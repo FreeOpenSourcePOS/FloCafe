@@ -31,6 +31,7 @@ const {
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { registerRoutes } = require('../main/routes/index');
+const { resolveTaxComponents } = require('../main/services/tax-components');
 
 /** Operational staff with a live token: authorization resolves from the users row, not the claim. */
 function seedStaffUser(db: any, role: string, reuse = false) {
@@ -805,6 +806,254 @@ async function main() {
     assertEqual(deniedPreview.data.code, 'permission_denied', 'the refusal carries the code the API client reacts to');
     db.prepare('DELETE FROM user_permission_overrides WHERE user_id = ?').run('cashier-test-001');
     db.prepare('DELETE FROM role_permission_overrides WHERE rowid = ?').run(ownerOverride.lastInsertRowid);
+
+    // ── Step 13: Full HTTP lifecycle with signed official-india (100.10 + 100.10) ────
+    console.log('\n13. Signed official-india document tax rounding end-to-end lifecycle');
+    const officialIndiaPack = JSON.parse(
+      fs.readFileSync(path.join(__dirname, 'fixtures/legacy-tax-packs/official-india.json'), 'utf8'),
+    );
+    installAndActivateTestTaxPack(db, officialIndiaPack);
+    db.prepare("UPDATE country_packs SET status = 'inactive' WHERE id = 'test-in-pack'").run();
+    db.prepare("UPDATE settings SET value = 'IN' WHERE key = 'country'").run();
+    db.prepare("UPDATE settings SET value = 'restaurant' WHERE key = 'business_type'").run();
+    db.prepare("UPDATE settings SET value = '27' WHERE key = 'state_code'").run();
+
+    seedProduct(db, 'prod-doc-1', 'cat-tax', 'Doc Item 1', 100.10, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    seedProduct(db, 'prod-doc-2', 'cat-tax', 'Doc Item 2', 100.10, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    db.prepare("INSERT OR IGNORE INTO tables (id, number, status) VALUES ('tbl-doc-1', 'D-1', 'available')").run();
+
+    // 1. Preview
+    const docPreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [
+          { product_id: 'prod-doc-1', quantity: 1, addons: [] },
+          { product_id: 'prod-doc-2', quantity: 1, addons: [] },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(docPreview.status, 200, 'doc tax preview succeeds');
+    assertEqual(docPreview.data.summary.subtotal, 200.2, 'preview subtotal = 200.20');
+    assertEqual(docPreview.data.summary.tax_amount, 10.01, 'preview tax_amount = 10.01 under document rounding');
+    assertEqual(docPreview.data.summary.total, 210.21, 'preview payable total = 210.21');
+
+    // 2. Order creation
+    const docOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        table_id: 'tbl-doc-1',
+        items: [
+          { product_id: 'prod-doc-1', quantity: 1 },
+          { product_id: 'prod-doc-2', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(docOrder.status, 201, 'doc order created');
+    assertEqual(docOrder.data.order.subtotal, 200.2, 'order subtotal = 200.20');
+    assertEqual(docOrder.data.order.tax_amount, 10.01, 'order tax_amount = 10.01');
+    assertEqual(docOrder.data.order.total, 210.21, 'order total = 210.21');
+
+    // 3. Bill generation
+    const docBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: docOrder.data.order.id },
+      headers: authHeader,
+    });
+    assertEqual(docBill.status, 201, 'doc bill generated');
+    assertEqual(docBill.data.bill.subtotal, 200.2, 'bill subtotal = 200.20');
+    assertEqual(docBill.data.bill.tax_amount, 10.01, 'bill tax_amount = 10.01');
+    assertEqual(docBill.data.bill.total, 210.21, 'bill total = 210.21');
+
+    // resolveTaxComponents(bill)
+    const components = resolveTaxComponents({ ...docBill.data.bill, items: docOrder.data.order.items });
+    const cgstComponent = components.find((c: any) => c.title === 'CGST');
+    const sgstComponent = components.find((c: any) => c.title === 'SGST');
+    assert(!!cgstComponent, 'CGST component present');
+    assert(!!sgstComponent, 'SGST component present');
+    assertEqual(cgstComponent.amount, 5.00, 'resolveTaxComponents CGST = 5.00');
+    assertEqual(sgstComponent.amount, 5.01, 'resolveTaxComponents SGST = 5.01');
+    assertEqual(Number((cgstComponent.amount + sgstComponent.amount).toFixed(2)), 10.01, 'CGST + SGST = 10.01');
+
+    // 4. Payment
+    const docPayment = await api(baseUrl, `/api/bills/${docBill.data.bill.id}/payment`, {
+      method: 'POST',
+      body: { method: 'cash', amount: 210.21 },
+      headers: authHeader,
+    });
+    assertEqual(docPayment.status, 200, 'doc bill payment accepted');
+    assertEqual(docPayment.data.bill.payment_status, 'paid', 'bill is settled');
+
+    // 5. Reports tax-components
+    const docReport = await api(baseUrl, '/api/reports/tax-components', {
+      headers: authHeader,
+    });
+    assertEqual(docReport.status, 200, 'tax-components report succeeds');
+    const reportComponents = docReport.data.taxComponents?.components || [];
+    const reportCgst = reportComponents.find((c: any) => c.title === 'CGST');
+    const reportSgst = reportComponents.find((c: any) => c.title === 'SGST');
+    assert(!!reportCgst, 'report has CGST');
+    assert(!!reportSgst, 'report has SGST');
+    assertEqual(reportCgst.amount, 5.00, 'report CGST = 5.00');
+    assertEqual(reportSgst.amount, 5.01, 'report SGST = 5.01');
+
+    // ── Step 14: Order & item mutations under scope: document ──────────
+    console.log('\n14. Order and item mutations under document tax rounding');
+    const mutOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        table_id: 'tbl-doc-1',
+        items: [{ product_id: 'prod-doc-1', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(mutOrderRes.status, 201, 'mutation order created with 1 item');
+    const mutOrderId = mutOrderRes.data.order.id;
+    const initialItem1 = mutOrderRes.data.order.items[0];
+    assertEqual(mutOrderRes.data.order.tax_amount, 5.01, 'initial 1-item tax = 5.01');
+    assertEqual(mutOrderRes.data.order.total, 105.11, 'initial 1-item total = 105.11');
+
+    // a. Add item
+    const addItemRes = await api(baseUrl, `/api/orders/${mutOrderId}/items`, {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-doc-2', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(addItemRes.status, 200, 'added 2nd item to order');
+    assertEqual(addItemRes.data.order.tax_amount, 10.01, '2-item order tax reconciled to 10.01');
+    assertEqual(addItemRes.data.order.total, 210.21, '2-item order total reconciled to 210.21');
+    const item2 = addItemRes.data.order.items.find((it: any) => it.product_id === 'prod-doc-2');
+
+    // b. Cancel item
+    const cancelItemRes = await api(baseUrl, `/api/orders/${mutOrderId}/items/${item2.id}/cancel`, {
+      method: 'PATCH',
+      headers: authHeader,
+    });
+    assertEqual(cancelItemRes.status, 200, 'item 2 cancelled');
+    assertEqual(cancelItemRes.data.order.tax_amount, 5.01, 'cancelled item excluded, remaining tax = 5.01');
+    assertEqual(cancelItemRes.data.order.total, 105.11, 'cancelled item excluded, remaining total = 105.11');
+
+    // c. Restore item
+    const restoreItemRes = await api(baseUrl, `/api/orders/${mutOrderId}/items/${item2.id}/restore`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: {},
+    });
+    assertEqual(restoreItemRes.status, 200, 'item 2 restored');
+    assertEqual(restoreItemRes.data.order.tax_amount, 10.01, 'restored order tax = 10.01');
+    assertEqual(restoreItemRes.data.order.total, 210.21, 'restored order total = 210.21');
+
+    // d. Void item
+    const prepRes = await api(baseUrl, `/api/order-items/${item2.id}/status`, {
+      method: 'PATCH',
+      body: { status: 'preparing' },
+      headers: authHeader,
+    });
+    assertEqual(prepRes.status, 200, 'item 2 moved to preparing');
+    const voidRes = await api(baseUrl, `/api/orders/${mutOrderId}/items/${item2.id}/cancel`, {
+      method: 'PATCH',
+      body: { override_pin: '1234' },
+      headers: authHeader,
+    });
+    assertEqual(voidRes.status, 200, 'item 2 voided');
+    assertEqual(voidRes.data.order.tax_amount, 5.01, 'voided item excluded, remaining tax = 5.01');
+
+    // e. Edit item
+    const editRes = await api(baseUrl, `/api/orders/${mutOrderId}/items/${initialItem1.id}/edit`, {
+      method: 'PATCH',
+      headers: { ...authHeader, 'Idempotency-Key': 'edit-doc-test-1' },
+      body: { quantity: 2, expected_edit_version: 0 },
+    });
+    assertEqual(editRes.status, 200, 'item 1 quantity edited to 2');
+    assertEqual(editRes.data.order.subtotal, 200.2, 'edited subtotal = 200.20');
+    assertEqual(editRes.data.order.tax_amount, 10.01, 'edited tax = 10.01');
+    assertEqual(editRes.data.order.total, 210.21, 'edited total = 210.21');
+
+    // f. Item discount
+    const itemToDiscount = editRes.data.order.items.find(
+      (it: any) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(it.status),
+    );
+    const itemDiscRes = await api(baseUrl, `/api/orders/${mutOrderId}/items/${itemToDiscount.id}/discount`, {
+      method: 'PATCH',
+      body: { discount_type: 'percentage', discount_value: 10 },
+      headers: authHeader,
+    });
+    assertEqual(itemDiscRes.status, 200, 'item discount applied');
+    const afterItemDiscOrder = (await api(baseUrl, `/api/orders/${mutOrderId}`, { headers: authHeader })).data.order;
+    assert(afterItemDiscOrder.tax_amount > 0, 'tax recalculated after item discount');
+
+    // g. Order discount
+    const orderDiscRes = await api(baseUrl, `/api/orders/${mutOrderId}/discount`, {
+      method: 'PATCH',
+      body: { discount_type: 'percentage', discount_value: 10 },
+      headers: authHeader,
+    });
+    assertEqual(orderDiscRes.status, 200, 'order discount applied');
+    assert(orderDiscRes.data.order.tax_amount > 0, 'tax scaled after order discount');
+
+    // h. Bill discount
+    const mutBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: mutOrderId },
+      headers: authHeader,
+    });
+    assertEqual(mutBillRes.status, 201, 'bill generated for discounted order');
+    const billDiscRes = await api(baseUrl, `/api/bills/${mutBillRes.data.bill.id}/applyDiscount`, {
+      method: 'POST',
+      body: { type: 'percentage', value: 10 },
+      headers: authHeader,
+    });
+    assertEqual(billDiscRes.status, 200, 'bill discount applied');
+
+    // i. Bill split
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('split_checks_enabled', 'true', ?)").run(now());
+    const splitOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        table_id: 'tbl-doc-1',
+        items: [
+          { product_id: 'prod-doc-1', quantity: 1 },
+          { product_id: 'prod-doc-2', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(splitOrderRes.status, 201, 'split order created');
+    const splitBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: splitOrderRes.data.order.id },
+      headers: authHeader,
+    });
+    assertEqual(splitBillRes.status, 201, 'split bill generated');
+    const splitItems = splitOrderRes.data.order.items;
+    const splitCheckRes = await api(baseUrl, `/api/bills/${splitBillRes.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: {
+        checks: [
+          { label: 'Guest 1', items: [{ order_item_id: splitItems[0].id, quantity: 1 }] },
+          { label: 'Guest 2', items: [{ order_item_id: splitItems[1].id, quantity: 1 }] },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(splitCheckRes.status, 201, 'bill split succeeded');
+    assertEqual(splitCheckRes.data.bills.length, 2, 'split produced 2 guest checks');
+    for (const childBill of splitCheckRes.data.bills) {
+      assertEqual(childBill.subtotal, 100.1, 'child bill subtotal = 100.10');
+      assert(childBill.tax_amount > 0, 'child bill carries allocated tax');
+    }
   } finally {
     server.close();
     closeDatabase();

@@ -1,7 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TaxEngine, applyPayableRounding, resolveTaxCategory, type TaxEngineLine } from '../main/services/tax-engine';
-import { calculateItemTax, previewCategoryRate } from '../main/services/tax';
+import { calculateDocumentItemTaxes, calculateItemTax, previewCategoryRate } from '../main/services/tax';
 import type {
   CountryPack,
   PayableRounding,
@@ -449,4 +451,84 @@ test('previewCategoryRate only counts rules the category actually claims via rul
     [['Real Tax', '5.00']],
     'checkout applies the same single rule preview now reports — no more preview/checkout mismatch',
   );
+});
+
+test('signed official-india two-item document rounding allocates 10.01 tax across items', () => {
+  const indiaPack = JSON.parse(
+    fs.readFileSync(path.join(__dirname, 'fixtures/legacy-tax-packs/official-india.json'), 'utf8'),
+  ) as CountryPack;
+  const result = TaxEngine.calculate({
+    pack: indiaPack,
+    currency: 'INR',
+    country: 'IN',
+    businessType: 'restaurant',
+    storeStateCode: 'KA',
+    transactionDate: new Date().toISOString(),
+    customer: null,
+    lines: [
+      { lineId: 'line-0001', kind: 'product', quantity: '1', unitPrice: '100.10', productCategoryId: 'standard', taxBehavior: 'exclusive' },
+      { lineId: 'line-0002', kind: 'product', quantity: '1', unitPrice: '100.10', productCategoryId: 'standard', taxBehavior: 'exclusive' },
+    ],
+  });
+  assert.equal(result.taxAmount, '10.01');
+  assert.equal(result.payableTotal, '210.21');
+  assert.deepEqual(result.lines.map((l) => l.taxAmount), ['5.01', '5.00']);
+  const cgstTotal = result.lines
+    .flatMap((l) => l.components)
+    .filter((c) => c.ruleId === 'b-cgst')
+    .reduce((sum, c) => sum + Number(c.amount), 0);
+  const sgstTotal = result.lines
+    .flatMap((l) => l.components)
+    .filter((c) => c.ruleId === 'a-sgst')
+    .reduce((sum, c) => sum + Number(c.amount), 0);
+  assert.equal(cgstTotal.toFixed(2), '5.00');
+  assert.equal(sgstTotal.toFixed(2), '5.01');
+});
+
+test('US document rounding allocates 0.01 tax across two 0.05 items at 8%', () => {
+  const usPack = packWith(
+    [{ id: 'sales-tax', label: 'Sales Tax', type: 'percent', categoryIds: ['standard'], rate: '8' }],
+    { scope: 'document', method: 'half_up', decimalPlaces: 2, remainderAllocation: 'largest_remainder' },
+  );
+  const result = calculate(usPack, [
+    line({ lineId: 'line-0001', unitPrice: '0.05', productCategoryId: 'standard', taxBehavior: 'exclusive' }),
+    line({ lineId: 'line-0002', unitPrice: '0.05', productCategoryId: 'standard', taxBehavior: 'exclusive' }),
+  ]);
+  assert.equal(result.taxAmount, '0.01');
+  assert.equal(result.payableTotal, '0.11');
+  assert.deepEqual(result.lines.map((l) => l.taxAmount), ['0.01', '0.00']);
+});
+
+test('calculateDocumentItemTaxes handles mixed categorized + uncategorized, scope line, and single-item wrapper', () => {
+  const tenant = { country: 'IN', business_type: 'restaurant', state_code: 'KA', currency: 'INR', taxes_enabled: true };
+
+  // 1. Mixed categorized and uncategorized items (using exempt behavior to test without DB pack)
+  const mixedResults = calculateDocumentItemTaxes(tenant, [
+    { lineId: 'line-0001', product: { tax_type: 'none', tax_rate: 0 }, taxableAmount: 100 },
+    { lineId: 'line-0002', product: { tax_type: 'none', tax_rate: 0, tax_category_id: 'standard', tax_behavior: 'exempt' }, taxableAmount: 100 },
+  ]);
+  assert.equal(mixedResults[0].tax_amount, 0);
+  assert.equal(mixedResults[0].tax_snapshot, null);
+  assert.equal(mixedResults[1].tax_amount, 0);
+  assert.ok(mixedResults[1].tax_snapshot);
+  assert.equal(mixedResults[1].tax_type, 'none');
+
+  // 2. Single-item calculateItemTax wrapper
+  const single = calculateItemTax(tenant, { tax_type: 'none', tax_rate: 0, tax_category_id: 'standard', tax_behavior: 'exempt' }, 100, null);
+  assert.equal(single.tax_amount, 0);
+  assert.ok(single.tax_snapshot);
+  assert.equal(single.tax_snapshot.lines.length, 1);
+
+  // 3. Scope line pack rounds lines independently
+  const lineScopePack = packWith(
+    [{ id: 'tax-5', label: 'Tax', type: 'percent', categoryIds: ['standard'], rate: '5' }],
+    { scope: 'line', method: 'half_up', decimalPlaces: 2 },
+  );
+  const lineScopeResult = calculate(lineScopePack, [
+    line({ lineId: 'line-0001', unitPrice: '10.05', productCategoryId: 'standard' }),
+    line({ lineId: 'line-0002', unitPrice: '10.05', productCategoryId: 'standard' }),
+  ]);
+  // 10.05 * 0.05 = 0.5025 -> rounded per line to 0.50 each, total 1.00
+  assert.deepEqual(lineScopeResult.lines.map((l) => l.taxAmount), ['0.50', '0.50']);
+  assert.equal(lineScopeResult.taxAmount, '1.00');
 });

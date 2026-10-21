@@ -2,9 +2,11 @@ import { getDatabase } from '../db';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import {
   calculateConfiguredChargeTaxes,
+  calculateDocumentItemTaxes,
   combineItemAndChargeTaxes,
   type ChargeTaxContext,
   type Customer,
+  type Product,
   type TaxBreakdown,
   type TaxRollup,
   type TenantInfo,
@@ -14,11 +16,19 @@ import { ChargeValidationError, toStandardChargeColumns, type AppliedCharge } fr
 
 type Database = ReturnType<typeof getDatabase>;
 type OrderItemRow = {
+  id?: number | string;
+  order_id?: number | string;
+  product_id?: number | string | null;
+  product_name?: string | null;
+  unit_price?: number | string | null;
+  quantity?: number | null;
   subtotal: number | null;
   tax_amount: number | null;
   tax_type: string | null;
   tax_breakdown: string | null;
   tax_snapshot: string | null;
+  total?: number | null;
+  status?: string | null;
 };
 
 export interface OrderTotals {
@@ -31,9 +41,108 @@ export interface OrderTotals {
 }
 
 export function calculateOrderTotals(db: Database, orderId: string | number): OrderTotals {
-  const statusPlaceholders = TERMINAL_ITEM_STATUSES.map(() => '?').join(', ');
-  const activeItems = db.prepare(`SELECT * FROM order_items WHERE order_id = ? AND (status IS NULL OR status NOT IN (${statusPlaceholders}))`)
-    .all(orderId, ...TERMINAL_ITEM_STATUSES) as OrderItemRow[];
+  const allItems = db.prepare(`SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid ASC`).all(orderId) as OrderItemRow[];
+  const activeItems = allItems.filter(
+    (item) => item.status === null || item.status === undefined || !TERMINAL_ITEM_STATUSES.includes(item.status as any),
+  );
+
+  const settingsRows = db.prepare("SELECT key, value FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'currency', 'taxes_enabled')").all() as Array<{ key: string; value: string }>;
+  const settings: Record<string, string> = {};
+  for (const r of settingsRows) settings[r.key] = r.value;
+  const tenantInfo: TenantInfo = {
+    country: settings.country || '',
+    business_type: settings.business_type || 'restaurant',
+    state_code: settings.state_code || '',
+    currency: settings.currency || 'INR',
+    taxes_enabled: settings.taxes_enabled === 'true',
+  };
+
+  const hasTaxableItem = activeItems.some((item) => Boolean(item.tax_snapshot));
+  if (tenantInfo.taxes_enabled && hasTaxableItem && activeItems.length > 0) {
+    const orderRow = db.prepare('SELECT customer_id FROM orders WHERE id = ?').get(orderId) as { customer_id: string | null } | undefined;
+    const customer = orderRow?.customer_id
+      ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(orderRow.customer_id) as Customer | null)
+      : null;
+
+    const decimals = getCurrencyFractionDigits(tenantInfo.currency || '');
+
+    const itemsForCalculation = activeItems.map((item, idx) => {
+      let snapshotLine: any = null;
+      if (item.tax_snapshot) {
+        try {
+          const parsed = typeof item.tax_snapshot === 'string' ? JSON.parse(item.tax_snapshot) : item.tax_snapshot;
+          if (Array.isArray(parsed?.lines) && parsed.lines.length > 0) {
+            snapshotLine = parsed.lines[0];
+          }
+        } catch { }
+      }
+
+      const product = item.product_id
+        ? (db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any)
+        : null;
+
+      const productForTax: Product = {
+        id: item.product_id ?? undefined,
+        tax_type: item.tax_type || product?.tax_type || 'none',
+        tax_rate: product?.tax_rate || 0,
+        tax_category_id: snapshotLine
+          ? (snapshotLine.categoryId ?? product?.tax_category_id ?? product?.tax_category ?? null)
+          : null,
+        tax_behavior: snapshotLine
+          ? (snapshotLine.taxBehavior ?? product?.tax_behavior ?? 'country_default')
+          : (product?.tax_behavior || 'country_default'),
+      };
+
+      return {
+        lineId: `line-${String(idx + 1).padStart(4, '0')}:${item.id}`,
+        product: productForTax,
+        taxableAmount: item.subtotal || 0,
+      };
+    });
+
+    const taxResults = calculateDocumentItemTaxes(tenantInfo, itemsForCalculation, customer);
+
+    const updateItemStmt = db.prepare(`
+      UPDATE order_items
+      SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, tax_type = ?, total = ?, updated_at = ?
+      WHERE id = ?
+    `);
+
+    for (let idx = 0; idx < activeItems.length; idx++) {
+      const item = activeItems[idx];
+      if (!item.tax_snapshot) continue;
+
+      const taxResult = taxResults[idx];
+      const newSnapshotJson = taxResult.tax_snapshot ? JSON.stringify(taxResult.tax_snapshot) : null;
+      const newBreakdownJson = JSON.stringify(taxResult.tax_breakdown);
+      const sub = item.subtotal || 0;
+      const newItemTotal = Number((sub + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount)).toFixed(decimals));
+
+      if (
+        item.tax_amount !== taxResult.tax_amount ||
+        item.tax_type !== taxResult.tax_type ||
+        item.total !== newItemTotal ||
+        item.tax_snapshot !== newSnapshotJson ||
+        item.tax_breakdown !== newBreakdownJson
+      ) {
+        updateItemStmt.run(
+          taxResult.tax_amount,
+          newBreakdownJson,
+          newSnapshotJson,
+          taxResult.tax_type,
+          newItemTotal,
+          new Date().toISOString(),
+          item.id,
+        );
+        item.tax_amount = taxResult.tax_amount;
+        item.tax_breakdown = newBreakdownJson;
+        item.tax_snapshot = newSnapshotJson;
+        item.tax_type = taxResult.tax_type;
+        item.total = newItemTotal;
+      }
+    }
+  }
+
   let subtotal = 0;
   let totalTax = 0;
   let exclusiveTax = 0;

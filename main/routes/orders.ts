@@ -21,6 +21,7 @@ import {
 import { asyncHandler } from '../middleware/async-handler';
 import {
   calculateConfiguredChargeTaxes,
+  calculateDocumentItemTaxes,
   calculateItemTax,
   combineItemAndChargeTaxes,
   getActiveCountryPack,
@@ -1688,7 +1689,19 @@ router.post(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
-        for (const item of items) {
+        const validatedItems: Array<{
+          item: any;
+          product: any;
+          quantity: number;
+          variant: any;
+          unitPrice: number;
+          deduction: any;
+          itemSubtotal: number;
+          itemId: string;
+        }> = [];
+
+        for (let idx = 0; idx < items.length; idx++) {
+          const item = items[idx];
           const product = db
             .prepare('SELECT * FROM products WHERE id = ?')
             .get(item.product_id) as any;
@@ -1740,7 +1753,33 @@ router.post(
           }
           itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
 
-          const taxResult = calculateItemTax(tenantInfo, product, itemSubtotal, customer);
+          const itemId = String(item.id || item.product_id || (idx + 1));
+          validatedItems.push({
+            item,
+            product,
+            quantity,
+            variant,
+            unitPrice,
+            deduction,
+            itemSubtotal,
+            itemId,
+          });
+        }
+
+        const documentTaxResults = calculateDocumentItemTaxes(
+          tenantInfo,
+          validatedItems.map((v, idx) => ({
+            lineId: `line-${String(idx + 1).padStart(4, '0')}:${v.itemId}`,
+            product: v.product,
+            taxableAmount: v.itemSubtotal,
+          })),
+          customer,
+        );
+
+        for (let idx = 0; idx < validatedItems.length; idx++) {
+          const { item, product, quantity, variant, unitPrice, deduction, itemSubtotal } =
+            validatedItems[idx];
+          const taxResult = documentTaxResults[idx];
 
           totalTax += taxResult.tax_amount;
           if (taxResult.tax_type !== 'inclusive') {
@@ -1781,7 +1820,7 @@ router.post(
             JSON.stringify(taxResult.tax_breakdown),
             itemTaxSnapshotJson,
             taxResult.tax_type,
-            itemDiscount,
+            0,
             itemTotal,
             variant
               ? variantSelectionSnapshot(variant)

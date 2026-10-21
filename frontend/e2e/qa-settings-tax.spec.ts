@@ -1,5 +1,7 @@
 /** Tests persisted tax settings, pack registry data, audit history, and catalog refresh. */
 import { test, expect, type Page } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
 
@@ -141,5 +143,79 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     const packs = await api<PackList>(page, '/tax-packs');
     // A catalog refresh must not have activated or removed anything.
     expect(packs.packs.filter((entry) => entry.active_for_store).length).toBe(1);
+  });
+
+  test('document tax rounding applies across transaction documents and preserves rounding consistency', async ({ page }) => {
+    await openTaxTab(page);
+
+    // Expand advanced tax tools
+    const advanced = page.getByRole('button', { name: /Advanced tax tools/ });
+    await expect(advanced).toBeVisible();
+    await advanced.click();
+
+    // Verify test calculation panel is available and performs calculation
+    const calcSection = page.locator('section').filter({
+      has: page.getByRole('heading', { name: 'Test calculation', exact: true }),
+    });
+    await expect(calcSection).toBeVisible();
+
+    const amountInput = calcSection.getByPlaceholder('Amount');
+    await expect(amountInput).toBeVisible();
+    await amountInput.fill('100.10');
+
+    const calcButton = calcSection.getByRole('button', { name: 'Calculate', exact: true });
+    await calcButton.click();
+    await expect(calcSection.getByText('Taxable Base')).toBeVisible();
+
+    // Verify multi-item document preview allocates and rounds across the document
+    const preview = await api<{
+      summary: { subtotal: number; tax_amount: number; total: number };
+      items: Array<{ subtotal: number; tax_amount: number; total: number }>;
+    }>(page, '/tax/preview', {
+      method: 'POST',
+      data: {
+        items: [
+          { product_id: 'e2e-product', quantity: 1, addons: [] },
+          { product_id: 'e2e-product', quantity: 1, addons: [] },
+        ],
+      },
+    });
+    expect(preview.summary.subtotal).toBe(120);
+    expect(preview.summary.total).toBe(preview.summary.subtotal + preview.summary.tax_amount);
+
+    // Verify order creation retains the document-calculated tax
+    const orderRes = await api<{
+      order: { id: string; subtotal: number; tax_amount: number; total: number };
+    }>(page, '/orders', {
+      method: 'POST',
+      data: {
+        type: 'takeaway',
+        items: [
+          { product_id: 'e2e-product', quantity: 1 },
+          { product_id: 'e2e-product', quantity: 1 },
+        ],
+      },
+    });
+    expect(orderRes.order.subtotal).toBe(120);
+    expect(orderRes.order.tax_amount).toBe(preview.summary.tax_amount);
+    expect(orderRes.order.total).toBe(preview.summary.total);
+
+    // Verify bill generation matches order
+    const billRes = await api<{
+      bill: { id: string; subtotal: number; tax_amount: number; total: number };
+    }>(page, '/bills/generate', {
+      method: 'POST',
+      data: { order_id: orderRes.order.id },
+    });
+    expect(billRes.bill.subtotal).toBe(orderRes.order.subtotal);
+    expect(billRes.bill.tax_amount).toBe(orderRes.order.tax_amount);
+    expect(billRes.bill.total).toBe(orderRes.order.total);
+
+    // Capture screenshot to the requested destination
+    const screenshotDir = '/Users/gurkiratkhaira/Documents/FloCafe-Consolidation/release-3131-r1-r4-2026-10-21/screenshots';
+    const screenshotPath = path.join(screenshotDir, 'r3-document-tax-rounding.png');
+    if (fs.existsSync(screenshotDir)) {
+      await page.screenshot({ path: screenshotPath });
+    }
   });
 });

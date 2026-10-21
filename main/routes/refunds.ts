@@ -242,8 +242,8 @@ router.post('/', requirePermission('refunds.initiate'), async (req: Request, res
     const userId = String((req as any).user.userId);
     const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
-    // 1. Check idempotency replay outside withTxn
-    if (idempotencyKey) {
+    const checkIdempotencyReplay = (): Record<string, unknown> | null => {
+      if (!idempotencyKey) return null;
       const prior = db
         .prepare(`
         SELECT bill_id, request_hash, response_json
@@ -251,17 +251,28 @@ router.post('/', requirePermission('refunds.initiate'), async (req: Request, res
         WHERE user_id = ? AND idempotency_key = ?
       `)
         .get(userId, idempotencyKey) as
-        | { bill_id: string; request_hash: string; response_json: string }
+        | { bill_id: string | number; request_hash: string; response_json: string }
         | undefined;
-      if (prior) {
-        if (String(prior.bill_id) !== String(billId) || prior.request_hash !== requestHash) {
-          throw Object.assign(
-            new Error('Idempotency-Key was already used for a different refund request'),
-            { statusCode: 409, diagnosticCode: 'idempotency_conflict' },
-          );
-        }
-        return res.status(201).json(JSON.parse(prior.response_json));
+      if (!prior) return null;
+      if (String(prior.bill_id) !== String(billId) || prior.request_hash !== requestHash) {
+        throw Object.assign(
+          new Error('Idempotency-Key was already used for a different refund request'),
+          { statusCode: 409, diagnosticCode: 'idempotency_conflict' },
+        );
       }
+      try {
+        return JSON.parse(prior.response_json);
+      } catch {
+        throw Object.assign(new Error('Stored refund response is invalid'), {
+          statusCode: 500,
+        });
+      }
+    };
+
+    // 1. Check idempotency replay outside withTxn
+    const initialReplay = checkIdempotencyReplay();
+    if (initialReplay) {
+      return res.status(201).json(initialReplay);
     }
 
     // 2. Pre-validate preconditions (business-day window, order item, amounts, session, etc.) before checking PIN
@@ -272,24 +283,30 @@ router.post('/', requirePermission('refunds.initiate'), async (req: Request, res
       orderItemId,
     });
 
-    // 3. Validate PIN presence
     const overridePin = body.override_pin;
-    if (!overridePin) {
-      throw Object.assign(
-        new Error(
-          lateRefund
-            ? 'Owner PIN required to process a refund on a completed order'
-            : 'Manager PIN required to process a refund',
-        ),
-        { statusCode: 400, diagnosticCode: 'approver_pin_required' },
-      );
-    }
 
-    // 4. Rate-limited async PIN verification outside withTxn
+    // 3. Rate-limited async PIN verification outside withTxn
     const rateLimitKey = `pin:${clientIp}:refund`;
     let preVerifiedApprover: PreVerifiedRefundApprover | null = null;
+    let idempotencyReplay: Record<string, unknown> | null = null;
 
     await withRefundPinLock(rateLimitKey, async () => {
+      idempotencyReplay = checkIdempotencyReplay();
+      if (idempotencyReplay) {
+        return;
+      }
+
+      if (!overridePin) {
+        throw Object.assign(
+          new Error(
+            lateRefund
+              ? 'Owner PIN required to process a refund on a completed order'
+              : 'Manager PIN required to process a refund',
+          ),
+          { statusCode: 400, diagnosticCode: 'approver_pin_required' },
+        );
+      }
+
       if (isPinRateLimited(rateLimitKey)) {
         throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
           statusCode: 429,
@@ -313,6 +330,10 @@ router.post('/', requirePermission('refunds.initiate'), async (req: Request, res
       }
 
       if (!candidate || !pinMatches) {
+        idempotencyReplay = checkIdempotencyReplay();
+        if (idempotencyReplay) {
+          return;
+        }
         checkPinRateLimit(rateLimitKey);
         throw Object.assign(new Error(lateRefund ? 'Invalid owner PIN' : 'Invalid manager PIN'), {
           statusCode: 403,
@@ -326,6 +347,10 @@ router.post('/', requirePermission('refunds.initiate'), async (req: Request, res
         lateRefund,
       };
     });
+
+    if (idempotencyReplay) {
+      return res.status(201).json(idempotencyReplay);
+    }
 
     const refundRequest: RefundRequest = {
       billId,

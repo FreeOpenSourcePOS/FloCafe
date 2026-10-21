@@ -8,7 +8,9 @@ import StatusBar from '@/components/layout/StatusBar';
 import GlobalNotifications from '@/components/layout/GlobalNotifications';
 import TitleBar from '@/components/layout/TitleBar';
 import UpdateAvailableDialog from '@/components/updates/UpdateAvailableDialog';
+import ProductAnalyticsDialog from '@/components/analytics/ProductAnalyticsDialog';
 import { usePrinterStatusSync } from '@/hooks/usePrinter';
+import { useReceiptSettingsSync } from '@/hooks/useReceiptSettingsSync';
 import { normalizePathname } from '@/lib/utils';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -21,6 +23,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isSettings = pathname === '/settings';
   // Sync printer status early so hardware and WebUSB reconnect before first print.
   usePrinterStatusSync();
+  // Hydrate receipt display settings from backend so browser print has current store details.
+  useReceiptSettingsSync();
 
   return (
     <AuthGuard>
@@ -54,6 +58,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </SidebarInset>
         </div>
         <UpdateAvailableDialog />
+        {!isPos && <ProductAnalyticsDialog />}
       </SidebarProvider>
     </AuthGuard>
   );

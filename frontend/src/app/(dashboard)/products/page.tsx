@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
@@ -25,7 +26,7 @@ import {
   ChevronDown,
   Search,
 } from 'lucide-react';
-import type { Product, Category, AddonGroup } from '@/lib/types';
+import type { Product, Category, AddonGroup, Addon } from '@/lib/types';
 import {
   buildVariantsPayload,
   hasInvalidVariantRow,
@@ -116,6 +117,23 @@ interface AddonEditorRow {
    * so re-saving a group must not overwrite stock an order has since moved.
    */
   stock_edited: boolean;
+  tax_category_id?: Addon['tax_category_id'];
+  tax_behavior?: Addon['tax_behavior'];
+  inherit_parent_tax_category?: Addon['inherit_parent_tax_category'];
+}
+
+function resolveProductsTab(value: string | null | undefined): TabType {
+  return value === 'categories' || value === 'addons' ? value : 'products';
+}
+
+function ProductsTabQuerySync({ onTabChange }: { onTabChange: (tab: TabType) => void }) {
+  const tabParam = useSearchParams()?.get('tab');
+
+  useEffect(() => {
+    onTabChange(resolveProductsTab(tabParam));
+  }, [tabParam, onTabChange]);
+
+  return null;
 }
 
 function taxCategoryOptionLabel(tc: { label: string; rate_percent?: number | null }): string {
@@ -218,7 +236,10 @@ export default function ProductsPage() {
   const [showBulkTaxModal, setShowBulkTaxModal] = useState(false);
   const [bulkTaxCategoryId, setBulkTaxCategoryId] = useState('');
   const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
+  const [savingAddonGroup, setSavingAddonGroup] = useState(false);
+  const addonGroupSaveInFlight = useRef(false);
 
+  const router = useRouter();
   const currency = getCurrencySymbol(
     currentTenant?.currency || '',
     getCountryByCode(currentTenant?.country ?? '')?.locale,
@@ -228,8 +249,20 @@ export default function ProductsPage() {
   const amountFormat = useAmountFormat();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = tenantCan(currentTenant, 'catalog.manage');
+  const canManageAddons = isRestaurant || isOwnerOrManager;
   const productAddonGroupOptions = [...addonGroups, ...productInactiveAddonGroups];
   const categoryAddonGroupOptions = [...addonGroups, ...categoryAddonGroups];
+
+  const handleTabChange = useCallback(
+    (value: string) => {
+      const nextTab = resolveProductsTab(value);
+      setActiveTab(nextTab);
+      const params = new URLSearchParams(window.location.search);
+      params.set('tab', nextTab);
+      router.replace(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+    },
+    [router],
+  );
 
   const fetchData = async () => {
     try {
@@ -237,7 +270,7 @@ export default function ProductsPage() {
         api.get('/products?include_inactive_variants=true'),
         api.get('/categories'),
       ];
-      if (isRestaurant) requests.push(api.get('/addon-groups'));
+      if (canManageAddons) requests.push(api.get('/addon-groups'));
       const [prodRes, catRes, agRes] = await Promise.all(requests);
       setProducts((prodRes.data.products as Product[]) || []);
       setCategories((catRes.data.categories as Category[]) || []);
@@ -255,7 +288,7 @@ export default function ProductsPage() {
       api.get('/products?include_inactive_variants=true', { signal: controller.signal }),
       api.get('/categories', { signal: controller.signal }),
     ];
-    if (isRestaurant) requests.push(api.get('/addon-groups', { signal: controller.signal }));
+    if (canManageAddons) requests.push(api.get('/addon-groups', { signal: controller.signal }));
     Promise.all(requests)
       .then(([prodRes, catRes, agRes]) => {
         setProducts((prodRes.data.products as Product[]) || []);
@@ -733,6 +766,7 @@ export default function ProductsPage() {
   };
 
   const resetAddonForm = () => {
+    if (savingAddonGroup) return;
     setAddonForm({
       name: '',
       description: '',
@@ -766,6 +800,9 @@ export default function ProductsPage() {
         stock_quantity: String(a.stock_quantity ?? 0),
         low_stock_threshold: String(a.low_stock_threshold ?? 0),
         stock_edited: false,
+        tax_category_id: a.tax_category_id,
+        tax_behavior: a.tax_behavior,
+        inherit_parent_tax_category: a.inherit_parent_tax_category,
       })) || [],
     );
     setShowAddonModal(true);
@@ -773,6 +810,9 @@ export default function ProductsPage() {
 
   const handleAddonGroupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (addonGroupSaveInFlight.current) return;
+    addonGroupSaveInFlight.current = true;
+    setSavingAddonGroup(true);
     try {
       const payload = {
         name: addonForm.name,
@@ -788,6 +828,12 @@ export default function ProductsPage() {
           is_active: addon.is_active,
           track_inventory: addon.track_inventory,
           low_stock_threshold: Math.max(0, Number(addon.low_stock_threshold) || 0),
+          // Saved tax settings are echoed back; omitted fields fall back to backend defaults.
+          ...(addon.tax_category_id !== undefined && { tax_category_id: addon.tax_category_id }),
+          ...(addon.tax_behavior !== undefined && { tax_behavior: addon.tax_behavior }),
+          ...(addon.inherit_parent_tax_category !== undefined && {
+            inherit_parent_tax_category: addon.inherit_parent_tax_category,
+          }),
           // Omitted unless the merchant edited it: the API reads a submitted
           // stock_quantity as an absolute set and writes a ledger movement.
           ...(addon.stock_edited
@@ -806,6 +852,9 @@ export default function ProductsPage() {
       fetchData();
     } catch {
       toast.error(t('failedToSaveAddonGroup'));
+    } finally {
+      addonGroupSaveInFlight.current = false;
+      setSavingAddonGroup(false);
     }
   };
 
@@ -883,9 +932,16 @@ export default function ProductsPage() {
           ]),
         );
 
+  const tabQuerySync = (
+    <Suspense fallback={null}>
+      <ProductsTabQuerySync onTabChange={setActiveTab} />
+    </Suspense>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
+        {tabQuerySync}
         <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -893,6 +949,7 @@ export default function ProductsPage() {
 
   return (
     <div className="dashboard-scroll-shell flex h-full min-h-0 flex-col">
+      {tabQuerySync}
       <div className="mb-6 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
         <div className="relative w-full sm:max-w-xs">
@@ -923,7 +980,7 @@ export default function ProductsPage() {
 
       <Tabs
         value={activeTab}
-        onValueChange={(value) => setActiveTab(value as TabType)}
+        onValueChange={handleTabChange}
         className="dashboard-scroll-frame flex min-h-0 flex-1 flex-col"
       >
         <TabsList className="mb-6 shrink-0">
@@ -933,7 +990,7 @@ export default function ProductsPage() {
           <TabsTrigger value="categories">
             <Folder size={16} /> {t('tabCategories')}
           </TabsTrigger>
-          {isRestaurant && (
+          {canManageAddons && (
             <TabsTrigger value="addons">
               <Puzzle size={16} /> {t('tabAddonGroups')}
             </TabsTrigger>
@@ -2439,8 +2496,12 @@ export default function ProductsPage() {
                         ))}
                       </div>
                     </div>
-                    <Button type="submit" className="w-full">
-                      {editingAddonGroup ? tCommon('update') : tCommon('create')}
+                    <Button type="submit" className="w-full" disabled={savingAddonGroup}>
+                      {savingAddonGroup
+                        ? tCommon('saving')
+                        : editingAddonGroup
+                          ? tCommon('update')
+                          : tCommon('create')}
                     </Button>
                   </form>
                 </div>

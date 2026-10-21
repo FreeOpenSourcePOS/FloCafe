@@ -90,6 +90,101 @@ Four things do not use it, and a new screen has to notice which kind it is:
 The other `axios` imports in the renderer are `axios.isAxiosError` for error shape, not a second
 client.
 
+### Durable manual item-edit recovery is re-sent only by staff action
+
+The Orders pages retry an item edit whose browser response was lost, but never automatically. The
+saved record lives in `localStorage` under one key per order item,
+[`flo.orders.item-edit.attempt.v1:<tenant>:<actor>:<order>:<item>`](../../frontend/src/lib/order-item-edit-attempt.ts).
+Enumeration
+([`listOrderItemEditAttempts`](../../frontend/src/lib/order-item-edit-attempt.ts)) reads only keys in
+that exact tenant/actor/order prefix and validates the snapshot it finds there: the key's item suffix,
+the stored tenant/actor/order/item IDs, the declared edit mode, and a body operation matching that
+mode. The stored `path` must equal the canonical `PATCH /orders/:orderId/items/:itemId/edit` path
+derived from those IDs, so a tampered record cannot redirect the replay at an arbitrary URL. Malformed
+or mismatched records inside the current scope are left intact, counted as unreadable, and never sent
+or cleared; they produce a translated storage warning. Records in other scopes are ignored.
+
+Mounted order surfaces lazily run that enumeration and render one shared
+[`PendingOrderItemEdits`](../../frontend/src/components/orders/PendingOrderItemEdits.tsx) notice above
+their item lists (both the card and the detail layouts, outside the active/inactive line filter, so
+history-hidden superseded lines still surface their unresolved attempt). The notice renders for saved
+records, storage warnings, or outstanding resolution notices. The browser sends nothing until staff click *Resolve pending
+edit*. Resolving re-reads the record under the attempt's Web Locks critical section, verifies the
+re-read still matches the offered operation, then replays the stored path, frozen body, and
+idempotency key through the axios client. Because the idempotency key is reused, a replay of an edit
+that already committed is a no-op refresh, not a second mutation.
+
+Clearing is compare-and-clear: a 2xx for the saved request, or a definitive current-route rejection
+(400/404/409/422), clears the record only if storage still holds the same idempotency key.
+Transport timeouts and 5xx, authentication/permission/rate-limit
+responses (401/403/429), and failed local clears all preserve the record and surface an inline
+message (sign-in for 401, rate limit for 429, the generic hint plus any server message otherwise):
+the 403/429 classes cannot establish whether an earlier request committed, so no
+automatic retry timer runs for them. A confirmed edit whose order refresh failed is reported as a
+refresh failure, not an edit failure, and the cleared attempt is not re-created.
+
+The Orders page owns the data result: after a resolved edit it refetches the current order and
+the already-loaded list pages through its existing fetch/refresh routines. A failed detail refresh after
+either confirmation or definitive rejection leaves a visible refresh warning with a retry action; only
+the confirmed case says the edit was confirmed.
+Scoped native custom events
+(`flo.orders.item-edit.attempt.changed`) refresh mounted notices in the current tab after the edit
+modal persists or resolves an attempt, and the browser `storage` event covers other tabs.
+An identity change during an item-edit commit closes the stale editor and refreshes the current
+order or table context without installing the returned order from the previous identity.
+
+### Split-check availability is a state, not a hidden button
+
+The POS payment modal derives split-check availability through explicit states rather than a boolean
+that silently hid the control. The feature setting (`split_checks_enabled`) lookup reports loading,
+ready, and failed states: while loading the section stays hidden, on failure it
+replaces the section with an error and a retry action, and a `settings.view` denial explains the
+account cannot check availability. Only a successfully read `false` removes the section.
+
+Eligibility resolves in a fixed order so staff always see the same reason for the same bill:
+billing permissions, an unresolved payment or split in progress, anything other than an untouched
+unpaid bill, a non-dine-in order type, fractional item quantities, fewer than two whole eligible
+units, and finally an incomplete bill/order projection, which is reported as an availability unknown
+with a check action, never as "cannot split". Definitive reasons render as visible text beside the
+disabled action, so no reason depends on hovering.
+
+Opening the allocator is guarded, not assumed. The modal re-fetches the bill (`GET /bills/:id`,
+with the existing whole-order fallback only for an as-yet-unsplit bill) and re-evaluates payment
+status, permissions, order type, and units from the fresh result before offering the split, passing
+the refreshed bill and its matching order projection to
+[`SplitCheckModal`](../../frontend/src/components/pos/SplitCheckModal.tsx). For a split-group child
+the child's own projection is authoritative; a paid sibling never leaks into the editor. Stale or
+racing lookups are ignored by lookup id, rapid clicks open at most one allocator, and while the
+explicit split-opening request is in flight competing payment and split mutations are disabled until
+it finally releases.
+
+### Add-on groups have one editor
+
+Add-on groups are managed only in Products, on the tab selected by `/products?tab=addons`. The
+Products page reads `tab` (`products`, `categories`, or `addons`; anything else selects Products)
+inside a Suspense boundary and writes tab clicks back with `router.replace`, keeping other query
+parameters. The tab is shown to restaurants and to any business whose role grants `catalog.manage`.
+The legacy `/addon-groups` route is kept for bookmarks and the static export; it makes no API call and
+client-redirects to `/products?tab=addons` with `router.replace`.
+
+The group editor echoes each saved add-on's `tax_category_id`, `tax_behavior`, and
+`inherit_parent_tax_category` back on save, and sends `stock_quantity` only when the stock field was
+edited, so an ordinary save cannot overwrite stock moved since the editor opened.
+
+### Charge identity is chosen, not typed
+
+[`ChargesSettingsCard`](../../frontend/src/components/settings/ChargesSettingsCard.tsx) offers Service,
+Packaging, and Custom kinds for a new charge. Service and Packaging use the reserved IDs
+`service_charge` and `packaging_charge` (which feed the standard report columns); if that ID already
+exists, choosing the kind opens the saved definition instead of applying defaults. Custom charges get
+an opaque `charge-<32 hex>` ID from `crypto.getRandomValues`, generated once per draft. IDs are never
+derived from names or editable, so renaming a charge keeps its identity. Choosing a kind writes
+nothing; only Save persists. Editing an existing charge reloads definitions before building the
+replacement list. An edit therefore does not recreate a charge already deleted on the server or
+replace other definitions from its old snapshot. A failed reload retains the draft and blocks saving
+until Retry succeeds. Creation retries reuse the draft's stable ID, including after a committed
+attempt's response is lost.
+
 ### The KDS live feed is a WebSocket, not a request
 
 Two surfaces open a socket to the same `/kds` path. The base ports for that path are `:3001` and
@@ -254,9 +349,11 @@ frame's URL to be `http:` on `localhost` or `127.0.0.1`. That establishes **whic
 calling**. It does not establish **who is signed in**, and the single POS window serves every role
 from chef to owner. Everything else in this section follows from that gap.
 
-Registering a privileged channel with a bare `ipcMain.handle` skips the check. `pick-restore-file`,
-`backup-database`, `restore-backup`, and `db-initialize` did that once; they go through the wrapper
-now, and a new channel does too or it has not been reviewed.
+Registering a privileged channel with a bare `ipcMain.handle` skips the check. All privileged
+channels in [`main/ipc.ts`](../../main/ipc.ts) go through the `handle` wrapper, and direct update
+and status handlers in [`main/update-ipc.ts`](../../main/update-ipc.ts) go through
+`registerDirectUpdateIpcHandlers` using `isTrustedMainWindowSender`; any new channel must enforce
+sender validation.
 
 ### What the settings channel may write
 
@@ -348,7 +445,11 @@ instead of the shared one.
 
 The renderer's print surface is a decision tree, not a single path. All of it lives in
 [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts), and the shared kernel, renderers, and
-transports are described in [Printing architecture](printing.md).
+transports are described in [Printing architecture](printing.md). Before dispatching a bill or tax
+bill, `usePrinterStore` awaits receipt settings hydration (`ensureReceiptSettingsLoaded()`, backed
+by [`useReceiptSettingsSync`](../../frontend/src/hooks/useReceiptSettingsSync.ts)) so storefront
+branding and receipt metadata are loaded into `pos-settings.ts` from `GET /api/settings/business`
+before rendering.
 
 For a bill or a kitchen ticket, in the order the store tries them:
 
@@ -527,7 +628,7 @@ frontend/src/
 │   ├── products/               Product image uploader
 │   ├── providers/              I18nProvider
 │   ├── settings/               The settings screen's building blocks:
-│   │   BetaChannelToggle, CurrencyResetDialog, DatabaseSettingsTab,
+│   │   BetaChannelToggle, ChargesSettingsCard, CurrencyResetDialog, DatabaseSettingsTab,
 │   │   GeneralSettingsTab, HealthCheckDialog,
 │   │   InitializeDatabaseDialog, LocalePreferencesPanel, MasterPinPrompt,
 │   │   PaymentMethodsSettings, PermissionAuditLog, PermissionMatrix,
@@ -537,7 +638,7 @@ frontend/src/
 │   ├── tables/                 Floorplan editor, table move modal, table turnover badge
 │   ├── ui/                     shadcn/ui primitives
 │   └── updates/                Update download prompt and install guard dialog
-├── hooks/                      Printer, KDS, theme, update, cash, and formatting hooks
+├── hooks/                      Printer, KDS, theme, update, cash, approver, and formatting hooks
 ├── lib/
 │   ├── i18n/                   Language registry, loader, and the 24 message files
 │   ├── printer/                Encoders, document builders, warnings, WebUSB bridge,

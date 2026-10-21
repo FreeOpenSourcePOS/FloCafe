@@ -47,6 +47,33 @@ export interface OrderItemEditAttemptSnapshot {
   createdAt: string;
 }
 
+/** Canonical PATCH path for an item edit; stored URLs are never trusted. */
+export const orderItemEditCanonicalPath = (orderId: number, itemId: number): string =>
+  `/orders/${orderId}/items/${itemId}/edit`;
+
+/** Outcome of a replayed saved edit, from the domain's single classifier. */
+export type OrderItemEditReplayOutcome =
+  | 'committed'
+  | 'rejected'
+  | 'authRequired'
+  | 'forbidden'
+  | 'rateLimited'
+  | 'unresolved';
+
+export type OrderItemEditReplayResult<O> =
+  | { outcome: 'committed'; data: O }
+  | {
+      outcome: Exclude<OrderItemEditReplayOutcome, 'committed'>;
+      data?: undefined;
+      error: unknown;
+    };
+
+export interface OrderItemEditAttemptList {
+  attempts: OrderItemEditAttemptSnapshot[];
+  /** Records in scope that are unreadable or out-of-contract; left intact. */
+  hasUnreadableRecords: boolean;
+}
+
 /** Raised when attempt storage is unavailable or already holds a conflicting submission. */
 export class OrderItemEditAttemptStorageError extends Error {
   constructor() {
@@ -176,6 +203,11 @@ export function persistOrderItemEditAttempt(snapshot: OrderItemEditAttemptSnapsh
     stored = false;
   }
   if (!stored) throw new OrderItemEditAttemptStorageError();
+  notifyOrderItemEditAttemptsChanged({
+    tenantId: snapshot.tenantId,
+    actorId: snapshot.actorId,
+    orderId: snapshot.orderId,
+  });
 }
 
 /** Clears the slot once the mutation is confirmed committed or definitively rejected. */
@@ -194,7 +226,11 @@ export function clearOrderItemEditAttempt(
     const parsed: unknown = JSON.parse(raw);
     if (isSnapshot(parsed) && parsed.idempotencyKey === idempotencyKey) {
       storage.removeItem(scopedKey);
-      return storage.getItem(scopedKey) === null;
+      const removed = storage.getItem(scopedKey) === null;
+      if (removed) {
+        notifyOrderItemEditAttemptsChanged({ tenantId, actorId, orderId });
+      }
+      return removed;
     }
     return false;
   } catch {
@@ -210,4 +246,275 @@ export function isUnresolvedOrderItemEditFailure(error: unknown): boolean {
   const status = (error as { response?: { status?: unknown } })?.response?.status;
   if (typeof status === 'number') return status >= 500;
   return true;
+}
+
+/**
+ * Classifies a replay/save failure into the domain's outcome set. 401/403/429
+ * cannot establish that a saved edit committed, so their records stay; only a
+ * definitive route rejection or an observed commit clears them.
+ */
+export function classifyOrderItemEditFailure(
+  error: unknown,
+): Exclude<OrderItemEditReplayOutcome, 'committed'> {
+  const status = (error as { response?: { status?: unknown } })?.response?.status;
+  if (typeof status !== 'number') return 'unresolved';
+  if (status === 401) return 'authRequired';
+  if (status === 403) return 'forbidden';
+  if (status === 429) return 'rateLimited';
+  if (status >= 500) return 'unresolved';
+  return 'rejected';
+}
+
+const ATTEMPTS_CHANGED_EVENT = 'flo.orders.item-edit.attempt.changed';
+
+export interface OrderItemEditAttemptScope {
+  tenantId: number;
+  actorId: string;
+  orderId: number;
+}
+
+/** Announces a same-tab persistence/clear; event details carry scope IDs only. */
+export function notifyOrderItemEditAttemptsChanged(scope: OrderItemEditAttemptScope): void {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  try {
+    window.dispatchEvent(
+      new CustomEvent(ATTEMPTS_CHANGED_EVENT, {
+        detail: { tenantId: scope.tenantId, actorId: scope.actorId, orderId: scope.orderId },
+      }),
+    );
+  } catch {
+    // Notifications are never worth breaking a save/clear over.
+  }
+}
+
+function attemptsChangedEventMatches(
+  event: Event,
+  scope: OrderItemEditAttemptScope | null,
+): boolean {
+  if (event.type === ATTEMPTS_CHANGED_EVENT) {
+    if (!scope) return true;
+    const detail = (event as CustomEvent<{ tenantId?: number; actorId?: string; orderId?: number }>)
+      .detail;
+    return (
+      detail?.tenantId === scope.tenantId &&
+      detail?.actorId === scope.actorId &&
+      detail?.orderId === scope.orderId
+    );
+  }
+  if (event.type === 'storage') {
+    if (!scope) return true;
+    const key = (event as StorageEvent).key;
+    if (key === null) return true;
+    return key.startsWith(scopedKeyPrefix(scope.tenantId, scope.actorId, scope.orderId));
+  }
+  return false;
+}
+
+/**
+ * Listens for attempt changes in the current tab (custom event) and other tabs
+ * (storage event) within one scope. Returns an unsubscribe function.
+ */
+export function subscribeOrderItemEditAttemptsChanged(
+  scope: OrderItemEditAttemptScope | null,
+  handler: () => void,
+): () => void {
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+    return () => undefined;
+  }
+  const listener = (event: Event) => {
+    if (attemptsChangedEventMatches(event, scope)) handler();
+  };
+  window.addEventListener(ATTEMPTS_CHANGED_EVENT, listener);
+  window.addEventListener('storage', listener);
+  return () => {
+    window.removeEventListener(ATTEMPTS_CHANGED_EVENT, listener);
+    window.removeEventListener('storage', listener);
+  };
+}
+
+const scopedKeyPrefix = (tenantId: number, actorId: string, orderId: number): string =>
+  `${ORDER_ITEM_EDIT_ATTEMPT_STORAGE_KEY}:${tenantId}:${actorId}:${orderId}:`;
+
+/** The edit contract accepts positive finite quantities; fractional support is
+ * product-dependent (sale unit and precision) and enforced by the backend, so
+ * storage validation must not approximate that product context. */
+function quantityIsValid(quantity: unknown): boolean {
+  return typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0;
+}
+
+/** Validates the body's operation against its declared mode without trusting callers. */
+function bodyOperationIsValid(snapshot: OrderItemEditAttemptSnapshot): boolean {
+  if (snapshot.mode === 'quantity') {
+    return quantityIsValid(snapshot.body.quantity) && snapshot.body.replacement === undefined;
+  }
+  const replacement = snapshot.body.replacement;
+  return (
+    !!replacement &&
+    typeof replacement.product_id === 'string' &&
+    replacement.product_id.length > 0 &&
+    quantityIsValid(replacement.quantity)
+  );
+}
+
+function storageKeys(storage: Storage): Array<string | null> {
+  const keys: Array<string | null> = [];
+  const enumerable = storage as unknown as { length?: unknown };
+  if (typeof enumerable.length === 'number') {
+    for (let index = 0; index < (enumerable as { length: number }).length; index += 1) {
+      keys.push(storage.key(index));
+    }
+    return keys;
+  }
+  if (Array.isArray((enumerable as { keys?: unknown }).keys)) {
+    return [...(enumerable as { keys: string[] }).keys];
+  }
+  throw new OrderItemEditAttemptStorageError();
+}
+
+/**
+ * Enumerates every recoverable saved edit for one tenant/actor/order, without
+ * touching or deleting records it cannot understand. A correction is offered
+ * only when the record validates against the exact key suffix it was found
+ * under and the canonical PATCH path derived from those IDs.
+ */
+export function listOrderItemEditAttempts(
+  tenantId: number,
+  actorId: string,
+  orderId: number,
+): OrderItemEditAttemptList {
+  let storage: Storage;
+  try {
+    storage = attemptStorage();
+  } catch {
+    throw new OrderItemEditAttemptStorageError();
+  }
+  const prefix = scopedKeyPrefix(tenantId, actorId, orderId);
+  const attempts: OrderItemEditAttemptSnapshot[] = [];
+  let hasUnreadableRecords = false;
+
+  for (const key of storageKeys(storage)) {
+    if (!key || !key.startsWith(prefix)) continue;
+    const itemId = Number(key.slice(prefix.length));
+    let raw: string | null = null;
+    let parsed: unknown = null;
+    if (!Number.isSafeInteger(itemId) || itemId <= 0) {
+      hasUnreadableRecords = true;
+      continue;
+    }
+    try {
+      raw = storage.getItem(key);
+    } catch {
+      hasUnreadableRecords = true;
+      continue;
+    }
+    if (raw === null) continue;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      hasUnreadableRecords = true;
+      continue;
+    }
+    if (!isSnapshot(parsed)) {
+      hasUnreadableRecords = true;
+      continue;
+    }
+    const snapshot = parsed as OrderItemEditAttemptSnapshot;
+    if (
+      snapshot.tenantId !== tenantId ||
+      snapshot.actorId !== actorId ||
+      snapshot.orderId !== orderId ||
+      snapshot.itemId !== itemId ||
+      snapshot.path !== orderItemEditCanonicalPath(orderId, itemId) ||
+      !bodyOperationIsValid(snapshot)
+    ) {
+      hasUnreadableRecords = true;
+      continue;
+    }
+    attempts.push(snapshot);
+  }
+
+  attempts.sort((a, b) => a.itemId - b.itemId);
+  return { attempts, hasUnreadableRecords };
+}
+
+/**
+ * True when two snapshots carry the same identity (tenant/actor/order/item),
+ * mode, body operation, and idempotency key. Used to verify that a re-read
+ * record still matches the offered operation before sending.
+ */
+export function orderItemEditAttemptsEquivalent(
+  a: OrderItemEditAttemptSnapshot,
+  b: OrderItemEditAttemptSnapshot,
+): boolean {
+  return (
+    a.tenantId === b.tenantId &&
+    a.actorId === b.actorId &&
+    a.orderId === b.orderId &&
+    a.itemId === b.itemId &&
+    a.mode === b.mode &&
+    a.idempotencyKey === b.idempotencyKey &&
+    a.path === b.path &&
+    attemptBodiesMatch(a.body, b.body)
+  );
+}
+
+export function attemptBodiesMatch(
+  a: OrderItemEditAttemptBody,
+  b: OrderItemEditAttemptBody,
+): boolean {
+  if (
+    a.expected_edit_version !== b.expected_edit_version ||
+    a.quantity !== b.quantity ||
+    (a.reason ?? '') !== (b.reason ?? '')
+  ) {
+    return false;
+  }
+  if (a.replacement === undefined || b.replacement === undefined) {
+    return a.replacement === b.replacement;
+  }
+  const aAddons = (a.replacement.addons ?? []).map((x) => ({
+    id: String(x.id ?? ''),
+    quantity: x.quantity ?? 1,
+  }));
+  const bAddons = (b.replacement.addons ?? []).map((x) => ({
+    id: String(x.id ?? ''),
+    quantity: x.quantity ?? 1,
+  }));
+  return (
+    a.replacement.product_id === b.replacement.product_id &&
+    a.replacement.quantity === b.replacement.quantity &&
+    (a.replacement.variant_id ?? '') === (b.replacement.variant_id ?? '') &&
+    (a.replacement.special_instructions ?? '') === (b.replacement.special_instructions ?? '') &&
+    JSON.stringify(aAddons) === JSON.stringify(bAddons)
+  );
+}
+
+/** Sending callback injected by callers so storage tests never need the HTTP client. */
+export type OrderItemEditSender<O = unknown> = (
+  path: string,
+  body: OrderItemEditAttemptBody,
+  idempotencyKey: string,
+) => Promise<O>;
+
+/**
+ * Stored-request replay of one saved edit.
+ *
+ * Sends the stored path, body, and idempotency key as-is through the injected
+ * sender and classifies the outcome. Whether the record is cleared afterwards
+ * is a separate, scope-checked decision by the caller (clearOrderItemEditAttempt).
+ */
+export async function replayOrderItemEditAttempt<O = unknown>(options: {
+  snapshot: OrderItemEditAttemptSnapshot;
+  send: OrderItemEditSender<O>;
+}): Promise<OrderItemEditReplayResult<O>> {
+  try {
+    const data = await options.send(
+      options.snapshot.path,
+      options.snapshot.body,
+      options.snapshot.idempotencyKey,
+    );
+    return { outcome: 'committed', data };
+  } catch (error) {
+    return { outcome: classifyOrderItemEditFailure(error), error };
+  }
 }

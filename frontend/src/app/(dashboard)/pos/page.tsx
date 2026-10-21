@@ -416,9 +416,12 @@ export default function POSPage() {
   };
 
   const stripPrepaidDiscountPin = (attempt: PrepaidAttempt): PrepaidAttempt => {
-    if (!attempt.discount || !('override_pin' in attempt.discount)) return attempt;
+    if (!attempt.discount) return attempt;
+    if (!('override_pin' in attempt.discount) && !('approver_id' in attempt.discount))
+      return attempt;
     const safeDiscount = { ...attempt.discount };
     delete safeDiscount.override_pin;
+    delete safeDiscount.approver_id;
     return { ...attempt, discount: safeDiscount };
   };
 
@@ -726,6 +729,7 @@ export default function POSPage() {
     const isAddonOrGeneralValidation =
       failure.reasonCode === 'order.addon_selection_required' ||
       failure.reasonCode === 'order.addon_unavailable' ||
+      failure.reasonCode === 'order.stock_insufficient' ||
       failure.reasonCode === 'validation.rejected';
     const rejectionMessage =
       isAddonOrGeneralValidation && failure.serverError
@@ -1648,7 +1652,11 @@ export default function POSPage() {
         effectiveDiscount &&
         currentDiscount &&
         discountFingerprint(effectiveDiscount) === discountFingerprint(currentDiscount)
-          ? { ...effectiveDiscount, override_pin: currentDiscount.override_pin }
+          ? {
+              ...effectiveDiscount,
+              override_pin: currentDiscount.override_pin,
+              approver_id: currentDiscount.approver_id,
+            }
           : effectiveDiscount;
       let discountAlreadyApplied = false;
       if (
@@ -1690,6 +1698,7 @@ export default function POSPage() {
             discount_value: discountForRequest?.value || 0,
             discount_reason: discountForRequest?.reason,
             override_pin: discountForRequest?.override_pin,
+            approver_id: discountForRequest?.approver_id,
           },
           { headers: operationHeaders(operationId) },
         );
@@ -2482,10 +2491,8 @@ export default function POSPage() {
         </div>
       )}
       <PosTopbar
-        tables={tables}
         products={products}
         onTopItemSelect={handleProductClick}
-        onShowTablePicker={() => setShowTablePicker(true)}
         onShowCashMovement={cashDrawer.openModal}
         // Re-fetch on entry: the mount snapshot can be hours stale on a
         // multi-terminal POS (backend still guards stale operations). On a
@@ -2525,6 +2532,7 @@ export default function POSPage() {
             onScannedVariant={handleScannedVariant}
             onScaledProduct={(product, quantity) => cart.addItem(product, quantity)}
             sidebarOpen={leftSidebarOpen}
+            collapseCategories
           />
         </div>
 

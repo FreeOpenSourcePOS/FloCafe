@@ -121,11 +121,25 @@ function loadComponents(): {
   getLanguageLocale: (lang: string) => string;
   React: typeof import('react');
   ReactDOMServer: typeof import('react-dom/server');
+  getRouterReplacedRoute: () => string;
+  resetRouterReplacedRoute: () => void;
 } {
+  let routerReplacedRoute = '';
+  const routerMock = {
+    replace: (target: string) => {
+      routerReplacedRoute = target;
+    },
+    push: (target: string) => {
+      routerReplacedRoute = target;
+    },
+  };
+
   const moduleApi = require('module') as {
     _resolveFilename: (...args: any[]) => string;
+    _load: (...args: any[]) => any;
   };
   const originalResolveFilename = moduleApi._resolveFilename;
+  const originalLoad = moduleApi._load;
 
   moduleApi._resolveFilename = function (
     request: string,
@@ -142,6 +156,16 @@ function loadComponents(): {
       resolvedRequest = path.resolve(ROOT, 'shared/print', request.slice('@print/'.length));
     }
     return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+  };
+
+  moduleApi._load = function (request: string, parent: any, isMain: boolean) {
+    if (request === 'next/navigation') {
+      return {
+        useRouter: () => routerMock,
+        useSearchParams: () => new URLSearchParams(),
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
   };
 
   try {
@@ -169,9 +193,14 @@ function loadComponents(): {
       getLanguageLocale,
       React,
       ReactDOMServer,
+      getRouterReplacedRoute: () => routerReplacedRoute,
+      resetRouterReplacedRoute: () => {
+        routerReplacedRoute = '';
+      },
     };
   } finally {
     moduleApi._resolveFilename = originalResolveFilename;
+    moduleApi._load = originalLoad;
   }
 }
 
@@ -256,6 +285,8 @@ function run(): void {
     getLanguageLocale,
     React,
     ReactDOMServer,
+    getRouterReplacedRoute,
+    resetRouterReplacedRoute,
   } = loadComponents();
 
   React.useSyncExternalStore = (_subscribe: any, getSnapshot: () => any) => getSnapshot();
@@ -445,64 +476,19 @@ function run(): void {
   }
   console.log('  ✓ getLanguageDirection resolves direction from shared language metadata');
 
-  const sampleAddonGroup = {
-    id: 'group-rtl-1',
-    name: 'Extras',
-    description: 'Optional extras',
-    is_required: false,
-    allow_multiple_quantities: false,
-    min_selection: 0,
-    max_selection: 2,
-    is_active: true,
-    addons: [{ id: 'addon-rtl-1', name: 'Extra Shot', price: 0, is_active: true }],
-  };
   const originalUseState = React.useState;
   const originalUseEffect = React.useEffect;
   const originalApiGet = api.get;
   try {
-    const hookStates: unknown[] = [];
-    let mountedEffectsRan = false;
+    resetRouterReplacedRoute();
+
+    let apiCallsCount = 0;
     api.get = (url: string) => {
-      assert(url === '/addon-groups', `Unexpected api.get URL in AddonGroupsPage: ${url}`);
-      const response = { data: { addon_groups: [sampleAddonGroup] } };
-      const chain = {
-        then(onFulfilled?: (val: typeof response) => unknown) {
-          if (onFulfilled) onFulfilled(response);
-          return chain;
-        },
-        catch() {
-          return chain;
-        },
-        finally(onFinally?: () => void) {
-          if (onFinally) onFinally();
-          return chain;
-        },
-      };
-      return chain;
+      apiCallsCount += 1;
+      throw new Error(`Unexpected API call to ${url}`);
     };
 
     const renderAddonGroupsPage = () => {
-      let hookSlot = 0;
-      const pendingEffects: Array<() => void | (() => void)> = [];
-      React.useState = ((initial: unknown) => {
-        const slot = hookSlot++;
-        if (slot >= hookStates.length) {
-          hookStates.push(typeof initial === 'function' ? (initial as () => unknown)() : initial);
-        }
-        const setState = (next: unknown) => {
-          hookStates[slot] =
-            typeof next === 'function'
-              ? (next as (prev: unknown) => unknown)(hookStates[slot])
-              : next;
-        };
-        return [hookStates[slot], setState];
-      }) as typeof React.useState;
-      React.useEffect = ((effect: () => void | (() => void)) => {
-        if (!mountedEffectsRan) {
-          pendingEffects.push(effect);
-        }
-      }) as typeof React.useEffect;
-
       let capturedTree: any;
       function AddonGroupsProbe() {
         capturedTree = AddonGroupsPage();
@@ -515,106 +501,27 @@ function run(): void {
           React.createElement(AddonGroupsProbe),
         ),
       );
-      if (!mountedEffectsRan) {
-        mountedEffectsRan = true;
-        for (const effect of pendingEffects) effect();
-      }
       return { tree: capturedTree, markup };
     };
 
-    // Initial mount pass runs useEffect -> api.get('/addon-groups'), populating state via setters.
+    const { markup } = renderAddonGroupsPage();
+    assert(apiCallsCount === 0, 'AddonGroupsPage compatibility redirect performs zero API reads');
+    assert(
+      markup.includes(faMessages.common.loading),
+      `AddonGroupsPage compatibility redirect renders translated loading state in RTL, got: ${markup}`,
+    );
+
+    // Run effect to verify redirect
+    let effectRan = false;
+    React.useEffect = ((effect: () => void) => {
+      effect();
+      effectRan = true;
+    }) as typeof React.useEffect;
     renderAddonGroupsPage();
-
-    const collapsedRender = renderAddonGroupsPage();
-    const collapsedChevronRights = collectElements(
-      collapsedRender.tree,
-      (el) => el.type === ChevronRight,
-    );
-    const collapsedChevronDowns = collectElements(
-      collapsedRender.tree,
-      (el) => el.type === ChevronDown,
-    );
+    assert(effectRan, 'AddonGroupsPage executes redirect effect');
     assert(
-      collapsedChevronRights.length === 1 && collapsedChevronDowns.length === 0,
-      `Collapsed AddonGroupsPage header must render ChevronRight and not ChevronDown (got ${collapsedChevronRights.length} ChevronRight, ${collapsedChevronDowns.length} ChevronDown)`,
-    );
-    const collapsedClassTokens = String(collapsedChevronRights[0].props?.className ?? '')
-      .trim()
-      .split(/\s+/);
-    assert(
-      collapsedClassTokens.includes('rtl-flip'),
-      `Collapsed AddonGroupsPage ChevronRight must include rtl-flip in className, got: "${collapsedChevronRights[0].props?.className}"`,
-    );
-    assert(
-      collapsedRender.markup.includes('lucide-chevron-right') &&
-        collapsedRender.markup.includes('rtl-flip') &&
-        !collapsedRender.markup.includes('lucide-chevron-down'),
-      `Collapsed AddonGroupsPage markup must render lucide-chevron-right with rtl-flip`,
-    );
-
-    const collapsedToggleBtn = collectElements(
-      collapsedRender.tree,
-      (el) =>
-        el.type === 'button' &&
-        collectElements(el, (child) => child.type === ChevronRight).length > 0,
-    )[0];
-    assert(
-      typeof collapsedToggleBtn?.props?.onClick === 'function',
-      'Collapsed AddonGroupsPage header must expose an onClick toggle button',
-    );
-    collapsedToggleBtn.props.onClick();
-
-    const expandedRender = renderAddonGroupsPage();
-    const expandedChevronRights = collectElements(
-      expandedRender.tree,
-      (el) => el.type === ChevronRight,
-    );
-    const expandedChevronDowns = collectElements(
-      expandedRender.tree,
-      (el) => el.type === ChevronDown,
-    );
-    assert(
-      expandedChevronDowns.length === 1 && expandedChevronRights.length === 0,
-      `Expanded AddonGroupsPage header must render ChevronDown and not ChevronRight (got ${expandedChevronDowns.length} ChevronDown, ${expandedChevronRights.length} ChevronRight)`,
-    );
-    const expandedClassTokens = String(expandedChevronDowns[0].props?.className ?? '')
-      .trim()
-      .split(/\s+/);
-    assert(
-      !expandedClassTokens.includes('rtl-flip'),
-      `Expanded AddonGroupsPage ChevronDown must not include rtl-flip in className, got: "${expandedChevronDowns[0].props?.className}"`,
-    );
-    assert(
-      expandedRender.markup.includes('lucide-chevron-down') &&
-        !expandedRender.markup.includes('lucide-chevron-right') &&
-        !expandedRender.markup.includes('rtl-flip'),
-      'Expanded AddonGroupsPage markup must render lucide-chevron-down without rtl-flip',
-    );
-
-    const expandedToggleBtn = collectElements(
-      expandedRender.tree,
-      (el) =>
-        el.type === 'button' &&
-        collectElements(el, (child) => child.type === ChevronDown).length > 0,
-    )[0];
-    assert(
-      typeof expandedToggleBtn?.props?.onClick === 'function',
-      'Expanded AddonGroupsPage header must expose an onClick toggle button',
-    );
-    expandedToggleBtn.props.onClick();
-
-    const recollapsedRender = renderAddonGroupsPage();
-    const recollapsedChevronRights = collectElements(
-      recollapsedRender.tree,
-      (el) => el.type === ChevronRight,
-    );
-    const recollapsedChevronDowns = collectElements(
-      recollapsedRender.tree,
-      (el) => el.type === ChevronDown,
-    );
-    assert(
-      recollapsedChevronRights.length === 1 && recollapsedChevronDowns.length === 0,
-      `Toggling expanded AddonGroupsPage header must collapse back to ChevronRight (got ${recollapsedChevronRights.length} ChevronRight, ${recollapsedChevronDowns.length} ChevronDown)`,
+      getRouterReplacedRoute() === '/products?tab=addons',
+      `AddonGroupsPage redirects to canonical /products?tab=addons, got: ${getRouterReplacedRoute()}`,
     );
   } finally {
     React.useState = originalUseState;
@@ -622,7 +529,7 @@ function run(): void {
     api.get = originalApiGet;
   }
   console.log(
-    '  ✓ AddonGroupsPage renders ChevronRight with rtl-flip when collapsed and ChevronDown without rtl-flip when expanded',
+    '  ✓ AddonGroupsPage compatibility redirect performs zero API calls, renders translated loading state in RTL, and redirects to /products?tab=addons',
   );
 
   console.log('\n✅ All RTL/LTR Dashboard, POS, and common flow checks passed.');

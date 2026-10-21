@@ -73,6 +73,13 @@ The main window is created with `contextIsolation: true`, `nodeIntegration: fals
 `sandbox: true`, so `main/preload.ts` may use only `electron` and web APIs. See
 [Authentication and authorization](authentication-and-authorization.md#boundaries-we-do-not-harden).
 
+Every IPC handler validates the sender. General handlers in [`main/ipc.ts`](../../main/ipc.ts)
+verify sender origin via `isTrustedSender` (`http:` on `localhost` or `127.0.0.1`). Direct update
+handlers, status, and theme in [`main/update-ipc.ts`](../../main/update-ipc.ts) are registered via
+`registerDirectUpdateIpcHandlers` and enforce strict sender validation via
+`isTrustedMainWindowSender`, requiring the caller to be the active main `BrowserWindow`, current
+top-level frame, and matching loopback server port.
+
 ## The native title bar
 
 The main window defaults to 1400x900 with a minimum of 1024x768, persists its window state between
@@ -181,9 +188,13 @@ The KDS window deliberately has no preload and learns its palette from a `theme`
 appended by `appendThemeQueryParam`. It is confined to its own origin: window-open requests are
 denied outright, and navigation away from the KDS origin is prevented.
 
-`target="_blank"` links in the POS window are opened in a new window only when the URL passes the
+In the POS window, `target="_blank"` links are opened in a new window only when the URL passes the
 local allowlist check in [`main/security/url-allowlist.ts`](../../main/security/url-allowlist.ts).
-Safe external URLs open in the system browser; anything else is refused with a warning.
+In-window navigation (`will-navigate`) is handled by `createMainWindowWillNavigateHandler` in
+[`main/window-options.ts`](../../main/window-options.ts), which confines navigation to local
+application URLs (`isAllowedLocalWindowUrl`). Safe external URLs (`isSafeExternalUrl`) are prevented
+from navigating inside the window and opened in the default system browser via `shell.openExternal`;
+unsafe schemes are blocked with a warning.
 
 ## Content Security Policy
 

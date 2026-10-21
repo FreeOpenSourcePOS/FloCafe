@@ -77,6 +77,7 @@ const {
 const CustomerTopItemsModule = require('../frontend/src/components/pos/CustomerTopItems');
 const CustomerTopItems = CustomerTopItemsModule.default;
 const { CustomerTopItemsList } = CustomerTopItemsModule;
+const { calculateFittingChoices } = require('../frontend/src/components/pos/CollapsiblePosChoices');
 
 function product(id: string, name: string, price: number) {
   return { id, name, price, category_id: 'cat-1', is_active: true, variants: [], addon_groups: [] };
@@ -103,8 +104,18 @@ function collectElements(
   }
   if (!node || typeof node !== 'object') return result;
   if (predicate(node)) result.push(node);
-  const props = (node as { props?: { children?: unknown } }).props;
-  if (props) collectElements(props.children, predicate, result);
+  const props = (node as { props?: { children?: unknown; choices?: unknown } }).props;
+  if (props) {
+    collectElements(props.children, predicate, result);
+    // The measured row composes its choice buttons through the choices prop.
+    if (Array.isArray(props.choices)) {
+      collectElements(
+        props.choices.map((choice) => (choice as { node?: unknown }).node),
+        predicate,
+        result,
+      );
+    }
+  }
   return result;
 }
 
@@ -780,6 +791,109 @@ async function testCustomersPageModalAddressAndNotes() {
   );
 }
 
+function testCollapsiblePosChoicesFitting() {
+  const choices = [
+    { key: 'cat-0', name: 'All' },
+    { key: 'cat-1', name: 'Coffee' },
+    { key: 'cat-2', name: 'Tea' },
+    { key: 'cat-3', name: 'Pastries' },
+    { key: 'cat-4', name: 'Sandwiches' },
+    { key: 'cat-5', name: 'Desserts' },
+  ];
+  const chipWidths = new Map<string, number>([
+    ['cat-0', 60],
+    ['cat-1', 60],
+    ['cat-2', 60],
+    ['cat-3', 60],
+    ['cat-4', 60],
+    ['cat-5', 60],
+  ]);
+
+  // 1. Reviewer reproduction: 360px of chips inside 330px available width.
+  // With 6 chips of 60px = 360px, available 330px, toggle 80px, gap 8px:
+  const collapsed = calculateFittingChoices({
+    choices,
+    mandatoryKeys: ['cat-0'],
+    availableWidth: 330,
+    chipWidths,
+    toggleWidth: 80,
+    gap: 8,
+  });
+  assert.equal(collapsed.allFit, false, '360px of chips cannot all fit in 330px');
+  assert.deepEqual(
+    collapsed.visibleChoices.map((c: any) => c.key),
+    ['cat-0', 'cat-1', 'cat-2'],
+    'fitting subset contains mandatory chip-0 and maximal prefix chip-1, chip-2',
+  );
+  // Total width: 3 chips (180px) + 80px toggle + 3 gaps (24px) = 284px <= 330px
+  const totalWidth = 3 * 60 + 80 + 3 * 8;
+  assert(totalWidth <= 330, 'total rendered width never exceeds available container');
+
+  // 2. Leading label width is measured and reserved:
+  const withLabel = calculateFittingChoices({
+    choices,
+    mandatoryKeys: ['cat-0'],
+    availableWidth: 330,
+    chipWidths,
+    labelWidth: 80,
+    toggleWidth: 80,
+    gap: 8,
+  });
+  assert.equal(withLabel.allFit, false);
+  assert.deepEqual(
+    withLabel.visibleChoices.map((c: any) => c.key),
+    ['cat-0', 'cat-1'],
+    'reserving space for label reduces the prefix so no overflow occurs',
+  );
+
+  // 3. Exact toggle width is measured (not a guessed constant):
+  const withWideToggle = calculateFittingChoices({
+    choices,
+    mandatoryKeys: ['cat-0'],
+    availableWidth: 330,
+    chipWidths,
+    toggleWidth: 140,
+    gap: 8,
+  });
+  assert.deepEqual(
+    withWideToggle.visibleChoices.map((c: any) => c.key),
+    ['cat-0', 'cat-1'],
+    'wider localized toggle reduces prefix accordingly',
+  );
+
+  // 4. Source order preservation with mandatory key at the tail (no mandatory-first reordering):
+  const tailMandatory = calculateFittingChoices({
+    choices,
+    mandatoryKeys: ['cat-0', 'cat-5'],
+    availableWidth: 330,
+    chipWidths,
+    toggleWidth: 80,
+    gap: 8,
+  });
+  assert.equal(tailMandatory.allFit, false);
+  assert.deepEqual(
+    tailMandatory.visibleChoices.map((c: any) => c.key),
+    ['cat-0', 'cat-1', 'cat-5'],
+    'source order is preserved: cat-5 stays at the tail and is not moved ahead of cat-1',
+  );
+
+  // 5. When all fit without toggle:
+  const allFitResult = calculateFittingChoices({
+    choices,
+    mandatoryKeys: ['cat-0'],
+    availableWidth: 600,
+    chipWidths,
+    toggleWidth: 80,
+    gap: 8,
+  });
+  assert.equal(allFitResult.allFit, true, 'all choices fit in 600px without toggle');
+  assert.equal(allFitResult.visibleChoices.length, 6);
+
+  console.log(
+    '  ✓ collapsible POS choices calculates fitting without overflow and preserves source order',
+  );
+}
+
 async function main() {
   console.log('Customer top items (POS) tests');
   try {
@@ -790,6 +904,7 @@ async function main() {
     testClickToAdd();
     testConnectedComponent();
     await testCustomersPageModalAddressAndNotes();
+    testCollapsiblePosChoicesFitting();
   } finally {
     moduleApi._load = originalLoad;
     moduleApi._resolveFilename = originalResolveFilename;

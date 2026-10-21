@@ -34,9 +34,9 @@ import { elementTop, expectPinned, innermostScrollableAncestor } from './helpers
 
 const PLACEHOLDER = 'Select an order on the left to view details.';
 
-async function login(page: import('@playwright/test').Page) {
+async function login(page: import('@playwright/test').Page, email = 'manager@flo.local') {
   await page.goto(`${BASE}/auth/login`);
-  await page.locator('#email').fill('manager@flo.local');
+  await page.locator('#email').fill(email);
   await page.locator('#password').fill(E2E_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL('**/pos/**', { timeout: 20000 });
@@ -58,7 +58,35 @@ async function createTakeaway(page: import('@playwright/test').Page, note: strin
     },
   });
   expect(orderResponse.ok()).toBeTruthy();
-  return (await orderResponse.json()).order as { id: number; order_number: string };
+  return (await orderResponse.json()).order as {
+    id: number;
+    order_number: string;
+    items: { id: number }[];
+  };
+}
+
+async function seedOwnerItemEdit(page: Page, order: { id: number; items: { id: number }[] }) {
+  await page.evaluate(
+    ({ orderId, itemId }) => {
+      const tenantId = JSON.parse(localStorage.getItem('tenant')!).id;
+      const key = `flo.orders.item-edit.attempt.v1:${tenantId}:e2e-owner:${orderId}:${itemId}`;
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          mode: 'quantity',
+          path: `/orders/${orderId}/items/${itemId}/edit`,
+          orderId,
+          itemId,
+          actorId: 'e2e-owner',
+          tenantId,
+          idempotencyKey: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+          body: { expected_edit_version: 0, quantity: 2 },
+        }),
+      );
+    },
+    { orderId: order.id, itemId: order.items[0].id },
+  );
 }
 
 test.describe('orders master/detail is the default layout', () => {
@@ -860,5 +888,967 @@ test.describe('owner live order item edit and superseded cancellation handling',
     await expect(qtyInput).toBeHidden();
     await expect(page.getByText('2x', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /voided item/i })).toHaveCount(0);
+  });
+
+  test('a rate-limited attempt keeps the saved record and its payload intact', async ({ page }) => {
+    const ownerHeaders = {
+      Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+    };
+    const orderResponse = await page.request.post(`${BASE}/api/orders`, {
+      headers: ownerHeaders,
+      data: {
+        type: 'takeaway',
+        special_instructions: 'E2E edit 429 test',
+        items: [{ product_id: 'e2e-product', quantity: 3 }],
+      },
+    });
+    expect(orderResponse.status()).toBe(201);
+    const order = (await orderResponse.json()).order as { id: number; order_number: string };
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await setLanguage(page, 'en');
+
+    await page.goto(`${BASE}/orders`);
+    const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+    await expect(masterRow).toBeVisible();
+    await masterRow.click();
+
+    const editButton = page.getByTitle('Edit item').first();
+    await expect(editButton).toBeVisible();
+    await editButton.click();
+    const qtyInput = page.locator('input[type="number"]');
+    await expect(qtyInput).toBeVisible();
+    await qtyInput.fill('1');
+
+    const rejected = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/orders/${order.id}/items/`) &&
+        response.request().method() === 'PATCH',
+    );
+    await page.route(`**/api/orders/${order.id}/items/*/edit`, (route) => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      return route.fulfill({
+        status: 429,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Too many requests' }),
+      });
+    });
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await rejected;
+
+    const savedBodies = await page.evaluate(() => {
+      const storage = window.localStorage;
+      const entries: Array<{ key: string; value: string }> = [];
+      for (let i = 0; i < storage.length; i += 1) {
+        const key = storage.key(i);
+        if (key) entries.push({ key, value: storage.getItem(key) ?? '' });
+      }
+      return entries
+        .filter((entry) => entry.key.startsWith('flo.orders.item-edit.attempt.v1:'))
+        .map((entry) => JSON.parse(entry.value));
+    });
+    expect(savedBodies, 'the 429 response preserves exactly one saved attempt').toHaveLength(1);
+    expect(savedBodies[0].body).toEqual({ expected_edit_version: 0, quantity: 1 });
+    expect(savedBodies[0].path).toEqual(`/orders/${order.id}/items/${savedBodies[0].itemId}/edit`);
+  });
+
+  test('a definitive 409 rejection clears the saved attempt and refetches the order', async ({
+    page,
+  }) => {
+    const ownerHeaders = {
+      Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+    };
+    const orderResponse = await page.request.post(`${BASE}/api/orders`, {
+      headers: ownerHeaders,
+      data: {
+        type: 'takeaway',
+        special_instructions: 'E2E edit conflict test',
+        items: [{ product_id: 'e2e-product', quantity: 1 }],
+      },
+    });
+    expect(orderResponse.status()).toBe(201);
+    const order = (await orderResponse.json()).order as { id: number; order_number: string };
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await setLanguage(page, 'en');
+
+    await page.goto(`${BASE}/orders`);
+    const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+    await expect(masterRow).toBeVisible();
+    await masterRow.click();
+
+    const editButton = page.getByTitle('Edit item').first();
+    await expect(editButton).toBeVisible();
+    await editButton.click();
+    const qtyInput = page.locator('input[type="number"]');
+    await expect(qtyInput).toBeVisible();
+    await qtyInput.fill('2');
+
+    await page.route(`**/api/orders/${order.id}/items/*/edit`, (route) => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      return route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'edit version conflict' }),
+      });
+    });
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(qtyInput).toBeHidden({ timeout: 15000 });
+
+    const remainingAttempts = await page.evaluate(() => {
+      const storage = window.localStorage;
+      const keys: string[] = [];
+      for (let i = 0; i < storage.length; i += 1) {
+        const key = storage.key(i);
+        if (key) keys.push(key);
+      }
+      return keys.filter((key) => key.startsWith('flo.orders.item-edit.attempt.v1:'));
+    });
+    expect(remainingAttempts, 'a definitive conflict clears the matching record').toHaveLength(0);
+  });
+
+  test('a committed edit whose response was dropped stays resolvable after reload without auto-patching', async ({
+    page,
+  }) => {
+    const ownerHeaders = {
+      Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+    };
+    const orderResponse = await page.request.post(`${BASE}/api/orders`, {
+      headers: ownerHeaders,
+      data: {
+        type: 'takeaway',
+        special_instructions: 'E2E edit recovery test',
+        items: [{ product_id: 'e2e-product', quantity: 3 }],
+      },
+    });
+    expect(orderResponse.status()).toBe(201);
+    const order = (await orderResponse.json()).order as { id: number; order_number: string };
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await setLanguage(page, 'en');
+
+    await page.goto(`${BASE}/orders`);
+    const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+    await expect(masterRow).toBeVisible();
+    await masterRow.click();
+
+    const editButton = page.getByTitle('Edit item').first();
+    await expect(editButton).toBeVisible();
+    await editButton.click();
+    const qtyInput = page.locator('input[type="number"]');
+    await expect(qtyInput).toBeVisible();
+    await qtyInput.fill('2');
+
+    // Forward a real commit through route.fetch() so the backend registers the
+    // edit, then abort the browser response so the page sees an uncertain one.
+    let forwardCalls = 0;
+    await page.route(`**/api/orders/${order.id}/items/*/edit`, async (route) => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      forwardCalls += 1;
+      const response = await route.fetch();
+      await route.abort();
+      void response;
+    });
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => forwardCalls).toBe(1);
+
+    // The edit really reached the server before the response was dropped.
+    const apiOrder = await page.request.get(`${BASE}/api/orders/${order.id}`, {
+      headers: ownerHeaders,
+    });
+    expect(apiOrder.ok()).toBeTruthy();
+    const committedItems = (await apiOrder.json()).order.items as {
+      quantity: number;
+      superseded?: boolean;
+    }[];
+    const activeCommitted = committedItems.filter((i) => !i.superseded);
+    expect(activeCommitted.some((i) => i.quantity === 2)).toBe(true);
+
+    await page.unroute(`**/api/orders/${order.id}/items/*/edit`);
+
+    // Reload never replays a saved edit silently: opening the order with the
+    // now-hidden original line still exposes the pending edit notice.
+    let recoveryPatches = 0;
+    await page.route(`**/api/orders/${order.id}/items/*/edit`, (route) => {
+      if (route.request().method() === 'PATCH') recoveryPatches += 1;
+      return route.continue();
+    });
+
+    // Return to a clean page state, then reload the orders screen.
+    await page.goto(`${BASE}/pos`);
+    await page.reload();
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/orders`);
+    await masterRow.click();
+
+    await expect(page.getByRole('button', { name: 'Resolve pending edit' }).first()).toBeVisible({
+      timeout: 15000,
+    });
+    expect(recoveryPatches, 'discovery alone never sends a PATCH').toBe(0);
+
+    // Manual resolve replays the exact stored request (same key and body) and
+    // then refreshes the loaded order to its latest state.
+    const resolvedPatches: { key?: string; body: Record<string, unknown> }[] = [];
+    await page.unroute(`**/api/orders/${order.id}/items/*/edit`);
+    await page.route(`**/api/orders/${order.id}/items/*/edit`, async (route) => {
+      if (route.request().method() === 'PATCH') {
+        resolvedPatches.push({
+          key: route.request().headers()['idempotency-key'],
+          body: route.request().postDataJSON() as Record<string, unknown>,
+        });
+      }
+      await route.continue();
+    });
+
+    await page.getByRole('button', { name: 'Resolve pending edit' }).first().click();
+    await expect
+      .poll(() => resolvedPatches.length, 'the resolve action sends one replayed PATCH')
+      .toBeGreaterThanOrEqual(1);
+    expect(resolvedPatches[0].key).toBeTruthy();
+    expect(resolvedPatches[0].body).toEqual({ expected_edit_version: 0, quantity: 2 });
+
+    // The notice clears and the reloaded order reflects the committed edit.
+    await expect(page.getByText('2x', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Resolve pending edit' })).toHaveCount(0);
+  });
+
+  for (const clearFails of [false, true]) {
+    test(`manual recovery with a definitive 409 rejection reports a failed clear: ${clearFails}`, async ({
+      page,
+    }) => {
+      const ownerHeaders = {
+        Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+      };
+      const orderResponse = await page.request.post(`${BASE}/api/orders`, {
+        headers: ownerHeaders,
+        data: {
+          type: 'takeaway',
+          special_instructions: 'E2E recovery 409 rejection test',
+          items: [{ product_id: 'e2e-product', quantity: 3 }],
+        },
+      });
+      expect(orderResponse.status()).toBe(201);
+      const order = (await orderResponse.json()).order as { id: number; order_number: string };
+
+      await page.goto(`${BASE}/auth/login`);
+      await page.locator('#email').fill('owner@flo.local');
+      await page.locator('#password').fill(E2E_PASSWORD);
+      await page.locator('button[type="submit"]').click();
+      await page.waitForURL('**/pos/**', { timeout: 20000 });
+      await setLanguage(page, 'en');
+
+      await page.goto(`${BASE}/orders`);
+      const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+      await expect(masterRow).toBeVisible();
+      await masterRow.click();
+
+      const editButton = page.getByTitle('Edit item').first();
+      await expect(editButton).toBeVisible();
+      await editButton.click();
+      const qtyInput = page.locator('input[type="number"]');
+      await expect(qtyInput).toBeVisible();
+      await qtyInput.fill('2');
+
+      // Abort the response on edit to leave a saved attempt
+      let aborted = false;
+      await page.route(`**/api/orders/${order.id}/items/*/edit`, async (route) => {
+        if (route.request().method() !== 'PATCH') return route.continue();
+        await route.abort();
+        aborted = true;
+      });
+
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect.poll(() => aborted).toBe(true);
+      await page.unroute(`**/api/orders/${order.id}/items/*/edit`);
+
+      // Reload the orders screen to discover the saved attempt
+      await page.goto(`${BASE}/pos`);
+      await page.reload();
+      await setLanguage(page, 'en');
+      await page.goto(`${BASE}/orders`);
+      await masterRow.click();
+
+      const resolveBtn = page.getByRole('button', { name: 'Resolve pending edit' }).first();
+      await expect(resolveBtn).toBeVisible({ timeout: 15000 });
+
+      // Mock 409 conflict when clicking Resolve
+      await page.route(`**/api/orders/${order.id}/items/*/edit`, (route) => {
+        if (route.request().method() !== 'PATCH') return route.continue();
+        return route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'edit version conflict' }),
+        });
+      });
+
+      let failRefresh = true;
+      await page.route(`**/api/orders/${order.id}`, (route) => {
+        if (failRefresh && route.request().method() === 'GET') {
+          return route.fulfill({ status: 503, json: { error: 'Temporarily unavailable' } });
+        }
+        return route.continue();
+      });
+      if (clearFails) {
+        await page.evaluate(() => {
+          const removeItem = Storage.prototype.removeItem;
+          Storage.prototype.removeItem = function (key: string) {
+            if (key.startsWith('flo.orders.item-edit.attempt.v1:'))
+              throw new Error('Storage unavailable');
+            return removeItem.call(this, key);
+          };
+        });
+      }
+      await resolveBtn.click();
+
+      // Rejection notice is displayed and the attempt is cleared from localStorage
+      const rejectionNotice = page.getByTestId('pending-item-edit-rejection');
+      await expect(rejectionNotice).toBeVisible({ timeout: 15000 });
+      await expect(rejectionNotice).toContainText('edit version conflict');
+      const refreshWarning = page.getByTestId('pending-item-edit-refresh-failed');
+      await expect(refreshWarning).toBeVisible();
+      await expect(refreshWarning).toHaveText(/Failed to load order/);
+      await expect(refreshWarning).not.toContainText('confirmed');
+
+      const remainingAttempts = await page.evaluate(() => {
+        const storage = window.localStorage;
+        const keys: string[] = [];
+        for (let i = 0; i < storage.length; i += 1) {
+          const key = storage.key(i);
+          if (key && key.startsWith('flo.orders.item-edit.attempt.v1:')) keys.push(key);
+        }
+        return keys;
+      });
+      expect(
+        remainingAttempts,
+        'only a successful clear removes the rejected attempt',
+      ).toHaveLength(clearFails ? 1 : 0);
+      if (clearFails)
+        await expect(page.getByTestId('pending-item-edit-storage-warning')).toBeVisible();
+
+      // Close button dismisses the rejection notice
+      await rejectionNotice.getByRole('button', { name: 'Close' }).click();
+      await expect(rejectionNotice).toBeHidden();
+      await expect(refreshWarning).toBeVisible();
+      failRefresh = false;
+      await refreshWarning.getByRole('button', { name: 'Retry', exact: true }).click();
+      await expect(refreshWarning).toBeHidden();
+    });
+  }
+
+  for (const status of ['pending', 'preparing'] as const) {
+    test(`card layout blocks ${status} item mutations until its saved edit is resolved`, async ({
+      page,
+    }) => {
+      const order = await createTakeaway(page, `Card mutation gate ${status}`);
+      await login(page, 'owner@flo.local');
+      const originalLayout = await readOrdersLayout(page);
+      try {
+        await setOrdersLayout(page, 'cards');
+        if (status === 'preparing') {
+          const started = await page.request.patch(
+            `${BASE}/api/kds/items/${order.items[0].id}/status`,
+            {
+              headers: {
+                Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+              },
+              data: { status },
+            },
+          );
+          expect(started.ok()).toBeTruthy();
+        }
+        await page.goto(`${BASE}/orders`);
+        const items = page.locator(`#order-items-${order.id}`);
+        const mutation = items.getByTitle(status === 'pending' ? 'Remove item' : 'Void item', {
+          exact: true,
+        });
+        await expect(mutation).toBeVisible();
+        await seedOwnerItemEdit(page, order);
+        await page.reload();
+        await expect(
+          items.getByRole('button', { name: 'Resolve pending edit', exact: true }),
+        ).toBeVisible();
+        await expect(mutation).toBeHidden();
+        await page.evaluate(() => {
+          const key = Object.keys(localStorage).find((key) =>
+            key.startsWith('flo.orders.item-edit.attempt.v1:'),
+          )!;
+          localStorage.removeItem(key);
+          window.dispatchEvent(new StorageEvent('storage', { key }));
+        });
+        await expect(mutation).toBeVisible();
+      } finally {
+        await setOrdersLayout(page, originalLayout);
+      }
+    });
+  }
+
+  for (const context of ['orders', 'table'] as const) {
+    test(`a committed edit closes the stale ${context} view after identity changes`, async ({
+      page,
+    }) => {
+      const headers = {
+        Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+      };
+      const cleanupRequest = await request.newContext();
+      let originalBusiness: Record<string, unknown> | undefined;
+      let tableId: string | undefined;
+      const tableName = `Identity change ${context} ${Date.now()}`;
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let orderId: number | undefined;
+      try {
+        if (context === 'table') {
+          const business = await page.request.get(`${BASE}/api/settings/business`, { headers });
+          expect(business.ok()).toBeTruthy();
+          originalBusiness = await business.json();
+          const settings = await page.request.put(`${BASE}/api/settings/business`, {
+            headers,
+            data: { ...originalBusiness, billing_type: 'postpaid', tables_required: true },
+          });
+          expect(settings.ok()).toBeTruthy();
+          const table = await page.request.post(`${BASE}/api/tables`, {
+            headers,
+            data: { number: tableName },
+          });
+          expect(table.ok()).toBeTruthy();
+          tableId = (await table.json()).table.id;
+        }
+        const created = await page.request.post(`${BASE}/api/orders`, {
+          headers,
+          data: {
+            type: context === 'table' ? 'dine_in' : 'takeaway',
+            ...(tableId !== undefined ? { table_id: tableId } : {}),
+            items: [{ product_id: 'e2e-product', quantity: 1 }],
+          },
+        });
+        expect(created.status()).toBe(201);
+        const order = (await created.json()).order;
+        orderId = order.id;
+        await login(page, 'owner@flo.local');
+        if (context === 'orders') {
+          await page.goto(`${BASE}/orders`);
+          await page
+            .getByRole('button')
+            .filter({ hasText: `#${order.order_number}` })
+            .click();
+        } else {
+          await page.getByRole('button', { name: 'Select Table', exact: true }).click();
+          await page.getByRole('button').filter({ hasText: tableName }).click();
+          await expect(
+            page.getByText('Previous Items (already ordered)', { exact: true }),
+          ).toBeVisible();
+        }
+        await page.getByTitle('Edit item', { exact: true }).first().click();
+        await page.getByRole('spinbutton', { name: 'New quantity', exact: true }).fill('2');
+        let committed!: () => void;
+        const committedResponse = new Promise<void>((resolve) => {
+          committed = resolve;
+        });
+        await page.route(`**/api/orders/${order.id}/items/*/edit`, async (route) => {
+          const response = await route.fetch();
+          expect(response.ok()).toBeTruthy();
+          committed();
+          await held;
+          return route.fulfill({ response });
+        });
+        await page.getByRole('button', { name: 'Save', exact: true }).click();
+        await committedResponse;
+        await page.route('**/api/auth/me', async (route) => {
+          const response = await route.fetch();
+          const data = await response.json();
+          data.user = { ...data.user, id: 'switched-actor', name: 'Switched actor' };
+          return route.fulfill({ response, json: data });
+        });
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+        await expect(page.getByTestId('status-bar-cashier-name')).toHaveText('Switched actor');
+        let listRefreshes = 0;
+        let oldOrderReads = 0;
+        page.on('request', (request) => {
+          if (request.method() !== 'GET') return;
+          const path = new URL(request.url()).pathname;
+          if (path === (context === 'orders' ? '/api/orders' : '/api/tables')) listRefreshes += 1;
+          if (path === `/api/orders/${order.id}`) oldOrderReads += 1;
+        });
+        release();
+        await expect(page.getByRole('heading', { name: 'Edit E2E Coffee' })).toBeHidden();
+        await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeHidden();
+        await expect.poll(() => listRefreshes).toBeGreaterThan(0);
+        if (context === 'table') {
+          await expect(
+            page.getByText('Previous Items (already ordered)', { exact: true }),
+          ).toBeHidden();
+          expect(oldOrderReads, 'identity-change cleanup cannot reload the previous checkout').toBe(
+            0,
+          );
+        }
+      } finally {
+        release();
+        try {
+          if (originalBusiness) {
+            const restored = await cleanupRequest.put(`${BASE}/api/settings/business`, {
+              headers,
+              data: originalBusiness,
+            });
+            expect(restored.ok()).toBeTruthy();
+          }
+          if (tableId !== undefined && orderId !== undefined) {
+            const cancelled = await cleanupRequest.patch(`${BASE}/api/orders/${orderId}/status`, {
+              headers,
+              data: { status: 'cancelled' },
+            });
+            expect(cancelled.ok()).toBeTruthy();
+          }
+        } finally {
+          await cleanupRequest.dispose();
+        }
+      }
+    });
+  }
+
+  test('queued recovery does not send after item-edit permission is revoked', async ({ page }) => {
+    const ownerHeaders = {
+      Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+    };
+    const response = await page.request.post(`${BASE}/api/orders`, {
+      headers: ownerHeaders,
+      data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 3 }] },
+    });
+    expect(response.status()).toBe(201);
+    const order = (await response.json()).order;
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await setLanguage(page, 'en');
+    const itemId = order.items[0].id as number;
+    const key = await page.evaluate(
+      ({ orderId, itemId }) => {
+        const tenantId = JSON.parse(localStorage.getItem('tenant')!).id;
+        const key = `flo.orders.item-edit.attempt.v1:${tenantId}:e2e-owner:${orderId}:${itemId}`;
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            mode: 'quantity',
+            path: `/orders/${orderId}/items/${itemId}/edit`,
+            orderId,
+            itemId,
+            actorId: 'e2e-owner',
+            tenantId,
+            idempotencyKey: crypto.randomUUID(),
+            createdAt: new Date().toISOString(),
+            body: { expected_edit_version: 0, quantity: 2 },
+          }),
+        );
+        return key;
+      },
+      { orderId: order.id, itemId },
+    );
+    await page.goto(`${BASE}/orders`);
+    await page
+      .getByRole('button')
+      .filter({ hasText: `#${order.order_number}` })
+      .click();
+    const resolve = page.getByRole('button', { name: 'Resolve pending edit', exact: true });
+    await expect(resolve).toBeVisible();
+    let patchCount = 0;
+    await page.route(`**/api/orders/${order.id}/items/${itemId}/edit`, (route) => {
+      patchCount += 1;
+      return route.fulfill({ status: 503, json: { error: 'Must not dispatch' } });
+    });
+    await page.evaluate(async (key) => {
+      await new Promise<void>((ready) => {
+        void navigator.locks.request(
+          key,
+          () =>
+            new Promise<void>((release) => {
+              (window as Window & { releaseRecoveryLock?: () => void }).releaseRecoveryLock =
+                release;
+              ready();
+            }),
+        );
+      });
+    }, key);
+    try {
+      await resolve.click();
+      await expect
+        .poll(() => page.evaluate(async () => (await navigator.locks.query()).pending?.length ?? 0))
+        .toBeGreaterThan(0);
+      await page.route('**/api/auth/me', async (route) => {
+        const original = await route.fetch();
+        const data = await original.json();
+        for (const tenant of data.tenants) {
+          expect(Array.isArray(tenant.permission_ids)).toBe(true);
+          tenant.permission_ids = tenant.permission_ids.filter(
+            (id: string) => id !== 'orders.item.edit',
+          );
+        }
+        return route.fulfill({ response: original, json: data });
+      });
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await expect(
+        page.getByRole('button', { name: 'Resolving edit...', exact: true }),
+      ).toBeHidden();
+      await page.evaluate(() =>
+        (window as Window & { releaseRecoveryLock?: () => void }).releaseRecoveryLock?.(),
+      );
+      await expect
+        .poll(() =>
+          page.evaluate(async () => {
+            const locks = await navigator.locks.query();
+            return (locks.pending?.length ?? 0) + (locks.held?.length ?? 0);
+          }),
+        )
+        .toBe(0);
+      expect(patchCount, 'revoked permission aborts the queued replay before HTTP dispatch').toBe(
+        0,
+      );
+      expect(await page.evaluate((key) => localStorage.getItem(key), key)).not.toBeNull();
+    } finally {
+      await page.evaluate(() =>
+        (window as Window & { releaseRecoveryLock?: () => void }).releaseRecoveryLock?.(),
+      );
+    }
+  });
+
+  test('a committed recovery whose current-order refresh fails keeps the refresh retry visible', async ({
+    page,
+  }) => {
+    const ownerHeaders = {
+      Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+    };
+    const orderResponse = await page.request.post(`${BASE}/api/orders`, {
+      headers: ownerHeaders,
+      data: {
+        type: 'takeaway',
+        special_instructions: 'E2E recovery refresh fail test',
+        items: [{ product_id: 'e2e-product', quantity: 3 }],
+      },
+    });
+    expect(orderResponse.status()).toBe(201);
+    const order = (await orderResponse.json()).order as { id: number; order_number: string };
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await setLanguage(page, 'en');
+
+    await page.goto(`${BASE}/orders`);
+    const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+    await expect(masterRow).toBeVisible();
+    await masterRow.click();
+
+    const editButton = page.getByTitle('Edit item').first();
+    await expect(editButton).toBeVisible();
+    await editButton.click();
+    const qtyInput = page.locator('input[type="number"]');
+    await expect(qtyInput).toBeVisible();
+    await qtyInput.fill('2');
+
+    // Forward the real commit then abort so the attempt stays in storage
+    let committed = false;
+    await page.route(`**/api/orders/${order.id}/items/*/edit`, async (route) => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      const res = await route.fetch();
+      await route.abort();
+      void res;
+      committed = true;
+    });
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => committed).toBe(true);
+    await page.unroute(`**/api/orders/${order.id}/items/*/edit`);
+
+    // Reload the orders screen
+    await page.goto(`${BASE}/pos`);
+    await page.reload();
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/orders`);
+    await masterRow.click();
+
+    const resolveBtn = page.getByRole('button', { name: 'Resolve pending edit' }).first();
+    await expect(resolveBtn).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId('pending-order-item-edits').first()).toContainText(
+      'Pending item edit (E2E Coffee)',
+    );
+
+    // Mock GET order refresh to fail
+    let failGet = true;
+    await page.route(`**/api/orders/${order.id}`, (route) => {
+      if (failGet && route.request().method() === 'GET') {
+        return route.fulfill({ status: 500, body: 'Refresh Failed' });
+      }
+      return route.continue();
+    });
+
+    await resolveBtn.click();
+
+    // The refresh warning and retry button appear
+    const refreshWarning = page.getByTestId('pending-item-edit-refresh-failed');
+    await expect(refreshWarning).toBeVisible({ timeout: 15000 });
+    await expect(refreshWarning).toContainText('The edit was confirmed');
+    const retryBtn = page.getByTestId('retry-refresh-button');
+    await expect(retryBtn).toBeVisible();
+
+    // The attempt is cleared from localStorage despite the refresh failure
+    const remainingAttempts = await page.evaluate(() => {
+      const storage = window.localStorage;
+      const keys: string[] = [];
+      for (let i = 0; i < storage.length; i += 1) {
+        const key = storage.key(i);
+        if (key && key.startsWith('flo.orders.item-edit.attempt.v1:')) keys.push(key);
+      }
+      return keys;
+    });
+    expect(remainingAttempts, 'the committed edit is cleared from local storage').toHaveLength(0);
+
+    // Unblock GET and click Retry
+    failGet = false;
+    await retryBtn.click();
+    await expect(refreshWarning).toBeHidden({ timeout: 15000 });
+  });
+
+  test('an uncertainless 403 keeps the saved attempt so a permitted reveal can resolve it', async ({
+    page,
+  }) => {
+    const ownerHeaders = {
+      Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+    };
+    const orderResponse = await page.request.post(`${BASE}/api/orders`, {
+      headers: ownerHeaders,
+      data: {
+        type: 'takeaway',
+        special_instructions: 'E2E edit 403 test',
+        items: [{ product_id: 'e2e-product', quantity: 3 }],
+      },
+    });
+    expect(orderResponse.status()).toBe(201);
+    const order = (await orderResponse.json()).order as { id: number; order_number: string };
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await setLanguage(page, 'en');
+
+    await page.goto(`${BASE}/orders`);
+    const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+    await expect(masterRow).toBeVisible();
+    await masterRow.click();
+
+    const editButton = page.getByTitle('Edit item').first();
+    await expect(editButton).toBeVisible();
+    await editButton.click();
+    const qtyInput = page.locator('input[type="number"]');
+    await expect(qtyInput).toBeVisible();
+    await qtyInput.fill('1');
+
+    const rejected = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/orders/${order.id}/items/`) &&
+        response.request().method() === 'PATCH',
+    );
+    await page.route(`**/api/orders/${order.id}/items/*/edit`, (route) => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      return route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Forbidden' }),
+      });
+    });
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await rejected;
+
+    // A 403 cannot establish whether an earlier attempt committed, so the
+    // saved record must survive for the same actor's next attempt.
+    const survivingAttempt = await page.evaluate(() => {
+      const storage = window.localStorage;
+      const keys: string[] = [];
+      for (let i = 0; i < storage.length; i += 1) {
+        const key = storage.key(i);
+        if (key) keys.push(key);
+      }
+      return keys.filter((key) => key.startsWith('flo.orders.item-edit.attempt.v1:'));
+    });
+    expect(survivingAttempt, 'the 403 response preserves the saved attempt').toHaveLength(1);
+  });
+  test('a started item says increases and decreases are allowed while replacement stays blocked', async ({
+    page,
+  }) => {
+    const ownerHeaders = {
+      Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+    };
+    const orderResponse = await page.request.post(`${BASE}/api/orders`, {
+      headers: ownerHeaders,
+      data: {
+        type: 'takeaway',
+        special_instructions: 'E2E kitchen hint test',
+        items: [{ product_id: 'e2e-product', quantity: 2 }],
+      },
+    });
+    expect(orderResponse.status()).toBe(201);
+    const order = (await orderResponse.json()).order as {
+      id: number;
+      order_number: string;
+      items: { id: number }[];
+    };
+    const started = await page.request.patch(`${BASE}/api/kds/items/${order.items[0].id}/status`, {
+      headers: ownerHeaders,
+      data: { status: 'preparing' },
+    });
+    expect(started.ok(), 'the fixture item is sent to the kitchen').toBeTruthy();
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await setLanguage(page, 'en');
+
+    await page.goto(`${BASE}/orders`);
+    const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+    await expect(masterRow).toBeVisible();
+    await masterRow.click();
+
+    await page.getByTitle('Edit item').first().click();
+
+    // The hint matches what the backend actually permits.
+    await expect(
+      page.getByText(
+        'Preparation has started. You can increase or reduce the quantity. Replacing the product is unavailable.',
+      ),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Replace item' })).toBeDisabled();
+
+    // A quantity reduction on a started item needs the waste reason.
+    const qtyInput = page.locator('input[type="number"]');
+    await qtyInput.fill('1');
+    await expect(page.getByText('Waste reason (required)')).toBeVisible();
+    await expect(page.getByPlaceholder('Reason for kitchen waste')).toBeVisible();
+
+    // Increasing keeps the reason optional.
+    await qtyInput.fill('3');
+    await expect(page.getByText('Waste reason (required)')).toBeHidden();
+  });
+});
+
+test.describe('owner order item editing on an online platform quotes platform prices', () => {
+  const headers = () => ({
+    Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+  });
+
+  test('the replacement customizer and selected preview quote the variant online price', async ({
+    page,
+  }) => {
+    const variantName = 'LatteLarge';
+    const productResponse = await page.request.post(`${BASE}/api/products`, {
+      headers: headers(),
+      data: {
+        name: 'E2E Online Latte',
+        price: 100,
+        tax_type: 'none',
+        variants: [{ name: variantName, price: 100, online_price: 140 }],
+      },
+    });
+    expect(productResponse.status(), 'fixture product created').toBe(201);
+    const fixture = (await productResponse.json()).product as {
+      id: string;
+      variants: { id: string }[];
+    };
+    const variantId = fixture.variants[0].id;
+
+    // The suite shares one disposable database: remove the test-owned product afterwards.
+    // Later spec files see only the seeded menu cards on the POS grid.
+    try {
+      const orderResponse = await page.request.post(`${BASE}/api/orders`, {
+        headers: headers(),
+        data: {
+          type: 'takeaway',
+          online_platform: 'grab',
+          special_instructions: 'E2E online pricing test',
+          items: [
+            { product_id: 'e2e-product', quantity: 1 },
+            { product_id: fixture.id, variant_id: variantId, quantity: 1 },
+          ],
+        },
+      });
+      expect(orderResponse.status(), 'online order created').toBe(201);
+      const order = (await orderResponse.json()).order as { id: number; order_number: string };
+
+      await page.goto(`${BASE}/auth/login`);
+      await page.locator('#email').fill('owner@flo.local');
+      await page.locator('#password').fill(E2E_PASSWORD);
+      await page.locator('button[type="submit"]').click();
+      await page.waitForURL('**/pos/**', { timeout: 20000 });
+      await setLanguage(page, 'en');
+
+      await page.goto(`${BASE}/orders`);
+      const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+      await expect(masterRow).toBeVisible();
+      await masterRow.click();
+
+      // Identify the latte line by its product name inside the detail pane.
+      const latteRow = page
+        .getByTestId('orders-detail-panel')
+        .locator('div')
+        .filter({ hasText: 'E2E Online Latte' })
+        .getByTitle('Edit item')
+        .first();
+      await expect(latteRow).toBeVisible();
+      await latteRow.click();
+
+      await page.getByRole('button', { name: 'Replace item' }).click();
+      const search = page.getByPlaceholder('Search products');
+      await expect(search).toBeVisible();
+      await search.fill('E2E Online Latte');
+      const match = page.locator('button').filter({ hasText: 'E2E Online Latte' }).last();
+      await expect(match).toBeVisible();
+      await match.click();
+
+      // The customizer quotes the platform price for the order's platform.
+      const customizerHeading = page.getByRole('heading', { name: 'E2E Online Latte' });
+      await expect(customizerHeading).toBeVisible();
+      const quotedPrice = customizerHeading.locator('xpath=following-sibling::p');
+      await expect(quotedPrice).toBeVisible();
+      await expect(quotedPrice, 'customizer (AddonModal) shows the online price').toContainText(
+        '140',
+      );
+
+      // Confirm the customizer; the selected replacement preview also quotes the
+      // platform price basis, not the counter price.
+      await page.getByRole('button', { name: /Save changes/ }).click();
+      const preview = page
+        .locator('div.rounded-lg.border.p-3')
+        .filter({ hasText: 'E2E Online Latte' });
+      await expect(preview).toBeVisible();
+      await expect(preview, 'selected replacement preview shows the online price').toContainText(
+        '140',
+      );
+    } finally {
+      await page.request.delete(`${BASE}/api/products/${fixture.id}`, {
+        headers: headers(),
+      });
+    }
   });
 });

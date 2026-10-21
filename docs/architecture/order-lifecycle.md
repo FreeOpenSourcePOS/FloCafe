@@ -75,9 +75,9 @@ settings:
 
 | Surface | Endpoint | Notes |
 | --- | --- | --- |
-| Order | `PATCH /api/orders/:id/discount` | Percentage or flat amount against the item subtotal; split bills return `409`, and completed or cancelled orders return `400`. |
-| Order item | `PATCH /api/orders/:id/items/:itemId/discount` | One line; split or refunded bills return `409`, and completed or cancelled orders or cancelled, voided, void-adjustment, or refunded items return `400`. |
-| Bill | `POST /api/bills/:id/applyDiscount` | Recomputes the bill and order; paid bills return `400`, split or refunded bills and cancelled orders return `409`. A completed order can still be discounted while its bill is unpaid. |
+| Order | `PATCH /api/orders/:id/discount` | Percentage or flat amount against the item subtotal; split or refunded bills or discounts below collected payments return `409`, and completed or cancelled orders return `400`. |
+| Order item | `PATCH /api/orders/:id/items/:itemId/discount` | One line; split or refunded bills or discounts below collected payments return `409`, and completed or cancelled orders or cancelled, voided, void-adjustment, or refunded items return `400`. |
+| Bill | `POST /api/bills/:id/applyDiscount` | Recomputes the bill and order; paid bills return `400`, split or refunded bills, completed or cancelled orders, and discounts below collected payments return `409`. |
 
 Common rules, enforced in the handlers:
 
@@ -86,7 +86,9 @@ Common rules, enforced in the handlers:
 - `discount_max_percentage` (default 25) and `discount_max_amount` (`0` means no limit) cap the
   value. A discount above the cap is a `400`.
 - `discount_requires_approval` requires a manager PIN, and the approving user must itself hold the
-  discount permission.
+  discount permission. When an approver is explicitly supplied (`approver_id`, `manager_id`, or
+  `user_id`) on an order, item, or bill discount, PIN verification is restricted to that active user
+  without falling back to scanning other managers.
 - A percentage discount applies to the fresh item subtotal, and a flat discount is capped at that
   subtotal. Re-applying a discount never compounds on the previous one.
 - The discount rescales each line's tax by the discounted share of the subtotal and rounds to the
@@ -95,6 +97,13 @@ Common rules, enforced in the handlers:
   A zero `discount_value` clears an order discount, and a zero `value` clears a bill discount,
   subject to the bill endpoint's discount-mode checks. The item endpoint requires a positive
   `discount_value`.
+- A discount cannot reduce a bill's total below collected payments (`below_collected_funds`,
+  `409`). Handlers re-read current order, bill, item, and payment rows inside the database
+  transaction lock so that concurrent payments, item edits, or bill splits revalidate against fresh
+  state.
+- Applying an order or bill discount records an `order_discount_applied` action in
+  `order_audit_log` with the authenticated actor, discount details, and the approving manager ID
+  when a manager PIN override was used (the raw PIN is never stored).
 
 ## Bills
 
@@ -129,13 +138,21 @@ same fields:
   if either already has an associated customer, a different id is a `400`. Wallet payments require a
   customer already associated with the bill or order, with enough points.
 - `override_pin`: the manager override described below.
+- `approver_id`: when supplying `override_pin`, the selected manager ID (`manager_id` and `user_id`
+  remain compatibility aliases).
 
 Non-cash lines can never exceed the balance (`400`). Cash is applied up to the amount still owed and
 the difference is recorded as change, so an over-tendered bill settles and its ledger line carries
-`tendered_amount` and `change_amount`.
+`tendered_amount` and `change_amount`. When a bill's remaining balance is zero, any positive payment
+tender (cash or non-cash) is rejected (`400` with `payment_exceeds_balance`), while an omitted-amount
+payment line completes zero-balance settlement.
 
 The optional `Idempotency-Key` is actor-scoped: the same key with the same normalized request
-returns the committed response, and the same key with a different request is a `409`.
+returns the committed response, and the same key with a different request is a `409`. Concurrent
+in-flight requests sharing the same key and actor await the active attempt. Replay detection runs
+before gate checks and manager PIN verification, so replaying a committed payment with a missing,
+changed, or invalid `override_pin` succeeds without re-evaluating the PIN or creating duplicate
+payments.
 
 Two gates sit between a valid request and the write:
 
@@ -146,10 +163,15 @@ Two gates sit between a valid request and the write:
 - **Kitchen-delivery gate.** When `require_kitchen_delivered_before_settlement` is on, `kds_enabled`
   is not `false`, and `billing_type` is not `prepaid`, paying while kitchen items are undelivered
   is a `409` with code `KITCHEN_ITEMS_UNDELIVERED` unless a manager PIN is supplied as `override_pin`.
-  The override is recorded in the order audit log.
+  When an approver is explicitly supplied (`approver_id`, `manager_id`, or `user_id`), PIN
+  verification is restricted to that active manager without falling back to scanning other managers.
+  When all kitchen items are delivered, `override_pin` verification is bypassed. The override is
+  recorded in the order audit log.
 
-A paid bill refuses further payment (`400`) and a refunded bill refuses it with `409`. The response
-carries the updated bill plus the wallet and loyalty effects; `bill.payment_details` is the
+A paid bill refuses positive payment (`400` with `bill_already_paid`) and a refunded bill refuses
+payment with `409`. A zero-balance payment retry on an already-settled bill returns `200`
+idempotently without rejecting. The response carries the updated bill plus the wallet and loyalty
+effects; `bill.payment_details` is the
 settlement ledger, one entry per line with the applied amount, the requested amount, cash tendered
 and change, the `cash_session_id`, and the timestamp.
 
@@ -159,6 +181,28 @@ A bill moves `unpaid` to `partial` to `paid`; refunds move it to `partially_refu
 When a payment settles the last unpaid bill of an order, the order becomes `completed` (unless it was
 already completed or cancelled) and its dine-in table is released to `available`. A payment never
 resurrects a terminal order.
+
+When an order, item, or bill discount reduces the remaining balance of a partially paid bill to exactly
+zero (where collected funds equal the discounted total), auto-settlement to `paid` is gated by kitchen
+delivery status. When `require_kitchen_delivered_before_settlement` is enabled, `kds_enabled` is not
+`false`, and `billing_type` is not `prepaid`:
+
+- If kitchen items remain undelivered (`pending`, `preparing`, or `ready`), auto-settlement is held:
+  the discount applies and reduces the balance to zero, but the bill remains in `partial` status
+  (`paid_at` is unset), the order stays active, and the dine-in table remains occupied. Supplying a
+  valid manager PIN as `override_pin` (or via an explicit approver) overrides the gate, recording
+  `kitchen_delivery_override` in `order_audit_log` and allowing auto-settlement to proceed immediately.
+- Once undelivered kitchen items are served (or when settled with an `override_pin`), a zero-balance
+  payment retry settles the bill to `paid`.
+
+When all kitchen items are delivered (or kitchen-delivery enforcement does not apply), the bill
+automatically settles to `paid` with its `paid_at` timestamp recorded. If all sibling bills are
+settled, the order transitions to `completed` and releases its dine-in table to `available`. Loyalty
+cashback is credited on collected net funds, and no phantom payment lines are written to
+`bill.payment_details`. A zero-balance settlement retry on an already settled bill returns `200`
+idempotently without rejecting. Discounts that would reduce the bill total below already-collected
+payments are rejected (`409` with diagnostic code `below_collected_funds`). Discounts on orders with
+zero collected payments leave the bill `unpaid` until explicitly settled.
 
 Wallet lines debit the customer's loyalty ledger. A paid bill credits cashback when loyalty is
 enabled, excluding the share funded by wallet points.
@@ -192,6 +236,8 @@ movements, and refunds have their own end-of-business-day cutoff described above
 
 ```sh
 npm run test:integration-order-hold-payment   # hold, discount, tax, installments, gates, replay
+npm run test:financial-safety-remediation     # payment replay idempotency, PIN decoupling, discount revalidation
+npm run test:issue-exact-balance-settlement    # auto-settle bill and complete order on exact-balance discount
 npm run test:integration-happy                # order to payment, discount recalculated
 npm run test:integration-payments             # payment methods and split lines
 npm run test:integration-discount             # discount edge cases

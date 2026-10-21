@@ -1,6 +1,12 @@
+import { capturePostHogBoundaryError } from '@/lib/posthog-client';
+
 /** Forwards caught render exceptions to anonymous telemetry via Electron IPC;
  * returns boolean success without rejecting. */
-export async function reportRendererError(error: Error & { digest?: string }, route?: string): Promise<boolean> {
+export async function reportRendererError(
+  error: Error & { digest?: string },
+  route?: string,
+): Promise<boolean> {
+  capturePostHogBoundaryError(error);
   try {
     const result = await window.electronAPI?.reportRendererError?.({
       message: error.message,

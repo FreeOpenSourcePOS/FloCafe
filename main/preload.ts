@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     route?: string;
   }) => ipcRenderer.invoke('report-renderer-error', report),
 
+  getPostHogBootstrap: () => ipcRenderer.invoke('get-posthog-bootstrap'),
+
   getStatus: () => ipcRenderer.invoke('get-status'),
   openWhatsAppShare: (url: string) => ipcRenderer.invoke('whatsapp-open-share', url),
 

@@ -8,6 +8,7 @@ import {
   parseRowJson,
   withTxn,
   verifyPin,
+  verifyPinAsync,
   getSettingValue,
   insertOrderItemAddons,
   attachEffectiveAddons,
@@ -15,7 +16,9 @@ import {
   utcTodayDate,
   recordOrderAudit,
   isKdsEnabled,
+  registerOrderSearchFunctions,
 } from '../db';
+import { asyncHandler } from '../middleware/async-handler';
 import {
   calculateConfiguredChargeTaxes,
   calculateItemTax,
@@ -60,11 +63,58 @@ import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { isTerminalItemStatus } from '../../shared/order-item-status';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
-import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
+import {
+  checkKitchenDeliveryStatus,
+  completeExactBalanceSettlement,
+  getTenantCurrency,
+  preVerifyKitchenDeliveryPin,
+  syncUnpaidBillsForOrder,
+} from './bills';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
-import { isAllowedPrivateIp } from '../middleware/security';
+import {
+  isAllowedPrivateIp,
+  checkPinRateLimit,
+  isPinRateLimited,
+  clearPinRateLimit,
+  resetPinRateLimitForTests,
+  withPinVerificationLock,
+  normalizeIpForRateLimit,
+  PIN_MAX_ATTEMPTS,
+  PIN_WINDOW_MS,
+} from '../middleware/security';
+
+export {
+  checkPinRateLimit,
+  isPinRateLimited,
+  clearPinRateLimit,
+  resetPinRateLimitForTests,
+  withPinVerificationLock,
+  PIN_MAX_ATTEMPTS,
+  PIN_WINDOW_MS,
+};
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
+
+type PinApproverCandidate = { id: string; role: string; pin_hash: string };
+
+const registeredSearchDatabases = new WeakSet<object>();
+
+function ensureOrderSearchFunctions(dbInstance: any): void {
+  if (registeredSearchDatabases.has(dbInstance)) return;
+  registerOrderSearchFunctions(dbInstance);
+  registeredSearchDatabases.add(dbInstance);
+}
+
+function isSearchIndexAvailable(dbInstance: any): boolean {
+  try {
+    const row = dbInstance
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'orders_search_fts'")
+      .get();
+    return Boolean(row);
+  } catch {
+    return false;
+  }
+}
 
 const router = Router();
 const ORDER_WRITE_RATE_LIMIT_ERROR = {
@@ -245,42 +295,6 @@ function getStoredOrderReplay(
   }
 }
 
-// Rate limiting for PIN validation (simple in-memory)
-const pinAttempts = new Map<string, { count: number; resetAt: number }>();
-const PIN_MAX_ATTEMPTS = 5;
-const PIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-
-export function checkPinRateLimit(key: string): boolean {
-  const now = Date.now();
-  // Sweep expired rate limit entries when map grows beyond threshold.
-  if (pinAttempts.size > 500) {
-    for (const [k, v] of pinAttempts.entries()) {
-      if (now > v.resetAt) pinAttempts.delete(k);
-    }
-  }
-  const entry = pinAttempts.get(key);
-  if (!entry || now > entry.resetAt) {
-    pinAttempts.set(key, { count: 1, resetAt: now + PIN_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= PIN_MAX_ATTEMPTS) return false;
-  entry.count++;
-  return true;
-}
-
-function isPinRateLimited(key: string): boolean {
-  const entry = pinAttempts.get(key);
-  if (!entry || Date.now() > entry.resetAt) {
-    pinAttempts.delete(key);
-    return false;
-  }
-  return entry.count >= PIN_MAX_ATTEMPTS;
-}
-
-export function resetPinRateLimitForTests(): void {
-  pinAttempts.clear();
-}
-
 function syncCustomerTagCounts(
   db: any,
   customerId: string,
@@ -392,11 +406,9 @@ function moveOrderItemAddonStock(
       const pool = db.prepare('SELECT stock_quantity FROM addons WHERE id = ?').get(addon.id) as
         | { stock_quantity: number }
         | undefined;
-      throw Object.assign(
-        new Error(
-          `Add-on "${addon.name}" is out of stock (requested ${quantity}, available ${Number(pool?.stock_quantity ?? 0)})`,
-        ),
-        { statusCode: 400 },
+      throw new InventoryServiceError(
+        400,
+        `Add-on "${addon.name}" is out of stock (requested ${quantity}, available ${Number(pool?.stock_quantity ?? 0)})`,
       );
     }
   }
@@ -630,28 +642,67 @@ router.get(
       }
       const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
       if (search) {
-        db.function('orders_search_contains', (value: string | null, query: string) =>
-          typeof value === 'string' && value.toLowerCase().includes(query.toLowerCase()) ? 1 : 0,
-        );
-        db.function('orders_search_digits_contains', (value: string | null, digits: string) =>
-          typeof value === 'string' && value.replace(/\D/g, '').includes(digits) ? 1 : 0,
-        );
+        ensureOrderSearchFunctions(db);
         const phoneDigits = search.replace(/\D/g, '');
+        const isPhoneSearch = Boolean(phoneDigits && !/\p{L}/u.test(search));
         const customerSearch = ['orders_search_contains(search_customer.name, ?)'];
-        if (phoneDigits && !/\p{L}/u.test(search)) {
+        if (isPhoneSearch) {
           customerSearch.push('orders_search_digits_contains(search_customer.phone_digits, ?)');
           customerSearch.push('orders_search_digits_contains(search_customer.phone, ?)');
         }
-        wheres.push(`(
+        const udfClause = `(
         orders_search_contains(orders.order_number, ?)
         OR EXISTS (
           SELECT 1 FROM customers AS search_customer
           WHERE search_customer.id = orders.customer_id
             AND (${customerSearch.join(' OR ')})
         )
-      )`);
-        params.push(search, search);
-        if (phoneDigits && !/\p{L}/u.test(search)) params.push(phoneDigits, phoneDigits);
+      )`;
+
+        const hasControlChars = /[\x00-\x1F\x7F]/.test(search);
+        const isEligible = !hasControlChars && [...search].length >= 3;
+        const hasFts = isEligible && isSearchIndexAvailable(db);
+
+        if (hasFts) {
+          let candidateClause: string;
+          const candidateParams: any[] = [];
+          const ftsSearch = '"' + search.replace(/"/g, '""') + '"';
+
+          if (isPhoneSearch) {
+            // For phone searches, customer phone strings may contain varied formatting
+            // (e.g. "+1/555 ext 0199"). Querying customers table with digit UDF efficiently
+            // identifies matching customer IDs across the small customers table, avoiding a
+            // full orders scan while preserving full parity across phone formats.
+            candidateClause = `(
+              orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
+              OR orders.customer_id IN (
+                SELECT id FROM customers
+                WHERE (phone_digits IS NOT NULL AND orders_search_digits_contains(phone_digits, ?))
+                   OR (phone IS NOT NULL AND orders_search_digits_contains(phone, ?))
+                   OR orders_search_contains(name, ?)
+              )
+            )`;
+            candidateParams.push(ftsSearch, phoneDigits, phoneDigits, search);
+          } else {
+            candidateClause = `(
+              orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
+              OR orders.customer_id IN (
+                SELECT id FROM customers WHERE rowid IN (
+                  SELECT rowid FROM customers_search_fts WHERE customers_search_fts MATCH ?
+                )
+              )
+            )`;
+            candidateParams.push(ftsSearch, ftsSearch);
+          }
+
+          wheres.push(`(${candidateClause} AND ${udfClause})`);
+          params.push(...candidateParams, search, search);
+          if (isPhoneSearch) params.push(phoneDigits, phoneDigits);
+        } else {
+          wheres.push(udfClause);
+          params.push(search, search);
+          if (isPhoneSearch) params.push(phoneDigits, phoneDigits);
+        }
       }
       // Filter by UTC day or date range across indexed created_at column.
       if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
@@ -2232,11 +2283,167 @@ router.post(
   },
 );
 
+function evaluateOrderStatusPaymentBlock(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number | unknown,
+  orderTotal: unknown,
+  orderRoundOff: unknown,
+): {
+  minorFactor: number;
+  roundCurrency: (amount: number) => number;
+  evaluatedBills: Array<{
+    id: string;
+    paymentStatus: string;
+    totalMinor: number;
+    unroundedTotalMinor: number;
+    recordedPaidMinor: number;
+    effectiveCollectedMinor: number;
+    hasCollectedFunds: boolean;
+    isPayable: boolean;
+    unpaidBalanceMinor: number;
+    isSettled: boolean;
+  }>;
+  orderTotalMinor: number;
+  payableBills: Array<{
+    id: string;
+    paymentStatus: string;
+    totalMinor: number;
+    unroundedTotalMinor: number;
+    recordedPaidMinor: number;
+    effectiveCollectedMinor: number;
+    hasCollectedFunds: boolean;
+    isPayable: boolean;
+    unpaidBalanceMinor: number;
+    isSettled: boolean;
+  }>;
+  totalOutstandingMinor: number;
+  totalCollectedMinor: number;
+  paymentBlocksCompletion: boolean;
+} {
+  const tenantCurrency = getTenantCurrency();
+  const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
+  const fractionDigits = getCurrencyFractionDigits(tenantCurrency);
+  const roundCurrency = (amount: number): number =>
+    fractionDigits === 0 ? Math.round(amount) : Number(amount.toFixed(fractionDigits));
+
+  const billRows = db
+    .prepare(`
+      SELECT b.*,
+             COALESCE((SELECT SUM(r.amount_cents) FROM refunds r WHERE r.bill_id = b.id), 0) AS refunded_cents
+      FROM bills b
+      WHERE b.order_id = ?
+      ORDER BY b.id ASC
+    `)
+    .all(String(orderId)) as Array<{
+    id: string;
+    total?: number | null;
+    round_off?: number | null;
+    paid_amount?: number | null;
+    refunded_cents?: number | null;
+    balance?: number | null;
+    payment_details?: unknown;
+    payment_status?: string | null;
+  }>;
+
+  const evaluatedBills = billRows.map((b) => {
+    const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
+    const roundOffMinor = Math.round(Number(b.round_off || 0) * minorFactor);
+    const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
+    const paidMinor = Math.max(0, Math.round(Number(b.paid_amount || 0) * minorFactor));
+    const refundedMinor = Math.max(0, Math.round(Number(b.refunded_cents || 0)));
+    const fallbackBalance = Math.max(0, Number(b.total || 0) - Number(b.paid_amount || 0));
+    const storedBalanceMinor = Math.max(
+      0,
+      Math.round(Number(b.balance ?? fallbackBalance) * minorFactor),
+    );
+    let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
+    if (typeof b.payment_details === 'string' && b.payment_details.trim()) {
+      try {
+        const parsed = JSON.parse(b.payment_details);
+        if (Array.isArray(parsed)) parsedPaymentDetails = parsed;
+      } catch {
+        parsedPaymentDetails = [];
+      }
+    } else if (Array.isArray(b.payment_details)) {
+      parsedPaymentDetails = b.payment_details as Array<{ amount?: unknown }>;
+    }
+    const detailsPaidMinor = parsedPaymentDetails.reduce(
+      (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
+      0,
+    );
+    const recordedPaidMinor = Math.max(paidMinor, detailsPaidMinor);
+    const netCollectedMinor = Math.max(0, recordedPaidMinor - refundedMinor);
+    const paymentStatus = String(b.payment_status || '');
+    const effectiveCollectedMinor = Math.max(
+      netCollectedMinor,
+      paymentStatus === 'paid' ? Math.max(0, totalMinor - refundedMinor) : 0,
+    );
+    const hasCollectedFunds =
+      effectiveCollectedMinor > 0 ||
+      (recordedPaidMinor > 0 && paymentStatus !== 'refunded') ||
+      paymentStatus === 'partial' ||
+      paymentStatus === 'partially_refunded' ||
+      (paymentStatus === 'paid' && (totalMinor > 0 || parsedPaymentDetails.length > 0));
+    const isPayable = totalMinor > 0 || storedBalanceMinor > 0;
+    const unpaidBalanceMinor = isPayable
+      ? Math.max(storedBalanceMinor, Math.max(0, totalMinor - recordedPaidMinor))
+      : 0;
+    const isSettled =
+      !isPayable ||
+      (paymentStatus === 'paid' && unpaidBalanceMinor === 0 && recordedPaidMinor >= totalMinor);
+    return {
+      id: b.id,
+      paymentStatus,
+      totalMinor,
+      unroundedTotalMinor,
+      recordedPaidMinor,
+      effectiveCollectedMinor,
+      hasCollectedFunds,
+      isPayable,
+      unpaidBalanceMinor,
+      isSettled,
+    };
+  });
+
+  const orderTotalMinor = Math.max(0, Math.round(Number(orderTotal || 0) * minorFactor));
+  const orderRoundOffMinor = Math.round(Number(orderRoundOff || 0) * minorFactor);
+  const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
+  const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
+  const payableBills = evaluatedBills.filter((b) => b.isPayable);
+  const billedCoverageMinor = evaluatedBills.reduce(
+    (sum, b) => sum + Math.max(b.totalMinor, b.unroundedTotalMinor),
+    0,
+  );
+  const unbilledMinor =
+    payableBills.length === 0
+      ? orderTotalMinor
+      : Math.max(0, effectiveOrderTargetMinor - billedCoverageMinor);
+  const totalOutstandingMinor =
+    payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
+  const totalCollectedMinor = evaluatedBills.reduce((sum, b) => sum + b.effectiveCollectedMinor, 0);
+
+  const paymentBlocksCompletion =
+    totalOutstandingMinor > 0 ||
+    (orderTotalMinor > 0 && payableBills.length === 0) ||
+    payableBills.some((b) => !b.isSettled);
+
+  return {
+    minorFactor,
+    roundCurrency,
+    evaluatedBills,
+    orderTotalMinor,
+    payableBills,
+    totalOutstandingMinor,
+    totalCollectedMinor,
+    paymentBlocksCompletion,
+  };
+}
+
 router.patch(
   '/:id/status',
   orderWriteRateLimit,
   requirePermission('orders.status.update'),
-  (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const { status, reason, override_pin, free_table } = req.body;
 
@@ -2256,6 +2463,83 @@ router.patch(
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
+      }
+
+      let preVerifiedStatusApprover: { id: string; verifiedPinHash: string } | null = null;
+      if (
+        (status === 'cancelled' || status === 'completed') &&
+        override_pin &&
+        typeof override_pin === 'string'
+      ) {
+        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const canonicalIp = normalizeIpForRateLimit(clientIp);
+        const rateLimitKey =
+          status === 'cancelled'
+            ? `pin:${canonicalIp}:order-cancel`
+            : `pin:${canonicalIp}:order-complete`;
+        if (isPinRateLimited(rateLimitKey)) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (!/^\d{4,6}$/.test(override_pin)) {
+          checkPinRateLimit(rateLimitKey);
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+
+        const preVerificationRequiresPayment =
+          status === 'completed' &&
+          evaluateOrderStatusPaymentBlock(
+            db,
+            req.params.id,
+            (order as any).total,
+            (order as any).round_off,
+          ).paymentBlocksCompletion;
+
+        const explicitApproverId = req.body.approver_id || req.body.manager_id || req.body.user_id;
+        const candidateUsers = explicitApproverId
+          ? (db
+              .prepare(
+                'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+              )
+              .all(explicitApproverId) as PinApproverCandidate[])
+          : (db
+              .prepare(
+                'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+              )
+              .all() as PinApproverCandidate[]);
+
+        const preVerifiedCandidate = await withPinVerificationLock(rateLimitKey, async () => {
+          if (isPinRateLimited(rateLimitKey)) {
+            return { rateLimited: true };
+          }
+          for (const candidate of candidateUsers) {
+            if (
+              hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+              hasPermission(candidate.id, 'orders.status.update') &&
+              (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel')) &&
+              (!preVerificationRequiresPayment || hasPermission(candidate.id, 'payments.take'))
+            ) {
+              if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
+                clearPinRateLimit(rateLimitKey);
+                return {
+                  approver: {
+                    id: candidate.id,
+                    verifiedPinHash: candidate.pin_hash,
+                  },
+                };
+              }
+            }
+          }
+          checkPinRateLimit(rateLimitKey);
+          return { approver: null };
+        });
+
+        if (preVerifiedCandidate.rateLimited) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (!preVerifiedCandidate.approver) {
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        preVerifiedStatusApprover = preVerifiedCandidate.approver;
       }
 
       const nowStr = now();
@@ -2326,121 +2610,22 @@ router.patch(
         const statusOrder = ['pending', 'preparing', 'ready', 'served', 'completed'];
         const currentStatusIndex = statusOrder.indexOf(currentOrder.status);
 
-        const tenantCurrency = getTenantCurrency();
-        const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
-        const fractionDigits = getCurrencyFractionDigits(tenantCurrency);
-        const roundCurrency = (amount: number): number =>
-          fractionDigits === 0 ? Math.round(amount) : Number(amount.toFixed(fractionDigits));
-
-        const billRows = db
-          .prepare(`
-            SELECT b.*,
-                   COALESCE((SELECT SUM(r.amount_cents) FROM refunds r WHERE r.bill_id = b.id), 0) AS refunded_cents
-            FROM bills b
-            WHERE b.order_id = ?
-            ORDER BY b.id ASC
-          `)
-          .all(req.params.id) as Array<{
-          id: string;
-          total?: number | null;
-          round_off?: number | null;
-          paid_amount?: number | null;
-          refunded_cents?: number | null;
-          balance?: number | null;
-          payment_details?: unknown;
-          payment_status?: string | null;
-        }>;
-
-        const evaluatedBills = billRows.map((b) => {
-          const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
-          const roundOffMinor = Math.round(Number(b.round_off || 0) * minorFactor);
-          const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
-          const paidMinor = Math.max(0, Math.round(Number(b.paid_amount || 0) * minorFactor));
-          const refundedMinor = Math.max(0, Math.round(Number(b.refunded_cents || 0)));
-          const fallbackBalance = Math.max(0, Number(b.total || 0) - Number(b.paid_amount || 0));
-          const storedBalanceMinor = Math.max(
-            0,
-            Math.round(Number(b.balance ?? fallbackBalance) * minorFactor),
-          );
-          let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
-          if (typeof b.payment_details === 'string' && b.payment_details.trim()) {
-            try {
-              const parsed = JSON.parse(b.payment_details);
-              if (Array.isArray(parsed)) parsedPaymentDetails = parsed;
-            } catch {
-              parsedPaymentDetails = [];
-            }
-          } else if (Array.isArray(b.payment_details)) {
-            parsedPaymentDetails = b.payment_details as Array<{ amount?: unknown }>;
-          }
-          const detailsPaidMinor = parsedPaymentDetails.reduce(
-            (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
-            0,
-          );
-          const recordedPaidMinor = Math.max(paidMinor, detailsPaidMinor);
-          const netCollectedMinor = Math.max(0, recordedPaidMinor - refundedMinor);
-          const paymentStatus = String(b.payment_status || '');
-          const effectiveCollectedMinor = Math.max(
-            netCollectedMinor,
-            paymentStatus === 'paid' ? Math.max(0, totalMinor - refundedMinor) : 0,
-          );
-          const hasCollectedFunds =
-            effectiveCollectedMinor > 0 ||
-            (recordedPaidMinor > 0 && paymentStatus !== 'refunded') ||
-            paymentStatus === 'partial' ||
-            paymentStatus === 'partially_refunded' ||
-            (paymentStatus === 'paid' && (totalMinor > 0 || parsedPaymentDetails.length > 0));
-          const isPayable = totalMinor > 0 || storedBalanceMinor > 0;
-          const unpaidBalanceMinor = isPayable
-            ? Math.max(storedBalanceMinor, Math.max(0, totalMinor - recordedPaidMinor))
-            : 0;
-          const isSettled =
-            !isPayable ||
-            (paymentStatus === 'paid' &&
-              unpaidBalanceMinor === 0 &&
-              recordedPaidMinor >= totalMinor);
-          return {
-            id: b.id,
-            paymentStatus,
-            totalMinor,
-            unroundedTotalMinor,
-            recordedPaidMinor,
-            effectiveCollectedMinor,
-            hasCollectedFunds,
-            isPayable,
-            unpaidBalanceMinor,
-            isSettled,
-          };
-        });
-
-        const orderTotalMinor = Math.max(
-          0,
-          Math.round(Number(currentOrder.total || 0) * minorFactor),
+        const {
+          minorFactor,
+          roundCurrency,
+          evaluatedBills,
+          orderTotalMinor,
+          payableBills,
+          totalOutstandingMinor,
+          totalCollectedMinor,
+          paymentBlocksCompletion: rawPaymentBlocksCompletion,
+        } = evaluateOrderStatusPaymentBlock(
+          db,
+          req.params.id,
+          currentOrder.total,
+          currentOrder.round_off,
         );
-        const orderRoundOffMinor = Math.round(Number(currentOrder.round_off || 0) * minorFactor);
-        const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
-        const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
-        const payableBills = evaluatedBills.filter((b) => b.isPayable);
-        const billedCoverageMinor = evaluatedBills.reduce(
-          (sum, b) => sum + Math.max(b.totalMinor, b.unroundedTotalMinor),
-          0,
-        );
-        const unbilledMinor =
-          payableBills.length === 0
-            ? orderTotalMinor
-            : Math.max(0, effectiveOrderTargetMinor - billedCoverageMinor);
-        const totalOutstandingMinor =
-          payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
-        const totalCollectedMinor = evaluatedBills.reduce(
-          (sum, b) => sum + b.effectiveCollectedMinor,
-          0,
-        );
-
-        const paymentBlocksCompletion =
-          status === 'completed' &&
-          (totalOutstandingMinor > 0 ||
-            (orderTotalMinor > 0 && payableBills.length === 0) ||
-            payableBills.some((b) => !b.isSettled));
+        const paymentBlocksCompletion = status === 'completed' && rawPaymentBlocksCompletion;
 
         const requireKitchenDelivered = db
           .prepare(
@@ -2507,42 +2692,46 @@ router.patch(
           }
 
           const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+          const canonicalIp = normalizeIpForRateLimit(clientIp);
           const rateLimitKey =
             status === 'cancelled'
-              ? `pin:${clientIp}:order-cancel`
-              : `pin:${clientIp}:order-complete`;
+              ? `pin:${canonicalIp}:order-cancel`
+              : `pin:${canonicalIp}:order-complete`;
           if (isPinRateLimited(rateLimitKey)) {
             throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
               statusCode: 429,
             });
           }
 
-          type PinApproverCandidate = { id: string; role: string; pin_hash: string };
-          const explicitApproverId = req.body.approver_id || req.body.manager_id;
-          const candidateUsers = explicitApproverId
-            ? (db
-                .prepare(
-                  'SELECT * FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
-                )
-                .all(explicitApproverId) as PinApproverCandidate[])
-            : (db
-                .prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
-                .all() as PinApproverCandidate[]);
+          const explicitApproverId =
+            req.body.approver_id || req.body.manager_id || req.body.user_id;
 
-          const user = candidateUsers.find(
-            (candidate) =>
+          let user: PinApproverCandidate | undefined;
+          if (preVerifiedStatusApprover) {
+            const candidate = db
+              .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+              .get(preVerifiedStatusApprover.id) as
+              | { id: string; role: string; pin_hash: string | null; is_active: number }
+              | undefined;
+            if (
+              candidate &&
+              candidate.is_active === 1 &&
+              candidate.pin_hash === preVerifiedStatusApprover.verifiedPinHash &&
               hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
               hasPermission(candidate.id, 'orders.status.update') &&
               (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel')) &&
               (!paymentBlocksCompletion || hasPermission(candidate.id, 'payments.take')) &&
-              verifyPin(candidate.pin_hash, override_pin),
-          );
+              (!explicitApproverId || candidate.id === explicitApproverId)
+            ) {
+              user = { id: candidate.id, role: candidate.role, pin_hash: candidate.pin_hash };
+            }
+          }
 
           if (!user) {
             checkPinRateLimit(rateLimitKey);
             throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
-          pinAttempts.delete(rateLimitKey);
+          clearPinRateLimit(rateLimitKey);
           approvedByUserId = user.id;
         }
 
@@ -2696,7 +2885,7 @@ router.patch(
         .status(error.statusCode || 500)
         .json({ error: error.statusCode ? error.message : 'Internal server error' });
     }
-  },
+  }),
 );
 
 router.patch(
@@ -2905,294 +3094,445 @@ router.patch(
   },
 );
 
-router.patch(
-  '/:id/discount',
-  orderWriteRateLimit,
-  requirePermission('orders.discount.apply'),
-  (req: Request, res: Response) => {
-    let operationCommitted = false;
-    try {
-      const db = getDatabase();
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
-      if (!order) {
-        return res.status(404).json({ error: 'Order not found' });
-      }
-      if (
-        db
-          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
-          .get(req.params.id)
-      ) {
-        return res
-          .status(409)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.discount.validation',
-              'not_applied',
-              'Discounts cannot be changed after a check has been split',
-              'split_check',
-            ),
-          );
-      }
+const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => {
+  let operationCommitted = false;
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (
+      db
+        .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+        .get(req.params.id)
+    ) {
+      return res
+        .status(409)
+        .json(
+          structuredOperationFailure(
+            req,
+            'fc.backend.order.discount.validation',
+            'not_applied',
+            'Discounts cannot be changed after a check has been split',
+            'split_check',
+          ),
+        );
+    }
 
-      // Cannot apply discount to completed or cancelled orders
-      if (['completed', 'cancelled'].includes(order.status)) {
-        return res
-          .status(400)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.discount.validation',
-              'not_applied',
-              'Cannot apply discount to a completed or cancelled order',
-              'order_not_discountable',
-            ),
-          );
-      }
+    // Cannot apply discount to completed or cancelled orders
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return res
+        .status(400)
+        .json(
+          structuredOperationFailure(
+            req,
+            'fc.backend.order.discount.validation',
+            'not_applied',
+            'Cannot apply discount to a completed or cancelled order',
+            'order_not_discountable',
+          ),
+        );
+    }
 
-      const { discount_type, discount_value, discount_reason } = req.body || {};
+    const {
+      discount_type,
+      discount_value,
+      discount_reason,
+      override_pin,
+      approver_id,
+      user_id,
+      manager_id,
+    } = req.body || {};
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
-      // Validate discount_type
-      if (
-        discount_value !== 0 &&
-        (!discount_type || !['percentage', 'amount'].includes(discount_type))
-      ) {
-        return res
-          .status(400)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.discount.validation',
-              'not_applied',
-              'discount_type must be "percentage" or "amount"',
-              'invalid_type',
-            ),
-          );
-      }
+    // Validate discount_type
+    if (
+      discount_value !== 0 &&
+      (!discount_type || !['percentage', 'amount'].includes(discount_type))
+    ) {
+      return res
+        .status(400)
+        .json(
+          structuredOperationFailure(
+            req,
+            'fc.backend.order.discount.validation',
+            'not_applied',
+            'discount_type must be "percentage" or "amount"',
+            'invalid_type',
+          ),
+        );
+    }
 
-      // Validate discount_value is a non-negative finite number
-      if (
-        discount_value === undefined ||
-        discount_value === null ||
-        typeof discount_value !== 'number' ||
-        discount_value < 0 ||
-        !Number.isFinite(discount_value)
-      ) {
-        return res
-          .status(400)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.discount.validation',
-              'not_applied',
-              'discount_value must be a non-negative number',
-              'invalid_value',
-            ),
-          );
-      }
+    // Validate discount_value is a non-negative finite number
+    if (
+      discount_value === undefined ||
+      discount_value === null ||
+      typeof discount_value !== 'number' ||
+      discount_value < 0 ||
+      !Number.isFinite(discount_value)
+    ) {
+      return res
+        .status(400)
+        .json(
+          structuredOperationFailure(
+            req,
+            'fc.backend.order.discount.validation',
+            'not_applied',
+            'discount_value must be a non-negative number',
+            'invalid_value',
+          ),
+        );
+    }
 
-      // Check if approval is required
-      let approvedByUserId: string | undefined;
-      if (discount_value > 0) {
-        const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
-        if (requiresApproval) {
-          const { override_pin } = req.body || {};
-          if (!override_pin) {
-            return res
-              .status(403)
-              .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
+    // Check if approval is required
+    const suppliedApproverIds = [approver_id, manager_id, user_id]
+      .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+      .map((val) => String(val).trim());
+    if (new Set(suppliedApproverIds).size > 1) {
+      return res.status(400).json({ error: 'Conflicting approver identifiers' });
+    }
+    const explicitApproverId = suppliedApproverIds[0];
+    let approvedByUserId: string | undefined;
+    let preVerifiedOrderDiscountPinHash: string | undefined;
+    if (discount_value > 0) {
+      const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
+      if (requiresApproval) {
+        if (!override_pin) {
+          return res
+            .status(403)
+            .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
+        }
+        const canonicalIp = normalizeIpForRateLimit(clientIp);
+        const rateLimitKey = `pin:${canonicalIp}:discount`;
+        if (isPinRateLimited(rateLimitKey)) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (typeof override_pin !== 'string' || !/^\d{4,6}$/.test(override_pin)) {
+          checkPinRateLimit(rateLimitKey);
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        const candidateUsers = explicitApproverId
+          ? (db
+              .prepare(
+                'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+              )
+              .all(explicitApproverId) as PinApproverCandidate[])
+          : (db
+              .prepare(
+                'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+              )
+              .all() as PinApproverCandidate[]);
+
+        const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
+          if (isPinRateLimited(rateLimitKey)) {
+            return { rateLimited: true };
           }
-          const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-          const rateLimitKey = `pin:${clientIp}:discount`;
-          if (!checkPinRateLimit(rateLimitKey)) {
-            return res
-              .status(429)
-              .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
-          }
-          const user = (
-            db
-              .prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
-              .all() as any[]
-          ).find(
-            (candidate) =>
+          let user: PinApproverCandidate | undefined;
+          for (const candidate of candidateUsers) {
+            if (
               hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
               hasPermission(candidate.id, 'orders.discount.apply') &&
-              verifyPin(candidate.pin_hash, override_pin),
-          );
+              (await verifyPinAsync(candidate.pin_hash, override_pin))
+            ) {
+              user = candidate;
+              break;
+            }
+          }
           if (!user) {
-            return res.status(403).json({ error: 'Invalid manager PIN' });
+            checkPinRateLimit(rateLimitKey);
+            return { user: null };
           }
-          approvedByUserId = user.id;
-        }
-      }
-
-      // Check discount mode
-      if (discount_value > 0) {
-        const discountMode = getSettingValue('discount_mode') || 'percentage';
-        if (discountMode === 'none') {
-          return res
-            .status(400)
-            .json(
-              structuredOperationFailure(
-                req,
-                'fc.backend.order.discount.validation',
-                'not_applied',
-                'Discounts are disabled',
-                'disabled',
-              ),
-            );
-        }
-        if (discountMode === 'flat' && discount_type === 'percentage') {
-          return res
-            .status(400)
-            .json(
-              structuredOperationFailure(
-                req,
-                'fc.backend.order.discount.validation',
-                'not_applied',
-                'Percentage discounts are disabled',
-                'type_disabled',
-              ),
-            );
-        }
-        if (discountMode === 'percentage' && discount_type === 'amount') {
-          return res
-            .status(400)
-            .json(
-              structuredOperationFailure(
-                req,
-                'fc.backend.order.discount.validation',
-                'not_applied',
-                'Flat amount discounts are disabled',
-                'type_disabled',
-              ),
-            );
-        }
-      }
-
-      // Check against limits from settings (0 = no limit)
-      if (discount_value > 0) {
-        if (discount_type === 'percentage') {
-          const maxPercentage = parseFloat(getSettingValue('discount_max_percentage') || '25');
-          if (maxPercentage > 0 && discount_value > maxPercentage) {
-            return res
-              .status(400)
-              .json(
-                structuredOperationFailure(
-                  req,
-                  'fc.backend.order.discount.validation',
-                  'not_applied',
-                  `discount_value exceeds maximum percentage of ${maxPercentage}`,
-                  'limit_exceeded',
-                ),
-              );
-          }
-        } else if (discount_type === 'amount') {
-          const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
-          if (maxAmount > 0 && discount_value > maxAmount) {
-            return res
-              .status(400)
-              .json(
-                structuredOperationFailure(
-                  req,
-                  'fc.backend.order.discount.validation',
-                  'not_applied',
-                  `discount_value exceeds maximum amount of ${maxAmount}`,
-                  'limit_exceeded',
-                ),
-              );
-          }
-        }
-      }
-      const tenantInfo = {
-        country: getSettingValue('country') || '',
-        business_type: getSettingValue('business_type') || 'restaurant',
-        state_code: getSettingValue('state_code') || '',
-        currency: getTenantCurrency(),
-        taxes_enabled: getSettingValue('taxes_enabled') === 'true',
-      };
-      // Wrap discount, tax recalculation, and bill sync in transaction.
-      const result = withTxn(() => {
-        // Re-fetch and re-validate under transaction lock to prevent races with concurrent edits.
-        const currentOrder = db
-          .prepare('SELECT * FROM orders WHERE id = ?')
-          .get(req.params.id) as any;
-        if (!currentOrder) {
-          throw Object.assign(new Error('Order not found'), { statusCode: 404 });
-        }
-        if (['completed', 'cancelled'].includes(currentOrder.status)) {
-          throw Object.assign(
-            new Error('Cannot apply discount to a completed or cancelled order'),
-            { statusCode: 400, diagnosticCode: 'order_not_discountable' },
-          );
-        }
-        const refundedBill = db
-          .prepare(
-            `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
-          )
-          .get(req.params.id);
-        if (refundedBill) {
-          throw Object.assign(new Error('Cannot apply discount to a refunded bill'), {
-            statusCode: 409,
-            diagnosticCode: 'refunded',
-          });
-        }
-
-        const customer = currentOrder.customer_id
-          ? (db
-              .prepare('SELECT * FROM customers WHERE id = ?')
-              .get(currentOrder.customer_id) as any)
-          : null;
-        const currency = getTenantCurrency();
-        const decimals = getCurrencyFractionDigits(currency);
-
-        // Recalculate tax from item-level data to avoid compounding on repeated discount edits.
-        // The fresh item sum is the only basis: it describes exactly the items the
-        // tax is summed over, and the write below heals the stored column to match.
-        const totals = calculateOrderTotals(db, req.params.id as string);
-
-        // Calculate discount amount
-        let discountAmount = 0;
-        if (discount_value > 0) {
-          if (discount_type === 'percentage') {
-            discountAmount = (totals.subtotal * discount_value) / 100;
-          } else {
-            discountAmount = Math.min(discount_value, totals.subtotal);
-          }
-          discountAmount = Number(discountAmount.toFixed(decimals));
-        }
-
-        const engineCharges = resolveEngineCharges(currentOrder, totals.subtotal, discountAmount);
-        const {
-          taxRollup,
-          total: newTotal,
-          roundOff,
-        } = recomputeOrderTotals({
-          tenantInfo,
-          chargeContext: currentOrder,
-          customer,
-          totals,
-          discountAmount,
-          taxScaling: 'when-discounted',
-          appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
-          chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
+          clearPinRateLimit(rateLimitKey);
+          return { user };
         });
 
-        const syncedServiceCharge = engineCharges
-          ? engineCharges.columns.service_charge
-          : currentOrder.service_charge || 0;
-        const syncedPackagingCharge = engineCharges
-          ? engineCharges.columns.packaging_charge
-          : currentOrder.packaging_charge || 0;
-        const syncedChargesJson = engineCharges
-          ? engineCharges.chargesJson
-          : (currentOrder.charges_breakdown ?? null);
+        if (verifiedResult.rateLimited) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (!verifiedResult.user) {
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        approvedByUserId = verifiedResult.user.id;
+        preVerifiedOrderDiscountPinHash = verifiedResult.user.pin_hash;
+      }
+    }
 
-        db.prepare(`
+    let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
+    if (approvedByUserId && preVerifiedOrderDiscountPinHash) {
+      preVerifiedKitchenManager = {
+        id: approvedByUserId,
+        verifiedPinHash: preVerifiedOrderDiscountPinHash,
+      };
+    } else if (override_pin) {
+      const existingBill = db
+        .prepare('SELECT id FROM bills WHERE order_id = ? AND payment_status != ?')
+        .get(req.params.id, 'paid') as { id: string | number } | undefined;
+      const initialKitchenStatus = checkKitchenDeliveryStatus(
+        db,
+        String(req.params.id),
+        undefined,
+        clientIp,
+        existingBill?.id,
+      );
+      if (!initialKitchenStatus.allowed) {
+        preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
+          db,
+          override_pin,
+          clientIp,
+          explicitApproverId,
+        );
+      }
+    }
+
+    // Check discount mode
+    if (discount_value > 0) {
+      const discountMode = getSettingValue('discount_mode') || 'percentage';
+      if (discountMode === 'none') {
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.discount.validation',
+              'not_applied',
+              'Discounts are disabled',
+              'disabled',
+            ),
+          );
+      }
+      if (discountMode === 'flat' && discount_type === 'percentage') {
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.discount.validation',
+              'not_applied',
+              'Percentage discounts are disabled',
+              'type_disabled',
+            ),
+          );
+      }
+      if (discountMode === 'percentage' && discount_type === 'amount') {
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.discount.validation',
+              'not_applied',
+              'Flat amount discounts are disabled',
+              'type_disabled',
+            ),
+          );
+      }
+    }
+
+    // Check against limits from settings (0 = no limit)
+    if (discount_value > 0) {
+      if (discount_type === 'percentage') {
+        const maxPercentage = parseFloat(getSettingValue('discount_max_percentage') || '25');
+        if (maxPercentage > 0 && discount_value > maxPercentage) {
+          return res
+            .status(400)
+            .json(
+              structuredOperationFailure(
+                req,
+                'fc.backend.order.discount.validation',
+                'not_applied',
+                `discount_value exceeds maximum percentage of ${maxPercentage}`,
+                'limit_exceeded',
+              ),
+            );
+        }
+      } else if (discount_type === 'amount') {
+        const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
+        if (maxAmount > 0 && discount_value > maxAmount) {
+          return res
+            .status(400)
+            .json(
+              structuredOperationFailure(
+                req,
+                'fc.backend.order.discount.validation',
+                'not_applied',
+                `discount_value exceeds maximum amount of ${maxAmount}`,
+                'limit_exceeded',
+              ),
+            );
+        }
+      }
+    }
+    const tenantInfo = {
+      country: getSettingValue('country') || '',
+      business_type: getSettingValue('business_type') || 'restaurant',
+      state_code: getSettingValue('state_code') || '',
+      currency: getTenantCurrency(),
+      taxes_enabled: getSettingValue('taxes_enabled') === 'true',
+    };
+    // Wrap discount, tax recalculation, and bill sync in transaction.
+    const result = withTxn(() => {
+      if (approvedByUserId && preVerifiedOrderDiscountPinHash) {
+        const approver = db
+          .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+          .get(approvedByUserId) as
+          | { id: string; role: string; pin_hash: string | null; is_active: number }
+          | undefined;
+        if (
+          !approver ||
+          approver.is_active !== 1 ||
+          !hasRole(approver.role, ROLE_ACCESS.ownerManager) ||
+          !hasPermission(approver.id, 'orders.discount.apply') ||
+          approver.pin_hash !== preVerifiedOrderDiscountPinHash
+        ) {
+          throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+        }
+      }
+
+      // Re-fetch and re-validate under transaction lock to prevent races with concurrent edits.
+      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+        | EditableOrderRow
+        | undefined;
+      if (!currentOrder) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      if (['completed', 'cancelled'].includes(currentOrder.status)) {
+        throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), {
+          statusCode: 400,
+          diagnosticCode: 'order_not_discountable',
+        });
+      }
+      const splitBill = db
+        .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+        .get(req.params.id);
+      if (splitBill) {
+        throw Object.assign(new Error('Discounts cannot be changed after a check has been split'), {
+          statusCode: 409,
+          diagnosticCode: 'split_check',
+        });
+      }
+      const refundedBill = db
+        .prepare(
+          `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
+        )
+        .get(req.params.id);
+      if (refundedBill) {
+        throw Object.assign(new Error('Cannot apply discount to a refunded bill'), {
+          statusCode: 409,
+          diagnosticCode: 'refunded',
+        });
+      }
+
+      const customer = currentOrder.customer_id
+        ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+            | Customer
+            | undefined) ?? null)
+        : null;
+      const currency = getTenantCurrency();
+      const decimals = getCurrencyFractionDigits(currency);
+
+      // Recalculate tax from item-level data to avoid compounding on repeated discount edits.
+      // The fresh item sum is the only basis: it describes exactly the items the
+      // tax is summed over, and the write below heals the stored column to match.
+      const totals = calculateOrderTotals(db, req.params.id as string);
+
+      // Calculate discount amount
+      let discountAmount = 0;
+      if (discount_value > 0) {
+        if (discount_type === 'percentage') {
+          discountAmount = (totals.subtotal * discount_value) / 100;
+        } else {
+          discountAmount = Math.min(discount_value, totals.subtotal);
+        }
+        discountAmount = Number(discountAmount.toFixed(decimals));
+      }
+
+      const engineCharges = resolveEngineCharges(currentOrder, totals.subtotal, discountAmount);
+      const {
+        taxRollup,
+        total: newTotal,
+        roundOff,
+      } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: currentOrder,
+        customer,
+        totals,
+        discountAmount,
+        taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+        chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
+      });
+
+      const syncedServiceCharge = engineCharges
+        ? engineCharges.columns.service_charge
+        : currentOrder.service_charge || 0;
+      const syncedPackagingCharge = engineCharges
+        ? engineCharges.columns.packaging_charge
+        : currentOrder.packaging_charge || 0;
+      const syncedChargesJson = engineCharges
+        ? engineCharges.chargesJson
+        : (currentOrder.charges_breakdown ?? null);
+
+      db.prepare(`
         UPDATE orders SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?,
           service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
       `).run(
+        totals.subtotal,
+        discountAmount,
+        discount_value > 0 ? discount_type : null,
+        discount_value > 0 ? discount_value : null,
+        discount_value > 0 ? discount_reason || null : null,
+        taxRollup.taxAmount,
+        JSON.stringify(taxRollup.breakdowns),
+        taxRollup.snapshotJson,
+        newTotal,
+        syncedServiceCharge,
+        syncedPackagingCharge,
+        syncedChargesJson,
+        roundOff,
+        now(),
+        req.params.id,
+      );
+
+      // Sync discount to bill if it exists and is unpaid
+      const existingBill = db
+        .prepare('SELECT * FROM bills WHERE order_id = ? AND payment_status != ?')
+        .get(req.params.id, 'paid') as any;
+      if (existingBill) {
+        const pack = getActiveCountryPack(tenantInfo.country);
+        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(
+          newTotal,
+          pack,
+          currency,
+        );
+        const billPaidAmount = Number(existingBill.paid_amount || 0);
+        if (billPaidAmount > 0 && billTotal < billPaidAmount) {
+          throw Object.assign(
+            new Error('Discount cannot reduce bill total below collected payments'),
+            { statusCode: 409, diagnosticCode: 'below_collected_funds' },
+          );
+        }
+        const newBillBalance = Math.max(0, billTotal - billPaidAmount);
+        const kitchenStatus = checkKitchenDeliveryStatus(
+          db,
+          String(req.params.id),
+          override_pin,
+          clientIp,
+          existingBill.id,
+          preVerifiedKitchenManager,
+          explicitApproverId,
+        );
+        const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
+        db.prepare(`
+          UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
+            discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?,
+            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+            paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
+            updated_at = ?
+          WHERE id = ?
+        `).run(
           totals.subtotal,
           discountAmount,
           discount_value > 0 ? discount_type : null,
@@ -3201,117 +3541,332 @@ router.patch(
           taxRollup.taxAmount,
           JSON.stringify(taxRollup.breakdowns),
           taxRollup.snapshotJson,
-          newTotal,
+          billTotal,
+          newBillBalance,
           syncedServiceCharge,
           syncedPackagingCharge,
           syncedChargesJson,
-          roundOff,
+          billRoundOff,
+          isBillNowPaid ? 1 : 0,
+          isBillNowPaid ? 1 : 0,
           now(),
-          req.params.id,
+          now(),
+          existingBill.id,
         );
-
-        // Sync discount to bill if it exists and is unpaid
-        const existingBill = db
-          .prepare('SELECT * FROM bills WHERE order_id = ? AND payment_status != ?')
-          .get(req.params.id, 'paid') as any;
-        if (existingBill) {
-          const pack = getActiveCountryPack(tenantInfo.country);
-          const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(
-            newTotal,
-            pack,
-            currency,
-          );
-          const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
-          db.prepare(`
-          UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
-            discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?,
-            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ?
-          WHERE id = ?
-        `).run(
-            totals.subtotal,
-            discountAmount,
-            discount_value > 0 ? discount_type : null,
-            discount_value > 0 ? discount_value : null,
-            discount_value > 0 ? discount_reason || null : null,
-            taxRollup.taxAmount,
-            JSON.stringify(taxRollup.breakdowns),
-            taxRollup.snapshotJson,
-            billTotal,
-            newBillBalance,
-            syncedServiceCharge,
-            syncedPackagingCharge,
-            syncedChargesJson,
-            billRoundOff,
-            now(),
+        if (isBillNowPaid) {
+          completeExactBalanceSettlement(
+            db,
             existingBill.id,
+            billTotal,
+            currency,
+            now(),
+            override_pin,
+            clientIp,
+            preVerifiedKitchenManager,
+            explicitApproverId,
           );
         }
+        if (kitchenStatus.overridden && isBillNowPaid) {
+          recordOrderAudit(db, {
+            orderId: req.params.id as string,
+            actorUserId: (req as any).user.userId,
+            action: 'kitchen_delivery_override',
+            details: {
+              manager_user_id: kitchenStatus.managerUserId,
+              undelivered_count: kitchenStatus.count,
+            },
+          });
+        }
+      }
 
-        recordOrderAudit(db, {
-          orderId: req.params.id as string,
-          actorUserId: (req as any).user.userId,
-          action: 'order_discount_applied',
-          details: {
-            discount_type,
-            discount_value,
-            ...(approvedByUserId && { approved_by: approvedByUserId }),
-          },
-        });
-
-        const updatedOrder = parseRowJson(
-          db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id),
-        ) as any;
-        return updatedOrder;
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        actorUserId: (req as any).user.userId,
+        action: 'order_discount_applied',
+        details: {
+          discount_type,
+          discount_value,
+          ...(approvedByUserId && { approved_by: approvedByUserId }),
+        },
       });
-      operationCommitted = true;
 
-      notifyOrderUpdated();
-      res.json({ order: result });
-    } catch (error: any) {
-      console.error('[API] Internal error:', error);
-      const statusCode = error.statusCode || 500;
-      const message = error.statusCode ? error.message : 'Internal server error';
-      if (statusCode === 404 && !operationCommitted)
-        return res.status(statusCode).json({ error: message });
-      const point = operationCommitted
-        ? 'fc.backend.order.discount.completion'
-        : statusCode >= 500
-          ? 'fc.backend.order.discount.persistence'
-          : 'fc.backend.order.discount.validation';
-      return res
-        .status(statusCode)
-        .json(
-          structuredOperationFailure(
-            req,
-            point,
-            operationCommitted ? 'applied' : 'not_applied',
-            message,
-            operationCommitted ? undefined : error.diagnosticCode,
-          ),
-        );
-    }
-  },
-);
+      const updatedOrder = parseRowJson(
+        db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id),
+      ) as any;
+      return updatedOrder;
+    });
+    operationCommitted = true;
+
+    notifyOrderUpdated();
+    res.json({ order: result });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    const statusCode = error.statusCode || 500;
+    const message = error.statusCode ? error.message : 'Internal server error';
+    if (statusCode === 404 && !operationCommitted)
+      return res.status(statusCode).json({ error: message });
+    const point = operationCommitted
+      ? 'fc.backend.order.discount.completion'
+      : statusCode >= 500
+        ? 'fc.backend.order.discount.persistence'
+        : 'fc.backend.order.discount.validation';
+    return res
+      .status(statusCode)
+      .json(
+        structuredOperationFailure(
+          req,
+          point,
+          operationCommitted ? 'applied' : 'not_applied',
+          message,
+          operationCommitted ? undefined : error.diagnosticCode,
+        ),
+      );
+  }
+});
 
 router.patch(
-  '/:id/items/:itemId/discount',
+  '/:id/discount',
   orderWriteRateLimit,
   requirePermission('orders.discount.apply'),
-  (req: Request, res: Response) => {
-    try {
-      const db = getDatabase();
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
-      if (!order) {
-        return res.status(404).json({ error: 'Order not found' });
-      }
-      if (
-        db
-          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
-          .get(req.params.id)
-      ) {
+  handleOrderDiscount,
+);
+router.post(
+  '/:id/discount',
+  orderWriteRateLimit,
+  requirePermission('orders.discount.apply'),
+  handleOrderDiscount,
+);
+
+const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (
+      db
+        .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+        .get(req.params.id)
+    ) {
+      return res
+        .status(409)
+        .json({ error: 'Discounts cannot be changed after a check has been split' });
+    }
+
+    const refundedBill = db
+      .prepare(
+        `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
+      )
+      .get(req.params.id);
+    if (refundedBill) {
+      return res.status(409).json({ error: 'Cannot apply discount to a refunded bill' });
+    }
+    // Cannot apply discount to completed or cancelled orders
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return res
+        .status(400)
+        .json({ error: 'Cannot apply discount to a completed or cancelled order' });
+    }
+
+    const item = db
+      .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
+      .get(req.params.itemId, req.params.id) as any;
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status)) {
+      return res
+        .status(400)
+        .json({ error: 'Cannot apply discount to a cancelled, voided, or refunded item' });
+    }
+
+    const { discount_type, discount_value, override_pin, approver_id, user_id } = req.body;
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+
+    // Validate discount_type
+    if (!discount_type || !['percentage', 'amount'].includes(discount_type)) {
+      return res.status(400).json({ error: 'discount_type must be "percentage" or "amount"' });
+    }
+
+    // Validate discount_value is a positive number
+    if (
+      discount_value === undefined ||
+      discount_value === null ||
+      typeof discount_value !== 'number' ||
+      discount_value <= 0
+    ) {
+      return res.status(400).json({ error: 'discount_value must be a positive number' });
+    }
+
+    // Check if approval is required
+    const suppliedApproverIds = [approver_id, req.body.manager_id, user_id]
+      .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+      .map((val) => String(val).trim());
+    if (new Set(suppliedApproverIds).size > 1) {
+      return res.status(400).json({ error: 'Conflicting approver identifiers' });
+    }
+    const explicitApproverId = suppliedApproverIds[0];
+    let approvedByUserId: string | undefined;
+    let preVerifiedItemDiscountPinHash: string | undefined;
+    const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
+    if (requiresApproval) {
+      if (!override_pin) {
         return res
-          .status(409)
-          .json({ error: 'Discounts cannot be changed after a check has been split' });
+          .status(403)
+          .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
+      }
+      const canonicalIp = normalizeIpForRateLimit(clientIp);
+      const rateLimitKey = `pin:${canonicalIp}:item-discount`;
+      if (isPinRateLimited(rateLimitKey)) {
+        return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+      }
+      if (typeof override_pin !== 'string' || !/^\d{4,6}$/.test(override_pin)) {
+        checkPinRateLimit(rateLimitKey);
+        return res.status(403).json({ error: 'Invalid manager PIN' });
+      }
+      const candidateUsers = explicitApproverId
+        ? (db
+            .prepare(
+              'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+            )
+            .all(explicitApproverId) as PinApproverCandidate[])
+        : (db
+            .prepare(
+              'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+            )
+            .all() as PinApproverCandidate[]);
+
+      const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
+        if (isPinRateLimited(rateLimitKey)) {
+          return { rateLimited: true };
+        }
+        let user: PinApproverCandidate | undefined;
+        for (const candidate of candidateUsers) {
+          if (
+            hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+            hasPermission(candidate.id, 'orders.discount.apply') &&
+            (await verifyPinAsync(candidate.pin_hash, override_pin))
+          ) {
+            user = candidate;
+            break;
+          }
+        }
+        if (!user) {
+          checkPinRateLimit(rateLimitKey);
+          return { user: null };
+        }
+        clearPinRateLimit(rateLimitKey);
+        return { user };
+      });
+
+      if (verifiedResult.rateLimited) {
+        return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+      }
+      if (!verifiedResult.user) {
+        return res.status(403).json({ error: 'Invalid manager PIN' });
+      }
+      approvedByUserId = verifiedResult.user.id;
+      preVerifiedItemDiscountPinHash = verifiedResult.user.pin_hash;
+    }
+
+    let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
+    if (approvedByUserId && preVerifiedItemDiscountPinHash) {
+      preVerifiedKitchenManager = {
+        id: approvedByUserId,
+        verifiedPinHash: preVerifiedItemDiscountPinHash,
+      };
+    } else if (override_pin) {
+      const existingBill = db
+        .prepare('SELECT id FROM bills WHERE order_id = ? AND payment_status != ?')
+        .get(req.params.id, 'paid') as { id: string | number } | undefined;
+      const initialKitchenStatus = checkKitchenDeliveryStatus(
+        db,
+        String(req.params.id),
+        undefined,
+        clientIp,
+        existingBill?.id,
+      );
+      if (!initialKitchenStatus.allowed) {
+        preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
+          db,
+          override_pin,
+          clientIp,
+          explicitApproverId,
+        );
+      }
+    }
+
+    // Check discount mode
+    const discountMode = getSettingValue('discount_mode') || 'percentage';
+    if (discountMode === 'none') {
+      return res.status(400).json({ error: 'Discounts are disabled' });
+    }
+    if (discountMode === 'flat' && discount_type === 'percentage') {
+      return res.status(400).json({ error: 'Percentage discounts are disabled' });
+    }
+    if (discountMode === 'percentage' && discount_type === 'amount') {
+      return res.status(400).json({ error: 'Flat amount discounts are disabled' });
+    }
+
+    // BUG #14 FIX: Check item-level discount against max settings (0 = no limit)
+    if (discount_type === 'percentage') {
+      const maxPercentage = parseFloat(getSettingValue('discount_max_percentage') || '25');
+      if (maxPercentage > 0 && discount_value > maxPercentage) {
+        return res
+          .status(400)
+          .json({ error: `discount_value exceeds maximum percentage of ${maxPercentage}` });
+      }
+    } else if (discount_type === 'amount') {
+      const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
+      if (maxAmount > 0 && discount_value > maxAmount) {
+        return res
+          .status(400)
+          .json({ error: `discount_value exceeds maximum amount of ${maxAmount}` });
+      }
+    }
+
+    const currency = getTenantCurrency();
+    const decimals = getCurrencyFractionDigits(currency);
+
+    const updatedItem = withTxn(() => {
+      if (approvedByUserId && preVerifiedItemDiscountPinHash) {
+        const approver = db
+          .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+          .get(approvedByUserId) as
+          | { id: string; role: string; pin_hash: string | null; is_active: number }
+          | undefined;
+        if (
+          !approver ||
+          approver.is_active !== 1 ||
+          !hasRole(approver.role, ROLE_ACCESS.ownerManager) ||
+          !hasPermission(approver.id, 'orders.discount.apply') ||
+          approver.pin_hash !== preVerifiedItemDiscountPinHash
+        ) {
+          throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+        }
+      }
+
+      // Re-read current order and item under transaction lock to prevent financial state races
+      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+        | EditableOrderRow
+        | undefined;
+      if (!currentOrder) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      if (['completed', 'cancelled'].includes(currentOrder.status)) {
+        throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), {
+          statusCode: 400,
+        });
+      }
+
+      const splitBill = db
+        .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+        .get(req.params.id);
+      if (splitBill) {
+        throw Object.assign(new Error('Discounts cannot be changed after a check has been split'), {
+          statusCode: 409,
+        });
       }
 
       const refundedBill = db
@@ -3320,138 +3875,63 @@ router.patch(
         )
         .get(req.params.id);
       if (refundedBill) {
-        return res.status(409).json({ error: 'Cannot apply discount to a refunded bill' });
-      }
-      // Cannot apply discount to completed or cancelled orders
-      if (['completed', 'cancelled'].includes(order.status)) {
-        return res
-          .status(400)
-          .json({ error: 'Cannot apply discount to a completed or cancelled order' });
+        throw Object.assign(new Error('Cannot apply discount to a refunded bill'), {
+          statusCode: 409,
+        });
       }
 
-      const item = db
+      const currentItem = db
         .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
-        .get(req.params.itemId, req.params.id) as any;
-      if (!item) {
-        return res.status(404).json({ error: 'Item not found' });
+        .get(req.params.itemId, req.params.id) as OrderItemRow | undefined;
+      if (!currentItem) {
+        throw Object.assign(new Error('Item not found'), { statusCode: 404 });
       }
-      if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status)) {
-        return res
-          .status(400)
-          .json({ error: 'Cannot apply discount to a cancelled, voided, or refunded item' });
-      }
-
-      const { discount_type, discount_value } = req.body;
-
-      // Validate discount_type
-      if (!discount_type || !['percentage', 'amount'].includes(discount_type)) {
-        return res.status(400).json({ error: 'discount_type must be "percentage" or "amount"' });
-      }
-
-      // Validate discount_value is a positive number
-      if (
-        discount_value === undefined ||
-        discount_value === null ||
-        typeof discount_value !== 'number' ||
-        discount_value <= 0
-      ) {
-        return res.status(400).json({ error: 'discount_value must be a positive number' });
-      }
-
-      // Check if approval is required
-      let approvedByUserId: string | undefined;
-      const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
-      if (requiresApproval) {
-        const { override_pin } = req.body;
-        if (!override_pin) {
-          return res
-            .status(403)
-            .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
-        }
-        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-        const rateLimitKey = `pin:${clientIp}:item-discount`;
-        if (!checkPinRateLimit(rateLimitKey)) {
-          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
-        }
-        const user = (
-          db
-            .prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
-            .all() as any[]
-        ).find(
-          (candidate) =>
-            hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
-            hasPermission(candidate.id, 'orders.discount.apply') &&
-            verifyPin(candidate.pin_hash, override_pin),
+      if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(currentItem.status)) {
+        throw Object.assign(
+          new Error('Cannot apply discount to a cancelled, voided, or refunded item'),
+          { statusCode: 400 },
         );
-        if (!user) {
-          return res.status(403).json({ error: 'Invalid manager PIN' });
-        }
-        approvedByUserId = user.id;
       }
 
-      // Check discount mode
-      const discountMode = getSettingValue('discount_mode') || 'percentage';
-      if (discountMode === 'none') {
-        return res.status(400).json({ error: 'Discounts are disabled' });
-      }
-      if (discountMode === 'flat' && discount_type === 'percentage') {
-        return res.status(400).json({ error: 'Percentage discounts are disabled' });
-      }
-      if (discountMode === 'percentage' && discount_type === 'amount') {
-        return res.status(400).json({ error: 'Flat amount discounts are disabled' });
-      }
-
-      // BUG #14 FIX: Check item-level discount against max settings (0 = no limit)
-      if (discount_type === 'percentage') {
-        const maxPercentage = parseFloat(getSettingValue('discount_max_percentage') || '25');
-        if (maxPercentage > 0 && discount_value > maxPercentage) {
-          return res
-            .status(400)
-            .json({ error: `discount_value exceeds maximum percentage of ${maxPercentage}` });
-        }
-      } else if (discount_type === 'amount') {
-        const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
-        if (maxAmount > 0 && discount_value > maxAmount) {
-          return res
-            .status(400)
-            .json({ error: `discount_value exceeds maximum amount of ${maxAmount}` });
-        }
-      }
-
-      // Calculate item discount amount (include addon prices)
+      // Calculate item discount amount using fresh quantity and addons
       const addonRows = db
         .prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?')
-        .all(item.id) as { price: number; quantity?: number }[];
+        .all(currentItem.id) as { price: number; quantity?: number }[];
       const addonTotal = addonRows.reduce(
-        (sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * item.quantity,
+        (sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * currentItem.quantity,
         0,
       );
-      const itemBaseTotal = item.unit_price * item.quantity + addonTotal;
-      const currency = getTenantCurrency();
-      const decimals = getCurrencyFractionDigits(currency);
+      const freshItemBaseTotal = currentItem.unit_price * currentItem.quantity + addonTotal;
 
       let discountAmount: number;
       if (discount_type === 'percentage') {
-        discountAmount = (itemBaseTotal * discount_value) / 100;
+        discountAmount = (freshItemBaseTotal * discount_value) / 100;
       } else {
-        discountAmount = Math.min(discount_value, itemBaseTotal);
+        discountAmount = Math.min(discount_value, freshItemBaseTotal);
       }
       discountAmount = Number(discountAmount.toFixed(decimals));
 
       // Recalculate item subtotal after discount
-      const newSubtotal = Math.max(0, itemBaseTotal - discountAmount);
+      const newSubtotal = Math.max(0, freshItemBaseTotal - discountAmount);
 
       // Recalculate tax on discounted subtotal
-      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-      const customer = order.customer_id
-        ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any)
+      const product = db
+        .prepare('SELECT * FROM products WHERE id = ?')
+        .get(currentItem.product_id) as ProductRow | undefined;
+      if (!product) {
+        throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+      }
+      const customer = currentOrder.customer_id
+        ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+            | Customer
+            | undefined) ?? null)
         : null;
       const settings = db
         .prepare(
-          "SELECT * FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
+          "SELECT key, value FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
         )
-        .all() as any[];
-      const settingsMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
+        .all() as { key: string; value: string }[];
+      const settingsMap = Object.fromEntries(settings.map((s) => [s.key, s.value]));
       const tenantInfo = {
         country: settingsMap.country || '',
         business_type: settingsMap.business_type || 'restaurant',
@@ -3468,146 +3948,211 @@ router.patch(
 
       const newTotal = newSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : newTaxAmount);
 
-      const updatedItem = withTxn(() => {
-        // Update item with recalculated tax
-        db.prepare(`
+      // Update item with recalculated tax
+      db.prepare(`
         UPDATE order_items SET discount_amount = ?,
           subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, tax_type = ?,
           total = ?, updated_at = ? WHERE id = ?
       `).run(
-          discountAmount,
-          newSubtotal,
-          newTaxAmount,
-          JSON.stringify(newTaxBreakdown),
-          newTaxSnapshotJson,
-          taxResult.tax_type,
-          newTotal,
-          now(),
-          req.params.itemId,
+        discountAmount,
+        newSubtotal,
+        newTaxAmount,
+        JSON.stringify(newTaxBreakdown),
+        newTaxSnapshotJson,
+        taxResult.tax_type,
+        newTotal,
+        now(),
+        req.params.itemId,
+      );
+
+      // Update order totals excluding terminal items.
+      const orderTotals = calculateOrderTotals(db, req.params.id as string);
+
+      // Recalculate order-level discount proportionally on new subtotal
+      const existingDiscountAmount = currentOrder.discount_amount || 0;
+      let newOrderDiscount = existingDiscountAmount;
+      if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
+        // Scale discount proportionally to new subtotal
+        newOrderDiscount = Number(
+          (existingDiscountAmount * (orderTotals.subtotal / currentOrder.subtotal)).toFixed(
+            decimals,
+          ),
         );
+      }
 
-        // Update order totals excluding terminal items.
-        const orderTotals = calculateOrderTotals(db, req.params.id as string);
+      // Recalculate tax on discounted subtotal
+      const engineCharges = resolveEngineCharges(
+        currentOrder,
+        orderTotals.subtotal,
+        newOrderDiscount,
+      );
+      const {
+        taxRollup,
+        total: orderTotal,
+        roundOff,
+      } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: currentOrder,
+        customer,
+        totals: orderTotals,
+        discountAmount: newOrderDiscount,
+        taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+        chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
+      });
 
-        // Recalculate order-level discount proportionally on new subtotal
-        const existingDiscountAmount = order.discount_amount || 0;
-        let newOrderDiscount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && order.subtotal > 0) {
-          // Scale discount proportionally to new subtotal
-          newOrderDiscount = Number(
-            (existingDiscountAmount * (orderTotals.subtotal / order.subtotal)).toFixed(decimals),
-          );
-        }
+      const syncedServiceCharge = engineCharges
+        ? engineCharges.columns.service_charge
+        : currentOrder.service_charge || 0;
+      const syncedPackagingCharge = engineCharges
+        ? engineCharges.columns.packaging_charge
+        : currentOrder.packaging_charge || 0;
+      const syncedChargesJson = engineCharges
+        ? engineCharges.chargesJson
+        : (currentOrder.charges_breakdown ?? null);
 
-        // Recalculate tax on discounted subtotal
-        const engineCharges = resolveEngineCharges(order, orderTotals.subtotal, newOrderDiscount);
-        const {
-          taxRollup,
-          total: orderTotal,
-          roundOff,
-        } = recomputeOrderTotals({
-          tenantInfo,
-          chargeContext: order,
-          customer,
-          totals: orderTotals,
-          discountAmount: newOrderDiscount,
-          taxScaling: 'when-discounted',
-          appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
-          chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
-        });
-
-        const syncedServiceCharge = engineCharges
-          ? engineCharges.columns.service_charge
-          : order.service_charge || 0;
-        const syncedPackagingCharge = engineCharges
-          ? engineCharges.columns.packaging_charge
-          : order.packaging_charge || 0;
-        const syncedChargesJson = engineCharges
-          ? engineCharges.chargesJson
-          : (order.charges_breakdown ?? null);
-
-        db.prepare(`
+      db.prepare(`
         UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?,
           service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
       `).run(
+        orderTotals.subtotal,
+        taxRollup.taxAmount,
+        JSON.stringify(taxRollup.breakdowns),
+        taxRollup.snapshotJson,
+        newOrderDiscount,
+        orderTotal,
+        syncedServiceCharge,
+        syncedPackagingCharge,
+        syncedChargesJson,
+        roundOff,
+        now(),
+        req.params.id,
+      );
+
+      // BUG #15 FIX: Sync item-level discount to bill
+      const existingBill = db
+        .prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'")
+        .get(req.params.id) as any;
+      if (existingBill) {
+        const pack = getActiveCountryPack(tenantInfo.country);
+        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(
+          orderTotal,
+          pack,
+          currency,
+        );
+        const billPaidAmount = Number(existingBill.paid_amount || 0);
+        if (billPaidAmount > 0 && billTotal < billPaidAmount) {
+          throw Object.assign(
+            new Error('Discount cannot reduce bill total below collected payments'),
+            { statusCode: 409, diagnosticCode: 'below_collected_funds' },
+          );
+        }
+        const newBillBalance = Math.max(0, billTotal - billPaidAmount);
+        const kitchenStatus = checkKitchenDeliveryStatus(
+          db,
+          String(req.params.id),
+          override_pin,
+          clientIp,
+          existingBill.id,
+          preVerifiedKitchenManager,
+          explicitApproverId,
+        );
+        const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
+        db.prepare(
+          `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+            paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
+            updated_at = ? WHERE id = ?`,
+        ).run(
           orderTotals.subtotal,
+          billTotal,
+          newBillBalance,
           taxRollup.taxAmount,
           JSON.stringify(taxRollup.breakdowns),
           taxRollup.snapshotJson,
           newOrderDiscount,
-          orderTotal,
           syncedServiceCharge,
           syncedPackagingCharge,
           syncedChargesJson,
-          roundOff,
+          billRoundOff,
+          isBillNowPaid ? 1 : 0,
+          isBillNowPaid ? 1 : 0,
           now(),
-          req.params.id,
+          now(),
+          existingBill.id,
         );
-
-        // BUG #15 FIX: Sync item-level discount to bill
-        const existingBill = db
-          .prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'")
-          .get(req.params.id) as any;
-        if (existingBill) {
-          const pack = getActiveCountryPack(tenantInfo.country);
-          const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(
-            orderTotal,
-            pack,
-            currency,
-          );
-          const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
-          db.prepare(
-            `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`,
-          ).run(
-            orderTotals.subtotal,
-            billTotal,
-            newBillBalance,
-            taxRollup.taxAmount,
-            JSON.stringify(taxRollup.breakdowns),
-            taxRollup.snapshotJson,
-            newOrderDiscount,
-            syncedServiceCharge,
-            syncedPackagingCharge,
-            syncedChargesJson,
-            billRoundOff,
-            now(),
+        if (isBillNowPaid) {
+          completeExactBalanceSettlement(
+            db,
             existingBill.id,
+            billTotal,
+            currency,
+            now(),
+            override_pin,
+            clientIp,
+            preVerifiedKitchenManager,
+            explicitApproverId,
           );
         }
+        if (kitchenStatus.overridden && isBillNowPaid) {
+          recordOrderAudit(db, {
+            orderId: req.params.id as string,
+            orderItemId: req.params.itemId as string,
+            actorUserId: (req as any).user.userId,
+            action: 'kitchen_delivery_override',
+            details: {
+              manager_user_id: kitchenStatus.managerUserId,
+              undelivered_count: kitchenStatus.count,
+            },
+          });
+        }
+      }
 
-        recordOrderAudit(db, {
-          orderId: req.params.id as string,
-          orderItemId: req.params.itemId as string,
-          actorUserId: (req as any).user.userId,
-          action: 'item_discount_applied',
-          details: {
-            discount_type,
-            discount_value,
-            ...(approvedByUserId && { approved_by: approvedByUserId }),
-          },
-        });
-
-        const updatedRow = db
-          .prepare('SELECT * FROM order_items WHERE id = ?')
-          .get(req.params.itemId) as Record<string, unknown>;
-        return {
-          ...updatedRow,
-          edit_version: getOrderItemEditVersion(
-            db,
-            req.params.id as string,
-            req.params.itemId as string,
-          ),
-        };
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        orderItemId: req.params.itemId as string,
+        actorUserId: (req as any).user.userId,
+        action: 'item_discount_applied',
+        details: {
+          discount_type,
+          discount_value,
+          ...(approvedByUserId && { approved_by: approvedByUserId }),
+        },
       });
 
-      res.json({ item: updatedItem });
-    } catch (error: any) {
-      console.error('[API] Internal error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
-    }
-  },
+      const updatedRow = db
+        .prepare('SELECT * FROM order_items WHERE id = ?')
+        .get(req.params.itemId) as Record<string, unknown>;
+      return {
+        ...updatedRow,
+        edit_version: getOrderItemEditVersion(
+          db,
+          req.params.id as string,
+          req.params.itemId as string,
+        ),
+      };
+    });
+
+    res.json({ item: updatedItem });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res
+      .status(error.statusCode || 500)
+      .json({ error: error.statusCode ? error.message : 'Internal server error' });
+  }
+});
+
+router.patch(
+  '/:id/items/:itemId/discount',
+  orderWriteRateLimit,
+  requirePermission('orders.discount.apply'),
+  handleItemDiscount,
+);
+router.post(
+  '/:id/items/:itemId/discount',
+  orderWriteRateLimit,
+  requirePermission('orders.discount.apply'),
+  handleItemDiscount,
 );
 
 function getOrderItemEditVersion(
@@ -3759,7 +4304,7 @@ function resolveEditedItemDiscountAmount(
 router.patch(
   '/:orderId/items/:itemId/cancel',
   orderItemCancelRateLimit,
-  (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const orderId = String(req.params.orderId);
       const itemId = String(req.params.itemId);
@@ -3781,6 +4326,67 @@ router.patch(
         .get(itemId, orderId) as any;
       if (!item) {
         return res.status(404).json({ error: 'Item not found in this order' });
+      }
+
+      const isItemVoidInProgress = ['preparing', 'ready'].includes(item.status);
+      let preVerifiedVoidApprover: { id: string; verifiedPinHash: string } | null = null;
+      if (isItemVoidInProgress && override_pin && typeof override_pin === 'string') {
+        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const canonicalIp = normalizeIpForRateLimit(clientIp);
+        const rateLimitKey = `pin:${canonicalIp}:item-void`;
+        if (isPinRateLimited(rateLimitKey)) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (!/^\d{4,6}$/.test(override_pin)) {
+          checkPinRateLimit(rateLimitKey);
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
+        const candidateUsers = managerId
+          ? (db
+              .prepare(
+                'SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
+              )
+              .all(managerId) as {
+              id: string;
+              role: string;
+              pin_hash: string;
+              is_active: number;
+            }[])
+          : (db
+              .prepare(
+                'SELECT id, role, pin_hash, is_active FROM users WHERE pin_hash IS NOT NULL AND is_active = 1',
+              )
+              .all() as { id: string; role: string; pin_hash: string; is_active: number }[]);
+
+        const preVerifiedCandidate = await withPinVerificationLock(rateLimitKey, async () => {
+          if (isPinRateLimited(rateLimitKey)) {
+            return { rateLimited: true };
+          }
+          for (const candidate of candidateUsers) {
+            if (
+              hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+              hasPermission(candidate.id, 'orders.item.void')
+            ) {
+              if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
+                clearPinRateLimit(rateLimitKey);
+                return {
+                  approver: { id: candidate.id, verifiedPinHash: candidate.pin_hash },
+                };
+              }
+            }
+          }
+          checkPinRateLimit(rateLimitKey);
+          return { approver: null };
+        });
+
+        if (preVerifiedCandidate.rateLimited) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (!preVerifiedCandidate.approver) {
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        preVerifiedVoidApprover = preVerifiedCandidate.approver;
       }
 
       // Wrap item cancel and total recalculation in transaction.
@@ -3868,49 +4474,37 @@ router.patch(
           }
 
           const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+          const canonicalIp = normalizeIpForRateLimit(clientIp);
           // Rate-limit attempts per client rather than per item to prevent brute force attacks.
-          const rateLimitKey = `pin:${clientIp}:item-void`;
-          if (!checkPinRateLimit(rateLimitKey)) {
+          const rateLimitKey = `pin:${canonicalIp}:item-void`;
+          if (isPinRateLimited(rateLimitKey)) {
             throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
               statusCode: 429,
             });
           }
 
-          const managerId = req.body.manager_id || req.body.user_id;
+          const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
           let pinUser: any = null;
-          if (managerId) {
+          if (preVerifiedVoidApprover) {
             const candidate = db
-              .prepare(
-                'SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
-              )
-              .get(managerId) as any;
+              .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+              .get(preVerifiedVoidApprover.id) as any;
             if (
               candidate &&
+              candidate.is_active === 1 &&
+              candidate.pin_hash === preVerifiedVoidApprover.verifiedPinHash &&
               hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
               hasPermission(candidate.id, 'orders.item.void') &&
-              verifyPin(candidate.pin_hash, override_pin)
+              (!managerId || candidate.id === managerId)
             ) {
               pinUser = candidate;
             }
           }
           if (!pinUser) {
-            const managers = db
-              .prepare('SELECT * FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
-              .all() as any[];
-            for (const u of managers) {
-              if (
-                hasRole(u.role, ROLE_ACCESS.ownerManager) &&
-                hasPermission(u.id, 'orders.item.void') &&
-                verifyPin(u.pin_hash, override_pin)
-              ) {
-                pinUser = u;
-                break;
-              }
-            }
-          }
-          if (!pinUser) {
+            checkPinRateLimit(rateLimitKey);
             throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
+          clearPinRateLimit(rateLimitKey);
           approvedByUserId = pinUser.id;
         }
 
@@ -4121,7 +4715,7 @@ router.patch(
         .status(error.statusCode || 500)
         .json({ error: error.statusCode ? error.message : 'Internal server error' });
     }
-  },
+  }),
 );
 
 // Owner-only edit of a live order line: change its quantity or swap it for another product.

@@ -16,6 +16,121 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
 import { subscribeToQuickSearch } from '@/lib/quick-search';
 import { parseQuantitySearch } from '@/lib/quantity-search';
+import CollapsiblePosChoices from './CollapsiblePosChoices';
+
+/** The category chip shared by both category row modes. */
+function CategoryChip({
+  categoryName,
+  categoryColor,
+  isSelected,
+  onSelect,
+}: {
+  categoryName: string;
+  categoryColor: string | null;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const colorClasses = getCategoryColorClasses(categoryColor);
+  return (
+    <button
+      onClick={onSelect}
+      title={categoryName}
+      className={`max-w-56 truncate px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+        isSelected
+          ? colorClasses
+            ? `${colorClasses.activeBg} ${colorClasses.activeText}`
+            : 'bg-brand text-white'
+          : colorClasses
+            ? `${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border} hover:opacity-80`
+            : 'bg-card text-foreground border border-border hover:bg-muted'
+      }`}
+    >
+      {categoryName}
+    </button>
+  );
+}
+
+/**
+ * The category row. The cashier POS opts into the measured collapse row; the
+ * Server App keeps the horizontal-scroll layout unchanged.
+ */
+function CategoryRow({
+  className,
+  collapse,
+  categories,
+  selectedCategory,
+  setSelectedCategory,
+  allLabel,
+  resetKey,
+}: {
+  className: string;
+  collapse: boolean;
+  categories: Category[];
+  selectedCategory: Category['id'] | null;
+  setSelectedCategory: (id: Category['id'] | null) => void;
+  allLabel: string;
+  resetKey: string | null;
+}) {
+  const allChip = (
+    <button
+      onClick={() => setSelectedCategory(null)}
+      title={collapse ? allLabel : undefined}
+      className={`${collapse ? 'min-w-0 truncate ' : ''}px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+        !selectedCategory
+          ? 'bg-brand text-white'
+          : 'bg-card text-foreground border border-border hover:bg-muted'
+      }`}
+    >
+      {allLabel}
+    </button>
+  );
+
+  const categoryChips = categories
+    .filter((cat) => cat.id != null)
+    .map((cat) => ({
+      key: String(cat.id),
+      render: () => (
+        <CategoryChip
+          categoryName={cat.name}
+          categoryColor={cat.color}
+          isSelected={selectedCategory === cat.id}
+          onSelect={() => setSelectedCategory(cat.id)}
+        />
+      ),
+    }));
+
+  if (!collapse) {
+    return (
+      <div
+        data-testid="pos-category-row"
+        className={`flex flex-nowrap gap-2 ${className} overflow-x-auto`}
+      >
+        {allChip}
+        {categoryChips.map((chip) => (
+          <div key={chip.key}>{chip.render()}</div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className={className}>
+      <CollapsiblePosChoices
+        data-testid="pos-category-row"
+        ariaLabel={allLabel}
+        resetKey={resetKey}
+        choices={[
+          { key: 'all', node: allChip },
+          ...categoryChips.map((chip) => ({
+            key: chip.key,
+            node: chip.render(),
+          })),
+        ]}
+        mandatoryKeys={['all', ...(selectedCategory != null ? [String(selectedCategory)] : [])]}
+      />
+    </div>
+  );
+}
 
 function isValidProductQuantity(product: Product, quantity: number): boolean {
   if (!Number.isFinite(quantity) || quantity <= 0) return false;
@@ -180,6 +295,8 @@ interface Props {
   gridClassName?: string;
   searchPlaceholder?: string;
   disabled?: boolean;
+  /** Cashier-POS opt-in: measured collapsed category row with a toggle. */
+  collapseCategories?: boolean;
 }
 
 export default function ProductGrid({
@@ -199,6 +316,7 @@ export default function ProductGrid({
   gridClassName,
   searchPlaceholder,
   disabled = false,
+  collapseCategories = false,
 }: Props) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cart = useCartStore();
@@ -306,41 +424,21 @@ export default function ProductGrid({
             </kbd>
           )}
         </div>
-        <div data-testid="pos-category-row" className="flex flex-nowrap gap-2 pb-1 overflow-x-auto">
-          <button
-            onClick={() => setSelectedCategory(null)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-              !selectedCategory
-                ? 'bg-brand text-white'
-                : 'bg-card text-foreground border border-border hover:bg-muted'
-            }`}
-          >
-            {t('allCategories')}
-          </button>
-          {categories
-            .filter((cat) => cat.id != null)
-            .map((cat) => {
-              const colorClasses = getCategoryColorClasses(cat.color);
-              const isSelected = selectedCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                    isSelected
-                      ? colorClasses
-                        ? `${colorClasses.activeBg} ${colorClasses.activeText}`
-                        : 'bg-brand text-white'
-                      : colorClasses
-                        ? `${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border} hover:opacity-80`
-                        : 'bg-card text-foreground border border-border hover:bg-muted'
-                  }`}
-                >
-                  {cat.name}
-                </button>
-              );
-            })}
-        </div>
+        <CategoryRow
+          className="pb-1"
+          collapse={collapseCategories}
+          categories={categories}
+          selectedCategory={selectedCategory}
+          setSelectedCategory={setSelectedCategory}
+          allLabel={t('allCategories')}
+          resetKey={
+            collapseCategories
+              ? cart.customer?.id == null
+                ? null
+                : String(cart.customer.id)
+              : null
+          }
+        />
       </div>
 
       {/* min-h-0 overrides the content-based automatic minimum size, so a long

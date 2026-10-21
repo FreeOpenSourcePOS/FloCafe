@@ -48,6 +48,7 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import { parseDbTimestamp } from '@/lib/utils';
 import { formatItemHeading } from '@/lib/printer/item-heading';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+import PendingOrderItemEdits from './PendingOrderItemEdits';
 import {
   orderStatusBadge,
   paymentStatusBadge,
@@ -104,6 +105,7 @@ export interface OrderDetailPanelProps {
   onDeleteItem?: (orderId: number, itemId: number) => void;
   onVoidItem?: (orderId: number, itemId: number, productName: string) => void;
   onRestoreItem?: (orderId: number, itemId: number) => void;
+  onItemEditResolved?: (orderId: number) => Promise<boolean> | void;
 }
 
 function OrderDetailContent({
@@ -146,6 +148,7 @@ function OrderDetailContent({
   onDeleteItem,
   onVoidItem,
   onRestoreItem,
+  onItemEditResolved,
 }: OrderDetailPanelProps & { order: Order }) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
@@ -158,6 +161,8 @@ function OrderDetailContent({
   const [showOrderNotes, setShowOrderNotes] = useState(false);
   const [showVoidedItems, setShowVoidedItems] = useState(false);
   const [showPrintActivity, setShowPrintActivity] = useState(false);
+  const [pendingResolveIds, setPendingResolveIds] = useState<number[]>([]);
+  const itemEditBlocked = (itemId: number) => pendingResolveIds.includes(itemId);
 
   const activeItems = (order.items || []).filter((i) => !isTerminalItemStatus(i.status));
   const inactiveItems = (order.items || []).filter(
@@ -548,6 +553,15 @@ function OrderDetailContent({
 
         {/* Items — every line is visible here, no truncation chip. */}
         <div className="px-4 py-3 space-y-2">
+          <PendingOrderItemEdits
+            orderId={order.id}
+            items={order.items}
+            // Recovery is permission- and identity-gated; a paid or terminal order
+            // still allows the same-key replay to be resolved.
+            canEditItems={canEditItems}
+            onPendingItemsChanged={setPendingResolveIds}
+            onItemEditResolved={onItemEditResolved}
+          />
           {activeItems.map((item: OrderItem) => {
             const dotConfig = itemStatusDot[item.status] || itemStatusDot.pending;
             const heading = formatItemHeading(item.product_name, item.variant_selection);
@@ -571,7 +585,8 @@ function OrderDetailContent({
                     {canEditItems &&
                       onEditItem &&
                       !isPaid &&
-                      !['completed', 'cancelled'].includes(order.status) && (
+                      !['completed', 'cancelled'].includes(order.status) &&
+                      !itemEditBlocked(item.id) && (
                         <button
                           type="button"
                           onClick={() => onEditItem(order, item)}
@@ -583,7 +598,8 @@ function OrderDetailContent({
                       )}
                     {canCancelItems &&
                       !isPaid &&
-                      !['completed', 'cancelled'].includes(order.status) && (
+                      !['completed', 'cancelled'].includes(order.status) &&
+                      !itemEditBlocked(item.id) && (
                         <div className="flex items-center gap-1 ms-1">
                           {item.status === 'pending' && onDeleteItem && (
                             <button

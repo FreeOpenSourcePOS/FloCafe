@@ -21,6 +21,15 @@ const path = require('path');
 const crypto = require('crypto');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-diagnostics-bounds-'));
 const originalFetch = globalThis.fetch;
+const priorTelemetryDev = process.env.FLO_TELEMETRY_DEV;
+const priorOffline = process.env.FLO_MATRIX_OFFLINE;
+
+function restoreEnv(): void {
+  if (priorTelemetryDev === undefined) delete process.env.FLO_TELEMETRY_DEV;
+  else process.env.FLO_TELEMETRY_DEV = priorTelemetryDev;
+  if (priorOffline === undefined) delete process.env.FLO_MATRIX_OFFLINE;
+  else process.env.FLO_MATRIX_OFFLINE = priorOffline;
+}
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => '3.11.0' } };
@@ -97,6 +106,8 @@ const settle = async (predicate: () => boolean, timeoutMs = 5000) => {
 };
 
 async function main() {
+  process.env.FLO_TELEMETRY_DEV = '1';
+  process.env.FLO_MATRIX_OFFLINE = '1';
   console.log('Diagnostics Bounds Tests');
   console.log('='.repeat(56));
 
@@ -1290,6 +1301,7 @@ async function main() {
   );
   cloudSync.stop();
   globalThis.fetch = originalFetch;
+  process.env.FLO_MATRIX_OFFLINE = '1';
 
   setSetting(db, 'diagnostics_consent', 'false');
   setSetting(db, 'diagnostics_transmission_enabled', 'false');
@@ -1329,11 +1341,13 @@ async function main() {
   console.log(`${results.passed} passed, ${results.failed} failed`);
   closeDatabase();
   fs.rmSync(testDir, { recursive: true, force: true });
+  restoreEnv();
   process.exit(results.failed > 0 ? 1 : 0);
 }
 
 main().catch((error) => {
   console.error('Test suite crashed:', error);
+  restoreEnv();
   closeDatabase();
   fs.rmSync(testDir, { recursive: true, force: true });
   process.exit(1);

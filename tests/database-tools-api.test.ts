@@ -47,11 +47,15 @@ const {
   MIGRATIONS,
   now,
   validateInventoryLedgerDatabase,
+  generateOrderNumber,
+  generateBillNumber,
+  repairSequences,
 } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
 const { authRoutes } = require('../main/routes/auth');
 const { databaseToolsRoutes } = require('../main/routes/database-tools');
 const { databaseRoutes } = require('../main/routes/database');
+const { orderRoutes } = require('../main/routes/orders');
 const { verifyMasterPin, isMasterPinSet, resetMasterPin } = require('../main/services/master-pin');
 const {
   cancelHttpShutdownWork,
@@ -150,6 +154,7 @@ app.use((req: any, res: any, next: any) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/db-tools', databaseToolsRoutes);
 app.use('/api/db', databaseRoutes);
+app.use('/api/orders', orderRoutes);
 
 const downloadServer = http.createServer(app);
 installHttpShutdownTracking(downloadServer);
@@ -1750,6 +1755,247 @@ async function runTests() {
       matchingOverwriteNoPin.status === 403,
       `matching-schema overwrite import without a PIN is still rejected (got ${matchingOverwriteNoPin.status})`,
     );
+  }
+
+  // ── Test 3d: sequence repair on partial import without sequences table ──
+  console.log(
+    '\nTest 3d: POST /db/import repairs sequences when importing orders/bills without sequences',
+  );
+  {
+    const insertSetting = (key: string, value: string) =>
+      db
+        .prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+        .run(key, value, now());
+    insertSetting('country', 'IN');
+    insertSetting('currency', 'INR');
+    insertSetting('timezone', 'Asia/Kolkata');
+
+    const initialOrderNum = generateOrderNumber();
+    const initialBillNum = generateBillNumber();
+    const ordResult = db
+      .prepare('INSERT INTO orders (order_number, created_at) VALUES (?, ?)')
+      .run(initialOrderNum, now());
+    const initialOrderId = ordResult.lastInsertRowid;
+    db.prepare(
+      'INSERT INTO bills (order_id, bill_number, subtotal, tax_amount, total, paid_amount, balance, created_at) VALUES (?, ?, 100, 0, 100, 100, 0, ?)',
+    ).run(initialOrderId, initialBillNum, now());
+
+    const orderDate = initialOrderNum.split('-')[1];
+    const billDate = initialBillNum.split('-')[1];
+
+    const partialImport = await request(app)
+      .post('/api/db/import')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        overwrite: false,
+        data: {
+          schema_version: String(getCurrentSchemaVersion()),
+          data: {
+            settings: [],
+            categories: [],
+            products: [],
+            users: [],
+            orders: [
+              { id: 102, order_number: `ORD-${orderDate}-0002`, created_at: now() },
+              { id: 103, order_number: `ORD-${orderDate}-0003`, created_at: now() },
+              { id: 104, order_number: `ORD-${orderDate}-0004`, created_at: now() },
+              { id: 105, order_number: `ORD-${orderDate}-0005`, created_at: now() },
+            ],
+            bills: [
+              {
+                id: 102,
+                order_id: 102,
+                bill_number: `INV-${billDate}-0002`,
+                subtotal: 10,
+                tax_amount: 0,
+                total: 10,
+                paid_amount: 10,
+                balance: 0,
+                created_at: now(),
+              },
+              {
+                id: 103,
+                order_id: 103,
+                bill_number: `INV-${billDate}-0003`,
+                subtotal: 10,
+                tax_amount: 0,
+                total: 10,
+                paid_amount: 10,
+                balance: 0,
+                created_at: now(),
+              },
+              {
+                id: 104,
+                order_id: 104,
+                bill_number: `INV-${billDate}-0004`,
+                subtotal: 10,
+                tax_amount: 0,
+                total: 10,
+                paid_amount: 10,
+                balance: 0,
+                created_at: now(),
+              },
+              {
+                id: 105,
+                order_id: 105,
+                bill_number: `INV-${billDate}-0005`,
+                subtotal: 10,
+                tax_amount: 0,
+                total: 10,
+                paid_amount: 10,
+                balance: 0,
+                created_at: now(),
+              },
+            ],
+          },
+        },
+      });
+
+    assert(partialImport.status === 200, `partial import succeeds (got ${partialImport.status})`);
+
+    const orderSeq = db
+      .prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = ?")
+      .get(orderDate) as { current_value: number } | undefined;
+    assertEqual(orderSeq?.current_value, 5, 'orders sequence counter advanced to 5 after import');
+
+    const billSeq = db
+      .prepare("SELECT current_value FROM sequences WHERE name = 'bills' AND date = ?")
+      .get(billDate) as { current_value: number } | undefined;
+    assertEqual(billSeq?.current_value, 5, 'bills sequence counter advanced to 5 after import');
+
+    const nextOrderNum = generateOrderNumber();
+    assertEqual(nextOrderNum, `ORD-${orderDate}-0006`, 'next generated order number is 0006');
+    let orderInsertThrew = false;
+    try {
+      db.prepare('INSERT INTO orders (order_number, created_at) VALUES (?, ?)').run(
+        nextOrderNum,
+        now(),
+      );
+    } catch {
+      orderInsertThrew = true;
+    }
+    assert(!orderInsertThrew, 'creating next order succeeds without UNIQUE constraint failure');
+
+    const nextBillNum = generateBillNumber();
+    assertEqual(nextBillNum, `INV-${billDate}-0006`, 'next generated bill number is 0006');
+    let billInsertThrew = false;
+    try {
+      db.prepare(
+        'INSERT INTO bills (order_id, bill_number, subtotal, tax_amount, total, paid_amount, balance, created_at) VALUES (105, ?, 10, 0, 10, 10, 0, ?)',
+      ).run(nextBillNum, now());
+    } catch {
+      billInsertThrew = true;
+    }
+    assert(!billInsertThrew, 'creating next bill succeeds without UNIQUE constraint failure');
+
+    // Simulate reopen fast-path
+    const bootRepair = repairSequences(false);
+    assertEqual(bootRepair.repaired, false, 'reopen fast-path skips historical scan');
+
+    const nextOrderNumAfterReopen = generateOrderNumber();
+    assertEqual(
+      nextOrderNumAfterReopen,
+      `ORD-${orderDate}-0007`,
+      'next order number after reopen is 0007',
+    );
+    let orderReopenThrew = false;
+    try {
+      db.prepare('INSERT INTO orders (order_number, created_at) VALUES (?, ?)').run(
+        nextOrderNumAfterReopen,
+        now(),
+      );
+    } catch {
+      orderReopenThrew = true;
+    }
+    assert(!orderReopenThrew, 'creating order after reopen succeeds');
+  }
+
+  // ── Test 3e: imported order FTS search after partial import ──
+  console.log(
+    '\nTest 3e: POST /db/import rebuilds FTS search index for partial orders/customer import',
+  );
+  {
+    const partialFtsImport = await request(app)
+      .post('/api/db/import')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        overwrite: false,
+        data: {
+          schema_version: String(getCurrentSchemaVersion()),
+          data: {
+            settings: [],
+            categories: [],
+            products: [],
+            users: [],
+            customers: [
+              {
+                id: 'cust-partial-fts-1',
+                name: 'Arthur Pendelton',
+                phone: '+15559876543',
+                created_at: now(),
+                updated_at: now(),
+              },
+            ],
+            orders: [
+              {
+                id: 8801,
+                order_number: 'ORD-PARTIAL-FTS-8801',
+                customer_id: 'cust-partial-fts-1',
+                type: 'takeaway',
+                status: 'pending',
+                subtotal: 50,
+                total: 50,
+                created_at: now(),
+                updated_at: now(),
+              },
+            ],
+          },
+        },
+      });
+
+    assert(
+      partialFtsImport.status === 200,
+      `partial FTS import succeeds (got ${partialFtsImport.status}, ${JSON.stringify(partialFtsImport.body)})`,
+    );
+
+    // Verify search by order number
+    const searchByOrder = await request(app)
+      .get('/api/orders?search=PARTIAL-FTS')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    assert(
+      searchByOrder.status === 200,
+      `search by order number succeeds (got ${searchByOrder.status})`,
+    );
+    const foundByOrder = searchByOrder.body.orders?.some(
+      (o: any) => o.order_number === 'ORD-PARTIAL-FTS-8801',
+    );
+    assert(foundByOrder, 'newly imported order is immediately searchable by order number');
+
+    // Verify search by customer name
+    const searchByName = await request(app)
+      .get('/api/orders?search=Pendelton')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    assert(
+      searchByName.status === 200,
+      `search by customer name succeeds (got ${searchByName.status})`,
+    );
+    const foundByName = searchByName.body.orders?.some(
+      (o: any) => o.order_number === 'ORD-PARTIAL-FTS-8801',
+    );
+    assert(foundByName, 'newly imported order is immediately searchable by customer name');
+
+    // Verify search by customer phone digits
+    const searchByPhone = await request(app)
+      .get('/api/orders?search=9876543')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    assert(
+      searchByPhone.status === 200,
+      `search by customer phone succeeds (got ${searchByPhone.status})`,
+    );
+    const foundByPhone = searchByPhone.body.orders?.some(
+      (o: any) => o.order_number === 'ORD-PARTIAL-FTS-8801',
+    );
+    assert(foundByPhone, 'newly imported order is immediately searchable by customer phone');
   }
 
   // ── Test 4: POST /db-tools/initialize ────────────────────────────────────

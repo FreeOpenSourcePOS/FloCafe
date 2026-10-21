@@ -157,6 +157,7 @@ export default function CartPanel({
   tables,
   submitting,
   onPlaceOrder,
+  onShowTablePicker,
   onEditItem,
   variant = 'sidebar',
   existingOrder,
@@ -165,6 +166,7 @@ export default function CartPanel({
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
   const billingType = usePosSettingsStore((s) => s.billingType);
+  const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
@@ -287,40 +289,70 @@ export default function CartPanel({
         </div>
 
         {cart.orderType === 'dine_in' && (
-          <div className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Users size={15} />
-              <span>{t('pax')}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-label={t('decreasePax')}
-                onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))}
-                className="touch-target rounded-full bg-muted"
-              >
-                <Minus size={15} />
-              </button>
-              <input
-                aria-label={t('pax')}
-                inputMode="numeric"
-                type="number"
-                min="1"
-                max="99"
-                value={cart.guestCount}
-                onChange={(e) =>
-                  cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))
-                }
-                className="w-12 text-center text-base font-semibold border-0 outline-none bg-transparent"
-              />
-              <button
-                type="button"
-                aria-label={t('increasePax')}
-                onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))}
-                className="touch-target rounded-full bg-muted"
-              >
-                <Plus size={15} />
-              </button>
+          <div className="flex flex-wrap items-stretch gap-2">
+            {isRestaurant &&
+              cart.orderType === 'dine_in' &&
+              tablesRequired &&
+              onShowTablePicker && (
+                <button
+                  type="button"
+                  onClick={onShowTablePicker}
+                  data-testid="cart-table-button"
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors whitespace-nowrap min-h-[38px] ${
+                    cart.tableId
+                      ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600'
+                      : 'bg-amber-50 border-amber-400 text-amber-700 hover:bg-amber-100'
+                  }`}
+                >
+                  <UtensilsCrossed size={14} />
+                  {cart.tableId
+                    ? t('tableLabel', {
+                        name: tables.find((t) => t.id === cart.tableId)?.name || cart.tableId,
+                      })
+                    : t('selectTable')}
+                  <span
+                    aria-hidden="true"
+                    className="hidden sm:inline-flex ms-1 px-1 py-0.2 rounded border border-current text-[10px] font-mono opacity-80"
+                  >
+                    F2
+                  </span>
+                </button>
+              )}
+            <div className="flex flex-1 min-w-[160px] items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Users size={15} />
+                <span>{t('pax')}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label={t('decreasePax')}
+                  onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))}
+                  className="touch-target rounded-full bg-muted"
+                >
+                  <Minus size={15} />
+                </button>
+                <input
+                  aria-label={t('pax')}
+                  inputMode="numeric"
+                  type="number"
+                  min="1"
+                  max="99"
+                  value={cart.guestCount}
+                  onChange={(e) =>
+                    cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))
+                  }
+                  className="w-12 text-center text-base font-semibold border-0 outline-none bg-transparent"
+                />
+                <button
+                  type="button"
+                  aria-label={t('increasePax')}
+                  onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))}
+                  className="touch-target rounded-full bg-muted"
+                >
+                  <Plus size={15} />
+                </button>
+              </div>
             </div>
           </div>
         )}

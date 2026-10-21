@@ -10,6 +10,7 @@ import {
   assertAdministrationReachable,
 } from '../services/authorization';
 import { cloudSync } from '../services/cloud-sync';
+import { syncPostHogIdentity } from '../services/posthog';
 import { serializeOperationFailure } from '../lib/operation-failure';
 import { isValidEmail } from './auth';
 import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole } from '../../shared/role-permissions';
@@ -139,6 +140,43 @@ router.get('/', requirePermission('staff.view'), (req: Request, res: Response) =
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ── Approvers directory (minimal projection for operational modals) ─────────
+
+router.get(
+  '/approvers',
+  requireAnyPermission(
+    'staff.view',
+    'pos.use',
+    'orders.read',
+    'orders.create',
+    'orders.status.update',
+    'orders.discount.apply',
+    'orders.item.void',
+    'orders.item.cancel',
+    'payments.take',
+    'bills.discount.apply',
+    'refunds.initiate',
+    'refunds.view',
+  ),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const approvers = db
+        .prepare(`
+          SELECT id, name, role, is_active, CASE WHEN pin_hash IS NOT NULL THEN 1 ELSE 0 END as has_pin
+          FROM users
+          WHERE is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL
+          ORDER BY name ASC
+        `)
+        .all();
+      res.json({ approvers, staff: approvers });
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 // ── Get one ───────────────────────────────────────────────────────────────────
 
@@ -462,6 +500,7 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
       });
     }
     invalidateUserAuthCache(req.params.id as string);
+    syncPostHogIdentity();
 
     const updated = db
       .prepare(`SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`)

@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, RequestHandler } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { getDatabase, getSettingValue, now } from '../db';
@@ -12,7 +12,11 @@ import {
   getGoogleDriveErrorCode,
   googleDrive,
 } from '../services/google-drive';
-import { requireAnyPermission, requirePermission } from '../services/authorization';
+import {
+  requireAnyPermission,
+  requirePermission,
+  resolveEffectivePermissions,
+} from '../services/authorization';
 import {
   CUSTOMER_DISPLAY_KEY,
   parseCustomerDisplayConfig,
@@ -28,6 +32,11 @@ import {
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
+import { readProductAnalyticsChoice, syncPostHogIdentity } from '../services/posthog';
+import {
+  PRODUCT_ANALYTICS_LEVEL_SETTING,
+  parseProductAnalyticsLevel,
+} from '../services/posthog-identity';
 import {
   getCountryByCode,
   getCurrencyFractionDigits,
@@ -131,6 +140,8 @@ const SENSITIVE_SETTING_KEYS = new Set([
   'cloud_device_secret',
   'cloud_deletion_status_token',
   'cloud_last_error',
+  'posthog_project_token',
+  'posthog_host',
 ]);
 
 function isGoogleDriveSettingKey(key: string): boolean {
@@ -234,6 +245,8 @@ function businessShape(s: Record<string, string>) {
     bill_show_logo: s.bill_show_logo === 'true',
     receipt_logo: s.receipt_logo || '',
     receipt_logo_raster: s.receipt_logo_raster || '',
+    bill_footer_message: s.bill_footer_message || '',
+    bill_template: s.bill_template || 'classic',
     currency_display: resolveStoredLocalePreference(
       'currency_display',
       s.currency_display,
@@ -259,7 +272,30 @@ function taxShape(s: Record<string, string>) {
 
 // ── Specific routes (must come BEFORE /:key wildcard) ─────────────────────
 
-router.get('/business', requirePermission('settings.view'), (req: Request, res: Response) => {
+const requireBusinessSettingsRead: RequestHandler = (req, res, next) => {
+  const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+  if (!userId) {
+    return res
+      .status(401)
+      .json({ error: 'Authentication required', code: 'authentication_required' });
+  }
+  const effective = resolveEffectivePermissions(userId);
+  if (
+    !effective ||
+    !['settings.view', 'bills.read', 'bills.print', 'bills.generate'].some((permissionId) =>
+      effective.permissionIds.has(permissionId as any),
+    )
+  ) {
+    return res.status(403).json({
+      error: 'Insufficient permissions',
+      code: 'permission_denied',
+      permission: 'settings.view',
+    });
+  }
+  next();
+};
+
+router.get('/business', requireBusinessSettingsRead, (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json(businessShape(s));
@@ -451,6 +487,7 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       ...countryConfirmationPatch(country, currentSettings.country, req.body.country_selected),
     });
     cloudSync.refreshRegistrationProfile();
+    syncPostHogIdentity();
 
     res.json(businessShape(getAllSettings(db)));
   } catch (error: any) {
@@ -672,6 +709,46 @@ router.put('/kds', requirePermission('settings.manage'), (req: Request, res: Res
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ─── Product analytics sharing level (must come BEFORE /:key wildcard) ──────
+
+router.get(
+  '/product-analytics',
+  requirePermission('settings.manage'),
+  (_req: Request, res: Response) => {
+    try {
+      res.json(readProductAnalyticsChoice());
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// `off` also stops the anonymous collector; the other levels keep it on.
+router.put(
+  '/product-analytics',
+  requirePermission('settings.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const level = parseProductAnalyticsLevel(req.body?.level);
+      if (!level) {
+        return res.status(400).json({ error: 'level must be "full", "anonymous" or "off"' });
+      }
+      const telemetry = level === 'off' ? 'false' : 'true';
+      upsertSettings(getDatabase(), {
+        [PRODUCT_ANALYTICS_LEVEL_SETTING]: level,
+        telemetry_enabled: telemetry,
+        anonymous_data_consent: telemetry,
+      });
+      syncPostHogIdentity();
+      res.json(readProductAnalyticsChoice());
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 // ─── Customer display settings (must come BEFORE /:key wildcard) ────────────
 
@@ -1916,6 +1993,14 @@ router.put(
       }
       if (req.params.key === 'split_checks_enabled' && boolFlag(value) === 'true') {
         void sendEvent('feature_used', { feature: 'split_checks', action: 'enabled' });
+      }
+      if (
+        req.params.key === 'telemetry_enabled' ||
+        req.params.key === 'email' ||
+        req.params.key === 'diagnostics_consent' ||
+        req.params.key === 'diagnostics_transmission_enabled'
+      ) {
+        syncPostHogIdentity();
       }
 
       const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);

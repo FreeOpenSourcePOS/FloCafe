@@ -1,7 +1,7 @@
 /**
  * Database maintenance allowlist cannot drift from the routes that exist.
  *
- * main/db.ts holds five hardcoded "<METHOD> /api/..." strings so the handlers
+ * main/db.ts holds hardcoded "<METHOD> /api/..." strings so the handlers
  * that take the maintenance lock are not counted in activeDatabaseRequests.
  * A route renamed out of that list is no longer excluded, so its own request
  * keeps the drain waiting on itself until MAINTENANCE_DRAIN_TIMEOUT_MS - a
@@ -22,7 +22,8 @@ const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'flo-db-maint-allowlist-'));
 Module._load = function (request_: string, parent: unknown, isMain: boolean) {
-  if (request_ === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+  if (request_ === 'electron')
+    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
   return originalLoad.apply(this, arguments as any);
 };
 
@@ -36,6 +37,7 @@ const { registerRoutes } = require('../main/routes/index');
 const EXPECTED_MAINTENANCE_HANDLERS = [
   'POST /api/db/import',
   'POST /api/db/backup',
+  'POST /api/db/restore',
   'GET /api/db/download',
   'POST /api/db-tools/initialize',
   'POST /api/db-tools/currency-reset',
@@ -54,7 +56,7 @@ async function run() {
   assert.deepEqual(
     [...allowlisted].sort(),
     [...EXPECTED_MAINTENANCE_HANDLERS].sort(),
-    'the maintenance allowlist still holds exactly the five handlers that take the lock',
+    'the maintenance allowlist still holds exactly the registered handlers that take the lock',
   );
 
   const app = express();
@@ -74,6 +76,14 @@ async function run() {
       response.status,
       404,
       `${entry} is allowlisted for maintenance but no route is registered for it`,
+    );
+
+    // Verify trailing slash variant is also registered in Express
+    const trailingResponse = await request(app)[method.toLowerCase()](`${routePath}/`).send({});
+    assert.notEqual(
+      trailingResponse.status,
+      404,
+      `${entry}/ trailing slash is accepted by Express but returned 404`,
     );
   }
 

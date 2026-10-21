@@ -15,6 +15,8 @@ import {
 } from '../db';
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
+import { getBuildIdentity } from './build-identity';
+import { postHogNetworkSuppressed } from './posthog-config';
 
 export const TELEMETRY_URL = 'https://telemetry.flopos.com/collect';
 
@@ -125,8 +127,36 @@ export function getInstallSource(): InstallSource {
   return linuxPackageFormat();
 }
 
+export function isTelemetrySuppressed(): boolean {
+  if (
+    process.env.FLO_MATRIX_OFFLINE === '1' ||
+    Boolean(process.env.E2E_TASK_LOCAL_PORTS) ||
+    process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK === '1'
+  ) {
+    return true;
+  }
+  if (process.env.FLO_TELEMETRY_DEV === '1') {
+    return false;
+  }
+  if (process.env.NODE_ENV === 'test' || Boolean(process.env.CI)) {
+    return true;
+  }
+  const version = typeof app?.getVersion === 'function' ? app.getVersion() : '';
+  if (
+    version === '1.0.0-test' ||
+    version === 'test' ||
+    version === 'e2e' ||
+    /(?:^|[-.])(?:test|e2e)(?:[-.]|$)/i.test(version)
+  ) {
+    return true;
+  }
+  const isDev = !app?.isPackaged || getBuildIdentity() === 'dev';
+  if (isDev) return true;
+  return false;
+}
+
 function matrixOffline(): boolean {
-  return process.env.FLO_MATRIX_OFFLINE === '1';
+  return isTelemetrySuppressed();
 }
 
 function trackTelemetry<T>(operation: Promise<T>): Promise<T> {
@@ -177,8 +207,30 @@ async function sendEventImpl(
   }
 }
 
+/** PostHog receives the same usage events; required lazily because posthog.ts imports this module. */
+function mirrorToPostHog(eventType: string, payload?: Record<string, unknown>): void {
+  if (eventType !== 'app_launch' && eventType !== 'feature_used') return;
+  try {
+    (require('./posthog') as typeof import('./posthog')).capturePostHogUsage(eventType, payload);
+  } catch {
+    // PostHog is optional and never disrupts the collector.
+  }
+}
+
+/** PostHog's daily ping and milestones run on this timer but never wait on the collector. */
+function runPostHogDailyChecks(): void {
+  if (telemetryStopping || !isTelemetryEnabled()) return;
+  try {
+    (require('./posthog') as typeof import('./posthog')).runPostHogDailyChecks();
+  } catch {
+    // PostHog is optional.
+  }
+}
+
 export function sendEvent(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
-  if (matrixOffline() || telemetryStopping) return Promise.resolve(false);
+  if (telemetryStopping) return Promise.resolve(false);
+  mirrorToPostHog(eventType, payload);
+  if (matrixOffline()) return Promise.resolve(false);
   return trackTelemetry(sendEventImpl(eventType, payload));
 }
 
@@ -305,7 +357,7 @@ export async function sendAnonymousDiagnosticReport(
 
   try {
     const anonId = ensureTelemetryAnonId();
-    const build = require('./build-identity').getBuildIdentity() as string;
+    const build = getBuildIdentity();
     const response = await fetch(TELEMETRY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -374,10 +426,16 @@ export const telemetry = {
       clearInterval(dailyPingTimer);
       dailyPingTimer = null;
     }
-    if (matrixOffline()) return;
+    if (matrixOffline() && postHogNetworkSuppressed()) return;
     void sendEvent('app_launch');
-    maybeSendDailyPing();
-    dailyPingTimer = setInterval(maybeSendDailyPing, DAILY_PING_INTERVAL_MS);
+    if (!matrixOffline()) maybeSendDailyPing();
+    runPostHogDailyChecks();
+    if (!matrixOffline() || !postHogNetworkSuppressed()) {
+      dailyPingTimer = setInterval(() => {
+        if (!matrixOffline()) maybeSendDailyPing();
+        runPostHogDailyChecks();
+      }, DAILY_PING_INTERVAL_MS);
+    }
   },
   stop(): Promise<void> {
     if (telemetryStopPromise) return telemetryStopPromise;

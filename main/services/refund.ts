@@ -41,6 +41,12 @@ export function getTenantCurrency(db?: Database): string {
   return resolveTenantCurrency(explicit, country || '');
 }
 
+export interface PreVerifiedRefundApprover {
+  id: string;
+  verifiedPinHash: string;
+  lateRefund: boolean;
+}
+
 export interface RefundRequest {
   billId: string | number;
   orderItemId?: number | null;
@@ -48,13 +54,16 @@ export interface RefundRequest {
   method?: string;
   reason?: string | null;
   shiftId?: string | null;
-  overridePin: string;
+  overridePin?: string;
   approverId?: string | null;
   createdByUserId: string;
   clientIp: string;
   checkPinRateLimit: (key: string) => boolean;
+  isPinRateLimited: (key: string) => boolean;
+  clearPinRateLimit: (key: string) => void;
   idempotencyKey?: string | null;
   requestHash?: string;
+  preVerifiedApprover?: PreVerifiedRefundApprover | null;
 }
 
 export interface RefundResult {
@@ -110,55 +119,63 @@ function resolveRefundApprover(
   return candidate && verifyPin(candidate.pin_hash, overridePin) ? candidate : null;
 }
 
-/** Validates, authorizes, and persists a refund inside an active transaction. */
-export function createRefund(db: Database, req: RefundRequest): RefundResult {
-  if (req.idempotencyKey) {
-    const prior = db
-      .prepare(`
-      SELECT bill_id, request_hash, response_json
-      FROM refund_idempotency
-      WHERE user_id = ? AND idempotency_key = ?
-    `)
-      .get(req.createdByUserId, req.idempotencyKey) as
-      | { bill_id: string; request_hash: string; response_json: string }
-      | undefined;
-    if (prior) {
-      if (String(prior.bill_id) !== String(req.billId) || prior.request_hash !== req.requestHash) {
-        throw httpError(
-          'Idempotency-Key was already used for a different refund request',
-          409,
-          'idempotency_conflict',
-        );
-      }
-      try {
-        return JSON.parse(prior.response_json);
-      } catch {
-        throw httpError('Stored refund response is invalid', 500);
-      }
-    }
-  }
+export interface RefundBillRecord {
+  id: string | number;
+  order_id: string | number;
+  customer_id?: string | null;
+  bill_number?: string | null;
+  split_group_id?: string | null;
+  payment_status?: string | null;
+  [key: string]: unknown;
+}
 
-  requireOpenSessionForCashTender(db, [{ method: req.method }]);
+export interface RefundOrderItemRecord {
+  id: string | number;
+  order_id: string | number;
+  product_id?: string | number | null;
+  product_name?: string | null;
+  product_sku?: string | null;
+  unit_price: number;
+  quantity: number;
+  subtotal: number;
+  tax_amount?: number | null;
+  tax_breakdown?: string | null;
+  tax_snapshot?: string | null;
+  tax_type?: string | null;
+  discount_amount?: number | null;
+  total: number;
+  variant_selection?: string | null;
+  modifier_selection?: string | null;
+  status: string;
+  [key: string]: unknown;
+}
 
-  const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.billId) as any;
-  if (!bill) throw httpError('Bill not found', 404, 'bill_unavailable');
-  const order = db.prepare('SELECT created_at FROM orders WHERE id = ?').get(bill.order_id) as
-    | { created_at: string }
+export interface ValidatedRefundPreconditions {
+  lateRefund: boolean;
+  bill: RefundBillRecord;
+  item: RefundOrderItemRecord | null;
+  amountCents: number;
+  currency: string;
+}
+
+/** Check whether a bill/order is in late refund status or expired. */
+export function checkIsLateRefund(
+  db: Database,
+  billId: string | number,
+  nowMs: number = Date.now(),
+): { lateRefund: boolean; bill: RefundBillRecord } {
+  const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as
+    | RefundBillRecord
     | undefined;
+  if (!bill) throw httpError('Bill not found', 404, 'bill_unavailable');
+  const order = db
+    .prepare('SELECT created_at FROM orders WHERE id = ?')
+    .get(bill.order_id as string | number) as { created_at: string } | undefined;
   if (!order) throw httpError('Order not found', 404, 'order_unavailable');
   const orderCreatedAt = parseDbTimestamp(order.created_at).getTime();
   if (!Number.isFinite(orderCreatedAt)) throw httpError('Order creation time is invalid', 500);
-  const nowMs = Date.now();
-  // Past the short window, an owner-only PIN is required for the rest of the business day (docs/reference/product-invariants.md).
-  let lateRefund = false;
+
   if (nowMs - orderCreatedAt > REFUND_WINDOW_MS) {
-    // Resolves through the country profile when the stored timezone is
-    // missing or invalid, matching resolveRegionalSnapshot's own contract,
-    // instead of letting localDateInTimezone()/dayBoundsInTimezone() silently
-    // fall back to UTC — at a tenant offset from UTC, that can wrongly accept
-    // or reject a late refund relative to the tenant's actual business-day
-    // end. Throws RegionalNotConfiguredError (409) only when the country
-    // itself is unresolvable.
     const timezone = resolveRegionalSnapshot({
       country: getSettingValue('country') ?? undefined,
       currency: getSettingValue('currency') ?? undefined,
@@ -174,16 +191,36 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
         'refund_window_expired',
       );
     }
-    lateRefund = true;
+    return { lateRefund: true, bill };
   }
+  return { lateRefund: false, bill };
+}
+
+/** Validates refund preconditions before PIN verification and write transaction. */
+export function validateRefundPreconditions(
+  db: Database,
+  req: {
+    billId: string | number;
+    method?: string;
+    amountCents?: number;
+    orderItemId?: number | null;
+  },
+  nowMs: number = Date.now(),
+): ValidatedRefundPreconditions {
+  requireOpenSessionForCashTender(db, [{ method: req.method }]);
+
+  const { lateRefund, bill } = checkIsLateRefund(db, req.billId, nowMs);
 
   const currency = getTenantCurrency(db);
   const minorFactor = getCurrencyMinorUnitFactor(currency);
 
   let amountCents = req.amountCents;
-  let item: any = null;
+  let item: RefundOrderItemRecord | null = null;
   if (req.orderItemId != null) {
-    item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.orderItemId) as any;
+    item =
+      (db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.orderItemId) as
+        | RefundOrderItemRecord
+        | undefined) ?? null;
     if (!item) throw httpError('Order item not found', 404, 'item_unavailable');
     if (String(item.order_id) !== String(bill.order_id)) {
       throw httpError("Item does not belong to this bill's order", 400, 'item_bill_mismatch');
@@ -193,7 +230,9 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
         .prepare(`
         SELECT quantity FROM bill_items WHERE bill_id = ? AND order_item_id = ?
       `)
-        .get(bill.id, item.id) as { quantity: number } | undefined;
+        .get(bill.id as string | number, item.id as string | number) as
+        | { quantity: number }
+        | undefined;
       if (!allocation) {
         throw httpError('Item is not allocated to this split bill', 400, 'split_item_unallocated');
       }
@@ -205,7 +244,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
         );
       }
     }
-    if (!REFUND_ITEM_ELIGIBLE_STATUSES.includes(item.status)) {
+    if (!REFUND_ITEM_ELIGIBLE_STATUSES.includes(item.status as string)) {
       throw httpError('Item is not eligible for refund', 409, 'item_status_ineligible');
     }
     const itemAmountCents = Math.round(Number(item.total) * minorFactor);
@@ -237,11 +276,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
       );
   }
 
-  const { paidCents, refundedCents, refundableCents } = getRefundableBalance(
-    db,
-    req.billId,
-    currency,
-  );
+  const { refundableCents } = getRefundableBalance(db, req.billId, currency);
   if (refundableCents <= 0)
     throw httpError('Bill has nothing left to refund', 400, 'nothing_to_refund');
   if (amountCents > refundableCents)
@@ -251,26 +286,109 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
       'amount_exceeds_refundable',
     );
 
-  if (!req.overridePin) {
-    throw httpError(
-      lateRefund
-        ? 'Owner PIN required to process a refund on a completed order'
-        : 'Manager PIN required to process a refund',
-      400,
-      'approver_pin_required',
-    );
+  return { lateRefund, bill, item, amountCents, currency };
+}
+
+/** Validates, authorizes, and persists a refund inside an active transaction. */
+export function createRefund(db: Database, req: RefundRequest): RefundResult {
+  if (req.idempotencyKey) {
+    const prior = db
+      .prepare(`
+      SELECT bill_id, request_hash, response_json
+      FROM refund_idempotency
+      WHERE user_id = ? AND idempotency_key = ?
+    `)
+      .get(req.createdByUserId, req.idempotencyKey) as
+      | { bill_id: string; request_hash: string; response_json: string }
+      | undefined;
+    if (prior) {
+      if (String(prior.bill_id) !== String(req.billId) || prior.request_hash !== req.requestHash) {
+        throw httpError(
+          'Idempotency-Key was already used for a different refund request',
+          409,
+          'idempotency_conflict',
+        );
+      }
+      try {
+        return JSON.parse(prior.response_json);
+      } catch {
+        throw httpError('Stored refund response is invalid', 500);
+      }
+    }
   }
-  const rateLimitKey = `pin:${req.clientIp}:refund`;
-  if (!req.checkPinRateLimit(rateLimitKey)) {
-    throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429, 'pin_rate_limited');
+
+  const nowMs = Date.now();
+  const { lateRefund, bill, item, amountCents, currency } = validateRefundPreconditions(
+    db,
+    req,
+    nowMs,
+  );
+  const minorFactor = getCurrencyMinorUnitFactor(currency);
+  const isStoreCreditRefund = req.method === 'wallet';
+  const { paidCents, refundedCents } = getRefundableBalance(db, req.billId, currency);
+
+  let approver: { id: string } | null = null;
+  if (req.preVerifiedApprover) {
+    if (req.preVerifiedApprover.id !== req.approverId) {
+      throw httpError('Pre-verified approver mismatch', 403, 'approver_pin_invalid');
+    }
+    if (lateRefund && !req.preVerifiedApprover.lateRefund) {
+      throw httpError(
+        'Owner PIN required to process a refund on a completed order',
+        403,
+        'approver_pin_invalid',
+      );
+    }
+    const allowedRoles = lateRefund ? ROLE_ACCESS.owner : ROLE_ACCESS.ownerManager;
+    const placeholders = allowedRoles.map(() => '?').join(', ');
+    const candidate = db
+      .prepare(
+        `SELECT id, pin_hash, role, is_active FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN (${placeholders}) AND is_active = 1`,
+      )
+      .get(req.preVerifiedApprover.id, ...allowedRoles) as
+      | { id: string; pin_hash: string; role: string; is_active: number }
+      | undefined;
+    if (!candidate || candidate.pin_hash !== req.preVerifiedApprover.verifiedPinHash) {
+      throw httpError(
+        lateRefund ? 'Invalid owner PIN' : 'Invalid manager PIN',
+        403,
+        'approver_pin_invalid',
+      );
+    }
+    approver = candidate;
+  } else {
+    if (!req.overridePin) {
+      throw httpError(
+        lateRefund
+          ? 'Owner PIN required to process a refund on a completed order'
+          : 'Manager PIN required to process a refund',
+        400,
+        'approver_pin_required',
+      );
+    }
+    const rateLimitKey = `pin:${req.clientIp}:refund`;
+    if (req.isPinRateLimited(rateLimitKey)) {
+      throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429, 'pin_rate_limited');
+    }
+    approver = resolveRefundApprover(db, req.overridePin, req.approverId, lateRefund);
+    if (!approver) {
+      req.checkPinRateLimit(rateLimitKey);
+      throw httpError(
+        lateRefund ? 'Invalid owner PIN' : 'Invalid manager PIN',
+        403,
+        'approver_pin_invalid',
+      );
+    }
+    req.clearPinRateLimit(rateLimitKey);
   }
-  const approver = resolveRefundApprover(db, req.overridePin, req.approverId, lateRefund);
-  if (!approver)
+
+  if (!approver) {
     throw httpError(
       lateRefund ? 'Invalid owner PIN' : 'Invalid manager PIN',
       403,
       'approver_pin_invalid',
     );
+  }
 
   const timestamp = now();
 

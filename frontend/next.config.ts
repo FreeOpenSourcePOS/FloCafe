@@ -1,18 +1,24 @@
-import type { NextConfig } from "next";
-import path from "node:path";
+import type { NextConfig } from 'next';
+import path from 'node:path';
 /**
  * NEXT_BUILD_MODE=desktop  →  static export for Electron (FloDesktop)
  * NEXT_BUILD_MODE unset    →  standard Next.js server mode (FloPOS cloud)
  */
-const isDesktop = process.env.NEXT_BUILD_MODE === "desktop";
+const isDesktop = process.env.NEXT_BUILD_MODE === 'desktop';
 
 const nextConfig: NextConfig = {
   // Static export: required for Electron — served via embedded Express,
   // not file:// so no CORS/routing issues.
-  output: isDesktop ? "export" : undefined,
+  output: isDesktop ? 'export' : undefined,
 
   // Trailing slashes make static paths predictable: /pos → /pos/index.html
   trailingSlash: isDesktop,
+
+  // Release builds with PostHog credentials emit browser maps for scripts/posthog-sourcemaps.cjs,
+  // which uploads and then deletes them; other builds ship no maps.
+  productionBrowserSourceMaps:
+    isDesktop &&
+    Boolean(process.env.POSTHOG_CLI_API_KEY?.trim() && process.env.POSTHOG_CLI_PROJECT_ID?.trim()),
 
   // next/image optimisation requires a running server; disable for static export.
   images: {

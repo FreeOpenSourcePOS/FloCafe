@@ -1379,19 +1379,21 @@ test('Charges stay read-only after a failed refresh until retry succeeds', async
   expect(reads).toBe(3);
 });
 
-test('Charges block duplicate IDs and confirm deletion before saving', async ({ page }) => {
+test('Charges use presets, edit existing standard definitions, and confirm deletion before saving', async ({
+  page,
+}) => {
   await startMockedSettingsSession(page);
   const charge = {
-    id: 'existing_fee',
-    name: 'Existing fee',
-    type: 'fixed',
-    value: 3,
-    calculation_basis: 'gross',
-    order_types: ['dine_in'],
-    is_optional: false,
-    is_default_active: true,
-    is_active: true,
-    tax_category_id: null,
+    id: 'service_charge',
+    name: 'Table service',
+    type: 'percentage',
+    value: 10,
+    calculation_basis: 'net',
+    order_types: ['dine_in', 'takeaway'],
+    is_optional: true,
+    is_default_active: false,
+    is_active: false,
+    tax_category_id: 'standard',
   };
   let writes = 0;
   let savedCharges: unknown[] = [];
@@ -1414,24 +1416,275 @@ test('Charges block duplicate IDs and confirm deletion before saving', async ({ 
   });
 
   await page.goto(`${BASE}/settings?tab=pos`);
-  await expect(page.getByText('Existing fee', { exact: true })).toBeVisible();
+  await expect(page.getByText('Table service', { exact: true })).toBeVisible();
+
   await page.getByRole('button', { name: 'Add Charge', exact: true }).click();
   const form = page.getByRole('dialog');
-  await form.getByLabel('Name').fill('Another fee');
-  await form.getByLabel('Charge ID').fill('existing_fee');
-  await form.getByLabel('Value').fill('5');
-  await form.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(form.getByRole('alert')).toContainText('Could not save charges');
-  await expect(page.getByText('Existing fee', { exact: true })).toBeVisible();
+
+  await expect(form.getByLabel('Charge ID')).toHaveCount(0);
+
+  await expect(form.getByLabel('Fee Type')).toHaveValue('custom');
+  await expect(form.getByLabel('Name')).toHaveValue('');
+  await expect(form.getByLabel('Value')).toHaveValue('');
+  await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+
+  await form.getByLabel('Fee Type').selectOption('packaging');
   expect(writes).toBe(0);
+  await expect(form.getByLabel('Name')).toHaveValue('Packaging charge');
+  await expect(form.getByLabel(/^type/i)).toHaveValue('fixed');
+  await expect(form.getByLabel('Value')).toHaveValue('');
+  await expect(form.getByLabel('Dine In')).not.toBeChecked();
+  await expect(form.getByLabel('Takeaway')).toBeChecked();
+  await expect(form.getByLabel('Delivery')).toBeChecked();
+  await expect(form.getByLabel('Online')).toBeChecked();
+  await expect(form.getByLabel('Apply automatically')).toBeChecked();
+  await expect(form.getByLabel('Cashier can waive')).not.toBeChecked();
+  await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+
+  // An existing reserved ID opens the saved definition instead of creation defaults.
+  await form.getByLabel('Fee Type').selectOption('service');
+  expect(writes).toBe(0);
+  await expect(form.getByRole('heading', { name: 'Edit Charge' })).toBeVisible();
+  await expect(form.getByLabel('Fee Type')).toBeDisabled();
+  await expect(form.getByLabel('Name')).toHaveValue('Table service');
+  await expect(form.getByLabel('Value')).toHaveValue('10');
+  await expect(form.getByLabel('Takeaway')).toBeChecked();
+  await expect(form.getByLabel('Cashier can waive')).toBeChecked();
+  await expect(form.getByLabel('Apply automatically')).not.toBeChecked();
 
   await form.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(writes).toBe(0);
+
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await form.getByLabel('Name').fill('Service');
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => writes).toBe(1);
+  expect(savedCharges).toEqual([{ ...charge, name: 'Service' }]);
+
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
   const confirmation = page.getByRole('dialog');
-  await expect(confirmation).toContainText('Delete Existing fee?');
+  await expect(confirmation).toContainText('Delete Service?');
   await confirmation.getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect.poll(() => writes).toBe(1);
+  await expect.poll(() => writes).toBe(2);
   expect(savedCharges).toEqual([]);
+});
+
+test('Charges generate stable custom IDs, allow duplicate names, and preserve IDs on rename/retry', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  let writes = 0;
+  let savedCharges: Array<{ id: string; name: string; value: number }> = [];
+  let shouldFailNextSave = false;
+  let failedCharges: Array<{ id: string }> = [];
+
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined });
+  });
+  await page.route('**/api/settings/charges', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ charges: savedCharges }),
+      });
+      return;
+    }
+    writes += 1;
+    if (shouldFailNextSave) {
+      failedCharges = route.request().postDataJSON().charges;
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Save failed' }),
+      });
+      return;
+    }
+    savedCharges = route.request().postDataJSON().charges;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ charges: savedCharges }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=pos`);
+
+  await page.getByRole('button', { name: 'Add Charge', exact: true }).click();
+  let form = page.getByRole('dialog');
+  await form.getByLabel('Fee Type').selectOption('service');
+  await expect(form.getByRole('heading', { name: 'Add Charge' })).toBeVisible();
+  await expect(form.getByLabel('Name')).toHaveValue('Service charge');
+  await expect(form.getByLabel(/^type/i)).toHaveValue('percentage');
+  await expect(form.getByLabel('Value')).toHaveValue('');
+  await expect(form.getByLabel('Dine In')).toBeChecked();
+  await expect(form.getByLabel('Takeaway')).not.toBeChecked();
+  await form.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(writes).toBe(0);
+
+  // Create first custom charge with a non-ASCII name
+  await page.getByRole('button', { name: 'Add Charge', exact: true }).click();
+  form = page.getByRole('dialog');
+  await form.getByLabel('Name').fill('رسوم التوصيل');
+  await form.getByLabel('Value').fill('5');
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => writes).toBe(1);
+  expect(savedCharges.length).toBe(1);
+  const firstId = savedCharges[0].id;
+  expect(firstId).toMatch(/^charge-[a-f0-9]{32}$/);
+
+  // Create a second custom charge with the same name; a failed save and retry keep its new ID
+  await page.getByRole('button', { name: 'Add Charge', exact: true }).click();
+  form = page.getByRole('dialog');
+  await form.getByLabel('Name').fill('رسوم التوصيل');
+  await form.getByLabel('Value').fill('8');
+  shouldFailNextSave = true;
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => writes).toBe(2);
+  await expect(form).toBeVisible();
+  const failedDraftId = failedCharges[1]?.id;
+  shouldFailNextSave = false;
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => writes).toBe(3);
+  expect(savedCharges.length).toBe(2);
+  const secondId = savedCharges[1].id;
+  expect(secondId).toMatch(/^charge-[a-f0-9]{32}$/);
+  expect(secondId).toBe(failedDraftId);
+  expect(firstId).not.toBe(secondId);
+
+  // Edit the first charge: change its name, ID must remain firstId
+  await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
+  form = page.getByRole('dialog');
+  await expect(form.getByRole('heading', { name: 'Edit Charge' })).toBeVisible();
+  await expect(form.getByLabel('Fee Type')).toBeDisabled();
+  await form.getByLabel('Name').fill('Envío exprés 配送');
+
+  // Failed save keeps dialog open and retry preserves the exact same ID
+  shouldFailNextSave = true;
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => writes).toBe(4);
+  await expect(form).toBeVisible();
+
+  shouldFailNextSave = false;
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => writes).toBe(5);
+  expect(savedCharges.length).toBe(2);
+  expect(savedCharges[0].id).toBe(firstId);
+  expect(savedCharges[0].name).toBe('Envío exprés 配送');
+});
+
+for (const outcome of ['deleted', 'updated', 'unavailable'] as const) {
+  test(`Charges reconcile an open editor with ${outcome} server definitions before saving`, async ({
+    page,
+  }) => {
+    await startMockedSettingsSession(page);
+    const original = {
+      id: 'service_charge',
+      name: 'Original service',
+      type: 'percentage',
+      value: 10,
+      calculation_basis: 'gross',
+      order_types: ['dine_in'],
+      is_optional: false,
+      is_default_active: true,
+      is_active: true,
+      tax_category_id: null as string | null,
+    };
+    const other = { ...original, id: 'other_fee', name: 'Other fee', value: 3 };
+    let serverCharges = [original, other];
+    let failReads = false;
+    let writes = 0;
+    let reads = 0;
+    await page.route('**/api/settings/charges', async (route) => {
+      if (route.request().method() === 'GET') {
+        reads += 1;
+        await route.fulfill({
+          status: failReads ? 503 : 200,
+          json: failReads ? { error: 'Read unavailable' } : { charges: serverCharges },
+        });
+        return;
+      }
+      writes += 1;
+      serverCharges = route.request().postDataJSON().charges;
+      await route.fulfill({ status: 200, json: { charges: serverCharges } });
+    });
+    await page.goto(`${BASE}/settings?tab=pos`);
+    await expect(page.getByText(original.name, { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
+    const form = page.getByRole('dialog');
+    await form.getByLabel('Name').fill('Renamed service');
+
+    const latestOther = { ...other, value: 7 };
+    const latestOriginal = { ...original, is_active: false, tax_category_id: 'standard' };
+    serverCharges = outcome === 'deleted' ? [latestOther] : [latestOriginal, latestOther];
+    failReads = outcome === 'unavailable';
+    const readsBeforeSave = reads;
+    await form.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => reads).toBeGreaterThan(readsBeforeSave);
+
+    if (outcome === 'deleted') {
+      await expect(form).toBeHidden();
+      await expect(
+        page.getByText('This charge is no longer available. Please reopen and try again.', {
+          exact: true,
+        }),
+      ).toBeVisible();
+      expect(writes).toBe(0);
+      expect(serverCharges).toEqual([latestOther]);
+    } else if (outcome === 'updated') {
+      await expect(form).toBeHidden();
+      expect(writes).toBe(1);
+      expect(serverCharges).toEqual([{ ...latestOriginal, name: 'Renamed service' }, latestOther]);
+    } else {
+      await expect(page.getByRole('alert')).toContainText('Failed to reload settings');
+      await expect(form.getByLabel('Name')).toHaveValue('Renamed service');
+      await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+      expect(writes).toBe(0);
+      failReads = false;
+      await page.getByRole('button', { name: 'Retry', exact: true }).click();
+      await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+      await form.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(form).toBeHidden();
+      expect(writes).toBe(1);
+      expect(serverCharges).toEqual([{ ...latestOriginal, name: 'Renamed service' }, latestOther]);
+    }
+  });
+}
+
+test('Charges retry a creation whose committed response was lost without treating its stable ID as a duplicate', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  let serverCharges: Array<{ id: string; name: string }> = [];
+  let firstId = '';
+  let writes = 0;
+  await page.route('**/api/settings/charges', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ status: 200, json: { charges: serverCharges } });
+      return;
+    }
+    writes += 1;
+    serverCharges = route.request().postDataJSON().charges;
+    if (writes === 1) {
+      firstId = serverCharges[0].id;
+      await route.fulfill({ status: 503, json: { error: 'Response lost after commit' } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: { charges: serverCharges } });
+  });
+  await page.goto(`${BASE}/settings?tab=pos`);
+  await page.getByRole('button', { name: 'Add Charge', exact: true }).click();
+  const form = page.getByRole('dialog');
+  await form.getByLabel('Name').fill('Delivery fee');
+  await form.getByLabel('Value').fill('5');
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => writes).toBe(1);
+  await expect(form).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(form).toBeHidden();
+  expect(writes).toBe(2);
+  expect(serverCharges).toEqual([expect.objectContaining({ id: firstId, name: 'Delivery fee' })]);
 });
 
 test('Charges ignore an older failed load after a newer load succeeds', async ({ page }) => {
@@ -1551,7 +1804,7 @@ test('Charges keep saved definitions when a pending load completes later', async
   await page.route('**/api/settings/charges', async (route) => {
     if (route.request().method() === 'GET') {
       reads += 1;
-      if (reads === 2) {
+      if (reads === 3) {
         signalStaleReadStarted();
         await staleReadHeld;
       }
@@ -1606,7 +1859,7 @@ test('Charges keep saved definitions when a pending load completes later', async
   await expect(page.getByText('Updated fee', { exact: true })).toBeVisible();
   await expect(page.getByText('Existing fee', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add Charge', exact: true })).toBeEnabled();
-  expect(reads).toBe(2);
+  expect(reads).toBe(3);
 });
 
 test('Charges generate distinct native IDs for non-ASCII names', async ({ page }) => {
@@ -1623,7 +1876,7 @@ test('Charges generate distinct native IDs for non-ASCII names', async ({ page }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ charges: [] }),
+        body: JSON.stringify({ charges: savedCharges }),
       });
       return;
     }

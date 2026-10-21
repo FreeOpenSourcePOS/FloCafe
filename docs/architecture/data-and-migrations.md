@@ -104,8 +104,12 @@ After migrations and with `foreign_keys` re-enabled, startup runs:
 - `runStartupIntegrityCheck` - `PRAGMA integrity_check` and `PRAGMA foreign_key_check`. A failed
   integrity check is recorded in `dbHealthError`, which is what the health endpoints report; it
   does not by itself abort startup.
-- `repairSequences` - re-seeds the per-day order and bill number sequences from existing rows, which
-  prevents unique-constraint collisions on numbering.
+- `repairSequences` - verifies sequence counters to prevent unique-constraint numbering collisions.
+  Ordinary boots skip scanning historical orders and bills when sequences are already initialized;
+  when repair is pending (such as after migration or restore) or sequences are missing, in-database
+  SQL aggregation re-seeds high-water counters for canonical daily formats (`ORD-YYYYMMDD-NNNN` and
+  `INV-YYYYMMDD-NNNN`) without materializing historical rows in memory. Custom numbering prefixes and
+  non-daily reset periods are tracked dynamically.
 - `autoRepairPaymentDetails` and `autoRepairDefaultPrinter` - the two targeted data repairs.
 
 ## Backup and restore
@@ -121,7 +125,9 @@ mode that corrupts a database, so any new entry point in this area must take the
 
 `restoreBackup` reads the `_flo_meta` stamp and the `user_version` pragma from the backup and
 decides between a direct file replacement and a data-only restore from the metadata. An unreadable
-source returns a structured failure with both versions rather than throwing.
+source returns a structured failure with both versions rather than throwing. Both restore paths
+execute `executeSequenceRepair` to re-align sequence counters with restored orders and bills and
+mark repair complete.
 
 ### Entry points
 
@@ -166,15 +172,18 @@ Directory syncing is skipped on Windows, which does not support it.
 | `npm run test:upgrade-path` | Migration from historical snapshots up to the current version. |
 | `npm run test:upgrade-regression` | Regression cover for past migration defects. |
 | `npm run test:upgrade-matrix-harness` | The harness the CI upgrade matrix drives. |
-| `npm run test:schema-health` | Schema shape and index health. |
+| `npm run test:schema-health` | Schema shape, index health, and recovery reference caching. |
+| `npm run test:schema-reference-cache` | Recovery schema reference caching and migration registry invalidation. |
 | `npm run test:backup` | Backup and restore behaviour. |
+| `npm run test:sequence` | Order and bill sequence generation, repair performance, and no-reuse invariants. |
 | `npm run test:issue-278-fail-closed-db` | The missing-database guard. |
 
 `isHealthyDatabaseFile` is the predicate that decides whether a candidate file is usable at all. It
 requires a clean `integrity_check`, no foreign-key violations outside an explicit allowlist, a
 schema version above zero and within the supported range, an `_flo_meta` stamp that matches the
 pragma, and a table and column set, plus normalised `CREATE` definitions, that match the ideal
-schema built by running the whole migration pipeline in memory.
+schema built by running the whole migration pipeline in memory (cached across health checks and
+invalidated on migration registry changes).
 
 ## Adding a migration
 

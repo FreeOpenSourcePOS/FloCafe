@@ -74,6 +74,32 @@ The Snap Store credential check is at runtime rather than in an `if:` condition,
 Actions does not allow `secrets` in `if:` expressions. A missing credential is a release failure,
 not a skipped channel.
 
+## PostHog release builds
+
+The release build steps and the Mac App Store lane set `FLO_OFFICIAL_RELEASE=1`, which marks the
+build as an official release in `build-identity.json`. Those builds are the only source of
+`production` analytics. The same steps pass the `POSTHOG_PROJECT_TOKEN` secret (or repository
+variable) and the optional `POSTHOG_HOST` variable, which `scripts/copy-runtime-assets.cjs` writes
+into `build-identity.json`. Without a token the release ships with PostHog inactive. A developer can
+opt any run in with `FLO_POSTHOG_DEV=1`; its events are tagged `development`. See [PostHog](../architecture/cloud-integrations.md#posthog).
+
+Each Linux, macOS, and Windows build step runs `npm run sourcemaps:posthog`
+(`scripts/posthog-sourcemaps.cjs`) between the builds and `electron-builder`. When the
+`POSTHOG_CLI_API_KEY` secret and the `POSTHOG_CLI_PROJECT_ID` variable are both set, the renderer
+export is built with browser source maps, and the script injects chunk ids into `frontend/out` and
+`dist`, uploads their maps as release `flocafe` at the `package.json` version, and deletes the
+`.js.map` files so they do not ship. `POSTHOG_CLI_HOST` defaults to `https://eu.posthog.com`.
+The script runs `@posthog/cli@latest` through `npx`, so a release uses the newest published CLI.
+The CLI gets only `PATH`, home and temp directories, proxy and npm cache settings, and
+`POSTHOG_CLI_*`; signing certificates and store credentials in the job are not passed to it.
+
+Without the key or the project id, the step prints a skip notice and the build is unchanged. An
+upload failure is a warning, not a release failure; the maps are still deleted. The key needs the
+`error tracking write` and `organization read` scopes.
+
+To check a release, open a served chunk in the packaged app and look for a `//# chunkId=` comment,
+then confirm the symbol sets under Error tracking settings in PostHog.
+
 ## Artifact naming
 
 Every published release must carry this exact inventory.

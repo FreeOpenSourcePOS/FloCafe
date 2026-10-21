@@ -107,7 +107,11 @@ export function resolveInventoryDeduction(
     }
     if (Number(variant.track_inventory) === 1 || variant.track_inventory === true) {
       if (!Number.isFinite(quantity) || quantity <= 0) return null;
-      return { productId: String(product.id), deductedQuantity: quantity, variantId: String(variant.id) };
+      return {
+        productId: String(product.id),
+        deductedQuantity: quantity,
+        variantId: String(variant.id),
+      };
     }
   }
   if (product.inventory_product_id) {
@@ -124,6 +128,17 @@ export function resolveInventoryDeduction(
   return null;
 }
 
+function getDecimalPlaces(value: number): number {
+  if (!Number.isFinite(value) || Math.floor(value) === value) return 0;
+  const str = value.toString();
+  if (str.includes('e-')) {
+    const [base, exp] = str.split('e-');
+    const baseDecimals = base.includes('.') ? base.split('.')[1].length : 0;
+    return baseDecimals + Number(exp);
+  }
+  return str.includes('.') ? str.split('.')[1].length : 0;
+}
+
 export function adjustProductStock(
   db: ReturnType<typeof getDatabase>,
   options: StockChangeOptions,
@@ -131,14 +146,20 @@ export function adjustProductStock(
   if (!Number.isFinite(options.quantityDelta) || options.quantityDelta === 0) {
     throw new InventoryServiceError(400, 'quantity_delta must be a non-zero finite number');
   }
-  const normalizedQuantityDelta = Number(options.quantityDelta.toFixed(INVENTORY_QUANTITY_PRECISION));
+  const normalizedQuantityDelta = Number(
+    options.quantityDelta.toFixed(INVENTORY_QUANTITY_PRECISION),
+  );
   if (normalizedQuantityDelta === 0) {
     throw new InventoryServiceError(400, 'quantity_delta is too small to change stock');
   }
   if (!options.actorUserId) {
     throw new InventoryServiceError(400, 'actor_user_id is required');
   }
-  if (options.reason !== undefined && options.reason !== null && typeof options.reason !== 'string') {
+  if (
+    options.reason !== undefined &&
+    options.reason !== null &&
+    typeof options.reason !== 'string'
+  ) {
     throw new InventoryServiceError(400, 'reason must be a string');
   }
   if (typeof options.reason === 'string' && options.reason.length > 500) {
@@ -149,10 +170,16 @@ export function adjustProductStock(
   // One movement moves one pool. Naming two would write a ledger row that the
   // validator cannot attribute to a single snapshot row.
   if (addonId && variantId) {
-    throw new InventoryServiceError(400, 'A movement moves either a variant pool or an add-on pool, not both');
+    throw new InventoryServiceError(
+      400,
+      'A movement moves either a variant pool or an add-on pool, not both',
+    );
   }
   if (addonId && options.productId) {
-    throw new InventoryServiceError(400, 'A movement moves either a product pool or an add-on pool, not both');
+    throw new InventoryServiceError(
+      400,
+      'A movement moves either a product pool or an add-on pool, not both',
+    );
   }
   if (!options.productId && !addonId) {
     throw new InventoryServiceError(400, 'product_id or addon_id is required');
@@ -176,27 +203,63 @@ export function adjustProductStock(
     stockLabel = 'Variant';
     stockIdArgs = [variantId, options.productId as string | number];
   }
-  const readStock = db.prepare(`SELECT stock_quantity FROM ${stockTable} WHERE ${stockKey}`);
-  const current = readStock.get(...stockIdArgs) as { stock_quantity: number | null } | undefined;
+  const readStock = db.prepare(`SELECT stock_quantity, name FROM ${stockTable} WHERE ${stockKey}`);
+  const current = readStock.get(...stockIdArgs) as
+    | { stock_quantity: number | null; name?: string }
+    | undefined;
+  let itemName: string | null = null;
+  if (current?.name) {
+    const safeName = (name: string) => (name.length > 60 ? `${name.slice(0, 57)}...` : name);
+    if (variantId && options.productId) {
+      const productRow = db
+        .prepare('SELECT name FROM products WHERE id = ?')
+        .get(options.productId as string | number) as { name?: string } | undefined;
+      itemName = productRow?.name
+        ? `"${safeName(productRow.name)}" (${safeName(current.name)})`
+        : `variant "${safeName(current.name)}"`;
+    } else if (addonId) {
+      itemName = `add-on "${safeName(current.name)}"`;
+    } else {
+      itemName = `"${safeName(current.name)}"`;
+    }
+  }
   const stockBefore = Number(current?.stock_quantity ?? 0);
-  const update = db.prepare(`
-    UPDATE ${stockTable}
-    SET stock_quantity = CASE
-      WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
-      ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ?)
-    END, updated_at = ?
-    WHERE ${stockKey}
-      AND COALESCE(stock_quantity, 0) + ? >= -?
-      AND CASE
-        WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
-        ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ?)
-      END != COALESCE(stock_quantity, 0)
-  `);
+  const legacyPrecision = Math.max(
+    getDecimalPlaces(stockBefore),
+    getDecimalPlaces(normalizedQuantityDelta),
+  );
+  const isLegacyPrecision = legacyPrecision > INVENTORY_QUANTITY_PRECISION;
+  const update = isLegacyPrecision
+    ? db.prepare(`
+        UPDATE ${stockTable}
+        SET stock_quantity = CASE
+          WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
+          ELSE COALESCE(stock_quantity, 0) + ?
+        END, updated_at = ?
+        WHERE ${stockKey}
+          AND COALESCE(stock_quantity, 0) + ? >= -?
+          AND CASE
+            WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
+            ELSE COALESCE(stock_quantity, 0) + ?
+          END != COALESCE(stock_quantity, 0)
+      `)
+    : db.prepare(`
+        UPDATE ${stockTable}
+        SET stock_quantity = CASE
+          WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
+          ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ${INVENTORY_QUANTITY_PRECISION})
+        END, updated_at = ?
+        WHERE ${stockKey}
+          AND COALESCE(stock_quantity, 0) + ? >= -?
+          AND CASE
+            WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
+            ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ${INVENTORY_QUANTITY_PRECISION})
+          END != COALESCE(stock_quantity, 0)
+      `);
   const result = update.run(
     normalizedQuantityDelta,
     INVENTORY_QUANTITY_TOLERANCE,
     normalizedQuantityDelta,
-    INVENTORY_QUANTITY_PRECISION,
     updatedAt,
     ...stockIdArgs,
     normalizedQuantityDelta,
@@ -204,18 +267,22 @@ export function adjustProductStock(
     normalizedQuantityDelta,
     INVENTORY_QUANTITY_TOLERANCE,
     normalizedQuantityDelta,
-    INVENTORY_QUANTITY_PRECISION,
   );
   if (result.changes !== 1) {
     if (!current) {
       throw new InventoryServiceError(404, `${stockLabel} not found`);
     }
-    throw new InventoryServiceError(400, 'Insufficient stock');
+    throw new InventoryServiceError(
+      400,
+      itemName ? `Insufficient stock for ${itemName}` : 'Insufficient stock',
+    );
   }
 
   const updatedStock = readStock.get(...stockIdArgs) as { stock_quantity: number };
   const stockAfter = Number(updatedStock.stock_quantity);
-  const effectiveQuantityDelta = stockAfter - stockBefore;
+  const effectiveQuantityDelta = isLegacyPrecision
+    ? stockAfter - stockBefore
+    : Number((stockAfter - stockBefore).toFixed(INVENTORY_QUANTITY_PRECISION));
 
   db.prepare(`
     INSERT INTO inventory_movements (
@@ -229,7 +296,9 @@ export function adjustProductStock(
     effectiveQuantityDelta,
     options.movementType,
     options.referenceType ?? null,
-    options.referenceId === null || options.referenceId === undefined ? null : String(options.referenceId),
+    options.referenceId === null || options.referenceId === undefined
+      ? null
+      : String(options.referenceId),
     options.reason ?? null,
     options.actorUserId,
     stockAfter,
@@ -259,8 +328,15 @@ export function listInventoryMovements(
     params.push(filters.movementType);
   }
   if (filters.referenceType && filters.referenceId) {
-    conditions.push('((m.reference_type = ? AND m.reference_id = ?) OR (m.source_reference_type = ? AND m.source_reference_id = ?))');
-    params.push(filters.referenceType, filters.referenceId, filters.referenceType, filters.referenceId);
+    conditions.push(
+      '((m.reference_type = ? AND m.reference_id = ?) OR (m.source_reference_type = ? AND m.source_reference_id = ?))',
+    );
+    params.push(
+      filters.referenceType,
+      filters.referenceId,
+      filters.referenceType,
+      filters.referenceId,
+    );
   } else if (filters.referenceType) {
     conditions.push('(m.reference_type = ? OR m.source_reference_type = ?)');
     params.push(filters.referenceType, filters.referenceType);
@@ -269,9 +345,9 @@ export function listInventoryMovements(
     params.push(filters.referenceId, filters.referenceId);
   }
   if (filters.beforeId !== undefined) {
-    const cursor = db.prepare('SELECT created_at FROM inventory_movements WHERE id = ?').get(filters.beforeId) as
-      | { created_at: string }
-      | undefined;
+    const cursor = db
+      .prepare('SELECT created_at FROM inventory_movements WHERE id = ?')
+      .get(filters.beforeId) as { created_at: string } | undefined;
     if (cursor) {
       conditions.push('(m.created_at, m.id) < (?, ?)');
       params.push(cursor.created_at, filters.beforeId);
@@ -280,7 +356,8 @@ export function listInventoryMovements(
 
   const perPage = filters.perPage ?? 50;
   const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(`
     SELECT
       m.id,
       m.product_id,
@@ -311,7 +388,8 @@ export function listInventoryMovements(
     ${whereSql}
     ORDER BY m.created_at DESC, m.id DESC
     LIMIT ?
-  `).all(...params, perPage + 1) as InventoryMovement[];
+  `)
+    .all(...params, perPage + 1) as InventoryMovement[];
 
   const hasMore = rows.length > perPage;
   const movements = hasMore ? rows.slice(0, perPage) : rows;

@@ -7,7 +7,9 @@ export type TitleBarMode = 'native-overlay' | 'html-fallback';
 /** The single narrow window-control verb set exposed over IPC. */
 export type WindowControlAction = 'minimize' | 'toggle-maximize' | 'close';
 
-export type BrowserWindowConstructor = new (options: BrowserWindowConstructorOptions) => BrowserWindow;
+export type BrowserWindowConstructor = new (
+  options: BrowserWindowConstructorOptions,
+) => BrowserWindow;
 
 // Centers 12px macOS traffic-light buttons in the 40px custom title bar.
 export const MAC_TRAFFIC_LIGHT_POSITION = { x: 16, y: 14 } as const;
@@ -29,9 +31,10 @@ export function resolveTitleBarMode(probe: {
     // It never needs HTML fallback caption buttons.
     return 'native-overlay';
   }
-  const versionMatch = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
-    probe.electronVersion,
-  );
+  const versionMatch =
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
+      probe.electronVersion,
+    );
   const major = versionMatch ? Number(versionMatch[1]) : Number.NaN;
   if (!Number.isSafeInteger(major) || major < MIN_OVERLAY_ELECTRON_MAJOR) return 'html-fallback';
   if (!probe.overlayApiPresent) return 'html-fallback';
@@ -166,7 +169,9 @@ export function createLocalWindowOpenHandler(
   isAllowedLocalWindowUrl: LocalWindowUrlChecker,
   getServerPort: () => number,
   getLocalIP: () => string,
-): (details: { url: string }) => { action: 'allow'; overrideBrowserWindowOptions: BrowserWindowConstructorOptions } | null {
+): (details: {
+  url: string;
+}) => { action: 'allow'; overrideBrowserWindowOptions: BrowserWindowConstructorOptions } | null {
   return ({ url }) => {
     const isBlank = url === 'about:blank' || url === '';
     if (!isAllowedLocalWindowUrl(url, getServerPort(), getLocalIP())) return null;
@@ -175,5 +180,42 @@ export function createLocalWindowOpenHandler(
       action: 'allow',
       overrideBrowserWindowOptions: getPopupWindowOptions(isBlank),
     };
+  };
+}
+
+/**
+ * Creates a will-navigate event handler for the privileged main window.
+ * Allows safe local application URLs, delegates safe external HTTP/HTTPS URLs
+ * to the default system browser via shell.openExternal, and blocks unsafe schemes.
+ */
+export function createMainWindowWillNavigateHandler(
+  isAllowedLocalWindowUrl: LocalWindowUrlChecker,
+  getServerPort: () => number,
+  getLocalIP: () => string,
+  isSafeExternalUrl: (rawUrl: string) => boolean,
+  openExternal: (url: string) => Promise<unknown> | unknown,
+  warn: (message: string, ...args: unknown[]) => void = console.warn,
+): (event: { preventDefault: () => void }, url: string) => void {
+  return (event, url) => {
+    if (isAllowedLocalWindowUrl(url, getServerPort(), getLocalIP())) {
+      return;
+    }
+    event.preventDefault();
+    if (isSafeExternalUrl(url)) {
+      try {
+        const res = openExternal(url);
+        if (res && typeof (res as Promise<unknown>).catch === 'function') {
+          (res as Promise<unknown>).catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            warn('[Flo] Failed to open external URL:', message);
+          });
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        warn('[Flo] Failed to open external URL:', message);
+      }
+    } else {
+      warn('[Flo] Blocked unsafe navigation URL:', url);
+    }
   };
 }

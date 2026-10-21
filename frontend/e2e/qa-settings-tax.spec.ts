@@ -171,69 +171,80 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
   test('document tax rounding applies across transaction documents and preserves rounding consistency', async ({
     page,
   }) => {
-    await openTaxTab(page);
+    // Configure store for official-india (document-scoped pack: 2.5% CGST + 2.5% SGST, largest remainder)
+    await api(page, '/settings/country', { method: 'PUT', data: { value: 'IN' } });
 
-    // Expand advanced tax tools
-    const advanced = page.getByRole('button', { name: /Advanced tax tools/ });
-    await expect(advanced).toBeVisible();
-    await advanced.click();
+    try {
+      await openTaxTab(page);
 
-    // Verify test calculation panel is available and performs calculation
-    const calcSection = page.locator('section').filter({
-      has: page.getByRole('heading', { name: 'Test calculation', exact: true }),
-    });
-    await expect(calcSection).toBeVisible();
+      // Expand advanced tax tools
+      const advanced = page.getByRole('button', { name: /Advanced tax tools/ });
+      await expect(advanced).toBeVisible();
+      await advanced.click();
 
-    const amountInput = calcSection.getByPlaceholder('Amount');
-    await expect(amountInput).toBeVisible();
-    await amountInput.fill('100.10');
+      // Verify test calculation panel is available and performs calculation
+      const calcSection = page.locator('section').filter({
+        has: page.getByRole('heading', { name: 'Test calculation', exact: true }),
+      });
+      await expect(calcSection).toBeVisible();
 
-    const calcButton = calcSection.getByRole('button', { name: 'Calculate', exact: true });
-    await calcButton.click();
-    await expect(calcSection.getByText('Taxable Base')).toBeVisible();
+      const amountInput = calcSection.getByPlaceholder('Amount');
+      await expect(amountInput).toBeVisible();
+      await amountInput.fill('100.10');
 
-    // Verify multi-item document preview allocates and rounds across the document
-    const preview = await api<{
-      summary: { subtotal: number; tax_amount: number; total: number };
-      items: Array<{ subtotal: number; tax_amount: number; total: number }>;
-    }>(page, '/tax/preview', {
-      method: 'POST',
-      data: {
-        items: [
-          { product_id: 'e2e-product', quantity: 1, addons: [] },
-          { product_id: 'e2e-product', quantity: 1, addons: [] },
-        ],
-      },
-    });
-    expect(preview.summary.subtotal).toBe(120);
-    expect(preview.summary.total).toBe(preview.summary.subtotal + preview.summary.tax_amount);
+      const calcButton = calcSection.getByRole('button', { name: 'Calculate', exact: true });
+      await calcButton.click();
+      await expect(calcSection.getByText('Taxable Base')).toBeVisible();
 
-    // Verify order creation retains the document-calculated tax
-    const orderRes = await api<{
-      order: { id: string; subtotal: number; tax_amount: number; total: number };
-    }>(page, '/orders', {
-      method: 'POST',
-      data: {
-        type: 'takeaway',
-        items: [
-          { product_id: 'e2e-product', quantity: 1 },
-          { product_id: 'e2e-product', quantity: 1 },
-        ],
-      },
-    });
-    expect(orderRes.order.subtotal).toBe(120);
-    expect(orderRes.order.tax_amount).toBe(preview.summary.tax_amount);
-    expect(orderRes.order.total).toBe(preview.summary.total);
+      // Verify multi-item document preview allocates and rounds across the document:
+      // Two 100.10 items at 2.5% CGST + 2.5% SGST produce document tax 10.01 and total 210.21
+      // (line-by-line rounding would produce 5.01 + 5.01 = 10.02 and 210.22)
+      const preview = await api<{
+        summary: { subtotal: number; tax_amount: number; total: number };
+        items: Array<{ subtotal: number; tax_amount: number; total: number }>;
+      }>(page, '/tax/preview', {
+        method: 'POST',
+        data: {
+          items: [
+            { product_id: 'e2e-product-rounding-1', quantity: 1, addons: [] },
+            { product_id: 'e2e-product-rounding-2', quantity: 1, addons: [] },
+          ],
+        },
+      });
+      expect(preview.summary.subtotal).toBe(200.2);
+      expect(preview.summary.tax_amount).toBe(10.01);
+      expect(preview.summary.total).toBe(210.21);
 
-    // Verify bill generation matches order
-    const billRes = await api<{
-      bill: { id: string; subtotal: number; tax_amount: number; total: number };
-    }>(page, '/bills/generate', {
-      method: 'POST',
-      data: { order_id: orderRes.order.id },
-    });
-    expect(billRes.bill.subtotal).toBe(orderRes.order.subtotal);
-    expect(billRes.bill.tax_amount).toBe(orderRes.order.tax_amount);
-    expect(billRes.bill.total).toBe(orderRes.order.total);
+      // Verify order creation retains the document-calculated tax
+      const orderRes = await api<{
+        order: { id: string; subtotal: number; tax_amount: number; total: number };
+      }>(page, '/orders', {
+        method: 'POST',
+        data: {
+          type: 'takeaway',
+          items: [
+            { product_id: 'e2e-product-rounding-1', quantity: 1 },
+            { product_id: 'e2e-product-rounding-2', quantity: 1 },
+          ],
+        },
+      });
+      expect(orderRes.order.subtotal).toBe(200.2);
+      expect(orderRes.order.tax_amount).toBe(10.01);
+      expect(orderRes.order.total).toBe(210.21);
+
+      // Verify bill generation matches order
+      const billRes = await api<{
+        bill: { id: string; subtotal: number; tax_amount: number; total: number };
+      }>(page, '/bills/generate', {
+        method: 'POST',
+        data: { order_id: orderRes.order.id },
+      });
+      expect(billRes.bill.subtotal).toBe(200.2);
+      expect(billRes.bill.tax_amount).toBe(10.01);
+      expect(billRes.bill.total).toBe(210.21);
+    } finally {
+      // Restore default store country
+      await api(page, '/settings/country', { method: 'PUT', data: { value: 'TH' } });
+    }
   });
 });

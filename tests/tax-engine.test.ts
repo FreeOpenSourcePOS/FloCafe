@@ -707,3 +707,29 @@ test('calculateDocumentItemTaxes handles mixed categorized + uncategorized, scop
   );
   assert.equal(lineScopeResult.taxAmount, '1.00');
 });
+
+test('calculateDocumentItemTaxes does not skip zero-price categorized items (Comment 3)', () => {
+  const tenant = {
+    country: 'IN',
+    business_type: 'restaurant',
+    state_code: 'KA',
+    currency: 'INR',
+    taxes_enabled: true,
+  };
+
+  const results = calculateDocumentItemTaxes(tenant, [
+    {
+      lineId: 'free-item',
+      product: {
+        tax_type: 'none',
+        tax_rate: 0,
+        tax_category_id: 'standard',
+        tax_behavior: 'exempt',
+      },
+      taxableAmount: 0,
+    },
+  ]);
+  assert.equal(results[0].tax_amount, 0);
+  assert.ok(results[0].tax_snapshot, 'zero-price categorized item must receive a tax snapshot');
+});
+

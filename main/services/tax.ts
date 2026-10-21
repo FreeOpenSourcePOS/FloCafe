@@ -368,7 +368,7 @@ export function calculateDocumentTaxes(
       );
     }
 
-    if ((entry.taxableAmount || 0) <= 0) {
+    if ((entry.taxableAmount ?? 0) < 0) {
       continue;
     }
 

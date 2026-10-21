@@ -1628,6 +1628,137 @@ async function main() {
       INSERT INTO settings (key, value, updated_at) VALUES ('custom_charges', '[]', ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(now());
+
+    // ── Step 15: Greptile Review Verifications (Comments 1, 2, 3) ────
+    console.log('\n15. Greptile review edge cases: untaxed lines, overrides, and free items');
+
+    // 15a. Existing untaxed item does not absorb document rounding remainders (Comment 1)
+    seedProduct(db, 'prod-untaxed', 'cat-tax', 'Untaxed Item', 100.1, {
+      tax_type: 'none',
+      tax_rate: 0,
+    });
+    const s15MixedOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-doc-1', quantity: 1 },
+          { product_id: 'prod-untaxed', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(s15MixedOrderRes.status, 201, 'mixed order created');
+    assertEqual(s15MixedOrderRes.data.order.subtotal, 200.2, 'subtotal = 200.20');
+    assertEqual(s15MixedOrderRes.data.order.tax_amount, 5.01, 'only taxed line generates tax');
+    const s15UntaxedItem = s15MixedOrderRes.data.order.items.find(
+      (it: any) => it.product_id === 'prod-untaxed',
+    );
+    assertEqual(s15UntaxedItem.tax_amount, 0, 'untaxed line tax = 0');
+    assertEqual(s15UntaxedItem.tax_snapshot, null, 'untaxed line has null snapshot');
+
+    // Add another item to trigger order recomputation across existing items
+    const s15RecomputeMixedRes = await api(
+      baseUrl,
+      `/api/orders/${s15MixedOrderRes.data.order.id}/items`,
+      {
+        method: 'POST',
+        body: {
+          items: [{ product_id: 'prod-doc-2', quantity: 1 }],
+        },
+        headers: authHeader,
+      },
+    );
+    assertEqual(s15RecomputeMixedRes.status, 200, 'item added to mixed order');
+    const s15RecomputedUntaxed = s15RecomputeMixedRes.data.order.items.find(
+      (it: any) => it.product_id === 'prod-untaxed',
+    );
+    assertEqual(s15RecomputedUntaxed.tax_amount, 0, 'untaxed line still has 0 tax after recomputation');
+    assertEqual(s15RecomputedUntaxed.tax_snapshot, null, 'untaxed line still has null snapshot');
+    assertEqual(
+      s15RecomputeMixedRes.data.order.tax_amount,
+      10.01,
+      'two taxed lines receive document rounded 10.01 tax',
+    );
+    assertEqual(s15RecomputeMixedRes.data.order.total, 310.31, 'total = 300.30 subtotal + 10.01 tax');
+
+    // 15b. Subsequent override changes do not reprice existing snapshotted items (Comment 2)
+    const s15OverrideOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-doc-1', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(s15OverrideOrderRes.status, 201, 'override test order created');
+    assertEqual(s15OverrideOrderRes.data.order.tax_amount, 5.01, 'initial item tax = 5.01');
+
+    // Merchant adds an override for prod-doc-1 changing behavior to unclassified
+    const s15ActivePackVersion = (
+      db.prepare("SELECT active_version_id FROM country_packs WHERE id = 'official-india'").get() as any
+    )?.active_version_id;
+    db.prepare(`
+      INSERT INTO tax_overrides (id, pack_version_id, entity_type, entity_id, field_name, value_json, created_at, updated_at)
+      VALUES (?, ?, 'product', 'prod-doc-1', 'tax_category_id', ?, ?, ?)
+    `).run('override-prod-doc-1', s15ActivePackVersion, JSON.stringify({ categoryId: 'unclassified' }), now(), now());
+
+    // Trigger recomputation on existing order by applying a 0-value discount
+    const s15PatchedOrderRes = await api(
+      baseUrl,
+      `/api/orders/${s15OverrideOrderRes.data.order.id}/discount`,
+      {
+        method: 'PATCH',
+        body: { discount_type: 'amount', discount_value: 0 },
+        headers: authHeader,
+      },
+    );
+    assertEqual(s15PatchedOrderRes.status, 200, 'discount patched');
+    assertEqual(
+      s15PatchedOrderRes.data.order.tax_amount,
+      5.01,
+      'existing snapshotted item preserves historical category and is not repriced by new override',
+    );
+
+    // Clean up the override
+    db.prepare("DELETE FROM tax_overrides WHERE id = 'override-prod-doc-1'").run();
+
+    // 15c. Zero-price categorized item (Comment 3)
+    seedProduct(db, 'prod-free', 'cat-tax', 'Free Promotion', 0, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    const s15FreePreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-free', quantity: 1, addons: [] }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(s15FreePreview.status, 200, 'preview succeeds for free categorized item');
+    assertEqual(s15FreePreview.data.summary.subtotal, 0, 'free item subtotal = 0');
+    assertEqual(s15FreePreview.data.items[0].tax_amount, 0, 'free item tax = 0');
+    assertEqual(
+      Array.isArray(s15FreePreview.data.items[0].tax_breakdown),
+      true,
+      'free categorized item has tax breakdown',
+    );
+
+    const s15FreeOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-free', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(s15FreeOrderRes.status, 201, 'free order created');
+    assertEqual(s15FreeOrderRes.data.order.items[0].subtotal, 0, 'free order item subtotal = 0');
+    assertEqual(
+      Boolean(s15FreeOrderRes.data.order.items[0].tax_snapshot),
+      true,
+      'free categorized item receives tax snapshot without being skipped',
+    );
   } finally {
     server.close();
     closeDatabase();

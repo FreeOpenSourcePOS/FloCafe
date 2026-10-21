@@ -187,8 +187,8 @@ async function main() {
         .prepare("SELECT value FROM settings WHERE key = 'diagnostics_transmission_enabled'")
         .get() as { value: string }
     ).value,
-    'true',
-    'reading the screen does not change the one-time enabled transmission default',
+    'false',
+    'reading the screen does not change the opted-out transmission default',
   );
 
   console.log(

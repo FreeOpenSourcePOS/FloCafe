@@ -554,6 +554,7 @@ function OrderDetailContent({
         {/* Items — every line is visible here, no truncation chip. */}
         <div className="px-4 py-3 space-y-2">
           <PendingOrderItemEdits
+            key={order.id}
             orderId={order.id}
             items={order.items}
             // Recovery is permission- and identity-gated; a paid or terminal order
@@ -946,7 +947,7 @@ export function OrderDetailPanel({ onBack, ...props }: OrderDetailPanelProps) {
         </div>
       )}
       {props.order ? (
-        <OrderDetailContent {...props} order={props.order} />
+        <OrderDetailContent key={props.order.id} {...props} order={props.order} />
       ) : (
         <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 text-center p-6 text-muted-foreground bg-card rounded-xl border border-dashed border-border">
           <ClipboardList size={40} className="opacity-40" />

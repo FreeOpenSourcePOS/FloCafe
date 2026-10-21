@@ -527,8 +527,16 @@ async function main() {
          WHERE addon_id = ? ORDER BY rowid DESC LIMIT 1`,
       )
       .get(upsertRow.id) as any;
-    assertEqualOrThrow(adjustment.quantity_delta, 15, 'stock change is recorded as a ledger movement');
-    assertEqualOrThrow(adjustment.reference_type, 'manual_adjustment', 'stock change is a manual adjustment');
+    assertEqualOrThrow(
+      adjustment.quantity_delta,
+      15,
+      'stock change is recorded as a ledger movement',
+    );
+    assertEqualOrThrow(
+      adjustment.reference_type,
+      'manual_adjustment',
+      'stock change is a manual adjustment',
+    );
 
     console.log('\n─── Add-on inventory columns: legacy sheets stay importable ───');
     // A spreadsheet exported before add-on stock existed must still import, and

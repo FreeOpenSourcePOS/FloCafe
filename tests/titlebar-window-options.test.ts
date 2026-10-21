@@ -27,7 +27,12 @@ class FakeBrowserWindow {
 const macMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'darwin');
 const windowsMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'win32');
 const linuxMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'linux');
-const darkMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'darwin', true);
+const darkMainWindow = createMainWindow(
+  FakeBrowserWindow as any,
+  '/tmp/preload.js',
+  'darwin',
+  true,
+);
 
 assert.equal(macMainWindow.options.name, 'flo-main');
 assert.equal(macMainWindow.options.windowStatePersistence, true);
@@ -48,7 +53,11 @@ assert.equal(macMainWindow.options.webPreferences.preload, '/tmp/preload.js');
 assert.equal(macMainWindow.options.webPreferences.contextIsolation, true);
 assert.equal(macMainWindow.options.webPreferences.nodeIntegration, false);
 assert.equal(macMainWindow.options.webPreferences.sandbox, true);
-assert.equal('frame' in macMainWindow.options, false, 'the native-controls design does not remove the window frame');
+assert.equal(
+  'frame' in macMainWindow.options,
+  false,
+  'the native-controls design does not remove the window frame',
+);
 
 // An options override merges webPreferences: it cannot replace the generated
 // preload and isolation settings, and its other keys still apply.
@@ -68,8 +77,16 @@ assert.equal(overriddenOptionsWindow.options.webPreferences.backgroundThrottling
 
 // macOS traffic lights are vertically centered in the 40px bar (buttons are 12px tall).
 assert.deepEqual(macMainWindow.options.trafficLightPosition, { x: 16, y: 14 });
-assert.equal('trafficLightPosition' in windowsMainWindow.options, false, 'trafficLightPosition is macOS-only');
-assert.equal('trafficLightPosition' in linuxMainWindow.options, false, 'trafficLightPosition is macOS-only');
+assert.equal(
+  'trafficLightPosition' in windowsMainWindow.options,
+  false,
+  'trafficLightPosition is macOS-only',
+);
+assert.equal(
+  'trafficLightPosition' in linuxMainWindow.options,
+  false,
+  'trafficLightPosition is macOS-only',
+);
 
 const localWindowOpenHandler = createLocalWindowOpenHandler(
   isAllowedLocalWindowUrl,
@@ -136,7 +153,12 @@ assert.equal(
   'html-fallback',
 );
 
-const linuxFallbackMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'linux', 'html-fallback');
+const linuxFallbackMainWindow = createMainWindow(
+  FakeBrowserWindow as any,
+  '/tmp/preload.js',
+  'linux',
+  'html-fallback',
+);
 assert.equal(linuxFallbackMainWindow.options.titleBarStyle, 'hidden');
 assert.equal(
   'titleBarOverlay' in linuxFallbackMainWindow.options,
@@ -151,14 +173,33 @@ class FakeWindow {
   calls: string[] = [];
   maximized = false;
   fullscreen = false;
-  isDestroyed() { return false; }
-  minimize() { this.calls.push('minimize'); }
-  isMaximized() { return this.maximized; }
-  maximize() { this.maximized = true; this.calls.push('maximize'); }
-  unmaximize() { this.maximized = false; this.calls.push('unmaximize'); }
-  isFullScreen() { return this.fullscreen; }
-  setFullScreen(val: boolean) { this.fullscreen = val; this.calls.push(`fullscreen:${val}`); }
-  close() { this.calls.push('close'); }
+  isDestroyed() {
+    return false;
+  }
+  minimize() {
+    this.calls.push('minimize');
+  }
+  isMaximized() {
+    return this.maximized;
+  }
+  maximize() {
+    this.maximized = true;
+    this.calls.push('maximize');
+  }
+  unmaximize() {
+    this.maximized = false;
+    this.calls.push('unmaximize');
+  }
+  isFullScreen() {
+    return this.fullscreen;
+  }
+  setFullScreen(val: boolean) {
+    this.fullscreen = val;
+    this.calls.push(`fullscreen:${val}`);
+  }
+  close() {
+    this.calls.push('close');
+  }
 }
 
 const win = new FakeWindow();
@@ -180,7 +221,11 @@ for (const bad of ['destroy', '', 'minimize ', 'MAXIMIZE', undefined, null, 42])
     `action ${String(bad)} must be rejected`,
   );
 }
-assert.deepEqual(win.calls, ['minimize', 'maximize', 'unmaximize', 'fullscreen:false', 'close'], 'rejected actions must not touch the window');
+assert.deepEqual(
+  win.calls,
+  ['minimize', 'maximize', 'unmaximize', 'fullscreen:false', 'close'],
+  'rejected actions must not touch the window',
+);
 const printPopup = localWindowOpenHandler({ url: 'about:blank' });
 assert.equal(printPopup?.action, 'allow');
 assert.deepEqual(printPopup?.overrideBrowserWindowOptions, {
@@ -204,7 +249,11 @@ assert.equal(kitchenPopup?.overrideBrowserWindowOptions.width, 1280);
 assert.equal(kitchenPopup?.overrideBrowserWindowOptions.height, 800);
 
 const kdsWindow = createKdsWindow(FakeBrowserWindow as any);
-assert.equal(kdsWindow.options.webPreferences.preload, undefined, 'KDS keeps the privileged preload bridge removed');
+assert.equal(
+  kdsWindow.options.webPreferences.preload,
+  undefined,
+  'KDS keeps the privileged preload bridge removed',
+);
 assert.equal(kdsWindow.options.webPreferences.contextIsolation, true);
 assert.equal(kdsWindow.options.webPreferences.nodeIntegration, false);
 assert.equal('titleBarStyle' in kdsWindow.options, false, 'KDS keeps stock window chrome');
@@ -258,7 +307,11 @@ const throwingWin = {
     throw new Error('overlay rejected');
   },
 };
-assert.equal(applyTitleBarOverlayTheme(throwingWin, true, 'darwin'), false, 'runtime rejection degrades to no-op');
+assert.equal(
+  applyTitleBarOverlayTheme(throwingWin, true, 'darwin'),
+  false,
+  'runtime rejection degrades to no-op',
+);
 
 // Theme sync wiring follows nativeTheme 'updated' events with live state.
 function makeFakeNativeTheme(initialDark: boolean): {
@@ -306,7 +359,9 @@ attachTitleBarThemeSync(missingWindowTheme, () => null, 'darwin');
 missingWindowTheme.emitUpdated(); // must not throw while the window is absent
 
 console.log('Title-bar dynamic theme overlay resolution and platform guards pass.');
-console.log('Title-bar main-window options, fallback gating, and popup/KDS exclusions are preserved.');
+console.log(
+  'Title-bar main-window options, fallback gating, and popup/KDS exclusions are preserved.',
+);
 
 // gh-513: theme-mode helpers
 assert.equal(resolveThemeMode(undefined), 'system');

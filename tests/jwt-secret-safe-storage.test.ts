@@ -18,7 +18,8 @@ Module._load = function (request: string) {
       app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' },
       safeStorage: {
         isEncryptionAvailable: () => encryptionAvailable,
-        encryptString: (value: string) => Buffer.from('enc:' + Buffer.from(value).toString('base64')),
+        encryptString: (value: string) =>
+          Buffer.from('enc:' + Buffer.from(value).toString('base64')),
         decryptString: (value: Buffer) => {
           const text = value.toString();
           if (!text.startsWith('enc:')) throw new Error('not decryptable');
@@ -41,7 +42,11 @@ const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
 
 const secretFile = path.join(testDir, 'jwt-secret.enc');
 const storedValue = () =>
-  (getDatabase().prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined)?.value;
+  (
+    getDatabase().prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as
+      | { value: string }
+      | undefined
+  )?.value;
 
 try {
   initDatabase();
@@ -53,14 +58,20 @@ try {
   assertOrThrow(/^[0-9a-f]{64}$/.test(first), 'a first launch mints a 32-byte hex secret');
   assertEqualOrThrow(storedValue(), JWT_SECRET_SAFE_STORAGE_MARKER, 'SQLite holds only the marker');
   assertOrThrow(fs.existsSync(secretFile), 'the encrypted secret file is written');
-  assertOrThrow(!fs.readFileSync(secretFile).toString().includes(first), 'the file does not contain the plaintext secret');
+  assertOrThrow(
+    !fs.readFileSync(secretFile).toString().includes(first),
+    'the file does not contain the plaintext secret',
+  );
   clearJWTSecretCache();
   assertEqualOrThrow(getJWTSecret(), first, 'the secret is stable across restarts');
 
   fs.rmSync(secretFile, { force: true });
   clearJWTSecretCache();
   const regenerated = getJWTSecret();
-  assertOrThrow(regenerated !== first && /^[0-9a-f]{64}$/.test(regenerated), 'an unreadable secure secret is replaced');
+  assertOrThrow(
+    regenerated !== first && /^[0-9a-f]{64}$/.test(regenerated),
+    'an unreadable secure secret is replaced',
+  );
   clearJWTSecretCache();
   assertEqualOrThrow(getJWTSecret(), regenerated, 'the replacement persists');
 
@@ -69,7 +80,11 @@ try {
   fs.rmSync(secretFile, { force: true });
   clearJWTSecretCache();
   assertEqualOrThrow(getJWTSecret(), legacy, 'an upgraded install keeps its existing secret');
-  assertEqualOrThrow(storedValue(), JWT_SECRET_SAFE_STORAGE_MARKER, 'the plaintext secret is removed from SQLite');
+  assertEqualOrThrow(
+    storedValue(),
+    JWT_SECRET_SAFE_STORAGE_MARKER,
+    'the plaintext secret is removed from SQLite',
+  );
   clearJWTSecretCache();
   assertEqualOrThrow(getJWTSecret(), legacy, 'the migrated secret reads back from secure storage');
 
@@ -78,7 +93,11 @@ try {
   fs.rmSync(secretFile, { force: true });
   clearJWTSecretCache();
   const fallback = getJWTSecret();
-  assertEqualOrThrow(storedValue(), fallback, 'without OS encryption the secret falls back to SQLite');
+  assertEqualOrThrow(
+    storedValue(),
+    fallback,
+    'without OS encryption the secret falls back to SQLite',
+  );
   assertOrThrow(!fs.existsSync(secretFile), 'no secure file is written without OS encryption');
 
   console.log('jwt-secret-safe-storage tests passed');

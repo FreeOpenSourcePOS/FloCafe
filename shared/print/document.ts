@@ -1630,7 +1630,8 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
     timeLabel: resolveSemanticLabel(labels, 'print.time'),
     timestamp: directionalText(String(printData.order?.createdAt ?? ''), base),
     orderNotes:
-      typeof printData.order?.orderNotes === 'string' && printData.order.orderNotes.trim().length > 0
+      typeof printData.order?.orderNotes === 'string' &&
+      printData.order.orderNotes.trim().length > 0
         ? Object.freeze({
             label: resolveSemanticLabel(labels, 'print.note'),
             text: directionalText(printData.order.orderNotes.trim(), base),

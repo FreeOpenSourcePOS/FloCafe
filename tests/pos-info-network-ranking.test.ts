@@ -3,7 +3,8 @@ import os from 'node:os';
 import { getAllLocalIPs, getLocalIP, rankLocalIPv4 } from '../main/server-state';
 
 type Ifaces = ReturnType<typeof os.networkInterfaces>;
-const v4 = (address: string) => ({ address, family: 'IPv4', internal: false }) as os.NetworkInterfaceInfo;
+const v4 = (address: string) =>
+  ({ address, family: 'IPv4', internal: false }) as os.NetworkInterfaceInfo;
 
 function withInterfaces(table: Ifaces, fn: () => void): void {
   const original = os.networkInterfaces;
@@ -35,7 +36,11 @@ withInterfaces(
 );
 
 withInterfaces({ docker0: [v4('172.17.0.1')] } as Ifaces, () => {
-  assert.equal(getLocalIP(), '172.17.0.1', 'a virtual adapter is still used when it is the only one');
+  assert.equal(
+    getLocalIP(),
+    '172.17.0.1',
+    'a virtual adapter is still used when it is the only one',
+  );
 });
 
 withInterfaces({} as Ifaces, () => {

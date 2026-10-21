@@ -22,7 +22,8 @@ function isValidLocalIPv4(alias: os.NetworkInterfaceInfo): boolean {
   return true;
 }
 
-const VIRTUAL_ADAPTER_NAME = /^(vethernet|wsl|docker|br-|veth|vmnet|vboxnet|vmware|virtualbox|hyper-v|tailscale|utun|tun|tap|zt|zerotier|ham|lo)/i;
+const VIRTUAL_ADAPTER_NAME =
+  /^(vethernet|wsl|docker|br-|veth|vmnet|vboxnet|vmware|virtualbox|hyper-v|tailscale|utun|tun|tap|zt|zerotier|ham|lo)/i;
 const PHYSICAL_ADAPTER_NAME = /^(en\d|eth|wlan|wlp|enp|eno|ens|wi-?fi|ethernet|wireless)/i;
 
 /** Scores an interface address for LAN pairing; higher is better, physical LAN adapters win over virtual or tunnel adapters. */
@@ -47,7 +48,11 @@ function listLocalIPv4(): string[] {
   for (const name of Object.keys(interfaces)) {
     for (const alias of interfaces[name] ?? []) {
       if (isValidLocalIPv4(alias)) {
-        candidates.push({ address: alias.address, score: rankLocalIPv4(name, alias.address), order: candidates.length });
+        candidates.push({
+          address: alias.address,
+          score: rankLocalIPv4(name, alias.address),
+          order: candidates.length,
+        });
       }
     }
   }

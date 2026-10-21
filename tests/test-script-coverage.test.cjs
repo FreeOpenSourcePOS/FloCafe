@@ -11,21 +11,17 @@ const {
 } = require('../scripts/ci/validate-test-script-coverage.cjs');
 
 assert.deepEqual(
-  extractExecutedTestScripts('npm run test:direct && node scripts/run-test.cjs npm run test:wrapped'),
+  extractExecutedTestScripts(
+    'npm run test:direct && node scripts/run-test.cjs npm run test:wrapped',
+  ),
   ['test:direct', 'test:wrapped'],
 );
 assert.deepEqual(
   extractExecutedTestScripts('echo "npm run test:not-executed" && npm run test:executed'),
   ['test:executed'],
 );
-assert.deepEqual(
-  extractExecutedTestScripts('node helper.cjs npm run test:argument'),
-  [],
-);
-assert.deepEqual(
-  extractExecutedTestScripts('echo "&& npm run test:phantom --note"'),
-  [],
-);
+assert.deepEqual(extractExecutedTestScripts('node helper.cjs npm run test:argument'), []);
+assert.deepEqual(extractExecutedTestScripts('echo "&& npm run test:phantom --note"'), []);
 assert.deepEqual(
   extractExecutedTestScripts("echo '; npm run test:phantom' && npm run test:executed"),
   ['test:executed'],
@@ -39,7 +35,9 @@ assert.deepEqual(
   'only suite files a command actually executes are extracted',
 );
 assert.deepEqual(
-  extractReferencedTestFiles('node tests/run-electron-node-test.cjs tests/held-orders.test.ts tests/held-orders.test.ts'),
+  extractReferencedTestFiles(
+    'node tests/run-electron-node-test.cjs tests/held-orders.test.ts tests/held-orders.test.ts',
+  ),
   ['tests/held-orders.test.ts'],
   'a file named twice is reported once',
 );
@@ -59,7 +57,9 @@ assert.deepEqual(
   'a command that only prints a suite path does not mark that suite covered',
 );
 assert.deepEqual(
-  extractReferencedTestFiles('node tests/run-electron-node-test.cjs tests/held-orders.test.ts && echo "tests/only-printed.test.ts"'),
+  extractReferencedTestFiles(
+    'node tests/run-electron-node-test.cjs tests/held-orders.test.ts && echo "tests/only-printed.test.ts"',
+  ),
   ['tests/held-orders.test.ts'],
   'a printed path is not counted even alongside a suite that really runs',
 );
@@ -76,7 +76,7 @@ assert.deepEqual(
     'test:inner': 'node y.cjs',
     'test:deepest': 'node z.cjs',
     'test:unrelated': 'node orphan.cjs',
-    'lint': 'eslint main/',
+    lint: 'eslint main/',
   }),
   new Set(['pretest', 'test', 'test:outer', 'test:inner', 'test:deepest']),
   'the closure follows nested test scripts and stops at non-test scripts',
@@ -101,7 +101,10 @@ assert.ok(
   reachable.has('test:release-regressions') && referenced.has('tests/browser-receipts.test.ts'),
   'suites reached only through pretest are covered without an allowlist entry',
 );
-for (const file of ['tests/issue-646-floor-management.test.ts', 'tests/windows-backup-unlink-ebusy.test.ts']) {
+for (const file of [
+  'tests/issue-646-floor-management.test.ts',
+  'tests/windows-backup-unlink-ebusy.test.ts',
+]) {
   assert.ok(referenced.has(file), `${file} is now wired into the default run`);
 }
 for (const [file, reason] of Object.entries(TEST_FILE_EXCLUSIONS)) {

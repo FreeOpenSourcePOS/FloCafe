@@ -17,11 +17,11 @@ FloCafe has five fixed staff identities, declared in
 request time, not from the token, and there is no role editor — an install cannot add a sixth
 identity or rename one.
 
-What each identity is *allowed to do* is a separate, configurable layer. See
+What each identity is _allowed to do_ is a separate, configurable layer. See
 [Configurable permissions](#configurable-permissions) below.
 
 `shared/role-permissions.ts` also exports `ROLE_ACCESS`, a map of ten named role groups. Those
-groups now serve two purposes: they are the *shipped default* `defaultRoles` values in
+groups now serve two purposes: they are the _shipped default_ `defaultRoles` values in
 [`shared/permissions.ts`](../../shared/permissions.ts) (`PERMISSION_DEFINITIONS`), and they remain
 the direct gate for the small set of context-policy checks described below that are role-based by
 product decision rather than by omission.
@@ -157,14 +157,14 @@ authorizes per message. See below.
 
 `isTokenRevoked`, `isTokenStale`, `getJWTSecret`, `rateLimit`, `authRateLimit`,
 `loginAuthRateLimit`, and `staticRouteRateLimit` are exported from one module and imported by all
-three servers, so the primitives are shared. The *middleware body* that sequences them is not: each
+three servers, so the primitives are shared. The _middleware body_ that sequences them is not: each
 server writes its own.
 
-| Server | Middleware | Shape |
-| --- | --- | --- |
-| `:3001` | `requireAuth` in [`main/server.ts`](../../main/server.ts) | Guards `/api`, with an unauthenticated-path allowlist, then revocation, verify, cached user lookup, staleness. |
-| `:3002` | `requireAuth` closure inside the server factory in [`main/kds-server.ts`](../../main/kds-server.ts) | Revocation, verify, uncached user lookup, staleness, then `hasPermission(user.id, 'kitchen.use')` and station resolution. |
-| `:3003` | `requireServerAppAuth` in [`main/server-app.ts`](../../main/server-app.ts) | 404-when-disabled, then revocation, verify, uncached user lookup, staleness, then `hasPermission(user.id, 'server-app.use')`. |
+| Server  | Middleware                                                                                          | Shape                                                                                                                         |
+| ------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `:3001` | `requireAuth` in [`main/server.ts`](../../main/server.ts)                                           | Guards `/api`, with an unauthenticated-path allowlist, then revocation, verify, cached user lookup, staleness.                |
+| `:3002` | `requireAuth` closure inside the server factory in [`main/kds-server.ts`](../../main/kds-server.ts) | Revocation, verify, uncached user lookup, staleness, then `hasPermission(user.id, 'kitchen.use')` and station resolution.     |
+| `:3003` | `requireServerAppAuth` in [`main/server-app.ts`](../../main/server-app.ts)                          | 404-when-disabled, then revocation, verify, uncached user lookup, staleness, then `hasPermission(user.id, 'server-app.use')`. |
 
 The three already differ in one observable way. `:3001` reads user active status, role, and
 `tokens_valid_after` through `getUserAuthStatus`, which caches for 30 seconds. `:3002` and `:3003`
@@ -195,13 +195,13 @@ to `authorizeMasterPin` in
 
 `authorizeMasterPin` is a fail-closed ladder, in order:
 
-| Condition | Result |
-| --- | --- |
-| OS-backed encryption unavailable | 503, and the gated operation is blocked rather than allowed through |
-| PIN not set on this device | 409 |
-| Rate limit reached for this key | 429 |
-| PIN absent, not a string, or not exactly 4 digits | 403 |
-| PIN does not verify | 403, and the attempt is recorded; 429 once the limit is reached |
+| Condition                                         | Result                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------- |
+| OS-backed encryption unavailable                  | 503, and the gated operation is blocked rather than allowed through |
+| PIN not set on this device                        | 409                                                                 |
+| Rate limit reached for this key                   | 429                                                                 |
+| PIN absent, not a string, or not exactly 4 digits | 403                                                                 |
+| PIN does not verify                               | 403, and the attempt is recorded; 429 once the limit is reached     |
 
 The PIN hash is stored through Electron `safeStorage` in `master-pin.enc` under the app's
 `userData` directory, written with mode `0o600`. Rate limiting is in memory, keyed by IP and route

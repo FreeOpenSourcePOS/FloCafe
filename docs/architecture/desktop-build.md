@@ -9,11 +9,11 @@ produces code that looks reasonable in a local build and has nowhere to run in a
 [`frontend/next.config.ts`](../../frontend/next.config.ts) reads `NEXT_BUILD_MODE`. When it equals
 `desktop`, three settings change:
 
-| Setting | Desktop | Otherwise |
-| --- | --- | --- |
-| `output` | `'export'` | `undefined` (server runtime) |
-| `trailingSlash` | `true` | default |
-| `images.unoptimized` | `true` | default |
+| Setting              | Desktop    | Otherwise                    |
+| -------------------- | ---------- | ---------------------------- |
+| `output`             | `'export'` | `undefined` (server runtime) |
+| `trailingSlash`      | `true`     | default                      |
+| `images.unoptimized` | `true`     | default                      |
 
 `npm run build:frontend` sets `NEXT_BUILD_MODE=desktop`, so that is the build the application ships.
 
@@ -91,11 +91,11 @@ contract below).
 `resolveTitleBarMode` in [`main/window-options.ts`](../../main/window-options.ts) returns
 `native-overlay` or `html-fallback`:
 
-| Platform | Result |
-| --- | --- |
-| Not `darwin`, `win32`, or `linux` | `html-fallback` |
-| `darwin` | `native-overlay` - macOS supplies traffic lights natively and never needs HTML buttons |
-| `win32` or `linux` | `native-overlay` only when the Electron major version is at least 33 **and** `BrowserWindow.prototype.setTitleBarOverlay` is a function; otherwise `html-fallback` |
+| Platform                          | Result                                                                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Not `darwin`, `win32`, or `linux` | `html-fallback`                                                                                                                                                    |
+| `darwin`                          | `native-overlay` - macOS supplies traffic lights natively and never needs HTML buttons                                                                             |
+| `win32` or `linux`                | `native-overlay` only when the Electron major version is at least 33 **and** `BrowserWindow.prototype.setTitleBarOverlay` is a function; otherwise `html-fallback` |
 
 The probe is capability-based: it asks the runtime what it can do. It does not inspect a user-agent
 string, and it must not grow one. The resolved mode is reported to the renderer through the
@@ -144,11 +144,11 @@ The renderer's HTML fallback controls and the top bar's native toggle use one IP
 as `windowAction` on the preload bridge and handled by the `window-action` channel. Exactly three
 actions are accepted:
 
-| Action | Effect |
-| --- | --- |
-| `minimize` | minimize the window |
+| Action            | Effect                                                       |
+| ----------------- | ------------------------------------------------------------ |
+| `minimize`        | minimize the window                                          |
 | `toggle-maximize` | leave full screen if in it, otherwise unmaximize or maximize |
-| `close` | close the window, which hides it unless quitting |
+| `close`           | close the window, which hides it unless quitting             |
 
 Any other value returns `{ error: 'Unsupported window action' }`. Keep the set at three verbs. Each
 new verb is a new native capability the renderer can reach, and the set exists to stay narrow.
@@ -178,11 +178,11 @@ detached frames, which is how handlers confirm the caller is the live renderer.
 
 ## Other window surfaces
 
-| Window | Module | URL | Preload |
-| --- | --- | --- | --- |
-| POS | `createMainWindow` | `http://localhost:<main port>` | yes |
-| KDS | `createKdsWindow` | `http://<LAN IP>:<kds port>/kds` | no |
-| Server app | served page | `http://localhost:<server app port>/server-standalone` | no |
+| Window     | Module             | URL                                                    | Preload |
+| ---------- | ------------------ | ------------------------------------------------------ | ------- |
+| POS        | `createMainWindow` | `http://localhost:<main port>`                         | yes     |
+| KDS        | `createKdsWindow`  | `http://<LAN IP>:<kds port>/kds`                       | no      |
+| Server app | served page        | `http://localhost:<server app port>/server-standalone` | no      |
 
 The KDS window deliberately has no preload and learns its palette from a `theme` query parameter
 appended by `appendThemeQueryParam`. It is confined to its own origin: window-open requests are

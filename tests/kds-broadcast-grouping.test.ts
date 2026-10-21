@@ -411,11 +411,7 @@ async function testRestPollingAndConflictResolution() {
     // 4. Older poll settling does not clear in-flight marker of newer pending refresh
     patchShouldConflict = false;
     timerIntervalCb!();
-    assertEqualOrThrow(
-      apiGetInFlight.length,
-      5,
-      'background timer triggers poll #5 when idle',
-    );
+    assertEqualOrThrow(apiGetInFlight.length, 5, 'background timer triggers poll #5 when idle');
 
     const updatePromise2 = hook.updateItemStatus(10, 'ready');
     await new Promise((r) => setImmediate(r));

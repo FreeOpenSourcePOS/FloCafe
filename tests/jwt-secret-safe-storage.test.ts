@@ -202,10 +202,7 @@ try {
   encryptionAvailable = true;
   clearJWTSecretCache();
   const recoveredNew = getJWTSecret();
-  assertOrThrow(
-    /^[0-9a-f]{64}$/.test(recoveredNew),
-    'regenerated recovered secret is hex string',
-  );
+  assertOrThrow(/^[0-9a-f]{64}$/.test(recoveredNew), 'regenerated recovered secret is hex string');
   assertEqualOrThrow(
     storedValue(),
     recoveredNew,

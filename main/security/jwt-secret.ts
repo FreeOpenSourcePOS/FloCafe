@@ -27,13 +27,15 @@ function getSecureStore(): { storage: SafeStorageLike; filePath: string } | null
   }
 }
 
+/** Electron's safeStorage and userData path for unpackaged development recovery only. */
 function getUnpackagedStore(): { storage: SafeStorageLike; filePath: string } | null {
   try {
     const { app, safeStorage } = require('electron') as {
       app?: { isPackaged?: boolean; getPath(name: string): string };
       safeStorage?: SafeStorageLike;
     };
-    if (app?.isPackaged || !app || !safeStorage || !safeStorage.isEncryptionAvailable()) return null;
+    if (app?.isPackaged || !app || !safeStorage || !safeStorage.isEncryptionAvailable())
+      return null;
     return { storage: safeStorage, filePath: path.join(app.getPath('userData'), JWT_SECRET_FILE) };
   } catch {
     return null;

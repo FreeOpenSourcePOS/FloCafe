@@ -75,18 +75,27 @@ export default function PendingOrderItemEdits({
   const [attempts, setAttempts] = useState<OrderItemEditAttemptSnapshot[]>(initialScan.attempts);
   const [hasUnreadableRecords, setHasUnreadableRecords] = useState(initialScan.unreadable);
   const [resolvingItemId, setResolvingItemId] = useState<number | null>(null);
-  const [issues, setIssues] = useState<Record<number, InlineIssue>>({});
+  const [issues, setIssues] = useState<Record<number, { scopeKey: string; issue: InlineIssue }>>(
+    {},
+  );
   const [refreshErrors, setRefreshErrors] = useState<
-    Record<number, { orderId: number; confirmed: boolean }>
+    Record<number, { scopeKey: string; orderId: number; confirmed: boolean }>
   >({});
-  const [rejectionNotices, setRejectionNotices] = useState<Record<number, string>>({});
-  const [storageErrors, setStorageErrors] = useState<Record<number, boolean>>({});
+  const [rejectionNotices, setRejectionNotices] = useState<
+    Record<number, { scopeKey: string; message: string }>
+  >({});
+  const [storageErrors, setStorageErrors] = useState<
+    Record<number, { scopeKey: string; hasError: boolean }>
+  >({});
+
+  const currentScopeKey = `${tenantId ?? 'none'}:${actorId || 'none'}:${orderId}`;
 
   const itemLabel = (itemId: number) =>
     items?.find((item) => item.id === itemId)?.product_name ?? `#${itemId}`;
 
   const inFlightRef = useRef(false);
   const mountedRef = useRef(true);
+  const scopeVersionRef = useRef(0);
 
   const rescan = useCallback(() => {
     if (tenantId === null || !actorId) {
@@ -107,6 +116,8 @@ export default function PendingOrderItemEdits({
   }, [actorId, orderId, tenantId]);
 
   useEffect(() => {
+    scopeVersionRef.current += 1;
+    inFlightRef.current = false;
     mountedRef.current = true;
     // Same-tab changes (custom event) and other-tab changes (storage event)
     // trigger a rescan; the module subscribes/unsubscribes both for this scope.
@@ -118,7 +129,14 @@ export default function PendingOrderItemEdits({
     // setting state synchronously inside the effect.
     let cancelled = false;
     queueMicrotask(() => {
-      if (!cancelled) rescan();
+      if (!cancelled) {
+        rescan();
+        setIssues({});
+        setRefreshErrors({});
+        setRejectionNotices({});
+        setStorageErrors({});
+        setResolvingItemId(null);
+      }
     });
     return () => {
       cancelled = true;
@@ -154,8 +172,16 @@ export default function PendingOrderItemEdits({
     };
   }, []);
 
-  const retryRefresh = async (itemId: number, targetOrderId: number, confirmed: boolean) => {
+  const retryRefresh = async (
+    itemId: number,
+    targetOrderId: number,
+    confirmed: boolean,
+    targetScopeKey?: string,
+    callerScopeVersion?: number,
+  ) => {
     if (!onItemEditResolved) return;
+    const startScopeVersion = callerScopeVersion ?? scopeVersionRef.current;
+    if (!mountedRef.current || scopeVersionRef.current !== startScopeVersion) return;
     let refreshed = false;
     try {
       const outcome = onItemEditResolved(targetOrderId);
@@ -163,11 +189,13 @@ export default function PendingOrderItemEdits({
     } catch {
       refreshed = false;
     }
-    if (!mountedRef.current) return;
+    if (!mountedRef.current || scopeVersionRef.current !== startScopeVersion) return;
+    const effectiveScopeKey =
+      targetScopeKey ?? `${tenantId ?? 'none'}:${actorId || 'none'}:${targetOrderId}`;
     setRefreshErrors((prev) => {
       const next = { ...prev };
       if (refreshed) delete next[itemId];
-      else next[itemId] = { orderId: targetOrderId, confirmed };
+      else next[itemId] = { scopeKey: effectiveScopeKey, orderId: targetOrderId, confirmed };
       return next;
     });
   };
@@ -182,11 +210,16 @@ export default function PendingOrderItemEdits({
 
   const resolve = async (attempt: OrderItemEditAttemptSnapshot) => {
     if (inFlightRef.current || !canEditItems) return;
+    const startScopeVersion = scopeVersionRef.current;
     const scope = identity();
+    const attemptScopeKey = `${attempt.tenantId}:${attempt.actorId}:${attempt.orderId}`;
     if (scope.tenant === null || !scope.actor) {
       setIssues((prev) => ({
         ...prev,
-        [attempt.itemId]: { messageKey: 'pendingItemEditAuthRequired' },
+        [attempt.itemId]: {
+          scopeKey: attemptScopeKey,
+          issue: { messageKey: 'pendingItemEditAuthRequired' },
+        },
       }));
       return;
     }
@@ -202,7 +235,10 @@ export default function PendingOrderItemEdits({
 
     inFlightRef.current = true;
     setResolvingItemId(attempt.itemId);
-    setIssues((prev) => ({ ...prev, [attempt.itemId]: null }));
+    setIssues((prev) => ({
+      ...prev,
+      [attempt.itemId]: { scopeKey: attemptScopeKey, issue: null },
+    }));
 
     let outcomeHandled = false;
     try {
@@ -214,10 +250,10 @@ export default function PendingOrderItemEdits({
           attempt.itemId,
         ),
         async () => {
-          // Re-check identity, mounted state, and permissions inside the lock
+          // Re-check identity, mounted state, scope version, and permissions inside the lock
           // immediately before sending, so a queued recovery cannot dispatch
           // under a different token or revoked permission.
-          if (!mountedRef.current) return null;
+          if (!mountedRef.current || scopeVersionRef.current !== startScopeVersion) return null;
           const currentScope = identity();
           if (
             currentScope.tenant !== attempt.tenantId ||
@@ -251,8 +287,24 @@ export default function PendingOrderItemEdits({
       );
 
       const finalScope = identity();
+      let cleared = false;
+      if (
+        (result?.outcome === 'rejected' || result?.outcome === 'committed') &&
+        finalScope.tenant === scope.tenant &&
+        finalScope.actor === scope.actor
+      ) {
+        cleared = clearOrderItemEditAttempt(
+          attempt.tenantId,
+          attempt.actorId,
+          attempt.orderId,
+          attempt.itemId,
+          attempt.idempotencyKey,
+        );
+      }
+
       if (
         !mountedRef.current ||
+        scopeVersionRef.current !== startScopeVersion ||
         finalScope.actor !== scope.actor ||
         finalScope.tenant !== scope.tenant
       ) {
@@ -270,24 +322,29 @@ export default function PendingOrderItemEdits({
         // Definitive rejection (e.g. 409 stale edit version, 400/404/422).
         // Clear the matching record, refresh current order data, and display
         // the rejection message.
-        const cleared = clearOrderItemEditAttempt(
-          attempt.tenantId,
-          attempt.actorId,
-          attempt.orderId,
-          attempt.itemId,
-          attempt.idempotencyKey,
-        );
         outcomeHandled = true;
-        await retryRefresh(attempt.itemId, attempt.orderId, false);
-        if (!mountedRef.current) return;
+        await retryRefresh(
+          attempt.itemId,
+          attempt.orderId,
+          false,
+          attemptScopeKey,
+          startScopeVersion,
+        );
+        if (!mountedRef.current || scopeVersionRef.current !== startScopeVersion) return;
         if (!cleared) {
-          setStorageErrors((prev) => ({ ...prev, [attempt.itemId]: true }));
+          setStorageErrors((prev) => ({
+            ...prev,
+            [attempt.itemId]: { scopeKey: attemptScopeKey, hasError: true },
+          }));
         }
         const backendMessage = ((result.error as { response?: { data?: { error?: string } } })
           ?.response?.data?.error ?? undefined) as string | undefined;
         setRejectionNotices((prev) => ({
           ...prev,
-          [attempt.itemId]: backendMessage || tOrders('editItemFailed'),
+          [attempt.itemId]: {
+            scopeKey: attemptScopeKey,
+            message: backendMessage || tOrders('editItemFailed'),
+          },
         }));
         rescan();
         return;
@@ -306,10 +363,13 @@ export default function PendingOrderItemEdits({
         setIssues((prev) => ({
           ...prev,
           [attempt.itemId]: {
-            messageKey,
-            message:
-              messageKey === 'pendingItemEditHint' && backendMessage ? backendMessage : undefined,
-          } as InlineIssue,
+            scopeKey: attemptScopeKey,
+            issue: {
+              messageKey,
+              message:
+                messageKey === 'pendingItemEditHint' && backendMessage ? backendMessage : undefined,
+            },
+          },
         }));
         outcomeHandled = true;
         rescan();
@@ -317,36 +377,37 @@ export default function PendingOrderItemEdits({
       }
 
       // Committed. Compare-and-clear the matching record only.
-      const cleared = clearOrderItemEditAttempt(
-        attempt.tenantId,
-        attempt.actorId,
-        attempt.orderId,
-        attempt.itemId,
-        attempt.idempotencyKey,
-      );
       outcomeHandled = true;
-      await retryRefresh(attempt.itemId, attempt.orderId, true);
-      if (!mountedRef.current) return;
+      await retryRefresh(attempt.itemId, attempt.orderId, true, attemptScopeKey, startScopeVersion);
+      if (!mountedRef.current || scopeVersionRef.current !== startScopeVersion) return;
       if (!cleared) {
         setStorageErrors((prev) => ({
           ...prev,
-          [attempt.itemId]: true,
+          [attempt.itemId]: { scopeKey: attemptScopeKey, hasError: true },
         }));
       }
       rescan();
     } catch {
-      if (!mountedRef.current || !outcomeHandled) {
+      if (mountedRef.current && scopeVersionRef.current === startScopeVersion && !outcomeHandled) {
         rescan();
       }
     } finally {
-      if (mountedRef.current) setResolvingItemId(null);
-      inFlightRef.current = false;
+      if (scopeVersionRef.current === startScopeVersion) {
+        inFlightRef.current = false;
+        if (mountedRef.current) setResolvingItemId(null);
+      }
     }
   };
 
-  const hasRefreshErrors = Object.keys(refreshErrors).length > 0;
-  const hasRejectionNotices = Object.keys(rejectionNotices).length > 0;
-  const hasStorageErrors = Object.keys(storageErrors).length > 0;
+  const hasRefreshErrors = Object.values(refreshErrors).some(
+    (err) => err.scopeKey === currentScopeKey,
+  );
+  const hasRejectionNotices = Object.values(rejectionNotices).some(
+    (notice) => notice.scopeKey === currentScopeKey,
+  );
+  const hasStorageErrors = Object.values(storageErrors).some(
+    (err) => err.scopeKey === currentScopeKey && err.hasError,
+  );
 
   if (tenantId === null || !actorId) return null;
   if (
@@ -365,7 +426,8 @@ export default function PendingOrderItemEdits({
       data-testid="pending-order-item-edits"
     >
       {attempts.map((attempt) => {
-        const issue = issues[attempt.itemId] ?? null;
+        const issueEntry = issues[attempt.itemId];
+        const issue = issueEntry?.scopeKey === currentScopeKey ? issueEntry.issue : null;
         const resolving = resolvingItemId === attempt.itemId;
         return (
           <div
@@ -412,56 +474,65 @@ export default function PendingOrderItemEdits({
         );
       })}
 
-      {Object.entries(refreshErrors).map(([itemIdStr, refreshError]) => {
-        const itemId = Number(itemIdStr);
-        return (
-          <div
-            key={`refresh-err-${itemId}`}
-            className="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300"
-            data-testid="pending-item-edit-refresh-failed"
-          >
-            <span>
-              {refreshError.confirmed
-                ? tOrders('pendingItemEditRefreshFailed')
-                : tPos('loadOrderFailed')}
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              data-testid="retry-refresh-button"
-              onClick={() =>
-                void retryRefresh(itemId, refreshError.orderId, refreshError.confirmed)
-              }
+      {Object.entries(refreshErrors)
+        .filter(([, refreshError]) => refreshError.scopeKey === currentScopeKey)
+        .map(([itemIdStr, refreshError]) => {
+          const itemId = Number(itemIdStr);
+          return (
+            <div
+              key={`refresh-err-${itemId}`}
+              className="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300"
+              data-testid="pending-item-edit-refresh-failed"
             >
-              {tSettings('retry')}
-            </Button>
-          </div>
-        );
-      })}
+              <span>
+                {refreshError.confirmed
+                  ? tOrders('pendingItemEditRefreshFailed')
+                  : tPos('loadOrderFailed')}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                data-testid="retry-refresh-button"
+                onClick={() =>
+                  void retryRefresh(
+                    itemId,
+                    refreshError.orderId,
+                    refreshError.confirmed,
+                    refreshError.scopeKey,
+                  )
+                }
+              >
+                {tSettings('retry')}
+              </Button>
+            </div>
+          );
+        })}
 
-      {Object.entries(rejectionNotices).map(([itemIdStr, message]) => {
-        const itemId = Number(itemIdStr);
-        return (
-          <div
-            key={`reject-${itemId}`}
-            className="flex items-center justify-between gap-2 text-xs text-red-600 dark:text-red-400"
-            data-testid="pending-item-edit-rejection"
-          >
-            <span>
-              {tOrders('pendingItemEdit')} ({itemLabel(itemId)}): {message}
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => dismissRejection(itemId)}
+      {Object.entries(rejectionNotices)
+        .filter(([, notice]) => notice.scopeKey === currentScopeKey)
+        .map(([itemIdStr, notice]) => {
+          const itemId = Number(itemIdStr);
+          return (
+            <div
+              key={`reject-${itemId}`}
+              className="flex items-center justify-between gap-2 text-xs text-red-600 dark:text-red-400"
+              data-testid="pending-item-edit-rejection"
             >
-              {tCommon('close')}
-            </Button>
-          </div>
-        );
-      })}
+              <span>
+                {tOrders('pendingItemEdit')} ({itemLabel(itemId)}): {notice.message}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => dismissRejection(itemId)}
+              >
+                {tCommon('close')}
+              </Button>
+            </div>
+          );
+        })}
 
       {(hasUnreadableRecords || hasStorageErrors) && (
         <p

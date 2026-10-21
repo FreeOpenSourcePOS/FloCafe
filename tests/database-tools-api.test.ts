@@ -2280,7 +2280,11 @@ async function runTests() {
     );
 
     const ledgerCheck = validateInventoryLedgerDatabase(db);
-    assertEqual(ledgerCheck, null, 'validateInventoryLedgerDatabase passes after clock rollback import');
+    assertEqual(
+      ledgerCheck,
+      null,
+      'validateInventoryLedgerDatabase passes after clock rollback import',
+    );
 
     const importedMovements = getInventoryMovementRows(db);
     assert(importedMovements.length === 6, 'all 6 movements imported in durable order');
@@ -2332,7 +2336,10 @@ async function runTests() {
 
     const exportedCustomers = exportRes.body.data.customers || [];
     const hasPhoneDigits = exportedCustomers.some((c: any) => 'phone_digits' in c);
-    assert(!hasPhoneDigits, 'GET /export excludes virtual generated column phone_digits from customers');
+    assert(
+      !hasPhoneDigits,
+      'GET /export excludes virtual generated column phone_digits from customers',
+    );
 
     const exportedSettings = exportRes.body.data.settings || [];
     const jwtRow = exportedSettings.find((s: any) => s.key === 'jwt_secret');
@@ -2371,7 +2378,9 @@ async function runTests() {
       `roundtrip import succeeds with overwrite: true (got ${roundtripImportRes.status}, ${JSON.stringify(roundtripImportRes.body)})`,
     );
 
-    const liveJwtRow = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as any;
+    const liveJwtRow = db
+      .prepare("SELECT value FROM settings WHERE key = 'jwt_secret'")
+      .get() as any;
     assert(
       liveJwtRow && liveJwtRow.value === 'live-secret-test-3g',
       'jwt_secret was preserved during import and not overwritten with [REDACTED]',
@@ -2416,7 +2425,9 @@ async function runTests() {
       .set('Authorization', `Bearer ${ownerToken}`);
 
     const shadowTablesData = {
-      orders_search_fts: [{ rowid: 1, order_number: 'ORD-CONTAM-8902', customer_name: 'Luna Lovegood' }],
+      orders_search_fts: [
+        { rowid: 1, order_number: 'ORD-CONTAM-8902', customer_name: 'Luna Lovegood' },
+      ],
       orders_search_fts_data: [{ id: 1, block: Buffer.from('fts block data') }],
       orders_search_fts_idx: [{ pgno: 1 }],
       orders_search_fts_config: [{ k: 'version', v: '1' }],

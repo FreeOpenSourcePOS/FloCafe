@@ -2624,6 +2624,7 @@ export function validateInventoryLedgerRows(
 
   const latestMovementByChain = new Map<string, Chain>();
   for (const [key, movements] of movementsByChain) {
+    // Order by durable append sequence (id ASC, with input index tie-breaker) so clock rollback cannot break valid stock chains.
     movements.sort((left, right) =>
       left.id !== null && right.id !== null && left.id !== right.id
         ? left.id - right.id

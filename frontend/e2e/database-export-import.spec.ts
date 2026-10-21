@@ -18,10 +18,9 @@ test.describe('Database Settings JSON Export and Import (#1272, #1273)', () => {
     await setLanguage(page, 'en');
   });
 
-  test('Database JSON export excludes FTS tables and virtual columns, and import round-trips successfully', async (
-    { page },
-    testInfo,
-  ) => {
+  test('Database JSON export excludes FTS tables and virtual columns, and import round-trips successfully', async ({
+    page,
+  }, testInfo) => {
     await signInAsOwner(page);
 
     // Navigate to Database Settings tab

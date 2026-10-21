@@ -2148,9 +2148,9 @@ async function runTests() {
     assert(foundByPhone, 'newly imported order is immediately searchable by customer phone');
   }
 
-  // ── Test 3f: JSON import preserving durable append order under backward clock (#1272) ──
+  // ── Test 3f: JSON import preserving durable append order under backward clock ──
   console.log(
-    '\nTest 3f: POST /api/db/import preserving durable append order under backward clock (#1272)',
+    '\nTest 3f: POST /api/db/import preserving durable append order under backward clock',
   );
   {
     db.exec(`
@@ -2298,9 +2298,9 @@ async function runTests() {
     );
   }
 
-  // ── Test 3g: Schema 115 GET /export excludes FTS tables and phone_digits, POST /import round-trips (#1273) ──
+  // ── Test 3g: Schema 115 GET /export excludes FTS tables and phone_digits, POST /import round-trips ──
   console.log(
-    '\nTest 3g: Schema 115 GET /export excludes FTS tables and phone_digits, POST /import round-trips (#1273)',
+    '\nTest 3g: Schema 115 GET /export excludes FTS tables and phone_digits, POST /import round-trips',
   );
   {
     // Ensure jwt_secret exists in settings
@@ -2415,9 +2415,9 @@ async function runTests() {
     );
   }
 
-  // ── Test 3h: Contaminated schema 115 export with shadow tables and phone_digits (#1273) ──
+  // ── Test 3h: Contaminated schema 115 export with shadow tables and phone_digits ──
   console.log(
-    '\nTest 3h: Contaminated schema 115 export with shadow tables and phone_digits (#1273)',
+    '\nTest 3h: Contaminated schema 115 export with shadow tables and phone_digits',
   );
   {
     const baseExportRes = await request(app)
@@ -2554,9 +2554,9 @@ async function runTests() {
     );
   }
 
-  // ── Test 3i: Historical schema 114 export -> schema 115 import (#1273) ──
+  // ── Test 3i: Historical schema 114 export -> schema 115 import ──
   console.log(
-    '\nTest 3i: Historical schema 114 export -> schema 115 import succeeds and rebuilds search (#1273)',
+    '\nTest 3i: Historical schema 114 export -> schema 115 import succeeds and rebuilds search',
   );
   {
     const baseExportRes = await request(app)
@@ -2628,30 +2628,33 @@ async function runTests() {
     );
   }
 
-  // ── Test 3j: Rollback sentinel preservation on import error (#1273) ──
-  console.log('\nTest 3j: Rollback sentinel preservation on import error (#1273)');
+  // ── Test 3j: Rollback sentinel preservation on import error ──
+  console.log('\nTest 3j: Rollback sentinel preservation on import error');
   {
-    db.prepare(
-      "INSERT OR IGNORE INTO categories (id, name, sort_order) VALUES ('sentinel-rollback-cat', 'Original Sentinel', 10)",
-    ).run();
+    // Clean up any residual category from prior runs
+    db.prepare("DELETE FROM categories WHERE id = 'sentinel-new-rollback-cat'").run();
 
     const badPayload = {
       settings: [],
       users: [],
-      categories: [{ id: 'sentinel-rollback-cat', name: 'MUTATED SHOULD ROLLBACK' }],
+      // Two rows with duplicate primary key triggers mid-transaction constraint failure
+      categories: [
+        { id: 'sentinel-new-rollback-cat', name: 'New Rollback Category 1', sort_order: 10 },
+        { id: 'sentinel-new-rollback-cat', name: 'Duplicate Should Fail', sort_order: 11 },
+      ],
       products: [
         {
-          id: 'prod-broken-chain',
-          name: 'Broken Chain Prod',
+          id: 'prod-rollback-chain',
+          name: 'Rollback Chain Prod',
           price: 10,
           track_inventory: 1,
-          stock_quantity: 50,
+          stock_quantity: 10,
         },
       ],
       inventory_movements: [
         {
           id: 99999,
-          product_id: 'prod-broken-chain',
+          product_id: 'prod-rollback-chain',
           quantity_delta: 10,
           stock_after: 10,
           movement_type: 'adjustment',
@@ -2673,16 +2676,15 @@ async function runTests() {
 
     assert(
       failImportRes.status >= 400,
-      `broken inventory chain import is rejected (got ${failImportRes.status})`,
+      `mid-transaction failure is rejected (got ${failImportRes.status})`,
     );
 
-    const sentinelCat = db
-      .prepare("SELECT name FROM categories WHERE id = 'sentinel-rollback-cat'")
+    const insertedCat = db
+      .prepare("SELECT name FROM categories WHERE id = 'sentinel-new-rollback-cat'")
       .get() as any;
-    assertEqual(
-      sentinelCat?.name,
-      'Original Sentinel',
-      'category mutation rolled back after failed import',
+    assert(
+      insertedCat === undefined,
+      'newly inserted category was rolled back after mid-transaction failure',
     );
 
     const integrity = db.pragma('integrity_check', { simple: true });

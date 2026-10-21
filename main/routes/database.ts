@@ -468,13 +468,20 @@ router.post(
               source_reason, source_created_at
             ) VALUES (?, ?, ?, ?, ?, 'import', ?, 'Imported inventory movement', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
+                  const allHavePositiveIntegerIds =
+                    rows.length > 0 &&
+                    rows.every((row) => {
+                      const rawId = Number(row?.id);
+                      return Number.isInteger(rawId) && rawId > 0;
+                    });
                   const orderedRows = rows
                     .map((row, index) => ({ row, index }))
                     .sort((left, right) => {
-                      const leftId = Number(left.row?.id);
-                      const rightId = Number(right.row?.id);
-                      if (Number.isFinite(leftId) && Number.isFinite(rightId) && leftId !== rightId)
-                        return leftId - rightId;
+                      if (allHavePositiveIntegerIds) {
+                        const leftId = Number(left.row?.id);
+                        const rightId = Number(right.row?.id);
+                        if (leftId !== rightId) return leftId - rightId;
+                      }
                       return left.index - right.index;
                     });
                   for (const { row } of orderedRows) {

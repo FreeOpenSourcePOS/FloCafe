@@ -2622,11 +2622,18 @@ export function validateInventoryLedgerRows(
     movementsByChain.set(key, movements);
   }
 
+  const allHavePositiveIntegerIds =
+    movementRows.length > 0 &&
+    movementRows.every((row) => {
+      const rawId = Number(row?.id);
+      return Number.isInteger(rawId) && rawId > 0;
+    });
+
   const latestMovementByChain = new Map<string, Chain>();
   for (const [key, movements] of movementsByChain) {
-    // Order by durable append sequence (id ASC, with input index tie-breaker) so clock rollback cannot break valid stock chains.
+    // Order by durable append sequence when all movements carry positive integer IDs, otherwise preserve input order.
     movements.sort((left, right) =>
-      left.id !== null && right.id !== null && left.id !== right.id
+      allHavePositiveIntegerIds && left.id !== null && right.id !== null && left.id !== right.id
         ? left.id - right.id
         : left.index - right.index,
     );

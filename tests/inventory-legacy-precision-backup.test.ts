@@ -630,7 +630,7 @@ async function run() {
     assertOrThrow(Boolean(restoredPayment), 'Restored payment transaction ref txn-v114-1 exists');
 
     console.log(
-      '\n--- Scenario 6: Backward clock and durable append order validation & backup/restore (#1272) ---',
+      '\n--- Scenario 6: Backward clock and durable append order validation & backup/restore ---',
     );
 
     // Part A: validateInventoryLedgerRows under backward clock jumps

@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/auth';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import ApplicationMenuRow from './ApplicationMenuRow';
 import UpdateBadge from './UpdateBadge';
+import { useDesktopTitleBarSync } from './titlebar-sync';
 
 const subscribeToElectronCapability = () => () => {};
 const getElectronCapability = () =>
@@ -22,17 +23,7 @@ export default function TitleBar() {
     getServerElectronCapability,
   );
 
-  useEffect(() => {
-    if (isElectron) {
-      document.documentElement.dataset.floDesktopTitlebar = 'true';
-      if (window.electronAPI?.platform) {
-        document.documentElement.dataset.floPlatform = window.electronAPI.platform;
-      }
-    } else {
-      delete document.documentElement.dataset.floDesktopTitlebar;
-      delete document.documentElement.dataset.floPlatform;
-    }
-  }, [isElectron]);
+  useDesktopTitleBarSync(isElectron);
 
   useEffect(() => {
     const handleFocus = () => {

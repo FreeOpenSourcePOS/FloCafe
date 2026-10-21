@@ -145,13 +145,15 @@ html[data-flo-window-focused='false'] .flo-title-bar {
   padding-inline: 0.75rem;
 }
 
-/* macOS uses native traffic lights on the top-left (occupying ~68px).
- * Traffic lights stay physically on the left even in RTL locales.
- * Safe area spans full width with 96px left padding (leaving 28px gap after green light) and 0.75rem right padding. */
+/* macOS reserves 96px leading space for traffic lights only when windowed;
+ * in native fullscreen traffic lights hide and safe-area padding reverts to normal. */
 html[data-flo-platform='darwin'] .flo-title-bar__safe-area {
   left: 0;
   right: 0;
   inline-size: 100%;
+}
+
+html[data-flo-platform='darwin']:not([data-flo-window-fullscreen='true']) .flo-title-bar__safe-area {
   padding-left: 96px;
   padding-right: 0.75rem;
 }

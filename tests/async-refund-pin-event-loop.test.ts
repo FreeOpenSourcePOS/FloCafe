@@ -16,6 +16,8 @@
  *    - Regular refund transitioned to late refund between pre-check and commit throws 403 for non-owner.
  * 6. withRefundPinLock serializes concurrent invalid PIN attempts and enforces rate limiting (429).
  * 7. Idempotency replays return the stored response outside withTxn without re-evaluating PINs.
+ * 8. Queued or concurrent idempotent retries waking inside withRefundPinLock replay committed responses
+ *    (or conflict with 409) without re-evaluating PINs or tripping rate limits.
  */
 
 import * as fs from 'node:fs';
@@ -510,7 +512,11 @@ async function run() {
 
     const [origResA, retryResA] = await Promise.all([origPromiseA, retryPromiseA]);
 
-    assertEqualOrThrow(origResA.status, 201, 'Concurrent original refund request succeeds with 201');
+    assertEqualOrThrow(
+      origResA.status,
+      201,
+      'Concurrent original refund request succeeds with 201',
+    );
     assertEqualOrThrow(retryResA.status, 201, 'Queued matching retry returns 201 replay');
     assertEqualOrThrow(
       retryResA.body.refund.id,
@@ -524,7 +530,9 @@ async function run() {
     );
 
     const countA = (
-      db.prepare('SELECT COUNT(*) as count FROM refunds WHERE bill_id = ?').get(fixture7a.billId) as any
+      db
+        .prepare('SELECT COUNT(*) as count FROM refunds WHERE bill_id = ?')
+        .get(fixture7a.billId) as any
     ).count;
     assertEqualOrThrow(countA, 1, 'Only 1 refund record exists in SQLite');
 
@@ -561,7 +569,11 @@ async function run() {
     const [origResA2, retryResA2] = await Promise.all([origPromiseA2, retryPromiseA2]);
 
     assertEqualOrThrow(origResA2.status, 201, 'Original request succeeds with 201');
-    assertEqualOrThrow(retryResA2.status, 201, 'Queued retry omitting override_pin returns 201 replay');
+    assertEqualOrThrow(
+      retryResA2.status,
+      201,
+      'Queued retry omitting override_pin returns 201 replay',
+    );
     assertEqualOrThrow(
       retryResA2.body.refund.id,
       origResA2.body.refund.id,
@@ -637,7 +649,11 @@ async function run() {
         .prepare('SELECT COUNT(*) as count FROM refund_idempotency WHERE idempotency_key = ?')
         .get(idempotencyKeyC) as any
     ).count;
-    assertEqualOrThrow(idempotencyRowCount, 0, 'Nothing committed to refund_idempotency on failed PIN');
+    assertEqualOrThrow(
+      idempotencyRowCount,
+      0,
+      'Nothing committed to refund_idempotency on failed PIN',
+    );
 
     const resC2 = await request(app)
       .post('/api/refunds')
@@ -650,7 +666,11 @@ async function run() {
         override_pin: 'wrong-pin-c2',
       });
 
-    assertEqualOrThrow(resC2.status, 403, 'Second attempt with same Idempotency-Key and invalid PIN still returns 403');
+    assertEqualOrThrow(
+      resC2.status,
+      403,
+      'Second attempt with same Idempotency-Key and invalid PIN still returns 403',
+    );
     assertEqualOrThrow(
       resC2.body.display_code,
       'approver_pin_invalid',
@@ -659,16 +679,17 @@ async function run() {
 
     // D. Missing override PIN when no idempotency record exists returns 400 approver_pin_required
     const fixture7d = createPaidBill();
-    const resD = await request(app)
-      .post('/api/refunds')
-      .set(ownerAuth)
-      .send({
-        bill_id: fixture7d.billId,
-        amount: fixture7d.total,
-        method: 'cash',
-        approver_id: managerId,
-      });
-    assertEqualOrThrow(resD.status, 400, 'Missing override_pin returns 400 when no prior replay exists');
+    const resD = await request(app).post('/api/refunds').set(ownerAuth).send({
+      bill_id: fixture7d.billId,
+      amount: fixture7d.total,
+      method: 'cash',
+      approver_id: managerId,
+    });
+    assertEqualOrThrow(
+      resD.status,
+      400,
+      'Missing override_pin returns 400 when no prior replay exists',
+    );
     assertEqualOrThrow(
       resD.body.display_code,
       'approver_pin_required',

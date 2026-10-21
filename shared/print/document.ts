@@ -868,6 +868,8 @@ export interface KotOrderSnapshot {
   readonly orderType: string;
   /** Customer display name, when the order carries one. */
   readonly customerName?: string;
+  /** Order-level notes (allergy alerts, packing instructions), when present. */
+  readonly orderNotes?: string;
 }
 
 /**
@@ -900,6 +902,8 @@ export interface KotHeaderBlock {
   readonly timeLabel: SemanticLabel;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
   readonly timestamp: DirectionalText;
+  /** Order-level notes rendered as a highlighted banner above the items. */
+  readonly orderNotes?: { readonly label: SemanticLabel; readonly text: DirectionalText } | null;
 }
 
 /** Ordered kitchen item rows with addons and preparation instructions. */
@@ -1539,7 +1543,12 @@ function isKotDocumentBlock(value: unknown): value is KotDocumentBlock {
           isSemanticLabel(value.customer.label) &&
           isDirectionalText(value.customer.name))) &&
       isSemanticLabel(value.timeLabel) &&
-      isDirectionalText(value.timestamp)
+      isDirectionalText(value.timestamp) &&
+      (value.orderNotes === undefined ||
+        value.orderNotes === null ||
+        (isRecord(value.orderNotes) &&
+          isSemanticLabel(value.orderNotes.label) &&
+          isDirectionalText(value.orderNotes.text)))
     );
   }
   if (value.kind !== 'kot-items' || !Array.isArray(value.rows)) return false;
@@ -1620,6 +1629,13 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
         : null,
     timeLabel: resolveSemanticLabel(labels, 'print.time'),
     timestamp: directionalText(String(printData.order?.createdAt ?? ''), base),
+    orderNotes:
+      typeof printData.order?.orderNotes === 'string' && printData.order.orderNotes.trim().length > 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'print.note'),
+            text: directionalText(printData.order.orderNotes.trim(), base),
+          })
+        : null,
   });
 
   const items: KotItemsBlock = Object.freeze({

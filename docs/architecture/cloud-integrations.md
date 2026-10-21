@@ -98,8 +98,9 @@ mismatched acknowledgment is retained as a visible permanent rejection.
 
 **Transmission gates.** Automatic delivery requires both `diagnostics_consent` and
 `diagnostics_transmission_enabled`. The one-time upgrade migration enables transmission for
-unconfigured legacy installs while preserving an explicit refusal; a fresh install receives the same
-enabled default. A merchant can opt out through Settings. Consent changes synchronize with FloAdmin
+unconfigured legacy installs that already have users while preserving an explicit refusal; a fresh
+install keeps transmission off until the merchant opts in through Settings. A merchant can change the
+choice at any time through Settings. Consent changes synchronize with FloAdmin
 using an idempotent change ID, and remote opt-out takes precedence over startup initialization. Cloud
 deletion blocks all diagnostics delivery. With a configured signed cloud connection reports go to
 FloAdmin. Without one, they use the anonymous collector only when `telemetry_enabled` is also on;

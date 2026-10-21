@@ -83,7 +83,7 @@ export function createMainWindow(
       preload,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
     show: false,
     ...windowOptions,

@@ -785,6 +785,19 @@ function createWindow(): void {
     return { action: 'deny' };
   });
 
+  // Keep the main window on the embedded server; external links go to the system browser.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isAllowedLocalWindowUrl(url, getServerPort(), getLocalIP())) return;
+    event.preventDefault();
+    if (isSafeExternalUrl(url)) {
+      shell
+        .openExternal(url)
+        .catch((err) => console.warn('[Flo] Failed to open external URL:', err?.message || err));
+    } else {
+      console.warn('[Flo] Blocked unsafe navigation:', url);
+    }
+  });
+
   // Intercept all renderer downloads and show a save dialog instead of
   // auto-saving to Downloads — required for MAS sandbox compliance.
   mainWindow.webContents.session.on('will-download', (_event, item) => {
@@ -1557,20 +1570,21 @@ async function initialize(): Promise<void> {
     });
 
     // Requires master PIN authorization and runs cleanup before quitAndInstall.
-    ipcMain.handle(
-      'restart-and-install',
-      createRestartAndInstallHandler({
-        isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
-        authorize: (pin) => authorizeMasterPin(pin, 'ipc:restart-and-install'),
-        runCleanup,
-        quitAndInstall: (isSilent, isForceRunAfter) =>
-          autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
-        updateState: updateShutdownState,
-        onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
-        warn: (message) => log.warn(message),
-        error: (message, error) => log.error(message, error),
-      }),
-    );
+    const restartAndInstallHandler = createRestartAndInstallHandler({
+      isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
+      authorize: (pin) => authorizeMasterPin(pin, 'ipc:restart-and-install'),
+      runCleanup,
+      quitAndInstall: (isSilent, isForceRunAfter) =>
+        autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
+      updateState: updateShutdownState,
+      onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
+      warn: (message) => log.warn(message),
+      error: (message, error) => log.error(message, error),
+    });
+    ipcMain.handle('restart-and-install', (event, pin) => {
+      if (!isTrustedSender(event)) return { success: false, error: 'Unauthorized sender' };
+      return restartAndInstallHandler(event, pin);
+    });
 
     ipcMain.handle('get-status', () => {
       const mem = process.memoryUsage();

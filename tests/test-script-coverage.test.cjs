@@ -11,7 +11,7 @@ const {
 } = require('../scripts/ci/validate-test-script-coverage.cjs');
 
 assert.deepEqual(
-  extractExecutedTestScripts('npm run test:direct && bash tests/run-test.sh npm run test:wrapped'),
+  extractExecutedTestScripts('npm run test:direct && node scripts/run-test.cjs npm run test:wrapped'),
   ['test:direct', 'test:wrapped'],
 );
 assert.deepEqual(
@@ -64,9 +64,9 @@ assert.deepEqual(
   'a printed path is not counted even alongside a suite that really runs',
 );
 assert.deepEqual(
-  extractReferencedTestFiles('bash tests/run-test.sh node tests/wrapped.test.ts'),
+  extractReferencedTestFiles('node scripts/run-test.cjs node tests/wrapped.test.ts'),
   ['tests/wrapped.test.ts'],
-  'a runner invoked through the run-test.sh wrapper still counts',
+  'a runner invoked through the run-test.cjs wrapper still counts',
 );
 assert.deepEqual(
   collectReachableScripts({

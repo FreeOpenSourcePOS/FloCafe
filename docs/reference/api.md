@@ -385,7 +385,7 @@ Bill generation, settlement, and completion are described end to end in
 | `POST` | `/:id/payments` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `payments`, `customer_id`; header: `Idempotency-Key` | See [Order lifecycle](../architecture/order-lifecycle.md#payments) for input, replay, gate, and settlement behavior. |
 | `POST` | `/:id/applyDiscount` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `type`, `value`, `reason`, `override_pin`, `manager_id`, `user_id` | `409` when the order is cancelled. |
 | `PATCH` | `/:id/charges` | `bills.discount.apply` | path: `id`; body: `charge_id`, `waived` or `applied` | `{ bill }` with updated charge breakdown and totals. Only for unpaid, unsplit bills with no payments; the charge must be active and apply to the order type. `409` when the order is cancelled. |
-| `POST` | `/:id/markPrinted` | `bills.print` (`ROLE_ACCESS.ownerManager`) | path: `id` | Stamps `bills.printed_at`. |
+| `POST` | `/:id/markPrinted` | `bills.print` | path: `id` | Stamps `bills.printed_at`. |
 | `POST` | `/:id/print` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `print_type` | - |
 | `GET` | `/:id/print-history` | `ROLE_ACCESS.ownerManagerCashier` | path: `id` | Print jobs recorded for the bill, newest first. |
 

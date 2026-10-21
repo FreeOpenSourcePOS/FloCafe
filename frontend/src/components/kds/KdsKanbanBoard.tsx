@@ -3,7 +3,7 @@
 import { PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom';
 import { DragDropProvider, useDraggable, type DragEndEvent } from '@dnd-kit/react';
 import { Clock } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { ElapsedTime } from '@/components/kds/ElapsedTime';
 import { KdsColumn } from '@/components/kds/KdsColumn';
@@ -180,7 +180,21 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
   );
 }
 
-function KanbanOrderCard({
+// onItemOpen is intentionally ignored: it only opens the item modal and is recreated every render.
+function kanbanOrderCardPropsEqual(
+  prev: { order: KdsOrder; status: KitchenStatus; items: KdsOrderItem[]; updating: number | null },
+  next: { order: KdsOrder; status: KitchenStatus; items: KdsOrderItem[]; updating: number | null },
+): boolean {
+  return (
+    prev.order === next.order &&
+    prev.status === next.status &&
+    prev.updating === next.updating &&
+    prev.items.length === next.items.length &&
+    prev.items.every((item, index) => item === next.items[index])
+  );
+}
+
+const KanbanOrderCard = memo(function KanbanOrderCard({
   order,
   status,
   items,
@@ -268,7 +282,7 @@ function KanbanOrderCard({
       </div>
     </div>
   );
-}
+}, kanbanOrderCardPropsEqual);
 
 // Read-only display column for voided items; drag-and-drop transitions are disabled.
 function VoidedColumn({

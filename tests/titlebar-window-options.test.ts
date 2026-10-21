@@ -47,7 +47,7 @@ assert.deepEqual(darkMainWindow.options.titleBarOverlay, {
 assert.equal(macMainWindow.options.webPreferences.preload, '/tmp/preload.js');
 assert.equal(macMainWindow.options.webPreferences.contextIsolation, true);
 assert.equal(macMainWindow.options.webPreferences.nodeIntegration, false);
-assert.equal(macMainWindow.options.webPreferences.sandbox, false);
+assert.equal(macMainWindow.options.webPreferences.sandbox, true);
 assert.equal('frame' in macMainWindow.options, false, 'the native-controls design does not remove the window frame');
 
 // An options override merges webPreferences: it cannot replace the generated
@@ -63,7 +63,7 @@ assert.equal(overriddenOptionsWindow.options.width, 1200);
 assert.equal(overriddenOptionsWindow.options.webPreferences.preload, '/tmp/preload.js');
 assert.equal(overriddenOptionsWindow.options.webPreferences.contextIsolation, true);
 assert.equal(overriddenOptionsWindow.options.webPreferences.nodeIntegration, false);
-assert.equal(overriddenOptionsWindow.options.webPreferences.sandbox, false);
+assert.equal(overriddenOptionsWindow.options.webPreferences.sandbox, true);
 assert.equal(overriddenOptionsWindow.options.webPreferences.backgroundThrottling, false);
 
 // macOS traffic lights are vertically centered in the 40px bar (buttons are 12px tall).

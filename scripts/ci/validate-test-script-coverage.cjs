@@ -59,7 +59,7 @@ function splitTopLevelCommands(command) {
 }
 
 function extractExecutedTestScripts(command) {
-  const commandStartPattern = /^(?:bash\s+tests\/run-test\.sh\s+)?npm\s+run\s+(test(?::[\w:-]+)?)(?:\s|$)/;
+  const commandStartPattern = /^(?:node\s+scripts\/run-test\.cjs\s+)?npm\s+run\s+(test(?::[\w:-]+)?)(?:\s|$)/;
   return splitTopLevelCommands(command)
     .map((segment) => segment.trim().match(commandStartPattern))
     .filter(Boolean)
@@ -93,7 +93,7 @@ function collectReachableScripts(scripts) {
 const TEST_RUNNER_PATTERN = /^(?:npx\s+)?(?:node|ts-node|tsx|bun|deno|electron)\b/;
 
 function segmentInvokesTestRunner(segment) {
-  const withoutWrapper = segment.trim().replace(/^bash\s+tests\/run-test\.sh\s+/, '');
+  const withoutWrapper = segment.trim().replace(/^node\s+scripts\/run-test\.cjs\s+/, '');
   return TEST_RUNNER_PATTERN.test(withoutWrapper);
 }
 

@@ -69,8 +69,12 @@ itself, the full permission catalog rendered as a matrix, and the owner-only man
 
 **Secret.** `getJWTSecret()` in
 [`main/security/jwt-secret.ts`](../../main/security/jwt-secret.ts) reads `process.env.JWT_SECRET` when set and
-otherwise reads the `jwt_secret` row in the `settings` table, generating one on first launch. The
-value is cached in a module-level variable, so each install has its own secret and a token from
+otherwise reads the secret from Electron `safeStorage` (the encrypted `jwt-secret.enc` file in the
+user-data directory), generating one on first launch. The `jwt_secret` settings row then holds only
+the marker `safe-storage:v1`; an install whose row still holds a plaintext secret is migrated on its
+first read. Where OS encryption is unavailable (and in the Electron-less dev server) the secret stays
+in the `jwt_secret` settings row. If the secure file becomes unreadable, a new secret is generated
+and existing sessions end. The value is cached in a module-level variable, so each install has its own secret and a token from
 one install does not validate against another. That module owns the only copy of the cache;
 `clearJWTSecretCache()` in the same module invalidates it, and a restore that restored a rotated
 secret must go through it or pre-rotation tokens would keep validating.
@@ -260,11 +264,12 @@ transport security: it does not stop an attacker on the same network from readin
 from the wire. The deployment rule is to treat the LAN as trusted. Do not expose the API or KDS
 port to a guest or shared network.
 
-**The renderer sandbox is disabled.** The main window sets `sandbox: false`, and the Windows build
-appends Chromium's `disable-gpu-sandbox` switch as a compatibility workaround.
-`contextIsolation: true`, `nodeIntegration: false`, the CSP, and the external-window URL allowlist
-carry the isolation instead. A renderer compromise has less process isolation than Electron's
-preferred configuration.
+**The GPU process sandbox is relaxed on Windows.** The Windows build appends Chromium's
+`disable-gpu-sandbox` switch as a compatibility workaround. The main window itself runs with
+`sandbox: true`, `contextIsolation: true`, and `nodeIntegration: false`; its preload uses only
+`electron` and web APIs. The main window also blocks `will-navigate` to any origin other than the
+embedded server and sends external links to the system browser, and `restart-and-install` accepts
+only trusted senders in addition to the Master PIN gate.
 
 **The WhatsApp session is not encrypted at rest.** `main/services/whatsapp.ts` creates the
 credential directory with mode `0o700`, so another OS user cannot read it, but the session files

@@ -90,7 +90,8 @@ An owner can flip any configurable cell for a role, or for one user, from the in
 | Orders | Edit quantity or replace order items | ✓ | — | — | — | — |
 | Orders | Create and manage held orders | ✓ | ✓ | ✓ | ✓ | — |
 | Payments | View bills, take payments, and print receipts | ✓ | ✓ | ✓ | — | — |
-| Payments | Apply bill discounts and mark bills printed | ✓ | ✓ | — | — | — |
+| Payments | Apply bill discounts | ✓ | ✓ | — | — | — |
+| Payments | Mark bills printed | ✓ | ✓ | ✓ | — | — |
 | Payments | View payment methods | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Payments | Manage payment methods | ✓ | ✓ | — | — | — |
 | Payments | View expenses and balances | ✓ | ✓ | — | — | — |

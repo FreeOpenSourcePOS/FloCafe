@@ -483,6 +483,19 @@ function activeOrdersCondition(): string {
 }
 
 function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: string[] = [], restrictedPayload = categoryIds.length > 0): void {
+  sendSerializedSnapshot(ws, buildActiveOrdersSnapshot(categoryIds, stationIds, restrictedPayload));
+}
+
+function sendSerializedSnapshot(ws: WebSocket, serialized: string): void {
+  if (ws.bufferedAmount > 1_000_000) {
+    ws.close(1013, 'KDS client is too slow');
+    return;
+  }
+  ws.send(serialized);
+}
+
+/** Queries and serializes the snapshot for one filter signature; identical for every client sharing it. */
+function buildActiveOrdersSnapshot(categoryIds: string[], stationIds: string[] = [], restrictedPayload = categoryIds.length > 0): string {
   const db = getDatabase();
   const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
   const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
@@ -610,15 +623,11 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
   const countMap: Record<string, number> = {};
   counts.forEach((c) => { countMap[c.status] = c.count; });
 
-  if (ws.bufferedAmount > 1_000_000) {
-    ws.close(1013, 'KDS client is too slow');
-    return;
-  }
-  ws.send(JSON.stringify({
+  return JSON.stringify({
     type: 'initial_data',
     orders: ordersWithItems,
     counts: countMap,
-  }));
+  });
 }
 
 let broadcastQueued = false;
@@ -632,6 +641,9 @@ function broadcastOrderUpdate(): void {
   // The voided-item expiry marker is global, not per-client — compute it once
   // and share it across every client in this broadcast.
   const sharedExpiredVoidMarker = getExpiredVoidMarker();
+  // Clients sharing a filter signature receive the same snapshot: query and
+  // serialize once per signature, then fan the string out.
+  const groups = new Map<string, KdsClient[]>();
   clients.forEach((client) => {
     if (client.ws.readyState !== WebSocket.OPEN) {
       clients.delete(client.ws);
@@ -640,8 +652,8 @@ function broadcastOrderUpdate(): void {
     }
     // A socket still inside its connect-to-auth window is not a revoked
     // session — its lifecycle belongs to the KDS_AUTH_TIMEOUT_MS timer, the
-    // same way the heartbeat below treats it. Skip it before sendActiveOrders
-    // so no order snapshot can reach an unauthenticated socket.
+    // same way the heartbeat below treats it. Skip it before building any
+    // snapshot so no order snapshot can reach an unauthenticated socket.
     if (!client.userId) {
       return;
     }
@@ -649,15 +661,41 @@ function broadcastOrderUpdate(): void {
       closeKdsClient(client, 'Session expired or revoked');
       return;
     }
-    try {
-      sendActiveOrders(client.ws, client.categoryIds, client.stationIds, client.role === 'chef' || client.categoryIds.length > 0 || client.stationIds.length > 0);
-      client.categoryIdsChanged = false;
-      client.stationIdsChanged = false;
-      client.lastExpiredVoidMarker = sharedExpiredVoidMarker;
-    } catch (err) {
-      console.error('[KDS] Broadcast error for client:', err);
-    }
+    const signature = kdsFilterSignature(client);
+    const group = groups.get(signature);
+    if (group) group.push(client);
+    else groups.set(signature, [client]);
   });
+  for (const group of groups.values()) {
+    const [first] = group;
+    try {
+      const serialized = buildActiveOrdersSnapshot(first.categoryIds, first.stationIds, kdsRestrictedPayload(first));
+      for (const client of group) {
+        try {
+          sendSerializedSnapshot(client.ws, serialized);
+          client.categoryIdsChanged = false;
+          client.stationIdsChanged = false;
+          client.lastExpiredVoidMarker = sharedExpiredVoidMarker;
+        } catch (err) {
+          console.error('[KDS] Broadcast error for client:', err);
+        }
+      }
+    } catch (err) {
+      console.error('[KDS] Broadcast error for client group:', err);
+    }
+  }
+}
+
+function kdsRestrictedPayload(client: KdsClient): boolean {
+  return client.role === 'chef' || client.categoryIds.length > 0 || client.stationIds.length > 0;
+}
+
+function kdsFilterSignature(client: KdsClient): string {
+  return JSON.stringify([
+    [...client.categoryIds].sort(),
+    [...client.stationIds].sort(),
+    kdsRestrictedPayload(client),
+  ]);
 }
 
 export function notifyKdsUpdate(): void {

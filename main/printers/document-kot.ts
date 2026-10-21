@@ -10,6 +10,7 @@ import {
   buildEscPos,
   formatVariantItemHeading,
   parseVariantSelection,
+  pushWrapped,
   truncate,
   truncateShapedLine,
   type PrintWarning,
@@ -51,6 +52,7 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       tableName: String(order?.table?.name ?? ''),
       orderType: String(order?.type ?? '').trim(),
       customerName: String(order?.customer?.name ?? order?.customer_name ?? '').trim(),
+      orderNotes: String(order?.special_instructions ?? order?.order_notes ?? order?.notes ?? '').trim(),
     },
     items: ticketItems.map((item: any) => ({
       productName: formatVariantItemHeading(
@@ -231,6 +233,20 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language, options.capabilities));
   sourceLines?.push(`${labelOf(header.timeLabel)}: ${time}`);
   sourceControlLines?.push(lines.at(-1) ?? '');
+  if (header.orderNotes) {
+    const noteLabel = labelOf(header.orderNotes.label);
+    const noteText = `${noteLabel}: ${header.orderNotes.text.text}`;
+    const wrapped: string[] = [];
+    pushWrapped(wrapped, noteText, Math.max(1, cols - 6), options.language, options.capabilities);
+    lines.push('');
+    sourceLines?.push('');
+    sourceControlLines?.push(lines.at(-1) ?? '');
+    wrapped.forEach((text, index) => {
+      lines.push('{DOUBLE_HEIGHT}{BOLD}' + (index === 0 ? '!! ' : '   ') + text + '{/BOLD}{/DOUBLE_HEIGHT}');
+      sourceLines?.push((index === 0 ? '!! ' : '   ') + text);
+      sourceControlLines?.push(lines.at(-1) ?? '');
+    });
+  }
   return lines;
 }
 

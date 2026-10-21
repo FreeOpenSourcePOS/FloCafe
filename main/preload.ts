@@ -1,7 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const { randomUUID } = require('node:crypto');
 
-const documentNonce = randomUUID();
+const documentNonce = globalThis.crypto.randomUUID();
 ipcRenderer.sendSync('window-document', documentNonce);
 
 contextBridge.exposeInMainWorld('electronAPI', {

@@ -7045,6 +7045,8 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       const consent = getSetting('diagnostics_consent');
       const explicit = getSetting('diagnostics_settings_explicit') === 'true';
       const transmission = getSetting('diagnostics_transmission_enabled');
+      const hasExistingUsers =
+        (db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n > 0;
       insertSettingIfMissing('diagnostics_settings_explicit', 'false');
       insertSettingIfMissing('diagnostics_consent_sync_pending', 'false');
       if (consent === 'false') {
@@ -7052,9 +7054,10 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         upsertSetting('diagnostics_consent_sync_pending', 'true');
       } else if (explicit && transmission === 'false') {
         upsertSetting('diagnostics_consent_sync_pending', 'true');
-      } else if (!explicit) {
-        // Legacy false had no reliable provenance; enable once unless the
-        // merchant had explicitly refused diagnostics consent.
+      } else if (!explicit && hasExistingUsers) {
+        // Legacy false had no reliable provenance; enable once for existing
+        // installs unless the merchant had explicitly refused diagnostics consent.
+        // Fresh installs stay opted out until the operator chooses.
         upsertSetting('diagnostics_transmission_enabled', 'true');
       }
       if (

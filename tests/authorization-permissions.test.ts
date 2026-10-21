@@ -107,7 +107,7 @@ function main(): void {
   }
 
   // bills.print is a payments-area permission, not a second name for bills.discount.apply.
-  assert.deepEqual(defaultPermissionIdsForRole('cashier').includes('bills.print'), false, 'cashier does not receive bills.print');
+  assert.equal(defaultPermissionIdsForRole('cashier').includes('bills.print'), true, 'cashier receives bills.print');
   assert.deepEqual(defaultPermissionIdsForRole('server').includes('bills.print'), false, 'server does not receive bills.print');
   assert.equal(defaultPermissionIdsForRole('manager').includes('bills.print'), true, 'manager receives bills.print');
   assert.equal(defaultPermissionIdsForRole('owner').includes('bills.print'), true, 'owner receives bills.print');

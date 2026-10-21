@@ -136,7 +136,7 @@ async function main(): Promise<void> {
   }
 
   // markPrinted is gated on bills.print, not on the discount endpoint above it.
-  assert.equal((await request(app).post('/api/bills/1/markPrinted').set(cashier)).status, 403, 'cashier cannot mark a bill printed');
+  assert.equal((await request(app).post('/api/bills/1/markPrinted').set(cashier)).status, 200, 'cashier can mark a bill printed');
   assert.equal((await request(app).post('/api/bills/1/markPrinted').set(server)).status, 403, 'server cannot mark a bill printed');
   assert.equal((await request(app).post('/api/bills/1/markPrinted').set(manager)).status, 200, 'manager can mark a bill printed');
   assert.equal((await request(app).post('/api/bills/1/markPrinted').set(owner)).status, 200, 'owner can mark a bill printed');

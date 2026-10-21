@@ -70,9 +70,8 @@ controls, window state, opening the KDS window, update status, database initiali
 handshake, and native PDF export.
 
 The main window is created with `contextIsolation: true`, `nodeIntegration: false`, and
-`sandbox: false`. `sandbox: false` is a deliberate choice recorded in
-[Authentication and authorization](authentication-and-authorization.md); do not change it as a
-drive-by cleanup.
+`sandbox: true`, so `main/preload.ts` may use only `electron` and web APIs. See
+[Authentication and authorization](authentication-and-authorization.md#boundaries-we-do-not-harden).
 
 ## The native title bar
 

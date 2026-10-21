@@ -477,7 +477,58 @@ async function main() {
       0,
       'active addon is not reported as reactivated',
     );
-    assertEqual(skippedActive.data.skipped, 1, 'active duplicate addon is skipped');
+    assertEqual(skippedActive.data.skipped, 0, 'active addon with a changed price is not skipped');
+    assertEqual(skippedActive.data.addons_updated, 1, 'active addon price is updated in place');
+    assertEqual(
+      db.prepare('SELECT price FROM addons WHERE name = ?').get('CSV Reactivation Addon').price,
+      8,
+      'active addon price is persisted',
+    );
+    const unchangedActive = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: { csv: addonCsv('CSV Reactivation Group,CSV Reactivation Addon,8,no,0,1') },
+      headers: authHeader,
+    });
+    assertEqual(unchangedActive.data.skipped, 1, 'an unchanged active addon row is skipped');
+    assertEqual(unchangedActive.data.addons_updated, 0, 'an unchanged row is not reported updated');
+
+    console.log('\n─── Add-on CSV round trip: threshold and stock update in place ───');
+    const upsertSeed = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: addonCsvWithHeader(
+          `${ADDON_HEADER},track_inventory,stock_quantity,low_stock_threshold`,
+          'Upsert Group,Upsert Addon,5,no,0,1,yes,20,2',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(upsertSeed.data.addons_created, 1, 'round-trip add-on is created');
+    const upsertEdit = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: addonCsvWithHeader(
+          `${ADDON_HEADER},track_inventory,stock_quantity,low_stock_threshold`,
+          'Upsert Group,Upsert Addon,6,no,0,1,yes,35,7',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(upsertEdit.data.addons_updated, 1, 'edited active add-on is updated');
+    const upsertRow = db
+      .prepare('SELECT id, price, stock_quantity, low_stock_threshold FROM addons WHERE name = ?')
+      .get('Upsert Addon') as any;
+    assertEqualOrThrow(upsertRow.price, 6, 'price is updated');
+    assertEqualOrThrow(upsertRow.low_stock_threshold, 7, 'threshold is updated');
+    assertEqualOrThrow(upsertRow.stock_quantity, 35, 'stock is updated');
+    const adjustment = db
+      .prepare(
+        `SELECT quantity_delta, reference_type FROM inventory_movements
+         WHERE addon_id = ? ORDER BY rowid DESC LIMIT 1`,
+      )
+      .get(upsertRow.id) as any;
+    assertEqualOrThrow(adjustment.quantity_delta, 15, 'stock change is recorded as a ledger movement');
+    assertEqualOrThrow(adjustment.reference_type, 'manual_adjustment', 'stock change is a manual adjustment');
 
     console.log('\n─── Add-on inventory columns: legacy sheets stay importable ───');
     // A spreadsheet exported before add-on stock existed must still import, and

@@ -483,7 +483,7 @@ Router: `main/routes/cash-sessions.ts`. Full path: `/api/cash-sessions`.
 | ------ | ------------ | --------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST` | `/open`      | `ROLE_ACCESS.ownerManagerCashier` | body: `opening_float_cents` | Body `opening_float_cents` (integer minor units, defaults to 0). `409` when a shift is already open (`session_already_open`) or the current store business day is already closed (`day_already_closed`). |
 | `GET`  | `/current`   | `ROLE_ACCESS.ownerManagerCashier` | none                        | The open shift, or `null` when none is open.                                                                                                                                                             |
-| `POST` | `/:id/close` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `notes`   | Closes the shift with optional `notes`.                                                                                                                                                                  |
+| `POST` | `/:id/close` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `counted_cash_cents`, optional `notes` | Closes the shift; returns `{ closure_id, variance_cents, expected_cash_cents, counted_cash_cents }`. `409` when unpaid or partially paid bills remain in the shift through the closing second (`unpaid_bills_remaining`) or the shift is already closed (`session_already_closed`). `403` when a cashier attempts to close another user's shift (`session_owner_required`). |
 
 ### Cash closures
 

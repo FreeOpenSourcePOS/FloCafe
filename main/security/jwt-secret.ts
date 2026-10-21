@@ -13,14 +13,29 @@ interface SafeStorageLike {
   decryptString(value: Buffer): string;
 }
 
-/** Electron's safeStorage and userData path, or null outside Electron or without OS encryption. */
+/** Electron's safeStorage and userData path, or null outside packaged Electron or without OS encryption. */
 function getSecureStore(): { storage: SafeStorageLike; filePath: string } | null {
   try {
     const { app, safeStorage } = require('electron') as {
-      app?: { getPath(name: string): string };
+      app?: { isPackaged?: boolean; getPath(name: string): string };
       safeStorage?: SafeStorageLike;
     };
-    if (!app || !safeStorage || !safeStorage.isEncryptionAvailable()) return null;
+    if (!app?.isPackaged || !safeStorage || !safeStorage.isEncryptionAvailable()) return null;
+    return { storage: safeStorage, filePath: path.join(app.getPath('userData'), JWT_SECRET_FILE) };
+  } catch {
+    return null;
+  }
+}
+
+/** Electron's safeStorage and userData path for unpackaged development recovery only. */
+function getUnpackagedStore(): { storage: SafeStorageLike; filePath: string } | null {
+  try {
+    const { app, safeStorage } = require('electron') as {
+      app?: { isPackaged?: boolean; getPath(name: string): string };
+      safeStorage?: SafeStorageLike;
+    };
+    if (app?.isPackaged || !app || !safeStorage || !safeStorage.isEncryptionAvailable())
+      return null;
     return { storage: safeStorage, filePath: path.join(app.getPath('userData'), JWT_SECRET_FILE) };
   } catch {
     return null;
@@ -94,9 +109,24 @@ export function getJWTSecret(): string {
         console.warn('[Auth] Secure JWT secret was unreadable; generated a new one');
       }
     } else if (row?.value === JWT_SECRET_SAFE_STORAGE_MARKER) {
-      throw new Error(
-        'JWT secret is held in OS secure storage, which is unavailable in this process',
-      );
+      const unpackagedStore = getUnpackagedStore();
+      if (unpackagedStore) {
+        const recovered = readSecureSecret(unpackagedStore) || randomBytes(32).toString('hex');
+        db.prepare("UPDATE settings SET value = ?, updated_at = ? WHERE key = 'jwt_secret'").run(
+          recovered,
+          now(),
+        );
+        const stored = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as
+          | { value: string }
+          | undefined;
+        if (stored?.value !== recovered) throw new Error('JWT secret write did not persist');
+        _jwtSecret = recovered;
+        console.log('[Auth] Recovered JWT secret from development secure storage to SQLite');
+      } else {
+        throw new Error(
+          'JWT secret is held in OS secure storage, which is unavailable in this process',
+        );
+      }
     } else if (row?.value) {
       _jwtSecret = row.value;
       // Upgrade: move the plaintext secret out of SQLite once secure storage verifies the round trip.

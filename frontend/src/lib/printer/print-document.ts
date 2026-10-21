@@ -292,6 +292,10 @@ export function buildFrontendBillDocument(
   return buildBillDocument(printData, printContext);
 }
 
+/**
+ * Build a KotDocument v1 for frontend rasterization, normalizing order metadata,
+ * pending items, and any order-level notes into the ticket header.
+ */
 export function buildFrontendKotDocument(
   order: Order,
   opts: {
@@ -307,6 +311,9 @@ export function buildFrontendKotDocument(
     tableName?: unknown;
     customer_name?: unknown;
     customerName?: unknown;
+    order_notes?: unknown;
+    orderNotes?: unknown;
+    notes?: unknown;
   };
   const firstText = (...values: unknown[]): string => {
     for (const value of values) {
@@ -345,6 +352,12 @@ export function buildFrontendKotDocument(
         orderShape.customer_name,
         orderShape.customerName,
       ),
+      orderNotes: firstText(
+        order.special_instructions,
+        orderShape.order_notes,
+        orderShape.orderNotes,
+        orderShape.notes,
+      ).trim(),
     },
     items: items
       .filter((item) => isKotItemPending(item.status))

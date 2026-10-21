@@ -231,8 +231,8 @@ export default function CustomersPage() {
 
   return (
     <div className="dashboard-scroll-shell flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 justify-between items-center mb-6">
-        <div className="flex items-center gap-4">
+      <div className="mb-6 flex shrink-0 flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-4">
           <h1 className="text-2xl font-bold text-foreground">{tNav('customers')}</h1>
           {filter === 'invalid_phones' && (
             <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5">

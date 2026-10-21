@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE, E2E_KDS_BASE_URL } from './helpers/urls';
 import {
+  emitFixtureWindowState,
   injectElectronFixture,
   readFixtureActions,
   readOpenedMenuEntries,
@@ -241,8 +242,10 @@ test('browser Electron fixture exposes the complete renderer API and explicit in
     'getSettings',
     'getStatus',
     'getUpdateStatus',
+    'getWindowState',
     'onMenuAction',
     'onUpdateStatus',
+    'onWindowStateChanged',
     'openApplicationMenu',
     'openKdsWindow',
     'openWhatsAppShare',
@@ -447,4 +450,79 @@ test('macOS keeps the native application menu and renders no title-bar menu row'
 
   await expect(page.getByTestId('desktop-title-bar')).toBeVisible();
   await expect(page.getByTestId('desktop-application-menu')).toHaveCount(0);
+});
+
+test('macOS native fullscreen removes traffic-light inset and restores on exit (#1153)', async ({
+  page,
+}) => {
+  await injectElectronFixture(page, {
+    platform: 'darwin',
+    focused: true,
+    windowState: { isMaximized: false, isFullScreen: true },
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}/auth/login`);
+  await page.locator('#email').fill('owner@flo.local');
+  await page.locator('#password').fill('E2ePass123!');
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL(/\/pos/, { timeout: 20000 });
+
+  const titleBar = page.getByTestId('desktop-title-bar');
+  await expect(titleBar).toBeVisible();
+  const safeArea = titleBar.locator('.flo-title-bar__safe-area');
+  await expect(safeArea).toBeVisible();
+
+  await expect(page.locator('html')).toHaveAttribute('data-flo-window-fullscreen', 'true');
+  const fullscreenInitialPadding = await safeArea.evaluate(
+    (el) => getComputedStyle(el).paddingLeft,
+  );
+  expect(fullscreenInitialPadding, 'initial fullscreen padding is 12px').toBe('12px');
+
+  await emitFixtureWindowState(page, { isFullScreen: false, isMaximized: false });
+  await expect(page.locator('html')).toHaveAttribute('data-flo-window-fullscreen', 'false');
+  const windowedPadding = await safeArea.evaluate((el) => getComputedStyle(el).paddingLeft);
+  expect(windowedPadding, 'normal windowed padding restores 96px inset').toBe('96px');
+
+  await emitFixtureWindowState(page, { isFullScreen: false, isMaximized: true });
+  await expect(page.locator('html')).toHaveAttribute('data-flo-window-fullscreen', 'false');
+  const maximizedPadding = await safeArea.evaluate((el) => getComputedStyle(el).paddingLeft);
+  expect(maximizedPadding, 'maximized macOS window retains 96px inset').toBe('96px');
+
+  await emitFixtureWindowState(page, { isFullScreen: true, isMaximized: false });
+  await expect(page.locator('html')).toHaveAttribute('data-flo-window-fullscreen', 'true');
+  const reenteredFullscreenPadding = await safeArea.evaluate(
+    (el) => getComputedStyle(el).paddingLeft,
+  );
+  expect(reenteredFullscreenPadding, 're-entering fullscreen removes 96px inset').toBe('12px');
+
+  await emitFixtureWindowState(page, { isFullScreen: false, isMaximized: false });
+  await expect(page.locator('html')).toHaveAttribute('data-flo-window-fullscreen', 'false');
+  const reexitedPadding = await safeArea.evaluate((el) => getComputedStyle(el).paddingLeft);
+  expect(reexitedPadding, 'exiting fullscreen restores 96px inset').toBe('96px');
+
+  for (const nonMacPlatform of ['win32', 'linux'] as const) {
+    const [winPadding, fullPadding] = await page.evaluate((platform) => {
+      const html = document.documentElement;
+      const testHeader = document.createElement('header');
+      testHeader.className = 'flo-title-bar';
+      const testSafeArea = document.createElement('div');
+      testSafeArea.className = 'flo-title-bar__safe-area';
+      testHeader.appendChild(testSafeArea);
+      document.body.appendChild(testHeader);
+      try {
+        html.dataset.floPlatform = platform;
+        html.dataset.floWindowFullscreen = 'false';
+        const pWindowed = getComputedStyle(testSafeArea).paddingLeft;
+        html.dataset.floWindowFullscreen = 'true';
+        const pFullscreen = getComputedStyle(testSafeArea).paddingLeft;
+        return [pWindowed, pFullscreen];
+      } finally {
+        html.dataset.floPlatform = 'darwin';
+        html.dataset.floWindowFullscreen = 'false';
+        testHeader.remove();
+      }
+    }, nonMacPlatform);
+    expect(winPadding, `${nonMacPlatform} windowed padding is 12px`).toBe('12px');
+    expect(fullPadding, `${nonMacPlatform} fullscreen padding is 12px`).toBe('12px');
+  }
 });

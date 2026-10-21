@@ -1673,14 +1673,22 @@ async function main() {
     const s15RecomputedUntaxed = s15RecomputeMixedRes.data.order.items.find(
       (it: any) => it.product_id === 'prod-untaxed',
     );
-    assertEqual(s15RecomputedUntaxed.tax_amount, 0, 'untaxed line still has 0 tax after recomputation');
+    assertEqual(
+      s15RecomputedUntaxed.tax_amount,
+      0,
+      'untaxed line still has 0 tax after recomputation',
+    );
     assertEqual(s15RecomputedUntaxed.tax_snapshot, null, 'untaxed line still has null snapshot');
     assertEqual(
       s15RecomputeMixedRes.data.order.tax_amount,
       10.01,
       'two taxed lines receive document rounded 10.01 tax',
     );
-    assertEqual(s15RecomputeMixedRes.data.order.total, 310.31, 'total = 300.30 subtotal + 10.01 tax');
+    assertEqual(
+      s15RecomputeMixedRes.data.order.total,
+      310.31,
+      'total = 300.30 subtotal + 10.01 tax',
+    );
 
     // 15b. Subsequent override changes do not reprice existing snapshotted items (Comment 2)
     const s15OverrideOrderRes = await api(baseUrl, '/api/orders', {
@@ -1696,12 +1704,20 @@ async function main() {
 
     // Merchant adds an override for prod-doc-1 changing behavior to unclassified
     const s15ActivePackVersion = (
-      db.prepare("SELECT active_version_id FROM country_packs WHERE id = 'official-india'").get() as any
+      db
+        .prepare("SELECT active_version_id FROM country_packs WHERE id = 'official-india'")
+        .get() as any
     )?.active_version_id;
     db.prepare(`
       INSERT INTO tax_overrides (id, pack_version_id, entity_type, entity_id, field_name, value_json, created_at, updated_at)
       VALUES (?, ?, 'product', 'prod-doc-1', 'tax_category_id', ?, ?, ?)
-    `).run('override-prod-doc-1', s15ActivePackVersion, JSON.stringify({ categoryId: 'unclassified' }), now(), now());
+    `).run(
+      'override-prod-doc-1',
+      s15ActivePackVersion,
+      JSON.stringify({ categoryId: 'unclassified' }),
+      now(),
+      now(),
+    );
 
     // Trigger recomputation on existing order by applying a 0-value discount
     const s15PatchedOrderRes = await api(

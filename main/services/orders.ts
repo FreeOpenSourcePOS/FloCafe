@@ -46,10 +46,7 @@ export interface OrderTotals {
   db?: Database;
 }
 
-export function calculateOrderTotals(
-  db: Database,
-  orderId: string | number,
-): OrderTotals {
+export function calculateOrderTotals(db: Database, orderId: string | number): OrderTotals {
   const allItems = db
     .prepare(`SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid ASC`)
     .all(orderId) as OrderItemRow[];
@@ -87,9 +84,9 @@ export function calculateOrderTotals(
       const hasExistingSnapshot = Boolean(item.tax_snapshot);
       const productForTax: Product = {
         id: undefined, // Do not consult current overrides for existing lines
-        tax_type: hasExistingSnapshot ? (item.tax_type || product?.tax_type || 'none') : 'none',
+        tax_type: hasExistingSnapshot ? item.tax_type || product?.tax_type || 'none' : 'none',
         tax_rate: product?.tax_rate || 0,
-        tax_category_id: hasExistingSnapshot ? (snapshotLine?.categoryId || undefined) : undefined,
+        tax_category_id: hasExistingSnapshot ? snapshotLine?.categoryId || undefined : undefined,
         tax_behavior: hasExistingSnapshot
           ? (snapshotLine?.taxBehavior ?? product?.tax_behavior ?? 'country_default')
           : 'country_default',
@@ -185,11 +182,9 @@ export interface RecomputedOrderTotals {
 }
 
 /**
- * Single home for the order-total recomputation that every order-item mutation
- * used to repeat: deduct the order-level discount from the subtotal, rescale
- * item tax to the discounted share, add charge tax, add the charges, round to
- * the currency. Every total, breakdown and snapshot written by a mutation comes
- * from here.
+ * Single home for order-total recomputation across order-item mutations: recomputes
+ * document taxes across items and charges, persists updated snapshots, rescales item
+ * tax for discounts, adds charge taxes and charges, and rounds to currency.
  */
 export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): RecomputedOrderTotals {
   const { tenantInfo, chargeContext, customer, totals, discountAmount, taxScaling } = input;

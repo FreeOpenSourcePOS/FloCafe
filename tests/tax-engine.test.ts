@@ -732,4 +732,3 @@ test('calculateDocumentItemTaxes does not skip zero-price categorized items (Com
   assert.equal(results[0].tax_amount, 0);
   assert.ok(results[0].tax_snapshot, 'zero-price categorized item must receive a tax snapshot');
 });
-

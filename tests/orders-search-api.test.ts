@@ -68,7 +68,7 @@ async function main() {
     '2023-01-01 00:00:00',
   );
   insertOrder.run(
-    'ORD-TURKISH-ALI',
+    'ORD-TURKISH-DOT',
     'cust-turkish-ali',
     '2023-01-01 00:00:00',
     '2023-01-01 00:00:00',
@@ -483,7 +483,7 @@ async function main() {
       'probe search with newline, carriage return, and DEL succeeds without 500',
     );
 
-    // 18. Unicode Georgian Mtavruli / Mkhedruli case folding probe (#1256)
+    // 18. Unicode Georgian Mtavruli / Mkhedruli case folding probe
     const probeGeorgian = await api(baseUrl, `/api/orders?search=${encodeURIComponent('აბგ')}`, {
       headers: owner.authHeader,
     });
@@ -497,7 +497,7 @@ async function main() {
       'probe returns order matching customer Georgian Mtavruli ᲐᲑᲒ',
     );
 
-    // 19. Unicode Turkish dotted capital / decomposed lowercase probe (#1256)
+    // 19. Unicode Turkish dotted capital / decomposed lowercase probe
     const probeTurkishDecomposed = await api(
       baseUrl,
       `/api/orders?search=${encodeURIComponent('i\u0307st')}`,
@@ -515,17 +515,17 @@ async function main() {
       'probe returns order matching customer İstanbul with decomposed i\u0307st',
     );
 
-    // 20. Stored customer ALİ queried with ASCII ali probe (#1256)
+    // 20. Stored customer ALİ queried with ASCII ali probe
     const probeTurkishAli = await api(baseUrl, `/api/orders?search=${encodeURIComponent('ali')}`, {
       headers: owner.authHeader,
     });
     assertEqualOrThrow(probeTurkishAli.status, 200, 'probe search for ASCII ali succeeds');
     assertOrThrow(
-      probeTurkishAli.data.orders.some((o: any) => o.order_number === 'ORD-TURKISH-ALI'),
+      probeTurkishAli.data.orders.some((o: any) => o.order_number === 'ORD-TURKISH-DOT'),
       'probe returns order matching customer ALİ with ASCII ali',
     );
 
-    // 21. Non-ASCII Unicode order_number probe (#1256)
+    // 21. Non-ASCII Unicode order_number probe
     const probeOrderGeorgian = await api(
       baseUrl,
       `/api/orders?search=${encodeURIComponent('აბგ-100')}`,

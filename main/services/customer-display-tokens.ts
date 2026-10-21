@@ -23,6 +23,33 @@ export interface CustomerDisplayFeed {
   business_name: string;
   config: CustomerDisplayConfig;
   orders: Array<{ id: number; number: string; status: string }>;
+  /** Pass as `cursor` to read the next older page; null when the queue is exhausted. */
+  next_cursor: string | null;
+}
+
+interface FeedCursor {
+  createdAt: string;
+  id: number;
+}
+
+function encodeFeedCursor(cursor: FeedCursor): string {
+  return Buffer.from(JSON.stringify([cursor.createdAt, cursor.id])).toString('base64url');
+}
+
+/** Returns null for anything that is not a cursor this service issued. */
+export function decodeFeedCursor(value: unknown): FeedCursor | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 200) return null;
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+    if (!Array.isArray(parsed) || parsed.length !== 2) return null;
+    const [createdAt, id] = parsed;
+    if (typeof createdAt !== 'string' || createdAt.length === 0 || createdAt.length > 40)
+      return null;
+    if (typeof id !== 'number' || !Number.isSafeInteger(id)) return null;
+    return { createdAt, id };
+  } catch {
+    return null;
+  }
 }
 
 const lastSeenWrites = new Map<string, number>();
@@ -102,7 +129,7 @@ export function touchDisplayToken(id: string): void {
 }
 
 /** Sanitized board data: order numbers and statuses only, never customer or staff fields. */
-export function buildDisplayFeed(): CustomerDisplayFeed {
+export function buildDisplayFeed(cursor: FeedCursor | null = null): CustomerDisplayFeed {
   const db = getDatabase();
   const settings = Object.fromEntries(
     (
@@ -113,19 +140,35 @@ export function buildDisplayFeed(): CustomerDisplayFeed {
   );
   const config = readStoredCustomerDisplayConfig(settings[CUSTOMER_DISPLAY_KEY]);
   const placeholders = config.statuses.map(() => '?').join(', ');
-  const orders = db
+  const cursorClause = cursor ? 'AND (o.created_at < ? OR (o.created_at = ? AND o.id < ?))' : '';
+  const cursorParams = cursor ? [cursor.createdAt, cursor.createdAt, cursor.id] : [];
+  // One extra row tells whether an older page exists without a second query.
+  const rows = db
     .prepare(
-      `SELECT id, number, status FROM (
-         SELECT o.id AS id,
-                COALESCE((SELECT b.bill_number FROM bills b WHERE b.order_id = o.id ORDER BY b.id DESC LIMIT 1), o.order_number) AS number,
-                o.status AS status,
-                o.created_at AS created_at
-         FROM orders o
-         WHERE o.status IN (${placeholders})
-         ORDER BY o.created_at DESC, o.id DESC
-         LIMIT ${FEED_ORDER_LIMIT}
-       ) ORDER BY created_at ASC, id ASC`,
+      `SELECT o.id AS id,
+              COALESCE((SELECT b.bill_number FROM bills b WHERE b.order_id = o.id ORDER BY b.id DESC LIMIT 1), o.order_number) AS number,
+              o.status AS status,
+              o.created_at AS created_at
+       FROM orders o
+       WHERE o.status IN (${placeholders}) ${cursorClause}
+       ORDER BY o.created_at DESC, o.id DESC
+       LIMIT ${FEED_ORDER_LIMIT + 1}`,
     )
-    .all(...config.statuses) as CustomerDisplayFeed['orders'];
-  return { business_name: settings.business_name || '', config, orders };
+    .all(...config.statuses, ...cursorParams) as Array<{
+    id: number;
+    number: string;
+    status: string;
+    created_at: string;
+  }>;
+  const hasMore = rows.length > FEED_ORDER_LIMIT;
+  const page = hasMore ? rows.slice(0, FEED_ORDER_LIMIT) : rows;
+  const oldest = page[page.length - 1];
+  const orders = page.map(({ id, number, status }) => ({ id, number, status })).reverse();
+  return {
+    business_name: settings.business_name || '',
+    config,
+    orders,
+    next_cursor:
+      hasMore && oldest ? encodeFeedCursor({ createdAt: oldest.created_at, id: oldest.id }) : null,
+  };
 }

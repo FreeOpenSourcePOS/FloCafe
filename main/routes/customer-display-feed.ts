@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import {
   buildDisplayFeed,
+  decodeFeedCursor,
   touchDisplayToken,
   verifyDisplayToken,
 } from '../services/customer-display-tokens';
@@ -10,7 +11,7 @@ const router = Router();
 
 const feedRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: 120,
+  limit: 600,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -25,9 +26,14 @@ router.get('/feed', feedRateLimit, (req: Request, res: Response) => {
     if (!tokenId) {
       return res.status(401).json({ error: 'Display not paired' });
     }
+    const rawCursor = req.query.cursor;
+    const cursor = rawCursor === undefined ? null : decodeFeedCursor(rawCursor);
+    if (rawCursor !== undefined && !cursor) {
+      return res.status(400).json({ error: 'Invalid cursor' });
+    }
     touchDisplayToken(tokenId);
     res.setHeader('Cache-Control', 'no-store');
-    res.json(buildDisplayFeed());
+    res.json(buildDisplayFeed(cursor));
   } catch (error) {
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });

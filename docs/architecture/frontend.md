@@ -26,11 +26,11 @@ build the application ships.
 `trailingSlash` to true, and sets `images.unoptimized` to true. The result is static HTML, CSS, and
 JavaScript in `frontend/out/`, served as files by three local servers:
 
-| Server | Default port | Serves |
-| --- | --- | --- |
-| [`main/server.ts`](../../main/server.ts) | `PORT`, else 3001 | the API under `/api` and the exported pages |
-| [`main/kds-server.ts`](../../main/kds-server.ts) | `KDS_PORT`, else 3002 | the standalone KDS |
-| [`main/server-app.ts`](../../main/server-app.ts) | `SERVER_APP_PORT`, else 3003 | the standalone Server App |
+| Server                                           | Default port                 | Serves                                      |
+| ------------------------------------------------ | ---------------------------- | ------------------------------------------- |
+| [`main/server.ts`](../../main/server.ts)         | `PORT`, else 3001            | the API under `/api` and the exported pages |
+| [`main/kds-server.ts`](../../main/kds-server.ts) | `KDS_PORT`, else 3002        | the standalone KDS                          |
+| [`main/server-app.ts`](../../main/server-app.ts) | `SERVER_APP_PORT`, else 3003 | the standalone Server App                   |
 
 Those are the base ports, not the addresses to code against. Each server resolves its port at bind
 time, and on `EADDRINUSE` or `EACCES` it increments and retries rather than failing. **Derive a
@@ -80,12 +80,12 @@ native route does not exist at all.
 
 Four things do not use it, and a new screen has to notice which kind it is:
 
-| Path | How it reaches the API |
-| --- | --- |
-| [`kds-standalone/page.tsx`](../../frontend/src/app/kds-standalone/page.tsx) | builds its own axios instance on its own origin, because it runs on the `:3002` base port rather than the POS window's `:3001`, and on a `401` clears the token and reloads instead of redirecting |
-| [`server-standalone/page.tsx`](../../frontend/src/app/server-standalone/page.tsx) | the same, against the filtered `:3003` proxy |
-| [`i18n/server-language.ts`](../../frontend/src/lib/i18n/server-language.ts) | bare `fetch`, because it reads the tenant's language before a session exists |
-| the KDS live feed | a WebSocket, described below |
+| Path                                                                              | How it reaches the API                                                                                                                                                                             |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`kds-standalone/page.tsx`](../../frontend/src/app/kds-standalone/page.tsx)       | builds its own axios instance on its own origin, because it runs on the `:3002` base port rather than the POS window's `:3001`, and on a `401` clears the token and reloads instead of redirecting |
+| [`server-standalone/page.tsx`](../../frontend/src/app/server-standalone/page.tsx) | the same, against the filtered `:3003` proxy                                                                                                                                                       |
+| [`i18n/server-language.ts`](../../frontend/src/lib/i18n/server-language.ts)       | bare `fetch`, because it reads the tenant's language before a session exists                                                                                                                       |
+| the KDS live feed                                                                 | a WebSocket, described below                                                                                                                                                                       |
 
 The other `axios` imports in the renderer are `axios.isAxiosError` for error shape, not a second
 client.
@@ -108,8 +108,8 @@ Mounted order surfaces lazily run that enumeration and render one shared
 [`PendingOrderItemEdits`](../../frontend/src/components/orders/PendingOrderItemEdits.tsx) notice above
 their item lists (both the card and the detail layouts, outside the active/inactive line filter, so
 history-hidden superseded lines still surface their unresolved attempt). The notice renders for saved
-records, storage warnings, or outstanding resolution notices. The browser sends nothing until staff click *Resolve pending
-edit*. Resolving re-reads the record under the attempt's Web Locks critical section, verifies the
+records, storage warnings, or outstanding resolution notices. The browser sends nothing until staff click _Resolve pending
+edit_. Resolving re-reads the record under the attempt's Web Locks critical section, verifies the
 re-read still matches the offered operation, then replays the stored path, frozen body, and
 idempotency key through the axios client. Because the idempotency key is reused, a replay of an edit
 that already committed is a no-op refresh, not a second mutation.
@@ -224,11 +224,11 @@ The frames, the handshake, and the server-side conditions live in
 The codebase holds two different tables about who may do what. Confusing them is the main way a
 permission change goes to the wrong place.
 
-| | `shared/role-permissions.ts` | `shared/permissions.ts` |
-| --- | --- | --- |
-| Holds | the five role identities in `ROLE_DEFINITIONS`, the named role groups in `ROLE_ACCESS`, and the capability table `PERMISSION_CAPABILITIES` | `PERMISSION_DEFINITIONS`, one entry per runtime permission id, with its area, shipped default roles, `configurable` flag, and risk tier |
-| Owner-editable | no, the identity list is a constant in the module | the grants are editable; the ids are not, because they are persistence keys |
-| Who reads it | backend route middleware imports `ROLE_ACCESS` and `hasRole` | the backend resolves the effective set from SQLite on every protected action |
+|                | `shared/role-permissions.ts`                                                                                                               | `shared/permissions.ts`                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Holds          | the five role identities in `ROLE_DEFINITIONS`, the named role groups in `ROLE_ACCESS`, and the capability table `PERMISSION_CAPABILITIES` | `PERMISSION_DEFINITIONS`, one entry per runtime permission id, with its area, shipped default roles, `configurable` flag, and risk tier |
+| Owner-editable | no, the identity list is a constant in the module                                                                                          | the grants are editable; the ids are not, because they are persistence keys                                                             |
+| Who reads it   | backend route middleware imports `ROLE_ACCESS` and `hasRole`                                                                               | the backend resolves the effective set from SQLite on every protected action                                                            |
 
 What an owner can change is the grants, not the shape. From **Staff > Role permissions** the owner
 edits role defaults and per-user exceptions. Two entries in `PERMISSION_DEFINITIONS` carry
@@ -263,10 +263,10 @@ row when a pending change would take one of the four away from the actor who is 
 warning, not a block: the save goes out, and the server applies two separate guards that need to be
 told apart.
 
-| Guard | Refuses | Status | Can a PIN satisfy it |
-| --- | --- | --- | --- |
-| `assertAdministrationReachable` | a write that would leave the install with no account that can administer it | 400 `administration_unreachable` | no, nothing rescues a stranded store |
-| `assertActorKeepsOwnAdministration` | a write that would take any of the four away from the actor making it | 428 `self_privilege_change_requires_factor`, 403 if the factor is wrong, 409 if the actor has no PIN set | yes |
+| Guard                               | Refuses                                                                     | Status                                                                                                   | Can a PIN satisfy it                 |
+| ----------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `assertAdministrationReachable`     | a write that would leave the install with no account that can administer it | 400 `administration_unreachable`                                                                         | no, nothing rescues a stranded store |
+| `assertActorKeepsOwnAdministration` | a write that would take any of the four away from the actor making it       | 428 `self_privilege_change_requires_factor`, 403 if the factor is wrong, 409 if the actor has no PIN set | yes                                  |
 
 The second guard's factor is the **actor's own staff PIN**, verified against `users.pin_hash` from
 the request body's `override_pin` and rate-limited per client IP. It is not the Master PIN, and the
@@ -283,7 +283,7 @@ both before the write, so a refusal stores nothing.
 [`frontend/src/lib/permissions.ts`](../../frontend/src/lib/permissions.ts) exposes one function:
 
 ```ts
-tenantCan(tenant, permissionId)
+tenantCan(tenant, permissionId);
 ```
 
 It returns `false` when there is no tenant. When the tenant payload carries a `permission_ids`
@@ -376,13 +376,13 @@ permission-gated route onto a window-origin check, which is a different and weak
 
 Five channels do database work, and they are gated two different ways on purpose.
 
-| Channel | Gate |
-| --- | --- |
-| `db-health-check` | sender check only; it reports, it does not write |
-| `db-apply-safe-fixes` | sender check, then `authorizeMasterPin(pin, 'ipc:apply-safe-fixes')`, failing closed on a missing or wrong PIN |
-| `backup-database` | sender check, then `authorizeMasterPin(pin, 'ipc:backup')` |
-| `restore-backup` | sender check, then `authorizeMasterPin(pin, 'ipc:restore')` |
-| `db-initialize` | sender check, then `authorizeMasterPin(pin, 'ipc:initialize')` **and** the exact confirmation phrase `INITIALIZE` |
+| Channel               | Gate                                                                                                              |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `db-health-check`     | sender check only; it reports, it does not write                                                                  |
+| `db-apply-safe-fixes` | sender check, then `authorizeMasterPin(pin, 'ipc:apply-safe-fixes')`, failing closed on a missing or wrong PIN    |
+| `backup-database`     | sender check, then `authorizeMasterPin(pin, 'ipc:backup')`                                                        |
+| `restore-backup`      | sender check, then `authorizeMasterPin(pin, 'ipc:restore')`                                                       |
+| `db-initialize`       | sender check, then `authorizeMasterPin(pin, 'ipc:initialize')` **and** the exact confirmation phrase `INITIALIZE` |
 
 `pick-restore-file` is the odd one out and is deliberately not Master-PIN gated. It opens the
 native file picker and returns a path bound to a single-use token; it performs no destructive step.
@@ -393,18 +393,18 @@ The HTTP twins of those repairs are gated separately, and not uniformly, by
 [`main/routes/database-tools.ts`](../../main/routes/database-tools.ts). Every one of its nine routes
 requires `database.manage`. Three of them add `requireMasterPin` on a `master_pin` body field:
 
-| Route | Extra requirement |
-| --- | --- |
-| `POST /api/db-tools/initialize` | the Master PIN, then the `INITIALIZE` phrase |
-| `POST /api/db-tools/currency-reset` | the Master PIN |
-| `POST /api/db-tools/backups/:fileName/delete` | the Master PIN |
+| Route                                         | Extra requirement                            |
+| --------------------------------------------- | -------------------------------------------- |
+| `POST /api/db-tools/initialize`               | the Master PIN, then the `INITIALIZE` phrase |
+| `POST /api/db-tools/currency-reset`           | the Master PIN                               |
+| `POST /api/db-tools/backups/:fileName/delete` | the Master PIN                               |
 
 Of the remaining six, one matters here because its IPC twin is gated the other way:
 
-| Interface | Gate |
-| --- | --- |
-| `db-apply-safe-fixes` over IPC | sender check, then the Master PIN, failing closed without it |
-| `POST /api/db-tools/apply-safe-fixes` over HTTP | `database.manage`, and no PIN of any kind |
+| Interface                                       | Gate                                                         |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| `db-apply-safe-fixes` over IPC                  | sender check, then the Master PIN, failing closed without it |
+| `POST /api/db-tools/apply-safe-fixes` over HTTP | `database.manage`, and no PIN of any kind                    |
 
 A caller holding `database.manage` can run the repair over HTTP with no second factor, and cannot
 run it over IPC without one. Neither gate implies the other; do not reason about one from the
@@ -432,14 +432,14 @@ Zustand holds the renderer's client state. Five stores live in
 [`frontend/src/store/`](../../frontend/src/store), and the printer store lives with the printer
 hook because it carries the transport:
 
-| Store | Holds | Persistence |
-| --- | --- | --- |
-| [`auth.ts`](../../frontend/src/store/auth.ts) | `user`, `token`, `tenants`, `currentTenant`, `loading`, and the locales that failed to warm at bootstrap | token and tenant in `localStorage`; throws `StorageUnavailableError` when storage is unavailable |
-| [`cart.ts`](../../frontend/src/store/cart.ts) | cart items with their addons, instructions and selected product variant, order type, table, customer, guest count, delivery details, and the subtotal and item count selectors | none |
-| [`held-orders.ts`](../../frontend/src/store/held-orders.ts) | suspended orders keyed by table, and the fetch, hold, restore, remove, and lookup actions over `/held-orders` | none |
-| [`pos-settings.ts`](../../frontend/src/store/pos-settings.ts) | the tenant's POS configuration, printer defaults, bill template and provenance, receipt and kitchen-ticket language policy | `persist` under the `pos-settings` key, version 5; `partialize` excludes `whatsappEnabled`, `billLanguagePolicy`, and `kotLanguagePolicy` |
-| [`theme.ts`](../../frontend/src/store/theme.ts) | `mode` and whether this session made an explicit choice | none; `useThemeModeToggle` writes through the API and rolls the store back when the write fails |
-| [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts) | connection status, the hardware and WebUSB printer records, the print method, the last emitted bytes, and the print actions: `printBill`, `printTaxBill`, `printKot`, `printDeliverySlip` | `persist` |
+| Store                                                         | Holds                                                                                                                                                                                     | Persistence                                                                                                                               |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| [`auth.ts`](../../frontend/src/store/auth.ts)                 | `user`, `token`, `tenants`, `currentTenant`, `loading`, and the locales that failed to warm at bootstrap                                                                                  | token and tenant in `localStorage`; throws `StorageUnavailableError` when storage is unavailable                                          |
+| [`cart.ts`](../../frontend/src/store/cart.ts)                 | cart items with their addons, instructions and selected product variant, order type, table, customer, guest count, delivery details, and the subtotal and item count selectors            | none                                                                                                                                      |
+| [`held-orders.ts`](../../frontend/src/store/held-orders.ts)   | suspended orders keyed by table, and the fetch, hold, restore, remove, and lookup actions over `/held-orders`                                                                             | none                                                                                                                                      |
+| [`pos-settings.ts`](../../frontend/src/store/pos-settings.ts) | the tenant's POS configuration, printer defaults, bill template and provenance, receipt and kitchen-ticket language policy                                                                | `persist` under the `pos-settings` key, version 5; `partialize` excludes `whatsappEnabled`, `billLanguagePolicy`, and `kotLanguagePolicy` |
+| [`theme.ts`](../../frontend/src/store/theme.ts)               | `mode` and whether this session made an explicit choice                                                                                                                                   | none; `useThemeModeToggle` writes through the API and rolls the store back when the write fails                                           |
+| [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts)   | connection status, the hardware and WebUSB printer records, the print method, the last emitted bytes, and the print actions: `printBill`, `printTaxBill`, `printKot`, `printDeliverySlip` | `persist`                                                                                                                                 |
 
 `held-orders.ts` exports `createHeldOrdersStore(apiClient)`, so a test can pass its own client
 instead of the shared one.
@@ -511,10 +511,10 @@ encoder, and the backend bill route in
 [`main/routes/printers.ts`](../../main/routes/printers.ts). The slip paths each re-implement the
 rule inline instead, with no call into the kernel:
 
-| Path | How it decides |
-| --- | --- |
+| Path                                                                                            | How it decides                                                   |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | renderer slip, `printDeliverySlip` in [`usePrinter.ts`](../../frontend/src/hooks/usePrinter.ts) | `billDeliveryShowCustomerPhoneAlways \|\| billShowCustomerPhone` |
-| backend slip, `main/routes/printers.ts` | the same boolean, read from the settings table directly |
+| backend slip, `main/routes/printers.ts`                                                         | the same boolean, read from the settings table directly          |
 
 The two agree today because the rule is two settings wide. They are separate code, so a change to
 one does not reach the other, and this is the duplication that let a slip lose the number when the
@@ -582,28 +582,30 @@ one-time link without creating another token. If no LAN address is available, th
 offers only the local preview; if address lookup fails, it shows an error and retry action. The board
 moves the token from the URL fragment into `localStorage` and polls
 `GET /api/customer-display/feed` with it instead of using a staff session, so it needs no login and
-can read nothing but order numbers and statuses. When the feed answers `401` (the token was
+can read nothing but order numbers and statuses. Each refresh reads the newest page and follows
+`next_cursor` through the older pages (at most 50), then merges them without duplicates, so the board
+covers the whole eligible queue. When the feed answers `401` (the token was
 revoked), the board clears the stored token and orders, then shows an unpaired screen.
 
 ## Tech stack
 
-| Layer | Technology |
-| --- | --- |
-| Framework | Next.js 16 App Router |
-| UI runtime | React 19 |
-| State | Zustand 5 |
-| Styling | Tailwind CSS v4 |
-| Components | shadcn/ui primitives vendored in `src/components/ui`, built on `radix-ui` |
-| Icons | lucide-react |
-| API client | axios |
-| Notifications | react-hot-toast |
-| Messages | use-intl |
-| Drag and drop | `@dnd-kit/react` and `@dnd-kit/dom` |
-| Drawer | vaul |
+| Layer            | Technology                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| Framework        | Next.js 16 App Router                                                              |
+| UI runtime       | React 19                                                                           |
+| State            | Zustand 5                                                                          |
+| Styling          | Tailwind CSS v4                                                                    |
+| Components       | shadcn/ui primitives vendored in `src/components/ui`, built on `radix-ui`          |
+| Icons            | lucide-react                                                                       |
+| API client       | axios                                                                              |
+| Notifications    | react-hot-toast                                                                    |
+| Messages         | use-intl                                                                           |
+| Drag and drop    | `@dnd-kit/react` and `@dnd-kit/dom`                                                |
+| Drawer           | vaul                                                                               |
 | Receipt encoding | `@point-of-sale/receipt-printer-encoder`, plus the shared kernel in `shared/print` |
-| Device I/O | WebUSB (`navigator.usb`) and the `window.electronAPI` bridge |
-| Image handling | react-dropzone, react-easy-crop |
-| Phone numbers | libphonenumber-js |
+| Device I/O       | WebUSB (`navigator.usb`) and the `window.electronAPI` bridge                       |
+| Image handling   | react-dropzone, react-easy-crop                                                    |
+| Phone numbers    | libphonenumber-js                                                                  |
 
 The `shadcn` CLI is a development dependency used to add primitives; the primitives themselves are
 committed under `src/components/ui` and are edited in place.
@@ -656,16 +658,16 @@ frontend/src/
 
 ## Verification
 
-| Change | Check |
-| --- | --- |
-| Any renderer change | `npm run lint` and `npm run build:frontend` |
-| A message key, a new locale, or a changed label | `npm run i18n:check` |
-| A permission the renderer gates on | `npm run test:authorization-permissions` and `npm run test:auth-ui-deterministic` |
-| A new or renamed IPC channel | `npm run test:electron-api-contract` and `npm run test:printer-ipc` |
-| The sender check on a database channel | `npm run test:kds-window-hardening`, which drives `pick-restore-file`, `backup-database`, `restore-backup`, and `db-initialize` from an untrusted sender |
-| A print path, template, or column width | `npm run test:receipt-column-oracle` |
-| The courier slip | `npm run test:delivery-slip` |
-| A user-facing flow | `npm run test:e2e:browser` from the repository root |
+| Change                                          | Check                                                                                                                                                    |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any renderer change                             | `npm run lint` and `npm run build:frontend`                                                                                                              |
+| A message key, a new locale, or a changed label | `npm run i18n:check`                                                                                                                                     |
+| A permission the renderer gates on              | `npm run test:authorization-permissions` and `npm run test:auth-ui-deterministic`                                                                        |
+| A new or renamed IPC channel                    | `npm run test:electron-api-contract` and `npm run test:printer-ipc`                                                                                      |
+| The sender check on a database channel          | `npm run test:kds-window-hardening`, which drives `pick-restore-file`, `backup-database`, `restore-backup`, and `db-initialize` from an untrusted sender |
+| A print path, template, or column width         | `npm run test:receipt-column-oracle`                                                                                                                     |
+| The courier slip                                | `npm run test:delivery-slip`                                                                                                                             |
+| A user-facing flow                              | `npm run test:e2e:browser` from the repository root                                                                                                      |
 
 `npm run build:frontend` is the check that catches a server-side construct: it is the only build
 that switches the export target on, so run it rather than a bare `next dev`.

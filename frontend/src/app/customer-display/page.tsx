@@ -10,8 +10,10 @@ import type { Order } from '@/lib/types';
 import {
   CUSTOMER_DISPLAY_DEFAULTS,
   CUSTOMER_DISPLAY_FEED_PATH,
+  CUSTOMER_DISPLAY_MAX_FEED_PAGES,
   isCustomerDisplayConfig,
   isCustomerDisplayFeed,
+  mergeFeedPages,
   type BoardOrder,
   type CustomerDisplayConfig,
 } from '@/lib/customer-display';
@@ -577,33 +579,54 @@ export default function CustomerDisplayPage() {
         CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS,
       );
       feedInFlightRef.current = { session, request, controller, timeout };
+      const loadPage = (cursor: string | null) =>
+        fetch(
+          `${window.location.origin}/api${CUSTOMER_DISPLAY_FEED_PATH}${
+            cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+          }`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+            signal: controller.signal,
+          },
+        );
+      const handleUnpaired = () => {
+        if (session !== feedSessionRef.current) return;
+        feedSessionRef.current += 1;
+        feedRequestRef.current += 1;
+        window.clearTimeout(timeout);
+        feedInFlightRef.current = null;
+        previousReadyOrderIdsRef.current = null;
+        setNewlyReadyOrderIds(new Set());
+        clearStoredDisplayToken();
+        setOrders([]);
+        setLastUpdated(null);
+        setError(false);
+        setUnpaired(true);
+      };
       try {
-        const response = await fetch(`${window.location.origin}/api${CUSTOMER_DISPLAY_FEED_PATH}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: 'no-store',
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          if (session !== feedSessionRef.current) return;
-          feedSessionRef.current += 1;
-          feedRequestRef.current += 1;
-          window.clearTimeout(timeout);
-          feedInFlightRef.current = null;
-          previousReadyOrderIdsRef.current = null;
-          setNewlyReadyOrderIds(new Set());
-          clearStoredDisplayToken();
-          setOrders([]);
-          setLastUpdated(null);
-          setError(false);
-          setUnpaired(true);
-          return;
-        }
+        const response = await loadPage(null);
+        if (response.status === 401) return handleUnpaired();
         const feed: unknown = await response.json();
         if (!response.ok || !isCustomerDisplayFeed(feed)) throw new Error('feed unavailable');
         if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
+        const pages: BoardOrder[][] = [feed.orders];
+        let cursor = feed.next_cursor ?? null;
+        // Older pages are read in the same refresh and applied once, so orders deeper in
+        // the queue never register as newly ready.
+        for (let page = 1; cursor && page < CUSTOMER_DISPLAY_MAX_FEED_PAGES; page += 1) {
+          const olderResponse = await loadPage(cursor);
+          if (olderResponse.status === 401) return handleUnpaired();
+          const older: unknown = await olderResponse.json();
+          if (!olderResponse.ok || !isCustomerDisplayFeed(older))
+            throw new Error('feed unavailable');
+          if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
+          pages.push(older.orders);
+          cursor = older.next_cursor ?? null;
+        }
         setConfig(feed.config);
         setBusinessName(feed.business_name);
-        acceptOrders(feed.orders);
+        acceptOrders(mergeFeedPages(pages));
         setError(false);
         setLastUpdated(new Date());
       } catch {

@@ -162,7 +162,12 @@ async function main(): Promise<void> {
   const feed = await request(app).get(FEED).set(display);
   assert.equal(feed.status, 200);
   assert.equal(feed.headers['cache-control'], 'no-store');
-  assert.deepEqual(Object.keys(feed.body).sort(), ['business_name', 'config', 'orders']);
+  assert.deepEqual(Object.keys(feed.body).sort(), [
+    'business_name',
+    'config',
+    'next_cursor',
+    'orders',
+  ]);
   assert.deepEqual(
     feed.body.orders.map((o: any) => [o.number, o.status]),
     [

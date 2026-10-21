@@ -40,13 +40,41 @@ export interface CustomerDisplayFeed {
   business_name: string;
   config: CustomerDisplayConfig;
   orders: BoardOrder[];
+  /** Cursor for the next older page of the eligible queue; absent or null when exhausted. */
+  next_cursor?: string | null;
+}
+
+/** Upper bound on pages walked per refresh, so a runaway queue cannot loop forever. */
+export const CUSTOMER_DISPLAY_MAX_FEED_PAGES = 50;
+
+function boardOrderKey(order: BoardOrder): string {
+  return String(order.id ?? order.number);
+}
+
+/**
+ * Merges feed pages fetched newest-first into one oldest-first list. An order that
+ * appears in more than one page keeps its entry from the newest page, so a status
+ * change between page reads never produces a duplicate row.
+ */
+export function mergeFeedPages(pagesNewestFirst: BoardOrder[][]): BoardOrder[] {
+  const seen = new Set<string>();
+  const kept = pagesNewestFirst.map((page) =>
+    page.filter((order) => {
+      const key = boardOrderKey(order);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }),
+  );
+  return kept.reverse().flat();
 }
 
 export function isCustomerDisplayFeed(value: unknown): value is CustomerDisplayFeed {
   if (!value || typeof value !== 'object') return false;
-  const { business_name, config, orders } = value as Record<string, unknown>;
+  const { business_name, config, orders, next_cursor } = value as Record<string, unknown>;
   return (
     typeof business_name === 'string' &&
+    (next_cursor === undefined || next_cursor === null || typeof next_cursor === 'string') &&
     isCustomerDisplayConfig(config) &&
     Array.isArray(orders) &&
     orders.every(

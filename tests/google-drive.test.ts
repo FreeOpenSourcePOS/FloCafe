@@ -1821,8 +1821,20 @@ async function main(): Promise<void> {
             },
           };
         });
+        remoteFixtures.push({
+          id: 'drive-file-invalid-candidate',
+          name: 'flo-backup-invalid.db',
+          size: '1024',
+          mimeType: 'text/plain',
+          createdTime: '2026-03-01T12:00:99.000Z',
+          appProperties: {
+            flo_marker_version: '1',
+            flo_installation_id: markerForPagination,
+            flo_backup_kind: 'manual',
+            flo_destination_folder_id: 'folder-a',
+          },
+        });
 
-        let observedListLimits: Array<number | undefined> = [];
         (gd.googleDrive as any).getAuthorizedClient = async () => ({});
         (gd.googleDrive as any).listFilesInDestination = async (
           _client: unknown,
@@ -1830,7 +1842,6 @@ async function main(): Promise<void> {
           _signal: AbortSignal,
           options: { limit?: number },
         ) => {
-          observedListLimits.push(options?.limit);
           const sorted = [...remoteFixtures].sort((a, b) => {
             if (a.createdTime !== b.createdTime) return a.createdTime < b.createdTime ? 1 : -1;
             return a.id === b.id ? 0 : a.id < b.id ? 1 : -1;
@@ -1846,11 +1857,6 @@ async function main(): Promise<void> {
           typeof page1.body.nextCursor,
           'string',
           'initial Drive page returns nextCursor',
-        );
-        assert.deepEqual(
-          observedListLimits,
-          [6],
-          'single-destination initial page bounds Drive listing to limit + 1',
         );
         assert.equal(page1.body.backups[0]?.id, 'drive-file-16', 'newest Drive backup is first');
         assert.equal(

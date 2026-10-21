@@ -2012,10 +2012,6 @@ class GoogleDriveService {
           ),
         ),
       ];
-      const singleFolderInitialLimit =
-        folders.length === 1 && !cursor && options.limit !== undefined
-          ? options.limit + 1
-          : undefined;
       const result: GoogleDriveRemoteBackup[] = [];
       for (const folderId of folders) {
         try {
@@ -2025,9 +2021,6 @@ class GoogleDriveService {
             signal,
             {
               query: `appProperties has { key='flo_marker_version' and value='${MARKER_VERSION}' } and appProperties has { key='flo_installation_id' and value='${marker}' }`,
-              ...(singleFolderInitialLimit !== undefined
-                ? { limit: singleFolderInitialLimit }
-                : {}),
             },
           );
           for (const file of files) {

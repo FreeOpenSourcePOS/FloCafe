@@ -183,7 +183,7 @@ test('a captured failure can be reported as a ticket', async ({ page }) => {
   );
 });
 
-test('automatic reporting is enabled by default and the owner can opt out', async ({ page }) => {
+test('automatic reporting is off by default and the owner can opt in', async ({ page }) => {
   const token = getE2eToken();
   await loginAs(page, 'owner@flo.local');
 
@@ -193,34 +193,20 @@ test('automatic reporting is enabled by default and the owner can opt out', asyn
   expect(settings.status()).toBe(200);
   const settingsJson = await settings.json();
   expect(settingsJson.settings?.diagnostics_consent).toBe('true');
-  expect(settingsJson.settings?.diagnostics_transmission_enabled).toBe('true');
+  expect(settingsJson.settings?.diagnostics_transmission_enabled).toBe('false');
   const initialHealthResponse = await page.request.get(`${BASE}/api/diagnostics/health`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const initialHealth = await initialHealthResponse.json();
   expect(initialHealth.effective_consent).toBe(true);
-  expect(initialHealth.transmission_enabled).toBe(true);
+  expect(initialHealth.transmission_enabled).toBe(false);
 
   await page.goto(`${BASE}/support?tab=diagnostics`);
   await expect(page.getByRole('heading', { name: DIAGNOSTICS_TAB })).toBeVisible();
   const ownerSwitch = page.getByRole('switch', { name: 'Send diagnostics automatically' });
-  await expect(ownerSwitch).toHaveAttribute('aria-checked', 'true');
+  await expect(ownerSwitch).toHaveAttribute('aria-checked', 'false');
   await expect(ownerSwitch, 'an owner who holds the settings permission can use it').toBeEnabled();
   await expect(page.getByTestId('diagnostics-health')).toBeVisible();
-  if (initialHealth.consent_sync_pending) {
-    await expect(
-      page.getByText('Reporting permission or delivery state has not been confirmed yet.', {
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(
-      page.getByText('Automatic reporting is enabled by both privacy controls', { exact: false }),
-    ).toHaveCount(0);
-  } else {
-    await expect(
-      page.getByText('Automatic reporting is enabled by both privacy controls', { exact: false }),
-    ).toBeVisible();
-  }
 
   const setTransmission = (value: string) =>
     page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
@@ -228,12 +214,12 @@ test('automatic reporting is enabled by default and the owner can opt out', asyn
       data: { value },
     });
   try {
-    expect((await setTransmission('false')).status(), 'the owner can opt out').toBe(200);
+    expect((await setTransmission('true')).status(), 'the owner can opt in').toBe(200);
     await page.reload();
     await expect(page.getByRole('heading', { name: DIAGNOSTICS_TAB })).toBeVisible();
     await expect(
       page.getByRole('switch', { name: 'Send diagnostics automatically' }),
-    ).toHaveAttribute('aria-checked', 'false');
+    ).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('diagnostics-health')).toBeVisible();
     const health = await page.request.get(`${BASE}/api/diagnostics/health`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -245,20 +231,17 @@ test('automatic reporting is enabled by default and the owner can opt out', asyn
     ).toBe(true);
     expect(
       healthState.transmission_enabled,
-      'opting out disables the independent transmission gate',
-    ).toBe(false);
-    expect(['local', 'disabled']).toContain(healthState.transport);
-    if (healthState.consent_sync_pending) {
+      'opting in enables the independent transmission gate',
+    ).toBe(true);
+    if (!healthState.consent_sync_pending) {
       await expect(
-        page.getByText('Reporting permission or delivery state has not been confirmed yet.', {
-          exact: true,
+        page.getByText('Automatic reporting is enabled by both privacy controls', {
+          exact: false,
         }),
       ).toBeVisible();
-    } else {
-      await expect(page.getByText('Automatic reporting is off', { exact: false })).toBeVisible();
     }
   } finally {
-    await setTransmission('true');
+    await setTransmission('false');
   }
 });
 

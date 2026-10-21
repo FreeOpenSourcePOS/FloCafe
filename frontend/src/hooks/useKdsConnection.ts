@@ -10,6 +10,20 @@ import { useConfirm } from '@/hooks/use-confirm';
 // preventing server hammering during outages.
 const KDS_RECONNECT_BASE_MS = 1000;
 const KDS_RECONNECT_MAX_MS = 30000;
+/** Keeps prior object identity for orders whose payload is unchanged, so memoized cards skip re-rendering. */
+export function reconcileKdsOrders(prev: KdsOrder[], next: KdsOrder[]): KdsOrder[] {
+  const previousById = new Map(prev.map((order) => [order.id, order]));
+  let identical = prev.length === next.length;
+  const merged = next.map((order, index) => {
+    const existing = previousById.get(order.id);
+    const reuse = existing !== undefined && JSON.stringify(existing) === JSON.stringify(order);
+    const result = reuse ? existing : order;
+    if (prev[index] !== result) identical = false;
+    return result;
+  });
+  return identical ? prev : merged;
+}
+
 function kdsReconnectDelay(attempt: number): number {
   return Math.min(KDS_RECONNECT_MAX_MS, KDS_RECONNECT_BASE_MS * 2 ** attempt);
 }
@@ -245,6 +259,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const restInitialFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restRequestSequenceRef = useRef(0);
+  const restInFlightGenerationRef = useRef<number | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const sessionGenerationRef = useRef(0);
@@ -294,6 +309,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   const fetchOrdersRest = useCallback(async () => {
     const generation = sessionGenerationRef.current;
+    if (restInFlightGenerationRef.current === generation) return;
+    restInFlightGenerationRef.current = generation;
     const requestSequence = ++restRequestSequenceRef.current;
     try {
       const { data } = await api.get(`${ordersPath}?status=pending,preparing,ready,served`);
@@ -303,7 +320,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         (typeof window !== 'undefined' && !window.localStorage.getItem('token'))
       )
         return;
-      setOrders(data.orders || []);
+      setOrders((prev) => reconcileKdsOrders(prev, data.orders || []));
       setCounts(data.counts || {});
       setConnected(true);
     } catch (error: unknown) {
@@ -349,6 +366,9 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       } else {
         setConnected(false);
       }
+    } finally {
+      if (restInFlightGenerationRef.current === generation)
+        restInFlightGenerationRef.current = null;
     }
   }, [api, disableKdsConnection, ordersPath, stopRestPolling, t]);
   // Re-starts polling loop; initial fetch is deferred a tick (setTimeout 0)
@@ -562,7 +582,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
               authTimeout = null;
             }
             setUser((prev) => (prev ? { ...prev, ...msg.user, token: prev.token } : null));
-            setOrders(msg.orders || []);
+            setOrders((prev) => reconcileKdsOrders(prev, msg.orders || []));
             setCounts(msg.counts || {});
             setConnected(true);
             setLoading(false);
@@ -618,7 +638,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             ws.close();
             setLoading(temporaryUnavailable);
           } else if ((msg.type === 'initial_data' || msg.type === 'orders') && msg.orders) {
-            setOrders(msg.orders);
+            const incomingOrders = msg.orders;
+            setOrders((prev) => reconcileKdsOrders(prev, incomingOrders));
             setCounts(msg.counts || {});
             setConnected(true);
             if (msg.type === 'initial_data') setLoading(false);

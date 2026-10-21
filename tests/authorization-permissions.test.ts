@@ -18,7 +18,13 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, now } = require('../main/db');
+const {
+  initDatabase,
+  getDatabase,
+  closeDatabase,
+  getCurrentSchemaVersion,
+  now,
+} = require('../main/db');
 const {
   PERMISSION_DEFINITIONS,
   PERMISSION_IDS,
@@ -57,8 +63,15 @@ function main(): void {
   // The permission tables must survive later migrations, so the schema version
   // is a floor rather than an exact pin.
   assert.ok(getCurrentSchemaVersion() >= 93, 'permission schema is at least migration v93');
-  for (const table of ['role_permission_overrides', 'user_permission_overrides', 'authorization_audit_log']) {
-    assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table), `${table} exists`);
+  for (const table of [
+    'role_permission_overrides',
+    'user_permission_overrides',
+    'authorization_audit_log',
+  ]) {
+    assert.ok(
+      db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table),
+      `${table} exists`,
+    );
   }
 
   const ids = PERMISSION_DEFINITIONS.map((definition: any) => definition.id);
@@ -66,7 +79,10 @@ function main(): void {
   assert.deepEqual(ids, PERMISSION_IDS, 'permission ID list follows registry order');
   for (const definition of PERMISSION_DEFINITIONS) {
     assert.ok(definition.area, `${definition.id} has an area`);
-    assert.ok(['standard', 'sensitive', 'destructive'].includes(definition.risk), `${definition.id} has a valid risk`);
+    assert.ok(
+      ['standard', 'sensitive', 'destructive'].includes(definition.risk),
+      `${definition.id} has a valid risk`,
+    );
     assert.ok(isPermissionId(definition.id), `${definition.id} is recognized`);
   }
   assert.equal(isPermissionId('unknown.permission'), false, 'unknown permission IDs are rejected');
@@ -88,11 +104,27 @@ function main(): void {
     );
   }
 
-  assert.equal(hasPermission('manager-permissions', 'reports.view'), true, 'manager receives default report access');
-  assert.equal(hasPermission('cashier-permissions', 'reports.view'), false, 'cashier lacks default report access');
-  assert.equal(hasPermission('server-permissions', 'orders.read'), true, 'server receives open order access');
+  assert.equal(
+    hasPermission('manager-permissions', 'reports.view'),
+    true,
+    'manager receives default report access',
+  );
+  assert.equal(
+    hasPermission('cashier-permissions', 'reports.view'),
+    false,
+    'cashier lacks default report access',
+  );
+  assert.equal(
+    hasPermission('server-permissions', 'orders.read'),
+    true,
+    'server receives open order access',
+  );
   assert.equal(hasPermission('chef-permissions', 'kitchen.use'), true, 'chef receives KDS access');
-  assert.equal(hasPermission('inactive-permissions', 'reports.view'), false, 'inactive users have no usable permissions');
+  assert.equal(
+    hasPermission('inactive-permissions', 'reports.view'),
+    false,
+    'inactive users have no usable permissions',
+  );
   assert.equal(resolveEffectivePermissions('missing-user'), null, 'missing users do not resolve');
 
   // The tax preview gate is requireAnyPermission('pos.use', 'orders.create', 'kitchen.use').
@@ -101,41 +133,95 @@ function main(): void {
   for (const role of basketPricingRoles) {
     const permissions = defaultPermissionIdsForRole(role);
     assert.ok(
-      ['pos.use', 'orders.create', 'kitchen.use'].some((permissionId) => (permissions as readonly string[]).includes(permissionId)),
+      ['pos.use', 'orders.create', 'kitchen.use'].some((permissionId) =>
+        (permissions as readonly string[]).includes(permissionId),
+      ),
       `${role} can price a basket under the shipped defaults`,
     );
   }
 
   // bills.print is a payments-area permission, not a second name for bills.discount.apply.
-  assert.deepEqual(defaultPermissionIdsForRole('cashier').includes('bills.print'), false, 'cashier does not receive bills.print');
-  assert.deepEqual(defaultPermissionIdsForRole('server').includes('bills.print'), false, 'server does not receive bills.print');
-  assert.equal(defaultPermissionIdsForRole('manager').includes('bills.print'), true, 'manager receives bills.print');
-  assert.equal(defaultPermissionIdsForRole('owner').includes('bills.print'), true, 'owner receives bills.print');
+  assert.equal(
+    defaultPermissionIdsForRole('cashier').includes('bills.print'),
+    true,
+    'cashier receives bills.print',
+  );
+  assert.deepEqual(
+    defaultPermissionIdsForRole('server').includes('bills.print'),
+    false,
+    'server does not receive bills.print',
+  );
+  assert.equal(
+    defaultPermissionIdsForRole('manager').includes('bills.print'),
+    true,
+    'manager receives bills.print',
+  );
+  assert.equal(
+    defaultPermissionIdsForRole('owner').includes('bills.print'),
+    true,
+    'owner receives bills.print',
+  );
 
   insertRoleOverride(db, 'manager', 'reports.view', 'deny');
-  assert.equal(hasPermission('manager-permissions', 'reports.view'), false, 'role deny overrides shipped allow');
+  assert.equal(
+    hasPermission('manager-permissions', 'reports.view'),
+    false,
+    'role deny overrides shipped allow',
+  );
   insertUserOverride(db, 'manager-permissions', 'reports.view', 'allow');
-  assert.equal(hasPermission('manager-permissions', 'reports.view'), true, 'user allow overrides role deny');
+  assert.equal(
+    hasPermission('manager-permissions', 'reports.view'),
+    true,
+    'user allow overrides role deny',
+  );
 
   insertRoleOverride(db, 'cashier', 'dashboard.view', 'allow');
-  assert.equal(hasPermission('cashier-permissions', 'dashboard.view'), true, 'role allow overrides shipped deny');
+  assert.equal(
+    hasPermission('cashier-permissions', 'dashboard.view'),
+    true,
+    'role allow overrides shipped deny',
+  );
   insertUserOverride(db, 'cashier-permissions', 'dashboard.view', 'deny');
-  assert.equal(hasPermission('cashier-permissions', 'dashboard.view'), false, 'user deny overrides role allow');
+  assert.equal(
+    hasPermission('cashier-permissions', 'dashboard.view'),
+    false,
+    'user deny overrides role allow',
+  );
 
   insertRoleOverride(db, 'manager', 'authorization.manage', 'allow');
   insertUserOverride(db, 'manager-permissions', 'staff.privileged.manage', 'allow');
-  assert.equal(hasPermission('manager-permissions', 'authorization.manage'), false, 'protected IAM permission cannot be granted to manager');
-  assert.equal(hasPermission('manager-permissions', 'staff.privileged.manage'), false, 'protected privileged staff permission cannot be granted to manager');
+  assert.equal(
+    hasPermission('manager-permissions', 'authorization.manage'),
+    false,
+    'protected IAM permission cannot be granted to manager',
+  );
+  assert.equal(
+    hasPermission('manager-permissions', 'staff.privileged.manage'),
+    false,
+    'protected privileged staff permission cannot be granted to manager',
+  );
 
   insertRoleOverride(db, 'owner', 'authorization.manage', 'deny');
   insertUserOverride(db, 'owner-permissions', 'staff.privileged.manage', 'deny');
   const ownerEffective = resolveEffectivePermissions('owner-permissions');
-  assert.equal(hasPermission('owner-permissions', 'authorization.manage'), true, 'owner cannot lose protected IAM permission');
-  assert.equal(hasPermission('owner-permissions', 'staff.privileged.manage'), true, 'owner cannot lose protected privileged staff permission');
+  assert.equal(
+    hasPermission('owner-permissions', 'authorization.manage'),
+    true,
+    'owner cannot lose protected IAM permission',
+  );
+  assert.equal(
+    hasPermission('owner-permissions', 'staff.privileged.manage'),
+    true,
+    'owner cannot lose protected privileged staff permission',
+  );
   assert.equal(ownerEffective.decisions['authorization.manage'].source, 'protected_rule');
 
   insertRoleOverride(db, 'manager', 'removed.permission', 'allow');
-  assert.equal(resolveEffectivePermissions('manager-permissions').permissionIds.has('removed.permission'), false, 'unknown stored permission fails closed');
+  assert.equal(
+    resolveEffectivePermissions('manager-permissions').permissionIds.has('removed.permission'),
+    false,
+    'unknown stored permission fails closed',
+  );
 
   console.log('Configurable authorization permission tests passed');
 }
@@ -143,7 +229,9 @@ function main(): void {
 try {
   main();
 } finally {
-  try { closeDatabase(); } catch { }
+  try {
+    closeDatabase();
+  } catch {}
   Module._load = originalLoad;
   fs.rmSync(testDir, { recursive: true, force: true });
 }

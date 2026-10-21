@@ -99,7 +99,7 @@ function executeWorkflowStep(
 
     // GitHub Actions runs these steps under bash on every OS, including the
     // windows-latest matrix lane. Resolve bash from PATH there (Git Bash is
-    // installed and already on PATH for the repo's own run-test.sh wrapper);
+    // installed and already on PATH for the repo's CI scripts);
     // a hardcoded /bin/bash only exists on POSIX systems.
     const bashExecutable = process.platform === 'win32' ? 'bash' : '/bin/bash';
     const result = childProcess.spawnSync(

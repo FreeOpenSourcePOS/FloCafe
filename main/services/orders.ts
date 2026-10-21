@@ -181,11 +181,7 @@ export interface RecomputedOrderTotals {
   chargeColumns: { service_charge: number; packaging_charge: number } | null;
 }
 
-/**
- * Single home for order-total recomputation across order-item mutations: recomputes
- * document taxes across items and charges, persists updated snapshots, rescales item
- * tax for discounts, adds charge taxes and charges, and rounds to currency.
- */
+/** Recomputes document taxes, discounts, charges, and totals for order mutations. */
 export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): RecomputedOrderTotals {
   const { tenantInfo, chargeContext, customer, totals, discountAmount, taxScaling } = input;
   const decimals = getCurrencyFractionDigits(tenantInfo.currency || '');

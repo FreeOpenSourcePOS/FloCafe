@@ -708,7 +708,7 @@ test('calculateDocumentItemTaxes handles mixed categorized + uncategorized, scop
   assert.equal(lineScopeResult.taxAmount, '1.00');
 });
 
-test('calculateDocumentItemTaxes does not skip zero-price categorized items (Comment 3)', () => {
+test('calculateDocumentItemTaxes does not skip zero-price categorized items', () => {
   const tenant = {
     country: 'IN',
     business_type: 'restaurant',

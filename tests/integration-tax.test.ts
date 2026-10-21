@@ -1629,10 +1629,10 @@ async function main() {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(now());
 
-    // ── Step 15: Greptile Review Verifications (Comments 1, 2, 3) ────
-    console.log('\n15. Greptile review edge cases: untaxed lines, overrides, and free items');
+    // ── Step 15: Untaxed lines, overrides, and zero-price items ────────
+    console.log('\n15. Edge cases: untaxed lines, overrides, and zero-price items');
 
-    // 15a. Existing untaxed item does not absorb document rounding remainders (Comment 1)
+    // Existing untaxed item does not absorb document rounding remainders
     seedProduct(db, 'prod-untaxed', 'cat-tax', 'Untaxed Item', 100.1, {
       tax_type: 'none',
       tax_rate: 0,
@@ -1690,7 +1690,7 @@ async function main() {
       'total = 300.30 subtotal + 10.01 tax',
     );
 
-    // 15b. Subsequent override changes do not reprice existing snapshotted items (Comment 2)
+    // Subsequent override changes do not reprice existing snapshotted items
     const s15OverrideOrderRes = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {
@@ -1702,7 +1702,7 @@ async function main() {
     assertEqual(s15OverrideOrderRes.status, 201, 'override test order created');
     assertEqual(s15OverrideOrderRes.data.order.tax_amount, 5.01, 'initial item tax = 5.01');
 
-    // Merchant adds an override for prod-doc-1 changing behavior to unclassified
+    // Merchant adds an override for prod-doc-1 changing category to exempt
     const s15ActivePackVersion = (
       db
         .prepare("SELECT active_version_id FROM country_packs WHERE id = 'official-india'")
@@ -1714,7 +1714,7 @@ async function main() {
     `).run(
       'override-prod-doc-1',
       s15ActivePackVersion,
-      JSON.stringify({ categoryId: 'unclassified' }),
+      JSON.stringify({ categoryId: 'exempt' }),
       now(),
       now(),
     );
@@ -1735,11 +1735,26 @@ async function main() {
       5.01,
       'existing snapshotted item preserves historical category and is not repriced by new override',
     );
+    const s15FetchedOrder = (
+      await api(baseUrl, `/api/orders/${s15OverrideOrderRes.data.order.id}`, {
+        headers: authHeader,
+      })
+    ).data.order;
+    const s15PatchedItem = s15FetchedOrder.items[0];
+    const s15PatchedSnapshot =
+      typeof s15PatchedItem.tax_snapshot === 'string'
+        ? JSON.parse(s15PatchedItem.tax_snapshot)
+        : s15PatchedItem.tax_snapshot;
+    assertEqual(
+      s15PatchedSnapshot.lines[0].categoryId,
+      'standard',
+      'saved tax snapshot preserves standard category',
+    );
 
     // Clean up the override
     db.prepare("DELETE FROM tax_overrides WHERE id = 'override-prod-doc-1'").run();
 
-    // 15c. Zero-price categorized item (Comment 3)
+    // Zero-price categorized item receives tax snapshots without error
     seedProduct(db, 'prod-free', 'cat-tax', 'Free Promotion', 0, {
       tax_category_id: 'standard',
       tax_behavior: 'exclusive',

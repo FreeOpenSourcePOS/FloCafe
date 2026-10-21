@@ -475,9 +475,69 @@ async function run() {
     );
   }
 
-  // ─── 7. Concurrent Idempotent Retry Replay & Conflict Safeguards (Finding N3) ──
-  console.log('\n--- 7. Concurrent Idempotent Retry Replay & Conflict Safeguards (Finding N3) ---');
+  // ─── 7. Concurrent Idempotent Retry Replay & Conflict Safeguards ─────────────
+  console.log('\n--- 7. Concurrent Idempotent Retry Replay & Conflict Safeguards ---');
   {
+    async function runWithConcurrentBarrier(
+      startOriginal: () => any,
+      startRetry: () => any,
+    ): Promise<[any, any]> {
+      const origCompare = bcrypt.compare;
+      const origPrepare = db.prepare.bind(db);
+
+      let pinEnteredResolver!: () => void;
+      const pinEntered = new Promise<void>((resolve) => {
+        pinEnteredResolver = resolve;
+      });
+
+      let releasePinResolver!: () => void;
+      const releasePin = new Promise<void>((resolve) => {
+        releasePinResolver = resolve;
+      });
+
+      let retryStarted = false;
+      let released = false;
+
+      bcrypt.compare = async function (s: string, hash: string) {
+        if (!retryStarted) {
+          pinEnteredResolver();
+          await releasePin;
+        }
+        return origCompare.apply(this, arguments as any);
+      };
+
+      db.prepare = function (sql: string) {
+        const stmt = origPrepare(sql);
+        if (
+          retryStarted &&
+          !released &&
+          typeof sql === 'string' &&
+          sql.includes('FROM refund_idempotency')
+        ) {
+          released = true;
+          setImmediate(() => {
+            releasePinResolver();
+          });
+        }
+        return stmt;
+      };
+
+      try {
+        const origPromise = startOriginal().then((r: any) => r);
+        origPromise.catch(() => {
+          pinEnteredResolver();
+          releasePinResolver();
+        });
+        await pinEntered;
+        retryStarted = true;
+        const retryPromise = startRetry().then((r: any) => r);
+        return await Promise.all([origPromise, retryPromise]);
+      } finally {
+        bcrypt.compare = origCompare;
+        db.prepare = origPrepare;
+      }
+    }
+
     // A. Concurrent original refund request + queued retry with invalid override_pin
     //    Both return 201 with identical body and ID; only 1 refund in SQLite; failed-PIN rate limit not tripped.
     const fixture7a = createPaidBill();
@@ -492,25 +552,18 @@ async function run() {
       approver_id: managerId,
     };
 
-    // Pre-seed 4 failed attempts into the rate limit bucket so 1 more failure would trip lockout
-    const testIp = '127.0.0.1';
-    for (let i = 0; i < 4; i++) {
-      checkPinRateLimit(`pin:${testIp}:refund`);
-      checkPinRateLimit(`pin:::ffff:${testIp}:refund`);
-      checkPinRateLimit(`pin:::1:refund`);
-    }
-
-    const origPromiseA = request(app)
-      .post('/api/refunds')
-      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA })
-      .send({ ...payloadA, override_pin: managerPin });
-
-    const retryPromiseA = request(app)
-      .post('/api/refunds')
-      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA })
-      .send({ ...payloadA, override_pin: 'invalid-stale-pin' });
-
-    const [origResA, retryResA] = await Promise.all([origPromiseA, retryPromiseA]);
+    const [origResA, retryResA] = await runWithConcurrentBarrier(
+      () =>
+        request(app)
+          .post('/api/refunds')
+          .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA })
+          .send({ ...payloadA, override_pin: managerPin }),
+      () =>
+        request(app)
+          .post('/api/refunds')
+          .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA })
+          .send({ ...payloadA, override_pin: 'invalid-stale-pin' }),
+    );
 
     assertEqualOrThrow(
       origResA.status,
@@ -536,12 +589,16 @@ async function run() {
     ).count;
     assertEqualOrThrow(countA, 1, 'Only 1 refund record exists in SQLite');
 
-    assertOrThrow(
-      !isPinRateLimited(`pin:${testIp}:refund`) &&
-        !isPinRateLimited(`pin:::ffff:${testIp}:refund`) &&
-        !isPinRateLimited(`pin:::1:refund`),
-      'Failed-PIN rate limit bucket was not tripped to lockout by the queued retry',
-    );
+    const testIpKeys = ['pin:127.0.0.1:refund', 'pin:::ffff:127.0.0.1:refund', 'pin:::1:refund'];
+    for (const key of testIpKeys) {
+      for (let i = 0; i < 4; i++) {
+        checkPinRateLimit(key);
+      }
+      assertOrThrow(
+        !isPinRateLimited(key),
+        `Failed-PIN rate limit bucket for ${key} recorded 0 retry attempts (4 subsequent failures did not trip lockout)`,
+      );
+    }
 
     // Queued retry omitting override_pin completely also replays 201 once original has committed
     const fixture7a2 = createPaidBill();
@@ -556,17 +613,18 @@ async function run() {
       approver_id: managerId,
     };
 
-    const origPromiseA2 = request(app)
-      .post('/api/refunds')
-      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA2 })
-      .send({ ...payloadA2, override_pin: managerPin });
-
-    const retryPromiseA2 = request(app)
-      .post('/api/refunds')
-      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA2 })
-      .send(payloadA2); // no override_pin
-
-    const [origResA2, retryResA2] = await Promise.all([origPromiseA2, retryPromiseA2]);
+    const [origResA2, retryResA2] = await runWithConcurrentBarrier(
+      () =>
+        request(app)
+          .post('/api/refunds')
+          .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA2 })
+          .send({ ...payloadA2, override_pin: managerPin }),
+      () =>
+        request(app)
+          .post('/api/refunds')
+          .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA2 })
+          .send(payloadA2), // no override_pin
+    );
 
     assertEqualOrThrow(origResA2.status, 201, 'Original request succeeds with 201');
     assertEqualOrThrow(
@@ -587,29 +645,30 @@ async function run() {
     resetOrderPinRateLimit();
 
     const idempotencyKeyB = `idem-concurrent-conflict-${Date.now()}`;
-    const origPromiseB = request(app)
-      .post('/api/refunds')
-      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyB })
-      .send({
-        bill_id: fixture7b.billId,
-        amount: 100,
-        method: 'cash',
-        approver_id: managerId,
-        override_pin: managerPin,
-      });
-
-    const retryPromiseB = request(app)
-      .post('/api/refunds')
-      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyB })
-      .send({
-        bill_id: fixture7b.billId,
-        amount: 50,
-        method: 'cash',
-        approver_id: managerId,
-        override_pin: 'invalid-or-stale-pin',
-      });
-
-    const [origResB, retryResB] = await Promise.all([origPromiseB, retryPromiseB]);
+    const [origResB, retryResB] = await runWithConcurrentBarrier(
+      () =>
+        request(app)
+          .post('/api/refunds')
+          .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyB })
+          .send({
+            bill_id: fixture7b.billId,
+            amount: 100,
+            method: 'cash',
+            approver_id: managerId,
+            override_pin: managerPin,
+          }),
+      () =>
+        request(app)
+          .post('/api/refunds')
+          .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyB })
+          .send({
+            bill_id: fixture7b.billId,
+            amount: 50,
+            method: 'cash',
+            approver_id: managerId,
+            override_pin: 'invalid-or-stale-pin',
+          }),
+    );
 
     assertEqualOrThrow(origResB.status, 201, 'Original request succeeds with 201');
     assertEqualOrThrow(retryResB.status, 409, 'Queued retry with mismatched amount returns 409');

@@ -2416,9 +2416,7 @@ async function runTests() {
   }
 
   // ── Test 3h: Contaminated schema 115 export with shadow tables and phone_digits ──
-  console.log(
-    '\nTest 3h: Contaminated schema 115 export with shadow tables and phone_digits',
-  );
+  console.log('\nTest 3h: Contaminated schema 115 export with shadow tables and phone_digits');
   {
     const baseExportRes = await request(app)
       .get('/api/db/export')

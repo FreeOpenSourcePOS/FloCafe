@@ -285,7 +285,9 @@ test.describe('Database Settings JSON Export and Import', () => {
       await expect(cancelMergeBtn).toBeVisible({ timeout: 5000 });
       await cancelMergeBtn.click();
 
-      await expect(page.getByText('Database imported successfully')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Database imported successfully')).toBeVisible({
+        timeout: 15000,
+      });
 
       // Verify FTS search index rebuild via order search
       const token = await page.evaluate(() => localStorage.getItem('token'));

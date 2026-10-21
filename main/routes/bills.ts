@@ -3426,7 +3426,7 @@ function applyPaymentBatch(
       }
     }
     const freshBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
-    const effectiveCustId = freshBill.customer_id || effectiveCustomerId;
+    const effectiveCustId = freshBill.customer_id;
     const cashback = calculateCashback(db, freshBill, effectiveCustId);
     const alreadyCredited = db
       .prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`)

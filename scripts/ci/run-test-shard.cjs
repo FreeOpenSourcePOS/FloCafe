@@ -3,10 +3,10 @@
  * CI test sharding for the FloCafe "Core test suite" (`npm test`).
  *
  * The canonical, ordered suite list lives in package.json's "test" script as a
- * chain of `bash tests/run-test.sh npm run test:<name>` invocations. This helper
+ * chain of `node scripts/run-test.cjs npm run test:<name>` invocations. This helper
  * reads that script at run time (so there is no second list to drift), assigns
  * suites to shards round-robin by position, and runs this shard's subset with
- * the same `run-test.sh` wrapper that `npm test` uses.
+ * the same `run-test.cjs` wrapper that `npm test` uses.
  *
  * Usage:
  *   SHARD_TOTAL=4 SHARD_INDEX=0 node scripts/ci/run-test-shard.cjs
@@ -46,7 +46,7 @@ if (typeof testScript !== 'string' || testScript.length === 0) {
   process.exit(2);
 }
 
-const suitePattern = /(?:bash\s+tests\/run-test\.sh\s+)?npm\s+run\s+(test:[\w-]+)/g;
+const suitePattern = /(?:node\s+scripts\/run-test\.cjs\s+)?npm\s+run\s+(test:[\w-]+)/g;
 const suites = [];
 let match;
 while ((match = suitePattern.exec(testScript)) !== null) {
@@ -66,7 +66,7 @@ console.log(
 let failed = false;
 for (const suite of mine) {
   console.log(`\n=== [shard ${index}] ${suite} ===`);
-  const result = spawnSync('bash', ['tests/run-test.sh', 'npm', 'run', suite], {
+  const result = spawnSync('node', ['scripts/run-test.cjs', 'npm', 'run', suite], {
     stdio: 'inherit',
     env: process.env,
   });

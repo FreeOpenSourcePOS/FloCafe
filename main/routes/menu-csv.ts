@@ -965,7 +965,8 @@ router.post(
         groupsUpdated = 0,
         addonsCreated = 0;
       let groupsReactivated = 0,
-        addonsReactivated = 0;
+        addonsReactivated = 0,
+        addonsUpdated = 0;
       let skipped = 0,
         failed = 0,
         changedRows = 0;
@@ -1288,8 +1289,18 @@ router.post(
           }
 
           const addonExists = db
-            .prepare('SELECT id, is_active FROM addons WHERE addon_group_id = ? AND name = ?')
-            .get(groupId, r.addon_name) as { id: string; is_active: number } | undefined;
+            .prepare(
+              'SELECT id, is_active, price, track_inventory, low_stock_threshold FROM addons WHERE addon_group_id = ? AND name = ?',
+            )
+            .get(groupId, r.addon_name) as
+            | {
+                id: string;
+                is_active: number;
+                price: number;
+                track_inventory: number;
+                low_stock_threshold: number;
+              }
+            | undefined;
           if (addonExists) {
             if (addonExists.is_active === 0) {
               // A pre-inventory spreadsheet carries neither inventory column, so
@@ -1321,7 +1332,47 @@ router.post(
                 );
               }
             } else {
-              skipped++;
+              const nextTrackInventory = hasTrackInventoryColumn
+                ? trackInventory
+                : addonExists.track_inventory;
+              const nextThreshold = hasLowStockThresholdColumn
+                ? lowStockThreshold
+                : Number(addonExists.low_stock_threshold ?? 0);
+              const detailsChanged =
+                Number(addonExists.price) !== price ||
+                addonExists.track_inventory !== nextTrackInventory ||
+                Number(addonExists.low_stock_threshold ?? 0) !== nextThreshold;
+              if (detailsChanged) {
+                db.prepare(
+                  `UPDATE addons SET price = ?, track_inventory = ?, low_stock_threshold = ?, updated_at = ? WHERE id = ?`,
+                ).run(price, nextTrackInventory, nextThreshold, now(), addonExists.id);
+              }
+              const stockBefore = hasStockQuantityColumn
+                ? Number(
+                    (
+                      db
+                        .prepare('SELECT stock_quantity FROM addons WHERE id = ?')
+                        .get(addonExists.id) as { stock_quantity: number }
+                    ).stock_quantity ?? 0,
+                  )
+                : 0;
+              const stockChanged = hasStockQuantityColumn && stockBefore !== stockQuantity;
+              if (stockChanged) {
+                applyImportedAddonStock(
+                  db,
+                  addonExists.id,
+                  stockQuantity,
+                  'manual_adjustment',
+                  addonExists.id,
+                  actorUserId,
+                );
+              }
+              if (detailsChanged || stockChanged) {
+                addonsUpdated++;
+                rowChanged = true;
+              } else {
+                skipped++;
+              }
             }
             if (rowChanged) changedRows++;
             continue;
@@ -1361,13 +1412,14 @@ router.post(
       const reactivated = groupsReactivated + addonsReactivated;
       res.json({
         created,
-        updated: groupsUpdated,
+        updated: groupsUpdated + addonsUpdated,
         reactivated,
         skipped,
         failed,
         groups_created: groupsCreated,
         groups_updated: groupsUpdated,
         addons_created: addonsCreated,
+        addons_updated: addonsUpdated,
         groups_reactivated: groupsReactivated,
         addons_reactivated: addonsReactivated,
         errors,

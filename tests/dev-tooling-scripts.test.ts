@@ -446,18 +446,12 @@ if (args[0] === 'ls') {
     // Copy run-test-shard.cjs
     fs.copyFileSync(shardScript, path.join(fixtureDir, 'scripts/ci/run-test-shard.cjs'));
 
-    // Create mock tests/run-test.sh
-    const runTestSh = `#!/usr/bin/env bash
-shift # skip 'npm'
-shift # skip 'run'
-suite="$1"
-echo "RUNNING_MOCK_SUITE:$suite"
-if [[ "$suite" == "test:failing-suite" ]]; then
-  exit 1
-fi
-exit 0
+    // Create mock scripts/run-test.cjs
+    const runTestWrapper = `const suite = process.argv[4];
+console.log('RUNNING_MOCK_SUITE:' + suite);
+process.exit(suite === 'test:failing-suite' ? 1 : 0);
 `;
-    fs.writeFileSync(path.join(fixtureDir, 'tests/run-test.sh'), runTestSh, { mode: 0o755 });
+    fs.writeFileSync(path.join(fixtureDir, 'scripts/run-test.cjs'), runTestWrapper);
 
     // Create fixture package.json
     const fixturePkg = {
@@ -469,9 +463,9 @@ exit 0
         'test:suite-4': 'node -e ""',
         'test:suite-5': 'node -e ""',
         'test:failing-suite': 'node -e ""',
-        test: 'bash tests/run-test.sh npm run test:suite-1 && bash tests/run-test.sh npm run test:suite-2 && bash tests/run-test.sh npm run test:suite-3 && bash tests/run-test.sh npm run test:suite-4 && bash tests/run-test.sh npm run test:suite-5',
+        test: 'node scripts/run-test.cjs npm run test:suite-1 && node scripts/run-test.cjs npm run test:suite-2 && node scripts/run-test.cjs npm run test:suite-3 && node scripts/run-test.cjs npm run test:suite-4 && node scripts/run-test.cjs npm run test:suite-5',
         'test-with-fail':
-          'bash tests/run-test.sh npm run test:suite-1 && bash tests/run-test.sh npm run test:failing-suite && bash tests/run-test.sh npm run test:suite-3',
+          'node scripts/run-test.cjs npm run test:suite-1 && node scripts/run-test.cjs npm run test:failing-suite && node scripts/run-test.cjs npm run test:suite-3',
       },
     };
     fs.writeFileSync(path.join(fixtureDir, 'package.json'), JSON.stringify(fixturePkg, null, 2));

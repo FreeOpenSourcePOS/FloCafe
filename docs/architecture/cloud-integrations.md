@@ -91,11 +91,11 @@ nothing.
 decides, and only for an Electron main process (`process.type === 'browser'`); test suites run as
 plain Node and never connect, even when they stub `app.isPackaged`.
 
-| Run | Environment |
-| --- | --- |
-| Packaged build whose `dist/main/build-identity.json` has `official_release: true` | `production` |
-| Any Electron run with `FLO_POSTHOG_DEV=1` | `development` |
-| Anything else: `npm run dev`, local `release:*` packages, CI and matrix packages | none; no connection |
+| Run                                                                               | Environment         |
+| --------------------------------------------------------------------------------- | ------------------- |
+| Packaged build whose `dist/main/build-identity.json` has `official_release: true` | `production`        |
+| Any Electron run with `FLO_POSTHOG_DEV=1`                                         | `development`       |
+| Anything else: `npm run dev`, local `release:*` packages, CI and matrix packages  | none; no connection |
 
 `official_release` is written by `scripts/copy-runtime-assets.cjs` only when the build runs with
 `FLO_OFFICIAL_RELEASE=1`, which only the release and Mac App Store workflows set. Every event and
@@ -117,11 +117,11 @@ person property it does not list is dropped. Every event carries `app_version`, 
 **Sharing levels** (`product_analytics_level`, read by `readProductAnalyticsLevel()` in
 `main/services/posthog-identity.ts`).
 
-| Level | Distinct id | Person properties | Links |
-| --- | --- | --- | --- |
-| `full` | Account (`acct_`) | Store email and store configuration | `install_ref`, `store_ref`, `staff_ref`; the device is aliased into the account |
-| `anonymous` | Device (`inst_`) | Store configuration only, never the email | `install_ref`, `staff_ref` |
-| `off` | Per launch (`anon_`) | None | None; only exceptions, when diagnostics transmission is on |
+| Level       | Distinct id          | Person properties                         | Links                                                                           |
+| ----------- | -------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- |
+| `full`      | Account (`acct_`)    | Store email and store configuration       | `install_ref`, `store_ref`, `staff_ref`; the device is aliased into the account |
+| `anonymous` | Device (`inst_`)     | Store configuration only, never the email | `install_ref`, `staff_ref`                                                      |
+| `off`       | Per launch (`anon_`) | None                                      | None; only exceptions, when diagnostics transmission is on                      |
 
 `telemetry_enabled` set to anything but `true` means `off`. Otherwise a stored `full` is `full`,
 any other stored value is `anonymous`, and a store with no stored level is `anonymous` once
@@ -145,11 +145,11 @@ levels.
 **Identities** (`main/services/posthog-identity.ts`). The collector keeps `telemetry_anon_id`;
 PostHog does not use it.
 
-| Id | Value | Lifetime |
-| --- | --- | --- |
-| Account (person) | `acct_` + 16 hex of SHA-256 over the lower-cased store email | Same for every terminal and every reinstall that uses that email |
-| Device | `inst_` + 16 hex of SHA-256 over `posthog_install_seed`, a random UUID generated once and stored in settings | Same for the life of the database; a new database gets a new device id |
-| Per launch | `anon_` + a random UUID | One app launch |
+| Id               | Value                                                                                                        | Lifetime                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| Account (person) | `acct_` + 16 hex of SHA-256 over the lower-cased store email                                                 | Same for every terminal and every reinstall that uses that email       |
+| Device           | `inst_` + 16 hex of SHA-256 over `posthog_install_seed`, a random UUID generated once and stored in settings | Same for the life of the database; a new database gets a new device id |
+| Per launch       | `anon_` + a random UUID                                                                                      | One app launch                                                         |
 
 At `full`, the account is the person once a store email exists. Main sends one `$create_alias`
 that folds the device into the account (`posthog_aliased` records the pair), so events the device
@@ -217,12 +217,12 @@ exception stays on the machine. The client itself is disabled only at `off` with
 transmission also off. `sendAnonymousDiagnosticReport` is unchanged and still requires
 both checks.
 
-| Capture point | Source |
-| --- | --- |
-| `uncaughtException`, `unhandledRejection` | Main process handlers in `main/index.ts` |
-| `renderer-autocapture` | Unhandled errors and rejections in the main window (bundled `posthog-js` extension, always loaded; the scrubber drops them while diagnostics is off) |
-| `react-error-boundary` | `reportRendererError`, called by the dashboard and global error boundaries |
-| `api-5xx` | A local API response with status 500 or higher: method, route pattern (mount prefix included, also for errors from the global handler), and status only |
+| Capture point                             | Source                                                                                                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `uncaughtException`, `unhandledRejection` | Main process handlers in `main/index.ts`                                                                                                                |
+| `renderer-autocapture`                    | Unhandled errors and rejections in the main window (bundled `posthog-js` extension, always loaded; the scrubber drops them while diagnostics is off)    |
+| `react-error-boundary`                    | `reportRendererError`, called by the dashboard and global error boundaries                                                                              |
+| `api-5xx`                                 | A local API response with status 500 or higher: method, route pattern (mount prefix included, also for errors from the global handler), and status only |
 
 An exception keeps its type, a redacted first line of the message, the mechanism, and stack frames
 with a project-relative file (`_next/static/...` for the packaged renderer), line, column, function
@@ -265,8 +265,9 @@ mismatched acknowledgment is retained as a visible permanent rejection.
 
 **Transmission gates.** Automatic delivery requires both `diagnostics_consent` and
 `diagnostics_transmission_enabled`. The one-time upgrade migration enables transmission for
-unconfigured legacy installs while preserving an explicit refusal; a fresh install receives the same
-enabled default. A merchant can opt out through Settings. Consent changes synchronize with FloAdmin
+unconfigured legacy installs that already have users while preserving an explicit refusal; a fresh
+install keeps transmission off until the merchant opts in through Settings. A merchant can change the
+choice at any time through Settings. Consent changes synchronize with FloAdmin
 using an idempotent change ID, and remote opt-out takes precedence over startup initialization. Cloud
 deletion blocks all diagnostics delivery. With a configured signed cloud connection reports go to
 FloAdmin. Without one, they use the anonymous collector only when `telemetry_enabled` is also on;

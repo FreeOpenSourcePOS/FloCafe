@@ -22,6 +22,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import {
   calculateConfiguredChargeTaxes,
   calculateDocumentItemTaxes,
+  calculateDocumentTaxes,
   calculateItemTax,
   combineItemAndChargeTaxes,
   getActiveCountryPack,
@@ -1766,14 +1767,45 @@ router.post(
           });
         }
 
-        const documentTaxResults = calculateDocumentItemTaxes(
+        const itemsSubtotal = validatedItems.reduce((acc, v) => acc + v.itemSubtotal, 0);
+
+        const currency = getTenantCurrency();
+        const decimals = getCurrencyFractionDigits(currency);
+        const minorFactor = getCurrencyMinorUnitFactor(currency);
+
+        const resolvedCharges = buildAppliedCharges({
+          currency,
+          orderType: type,
+          subtotal: itemsSubtotal,
+          discountAmount: 0,
+          waivedIds: waivedChargeIds,
+          optedInIds: optedInChargeIds,
+        });
+        const engineColumns = resolvedCharges.configured ? resolvedCharges.columns : null;
+        const appliedServiceCharge = resolvedCharges.ownsServiceChargeColumn
+          ? resolvedCharges.columns.service_charge
+          : serviceCharge;
+        const appliedPackagingCharge = resolvedCharges.ownsPackagingChargeColumn
+          ? resolvedCharges.columns.packaging_charge
+          : pkgCharge;
+        const otherCharges = engineColumns ? engineColumns.other_charges : 0;
+        const appliedChargeContext: typeof chargeContext = {
+          ...chargeContext,
+          service_charge: appliedServiceCharge,
+          packaging_charge: appliedPackagingCharge,
+        };
+
+        const { itemResults: documentTaxResults, chargeTaxes } = calculateDocumentTaxes(
           tenantInfo,
-          validatedItems.map((v, idx) => ({
-            lineId: `line-${String(idx + 1).padStart(4, '0')}:${v.itemId}`,
-            product: v.product,
-            taxableAmount: v.itemSubtotal,
-          })),
-          customer,
+          {
+            items: validatedItems.map((v, idx) => ({
+              lineId: `line-${String(idx + 1).padStart(4, '0')}:${v.itemId}`,
+              product: v.product,
+              taxableAmount: v.itemSubtotal,
+            })),
+            chargeContext: appliedChargeContext,
+            customer,
+          },
         );
 
         for (let idx = 0; idx < validatedItems.length; idx++) {
@@ -1862,41 +1894,6 @@ router.post(
           }
         }
 
-        const currency = getTenantCurrency();
-        const decimals = getCurrencyFractionDigits(currency);
-        const minorFactor = getCurrencyMinorUnitFactor(currency);
-
-        // Unified charges & fees engine. Charges the merchant configured for this
-        // order type are applied here and the standard ids are projected onto the
-        // dedicated columns. Manually entered amounts survive when no configured
-        // or retained charge owns the corresponding standard column.
-        const resolvedCharges = buildAppliedCharges({
-          currency,
-          orderType: type,
-          subtotal,
-          discountAmount: 0,
-          waivedIds: waivedChargeIds,
-          optedInIds: optedInChargeIds,
-        });
-        const engineColumns = resolvedCharges.configured ? resolvedCharges.columns : null;
-        const appliedServiceCharge = resolvedCharges.ownsServiceChargeColumn
-          ? resolvedCharges.columns.service_charge
-          : serviceCharge;
-        const appliedPackagingCharge = resolvedCharges.ownsPackagingChargeColumn
-          ? resolvedCharges.columns.packaging_charge
-          : pkgCharge;
-        const otherCharges = engineColumns ? engineColumns.other_charges : 0;
-        const appliedChargeContext: typeof chargeContext = {
-          ...chargeContext,
-          service_charge: appliedServiceCharge,
-          packaging_charge: appliedPackagingCharge,
-        };
-
-        const chargeTaxes = calculateConfiguredChargeTaxes(
-          tenantInfo,
-          appliedChargeContext,
-          customer,
-        );
         const taxRollup = combineItemAndChargeTaxes({
           itemTaxAmount: totalTax,
           itemExclusiveTaxAmount: exclusiveTax,

@@ -905,6 +905,53 @@ async function main() {
     assertEqual(reportCgst.amount, 5.00, 'report CGST = 5.00');
     assertEqual(reportSgst.amount, 5.01, 'report SGST = 5.01');
 
+    console.log('\n13b. Signed official-india document tax rounding across items and charges');
+    db.prepare(`
+      INSERT INTO tax_overrides (id, pack_version_id, entity_type, entity_id, field_name, value_json, created_at, updated_at)
+      SELECT 'ovr-pkg-std', pack.active_version_id, 'packaging', NULL, 'tax_category_id', '"standard"', datetime('now'), datetime('now')
+      FROM country_packs AS pack WHERE pack.id = 'official-india'
+      ON CONFLICT(id) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+    `).run();
+
+    const itemChargePreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-doc-1', quantity: 1, addons: [] }],
+        packaging_charge: 100.10,
+      },
+      headers: authHeader,
+    });
+    assertEqual(itemChargePreview.status, 200, 'item + charge preview succeeds');
+    assertEqual(itemChargePreview.data.summary.subtotal, 100.10, 'preview item subtotal = 100.10');
+    assertEqual(itemChargePreview.data.summary.packaging_charge, 100.10, 'preview packaging charge = 100.10');
+    assertEqual(itemChargePreview.data.summary.tax_amount, 10.01, 'preview tax across item + charge = 10.01 under document rounding');
+    assertEqual(itemChargePreview.data.summary.total, 210.21, 'preview total = 210.21');
+
+    const itemChargeOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        packaging_charge: 100.10,
+        items: [{ product_id: 'prod-doc-1', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(itemChargeOrder.status, 201, 'item + charge order created');
+    assertEqual(itemChargeOrder.data.order.subtotal, 100.10, 'order item subtotal = 100.10');
+    assertEqual(itemChargeOrder.data.order.packaging_charge, 100.10, 'order packaging charge = 100.10');
+    assertEqual(itemChargeOrder.data.order.tax_amount, 10.01, 'order tax_amount across item + charge = 10.01');
+    assertEqual(itemChargeOrder.data.order.total, 210.21, 'order total = 210.21');
+
+    const itemChargeBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: itemChargeOrder.data.order.id },
+      headers: authHeader,
+    });
+    assertEqual(itemChargeBill.status, 201, 'item + charge bill generated');
+    assertEqual(itemChargeBill.data.bill.subtotal, 100.10, 'bill subtotal = 100.10');
+    assertEqual(itemChargeBill.data.bill.tax_amount, 10.01, 'bill tax_amount = 10.01');
+    assertEqual(itemChargeBill.data.bill.total, 210.21, 'bill total = 210.21');
+
     // ── Step 14: Order & item mutations under scope: document ──────────
     console.log('\n14. Order and item mutations under document tax rounding');
     const mutOrderRes = await api(baseUrl, '/api/orders', {

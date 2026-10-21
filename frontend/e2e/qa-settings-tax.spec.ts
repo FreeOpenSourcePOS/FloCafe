@@ -1,7 +1,5 @@
 /** Tests persisted tax settings, pack registry data, audit history, and catalog refresh. */
 import { test, expect, type Page } from '@playwright/test';
-import * as fs from 'fs';
-import * as path from 'path';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
 
@@ -210,12 +208,5 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     expect(billRes.bill.subtotal).toBe(orderRes.order.subtotal);
     expect(billRes.bill.tax_amount).toBe(orderRes.order.tax_amount);
     expect(billRes.bill.total).toBe(orderRes.order.total);
-
-    // Capture screenshot to the requested destination
-    const screenshotDir = '/Users/gurkiratkhaira/Documents/FloCafe-Consolidation/release-3131-r1-r4-2026-10-21/screenshots';
-    const screenshotPath = path.join(screenshotDir, 'r3-document-tax-rounding.png');
-    if (fs.existsSync(screenshotDir)) {
-      await page.screenshot({ path: screenshotPath });
-    }
   });
 });

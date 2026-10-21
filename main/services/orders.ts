@@ -3,8 +3,10 @@ import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countr
 import {
   calculateConfiguredChargeTaxes,
   calculateDocumentItemTaxes,
+  calculateDocumentTaxes,
   combineItemAndChargeTaxes,
   type ChargeTaxContext,
+  type ChargeTaxSummary,
   type Customer,
   type Product,
   type TaxBreakdown,
@@ -38,6 +40,7 @@ export interface OrderTotals {
   allTaxBreakdowns: TaxBreakdown[][];
   allTaxSnapshots: (string | null)[];
   activeItems: OrderItemRow[];
+  chargeTaxes?: ChargeTaxSummary;
 }
 
 export function calculateOrderTotals(db: Database, orderId: string | number): OrderTotals {
@@ -57,13 +60,28 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
     taxes_enabled: settings.taxes_enabled === 'true',
   };
 
+  const orderRow = db.prepare(`
+    SELECT customer_id, packaging_charge, delivery_charge, service_charge,
+           packaging_tax_category_id, delivery_tax_category_id, service_charge_tax_category_id
+    FROM orders WHERE id = ?
+  `).get(orderId) as any;
+  const customer = orderRow?.customer_id
+    ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(orderRow.customer_id) as Customer | null)
+    : null;
+
+  const chargeContext: ChargeTaxContext = {
+    packaging_charge: orderRow?.packaging_charge || 0,
+    delivery_charge: orderRow?.delivery_charge || 0,
+    service_charge: orderRow?.service_charge || 0,
+    packaging_tax_category_id: orderRow?.packaging_tax_category_id || null,
+    delivery_tax_category_id: orderRow?.delivery_tax_category_id || null,
+    service_charge_tax_category_id: orderRow?.service_charge_tax_category_id || null,
+  };
+
+  let documentChargeTaxes: ChargeTaxSummary | undefined;
+
   const hasTaxableItem = activeItems.some((item) => Boolean(item.tax_snapshot));
   if (tenantInfo.taxes_enabled && hasTaxableItem && activeItems.length > 0) {
-    const orderRow = db.prepare('SELECT customer_id FROM orders WHERE id = ?').get(orderId) as { customer_id: string | null } | undefined;
-    const customer = orderRow?.customer_id
-      ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(orderRow.customer_id) as Customer | null)
-      : null;
-
     const decimals = getCurrencyFractionDigits(tenantInfo.currency || '');
 
     const itemsForCalculation = activeItems.map((item, idx) => {
@@ -100,7 +118,12 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
       };
     });
 
-    const taxResults = calculateDocumentItemTaxes(tenantInfo, itemsForCalculation, customer);
+    const { itemResults: taxResults, chargeTaxes } = calculateDocumentTaxes(tenantInfo, {
+      items: itemsForCalculation,
+      chargeContext,
+      customer,
+    });
+    documentChargeTaxes = chargeTaxes;
 
     const updateItemStmt = db.prepare(`
       UPDATE order_items
@@ -164,7 +187,15 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
     allTaxSnapshots.push(item.tax_snapshot || null);
   }
 
-  return { subtotal, totalTax, exclusiveTax, allTaxBreakdowns, allTaxSnapshots, activeItems };
+  return {
+    subtotal,
+    totalTax,
+    exclusiveTax,
+    allTaxBreakdowns,
+    allTaxSnapshots,
+    activeItems,
+    ...(documentChargeTaxes ? { chargeTaxes: documentChargeTaxes } : {}),
+  };
 }
 
 export type RecomputeOrderTotalsInput = {
@@ -260,13 +291,22 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
     exclusiveTaxAmount = Number((totals.exclusiveTax * taxRatio).toFixed(decimals));
   }
 
+  const hasMatchingCharges = Boolean(totals.chargeTaxes)
+    && Number(effectiveChargeContext.packaging_charge || 0) === Number(chargeContext.packaging_charge || 0)
+    && Number(effectiveChargeContext.service_charge || 0) === Number(chargeContext.service_charge || 0)
+    && Number(effectiveChargeContext.delivery_charge || 0) === Number(chargeContext.delivery_charge || 0);
+
+  const chargeTaxes = hasMatchingCharges
+    ? totals.chargeTaxes!
+    : calculateConfiguredChargeTaxes(tenantInfo, effectiveChargeContext, customer);
+
   const taxRollup = combineItemAndChargeTaxes({
     itemTaxAmount: taxAmount,
     itemExclusiveTaxAmount: exclusiveTaxAmount,
     itemBreakdowns: totals.allTaxBreakdowns,
     itemSnapshots: totals.allTaxSnapshots,
     itemTaxRatio: taxRatio,
-    chargeTaxes: calculateConfiguredChargeTaxes(tenantInfo, effectiveChargeContext, customer),
+    chargeTaxes,
     minorFactor,
   });
 

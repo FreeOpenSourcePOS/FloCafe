@@ -177,36 +177,21 @@ export function hasConfiguredTaxCategories(pack: CountryPack, businessType: stri
 export function getActiveTaxOverride(
   entityType: string,
   entityId: string | number,
-  packId?: string,
+  packId: string,
 ): { id: string; categoryId: string } | null {
   try {
     const db = getDatabase();
-    const query = packId
-      ? `
-        SELECT override.id, override.value_json
-        FROM tax_overrides AS override
-        JOIN country_packs AS pack ON pack.active_version_id = override.pack_version_id
-        WHERE pack.id = ?
-          AND override.entity_type = ?
-          AND override.entity_id = ?
-          AND override.field_name = 'tax_category_id'
-        ORDER BY override.updated_at DESC
-        LIMIT 1
-      `
-      : `
-        SELECT override.id, override.value_json
-        FROM tax_overrides AS override
-        JOIN country_packs AS pack ON pack.active_version_id = override.pack_version_id
-        WHERE override.entity_type = ?
-          AND override.entity_id = ?
-          AND override.field_name = 'tax_category_id'
-        ORDER BY override.updated_at DESC
-        LIMIT 1
-      `;
-    const row = (packId
-      ? db.prepare(query).get(packId, entityType, String(entityId))
-      : db.prepare(query).get(entityType, String(entityId))
-    ) as { id: string; value_json: string } | undefined;
+    const row = db.prepare(`
+      SELECT override.id, override.value_json
+      FROM tax_overrides AS override
+      JOIN country_packs AS pack ON pack.active_version_id = override.pack_version_id
+      WHERE pack.id = ?
+        AND override.entity_type = ?
+        AND override.entity_id = ?
+        AND override.field_name = 'tax_category_id'
+      ORDER BY override.updated_at DESC
+      LIMIT 1
+    `).get(packId, entityType, String(entityId)) as { id: string; value_json: string } | undefined;
     if (row) {
       const value = JSON.parse(row.value_json);
       const categoryId = typeof value === 'string' ? value : value?.categoryId;
@@ -219,142 +204,6 @@ export function getActiveTaxOverride(
     // in isolated unit tests; normal checkout databases always have it.
   }
   return null;
-}
-
-export function calculateDocumentItemTaxes(
-  tenant: TenantInfo,
-  items: Array<{ lineId?: string; product: Product; taxableAmount: number }>,
-  customer: Customer | null = null,
-): TaxResult[] {
-  const results: TaxResult[] = items.map(() => ({
-    tax_amount: 0,
-    tax_breakdown: [],
-    tax_type: 'none',
-    tax_snapshot: null,
-  }));
-
-  if (!tenant.taxes_enabled || items.length === 0) {
-    return results;
-  }
-
-  const pack = getActiveCountryPack(tenant.country);
-
-  const engineEntries: Array<{
-    itemIndex: number;
-    merchantOverride: { id: string; categoryId: string } | null;
-    engineLine: TaxEngineLine;
-  }> = [];
-
-  for (let idx = 0; idx < items.length; idx++) {
-    const entry = items[idx];
-    const taxCategoryId = entry.product.tax_category_id ?? entry.product.tax_category ?? null;
-    const merchantOverride = entry.product.id !== undefined && entry.product.id !== null
-      ? getActiveTaxOverride('product', entry.product.id, pack?.id)
-      : null;
-
-    if (!taxCategoryId && !merchantOverride) {
-      continue;
-    }
-
-    if (!pack) {
-      throw Object.assign(
-        new Error(`Tax calculation failed: no active tax pack for country ${tenant.country}`),
-        { statusCode: 400 },
-      );
-    }
-
-    if ((entry.taxableAmount || 0) <= 0) {
-      continue;
-    }
-
-    const lineId = entry.lineId || (items.length === 1 ? 'legacy-item-adapter' : `line-${String(idx + 1).padStart(4, '0')}`);
-    engineEntries.push({
-      itemIndex: idx,
-      merchantOverride,
-      engineLine: {
-        lineId,
-        kind: 'product',
-        quantity: '1',
-        unitPrice: String(entry.taxableAmount),
-        merchantCategoryId: merchantOverride?.categoryId,
-        productCategoryId: taxCategoryId || undefined,
-        taxBehavior: entry.product.tax_behavior || 'country_default',
-      },
-    });
-  }
-
-  if (engineEntries.length === 0) {
-    return results;
-  }
-
-  let calculation;
-  try {
-    calculation = TaxEngine.calculate({
-      pack,
-      currency: tenant.currency,
-      country: tenant.country,
-      businessType: tenant.business_type,
-      storeStateCode: tenant.state_code,
-      transactionDate: new Date().toISOString(),
-      customer: customer
-        ? {
-            registrationNumber: customer.taxRegistrationNumber,
-            stateCode: customer.customer_state_code,
-          }
-        : null,
-      lines: engineEntries.map((e) => e.engineLine),
-    });
-  } catch (engineError: any) {
-    throw Object.assign(
-      new Error(`Tax calculation failed: ${engineError.message}`),
-      { statusCode: 400 },
-    );
-  }
-
-  for (let k = 0; k < engineEntries.length; k++) {
-    const line = calculation.lines[k];
-    const entry = engineEntries[k];
-    if (line.taxBehavior !== 'exempt' && line.components.length === 0) {
-      throw Object.assign(
-        new Error(`Tax calculation failed: no tax rules apply to category ${line.categoryId} for business type ${tenant.business_type}`),
-        { statusCode: 400 },
-      );
-    }
-    results[entry.itemIndex] = {
-      tax_amount: Number(line.taxAmount),
-      tax_breakdown: line.components.map((component) => ({
-        title: component.label,
-        rate: Number(component.rate || 0),
-        amount: Number(component.amount),
-      })),
-      tax_type: line.taxBehavior === 'exempt' ? 'none' : line.taxBehavior,
-      tax_snapshot: {
-        ...calculation.snapshot,
-        country: tenant.country,
-        currency: tenant.currency,
-        payableRounding: pack.payableRounding,
-        lines: [line],
-        merchantOverridesApplied: entry.merchantOverride ? [{
-          overrideId: entry.merchantOverride.id,
-          entityType: 'product',
-          entityId: String(items[entry.itemIndex].product.id),
-          fieldName: 'tax_category_id',
-          categoryId: entry.merchantOverride.categoryId,
-        }] : [],
-      },
-    };
-  }
-
-  return results;
-}
-
-export function calculateItemTax(
-  tenant: TenantInfo,
-  product: Product,
-  taxableAmount: number,
-  customer: Customer | null,
-): TaxResult {
-  return calculateDocumentItemTaxes(tenant, [{ lineId: 'legacy-item-adapter', product, taxableAmount }], customer)[0];
 }
 
 const CHARGE_KINDS: ChargeTaxKind[] = ['packaging', 'delivery', 'service_charge'];
@@ -425,40 +274,127 @@ function chargeCategoryId(context: ChargeTaxContext, kind: ChargeTaxKind): strin
   return typeof value === 'string' && value ? value : null;
 }
 
-export function calculateConfiguredChargeTaxes(
+export interface DocumentTaxCalculationInput {
+  items?: Array<{ lineId?: string; product: Product; taxableAmount: number }>;
+  chargeContext?: ChargeTaxContext | null;
+  customer?: Customer | null;
+}
+
+export interface DocumentTaxResult {
+  itemResults: TaxResult[];
+  chargeTaxes: ChargeTaxSummary;
+}
+
+export function calculateDocumentTaxes(
   tenant: TenantInfo,
-  context: ChargeTaxContext,
-  customer: Customer | null,
-): ChargeTaxSummary {
+  input: DocumentTaxCalculationInput,
+): DocumentTaxResult {
+  const items = input.items || [];
+  const customer = input.customer || null;
+  const chargeContext = input.chargeContext || null;
+
+  const itemResults: TaxResult[] = items.map(() => ({
+    tax_amount: 0,
+    tax_breakdown: [],
+    tax_type: 'none',
+    tax_snapshot: null,
+  }));
+
+  const chargeTaxes: ChargeTaxSummary = {
+    taxAmount: 0,
+    exclusiveTaxAmount: 0,
+    breakdowns: [],
+    snapshotJson: [],
+  };
+
+  if (!tenant.taxes_enabled || (items.length === 0 && !chargeContext)) {
+    return { itemResults, chargeTaxes };
+  }
+
   const pack = getActiveCountryPack(tenant.country);
-  const breakdowns: TaxBreakdown[][] = [];
-  const snapshotJson: string[] = [];
-  let taxAmount = new Decimal(0);
-  let exclusiveTaxAmount = new Decimal(0);
+
+  const itemEntries: Array<{
+    itemIndex: number;
+    merchantOverride: { id: string; categoryId: string } | null;
+    engineLine: TaxEngineLine;
+  }> = [];
+
+  for (let idx = 0; idx < items.length; idx++) {
+    const entry = items[idx];
+    const taxCategoryId = entry.product.tax_category_id ?? entry.product.tax_category ?? null;
+    const merchantOverride = entry.product.id !== undefined && entry.product.id !== null && pack
+      ? getActiveTaxOverride('product', entry.product.id, pack.id)
+      : null;
+
+    if (!taxCategoryId && !merchantOverride) {
+      continue;
+    }
+
+    if (!pack) {
+      throw Object.assign(
+        new Error(`Tax calculation failed: no active tax pack for country ${tenant.country}`),
+        { statusCode: 400 },
+      );
+    }
+
+    if ((entry.taxableAmount || 0) <= 0) {
+      continue;
+    }
+
+    const lineId = entry.lineId || (items.length === 1 && !chargeContext ? 'legacy-item-adapter' : `line-${String(idx + 1).padStart(4, '0')}`);
+    itemEntries.push({
+      itemIndex: idx,
+      merchantOverride,
+      engineLine: {
+        lineId,
+        kind: 'product',
+        quantity: '1',
+        unitPrice: String(entry.taxableAmount),
+        merchantCategoryId: merchantOverride?.categoryId,
+        productCategoryId: taxCategoryId || undefined,
+        taxBehavior: entry.product.tax_behavior || 'country_default',
+      },
+    });
+  }
 
   const activeCharges: Array<{ kind: ChargeTaxKind; amount: Decimal; categoryId: string }> = [];
-  for (const kind of CHARGE_KINDS) {
-    const amount = chargeAmount(context, kind);
-    const categoryId = chargeCategoryId(context, kind);
-    // Skip unconfigured charges to preserve untaxed legacy behavior.
-    if (!amount.isZero() && !amount.isNegative() && categoryId) {
-      activeCharges.push({ kind, amount, categoryId });
+  if (chargeContext) {
+    for (const kind of CHARGE_KINDS) {
+      const amount = chargeAmount(chargeContext, kind);
+      const categoryId = chargeCategoryId(chargeContext, kind);
+      if (!amount.isZero() && !amount.isNegative() && categoryId) {
+        activeCharges.push({ kind, amount, categoryId });
+      }
     }
   }
 
-  if (activeCharges.length === 0) {
-    return {
-      taxAmount: 0,
-      exclusiveTaxAmount: 0,
-      breakdowns,
-      snapshotJson,
-    };
+  if (activeCharges.length > 0 && !pack) {
+    throw Object.assign(
+      new Error(`Tax calculation failed: no active tax pack for country ${tenant.country}`),
+      { statusCode: 400 },
+    );
+  }
+
+  const allEngineLines: TaxEngineLine[] = [
+    ...itemEntries.map((e) => e.engineLine),
+    ...activeCharges.map((charge) => ({
+      lineId: `charge:${charge.kind}`,
+      kind: charge.kind,
+      quantity: '1',
+      unitPrice: charge.amount.toString(),
+      merchantCategoryId: charge.categoryId,
+      taxBehavior: 'country_default' as const,
+    })),
+  ];
+
+  if (allEngineLines.length === 0) {
+    return { itemResults, chargeTaxes };
   }
 
   let calculation;
   try {
     calculation = TaxEngine.calculate({
-      pack,
+      pack: pack!,
       currency: tenant.currency,
       country: tenant.country,
       businessType: tenant.business_type,
@@ -470,14 +406,7 @@ export function calculateConfiguredChargeTaxes(
             stateCode: customer.customer_state_code,
           }
         : null,
-      lines: activeCharges.map((charge) => ({
-        lineId: `charge:${charge.kind}`,
-        kind: charge.kind,
-        quantity: '1',
-        unitPrice: charge.amount.toString(),
-        merchantCategoryId: charge.categoryId,
-        taxBehavior: 'country_default',
-      })),
+      lines: allEngineLines,
     });
   } catch (engineError: any) {
     throw Object.assign(
@@ -486,9 +415,49 @@ export function calculateConfiguredChargeTaxes(
     );
   }
 
-  for (let k = 0; k < activeCharges.length; k++) {
+  for (let k = 0; k < itemEntries.length; k++) {
     const line = calculation.lines[k];
-    const charge = activeCharges[k];
+    const entry = itemEntries[k];
+    if (line.taxBehavior !== 'exempt' && line.components.length === 0) {
+      throw Object.assign(
+        new Error(`Tax calculation failed: no tax rules apply to category ${line.categoryId} for business type ${tenant.business_type}`),
+        { statusCode: 400 },
+      );
+    }
+    itemResults[entry.itemIndex] = {
+      tax_amount: Number(line.taxAmount),
+      tax_breakdown: line.components.map((component) => ({
+        title: component.label,
+        rate: Number(component.rate || 0),
+        amount: Number(component.amount),
+      })),
+      tax_type: line.taxBehavior === 'exempt' ? 'none' : line.taxBehavior,
+      tax_snapshot: {
+        ...calculation.snapshot,
+        country: tenant.country,
+        currency: tenant.currency,
+        payableRounding: pack!.payableRounding,
+        lines: [line],
+        merchantOverridesApplied: entry.merchantOverride ? [{
+          overrideId: entry.merchantOverride.id,
+          entityType: 'product',
+          entityId: String(items[entry.itemIndex].product.id),
+          fieldName: 'tax_category_id',
+          categoryId: entry.merchantOverride.categoryId,
+        }] : [],
+      },
+    };
+  }
+
+  let chargeTaxAmount = new Decimal(0);
+  let chargeExclusiveTaxAmount = new Decimal(0);
+  const chargeBreakdowns: TaxBreakdown[][] = [];
+  const chargeSnapshotJson: string[] = [];
+
+  for (let idx = 0; idx < activeCharges.length; idx++) {
+    const k = itemEntries.length + idx;
+    const line = calculation.lines[k];
+    const charge = activeCharges[idx];
     if (line.taxBehavior !== 'exempt' && line.components.length === 0) {
       throw Object.assign(
         new Error(`Tax calculation failed: no tax rules apply to ${charge.kind} category ${line.categoryId}`),
@@ -496,14 +465,14 @@ export function calculateConfiguredChargeTaxes(
       );
     }
     const lineTax = new Decimal(line.taxAmount);
-    taxAmount = taxAmount.plus(lineTax);
-    if (line.taxBehavior !== 'inclusive') exclusiveTaxAmount = exclusiveTaxAmount.plus(lineTax);
-    breakdowns.push(line.components.map((component) => ({
+    chargeTaxAmount = chargeTaxAmount.plus(lineTax);
+    if (line.taxBehavior !== 'inclusive') chargeExclusiveTaxAmount = chargeExclusiveTaxAmount.plus(lineTax);
+    chargeBreakdowns.push(line.components.map((component) => ({
       title: component.label,
       rate: Number(component.rate || 0),
       amount: Number(component.amount),
     })));
-    snapshotJson.push(JSON.stringify({
+    chargeSnapshotJson.push(JSON.stringify({
       ...calculation.snapshot,
       lines: [line],
       chargeKind: charge.kind,
@@ -511,12 +480,38 @@ export function calculateConfiguredChargeTaxes(
     }));
   }
 
-  return {
-    taxAmount: taxAmount.toNumber(),
-    exclusiveTaxAmount: exclusiveTaxAmount.toNumber(),
-    breakdowns,
-    snapshotJson,
-  };
+  chargeTaxes.taxAmount = chargeTaxAmount.toNumber();
+  chargeTaxes.exclusiveTaxAmount = chargeExclusiveTaxAmount.toNumber();
+  chargeTaxes.breakdowns = chargeBreakdowns;
+  chargeTaxes.snapshotJson = chargeSnapshotJson;
+
+  return { itemResults, chargeTaxes };
+}
+
+export function calculateDocumentItemTaxes(
+  tenant: TenantInfo,
+  items: Array<{ lineId?: string; product: Product; taxableAmount: number }>,
+  customer: Customer | null = null,
+  chargeContext?: ChargeTaxContext | null,
+): TaxResult[] {
+  return calculateDocumentTaxes(tenant, { items, chargeContext, customer }).itemResults;
+}
+
+export function calculateItemTax(
+  tenant: TenantInfo,
+  product: Product,
+  taxableAmount: number,
+  customer: Customer | null,
+): TaxResult {
+  return calculateDocumentItemTaxes(tenant, [{ lineId: 'legacy-item-adapter', product, taxableAmount }], customer)[0];
+}
+
+export function calculateConfiguredChargeTaxes(
+  tenant: TenantInfo,
+  context: ChargeTaxContext,
+  customer: Customer | null = null,
+): ChargeTaxSummary {
+  return calculateDocumentTaxes(tenant, { items: [], chargeContext: context, customer }).chargeTaxes;
 }
 
 export function aggregateTaxBreakdown(itemBreakdowns: TaxBreakdown[][], minorFactor = 100): TaxBreakdown[] {
@@ -890,44 +885,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         subtotal,
         itemData,
       });
-    }
-
-    const documentTaxResults = calculateDocumentItemTaxes(
-      tenantInfo,
-      resolvedItems.map((item, idx) => ({
-        lineId: `line-${String(idx + 1).padStart(4, '0')}`,
-        product: item.product,
-        taxableAmount: item.subtotal,
-      })),
-      customer || null,
-    );
-
-    for (let i = 0; i < resolvedItems.length; i++) {
-      const item = resolvedItems[i];
-      const taxResult = documentTaxResults[i];
-
-      itemResults.push({
-        product_id: item.product.id,
-        product_name: item.product.name,
-        quantity: item.quantity,
-        unit_price: item.unitPrice,
-        subtotal: round(item.subtotal, decimals),
-        discount_amount: item.itemDiscount,
-        tax_amount: taxResult.tax_amount,
-        tax_breakdown: taxResult.tax_breakdown,
-        tax_type: taxResult.tax_type,
-        total: round(item.subtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount), decimals),
-      });
-
-      if (taxResult.tax_breakdown) {
-        allBreakdowns.push(taxResult.tax_breakdown);
-      }
-      allTaxSnapshots.push(taxResult.tax_snapshot ? JSON.stringify(taxResult.tax_snapshot) : null);
-      totalSubtotal += item.subtotal;
-      totalTax += taxResult.tax_amount;
-      if (taxResult.tax_type !== 'inclusive') {
-        totalExclusiveTax += taxResult.tax_amount;
-      }
+      totalSubtotal += subtotal;
     }
 
     let packaging = normalizeChargeAmount(packaging_charge, 'packaging');
@@ -975,6 +933,56 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       if (resolvedCharges.configured) otherCharges = new Decimal(resolvedCharges.columns.other_charges);
     }
 
+    const chargeCategories = getConfiguredChargeTaxCategories(tenantInfo.country);
+    const chargeContext: ChargeTaxContext = {
+      packaging_charge: packaging,
+      delivery_charge: delivery,
+      service_charge: service,
+      packaging_tax_category_id: chargeCategories.packaging?.categoryId || null,
+      delivery_tax_category_id: chargeCategories.delivery?.categoryId || null,
+      service_charge_tax_category_id: chargeCategories.service_charge?.categoryId || null,
+    };
+
+    const { itemResults: documentTaxResults, chargeTaxes } = calculateDocumentTaxes(
+      tenantInfo,
+      {
+        items: resolvedItems.map((item, idx) => ({
+          lineId: `line-${String(idx + 1).padStart(4, '0')}`,
+          product: item.product,
+          taxableAmount: item.subtotal,
+        })),
+        chargeContext,
+        customer: customer || null,
+      },
+    );
+
+    for (let i = 0; i < resolvedItems.length; i++) {
+      const item = resolvedItems[i];
+      const taxResult = documentTaxResults[i];
+
+      itemResults.push({
+        product_id: item.product.id,
+        product_name: item.product.name,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        subtotal: round(item.subtotal, decimals),
+        discount_amount: item.itemDiscount,
+        tax_amount: taxResult.tax_amount,
+        tax_breakdown: taxResult.tax_breakdown,
+        tax_type: taxResult.tax_type,
+        total: round(item.subtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount), decimals),
+      });
+
+      if (taxResult.tax_breakdown) {
+        allBreakdowns.push(taxResult.tax_breakdown);
+      }
+      allTaxSnapshots.push(taxResult.tax_snapshot ? JSON.stringify(taxResult.tax_snapshot) : null);
+      totalTax += taxResult.tax_amount;
+      if (taxResult.tax_type !== 'inclusive') {
+        totalExclusiveTax += taxResult.tax_amount;
+      }
+    }
+
     const subtotalDecimal = new Decimal(totalSubtotal);
     const discountedSubtotal = Decimal.max(0, subtotalDecimal.minus(discountAmount));
     const taxRatio = discountAmount.gt(0) && subtotalDecimal.gt(0)
@@ -989,15 +997,6 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
       .toNumber();
 
-    const chargeCategories = getConfiguredChargeTaxCategories(tenantInfo.country);
-    const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
-      packaging_charge: packaging,
-      delivery_charge: delivery,
-      service_charge: service,
-      packaging_tax_category_id: chargeCategories.packaging?.categoryId || null,
-      delivery_tax_category_id: chargeCategories.delivery?.categoryId || null,
-      service_charge_tax_category_id: chargeCategories.service_charge?.categoryId || null,
-    }, customer || null);
     const taxRollup = combineItemAndChargeTaxes({
       itemTaxAmount: discountedItemTax,
       itemExclusiveTaxAmount: discountedExclusiveTax,

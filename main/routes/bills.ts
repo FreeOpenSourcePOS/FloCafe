@@ -3392,6 +3392,13 @@ function applyPaymentBatch(
   }
   if (prepared.length === 0) {
     const changedAt = now();
+    if (!bill.customer_id && effectiveCustomerId) {
+      db.prepare('UPDATE bills SET customer_id = ?, updated_at = ? WHERE id = ?').run(
+        effectiveCustomerId,
+        changedAt,
+        billId,
+      );
+    }
     if (bill.payment_status !== 'paid') {
       db.prepare(
         `UPDATE bills SET payment_status = 'paid', paid_at = COALESCE(paid_at, ?), balance = 0, updated_at = ? WHERE id = ?`,
@@ -3419,7 +3426,7 @@ function applyPaymentBatch(
       }
     }
     const freshBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
-    const effectiveCustId = freshBill.customer_id;
+    const effectiveCustId = freshBill.customer_id || effectiveCustomerId;
     const cashback = calculateCashback(db, freshBill, effectiveCustId);
     const alreadyCredited = db
       .prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`)

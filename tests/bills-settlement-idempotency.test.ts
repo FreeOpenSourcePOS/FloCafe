@@ -884,6 +884,343 @@ async function run(): Promise<void> {
       });
       checkEqual(replay.status, 200, 'Replay of settled key returns 200');
     }
+
+    // --- Section 4: Zero-Balance Settlement Customer Attribution & Cashback (Finding N2) ---
+    console.log(
+      '\n--- Section 4: Zero-Balance Settlement Customer Attribution & Cashback (Finding N2) ---',
+    );
+
+    seedCustomer(db, 'cust-f2', 'Second Customer');
+
+    // [4.1] Single payment on zero-remaining-balance bill with newly selected customer_id binds customer_id
+    {
+      console.log(
+        '\n[4.1] Single payment on zero-remaining-balance bill binds customer_id in response and SQLite',
+      );
+      const createOrder = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'takeaway',
+          items: [{ product_id: 'prod-500', quantity: 1 }],
+        },
+        headers: ownerAuth,
+      });
+      checkEqual(createOrder.status, 201, 'Order created without customer');
+      const orderId = createOrder.data?.order?.id;
+      db.prepare("UPDATE order_items SET status = 'served' WHERE order_id = ?").run(orderId);
+
+      const genBill = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: orderId },
+        headers: ownerAuth,
+      });
+      checkEqual(genBill.status, 201, 'Bill generated');
+      const billId = genBill.data?.bill?.id;
+      checkEqual(genBill.data?.bill?.customer_id, null, 'Bill initially has no customer');
+
+      const discRes = await api(baseUrl, `/api/bills/${billId}/applyDiscount`, {
+        method: 'POST',
+        body: { type: 'percentage', value: 100, reason: 'Full comp' },
+        headers: ownerAuth,
+      });
+      checkEqual(discRes.status, 200, '100% discount applied');
+      const billAfterDisc = db
+        .prepare('SELECT balance, payment_status, customer_id FROM bills WHERE id = ?')
+        .get(billId) as any;
+      checkEqual(Number(billAfterDisc?.balance), 0, 'Bill balance is 0');
+      checkEqual(billAfterDisc?.payment_status, 'unpaid', 'Bill is unpaid');
+      checkEqual(billAfterDisc?.customer_id, null, 'Bill customer_id is null before settlement');
+
+      const settleRes = await api(baseUrl, `/api/bills/${billId}/payment`, {
+        method: 'POST',
+        body: {
+          method: 'cash',
+          amount: null,
+          customer_id: 'cust-f2',
+        },
+        headers: ownerAuth,
+      });
+      checkEqual(settleRes.status, 200, 'Single payment zero-balance settlement returns 200');
+      checkEqual(settleRes.data?.bill?.payment_status, 'paid', 'Bill payment_status is paid');
+      checkEqual(
+        settleRes.data?.bill?.customer_id,
+        'cust-f2',
+        'Response bill binds newly selected customer_id',
+      );
+
+      const billInDb = db
+        .prepare('SELECT customer_id, payment_status FROM bills WHERE id = ?')
+        .get(billId) as any;
+      checkEqual(
+        billInDb?.customer_id,
+        'cust-f2',
+        'Database bills table binds newly selected customer_id',
+      );
+      checkEqual(billInDb?.payment_status, 'paid', 'Database bills table payment_status is paid');
+    }
+
+    // [4.2] Batch payment on zero-remaining-balance bill with newly selected customer_id binds customer_id
+    {
+      console.log(
+        '\n[4.2] Batch payment on zero-remaining-balance bill binds customer_id in response and SQLite',
+      );
+      const createOrder = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'takeaway',
+          items: [{ product_id: 'prod-500', quantity: 1 }],
+        },
+        headers: ownerAuth,
+      });
+      checkEqual(createOrder.status, 201, 'Batch order created without customer');
+      const orderId = createOrder.data?.order?.id;
+      db.prepare("UPDATE order_items SET status = 'served' WHERE order_id = ?").run(orderId);
+
+      const genBill = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: orderId },
+        headers: ownerAuth,
+      });
+      checkEqual(genBill.status, 201, 'Batch bill generated');
+      const billId = genBill.data?.bill?.id;
+
+      const discRes = await api(baseUrl, `/api/bills/${billId}/applyDiscount`, {
+        method: 'POST',
+        body: { type: 'percentage', value: 100, reason: 'Full comp' },
+        headers: ownerAuth,
+      });
+      checkEqual(discRes.status, 200, 'Batch 100% discount applied');
+
+      const settleRes = await api(baseUrl, `/api/bills/${billId}/payments`, {
+        method: 'POST',
+        body: {
+          payments: [{ method: 'cash', amount: 0 }],
+          customer_id: 'cust-f2',
+        },
+        headers: ownerAuth,
+      });
+      checkEqual(settleRes.status, 200, 'Batch payment zero-balance settlement returns 200');
+      checkEqual(settleRes.data?.bill?.payment_status, 'paid', 'Batch bill payment_status is paid');
+      checkEqual(
+        settleRes.data?.bill?.customer_id,
+        'cust-f2',
+        'Batch response bill binds newly selected customer_id',
+      );
+
+      const billInDb = db
+        .prepare('SELECT customer_id, payment_status FROM bills WHERE id = ?')
+        .get(billId) as any;
+      checkEqual(
+        billInDb?.customer_id,
+        'cust-f2',
+        'Database bills table binds customer_id for batch settlement',
+      );
+    }
+
+    // [4.3] Zero-remaining-balance settlement on bill with positive net total (total > 0, balance = 0)
+    // with newly selected customer_id binds customer_id, awards eligible loyalty cashback once in loyalty_ledger,
+    // and supports idempotent replay while rejecting customer conflict and non-existent customer.
+    {
+      console.log(
+        '\n[4.3] Zero-balance settlement on bill with total > 0 awards cashback and supports idempotent replay',
+      );
+      setSetting(db, 'loyalty_enabled', 'true');
+      setSetting(db, 'global_cashback_percent', '10');
+
+      const createOrder = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'takeaway',
+          items: [{ product_id: 'prod-1000', quantity: 1 }],
+        },
+        headers: ownerAuth,
+      });
+      checkEqual(createOrder.status, 201, 'Order created for positive net total bill');
+      const orderId = createOrder.data?.order?.id;
+      db.prepare("UPDATE order_items SET status = 'preparing' WHERE order_id = ?").run(orderId);
+
+      const genBill = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: orderId },
+        headers: ownerAuth,
+      });
+      checkEqual(genBill.status, 201, 'Bill generated for partial payment and discount');
+      const billId = genBill.data?.bill?.id;
+      checkEqual(genBill.data?.bill?.customer_id, null, 'Bill initially has no customer');
+
+      // Partial payment with manager override PIN (kitchen items undelivered)
+      const partialPayRes = await api(baseUrl, `/api/bills/${billId}/payment`, {
+        method: 'POST',
+        body: {
+          method: 'cash',
+          amount: 500,
+          override_pin: managerAPin,
+          approver_id: managerId,
+        },
+        headers: ownerAuth,
+      });
+      checkEqual(partialPayRes.status, 200, 'Partial payment of 500 succeeds');
+      checkEqual(partialPayRes.data?.bill?.payment_status, 'partial', 'Bill status is partial');
+      checkEqual(Number(partialPayRes.data?.bill?.balance), 500, 'Bill balance is 500');
+
+      // Apply flat discount of 500 without kitchen delivery override PIN:
+      // total becomes 500, paid_amount is 500, balance becomes 0, but bill remains partial because kitchen items undelivered.
+      const discRes = await api(baseUrl, `/api/bills/${billId}/applyDiscount`, {
+        method: 'POST',
+        body: { type: 'amount', value: 500, reason: 'Partial comp balance reduction' },
+        headers: ownerAuth,
+      });
+      checkEqual(discRes.status, 200, 'Discount applied reducing balance to 0');
+      const billAfterDisc = db
+        .prepare(
+          'SELECT total, paid_amount, balance, payment_status, customer_id FROM bills WHERE id = ?',
+        )
+        .get(billId) as any;
+      checkEqual(Number(billAfterDisc?.total), 500, 'Bill total is positive (500)');
+      checkEqual(Number(billAfterDisc?.paid_amount), 500, 'Bill paid_amount is 500');
+      checkEqual(Number(billAfterDisc?.balance), 0, 'Bill balance is 0');
+      checkEqual(billAfterDisc?.payment_status, 'partial', 'Bill payment_status remains partial');
+      checkEqual(billAfterDisc?.customer_id, null, 'Bill customer_id is still null');
+
+      // Now kitchen delivers items
+      db.prepare("UPDATE order_items SET status = 'served' WHERE order_id = ?").run(orderId);
+
+      const idemKey = 'idem-n2-zero-bal-cashback-001';
+      const settleRes = await api(baseUrl, `/api/bills/${billId}/payment`, {
+        method: 'POST',
+        body: {
+          method: 'cash',
+          amount: null,
+          customer_id: 'cust-f2',
+        },
+        headers: { ...ownerAuth, 'Idempotency-Key': idemKey },
+      });
+      checkEqual(settleRes.status, 200, 'Zero-balance settlement returns 200');
+      checkEqual(settleRes.data?.bill?.payment_status, 'paid', 'Settled bill status is paid');
+      checkEqual(
+        settleRes.data?.bill?.customer_id,
+        'cust-f2',
+        'Settled bill response binds customer_id',
+      );
+      check(
+        Number(settleRes.data?.loyaltyPointsEarned) > 0,
+        `Loyalty cashback credited on positive total zero-balance settlement: got ${settleRes.data?.loyaltyPointsEarned}`,
+      );
+
+      const billInDb = db
+        .prepare('SELECT customer_id, payment_status FROM bills WHERE id = ?')
+        .get(billId) as any;
+      checkEqual(billInDb?.customer_id, 'cust-f2', 'Database bill customer_id bound to cust-f2');
+      checkEqual(billInDb?.payment_status, 'paid', 'Database bill payment_status is paid');
+
+      const ledgerEntries = db
+        .prepare('SELECT customer_id, bill_id, type, amount FROM loyalty_ledger WHERE bill_id = ?')
+        .all(billId) as any[];
+      checkEqual(ledgerEntries.length, 1, 'Exactly 1 loyalty_ledger entry recorded for bill');
+      checkEqual(
+        ledgerEntries[0]?.customer_id,
+        'cust-f2',
+        'Loyalty ledger customer matches cust-f2',
+      );
+      checkEqual(ledgerEntries[0]?.type, 'credit', 'Loyalty ledger type is credit');
+      checkEqual(
+        Number(ledgerEntries[0]?.amount),
+        Number(settleRes.data?.loyaltyPointsEarned),
+        'Loyalty ledger amount matches loyaltyPointsEarned in response',
+      );
+
+      // (d) Idempotent replay with Idempotency-Key returns cached response with bound customer_id & loyaltyPointsEarned
+      const replayRes = await api(baseUrl, `/api/bills/${billId}/payment`, {
+        method: 'POST',
+        body: {
+          method: 'cash',
+          amount: null,
+          customer_id: 'cust-f2',
+        },
+        headers: { ...ownerAuth, 'Idempotency-Key': idemKey },
+      });
+      checkEqual(replayRes.status, 200, 'Idempotent replay returns 200');
+      checkEqual(
+        replayRes.data?.bill?.customer_id,
+        'cust-f2',
+        'Replay response preserves bound customer_id',
+      );
+      checkEqual(
+        replayRes.data?.loyaltyPointsEarned,
+        settleRes.data?.loyaltyPointsEarned,
+        'Replay response preserves loyaltyPointsEarned',
+      );
+      checkEqual(
+        JSON.stringify(replayRes.data),
+        JSON.stringify(settleRes.data),
+        'Replay response matches initial cached response',
+      );
+
+      const ledgerEntriesAfterReplay = db
+        .prepare('SELECT customer_id, bill_id, type, amount FROM loyalty_ledger WHERE bill_id = ?')
+        .all(billId) as any[];
+      checkEqual(
+        ledgerEntriesAfterReplay.length,
+        1,
+        'Idempotent replay does not duplicate loyalty_ledger rows',
+      );
+
+      // Conflicting customer_id (customer_mismatch) returns 400
+      const mismatchRes = await api(baseUrl, `/api/bills/${billId}/payment`, {
+        method: 'POST',
+        body: {
+          method: 'cash',
+          amount: 0,
+          customer_id: 'cust-f1',
+        },
+        headers: ownerAuth,
+      });
+      checkEqual(mismatchRes.status, 400, 'Conflicting customer returns 400');
+      checkEqual(
+        mismatchRes.data?.display_code,
+        'customer_mismatch',
+        'Conflicting customer returns customer_mismatch code',
+      );
+
+      // Non-existent customer_id (customer_unavailable) returns 400 on zero-balance bill without customer
+      const orderForMissingCust = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'takeaway',
+          items: [{ product_id: 'prod-500', quantity: 1 }],
+        },
+        headers: ownerAuth,
+      });
+      const orderIdMissing = orderForMissingCust.data?.order?.id;
+      db.prepare("UPDATE order_items SET status = 'served' WHERE order_id = ?").run(orderIdMissing);
+      const billForMissingCust = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: orderIdMissing },
+        headers: ownerAuth,
+      });
+      const billIdMissing = billForMissingCust.data?.bill?.id;
+      await api(baseUrl, `/api/bills/${billIdMissing}/applyDiscount`, {
+        method: 'POST',
+        body: { type: 'percentage', value: 100, reason: 'Full comp' },
+        headers: ownerAuth,
+      });
+
+      const missingCustRes = await api(baseUrl, `/api/bills/${billIdMissing}/payment`, {
+        method: 'POST',
+        body: {
+          method: 'cash',
+          amount: null,
+          customer_id: 'non-existent-customer-id',
+        },
+        headers: ownerAuth,
+      });
+      checkEqual(missingCustRes.status, 400, 'Non-existent customer returns 400');
+      checkEqual(
+        missingCustRes.data?.display_code,
+        'customer_unavailable',
+        'Non-existent customer returns customer_unavailable code',
+      );
+    }
   } finally {
     bcrypt.compare = originalBcryptCompare;
     server.close();

@@ -25,6 +25,7 @@ export interface ElectronFixtureOptions {
   /** Top-level entries the main-process menu would return; defaults to the
    *  real non-macOS menu, empty on darwin. */
   applicationMenuEntries?: ApplicationMenuEntry[];
+  windowState?: { isMaximized: boolean; isFullScreen: boolean };
 }
 
 interface SerializedElectronFixtureOptions {
@@ -35,6 +36,7 @@ interface SerializedElectronFixtureOptions {
   focused: boolean;
   api: boolean;
   applicationMenuEntries: ApplicationMenuEntry[];
+  windowState: { isMaximized: boolean; isFullScreen: boolean };
 }
 
 const DEFAULT_DOCUMENT_NONCE = '00000000-0000-4000-8000-000000000000';
@@ -68,11 +70,16 @@ export async function injectElectronFixture(
       options.applicationMenuEntries ??
       // macOS keeps its authoritative native menu bar; main answers with none.
       (platform === 'darwin' ? [] : DEFAULT_APPLICATION_MENU_ENTRIES),
+    windowState: options.windowState ?? { isMaximized: false, isFullScreen: false },
   };
 
   await page.addInitScript((config: SerializedElectronFixtureOptions) => {
     if (!config.api) return;
 
+    let currentWindowState = { ...config.windowState };
+    const windowStateListeners: Array<
+      (state: { isMaximized: boolean; isFullScreen: boolean }) => void
+    > = [];
     const actions: WindowControlAction[] = [];
     const status: ElectronStatus = {
       server: 'running',
@@ -151,6 +158,16 @@ export async function injectElectronFixture(
       rasterizeKotDocument: async () => ({ ok: false, error: 'fixture' }),
       getStatus: async () => status,
       windowReady: async () => result,
+      getWindowState: async () => ({ ...currentWindowState }),
+      onWindowStateChanged: (
+        callback: (state: { isMaximized: boolean; isFullScreen: boolean }) => void,
+      ) => {
+        windowStateListeners.push(callback);
+        return () => {
+          const idx = windowStateListeners.indexOf(callback);
+          if (idx !== -1) windowStateListeners.splice(idx, 1);
+        };
+      },
       onUpdateStatus: (callback) => {
         callback(updateStatus);
         return () => {};
@@ -172,7 +189,21 @@ export async function injectElectronFixture(
     window.__floPickerCalls ??= 0;
     Object.defineProperty(window, '__floElectronFixture', {
       configurable: true,
-      value: { actions, status, ipcError, openedMenuEntries },
+      value: {
+        actions,
+        status,
+        ipcError,
+        openedMenuEntries,
+        get windowState() {
+          return currentWindowState;
+        },
+        setWindowState: (nextState: Partial<{ isMaximized: boolean; isFullScreen: boolean }>) => {
+          currentWindowState = { ...currentWindowState, ...nextState };
+          for (const listener of [...windowStateListeners]) {
+            listener(currentWindowState);
+          }
+        },
+      },
     });
     // Initial focus is explicit before application scripts execute. TitleBar
     // owns later focus/blur transitions on dashboard routes.
@@ -202,6 +233,22 @@ export async function readOpenedMenuEntries(
   });
 }
 
+export async function emitFixtureWindowState(
+  page: Page,
+  state: Partial<{ isMaximized: boolean; isFullScreen: boolean }>,
+): Promise<void> {
+  await page.evaluate((next) => {
+    window.__floElectronFixture?.setWindowState(next);
+  }, state);
+}
+
+export async function buildElectronStub(
+  page: Page,
+  options: ElectronFixtureOptions = {},
+): Promise<void> {
+  return injectElectronFixture(page, options);
+}
+
 declare global {
   interface Window {
     __floElectronFixture?: {
@@ -209,6 +256,8 @@ declare global {
       status: ElectronStatus;
       ipcError: ElectronIpcError;
       openedMenuEntries: { key: string; x: number; y: number }[];
+      readonly windowState: { isMaximized: boolean; isFullScreen: boolean };
+      setWindowState: (nextState: Partial<{ isMaximized: boolean; isFullScreen: boolean }>) => void;
     };
     /** Number of times the restore file picker has been opened by the fixture. */
     __floPickerCalls?: number;

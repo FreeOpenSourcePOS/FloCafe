@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import WindowControls from './WindowControls';
+import { useDesktopTitleBarSync } from './titlebar-sync';
 
 const subscribeToElectronCapability = () => () => {};
 const getElectronCapability = () => typeof window !== 'undefined' && Boolean(window.electronAPI?.getStatus);
@@ -14,17 +15,7 @@ export default function DesktopDragSurface() {
     getServerElectronCapability,
   );
 
-  useEffect(() => {
-    if (isElectron) {
-      document.documentElement.dataset.floDesktopTitlebar = 'true';
-      if (window.electronAPI?.platform) {
-        document.documentElement.dataset.floPlatform = window.electronAPI.platform;
-      }
-    } else {
-      delete document.documentElement.dataset.floDesktopTitlebar;
-      delete document.documentElement.dataset.floPlatform;
-    }
-  }, [isElectron]);
+  useDesktopTitleBarSync(isElectron);
 
   if (!isElectron) return null;
 

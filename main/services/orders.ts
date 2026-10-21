@@ -42,7 +42,6 @@ export interface OrderTotals {
   allTaxBreakdowns: TaxBreakdown[][];
   allTaxSnapshots: (string | null)[];
   activeItems: OrderItemRow[];
-  chargeTaxes?: ChargeTaxSummary;
   itemsForCalculation?: Array<{ lineId: string; product: Product; taxableAmount: number }>;
   db?: Database;
 }
@@ -50,7 +49,6 @@ export interface OrderTotals {
 export function calculateOrderTotals(
   db: Database,
   orderId: string | number,
-  _callerChargeContext?: ChargeTaxContext | null,
 ): OrderTotals {
   const allItems = db
     .prepare(`SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid ASC`)

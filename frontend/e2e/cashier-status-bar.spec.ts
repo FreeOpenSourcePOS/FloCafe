@@ -1,6 +1,4 @@
 import { test, expect } from '@playwright/test';
-import * as fs from 'fs';
-import * as path from 'path';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { injectElectronFixture } from './helpers/electron-fixture';
 
@@ -351,13 +349,6 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     const checkShiftJson = await checkShiftRes.json();
     expect(checkShiftJson?.status).toBe('open');
 
-    // Capture screenshot to the requested destination
-    const screenshotDir =
-      '/Users/gurkiratkhaira/Documents/FloCafe-Consolidation/release-3131-r1-r4-2026-10-21/screenshots';
-    const screenshotPath = path.join(screenshotDir, 'r4-shift-close-unpaid-guard.png');
-    if (fs.existsSync(screenshotDir)) {
-      await page.screenshot({ path: screenshotPath });
-    }
     await page.screenshot({ path: 'test-results/r4-shift-close-unpaid-guard.png' });
 
     // Now settle the bill so shift close can succeed

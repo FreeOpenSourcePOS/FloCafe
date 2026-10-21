@@ -2811,3 +2811,251 @@ test('Switching from KDS to Printers while KDS save is pending preserves success
       kotPrintingEnabled: false,
     });
 });
+
+test('Refreshing local or Drive backup history while Load more is in flight ignores stale older-page responses', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+
+  const encodeCursor = (createdAt: string, id: string) =>
+    Buffer.from(JSON.stringify({ createdAt, id }), 'utf8').toString('base64url');
+  const decodeCursor = (raw: string) =>
+    JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as {
+      createdAt: string;
+      id: string;
+    };
+
+  const allLocalBackups = Array.from({ length: 25 }, (_, index) => {
+    const rank = 25 - index;
+    const day = String(rank).padStart(2, '0');
+    const createdAt = `2026-03-${day}T12:00:00.000Z`;
+    const fileName = `flo-backup-local-${day}.db`;
+    return {
+      fileName,
+      path: `/tmp/backups/${fileName}`,
+      sizeBytes: 120_000 + rank * 1024,
+      createdAt,
+      kind: 'manual' as const,
+      schemaVersion: 85,
+    };
+  });
+
+  const allRemoteBackups = Array.from({ length: 25 }, (_, index) => {
+    const rank = 25 - index;
+    const day = String(rank).padStart(2, '0');
+    const created_at = `2026-03-${day}T12:00:00.000Z`;
+    return {
+      id: `drive-file-${day}`,
+      name: `flo-backup-drive-${day}.db`,
+      created_at,
+      bytes: 220_000 + rank * 1024,
+      kind: 'manual' as const,
+      schema_version: 85,
+      app_version: '3.13.0',
+      sha256: 'a'.repeat(64),
+      installation_id: 'install-e2e-1',
+      compatible: true,
+      incompatible_reason: null,
+    };
+  });
+
+  let holdNextLocalCursor = false;
+  let releaseHeldLocalCursor: () => void = () => {};
+  let heldLocalCursorPromise = new Promise<void>((resolve) => {
+    releaseHeldLocalCursor = resolve;
+  });
+  let signalLocalCursorStarted: () => void = () => {};
+  let localCursorStarted = new Promise<void>((resolve) => {
+    signalLocalCursorStarted = resolve;
+  });
+
+  let holdNextRemoteCursor = false;
+  let releaseHeldRemoteCursor: () => void = () => {};
+  let heldRemoteCursorPromise = new Promise<void>((resolve) => {
+    releaseHeldRemoteCursor = resolve;
+  });
+  let signalRemoteCursorStarted: () => void = () => {};
+  let remoteCursorStarted = new Promise<void>((resolve) => {
+    signalRemoteCursorStarted = resolve;
+  });
+
+  await page.route('**/api/settings/google-drive', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        configured: true,
+        auth_state: 'connected',
+        secure_storage_available: true,
+        connected: true,
+        account_email: 'owner@flocafe.test',
+        frequency: 'daily',
+        retention_count: 7,
+        destination_folder_id: 'folder-e2e-1',
+        destination_folder_name: 'FloCafe Backups',
+        warning_acknowledged: true,
+        warning_required: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/db-tools/backups*', async (route) => {
+    const url = new URL(route.request().url());
+    const limit = Number(url.searchParams.get('limit') || '25');
+    const cursorParam = url.searchParams.get('cursor');
+    if (cursorParam && holdNextLocalCursor) {
+      holdNextLocalCursor = false;
+      signalLocalCursorStarted();
+      await heldLocalCursorPromise;
+    }
+    let candidates = [...allLocalBackups];
+    if (cursorParam) {
+      const cursor = decodeCursor(cursorParam);
+      candidates = candidates.filter(
+        (entry) =>
+          entry.createdAt < cursor.createdAt ||
+          (entry.createdAt === cursor.createdAt && entry.fileName < cursor.id),
+      );
+    }
+    const slice = candidates.slice(0, limit);
+    const hasMore = candidates.length > limit;
+    const last = slice[slice.length - 1];
+    const nextCursor = hasMore && last ? encodeCursor(last.createdAt, last.fileName) : null;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ backups: slice, nextCursor, hasMore }),
+    });
+  });
+
+  await page.route('**/api/settings/google-drive/backups*', async (route) => {
+    const url = new URL(route.request().url());
+    const limit = Number(url.searchParams.get('limit') || '25');
+    const cursorParam = url.searchParams.get('cursor');
+    if (cursorParam && holdNextRemoteCursor) {
+      holdNextRemoteCursor = false;
+      signalRemoteCursorStarted();
+      await heldRemoteCursorPromise;
+    }
+    let candidates = [...allRemoteBackups];
+    if (cursorParam) {
+      const cursor = decodeCursor(cursorParam);
+      candidates = candidates.filter(
+        (entry) =>
+          entry.created_at < cursor.createdAt ||
+          (entry.created_at === cursor.createdAt && entry.id < cursor.id),
+      );
+    }
+    const slice = candidates.slice(0, limit);
+    const hasMore = candidates.length > limit;
+    const last = slice[slice.length - 1];
+    const nextCursor = hasMore && last ? encodeCursor(last.created_at, last.id) : null;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ backups: slice, nextCursor, hasMore }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=data`);
+  const localRows = page.getByTestId('local-backup-row');
+  const remoteRows = page.getByTestId('remote-backup-row');
+  const localLoadMore = page.getByTestId('local-backups-load-more');
+  const remoteLoadMore = page.getByTestId('remote-backups-load-more');
+
+  await expect(localRows).toHaveCount(5);
+  await expect(remoteRows).toHaveCount(5);
+
+  // Load rows 6-15 (indices 5..14) for both Local and Drive
+  await localLoadMore.click();
+  await expect(localRows).toHaveCount(15);
+  await remoteLoadMore.click();
+  await expect(remoteRows).toHaveCount(15);
+
+  // Local: start Load more for rows 16-25 (indices 15..24), then Refresh before it completes
+  heldLocalCursorPromise = new Promise<void>((resolve) => {
+    releaseHeldLocalCursor = resolve;
+  });
+  localCursorStarted = new Promise<void>((resolve) => {
+    signalLocalCursorStarted = resolve;
+  });
+  holdNextLocalCursor = true;
+
+  await localLoadMore.click();
+  await localCursorStarted;
+
+  const localRefreshDone = page.waitForResponse((res) => {
+    const url = new URL(res.url());
+    return (
+      url.pathname === '/api/db-tools/backups' &&
+      url.searchParams.get('limit') === '5' &&
+      !url.searchParams.has('cursor')
+    );
+  });
+  await page.locator('button[title="Refresh"]').click();
+  await localRefreshDone;
+  await expect(localRows).toHaveCount(5);
+
+  const staleLocalLoadMoreDone = page.waitForResponse((res) => {
+    const url = new URL(res.url());
+    return url.pathname === '/api/db-tools/backups' && url.searchParams.has('cursor');
+  });
+  releaseHeldLocalCursor();
+  await staleLocalLoadMoreDone;
+
+  // Stale response for rows 16-25 must be ignored; clicking Load more fetches rows 6-15 contiguously
+  await expect(localRows).toHaveCount(5);
+  await expect(localRows.nth(4)).toHaveAttribute(
+    'data-backup-filename',
+    allLocalBackups[4].fileName,
+  );
+  await localLoadMore.click();
+  await expect(localRows).toHaveCount(15);
+  await expect(localRows.nth(5)).toHaveAttribute(
+    'data-backup-filename',
+    allLocalBackups[5].fileName,
+  );
+  await expect(localRows.nth(14)).toHaveAttribute(
+    'data-backup-filename',
+    allLocalBackups[14].fileName,
+  );
+
+  // Drive: start Load more for rows 16-25 (indices 15..24), then Refresh before it completes
+  heldRemoteCursorPromise = new Promise<void>((resolve) => {
+    releaseHeldRemoteCursor = resolve;
+  });
+  remoteCursorStarted = new Promise<void>((resolve) => {
+    signalRemoteCursorStarted = resolve;
+  });
+  holdNextRemoteCursor = true;
+
+  await remoteLoadMore.click();
+  await remoteCursorStarted;
+
+  const remoteRefreshDone = page.waitForResponse((res) => {
+    const url = new URL(res.url());
+    return (
+      url.pathname === '/api/settings/google-drive/backups' &&
+      url.searchParams.get('limit') === '5' &&
+      !url.searchParams.has('cursor')
+    );
+  });
+  await page.getByRole('button', { name: 'Refresh', exact: true }).nth(1).click();
+  await remoteRefreshDone;
+  await expect(remoteRows).toHaveCount(5);
+
+  const staleRemoteLoadMoreDone = page.waitForResponse((res) => {
+    const url = new URL(res.url());
+    return url.pathname === '/api/settings/google-drive/backups' && url.searchParams.has('cursor');
+  });
+  releaseHeldRemoteCursor();
+  await staleRemoteLoadMoreDone;
+
+  // Stale response for rows 16-25 must be ignored; clicking Load more fetches rows 6-15 contiguously
+  await expect(remoteRows).toHaveCount(5);
+  await expect(remoteRows.nth(4)).toHaveAttribute('data-backup-id', allRemoteBackups[4].id);
+  await remoteLoadMore.click();
+  await expect(remoteRows).toHaveCount(15);
+  await expect(remoteRows.nth(5)).toHaveAttribute('data-backup-id', allRemoteBackups[5].id);
+  await expect(remoteRows.nth(14)).toHaveAttribute('data-backup-id', allRemoteBackups[14].id);
+});

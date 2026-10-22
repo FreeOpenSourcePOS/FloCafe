@@ -155,10 +155,17 @@ function main(): void {
   );
   seedPopulatedPriorDatabase(db);
 
+  // Compare the columns the prior schema already had, so a later additive column on
+  // order_items does not read as the migration rewriting existing rows.
+  const priorOrderItemColumns = (
+    db.prepare('PRAGMA table_info(order_items)').all() as { name: string }[]
+  )
+    .map((column) => column.name)
+    .join(', ');
   const preservedSelections = {
     users: `SELECT id, name, email, role FROM users ORDER BY id`,
     orders: `SELECT * FROM orders ORDER BY id`,
-    order_items: `SELECT * FROM order_items ORDER BY id`,
+    order_items: `SELECT ${priorOrderItemColumns} FROM order_items ORDER BY id`,
     bills: `SELECT * FROM bills ORDER BY id`,
     supplies: `SELECT * FROM supplies ORDER BY id`,
     supply_movements: `SELECT * FROM supply_movements ORDER BY id`,

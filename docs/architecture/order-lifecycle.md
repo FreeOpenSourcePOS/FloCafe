@@ -155,8 +155,9 @@ rules:
 
 - `PATCH /api/orders/:id/customer` requires an active order (`400` on `completed` or `cancelled`),
   refuses changes once any bill has payments, a split, or a refund (`409`), re-evaluates
-  non-terminal item taxes for the new customer when taxes are enabled, recomputes order and open-bill
-  totals, and records `customer_updated` in `order_audit_log`.
+  non-terminal item taxes for the new customer from each item's saved `tax_snapshot` category and
+  behavior rules when taxes are enabled, recomputes order and open-bill totals, and records
+  `customer_updated` in `order_audit_log`.
 - `PATCH /api/orders/:id/convert-to-takeaway` requires an active `dine_in` order (`400`), refuses
   split, paid, or refunded bills (`409`), re-resolves charges for `takeaway`, rejects conversions
   whose payable total would fall below already-collected payments (`409` with

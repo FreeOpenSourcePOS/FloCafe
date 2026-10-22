@@ -1343,6 +1343,7 @@ export class CloudSyncService {
         if (
           !this.cloudDeletionInProgress &&
           !this.shutdownRequested &&
+          !isOfflineMode() &&
           currentSettings.cloud_services_disabled_by_user !== 'true'
         ) {
           this.upsertSettings({
@@ -3134,7 +3135,7 @@ export class CloudSyncService {
   }
 
   private attemptAutoRegister() {
-    if (this.shutdownRequested) return;
+    if (this.shutdownRequested || isOfflineMode()) return;
     let settings: Record<string, string>;
     try {
       settings = this.readSettings(getDatabase());
@@ -3158,7 +3159,7 @@ export class CloudSyncService {
         })
         .catch(() => {
           this.autoRegisterInFlight = false;
-          if (this.shutdownRequested) return;
+          if (this.shutdownRequested || isOfflineMode()) return;
           const currentSettings = this.readSettings(getDatabase());
           if (
             this.cloudDeletionInProgress ||
@@ -3174,7 +3175,7 @@ export class CloudSyncService {
           this.autoRegisterAttempts++;
           this.autoRegisterTimer = setTimeout(() => {
             this.autoRegisterTimer = null;
-            if (!this.shutdownRequested) this.attemptAutoRegister();
+            if (!this.shutdownRequested && !isOfflineMode()) this.attemptAutoRegister();
           }, delay);
         }),
       'auto-registration',

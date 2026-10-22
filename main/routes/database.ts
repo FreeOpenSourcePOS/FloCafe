@@ -533,6 +533,13 @@ router.post(
                     row.value === '[REDACTED]'
                   )
                     continue;
+                  if (
+                    tableName === 'settings' &&
+                    !overwrite &&
+                    !hasVersionMismatch &&
+                    String(row.key) === 'offline_mode'
+                  )
+                    continue;
 
                   if (tableName === 'customers' && row.phone) {
                     const parsed = parsePhoneE164(String(row.phone), tenantCountry);

@@ -32,7 +32,7 @@ import {
 } from '../services/customer-display-tokens';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
-import { sendEvent } from '../services/telemetry';
+import { sendEvent, telemetry } from '../services/telemetry';
 import { readProductAnalyticsChoice, syncPostHogIdentity } from '../services/posthog';
 import {
   OFFLINE_MODE_SETTING,
@@ -1610,6 +1610,7 @@ router.put(
         cloudSync.reload();
         cloudSync.refreshRegistrationProfile();
         whatsapp.initFromDb();
+        telemetry.start();
       }
       res.json({ offline_mode: isOfflineMode() });
     } catch (error: unknown) {

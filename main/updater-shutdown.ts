@@ -33,10 +33,44 @@ type AutoUpdaterErrorHandlerOptions = {
   setPhase: (phase: UpdateErrorPhase) => void;
   isInstallReady: () => boolean;
   isInstallingUpdate: () => boolean;
+  isOfflineSuppressed?: () => boolean;
   setUpdateStatus: (next: StoredUpdateStatus) => void;
   onInstallFailure: (error: unknown) => void;
   logInfo: (message: string, detail?: unknown) => void;
 };
+
+type SuspendUpdaterForOfflineModeOptions = {
+  getPhase: () => UpdateErrorPhase;
+  setPhase: (phase: UpdateErrorPhase) => void;
+  getStatus: () => StoredUpdateStatus;
+  setUpdateStatus: (next: StoredUpdateStatus) => void;
+  cancelDownload: () => void;
+  invalidateCheck?: () => void;
+};
+
+export function createSuspendUpdaterForOfflineMode({
+  getPhase,
+  setPhase,
+  getStatus,
+  setUpdateStatus,
+  cancelDownload,
+  invalidateCheck,
+}: SuspendUpdaterForOfflineModeOptions): () => void {
+  return () => {
+    const phase = getPhase();
+    const status = getStatus().status;
+    const checkInFlight = phase === 'check' && status === 'checking';
+    const downloadInFlight = phase === 'download' && status === 'downloading';
+    if (!checkInFlight && !downloadInFlight) return;
+    if (downloadInFlight) {
+      cancelDownload();
+    } else {
+      invalidateCheck?.();
+    }
+    setPhase('check');
+    setUpdateStatus({ status: 'offline', reason: 'unknown', error: 'Offline mode is on' });
+  };
+}
 
 export function createAutoUpdaterErrorHandler(
   {
@@ -44,6 +78,7 @@ export function createAutoUpdaterErrorHandler(
     setPhase,
     isInstallReady,
     isInstallingUpdate,
+    isOfflineSuppressed,
     setUpdateStatus,
     onInstallFailure,
     logInfo,
@@ -64,6 +99,10 @@ export function createAutoUpdaterErrorHandler(
     }
     if (isInstallReady()) {
       logInfo('[Update] Preserving ready-to-install status while staged update awaits installation');
+      return;
+    }
+    if (isOfflineSuppressed?.()) {
+      setUpdateStatus({ status: 'offline', reason: 'unknown', error: 'Offline mode is on' });
       return;
     }
     setUpdateStatus({

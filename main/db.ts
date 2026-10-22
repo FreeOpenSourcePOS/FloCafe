@@ -3095,6 +3095,7 @@ const RESTORE_PROTECTED_SETTING_KEYS = [
   'cloud_api_key',
   'cloud_device_secret',
   'cloud_pos_hash',
+  'offline_mode',
   'telemetry_enabled',
   'product_analytics_level',
   'diagnostics_consent',

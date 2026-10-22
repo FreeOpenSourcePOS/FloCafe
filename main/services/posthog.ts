@@ -19,6 +19,7 @@ import {
   type PostHogConfig,
   type PostHogEnvironment,
 } from './posthog-config';
+import { getOfflineModeAbortSignal, onOfflineModeEnabled } from './offline-mode';
 import { readCountryProvenance } from './country-provenance';
 import { getInstallSource, getRunMode } from './telemetry';
 import {
@@ -89,6 +90,12 @@ export interface PostHogBootstrapReady {
 
 let client: PostHogClient | null = null;
 let clientKey: string | null = null;
+let clientAbort: AbortController | null = null;
+
+onOfflineModeEnabled(() => {
+  invalidatePostHogConsentCache();
+  if (client) void stopPostHog({ flush: false });
+});
 
 function appVersion(): string {
   try {
@@ -273,7 +280,7 @@ export function readDailyUsageSummary(): Record<string, number | boolean | strin
   return { ...summary, ...readStoreProperties() };
 }
 
-function createClient(token: string, host: string): PostHogClient {
+function createClient(token: string, host: string, abortSignal: AbortSignal): PostHogClient {
   const { PostHog } = require('posthog-node') as {
     PostHog: new (projectToken: string, options: Record<string, unknown>) => PostHogClient;
   };
@@ -285,8 +292,24 @@ function createClient(token: string, host: string): PostHogClient {
     enableLocalEvaluation: false,
     flushAt: 1,
     flushInterval: 0,
+    fetch: async (url: string, options?: RequestInit) => {
+      if (abortSignal.aborted || postHogNetworkSuppressed()) {
+        return new Response(null, { status: 204 });
+      }
+      const signals: AbortSignal[] = [abortSignal, getOfflineModeAbortSignal()];
+      if (options?.signal) signals.push(options.signal);
+      try {
+        return await globalThis.fetch(url, { ...options, signal: AbortSignal.any(signals) });
+      } catch (error) {
+        if (abortSignal.aborted || postHogNetworkSuppressed()) {
+          return new Response(null, { status: 204 });
+        }
+        throw error;
+      }
+    },
     before_send: (event: ScrubbableEvent | null) => {
-      const { level, diagnosticsEnabled } = getConsentState();
+      const { level, diagnosticsEnabled, environment } = getConsentState();
+      if (abortSignal.aborted || environment === null) return null;
       return scrubPostHogEvent(event, {
         telemetryEnabled: level !== 'off',
         accountLinked: level === 'full',
@@ -304,8 +327,12 @@ function activeClient(): PostHogClient | null {
   const key = `${config.host}\n${config.token}`;
   if (client && clientKey === key) return client;
   const previous = client;
-  client = createClient(config.token, config.host);
+  const previousAbort = clientAbort;
+  const nextAbort = new AbortController();
+  client = createClient(config.token, config.host, nextAbort.signal);
   clientKey = key;
+  clientAbort = nextAbort;
+  previousAbort?.abort();
   if (previous) void previous.shutdown(POSTHOG_SHUTDOWN_TIMEOUT_MS).catch(() => {});
   return client;
 }
@@ -355,12 +382,12 @@ export function readPostHogBootstrap(): PostHogBootstrap | PostHogBootstrapReady
 export function syncPostHogIdentity(): void {
   try {
     invalidatePostHogConsentCache();
-    if (!readPostHogConfig()) {
-      if (client) void stopPostHog();
+    if (postHogNetworkSuppressed() || !readPostHogConfig()) {
+      if (client) void stopPostHog({ flush: false });
       return;
     }
     if (!usageEnabled() && !getConsentState().diagnosticsEnabled) {
-      void stopPostHog();
+      void stopPostHog({ flush: false });
       return;
     }
     if (!usageEnabled()) return;
@@ -486,12 +513,21 @@ export function startPostHog(): void {
   syncPostHogIdentity();
 }
 
-export async function stopPostHog(): Promise<void> {
+export async function stopPostHog(options?: { flush?: boolean }): Promise<void> {
   invalidatePostHogConsentCache();
   const current = client;
+  const currentAbort = clientAbort;
   client = null;
   clientKey = null;
+  clientAbort = null;
   if (!current) return;
+  const suppressFlush = options?.flush === false || postHogNetworkSuppressed();
+  if (suppressFlush) {
+    currentAbort?.abort();
+    const internal = current as unknown as { disabled?: boolean; queue?: unknown[] };
+    internal.disabled = true;
+    if (Array.isArray(internal.queue)) internal.queue.length = 0;
+  }
   try {
     await current.shutdown(POSTHOG_SHUTDOWN_TIMEOUT_MS);
   } catch {

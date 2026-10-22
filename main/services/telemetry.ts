@@ -16,7 +16,7 @@ import {
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { getBuildIdentity } from './build-identity';
-import { isOfflineMode } from './offline-mode';
+import { getOfflineModeAbortSignal, isOfflineMode, onOfflineModeEnabled } from './offline-mode';
 import { postHogNetworkSuppressed } from './posthog-config';
 
 export const TELEMETRY_URL = 'https://telemetry.flopos.com/collect';
@@ -51,6 +51,13 @@ let dailyPingTimer: ReturnType<typeof setInterval> | null = null;
 let telemetryStopping = false;
 let telemetryStopPromise: Promise<void> | null = null;
 const inFlightTelemetry = new Set<Promise<unknown>>();
+
+onOfflineModeEnabled(() => {
+  if (dailyPingTimer) {
+    clearInterval(dailyPingTimer);
+    dailyPingTimer = null;
+  }
+});
 
 /**
  * Resolves Electron's `app` without assuming an Electron runtime. This module is
@@ -174,6 +181,7 @@ async function sendEventImpl(
   if (matrixOffline() || !isTelemetryEnabled()) return false;
 
   try {
+    const offlineSignal = getOfflineModeAbortSignal();
     const anonId = ensureTelemetryAnonId();
     // Report only user-confirmed country so FloAdmin IP geolocation fallback can operate.
     const provenance = readCountryProvenance();
@@ -194,8 +202,12 @@ async function sendEventImpl(
         ...(currency ? { currency } : {}),
         ...(payload ? { payload } : {}),
       }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.any([offlineSignal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
     });
+    if (matrixOffline() || offlineSignal.aborted) {
+      await response.body?.cancel().catch(() => {});
+      return false;
+    }
     const ok = response.ok;
     if (!ok) {
       log.debug(`[Flo] telemetry rejected with HTTP ${response.status}`);
@@ -358,6 +370,7 @@ export async function sendAnonymousDiagnosticReport(
   if (!safeReport) return { disposition: 'invalid_ack' };
 
   try {
+    const offlineSignal = getOfflineModeAbortSignal();
     const anonId = ensureTelemetryAnonId();
     const build = getBuildIdentity();
     const response = await fetch(TELEMETRY_URL, {
@@ -374,10 +387,17 @@ export async function sendAnonymousDiagnosticReport(
         install_source: getInstallSource(),
         payload: { schema_version: 2, report: safeReport },
       }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.any([offlineSignal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
     });
+    if (matrixOffline() || offlineSignal.aborted) {
+      await response.body?.cancel().catch(() => {});
+      return { disposition: 'network_error' };
+    }
     const ack = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     await response.body?.cancel().catch(() => {});
+    if (matrixOffline() || offlineSignal.aborted) {
+      return { disposition: 'network_error' };
+    }
     if (response.status === 408 || response.status === 429 || response.status >= 500) {
       return {
         disposition: 'network_error',
@@ -415,9 +435,13 @@ function maybeSendDailyPing(): void {
   if (elapsed < DAILY_PING_MIN_GAP_MS) return;
 
   const operation = sendEvent('daily_ping').then((sent) => {
-    if (sent) upsertTelemetryLastPing();
+    if (sent && !matrixOffline()) upsertTelemetryLastPing();
   });
   trackTelemetry(operation);
+}
+
+export function isTelemetryDailyTimerActive(): boolean {
+  return dailyPingTimer !== null;
 }
 
 export const telemetry = {

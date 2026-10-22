@@ -1415,8 +1415,9 @@ export default function ServerStandalonePage() {
           formatPrice={(amount) => money(amount, regional)}
           onClose={() => setMoveTableModalOpen(false)}
           onSuccess={async (movedData) => {
-            const targetTableId = String(movedData.targetTable.id);
-            const targetTableName = movedData.targetTable.name || movedData.targetTable.number;
+            const targetTable = movedData.targetTable as Table;
+            const targetTableId = String(targetTable.id);
+            const targetTableName = targetTable.name || targetTable.number;
             if (sendAttemptRef.current?.snapshot.tableId === activeTable.id) {
               const prevAttempt = sendAttemptRef.current;
               const nextSnapshot: SendSnapshot = {

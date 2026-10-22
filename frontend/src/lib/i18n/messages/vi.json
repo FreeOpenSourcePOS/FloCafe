@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Chênh lệch",
     "priceExceptionBy": "Người đổi",
     "priceExceptionAt": "Khi nào",
-    "priceExceptionReason": "Lý do"
+    "priceExceptionReason": "Lý do",
+    "priceExceptionsAllShifts": "Toàn bộ giai đoạn",
+    "priceExceptionsShift": "Ca",
+    "priceExceptionsShiftOpen": "đang mở"
   },
   "expenses": {
     "addTitle": "Thêm chi phí",

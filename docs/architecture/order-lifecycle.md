@@ -131,7 +131,8 @@ complimentary item. The permission `orders.item.price_override` is owner-only an
   with a different product or variant starts at that product's menu price.
 - Each override records an `item_price_overridden` action in `order_audit_log`.
 - `GET /api/reports/price-exceptions` lists overridden, non-cancelled lines whose override time falls
-  in the selected store-timezone date range, and the dashboard shows them as the price exceptions card.
+  in the selected store-timezone date range, or in one cash shift's window when `shift_id` is given.
+  The dashboard shows them as the price exceptions card with a shift selector.
 
 ## Bills
 

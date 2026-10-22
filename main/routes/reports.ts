@@ -15,7 +15,11 @@ import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import * as whatsapp from '../services/whatsapp';
 import { parsePhoneE164 } from '../lib/phone';
 import { getOrdersWithItemsForBills } from './bills';
-import { listPriceExceptions } from '../services/item-price-override';
+import {
+  getShiftWindow,
+  listPriceExceptions,
+  listShiftsOverlapping,
+} from '../services/item-price-override';
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
@@ -457,11 +461,21 @@ router.get(
         captureReportsDateRangeRejection('reversed_range');
         return res.status(400).json({ error: 'start_date must be on or before end_date' });
       }
-      const rows = listPriceExceptions(
-        db,
-        reportDayBounds(startDate)[0],
-        reportDayBounds(endDate)[1],
-      );
+      const rangeStart = reportDayBounds(startDate)[0];
+      const rangeEnd = reportDayBounds(endDate)[1];
+      const shifts = listShiftsOverlapping(db, rangeStart, rangeEnd);
+      let fromIso = rangeStart;
+      let toIso = rangeEnd;
+      let shiftId: number | null = null;
+      if (req.query.shift_id !== undefined && req.query.shift_id !== '') {
+        const requested = Number(req.query.shift_id);
+        const shift = Number.isInteger(requested) ? getShiftWindow(db, requested) : undefined;
+        if (!shift) return res.status(404).json({ error: 'Shift not found' });
+        shiftId = shift.id;
+        fromIso = shift.opened_at;
+        toIso = shift.closed_at ?? '9999-12-31 23:59:59';
+      }
+      const rows = listPriceExceptions(db, fromIso, toIso);
       const complimentary = rows.filter((row) => row.billed_unit_price === 0).length;
       const totalDifference = rows.reduce(
         (sum, row) => sum.plus(row.difference * row.quantity),
@@ -471,6 +485,8 @@ router.get(
         priceExceptions: {
           startDate,
           endDate,
+          shiftId,
+          shifts,
           count: rows.length,
           complimentaryCount: complimentary,
           totalDifference: totalDifference.toDecimalPlaces(6).toNumber(),

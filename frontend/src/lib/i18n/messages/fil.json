@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Pagkakaiba",
     "priceExceptionBy": "Binago ni",
     "priceExceptionAt": "Kailan",
-    "priceExceptionReason": "Dahilan"
+    "priceExceptionReason": "Dahilan",
+    "priceExceptionsAllShifts": "Buong panahon",
+    "priceExceptionsShift": "Shift sa trabaho",
+    "priceExceptionsShiftOpen": "bukas"
   },
   "expenses": {
     "addTitle": "Magdagdag ng gastos",

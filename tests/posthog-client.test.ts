@@ -59,9 +59,27 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
           clients.push(this);
         }
         capture(payload: RecordedClient['events'][number]) {
+          if (this.options.before_send) {
+            const scrubbed = this.options.before_send({
+              event: payload.event ?? '',
+              properties: { ...(payload.properties ?? {}), distinct_id: payload.distinctId },
+            });
+            if (!scrubbed) return;
+          }
           this.events.push(payload);
         }
         captureException(error: Error, distinctId?: string, properties?: Record<string, unknown>) {
+          if (this.options.before_send) {
+            const scrubbed = this.options.before_send({
+              event: '$exception',
+              properties: {
+                ...(properties ?? {}),
+                distinct_id: distinctId,
+                $exception_list: [{ type: error.name, value: error.message }],
+              },
+            });
+            if (!scrubbed) return;
+          }
           this.exceptions.push({
             message: error.message,
             name: error.name,
@@ -90,7 +108,6 @@ const {
   capturePostHogException,
   capturePostHogUsage,
   checkPostHogMilestones,
-  invalidatePostHogConsentCache,
   maybeSendPostHogDailyPing,
   postHogApiFailureMiddleware,
   readDailyUsageSummary,
@@ -853,7 +870,6 @@ async function main() {
   assert.equal(latest().events.at(-1).distinctId, account, 'an email edit keeps the person');
 
   deleteSetting('posthog_account_ref');
-  invalidatePostHogConsentCache();
   capturePostHogUsage('feature_used', { feature: 'split_checks', action: 'enabled' });
   const mirrored = latest().events.at(-1);
   assert.equal(mirrored.event, 'feature_used');
@@ -869,14 +885,24 @@ async function main() {
   }) as typeof dbForCount.prepare;
   try {
     capturePostHogUsage('feature_used', { feature: 'split_checks', action: 'disabled' });
+    capturePostHogException('uncaughtException', new Error('cached exception check'));
   } finally {
     dbForCount.prepare = originalPrepare;
   }
   assert.equal(
     capturePrepareCalls,
     0,
-    'subsequent capturePostHogUsage reuses cached consent and identity without synchronous SQLite reads even after identity seed generation',
+    'subsequent capturePostHogUsage and capturePostHogException reuse cached consent, diagnostics, and identity without synchronous SQLite reads',
   );
+  setSetting('diagnostics_consent', 'false');
+  const exceptionsBeforeDirectDisable = latest().exceptions.length;
+  capturePostHogException('uncaughtException', new Error('blocked by direct SQLite write'));
+  assert.equal(
+    latest().exceptions.length,
+    exceptionsBeforeDirectDisable,
+    'direct SQLite settings mutation invalidates cached diagnostics consent via trigger',
+  );
+  setSetting('diagnostics_consent', 'true');
   const revisionBeforeReopen = getSettingsRevision();
   closeDatabase();
   assert.equal(getSettingsRevision() > revisionBeforeReopen, true);

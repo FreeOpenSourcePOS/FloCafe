@@ -107,13 +107,14 @@ interface CachedConsentState {
   level: ProductAnalyticsLevel;
   identity: PostHogIdentity;
   config: PostHogConfig | null;
+  diagnosticsEnabled: boolean;
   revision: number;
   expiresAt: number;
 }
 
 let cachedConsent: CachedConsentState | null = null;
 
-export function invalidatePostHogConsentCache(): void {
+function invalidatePostHogConsentCache(): void {
   cachedConsent = null;
 }
 
@@ -126,10 +127,12 @@ function getConsentState(): CachedConsentState {
   const level = readProductAnalyticsLevel();
   const resolvedIdentity = resolvePostHogIdentity(level);
   const config = readPostHogConfig();
+  const diagnosticsEnabled = isDiagnosticsTransmissionEnabled();
   cachedConsent = {
     level,
     identity: resolvedIdentity,
     config,
+    diagnosticsEnabled,
     revision: getSettingsRevision(),
     expiresAt: nowMs + CONSENT_CACHE_TTL_MS,
   };
@@ -267,11 +270,11 @@ function createClient(token: string, host: string): PostHogClient {
     flushAt: 1,
     flushInterval: 0,
     before_send: (event: ScrubbableEvent | null) => {
-      const { level } = getConsentState();
+      const { level, diagnosticsEnabled } = getConsentState();
       return scrubPostHogEvent(event, {
         telemetryEnabled: level !== 'off',
         accountLinked: level === 'full',
-        allowExceptions: isDiagnosticsTransmissionEnabled(),
+        allowExceptions: diagnosticsEnabled,
       });
     },
   });
@@ -279,9 +282,9 @@ function createClient(token: string, host: string): PostHogClient {
 
 function activeClient(): PostHogClient | null {
   if (postHogNetworkSuppressed()) return null;
-  const { config, level } = getConsentState();
+  const { config, level, diagnosticsEnabled } = getConsentState();
   if (!config) return null;
-  if (level === 'off' && !isDiagnosticsTransmissionEnabled()) return null;
+  if (level === 'off' && !diagnosticsEnabled) return null;
   const key = `${config.host}\n${config.token}`;
   if (client && clientKey === key) return client;
   const previous = client;
@@ -340,7 +343,7 @@ export function syncPostHogIdentity(): void {
       if (client) void stopPostHog();
       return;
     }
-    if (!usageEnabled() && !isDiagnosticsTransmissionEnabled()) {
+    if (!usageEnabled() && !getConsentState().diagnosticsEnabled) {
       void stopPostHog();
       return;
     }
@@ -504,7 +507,7 @@ export function capturePostHogException(
 ): void {
   try {
     if (!isPostHogCapturePoint(capturePoint)) return;
-    if (!isDiagnosticsTransmissionEnabled()) return;
+    if (!getConsentState().diagnosticsEnabled) return;
     const current = activeClient();
     if (!current) return;
     const who = identity();

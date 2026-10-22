@@ -1362,6 +1362,33 @@ export function registerOrderSearchFunctions(dbInstance: Database.Database): voi
   }
 }
 
+function registerSettingsRevisionTriggers(dbInstance: Database.Database): void {
+  dbInstance.function('flo_bump_settings_revision', () => {
+    settingsRevision += 1;
+    return 0;
+  });
+  dbInstance.exec(`
+    CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_ai AFTER INSERT ON main.settings BEGIN
+      SELECT flo_bump_settings_revision();
+    END;
+    CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_au AFTER UPDATE ON main.settings BEGIN
+      SELECT flo_bump_settings_revision();
+    END;
+    CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_ad AFTER DELETE ON main.settings BEGIN
+      SELECT flo_bump_settings_revision();
+    END;
+    CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_ai AFTER INSERT ON main.users BEGIN
+      SELECT flo_bump_settings_revision();
+    END;
+    CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_au AFTER UPDATE ON main.users BEGIN
+      SELECT flo_bump_settings_revision();
+    END;
+    CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_ad AFTER DELETE ON main.users BEGIN
+      SELECT flo_bump_settings_revision();
+    END;
+  `);
+}
+
 export function initDatabase(
   recoverInterruptedReplacement = true,
   allowDuringShutdown = false,
@@ -1399,6 +1426,7 @@ export function initDatabase(
   runMigrations();
 
   db.pragma('foreign_keys = ON');
+  registerSettingsRevisionTriggers(db);
 
   runStartupIntegrityCheck();
   repairSequences();

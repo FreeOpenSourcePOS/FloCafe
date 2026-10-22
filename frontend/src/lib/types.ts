@@ -258,6 +258,9 @@ export interface OrderItem {
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'voided' | 'void_adjustment';
   superseded?: boolean;
   edit_version?: number;
+  price_overridden?: number | boolean;
+  original_unit_price?: number | null;
+  price_override_reason?: string | null;
 }
 
 export interface Bill {

@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "กำลังเปิด WhatsApp พร้อมรายงาน...",
     "salesSummary": "สรุปยอดขาย",
     "paymentBreakdown": "การชำระเงิน",
-    "drawerReconciliation": "การกระทบยอดลิ้นชักเงินสด"
+    "drawerReconciliation": "การกระทบยอดลิ้นชักเงินสด",
+    "priceExceptions": "ข้อยกเว้นด้านราคา",
+    "priceExceptionsEmpty": "ไม่มีการเปลี่ยนราคาในช่วงเวลานี้",
+    "priceExceptionsCount": "การเปลี่ยนแปลง: {count}",
+    "priceExceptionsComps": "ของแถม: {count}",
+    "priceExceptionsTotal": "ผลต่างรวม: {amount}",
+    "priceExceptionOrder": "ออเดอร์",
+    "priceExceptionItem": "สินค้า",
+    "priceExceptionOriginal": "ราคาในเมนู",
+    "priceExceptionBilled": "ราคาที่เรียกเก็บ",
+    "priceExceptionDifference": "ส่วนต่าง",
+    "priceExceptionBy": "เปลี่ยนโดย",
+    "priceExceptionAt": "เมื่อ",
+    "priceExceptionReason": "เหตุผล"
   },
   "expenses": {
     "addTitle": "เพิ่มค่าใช้จ่าย",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "ไม่สามารถอ่านหรืออัปเดตการแก้ไขที่บันทึกไว้ได้ ระบบจะยังเก็บไว้บนอุปกรณ์นี้",
     "pendingItemEditAuthRequired": "เข้าสู่ระบบด้วยบัญชีเดิมเพื่อดำเนินการแก้ไขนี้ให้เสร็จ",
     "pendingItemEditRateLimited": "มีคำขอมากเกินไป รอสักครู่แล้วลองอีกครั้ง",
-    "pendingItemEditRefreshFailed": "การแก้ไขได้รับการยืนยันแล้ว แต่ไม่สามารถรีเฟรชรายละเอียดการสั่งซื้อปัจจุบันได้"
+    "pendingItemEditRefreshFailed": "การแก้ไขได้รับการยืนยันแล้ว แต่ไม่สามารถรีเฟรชรายละเอียดการสั่งซื้อปัจจุบันได้",
+    "overridePrice": "เปลี่ยนราคา",
+    "overridePriceTitle": "เปลี่ยนราคาสินค้า",
+    "overridePriceHint": "กำหนดราคาขายของรายการนี้ ใส่ 0 สำหรับสินค้าแถม",
+    "overridePriceNewPrice": "ราคาต่อหน่วยใหม่",
+    "overridePriceReason": "เหตุผล",
+    "overridePriceReasonPlaceholder": "เช่น ของหวานแถม",
+    "overridePriceSave": "ใช้ราคา",
+    "overridePriceSaved": "อัปเดตราคาแล้ว",
+    "overridePriceFailed": "ไม่สามารถอัปเดตราคาได้",
+    "priceOverriddenMenu": "เปลี่ยนราคาแล้ว (เมนู {price})"
   },
   "pos": {
     "addCustomer": "เพิ่มลูกค้า",
@@ -2699,7 +2722,8 @@
       "databaseTools": "ใช้เครื่องมือฐานข้อมูลและการสำรองข้อมูล",
       "serverApp": "ใช้ Server App แบบแยกตัว",
       "support": "ติดต่อฝ่ายช่วยเหลือและดูข้อมูลวินิจฉัย",
-      "inventoryManage": "จัดการวัสดุและสูตรส่วนผสม"
+      "inventoryManage": "จัดการวัสดุและสูตรส่วนผสม",
+      "orderItemPriceOverride": "เปลี่ยนราคาสินค้าในออเดอร์"
     },
     "editorSubtitle": "กำหนดค่าเริ่มต้นของบทบาท หรือสร้างข้อยกเว้นสำหรับพนักงานหนึ่งคน การเปลี่ยนแปลงจะมีผลกับการกระทำครั้งถัดไปของเขา",
     "roleDefaultsTab": "ค่าเริ่มต้นตามบทบาท",

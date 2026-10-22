@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "প্রতিবেদনসহ WhatsApp খোলা হচ্ছে...",
     "salesSummary": "বিক্রয় সারাংশ",
     "paymentBreakdown": "পেমেন্ট",
-    "drawerReconciliation": "ক্যাশ ড্রয়ার মিল"
+    "drawerReconciliation": "ক্যাশ ড্রয়ার মিল",
+    "priceExceptions": "দামের ব্যতিক্রম",
+    "priceExceptionsEmpty": "এই সময়ে কোনো দাম পরিবর্তন নেই",
+    "priceExceptionsCount": "পরিবর্তন: {count}",
+    "priceExceptionsComps": "বিনামূল্যে: {count}",
+    "priceExceptionsTotal": "মোট পার্থক্য: {amount}",
+    "priceExceptionOrder": "অর্ডার",
+    "priceExceptionItem": "আইটেম",
+    "priceExceptionOriginal": "মেনু দাম",
+    "priceExceptionBilled": "বিলের দাম",
+    "priceExceptionDifference": "পার্থক্য",
+    "priceExceptionBy": "পরিবর্তনকারী",
+    "priceExceptionAt": "কখন",
+    "priceExceptionReason": "কারণ"
   },
   "expenses": {
     "addTitle": "খরচ যোগ করুন",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "সংরক্ষিত সম্পাদনা পড়া বা হালনাগাদ করা যায়নি। এই ডিভাইসেই রাখা আছে।",
     "pendingItemEditAuthRequired": "এই সম্পাদনা মীমাংসা করতে মূল অ্যাকাউন্ট দিয়ে সাইন ইন করুন।",
     "pendingItemEditRateLimited": "অনুরোধ অনেক বেশি। অপেক্ষা করুন, তারপর আবার চেষ্টা করুন।",
-    "pendingItemEditRefreshFailed": "সম্পাদনা নিশ্চিত হয়েছে, তবে বর্তমান অর্ডারের বিবরণ রিফ্রেশ করা যায়নি।"
+    "pendingItemEditRefreshFailed": "সম্পাদনা নিশ্চিত হয়েছে, তবে বর্তমান অর্ডারের বিবরণ রিফ্রেশ করা যায়নি।",
+    "overridePrice": "দাম পরিবর্তন",
+    "overridePriceTitle": "আইটেমের দাম পরিবর্তন",
+    "overridePriceHint": "এই লাইনের বিক্রয়মূল্য নির্ধারণ করুন। বিনামূল্যের আইটেমের জন্য 0 লিখুন।",
+    "overridePriceNewPrice": "নতুন একক দাম",
+    "overridePriceReason": "কারণ",
+    "overridePriceReasonPlaceholder": "যেমন: বিনামূল্যে ডেজার্ট",
+    "overridePriceSave": "দাম প্রয়োগ করুন",
+    "overridePriceSaved": "দাম আপডেট হয়েছে",
+    "overridePriceFailed": "দাম আপডেট করা যায়নি",
+    "priceOverriddenMenu": "দাম পরিবর্তিত (মেনু {price})"
   },
   "pos": {
     "addCustomer": "গ্রাহক যোগ করুন",
@@ -2699,7 +2722,8 @@
       "databaseTools": "ডাটাবেস টুল এবং ব্যাকআপ ব্যবহার করুন",
       "serverApp": "স্বতন্ত্র সার্ভার অ্যাপ ব্যবহার করুন",
       "support": "সহায়তার সাথে যোগাযোগ করুন এবং ডায়াগনস্টিক দেখুন",
-      "inventoryManage": "সরবরাহ এবং রেসিপি পরিচালনা করুন"
+      "inventoryManage": "সরবরাহ এবং রেসিপি পরিচালনা করুন",
+      "orderItemPriceOverride": "অর্ডার আইটেমের দাম পরিবর্তন করুন"
     },
     "editorSubtitle": "ভূমিকার ডিফল্ট সেটিংস কনফিগার করুন বা একজন স্টাফের জন্য ব্যতিক্রম তৈরি করুন। পরিবর্তনগুলো তার পরবর্তী কাজে প্রযোজ্য হবে।",
     "roleDefaultsTab": "ভূমিকার ডিফল্ট",

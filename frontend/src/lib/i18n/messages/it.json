@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "Apertura di WhatsApp con il report...",
     "salesSummary": "RIEPILOGO VENDITE",
     "paymentBreakdown": "PAGAMENTI",
-    "drawerReconciliation": "RICONCILIAZIONE CASSA"
+    "drawerReconciliation": "RICONCILIAZIONE CASSA",
+    "priceExceptions": "Eccezioni di prezzo",
+    "priceExceptionsEmpty": "Nessuna modifica di prezzo in questo periodo",
+    "priceExceptionsCount": "Modifiche: {count}",
+    "priceExceptionsComps": "Omaggi: {count}",
+    "priceExceptionsTotal": "Differenza totale: {amount}",
+    "priceExceptionOrder": "Ordine",
+    "priceExceptionItem": "Articolo",
+    "priceExceptionOriginal": "Prezzo di menu",
+    "priceExceptionBilled": "Prezzo fatturato",
+    "priceExceptionDifference": "Differenza",
+    "priceExceptionBy": "Modificato da",
+    "priceExceptionAt": "Quando",
+    "priceExceptionReason": "Motivo"
   },
   "expenses": {
     "addTitle": "Aggiungi spesa",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "La modifica salvata non può essere letta o aggiornata. È stata conservata su questo dispositivo.",
     "pendingItemEditAuthRequired": "Accedi con l'account originale per risolvere questa modifica.",
     "pendingItemEditRateLimited": "Troppe richieste. Attendi, poi riprova a risolvere.",
-    "pendingItemEditRefreshFailed": "La modifica è stata confermata, ma non è stato possibile aggiornare i dettagli correnti dell'ordine."
+    "pendingItemEditRefreshFailed": "La modifica è stata confermata, ma non è stato possibile aggiornare i dettagli correnti dell'ordine.",
+    "overridePrice": "Modifica prezzo",
+    "overridePriceTitle": "Modifica il prezzo dell’articolo",
+    "overridePriceHint": "Imposta il prezzo di vendita di questa riga. Inserisci 0 per un articolo omaggio.",
+    "overridePriceNewPrice": "Nuovo prezzo unitario",
+    "overridePriceReason": "Motivo",
+    "overridePriceReasonPlaceholder": "es. Dolce in omaggio",
+    "overridePriceSave": "Applica prezzo",
+    "overridePriceSaved": "Prezzo aggiornato",
+    "overridePriceFailed": "Impossibile aggiornare il prezzo",
+    "priceOverriddenMenu": "Prezzo modificato (menu {price})"
   },
   "pos": {
     "addCustomer": "Aggiungi cliente",
@@ -2699,7 +2722,8 @@
       "cloudAccountData": "Gestisci controlli account e dati cloud",
       "databaseTools": "Usa strumenti database e backup",
       "serverApp": "Usa l'Server App indipendente",
-      "support": "Contatta l'assistenza e visualizza le diagnostiche"
+      "support": "Contatta l'assistenza e visualizza le diagnostiche",
+      "orderItemPriceOverride": "Modificare i prezzi degli articoli dell’ordine"
     },
     "editorSubtitle": "Configura le impostazioni predefinite del ruolo o crea un'eccezione per un membro dello staff. Le modifiche si applicano alla prossima azione.",
     "roleDefaultsTab": "Impostazioni ruolo",

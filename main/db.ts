@@ -7583,6 +7583,26 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 116,
+    name: 'add_order_item_price_override',
+    up: () => {
+      const columns = getColumns(db, 'order_items');
+      const add = (name: string, definition: string) => {
+        if (!columns.includes(name))
+          db.exec(`ALTER TABLE order_items ADD COLUMN ${name} ${definition}`);
+      };
+      add('price_overridden', 'INTEGER NOT NULL DEFAULT 0');
+      add('original_unit_price', 'REAL');
+      add('price_override_reason', 'TEXT');
+      add('price_overridden_by', 'TEXT');
+      add('price_overridden_at', 'TEXT');
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_order_items_price_overridden
+          ON order_items(price_overridden_at) WHERE price_overridden = 1;
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "Đang mở WhatsApp cùng báo cáo...",
     "salesSummary": "TÓM TẮT DOANH SỐ",
     "paymentBreakdown": "THANH TOÁN",
-    "drawerReconciliation": "ĐỐI SOÁT NGĂN KÉO TIỀN"
+    "drawerReconciliation": "ĐỐI SOÁT NGĂN KÉO TIỀN",
+    "priceExceptions": "Ngoại lệ về giá",
+    "priceExceptionsEmpty": "Không có thay đổi giá trong khoảng thời gian này",
+    "priceExceptionsCount": "Thay đổi: {count}",
+    "priceExceptionsComps": "Tặng kèm: {count}",
+    "priceExceptionsTotal": "Tổng chênh lệch: {amount}",
+    "priceExceptionOrder": "Đơn hàng",
+    "priceExceptionItem": "Món",
+    "priceExceptionOriginal": "Giá thực đơn",
+    "priceExceptionBilled": "Giá tính tiền",
+    "priceExceptionDifference": "Chênh lệch",
+    "priceExceptionBy": "Người đổi",
+    "priceExceptionAt": "Khi nào",
+    "priceExceptionReason": "Lý do"
   },
   "expenses": {
     "addTitle": "Thêm chi phí",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "Không đọc hoặc cập nhật được chỉnh sửa đã lưu. Đã được giữ lại trên thiết bị này.",
     "pendingItemEditAuthRequired": "Đăng nhập bằng tài khoản gốc để giải quyết thay đổi này.",
     "pendingItemEditRateLimited": "Quá nhiều yêu cầu. Vui lòng đợi rồi thử lại.",
-    "pendingItemEditRefreshFailed": "Chỉnh sửa đã được xác nhận nhưng không thể cập nhật chi tiết đơn hiện tại."
+    "pendingItemEditRefreshFailed": "Chỉnh sửa đã được xác nhận nhưng không thể cập nhật chi tiết đơn hiện tại.",
+    "overridePrice": "Đổi giá",
+    "overridePriceTitle": "Đổi giá món",
+    "overridePriceHint": "Đặt giá bán cho dòng này. Nhập 0 cho món tặng.",
+    "overridePriceNewPrice": "Đơn giá mới",
+    "overridePriceReason": "Lý do",
+    "overridePriceReasonPlaceholder": "vd: Tráng miệng tặng kèm",
+    "overridePriceSave": "Áp dụng giá",
+    "overridePriceSaved": "Đã cập nhật giá",
+    "overridePriceFailed": "Không thể cập nhật giá",
+    "priceOverriddenMenu": "Giá đã đổi (thực đơn {price})"
   },
   "pos": {
     "addCustomer": "Thêm khách hàng",
@@ -2699,7 +2722,8 @@
       "databaseTools": "Sử dụng công cụ cơ sở dữ liệu và sao lưu",
       "serverApp": "Sử dụng Server App độc lập",
       "support": "Liên hệ hỗ trợ và xem chẩn đoán",
-      "inventoryManage": "Quản lý vật tư và công thức"
+      "inventoryManage": "Quản lý vật tư và công thức",
+      "orderItemPriceOverride": "Đổi giá món trong đơn hàng"
     },
     "editorSubtitle": "Cấu hình mặc định theo vai trò hoặc tạo ngoại lệ cho một nhân viên. Thay đổi sẽ áp dụng từ hành động tiếp theo của họ.",
     "roleDefaultsTab": "Mặc định vai trò",

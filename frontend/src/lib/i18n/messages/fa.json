@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "در حال باز کردن واتساپ همراه گزارش...",
     "salesSummary": "خلاصه فروش",
     "paymentBreakdown": "پرداخت‌ها",
-    "drawerReconciliation": "تطبیق صندوق"
+    "drawerReconciliation": "تطبیق صندوق",
+    "priceExceptions": "استثناهای قیمت",
+    "priceExceptionsEmpty": "در این بازه تغییر قیمتی وجود ندارد",
+    "priceExceptionsCount": "تغییرات: {count}",
+    "priceExceptionsComps": "رایگان: {count}",
+    "priceExceptionsTotal": "مجموع اختلاف: {amount}",
+    "priceExceptionOrder": "سفارش",
+    "priceExceptionItem": "آیتم",
+    "priceExceptionOriginal": "قیمت منو",
+    "priceExceptionBilled": "قیمت صورتحساب",
+    "priceExceptionDifference": "اختلاف",
+    "priceExceptionBy": "تغییر توسط",
+    "priceExceptionAt": "زمان",
+    "priceExceptionReason": "دلیل"
   },
   "expenses": {
     "addTitle": "افزودن هزینه",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "ویرایش ذخیره‌شده خوانده یا به‌روزرسانی نشد. روی این دستگاه نگهداری می‌شود.",
     "pendingItemEditAuthRequired": "برای حل این ویرایش با حساب اصلی وارد شوید.",
     "pendingItemEditRateLimited": "درخواست‌های بیش از حد. صبر کنید و دوباره تلاش کنید.",
-    "pendingItemEditRefreshFailed": "ویرایش تأیید شد، اما جزئیات فعلی سفارش به‌روزرسانی نشد."
+    "pendingItemEditRefreshFailed": "ویرایش تأیید شد، اما جزئیات فعلی سفارش به‌روزرسانی نشد.",
+    "overridePrice": "تغییر قیمت",
+    "overridePriceTitle": "تغییر قیمت آیتم",
+    "overridePriceHint": "قیمت فروش این ردیف را تعیین کنید. برای آیتم رایگان ۰ وارد کنید.",
+    "overridePriceNewPrice": "قیمت واحد جدید",
+    "overridePriceReason": "دلیل",
+    "overridePriceReasonPlaceholder": "مثلاً دسر رایگان",
+    "overridePriceSave": "اعمال قیمت",
+    "overridePriceSaved": "قیمت به‌روزرسانی شد",
+    "overridePriceFailed": "به‌روزرسانی قیمت ممکن نشد",
+    "priceOverriddenMenu": "قیمت تغییر کرد (منو {price})"
   },
   "pos": {
     "addCustomer": "افزودن مشتری",
@@ -2699,7 +2722,8 @@
       "databaseTools": "استفاده از ابزار پایگاه‌داده و پشتیبان‌گیری",
       "serverApp": "استفاده از برنامه مستقل پیش‌خدمت",
       "support": "تماس با پشتیبانی و مشاهده عیب‌یابی",
-      "inventoryManage": "مدیریت مواد اولیه و دستورها"
+      "inventoryManage": "مدیریت مواد اولیه و دستورها",
+      "orderItemPriceOverride": "تغییر قیمت آیتم‌های سفارش"
     },
     "editorSubtitle": "پیش‌فرض‌های نقش را پیکربندی کنید یا برای یک کارمند استثنا ایجاد کنید. تغییرات در اقدام بعدی او اعمال می‌شود.",
     "roleDefaultsTab": "پیش‌فرض‌های نقش",

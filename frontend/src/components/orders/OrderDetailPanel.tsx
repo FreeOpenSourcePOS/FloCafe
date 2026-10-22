@@ -38,6 +38,7 @@ import {
   ClipboardList,
   Bike,
   Pencil,
+  Tag,
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Order, OrderItem, Bill, Customer } from '@/lib/types';
@@ -67,6 +68,8 @@ export interface OrderDetailPanelProps {
   canCancelItems: boolean;
   canEditItems?: boolean;
   onEditItem?: (order: Order, item: OrderItem) => void;
+  canOverridePrice?: boolean;
+  onOverridePrice?: (order: Order, item: OrderItem) => void;
   canRestoreItems: boolean;
   canRefund: boolean;
   isWhatsAppReady: boolean;
@@ -114,6 +117,8 @@ function OrderDetailContent({
   canCancelItems,
   canEditItems = false,
   onEditItem,
+  canOverridePrice = false,
+  onOverridePrice,
   canRestoreItems,
   canRefund,
   isWhatsAppReady,
@@ -597,6 +602,21 @@ function OrderDetailContent({
                           <Pencil size={14} />
                         </button>
                       )}
+                    {canOverridePrice &&
+                      onOverridePrice &&
+                      !isPaid &&
+                      !['completed', 'cancelled'].includes(order.status) &&
+                      !['cancelled', 'voided', 'void_adjustment'].includes(item.status) &&
+                      !itemEditBlocked(item.id) && (
+                        <button
+                          type="button"
+                          onClick={() => onOverridePrice(order, item)}
+                          className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 rounded-md hover:bg-muted transition-colors touch-manipulation"
+                          title={tOrders('overridePrice')}
+                        >
+                          <Tag size={14} />
+                        </button>
+                      )}
                     {canCancelItems &&
                       !isPaid &&
                       !['completed', 'cancelled'].includes(order.status) &&
@@ -627,6 +647,13 @@ function OrderDetailContent({
                       )}
                   </div>
                 </div>
+                {Boolean(item.price_overridden) && (
+                  <div className="ps-6 mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                    {tOrders('priceOverriddenMenu', {
+                      price: fmt(Number(item.original_unit_price ?? 0)),
+                    })}
+                  </div>
+                )}
                 {item.addons && item.addons.length > 0 && (
                   <div className="ps-6 mt-0.5 text-xs text-muted-foreground">
                     {item.addons

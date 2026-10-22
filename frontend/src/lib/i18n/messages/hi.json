@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "रिपोर्ट के साथ WhatsApp खुल रहा है...",
     "salesSummary": "बिक्री सारांश",
     "paymentBreakdown": "भुगतान",
-    "drawerReconciliation": "कैश ड्रॉअर मिलान"
+    "drawerReconciliation": "कैश ड्रॉअर मिलान",
+    "priceExceptions": "कीमत अपवाद",
+    "priceExceptionsEmpty": "इस अवधि में कोई कीमत परिवर्तन नहीं",
+    "priceExceptionsCount": "परिवर्तन: {count}",
+    "priceExceptionsComps": "मुफ़्त: {count}",
+    "priceExceptionsTotal": "कुल अंतर: {amount}",
+    "priceExceptionOrder": "ऑर्डर",
+    "priceExceptionItem": "आइटम",
+    "priceExceptionOriginal": "मेनू कीमत",
+    "priceExceptionBilled": "बिल की कीमत",
+    "priceExceptionDifference": "अंतर",
+    "priceExceptionBy": "किसने बदला",
+    "priceExceptionAt": "कब",
+    "priceExceptionReason": "कारण"
   },
   "expenses": {
     "addTitle": "व्यय जोड़ें",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "सहेजा गया संपादन पढ़ा या अपडेट नहीं जा सका। इसे इस डिवाइस पर रखा गया है।",
     "pendingItemEditAuthRequired": "इस संपादन को हल करने के लिए मूल खाते से साइन इन करें।",
     "pendingItemEditRateLimited": "बहुत अधिक अनुरोध। प्रतीक्षा करें, फिर फिर से प्रयास करें।",
-    "pendingItemEditRefreshFailed": "संपादन पुष्ट हुआ, पर वर्तमान ऑर्डर विवरण रीफ्रेश नहीं हो सके।"
+    "pendingItemEditRefreshFailed": "संपादन पुष्ट हुआ, पर वर्तमान ऑर्डर विवरण रीफ्रेश नहीं हो सके।",
+    "overridePrice": "कीमत बदलें",
+    "overridePriceTitle": "आइटम की कीमत बदलें",
+    "overridePriceHint": "इस पंक्ति की बिक्री कीमत तय करें। मुफ़्त आइटम के लिए 0 दर्ज करें।",
+    "overridePriceNewPrice": "नई इकाई कीमत",
+    "overridePriceReason": "कारण",
+    "overridePriceReasonPlaceholder": "जैसे: मुफ़्त मिठाई",
+    "overridePriceSave": "कीमत लागू करें",
+    "overridePriceSaved": "कीमत अपडेट हुई",
+    "overridePriceFailed": "कीमत अपडेट नहीं हो सकी",
+    "priceOverriddenMenu": "कीमत बदली गई (मेनू {price})"
   },
   "pos": {
     "addCustomer": "ग्राहक जोड़ें",
@@ -2699,7 +2722,8 @@
       "databaseTools": "डेटाबेस टूल और बैकअप का उपयोग करें",
       "serverApp": "स्टैंडअलोन सर्वर ऐप का उपयोग करें",
       "support": "समर्थन से संपर्क करें और निदान देखें",
-      "inventoryManage": "आपूर्ति और व्यंजनों का प्रबंधन करें"
+      "inventoryManage": "आपूर्ति और व्यंजनों का प्रबंधन करें",
+      "orderItemPriceOverride": "ऑर्डर आइटम की कीमत बदलें"
     },
     "editorSubtitle": "भूमिका की डिफ़ॉल्ट सेटिंग्स कॉन्फ़िगर करें या एक कर्मचारी के लिए अपवाद बनाएँ। बदलाव उनके अगले कार्य पर लागू होंगे।",
     "roleDefaultsTab": "भूमिका डिफ़ॉल्ट",

@@ -88,6 +88,7 @@ An owner can flip any configurable cell for a role, or for one user, from the in
 | Orders       | Void in-progress order items (manager PIN may be required) |   ✓   |    ✓    |    —    |   —    |  —   |
 | Orders       | Restore cancelled order items                              |   ✓   |    ✓    |    —    |   —    |  —   |
 | Orders       | Edit quantity or replace order items                       |   ✓   |    —    |    —    |   —    |  —   |
+| Orders       | Override order item prices                                 |   ✓   |    —    |    —    |   —    |  —   |
 | Orders       | Create and manage held orders                              |   ✓   |    ✓    |    ✓    |   ✓    |  —   |
 | Payments     | View bills, take payments, and print receipts              |   ✓   |    ✓    |    ✓    |   —    |  —   |
 | Payments     | Apply bill discounts                                       |   ✓   |    ✓    |    —    |   —    |  —   |

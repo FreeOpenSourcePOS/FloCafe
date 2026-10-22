@@ -77,6 +77,7 @@ export const PERMISSION_LABEL_KEYS = {
   'orders.item.void': 'orderItemVoid',
   'orders.item.restore': 'orderItemRestore',
   'orders.item.edit': 'orderItemEdit',
+  'orders.item.price_override': 'orderItemPriceOverride',
   'held-orders.manage': 'heldOrders',
 
   'tables.view': 'tablesView',

@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "Ouverture de WhatsApp avec le rapport...",
     "salesSummary": "RÉSUMÉ DES VENTES",
     "paymentBreakdown": "PAIEMENTS",
-    "drawerReconciliation": "RAPPROCHEMENT DE CAISSE"
+    "drawerReconciliation": "RAPPROCHEMENT DE CAISSE",
+    "priceExceptions": "Exceptions de prix",
+    "priceExceptionsEmpty": "Aucune modification de prix sur cette période",
+    "priceExceptionsCount": "Modifications : {count}",
+    "priceExceptionsComps": "Offerts : {count}",
+    "priceExceptionsTotal": "Écart total : {amount}",
+    "priceExceptionOrder": "Commande",
+    "priceExceptionItem": "Article",
+    "priceExceptionOriginal": "Prix de la carte",
+    "priceExceptionBilled": "Prix facturé",
+    "priceExceptionDifference": "Écart",
+    "priceExceptionBy": "Modifié par",
+    "priceExceptionAt": "Quand",
+    "priceExceptionReason": "Motif"
   },
   "expenses": {
     "addTitle": "Ajouter une dépense",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "La modification enregistrée n’a pas pu être lue ni mise à jour. Elle a été conservée sur cet appareil.",
     "pendingItemEditAuthRequired": "Connectez-vous avec le compte d’origine pour résoudre cette modification.",
     "pendingItemEditRateLimited": "Trop de requêtes. Patientez, puis réessayez de résoudre la modification.",
-    "pendingItemEditRefreshFailed": "La modification a été confirmée, mais les détails actuels de la commande n’ont pas pu être actualisés."
+    "pendingItemEditRefreshFailed": "La modification a été confirmée, mais les détails actuels de la commande n’ont pas pu être actualisés.",
+    "overridePrice": "Modifier le prix",
+    "overridePriceTitle": "Modifier le prix de l’article",
+    "overridePriceHint": "Définissez le prix de vente de cette ligne. Saisissez 0 pour un article offert.",
+    "overridePriceNewPrice": "Nouveau prix unitaire",
+    "overridePriceReason": "Motif",
+    "overridePriceReasonPlaceholder": "p. ex. Dessert offert",
+    "overridePriceSave": "Appliquer le prix",
+    "overridePriceSaved": "Prix mis à jour",
+    "overridePriceFailed": "Impossible de mettre à jour le prix",
+    "priceOverriddenMenu": "Prix modifié (carte {price})"
   },
   "pos": {
     "addCustomer": "Ajouter un client",
@@ -2699,7 +2722,8 @@
       "databaseTools": "Utiliser les outils de base de données et les sauvegardes",
       "serverApp": "Utiliser l’application serveur autonome",
       "support": "Contacter l’assistance et afficher les diagnostics",
-      "inventoryManage": "Gérer les approvisionnements et les recettes"
+      "inventoryManage": "Gérer les approvisionnements et les recettes",
+      "orderItemPriceOverride": "Modifier les prix des articles de commande"
     },
     "editorSubtitle": "Configurez les permissions par défaut d'un rôle ou créez une exception pour un membre du personnel. Les modifications s'appliquent à sa prochaine action.",
     "roleDefaultsTab": "Permissions du rôle",

@@ -48,6 +48,13 @@ import {
   type ProductVariant,
 } from '../services/product-variants';
 import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
+import {
+  carryPriceOverride,
+  ITEM_PRICE_OVERRIDE_PERMISSION,
+  markItemPriceOverridden,
+  parsePriceOverrideInput,
+  type PriceOverrideInput,
+} from '../services/item-price-override';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import {
@@ -817,6 +824,8 @@ interface OrderItemInput {
   variant_selection?: unknown;
   modifier_selection?: unknown;
   special_instructions?: string | null;
+  /** Owner-only manual selling price, applied instead of the menu price. */
+  price_override?: { price?: unknown; reason?: unknown } | null;
   recipe_snapshot?: unknown;
   inventory_deducted_quantity?: number;
   inventory_target_product_id?: string | null;
@@ -843,6 +852,8 @@ function insertOrderItems(
     actorUserId: string;
     initialStatus?: string;
     preserveUnitPrice?: boolean;
+    /** Whether the actor may apply `price_override` to new lines. */
+    canOverridePrice?: boolean;
     /** Quantity reductions keep the stored variant/add-on selections verbatim. */
     preserveSelections?: boolean;
   },
@@ -887,11 +898,25 @@ function insertOrderItems(
       allowInactive: !!context.preserveSelections,
       allowUnselected: !!context.preserveSelections,
     });
-    const unitPrice = context.preserveUnitPrice
+    let unitPrice = context.preserveUnitPrice
       ? Number(item.unit_price)
       : variant
         ? variantUnitPrice(variant, isOnlineOrder)
         : parseFloat(String(product.price));
+    const menuUnitPrice = unitPrice;
+    let priceOverride: PriceOverrideInput | null = null;
+    if (item.price_override !== undefined && item.price_override !== null) {
+      if (!context.canOverridePrice) {
+        throw Object.assign(new Error('Only the owner can override item prices'), {
+          statusCode: 403,
+        });
+      }
+      priceOverride = parsePriceOverrideInput(
+        item.price_override,
+        getCurrencyFractionDigits(getTenantCurrency()),
+      );
+      unitPrice = priceOverride.price;
+    }
     const deduction =
       context.preserveSelections && typeof item.inventory_deducted_quantity === 'number'
         ? item.inventory_deducted_quantity > 0
@@ -980,6 +1005,25 @@ function insertOrderItems(
     );
     insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
     insertedItemIds.push(insertItemResult.lastInsertRowid);
+    if (priceOverride) {
+      markItemPriceOverridden(db, insertItemResult.lastInsertRowid, {
+        originalUnitPrice: menuUnitPrice,
+        reason: priceOverride.reason,
+        actorUserId,
+        at: itemCreatedAt,
+      });
+      recordOrderAudit(db, {
+        orderId,
+        orderItemId: Number(insertItemResult.lastInsertRowid),
+        actorUserId,
+        action: 'item_price_overridden',
+        details: {
+          original_unit_price: menuUnitPrice,
+          new_unit_price: priceOverride.price,
+          reason: priceOverride.reason,
+        },
+      });
+    }
 
     if (deduction) {
       adjustProductStock(db, {
@@ -1694,6 +1738,8 @@ router.post(
           quantity: number;
           variant: ReturnType<typeof resolveOrderItemVariant>;
           unitPrice: number;
+          menuUnitPrice: number;
+          priceOverride: PriceOverrideInput | null;
           deduction: ReturnType<typeof resolveInventoryDeduction>;
           itemSubtotal: number;
           itemId: string;
@@ -1717,9 +1763,23 @@ router.post(
           // Validate quantity and price
           validateProductQuantity(product, quantity);
           const variant = resolveOrderItemVariant(db, product, item, isOnlineOrder);
-          const unitPrice = variant
+          let unitPrice = variant
             ? variantUnitPrice(variant, isOnlineOrder)
             : parseFloat(product.price);
+          const menuUnitPrice = unitPrice;
+          let priceOverride: PriceOverrideInput | null = null;
+          if (item.price_override !== undefined && item.price_override !== null) {
+            if (!hasPermission(authenticatedUserId, ITEM_PRICE_OVERRIDE_PERMISSION)) {
+              throw Object.assign(new Error('Only the owner can override item prices'), {
+                statusCode: 403,
+              });
+            }
+            priceOverride = parsePriceOverrideInput(
+              item.price_override,
+              getCurrencyFractionDigits(getTenantCurrency()),
+            );
+            unitPrice = priceOverride.price;
+          }
           const deduction = resolveInventoryDeduction(product, quantity, variant);
           if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
             throw Object.assign(
@@ -1759,6 +1819,8 @@ router.post(
             quantity,
             variant,
             unitPrice,
+            menuUnitPrice,
+            priceOverride,
             deduction,
             itemSubtotal,
             itemId,
@@ -1807,8 +1869,17 @@ router.post(
         );
 
         for (let idx = 0; idx < validatedItems.length; idx++) {
-          const { item, product, quantity, variant, unitPrice, deduction, itemSubtotal } =
-            validatedItems[idx];
+          const {
+            item,
+            product,
+            quantity,
+            variant,
+            unitPrice,
+            menuUnitPrice,
+            priceOverride,
+            deduction,
+            itemSubtotal,
+          } = validatedItems[idx];
           const taxResult = documentTaxResults[idx];
 
           totalTax += taxResult.tax_amount;
@@ -1862,6 +1933,25 @@ router.post(
             itemCreatedAt,
           );
           insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
+          if (priceOverride) {
+            markItemPriceOverridden(db, insertItemResult.lastInsertRowid, {
+              originalUnitPrice: menuUnitPrice,
+              reason: priceOverride.reason,
+              actorUserId: authenticatedUserId,
+              at: itemCreatedAt,
+            });
+            recordOrderAudit(db, {
+              orderId: Number(orderId),
+              orderItemId: Number(insertItemResult.lastInsertRowid),
+              actorUserId: authenticatedUserId,
+              action: 'item_price_overridden',
+              details: {
+                original_unit_price: menuUnitPrice,
+                new_unit_price: priceOverride.price,
+                reason: priceOverride.reason,
+              },
+            });
+          }
 
           if (deduction) {
             adjustProductStock(db, {
@@ -2150,6 +2240,7 @@ router.post(
           customer,
           isOnlineOrder,
           actorUserId: idempotencyUserId,
+          canOverridePrice: hasPermission(idempotencyUserId, ITEM_PRICE_OVERRIDE_PERMISSION),
         });
 
         // BUG #3 FIX: Filter out terminal items from total recalculation.
@@ -4189,6 +4280,265 @@ router.post(
   handleItemDiscount,
 );
 
+const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const currency = getTenantCurrency();
+    const decimals = getCurrencyFractionDigits(currency);
+    const override = parsePriceOverrideInput(req.body, decimals);
+    const actorId = (req as any).user.userId as string;
+
+    const updatedItem = withTxn(() => {
+      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+        | EditableOrderRow
+        | undefined;
+      if (!currentOrder) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      if (['completed', 'cancelled'].includes(currentOrder.status)) {
+        throw Object.assign(new Error('Cannot override prices on a completed or cancelled order'), {
+          statusCode: 400,
+        });
+      }
+      const blockingBill = db
+        .prepare(
+          `SELECT payment_status, split_group_id, COALESCE(paid_amount, 0) AS paid_amount
+           FROM bills WHERE order_id = ?
+             AND (split_group_id IS NOT NULL
+                  OR payment_status IN ('paid', 'partial', 'refunded', 'partially_refunded')
+                  OR COALESCE(paid_amount, 0) > 0)
+           LIMIT 1`,
+        )
+        .get(req.params.id);
+      if (blockingBill) {
+        throw Object.assign(
+          new Error('Prices cannot be overridden once a bill has payments, a split, or a refund'),
+          { statusCode: 409 },
+        );
+      }
+
+      const currentItem = db
+        .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
+        .get(req.params.itemId, req.params.id) as
+        | (OrderItemRow & {
+            price_overridden: number;
+            original_unit_price: number | null;
+            discount_amount: number | null;
+          })
+        | undefined;
+      if (!currentItem) {
+        throw Object.assign(new Error('Item not found'), { statusCode: 404 });
+      }
+      if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(currentItem.status)) {
+        throw Object.assign(new Error('Cannot override the price of a cancelled or voided item'), {
+          statusCode: 400,
+        });
+      }
+      const product = db
+        .prepare('SELECT * FROM products WHERE id = ?')
+        .get(currentItem.product_id) as ProductRow | undefined;
+      if (!product) {
+        throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+      }
+
+      const addonRows = db
+        .prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?')
+        .all(currentItem.id) as { price: number; quantity?: number }[];
+      const addonTotal = addonRows.reduce(
+        (sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * currentItem.quantity,
+        0,
+      );
+      const baseTotal = override.price * currentItem.quantity + addonTotal;
+      // An existing item discount stays, capped so the line never goes negative.
+      const itemDiscount = Number(
+        Math.min(Number(currentItem.discount_amount || 0), baseTotal).toFixed(decimals),
+      );
+      const newSubtotal = Math.max(0, Number((baseTotal - itemDiscount).toFixed(decimals)));
+
+      const customer = currentOrder.customer_id
+        ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+            | Customer
+            | undefined) ?? null)
+        : null;
+      const settingsMap = Object.fromEntries(
+        (
+          db
+            .prepare(
+              "SELECT key, value FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
+            )
+            .all() as { key: string; value: string }[]
+        ).map((s) => [s.key, s.value]),
+      );
+      const tenantInfo = {
+        country: settingsMap.country || '',
+        business_type: settingsMap.business_type || 'restaurant',
+        state_code: settingsMap.state_code || '',
+        currency,
+        taxes_enabled: settingsMap.taxes_enabled === 'true',
+      };
+      const taxResult = calculateItemTax(tenantInfo, product, newSubtotal, customer);
+      const newTotal =
+        newSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
+      const at = now();
+      const originalUnitPrice = currentItem.price_overridden
+        ? Number(currentItem.original_unit_price ?? currentItem.unit_price)
+        : Number(currentItem.unit_price);
+
+      db.prepare(
+        `UPDATE order_items SET unit_price = ?, discount_amount = ?, subtotal = ?, tax_amount = ?,
+           tax_breakdown = ?, tax_snapshot = ?, tax_type = ?, total = ?, updated_at = ? WHERE id = ?`,
+      ).run(
+        override.price,
+        itemDiscount,
+        newSubtotal,
+        taxResult.tax_amount,
+        JSON.stringify(taxResult.tax_breakdown),
+        taxResult.tax_snapshot ? JSON.stringify(taxResult.tax_snapshot) : null,
+        taxResult.tax_type,
+        newTotal,
+        at,
+        currentItem.id,
+      );
+      markItemPriceOverridden(db, currentItem.id, {
+        originalUnitPrice,
+        reason: override.reason,
+        actorUserId: actorId,
+        at,
+      });
+
+      const orderTotals = calculateOrderTotals(db, req.params.id as string);
+      const existingDiscountAmount = currentOrder.discount_amount || 0;
+      let newOrderDiscount = existingDiscountAmount;
+      if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
+        newOrderDiscount = Number(
+          (existingDiscountAmount * (orderTotals.subtotal / currentOrder.subtotal)).toFixed(
+            decimals,
+          ),
+        );
+      }
+      const engineCharges = resolveEngineCharges(
+        currentOrder,
+        orderTotals.subtotal,
+        newOrderDiscount,
+      );
+      const {
+        taxRollup,
+        total: orderTotal,
+        roundOff,
+      } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: currentOrder,
+        customer,
+        totals: orderTotals,
+        discountAmount: newOrderDiscount,
+        taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+        chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
+      });
+      const syncedServiceCharge = engineCharges
+        ? engineCharges.columns.service_charge
+        : currentOrder.service_charge || 0;
+      const syncedPackagingCharge = engineCharges
+        ? engineCharges.columns.packaging_charge
+        : currentOrder.packaging_charge || 0;
+      const syncedChargesJson = engineCharges
+        ? engineCharges.chargesJson
+        : (currentOrder.charges_breakdown ?? null);
+
+      db.prepare(
+        `UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?,
+           service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`,
+      ).run(
+        orderTotals.subtotal,
+        taxRollup.taxAmount,
+        JSON.stringify(taxRollup.breakdowns),
+        taxRollup.snapshotJson,
+        newOrderDiscount,
+        orderTotal,
+        syncedServiceCharge,
+        syncedPackagingCharge,
+        syncedChargesJson,
+        roundOff,
+        at,
+        req.params.id,
+      );
+
+      // No payments exist (checked above), so an open bill simply takes the new total.
+      const existingBill = db
+        .prepare("SELECT id FROM bills WHERE order_id = ? AND payment_status != 'paid'")
+        .get(req.params.id) as { id: number } | undefined;
+      if (existingBill) {
+        const pack = getActiveCountryPack(tenantInfo.country);
+        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(
+          orderTotal,
+          pack,
+          currency,
+        );
+        db.prepare(
+          `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
+             discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+             updated_at = ? WHERE id = ?`,
+        ).run(
+          orderTotals.subtotal,
+          billTotal,
+          billTotal,
+          taxRollup.taxAmount,
+          JSON.stringify(taxRollup.breakdowns),
+          taxRollup.snapshotJson,
+          newOrderDiscount,
+          syncedServiceCharge,
+          syncedPackagingCharge,
+          syncedChargesJson,
+          billRoundOff,
+          at,
+          existingBill.id,
+        );
+      }
+
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        orderItemId: req.params.itemId as string,
+        actorUserId: actorId,
+        action: 'item_price_overridden',
+        details: {
+          original_unit_price: originalUnitPrice,
+          previous_unit_price: Number(currentItem.unit_price),
+          new_unit_price: override.price,
+          reason: override.reason,
+        },
+      });
+
+      const updatedRow = db
+        .prepare('SELECT * FROM order_items WHERE id = ?')
+        .get(req.params.itemId) as Record<string, unknown>;
+      return {
+        ...updatedRow,
+        edit_version: getOrderItemEditVersion(
+          db,
+          req.params.id as string,
+          req.params.itemId as string,
+        ),
+      };
+    });
+
+    cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
+    notifyOrderUpdated();
+    res.json({ item: updatedItem });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res
+      .status(error.statusCode || 500)
+      .json({ error: error.statusCode ? error.message : 'Internal server error' });
+  }
+});
+
+router.patch(
+  '/:id/items/:itemId/price',
+  orderWriteRateLimit,
+  requirePermission(ITEM_PRICE_OVERRIDE_PERMISSION),
+  handleItemPriceOverride,
+);
+
 function getOrderItemEditVersion(
   db: ReturnType<typeof getDatabase>,
   orderId: string | number,
@@ -5140,6 +5490,7 @@ router.patch(
             preserveSelections: preserveStoredSelections,
           });
           newItemId = insertedId;
+          if (preserveUnitPrice) carryPriceOverride(db, oldItem.id, insertedId);
           if (
             carriedDiscountDetails &&
             Number(newItem.discount_amount || 0) > 0 &&

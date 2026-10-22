@@ -148,8 +148,12 @@ export default function MoveTableModal({
             </p>
           </div>
           <button
-            onClick={onClose}
-            className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted"
+            type="button"
+            disabled={moving}
+            onClick={() => {
+              if (!moving) onClose();
+            }}
+            className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted disabled:opacity-50"
             aria-label={t('cancel')}
           >
             <X size={20} />
@@ -193,8 +197,9 @@ export default function MoveTableModal({
           <div className="px-5 pt-3 flex flex-wrap gap-1.5" aria-label={t('floorFilter')}>
             <button
               type="button"
+              disabled={moving}
               onClick={() => setSelectedFloor('all')}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
                 selectedFloor === 'all'
                   ? 'border-brand bg-brand text-white'
                   : 'border-border bg-card text-muted-foreground hover:border-brand hover:text-brand'
@@ -206,8 +211,9 @@ export default function MoveTableModal({
               <button
                 key={floor}
                 type="button"
+                disabled={moving}
                 onClick={() => setSelectedFloor(floor)}
-                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
                   selectedFloor === floor
                     ? 'border-brand bg-brand text-white'
                     : 'border-border bg-card text-muted-foreground hover:border-brand hover:text-brand'

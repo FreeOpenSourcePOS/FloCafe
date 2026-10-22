@@ -603,14 +603,37 @@ test.describe('Server App tableside ordering', () => {
     await page.getByRole('button', { name: 'Current ticket' }).click();
     await expect(page.getByRole('button', { name: 'Move Table' })).toHaveCount(0);
 
-    // Close drawer, grant tables.orders.move, and tap Refresh: Move Table appears without reloading the page.
+    // Close drawer, grant tables.orders.move, mark the order as served, and tap Refresh:
+    // served orders must remain loaded in currentOrder so Move Table is available.
     await page.keyboard.press('Escape');
+    const srcOrdersLookup = await page.request.get(`${E2E_BASE_URL}/api/orders`, {
+      headers,
+      params: { table_id: tableSrc.id, type: 'dine_in', per_page: 5 },
+    });
+    const { orders: srcOrdersBeforeMove } = await srcOrdersLookup.json();
+    expect(srcOrdersBeforeMove).toHaveLength(1);
+    const markServedRes = await page.request.patch(
+      `${E2E_BASE_URL}/api/orders/${srcOrdersBeforeMove[0].id}/status`,
+      {
+        headers,
+        data: { status: 'served' },
+      },
+    );
+    expect(markServedRes.ok()).toBeTruthy();
+
     grantMovePermission = true;
     const authMeRefresh = page.waitForResponse(
       (res) => res.url().includes('/api/auth/me') && res.ok(),
     );
+    const servedOrderRefresh = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/orders') &&
+        res.url().includes(`table_id=${tableSrc.id}`) &&
+        res.url().includes('served') &&
+        res.ok(),
+    );
     await page.locator('header').getByRole('button', { name: 'Refresh' }).click();
-    await authMeRefresh;
+    await Promise.all([authMeRefresh, servedOrderRefresh]);
 
     // Add a second item whose append commits on the backend while its HTTP reply is lost (500).
     await search.fill('E2E Coffee');
@@ -646,12 +669,34 @@ test.describe('Server App tableside ordering', () => {
     expect(appendIdempotencyKeys).toHaveLength(1);
     expect(appendIdempotencyKeys[0]).toContain(`server-app-${tableSrc.id}-`);
 
+    let markMoveIntercepted: () => void = () => {};
+    let releaseMoveOrder: () => void = () => {};
+    const moveIntercepted = new Promise<void>((resolve) => {
+      markMoveIntercepted = resolve;
+    });
+    const moveGate = new Promise<void>((resolve) => {
+      releaseMoveOrder = resolve;
+    });
+    await page.route('**/api/tables/*/move-order', async (route) => {
+      markMoveIntercepted();
+      await moveGate;
+      await route.continue();
+    });
+
     // Tap Move Table inside the mobile ticket drawer: the drawer closes so MoveTableModal is uncovered and clickable.
     await moveTableButton.click();
     const modal = page.getByTestId('move-table-modal');
     await expect(modal).toBeVisible();
     await modal.getByRole('button', { name: new RegExp(tableDstName) }).click();
     await modal.getByRole('button', { name: new RegExp(`Move to ${tableDstName}`) }).click();
+    await moveIntercepted;
+
+    // While the move request is in flight, both the header X close button and the footer Cancel button must be disabled.
+    const cancelButtons = modal.getByRole('button', { name: 'Cancel' });
+    await expect(cancelButtons.first()).toBeDisabled();
+    await expect(cancelButtons.last()).toBeDisabled();
+
+    releaseMoveOrder();
     await expect(modal).toBeHidden();
     await expect(page.locator('header')).toContainText(tableDstName);
 

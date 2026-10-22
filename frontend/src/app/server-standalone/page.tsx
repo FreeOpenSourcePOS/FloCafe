@@ -314,7 +314,7 @@ export default function ServerStandalonePage() {
         params: {
           table_id: tableId,
           type: 'dine_in',
-          status: 'pending,preparing,ready',
+          status: 'pending,preparing,ready,served',
           per_page: 1,
         },
       });
@@ -425,7 +425,7 @@ export default function ServerStandalonePage() {
         params: {
           table_id: targetTableId,
           type: 'dine_in',
-          status: 'pending,preparing,ready',
+          status: 'pending,preparing,ready,served',
           per_page: 1,
         },
       })
@@ -560,6 +560,7 @@ export default function ServerStandalonePage() {
       return;
     }
     selectedTableIdRef.current = tableId;
+    setMoveTableModalOpen(false);
     orderLookupFailedRef.current = false;
     orderLoadedTableIdRef.current = '';
     setOrderLoadedTableId('');
@@ -1427,10 +1428,13 @@ export default function ServerStandalonePage() {
           formatPrice={(amount) => money(amount, regional)}
           onClose={() => setMoveTableModalOpen(false)}
           onSuccess={async (movedData) => {
+            const sourceTableId = String(
+              (movedData.sourceTable as Table | undefined)?.id ?? activeTable.id,
+            );
             const targetTable = movedData.targetTable as Table;
             const targetTableId = String(targetTable.id);
             const targetTableName = targetTable.name || targetTable.number;
-            if (sendAttemptRef.current?.snapshot.tableId === activeTable.id) {
+            if (sendAttemptRef.current?.snapshot.tableId === sourceTableId) {
               const prevAttempt = sendAttemptRef.current;
               const nextSnapshot: SendSnapshot = {
                 ...prevAttempt.snapshot,
@@ -1451,7 +1455,9 @@ export default function ServerStandalonePage() {
               };
             }
             setMoveTableModalOpen(false);
-            selectTable(targetTableId);
+            if (selectedTableIdRef.current === sourceTableId) {
+              selectTable(targetTableId);
+            }
             await loadAll().catch(() => {});
           }}
         />

@@ -43,8 +43,14 @@ import { type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { rasterWebUsbPathEnabled } from '@print/raster';
 import { columnsForConfiguredPrinter } from '@print/width';
-import { ensureReceiptSettingsLoaded } from '@/hooks/useReceiptSettingsSync';
+import {
+  ensureReceiptSettingsLoaded,
+  PrintCancelledOnTenantChangeError,
+  isPrintCancelledOnTenantChangeError,
+} from '@/hooks/useReceiptSettingsSync';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
+
+export { PrintCancelledOnTenantChangeError, isPrintCancelledOnTenantChangeError };
 
 type CoreBillTemplate = 'classic' | 'compact';
 
@@ -216,20 +222,22 @@ export const usePrinterStore = create<PrinterState>()(
         const authTenantIdAtStart = useAuthStore.getState().currentTenant?.id ?? null;
         const isSameTenant = () =>
           (useAuthStore.getState().currentTenant?.id ?? null) === authTenantIdAtStart;
-        const cancelIfTenantChanged = (): boolean => {
-          if (isSameTenant()) return false;
+        const throwIfTenantChanged = (): void => {
+          if (isSameTenant()) return;
           if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
           windowTransferred = true;
-          return true;
+          throw new PrintCancelledOnTenantChangeError();
         };
         try {
           const readyForTenant = await ensureReceiptSettingsLoaded(authTenantIdAtStart).catch(() =>
             isSameTenant(),
           );
-          if (!readyForTenant || cancelIfTenantChanged()) {
+          if (!readyForTenant) {
             if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
-            return [];
+            windowTransferred = true;
+            throw new PrintCancelledOnTenantChangeError();
           }
+          throwIfTenantChanged();
           const {
             billTemplate,
             billTemplateSource,
@@ -279,6 +287,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           const executeBrowserPrint = async (): Promise<PrintWarning[]> => {
             const { printWebBill } = await import('@/lib/printer/web-print');
+            throwIfTenantChanged();
             windowTransferred = true;
             const browserWarnings = await printWebBill(
               bill,
@@ -349,7 +358,7 @@ export const usePrinterStore = create<PrinterState>()(
           // Await startup silent reconnect before checking isConnected
           // to avoid premature browser print fallbacks.
           await printerService.awaitPendingReconnect();
-          if (cancelIfTenantChanged()) return [];
+          throwIfTenantChanged();
 
           if (
             get().printMethod === 'browser' ||
@@ -367,7 +376,7 @@ export const usePrinterStore = create<PrinterState>()(
           // ESC/POS thermal path: load requested language bundles before resolving labels.
           const languages = opts?.languages ?? resolveBillPrintLanguages();
           const failedLanguages = await ensurePrintLanguagesLoaded(languages);
-          if (cancelIfTenantChanged()) return [];
+          throwIfTenantChanged();
           // Surface failed locale loads as warnings when labels fall back to English.
           const warnings: PrintWarning[] = failedLanguages.map((language) => ({
             field: 'receipt language',
@@ -486,6 +495,7 @@ export const usePrinterStore = create<PrinterState>()(
             const refusal = makeFinancialPrintRefusalMessage(warnings);
             throw new Error(refusal);
           }
+          throwIfTenantChanged();
 
           set({ lastPrintedBytes: bytes });
           await printerService.print(bytes);
@@ -493,7 +503,9 @@ export const usePrinterStore = create<PrinterState>()(
         } catch (err) {
           if (!windowTransferred && reservedWindow && !reservedWindow.closed)
             reservedWindow.close();
-          set({ lastError: (err as Error).message });
+          if (!isPrintCancelledOnTenantChangeError(err)) {
+            set({ lastError: (err as Error).message });
+          }
           throw err;
         }
       },
@@ -503,13 +515,19 @@ export const usePrinterStore = create<PrinterState>()(
         const authTenantIdAtStart = useAuthStore.getState().currentTenant?.id ?? null;
         const isSameTenant = () =>
           (useAuthStore.getState().currentTenant?.id ?? null) === authTenantIdAtStart;
+        const throwIfTenantChanged = (): void => {
+          if (!isSameTenant()) {
+            throw new PrintCancelledOnTenantChangeError();
+          }
+        };
         try {
           const readyForTenant = await ensureReceiptSettingsLoaded(authTenantIdAtStart).catch(() =>
             isSameTenant(),
           );
-          if (!readyForTenant || !isSameTenant()) {
-            return [];
+          if (!readyForTenant) {
+            throw new PrintCancelledOnTenantChangeError();
           }
+          throwIfTenantChanged();
           const {
             printerUseUnicode,
             printerArabicShaping,
@@ -544,7 +562,7 @@ export const usePrinterStore = create<PrinterState>()(
           // Fall back to browser print when no WebUSB thermal transport is connected.
           // Await any in-flight startup reconnect before checking connection status.
           await printerService.awaitPendingReconnect();
-          if (!isSameTenant()) return [];
+          throwIfTenantChanged();
           const noThermalTransport = !printerService.isConnected && get().printMethod === 'escpos';
           if (get().printMethod === 'browser' || noThermalTransport) {
             if (noThermalTransport) {
@@ -552,6 +570,7 @@ export const usePrinterStore = create<PrinterState>()(
             }
             // Render HTML directly for browser printing to preserve Unicode glyphs.
             const { printWebBill } = await import('@/lib/printer/web-print');
+            throwIfTenantChanged();
             const browserWarnings = await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
               columns: taxBillColumns,
@@ -580,7 +599,7 @@ export const usePrinterStore = create<PrinterState>()(
           }
 
           const failedLanguages = await ensurePrintLanguagesLoaded(languages);
-          if (!isSameTenant()) return [];
+          throwIfTenantChanged();
           const warnings: PrintWarning[] = failedLanguages.map((language) => ({
             field: 'receipt language',
             text: language,
@@ -623,7 +642,9 @@ export const usePrinterStore = create<PrinterState>()(
           await printerService.print(bytes);
           return warnings;
         } catch (err) {
-          set({ lastError: (err as Error).message });
+          if (!isPrintCancelledOnTenantChangeError(err)) {
+            set({ lastError: (err as Error).message });
+          }
           throw err;
         }
       },

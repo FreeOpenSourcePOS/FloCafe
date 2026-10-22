@@ -42,7 +42,7 @@ import { useCashSession } from '@/hooks/useCashSession';
 import { tenantCan } from '@/lib/permissions';
 import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
 import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
-import { usePrinterStore } from '@/hooks/usePrinter';
+import { isPrintCancelledOnTenantChangeError, usePrinterStore } from '@/hooks/usePrinter';
 import { printerService } from '@/lib/printer/PrinterService';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatKotErrorToast, formatReceiptErrorToast } from '@/lib/printer/warnings';
@@ -878,7 +878,11 @@ export default function POSPage() {
   };
 
   const printBillForTenant = async (bill: Bill, force = false, reservedWindow?: Window | null) => {
-    if (!currentTenant || (!force && !autoPrintBill)) {
+    if (
+      !currentTenant ||
+      useAuthStore.getState().currentTenant?.id !== currentTenant.id ||
+      (!force && !autoPrintBill)
+    ) {
       if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
       return;
     }
@@ -887,6 +891,7 @@ export default function POSPage() {
       const printWarnings = await printBill(bill, currentTenant, undefined, reservedWindow);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
+      if (isPrintCancelledOnTenantChangeError(err)) return;
       // Non-fatal: print failure should not block the checkout flow.
       const code = 'print.receipt.failed';
       console.error('[POS] Receipt print failed:', err);

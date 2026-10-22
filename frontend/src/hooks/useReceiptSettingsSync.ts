@@ -5,6 +5,25 @@ import { usePosSettingsStore, type ReceiptSettingsHydrationData } from '@/store/
 import type { Tenant } from '@/lib/types';
 import { tenantCan } from '@/lib/permissions';
 
+export class PrintCancelledOnTenantChangeError extends Error {
+  readonly code = 'PRINT_CANCELLED_TENANT_CHANGED';
+
+  constructor() {
+    super('Print cancelled because active tenant changed');
+    this.name = 'PrintCancelledOnTenantChangeError';
+  }
+}
+
+export function isPrintCancelledOnTenantChangeError(err: unknown): boolean {
+  return (
+    err instanceof PrintCancelledOnTenantChangeError ||
+    (typeof err === 'object' &&
+      err !== null &&
+      ((err as { name?: unknown }).name === 'PrintCancelledOnTenantChangeError' ||
+        (err as { code?: unknown }).code === 'PRINT_CANCELLED_TENANT_CHANGED'))
+  );
+}
+
 export function canSyncReceiptSettings(tenant: Tenant | null | undefined): boolean {
   if (!tenant) return false;
   return (

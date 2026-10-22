@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Printer, FileText, MessageCircle, Download, Usb, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { usePrinterStore } from '@/hooks/usePrinter';
+import { isPrintCancelledOnTenantChangeError, usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintLanguageLoadErrorsToast, showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useAuthStore } from '@/store/auth';
@@ -129,7 +129,8 @@ export default function PrintTestPage() {
           }
           break;
       }
-    } catch {
+    } catch (err) {
+      if (isPrintCancelledOnTenantChangeError(err)) return;
       toast.error(t('failedWithReason', { message: tCommon('somethingWrong') }));
     } finally {
       setTesting(false);

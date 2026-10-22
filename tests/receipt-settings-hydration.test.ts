@@ -61,6 +61,7 @@ function loadFrontendModules() {
       webPrint: require('../frontend/src/lib/printer/web-print'),
       i18n: require('../frontend/src/lib/i18n'),
       receiptSync: require('../frontend/src/hooks/useReceiptSettingsSync'),
+      printerHook: require('../frontend/src/hooks/usePrinter'),
       authStore: require('../frontend/src/store/auth'),
       frontendApi: apiModule.default || apiModule,
     };
@@ -69,7 +70,8 @@ function loadFrontendModules() {
   }
 }
 
-const { posSettings, webPrint, i18n, receiptSync, authStore, frontendApi } = loadFrontendModules();
+const { posSettings, webPrint, i18n, receiptSync, printerHook, authStore, frontendApi } =
+  loadFrontendModules();
 const { usePosSettingsStore } = posSettings;
 const { generateBillHtml } = webPrint;
 const {
@@ -78,6 +80,8 @@ const {
   ensureReceiptSettingsLoaded,
   resetReceiptSettingsSyncForTests,
 } = receiptSync;
+const { usePrinterStore, PrintCancelledOnTenantChangeError, isPrintCancelledOnTenantChangeError } =
+  printerHook;
 const { useAuthStore } = authStore;
 
 async function runTests() {
@@ -1112,6 +1116,127 @@ async function runTests() {
         printReadyForA,
         false,
         'ensureReceiptSettingsLoaded returns false when tenant switches to B while A print is waiting',
+      );
+
+      // Verify printBill and printTaxBill reject with PrintCancelledOnTenantChangeError on mid-print tenant switch
+      resetReceiptSettingsSyncForTests();
+      let resolveCancelledPrintA!: (value: any) => void;
+      const cancelledPrintAPromise = new Promise((resolve) => {
+        resolveCancelledPrintA = resolve;
+      });
+      frontendApi.get = () => {
+        const activeTenantId = String(useAuthStore.getState().currentTenant?.id ?? '');
+        if (activeTenantId === 'tenant-a') {
+          return cancelledPrintAPromise;
+        }
+        return Promise.resolve({ data: tenantResponses[activeTenantId] });
+      };
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-a',
+          business_name: 'Alpha Cafe',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+      const fakeWindow = {
+        closed: false,
+        close() {
+          this.closed = true;
+        },
+      };
+      const printBillPromise = usePrinterStore.getState().printBill(
+        sampleBill as any,
+        {
+          business_name: 'Alpha Cafe',
+          currency: 'USD',
+          country: 'US',
+          timezone: 'UTC',
+        },
+        undefined,
+        fakeWindow as any,
+      );
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-b',
+          business_name: 'Bravo Bistro',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+      resolveCancelledPrintA({ data: tenantResponses['tenant-a'] });
+      let caughtPrintBillErr: unknown = null;
+      try {
+        await printBillPromise;
+      } catch (err) {
+        caughtPrintBillErr = err;
+      }
+      assertOrThrow(
+        caughtPrintBillErr instanceof PrintCancelledOnTenantChangeError &&
+          isPrintCancelledOnTenantChangeError(caughtPrintBillErr),
+        'printBill rejects with PrintCancelledOnTenantChangeError when tenant changes mid-print',
+      );
+      assertEqualOrThrow(
+        fakeWindow.closed,
+        true,
+        'printBill closes reservedWindow when tenant changes mid-print',
+      );
+      assertEqualOrThrow(
+        usePrinterStore.getState().lastError,
+        null,
+        'printBill leaves lastError null when cancelled by tenant change',
+      );
+
+      resetReceiptSettingsSyncForTests();
+      let resolveCancelledTaxPrintA!: (value: any) => void;
+      const cancelledTaxPrintAPromise = new Promise((resolve) => {
+        resolveCancelledTaxPrintA = resolve;
+      });
+      frontendApi.get = () => {
+        const activeTenantId = String(useAuthStore.getState().currentTenant?.id ?? '');
+        if (activeTenantId === 'tenant-a') {
+          return cancelledTaxPrintAPromise;
+        }
+        return Promise.resolve({ data: tenantResponses[activeTenantId] });
+      };
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-a',
+          business_name: 'Alpha Cafe',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+      const printTaxBillPromise = usePrinterStore.getState().printTaxBill(sampleBill as any, {
+        business_name: 'Alpha Cafe',
+        currency: 'USD',
+        country: 'US',
+        timezone: 'UTC',
+      });
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-b',
+          business_name: 'Bravo Bistro',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+      resolveCancelledTaxPrintA({ data: tenantResponses['tenant-a'] });
+      let caughtPrintTaxBillErr: unknown = null;
+      try {
+        await printTaxBillPromise;
+      } catch (err) {
+        caughtPrintTaxBillErr = err;
+      }
+      assertOrThrow(
+        caughtPrintTaxBillErr instanceof PrintCancelledOnTenantChangeError &&
+          isPrintCancelledOnTenantChangeError(caughtPrintTaxBillErr),
+        'printTaxBill rejects with PrintCancelledOnTenantChangeError when tenant changes mid-print',
+      );
+      assertEqualOrThrow(
+        usePrinterStore.getState().lastError,
+        null,
+        'printTaxBill leaves lastError null when cancelled by tenant change',
       );
     } finally {
       frontendApi.get = originalGetForTenantSwitch;

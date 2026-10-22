@@ -22,7 +22,7 @@ import type { Order, OrderItem, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
-import { usePrinterStore } from '@/hooks/usePrinter';
+import { isPrintCancelledOnTenantChangeError, usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatReceiptErrorToast, extractPrinterErrorMessage } from '@/lib/printer/warnings';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -969,9 +969,13 @@ export default function OrdersPage() {
     fetchOrders(undefined, { refreshLoadedPages: true });
 
     if (bill && autoPrintBill) {
+      const tenantIdAtStart = currentTenant?.id ?? null;
       try {
         const fallbackOrder = orders.find((o) => o.bill?.id === bill.id);
         const { data } = await api.get(`/bills/${bill.id}`);
+        if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
+          return;
+        }
         const latestBill = preferChildScopedBill(data.bill as Bill, fallbackOrder);
         const printWarnings = await printBill(
           latestBill,
@@ -993,6 +997,7 @@ export default function OrdersPage() {
           /* best-effort history tracking */
         }
       } catch (err) {
+        if (isPrintCancelledOnTenantChangeError(err)) return;
         const msg = extractPrinterErrorMessage(err);
         toast.error(
           `${tPos('saleCompletePrintFailed')} ${tPos('saleCompleteReprintNextStep')} ${formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint'))}`,
@@ -1008,9 +1013,13 @@ export default function OrdersPage() {
       return;
     }
     const isReprint = (printHistory[billId]?.length ?? 0) > 0;
+    const tenantIdAtStart = currentTenant?.id ?? null;
     setPrintingBillId(billId);
     try {
       const { data } = await api.get(`/bills/${billId}`);
+      if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
+        return;
+      }
       const latestBill = preferChildScopedBill(data.bill as Bill, order);
       // Actually attempt the print first — only log/report success if the printer accepted the job,
       // otherwise a disconnected printer would silently report "success" (it was only logging before).
@@ -1036,6 +1045,7 @@ export default function OrdersPage() {
         /* best-effort history tracking */
       }
     } catch (err) {
+      if (isPrintCancelledOnTenantChangeError(err)) return;
       const detail = extractPrinterErrorMessage(err);
       toast.error(formatReceiptErrorToast(detail, tOrders('printReceiptFailed')));
     } finally {

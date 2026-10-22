@@ -151,8 +151,10 @@ at a category the new version dropped.
 Once a transaction is written, its tax is a snapshot, not a live calculation. `tax_snapshot` is
 stored on `orders`, `order_items`, and `bills`, holding the item-level line amounts as strings.
 During active order mutations (such as item edits, cancellations, discounts, or charge updates),
-`recomputeOrderTotals()` reallocates document tax rounding across active items and charges directly
-from saved snapshots without catalog re-evaluation, persisting updated line snapshots to `order_items`.
+`recomputeOrderTotals()` preserves existing items' saved `tax_snapshot` rules without re-evaluating
+them against the active catalog, evaluates configured charge taxes against the active pack via
+`calculateConfiguredChargeTaxes()`, and reallocates document tax rounding across the combined active
+item and charge snapshots before persisting updated line snapshots to `order_items`.
 Once bills are settled or paid, transactions preserve the recorded snapshots.
 `aggregateTaxSnapshots()` in `main/services/tax.ts` folds the item snapshots into an order or bill
 level array, and `invertTaxSnapshot()` negates the line amounts for a void or refund adjustment

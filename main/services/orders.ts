@@ -270,16 +270,8 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
         const lineId = `line-${String(idx + 1).padStart(4, '0')}:${item.id}`;
         line.lineId = lineId;
 
-        const grossNum = Number(line.grossAmount || 0);
-        const itemSub = Number(item.subtotal || 0);
-        const scale =
-          grossNum > 0 && grossNum !== itemSub ? new Decimal(itemSub).div(grossNum) : null;
-
-        const compKey = (line.components || [])
-          .map((c) => `${c.ruleId}:${c.rate ?? ''}:${c.amountPer ?? ''}`)
-          .join(',');
         const taxRoundingKey = JSON.stringify(snap.taxRounding);
-        const groupKey = `${snap.packId}\0${snap.packVersion}\0${taxRoundingKey}\0${compKey}`;
+        const groupKey = `${snap.packId}\0${taxRoundingKey}`;
 
         let group = groups.get(groupKey);
         if (!group) {
@@ -295,8 +287,7 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
 
         group.affectedItems.add(item);
         for (const comp of line.components || []) {
-          const rawBase = new Decimal(comp.amount).plus(comp.roundingRemainder || '0');
-          const raw = scale ? rawBase.mul(scale) : rawBase;
+          const raw = new Decimal(comp.amount).plus(comp.roundingRemainder || '0');
           group.components.push({
             comp,
             raw,
@@ -327,11 +318,8 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
 
         chargeSnapshots.set(cIdx, snap);
         const line = snap.lines[0];
-        const compKey = (line.components || [])
-          .map((c) => `${c.ruleId}:${c.rate ?? ''}:${c.amountPer ?? ''}`)
-          .join(',');
         const taxRoundingKey = JSON.stringify(snap.taxRounding);
-        const groupKey = `${snap.packId}\0${snap.packVersion}\0${taxRoundingKey}\0${compKey}`;
+        const groupKey = `${snap.packId}\0${taxRoundingKey}`;
 
         let group = groups.get(groupKey);
         if (!group) {
@@ -405,7 +393,6 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
         );
         line.taxAmount = lineTax.toFixed(places);
         const itemSub = Number(item.subtotal || 0);
-        line.grossAmount = itemSub.toFixed(places);
 
         const lineTaxNum = lineTax.toNumber();
         const breakdown = (line.components || []).map((c) => ({

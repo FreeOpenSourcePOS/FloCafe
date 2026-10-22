@@ -43,6 +43,7 @@ const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { registerRoutes } = require('../main/routes/index');
 const { resolveTaxComponents } = require('../main/services/tax-components');
+const { getActiveCountryPack } = require('../main/services/tax');
 
 /** Operational staff with a live token: authorization resolves from the users row, not the claim. */
 function seedStaffUser(db: any, role: string, reuse = false) {
@@ -1795,6 +1796,46 @@ async function main() {
     console.log(
       '\n16. Open order mutations survive active tax pack category rename and rate change',
     );
+    // a. Weighted item document rounding stability (does not drift on recompute)
+    seedProduct(db, 'prod-weight-1', 'cat-tax', 'Weighted Product', 1.0, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+      sale_unit: 'kg',
+      allow_fractional_quantity: true,
+      weight_precision: 3,
+    });
+    const weightedOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-weight-1', quantity: 1.103 },
+          { product_id: 'prod-weight-1', quantity: 1.103 },
+          { product_id: 'prod-weight-1', quantity: 1.093 },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(weightedOrderRes.status, 201, 'weighted order created');
+    assertEqual(weightedOrderRes.data.order.tax_amount, 0.16, 'initial weighted tax = 0.16');
+
+    const weightedDiscountRes = await api(
+      baseUrl,
+      `/api/orders/${weightedOrderRes.data.order.id}/discount`,
+      {
+        method: 'PATCH',
+        body: { discount_type: 'amount', discount_value: 0 },
+        headers: authHeader,
+      },
+    );
+    assertEqual(weightedDiscountRes.status, 200, 'weighted discount patched');
+    assertEqual(
+      weightedDiscountRes.data.order.tax_amount,
+      0.16,
+      'weighted item tax remains 0.16 and does not drift',
+    );
+
+    // b. Open order survives active tax pack category rename and rate change
     const s16OrderRes = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {
@@ -1821,12 +1862,43 @@ async function main() {
         .get() as any
     )?.active_version_id;
 
-    db.prepare(
-      "UPDATE tax_categories SET id = 'standard_renamed' WHERE id = 'standard' AND pack_version_id = ?",
-    ).run(s16ActiveVersionId);
-    db.prepare(
-      "UPDATE tax_rules SET rate = 9.0 WHERE id IN ('b-cgst', 'a-sgst') AND pack_version_id = ?",
-    ).run(s16ActiveVersionId);
+    const origPackRow = db
+      .prepare('SELECT pack_json FROM country_pack_versions WHERE id = ?')
+      .get(s16ActiveVersionId) as { pack_json: string };
+    const modifiedPack = JSON.parse(origPackRow.pack_json);
+
+    for (const cat of modifiedPack.categories || []) {
+      if (cat.id === 'standard') cat.id = 'standard_renamed';
+    }
+    for (const rule of modifiedPack.rules || []) {
+      if (Array.isArray(rule.categoryIds)) {
+        rule.categoryIds = rule.categoryIds.map((cid: string) =>
+          cid === 'standard' ? 'standard_renamed' : cid,
+        );
+      }
+      if (rule.id === 'b-cgst' || rule.id === 'a-sgst') {
+        rule.rate = '9';
+      }
+    }
+    db.prepare('UPDATE country_pack_versions SET pack_json = ? WHERE id = ?').run(
+      JSON.stringify(modifiedPack),
+      s16ActiveVersionId,
+    );
+
+    const activePackNow = getActiveCountryPack('IN');
+    assert(
+      activePackNow.categories.some((c: any) => c.id === 'standard_renamed'),
+      'active pack reflects renamed category',
+    );
+    assert(
+      !activePackNow.categories.some((c: any) => c.id === 'standard'),
+      'standard category no longer in active pack',
+    );
+    assertEqual(
+      activePackNow.rules.find((r: any) => r.id === 'b-cgst')?.rate,
+      '9',
+      'active pack reflects 9% rate',
+    );
 
     const s16DiscountRes = await api(baseUrl, `/api/orders/${s16OrderId}/discount`, {
       method: 'PATCH',
@@ -1857,12 +1929,10 @@ async function main() {
     );
     assertEqual(s16CancelRes.data.order.total, 105.11, 'cancelled item total updated');
 
-    db.prepare(
-      "UPDATE tax_categories SET id = 'standard' WHERE id = 'standard_renamed' AND pack_version_id = ?",
-    ).run(s16ActiveVersionId);
-    db.prepare(
-      "UPDATE tax_rules SET rate = 2.5 WHERE id IN ('b-cgst', 'a-sgst') AND pack_version_id = ?",
-    ).run(s16ActiveVersionId);
+    db.prepare('UPDATE country_pack_versions SET pack_json = ? WHERE id = ?').run(
+      origPackRow.pack_json,
+      s16ActiveVersionId,
+    );
   } finally {
     server.close();
     closeDatabase();

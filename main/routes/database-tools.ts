@@ -18,6 +18,14 @@ import { clearJWTSecretCache } from '../security/jwt-secret';
 import { getHttpRequestSignal } from '../shutdown';
 import { googleDrive } from '../services/google-drive';
 import { isSupportedCurrencyCode } from '../../shared/currencies';
+import {
+  LOCAL_BACKUP_RETENTION,
+  getLastLocalBackupAt,
+  getLocalBackupDir,
+  isLocalBackupEnabled,
+  retainBackupLocally,
+  setLocalBackupEnabled,
+} from '../services/local-backup';
 
 const router = Router();
 
@@ -89,6 +97,45 @@ router.post(
         return res.status(404).json({ error: 'Backup not found' });
       }
       res.status(500).json({ error: 'Deleting backup failed' });
+    }
+  },
+);
+
+function localBackupStatus() {
+  return {
+    enabled: isLocalBackupEnabled(),
+    directory: getLocalBackupDir(),
+    retention: LOCAL_BACKUP_RETENTION,
+    lastBackupAt: getLastLocalBackupAt(),
+  };
+}
+
+router.get(
+  '/local-backup',
+  requirePermission('database.manage'),
+  (_req: Request, res: Response) => {
+    try {
+      res.json(localBackupStatus());
+    } catch (error: unknown) {
+      console.error('[DB Tools] local backup status error:', error);
+      res.status(500).json({ error: 'Could not read local backup status' });
+    }
+  },
+);
+
+router.put(
+  '/local-backup',
+  requirePermission('database.manage'),
+  (req: Request, res: Response) => {
+    if (typeof req.body?.enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
+    }
+    try {
+      setLocalBackupEnabled(req.body.enabled);
+      res.json(localBackupStatus());
+    } catch (error: unknown) {
+      console.error('[DB Tools] local backup update error:', error);
+      res.status(500).json({ error: 'Could not update local backup setting' });
     }
   },
 );
@@ -234,6 +281,7 @@ router.post(
       await googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true });
       restorePrepared = true;
       const { backupPath } = await resetDatabaseWithBackup(getHttpRequestSignal(req));
+      retainBackupLocally(backupPath);
       const cleanup = googleDrive.completeDatabaseRestore();
       clearUserAuthCache();
       clearInMemoryRevokedTokens();

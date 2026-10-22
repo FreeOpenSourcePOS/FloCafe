@@ -153,6 +153,19 @@ carries the `flo-backup-` prefix, it appears in `listBackups()` and is restorabl
 preset path as any other managed backup, so a restore of the wrong file is an undo rather than data
 loss. Retention failure is logged and never fails the committed restore.
 
+### Daily local backup
+
+`main/services/local-backup.ts` writes one backup a day to `Documents/FloCafe/Backups`, outside
+`userData`, so it survives a data wipe, a reinstall, and an uninstall. It is on unless
+`local_backup_enabled` is `'false'`. A check runs two minutes after startup and then hourly; it calls
+`createBackup(targetPath)` when the newest file is at least 24 hours old, and skips a database with
+no orders, products, or customers so an empty install cannot push real backups out of retention.
+Files are named `flo-backup-<UTC timestamp>Z.db`. Only names matching that pattern are listed or
+pruned, and the newest `LOCAL_BACKUP_RETENTION` (5) are kept. Failures are logged and retried on the
+next check. These files are plain SQLite and unencrypted. They are not part of `listBackups()`; restore
+one through `POST /api/db/restore` with the file picker. `POST /api/db-tools/initialize` also copies its
+pre-reset backup here (`retainBackupLocally`) when the setting is on.
+
 ### Durability
 
 Replacement is journalled, not best-effort. `writeReplacementJournal` writes a temporary file,
@@ -176,6 +189,7 @@ Directory syncing is skipped on Windows, which does not support it.
 | `npm run test:schema-health` | Schema shape, index health, and recovery reference caching. |
 | `npm run test:schema-reference-cache` | Recovery schema reference caching and migration registry invalidation. |
 | `npm run test:backup` | Backup and restore behaviour. |
+| `npm run test:local-backup` | The daily local backup: naming, due logic, retention, opt-out, and empty-database skip. |
 | `npm run test:sequence` | Order and bill sequence generation, repair performance, and no-reuse invariants. |
 | `npm run test:issue-278-fail-closed-db` | The missing-database guard. |
 

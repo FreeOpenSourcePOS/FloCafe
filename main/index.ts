@@ -35,6 +35,7 @@ import { cloudSync } from './services/cloud-sync';
 import { telemetry } from './services/telemetry';
 import { capturePostHogException, startPostHog, stopPostHog } from './services/posthog';
 import { googleDrive } from './services/google-drive';
+import { localBackup } from './services/local-backup';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
 import { initPrinter } from './printers/thermal';
@@ -1468,6 +1469,7 @@ async function initialize(): Promise<void> {
     telemetry.start();
     startPostHog();
     googleDrive.start();
+    localBackup.start();
 
     console.log('[Flo] Starting KDS server on port 3002...');
     await startKdsServer();
@@ -1669,6 +1671,7 @@ const cleanupCoordinator = createShutdownCoordinator(
     { name: 'telemetry', run: () => telemetry.stop(), blocksDatabase: true },
     { name: 'posthog', run: () => stopPostHog(), blocksDatabase: true },
     { name: 'Google Drive', run: () => googleDrive.stop(), blocksDatabase: true },
+    { name: 'local backup', run: () => localBackup.stop(), blocksDatabase: true },
     { name: 'WhatsApp', run: () => shutdownWhatsApp(), blocksDatabase: true },
     { name: 'Bonjour', run: () => stopMdns() },
     { name: 'HTTP handler cleanup', run: () => waitForHttpShutdownWork(), blocksDatabase: true },

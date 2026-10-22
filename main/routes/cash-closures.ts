@@ -366,6 +366,7 @@ export interface PaymentMethodBreakdownOptions {
   startDate?: string;
   endDate?: string;
   paidOnly?: boolean;
+  excludeCancelledOrders?: boolean;
   attributeRefundsToBillDate?: boolean;
   keyByPaidAt?: boolean;
   /** Raw timestamp window for session attribution (#279). */
@@ -380,6 +381,7 @@ export function paymentMethodBreakdown(
     startDate = '',
     endDate,
     paidOnly = false,
+    excludeCancelledOrders = false,
     attributeRefundsToBillDate = false,
     keyByPaidAt = false,
     explicitWindow,
@@ -399,6 +401,7 @@ export function paymentMethodBreakdown(
     WITH payment_lines AS (
       SELECT b.paid_at, b.created_at, je.value AS line
       FROM bills b
+      LEFT JOIN orders o ON o.id = b.order_id
       JOIN json_each(CASE
         WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array'
           THEN b.payment_details
@@ -410,6 +413,7 @@ export function paymentMethodBreakdown(
         AND b.created_at < ?
         AND (b.paid_at IS NULL OR b.paid_at >= ?)
         AND (? = 0 OR b.paid_at IS NOT NULL)
+        AND (? = 0 OR COALESCE(o.status, '') != 'cancelled')
         AND json_type(je.value) = 'object'
     ), normalized AS (
       SELECT
@@ -427,6 +431,8 @@ export function paymentMethodBreakdown(
         datetime(CASE WHEN ? = 1 THEN b.paid_at ELSE r.created_at END)
       FROM refunds r
       JOIN bills b ON b.id = r.bill_id
+      LEFT JOIN orders o ON o.id = b.order_id
+      WHERE (? = 0 OR COALESCE(o.status, '') != 'cancelled')
     )
     SELECT COALESCE(pm.name, normalized.method) AS method, COUNT(*) AS count,
       COALESCE(SUM(CASE WHEN typeof(amount) IN ('integer', 'real') THEN amount ELSE 0 END), 0) AS total
@@ -439,9 +445,11 @@ export function paymentMethodBreakdown(
       end,
       start,
       paidOnly ? 1 : 0,
+      excludeCancelledOrders ? 1 : 0,
       keyByPaidAt ? 1 : 0,
       minorFactor,
       attributeRefundsToBillDate ? 1 : 0,
+      excludeCancelledOrders ? 1 : 0,
       start,
       end,
     ) as PaymentMethodRow[];

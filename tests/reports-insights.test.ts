@@ -592,16 +592,22 @@ async function main() {
         VALUES ('ORD-TODAY-TBL2-CANCELLED', 'tbl-rep-2', ?, 'dine_in', 'cancelled', 66666, 66666, ?, ?)
       `).run(cashierId, now(), now());
 
-      // Seed a bill on the cancelled order; it must not inflate summary.bills.
+      // Seed a bill and partial refund on the cancelled order; neither may inflate summary/sales.
       const cancelledBillResult = db
         .prepare(`
-        INSERT INTO bills (bill_number, order_id, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
-        VALUES ('BILL-INS-CANCELLED', ?, 88888, 88888, 0, 'paid', ?, ?, ?)
+        INSERT INTO bills (bill_number, order_id, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+        VALUES ('BILL-INS-CANCELLED', ?, 88888, 88888, 0, 'paid', ?, ?, ?, ?)
       `)
-        .run(cancelledOrderId, now(), now(), now());
+        .run(
+          cancelledOrderId,
+          JSON.stringify([{ method: 'cash', amount: 88888, timestamp: now() }]),
+          now(),
+          now(),
+          now(),
+        );
       db.prepare(`
         INSERT INTO refunds (bill_id, amount_cents, method, reason, approved_by, created_by, created_at)
-        VALUES (?, 8888800, 'cash', 'Cancelled order refund', ?, ?, ?)
+        VALUES (?, 1111100, 'cash', 'Cancelled order partial refund', ?, ?, ?)
       `).run(cancelledBillResult.lastInsertRowid, ownerId, ownerId, now());
 
       // Seed items on the cancelled order and terminal items on the valid completed order.
@@ -643,7 +649,12 @@ async function main() {
       assertEqual(
         summaryRes.body.summary?.bills?.collected,
         300,
-        'summary.bills.collected excludes bills on cancelled orders',
+        'summary.bills.collected excludes bills and partial refunds on cancelled orders',
+      );
+      assertEqual(
+        (summaryRes.body.summary?.paymentMethods ?? []).length,
+        0,
+        'summary.paymentMethods excludes payments and refunds on cancelled orders',
       );
 
       const salesRes = await request(app)
@@ -653,6 +664,11 @@ async function main() {
       const todayDaily = (salesRes.body.sales?.dailySales ?? []).find((d: any) => d.date === today);
       assertEqual(todayDaily?.orders, 1, 'sales.dailySales.orders excludes cancelled orders');
       assertEqual(todayDaily?.sales, 250, 'sales.dailySales.sales excludes cancelled orders');
+      assertEqual(
+        (salesRes.body.sales?.byPaymentMethod ?? []).length,
+        0,
+        'sales.byPaymentMethod excludes payments and refunds on cancelled orders',
+      );
       const byType = salesRes.body.sales?.byOrderType ?? [];
       const dineInType = byType.find((t: any) => t.type === 'dine_in');
       const takeawayType = byType.find((t: any) => t.type === 'takeaway');

@@ -286,7 +286,10 @@ router.get('/summary', requirePermission('reports.view'), (req: Request, res: Re
       total: number;
       collected: number;
     };
-    const paymentMethodsToday = paymentMethodBreakdown(db, { startDate: date });
+    const paymentMethodsToday = paymentMethodBreakdown(db, {
+      startDate: date,
+      excludeCancelledOrders: true,
+    });
 
     const customersToday = db
       .prepare(`
@@ -554,7 +557,12 @@ router.get('/sales', requirePermission('reports.view'), (req: Request, res: Resp
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([date, totals]) => ({ date, ...totals }));
 
-    const byPaymentMethod = paymentMethodBreakdown(db, { startDate, endDate, paidOnly: true }) as {
+    const byPaymentMethod = paymentMethodBreakdown(db, {
+      startDate,
+      endDate,
+      paidOnly: true,
+      excludeCancelledOrders: true,
+    }) as {
       method: string;
       count: number;
       total: number;

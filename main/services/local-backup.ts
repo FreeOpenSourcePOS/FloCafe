@@ -26,7 +26,10 @@ export function setLocalBackupEnabled(enabled: boolean): void {
 }
 
 export function localBackupFileName(at: Date): string {
-  return `flo-backup-${at.toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/:/g, '-')}.db`;
+  return `flo-backup-${at
+    .toISOString()
+    .replace(/\.\d{3}Z$/, 'Z')
+    .replace(/:/g, '-')}.db`;
 }
 
 export function parseLocalBackupTime(fileName: string): number | null {

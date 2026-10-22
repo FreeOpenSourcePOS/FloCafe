@@ -123,22 +123,18 @@ router.get(
   },
 );
 
-router.put(
-  '/local-backup',
-  requirePermission('database.manage'),
-  (req: Request, res: Response) => {
-    if (typeof req.body?.enabled !== 'boolean') {
-      return res.status(400).json({ error: 'enabled must be a boolean' });
-    }
-    try {
-      setLocalBackupEnabled(req.body.enabled);
-      res.json(localBackupStatus());
-    } catch (error: unknown) {
-      console.error('[DB Tools] local backup update error:', error);
-      res.status(500).json({ error: 'Could not update local backup setting' });
-    }
-  },
-);
+router.put('/local-backup', requirePermission('database.manage'), (req: Request, res: Response) => {
+  if (typeof req.body?.enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled must be a boolean' });
+  }
+  try {
+    setLocalBackupEnabled(req.body.enabled);
+    res.json(localBackupStatus());
+  } catch (error: unknown) {
+    console.error('[DB Tools] local backup update error:', error);
+    res.status(500).json({ error: 'Could not update local backup setting' });
+  }
+});
 
 router.get(
   '/master-pin/status',

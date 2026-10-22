@@ -91,7 +91,9 @@ async function main(): Promise<void> {
   assert.ok(getLastLocalBackupAt(backupDir), 'last backup time is reported');
   const copy = new Database(path.join(backupDir, first), { readonly: true });
   try {
-    const row = copy.prepare('SELECT name FROM products WHERE id = ?').get('p1') as { name: string };
+    const row = copy.prepare('SELECT name FROM products WHERE id = ?').get('p1') as {
+      name: string;
+    };
     assert.equal(row.name, 'Flat White', 'the backup contains the data');
   } finally {
     copy.close();
@@ -116,9 +118,17 @@ async function main(): Promise<void> {
   assert.equal(removed.length, 7 - LOCAL_BACKUP_RETENTION);
   const kept = listLocalBackups(backupDir);
   assert.equal(kept.length, LOCAL_BACKUP_RETENTION);
-  assert.equal(kept[0], localBackupFileName(new Date(Date.UTC(2026, 0, 7, 3, 0, 0))), 'newest kept');
-  assert.ok(!kept.includes(localBackupFileName(new Date(Date.UTC(2026, 0, 1, 3, 0, 0)))), 'oldest dropped');
-  for (const name of foreign) assert.ok(fs.existsSync(path.join(backupDir, name)), `${name} untouched`);
+  assert.equal(
+    kept[0],
+    localBackupFileName(new Date(Date.UTC(2026, 0, 7, 3, 0, 0))),
+    'newest kept',
+  );
+  assert.ok(
+    !kept.includes(localBackupFileName(new Date(Date.UTC(2026, 0, 1, 3, 0, 0)))),
+    'oldest dropped',
+  );
+  for (const name of foreign)
+    assert.ok(fs.existsSync(path.join(backupDir, name)), `${name} untouched`);
 
   await localBackup.runIfDue();
   const afterDue = listLocalBackups(backupDir);
@@ -133,7 +143,11 @@ async function main(): Promise<void> {
   const retained = retainBackupLocally(source);
   assert.ok(retained && fs.readFileSync(retained, 'utf8') === 'pre-reset snapshot', 'copy is kept');
   assert.ok(listLocalBackups(backupDir).includes(path.basename(retained as string)));
-  assert.equal(listLocalBackups(backupDir).length, LOCAL_BACKUP_RETENTION, 'retention still applies');
+  assert.equal(
+    listLocalBackups(backupDir).length,
+    LOCAL_BACKUP_RETENTION,
+    'retention still applies',
+  );
   setLocalBackupEnabled(false);
   assert.equal(retainBackupLocally(source), null, 'respects the off switch');
 

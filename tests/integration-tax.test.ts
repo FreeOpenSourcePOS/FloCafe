@@ -1792,7 +1792,9 @@ async function main() {
     );
 
     // ── Step 16: Open order mutations survive active tax pack category rename/rate change ────
-    console.log('\n16. Open order mutations survive active tax pack category rename and rate change');
+    console.log(
+      '\n16. Open order mutations survive active tax pack category rename and rate change',
+    );
     const s16OrderRes = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {

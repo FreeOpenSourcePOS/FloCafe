@@ -105,8 +105,8 @@ interface TaxEngineInput {
 standard `packaging`, `delivery`, and `service_charge` kinds. Applied custom-fee snapshots in
 `charges_breakdown` contribute to order and bill totals but are not converted into tax-engine
 lines. A custom charge's `tax_category_id`, when present, is stored metadata and does not
-affect tax calculation. Across transaction flows (preview, order creation, order mutations, and
-bill generation), `calculateDocumentTaxes()` evaluates items and configured standard charge columns
+affect tax calculation. During initial transaction pricing (tax preview and order creation),
+`calculateDocumentTaxes()` evaluates items and configured standard charge columns
 (`packaging`, `delivery`, `service_charge`) together in a single `TaxEngine.calculate()` call with
 stable line identities. `calculateConfiguredChargeTaxes()` delegates to `calculateDocumentTaxes()`
 with an empty items array when charges are evaluated in isolation.
@@ -151,9 +151,9 @@ at a category the new version dropped.
 Once a transaction is written, its tax is a snapshot, not a live calculation. `tax_snapshot` is
 stored on `orders`, `order_items`, and `bills`, holding the item-level line amounts as strings.
 During active order mutations (such as item edits, cancellations, discounts, or charge updates),
-`recomputeOrderTotals()` recomputes document taxes across the active items and charges, persisting
-updated line snapshots to `order_items`. Once bills are settled or paid, transactions preserve the
-recorded snapshots.
+`recomputeOrderTotals()` reallocates document tax rounding across active items and charges directly
+from saved snapshots without catalog re-evaluation, persisting updated line snapshots to `order_items`.
+Once bills are settled or paid, transactions preserve the recorded snapshots.
 `aggregateTaxSnapshots()` in `main/services/tax.ts` folds the item snapshots into an order or bill
 level array, and `invertTaxSnapshot()` negates the line amounts for a void or refund adjustment
 row, so an adjustment reverses the recorded numbers rather than recomputing them.

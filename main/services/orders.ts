@@ -186,25 +186,44 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
   if (tenantInfo.taxes_enabled) {
     chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, effectiveChargeContext, customer);
 
-    interface GroupComponentEntry {
-      comp: {
-        ruleId: string;
-        amount: string;
-        roundingRemainder: string;
-        rate?: string;
-        amountPer?: string;
-        label?: string;
+    interface SnapshotComponent {
+      ruleId: string;
+      amount: string;
+      roundingRemainder?: string;
+      rate?: string;
+      amountPer?: string;
+      label?: string;
+    }
+
+    interface SnapshotLine {
+      lineId: string;
+      grossAmount?: string;
+      taxAmount?: string;
+      taxableBase?: string;
+      components: SnapshotComponent[];
+      categoryId?: string;
+      taxBehavior?: string;
+    }
+
+    interface SnapshotData {
+      packId?: string;
+      packVersion?: string;
+      currency?: string;
+      taxRounding?: {
+        scope: string;
+        method: RoundingMethod;
+        decimalPlaces: number;
+        remainderAllocation?: string;
       };
+      lines?: SnapshotLine[];
+    }
+
+    interface GroupComponentEntry {
+      comp: SnapshotComponent;
       raw: Decimal;
       rounded: Decimal;
       remainder: Decimal;
-      line: {
-        lineId: string;
-        grossAmount?: string;
-        taxAmount?: string;
-        taxableBase?: string;
-        components: any[];
-      };
+      line: SnapshotLine;
       item?: OrderItemRow;
       chargeIndex?: number;
     }
@@ -223,13 +242,13 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
     }
 
     const groups = new Map<string, DocumentGroup>();
-    const itemSnapshots = new Map<OrderItemRow, any>();
-    const chargeSnapshots = new Map<number, any>();
+    const itemSnapshots = new Map<OrderItemRow, SnapshotData>();
+    const chargeSnapshots = new Map<number, SnapshotData>();
 
     if (totals.activeItems && totals.activeItems.length > 0) {
       totals.activeItems.forEach((item, idx) => {
         if (!item.tax_snapshot) return;
-        let snap: any = null;
+        let snap: SnapshotData | null = null;
         try {
           snap =
             typeof item.tax_snapshot === 'string'
@@ -257,7 +276,7 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
           grossNum > 0 && grossNum !== itemSub ? new Decimal(itemSub).div(grossNum) : null;
 
         const compKey = (line.components || [])
-          .map((c: any) => `${c.ruleId}:${c.rate ?? ''}:${c.amountPer ?? ''}`)
+          .map((c) => `${c.ruleId}:${c.rate ?? ''}:${c.amountPer ?? ''}`)
           .join(',');
         const taxRoundingKey = JSON.stringify(snap.taxRounding);
         const groupKey = `${snap.packId}\0${snap.packVersion}\0${taxRoundingKey}\0${compKey}`;
@@ -292,7 +311,7 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
 
     if (chargeTaxes.snapshotJson && chargeTaxes.snapshotJson.length > 0) {
       chargeTaxes.snapshotJson.forEach((snapJson, cIdx) => {
-        let snap: any = null;
+        let snap: SnapshotData | null = null;
         try {
           snap = JSON.parse(snapJson);
         } catch {
@@ -309,7 +328,7 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
         chargeSnapshots.set(cIdx, snap);
         const line = snap.lines[0];
         const compKey = (line.components || [])
-          .map((c: any) => `${c.ruleId}:${c.rate ?? ''}:${c.amountPer ?? ''}`)
+          .map((c) => `${c.ruleId}:${c.rate ?? ''}:${c.amountPer ?? ''}`)
           .join(',');
         const taxRoundingKey = JSON.stringify(snap.taxRounding);
         const groupKey = `${snap.packId}\0${snap.packVersion}\0${taxRoundingKey}\0${compKey}`;
@@ -381,7 +400,7 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
         if (!snap || !Array.isArray(snap.lines) || snap.lines.length === 0) continue;
         const line = snap.lines[0];
         const lineTax = (line.components || []).reduce(
-          (sum: Decimal, c: any) => sum.plus(new Decimal(c.amount)),
+          (sum: Decimal, c) => sum.plus(new Decimal(c.amount)),
           new Decimal(0),
         );
         line.taxAmount = lineTax.toFixed(places);
@@ -389,8 +408,8 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
         line.grossAmount = itemSub.toFixed(places);
 
         const lineTaxNum = lineTax.toNumber();
-        const breakdown = (line.components || []).map((c: any) => ({
-          title: c.label,
+        const breakdown = (line.components || []).map((c) => ({
+          title: c.label || '',
           rate: Number(c.rate || 0),
           amount: Number(c.amount),
         }));
@@ -435,13 +454,13 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
         if (!snap || !Array.isArray(snap.lines) || snap.lines.length === 0) continue;
         const line = snap.lines[0];
         const lineTax = (line.components || []).reduce(
-          (sum: Decimal, c: any) => sum.plus(new Decimal(c.amount)),
+          (sum: Decimal, c) => sum.plus(new Decimal(c.amount)),
           new Decimal(0),
         );
         line.taxAmount = lineTax.toFixed(places);
         chargeTaxes.snapshotJson[cIdx] = JSON.stringify(snap);
-        chargeTaxes.breakdowns[cIdx] = (line.components || []).map((c: any) => ({
-          title: c.label,
+        chargeTaxes.breakdowns[cIdx] = (line.components || []).map((c) => ({
+          title: c.label || '',
           rate: Number(c.rate || 0),
           amount: Number(c.amount),
         }));

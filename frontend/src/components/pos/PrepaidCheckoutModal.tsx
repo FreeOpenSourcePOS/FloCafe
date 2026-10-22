@@ -513,10 +513,23 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     onConfirm(splitLines, walletAmt, finalDiscount);
   };
 
+  const modalRef = useRef<HTMLDivElement>(null);
   const handleConfirmRef = useRef(handleConfirm);
   useEffect(() => {
     handleConfirmRef.current = handleConfirm;
   });
+
+  useEffect(() => {
+    if (
+      typeof document !== 'undefined' &&
+      modalRef.current &&
+      document.activeElement &&
+      !modalRef.current.contains(document.activeElement) &&
+      typeof (document.activeElement as HTMLElement).blur === 'function'
+    ) {
+      (document.activeElement as HTMLElement).blur();
+    }
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -527,12 +540,15 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         tag === 'TEXTAREA' ||
         tag === 'SELECT' ||
         Boolean(target?.isContentEditable);
+      const isInsideModal =
+        !modalRef.current || !target || modalRef.current.contains(target as Node);
       const isInteractive =
         isInput ||
-        tag === 'BUTTON' ||
-        tag === 'A' ||
-        target?.getAttribute?.('role') === 'button' ||
-        Boolean(target?.closest?.('button, a, [role="button"]'));
+        (isInsideModal &&
+          (tag === 'BUTTON' ||
+            tag === 'A' ||
+            target?.getAttribute?.('role') === 'button' ||
+            Boolean(target?.closest?.('button, a, [role="button"]'))));
 
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -593,6 +609,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
 
   return (
     <div
+      ref={modalRef}
       data-testid="prepaid-checkout-modal"
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
     >

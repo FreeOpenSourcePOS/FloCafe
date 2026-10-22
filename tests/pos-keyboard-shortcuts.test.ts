@@ -1009,6 +1009,7 @@ console.log(
   const prevWin = (globalThis as Record<string, unknown>).window;
   const prevDoc = (globalThis as Record<string, unknown>).document;
   (globalThis as Record<string, unknown>).window = {
+    location: { href: 'http://localhost:3000', origin: 'http://localhost:3000' },
     addEventListener: (type: string, fn: (e: Record<string, unknown>) => void) => {
       if (type === 'keydown') modalListeners.add(fn);
     },
@@ -1040,6 +1041,7 @@ console.log(
     onlinePlatform: string | null;
     waivedChargeIds: Set<number>;
     optedInChargeIds: Set<number>;
+    itemCount: () => number;
     setCustomer: (c: Record<string, unknown> | null) => void;
   } = {
     customer: null,
@@ -1049,6 +1051,7 @@ console.log(
     onlinePlatform: null,
     waivedChargeIds: new Set(),
     optedInChargeIds: new Set(),
+    itemCount: () => cartState.items.length,
     setCustomer: (c) => {
       cartState.customer = c;
       cartState.customerId = (c?.id as string | undefined) ?? null;
@@ -1573,7 +1576,11 @@ console.log(
       code: 'Escape',
       target: { tagName: 'BUTTON' },
     });
-    assert.strictEqual(escRes.defaultPrevented, true, 'PrepaidCheckoutModal Escape preventsDefault');
+    assert.strictEqual(
+      escRes.defaultPrevented,
+      true,
+      'PrepaidCheckoutModal Escape preventsDefault',
+    );
     assert.strictEqual(prepaidClosed, 1, 'PrepaidCheckoutModal Escape closes modal');
   } finally {
     moduleApi._load = originalLoad;

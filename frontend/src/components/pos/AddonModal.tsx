@@ -18,7 +18,13 @@ interface Props {
   currency: string;
   /** Overrides the signed-in tenant's currency formatting (e.g. for standalone pages with no auth store). */
   country?: string;
-  onAdd: (product: Product, quantity: number, addons: Addon[], specialInstructions: string, variant: ProductVariant | null) => void;
+  onAdd: (
+    product: Product,
+    quantity: number,
+    addons: Addon[],
+    specialInstructions: string,
+    variant: ProductVariant | null,
+  ) => void;
   onClose: () => void;
   initialQuantity?: number;
   initialAddons?: Addon[];
@@ -41,12 +47,14 @@ function groupInitialAddons(addons: Addon[]): Record<string | number, Addon[]> {
 
 function variantPillClassName(isSelected: boolean, soldOut: boolean): string {
   if (soldOut) return 'border-border opacity-50 cursor-not-allowed';
-  if (isSelected) return 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300';
+  if (isSelected)
+    return 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300';
   return 'border-border hover:border-brand/40';
 }
 
 function addonRowClassName(isSelected: boolean, soldOut: boolean): string {
-  if (isSelected) return 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300';
+  if (isSelected)
+    return 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300';
   if (soldOut) return 'border-border opacity-50 cursor-not-allowed';
   return 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border';
 }
@@ -55,7 +63,11 @@ function addonRowClassName(isSelected: boolean, soldOut: boolean): string {
  * The stock badges for one add-on row. Sold out wins over running low, so a
  * zero-stock add-on never carries both.
  */
-function addonStockBadges(soldOut: boolean, lowStock: boolean, labels: { outOfStock: string; lowStock: string }) {
+function addonStockBadges(
+  soldOut: boolean,
+  lowStock: boolean,
+  labels: { outOfStock: string; lowStock: string },
+) {
   if (!soldOut && !lowStock) return null;
   return (
     <>
@@ -74,21 +86,33 @@ function addonStockBadges(soldOut: boolean, lowStock: boolean, labels: { outOfSt
 }
 
 export default function AddonModal({
-  product, currency, country, onAdd, onClose,
-  initialQuantity = 1, initialAddons = [], initialInstructions = '', initialVariant = null, mode = 'add',
+  product,
+  currency,
+  country,
+  onAdd,
+  onClose,
+  initialQuantity = 1,
+  initialAddons = [],
+  initialInstructions = '',
+  initialVariant = null,
+  mode = 'add',
   onlinePlatformSelected = false,
 }: Props) {
   const t = useTranslations('pos');
   const tenantFmt = useFormatCurrency();
   const fmt = country ? (n: number) => formatCurrencyForTenant(n, country, currency) : tenantFmt;
-  const [selected, setSelected] = useState<Record<string | number, Addon[]>>(() => groupInitialAddons(initialAddons));
+  const [selected, setSelected] = useState<Record<string | number, Addon[]>>(() =>
+    groupInitialAddons(initialAddons),
+  );
   const [quantity, setQuantity] = useState(initialQuantity);
   const [qtyDraft, setQtyDraft] = useState(() => String(initialQuantity));
   const [instructions, setInstructions] = useState(initialInstructions);
 
   const variants = activeVariants(product.variants);
   const defaultVariant = selectDefaultVariant(variants, initialVariant?.id);
-  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(defaultVariant?.id ?? null);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
+    defaultVariant?.id ?? null,
+  );
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? null;
   const variantUnitPrice = (variant: ProductVariant | null) =>
     cartVariantUnitPrice({ variant, product }, onlinePlatformSelected);
@@ -123,7 +147,7 @@ export default function AddonModal({
     const groupId = group.id;
     const currentList = selected[groupId] || [];
     const existingIndex = currentList.findIndex((a) => a.id === addon.id);
-    const currentQty = existingIndex >= 0 ? (currentList[existingIndex].quantity || 1) : 0;
+    const currentQty = existingIndex >= 0 ? currentList[existingIndex].quantity || 1 : 0;
     const newQty = currentQty + delta;
 
     if (newQty <= 0) {
@@ -139,7 +163,8 @@ export default function AddonModal({
       }
 
       const rawCeiling = addonStockCeiling(addon);
-      const stockCeiling = rawCeiling == null ? null : Math.floor(rawCeiling / (quantity > 0 ? quantity : 1));
+      const stockCeiling =
+        rawCeiling == null ? null : Math.floor(rawCeiling / (quantity > 0 ? quantity : 1));
       if (delta > 0 && stockCeiling != null && newQty > stockCeiling) {
         return;
       }
@@ -167,7 +192,7 @@ export default function AddonModal({
   const getAddonQuantity = (groupId: string | number, addonId: string | number): number => {
     const list = selected[groupId] || [];
     const item = list.find((a) => a.id === addonId);
-    return item ? (item.quantity || 1) : 0;
+    return item ? item.quantity || 1 : 0;
   };
 
   const allAddons = Object.values(selected).flat();
@@ -190,14 +215,19 @@ export default function AddonModal({
 
   const groupsSatisfied = groups.every((g) => {
     const count = getGroupTotalQuantity(g.id);
-    const requiredMin = Boolean(g.is_required) ? Math.max(1, g.min_selection || 1) : (g.min_selection || 0);
+    const requiredMin = Boolean(g.is_required)
+      ? Math.max(1, g.min_selection || 1)
+      : g.min_selection || 0;
     if (count < requiredMin) return false;
     if (g.max_selection && count > g.max_selection) return false;
     return true;
   });
   // A product with variants cannot be sold without one, and a fully sold-out
   // variant set cannot be sold at all.
-  const isValid = groupsSatisfied && (variants.length === 0 || Boolean(selectedVariant)) && canQuantityCoverAddons(quantity);
+  const isValid =
+    groupsSatisfied &&
+    (variants.length === 0 || Boolean(selectedVariant)) &&
+    canQuantityCoverAddons(quantity);
 
   const handleAdd = () => {
     if (!isValid) return;
@@ -222,7 +252,11 @@ export default function AddonModal({
             <h2 className="text-lg font-bold text-foreground">{product.name}</h2>
             <p className="text-brand font-semibold">{fmt(basePrice)}</p>
           </div>
-          <button onClick={onClose} className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted" aria-label={t('close')}>
+          <button
+            onClick={onClose}
+            className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted"
+            aria-label={t('close')}
+          >
             <X size={20} />
           </button>
         </div>
@@ -245,7 +279,9 @@ export default function AddonModal({
                       className={`touch-target inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${variantPillClassName(isSel, soldOut)}`}
                     >
                       <span className="font-medium text-foreground">{variant.name}</span>
-                      <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
+                      <span
+                        className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}
+                      >
                         {fmt(variantUnitPrice(variant))}
                       </span>
                       {soldOut && (
@@ -271,24 +307,32 @@ export default function AddonModal({
                   <h3 className="font-semibold text-sm text-foreground">{group.name}</h3>
                   <span className="flex items-center gap-2">
                     {Boolean(group.is_required) && (
-                      <span className="text-xs font-medium text-red-500 dark:text-red-400">{t('required')}</span>
+                      <span className="text-xs font-medium text-red-500 dark:text-red-400">
+                        {t('required')}
+                      </span>
                     )}
-                    {group.max_selection ? (() => {
-                      const remaining = Math.max(0, group.max_selection - count);
-                      const isZero = remaining === 0;
-                      return (
-                        <span className={`font-semibold transition-all ${
-                          isZero
-                            ? 'text-sm text-amber-500'
-                            : 'text-xs text-sky-500'
-                        }`}>
-                          {isZero ? t('selectionComplete') : t('remainingCount', { count: remaining })}
-                        </span>
-                      );
-                    })() : null}
+                    {group.max_selection
+                      ? (() => {
+                          const remaining = Math.max(0, group.max_selection - count);
+                          const isZero = remaining === 0;
+                          return (
+                            <span
+                              className={`font-semibold transition-all ${
+                                isZero ? 'text-sm text-amber-500' : 'text-xs text-sky-500'
+                              }`}
+                            >
+                              {isZero
+                                ? t('selectionComplete')
+                                : t('remainingCount', { count: remaining })}
+                            </span>
+                          );
+                        })()
+                      : null}
                   </span>
                 </div>
-                {group.description && <p className="text-xs text-muted-foreground mb-2">{group.description}</p>}
+                {group.description && (
+                  <p className="text-xs text-muted-foreground mb-2">{group.description}</p>
+                )}
                 <div className="space-y-1">
                   {activeAddons.map((addon) => {
                     const addonQty = getAddonQuantity(group.id, addon.id);
@@ -296,14 +340,24 @@ export default function AddonModal({
                     const soldOut = isAddonSoldOut(addon);
                     const lowStock = isAddonLowStock(addon);
                     const rawCeiling = addonStockCeiling(addon);
-                    const stockCeiling = rawCeiling == null ? null : Math.floor(rawCeiling / (quantity > 0 ? quantity : 1));
+                    const stockCeiling =
+                      rawCeiling == null
+                        ? null
+                        : Math.floor(rawCeiling / (quantity > 0 ? quantity : 1));
                     // The cashier may only dial up to what is left, but never past
                     // the group cap, and an untracked add-on is never limited.
                     const atStockCeiling = stockCeiling != null && addonQty >= stockCeiling;
-                    const plusDisabled = soldOut || atStockCeiling;
-                    const priceTone = isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground';
-                    const counterButton = 'touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]';
-                    const badges = addonStockBadges(soldOut, lowStock, { outOfStock: t('outOfStock'), lowStock: t('lowStock') });
+                    const atGroupCap = Boolean(group.max_selection && count >= group.max_selection);
+                    const plusDisabled = soldOut || atStockCeiling || atGroupCap;
+                    const priceTone = isSel
+                      ? 'text-brand dark:text-indigo-300 font-semibold'
+                      : 'text-muted-foreground';
+                    const counterButton =
+                      'touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]';
+                    const badges = addonStockBadges(soldOut, lowStock, {
+                      outOfStock: t('outOfStock'),
+                      lowStock: t('lowStock'),
+                    });
 
                     if (allowMultiple) {
                       return (
@@ -314,7 +368,9 @@ export default function AddonModal({
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-foreground">{addon.name}</span>
                             <span className={`text-xs ${priceTone}`}>
-                              {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
+                              {Number(addon.price) === 0
+                                ? t('freeAddon')
+                                : `+${fmt(Number(addon.price))}`}
                             </span>
                             {badges}
                           </div>
@@ -328,7 +384,9 @@ export default function AddonModal({
                                 >
                                   <Minus size={14} />
                                 </button>
-                                <span className="text-sm font-bold w-5 text-center text-brand dark:text-indigo-300 tabular-nums">{addonQty}</span>
+                                <span className="text-sm font-bold w-5 text-center text-brand dark:text-indigo-300 tabular-nums">
+                                  {addonQty}
+                                </span>
                                 <button
                                   type="button"
                                   disabled={plusDisabled}
@@ -361,7 +419,9 @@ export default function AddonModal({
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-foreground">{addon.name}</span>
                           <span className={`text-xs ${priceTone}`}>
-                            {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
+                            {Number(addon.price) === 0
+                              ? t('freeAddon')
+                              : `+${fmt(Number(addon.price))}`}
                           </span>
                           {badges}
                         </div>
@@ -375,7 +435,9 @@ export default function AddonModal({
                               >
                                 <Minus size={14} />
                               </button>
-                              <span className="text-sm font-bold w-5 text-center text-brand dark:text-indigo-300 tabular-nums">1</span>
+                              <span className="text-sm font-bold w-5 text-center text-brand dark:text-indigo-300 tabular-nums">
+                                1
+                              </span>
                               <button
                                 type="button"
                                 disabled
@@ -400,10 +462,14 @@ export default function AddonModal({
                   })}
                 </div>
                 {(() => {
-                  const requiredMin = Boolean(group.is_required) ? Math.max(1, group.min_selection || 1) : (group.min_selection || 0);
+                  const requiredMin = Boolean(group.is_required)
+                    ? Math.max(1, group.min_selection || 1)
+                    : group.min_selection || 0;
                   if (requiredMin > 0 && count < requiredMin) {
                     return (
-                      <p className="mt-1 text-xs text-red-500 dark:text-red-400">{t('selectAtLeast', { count: requiredMin })}</p>
+                      <p className="mt-1 text-xs text-red-500 dark:text-red-400">
+                        {t('selectAtLeast', { count: requiredMin })}
+                      </p>
                     );
                   }
                   return null;
@@ -413,7 +479,9 @@ export default function AddonModal({
           })}
 
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">{t('specialInstructions')}</label>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              {t('specialInstructions')}
+            </label>
             <input
               type="text"
               value={instructions}
@@ -422,7 +490,9 @@ export default function AddonModal({
               maxLength={100}
               className="w-full min-h-11 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-brand"
             />
-            <p className="text-xs text-muted-foreground text-end mt-0.5">{instructions.length}/100</p>
+            <p className="text-xs text-muted-foreground text-end mt-0.5">
+              {instructions.length}/100
+            </p>
           </div>
         </div>
 
@@ -449,7 +519,9 @@ export default function AddonModal({
                     disabled={disabled}
                     onClick={() => setQty(quickQty)}
                     className={`touch-target rounded-lg border px-3 text-sm font-bold tabular-nums disabled:cursor-not-allowed disabled:opacity-50 ${
-                      quantity === quickQty ? 'border-brand bg-brand text-white' : 'border-border bg-card text-foreground'
+                      quantity === quickQty
+                        ? 'border-brand bg-brand text-white'
+                        : 'border-border bg-card text-foreground'
                     }`}
                   >
                     {quickQty}

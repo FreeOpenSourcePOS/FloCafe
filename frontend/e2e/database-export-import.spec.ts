@@ -207,6 +207,7 @@ test.describe('Database Settings JSON Export and Import', () => {
     const uniqueOrderNumber = `ORD-E2E-${runId}`;
     const uniqueCustomerName = `E2E Customer ${runId}`;
     const uniquePhone = `+1555019${Math.floor(1000 + Math.random() * 9000)}`;
+    const fixtureTimestamp = '2020-01-01 00:00:00';
 
     const contaminatedPayload = {
       app: 'FloDesktop',
@@ -226,8 +227,8 @@ test.describe('Database Settings JSON Export and Import', () => {
             stock_quantity: 10,
             is_active: 1,
             sort_order: 1,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            created_at: fixtureTimestamp,
+            updated_at: fixtureTimestamp,
           },
         ],
         inventory_movements: [
@@ -239,7 +240,7 @@ test.describe('Database Settings JSON Export and Import', () => {
             movement_type: 'adjustment',
             quantity_delta: 10,
             stock_after: 10,
-            created_at: new Date().toISOString(),
+            created_at: fixtureTimestamp,
           },
         ],
         customers: [
@@ -248,8 +249,8 @@ test.describe('Database Settings JSON Export and Import', () => {
             name: uniqueCustomerName,
             phone: uniquePhone,
             phone_digits: '5550199999', // Virtual generated column that must be ignored
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            created_at: fixtureTimestamp,
+            updated_at: fixtureTimestamp,
           },
         ],
         orders: [
@@ -261,8 +262,8 @@ test.describe('Database Settings JSON Export and Import', () => {
             status: 'pending',
             subtotal: 50,
             total: 50,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            created_at: fixtureTimestamp,
+            updated_at: fixtureTimestamp,
           },
         ],
         orders_search_fts_data: [{ id: 1, block: 'ignored shadow data' }],
@@ -313,8 +314,14 @@ test.describe('Database Settings JSON Export and Import', () => {
       );
       expect(customerOrderFound).toBeTruthy();
     } finally {
-      // Clean up test product to prevent stock accumulation across retries
+      // Clean up test order and product to prevent state accumulation across retries and specs
       const authToken = getE2eToken();
+      await page.request
+        .patch(`${BASE}/api/orders/${uniqueOrderId}/status`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+          data: { status: 'cancelled', reason: 'E2E cleanup' },
+        })
+        .catch(() => {});
       await page.request
         .delete(`${BASE}/api/products/${uniqueProductId}`, {
           headers: { Authorization: `Bearer ${authToken}` },

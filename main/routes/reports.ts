@@ -270,7 +270,13 @@ router.get('/summary', requirePermission('reports.view'), (req: Request, res: Re
           JOIN orders o2 ON o2.id = b2.order_id
           WHERE b2.paid_at >= ? AND b2.paid_at < ? AND o2.status != 'cancelled'
         ), 0)
-        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as collected
+        - COALESCE((
+          SELECT SUM(CAST(r.amount_cents AS REAL)) / ?
+          FROM refunds r
+          JOIN bills b3 ON b3.id = r.bill_id
+          JOIN orders o3 ON o3.id = b3.order_id
+          WHERE r.created_at >= ? AND r.created_at < ? AND o3.status != 'cancelled'
+        ), 0) as collected
       FROM bills b
       JOIN orders o ON o.id = b.order_id
       WHERE b.created_at >= ? AND b.created_at < ? AND o.status != 'cancelled'

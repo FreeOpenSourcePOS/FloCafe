@@ -593,10 +593,16 @@ async function main() {
       `).run(cashierId, now(), now());
 
       // Seed a bill on the cancelled order; it must not inflate summary.bills.
-      db.prepare(`
+      const cancelledBillResult = db
+        .prepare(`
         INSERT INTO bills (bill_number, order_id, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
         VALUES ('BILL-INS-CANCELLED', ?, 88888, 88888, 0, 'paid', ?, ?, ?)
-      `).run(cancelledOrderId, now(), now(), now());
+      `)
+        .run(cancelledOrderId, now(), now(), now());
+      db.prepare(`
+        INSERT INTO refunds (bill_id, amount_cents, method, reason, approved_by, created_by, created_at)
+        VALUES (?, 8888800, 'cash', 'Cancelled order refund', ?, ?, ?)
+      `).run(cancelledBillResult.lastInsertRowid, ownerId, ownerId, now());
 
       // Seed items on the cancelled order and terminal items on the valid completed order.
       db.prepare(`

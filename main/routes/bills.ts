@@ -474,7 +474,7 @@ export function projectOrderItems(
   const taxDiscountRatioDec = getTaxDiscountRatioDecimal(order?.subtotal, order?.discount_amount);
   const taxDiscountRatio = taxDiscountRatioDec.toNumber();
   const decimals = Math.log10(minorFactor);
-  const docOutputByItem = new Map<any, DocumentTaxAllocationItemOutput>();
+  const docOutputByItem = new Map<unknown, DocumentTaxAllocationItemOutput>();
   if (!taxDiscountRatioDec.eq(1)) {
     const parsedOrderSnap = parseTaxSnapshot(order?.tax_snapshot);
     const orderSnapEntries = Array.isArray(parsedOrderSnap)
@@ -485,7 +485,9 @@ export function projectOrderItems(
     const chargeSnapJson = orderSnapEntries
       .filter(
         (entry) =>
-          entry && typeof entry === 'object' && typeof (entry as any).chargeKind === 'string',
+          entry &&
+          typeof entry === 'object' &&
+          typeof (entry as Record<string, unknown>).chargeKind === 'string',
       )
       .map((entry) => JSON.stringify(entry));
     const activeItems = rawItemRows.filter(

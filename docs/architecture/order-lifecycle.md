@@ -114,20 +114,20 @@ complimentary item. The permission `orders.item.price_override` is owner-only an
 - `PATCH /api/orders/:id/items/:itemId/price` takes `price` and a required `reason`. The same
   `price_override: { price, reason }` object is accepted on a line when an order is created or items
   are added, and a request from any other role is a `403`.
-- The line's `unit_price` becomes the override. The first menu price stays in `original_unit_price`
-  across repeated overrides, and `price_overridden`, `price_override_reason`, `price_overridden_by`,
-  and `price_overridden_at` record the change. Receipts and bills read `unit_price`, so they show the
-  selling price.
+- The line's `unit_price` becomes the override, rounded half-up to the currency's decimal places. The
+  first menu price stays in `original_unit_price` across repeated overrides, and `price_overridden`,
+  `price_override_reason`, `price_overridden_by`, and `price_overridden_at` record the change.
+  Receipts and bills read `unit_price`, so they show the selling price.
 - The backend recomputes item tax, order totals, and an open bill. An existing item discount stays,
   capped at the new line total.
 - Overrides are allowed once a line has been sent to the kitchen, because only the price changes.
   They are refused (`409`) once a bill has payments, a split, or a refund, and (`400`) on completed or
   cancelled orders and cancelled or voided lines.
 - In the POS the owner sees a price control on each cart line (also when adding items to an open
-  order). The override is part of the line's cart identity, so it never merges into a menu-price
-  line, survives holding and resuming, and is quoted by `POST /api/tax/preview` through an optional
-  per-item `price_override: { price }`. The placed order re-checks the owner permission, so a held
-  cart with an override placed by another role is refused with `403`.
+  order). The normalized override is part of the line's cart identity, so it never merges into a
+  menu-price line, survives holding and resuming, and is quoted by `POST /api/tax/preview` through an
+  optional per-item `price_override: { price }`. The placed order re-checks the owner permission, so a
+  held cart with an override placed by another role is refused with `403`.
 - A quantity edit keeps the override flag and menu price on the replacement line; replacing the line
   with a different product or variant starts at that product's menu price.
 - Each override records an `item_price_overridden` action in `order_audit_log`.

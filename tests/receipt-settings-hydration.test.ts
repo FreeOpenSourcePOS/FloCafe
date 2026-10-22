@@ -72,8 +72,12 @@ function loadFrontendModules() {
 const { posSettings, webPrint, i18n, receiptSync, authStore, frontendApi } = loadFrontendModules();
 const { usePosSettingsStore } = posSettings;
 const { generateBillHtml } = webPrint;
-const { canSyncReceiptSettings, ensureReceiptSettingsLoaded, resetReceiptSettingsSyncForTests } =
-  receiptSync;
+const {
+  canSyncReceiptSettings,
+  syncReceiptSettings,
+  ensureReceiptSettingsLoaded,
+  resetReceiptSettingsSyncForTests,
+} = receiptSync;
 const { useAuthStore } = authStore;
 
 async function runTests() {
@@ -654,6 +658,225 @@ async function runTests() {
       'Updated footer: Visit us online!',
       'billFooterMessage hydrates cleanly after network recovery',
     );
+
+    // ── Test 9: Tenant switch bypasses 60s throttle and ignores stale in-flight responses ──
+    console.log(
+      '\n9. Tenant switch within 60s throttle window immediately re-syncs and ignores stale in-flight responses',
+    );
+    resetReceiptSettingsSyncForTests();
+    usePosSettingsStore.setState({
+      billAddress: '',
+      billFooterMessage: '',
+    });
+
+    const originalGetForTenantSwitch = frontendApi.get;
+    try {
+      let fetchCalls = 0;
+      const tenantResponses: Record<string, any> = {
+        'tenant-a': {
+          business_address: '100 Alpha Ave, Austin, TX',
+          bill_footer_message: 'Welcome to Alpha Cafe',
+        },
+        'tenant-b': {
+          business_address: '200 Bravo Blvd, Boston, MA',
+          bill_footer_message: 'Welcome to Bravo Bistro',
+        },
+      };
+
+      frontendApi.get = async () => {
+        fetchCalls += 1;
+        const activeTenantId = String(useAuthStore.getState().currentTenant?.id ?? '');
+        return { data: tenantResponses[activeTenantId] };
+      };
+
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-a',
+          business_name: 'Alpha Cafe',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+
+      await syncReceiptSettings();
+      assertEqualOrThrow(fetchCalls, 1, 'initial tenant-a sync triggers 1 fetch');
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billAddress,
+        '100 Alpha Ave, Austin, TX',
+        'tenant-a address hydrated',
+      );
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billFooterMessage,
+        'Welcome to Alpha Cafe',
+        'tenant-a footer hydrated',
+      );
+
+      // Same tenant within 60s throttle window should be a no-op
+      await syncReceiptSettings();
+      assertEqualOrThrow(fetchCalls, 1, 'same-tenant sync within 60s throttle window is skipped');
+
+      // Switch to tenant-b within the 60s throttle window -> must bypass throttle and re-sync immediately
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-b',
+          business_name: 'Bravo Bistro',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+
+      await syncReceiptSettings();
+      assertEqualOrThrow(
+        fetchCalls,
+        2,
+        'switching currentTenant within 60s throttle window forces immediate fetch',
+      );
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billAddress,
+        '200 Bravo Blvd, Boston, MA',
+        'tenant-b address hydrated immediately on tenant switch',
+      );
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billFooterMessage,
+        'Welcome to Bravo Bistro',
+        'tenant-b footer hydrated immediately on tenant switch',
+      );
+
+      // Verify stale in-flight response from tenant-a cannot overwrite tenant-b after tenant switch
+      resetReceiptSettingsSyncForTests();
+      usePosSettingsStore.setState({
+        billAddress: 'Initial Address',
+        billFooterMessage: 'Initial Footer',
+      });
+
+      let resolveTenantA!: (value: any) => void;
+      const tenantAPromise = new Promise((resolve) => {
+        resolveTenantA = resolve;
+      });
+
+      frontendApi.get = (url: string) => {
+        const activeTenantId = String(useAuthStore.getState().currentTenant?.id ?? '');
+        if (activeTenantId === 'tenant-a' && url === '/settings/business') {
+          return tenantAPromise;
+        }
+        return Promise.resolve({ data: tenantResponses[activeTenantId] });
+      };
+
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-a',
+          business_name: 'Alpha Cafe',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+
+      // Start in-flight sync for tenant-a (does not resolve yet)
+      const inFlightA = syncReceiptSettings();
+
+      // Switch to tenant-b while tenant-a request is still in flight
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-b',
+          business_name: 'Bravo Bistro',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+
+      // Trigger tenant-b sync while tenant-a fetch is still in flight
+      await syncReceiptSettings();
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billAddress,
+        '200 Bravo Blvd, Boston, MA',
+        'tenant-b syncs immediately even while tenant-a fetch is still in flight',
+      );
+
+      // Resolve stale tenant-a response after tenant-b has already hydrated
+      resolveTenantA({ data: tenantResponses['tenant-a'] });
+      await inFlightA;
+
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billAddress,
+        '200 Bravo Blvd, Boston, MA',
+        'stale in-flight response from tenant-a does not overwrite tenant-b settings in posSettings',
+      );
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billFooterMessage,
+        'Welcome to Bravo Bistro',
+        'stale in-flight response from tenant-a does not overwrite tenant-b footer in posSettings',
+      );
+
+      // Also verify stale in-flight response resolving before tenant-b sync starts leaves tenant-b unthrottled
+      resetReceiptSettingsSyncForTests();
+      usePosSettingsStore.setState({
+        billAddress: 'Initial Address',
+        billFooterMessage: 'Initial Footer',
+      });
+      let resolveStaleA!: (value: any) => void;
+      const staleAPromise = new Promise((resolve) => {
+        resolveStaleA = resolve;
+      });
+      frontendApi.get = () => {
+        const activeTenantId = String(useAuthStore.getState().currentTenant?.id ?? '');
+        if (activeTenantId === 'tenant-a') {
+          return staleAPromise;
+        }
+        return Promise.resolve({ data: tenantResponses[activeTenantId] });
+      };
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-a',
+          business_name: 'Alpha Cafe',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+      const pendingStaleA = syncReceiptSettings();
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-b',
+          business_name: 'Bravo Bistro',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+      resolveStaleA({ data: tenantResponses['tenant-a'] });
+      await pendingStaleA;
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billAddress,
+        'Initial Address',
+        'stale in-flight response resolving before new sync does not overwrite posSettings',
+      );
+      await syncReceiptSettings();
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billAddress,
+        '200 Bravo Blvd, Boston, MA',
+        'subsequent tenant-b sync remains unthrottled after stale tenant-a response',
+      );
+
+      // Verify ensureReceiptSettingsLoaded also re-hydrates when tenant switches
+      frontendApi.get = async () => {
+        const activeTenantId = String(useAuthStore.getState().currentTenant?.id ?? '');
+        return { data: tenantResponses[activeTenantId] };
+      };
+      useAuthStore.setState({
+        currentTenant: {
+          id: 'tenant-a',
+          business_name: 'Alpha Cafe',
+          role: 'owner',
+          permission_ids: ['settings.view'],
+        } as any,
+      });
+      await ensureReceiptSettingsLoaded();
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billAddress,
+        '100 Alpha Ave, Austin, TX',
+        'ensureReceiptSettingsLoaded re-hydrates when currentTenant changes',
+      );
+    } finally {
+      frontendApi.get = originalGetForTenantSwitch;
+    }
   } finally {
     delete frontendApi.defaults.headers.common['Authorization'];
     frontendApi.defaults.baseURL = '/api';

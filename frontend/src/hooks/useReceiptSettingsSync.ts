@@ -16,31 +16,40 @@ export function canSyncReceiptSettings(tenant: Tenant | null | undefined): boole
 }
 
 let syncPromise: Promise<void> | null = null;
+let inFlightTenantId: string | number | null = null;
 let isHydrated = false;
+let hydratedTenantId: string | number | null = null;
 let lastSyncTime = 0;
 const FOCUS_SYNC_THROTTLE_MS = 60_000;
 
 export function syncReceiptSettings(force = false): Promise<void> {
-  if (syncPromise) {
-    return syncPromise;
-  }
-
-  const now = Date.now();
-  if (!force && isHydrated && now - lastSyncTime < FOCUS_SYNC_THROTTLE_MS) {
-    return Promise.resolve();
-  }
-
   const currentTenant = useAuthStore.getState().currentTenant;
   if (!canSyncReceiptSettings(currentTenant)) {
     return Promise.resolve();
   }
 
-  syncPromise = api
+  const tenantIdAtStart = currentTenant?.id ?? null;
+  if (syncPromise && inFlightTenantId === tenantIdAtStart) {
+    return syncPromise;
+  }
+
+  const tenantChanged = tenantIdAtStart !== hydratedTenantId;
+  const now = Date.now();
+  if (!force && !tenantChanged && isHydrated && now - lastSyncTime < FOCUS_SYNC_THROTTLE_MS) {
+    return Promise.resolve();
+  }
+
+  inFlightTenantId = tenantIdAtStart;
+  const requestPromise = api
     .get<ReceiptSettingsHydrationData>('/settings/business')
     .then((res) => {
+      if (useAuthStore.getState().currentTenant?.id !== tenantIdAtStart) {
+        return;
+      }
       if (res?.data) {
         usePosSettingsStore.getState().hydrateReceiptSettings(res.data);
         isHydrated = true;
+        hydratedTenantId = tenantIdAtStart;
         lastSyncTime = Date.now();
       }
     })
@@ -48,23 +57,31 @@ export function syncReceiptSettings(force = false): Promise<void> {
       // Graceful fallback: offline/network failure leaves existing persisted settings intact
     })
     .finally(() => {
-      syncPromise = null;
+      if (syncPromise === requestPromise) {
+        syncPromise = null;
+        inFlightTenantId = null;
+      }
     });
 
-  return syncPromise;
+  syncPromise = requestPromise;
+  return requestPromise;
 }
 
 export async function ensureReceiptSettingsLoaded(): Promise<void> {
-  if (syncPromise) {
+  const currentTenantId = useAuthStore.getState().currentTenant?.id ?? null;
+  if (syncPromise && inFlightTenantId === currentTenantId) {
     await syncPromise;
   }
-  if (isHydrated) return;
+  const latestTenantId = useAuthStore.getState().currentTenant?.id ?? null;
+  if (isHydrated && hydratedTenantId === latestTenantId) return;
   await syncReceiptSettings(true);
 }
 
 export function resetReceiptSettingsSyncForTests(): void {
   syncPromise = null;
+  inFlightTenantId = null;
   isHydrated = false;
+  hydratedTenantId = null;
   lastSyncTime = 0;
 }
 

@@ -164,6 +164,7 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   receipt_logo_raster: '',
   printer_trim_decimals: 'false',
   split_checks_enabled: 'false',
+  card_transaction_id_required: 'false',
   // Print language policies (#441) — inherit store language, no second
   // language. Defaults preserve pre-policy behavior for existing tenants.
   [BILL_LANGUAGE_POLICY_KEY]: defaultLanguagePolicySettingJson(),
@@ -1639,6 +1640,30 @@ router.put(
   },
 );
 
+router.get(
+  '/card_transaction_id_required',
+  settingsReadRateLimit,
+  requireAnyPermission('settings.view', 'payments.take', 'orders.create', 'bills.read'),
+  (_req: Request, res: Response) => {
+    try {
+      const setting = getDatabase()
+        .prepare('SELECT * FROM settings WHERE key = ?')
+        .get('card_transaction_id_required');
+      if (setting) return res.json({ setting });
+      return res.json({
+        setting: {
+          key: 'card_transaction_id_required',
+          value: OPTIONAL_SETTING_DEFAULTS.card_transaction_id_required,
+          updated_at: null,
+        },
+      });
+    } catch (error) {
+      console.error('[API] Internal error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
 // ── Generic key-value routes (wildcard — must be last) ─────────────────────
 
 // Only non-sensitive keys may be updated via the wildcard route.
@@ -1683,6 +1708,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'kot_printing_enabled',
   'server_app_bill_printing_enabled',
   'split_checks_enabled',
+  'card_transaction_id_required',
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
   Z_REPORT_LANGUAGE_POLICY_KEY,
@@ -1970,9 +1996,12 @@ router.put(
         });
       }
       let valueToPersist: unknown = value;
-      if (req.params.key === 'require_open_shift') {
+      if (
+        req.params.key === 'require_open_shift' ||
+        req.params.key === 'card_transaction_id_required'
+      ) {
         if (value !== true && value !== false && value !== 'true' && value !== 'false') {
-          return res.status(400).json({ error: 'require_open_shift must be a boolean' });
+          return res.status(400).json({ error: `${req.params.key} must be a boolean` });
         }
         valueToPersist = value === true || value === 'true' ? 'true' : 'false';
       }

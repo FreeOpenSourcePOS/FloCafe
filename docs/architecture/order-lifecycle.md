@@ -160,7 +160,10 @@ same fields:
 - `transaction_id`: an external reference scoped to its payment method. Reusing it on another bill is
   a `409`; repeating it for the same method twice in a new multi-line batch is also a `409`, while
   reusing it across methods in that batch is a `400`. Replaying an identical committed payment
-  returns the bill without writing again.
+  returns the bill without writing again. When `card_transaction_id_required` is `true` (default
+  `false`, toggled under Settings → Payment methods), a built-in `card` line without one is a `400`
+  with display code `card_transaction_id_required`; custom methods are unaffected. The POS payment
+  and prepaid checkout dialogs then ask for the card terminal's number on the card line.
 - `notes` (up to 1024 UTF-16 code units); serialized payment-line JSON is limited to 8192 UTF-16
   code units.
 - `customer_id`: if neither the bill nor order has a customer, a non-wallet payment may attach one;

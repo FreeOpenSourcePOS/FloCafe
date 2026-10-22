@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CreditCard, Plus, Save, Trash2, Merge } from 'lucide-react';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -35,6 +35,32 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
   const [mergeTargets, setMergeTargets] = useState<Record<number, string>>({});
   const [merges, setMerges] = useState<MergeRecord[]>([]);
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
+  const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(false);
+  const [cardTransactionSettingState, setCardTransactionSettingState] = useState<
+    'loading' | 'ready' | 'error'
+  >('loading');
+  const [isSavingCardTransactionIdRequired, setIsSavingCardTransactionIdRequired] = useState(false);
+  const cardTransactionSaveEpochRef = useRef(0);
+  const cardTransactionSaveInFlightRef = useRef(false);
+
+  const loadCardTransactionSetting = async () => {
+    if (cardTransactionSaveInFlightRef.current) return;
+    const epoch = cardTransactionSaveEpochRef.current;
+    setCardTransactionSettingState('loading');
+    try {
+      const cardTransactionRes = await api.get('/settings/card_transaction_id_required');
+      if (cardTransactionSaveInFlightRef.current || epoch !== cardTransactionSaveEpochRef.current) {
+        return;
+      }
+      setCardTransactionIdRequired(cardTransactionRes.data?.setting?.value === 'true');
+      setCardTransactionSettingState('ready');
+    } catch {
+      if (cardTransactionSaveInFlightRef.current || epoch !== cardTransactionSaveEpochRef.current) {
+        return;
+      }
+      setCardTransactionSettingState('error');
+    }
+  };
 
   const load = async () => {
     const [methodsRes, historyRes, splitRes] = await Promise.all([
@@ -43,6 +69,7 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
       api
         .get('/settings/split_checks_enabled')
         .catch(() => ({ data: { setting: { value: 'false' } } })),
+      loadCardTransactionSetting(),
     ]);
     const rows = methodsRes.data.payment_methods || [];
     setMethods(rows);
@@ -229,6 +256,60 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
             }
           }}
         />
+      </div>
+
+      <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
+        <div>
+          <h2 id="card-transaction-id-required-label" className="font-semibold text-foreground">
+            {t('cardTransactionIdRequired')}
+          </h2>
+          <p id="card-transaction-id-required-hint" className="text-sm text-muted-foreground mt-1">
+            {t('cardTransactionIdRequiredHint')}
+          </p>
+        </div>
+        {cardTransactionSettingState === 'error' ? (
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-destructive">{t('loadFailed')}</span>
+            <Button variant="outline" size="sm" onClick={() => void loadCardTransactionSetting()}>
+              {t('retry')}
+            </Button>
+          </div>
+        ) : (
+          <input
+            id="card-transaction-id-required"
+            type="checkbox"
+            aria-labelledby="card-transaction-id-required-label"
+            aria-describedby="card-transaction-id-required-hint"
+            className="size-5 shrink-0"
+            disabled={
+              !isAdmin ||
+              cardTransactionSettingState !== 'ready' ||
+              isSavingCardTransactionIdRequired
+            }
+            checked={cardTransactionIdRequired}
+            onChange={async (e) => {
+              if (isSavingCardTransactionIdRequired || cardTransactionSaveInFlightRef.current)
+                return;
+              const previousValue = cardTransactionIdRequired;
+              const value = e.target.checked;
+              cardTransactionSaveEpochRef.current += 1;
+              cardTransactionSaveInFlightRef.current = true;
+              setCardTransactionIdRequired(value);
+              setIsSavingCardTransactionIdRequired(true);
+              try {
+                await api.put('/settings/card_transaction_id_required', { value: String(value) });
+                setCardTransactionIdRequired(value);
+                setCardTransactionSettingState('ready');
+              } catch {
+                setCardTransactionIdRequired(previousValue);
+                toast.error(t('saveFailed'));
+              } finally {
+                cardTransactionSaveInFlightRef.current = false;
+                setIsSavingCardTransactionIdRequired(false);
+              }
+            }}
+          />
+        )}
       </div>
 
       {merges.length > 0 && (

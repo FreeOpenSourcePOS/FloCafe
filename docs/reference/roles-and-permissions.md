@@ -23,11 +23,13 @@ The runtime source of truth is
 executable catalog — every permission id, its area, its shipped default roles, whether it is
 owner-configurable, and its risk tier. `authorization.manage` and `staff.privileged.manage` are
 marked `configurable: false`; they are protected and always resolve to the active owner (see
-[Resolution model](#resolution-model)).
+[Resolution model](#resolution-model)). `orders.item.price_override` and `offline-mode.manage` are
+also `configurable: false`: no override can grant them, so they stay with the owner.
 
 For each permission, the effective value for a request resolves in this order:
 
-1. The protected owner rule, for the two protected permissions above.
+1. The protected owner rule, for the two protected permissions above. The other non-configurable
+   permissions accept no override and keep their owner default.
 2. An explicit user override (`allow` or `deny`), if one exists for that user and permission.
 3. An explicit role override (`allow` or `deny`), if one exists for that role and permission.
 4. The shipped default in `PERMISSION_DEFINITIONS`.
@@ -134,13 +136,15 @@ An owner can flip any configurable cell for a role, or for one user, from the in
 | Integrations | Manage Google Drive backups                                |   ✓   |    —    |    —    |   —    |  —   |
 | Integrations | Manage cloud account and data controls                     |   ✓   |    —    |    —    |   —    |  —   |
 | System       | Use database tools and backups                             |   ✓   |    —    |    —    |   —    |  —   |
+| System       | Turn Offline mode on or off                                |   ✓   |    —    |    —    |   —    |  —   |
 | System       | Manage mobile access (FloAdmin sync and device pairing)    |   ✓   |    —    |    —    |   —    |  —   |
 | Orders       | Use the standalone Server App                              |   ✓   |    ✓    |    —    |   ✓    |  —   |
 | Support      | Contact support and view diagnostics                       |   ✓   |    ✓    |    ✓    |   ✓    |  ✓   |
 
 `authorization.manage` and `staff.privileged.manage` (the last two Staff rows a non-owner will
-never see change) are protected and not shown as editable in the table above; every other row is
-`configurable: true` in `shared/permissions.ts` and can be overridden per role or per user.
+never see change), `orders.item.price_override` and `offline-mode.manage` are not editable in the
+table above; every other row is `configurable: true` in `shared/permissions.ts` and can be
+overridden per role or per user.
 
 ## Scope notes
 

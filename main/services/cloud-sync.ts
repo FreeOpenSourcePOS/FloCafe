@@ -32,6 +32,7 @@ import {
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { getTenantCurrency } from './refund';
 import { getCurrencyMinorUnitFactor } from '../countries';
+import { assertOnlineAllowed, isOfflineMode } from './offline-mode';
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
@@ -990,6 +991,7 @@ export class CloudSyncService {
 
   // Zero-touch registration state.
   private autoRegisterTimer: ReturnType<typeof setTimeout> | null = null;
+  private offlineAbort = new AbortController();
   private autoRegisterAttempts = 0;
   private autoRegisterInFlight = false;
   private runtimeStarted = false;
@@ -1011,6 +1013,7 @@ export class CloudSyncService {
   reload() {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     this.stop();
+    if (isOfflineMode()) return;
     const persisted = this.loadSettings(false);
     this.settings = persisted;
     if (!persisted || isCloudDeletionBlocking(persisted.cloud_deletion_status)) return;
@@ -3102,6 +3105,7 @@ export class CloudSyncService {
 
   /** Register on startup to sync updated store metadata with FloAdmin. */
   private maybeAutoRegister() {
+    if (isOfflineMode()) return;
     const db = getDatabase();
     const settings = this.readSettings(db);
     if (
@@ -3113,6 +3117,13 @@ export class CloudSyncService {
     // Wait until first-run setup writes a business name before registering.
     if (!settings.business_name?.trim()) return;
     this.attemptAutoRegister();
+  }
+
+  /** Aborts in-flight FloAdmin requests when Offline mode is switched on. */
+  suspendForOfflineMode() {
+    this.offlineAbort.abort();
+    this.offlineAbort = new AbortController();
+    this.reload();
   }
 
   /** Refresh FloAdmin after setup or store-profile settings change. */
@@ -3848,6 +3859,7 @@ export class CloudSyncService {
   ): Promise<Response> {
     if (this.cloudDeletionInProgress && !allowDuringDeletion)
       throw new Error('Cloud deletion in progress');
+    assertOnlineAllowed('Cloud sync');
     this.cloudNetworkOperations += 1;
     let released = false;
     const release = () => {
@@ -3860,7 +3872,10 @@ export class CloudSyncService {
       }
     };
     try {
-      const response = await fetch(url, init);
+      const signal = init.signal
+        ? AbortSignal.any([init.signal, this.offlineAbort.signal])
+        : this.offlineAbort.signal;
+      const response = await fetch(url, { ...init, signal });
       if (this.cloudDeletionInProgress && !allowDuringDeletion) {
         release();
         throw new Error('Cloud deletion in progress');

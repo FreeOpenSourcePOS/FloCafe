@@ -1,3 +1,4 @@
+import { isOfflineMode } from '../services/offline-mode';
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { isBlockedSsrfTarget } from '../middleware/security';
@@ -1296,6 +1297,9 @@ router.post(
 
       if (!url || typeof url !== 'string') {
         return res.status(400).json({ error: 'URL is required' });
+      }
+      if (isOfflineMode()) {
+        return res.status(503).json({ error: 'offline_mode' });
       }
 
       // HTTPS only — prevents MITM and mixed-content issues

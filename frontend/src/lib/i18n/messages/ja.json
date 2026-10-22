@@ -2495,7 +2495,12 @@
     "chargeKind": "料金種別",
     "chargePresetCustom": "カスタム",
     "editCharge": "料金を編集",
-    "chargeReopenRequired": "この料金は利用できなくなりました。再度開いてお試しください。"
+    "chargeReopenRequired": "この料金は利用できなくなりました。再度開いてお試しください。",
+    "offlineModeTitle": "オフラインモード",
+    "offlineModeDescription": "クラウド同期、Google Drive バックアップ、WhatsApp、アップデート確認、利用状況の分析、Web からの画像取り込みなど、任意のインターネット接続をすべて停止します。注文、会計、印刷、ローカルネットワーク上のデバイスは引き続き動作します。",
+    "offlineModeFailed": "オフラインモードを変更できませんでした",
+    "offlineModeReadFailed": "現在のオフラインモード設定を読み込めませんでした。",
+    "offlineModeRetry": "再試行"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",
@@ -2727,7 +2732,8 @@
       "databaseTools": "データベースツールとバックアップを使用",
       "serverApp": "スタンドアロンのサーバーアプリを使用",
       "support": "サポートに連絡し診断情報を表示",
-      "orderItemPriceOverride": "注文商品の価格を変更"
+      "orderItemPriceOverride": "注文商品の価格を変更",
+      "offlineMode": "オフラインモードの切り替え"
     },
     "editorSubtitle": "役割の既定値を設定するか、特定のスタッフの例外を作成します。変更は次の操作から適用されます。",
     "roleDefaultsTab": "役割の既定値",

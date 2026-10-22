@@ -153,6 +153,7 @@ export const PERMISSION_LABEL_KEYS = {
   'cloud.manage': 'cloudDrive',
   'cloud.account.manage': 'cloudAccountData',
   'google-drive.manage': 'googleDrive',
+  'offline-mode.manage': 'offlineMode',
 
   'database.manage': 'databaseTools',
   'mobile-access.manage': 'mobileAccessManage',

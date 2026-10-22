@@ -2495,7 +2495,12 @@
     "chargeKind": "Tipo di spesa",
     "chargePresetCustom": "Personalizzato",
     "editCharge": "Modifica spesa",
-    "chargeReopenRequired": "Questa spesa non è più disponibile. Riapri e riprova."
+    "chargeReopenRequired": "Questa spesa non è più disponibile. Riapri e riprova.",
+    "offlineModeTitle": "Modalità offline",
+    "offlineModeDescription": "Disattiva ogni connessione a internet facoltativa: sincronizzazione cloud, backup su Google Drive, WhatsApp, controllo aggiornamenti, analisi d'uso e importazione di immagini dal web. Ordini, fatturazione, stampa e dispositivi della rete locale continuano a funzionare.",
+    "offlineModeFailed": "Impossibile cambiare la modalità offline",
+    "offlineModeReadFailed": "Impossibile leggere l'impostazione attuale della modalità offline.",
+    "offlineModeRetry": "Riprova"
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",
@@ -2727,7 +2732,8 @@
       "databaseTools": "Usa strumenti database e backup",
       "serverApp": "Usa l'Server App indipendente",
       "support": "Contatta l'assistenza e visualizza le diagnostiche",
-      "orderItemPriceOverride": "Modificare i prezzi degli articoli dell’ordine"
+      "orderItemPriceOverride": "Modificare i prezzi degli articoli dell’ordine",
+      "offlineMode": "Attiva o disattiva la modalità offline"
     },
     "editorSubtitle": "Configura le impostazioni predefinite del ruolo o crea un'eccezione per un membro dello staff. Le modifiche si applicano alla prossima azione.",
     "roleDefaultsTab": "Impostazioni ruolo",

@@ -32,6 +32,7 @@ import {
 import { computeTaxPackUpdates, fetchRemoteTaxPackCatalog } from './tax-packs/catalog';
 import { startServer, stopServer, getLocalIP, isServerRunning, getServerPort } from './server';
 import { cloudSync } from './services/cloud-sync';
+import { isOfflineMode, onOfflineModeEnabled } from './services/offline-mode';
 import { telemetry } from './services/telemetry';
 import { capturePostHogException, startPostHog, stopPostHog } from './services/posthog';
 import { googleDrive } from './services/google-drive';
@@ -47,6 +48,7 @@ import {
 } from './services/whatsapp';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
+import { CancellationToken } from 'builder-util-runtime';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
 import {
   AUTO_UPDATE_CHECK_SETTING_KEY,
@@ -293,6 +295,7 @@ function setupAutoUpdater(): void {
       logInfo: (message, detail) => log.info(message, detail),
     }),
   );
+  onOfflineModeEnabled(cancelUpdateDownloadForOfflineMode);
 }
 
 function checkForUpdates(): void {
@@ -303,6 +306,11 @@ function checkForUpdates(): void {
 
   if (isUpdateCheckInFlight(storedUpdateStatus, updaterPhase)) {
     log.info('[Update] Ignoring check while another update operation is in progress');
+    return;
+  }
+
+  if (isOfflineMode()) {
+    setUpdateStatus({ status: 'offline', reason: 'unknown', error: 'Offline mode is on' });
     return;
   }
 
@@ -377,14 +385,26 @@ function checkForUpdates(): void {
   });
 }
 
+let updateDownloadToken: CancellationToken | null = null;
+
+function cancelUpdateDownloadForOfflineMode(): void {
+  if (updaterPhase !== 'download' || storedUpdateStatus.status !== 'downloading') return;
+  updateDownloadToken?.cancel();
+  updateDownloadToken = null;
+  updaterPhase = 'check';
+  setUpdateStatus({ status: 'offline', reason: 'unknown', error: 'Offline mode is on' });
+}
+
 function downloadUpdate(): { success: boolean; error?: string } {
+  if (isOfflineMode()) return { success: false, error: 'Offline mode is on' };
   if (!canStartUpdateDownload(storedUpdateStatus, updaterPhase, stagedUpdateReady)) {
     return { success: false, error: 'No update is waiting to be downloaded' };
   }
   log.info(`[Update] User approved download of ${storedUpdateStatus.version ?? 'update'}`);
   updaterPhase = 'download';
   setUpdateStatus({ status: 'downloading', percent: 0, version: storedUpdateStatus.version });
-  autoUpdater.downloadUpdate().catch((err) => {
+  updateDownloadToken = new CancellationToken();
+  autoUpdater.downloadUpdate(updateDownloadToken).catch((err) => {
     // The updater 'error' event records the failure state.
     console.error('[Update] Download failed:', err);
   });
@@ -393,6 +413,7 @@ function downloadUpdate(): { success: boolean; error?: string } {
 
 // Best-effort startup check for tax pack plugin updates.
 async function checkTaxPackUpdatesOnStartup(): Promise<void> {
+  if (isOfflineMode()) return;
   try {
     const remote = await fetchRemoteTaxPackCatalog();
     const installedRows = getDatabase()

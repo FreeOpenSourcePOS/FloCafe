@@ -289,7 +289,10 @@ export function readPostHogBootstrap(): PostHogBootstrap | PostHogBootstrapReady
  */
 export function syncPostHogIdentity(): void {
   try {
-    if (!readPostHogConfig()) return;
+    if (!readPostHogConfig()) {
+      if (client) void stopPostHog();
+      return;
+    }
     if (!usageEnabled() && !isDiagnosticsTransmissionEnabled()) {
       void stopPostHog();
       return;

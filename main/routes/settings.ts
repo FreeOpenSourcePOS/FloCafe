@@ -35,6 +35,12 @@ import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/t
 import { sendEvent } from '../services/telemetry';
 import { readProductAnalyticsChoice, syncPostHogIdentity } from '../services/posthog';
 import {
+  OFFLINE_MODE_SETTING,
+  isOfflineMode,
+  notifyOfflineModeEnabled,
+} from '../services/offline-mode';
+import * as whatsapp from '../services/whatsapp';
+import {
   PRODUCT_ANALYTICS_LEVEL_SETTING,
   parseProductAnalyticsLevel,
 } from '../services/posthog-identity';
@@ -1569,6 +1575,45 @@ router.get(
     } catch (error) {
       console.error('[API] Internal error:', error);
       return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+router.get('/offline-mode', requirePermission('settings.view'), (_req: Request, res: Response) => {
+  res.json({ offline_mode: isOfflineMode() });
+});
+
+router.put(
+  '/offline-mode',
+  settingsWriteRateLimit,
+  requirePermission('offline-mode.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const value = req.body?.offline_mode;
+      if (typeof value !== 'boolean') {
+        return res.status(400).json({ error: 'offline_mode must be a boolean' });
+      }
+      getDatabase()
+        .prepare(
+          `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        )
+        .run(OFFLINE_MODE_SETTING, value ? 'true' : 'false', now());
+      syncPostHogIdentity();
+      if (value) {
+        cloudSync.suspendForOfflineMode();
+        whatsapp.suspendForOfflineMode();
+        googleDrive.suspendForOfflineMode();
+        notifyOfflineModeEnabled();
+      } else {
+        cloudSync.reload();
+        cloudSync.refreshRegistrationProfile();
+        whatsapp.initFromDb();
+      }
+      res.json({ offline_mode: isOfflineMode() });
+    } catch (error: unknown) {
+      console.error('[API] Offline mode update failed:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   },
 );

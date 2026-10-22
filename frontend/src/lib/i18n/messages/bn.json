@@ -416,7 +416,10 @@
     "priceExceptionDifference": "পার্থক্য",
     "priceExceptionBy": "পরিবর্তনকারী",
     "priceExceptionAt": "কখন",
-    "priceExceptionReason": "কারণ"
+    "priceExceptionReason": "কারণ",
+    "priceExceptionsAllShifts": "সম্পূর্ণ সময়কাল",
+    "priceExceptionsShift": "শিফট",
+    "priceExceptionsShiftOpen": "চালু"
   },
   "expenses": {
     "addTitle": "খরচ যোগ করুন",

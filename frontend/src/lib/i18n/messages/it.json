@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Differenza",
     "priceExceptionBy": "Modificato da",
     "priceExceptionAt": "Quando",
-    "priceExceptionReason": "Motivo"
+    "priceExceptionReason": "Motivo",
+    "priceExceptionsAllShifts": "Intero periodo",
+    "priceExceptionsShift": "Turno",
+    "priceExceptionsShiftOpen": "aperto"
   },
   "expenses": {
     "addTitle": "Aggiungi spesa",

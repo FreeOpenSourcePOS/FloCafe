@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Selisih",
     "priceExceptionBy": "Diubah oleh",
     "priceExceptionAt": "Kapan",
-    "priceExceptionReason": "Alasan"
+    "priceExceptionReason": "Alasan",
+    "priceExceptionsAllShifts": "Seluruh periode",
+    "priceExceptionsShift": "Giliran kerja",
+    "priceExceptionsShiftOpen": "terbuka"
   },
   "expenses": {
     "addTitle": "Tambah pengeluaran",

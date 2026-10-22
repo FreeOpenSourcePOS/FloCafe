@@ -21,7 +21,15 @@ interface PriceExceptionRow {
   changed_at: string;
 }
 
+interface ShiftOption {
+  id: number;
+  opened_by_name: string;
+  opened_at: string;
+  closed_at: string | null;
+}
+
 interface PriceExceptionsReport {
+  shifts: ShiftOption[];
   count: number;
   complimentaryCount: number;
   totalDifference: number;
@@ -40,12 +48,15 @@ export function PriceExceptionsCard({
   const fmt = useFormatCurrency();
   const { formatDateTime } = useFormatDate();
   const [report, setReport] = useState<PriceExceptionsReport | null>(null);
+  const rangeKey = `${startDate}:${endDate}`;
+  const [selection, setSelection] = useState({ rangeKey, shiftId: '' });
+  const shiftId = selection.rangeKey === rangeKey ? selection.shiftId : '';
 
   useEffect(() => {
     const controller = new AbortController();
     api
       .get('/reports/price-exceptions', {
-        params: { start_date: startDate, end_date: endDate },
+        params: { start_date: startDate, end_date: endDate, shift_id: shiftId || undefined },
         signal: controller.signal,
       })
       .then((res) => setReport(res.data.priceExceptions ?? null))
@@ -53,7 +64,7 @@ export function PriceExceptionsCard({
         if (!controller.signal.aborted) setReport(null);
       });
     return () => controller.abort();
-  }, [startDate, endDate]);
+  }, [startDate, endDate, shiftId]);
 
   if (!report) return null;
 
@@ -66,6 +77,22 @@ export function PriceExceptionsCard({
           </span>
           <h2 className="font-semibold text-foreground">{t('priceExceptions')}</h2>
         </div>
+        {(report.shifts.length > 0 || shiftId) && (
+          <select
+            aria-label={t('priceExceptionsShift')}
+            value={shiftId}
+            onChange={(event) => setSelection({ rangeKey, shiftId: event.target.value })}
+            className="rounded-lg border border-border bg-background px-2 py-1 text-xs"
+          >
+            <option value="">{t('priceExceptionsAllShifts')}</option>
+            {report.shifts.map((shift) => (
+              <option key={shift.id} value={shift.id}>
+                {shift.opened_by_name} · {formatDateTime(shift.opened_at)}
+                {shift.closed_at ? '' : ` (${t('priceExceptionsShiftOpen')})`}
+              </option>
+            ))}
+          </select>
+        )}
         {report.count > 0 && (
           <p className="text-xs text-muted-foreground">
             {t('priceExceptionsCount', { count: report.count })} ·{' '}

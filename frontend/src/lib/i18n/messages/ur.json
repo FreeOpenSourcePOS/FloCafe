@@ -416,7 +416,10 @@
     "priceExceptionDifference": "فرق",
     "priceExceptionBy": "تبدیل کرنے والا",
     "priceExceptionAt": "کب",
-    "priceExceptionReason": "وجہ"
+    "priceExceptionReason": "وجہ",
+    "priceExceptionsAllShifts": "پورا عرصہ",
+    "priceExceptionsShift": "شفٹ",
+    "priceExceptionsShiftOpen": "کھلی"
   },
   "expenses": {
     "addTitle": "خرچ شامل کریں",

@@ -416,7 +416,10 @@
     "priceExceptionDifference": "الفرق",
     "priceExceptionBy": "غيّره",
     "priceExceptionAt": "الوقت",
-    "priceExceptionReason": "السبب"
+    "priceExceptionReason": "السبب",
+    "priceExceptionsAllShifts": "الفترة كاملة",
+    "priceExceptionsShift": "الوردية",
+    "priceExceptionsShiftOpen": "مفتوحة"
   },
   "expenses": {
     "addTitle": "إضافة مصروف",

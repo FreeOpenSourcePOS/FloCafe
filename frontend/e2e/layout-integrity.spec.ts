@@ -2913,6 +2913,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       const budgetPage = await displayContext.newPage();
       await budgetPage.setViewportSize({ width: 1920, height: 1080 });
       await budgetPage.clock.install();
+      await budgetPage.clock.pauseAt(new Date(Date.now() + 1000));
       let slowMode = true;
       let rateWindowRequests = 0;
       let hit429 = false;
@@ -3019,8 +3020,6 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       slowMode = false;
       rateWindowRequests = 0;
       hit429 = false;
-      const pauseBaseMs = await budgetPage.evaluate(() => Date.now());
-      await budgetPage.clock.pauseAt(pauseBaseMs);
       // Trigger one poll so the client observes a 5-page queue at refresh_seconds: 2
       await budgetPage.clock.runFor(2000);
       await expect.poll(() => rateWindowRequests).toBe(5);

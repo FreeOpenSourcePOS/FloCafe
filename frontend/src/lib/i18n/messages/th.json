@@ -416,7 +416,10 @@
     "priceExceptionDifference": "ส่วนต่าง",
     "priceExceptionBy": "เปลี่ยนโดย",
     "priceExceptionAt": "เมื่อ",
-    "priceExceptionReason": "เหตุผล"
+    "priceExceptionReason": "เหตุผล",
+    "priceExceptionsAllShifts": "ทั้งช่วงเวลา",
+    "priceExceptionsShift": "กะ",
+    "priceExceptionsShiftOpen": "เปิดอยู่"
   },
   "expenses": {
     "addTitle": "เพิ่มค่าใช้จ่าย",

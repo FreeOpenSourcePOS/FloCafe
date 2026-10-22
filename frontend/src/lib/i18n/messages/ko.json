@@ -416,7 +416,10 @@
     "priceExceptionDifference": "차액",
     "priceExceptionBy": "변경자",
     "priceExceptionAt": "시각",
-    "priceExceptionReason": "사유"
+    "priceExceptionReason": "사유",
+    "priceExceptionsAllShifts": "전체 기간",
+    "priceExceptionsShift": "근무조",
+    "priceExceptionsShiftOpen": "진행 중"
   },
   "expenses": {
     "addTitle": "경비 추가",

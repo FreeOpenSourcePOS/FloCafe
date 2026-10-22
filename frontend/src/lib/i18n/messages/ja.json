@@ -416,7 +416,10 @@
     "priceExceptionDifference": "差額",
     "priceExceptionBy": "変更者",
     "priceExceptionAt": "日時",
-    "priceExceptionReason": "理由"
+    "priceExceptionReason": "理由",
+    "priceExceptionsAllShifts": "期間全体",
+    "priceExceptionsShift": "シフト",
+    "priceExceptionsShiftOpen": "営業中"
   },
   "expenses": {
     "addTitle": "経費を追加",

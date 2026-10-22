@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Fark",
     "priceExceptionBy": "Değiştiren",
     "priceExceptionAt": "Ne zaman",
-    "priceExceptionReason": "Neden"
+    "priceExceptionReason": "Neden",
+    "priceExceptionsAllShifts": "Tüm dönem",
+    "priceExceptionsShift": "Vardiya",
+    "priceExceptionsShiftOpen": "açık"
   },
   "expenses": {
     "addTitle": "Gider ekle",

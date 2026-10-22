@@ -17,6 +17,7 @@ import {
   postHogNetworkSuppressed,
   readPostHogConfig,
   type PostHogConfig,
+  type PostHogEnvironment,
 } from './posthog-config';
 import { readCountryProvenance } from './country-provenance';
 import { getInstallSource, getRunMode } from './telemetry';
@@ -108,6 +109,8 @@ interface CachedConsentState {
   identity: PostHogIdentity;
   config: PostHogConfig | null;
   diagnosticsEnabled: boolean;
+  environment: PostHogEnvironment | null;
+  envKey: string;
   revision: number;
   expiresAt: number;
 }
@@ -118,21 +121,34 @@ export function invalidatePostHogConsentCache(): void {
   cachedConsent = null;
 }
 
+function getEnvCacheKey(): string {
+  return `${process.env.CI ?? ''}|${process.env.FLO_MATRIX_OFFLINE ?? ''}|${process.env.E2E_TASK_LOCAL_PORTS ?? ''}|${process.env.NODE_ENV ?? ''}|${process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK ?? ''}|${(process as NodeJS.Process & { type?: string }).type ?? ''}|${process.env.FLO_POSTHOG_DEV ?? ''}|${process.env.FLO_POSTHOG_DEV_TOKEN ?? ''}|${process.env.FLO_POSTHOG_DEV_HOST ?? ''}`;
+}
+
 function getConsentState(): CachedConsentState {
   const nowMs = Date.now();
   const revision = getSettingsRevision();
-  if (cachedConsent && cachedConsent.expiresAt > nowMs && cachedConsent.revision === revision) {
+  const envKey = getEnvCacheKey();
+  if (
+    cachedConsent &&
+    cachedConsent.expiresAt > nowMs &&
+    cachedConsent.revision === revision &&
+    cachedConsent.envKey === envKey
+  ) {
     return cachedConsent;
   }
   const level = readProductAnalyticsLevel();
   const resolvedIdentity = resolvePostHogIdentity(level);
   const config = readPostHogConfig();
   const diagnosticsEnabled = isDiagnosticsTransmissionEnabled();
+  const environment = postHogEnvironment();
   cachedConsent = {
     level,
     identity: resolvedIdentity,
     config,
     diagnosticsEnabled,
+    environment,
+    envKey,
     revision: getSettingsRevision(),
     expiresAt: nowMs + CONSENT_CACHE_TTL_MS,
   };
@@ -154,7 +170,7 @@ export function readSuperProperties(current: PostHogIdentity = identity()): Supe
     platform: process.platform,
     run_mode: getRunMode(),
     install_source: getInstallSource(),
-    environment: postHogEnvironment() ?? 'development',
+    environment: getConsentState().environment ?? 'development',
     release_channel: /-beta\b/.test(appVersion()) ? 'beta' : 'stable',
     ...(current.installRef ? { install_ref: current.installRef } : {}),
     ...(current.accountRef ? { store_ref: current.accountRef } : {}),
@@ -281,8 +297,8 @@ function createClient(token: string, host: string): PostHogClient {
 }
 
 function activeClient(): PostHogClient | null {
-  if (postHogNetworkSuppressed()) return null;
-  const { config, level, diagnosticsEnabled } = getConsentState();
+  const { config, level, diagnosticsEnabled, environment } = getConsentState();
+  if (environment === null) return null;
   if (!config) return null;
   if (level === 'off' && !diagnosticsEnabled) return null;
   const key = `${config.host}\n${config.token}`;

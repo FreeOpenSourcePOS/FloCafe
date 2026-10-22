@@ -101,7 +101,13 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { initDatabase, getDatabase, closeDatabase, getSettingsRevision, now } = require('../main/db');
+const {
+  initDatabase,
+  getDatabase,
+  closeDatabase,
+  getSettingsRevision,
+  now,
+} = require('../main/db');
 const {
   apiRoutePattern,
   capturePostHogApiFailure,

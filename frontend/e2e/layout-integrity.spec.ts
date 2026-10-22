@@ -2804,6 +2804,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
         window.localStorage.getItem('flo.customerDisplayToken'),
       );
       expect(storedTokenAfter401).toBeNull();
+      await displayPage.close();
 
       // Signed-in staff fallback mode also drains multiple /api/orders cursor pages via before_id and deduplicates
       await page.setViewportSize({ width: 1920, height: 1080 });
@@ -2913,7 +2914,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       const budgetPage = await displayContext.newPage();
       await budgetPage.setViewportSize({ width: 1920, height: 1080 });
       const initialClockMs = Date.now();
-      await budgetPage.clock.install({ time: initialClockMs });
+      await budgetPage.clock.install({ time: initialClockMs - 60_000 });
       await budgetPage.clock.pauseAt(initialClockMs);
       let slowMode = true;
       let rateWindowRequests = 0;

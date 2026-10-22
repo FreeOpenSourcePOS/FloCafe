@@ -110,4 +110,29 @@ export function listPriceExceptions(
     .all(fromIso, toIso) as PriceExceptionRow[];
 }
 
+export interface ShiftWindow {
+  id: number;
+  opened_by_name: string;
+  opened_at: string;
+  closed_at: string | null;
+}
+
+export function listShiftsOverlapping(db: Database, fromIso: string, toIso: string): ShiftWindow[] {
+  return db
+    .prepare(
+      `SELECT id, opened_by_name, opened_at, closed_at
+       FROM cash_sessions
+       WHERE opened_at < ? AND COALESCE(closed_at, ?) >= ?
+       ORDER BY opened_at DESC, id DESC
+       LIMIT 20`,
+    )
+    .all(toIso, toIso, fromIso) as ShiftWindow[];
+}
+
+export function getShiftWindow(db: Database, id: number): ShiftWindow | undefined {
+  return db
+    .prepare('SELECT id, opened_by_name, opened_at, closed_at FROM cash_sessions WHERE id = ?')
+    .get(id) as ShiftWindow | undefined;
+}
+
 export { now };

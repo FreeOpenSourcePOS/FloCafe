@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Verschil",
     "priceExceptionBy": "Gewijzigd door",
     "priceExceptionAt": "Wanneer",
-    "priceExceptionReason": "Reden"
+    "priceExceptionReason": "Reden",
+    "priceExceptionsAllShifts": "Hele periode",
+    "priceExceptionsShift": "Dienst",
+    "priceExceptionsShiftOpen": "geopend"
   },
   "expenses": {
     "addTitle": "Onkost toevoegen",

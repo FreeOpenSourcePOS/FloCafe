@@ -248,10 +248,13 @@ async function main() {
     db.prepare("UPDATE orders SET status = 'pending' WHERE id = ?").run(orderId);
 
     console.log('\n--- Price exceptions report ---');
-    const day = new Date().toISOString().slice(0, 10);
+    const dayOffset = (days: number) =>
+      new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+    const from = dayOffset(-1);
+    const to = dayOffset(1);
     const report = await api(
       baseUrl,
-      `/api/reports/price-exceptions?start_date=${day}&end_date=${day}`,
+      `/api/reports/price-exceptions?start_date=${from}&end_date=${to}`,
       { headers: ownerAuth },
     );
     assertEqualOrThrow(report.status, 200, 'the report loads');
@@ -268,9 +271,57 @@ async function main() {
       true,
       'comps are counted',
     );
+    const shiftId = Number(
+      db
+        .prepare(
+          `INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, status)
+           VALUES ('owner-po', 'Owner', '2000-01-01 00:00:00', 'open')`,
+        )
+        .run().lastInsertRowid,
+    );
+    const inShift = await api(
+      baseUrl,
+      `/api/reports/price-exceptions?start_date=${from}&end_date=${to}&shift_id=${shiftId}`,
+      { headers: ownerAuth },
+    );
+    assertEqualOrThrow(inShift.status, 200, 'the report filters by shift');
+    assertEqualOrThrow(
+      inShift.data.priceExceptions.count,
+      rows.length,
+      'an open shift covers every override since it opened',
+    );
+    assertEqualOrThrow(inShift.data.priceExceptions.shiftId, shiftId, 'the shift is echoed');
+    assertOrThrow(
+      (inShift.data.priceExceptions.shifts as { id: number }[]).some((s) => s.id === shiftId),
+      'the report lists shifts that overlap the range',
+    );
+    db.prepare(
+      "UPDATE cash_sessions SET status = 'closed', closed_at = '2000-01-01 08:00:00' WHERE id = ?",
+    ).run(shiftId);
+    const closedShift = await api(
+      baseUrl,
+      `/api/reports/price-exceptions?start_date=${from}&end_date=${to}&shift_id=${shiftId}`,
+      { headers: ownerAuth },
+    );
+    assertEqualOrThrow(
+      closedShift.data.priceExceptions.count,
+      0,
+      'overrides outside the shift are excluded',
+    );
     assertEqualOrThrow(
       (
-        await api(baseUrl, `/api/reports/price-exceptions?start_date=${day}&end_date=${day}`, {
+        await api(
+          baseUrl,
+          `/api/reports/price-exceptions?start_date=${from}&end_date=${to}&shift_id=999999`,
+          { headers: ownerAuth },
+        )
+      ).status,
+      404,
+      'an unknown shift is rejected',
+    );
+    assertEqualOrThrow(
+      (
+        await api(baseUrl, `/api/reports/price-exceptions?start_date=${from}&end_date=${to}`, {
           headers: cashierAuth,
         })
       ).status,

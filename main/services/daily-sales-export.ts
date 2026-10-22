@@ -2,6 +2,7 @@ import type { Database } from 'better-sqlite3';
 import {
   dayBoundsInTimezone,
   getDatabase,
+  parseDbTimestamp,
   getSettingValue,
   tenantBusinessDayStartTime,
 } from '../db';
@@ -27,6 +28,15 @@ export type DailySalesExportPaymentRow = {
   total: number;
 };
 
+export type DailySalesExportPaymentLineRow = {
+  bill_number: string;
+  order_number: string;
+  payment_time: string;
+  method: string;
+  amount: number;
+  transaction_id: string;
+};
+
 export type DailySalesExportSummary = {
   business_date: string;
   timezone: string;
@@ -48,6 +58,7 @@ export type DailySalesExportSummary = {
 export type DailySalesExportDataset = {
   summary: DailySalesExportSummary;
   items: DailySalesExportItemRow[];
+  payments: DailySalesExportPaymentLineRow[];
 };
 
 function resolveExportTimezone(): string {
@@ -67,6 +78,22 @@ export function dailySalesPaymentMetricKey(method: string): string {
   return key || 'unknown';
 }
 
+// `sv-SE` formats as `YYYY-MM-DD HH:MM:SS`, matching the stored timestamp shape.
+function storeLocalTimestamp(stored: string, timezone: string): string {
+  const instant = parseDbTimestamp(stored);
+  if (Number.isNaN(instant.getTime())) return '';
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(instant);
+}
+
 /**
  * One normalized daily-sales export dataset for a tenant business date.
  *
@@ -75,6 +102,8 @@ export function dailySalesPaymentMetricKey(method: string): string {
  * - refunds_issued: refunds issued in window (`created_at`) — NOT attributed to the original pay day
  * - payment_method rows use paymentMethodBreakdown(paidOnly, refunds-by-created_at, keyByPaidAt)
  *   so Σ payment totals = net_collected
+ *
+ * Payments: every ledger line of the bills paid in window, so Σ amount = gross_collected.
  *
  * Items: products on paid bills (split via bill_items), excluding void/cancel/adjustment
  * rows so item refunds do not double-count against refunds_issued. Refunded originals stay
@@ -90,7 +119,8 @@ export function buildDailySalesExportDataset(
   const currency = getTenantCurrency(db);
   const minorFactor = getCurrencyMinorUnitFactor(currency);
 
-  const billRow = db.prepare(`
+  const billRow = db
+    .prepare(`
     SELECT
       COUNT(*) AS paid_bill_count,
       COUNT(DISTINCT order_id) AS order_count,
@@ -101,7 +131,8 @@ export function buildDailySalesExportDataset(
       COALESCE(SUM(delivery_charge), 0) AS delivery_charge_total
     FROM bills
     WHERE paid_at >= ? AND paid_at < ?
-  `).get(start, end) as {
+  `)
+    .get(start, end) as {
     paid_bill_count: number;
     order_count: number;
     gross_collected: number;
@@ -111,11 +142,13 @@ export function buildDailySalesExportDataset(
     delivery_charge_total: number;
   };
 
-  const refundRow = db.prepare(`
+  const refundRow = db
+    .prepare(`
     SELECT COALESCE(SUM(CAST(amount_cents AS REAL)) / ?, 0) AS refunds_issued
     FROM refunds
     WHERE created_at >= ? AND created_at < ?
-  `).get(minorFactor, start, end) as { refunds_issued: number };
+  `)
+    .get(minorFactor, start, end) as { refunds_issued: number };
 
   // Tax components: same paid-window hydration as computeDayAggregates / X-report.
   type PaidBillTaxRow = {
@@ -124,12 +157,14 @@ export function buildDailySalesExportDataset(
     tax_snapshot?: unknown;
     tax_breakdown?: unknown;
   };
-  const bills = db.prepare(`
+  const bills = db
+    .prepare(`
     SELECT b.*
     FROM bills b
     WHERE b.paid_at >= ? AND b.paid_at < ?
     ORDER BY b.paid_at, b.id
-  `).all(start, end) as PaidBillTaxRow[];
+  `)
+    .all(start, end) as PaidBillTaxRow[];
   const orders = getOrdersWithItemsForBills(db, bills);
   const taxDocuments = bills.map((bill) => ({
     tax_amount: bill.tax_amount,
@@ -140,7 +175,8 @@ export function buildDailySalesExportDataset(
   const taxComponents = aggregateTaxComponents(taxDocuments);
   const taxTotal = taxComponents.reduce((sum, component) => sum + Number(component.amount || 0), 0);
 
-  const itemRows = db.prepare(`
+  const itemRows = db
+    .prepare(`
     SELECT
       oi.product_id AS product_id,
       oi.product_name AS product_name,
@@ -172,7 +208,8 @@ export function buildDailySalesExportDataset(
       AND (b.split_group_id IS NULL OR b.split_group_id = '' OR bi.bill_id IS NOT NULL)
     GROUP BY oi.product_id, oi.product_name, oi.product_sku
     ORDER BY net_item_sales DESC, product_name ASC
-  `).all(start, end) as Array<{
+  `)
+    .all(start, end) as Array<{
     product_id: string;
     product_name: string;
     product_sku: string | null;
@@ -202,12 +239,57 @@ export function buildDailySalesExportDataset(
   // under the approved refund-day rule (attributeRefundsToBillDate=false).
   // count is intentionally dropped: paymentMethodBreakdown COUNT(*) covers
   // payment+refund lines, which is not a payment count (review: misleading).
-  const paymentMethods = paymentMethodBreakdown(
-    db,
-    { startDate: businessDate, endDate: businessDate, paidOnly: true, attributeRefundsToBillDate: false, keyByPaidAt: true },
-  ).map((row) => ({
+  const paymentMethods = paymentMethodBreakdown(db, {
+    startDate: businessDate,
+    endDate: businessDate,
+    paidOnly: true,
+    attributeRefundsToBillDate: false,
+    keyByPaidAt: true,
+  }).map((row) => ({
     method: String(row.method || 'unknown'),
     total: Number(row.total || 0),
+  }));
+
+  const paymentLineRows = db
+    .prepare(`
+    SELECT
+      b.bill_number AS bill_number,
+      o.order_number AS order_number,
+      COALESCE(NULLIF(json_extract(je.value, '$.timestamp'), ''), b.paid_at) AS payment_time,
+      COALESCE(pm.name, NULLIF(json_extract(je.value, '$.method'), ''), 'unknown') AS method,
+      json_extract(je.value, '$.amount') AS amount,
+      json_extract(je.value, '$.transaction_id') AS transaction_id
+    FROM bills b
+    LEFT JOIN orders o ON o.id = b.order_id
+    JOIN json_each(CASE
+      WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array'
+        THEN b.payment_details
+      WHEN json_valid(b.payment_details)
+        THEN json_array(b.payment_details)
+      ELSE '[]'
+    END) je
+    LEFT JOIN payment_methods pm
+      ON pm.id = CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER)
+    WHERE b.paid_at >= ? AND b.paid_at < ?
+      AND json_type(je.value) = 'object'
+    ORDER BY payment_time, b.id, je.key
+  `)
+    .all(start, end) as Array<{
+    bill_number: string | null;
+    order_number: string | null;
+    payment_time: string | null;
+    method: string;
+    amount: unknown;
+    transaction_id: unknown;
+  }>;
+
+  const payments: DailySalesExportPaymentLineRow[] = paymentLineRows.map((row) => ({
+    bill_number: row.bill_number == null ? '' : String(row.bill_number),
+    order_number: row.order_number == null ? '' : String(row.order_number),
+    payment_time: row.payment_time ? storeLocalTimestamp(row.payment_time, timezone) : '',
+    method: String(row.method),
+    amount: typeof row.amount === 'number' ? row.amount : 0,
+    transaction_id: typeof row.transaction_id === 'string' ? row.transaction_id : '',
   }));
 
   return {
@@ -230,6 +312,7 @@ export function buildDailySalesExportDataset(
       payment_methods: paymentMethods,
     },
     items,
+    payments,
   };
 }
 
@@ -254,7 +337,10 @@ export function dailySalesSummaryMetricRows(
     { metric: 'delivery_charge_total', value: summary.delivery_charge_total },
   ];
   for (const payment of summary.payment_methods) {
-    rows.push({ metric: `payment_${dailySalesPaymentMetricKey(payment.method)}`, value: payment.total });
+    rows.push({
+      metric: `payment_${dailySalesPaymentMetricKey(payment.method)}`,
+      value: payment.total,
+    });
   }
   return rows;
 }
@@ -268,4 +354,13 @@ export const DAILY_SALES_ITEM_COLUMNS = [
   'item_discounts',
   'net_item_sales',
   'tax_amount',
+] as const;
+
+export const DAILY_SALES_PAYMENT_COLUMNS = [
+  'bill_number',
+  'order_number',
+  'payment_time',
+  'method',
+  'amount',
+  'transaction_id',
 ] as const;

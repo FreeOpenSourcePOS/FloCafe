@@ -2,13 +2,14 @@ import ExcelJS from 'exceljs';
 import { toCsvRow } from '../lib/csv';
 import {
   DAILY_SALES_ITEM_COLUMNS,
+  DAILY_SALES_PAYMENT_COLUMNS,
   dailySalesSummaryMetricRows,
   type DailySalesExportDataset,
   type DailySalesExportItemRow,
 } from './daily-sales-export';
 
 export type DailySalesExportFormat = 'xlsx' | 'csv';
-export type DailySalesExportCsvPart = 'summary' | 'items';
+export type DailySalesExportCsvPart = 'summary' | 'items' | 'payments';
 
 export function dailySalesExportFilename(
   businessDate: string,
@@ -18,7 +19,8 @@ export function dailySalesExportFilename(
   if (format === 'xlsx') return `daily-sales-${businessDate}.xlsx`;
   if (part === 'summary') return `daily-sales-${businessDate}-summary.csv`;
   if (part === 'items') return `daily-sales-${businessDate}-items.csv`;
-  throw new Error('CSV export requires part=summary or part=items');
+  if (part === 'payments') return `daily-sales-${businessDate}-payments.csv`;
+  throw new Error('CSV export requires part=summary, part=items or part=payments');
 }
 
 function moneyNumFmt(fractionDigits: number): string {
@@ -78,9 +80,31 @@ export async function serializeDailySalesExportXlsx(
       tax_amount: item.tax_amount,
     });
     entry.getCell('quantity').numFmt = '#,##0.###';
-    for (const col of ['gross_item_sales', 'item_discounts', 'net_item_sales', 'tax_amount'] as const) {
+    for (const col of [
+      'gross_item_sales',
+      'item_discounts',
+      'net_item_sales',
+      'tax_amount',
+    ] as const) {
       entry.getCell(col).numFmt = moneyFmt;
     }
+  }
+
+  const paymentsSheet = workbook.addWorksheet('Payments');
+  paymentsSheet.columns = [
+    { header: 'bill_number', key: 'bill_number', width: 22 },
+    { header: 'order_number', key: 'order_number', width: 22 },
+    { header: 'payment_time', key: 'payment_time', width: 20 },
+    { header: 'method', key: 'method', width: 18 },
+    { header: 'amount', key: 'amount', width: 14 },
+    { header: 'transaction_id', key: 'transaction_id', width: 28 },
+  ];
+  paymentsSheet.getRow(1).font = { bold: true };
+  paymentsSheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+  for (const payment of dataset.payments) {
+    const entry = paymentsSheet.addRow({ ...payment });
+    entry.getCell('amount').numFmt = moneyFmt;
   }
 
   const buffer = await workbook.xlsx.writeBuffer();
@@ -97,19 +121,26 @@ export function serializeDailySalesExportCsv(
     for (const row of dailySalesSummaryMetricRows(dataset.summary)) {
       lines.push(toCsvRow([row.metric, row.value]));
     }
+  } else if (part === 'payments') {
+    lines.push(toCsvRow([...DAILY_SALES_PAYMENT_COLUMNS]));
+    for (const payment of dataset.payments) {
+      lines.push(toCsvRow(DAILY_SALES_PAYMENT_COLUMNS.map((column) => payment[column])));
+    }
   } else {
     lines.push(toCsvRow([...DAILY_SALES_ITEM_COLUMNS]));
     for (const item of dataset.items as DailySalesExportItemRow[]) {
-      lines.push(toCsvRow([
-        item.product_id,
-        item.product_name,
-        item.product_sku ?? '',
-        item.quantity,
-        item.gross_item_sales,
-        item.item_discounts,
-        item.net_item_sales,
-        item.tax_amount,
-      ]));
+      lines.push(
+        toCsvRow([
+          item.product_id,
+          item.product_name,
+          item.product_sku ?? '',
+          item.quantity,
+          item.gross_item_sales,
+          item.item_discounts,
+          item.net_item_sales,
+          item.tax_amount,
+        ]),
+      );
     }
   }
   return lines.join('\n') + '\n';

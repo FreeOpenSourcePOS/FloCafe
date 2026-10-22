@@ -1424,8 +1424,15 @@ export function serializeOperationFailure(input: {
           return null;
         facts[key] = value;
       } else {
-        if (typeof value !== 'string' || !rule.values.includes(value)) return null;
-        facts[key] = value;
+        const normalizedValue =
+          definition.capture_point === 'fc.backend.payment.create.validation' &&
+          key === 'display_code' &&
+          value === 'card_transaction_id_required'
+            ? 'payment_input_invalid'
+            : value;
+        if (typeof normalizedValue !== 'string' || !rule.values.includes(normalizedValue))
+          return null;
+        facts[key] = normalizedValue;
       }
     }
     for (const [key, rule] of Object.entries(definition.facts)) {

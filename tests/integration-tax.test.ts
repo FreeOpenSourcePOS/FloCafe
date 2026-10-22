@@ -2441,6 +2441,36 @@ async function main() {
       ce1Order.data.order.id,
     );
 
+    // 9. Quantity > 1 (qty 3 at 100.10) preview and saved order totals match
+    const ce9Preview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-disc-10010-a', quantity: 3 }],
+        order_type: 'takeaway',
+      },
+      headers: authHeader,
+    });
+    const ce9Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-disc-10010-a', quantity: 3 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(ce9Preview.status, 200, 'CE9 preview status 200');
+    assertEqual(ce9Order.status, 201, 'CE9 order status 201');
+    assertEqual(
+      ce9Preview.data.summary.tax_amount,
+      ce9Order.data.order.tax_amount,
+      'CE9 qty 3 preview tax matches saved order tax',
+    );
+    assertEqual(
+      ce9Preview.data.summary.total,
+      ce9Order.data.order.total,
+      'CE9 qty 3 preview total matches saved order total',
+    );
+
     const s17Report = await api(baseUrl, '/api/reports/tax-components', {
       headers: authHeader,
     });

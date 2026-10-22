@@ -1461,16 +1461,13 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       const rawDisc = Number(itemData.discount_amount);
       const itemDiscount = Number.isFinite(rawDisc) && rawDisc >= 0 ? rawDisc : 0;
 
-      let subtotalDec = new Decimal(unitPrice).mul(quantity);
+      let subtotal = unitPrice * quantity;
       if (itemData.addons) {
         for (const addon of itemData.addons) {
-          subtotalDec = subtotalDec.plus(
-            new Decimal(addon.price || 0).mul(addon.quantity || 1).mul(quantity),
-          );
+          subtotal += (addon.price || 0) * (addon.quantity || 1) * quantity;
         }
       }
-      subtotalDec = Decimal.max(0, subtotalDec.minus(itemDiscount));
-      const subtotal = subtotalDec.toNumber();
+      subtotal = Math.max(0, subtotal - itemDiscount);
 
       resolvedItems.push({
         product,
@@ -1480,7 +1477,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         itemDiscount,
         subtotal,
       });
-      totalSubtotalDec = totalSubtotalDec.plus(subtotalDec);
+      totalSubtotalDec = totalSubtotalDec.plus(subtotal);
     }
     const totalSubtotal = totalSubtotalDec.toNumber();
 

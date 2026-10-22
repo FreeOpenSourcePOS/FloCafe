@@ -5,14 +5,6 @@ import { getCountryByCode, getCurrencyFractionDigits } from '@/lib/countries';
 import { formatDate } from './printer/format-date';
 import api from './api';
 import toast from 'react-hot-toast';
-import {
-  renderWhatsAppTemplate,
-  WHATSAPP_PLACEHOLDERS,
-  buildSampleWhatsAppContext,
-  type WhatsAppTemplateContext,
-} from '../../../shared/whatsapp-automation';
-
-export { renderWhatsAppTemplate, WHATSAPP_PLACEHOLDERS, buildSampleWhatsAppContext };
 
 export interface WhatsAppShareOptions {
   /** Points earned from this bill (cashback) */
@@ -21,18 +13,6 @@ export interface WhatsAppShareOptions {
   walletBalance?: number;
   /** Business phone for WhatsApp business account */
   businessPhone?: string;
-  /** Optional custom receipt template body with {placeholders} */
-  customTemplateBody?: string;
-  /** Customer name for placeholder interpolation */
-  customerName?: string;
-  /** Customer phone for placeholder interpolation */
-  customerPhone?: string;
-  /** Customer visit count for placeholder interpolation */
-  visitCount?: number;
-  /** Store feedback link for placeholder interpolation */
-  feedbackLink?: string;
-  /** Store Instagram handle for placeholder interpolation */
-  instagram?: string;
 }
 
 interface CashCloseReportBase {
@@ -189,41 +169,6 @@ export async function shareCashCloseViaWhatsApp(
   return openFallback();
 }
 
-function buildBillTemplateContext(
-  bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
-  customer: { phone?: string | null; country_code?: string | null; name?: string | null } | null | undefined,
-  opts: WhatsAppShareOptions,
-  locale: string,
-): WhatsAppTemplateContext {
-  const currency = tenant.currency;
-  const itemLines = formatItemsList(bill.order, currency, locale);
-  const pointsBalance =
-    opts.walletBalance !== undefined ? Math.round(Number(opts.walletBalance)) : 0;
-  const paymentMethods = Array.isArray(bill.payment_details)
-    ? bill.payment_details.map((p) => p.method).filter(Boolean).join(', ')
-    : '';
-  return {
-    customer_name: opts.customerName || customer?.name || 'Guest',
-    customer_phone: opts.customerPhone || customer?.phone || '',
-    visit_count: opts.visitCount ?? 1,
-    last_visit_date: formatDate(bill.order?.created_at, locale),
-    total_spent: formatAmount(bill.total, currency, locale),
-    bill_no: bill.bill_number || String(bill.id),
-    order_date: formatDate(bill.order?.created_at, locale),
-    order_items: itemLines.join('\n'),
-    total: formatAmount(bill.total, currency, locale),
-    payment_method: paymentMethods,
-    points_earned: opts.pointsEarned ?? 0,
-    points_balance: pointsBalance,
-    points_value: formatAmount(opts.walletBalance ?? 0, currency, locale),
-    store_name: tenant.business_name || '',
-    store_phone: opts.businessPhone || '',
-    feedback_link: opts.feedbackLink || '',
-    instagram: opts.instagram || '',
-  };
-}
-
 /** Generates a wa.me URL pre-filled with bill details for WhatsApp sharing. */
 export function getWhatsAppShareUrl(
   bill: Bill,
@@ -232,50 +177,42 @@ export function getWhatsAppShareUrl(
   opts: WhatsAppShareOptions = {},
   localeOverride?: string,
 ): string {
-  const { pointsEarned = 0, walletBalance, businessPhone, customTemplateBody } = opts;
+  const { pointsEarned = 0, walletBalance, businessPhone } = opts;
   const currency = tenant.currency;
   const locale = localeOverride || getCountryByCode(tenant.country)?.locale || 'en-US';
 
-  let message: string;
-  if (customTemplateBody && customTemplateBody.trim()) {
-    message = renderWhatsAppTemplate(
-      customTemplateBody,
-      buildBillTemplateContext(bill, tenant, customer, opts, locale),
-    );
-  } else {
-    // Build the message
-    const lines: string[] = [];
+  // Build the message
+  const lines: string[] = [];
 
-    lines.push(`*${tenant.business_name}*`);
-    lines.push(`Bill #: ${bill.bill_number}`);
-    lines.push(`Date: ${formatDate(bill.order?.created_at, locale)}`);
-    const itemLines = formatItemsList(bill.order, currency, locale);
-    if (itemLines.length > 0) {
-      lines.push(``);
-      lines.push(`*Items:*`);
-      lines.push(...itemLines);
-    }
+  lines.push(`*${tenant.business_name}*`);
+  lines.push(`Bill #: ${bill.bill_number}`);
+  lines.push(`Date: ${formatDate(bill.order?.created_at, locale)}`);
+  const itemLines = formatItemsList(bill.order, currency, locale);
+  if (itemLines.length > 0) {
     lines.push(``);
-    lines.push(`*Total: ${formatAmount(bill.total, currency, locale)}*`);
-
-    if (pointsEarned > 0) {
-      lines.push(``);
-      lines.push(`You earned ${pointsEarned} loyalty points! 🎉`);
-    }
-
-    if (walletBalance !== undefined && walletBalance > 0) {
-      lines.push(`Your wallet balance: ${formatAmount(walletBalance, currency, locale)}`);
-    }
-
-    lines.push(``);
-    lines.push(`Thank you for your visit! 🙏`);
-
-    if (businessPhone) {
-      lines.push(`Contact: ${businessPhone}`);
-    }
-
-    message = lines.join('\n');
+    lines.push(`*Items:*`);
+    lines.push(...itemLines);
   }
+  lines.push(``);
+  lines.push(`*Total: ${formatAmount(bill.total, currency, locale)}*`);
+
+  if (pointsEarned > 0) {
+    lines.push(``);
+    lines.push(`You earned ${pointsEarned} loyalty points! 🎉`);
+  }
+
+  if (walletBalance !== undefined && walletBalance > 0) {
+    lines.push(`Your wallet balance: ${formatAmount(walletBalance, currency, locale)}`);
+  }
+
+  lines.push(``);
+  lines.push(`Thank you for your visit! 🙏`);
+
+  if (businessPhone) {
+    lines.push(`Contact: ${businessPhone}`);
+  }
+
+  const message = lines.join('\n');
   const encoded = encodeURIComponent(message);
 
   if (customer && customer.phone) {
@@ -313,16 +250,9 @@ export function getWhatsAppMessage(
   opts: WhatsAppShareOptions = {},
   localeOverride?: string,
 ): string {
-  const { pointsEarned = 0, walletBalance, customTemplateBody } = opts;
+  const { pointsEarned = 0, walletBalance } = opts;
   const currency = tenant.currency;
   const locale = localeOverride || getCountryByCode(tenant.country)?.locale || 'en-US';
-
-  if (customTemplateBody && customTemplateBody.trim()) {
-    return renderWhatsAppTemplate(
-      customTemplateBody,
-      buildBillTemplateContext(bill, tenant, null, opts, locale),
-    );
-  }
 
   const lines: string[] = [];
 

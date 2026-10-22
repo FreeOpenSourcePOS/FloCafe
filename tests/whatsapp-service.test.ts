@@ -356,9 +356,7 @@ async function main(): Promise<void> {
         quietHoursStart: '00:00',
         quietHoursEnd: '23:59',
         maxPerCustomerPerWeek: 2,
-        rateLimitPerHour: 10,
         feedbackLink: 'https://flocafe.example.com/feedback',
-        instagram: '@flocafe',
       },
     });
     const blockedByQuietHours = await whatsapp.sendMessage({
@@ -394,9 +392,7 @@ async function main(): Promise<void> {
         quietHoursStart: '22:00',
         quietHoursEnd: '09:00',
         maxPerCustomerPerWeek: 2,
-        rateLimitPerHour: 10,
         feedbackLink: 'https://flocafe.example.com/feedback',
-        instagram: '@flocafe',
       },
     });
     const autoSend1 = await whatsapp.sendMessage({
@@ -443,7 +439,7 @@ async function main(): Promise<void> {
 
     // 4. Automated rules on bill payment completion (after_payment, points_threshold, nth_visit) + trigger_rule in listMessages
     const db = getDatabase();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US'), ('currency', 'USD'), ('business_name', 'Flo Test Cafe')").run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US'), ('currency', 'USD'), ('business_name', 'Flo Test Cafe'), ('instagram_handle', '@flotestcafe')").run();
     db.prepare(`
       INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
       VALUES ('cust-auto-1', 'Maya Lin', '+14089961010', 'US', 1, datetime('now'), datetime('now'))
@@ -472,14 +468,12 @@ async function main(): Promise<void> {
         quietHoursStart: '22:00',
         quietHoursEnd: '09:00',
         maxPerCustomerPerWeek: 10,
-        rateLimitPerHour: 10,
         feedbackLink: 'https://flocafe.example.com/feedback',
-        instagram: '@flotestcafe',
       },
       rules: [
         { id: 'after_payment', trigger: 'after_payment', enabled: true, templateId: 'receipt' },
         { id: 'points_threshold', trigger: 'points_threshold', enabled: true, templateId: 'loyalty_milestone', pointsThreshold: 100 },
-        { id: 'nth_visit', trigger: 'nth_visit', enabled: true, templateId: 'feedback', nthVisit: 1, repeatEveryNth: true },
+        { id: 'nth_visit', trigger: 'nth_visit', enabled: true, templateId: 'visit_milestone', nthVisit: 1 },
         { id: 'feedback_delay', trigger: 'feedback_delay', enabled: false, templateId: 'feedback', delayHours: 2 },
         { id: 'winback', trigger: 'winback', enabled: false, templateId: 'winback', inactiveDays: 14 },
       ],
@@ -629,14 +623,12 @@ async function main(): Promise<void> {
         quietHoursStart: '22:00',
         quietHoursEnd: '09:00',
         maxPerCustomerPerWeek: 10,
-        rateLimitPerHour: 10,
         feedbackLink: 'https://flocafe.example.com/feedback',
-        instagram: '@flotestcafe',
       },
       rules: [
         { id: 'after_payment', trigger: 'after_payment', enabled: false, templateId: 'receipt' },
         { id: 'points_threshold', trigger: 'points_threshold', enabled: false, templateId: 'loyalty_milestone', pointsThreshold: 100 },
-        { id: 'nth_visit', trigger: 'nth_visit', enabled: false, templateId: 'loyalty_milestone', nthVisit: 5, repeatEveryNth: true },
+        { id: 'nth_visit', trigger: 'nth_visit', enabled: false, templateId: 'visit_milestone', nthVisit: 5 },
         { id: 'feedback_delay', trigger: 'feedback_delay', enabled: true, templateId: 'feedback', delayHours: 2 },
         { id: 'winback', trigger: 'winback', enabled: true, templateId: 'winback', inactiveDays: 14 },
       ],

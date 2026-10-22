@@ -78,8 +78,6 @@ export interface WhatsAppAutomationRule {
   pointsThreshold?: number;
   /** Paid visit milestone count (`nth_visit`). */
   nthVisit?: number;
-  /** Whether `nth_visit` triggers every N visits (default true) or only on exact visit N. */
-  repeatEveryNth?: boolean;
 }
 
 export interface WhatsAppSafetyConfig {
@@ -88,9 +86,7 @@ export interface WhatsAppSafetyConfig {
   quietHoursStart: string;
   quietHoursEnd: string;
   maxPerCustomerPerWeek: number;
-  rateLimitPerHour: number;
   feedbackLink: string;
-  instagram: string;
 }
 
 export interface WhatsAppAutomationConfig {
@@ -133,9 +129,19 @@ export const DEFAULT_WHATSAPP_TEMPLATES: readonly WhatsAppTemplate[] = [
     id: 'loyalty_milestone',
     name: 'Loyalty & Milestone Reward',
     body: [
-      'Thank you for {visit_count} visits to {store_name}, {customer_name}!',
-      'Your loyalty balance is now {points_balance} points (worth {points_value}).',
+      'Congratulations {customer_name}!',
+      'You have earned {points_earned} points at {store_name} and your loyalty balance is now {points_balance} points (worth {points_value}).',
       'Redeem your points on your next visit!',
+      'Reply STOP to opt out.',
+    ].join('\n'),
+  },
+  {
+    id: 'visit_milestone',
+    name: 'Visit Milestone Reward',
+    body: [
+      'Thank you for {visit_count} visits to {store_name}, {customer_name}!',
+      'Total spent with us: {total_spent}. Current points balance: {points_balance} ({points_value}).',
+      'We appreciate your loyalty and look forward to seeing you again!',
       'Reply STOP to opt out.',
     ].join('\n'),
   },
@@ -183,9 +189,8 @@ export const DEFAULT_WHATSAPP_RULES: readonly WhatsAppAutomationRule[] = [
     id: 'nth_visit',
     trigger: 'nth_visit',
     enabled: false,
-    templateId: 'loyalty_milestone',
+    templateId: 'visit_milestone',
     nthVisit: 5,
-    repeatEveryNth: true,
   },
 ];
 
@@ -195,9 +200,7 @@ export const DEFAULT_WHATSAPP_SAFETY: WhatsAppSafetyConfig = {
   quietHoursStart: '22:00',
   quietHoursEnd: '09:00',
   maxPerCustomerPerWeek: 5,
-  rateLimitPerHour: 4,
   feedbackLink: '',
-  instagram: '',
 };
 
 export const DEFAULT_WHATSAPP_AUTOMATION_CONFIG: WhatsAppAutomationConfig = {
@@ -371,17 +374,13 @@ export function normalizeWhatsAppAutomationConfig(raw: unknown): WhatsAppAutomat
       templateId,
     };
     if (def.trigger === 'feedback_delay') {
-      rule.delayHours = clampInt(custom?.delayHours, def.delayHours ?? 2, 0, 168);
+      rule.delayHours = clampInt(custom?.delayHours, def.delayHours ?? 2, 1, 168);
     } else if (def.trigger === 'winback') {
       rule.inactiveDays = clampInt(custom?.inactiveDays, def.inactiveDays ?? 14, 1, 365);
     } else if (def.trigger === 'points_threshold') {
       rule.pointsThreshold = clampInt(custom?.pointsThreshold, def.pointsThreshold ?? 100, 1, 1_000_000);
     } else if (def.trigger === 'nth_visit') {
       rule.nthVisit = clampInt(custom?.nthVisit, def.nthVisit ?? 5, 1, 1000);
-      rule.repeatEveryNth =
-        typeof custom?.repeatEveryNth === 'boolean'
-          ? custom.repeatEveryNth
-          : (def.repeatEveryNth ?? true);
     }
     return rule;
   });
@@ -425,16 +424,7 @@ export function normalizeWhatsAppAutomationConfig(raw: unknown): WhatsAppAutomat
       1,
       50,
     ),
-    rateLimitPerHour: clampInt(
-      rawSafety.rateLimitPerHour,
-      DEFAULT_WHATSAPP_SAFETY.rateLimitPerHour,
-      1,
-      20,
-    ),
     feedbackLink,
-    instagram: String(rawSafety.instagram ?? DEFAULT_WHATSAPP_SAFETY.instagram)
-      .trim()
-      .slice(0, 120),
   };
 
   return { templates, rules, safety };

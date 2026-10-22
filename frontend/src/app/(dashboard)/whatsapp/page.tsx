@@ -1185,7 +1185,6 @@ export default function WhatsAppPage() {
                     const sampleContext = buildSampleWhatsAppContext({
                       store_name: currentTenant?.business_name || undefined,
                       feedback_link: automationConfig.safety.feedbackLink || undefined,
-                      instagram: automationConfig.safety.instagram || undefined,
                     });
                     const renderedPreview = renderWhatsAppTemplate(activeTpl.body, sampleContext);
 
@@ -1613,7 +1612,7 @@ export default function WhatsAppPage() {
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t">
+                  <div className="pt-2 border-t">
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">
                         {tAutomation('feedbackLinkLabel')}
@@ -1625,21 +1624,6 @@ export default function WhatsAppPage() {
                           setAutomationConfig((prev) => ({
                             ...prev,
                             safety: { ...prev.safety, feedbackLink: e.target.value },
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">
-                        {tAutomation('instagramLabel')}
-                      </label>
-                      <Input
-                        dir="ltr"
-                        value={automationConfig.safety.instagram}
-                        onChange={(e) =>
-                          setAutomationConfig((prev) => ({
-                            ...prev,
-                            safety: { ...prev.safety, instagram: e.target.value },
                           }))
                         }
                       />

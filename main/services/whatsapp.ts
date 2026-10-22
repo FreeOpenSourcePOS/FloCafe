@@ -512,20 +512,12 @@ function randomDelayMs(body: string): number {
 
 export function getAutomationConfig(): WhatsAppAutomationConfig {
   const raw = getSettingValue(WHATSAPP_AUTOMATION_SETTING_KEY);
-  const config = normalizeWhatsAppAutomationConfig(raw);
-  if (!config.safety.instagram) {
-    const storeInstagram = getSettingValue('instagram_handle');
-    if (storeInstagram) config.safety.instagram = storeInstagram;
-  }
-  return config;
+  return normalizeWhatsAppAutomationConfig(raw);
 }
 
 export function saveAutomationConfig(raw: unknown): WhatsAppAutomationConfig {
   const normalized = normalizeWhatsAppAutomationConfig(raw);
   writeSetting(WHATSAPP_AUTOMATION_SETTING_KEY, JSON.stringify(normalized));
-  if (typeof normalized.safety.instagram === 'string') {
-    writeSetting('instagram_handle', normalized.safety.instagram);
-  }
   return normalized;
 }
 
@@ -1501,7 +1493,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   if (isInCooldown()) {
     return { ok: false, error: 'Send is temporarily paused.', reason: 'cooldown' };
   }
-  const rate = isOverRateLimit(req.phoneE164, automationConfig.safety.rateLimitPerHour, automated);
+  const rate = isOverRateLimit(req.phoneE164, RATE_LIMIT_MAX_PER_HOUR, automated);
   if (rate.limited) {
     return { ok: false, error: 'Rate limit reached for this number.', reason: 'rate_limited' };
   }
@@ -1807,7 +1799,7 @@ export function buildWhatsAppTemplateContext(opts: {
     state.connectedPhone ||
     '';
   const feedbackLink = config.safety.feedbackLink || '';
-  const instagram = config.safety.instagram || getSettingValue('instagram_handle') || '';
+  const instagram = getSettingValue('instagram_handle') || '';
 
   const context: WhatsAppTemplateContext = {
     customer_name: 'Guest',
@@ -1963,29 +1955,9 @@ export function buildWhatsAppTemplateContext(opts: {
         last_visit_at: string | null;
       };
 
-      let visitCount = Number(stats?.visit_count || 0);
-      let totalSpent = Number(stats?.total_spent || 0);
-      let lastVisitAt = stats?.last_visit_at || null;
-
-      if (visitCount === 0) {
-        const orderStats = db
-          .prepare(`
-            SELECT
-              COUNT(*) AS visit_count,
-              COALESCE(SUM(total), 0) AS total_spent,
-              MAX(created_at) AS last_visit_at
-            FROM orders
-            WHERE customer_id = ? AND status != 'cancelled'
-          `)
-          .get(resolvedCustomerId) as {
-          visit_count: number;
-          total_spent: number;
-          last_visit_at: string | null;
-        };
-        visitCount = Number(orderStats?.visit_count || 0);
-        totalSpent = Number(orderStats?.total_spent || 0);
-        lastVisitAt = orderStats?.last_visit_at || null;
-      }
+      const visitCount = Number(stats?.visit_count || 0);
+      const totalSpent = Number(stats?.total_spent || 0);
+      const lastVisitAt = stats?.last_visit_at || null;
 
       context.visit_count = visitCount;
       context.total_spent = formatCurrencyForTemplate(totalSpent, currency, country);
@@ -2009,22 +1981,6 @@ export function buildWhatsAppTemplateContext(opts: {
   }
 
   return context;
-}
-
-export function renderReceiptForBill(
-  billId: number,
-  opts?: { pointsEarned?: number; templateId?: string },
-): string {
-  const config = getAutomationConfig();
-  const templateId = opts?.templateId || 'receipt';
-  const template =
-    config.templates.find((t) => t.id === templateId) ||
-    DEFAULT_WHATSAPP_TEMPLATES.find((t) => t.id === 'receipt')!;
-  const context = buildWhatsAppTemplateContext({
-    billId,
-    pointsEarned: opts?.pointsEarned,
-  });
-  return renderWhatsAppTemplate(template.body, context);
 }
 
 function hasRuleMessageForBill(billId: number, ruleUserId: string): boolean {
@@ -2184,12 +2140,12 @@ async function triggerBillPaidAutomationImpl(
     if (nthVisitRule?.enabled && !hasRuleMessageForBill(billId, 'rule:nth_visit')) {
       const nth = nthVisitRule.nthVisit ?? 5;
       const visitCount = Number(context.visit_count || 0);
-      const matchesNth =
-        visitCount > 0 &&
-        (nthVisitRule.repeatEveryNth !== false ? visitCount % nth === 0 : visitCount === nth);
+      const matchesNth = visitCount > 0 && visitCount % nth === 0;
       if (matchesNth) {
         const tpl =
-          templateMap.get(nthVisitRule.templateId) ?? templateMap.get('loyalty_milestone');
+          templateMap.get(nthVisitRule.templateId) ??
+          templateMap.get('visit_milestone') ??
+          templateMap.get('loyalty_milestone');
         if (tpl) {
           const body = renderWhatsAppTemplate(tpl.body, context);
           if (body) {
@@ -2204,31 +2160,6 @@ async function triggerBillPaidAutomationImpl(
             results.nth_visit = res;
             if (res.ok) triggered.push('nth_visit');
           }
-        }
-      }
-    }
-
-    // 4. Feedback request when delayHours === 0
-    const feedbackRule = findRule('feedback_delay');
-    if (
-      feedbackRule?.enabled &&
-      (feedbackRule.delayHours ?? 2) === 0 &&
-      !hasRuleMessageForBill(billId, 'rule:feedback_delay')
-    ) {
-      const tpl = templateMap.get(feedbackRule.templateId) ?? templateMap.get('feedback');
-      if (tpl) {
-        const body = renderWhatsAppTemplate(tpl.body, context);
-        if (body) {
-          const res = await sendMessage({
-            phoneE164: parsedPhone.e164,
-            body,
-            billId,
-            customerId: String(customerId),
-            kind: 'auto_followup',
-            userId: 'rule:feedback_delay',
-          });
-          results.feedback_delay = res;
-          if (res.ok) triggered.push('feedback_delay');
         }
       }
     }
@@ -2272,7 +2203,7 @@ async function runScheduledAutomationSweepImpl(
   // 1. Delayed feedback requests (X hours after paid_at, within last 7 days)
   const feedbackRule = config.rules.find((r) => r.trigger === 'feedback_delay');
   if (feedbackRule?.enabled) {
-    const delayHours = feedbackRule.delayHours ?? 2;
+    const delayHours = Math.max(1, feedbackRule.delayHours ?? 2);
     const cutoff = new Date(nowMs - delayHours * 60 * 60 * 1000)
       .toISOString()
       .replace('T', ' ')
@@ -2422,8 +2353,6 @@ async function runScheduledAutomationSweepImpl(
 
 export interface BroadcastSegmentOptions {
   templateId?: string;
-  body?: string;
-  customBody?: string;
   minVisits?: number;
   inactiveDays?: number;
   minPoints?: number;
@@ -2446,8 +2375,7 @@ export async function runBroadcast(opts: BroadcastSegmentOptions): Promise<{
   const tpl = opts.templateId
     ? config.templates.find((t) => t.id === opts.templateId)
     : undefined;
-  const candidateBody = opts.body ?? opts.customBody;
-  const rawTemplateBody = (typeof candidateBody === 'string' && candidateBody.trim()) || tpl?.body || '';
+  const rawTemplateBody = tpl?.body?.trim() || '';
   if (!rawTemplateBody) {
     return {
       ok: false,

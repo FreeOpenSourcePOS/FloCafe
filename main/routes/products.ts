@@ -155,6 +155,14 @@ export function fetchPinnedHttps(
   const parsedUrl = new URL(rawUrl);
   const offlineSignal = getOfflineModeAbortSignal();
   const effectiveSignal = signal ? AbortSignal.any([signal, offlineSignal]) : offlineSignal;
+  if (effectiveSignal.aborted) {
+    if (isOfflineMode() || offlineSignal.aborted) {
+      return Promise.reject(new OfflineModeError('Image import'));
+    }
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    return Promise.reject(abortError);
+  }
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -236,12 +244,12 @@ export function fetchPinnedHttps(
       },
     );
 
+    request.on('error', (error) => finish(error));
     if (effectiveSignal.aborted) {
       onAbort();
       return;
     }
     effectiveSignal.addEventListener('abort', onAbort, { once: true });
-    request.on('error', (error) => finish(error));
     request.end();
   });
 }

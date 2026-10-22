@@ -70,6 +70,7 @@ import {
   createAutoUpdaterErrorHandler,
   createRestartAndInstallHandler,
   createSuspendUpdaterForOfflineMode,
+  createUpdateCheckTracker,
   type UpdateShutdownState,
 } from './updater-shutdown';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
@@ -146,9 +147,11 @@ console.log('[Log] Log files location:', logPath);
 // Persisted update state: transitions are routed here for status recovery.
 let storedUpdateStatus: StoredUpdateStatus = initialUpdateState();
 let updaterPhase: UpdateErrorPhase = 'check';
-let activeUpdateCheckId = 0;
-let acceptedUpdateCheckId = 0;
 let stagedUpdateReady = false;
+const updateCheckTracker = createUpdateCheckTracker({
+  shouldRunDeferredCheck: () =>
+    !isOfflineMode() && !isInstallReady(storedUpdateStatus, stagedUpdateReady),
+});
 let startupFailure = false;
 let isInstallingUpdate = false;
 let betaChannelTransitionTail: Promise<void> = Promise.resolve();
@@ -243,7 +246,7 @@ function setupAutoUpdater(): void {
   autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('checking-for-update', () => {
-    if (isOfflineMode() || acceptedUpdateCheckId !== activeUpdateCheckId) return;
+    if (isOfflineMode() || !updateCheckTracker.canAcceptCheckEvent()) return;
     console.log('[Update] Checking for updates...');
     updaterPhase = 'check';
     setUpdateStatus({ status: 'checking' });
@@ -255,7 +258,7 @@ function setupAutoUpdater(): void {
         storedUpdateStatus,
         updaterPhase,
         isOfflineMode(),
-        acceptedUpdateCheckId === activeUpdateCheckId,
+        updateCheckTracker.canAcceptCheckEvent(),
       )
     ) {
       return;
@@ -276,7 +279,7 @@ function setupAutoUpdater(): void {
         storedUpdateStatus,
         updaterPhase,
         isOfflineMode(),
-        acceptedUpdateCheckId === activeUpdateCheckId,
+        updateCheckTracker.canAcceptCheckEvent(),
       )
     ) {
       return;
@@ -315,7 +318,9 @@ function setupAutoUpdater(): void {
       },
       isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
       isInstallingUpdate: () => isInstallingUpdate,
-      isOfflineSuppressed: () => isOfflineMode() || acceptedUpdateCheckId !== activeUpdateCheckId,
+      isOfflineSuppressed: () => isOfflineMode(),
+      isStaleCheckSuppressed: () =>
+        updaterPhase === 'check' && !updateCheckTracker.canAcceptCheckEvent(),
       setUpdateStatus,
       onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
       logInfo: (message, detail) => log.info(message, detail),
@@ -403,12 +408,15 @@ function checkForUpdates(): void {
     return;
   }
 
-  acceptedUpdateCheckId = ++activeUpdateCheckId;
   updaterPhase = 'check';
   setUpdateStatus({ status: 'checking' });
-  autoUpdater.checkForUpdates().catch((err) => {
-    // Record error state; catch prevents unhandled rejection.
-    console.error('[Update] Check failed:', err);
+  updateCheckTracker.beginCheck(() => {
+    updaterPhase = 'check';
+    setUpdateStatus({ status: 'checking' });
+    return autoUpdater.checkForUpdates().catch((err) => {
+      // Record error state; catch prevents unhandled rejection.
+      console.error('[Update] Check failed:', err);
+    });
   });
 }
 
@@ -426,7 +434,7 @@ const suspendUpdaterForOfflineMode = createSuspendUpdaterForOfflineMode({
     updateDownloadToken = null;
   },
   invalidateCheck: () => {
-    acceptedUpdateCheckId = 0;
+    updateCheckTracker.invalidateActiveCheck();
   },
 });
 

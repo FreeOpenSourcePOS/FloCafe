@@ -29,8 +29,8 @@ on. While it is on:
   artifact downloads (including in-flight requests) are refused or aborted.
 - Telemetry, diagnostics and PostHog send nothing (stopping the daily ping timer, aborting in-flight
   telemetry, diagnostics and PostHog requests, and shutting down the PostHog client without flushing
-  queued events; turning the mode off restarts the telemetry timer), and web image import returns
-  `503` (aborting in-flight fetches).
+  queued events; turning the mode off resumes the daily telemetry timer without resending
+  `app_launch`), and web image import returns `503` (aborting in-flight fetches).
 
 The Express API, KDS and Server App stay bound to `0.0.0.0`, so devices on the local network keep
 working.

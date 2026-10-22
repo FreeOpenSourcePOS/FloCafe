@@ -1610,7 +1610,7 @@ router.put(
         cloudSync.reload();
         cloudSync.refreshRegistrationProfile();
         whatsapp.initFromDb();
-        telemetry.start();
+        telemetry.resumeDailyChecks();
       }
       res.json({ offline_mode: isOfflineMode() });
     } catch (error: unknown) {

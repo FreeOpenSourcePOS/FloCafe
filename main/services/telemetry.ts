@@ -444,6 +444,23 @@ export function isTelemetryDailyTimerActive(): boolean {
   return dailyPingTimer !== null;
 }
 
+function armDailyChecks(): void {
+  if (telemetryStopping) return;
+  if (dailyPingTimer) {
+    clearInterval(dailyPingTimer);
+    dailyPingTimer = null;
+  }
+  if (matrixOffline() && postHogNetworkSuppressed()) return;
+  if (!matrixOffline()) maybeSendDailyPing();
+  runPostHogDailyChecks();
+  if (!matrixOffline() || !postHogNetworkSuppressed()) {
+    dailyPingTimer = setInterval(() => {
+      if (!matrixOffline()) maybeSendDailyPing();
+      runPostHogDailyChecks();
+    }, DAILY_PING_INTERVAL_MS);
+  }
+}
+
 export const telemetry = {
   start(): void {
     telemetryStopping = false;
@@ -457,14 +474,15 @@ export const telemetry = {
     }
     if (matrixOffline() && postHogNetworkSuppressed()) return;
     void sendEvent('app_launch');
-    if (!matrixOffline()) maybeSendDailyPing();
-    runPostHogDailyChecks();
-    if (!matrixOffline() || !postHogNetworkSuppressed()) {
-      dailyPingTimer = setInterval(() => {
-        if (!matrixOffline()) maybeSendDailyPing();
-        runPostHogDailyChecks();
-      }, DAILY_PING_INTERVAL_MS);
-    }
+    armDailyChecks();
+  },
+  resumeDailyChecks(): void {
+    telemetryStopping = false;
+    telemetryStopPromise = null;
+    try {
+      (require('./posthog') as typeof import('./posthog')).invalidatePostHogConsentCache();
+    } catch {}
+    armDailyChecks();
   },
   stop(): Promise<void> {
     if (telemetryStopPromise) return telemetryStopPromise;

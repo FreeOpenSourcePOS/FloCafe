@@ -30,10 +30,72 @@ type AutoUpdaterErrorHandlerOptions = {
   isInstallReady: () => boolean;
   isInstallingUpdate: () => boolean;
   isOfflineSuppressed?: () => boolean;
+  isStaleCheckSuppressed?: () => boolean;
   setUpdateStatus: (next: StoredUpdateStatus) => void;
   onInstallFailure: (error: unknown) => void;
   logInfo: (message: string, detail?: unknown) => void;
 };
+
+export type UpdateCheckTracker = {
+  beginCheck: (runCheck: (checkId: number) => Promise<unknown> | unknown) => number | null;
+  invalidateActiveCheck: () => void;
+  canAcceptCheckEvent: (checkId?: number) => boolean;
+  hasPendingInvalidatedCheck: () => boolean;
+};
+
+export function createUpdateCheckTracker(options?: {
+  shouldRunDeferredCheck?: () => boolean;
+}): UpdateCheckTracker {
+  let nextCheckId = 0;
+  let acceptedCheckId = 0;
+  const pendingInvalidatedChecks = new Set<number>();
+  let deferredRunner: ((checkId: number) => Promise<unknown> | unknown) | null = null;
+
+  const beginCheck = (runCheck: (checkId: number) => Promise<unknown> | unknown): number | null => {
+    if (pendingInvalidatedChecks.size > 0) {
+      deferredRunner = runCheck;
+      acceptedCheckId = 0;
+      return null;
+    }
+    const checkId = ++nextCheckId;
+    acceptedCheckId = checkId;
+    let task: Promise<unknown>;
+    try {
+      task = Promise.resolve(runCheck(checkId));
+    } catch (error) {
+      task = Promise.reject(error);
+    }
+    void task
+      .catch(() => {})
+      .finally(() => {
+        const wasInvalidated = pendingInvalidatedChecks.delete(checkId);
+        if (wasInvalidated && pendingInvalidatedChecks.size === 0 && deferredRunner) {
+          const nextRun = deferredRunner;
+          deferredRunner = null;
+          if (options?.shouldRunDeferredCheck ? options.shouldRunDeferredCheck() : true) {
+            beginCheck(nextRun);
+          }
+        }
+      });
+    return checkId;
+  };
+
+  return {
+    beginCheck,
+    invalidateActiveCheck: () => {
+      deferredRunner = null;
+      if (acceptedCheckId > 0) {
+        pendingInvalidatedChecks.add(acceptedCheckId);
+        acceptedCheckId = 0;
+      }
+    },
+    canAcceptCheckEvent: (checkId?: number) => {
+      if (pendingInvalidatedChecks.size > 0 || acceptedCheckId === 0) return false;
+      return checkId === undefined || checkId === acceptedCheckId;
+    },
+    hasPendingInvalidatedCheck: () => pendingInvalidatedChecks.size > 0,
+  };
+}
 
 type SuspendUpdaterForOfflineModeOptions = {
   getPhase: () => UpdateErrorPhase;
@@ -74,6 +136,7 @@ export function createAutoUpdaterErrorHandler({
   isInstallReady,
   isInstallingUpdate,
   isOfflineSuppressed,
+  isStaleCheckSuppressed,
   setUpdateStatus,
   onInstallFailure,
   logInfo,
@@ -99,6 +162,9 @@ export function createAutoUpdaterErrorHandler({
     }
     if (isOfflineSuppressed?.()) {
       setUpdateStatus({ status: 'offline', reason: 'unknown', error: 'Offline mode is on' });
+      return;
+    }
+    if (isStaleCheckSuppressed?.()) {
       return;
     }
     setUpdateStatus({

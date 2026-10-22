@@ -78,6 +78,7 @@ const { canAcceptUpdateCheckResult } = require('../main/update-state');
 const {
   createAutoUpdaterErrorHandler,
   createSuspendUpdaterForOfflineMode,
+  createUpdateCheckTracker,
 } = require('../main/updater-shutdown');
 const net = require('net');
 
@@ -404,6 +405,25 @@ async function main() {
           'offline_mode',
           'in-flight fetchPinnedHttps aborts with offline_mode when Offline mode turns on',
         );
+
+        await api(baseUrl, '/api/settings/offline-mode', {
+          method: 'PUT',
+          body: { offline_mode: false },
+          headers: ownerAuth,
+        });
+        const preAbortedErrorName = await fetchPinnedHttps(
+          `https://example.com:${port}/slow.png`,
+          '127.0.0.1',
+          AbortSignal.abort(),
+        ).then(
+          () => '',
+          (err: any) => err?.name ?? '',
+        );
+        assertEqualOrThrow(
+          preAbortedErrorName,
+          'AbortError',
+          'fetchPinnedHttps with a pre-aborted signal rejects cleanly with AbortError',
+        );
       } finally {
         for (const s of sockets) s.destroy();
         await new Promise<void>((resolve) => hangingServer.close(() => resolve()));
@@ -649,15 +669,24 @@ async function main() {
 
     console.log('\n--- 4. Leaving Offline mode re-arms telemetry and PostHog daily checks ---');
     {
+      const savedNodeEnv = process.env.NODE_ENV;
+      const savedCi = process.env.CI;
       const savedTelemetryDev = process.env.FLO_TELEMETRY_DEV;
       const savedFetch = globalThis.fetch;
+      const telemetryEvents: string[] = [];
       globalThis.fetch = (async (input: any, init?: RequestInit) => {
         if (String(input) === TELEMETRY_URL) {
+          try {
+            const parsed = JSON.parse(String(init?.body || '{}'));
+            if (typeof parsed.event_type === 'string') telemetryEvents.push(parsed.event_type);
+          } catch {}
           return new Response(null, { status: 204 });
         }
         return savedFetch(input, init);
       }) as typeof fetch;
       try {
+        delete process.env.NODE_ENV;
+        delete process.env.CI;
         process.env.FLO_TELEMETRY_DEV = '1';
         upsertSettings({ offline_mode: 'true', telemetry_enabled: 'true' });
         telemetry.start();
@@ -675,7 +704,23 @@ async function main() {
         assertEqualOrThrow(
           isTelemetryDailyTimerActive(),
           true,
-          'turning Offline mode off re-arms dailyPingTimer via telemetry.start()',
+          'turning Offline mode off re-arms dailyPingTimer via telemetry.resumeDailyChecks()',
+        );
+        assertEqualOrThrow(
+          telemetryEvents.includes('app_launch'),
+          false,
+          'leaving Offline mode does not send duplicate app_launch events',
+        );
+
+        await api(baseUrl, '/api/settings/offline-mode', {
+          method: 'PUT',
+          body: { offline_mode: false },
+          headers: ownerAuth,
+        });
+        assertEqualOrThrow(
+          telemetryEvents.includes('app_launch'),
+          false,
+          'writing offline_mode=false while already online does not send app_launch',
         );
 
         await api(baseUrl, '/api/settings/offline-mode', {
@@ -691,6 +736,10 @@ async function main() {
       } finally {
         await telemetry.stop();
         globalThis.fetch = savedFetch;
+        if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = savedNodeEnv;
+        if (savedCi === undefined) delete process.env.CI;
+        else process.env.CI = savedCi;
         if (savedTelemetryDev === undefined) delete process.env.FLO_TELEMETRY_DEV;
         else process.env.FLO_TELEMETRY_DEV = savedTelemetryDev;
         await api(baseUrl, '/api/settings/offline-mode', {
@@ -779,9 +828,21 @@ async function main() {
     {
       let phase: 'check' | 'download' = 'check';
       let status: any = { status: 'checking' };
-      let activeCheckId = 1;
-      let acceptedCheckId = 1;
+      let offline = false;
       let downloadCancelled = false;
+      let settleFirstCheck: (() => void) | null = null;
+      let secondCheckStarted = false;
+
+      const tracker = createUpdateCheckTracker({
+        shouldRunDeferredCheck: () => !offline,
+      });
+      const firstCheckId = tracker.beginCheck(
+        () =>
+          new Promise<void>((resolve) => {
+            settleFirstCheck = resolve;
+          }),
+      );
+      assertEqualOrThrow(firstCheckId, 1, 'initial online update check starts immediately');
 
       const suspendUpdater = createSuspendUpdaterForOfflineMode({
         getPhase: () => phase,
@@ -796,10 +857,11 @@ async function main() {
           downloadCancelled = true;
         },
         invalidateCheck: () => {
-          acceptedCheckId = 0;
+          tracker.invalidateActiveCheck();
         },
       });
 
+      offline = true;
       suspendUpdater();
       assertEqualOrThrow(
         status.status,
@@ -812,19 +874,9 @@ async function main() {
         'suspending during a check invalidates the check without touching download token',
       );
       assertEqualOrThrow(
-        canAcceptUpdateCheckResult(status, phase, true, acceptedCheckId === activeCheckId),
+        canAcceptUpdateCheckResult(status, phase, offline, tracker.canAcceptCheckEvent()),
         false,
         'late update-available/update-not-available result is rejected while Offline mode is on',
-      );
-      assertEqualOrThrow(
-        canAcceptUpdateCheckResult(
-          { status: 'checking' },
-          phase,
-          false,
-          acceptedCheckId === activeCheckId,
-        ),
-        false,
-        'invalidated check result remains rejected even if Offline mode is toggled back off',
       );
 
       const handleError = createAutoUpdaterErrorHandler({
@@ -834,7 +886,8 @@ async function main() {
         },
         isInstallReady: () => false,
         isInstallingUpdate: () => false,
-        isOfflineSuppressed: () => true,
+        isOfflineSuppressed: () => offline,
+        isStaleCheckSuppressed: () => phase === 'check' && !tracker.canAcceptCheckEvent(),
         setUpdateStatus: (next) => {
           status = next;
         },
@@ -846,6 +899,44 @@ async function main() {
         status.status,
         'offline',
         'late error from invalidated check preserves offline status instead of check-failed',
+      );
+
+      // Reconnect and start another check while the pre-offline check is still pending.
+      offline = false;
+      phase = 'check';
+      status = { status: 'checking' };
+      const queuedCheckId = tracker.beginCheck(() => {
+        secondCheckStarted = true;
+        return Promise.resolve();
+      });
+      assertEqualOrThrow(
+        queuedCheckId,
+        null,
+        'new check after reconnect waits for the invalidated check to settle',
+      );
+      assertEqualOrThrow(
+        canAcceptUpdateCheckResult(status, phase, offline, tracker.canAcceptCheckEvent()),
+        false,
+        'late result from pre-offline check is blocked even after reconnecting and starting a new check',
+      );
+      handleError(new Error('Stale check error after reconnect'));
+      assertEqualOrThrow(
+        status.status,
+        'checking',
+        'stale error from pre-offline check does not clobber the new check status after reconnect',
+      );
+
+      (settleFirstCheck as (() => void) | null)?.();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      assertEqualOrThrow(
+        secondCheckStarted,
+        true,
+        'queued check starts once the invalidated pre-offline check settles',
+      );
+      assertEqualOrThrow(
+        canAcceptUpdateCheckResult(status, phase, offline, tracker.canAcceptCheckEvent()),
+        true,
+        'new check result is accepted after the invalidated check settles',
       );
     }
   } finally {

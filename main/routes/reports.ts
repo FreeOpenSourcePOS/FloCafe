@@ -1259,9 +1259,13 @@ router.get(
         return res.status(400).json({ error: 'format must be xlsx or csv' });
       }
       const part =
-        req.query.part === 'summary' || req.query.part === 'items' ? req.query.part : undefined;
+        req.query.part === 'summary' || req.query.part === 'items' || req.query.part === 'payments'
+          ? req.query.part
+          : undefined;
       if (format === 'csv' && !part) {
-        return res.status(400).json({ error: 'CSV export requires part=summary or part=items' });
+        return res
+          .status(400)
+          .json({ error: 'CSV export requires part=summary, part=items or part=payments' });
       }
 
       const dataset = buildDailySalesExportDataset(date);

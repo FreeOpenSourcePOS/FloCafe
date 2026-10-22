@@ -111,6 +111,20 @@ export interface OrderDetailPanelProps {
   onItemEditResolved?: (orderId: number) => Promise<boolean> | void;
 }
 
+type PaymentDetailLine = NonNullable<Bill['payment_details']>[number];
+
+export function normalizeBillPaymentDetails(raw: unknown): PaymentDetailLine[] {
+  if (Array.isArray(raw)) {
+    return raw.filter(
+      (line): line is PaymentDetailLine => Boolean(line) && typeof line === 'object',
+    );
+  }
+  if (raw && typeof raw === 'object') {
+    return [raw as PaymentDetailLine];
+  }
+  return [];
+}
+
 function OrderDetailContent({
   order,
   now,
@@ -186,6 +200,11 @@ function OrderDetailContent({
 
   const orderBills = order.bills && order.bills.length > 0 ? order.bills : bill ? [bill] : [];
   const splitBills = orderBills.filter((candidate) => Boolean(candidate.split_group_id));
+  const paymentReferences = orderBills.flatMap((candidate) =>
+    normalizeBillPaymentDetails(candidate.payment_details).filter((line) =>
+      Boolean(line.transaction_id),
+    ),
+  );
   const canPaySplitBill = (candidate: Bill) =>
     candidate.payment_status === 'unpaid' || candidate.payment_status === 'partial';
   const hasUnpaidSplitBills = splitBills.some(canPaySplitBill);
@@ -772,6 +791,26 @@ function OrderDetailContent({
               <span className="text-red-600 dark:text-red-400 font-bold">
                 {tOrders('balance')}: {fmt(Number(bill.balance))}
               </span>
+            </div>
+          )}
+
+          {paymentReferences.length > 0 && (
+            <div className="mt-2.5 space-y-1 text-xs text-muted-foreground">
+              {paymentReferences.map((line, index) => (
+                <div
+                  key={`${line.method}:${line.transaction_id}:${index}`}
+                  className="flex items-center justify-between gap-2"
+                >
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <CreditCard size={12} className="shrink-0" />
+                    <span className="truncate">
+                      {line.method === 'card' ? tPos('methodCard') : line.method} ·{' '}
+                      {tOrders('transactionNumber')}: <Ltr>{line.transaction_id}</Ltr>
+                    </span>
+                  </span>
+                  <span className="font-medium text-foreground">{fmt(Number(line.amount))}</span>
+                </div>
+              ))}
             </div>
           )}
 

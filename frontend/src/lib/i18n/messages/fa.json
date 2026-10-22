@@ -807,7 +807,8 @@
     "overridePriceSave": "اعمال قیمت",
     "overridePriceSaved": "قیمت به‌روزرسانی شد",
     "overridePriceFailed": "به‌روزرسانی قیمت ممکن نشد",
-    "priceOverriddenMenu": "قیمت تغییر کرد (منو {price})"
+    "priceOverriddenMenu": "قیمت تغییر کرد (منو {price})",
+    "overridePriceClear": "استفاده از قیمت منو"
   },
   "pos": {
     "addCustomer": "افزودن مشتری",

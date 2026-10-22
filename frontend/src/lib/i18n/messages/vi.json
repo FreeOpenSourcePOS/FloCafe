@@ -807,7 +807,8 @@
     "overridePriceSave": "Áp dụng giá",
     "overridePriceSaved": "Đã cập nhật giá",
     "overridePriceFailed": "Không thể cập nhật giá",
-    "priceOverriddenMenu": "Giá đã đổi (thực đơn {price})"
+    "priceOverriddenMenu": "Giá đã đổi (thực đơn {price})",
+    "overridePriceClear": "Dùng giá thực đơn"
   },
   "pos": {
     "addCustomer": "Thêm khách hàng",

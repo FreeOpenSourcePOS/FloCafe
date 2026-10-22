@@ -807,7 +807,8 @@
     "overridePriceSave": "가격 적용",
     "overridePriceSaved": "가격이 업데이트되었습니다",
     "overridePriceFailed": "가격을 업데이트할 수 없습니다",
-    "priceOverriddenMenu": "가격 변경됨(메뉴 {price})"
+    "priceOverriddenMenu": "가격 변경됨(메뉴 {price})",
+    "overridePriceClear": "메뉴 가격 사용"
   },
   "pos": {
     "addCustomer": "고객 추가",

@@ -807,7 +807,8 @@
     "overridePriceSave": "Apliko çmimin",
     "overridePriceSaved": "Çmimi u përditësua",
     "overridePriceFailed": "Çmimi nuk mund të përditësohej",
-    "priceOverriddenMenu": "Çmimi u ndryshua (menuja {price})"
+    "priceOverriddenMenu": "Çmimi u ndryshua (menuja {price})",
+    "overridePriceClear": "Përdor çmimin e menusë"
   },
   "pos": {
     "addCustomer": "Shto klient",

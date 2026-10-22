@@ -14,6 +14,7 @@ import {
   Pause,
   MapPin,
   SquarePen,
+  Tag,
   Users,
   Wallet,
   StickyNote,
@@ -30,7 +31,9 @@ import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
-import { cartVariantUnitPrice } from '@/lib/cart-price';
+import { cartLineUnitPrice, cartVariantUnitPrice } from '@/lib/cart-price';
+import { tenantCan } from '@/lib/permissions';
+import { CartPriceOverrideModal } from '@/components/pos/CartPriceOverrideModal';
 import { calculateAppliedCharges } from '@/lib/charges';
 import { chargesForOrderType, useChargesStore } from '@/store/charges';
 import { getCurrencyFractionDigits } from '@countries';
@@ -165,6 +168,8 @@ export default function CartPanel({
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
+  const canOverridePrice = tenantCan(currentTenant, 'orders.item.price_override');
+  const [priceOverrideItemId, setPriceOverrideItemId] = useState<string | null>(null);
   const billingType = usePosSettingsStore((s) => s.billingType);
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
   const t = useTranslations('pos');
@@ -552,13 +557,35 @@ export default function CartPanel({
                 <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-muted-foreground">
                     {fmt(
-                      cartVariantUnitPrice(
+                      cartLineUnitPrice(
                         item,
                         cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0,
                       ),
                     )}
+                    {item.price_override && (
+                      <span className="ms-1.5 text-xs text-amber-600 dark:text-amber-400">
+                        {tOrders('priceOverriddenMenu', {
+                          price: fmt(
+                            cartVariantUnitPrice(
+                              item,
+                              cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0,
+                            ),
+                          ),
+                        })}
+                      </span>
+                    )}
                   </p>
                   <div className="flex items-center gap-1.5">
+                    {canOverridePrice && (
+                      <button
+                        onClick={() => setPriceOverrideItemId(item.id)}
+                        className="touch-target shrink-0 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+                        aria-label={tOrders('overridePrice')}
+                        title={tOrders('overridePrice')}
+                      >
+                        <Tag size={14} />
+                      </button>
+                    )}
                     {onEditItem && (
                       <button
                         onClick={() => onEditItem(item)}
@@ -699,6 +726,20 @@ export default function CartPanel({
           </Button>
         </div>
       </div>
+      {priceOverrideItemId &&
+        (() => {
+          const target = cart.items.find((i) => i.id === priceOverrideItemId);
+          return target ? (
+            <CartPriceOverrideModal
+              item={target}
+              onlinePlatformSelected={
+                cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0
+              }
+              onApply={(override) => cart.setItemPriceOverride(target.id, override)}
+              onClose={() => setPriceOverrideItemId(null)}
+            />
+          ) : null;
+        })()}
     </div>
   );
 }

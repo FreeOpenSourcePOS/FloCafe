@@ -807,7 +807,8 @@
     "overridePriceSave": "قیمت لاگو کریں",
     "overridePriceSaved": "قیمت اپ ڈیٹ ہو گئی",
     "overridePriceFailed": "قیمت اپ ڈیٹ نہیں ہو سکی",
-    "priceOverriddenMenu": "قیمت تبدیل کی گئی (مینو {price})"
+    "priceOverriddenMenu": "قیمت تبدیل کی گئی (مینو {price})",
+    "overridePriceClear": "مینو کی قیمت استعمال کریں"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",

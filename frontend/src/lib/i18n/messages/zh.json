@@ -807,7 +807,8 @@
     "overridePriceSave": "应用价格",
     "overridePriceSaved": "价格已更新",
     "overridePriceFailed": "无法更新价格",
-    "priceOverriddenMenu": "价格已修改（菜单价 {price}）"
+    "priceOverriddenMenu": "价格已修改（菜单价 {price}）",
+    "overridePriceClear": "使用菜单价"
   },
   "pos": {
     "addCustomer": "添加顾客",

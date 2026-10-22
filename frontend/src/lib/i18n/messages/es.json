@@ -807,7 +807,8 @@
     "overridePriceSave": "Aplicar precio",
     "overridePriceSaved": "Precio actualizado",
     "overridePriceFailed": "No se pudo actualizar el precio",
-    "priceOverriddenMenu": "Precio modificado (menú {price})"
+    "priceOverriddenMenu": "Precio modificado (menú {price})",
+    "overridePriceClear": "Usar precio de menú"
   },
   "pos": {
     "addCustomer": "Agregar Cliente",

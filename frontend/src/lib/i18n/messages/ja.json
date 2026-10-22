@@ -807,7 +807,8 @@
     "overridePriceSave": "価格を適用",
     "overridePriceSaved": "価格を更新しました",
     "overridePriceFailed": "価格を更新できませんでした",
-    "priceOverriddenMenu": "価格変更済み（メニュー {price}）"
+    "priceOverriddenMenu": "価格変更済み（メニュー {price}）",
+    "overridePriceClear": "メニュー価格に戻す"
   },
   "pos": {
     "addCustomer": "顧客を追加",

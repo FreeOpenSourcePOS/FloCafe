@@ -807,7 +807,8 @@
     "overridePriceSave": "कीमत लागू करें",
     "overridePriceSaved": "कीमत अपडेट हुई",
     "overridePriceFailed": "कीमत अपडेट नहीं हो सकी",
-    "priceOverriddenMenu": "कीमत बदली गई (मेनू {price})"
+    "priceOverriddenMenu": "कीमत बदली गई (मेनू {price})",
+    "overridePriceClear": "मेनू कीमत का उपयोग करें"
   },
   "pos": {
     "addCustomer": "ग्राहक जोड़ें",

@@ -807,7 +807,8 @@
     "overridePriceSave": "Prijs toepassen",
     "overridePriceSaved": "Prijs bijgewerkt",
     "overridePriceFailed": "Prijs kon niet worden bijgewerkt",
-    "priceOverriddenMenu": "Prijs aangepast (menu {price})"
+    "priceOverriddenMenu": "Prijs aangepast (menu {price})",
+    "overridePriceClear": "Menuprijs gebruiken"
   },
   "pos": {
     "addCustomer": "Klant toevoegen",

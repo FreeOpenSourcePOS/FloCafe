@@ -807,7 +807,8 @@
     "overridePriceSave": "Fiyatı uygula",
     "overridePriceSaved": "Fiyat güncellendi",
     "overridePriceFailed": "Fiyat güncellenemedi",
-    "priceOverriddenMenu": "Fiyat değiştirildi (menü {price})"
+    "priceOverriddenMenu": "Fiyat değiştirildi (menü {price})",
+    "overridePriceClear": "Menü fiyatını kullan"
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",

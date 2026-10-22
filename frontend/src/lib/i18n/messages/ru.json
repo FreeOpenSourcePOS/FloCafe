@@ -807,7 +807,8 @@
     "overridePriceSave": "Применить цену",
     "overridePriceSaved": "Цена обновлена",
     "overridePriceFailed": "Не удалось обновить цену",
-    "priceOverriddenMenu": "Цена изменена (меню {price})"
+    "priceOverriddenMenu": "Цена изменена (меню {price})",
+    "overridePriceClear": "Вернуть цену из меню"
   },
   "pos": {
     "addCustomer": "Добавить клиента",

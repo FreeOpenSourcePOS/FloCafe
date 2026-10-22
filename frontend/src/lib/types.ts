@@ -444,4 +444,6 @@ export interface CartItem {
   addons: Addon[];
   special_instructions: string;
   variant?: ProductVariant | null;
+  /** Owner-set selling price for this line, sent to the server when the order is placed. */
+  price_override?: { price: number; reason: string } | null;
 }

@@ -807,7 +807,8 @@
     "overridePriceSave": "Appliquer le prix",
     "overridePriceSaved": "Prix mis à jour",
     "overridePriceFailed": "Impossible de mettre à jour le prix",
-    "priceOverriddenMenu": "Prix modifié (carte {price})"
+    "priceOverriddenMenu": "Prix modifié (carte {price})",
+    "overridePriceClear": "Utiliser le prix de la carte"
   },
   "pos": {
     "addCustomer": "Ajouter un client",

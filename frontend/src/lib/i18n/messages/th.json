@@ -807,7 +807,8 @@
     "overridePriceSave": "ใช้ราคา",
     "overridePriceSaved": "อัปเดตราคาแล้ว",
     "overridePriceFailed": "ไม่สามารถอัปเดตราคาได้",
-    "priceOverriddenMenu": "เปลี่ยนราคาแล้ว (เมนู {price})"
+    "priceOverriddenMenu": "เปลี่ยนราคาแล้ว (เมนู {price})",
+    "overridePriceClear": "ใช้ราคาตามเมนู"
   },
   "pos": {
     "addCustomer": "เพิ่มลูกค้า",

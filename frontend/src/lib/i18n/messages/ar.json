@@ -807,7 +807,8 @@
     "overridePriceSave": "تطبيق السعر",
     "overridePriceSaved": "تم تحديث السعر",
     "overridePriceFailed": "تعذّر تحديث السعر",
-    "priceOverriddenMenu": "تم تغيير السعر (القائمة {price})"
+    "priceOverriddenMenu": "تم تغيير السعر (القائمة {price})",
+    "overridePriceClear": "استخدام سعر القائمة"
   },
   "pos": {
     "addCustomer": "إضافة عميل",

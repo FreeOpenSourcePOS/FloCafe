@@ -807,7 +807,8 @@
     "overridePriceSave": "मूल्य लागू गर्नुहोस्",
     "overridePriceSaved": "मूल्य अद्यावधिक भयो",
     "overridePriceFailed": "मूल्य अद्यावधिक गर्न सकिएन",
-    "priceOverriddenMenu": "मूल्य परिवर्तन गरियो (मेनु {price})"
+    "priceOverriddenMenu": "मूल्य परिवर्तन गरियो (मेनु {price})",
+    "overridePriceClear": "मेनु मूल्य प्रयोग गर्नुहोस्"
   },
   "pos": {
     "addCustomer": "ग्राहक थप्नुहोस्",

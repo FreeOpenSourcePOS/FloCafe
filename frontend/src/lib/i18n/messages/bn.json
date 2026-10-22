@@ -807,7 +807,8 @@
     "overridePriceSave": "দাম প্রয়োগ করুন",
     "overridePriceSaved": "দাম আপডেট হয়েছে",
     "overridePriceFailed": "দাম আপডেট করা যায়নি",
-    "priceOverriddenMenu": "দাম পরিবর্তিত (মেনু {price})"
+    "priceOverriddenMenu": "দাম পরিবর্তিত (মেনু {price})",
+    "overridePriceClear": "মেনু দাম ব্যবহার করুন"
   },
   "pos": {
     "addCustomer": "গ্রাহক যোগ করুন",

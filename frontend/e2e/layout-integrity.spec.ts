@@ -2994,6 +2994,8 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       const slowPage1Arrived = waitForNextSlowPage();
       await budgetPage.goto(`${BASE}/customer-display/#token=${displayToken}`);
       await budgetPage.clock.runFor(1);
+      await expect(budgetPage.locator('header')).toBeVisible();
+      await budgetPage.clock.runFor(1);
       await slowPage1Arrived;
 
       const slowPage2Arrived = waitForNextSlowPage();

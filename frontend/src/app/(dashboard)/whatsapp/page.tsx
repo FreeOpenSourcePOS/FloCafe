@@ -296,6 +296,8 @@ export default function WhatsAppPage() {
   const [automationConfig, setAutomationConfig] = useState<WhatsAppAutomationConfig>(
     DEFAULT_WHATSAPP_AUTOMATION_CONFIG,
   );
+  const [automationLoaded, setAutomationLoaded] = useState(false);
+  const [automationLoadError, setAutomationLoadError] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('receipt');
   const [savingAutomation, setSavingAutomation] = useState(false);
   const [runningSweep, setRunningSweep] = useState(false);
@@ -389,9 +391,13 @@ export default function WhatsAppPage() {
       const { data } = await api.get('/whatsapp/automation');
       if (data?.config) {
         setAutomationConfig(data.config);
+        setAutomationLoaded(true);
+        setAutomationLoadError(false);
+      } else {
+        setAutomationLoadError(true);
       }
     } catch {
-      /* ignore */
+      setAutomationLoadError(true);
     }
   }, [isAdmin]);
 
@@ -449,10 +455,18 @@ export default function WhatsAppPage() {
   }, [refreshAutomation]);
 
   const saveAutomation = async () => {
+    if (!automationLoaded || automationLoadError) {
+      toast.error(tCommon('somethingWrong'));
+      return;
+    }
     setSavingAutomation(true);
     try {
       const { data } = await api.put('/whatsapp/automation', automationConfig);
-      if (data?.config) setAutomationConfig(data.config);
+      if (data?.config) {
+        setAutomationConfig(data.config);
+        setAutomationLoaded(true);
+        setAutomationLoadError(false);
+      }
       toast.success(tAutomation('savedSuccess'));
     } catch {
       toast.error(tCommon('saveFailed'));
@@ -1146,6 +1160,23 @@ export default function WhatsAppPage() {
 
           {isAdmin && (
             <TabsContent value="automation" className="space-y-4">
+              {automationLoadError && (
+                <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="size-4 shrink-0" />
+                    <span>{tCommon('somethingWrong')}</span>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void refreshAutomation()}
+                  >
+                    <RotateCcw className="size-3.5" />
+                  </Button>
+                </div>
+              )}
+
               {/* 1. Message Template Builder with Placeholders & Live Preview */}
               <Card>
                 <CardHeader>
@@ -1156,7 +1187,10 @@ export default function WhatsAppPage() {
                       </CardTitle>
                       <CardDescription>{tAutomation('templatesDescription')}</CardDescription>
                     </div>
-                    <Button onClick={saveAutomation} disabled={savingAutomation}>
+                    <Button
+                      onClick={saveAutomation}
+                      disabled={savingAutomation || !automationLoaded || automationLoadError}
+                    >
                       {savingAutomation && <Loader2 className="size-4 animate-spin" />}{' '}
                       {tAutomation('saveCta')}
                     </Button>
@@ -1213,10 +1247,14 @@ export default function WhatsAppPage() {
                         <div className="space-y-3">
                           <div className="flex items-end justify-between gap-2">
                             <div className="flex-1 space-y-1">
-                              <label className="text-xs font-medium text-muted-foreground">
+                              <label
+                                htmlFor="wa-template-name"
+                                className="text-xs font-medium text-muted-foreground"
+                              >
                                 {tAutomation('templateNameLabel')}
                               </label>
                               <Input
+                                id="wa-template-name"
                                 value={activeTpl.name}
                                 onChange={(e) => updateTemplateField('name', e.target.value)}
                               />
@@ -1232,10 +1270,14 @@ export default function WhatsAppPage() {
                           </div>
 
                           <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">
+                            <label
+                              htmlFor="wa-template-body"
+                              className="text-xs font-medium text-muted-foreground"
+                            >
                               {tAutomation('templateBodyLabel')}
                             </label>
                             <textarea
+                              id="wa-template-body"
                               rows={8}
                               value={activeTpl.body}
                               onChange={(e) => updateTemplateField('body', e.target.value)}
@@ -1347,10 +1389,14 @@ export default function WhatsAppPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           {rule.trigger === 'feedback_delay' && (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-xs text-muted-foreground">
+                              <label
+                                htmlFor={`wa-rule-threshold-${rule.trigger}`}
+                                className="text-xs text-muted-foreground"
+                              >
                                 {tAutomation('thresholdHours')}
-                              </span>
+                              </label>
                               <Input
+                                id={`wa-rule-threshold-${rule.trigger}`}
                                 type="number"
                                 min={1}
                                 max={168}
@@ -1367,10 +1413,14 @@ export default function WhatsAppPage() {
 
                           {rule.trigger === 'winback' && (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-xs text-muted-foreground">
+                              <label
+                                htmlFor={`wa-rule-threshold-${rule.trigger}`}
+                                className="text-xs text-muted-foreground"
+                              >
                                 {tAutomation('thresholdDays')}
-                              </span>
+                              </label>
                               <Input
+                                id={`wa-rule-threshold-${rule.trigger}`}
                                 type="number"
                                 min={1}
                                 max={365}
@@ -1387,10 +1437,14 @@ export default function WhatsAppPage() {
 
                           {rule.trigger === 'points_threshold' && (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-xs text-muted-foreground">
+                              <label
+                                htmlFor={`wa-rule-threshold-${rule.trigger}`}
+                                className="text-xs text-muted-foreground"
+                              >
                                 {tAutomation('thresholdPoints')}
-                              </span>
+                              </label>
                               <Input
+                                id={`wa-rule-threshold-${rule.trigger}`}
                                 type="number"
                                 min={1}
                                 className="w-24 h-8 text-xs"
@@ -1406,10 +1460,14 @@ export default function WhatsAppPage() {
 
                           {rule.trigger === 'nth_visit' && (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-xs text-muted-foreground">
+                              <label
+                                htmlFor={`wa-rule-threshold-${rule.trigger}`}
+                                className="text-xs text-muted-foreground"
+                              >
                                 {tAutomation('thresholdVisits')}
-                              </span>
+                              </label>
                               <Input
+                                id={`wa-rule-threshold-${rule.trigger}`}
                                 type="number"
                                 min={1}
                                 max={1000}
@@ -1423,10 +1481,14 @@ export default function WhatsAppPage() {
                           )}
 
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-muted-foreground">
+                            <label
+                              htmlFor={`wa-rule-template-${rule.trigger}`}
+                              className="text-xs text-muted-foreground"
+                            >
                               {tAutomation('templateSelectLabel')}
-                            </span>
+                            </label>
                             <select
+                              id={`wa-rule-template-${rule.trigger}`}
                               value={rule.templateId}
                               onChange={(e) => updateRule({ templateId: e.target.value })}
                               className="h-8 rounded-md border bg-background px-2 text-xs"
@@ -1456,10 +1518,14 @@ export default function WhatsAppPage() {
                 <CardContent>
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">
+                      <label
+                        htmlFor="wa-broadcast-template"
+                        className="text-xs text-muted-foreground"
+                      >
                         {tAutomation('templateSelectLabel')}
                       </label>
                       <select
+                        id="wa-broadcast-template"
                         value={broadcastTemplateId}
                         onChange={(e) => setBroadcastTemplateId(e.target.value)}
                         className="h-9 rounded-md border bg-background px-2.5 text-sm block"
@@ -1473,10 +1539,14 @@ export default function WhatsAppPage() {
                     </div>
 
                     <div className="space-y-1 w-32">
-                      <label className="text-xs text-muted-foreground">
+                      <label
+                        htmlFor="wa-broadcast-min-visits"
+                        className="text-xs text-muted-foreground"
+                      >
                         {tAutomation('broadcastMinVisits')}
                       </label>
                       <Input
+                        id="wa-broadcast-min-visits"
                         type="number"
                         min={0}
                         value={broadcastMinVisits}
@@ -1485,10 +1555,14 @@ export default function WhatsAppPage() {
                     </div>
 
                     <div className="space-y-1 w-36">
-                      <label className="text-xs text-muted-foreground">
+                      <label
+                        htmlFor="wa-broadcast-inactive-days"
+                        className="text-xs text-muted-foreground"
+                      >
                         {tAutomation('broadcastInactiveDays')}
                       </label>
                       <Input
+                        id="wa-broadcast-inactive-days"
                         type="number"
                         min={0}
                         value={broadcastInactiveDays}
@@ -1497,10 +1571,14 @@ export default function WhatsAppPage() {
                     </div>
 
                     <div className="space-y-1 w-32">
-                      <label className="text-xs text-muted-foreground">
+                      <label
+                        htmlFor="wa-broadcast-min-points"
+                        className="text-xs text-muted-foreground"
+                      >
                         {tAutomation('broadcastMinPoints')}
                       </label>
                       <Input
+                        id="wa-broadcast-min-points"
                         type="number"
                         min={0}
                         value={broadcastMinPoints}
@@ -1558,10 +1636,14 @@ export default function WhatsAppPage() {
 
                     <div className="grid gap-3 sm:grid-cols-3 pt-1">
                       <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">
+                        <label
+                          htmlFor="wa-quiet-hours-start"
+                          className="text-xs text-muted-foreground"
+                        >
                           {tAutomation('quietHoursStart')}
                         </label>
                         <Input
+                          id="wa-quiet-hours-start"
                           type="time"
                           value={automationConfig.safety.quietHoursStart}
                           onChange={(e) =>
@@ -1573,10 +1655,14 @@ export default function WhatsAppPage() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">
+                        <label
+                          htmlFor="wa-quiet-hours-end"
+                          className="text-xs text-muted-foreground"
+                        >
                           {tAutomation('quietHoursEnd')}
                         </label>
                         <Input
+                          id="wa-quiet-hours-end"
                           type="time"
                           value={automationConfig.safety.quietHoursEnd}
                           onChange={(e) =>
@@ -1588,10 +1674,11 @@ export default function WhatsAppPage() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">
+                        <label htmlFor="wa-max-per-week" className="text-xs text-muted-foreground">
                           {tAutomation('maxPerWeekLabel')}
                         </label>
                         <Input
+                          id="wa-max-per-week"
                           type="number"
                           min={1}
                           max={50}
@@ -1612,10 +1699,11 @@ export default function WhatsAppPage() {
 
                   <div className="pt-2 border-t">
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">
+                      <label htmlFor="wa-feedback-link" className="text-xs text-muted-foreground">
                         {tAutomation('feedbackLinkLabel')}
                       </label>
                       <Input
+                        id="wa-feedback-link"
                         dir="ltr"
                         value={automationConfig.safety.feedbackLink}
                         onChange={(e) =>
@@ -1629,7 +1717,10 @@ export default function WhatsAppPage() {
                   </div>
 
                   <div className="pt-2 border-t flex justify-end">
-                    <Button onClick={saveAutomation} disabled={savingAutomation}>
+                    <Button
+                      onClick={saveAutomation}
+                      disabled={savingAutomation || !automationLoaded || automationLoadError}
+                    >
                       {savingAutomation && <Loader2 className="size-4 animate-spin" />}{' '}
                       {tAutomation('saveCta')}
                     </Button>

@@ -6,7 +6,7 @@ import { parsePhoneNumber } from 'libphonenumber-js';
 import { getDatabase, getSettingValue, now } from '../db';
 import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
 import { isOfflineMode } from './offline-mode';
-import { getCountryByCode, getCurrencyFractionDigits } from '../countries';
+import { resolveRegionalSnapshot, type RegionalSnapshot } from '../countries';
 import { parsePhoneE164 } from '../lib/phone';
 import {
   WHATSAPP_AUTOMATION_SETTING_KEY,
@@ -518,7 +518,19 @@ export function getAutomationConfig(): WhatsAppAutomationConfig {
 export function saveAutomationConfig(raw: unknown): WhatsAppAutomationConfig {
   const normalized = normalizeWhatsAppAutomationConfig(raw);
   writeSetting(WHATSAPP_AUTOMATION_SETTING_KEY, JSON.stringify(normalized));
+  sweepRecipientCooldownUntil.clear();
   return normalized;
+}
+
+function tenantRegionalSnapshot(): RegionalSnapshot {
+  return resolveRegionalSnapshot({
+    country: getSettingValue('country') || undefined,
+    currency: getSettingValue('currency') || undefined,
+    timezone: getSettingValue('timezone') || undefined,
+    currency_display: getSettingValue('currency_display') || undefined,
+    number_digits: getSettingValue('number_digits') || undefined,
+    calendar: getSettingValue('calendar') || undefined,
+  });
 }
 
 export function isCurrentlyQuietHours(
@@ -526,25 +538,14 @@ export function isCurrentlyQuietHours(
   nowDate: Date = new Date(),
 ): boolean {
   if (!safety.quietHoursEnabled) return false;
-  const tz = getSettingValue('timezone') || 'UTC';
-  let currentHhMm = '00:00';
-  try {
-    const formatted = new Intl.DateTimeFormat('en-GB', {
-      timeZone: tz,
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(nowDate);
-    currentHhMm = formatted.replace(/^24:/, '00:');
-  } catch {
-    const formatted = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'UTC',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(nowDate);
-    currentHhMm = formatted.replace(/^24:/, '00:');
-  }
+  const { timezone } = tenantRegionalSnapshot();
+  const formatted = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(nowDate);
+  const currentHhMm = formatted.replace(/^24:/, '00:');
   return isTimeWithinQuietHours(currentHhMm, safety.quietHoursStart, safety.quietHoursEnd);
 }
 
@@ -887,6 +888,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
           state.lastPairingCode = null;
           state.lastError = null;
           state.lastErrorReason = null;
+          ensureAutomationTimer();
           const user = (socket as any).user;
           if (user?.id) {
             const phone = '+' + userFromJid(user.id);
@@ -1251,6 +1253,7 @@ export function disable(): void {
     clearInterval(state.automationTimer);
     state.automationTimer = null;
   }
+  sweepRecipientCooldownUntil.clear();
   state.state = 'disconnected';
   state.connectedPhone = null;
   state.lastQr = null;
@@ -1280,6 +1283,7 @@ export async function connectWithQr(
   if (signal.aborted) return { ok: false, error: 'WhatsApp request cancelled.' };
   state.lastQr = null;
   state.lastPairingCode = null;
+  ensureAutomationTimer();
   await abortable(() => startSocket(signal), signal);
   // QR arrives asynchronously via connection.update
   return { ok: true };
@@ -1299,6 +1303,7 @@ export async function connectWithPairingCode(
     ? AbortSignal.any([requestSignal, whatsappAbortController.signal])
     : whatsappAbortController.signal;
   if (signal.aborted) return { ok: false, error: 'WhatsApp request cancelled.' };
+  ensureAutomationTimer();
   try {
     if (!state.socket) {
       await abortable(() => startSocket(signal), signal);
@@ -1359,6 +1364,7 @@ export function disconnect(): void {
     clearInterval(state.automationTimer);
     state.automationTimer = null;
   }
+  sweepRecipientCooldownUntil.clear();
   state.state = 'disconnected';
   state.connectedPhone = null;
   state.lastQr = null;
@@ -1494,6 +1500,9 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   const jid = await resolveJid(req.phoneE164, socket, signal);
   if (isWhatsAppTerminal())
     return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+  if (isBlocked(req.phoneE164)) {
+    return { ok: false, error: 'This number asked to stop receiving messages.', reason: 'blocked' };
+  }
   if (!jid) {
     return {
       ok: false,
@@ -1594,6 +1603,19 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     await abortableDelay(randomDelayMs(req.body), signal);
     await abortable(() => socket.sendPresenceUpdate('paused', jid), signal).catch(() => {});
     if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
+    if (isBlocked(req.phoneE164)) {
+      updateMessageRow(messageId, {
+        status: 'failed',
+        error: 'This number asked to stop receiving messages.',
+        timestamp_field: 'failed_at',
+      });
+      return {
+        ok: false,
+        messageId,
+        error: 'This number asked to stop receiving messages.',
+        reason: 'blocked',
+      };
+    }
     const sent = await abortable(() => socket.sendMessage(jid, { text: req.body }), signal);
     if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
     // Do not mark 'sent' immediately; wait for server ACK (status=2) in messages.update.
@@ -1753,32 +1775,35 @@ export function removeFromBlocklist(phoneE164: string): boolean {
   return result.changes > 0;
 }
 
-function formatCurrencyForTemplate(amount: number, currency: string, country: string): string {
+function roundLoyaltyAmount(value: unknown): number {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.round((num + Number.EPSILON) * 100) / 100;
+}
+
+function formatCurrencyForTemplate(
+  amount: number,
+  regional: Pick<RegionalSnapshot, 'locale' | 'currency' | 'currencyFractionDigits'>,
+): string {
   const safe = Number.isFinite(amount) ? amount : 0;
-  const locale = getCountryByCode(country)?.locale || 'en-US';
-  if (currency) {
-    try {
-      const decimals = getCurrencyFractionDigits(currency);
-      return new Intl.NumberFormat(locale, {
-        style: 'currency',
-        currency,
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
-      }).format(safe);
-    } catch {
-      // Fall back to plain decimal formatting below.
-    }
+  try {
+    return new Intl.NumberFormat(regional.locale, {
+      style: 'currency',
+      currency: regional.currency,
+      minimumFractionDigits: regional.currencyFractionDigits,
+      maximumFractionDigits: regional.currencyFractionDigits,
+    }).format(safe);
+  } catch {
+    return new Intl.NumberFormat(regional.locale, {
+      minimumFractionDigits: regional.currencyFractionDigits,
+      maximumFractionDigits: regional.currencyFractionDigits,
+    }).format(safe);
   }
-  return new Intl.NumberFormat(locale, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(safe);
 }
 
 function formatDateForTemplate(
   rawTs: string | null | undefined,
-  country: string,
-  timezone: string,
+  regional: Pick<RegionalSnapshot, 'locale' | 'timezone'>,
   includeTime = false,
 ): string {
   if (!rawTs) return '';
@@ -1786,11 +1811,10 @@ function formatDateForTemplate(
     const iso = rawTs.includes('T') ? rawTs : `${rawTs.replace(' ', 'T')}Z`;
     const date = new Date(iso);
     if (Number.isNaN(date.getTime())) return String(rawTs);
-    const locale = getCountryByCode(country)?.locale || 'en-US';
-    return new Intl.DateTimeFormat(locale, {
+    return new Intl.DateTimeFormat(regional.locale, {
       dateStyle: 'medium',
       ...(includeTime ? { timeStyle: 'short' } : {}),
-      timeZone: timezone || 'UTC',
+      timeZone: regional.timezone,
     }).format(date);
   } catch {
     return String(rawTs);
@@ -1804,9 +1828,8 @@ export function buildWhatsAppTemplateContext(opts: {
 }): WhatsAppTemplateContext {
   const db = getDatabase();
   const config = getAutomationConfig();
-  const country = getSettingValue('country') || '';
-  const currency = getSettingValue('currency') || '';
-  const timezone = getSettingValue('timezone') || 'UTC';
+  const regional = tenantRegionalSnapshot();
+  const country = regional.country;
   const storeName = getSettingValue('business_name') || 'Store';
   const storePhone =
     getSettingValue('business_phone') || getSettingValue('phone') || state.connectedPhone || '';
@@ -1818,15 +1841,15 @@ export function buildWhatsAppTemplateContext(opts: {
     customer_phone: '',
     visit_count: 0,
     last_visit_date: '',
-    total_spent: formatCurrencyForTemplate(0, currency, country),
+    total_spent: formatCurrencyForTemplate(0, regional),
     bill_no: '',
     order_date: '',
     order_items: '',
-    total: formatCurrencyForTemplate(0, currency, country),
+    total: formatCurrencyForTemplate(0, regional),
     payment_method: '',
-    points_earned: opts.pointsEarned ?? 0,
+    points_earned: opts.pointsEarned !== undefined ? roundLoyaltyAmount(opts.pointsEarned) : 0,
     points_balance: 0,
-    points_value: formatCurrencyForTemplate(0, currency, country),
+    points_value: formatCurrencyForTemplate(0, regional),
     store_name: storeName,
     store_phone: storePhone,
     feedback_link: feedbackLink,
@@ -1865,11 +1888,10 @@ export function buildWhatsAppTemplateContext(opts: {
       context.bill_no = String(bill.bill_number || bill.id);
       context.order_date = formatDateForTemplate(
         bill.paid_at || order?.created_at || bill.created_at,
-        country,
-        timezone,
+        regional,
         true,
       );
-      context.total = formatCurrencyForTemplate(Number(bill.total || 0), currency, country);
+      context.total = formatCurrencyForTemplate(Number(bill.total || 0), regional);
 
       if (bill.order_id) {
         const hasBillItems = Boolean(
@@ -1914,7 +1936,7 @@ export function buildWhatsAppTemplateContext(opts: {
         context.order_items = items
           .map(
             (item) =>
-              `${item.quantity}x ${item.product_name} - ${formatCurrencyForTemplate(Number(item.total || 0), currency, country)}`,
+              `${item.quantity}x ${item.product_name} - ${formatCurrencyForTemplate(Number(item.total || 0), regional)}`,
           )
           .join('\n');
       }
@@ -1947,7 +1969,7 @@ export function buildWhatsAppTemplateContext(opts: {
             WHERE bill_id = ? AND type = 'credit'
           `)
           .get(bill.id) as { total: number } | undefined;
-        context.points_earned = Math.round(Number(earnedRow?.total || 0));
+        context.points_earned = roundLoyaltyAmount(earnedRow?.total);
       }
     }
   }
@@ -1987,9 +2009,9 @@ export function buildWhatsAppTemplateContext(opts: {
       const lastVisitAt = stats?.last_visit_at || null;
 
       context.visit_count = visitCount;
-      context.total_spent = formatCurrencyForTemplate(totalSpent, currency, country);
+      context.total_spent = formatCurrencyForTemplate(totalSpent, regional);
       context.last_visit_date = lastVisitAt
-        ? formatDateForTemplate(lastVisitAt, country, timezone, false)
+        ? formatDateForTemplate(lastVisitAt, regional, false)
         : '';
 
       const ledgerRow = db
@@ -2001,9 +2023,9 @@ export function buildWhatsAppTemplateContext(opts: {
           WHERE customer_id = ?
         `)
         .get(resolvedCustomerId) as { balance: number } | undefined;
-      const balance = Math.max(0, Math.round(Number(ledgerRow?.balance || 0)));
+      const balance = Math.max(0, roundLoyaltyAmount(ledgerRow?.balance));
       context.points_balance = balance;
-      context.points_value = formatCurrencyForTemplate(balance, currency, country);
+      context.points_value = formatCurrencyForTemplate(balance, regional);
     }
   }
 
@@ -2012,9 +2034,35 @@ export function buildWhatsAppTemplateContext(opts: {
 
 function hasRuleMessageForBill(billId: number, ruleUserId: string): boolean {
   const row = getDatabase()
-    .prepare('SELECT 1 FROM whatsapp_messages WHERE bill_id = ? AND created_by_user_id = ? LIMIT 1')
+    .prepare(
+      "SELECT 1 FROM whatsapp_messages WHERE bill_id = ? AND created_by_user_id = ? AND status != 'failed' LIMIT 1",
+    )
     .get(billId, ruleUserId);
   return !!row;
+}
+
+function hasNthVisitMessageForOrder(
+  billId: number,
+  orderId: string | number | null | undefined,
+  customerId: string,
+): boolean {
+  if (hasRuleMessageForBill(billId, 'rule:nth_visit')) return true;
+  if (orderId !== null && orderId !== undefined && orderId !== '') {
+    const row = getDatabase()
+      .prepare(`
+        SELECT 1
+        FROM whatsapp_messages wm
+        JOIN bills b ON b.id = wm.bill_id
+        WHERE b.order_id = ?
+          AND wm.customer_id = ?
+          AND wm.created_by_user_id = 'rule:nth_visit'
+          AND wm.status != 'failed'
+        LIMIT 1
+      `)
+      .get(orderId, customerId);
+    if (row) return true;
+  }
+  return false;
 }
 
 const inFlightBillAutomations = new Map<
@@ -2023,6 +2071,9 @@ const inFlightBillAutomations = new Map<
 >();
 let activeAutomationSweepPromise: Promise<{ feedbackSent: number; winbackSent: number }> | null =
   null;
+const sweepRecipientCooldownUntil = new Map<string, number>();
+const SWEEP_REJECT_COOLDOWN_MS = 30 * 60 * 1000;
+const SWEEP_MAX_FAILED_RETRIES = 3;
 
 export function triggerBillPaidAutomation(
   billId: number,
@@ -2061,6 +2112,7 @@ async function triggerBillPaidAutomationImpl(
       `)
       .get(billId) as
       | {
+          order_id?: string | number | null;
           payment_status?: string | null;
           customer_id?: string | number | null;
           order_customer_id?: string | number | null;
@@ -2129,8 +2181,8 @@ async function triggerBillPaidAutomationImpl(
     const pointsRule = findRule('points_threshold');
     if (pointsRule?.enabled && !hasRuleMessageForBill(billId, 'rule:points_threshold')) {
       const threshold = pointsRule.pointsThreshold ?? 100;
-      const balance = Number(context.points_balance || 0);
-      const earned = Number(context.points_earned || 0);
+      const balance = roundLoyaltyAmount(context.points_balance);
+      const earned = roundLoyaltyAmount(context.points_earned);
       const redeemedRow = db
         .prepare(`
           SELECT COALESCE(SUM(amount), 0) AS total
@@ -2138,8 +2190,8 @@ async function triggerBillPaidAutomationImpl(
           WHERE bill_id = ? AND type = 'debit'
         `)
         .get(billId) as { total: number } | undefined;
-      const redeemed = Math.round(Number(redeemedRow?.total || 0));
-      const prevBalance = balance - earned + redeemed;
+      const redeemed = roundLoyaltyAmount(redeemedRow?.total);
+      const prevBalance = roundLoyaltyAmount(balance - earned + redeemed);
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         .toISOString()
         .replace('T', ' ')
@@ -2147,7 +2199,10 @@ async function triggerBillPaidAutomationImpl(
       const recentPointsReminder = db
         .prepare(`
           SELECT 1 FROM whatsapp_messages
-          WHERE phone_e164 = ? AND created_by_user_id = 'rule:points_threshold' AND queued_at >= ?
+          WHERE phone_e164 = ?
+            AND created_by_user_id = 'rule:points_threshold'
+            AND status != 'failed'
+            AND queued_at >= ?
           LIMIT 1
         `)
         .get(parsedPhone.e164, sevenDaysAgo);
@@ -2173,7 +2228,10 @@ async function triggerBillPaidAutomationImpl(
 
     // 3. Nth visit milestone
     const nthVisitRule = findRule('nth_visit');
-    if (nthVisitRule?.enabled && !hasRuleMessageForBill(billId, 'rule:nth_visit')) {
+    if (
+      nthVisitRule?.enabled &&
+      !hasNthVisitMessageForOrder(billId, bill.order_id, String(customerId))
+    ) {
       const nth = nthVisitRule.nthVisit ?? 5;
       const visitCount = Number(context.visit_count || 0);
       const matchesNth = visitCount > 0 && visitCount % nth === 0;
@@ -2231,20 +2289,24 @@ async function runScheduledAutomationSweepImpl(
   if (!state.enabled || isWhatsAppTerminal() || state.state !== 'connected' || !state.socket) {
     return { feedbackSent, winbackSent };
   }
+  for (const [key, until] of sweepRecipientCooldownUntil) {
+    if (until <= nowMs) sweepRecipientCooldownUntil.delete(key);
+  }
   const db = getDatabase();
   const config = getAutomationConfig();
   const templateMap = new Map(config.templates.map((t) => [t.id, t]));
   const tenantCountry = getSettingValue('country') || '';
 
-  // 1. Delayed feedback requests (X hours after paid_at, within last 7 days)
+  // 1. Delayed feedback requests (X hours after paid_at, within 7 days of becoming due)
   const feedbackRule = config.rules.find((r) => r.trigger === 'feedback_delay');
   if (feedbackRule?.enabled) {
     const delayHours = Math.max(1, feedbackRule.delayHours ?? 2);
-    const cutoff = new Date(nowMs - delayHours * 60 * 60 * 1000)
+    const cutoffMs = nowMs - delayHours * 60 * 60 * 1000;
+    const cutoff = new Date(cutoffMs)
       .toISOString()
       .replace('T', ' ')
       .replace(/\..*$/, '');
-    const sevenDaysAgo = new Date(nowMs - 7 * 24 * 60 * 60 * 1000)
+    const lookbackFloor = new Date(cutoffMs - 7 * 24 * 60 * 60 * 1000)
       .toISOString()
       .replace('T', ' ')
       .replace(/\..*$/, '');
@@ -2269,11 +2331,19 @@ async function runScheduledAutomationSweepImpl(
           )
           AND NOT EXISTS (
             SELECT 1 FROM whatsapp_messages wm
-            WHERE wm.bill_id = b.id AND wm.created_by_user_id = 'rule:feedback_delay'
+            WHERE wm.bill_id = b.id
+              AND wm.created_by_user_id = 'rule:feedback_delay'
+              AND wm.status != 'failed'
           )
+          AND (
+            SELECT COUNT(*) FROM whatsapp_messages wm
+            WHERE wm.bill_id = b.id
+              AND wm.created_by_user_id = 'rule:feedback_delay'
+              AND wm.status = 'failed'
+          ) < ?
         ORDER BY COALESCE(b.paid_at, b.created_at) DESC
       `)
-      .all(cutoff, sevenDaysAgo) as Array<{
+      .all(cutoff, lookbackFloor, SWEEP_MAX_FAILED_RETRIES) as Array<{
       bill_id: number;
       customer_id: string;
       phone: string;
@@ -2282,9 +2352,12 @@ async function runScheduledAutomationSweepImpl(
 
     const tpl = templateMap.get(feedbackRule.templateId) ?? templateMap.get('feedback');
     if (tpl) {
-      let attempted = 0;
+      let dispatched = 0;
       for (const row of dueBills) {
-        if (isWhatsAppTerminal() || attempted >= 25) break;
+        if (isWhatsAppTerminal() || dispatched >= 25) break;
+        const skipKey = `feedback:${row.bill_id}`;
+        const skipUntil = sweepRecipientCooldownUntil.get(skipKey);
+        if (skipUntil && skipUntil > nowMs) continue;
         const parsedPhone = parsePhoneE164(row.phone, tenantCountry || row.country_code || '');
         if (!parsedPhone || isBlocked(parsedPhone.e164)) continue;
         const context = buildWhatsAppTemplateContext({
@@ -2293,7 +2366,6 @@ async function runScheduledAutomationSweepImpl(
         });
         const body = renderWhatsAppTemplate(tpl.body, context);
         if (!body) continue;
-        attempted++;
         const res = await sendMessage({
           phoneE164: parsedPhone.e164,
           body,
@@ -2302,7 +2374,21 @@ async function runScheduledAutomationSweepImpl(
           kind: 'auto_followup',
           userId: 'rule:feedback_delay',
         });
-        if (res.ok) feedbackSent++;
+        if (res.ok) {
+          dispatched++;
+          feedbackSent++;
+        } else if (res.messageId !== undefined) {
+          dispatched++;
+        } else if (
+          res.reason === 'quiet_hours' ||
+          res.reason === 'cooldown' ||
+          res.reason === 'feature_off' ||
+          res.reason === 'not_connected'
+        ) {
+          break;
+        } else {
+          sweepRecipientCooldownUntil.set(skipKey, nowMs + SWEEP_REJECT_COOLDOWN_MS);
+        }
       }
     }
   }
@@ -2344,10 +2430,18 @@ async function runScheduledAutomationSweepImpl(
             WHERE wm.customer_id = c.id
               AND wm.created_by_user_id = 'rule:winback'
               AND wm.queued_at >= ?
+              AND wm.status != 'failed'
           )
+          AND (
+            SELECT COUNT(*) FROM whatsapp_messages wm
+            WHERE wm.customer_id = c.id
+              AND wm.created_by_user_id = 'rule:winback'
+              AND wm.queued_at >= ?
+              AND wm.status = 'failed'
+          ) < ?
         ORDER BY cv.last_visit_at DESC
       `)
-      .all(cutoff, cutoff) as Array<{
+      .all(cutoff, cutoff, cutoff, SWEEP_MAX_FAILED_RETRIES) as Array<{
       id: string;
       phone: string;
       country_code: string | null;
@@ -2356,15 +2450,17 @@ async function runScheduledAutomationSweepImpl(
 
     const tpl = templateMap.get(winbackRule.templateId) ?? templateMap.get('winback');
     if (tpl) {
-      let attempted = 0;
+      let dispatched = 0;
       for (const cust of dueCustomers) {
-        if (isWhatsAppTerminal() || attempted >= 25) break;
+        if (isWhatsAppTerminal() || dispatched >= 25) break;
+        const skipKey = `winback:${cust.id}`;
+        const skipUntil = sweepRecipientCooldownUntil.get(skipKey);
+        if (skipUntil && skipUntil > nowMs) continue;
         const parsedPhone = parsePhoneE164(cust.phone, tenantCountry || cust.country_code || '');
         if (!parsedPhone || isBlocked(parsedPhone.e164)) continue;
         const context = buildWhatsAppTemplateContext({ customerId: cust.id });
         const body = renderWhatsAppTemplate(tpl.body, context);
         if (!body) continue;
-        attempted++;
         const res = await sendMessage({
           phoneE164: parsedPhone.e164,
           body,
@@ -2373,7 +2469,21 @@ async function runScheduledAutomationSweepImpl(
           kind: 'auto_followup',
           userId: 'rule:winback',
         });
-        if (res.ok) winbackSent++;
+        if (res.ok) {
+          dispatched++;
+          winbackSent++;
+        } else if (res.messageId !== undefined) {
+          dispatched++;
+        } else if (
+          res.reason === 'quiet_hours' ||
+          res.reason === 'cooldown' ||
+          res.reason === 'feature_off' ||
+          res.reason === 'not_connected'
+        ) {
+          break;
+        } else {
+          sweepRecipientCooldownUntil.set(skipKey, nowMs + SWEEP_REJECT_COOLDOWN_MS);
+        }
       }
     }
   }
@@ -2443,7 +2553,7 @@ export async function runBroadcast(opts: BroadcastSegmentOptions): Promise<{
 
   const maxLimit = Math.max(1, Math.min(50, Math.round(Number(opts.limit || 25))));
   const minVisits = Math.max(0, Math.round(Number(opts.minVisits || 0)));
-  const minPoints = Math.max(0, Math.round(Number(opts.minPoints || 0)));
+  const minPoints = Math.max(0, roundLoyaltyAmount(opts.minPoints || 0));
   const inactiveDays = Math.max(0, Math.round(Number(opts.inactiveDays || 0)));
   const inactiveCutoff =
     inactiveDays > 0

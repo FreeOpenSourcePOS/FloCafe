@@ -331,7 +331,7 @@ re-parsed as tokens. All five automated rules ship disabled (`enabled: false`):
 `autoOptOutEnabled` is on. Automated sends check store-timezone quiet hours (`quietHoursEnabled`,
 `quietHoursStart` to `quietHoursEnd`) and a per-customer 7-day automated message cap
 (`maxPerCustomerPerWeek`), returning `quiet_hours` or `weekly_cap` when blocked. All outbound sends
-enforce the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`), a 1-hour duplicate-body
+enforce the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`), a 10-minute duplicate-body
 filter, simulated typing delay, and a content filter that rejects non-HTTPS URLs and URL shorteners.
 
 **Offline behaviour.** No work is started when the module is disabled, when it is in a terminal

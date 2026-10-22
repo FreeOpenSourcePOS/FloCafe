@@ -350,10 +350,14 @@ async function main(): Promise<void> {
       'request cancellation does not restart shared auth loading',
     );
 
-    // Connect the socket and run Issue #1239 automation & safety tests
+    // Connect the socket and run automation & safety tests
     eventHandlers.get('connection.update')?.({ connection: 'open' });
     await new Promise((resolve) => setImmediate(resolve));
     process.env.FLO_WHATSAPP_FAST_DELAY = '1';
+    const db = getDatabase();
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US'), ('currency', 'USD'), ('timezone', 'UTC'), ('business_name', 'Flo Test Cafe'), ('instagram_handle', '@flotestcafe')",
+    ).run();
 
     // 1. Placeholder interpolation (renderWhatsAppTemplate) across customer, bill, loyalty, and store fields
     const interpolated = whatsapp.renderWhatsAppTemplate(
@@ -427,37 +431,83 @@ async function main(): Promise<void> {
         whatsapp.isTimeWithinQuietHours('14:00', '22:00', '09:00') === false,
       'isTimeWithinQuietHours handles overnight quiet-hours windows accurately',
     );
-    // Set an all-day quiet window (00:00 -> 23:59) except current minute? Better: test both windows covering 24h by setting start='00:00', end='23:59'
+    assert(
+      whatsapp.isCurrentlyQuietHours(
+        {
+          autoOptOutEnabled: true,
+          quietHoursEnabled: true,
+          quietHoursStart: '22:00',
+          quietHoursEnd: '09:00',
+          maxPerCustomerPerWeek: 2,
+          feedbackLink: '',
+        },
+        new Date('2026-06-15T23:30:00.000Z'),
+      ) === true &&
+        whatsapp.isCurrentlyQuietHours(
+          {
+            autoOptOutEnabled: true,
+            quietHoursEnabled: true,
+            quietHoursStart: '22:00',
+            quietHoursEnd: '09:00',
+            maxPerCustomerPerWeek: 2,
+            feedbackLink: '',
+          },
+          new Date('2026-06-15T14:00:00.000Z'),
+        ) === false,
+      'isCurrentlyQuietHours evaluates deterministic timestamps in store timezone',
+    );
     whatsapp.saveAutomationConfig({
       safety: {
         autoOptOutEnabled: true,
         quietHoursEnabled: true,
-        quietHoursStart: '00:00',
-        quietHoursEnd: '23:59',
+        quietHoursStart: '22:00',
+        quietHoursEnd: '09:00',
         maxPerCustomerPerWeek: 2,
         feedbackLink: 'https://flocafe.example.com/feedback',
       },
     });
-    const blockedByQuietHours = await whatsapp.sendMessage({
-      phoneE164: '+15555550120',
-      body: 'Auto follow-up during quiet hours',
-      billId: null,
-      customerId: null,
-      kind: 'auto_followup',
-      userId: 'rule:feedback_delay',
-    });
+    const RealDate = globalThis.Date;
+    const fixedQuietMs = new RealDate('2026-06-15T23:30:00.000Z').getTime();
+    class MockQuietDate extends RealDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(fixedQuietMs);
+        } else {
+          // @ts-expect-error spread into Date constructor
+          super(...args);
+        }
+      }
+      static override now(): number {
+        return fixedQuietMs;
+      }
+    }
+    globalThis.Date = MockQuietDate as DateConstructor;
+    let blockedByQuietHours!: { ok: boolean; reason?: string };
+    let manualDuringQuietHours!: { ok: boolean; reason?: string };
+    try {
+      blockedByQuietHours = await whatsapp.sendMessage({
+        phoneE164: '+15555550120',
+        body: 'Auto follow-up during quiet hours',
+        billId: null,
+        customerId: null,
+        kind: 'auto_followup',
+        userId: 'rule:feedback_delay',
+      });
+      manualDuringQuietHours = await whatsapp.sendMessage({
+        phoneE164: '+15555550120',
+        body: 'Manual reply during quiet hours',
+        billId: null,
+        customerId: null,
+        kind: 'manual_reply',
+        userId: 'staff-1',
+      });
+    } finally {
+      globalThis.Date = RealDate;
+    }
     assert(
       blockedByQuietHours.ok === false && blockedByQuietHours.reason === 'quiet_hours',
       'quiet hours block automated follow-up sends',
     );
-    const manualDuringQuietHours = await whatsapp.sendMessage({
-      phoneE164: '+15555550120',
-      body: 'Manual reply during quiet hours',
-      billId: null,
-      customerId: null,
-      kind: 'manual_reply',
-      userId: 'staff-1',
-    });
     assert(manualDuringQuietHours.ok === true, 'quiet hours still allow manual staff replies');
 
     // Disable quiet hours and verify weekly cap (maxPerCustomerPerWeek = 2)
@@ -514,10 +564,6 @@ async function main(): Promise<void> {
     assert(manualAfterCap.ok === true, 'weekly per-customer cap still allows manual staff replies');
 
     // 4. Automated rules on bill payment completion (after_payment, points_threshold, nth_visit) + trigger_rule in listMessages
-    const db = getDatabase();
-    db.prepare(
-      "INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US'), ('currency', 'USD'), ('business_name', 'Flo Test Cafe'), ('instagram_handle', '@flotestcafe')",
-    ).run();
     db.prepare(`
       INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
       VALUES ('cust-auto-1', 'Maya Lin', '+14089961010', 'US', 1, datetime('now'), datetime('now'))
@@ -811,6 +857,207 @@ async function main(): Promise<void> {
         feedbackRecipientMsgs[0]?.trigger_rule === 'feedback_delay',
       'scheduled sweep sends exactly one feedback_delay message to eligible customer',
     );
+
+    // 5. Regression tests for review findings:
+    // 5a. Fractional loyalty points are preserved (99.5 does not round to 100 or prematurely trigger threshold=100)
+    db.prepare(`
+      INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+      VALUES ('cust-frac-1', 'Frac User', '+14089961030', 'US', 1, datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO orders (id, order_number, type, status, customer_id, subtotal, tax_amount, discount_amount, total, created_at, updated_at)
+      VALUES (910, 'ORD-910', 'dine_in', 'completed', 'cust-frac-1', 20, 0, 0, 20, datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
+      VALUES (910, 'INV-910', 910, 'cust-frac-1', 20, 0, 0, 20, 20, 0, 'paid', datetime('now'), datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)
+      VALUES ('cust-frac-1', 910, 'credit', 99.5, 'Fractional cashback', datetime('now'), datetime('now'))
+    `).run();
+    const fracContext = whatsapp.buildWhatsAppTemplateContext({ billId: 910 });
+    assert(
+      fracContext.points_balance === 99.5 && fracContext.points_value === '$99.50',
+      `fractional loyalty balance is preserved without integer rounding (got ${fracContext.points_balance} / ${fracContext.points_value})`,
+    );
+    whatsapp.saveAutomationConfig({
+      rules: [
+        { id: 'after_payment', trigger: 'after_payment', enabled: false, templateId: 'receipt' },
+        {
+          id: 'points_threshold',
+          trigger: 'points_threshold',
+          enabled: true,
+          templateId: 'loyalty_milestone',
+          pointsThreshold: 100,
+        },
+        {
+          id: 'nth_visit',
+          trigger: 'nth_visit',
+          enabled: true,
+          templateId: 'visit_milestone',
+          nthVisit: 1,
+        },
+        {
+          id: 'feedback_delay',
+          trigger: 'feedback_delay',
+          enabled: false,
+          templateId: 'feedback',
+          delayHours: 2,
+        },
+        {
+          id: 'winback',
+          trigger: 'winback',
+          enabled: false,
+          templateId: 'winback',
+          inactiveDays: 14,
+        },
+      ],
+    });
+    const fracTrigger = await whatsapp.triggerBillPaidAutomation(910, { pointsEarned: 99.5 });
+    assert(
+      !fracTrigger.triggered.includes('points_threshold'),
+      '99.5 loyalty points does not prematurely trigger points_threshold=100',
+    );
+
+    // 5b. Split checks on the same order do not repeat nth_visit milestone for the same customer
+    db.prepare(`
+      INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, split_group_id, paid_at, created_at, updated_at)
+      VALUES (911, 'INV-910B', 910, 'cust-frac-1', 15, 0, 0, 15, 15, 0, 'paid', 'grp-910', datetime('now'), datetime('now'), datetime('now'))
+    `).run();
+    const splitSiblingTrigger = await whatsapp.triggerBillPaidAutomation(911);
+    assert(
+      !splitSiblingTrigger.triggered.includes('nth_visit'),
+      'paying a second split bill on the same order does not repeat nth_visit milestone',
+    );
+
+    // 5c. 168-hour (7-day) feedback delay window, failed feedback retry, and skipping 25 rejected recipients
+    const sevenDaysPlusTwoHoursAgo = new Date(Date.now() - 170 * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\..*$/, '');
+    db.prepare(`
+      INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+      VALUES ('cust-168h', 'Seven Day User', '+14089961031', 'US', 1, ?, ?)
+    `).run(sevenDaysPlusTwoHoursAgo, sevenDaysPlusTwoHoursAgo);
+    db.prepare(`
+      INSERT INTO orders (id, order_number, type, status, customer_id, subtotal, tax_amount, discount_amount, total, created_at, updated_at)
+      VALUES (912, 'ORD-912', 'dine_in', 'completed', 'cust-168h', 25, 0, 0, 25, ?, ?)
+    `).run(sevenDaysPlusTwoHoursAgo, sevenDaysPlusTwoHoursAgo);
+    db.prepare(`
+      INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
+      VALUES (912, 'INV-912', 912, 'cust-168h', 25, 0, 0, 25, 25, 0, 'paid', ?, ?, ?)
+    `).run(sevenDaysPlusTwoHoursAgo, sevenDaysPlusTwoHoursAgo, sevenDaysPlusTwoHoursAgo);
+    // Insert a failed feedback_delay row for bill 912 to verify failed feedback is retried
+    db.prepare(`
+      INSERT INTO whatsapp_messages (bill_id, customer_id, phone_e164, direction, kind, status, body, error, queued_at, failed_at, created_by_user_id)
+      VALUES (912, 'cust-168h', '+14089961031', 'outbound', 'auto_followup', 'failed', 'Failed attempt', 'Transient socket error', ?, ?, 'rule:feedback_delay')
+    `).run(sevenDaysPlusTwoHoursAgo, sevenDaysPlusTwoHoursAgo);
+    // Insert 25 newer bills whose numbers are not on WhatsApp so they get rejected before recordMessageRow
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\..*$/, '');
+    for (let i = 1; i <= 25; i++) {
+      const cid = `cust-unreg-${i}`;
+      const bid = 920 + i;
+      const phone = `+14089962${String(i).padStart(3, '0')}`;
+      db.prepare(`
+        INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, 'US', 1, ?, ?)
+      `).run(cid, `Unreg ${i}`, phone, oneHourAgo, oneHourAgo);
+      db.prepare(`
+        INSERT INTO orders (id, order_number, type, status, customer_id, subtotal, tax_amount, discount_amount, total, created_at, updated_at)
+        VALUES (?, ?, 'dine_in', 'completed', ?, 10, 0, 0, 10, ?, ?)
+      `).run(bid, `ORD-${bid}`, cid, oneHourAgo, oneHourAgo);
+      db.prepare(`
+        INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 10, 0, 0, 10, 10, 0, 'paid', ?, ?, ?)
+      `).run(bid, `INV-${bid}`, bid, cid, sevenDaysPlusTwoHoursAgo, sevenDaysPlusTwoHoursAgo, sevenDaysPlusTwoHoursAgo);
+    }
+    const origOnWhatsApp = fakeSocket.onWhatsApp;
+    fakeSocket.onWhatsApp = async (jid: string) => {
+      if (jid.startsWith('14089962')) return [{ exists: false, jid }];
+      return [{ exists: true, jid }];
+    };
+    try {
+      whatsapp.saveAutomationConfig({
+        rules: [
+          { id: 'after_payment', trigger: 'after_payment', enabled: false, templateId: 'receipt' },
+          {
+            id: 'points_threshold',
+            trigger: 'points_threshold',
+            enabled: false,
+            templateId: 'loyalty_milestone',
+            pointsThreshold: 100,
+          },
+          {
+            id: 'nth_visit',
+            trigger: 'nth_visit',
+            enabled: false,
+            templateId: 'visit_milestone',
+            nthVisit: 5,
+          },
+          {
+            id: 'feedback_delay',
+            trigger: 'feedback_delay',
+            enabled: true,
+            templateId: 'feedback',
+            delayHours: 168,
+          },
+          {
+            id: 'winback',
+            trigger: 'winback',
+            enabled: false,
+            templateId: 'winback',
+            inactiveDays: 14,
+          },
+        ],
+      });
+      const sweep168 = await whatsapp.runScheduledAutomationSweep();
+      assert(
+        sweep168.feedbackSent === 1,
+        `168h feedback_delay window retries failed row and continues past 25 rejected recipients (got feedbackSent=${sweep168.feedbackSent})`,
+      );
+    } finally {
+      fakeSocket.onWhatsApp = origOnWhatsApp;
+    }
+
+    // 5d. Mid-send opt-out recheck cancels active send before socket.sendMessage
+    const origSendPresenceUpdate = fakeSocket.sendPresenceUpdate;
+    fakeSocket.sendPresenceUpdate = async (stateUpdate?: string) => {
+      if (stateUpdate === 'paused') {
+        whatsapp.addToBlocklist('+14089961035', 'Auto opt-out: STOP', 'system:auto_opt_out');
+      }
+    };
+    try {
+      const midSendOptOutRes = await whatsapp.sendMessage({
+        phoneE164: '+14089961035',
+        body: 'Message cancelled by mid-send STOP',
+        billId: null,
+        customerId: null,
+        kind: 'manual_reply',
+        userId: 'staff-1',
+      });
+      assert(
+        midSendOptOutRes.ok === false && midSendOptOutRes.reason === 'blocked',
+        `mid-send opt-out cancels active send with reason=blocked (got ${JSON.stringify(midSendOptOutRes)})`,
+      );
+    } finally {
+      fakeSocket.sendPresenceUpdate = origSendPresenceUpdate;
+    }
+
+    // 5e. Regional defaults resolve from country profile when currency/timezone settings are empty
+    db.prepare("DELETE FROM settings WHERE key IN ('currency', 'timezone')").run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'IN')").run();
+    const inContext = whatsapp.buildWhatsAppTemplateContext({ billId: 910 });
+    assert(
+      inContext.total.includes('₹'),
+      `buildWhatsAppTemplateContext uses resolveRegionalSnapshot currency for country=IN when currency setting is unset (got ${inContext.total})`,
+    );
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US'), ('currency', 'USD'), ('timezone', 'UTC')",
+    ).run();
 
     whatsapp.disconnect();
     await whatsapp.enable('broadcast-disconnected-check');

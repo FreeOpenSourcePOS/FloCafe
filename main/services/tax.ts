@@ -84,8 +84,14 @@ export interface TaxRollup {
   snapshotJson: string | null;
 }
 
-import { TaxEngine, applyPayableRounding, type TaxEngineLine } from './tax-engine';
-import type { CountryPack, TaxRule } from '../tax-packs/types';
+import {
+  TaxEngine,
+  applyPayableRounding,
+  canonical,
+  roundPlaces,
+  type TaxEngineLine,
+} from './tax-engine';
+import type { CountryPack, RoundingMethod, TaxRule } from '../tax-packs/types';
 
 function round(value: number, decimals: number = 2): number {
   if (typeof value !== 'number' || isNaN(value) || !isFinite(value)) return 0;
@@ -735,6 +741,9 @@ export function scaleTaxSnapshots(
     }
   });
   const scale = new Decimal(ratio);
+  if (scale.eq(1)) {
+    return snapshots.map((snapshot) => JSON.stringify(snapshot));
+  }
   const decimals = Math.log10(minorFactor);
   const entries: Array<{
     component: any;
@@ -845,6 +854,481 @@ export function combineItemAndChargeTaxes(args: {
   };
 }
 
+interface SnapshotComponent {
+  ruleId: string;
+  amount: string;
+  roundingRemainder?: string;
+  rate?: string;
+  amountPer?: string;
+  label?: string;
+}
+
+interface SnapshotLine {
+  lineId: string;
+  grossAmount?: string;
+  taxAmount?: string;
+  taxableBase?: string;
+  components: SnapshotComponent[];
+  categoryId?: string;
+  taxBehavior?: string;
+}
+
+interface SnapshotData {
+  packId?: string;
+  packVersion?: string;
+  currency?: string;
+  taxRounding?: {
+    scope: string;
+    method: RoundingMethod;
+    decimalPlaces: number;
+    remainderAllocation?: string;
+  };
+  lines?: SnapshotLine[];
+}
+
+export interface DocumentTaxAllocationItemInput {
+  snapshot: string | Record<string, unknown> | null | undefined;
+  lineIdOverride?: string;
+}
+
+export interface DocumentTaxAllocationItemOutput {
+  handled: boolean;
+  taxAmount: number;
+  breakdown: TaxBreakdown[];
+  snapshotJson: string | null;
+}
+
+/**
+ * Reconstructs raw unrounded tax components from item and charge snapshots,
+ * optionally scaling item raw amounts by an order-discount ratio before
+ * performing document-scope largest_remainder allocation across the combined
+ * document group.
+ */
+export function allocateDocumentTaxRounding(args: {
+  items: DocumentTaxAllocationItemInput[];
+  chargeTaxes: ChargeTaxSummary;
+  currency: string;
+  itemTaxRatio?: Decimal;
+}): {
+  itemOutputs: DocumentTaxAllocationItemOutput[];
+  chargeTaxes: ChargeTaxSummary;
+} {
+  const ratio = args.itemTaxRatio ?? new Decimal(1);
+  const isScaled = !ratio.eq(1);
+  const itemOutputs: DocumentTaxAllocationItemOutput[] = args.items.map(() => ({
+    handled: false,
+    taxAmount: 0,
+    breakdown: [],
+    snapshotJson: null,
+  }));
+  const nextChargeTaxes: ChargeTaxSummary = {
+    taxAmount: args.chargeTaxes.taxAmount,
+    exclusiveTaxAmount: args.chargeTaxes.exclusiveTaxAmount,
+    breakdowns: [...args.chargeTaxes.breakdowns],
+    snapshotJson: [...args.chargeTaxes.snapshotJson],
+  };
+
+  interface GroupComponentEntry {
+    comp: SnapshotComponent;
+    raw: Decimal;
+    rounded: Decimal;
+    remainder: Decimal;
+    line: SnapshotLine;
+    orderIdx: number;
+  }
+
+  interface DocumentGroup {
+    taxRounding: NonNullable<SnapshotData['taxRounding']>;
+    currency?: string;
+    components: GroupComponentEntry[];
+    affectedItemIndices: Set<number>;
+    affectedChargeIndices: Set<number>;
+  }
+
+  const groups = new Map<string, DocumentGroup>();
+  const itemSnapshots = new Map<number, SnapshotData>();
+  const chargeSnapshots = new Map<number, SnapshotData>();
+  let orderCounter = 0;
+
+  args.items.forEach((itemInput, idx) => {
+    if (!itemInput.snapshot) return;
+    let snap: SnapshotData | null = null;
+    try {
+      snap =
+        typeof itemInput.snapshot === 'string'
+          ? JSON.parse(itemInput.snapshot)
+          : JSON.parse(JSON.stringify(itemInput.snapshot));
+    } catch {
+      return;
+    }
+    if (
+      snap?.taxRounding?.scope !== 'document' ||
+      !Array.isArray(snap.lines) ||
+      snap.lines.length === 0
+    ) {
+      return;
+    }
+
+    itemSnapshots.set(idx, snap);
+    const line = snap.lines[0];
+    if (itemInput.lineIdOverride) {
+      line.lineId = itemInput.lineIdOverride;
+    }
+    if (isScaled) {
+      const places = getCurrencyFractionDigits(args.currency || snap.currency || '');
+      const scaleLineAmount = (val: unknown) =>
+        typeof val === 'string' || typeof val === 'number'
+          ? new Decimal(val)
+              .mul(ratio)
+              .toDecimalPlaces(places, Decimal.ROUND_HALF_UP)
+              .toFixed(places)
+          : val;
+      line.grossAmount = scaleLineAmount(line.grossAmount) as string | undefined;
+      line.taxableBase = scaleLineAmount(line.taxableBase) as string | undefined;
+    }
+
+    const mode: RoundingMethod = snap.taxRounding.method || 'half_up';
+    const allocation = snap.taxRounding.remainderAllocation || 'largest_remainder';
+    const groupKey = `${snap.packId || ''}:${snap.packVersion || ''}:${mode}:${allocation}`;
+
+    let group = groups.get(groupKey);
+    if (!group) {
+      group = {
+        taxRounding: snap.taxRounding,
+        currency: snap.currency,
+        components: [],
+        affectedItemIndices: new Set(),
+        affectedChargeIndices: new Set(),
+      };
+      groups.set(groupKey, group);
+    }
+
+    group.affectedItemIndices.add(idx);
+    for (const comp of line.components || []) {
+      const unscaledRaw = new Decimal(comp.amount).plus(comp.roundingRemainder || '0');
+      const raw = isScaled ? unscaledRaw.mul(ratio) : unscaledRaw;
+      group.components.push({
+        comp,
+        raw,
+        rounded: new Decimal(0),
+        remainder: new Decimal(0),
+        line,
+        orderIdx: orderCounter++,
+      });
+    }
+  });
+
+  if (nextChargeTaxes.snapshotJson.length > 0) {
+    nextChargeTaxes.snapshotJson.forEach((snapJson, cIdx) => {
+      let snap: SnapshotData | null = null;
+      try {
+        snap = JSON.parse(snapJson);
+      } catch {
+        return;
+      }
+      if (
+        snap?.taxRounding?.scope !== 'document' ||
+        !Array.isArray(snap.lines) ||
+        snap.lines.length === 0
+      ) {
+        return;
+      }
+
+      chargeSnapshots.set(cIdx, snap);
+      const line = snap.lines[0];
+      const mode: RoundingMethod = snap.taxRounding.method || 'half_up';
+      const allocation = snap.taxRounding.remainderAllocation || 'largest_remainder';
+      const groupKey = `${snap.packId || ''}:${snap.packVersion || ''}:${mode}:${allocation}`;
+
+      let group = groups.get(groupKey);
+      if (!group) {
+        group = {
+          taxRounding: snap.taxRounding,
+          currency: snap.currency,
+          components: [],
+          affectedItemIndices: new Set(),
+          affectedChargeIndices: new Set(),
+        };
+        groups.set(groupKey, group);
+      }
+
+      group.affectedChargeIndices.add(cIdx);
+      for (const comp of line.components || []) {
+        const raw = new Decimal(comp.amount).plus(comp.roundingRemainder || '0');
+        group.components.push({
+          comp,
+          raw,
+          rounded: new Decimal(0),
+          remainder: new Decimal(0),
+          line,
+          orderIdx: orderCounter++,
+        });
+      }
+    });
+  }
+
+  for (const group of groups.values()) {
+    const places = getCurrencyFractionDigits(args.currency || group.currency || '');
+    const quantum = new Decimal(10).pow(-places);
+    const sumRaw = group.components.reduce((sum, c) => sum.plus(c.raw), new Decimal(0));
+    const target = roundPlaces(sumRaw, places, group.taxRounding.method);
+
+    for (const entry of group.components) {
+      entry.rounded = entry.raw.toDecimalPlaces(places, Decimal.ROUND_FLOOR);
+      entry.remainder = entry.raw.minus(entry.rounded);
+    }
+
+    const sumRounded = group.components.reduce((sum, c) => sum.plus(c.rounded), new Decimal(0));
+    let units = target.minus(sumRounded).div(quantum).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+
+    const ordered = [...group.components].sort((left, right) => {
+      const remainderOrder = right.remainder.comparedTo(left.remainder);
+      if (remainderOrder !== 0) return remainderOrder;
+      const ruleOrder = (left.comp.ruleId || '').localeCompare(right.comp.ruleId || '');
+      if (ruleOrder !== 0) return ruleOrder;
+      const lineOrder = (left.line.lineId || '').localeCompare(right.line.lineId || '');
+      if (lineOrder !== 0) return lineOrder;
+      return left.orderIdx - right.orderIdx;
+    });
+
+    let uIndex = 0;
+    while (units.gt(0) && ordered.length > 0) {
+      const entry = ordered[uIndex % ordered.length];
+      entry.rounded = entry.rounded.plus(quantum);
+      units = units.minus('1');
+      uIndex += 1;
+    }
+
+    for (const entry of group.components) {
+      entry.comp.amount = entry.rounded.toFixed(places);
+      entry.comp.roundingRemainder = canonical(entry.raw.minus(entry.rounded));
+    }
+
+    for (const itemIdx of group.affectedItemIndices) {
+      const snap = itemSnapshots.get(itemIdx);
+      if (!snap || !Array.isArray(snap.lines) || snap.lines.length === 0) continue;
+      const line = snap.lines[0];
+      const lineTax = (line.components || []).reduce(
+        (sum: Decimal, c) => sum.plus(new Decimal(c.amount)),
+        new Decimal(0),
+      );
+      line.taxAmount = lineTax.toFixed(places);
+      itemOutputs[itemIdx] = {
+        handled: true,
+        taxAmount: lineTax.toNumber(),
+        breakdown: (line.components || []).map((c) => ({
+          title: c.label || '',
+          rate: Number(c.rate || 0),
+          amount: Number(c.amount),
+        })),
+        snapshotJson: JSON.stringify(snap),
+      };
+    }
+
+    for (const cIdx of group.affectedChargeIndices) {
+      const snap = chargeSnapshots.get(cIdx);
+      if (!snap || !Array.isArray(snap.lines) || snap.lines.length === 0) continue;
+      const line = snap.lines[0];
+      const lineTax = (line.components || []).reduce(
+        (sum: Decimal, c) => sum.plus(new Decimal(c.amount)),
+        new Decimal(0),
+      );
+      line.taxAmount = lineTax.toFixed(places);
+      nextChargeTaxes.snapshotJson[cIdx] = JSON.stringify(snap);
+      nextChargeTaxes.breakdowns[cIdx] = (line.components || []).map((c) => ({
+        title: c.label || '',
+        rate: Number(c.rate || 0),
+        amount: Number(c.amount),
+      }));
+    }
+  }
+
+  if (chargeSnapshots.size > 0 && nextChargeTaxes.snapshotJson.length > 0) {
+    let chargeTaxAmount = new Decimal(0);
+    let chargeExclusiveTaxAmount = new Decimal(0);
+    for (const snapStr of nextChargeTaxes.snapshotJson) {
+      try {
+        const cSnap = JSON.parse(snapStr);
+        for (const cLine of cSnap.lines || []) {
+          const lTax = new Decimal(cLine.taxAmount || '0');
+          chargeTaxAmount = chargeTaxAmount.plus(lTax);
+          if (cLine.taxBehavior !== 'inclusive') {
+            chargeExclusiveTaxAmount = chargeExclusiveTaxAmount.plus(lTax);
+          }
+        }
+      } catch {}
+    }
+    nextChargeTaxes.taxAmount = chargeTaxAmount.toNumber();
+    nextChargeTaxes.exclusiveTaxAmount = chargeExclusiveTaxAmount.toNumber();
+  }
+
+  return { itemOutputs, chargeTaxes: nextChargeTaxes };
+}
+
+export interface DiscountedTaxItemInput {
+  taxAmount: number;
+  taxType: string | null;
+  breakdown: TaxBreakdown[] | null;
+  snapshot: string | Record<string, unknown> | null;
+  lineIdOverride?: string;
+}
+
+/**
+ * Computes the order/bill/preview tax rollup across items and charges, applying
+ * document-scope discount scaling before remainder allocation when an order
+ * discount applies.
+ */
+export function rollupOrderTaxes(args: {
+  items: DiscountedTaxItemInput[];
+  chargeTaxes: ChargeTaxSummary;
+  currency: string;
+  decimals: number;
+  minorFactor: number;
+  itemTaxRatio: Decimal;
+  taxesEnabled: boolean;
+}): {
+  itemTaxAmount: number;
+  itemExclusiveTaxAmount: number;
+  taxRollup: TaxRollup;
+} {
+  const { items, chargeTaxes, currency, decimals, minorFactor, itemTaxRatio, taxesEnabled } = args;
+  const toSnapshotString = (snap: string | Record<string, unknown> | null) =>
+    typeof snap === 'string' ? snap : snap ? JSON.stringify(snap) : null;
+
+  if (itemTaxRatio.eq(1)) {
+    let totalTax = new Decimal(0);
+    let exclusiveTax = new Decimal(0);
+    const breakdowns: TaxBreakdown[][] = [];
+    const snapshots: (string | null)[] = [];
+
+    for (const item of items) {
+      const itemTax = new Decimal(item.taxAmount || 0);
+      totalTax = totalTax.plus(itemTax);
+      if (item.taxType !== 'inclusive') {
+        exclusiveTax = exclusiveTax.plus(itemTax);
+      }
+      if (item.breakdown && item.breakdown.length > 0) {
+        breakdowns.push(item.breakdown);
+      }
+      snapshots.push(toSnapshotString(item.snapshot));
+    }
+
+    const itemTaxAmount = totalTax.toNumber();
+    const itemExclusiveTaxAmount = exclusiveTax.toNumber();
+    return {
+      itemTaxAmount,
+      itemExclusiveTaxAmount,
+      taxRollup: combineItemAndChargeTaxes({
+        itemTaxAmount,
+        itemExclusiveTaxAmount,
+        itemBreakdowns: breakdowns,
+        itemSnapshots: snapshots,
+        itemTaxRatio: 1,
+        chargeTaxes,
+        minorFactor,
+      }),
+    };
+  }
+
+  const discountedAlloc = taxesEnabled
+    ? allocateDocumentTaxRounding({
+        items: items.map((it) => ({
+          snapshot: it.snapshot,
+          lineIdOverride: it.lineIdOverride,
+        })),
+        chargeTaxes,
+        currency,
+        itemTaxRatio,
+      })
+    : null;
+  const rollupChargeTaxes = discountedAlloc ? discountedAlloc.chargeTaxes : chargeTaxes;
+
+  let docTotalTax = new Decimal(0);
+  let docExclusiveTax = new Decimal(0);
+  let nonDocTotalTax = new Decimal(0);
+  let nonDocExclusiveTax = new Decimal(0);
+  const nonDocBreakdowns: TaxBreakdown[][] = [];
+  const nonDocSnapshots: (string | null)[] = [];
+  const nonDocBreakdownSlots: number[] = [];
+  const nonDocSnapshotSlots: number[] = [];
+  const combinedBreakdowns: TaxBreakdown[][] = [];
+  const combinedSnapshots: (string | null)[] = [];
+
+  items.forEach((item, idx) => {
+    const out = discountedAlloc?.itemOutputs[idx];
+    if (out?.handled) {
+      const itemTax = new Decimal(out.taxAmount);
+      docTotalTax = docTotalTax.plus(itemTax);
+      if (item.taxType !== 'inclusive') {
+        docExclusiveTax = docExclusiveTax.plus(itemTax);
+      }
+      if (out.breakdown.length > 0) {
+        combinedBreakdowns.push(out.breakdown);
+      }
+      combinedSnapshots.push(out.snapshotJson);
+    } else {
+      const itemTax = new Decimal(item.taxAmount || 0);
+      nonDocTotalTax = nonDocTotalTax.plus(itemTax);
+      if (item.taxType !== 'inclusive') {
+        nonDocExclusiveTax = nonDocExclusiveTax.plus(itemTax);
+      }
+      if (item.breakdown && item.breakdown.length > 0) {
+        nonDocBreakdownSlots.push(combinedBreakdowns.length);
+        combinedBreakdowns.push([]);
+        nonDocBreakdowns.push(item.breakdown);
+      }
+      nonDocSnapshotSlots.push(combinedSnapshots.length);
+      combinedSnapshots.push(null);
+      nonDocSnapshots.push(toSnapshotString(item.snapshot));
+    }
+  });
+
+  const ratioNum = itemTaxRatio.toNumber();
+  const scaledNonDocTax = nonDocTotalTax
+    .mul(itemTaxRatio)
+    .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
+  const scaledNonDocExclusiveTax = nonDocExclusiveTax
+    .mul(itemTaxRatio)
+    .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
+
+  if (nonDocBreakdownSlots.length > 0) {
+    const scaledBreakdowns = scaleTaxBreakdowns(
+      nonDocBreakdowns,
+      ratioNum,
+      scaledNonDocTax.toNumber(),
+      minorFactor,
+    );
+    nonDocBreakdownSlots.forEach((slotIdx, i) => {
+      combinedBreakdowns[slotIdx] = scaledBreakdowns[i] || [];
+    });
+  }
+  if (nonDocSnapshotSlots.length > 0) {
+    const scaledSnapshots = scaleTaxSnapshots(nonDocSnapshots, ratioNum, minorFactor);
+    let snapCursor = 0;
+    nonDocSnapshotSlots.forEach((slotIdx, i) => {
+      combinedSnapshots[slotIdx] = nonDocSnapshots[i]
+        ? (scaledSnapshots[snapCursor++] ?? null)
+        : null;
+    });
+  }
+
+  const itemTaxAmount = docTotalTax.plus(scaledNonDocTax).toNumber();
+  const itemExclusiveTaxAmount = docExclusiveTax.plus(scaledNonDocExclusiveTax).toNumber();
+  return {
+    itemTaxAmount,
+    itemExclusiveTaxAmount,
+    taxRollup: combineItemAndChargeTaxes({
+      itemTaxAmount,
+      itemExclusiveTaxAmount,
+      itemBreakdowns: combinedBreakdowns,
+      itemSnapshots: combinedSnapshots,
+      itemTaxRatio: 1,
+      chargeTaxes: rollupChargeTaxes,
+      minorFactor,
+    }),
+  };
+}
+
 // Tax preview endpoint handler
 export async function calculateTaxPreview(req: any, res: any): Promise<void> {
   try {
@@ -921,11 +1405,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     const isOnlineOrder = typeof online_platform === 'string' && online_platform.trim().length > 0;
 
     const itemResults: any[] = [];
-    const allBreakdowns: any[] = [];
-    const allTaxSnapshots: (string | null)[] = [];
     let totalSubtotal = 0;
-    let totalTax = 0;
-    let totalExclusiveTax = 0;
 
     const resolvedItems: Array<{
       product: Product;
@@ -1070,15 +1550,6 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
           decimals,
         ),
       });
-
-      if (taxResult.tax_breakdown) {
-        allBreakdowns.push(taxResult.tax_breakdown);
-      }
-      allTaxSnapshots.push(taxResult.tax_snapshot ? JSON.stringify(taxResult.tax_snapshot) : null);
-      totalTax += taxResult.tax_amount;
-      if (taxResult.tax_type !== 'inclusive') {
-        totalExclusiveTax += taxResult.tax_amount;
-      }
     }
 
     const subtotalDecimal = new Decimal(totalSubtotal);
@@ -1087,23 +1558,21 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       discountAmount.gt(0) && subtotalDecimal.gt(0)
         ? discountedSubtotal.div(subtotalDecimal)
         : new Decimal(1);
-    const discountedItemTax = new Decimal(totalTax)
-      .mul(taxRatio)
-      .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
-      .toNumber();
-    const discountedExclusiveTax = new Decimal(totalExclusiveTax)
-      .mul(taxRatio)
-      .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
-      .toNumber();
 
-    const taxRollup = combineItemAndChargeTaxes({
-      itemTaxAmount: discountedItemTax,
-      itemExclusiveTaxAmount: discountedExclusiveTax,
-      itemBreakdowns: allBreakdowns,
-      itemSnapshots: allTaxSnapshots,
-      itemTaxRatio: taxRatio.toNumber(),
+    const { taxRollup } = rollupOrderTaxes({
+      items: documentTaxResults.map((taxResult, idx) => ({
+        taxAmount: taxResult.tax_amount,
+        taxType: taxResult.tax_type,
+        breakdown: taxResult.tax_breakdown || null,
+        snapshot: taxResult.tax_snapshot || null,
+        lineIdOverride: `line-${String(idx + 1).padStart(4, '0')}`,
+      })),
       chargeTaxes,
+      currency,
+      decimals,
       minorFactor,
+      itemTaxRatio: taxRatio,
+      taxesEnabled: tenantInfo.taxes_enabled,
     });
     const aggregatedBreakdown = aggregateTaxBreakdown(taxRollup.breakdowns, minorFactor);
     const exactTotal = discountedSubtotal

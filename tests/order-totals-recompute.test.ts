@@ -348,6 +348,63 @@ async function main() {
       assertEqualOrThrow(negativeSubtotal.taxRatio, 1, 'a negative subtotal is not divided by: the ratio stays 1');
       assertEqualOrThrow(negativeSubtotal.taxAmount, 20, 'a negative subtotal leaves the full 20 of tax standing');
     }
+
+    console.log('\n─── Document-scope discount allocation before rounding (#1288) ───');
+    {
+      seedProduct(db, 'prod-doc-10010-a', 'cat-totals', '100.10 A', 100.10, taxable);
+      seedProduct(db, 'prod-doc-10010-b', 'cat-totals', '100.10 B', 100.10, taxable);
+      seedProduct(db, 'prod-doc-10005-a', 'cat-totals', '100.05 A', 100.05, taxable);
+      seedProduct(db, 'prod-doc-10005-b', 'cat-totals', '100.05 B', 100.05, taxable);
+      seedProduct(db, 'prod-doc-10020', 'cat-totals', '100.20', 100.20, taxable);
+
+      // 1. Two 100.10 items at 50% discount -> 5.01 tax, 105.11 total
+      const o1 = await createOrder({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-doc-10010-a', quantity: 1 }, { product_id: 'prod-doc-10010-b', quantity: 1 }],
+      });
+      assertEqualOrThrow(o1.status, 201, '100.10x2 order created');
+      const d1 = await orderDiscount(o1.data.order.id, 50);
+      assertEqualOrThrow(d1.status, 200, '50% discount applied to 100.10x2');
+      assertEqualOrThrow(JSON.stringify(totalsRow(db, 'orders', o1.data.order.id)), JSON.stringify({
+        subtotal: 200.2, tax_amount: 5.01, discount_amount: 100.1, total: 105.11, round_off: 0,
+        components: '[[["Tax A",2.5,1.26],["Tax B",2.5,1.25]],[["Tax A",2.5,1.25],["Tax B",2.5,1.25]]]',
+      }), '100.10x2 at 50% discount allocates 5.01 document tax (105.11 total)');
+
+      // 2. Two 100.05 items at 50% discount -> 5.00 tax, 105.05 total
+      const o2 = await createOrder({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-doc-10005-a', quantity: 1 }, { product_id: 'prod-doc-10005-b', quantity: 1 }],
+      });
+      assertEqualOrThrow(o2.status, 201, '100.05x2 order created');
+      const d2 = await orderDiscount(o2.data.order.id, 50);
+      assertEqualOrThrow(d2.status, 200, '50% discount applied to 100.05x2');
+      assertEqualOrThrow(JSON.stringify(totalsRow(db, 'orders', o2.data.order.id)), JSON.stringify({
+        subtotal: 200.1, tax_amount: 5, discount_amount: 100.05, total: 105.05, round_off: 0,
+        components: '[[["Tax A",2.5,1.25],["Tax B",2.5,1.25]],[["Tax A",2.5,1.25],["Tax B",2.5,1.25]]]',
+      }), '100.05x2 at 50% discount allocates 5.00 document tax (105.05 total)');
+
+      // 3. One 100.20 item + 100.10 taxable packaging charge at 100% discount -> 5.01 charge tax, 105.11 total
+      const activeVersion = db.prepare("SELECT active_version_id FROM country_packs WHERE id = 'test-in-pack'").get() as any;
+      db.prepare(`
+        INSERT OR REPLACE INTO tax_overrides (id, pack_version_id, entity_type, entity_id, field_name, value_json, created_at, updated_at)
+        VALUES ('ovr-recompute-pkg', ?, 'packaging', NULL, 'tax_category_id', '"standard"', datetime('now'), datetime('now'))
+      `).run(activeVersion.active_version_id);
+      db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('discount_max_percentage', '100', datetime('now'))").run();
+
+      const o3 = await createOrder({
+        type: 'takeaway',
+        packaging_charge: 100.10,
+        items: [{ product_id: 'prod-doc-10020', quantity: 1 }],
+      });
+      assertEqualOrThrow(o3.status, 201, '100.20 item + 100.10 packaging charge order created');
+      assertEqualOrThrow(o3.data.order.tax_amount, 10.02, 'undiscounted item + charge tax = 10.02');
+      const d3 = await orderDiscount(o3.data.order.id, 100);
+      assertEqualOrThrow(d3.status, 200, '100% discount applied to 100.20 item + 100.10 charge');
+      assertEqualOrThrow(JSON.stringify(totalsRow(db, 'orders', o3.data.order.id)), JSON.stringify({
+        subtotal: 100.2, tax_amount: 5.01, discount_amount: 100.2, total: 105.11, round_off: 0,
+        components: '[[["Tax A",2.5,0],["Tax B",2.5,0]],[["Tax A",2.5,2.51],["Tax B",2.5,2.5]]]',
+      }), '100% item discount reallocates document remainder to unchanged 100.10 charge (5.01 tax, 105.11 total)');
+    }
   } finally {
     server.close();
     closeDatabase();

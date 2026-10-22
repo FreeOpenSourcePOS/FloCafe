@@ -8,6 +8,14 @@
 
 import type { ProductVariant } from '@/lib/types';
 
+export function normalizeOverridePrice(price: number | string, decimals = 2): number {
+  const num = Number(price);
+  if (!Number.isFinite(num) || num < 0) return 0;
+  const [mantissa, exp = '0'] = num.toString().toLowerCase().split('e');
+  const shifted = Number(`${mantissa}e${Number(exp) + decimals}`);
+  return Number(`${Math.round(shifted)}e-${decimals}`);
+}
+
 export function cartLineUnitPrice(
   item: {
     variant?: ProductVariant | null;
@@ -17,7 +25,7 @@ export function cartLineUnitPrice(
   onlinePlatformSelected: boolean,
 ): number {
   return item.price_override
-    ? Number(item.price_override.price) || 0
+    ? normalizeOverridePrice(item.price_override.price)
     : cartVariantUnitPrice(item, onlinePlatformSelected);
 }
 

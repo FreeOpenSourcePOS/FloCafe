@@ -91,8 +91,9 @@ Common rules, enforced in the handlers:
   without falling back to scanning other managers.
 - A percentage discount applies to the fresh item subtotal, and a flat discount is capped at that
   subtotal. Re-applying a discount never compounds on the previous one.
-- The discount rescales each line's tax by the discounted share of the subtotal and rounds to the
-  currency, so tax is charged on the discounted amount.
+- Order and bill discounts scale item taxes by the discounted share of the subtotal while keeping
+  stored `order_items` taxes un-order-discounted; see
+  [Taxation](taxation.md#where-the-amount-came-from).
 - Applying a discount to an order that has an unpaid bill re-syncs the bill's totals and balance.
   A zero `discount_value` clears an order discount, and a zero `value` clears a bill discount,
   subject to the bill endpoint's discount-mode checks. The item endpoint requires a positive
@@ -113,20 +114,20 @@ complimentary item. The permission `orders.item.price_override` is owner-only an
 - `PATCH /api/orders/:id/items/:itemId/price` takes `price` and a required `reason`. The same
   `price_override: { price, reason }` object is accepted on a line when an order is created or items
   are added, and a request from any other role is a `403`.
-- The line's `unit_price` becomes the override. The first menu price stays in `original_unit_price`
-  across repeated overrides, and `price_overridden`, `price_override_reason`, `price_overridden_by`,
-  and `price_overridden_at` record the change. Receipts and bills read `unit_price`, so they show the
-  selling price.
+- The line's `unit_price` becomes the override, rounded half-up to the currency's decimal places. The
+  first menu price stays in `original_unit_price` across repeated overrides, and `price_overridden`,
+  `price_override_reason`, `price_overridden_by`, and `price_overridden_at` record the change.
+  Receipts and bills read `unit_price`, so they show the selling price.
 - The backend recomputes item tax, order totals, and an open bill. An existing item discount stays,
   capped at the new line total.
 - Overrides are allowed once a line has been sent to the kitchen, because only the price changes.
   They are refused (`409`) once a bill has payments, a split, or a refund, and (`400`) on completed or
   cancelled orders and cancelled or voided lines.
 - In the POS the owner sees a price control on each cart line (also when adding items to an open
-  order). The override is part of the line's cart identity, so it never merges into a menu-price
-  line, survives holding and resuming, and is quoted by `POST /api/tax/preview` through an optional
-  per-item `price_override: { price }`. The placed order re-checks the owner permission, so a held
-  cart with an override placed by another role is refused with `403`.
+  order). The normalized override is part of the line's cart identity, so it never merges into a
+  menu-price line, survives holding and resuming, and is quoted by `POST /api/tax/preview` through an
+  optional per-item `price_override: { price }`. The placed order re-checks the owner permission, so a
+  held cart with an override placed by another role is refused with `403`.
 - A quantity edit keeps the override flag and menu price on the replacement line; replacing the line
   with a different product or variant starts at that product's menu price.
 - Each override records an `item_price_overridden` action in `order_audit_log`.
@@ -160,7 +161,10 @@ same fields:
 - `transaction_id`: an external reference scoped to its payment method. Reusing it on another bill is
   a `409`; repeating it for the same method twice in a new multi-line batch is also a `409`, while
   reusing it across methods in that batch is a `400`. Replaying an identical committed payment
-  returns the bill without writing again.
+  returns the bill without writing again. When `card_transaction_id_required` is `true` (default
+  `false`, toggled under Settings → Payment methods), a built-in `card` line without one is a `400`
+  with display code `card_transaction_id_required`; custom methods are unaffected. The POS payment
+  and prepaid checkout dialogs then ask for the card terminal's number on the card line.
 - `notes` (up to 1024 UTF-16 code units); serialized payment-line JSON is limited to 8192 UTF-16
   code units.
 - `customer_id`: if neither the bill nor order has a customer, a non-wallet payment may attach one;

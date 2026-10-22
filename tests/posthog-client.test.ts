@@ -59,9 +59,27 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
           clients.push(this);
         }
         capture(payload: RecordedClient['events'][number]) {
+          if (this.options.before_send) {
+            const scrubbed = this.options.before_send({
+              event: payload.event ?? '',
+              properties: { ...(payload.properties ?? {}), distinct_id: payload.distinctId },
+            });
+            if (!scrubbed) return;
+          }
           this.events.push(payload);
         }
         captureException(error: Error, distinctId?: string, properties?: Record<string, unknown>) {
+          if (this.options.before_send) {
+            const scrubbed = this.options.before_send({
+              event: '$exception',
+              properties: {
+                ...(properties ?? {}),
+                distinct_id: distinctId,
+                $exception_list: [{ type: error.name, value: error.message }],
+              },
+            });
+            if (!scrubbed) return;
+          }
           this.exceptions.push({
             message: error.message,
             name: error.name,
@@ -83,13 +101,20 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
+const {
+  initDatabase,
+  getDatabase,
+  closeDatabase,
+  getSettingsRevision,
+  now,
+} = require('../main/db');
 const {
   apiRoutePattern,
   capturePostHogApiFailure,
   capturePostHogException,
   capturePostHogUsage,
   checkPostHogMilestones,
+  invalidatePostHogConsentCache,
   maybeSendPostHogDailyPing,
   postHogApiFailureMiddleware,
   readDailyUsageSummary,
@@ -851,11 +876,47 @@ async function main() {
   );
   assert.equal(latest().events.at(-1).distinctId, account, 'an email edit keeps the person');
 
+  deleteSetting('posthog_account_ref');
   capturePostHogUsage('feature_used', { feature: 'split_checks', action: 'enabled' });
   const mirrored = latest().events.at(-1);
   assert.equal(mirrored.event, 'feature_used');
   assert.equal(mirrored.properties?.feature, 'split_checks');
   assert.equal(typeof mirrored.properties?.app_version, 'string');
+
+  const dbForCount = getDatabase();
+  const originalPrepare = dbForCount.prepare.bind(dbForCount);
+  let capturePrepareCalls = 0;
+  dbForCount.prepare = ((sql: string) => {
+    capturePrepareCalls += 1;
+    return originalPrepare(sql);
+  }) as typeof dbForCount.prepare;
+  try {
+    capturePostHogUsage('feature_used', { feature: 'split_checks', action: 'disabled' });
+    capturePostHogException('uncaughtException', new Error('cached exception check'));
+  } finally {
+    dbForCount.prepare = originalPrepare;
+  }
+  assert.equal(
+    capturePrepareCalls,
+    0,
+    'subsequent capturePostHogUsage and capturePostHogException reuse cached consent, diagnostics, and identity without synchronous SQLite reads',
+  );
+  setSetting('diagnostics_consent', 'false');
+  const exceptionsBeforeDirectDisable = latest().exceptions.length;
+  capturePostHogException('uncaughtException', new Error('blocked by direct SQLite write'));
+  assert.equal(
+    latest().exceptions.length,
+    exceptionsBeforeDirectDisable,
+    'direct SQLite settings mutation invalidates cached diagnostics consent via trigger',
+  );
+  setSetting('diagnostics_consent', 'true');
+  invalidatePostHogConsentCache();
+  const revisionBeforeReopen = getSettingsRevision();
+  closeDatabase();
+  assert.equal(getSettingsRevision() > revisionBeforeReopen, true);
+  const revisionAfterClose = getSettingsRevision();
+  initDatabase(false, true);
+  assert.equal(getSettingsRevision() > revisionAfterClose, true);
   const summary = readDailyUsageSummary();
   assert.equal(summary.orders_24h, 0);
   assert.equal(summary.active_staff_count, 2);

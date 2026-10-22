@@ -7,6 +7,7 @@
  */
 
 import type { CartItem } from '@/lib/types';
+import { normalizeOverridePrice } from '@/lib/cart-price';
 
 export interface OrderItemAddonPayload {
   id: string;
@@ -47,7 +48,12 @@ export function cartItemToOrderItem(item: OrderItemSource): OrderItemPayload {
         : null,
     special_instructions: item.special_instructions || null,
     ...(item.price_override
-      ? { price_override: { price: item.price_override.price, reason: item.price_override.reason } }
+      ? {
+          price_override: {
+            price: normalizeOverridePrice(item.price_override.price),
+            reason: item.price_override.reason,
+          },
+        }
       : {}),
   };
 }

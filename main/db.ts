@@ -522,6 +522,12 @@ export function tenantBusinessDayStartTime(customDb?: ReturnType<typeof getDatab
   return normalizeBusinessDayStartTime(typeof raw === 'string' ? raw : null);
 }
 
+let settingsRevision = 0;
+
+export function getSettingsRevision(): number {
+  return settingsRevision;
+}
+
 export function upsertSettings(entries: Record<string, string | undefined | null>): void {
   const stmt = db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -530,6 +536,7 @@ export function upsertSettings(entries: Record<string, string | undefined | null
   for (const [key, val] of Object.entries(entries)) {
     if (val !== undefined) stmt.run(key, val ?? '', now());
   }
+  settingsRevision += 1;
 }
 
 export const GOOGLE_DRIVE_PRIVATE_SETTING_KEYS = [
@@ -560,6 +567,7 @@ export function clearGoogleDriveRestoreBinding(dbInstance: Database.Database = d
   dbInstance
     .prepare(`DELETE FROM settings WHERE key IN (${placeholders})`)
     .run(...GOOGLE_DRIVE_PRIVATE_SETTING_KEYS);
+  settingsRevision += 1;
 }
 
 function upsertSetting(key: string, value: string): void {
@@ -567,6 +575,7 @@ function upsertSetting(key: string, value: string): void {
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `).run(key, value, now());
+  settingsRevision += 1;
 }
 
 function insertSettingIfMissing(key: string, value: string): void {
@@ -575,6 +584,7 @@ function insertSettingIfMissing(key: string, value: string): void {
     value,
     now(),
   );
+  settingsRevision += 1;
 }
 
 export function getDbHealth(): { ok: boolean; error?: string } {
@@ -1352,6 +1362,52 @@ export function registerOrderSearchFunctions(dbInstance: Database.Database): voi
   }
 }
 
+export function registerSettingsRevisionTriggers(dbInstance: Database.Database = db): void {
+  try {
+    dbInstance.function('flo_bump_settings_revision', () => {
+      settingsRevision += 1;
+      return 0;
+    });
+  } catch {
+    // Function already registered or connection closed
+  }
+  const existingTables = new Set(
+    (
+      dbInstance
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('settings', 'users')",
+        )
+        .all() as { name: string }[]
+    ).map((r) => r.name),
+  );
+  if (existingTables.has('settings')) {
+    dbInstance.exec(`
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_ai AFTER INSERT ON main.settings BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_au AFTER UPDATE ON main.settings BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_ad AFTER DELETE ON main.settings BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+    `);
+  }
+  if (existingTables.has('users')) {
+    dbInstance.exec(`
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_ai AFTER INSERT ON main.users BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_au AFTER UPDATE ON main.users BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_ad AFTER DELETE ON main.users BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+    `);
+  }
+}
+
 export function initDatabase(
   recoverInterruptedReplacement = true,
   allowDuringShutdown = false,
@@ -1379,6 +1435,7 @@ export function initDatabase(
   console.log(`[DB] Opening database at: ${dbPath}`);
   dbHealthError = null;
   db = new Database(dbPath);
+  settingsRevision += 1;
   registerOrderSearchFunctions(db);
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
@@ -1388,6 +1445,7 @@ export function initDatabase(
   runMigrations();
 
   db.pragma('foreign_keys = ON');
+  registerSettingsRevisionTriggers(db);
 
   runStartupIntegrityCheck();
   repairSequences();
@@ -1796,6 +1854,7 @@ export function closeDatabase(): void {
   if (db) {
     db.close();
     db = null as unknown as Database.Database;
+    settingsRevision += 1;
     console.log('[DB] Database closed');
   }
 }
@@ -3096,6 +3155,7 @@ export function mergeRestoreProtectedSettings(
   );
   const hasPosHash = states.some((state) => state.key === 'cloud_pos_hash' && state.present);
   if (!hasDeviceSecret || !hasPosHash) ensureCloudIdentity();
+  settingsRevision += 1;
 }
 
 export function captureRestoreOutboxState(dbInstance: Database.Database): RestoreOutboxState {

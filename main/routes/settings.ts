@@ -34,7 +34,11 @@ import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
 import { readProductAnalyticsChoice, syncPostHogIdentity } from '../services/posthog';
-import { OFFLINE_MODE_SETTING, isOfflineMode } from '../services/offline-mode';
+import {
+  OFFLINE_MODE_SETTING,
+  isOfflineMode,
+  notifyOfflineModeEnabled,
+} from '../services/offline-mode';
 import * as whatsapp from '../services/whatsapp';
 import {
   PRODUCT_ANALYTICS_LEVEL_SETTING,
@@ -1599,6 +1603,8 @@ router.put(
       syncPostHogIdentity();
       if (value) {
         whatsapp.suspendForOfflineMode();
+        googleDrive.suspendForOfflineMode();
+        notifyOfflineModeEnabled();
       } else {
         whatsapp.initFromDb();
       }

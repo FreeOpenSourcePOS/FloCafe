@@ -21,6 +21,23 @@ export function isOfflineMode(): boolean {
   }
 }
 
+const enabledListeners = new Set<() => void>();
+
+/** Runs `listener` whenever the owner switches Offline mode on, so live connections can close. */
+export function onOfflineModeEnabled(listener: () => void): void {
+  enabledListeners.add(listener);
+}
+
+export function notifyOfflineModeEnabled(): void {
+  for (const listener of enabledListeners) {
+    try {
+      listener();
+    } catch (error) {
+      console.error('[OfflineMode] Listener failed:', error);
+    }
+  }
+}
+
 export function assertOnlineAllowed(feature: string): void {
   if (isOfflineMode()) throw new OfflineModeError(feature);
 }

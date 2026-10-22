@@ -17,11 +17,12 @@ by default. `main/services/offline-mode.ts` exposes `isOfflineMode()`, which is 
 
 - FloAdmin cloud sync starts no timers and `trackedFetch` refuses every request.
 - Google Drive scheduled backups do not run, and connecting, listing, backing up and restoring fail
-  with the `offline` error code. Disconnecting still clears local tokens and records the revoke as
-  unconfirmed.
+  with the `offline` error code, and in-flight Drive work is cancelled. Disconnecting retains the
+  local tokens and records the revoke as unconfirmed, which blocks further Drive access.
 - WhatsApp closes its socket without unpairing, refuses to connect and does not start; turning the
   mode off reconnects it.
-- Update checks and downloads report the `offline` update state.
+- Update checks report the `offline` update state, an in-flight update download is cancelled, and
+  the startup tax pack check and the tax pack catalog download are refused.
 - Telemetry, diagnostics and PostHog send nothing, and web image import returns `503`.
 
 The Express API, KDS and Server App stay bound to `0.0.0.0`, so devices on the local network keep

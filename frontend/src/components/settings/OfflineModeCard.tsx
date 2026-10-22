@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
 import { Toggle } from '@/components/settings/Toggle';
+import { PRIVACY_CHANGED_EVENT } from '@/lib/privacy-events';
 
 export function OfflineModeCard({ canManage }: { canManage: boolean }) {
   const t = useTranslations('settings');
@@ -26,6 +27,7 @@ export function OfflineModeCard({ canManage }: { canManage: boolean }) {
     try {
       const res = await api.put('/settings/offline-mode', { offline_mode: next });
       setEnabled(res.data?.offline_mode === true);
+      window.dispatchEvent(new Event(PRIVACY_CHANGED_EVENT));
     } catch {
       toast.error(t('offlineModeFailed'));
     } finally {

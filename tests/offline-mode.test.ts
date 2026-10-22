@@ -35,6 +35,7 @@ const { getJWTSecret } = require('../main/routes/auth');
 const { settingsRoutes } = require('../main/routes/settings');
 const { productRoutes } = require('../main/routes/products');
 const { isOfflineMode, assertOnlineAllowed } = require('../main/services/offline-mode');
+const { fetchRemoteTaxPackCatalog } = require('../main/tax-packs/catalog');
 const { isTelemetrySuppressed } = require('../main/services/telemetry');
 const { postHogEnvironment } = require('../main/services/posthog-config');
 
@@ -102,6 +103,13 @@ async function main() {
       blocked = error.code;
     }
     assertEqualOrThrow(blocked, 'offline_mode', 'network guards throw while Offline mode is on');
+    let catalogError = '';
+    try {
+      await fetchRemoteTaxPackCatalog();
+    } catch (error: any) {
+      catalogError = error.code;
+    }
+    assertEqualOrThrow(catalogError, 'offline_mode', 'the tax pack catalog download is refused');
     assertEqualOrThrow(isTelemetrySuppressed(), true, 'telemetry is suppressed');
     assertEqualOrThrow(postHogEnvironment(), null, 'product analytics never connects');
     const imageImport = await api(baseUrl, '/api/products/fetch-url', {

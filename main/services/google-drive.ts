@@ -1119,6 +1119,14 @@ class GoogleDriveService {
     for (const operation of this.activeDriveOperations) cancelDriveOperation(operation);
   }
 
+  /** Cancels in-flight Drive work when Offline mode is switched on; the service stays usable. */
+  suspendForOfflineMode(): void {
+    this.backupAbortController?.abort();
+    this.abortQueuedDriveOperations();
+    for (const controller of this.jobControllers.values()) controller.abort();
+    this.cancelActiveDriveOperations();
+  }
+
   private abortQueuedDriveOperations(): void {
     for (const controller of this.queuedOperationControllers) controller.abort();
   }

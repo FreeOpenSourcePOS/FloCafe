@@ -902,17 +902,17 @@ async function startSocketImpl(attemptId: number): Promise<void> {
   const version = await runSocketPhase(attemptId, 'version_lookup', () =>
     resolveWaWebVersion(signal),
   );
-  if (isWhatsAppTerminal() || signal.aborted) return;
+  if (isWhatsAppTerminal() || signal.aborted || isOfflineMode()) return;
   const { useMultiFileAuthState, makeWASocket, Browsers, proto } = await runSocketPhase(
     attemptId,
     'baileys_load',
     () => abortable(() => loadBaileys(), signal),
   );
-  if (isWhatsAppTerminal() || signal.aborted) return;
+  if (isWhatsAppTerminal() || signal.aborted || isOfflineMode()) return;
   const { state: authState, saveCreds } = await runSocketPhase(attemptId, 'auth_load', () =>
     abortable(() => useMultiFileAuthState(authDir), signal),
   );
-  if (isWhatsAppTerminal() || signal.aborted) return;
+  if (isWhatsAppTerminal() || signal.aborted || isOfflineMode()) return;
   const socket = await runSocketPhase(attemptId, 'socket_create', () =>
     makeWASocket({
       version,

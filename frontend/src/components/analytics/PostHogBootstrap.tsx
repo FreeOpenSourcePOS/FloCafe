@@ -7,6 +7,7 @@ import { scrubPostHogEvent, scrubPathname, type ScrubbableEvent } from '@shared/
 import { createScreenViewThrottle, screenKey } from '@shared/posthog-screen-views';
 import { setPostHogClient } from '@/lib/posthog-client';
 import { useAuthStore } from '@/store/auth';
+import { PRIVACY_CHANGED_EVENT } from '@/lib/privacy-events';
 
 let boot: Promise<PostHog | null> | null = null;
 let client: PostHog | null = null;
@@ -176,9 +177,11 @@ export function PostHogBootstrap() {
   useEffect(() => {
     const timer = window.setInterval(refresh, CONSENT_REFRESH_MS);
     window.addEventListener('focus', refresh);
+    window.addEventListener(PRIVACY_CHANGED_EVENT, refresh);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener('focus', refresh);
+      window.removeEventListener(PRIVACY_CHANGED_EVENT, refresh);
     };
   }, []);
 

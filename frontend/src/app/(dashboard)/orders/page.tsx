@@ -811,11 +811,12 @@ export default function OrdersPage() {
 
       if (isTablesRequired) {
         heldOrdersStore.fetchHeldOrders();
-        api
-          .get('/tables')
-          .then((res) => setTables(res.data.tables || []))
-          .catch(() => {});
       }
+
+      api
+        .get('/tables')
+        .then((res) => setTables(res.data.tables || []))
+        .catch(() => {});
 
       api
         .get('/settings/discount')

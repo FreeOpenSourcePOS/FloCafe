@@ -559,6 +559,7 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
 
   const pushedRoutes: string[] = [];
   let currentSearchParams = new URLSearchParams();
+  let mockTablesRequired = false;
   const orderRequests: Array<Record<string, unknown>> = [];
   const Icon = () => null;
   const ButtonStub = (props: Record<string, unknown>) => ({ type: 'button', props });
@@ -657,7 +658,8 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
               },
             };
           }
-          if (url === '/settings/business') return { data: { tables_required: true } };
+          if (url === '/settings/business')
+            return { data: { tables_required: mockTablesRequired } };
           if (url === '/settings/discount')
             return { data: { discount_mode: 'percentage', discount_requires_approval: false } };
           if (url === '/settings/kds_enabled') return { data: { setting: { value: 'false' } } };
@@ -929,103 +931,116 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
       tablesRenderer.cleanupAll();
     }
 
-    // 2. Verify OrdersPage syncs ?table= from useSearchParams() into filters.table,
-    //    requests GET /orders with table_id, and preserves manual table dropdown edits on re-render.
-    currentSearchParams = new URLSearchParams('table=tbl-42');
-    const ordersRenderer = createRenderer();
-    try {
-      const renderOrdersWithSync = () => {
-        const tree = ordersRenderer.render(OrdersPage, {});
-        const syncEl = collectElements(
-          tree,
-          (el) => typeof el.type === 'function' && el.type.name === 'OrdersTableQuerySync',
-        )[0];
-        assert.ok(syncEl, 'OrdersPage renders OrdersTableQuerySync inside Suspense');
-        syncEl.type(syncEl.props);
-        return tree;
-      };
+    // 2. Verify OrdersPage populates table options and syncs ?table= from useSearchParams() into
+    //    filters.table for both tables_required: false and tables_required: true, requests GET /orders
+    //    with table_id, and preserves manual table dropdown edits on re-render.
+    for (const tablesRequired of [false, true]) {
+      mockTablesRequired = tablesRequired;
+      orderRequests.length = 0;
+      currentSearchParams = new URLSearchParams('table=tbl-42');
+      const ordersRenderer = createRenderer();
+      try {
+        const renderOrdersWithSync = () => {
+          const tree = ordersRenderer.render(OrdersPage, {});
+          const syncEl = collectElements(
+            tree,
+            (el) => typeof el.type === 'function' && el.type.name === 'OrdersTableQuerySync',
+          )[0];
+          assert.ok(syncEl, 'OrdersPage renders OrdersTableQuerySync inside Suspense');
+          syncEl.type(syncEl.props);
+          return tree;
+        };
 
-      renderOrdersWithSync();
-      ordersRenderer.flushEffects();
-      await new Promise((resolve) => setTimeout(resolve, 20));
+        renderOrdersWithSync();
+        ordersRenderer.flushEffects();
+        await new Promise((resolve) => setTimeout(resolve, 20));
 
-      const syncedTree = renderOrdersWithSync();
-      ordersRenderer.flushEffects();
-      await new Promise((resolve) => setTimeout(resolve, 350));
+        const syncedTree = renderOrdersWithSync();
+        ordersRenderer.flushEffects();
+        await new Promise((resolve) => setTimeout(resolve, 350));
 
-      const findTableSelect = (tree: unknown) =>
-        collectElements(
-          tree,
-          (el) =>
-            el.type === 'select' &&
-            collectElements(
-              el,
-              (opt) => opt.type === 'option' && opt.props?.children === 'orders.allTables',
-            ).length > 0,
-        )[0];
+        const findTableSelect = (tree: unknown) =>
+          collectElements(
+            tree,
+            (el) =>
+              el.type === 'select' &&
+              collectElements(
+                el,
+                (opt) => opt.type === 'option' && opt.props?.children === 'orders.allTables',
+              ).length > 0,
+          )[0];
 
-      const tableSelect = findTableSelect(syncedTree);
-      assert.ok(tableSelect, 'Table filter select dropdown renders');
-      assert.equal(
-        tableSelect.props.value,
-        'tbl-42',
-        'OrdersTableQuerySync syncs ?table=tbl-42 into filters.table',
-      );
-      assert.ok(
-        orderRequests.some((req) => req.table_id === 'tbl-42'),
-        'OrdersPage fetches /orders filtered by table_id=tbl-42',
-      );
+        const tableSelect = findTableSelect(syncedTree);
+        assert.ok(tableSelect, 'Table filter select dropdown renders');
+        const optionValues = collectElements(tableSelect, (opt) => opt.type === 'option').map(
+          (opt) => opt.props?.value,
+        );
+        assert.deepEqual(
+          optionValues,
+          ['', 'tbl-42', 'tbl-99'],
+          `Table filter select populates table options when tables_required=${tablesRequired}`,
+        );
+        assert.equal(
+          tableSelect.props.value,
+          'tbl-42',
+          `OrdersTableQuerySync syncs ?table=tbl-42 into filters.table when tables_required=${tablesRequired}`,
+        );
+        assert.ok(
+          orderRequests.some((req) => req.table_id === 'tbl-42'),
+          `OrdersPage fetches /orders filtered by table_id=tbl-42 when tables_required=${tablesRequired}`,
+        );
 
-      // Manually change the table dropdown to another table while ?table=tbl-42 stays in URL.
-      tableSelect.props.onChange({ target: { value: 'tbl-99' } });
-      renderOrdersWithSync();
-      ordersRenderer.flushEffects();
-      const afterManualSelectTree = renderOrdersWithSync();
-      ordersRenderer.flushEffects();
-      assert.equal(
-        findTableSelect(afterManualSelectTree).props.value,
-        'tbl-99',
-        'Manual table filter change is not overwritten on re-render when ?table= is unchanged',
-      );
+        // Manually change the table dropdown to another table while ?table=tbl-42 stays in URL.
+        tableSelect.props.onChange({ target: { value: 'tbl-99' } });
+        renderOrdersWithSync();
+        ordersRenderer.flushEffects();
+        const afterManualSelectTree = renderOrdersWithSync();
+        ordersRenderer.flushEffects();
+        assert.equal(
+          findTableSelect(afterManualSelectTree).props.value,
+          'tbl-99',
+          'Manual table filter change is not overwritten on re-render when ?table= is unchanged',
+        );
 
-      // Manually reset the table dropdown to All Tables ('') while ?table=tbl-42 stays in URL.
-      findTableSelect(afterManualSelectTree).props.onChange({ target: { value: '' } });
-      renderOrdersWithSync();
-      ordersRenderer.flushEffects();
-      const afterManualClearTree = renderOrdersWithSync();
-      ordersRenderer.flushEffects();
-      assert.equal(
-        findTableSelect(afterManualClearTree).props.value,
-        '',
-        'Manual reset to All Tables is preserved on re-render when ?table= is unchanged',
-      );
+        // Manually reset the table dropdown to All Tables ('') while ?table=tbl-42 stays in URL.
+        findTableSelect(afterManualSelectTree).props.onChange({ target: { value: '' } });
+        renderOrdersWithSync();
+        ordersRenderer.flushEffects();
+        const afterManualClearTree = renderOrdersWithSync();
+        ordersRenderer.flushEffects();
+        assert.equal(
+          findTableSelect(afterManualClearTree).props.value,
+          '',
+          'Manual reset to All Tables is preserved on re-render when ?table= is unchanged',
+        );
 
-      // Select a table again, then navigate back to /orders (clearing ?table=), which resets filters.table to ''.
-      findTableSelect(afterManualClearTree).props.onChange({ target: { value: 'tbl-99' } });
-      currentSearchParams = new URLSearchParams();
-      renderOrdersWithSync();
-      ordersRenderer.flushEffects();
-      const afterUrlClearTree = renderOrdersWithSync();
-      ordersRenderer.flushEffects();
-      assert.equal(
-        findTableSelect(afterUrlClearTree).props.value,
-        '',
-        'Removing ?table= from the URL resets filters.table to All Tables',
-      );
+        // Select a table again, then navigate back to /orders (clearing ?table=), which resets filters.table to ''.
+        findTableSelect(afterManualClearTree).props.onChange({ target: { value: 'tbl-99' } });
+        currentSearchParams = new URLSearchParams();
+        renderOrdersWithSync();
+        ordersRenderer.flushEffects();
+        const afterUrlClearTree = renderOrdersWithSync();
+        ordersRenderer.flushEffects();
+        assert.equal(
+          findTableSelect(afterUrlClearTree).props.value,
+          '',
+          'Removing ?table= from the URL resets filters.table to All Tables',
+        );
 
-      // Manually selecting a table while on /orders (no ?table= in URL) is preserved on re-render.
-      findTableSelect(afterUrlClearTree).props.onChange({ target: { value: 'tbl-99' } });
-      renderOrdersWithSync();
-      ordersRenderer.flushEffects();
-      const afterManualSelectWithoutParamTree = renderOrdersWithSync();
-      ordersRenderer.flushEffects();
-      assert.equal(
-        findTableSelect(afterManualSelectWithoutParamTree).props.value,
-        'tbl-99',
-        'Manual table filter selection is preserved on re-render when ?table= is absent',
-      );
-    } finally {
-      ordersRenderer.cleanupAll();
+        // Manually selecting a table while on /orders (no ?table= in URL) is preserved on re-render.
+        findTableSelect(afterUrlClearTree).props.onChange({ target: { value: 'tbl-99' } });
+        renderOrdersWithSync();
+        ordersRenderer.flushEffects();
+        const afterManualSelectWithoutParamTree = renderOrdersWithSync();
+        ordersRenderer.flushEffects();
+        assert.equal(
+          findTableSelect(afterManualSelectWithoutParamTree).props.value,
+          'tbl-99',
+          'Manual table filter selection is preserved on re-render when ?table= is absent',
+        );
+      } finally {
+        ordersRenderer.cleanupAll();
+      }
     }
   } finally {
     moduleApi._load = originalLoad;

@@ -1853,15 +1853,45 @@ export function buildWhatsAppTemplateContext(opts: {
       context.total = formatCurrencyForTemplate(Number(bill.total || 0), currency, country);
 
       if (bill.order_id) {
-        const items = db
-          .prepare(`
-            SELECT product_name, quantity, total
-            FROM order_items
-            WHERE order_id = ?
-              AND (status IS NULL OR status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded'))
-            ORDER BY id
-          `)
-          .all(bill.order_id) as Array<{ product_name: string; quantity: number; total: number }>;
+        const hasBillItems = Boolean(
+          db.prepare('SELECT 1 FROM bill_items WHERE bill_id = ? LIMIT 1').get(bill.id),
+        );
+        const items = hasBillItems
+          ? (db
+              .prepare(`
+                SELECT
+                  oi.product_name,
+                  bi.quantity AS quantity,
+                  CASE
+                    WHEN oi.quantity > 0 THEN oi.total * bi.quantity / oi.quantity
+                    ELSE oi.total
+                  END AS total
+                FROM bill_items bi
+                JOIN order_items oi ON oi.id = bi.order_item_id
+                WHERE bi.bill_id = ?
+                  AND bi.quantity > 0
+                  AND oi.order_id = ?
+                  AND (oi.status IS NULL OR oi.status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded'))
+                ORDER BY oi.id
+              `)
+              .all(bill.id, bill.order_id) as Array<{
+              product_name: string;
+              quantity: number;
+              total: number;
+            }>)
+          : (db
+              .prepare(`
+                SELECT product_name, quantity, total
+                FROM order_items
+                WHERE order_id = ?
+                  AND (status IS NULL OR status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded'))
+                ORDER BY id
+              `)
+              .all(bill.order_id) as Array<{
+              product_name: string;
+              quantity: number;
+              total: number;
+            }>);
         context.order_items = items
           .map(
             (item) =>
@@ -1924,10 +1954,10 @@ export function buildWhatsAppTemplateContext(opts: {
             MAX(COALESCE(b.paid_at, b.created_at)) AS last_visit_at
           FROM bills b
           LEFT JOIN orders o ON o.id = b.order_id
-          WHERE (b.customer_id = ? OR o.customer_id = ?)
+          WHERE COALESCE(b.customer_id, o.customer_id) = ?
             AND b.payment_status = 'paid'
         `)
-        .get(resolvedCustomerId, resolvedCustomerId) as {
+        .get(resolvedCustomerId) as {
         visit_count: number;
         total_spent: number;
         last_visit_at: string | null;
@@ -2006,7 +2036,31 @@ function hasRuleMessageForBill(billId: number, ruleUserId: string): boolean {
   return !!row;
 }
 
-export async function triggerBillPaidAutomation(
+const inFlightBillAutomations = new Map<
+  number,
+  Promise<{ triggered: WhatsAppTriggerType[]; results: Record<string, SendResult> }>
+>();
+let activeAutomationSweepPromise: Promise<{ feedbackSent: number; winbackSent: number }> | null =
+  null;
+
+export function triggerBillPaidAutomation(
+  billId: number,
+  opts?: { pointsEarned?: number },
+): Promise<{ triggered: WhatsAppTriggerType[]; results: Record<string, SendResult> }> {
+  const existing = inFlightBillAutomations.get(billId);
+  if (existing) {
+    return existing;
+  }
+  const runPromise = trackWhatsAppWork(triggerBillPaidAutomationImpl(billId, opts)).finally(() => {
+    if (inFlightBillAutomations.get(billId) === runPromise) {
+      inFlightBillAutomations.delete(billId);
+    }
+  });
+  inFlightBillAutomations.set(billId, runPromise);
+  return runPromise;
+}
+
+async function triggerBillPaidAutomationImpl(
   billId: number,
   opts?: { pointsEarned?: number },
 ): Promise<{ triggered: WhatsAppTriggerType[]; results: Record<string, SendResult> }> {
@@ -2084,7 +2138,15 @@ export async function triggerBillPaidAutomation(
       const threshold = pointsRule.pointsThreshold ?? 100;
       const balance = Number(context.points_balance || 0);
       const earned = Number(context.points_earned || 0);
-      const prevBalance = balance - earned;
+      const redeemedRow = db
+        .prepare(`
+          SELECT COALESCE(SUM(amount), 0) AS total
+          FROM loyalty_ledger
+          WHERE bill_id = ? AND type = 'debit'
+        `)
+        .get(billId) as { total: number } | undefined;
+      const redeemed = Math.round(Number(redeemedRow?.total || 0));
+      const prevBalance = balance - earned + redeemed;
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         .toISOString()
         .replace('T', ' ')
@@ -2179,12 +2241,27 @@ export async function triggerBillPaidAutomation(
   return { triggered, results };
 }
 
-export async function runScheduledAutomationSweep(
+export function runScheduledAutomationSweep(
+  nowMs: number = Date.now(),
+): Promise<{ feedbackSent: number; winbackSent: number }> {
+  if (activeAutomationSweepPromise) {
+    return activeAutomationSweepPromise;
+  }
+  const sweepPromise = trackWhatsAppWork(runScheduledAutomationSweepImpl(nowMs)).finally(() => {
+    if (activeAutomationSweepPromise === sweepPromise) {
+      activeAutomationSweepPromise = null;
+    }
+  });
+  activeAutomationSweepPromise = sweepPromise;
+  return sweepPromise;
+}
+
+async function runScheduledAutomationSweepImpl(
   nowMs: number = Date.now(),
 ): Promise<{ feedbackSent: number; winbackSent: number }> {
   let feedbackSent = 0;
   let winbackSent = 0;
-  if (!state.enabled || isWhatsAppTerminal()) {
+  if (!state.enabled || isWhatsAppTerminal() || state.state !== 'connected' || !state.socket) {
     return { feedbackSent, winbackSent };
   }
   const db = getDatabase();
@@ -2206,48 +2283,58 @@ export async function runScheduledAutomationSweep(
       .replace(/\..*$/, '');
     const dueBills = db
       .prepare(`
-        SELECT b.id AS bill_id, COALESCE(b.customer_id, o.customer_id) AS customer_id
+        SELECT
+          b.id AS bill_id,
+          c.id AS customer_id,
+          c.phone AS phone,
+          c.country_code AS country_code
         FROM bills b
         LEFT JOIN orders o ON o.id = b.order_id
+        JOIN customers c ON c.id = COALESCE(b.customer_id, o.customer_id)
         WHERE b.payment_status = 'paid'
+          AND c.is_active = 1
+          AND c.phone IS NOT NULL AND c.phone != ''
           AND COALESCE(b.paid_at, b.created_at) <= ?
           AND COALESCE(b.paid_at, b.created_at) >= ?
-          AND COALESCE(b.customer_id, o.customer_id) IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM whatsapp_blocklist wb
+            WHERE wb.phone_e164 = c.phone
+          )
           AND NOT EXISTS (
             SELECT 1 FROM whatsapp_messages wm
             WHERE wm.bill_id = b.id AND wm.created_by_user_id = 'rule:feedback_delay'
           )
         ORDER BY COALESCE(b.paid_at, b.created_at) DESC
-        LIMIT 25
       `)
-      .all(cutoff, sevenDaysAgo) as Array<{ bill_id: number; customer_id: string }>;
+      .all(cutoff, sevenDaysAgo) as Array<{
+      bill_id: number;
+      customer_id: string;
+      phone: string;
+      country_code: string | null;
+    }>;
 
     const tpl = templateMap.get(feedbackRule.templateId) ?? templateMap.get('feedback');
     if (tpl) {
+      let attempted = 0;
       for (const row of dueBills) {
-        if (isWhatsAppTerminal()) break;
-        const customer = db
-          .prepare('SELECT id, phone, country_code, is_active FROM customers WHERE id = ?')
-          .get(String(row.customer_id)) as
-          | { id: string; phone: string | null; country_code: string | null; is_active: number }
-          | undefined;
-        if (!customer?.phone || customer.is_active === 0) continue;
+        if (isWhatsAppTerminal() || attempted >= 25) break;
         const parsedPhone = parsePhoneE164(
-          customer.phone,
-          tenantCountry || customer.country_code || '',
+          row.phone,
+          tenantCountry || row.country_code || '',
         );
-        if (!parsedPhone) continue;
+        if (!parsedPhone || isBlocked(parsedPhone.e164)) continue;
         const context = buildWhatsAppTemplateContext({
           billId: row.bill_id,
-          customerId: customer.id,
+          customerId: row.customer_id,
         });
         const body = renderWhatsAppTemplate(tpl.body, context);
         if (!body) continue;
+        attempted++;
         const res = await sendMessage({
           phoneE164: parsedPhone.e164,
           body,
           billId: row.bill_id,
-          customerId: customer.id,
+          customerId: row.customer_id,
           kind: 'auto_followup',
           userId: 'rule:feedback_delay',
         });
@@ -2285,13 +2372,16 @@ export async function runScheduledAutomationSweep(
           AND cv.visit_count >= 1
           AND cv.last_visit_at <= ?
           AND NOT EXISTS (
+            SELECT 1 FROM whatsapp_blocklist wb
+            WHERE wb.phone_e164 = c.phone
+          )
+          AND NOT EXISTS (
             SELECT 1 FROM whatsapp_messages wm
             WHERE wm.customer_id = c.id
               AND wm.created_by_user_id = 'rule:winback'
               AND wm.queued_at >= ?
           )
         ORDER BY cv.last_visit_at DESC
-        LIMIT 25
       `)
       .all(cutoff, cutoff) as Array<{
       id: string;
@@ -2302,16 +2392,18 @@ export async function runScheduledAutomationSweep(
 
     const tpl = templateMap.get(winbackRule.templateId) ?? templateMap.get('winback');
     if (tpl) {
+      let attempted = 0;
       for (const cust of dueCustomers) {
-        if (isWhatsAppTerminal()) break;
+        if (isWhatsAppTerminal() || attempted >= 25) break;
         const parsedPhone = parsePhoneE164(
           cust.phone,
           tenantCountry || cust.country_code || '',
         );
-        if (!parsedPhone) continue;
+        if (!parsedPhone || isBlocked(parsedPhone.e164)) continue;
         const context = buildWhatsAppTemplateContext({ customerId: cust.id });
         const body = renderWhatsAppTemplate(tpl.body, context);
         if (!body) continue;
+        attempted++;
         const res = await sendMessage({
           phoneE164: parsedPhone.e164,
           body,
@@ -2368,6 +2460,30 @@ export async function runBroadcast(opts: BroadcastSegmentOptions): Promise<{
       errors: [],
     };
   }
+  if (!state.enabled || isWhatsAppTerminal()) {
+    return {
+      ok: false,
+      matched: 0,
+      attempted: 0,
+      sent: 0,
+      skipped: 0,
+      error: 'WhatsApp is not enabled.',
+      reason: 'feature_off',
+      errors: [],
+    };
+  }
+  if (state.state !== 'connected' || !state.socket) {
+    return {
+      ok: false,
+      matched: 0,
+      attempted: 0,
+      sent: 0,
+      skipped: 0,
+      error: 'Flo is not connected to WhatsApp.',
+      reason: 'not_connected',
+      errors: [],
+    };
+  }
 
   const maxLimit = Math.max(1, Math.min(50, Math.round(Number(opts.limit || 25))));
   const minVisits = Math.max(0, Math.round(Number(opts.minVisits || 0)));
@@ -2381,7 +2497,7 @@ export async function runBroadcast(opts: BroadcastSegmentOptions): Promise<{
           .replace(/\..*$/, '')
       : null;
 
-  const customers = db
+  const filtered = db
     .prepare(`
       WITH bill_stats AS (
         SELECT
@@ -2413,10 +2529,21 @@ export async function runBroadcast(opts: BroadcastSegmentOptions): Promise<{
       LEFT JOIN loyalty_stats ls ON ls.customer_id = c.id
       WHERE c.is_active = 1
         AND c.phone IS NOT NULL AND c.phone != ''
+        AND (? <= 0 OR COALESCE(bs.visits_count, 0) >= ?)
+        AND (? <= 0 OR COALESCE(ls.points_balance, 0) >= ?)
+        AND (? IS NULL OR (bs.last_visit_at IS NOT NULL AND bs.last_visit_at <= ?))
       ORDER BY c.created_at DESC
-      LIMIT 200
+      LIMIT ?
     `)
-    .all() as Array<{
+    .all(
+      minVisits,
+      minVisits,
+      minPoints,
+      minPoints,
+      inactiveCutoff,
+      inactiveCutoff,
+      maxLimit,
+    ) as Array<{
     id: string;
     phone: string;
     country_code: string | null;
@@ -2426,16 +2553,6 @@ export async function runBroadcast(opts: BroadcastSegmentOptions): Promise<{
   }>;
 
   const tenantCountry = getSettingValue('country') || '';
-  const filtered = customers
-    .filter((c) => {
-      if (minVisits > 0 && Number(c.visits_count) < minVisits) return false;
-      if (minPoints > 0 && Number(c.points_balance) < minPoints) return false;
-      if (inactiveCutoff) {
-        if (!c.last_visit_at || c.last_visit_at > inactiveCutoff) return false;
-      }
-      return true;
-    })
-    .slice(0, maxLimit);
 
   let attempted = 0;
   let sent = 0;

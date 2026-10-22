@@ -524,6 +524,151 @@ async function main(): Promise<void> {
       'listMessages records trigger_rule=broadcast for segment broadcasts',
     );
 
+    db.prepare(`
+      INSERT INTO orders (id, order_number, type, status, customer_id, subtotal, tax_amount, discount_amount, total, created_at, updated_at)
+      VALUES (902, 'ORD-902', 'dine_in', 'completed', 'cust-auto-1', 60, 0, 0, 60, datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+      VALUES (902, 'INV-902', 902, 'cust-auto-1', 60, 0, 0, 60, 60, 0, 'paid', '[{"method":"wallet","amount":50},{"method":"card","amount":10}]', datetime('now'), datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)
+      VALUES
+        ('cust-auto-1', 902, 'debit', 100, 'Redeem on bill INV-902', datetime('now'), datetime('now')),
+        ('cust-auto-1', 902, 'credit', 60, 'Cashback on bill INV-902', datetime('now'), datetime('now'))
+    `).run();
+    const secondBillTrigger = await whatsapp.triggerBillPaidAutomation(902, { pointsEarned: 60 });
+    assert(
+      !secondBillTrigger.triggered.includes('points_threshold'),
+      'points_threshold does not re-fire within 7 days when customer redeems points but was already above threshold before the bill',
+    );
+
+    db.prepare(`
+      INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+      VALUES ('cust-split-2', 'Noah Patel', '+14089961011', 'US', 1, datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO orders (id, order_number, type, status, customer_id, subtotal, tax_amount, discount_amount, total, created_at, updated_at)
+      VALUES (903, 'ORD-903', 'dine_in', 'completed', 'cust-auto-1', 35, 0, 0, 35, datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO order_items (id, order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total, status)
+      VALUES
+        (9031, 903, 'prod-split-1', 'Croissant', 2, 10, 20, 0, 20, 'delivered'),
+        (9032, 903, 'prod-split-2', 'Matcha', 1, 15, 15, 0, 15, 'delivered')
+    `).run();
+    db.prepare(`
+      INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, split_group_id, paid_at, created_at, updated_at)
+      VALUES
+        (903, 'INV-903A', 903, 'cust-auto-1', 10, 0, 0, 10, 10, 0, 'paid', 'grp-903', datetime('now'), datetime('now'), datetime('now')),
+        (904, 'INV-903B', 903, 'cust-split-2', 25, 0, 0, 25, 25, 0, 'paid', 'grp-903', datetime('now'), datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO bill_items (bill_id, order_item_id, quantity)
+      VALUES
+        (903, 9031, 1),
+        (904, 9031, 1),
+        (904, 9032, 1)
+    `).run();
+    const splitContextA = whatsapp.buildWhatsAppTemplateContext({ billId: 903 });
+    assert(
+      splitContextA.order_items.includes('1x Croissant - $10.00') &&
+        !splitContextA.order_items.includes('2x Croissant') &&
+        !splitContextA.order_items.includes('Matcha'),
+      `split bill template context scopes order_items to bill_items allocation (got "${splitContextA.order_items}")`,
+    );
+    assert(
+      splitContextA.total_spent === '$120.00',
+      `split bill customer total_spent excludes sibling bill assigned to another customer (got ${splitContextA.total_spent})`,
+    );
+
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\..*$/, '');
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\..*$/, '');
+    db.prepare(`
+      INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+      VALUES
+        ('cust-sweep-blocked', 'Blocked User', '+15555550199', 'US', 1, ?, ?),
+        ('cust-sweep-feedback', 'Feedback User', '+14089961021', 'US', 1, ?, ?),
+        ('cust-sweep-winback', 'Winback User', '+14089961022', 'US', 1, ?, ?)
+    `).run(twentyDaysAgo, twentyDaysAgo, threeHoursAgo, threeHoursAgo, twentyDaysAgo, twentyDaysAgo);
+    db.prepare(`
+      INSERT INTO orders (id, order_number, type, status, customer_id, subtotal, tax_amount, discount_amount, total, created_at, updated_at)
+      VALUES
+        (905, 'ORD-905', 'dine_in', 'completed', 'cust-sweep-blocked', 20, 0, 0, 20, ?, ?),
+        (906, 'ORD-906', 'dine_in', 'completed', 'cust-sweep-feedback', 30, 0, 0, 30, ?, ?),
+        (907, 'ORD-907', 'dine_in', 'completed', 'cust-sweep-winback', 40, 0, 0, 40, ?, ?)
+    `).run(threeHoursAgo, threeHoursAgo, threeHoursAgo, threeHoursAgo, twentyDaysAgo, twentyDaysAgo);
+    db.prepare(`
+      INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
+      VALUES
+        (905, 'INV-905', 905, 'cust-sweep-blocked', 20, 0, 0, 20, 20, 0, 'paid', ?, ?, ?),
+        (906, 'INV-906', 906, 'cust-sweep-feedback', 30, 0, 0, 30, 30, 0, 'paid', ?, ?, ?),
+        (907, 'INV-907', 907, 'cust-sweep-winback', 40, 0, 0, 40, 40, 0, 'paid', ?, ?, ?)
+    `).run(
+      threeHoursAgo,
+      threeHoursAgo,
+      threeHoursAgo,
+      threeHoursAgo,
+      threeHoursAgo,
+      threeHoursAgo,
+      twentyDaysAgo,
+      twentyDaysAgo,
+      twentyDaysAgo,
+    );
+    whatsapp.saveAutomationConfig({
+      safety: {
+        autoOptOutEnabled: true,
+        quietHoursEnabled: false,
+        quietHoursStart: '22:00',
+        quietHoursEnd: '09:00',
+        maxPerCustomerPerWeek: 10,
+        rateLimitPerHour: 10,
+        feedbackLink: 'https://flocafe.example.com/feedback',
+        instagram: '@flotestcafe',
+      },
+      rules: [
+        { id: 'after_payment', trigger: 'after_payment', enabled: false, templateId: 'receipt' },
+        { id: 'points_threshold', trigger: 'points_threshold', enabled: false, templateId: 'loyalty_milestone', pointsThreshold: 100 },
+        { id: 'nth_visit', trigger: 'nth_visit', enabled: false, templateId: 'loyalty_milestone', nthVisit: 5, repeatEveryNth: true },
+        { id: 'feedback_delay', trigger: 'feedback_delay', enabled: true, templateId: 'feedback', delayHours: 2 },
+        { id: 'winback', trigger: 'winback', enabled: true, templateId: 'winback', inactiveDays: 14 },
+      ],
+    });
+    const [sweep1, sweep2] = await Promise.all([
+      whatsapp.runScheduledAutomationSweep(),
+      whatsapp.runScheduledAutomationSweep(),
+    ]);
+    assert(
+      sweep1.feedbackSent === 1 &&
+        sweep1.winbackSent === 1 &&
+        sweep2.feedbackSent === 1 &&
+        sweep2.winbackSent === 1,
+      `concurrent runScheduledAutomationSweep calls deduplicate in-flight work (got ${JSON.stringify(sweep1)})`,
+    );
+    const feedbackRecipientMsgs = whatsapp.listMessages({ phone: '+14089961021', limit: 10, offset: 0, canViewReports: true });
+    assert(
+      feedbackRecipientMsgs.length === 1 && feedbackRecipientMsgs[0]?.trigger_rule === 'feedback_delay',
+      'scheduled sweep sends exactly one feedback_delay message to eligible customer',
+    );
+
+    whatsapp.disconnect();
+    await whatsapp.enable('broadcast-disconnected-check');
+    const disconnectedBroadcast = await whatsapp.runBroadcast({ templateId: 'winback', minVisits: 1 });
+    assert(
+      disconnectedBroadcast.ok === false && disconnectedBroadcast.reason === 'not_connected',
+      `runBroadcast returns ok=false and reason=not_connected when disconnected (got ${JSON.stringify(disconnectedBroadcast)})`,
+    );
+    await whatsapp.connectWithQr();
+    eventHandlers.get('connection.update')?.({ connection: 'open' });
+    await new Promise((resolve) => setImmediate(resolve));
+
     delete process.env.FLO_WHATSAPP_FAST_DELAY;
     holdPresence = true;
 

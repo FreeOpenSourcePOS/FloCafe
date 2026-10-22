@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue } from '../db';
+import { normalizeOverridePrice } from './item-price-override';
 import { resolveOrderItemVariant, variantUnitPrice } from './product-variants';
 import { getBundledCountryPack } from '../tax-packs/bundled';
 import {
@@ -677,7 +678,7 @@ export function invertTaxBreakdown(raw: string | null | undefined): string | nul
 
 export function scaleTaxBreakdowns(
   breakdowns: any[],
-  ratio: number,
+  ratio: Decimal.Value,
   targetTaxAmount: number,
   minorFactor = 100,
 ): any[] {
@@ -692,12 +693,14 @@ export function scaleTaxBreakdowns(
     outerIndex: number;
     innerIndex: number;
   }> = [];
-  const scale = new Decimal(ratio);
+  const scale = Decimal.isDecimal(ratio) ? new TaxDecimal(ratio.toString()) : new TaxDecimal(ratio);
 
   cloned.forEach((breakdown, outerIndex) => {
     if (!Array.isArray(breakdown)) return;
     breakdown.forEach((component: any, innerIndex: number) => {
-      const rawAmount = new Decimal(component.amount || 0).mul(scale);
+      const rawAmount = new TaxDecimal(component.amount || 0)
+        .mul(scale)
+        .toSignificantDigits(20, Decimal.ROUND_HALF_UP);
       const rounded = rawAmount.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
       entries.push({
         component,
@@ -740,7 +743,7 @@ export function scaleTaxBreakdowns(
 
 export function scaleTaxSnapshots(
   snapshotsJson: (string | null | undefined)[],
-  ratio: number,
+  ratio: Decimal.Value,
   minorFactor = 100,
 ): string[] {
   const snapshots = snapshotsJson.flatMap((raw) => {
@@ -752,7 +755,7 @@ export function scaleTaxSnapshots(
       return [];
     }
   });
-  const scale = new Decimal(ratio);
+  const scale = Decimal.isDecimal(ratio) ? new TaxDecimal(ratio.toString()) : new TaxDecimal(ratio);
   if (scale.eq(1)) {
     return snapshots.map((snapshot) => JSON.stringify(snapshot));
   }
@@ -769,7 +772,9 @@ export function scaleTaxSnapshots(
     for (const line of snapshot.lines) {
       if (!Array.isArray(line.components)) continue;
       for (const component of line.components) {
-        const raw = new Decimal(component.amount || 0).mul(scale);
+        const raw = new TaxDecimal(component.amount || 0)
+          .mul(scale)
+          .toSignificantDigits(20, Decimal.ROUND_HALF_UP);
         const rounded = raw.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
         entries.push({ component, line, raw, rounded, remainder: raw.minus(rounded) });
       }
@@ -778,8 +783,12 @@ export function scaleTaxSnapshots(
 
   if (entries.length > 0) {
     const targetTaxAmount = entries
-      .reduce((sum, entry) => sum.plus(new Decimal(entry.component.amount || 0)), new Decimal(0))
+      .reduce(
+        (sum, entry) => sum.plus(new TaxDecimal(entry.component.amount || 0)),
+        new TaxDecimal(0),
+      )
       .mul(scale)
+      .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
       .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
     const roundedTotal = entries.reduce((sum, entry) => sum.plus(entry.rounded), new Decimal(0));
     const centsDelta = targetTaxAmount
@@ -794,6 +803,22 @@ export function scaleTaxSnapshots(
           ? right.remainder.comparedTo(left.remainder)
           : left.remainder.comparedTo(right.remainder);
       if (remainderOrder !== 0) return remainderOrder;
+      const labelLeft = String(
+        left.component.label ??
+          left.component.title ??
+          left.component.name ??
+          left.component.ruleId ??
+          '',
+      );
+      const labelRight = String(
+        right.component.label ??
+          right.component.title ??
+          right.component.name ??
+          right.component.ruleId ??
+          '',
+      );
+      const labelOrder = labelLeft.localeCompare(labelRight);
+      if (labelOrder !== 0) return labelOrder;
       const ruleOrder = String(left.component.ruleId || '').localeCompare(
         String(right.component.ruleId || ''),
       );
@@ -814,8 +839,9 @@ export function scaleTaxSnapshots(
     for (const line of snapshot.lines) {
       const scaleValue = (value: unknown) => {
         if (typeof value !== 'string' && typeof value !== 'number') return value;
-        return new Decimal(value)
+        return new TaxDecimal(value)
           .mul(scale)
+          .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
           .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
           .toFixed(decimals);
       };
@@ -838,7 +864,7 @@ export function combineItemAndChargeTaxes(args: {
   itemExclusiveTaxAmount: number;
   itemBreakdowns: any[];
   itemSnapshots: (string | null | undefined)[];
-  itemTaxRatio: number;
+  itemTaxRatio: Decimal.Value;
   chargeTaxes: ChargeTaxSummary;
   minorFactor?: number;
 }): TaxRollup {
@@ -1208,8 +1234,23 @@ export function rollupOrderTaxes(args: {
   taxRollup: TaxRollup;
 } {
   const { items, chargeTaxes, currency, decimals, minorFactor, itemTaxRatio, taxesEnabled } = args;
-  const toSnapshotString = (snap: string | Record<string, unknown> | null) =>
-    typeof snap === 'string' ? snap : snap ? JSON.stringify(snap) : null;
+  const toSnapshotString = (
+    snap: string | Record<string, unknown> | null,
+    lineIdOverride?: string,
+  ) => {
+    if (!snap) return null;
+    if (!lineIdOverride) return typeof snap === 'string' ? snap : JSON.stringify(snap);
+    try {
+      const parsed = (
+        typeof snap === 'string' ? JSON.parse(snap) : JSON.parse(JSON.stringify(snap))
+      ) as SnapshotData;
+      if (parsed && Array.isArray(parsed.lines) && parsed.lines[0]) {
+        parsed.lines[0].lineId = lineIdOverride;
+        return JSON.stringify(parsed);
+      }
+    } catch {}
+    return typeof snap === 'string' ? snap : JSON.stringify(snap);
+  };
 
   if (itemTaxRatio.eq(1)) {
     let totalTax = new Decimal(0);
@@ -1226,7 +1267,7 @@ export function rollupOrderTaxes(args: {
       if (item.breakdown && item.breakdown.length > 0) {
         breakdowns.push(item.breakdown);
       }
-      snapshots.push(toSnapshotString(item.snapshot));
+      snapshots.push(toSnapshotString(item.snapshot, item.lineIdOverride));
     }
 
     const itemTaxAmount = totalTax.toNumber();
@@ -1295,22 +1336,24 @@ export function rollupOrderTaxes(args: {
       }
       nonDocSnapshotSlots.push(combinedSnapshots.length);
       combinedSnapshots.push(null);
-      nonDocSnapshots.push(toSnapshotString(item.snapshot));
+      nonDocSnapshots.push(toSnapshotString(item.snapshot, item.lineIdOverride));
     }
   });
 
-  const ratioNum = itemTaxRatio.toNumber();
-  const scaledNonDocTax = nonDocTotalTax
-    .mul(itemTaxRatio)
+  const ratioScale = new TaxDecimal(itemTaxRatio.toString());
+  const scaledNonDocTax = new TaxDecimal(nonDocTotalTax.toString())
+    .mul(ratioScale)
+    .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
     .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
-  const scaledNonDocExclusiveTax = nonDocExclusiveTax
-    .mul(itemTaxRatio)
+  const scaledNonDocExclusiveTax = new TaxDecimal(nonDocExclusiveTax.toString())
+    .mul(ratioScale)
+    .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
     .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
 
   if (nonDocBreakdownSlots.length > 0) {
     const scaledBreakdowns = scaleTaxBreakdowns(
       nonDocBreakdowns,
-      ratioNum,
+      itemTaxRatio,
       scaledNonDocTax.toNumber(),
       minorFactor,
     );
@@ -1319,7 +1362,7 @@ export function rollupOrderTaxes(args: {
     });
   }
   if (nonDocSnapshotSlots.length > 0) {
-    const scaledSnapshots = scaleTaxSnapshots(nonDocSnapshots, ratioNum, minorFactor);
+    const scaledSnapshots = scaleTaxSnapshots(nonDocSnapshots, itemTaxRatio, minorFactor);
     let snapCursor = 0;
     nonDocSnapshotSlots.forEach((slotIdx, i) => {
       combinedSnapshots[slotIdx] = nonDocSnapshots[i]
@@ -1450,11 +1493,11 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       const menuUnitPrice = variant
         ? variantUnitPrice(variant, isOnlineOrder)
         : parseFloat(product.price) || 0;
-      // A cart line the owner has overridden is quoted at its override price.
+      // A cart line the owner has overridden is quoted at its normalized override price.
       const overridePrice = Number(itemData.price_override?.price);
       const unitPrice =
         itemData.price_override && Number.isFinite(overridePrice) && overridePrice >= 0
-          ? overridePrice
+          ? normalizeOverridePrice(overridePrice, decimals)
           : menuUnitPrice;
       const rawQty = Number(itemData.quantity);
       const quantity = Number.isFinite(rawQty) && rawQty > 0 ? rawQty : 1;

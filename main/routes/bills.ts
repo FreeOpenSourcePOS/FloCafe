@@ -402,7 +402,7 @@ export function addBillLoyaltyFields(
 
 function scaleTaxBreakdown(
   raw: unknown,
-  ratio: number,
+  ratio: Decimal.Value,
   ownerWeights?: number[],
   childIndex = 0,
   sourceTaxMinor?: number,
@@ -411,7 +411,8 @@ function scaleTaxBreakdown(
   if (ownerWeights && ownerWeights.length > 0) {
     return allocateTaxBreakdownForChild(raw, ownerWeights, childIndex, sourceTaxMinor, minorFactor);
   }
-  if (raw === null || raw === undefined || ratio === 1) return raw;
+  const ratioDec = Decimal.isDecimal(ratio) ? ratio : new Decimal(ratio);
+  if (raw === null || raw === undefined || ratioDec.eq(1)) return raw;
   const wasString = typeof raw === 'string';
   let parsed = raw;
   if (wasString) {
@@ -421,6 +422,7 @@ function scaleTaxBreakdown(
       return raw;
     }
   }
+  const decimals = Math.log10(minorFactor);
 
   const scale = (value: any): any => {
     if (Array.isArray(value)) return value.map(scale);
@@ -429,9 +431,12 @@ function scaleTaxBreakdown(
     if (Object.prototype.hasOwnProperty.call(result, 'amount')) {
       const amount = Number(result.amount);
       if (Number.isFinite(amount)) {
-        const scaled = Number((amount * ratio).toFixed(Math.log10(minorFactor)));
-        result.amount =
-          typeof value.amount === 'string' ? scaled.toFixed(Math.log10(minorFactor)) : scaled;
+        const scaled = new Decimal(amount)
+          .mul(ratioDec)
+          .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
+          .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
+          .toNumber();
+        result.amount = typeof value.amount === 'string' ? scaled.toFixed(decimals) : scaled;
       }
     }
     return result;
@@ -473,7 +478,6 @@ export function projectOrderItems(
     allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]),
   );
   const taxDiscountRatioDec = getTaxDiscountRatioDecimal(order?.subtotal, order?.discount_amount);
-  const taxDiscountRatio = taxDiscountRatioDec.toNumber();
   const decimals = Math.log10(minorFactor);
   const docOutputByItem = new Map<unknown, DocumentTaxAllocationItemOutput>();
   if (!taxDiscountRatioDec.eq(1)) {
@@ -494,9 +498,8 @@ export function projectOrderItems(
     const toSavedDocOutput = (
       snap: Record<string, unknown>,
     ): DocumentTaxAllocationItemOutput | null => {
-      const taxRounding = snap.taxRounding as Record<string, unknown> | undefined;
       const lines = snap.lines as Record<string, unknown>[] | undefined;
-      if (taxRounding?.scope !== 'document' || !Array.isArray(lines) || lines.length === 0) {
+      if (!Array.isArray(lines) || lines.length === 0) {
         return null;
       }
       const line = lines[0];
@@ -585,6 +588,7 @@ export function projectOrderItems(
         ? Math.round(docOut.taxAmount * minorFactor)
         : new Decimal(item.tax_amount || 0)
             .mul(taxDiscountRatioDec)
+            .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
             .mul(minorFactor)
             .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
             .toNumber();
@@ -600,7 +604,7 @@ export function projectOrderItems(
           ? item.tax_breakdown
           : scaleTaxBreakdown(
               item.tax_breakdown,
-              taxDiscountRatio,
+              taxDiscountRatioDec,
               undefined,
               0,
               undefined,
@@ -636,7 +640,7 @@ export function projectOrderItems(
                     ? item.tax_snapshot
                     : JSON.stringify(item.tax_snapshot),
                 ],
-                taxDiscountRatioDec.mul(quantityRatio).toNumber(),
+                taxDiscountRatioDec.mul(quantityRatio),
                 minorFactor,
               )[0] || null;
       if (quantity === undefined && taxDiscountRatioDec.eq(1) && !ownerAllocation) return item;

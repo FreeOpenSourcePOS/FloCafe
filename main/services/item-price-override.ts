@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { getDatabase, now } from '../db';
 
 type Database = ReturnType<typeof getDatabase>;
@@ -15,6 +16,11 @@ export interface PriceOverrideState {
   reason: string;
   actorUserId: string;
   at: string;
+}
+
+/** Rounds a non-negative unit price to currency precision using half-up rounding. */
+export function normalizeOverridePrice(price: number, decimals: number): number {
+  return new Decimal(price).toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP).toNumber();
 }
 
 /** Validates a client override: a finite non-negative price (0 allowed) and a required reason. */
@@ -36,7 +42,7 @@ export function parsePriceOverrideInput(raw: unknown, decimals: number): PriceOv
       { statusCode: 400 },
     );
   }
-  return { price: Number(price.toFixed(decimals)), reason };
+  return { price: normalizeOverridePrice(price, decimals), reason };
 }
 
 /** Flags an item as price-overridden, keeping the first menu price when overridden repeatedly. */

@@ -1046,4 +1046,42 @@ test('allocateDocumentTaxRounding applies order discount ratio before document l
   );
   const parsedLineScoped = JSON.parse(lineScopedScaled[0]);
   assert.equal(parsedLineScoped.lines[0].taxAmount, '0.50');
+
+  // Line-scoped scaleTaxSnapshots preserves full Decimal ratio precision (16.10 / 104.00)
+  const lineScopedRepeating = scaleTaxSnapshots(
+    [
+      JSON.stringify({
+        packId: 'line-pack',
+        taxRounding: { scope: 'line', method: 'half_up' },
+        lines: [
+          {
+            lineId: 'line-0001',
+            grossAmount: '104.00',
+            taxableBase: '104.00',
+            taxAmount: '5.20',
+            components: [
+              {
+                ruleId: 'cgst',
+                name: 'CGST',
+                rate: '2.5',
+                amount: '2.60',
+                roundingRemainder: '0',
+              },
+              {
+                ruleId: 'sgst',
+                name: 'SGST',
+                rate: '2.5',
+                amount: '2.60',
+                roundingRemainder: '0',
+              },
+            ],
+          },
+        ],
+      }),
+    ],
+    computeDiscountTaxRatio('16.10', '104.00'),
+    100,
+  );
+  const parsedLineRepeating = JSON.parse(lineScopedRepeating[0]);
+  assert.equal(parsedLineRepeating.lines[0].taxAmount, '0.81');
 });

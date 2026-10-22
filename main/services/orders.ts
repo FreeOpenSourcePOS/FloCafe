@@ -298,7 +298,7 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
       itemExclusiveTaxAmount: exclusiveTaxAmount,
       itemBreakdowns: totals.allTaxBreakdowns,
       itemSnapshots: totals.allTaxSnapshots,
-      itemTaxRatio: taxRatio,
+      itemTaxRatio: taxRatioDec,
       chargeTaxes,
       minorFactor,
     });

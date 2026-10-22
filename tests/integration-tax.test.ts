@@ -2471,6 +2471,74 @@ async function main() {
       'CE9 qty 3 preview total matches saved order total',
     );
 
+    // 10. Line-scoped 104.00 item + two 2.5% taxes + 87.90 flat discount + taxable 0.10 packaging charge
+    const linePackVersionId = (
+      db
+        .prepare("SELECT active_version_id FROM country_packs WHERE id = 'official-india'")
+        .get() as { active_version_id: number }
+    )?.active_version_id;
+    const savedPackRow = db
+      .prepare('SELECT pack_json FROM country_pack_versions WHERE id = ?')
+      .get(linePackVersionId) as { pack_json: string };
+    const lineScopePack = JSON.parse(savedPackRow.pack_json);
+    lineScopePack.taxRounding = { ...lineScopePack.taxRounding, scope: 'line' };
+    db.prepare('UPDATE country_pack_versions SET pack_json = ? WHERE id = ?').run(
+      JSON.stringify(lineScopePack),
+      linePackVersionId,
+    );
+    db.prepare('UPDATE products SET price = ? WHERE id = ?').run(104.0, 'prod-doc-1');
+    const ce10Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-doc-1', quantity: 1 }],
+        packaging_charge: 0.1,
+      },
+      headers: authHeader,
+    });
+    assertEqual(ce10Order.status, 201, 'CE10 line-scoped order created');
+    const ce10Disc = await api(baseUrl, `/api/orders/${ce10Order.data.order.id}/discount`, {
+      method: 'PATCH',
+      body: { discount_type: 'amount', discount_value: 87.9 },
+      headers: authHeader,
+    });
+    assertEqual(ce10Disc.status, 200, 'CE10 flat 87.90 discount applied');
+    assertEqual(ce10Disc.data.order.tax_amount, 0.81, 'CE10 order tax_amount = 0.81');
+    assertEqual(
+      sumSnapshotTax(ce10Disc.data.order.tax_snapshot),
+      0.81,
+      'CE10 order snapshot tax sum = 0.81',
+    );
+    const ce10Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: ce10Order.data.order.id },
+      headers: authHeader,
+    });
+    assertEqual(ce10Bill.status, 201, 'CE10 bill generated');
+    assertEqual(ce10Bill.data.bill.tax_amount, 0.81, 'CE10 bill tax_amount = 0.81');
+    assertEqual(
+      sumSnapshotTax(ce10Bill.data.bill.tax_snapshot),
+      0.81,
+      'CE10 bill snapshot tax sum = 0.81',
+    );
+    const ce10FetchedBill = await api(baseUrl, `/api/bills/${ce10Bill.data.bill.id}`, {
+      headers: authHeader,
+    });
+    assertEqual(ce10FetchedBill.status, 200, 'CE10 bill fetched');
+    const ce10Resolved = resolveTaxComponents({
+      ...ce10FetchedBill.data.bill,
+      items: ce10FetchedBill.data.bill.order?.items || [],
+    });
+    const ce10ResolvedSum = Number(
+      ce10Resolved.reduce((s: number, c: { amount: number }) => s + c.amount, 0).toFixed(2),
+    );
+    assertEqual(ce10ResolvedSum, 0.81, 'CE10 resolveTaxComponents sum = 0.81 (no extra cent)');
+    db.prepare('UPDATE country_pack_versions SET pack_json = ? WHERE id = ?').run(
+      savedPackRow.pack_json,
+      linePackVersionId,
+    );
+    db.prepare('UPDATE products SET price = ? WHERE id = ?').run(100.1, 'prod-doc-1');
+
     const s17Report = await api(baseUrl, '/api/reports/tax-components', {
       headers: authHeader,
     });

@@ -350,8 +350,8 @@ export interface DayAggregates {
 }
 
 /**
- * Shared by financial-summary (reports.ts, called with paidOnly/attributeRefundsToBillDate=true)
- * and cash-closure snapshots; defaults false/false/false.
+ * Shared by reports (financial-summary, summary, sales, daily-stats, daily-sales-export)
+ * and cash-closure snapshots; boolean flags default to false.
  *
  * `keyByPaidAt` is true only for the day-close snapshot: a bill paid in
  * installments carries one `timestamp` per payment line, so keying lines

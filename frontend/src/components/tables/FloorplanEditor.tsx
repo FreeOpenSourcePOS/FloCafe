@@ -219,7 +219,7 @@ export default function FloorplanEditor({
   ordersByTable?: Map<string, Order[]>;
   onSaved?: () => void;
   onReserve?: (tb: Table) => void;
-  onViewOrder?: () => void;
+  onViewOrder?: (tb: Table) => void;
   onMoveTable?: (tb: Table) => void;
 }) {
   const edit = mode === 'edit' && canManage;
@@ -793,7 +793,7 @@ export default function FloorplanEditor({
         icon: <Eye size={15} />,
         run: () => {
           setActionTable(null);
-          onViewOrder();
+          onViewOrder(tb);
         },
       });
     }

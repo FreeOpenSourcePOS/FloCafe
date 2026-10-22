@@ -591,7 +591,11 @@ export default function TablesPage() {
           ordersByTable={ordersByTable}
           onSaved={fetchTables}
           onReserve={(tb) => setReservingTable(tb)}
-          onViewOrder={canReadOrders ? () => router.push('/orders') : undefined}
+          onViewOrder={
+            canReadOrders
+              ? (tb) => router.push(`/orders?table=${encodeURIComponent(String(tb.id))}`)
+              : undefined
+          }
           onMoveTable={canMoveTable ? (tb) => setMovingTable(tb) : undefined}
         />
       </div>

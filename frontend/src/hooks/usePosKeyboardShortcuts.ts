@@ -92,17 +92,17 @@ export function usePosKeyboardShortcuts(
         return;
       }
 
-      // 2. Typing Immunity: suppress all single-key accelerators in inputs
+      // 2. Modal Guard: suppress POS canvas shortcuts when modal is open
+      if (anyModalOpen) {
+        return;
+      }
+
+      // 3. Typing Immunity: suppress all single-key accelerators in inputs
       if (isInput) {
         if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
           e.preventDefault();
           handlersRef.current.onFocusSearch();
         }
-        return;
-      }
-
-      // 3. Modal Guard: suppress POS canvas shortcuts when modal is open
-      if (anyModalOpen) {
         return;
       }
 

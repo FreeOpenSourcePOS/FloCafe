@@ -324,7 +324,48 @@ console.log('Testing usePosKeyboardShortcuts keydown behavior...');
     dispatchKey({ key: '-', code: 'Minus', repeat: true });
     assert.strictEqual(decrementCalls, 2, '- works on both initial and repeat keydown');
 
-    void focusSearchCalls;
+    // 6. Ctrl+K / Meta+K inside an INPUT focuses search when no modal is open, but is suppressed when anyModalOpen is true
+    const ctrlKInCanvasInput = dispatchKey({
+      key: 'k',
+      code: 'KeyK',
+      ctrlKey: true,
+      target: inputTarget,
+    });
+    assert.strictEqual(
+      ctrlKInCanvasInput.defaultPrevented,
+      true,
+      'Ctrl+K in canvas INPUT prevents default',
+    );
+    assert.strictEqual(focusSearchCalls, 1, 'Ctrl+K in canvas INPUT focuses search');
+
+    runHook(handlers, { ...options, anyModalOpen: true });
+    const ctrlKInModalInput = dispatchKey({
+      key: 'k',
+      code: 'KeyK',
+      ctrlKey: true,
+      target: inputTarget,
+    });
+    const metaKInModalInput = dispatchKey({
+      key: 'k',
+      code: 'KeyK',
+      metaKey: true,
+      target: inputTarget,
+    });
+    assert.strictEqual(
+      ctrlKInModalInput.defaultPrevented,
+      false,
+      'Ctrl+K in modal INPUT must not prevent default when anyModalOpen is true',
+    );
+    assert.strictEqual(
+      metaKInModalInput.defaultPrevented,
+      false,
+      'Meta+K in modal INPUT must not prevent default when anyModalOpen is true',
+    );
+    assert.strictEqual(
+      focusSearchCalls,
+      1,
+      'Ctrl+K / Meta+K in modal INPUT must not focus background product search when anyModalOpen is true',
+    );
   } finally {
     while (cleanups.length > 0) {
       cleanups.pop()?.();

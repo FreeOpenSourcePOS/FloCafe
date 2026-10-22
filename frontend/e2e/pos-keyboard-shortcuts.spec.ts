@@ -553,6 +553,12 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
       has: page.getByRole('heading', { name: 'Add Customer' }),
     });
     await expect(createModal).toBeVisible({ timeout: 5_000 });
+    const createModalInput = createModal.locator('input').first();
+    await createModalInput.focus();
+    await expect(createModalInput).toBeFocused();
+    await page.keyboard.press('Control+k');
+    await page.keyboard.press('Meta+k');
+    await expect(searchInput).not.toBeFocused();
     await createModal.getByRole('heading', { name: 'Add Customer' }).click();
     await page.keyboard.press('F2');
     await page.keyboard.press('F4');
@@ -579,7 +585,13 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
       path: path.join(SCREENSHOTS_DIR, 'f6-customer-shortcut-edit-modal.png'),
     });
 
-    // Suppresses background POS shortcuts while EditCustomerModal is open
+    // Suppresses background POS shortcuts (including Ctrl/Cmd+K in modal inputs) while EditCustomerModal is open
+    const editModalInput = editModal.locator('input').first();
+    await editModalInput.focus();
+    await expect(editModalInput).toBeFocused();
+    await page.keyboard.press('Control+k');
+    await page.keyboard.press('Meta+k');
+    await expect(searchInput).not.toBeFocused();
     await editModal.getByRole('heading', { name: 'Edit Customer' }).click();
     await page.keyboard.press('F2');
     await page.keyboard.press('F4');
@@ -667,19 +679,20 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     expect(groupRes.status()).toBe(201);
     const groupId = (await groupRes.json()).addon_group.id as string;
 
-    const prodRes = await page.request.post(`${BASE}/api/products`, {
-      headers: managerHeaders,
-      data: {
-        name: `Addon Latte ${suffix}`,
-        category_id: 'e2e-category',
-        price: 80,
-        addon_group_ids: [groupId],
-      },
-    });
-    expect(prodRes.status()).toBe(201);
-    const productId = (await prodRes.json()).product.id as string;
-
+    let productId: string | undefined;
     try {
+      const prodRes = await page.request.post(`${BASE}/api/products`, {
+        headers: managerHeaders,
+        data: {
+          name: `Addon Latte ${suffix}`,
+          category_id: 'e2e-category',
+          price: 80,
+          addon_group_ids: [groupId],
+        },
+      });
+      expect(prodRes.status()).toBe(201);
+      productId = (await prodRes.json()).product.id as string;
+
       await page.reload();
       const addonCard = page
         .getByTestId('pos-product-card')
@@ -719,7 +732,9 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
       });
       await addonModal.getByRole('button', { name: 'Close' }).click();
     } finally {
-      await page.request.delete(`${BASE}/api/products/${productId}`, { headers: managerHeaders });
+      if (productId) {
+        await page.request.delete(`${BASE}/api/products/${productId}`, { headers: managerHeaders });
+      }
       await page.request.delete(`${BASE}/api/addon-groups/${groupId}`, {
         headers: managerHeaders,
       });

@@ -143,6 +143,35 @@ async function run() {
     assert.equal(anonymous.status, 401, 'restore is refused without a session');
     clearRestoreFileSelection();
 
+    // --- failed pre-validation (missing or invalid backup) does not consume token ---
+    const missingBackupPath = path.join(testDir, 'missing-backup.db');
+    const missingSelection = rememberRestoreFileSelection(missingBackupPath);
+    const missingRes = await request(app)
+      .post('/api/db/restore')
+      .set('Authorization', `Bearer ${ownerToken()}`)
+      .send({ confirmation: RESTORE_CONFIRMATION, selection_token: missingSelection.token });
+    assert.equal(missingRes.status, 404, 'restore of missing file returns 404');
+    assert.equal(
+      consumeRestoreFileSelection(missingSelection.token),
+      missingBackupPath,
+      'missing-file failure does not consume the selection token',
+    );
+
+    const invalidBackupPath = path.join(testDir, 'invalid-backup.db');
+    fs.writeFileSync(invalidBackupPath, 'not a valid backup');
+    const invalidSelection = rememberRestoreFileSelection(invalidBackupPath);
+    const invalidRes = await request(app)
+      .post('/api/db/restore')
+      .set('Authorization', `Bearer ${ownerToken()}`)
+      .send({ confirmation: RESTORE_CONFIRMATION, selection_token: invalidSelection.token });
+    assert.equal(invalidRes.status, 400, 'restore of invalid backup file returns 400');
+    assert.equal(
+      consumeRestoreFileSelection(invalidSelection.token),
+      invalidBackupPath,
+      'invalid-file failure does not consume the selection token',
+    );
+    clearRestoreFileSelection();
+
     // --- a valid single-use selection restores --------------------------------
     const selection = rememberRestoreFileSelection(backupSource);
     const restored = await request(app)

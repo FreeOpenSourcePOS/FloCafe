@@ -689,6 +689,36 @@ async function main() {
       'counter station display shows the dine-in split order drink item',
     );
 
+    const { buildActiveOrdersSnapshot } = require('../main/services/kds');
+    let orderFindCalls = 0;
+    const origFind = Array.prototype.find;
+    Array.prototype.find = function (predicate: any, thisArg?: any) {
+      if (
+        this.length > 0 &&
+        this[0] &&
+        typeof this[0] === 'object' &&
+        'order_number' in this[0] &&
+        'kitchen_station_id' in this[0]
+      ) {
+        orderFindCalls++;
+      }
+      return origFind.call(this, predicate, thisArg);
+    };
+    try {
+      const snapshot = JSON.parse(buildActiveOrdersSnapshot([], ['kds-contract-station']));
+      assert(
+        snapshot.orders.length > 0,
+        'buildActiveOrdersSnapshot returns active orders for station',
+      );
+    } finally {
+      Array.prototype.find = origFind;
+    }
+    assertEqual(
+      orderFindCalls,
+      0,
+      'buildActiveOrdersSnapshot indexes orders by ID in a Map instead of calling orders.find per item',
+    );
+
     db.exec('PRAGMA foreign_keys = OFF');
     db.prepare('UPDATE order_items SET order_id = ? WHERE id = ?').run('missing-order', barItemId);
     db.exec('PRAGMA foreign_keys = ON');

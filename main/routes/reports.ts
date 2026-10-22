@@ -257,23 +257,39 @@ router.get('/summary', requirePermission('reports.view'), (req: Request, res: Re
     const ordersToday = db
       .prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total
-      FROM orders WHERE created_at >= ? AND created_at < ?
+      FROM orders WHERE created_at >= ? AND created_at < ? AND status != 'cancelled'
     `)
       .get(start, end) as { count: number; total: number };
 
     const billsToday = db
       .prepare(`
-      SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total,
-        COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
-        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as collected
-      FROM bills WHERE created_at >= ? AND created_at < ?
+      SELECT COUNT(*) as count, COALESCE(SUM(b.total), 0) as total,
+        COALESCE((
+          SELECT SUM(b2.paid_amount)
+          FROM bills b2
+          JOIN orders o2 ON o2.id = b2.order_id
+          WHERE b2.paid_at >= ? AND b2.paid_at < ? AND o2.status != 'cancelled'
+        ), 0)
+        - COALESCE((
+          SELECT SUM(CAST(r.amount_cents AS REAL)) / ?
+          FROM refunds r
+          JOIN bills b3 ON b3.id = r.bill_id
+          JOIN orders o3 ON o3.id = b3.order_id
+          WHERE r.created_at >= ? AND r.created_at < ? AND o3.status != 'cancelled'
+        ), 0) as collected
+      FROM bills b
+      JOIN orders o ON o.id = b.order_id
+      WHERE b.created_at >= ? AND b.created_at < ? AND o.status != 'cancelled'
     `)
       .get(start, end, minorFactor, start, end, start, end) as {
       count: number;
       total: number;
       collected: number;
     };
-    const paymentMethodsToday = paymentMethodBreakdown(db, { startDate: date });
+    const paymentMethodsToday = paymentMethodBreakdown(db, {
+      startDate: date,
+      excludeCancelledOrders: true,
+    });
 
     const customersToday = db
       .prepare(`
@@ -524,7 +540,7 @@ router.get('/sales', requirePermission('reports.view'), (req: Request, res: Resp
       .prepare(`
       SELECT created_at, total
       FROM orders
-      WHERE created_at >= ? AND created_at < ?
+      WHERE created_at >= ? AND created_at < ? AND status != 'cancelled'
     `)
       .all(windowStart, windowEnd) as { created_at: string; total: number }[];
     const dailyByDate = new Map<string, { orders: number; sales: number }>();
@@ -541,7 +557,12 @@ router.get('/sales', requirePermission('reports.view'), (req: Request, res: Resp
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([date, totals]) => ({ date, ...totals }));
 
-    const byPaymentMethod = paymentMethodBreakdown(db, { startDate, endDate, paidOnly: true }) as {
+    const byPaymentMethod = paymentMethodBreakdown(db, {
+      startDate,
+      endDate,
+      paidOnly: true,
+      excludeCancelledOrders: true,
+    }) as {
       method: string;
       count: number;
       total: number;
@@ -551,7 +572,7 @@ router.get('/sales', requirePermission('reports.view'), (req: Request, res: Resp
       .prepare(`
       SELECT type, COUNT(*) as count, SUM(total) as total
       FROM orders
-      WHERE created_at >= ? AND created_at < ?
+      WHERE created_at >= ? AND created_at < ? AND status != 'cancelled'
       GROUP BY type
     `)
       .all(windowStart, windowEnd);
@@ -599,6 +620,8 @@ router.get('/topProducts', requirePermission('reports.view'), (req: Request, res
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       WHERE o.created_at >= ? AND o.created_at < ?
+        AND o.status != 'cancelled'
+        AND COALESCE(oi.status, 'active') NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
       GROUP BY oi.product_id
       ORDER BY total_quantity DESC
       LIMIT ?
@@ -721,6 +744,7 @@ router.get('/tables', requirePermission('reports.view'), (req: Request, res: Res
       FROM tables t
       LEFT JOIN orders o ON t.id = o.table_id
         AND o.created_at >= ? AND o.created_at < ?
+        AND o.status != 'cancelled'
       GROUP BY t.id
     `)
       .all(start, end);

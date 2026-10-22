@@ -32,7 +32,9 @@ type Financial = {
   };
 };
 
-async function readLedgers(page: import('@playwright/test').Page): Promise<{ summary: Summary['summary']; money: Financial['financialSummary'] }> {
+async function readLedgers(
+  page: import('@playwright/test').Page,
+): Promise<{ summary: Summary['summary']; money: Financial['financialSummary'] }> {
   const token = await page.evaluate(() => localStorage.getItem('token'));
   const headers = { Authorization: `Bearer ${token}` };
   const date = new Intl.DateTimeFormat('en-CA', {
@@ -42,11 +44,15 @@ async function readLedgers(page: import('@playwright/test').Page): Promise<{ sum
     day: '2-digit',
   }).format(new Date());
 
-  const summary = (await (await page.request.get(`${E2E_BASE_URL}/api/reports/summary?date=${date}`, { headers })).json()) as Summary;
-  const financial = (await (await page.request.get(
-    `${E2E_BASE_URL}/api/reports/financial-summary?start_date=${date}&end_date=${date}`,
-    { headers },
-  )).json()) as Financial;
+  const summary = (await (
+    await page.request.get(`${E2E_BASE_URL}/api/reports/summary?date=${date}`, { headers })
+  ).json()) as Summary;
+  const financial = (await (
+    await page.request.get(
+      `${E2E_BASE_URL}/api/reports/financial-summary?start_date=${date}&end_date=${date}`,
+      { headers },
+    )
+  ).json()) as Financial;
 
   return { summary: summary.summary, money: financial.financialSummary };
 }
@@ -61,7 +67,9 @@ async function readRunningOrders(page: import('@playwright/test').Page): Promise
 }
 
 /** The headline figures the dashboard renders, read off the screen itself. */
-async function readDashboard(page: import('@playwright/test').Page): Promise<Record<string, number>> {
+async function readDashboard(
+  page: import('@playwright/test').Page,
+): Promise<Record<string, number>> {
   // The dashboard fetches several reports before it paints, so wait for the
   // first headline rather than reading a half-rendered screen.
   await page.getByText("Today's Sales").waitFor({ state: 'visible', timeout: 30_000 });
@@ -70,7 +78,9 @@ async function readDashboard(page: import('@playwright/test').Page): Promise<Rec
   const after = (label: string) => {
     const at = text.indexOf(label);
     if (at < 0) throw new Error(`the dashboard did not render "${label}"`);
-    return money(text.slice(at + label.length, at + label.length + 40).match(/฿([\d,]+\.\d{2})/)?.[1] ?? '');
+    return money(
+      text.slice(at + label.length, at + label.length + 40).match(/฿([\d,]+\.\d{2})/)?.[1] ?? '',
+    );
   };
   const countAfter = (label: string) => {
     const at = text.indexOf(label);
@@ -101,7 +111,7 @@ test.describe('@ci-tier2 operations admin - dashboard reconciliation', () => {
     await login(page, 'owner');
   });
 
-  test('today\'s sales move by exactly what a real sale collects', async ({ page }) => {
+  test("today's sales move by exactly what a real sale collects", async ({ page }) => {
     const before = await readLedgers(page);
 
     await page.goto(`${E2E_BASE_URL}/pos`);
@@ -113,13 +123,20 @@ test.describe('@ci-tier2 operations admin - dashboard reconciliation', () => {
 
     // The one sale moved the day's collections by its own total, nothing else.
     const collected = await page.request.get(`${E2E_BASE_URL}/api/orders`, {
-      headers: { Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` },
+      headers: {
+        Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+      },
     });
-    const { orders } = (await collected.json()) as { orders: Array<{ order_number: string; total: number; status: string }> };
+    const { orders } = (await collected.json()) as {
+      orders: Array<{ order_number: string; total: number; status: string }>;
+    };
     const sold = orders.find((o) => o.order_number === orderNumber);
     expect(sold?.status).toBe('completed');
 
-    expect(after.summary.bills.collected - before.summary.bills.collected).toBeCloseTo(sold!.total, 2);
+    expect(after.summary.bills.collected - before.summary.bills.collected).toBeCloseTo(
+      sold!.total,
+      2,
+    );
     expect(after.money.grossCollected - before.money.grossCollected).toBeCloseTo(sold!.total, 2);
     expect(after.money.billCount - before.money.billCount).toBe(1);
 
@@ -128,13 +145,21 @@ test.describe('@ci-tier2 operations admin - dashboard reconciliation', () => {
     await expect(page.getByText("Today's Sales")).toBeVisible({ timeout: 20_000 });
     const shown = await readDashboard(page);
 
-    expect(shown.todaysSales, "the dashboard's Today's Sales must equal the cash the ledger holds").toBeCloseTo(after.summary.bills.collected, 2);
-    expect(shown.avgOrderValue, 'the dashboard average must be net collections over bills').toBeCloseTo(after.money.averageOrderValue, 2);
+    expect(
+      shown.todaysSales,
+      "the dashboard's Today's Sales must equal the cash the ledger holds",
+    ).toBeCloseTo(after.summary.bills.collected, 2);
+    expect(
+      shown.avgOrderValue,
+      'the dashboard average must be net collections over bills',
+    ).toBeCloseTo(after.money.averageOrderValue, 2);
     expect(shown.avgOrderValue).toBeCloseTo(after.money.netCollected / after.money.billCount, 2);
   });
 
-  test('a cancelled sale never reaches today\'s sales', async ({ page }) => {
-    const headers = { Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` };
+  test("a cancelled sale never reaches today's sales", async ({ page }) => {
+    const headers = {
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    };
     const before = await readLedgers(page);
 
     // An order opened and cancelled without ever being paid must not be counted
@@ -153,15 +178,21 @@ test.describe('@ci-tier2 operations admin - dashboard reconciliation', () => {
     expect(cancelled.ok(), `cancelling must succeed (got ${cancelled.status()})`).toBeTruthy();
 
     const after = await readLedgers(page);
-    expect(after.summary.bills.collected, 'a cancelled order must not add to collections').toBeCloseTo(before.summary.bills.collected, 2);
+    expect(
+      after.summary.bills.collected,
+      'a cancelled order must not add to collections',
+    ).toBeCloseTo(before.summary.bills.collected, 2);
     expect(after.money.grossCollected).toBeCloseTo(before.money.grossCollected, 2);
-    expect(after.summary.orders.count, 'the order itself is still counted as an order').toBe(before.summary.orders.count + 1);
+    expect(after.summary.orders.count, 'a cancelled order must not inflate the order summary').toBe(
+      before.summary.orders.count,
+    );
 
-    const cancelledCount = after.summary.ordersByStatus.find((s) => s.status === 'cancelled')?.count ?? 0;
+    const cancelledCount =
+      after.summary.ordersByStatus.find((s) => s.status === 'cancelled')?.count ?? 0;
     expect(cancelledCount).toBeGreaterThan(0);
   });
 
-  test('refunding a sale takes the money back out of today\'s sales', async ({ page }) => {
+  test("refunding a sale takes the money back out of today's sales", async ({ page }) => {
     // A refund is the one path that removes collected money, so the dashboard
     // has to follow it or a day's takings would overstate what is in the drawer.
     await page.goto(`${E2E_BASE_URL}/pos`);
@@ -169,15 +200,21 @@ test.describe('@ci-tier2 operations admin - dashboard reconciliation', () => {
     const orderNumber = await placeOrderAndPayCash(page);
 
     const afterSale = await readLedgers(page);
-    const headers = { Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` };
-    const { orders } = (await (await page.request.get(`${E2E_BASE_URL}/api/orders`, { headers })).json()) as {
+    const headers = {
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    };
+    const { orders } = (await (
+      await page.request.get(`${E2E_BASE_URL}/api/orders`, { headers })
+    ).json()) as {
       orders: Array<{ id: number; order_number: string; total: number }>;
     };
     const sold = orders.find((o) => o.order_number === orderNumber)!;
     expect(sold.total, 'the scenario must have collected a known amount').toBeGreaterThan(0);
 
     // Refund it in full against its bill, the way the Orders screen does.
-    const { bill } = (await (await page.request.get(`${E2E_BASE_URL}/api/bills/order/${sold.id}`, { headers })).json()) as {
+    const { bill } = (await (
+      await page.request.get(`${E2E_BASE_URL}/api/bills/order/${sold.id}`, { headers })
+    ).json()) as {
       bill: { id: number };
     };
     const refund = await page.request.post(`${E2E_BASE_URL}/api/refunds`, {
@@ -192,10 +229,16 @@ test.describe('@ci-tier2 operations admin - dashboard reconciliation', () => {
     });
     // Asserted rather than tolerated: a refund that silently fails here would
     // leave this scenario proving nothing about the dashboard at all.
-    expect(refund.status(), `the refund must settle so the dashboard effect can be measured (got ${refund.status()} ${await refund.text()})`).toBe(201);
+    expect(
+      refund.status(),
+      `the refund must settle so the dashboard effect can be measured (got ${refund.status()} ${await refund.text()})`,
+    ).toBe(201);
 
     const afterRefund = await readLedgers(page);
-    expect(afterRefund.summary.bills.collected, 'a refunded sale must leave the collections figure').toBeCloseTo(afterSale.summary.bills.collected - sold.total, 2);
+    expect(
+      afterRefund.summary.bills.collected,
+      'a refunded sale must leave the collections figure',
+    ).toBeCloseTo(afterSale.summary.bills.collected - sold.total, 2);
     expect(afterRefund.money.refunded).toBeCloseTo(afterSale.money.refunded + sold.total, 2);
 
     await page.goto(`${E2E_BASE_URL}/dashboard`);
@@ -211,13 +254,17 @@ test.describe('@ci-tier2 operations admin - dashboard reconciliation', () => {
     await expect(page.getByText('Running Orders')).toBeVisible({ timeout: 20_000 });
     const shown = await readDashboard(page);
 
-    expect(shown.runningOrders, 'the live order count must match the reports API').toBe(runningOrders);
+    expect(shown.runningOrders, 'the live order count must match the reports API').toBe(
+      runningOrders,
+    );
   });
 
-  test('today\'s sales exclude orders that were never paid for', async ({ page }) => {
+  test("today's sales exclude orders that were never paid for", async ({ page }) => {
     // Open a handful of orders and leave them unpaid. The day's takings must not
     // move, which is the difference between "sold" and "paid".
-    const headers = { Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` };
+    const headers = {
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    };
     const before = await readLedgers(page);
 
     for (let i = 0; i < 3; i++) {
@@ -229,7 +276,10 @@ test.describe('@ci-tier2 operations admin - dashboard reconciliation', () => {
     }
 
     const after = await readLedgers(page);
-    expect(after.summary.bills.collected, 'unpaid orders must not be counted as takings').toBeCloseTo(before.summary.bills.collected, 2);
+    expect(
+      after.summary.bills.collected,
+      'unpaid orders must not be counted as takings',
+    ).toBeCloseTo(before.summary.bills.collected, 2);
     expect(after.summary.orders.count).toBe(before.summary.orders.count + 3);
 
     // The screen must still show the same money, only more running orders.

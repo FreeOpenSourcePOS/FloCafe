@@ -9,13 +9,9 @@ export type UpdateShutdownState = {
   setQuitting: (value: boolean) => void;
 };
 
-type UpdateAuthorizationResult =
-  | { ok: true }
-  | { ok: false; error: string };
+type UpdateAuthorizationResult = { ok: true } | { ok: false; error: string };
 
-type RestartAndInstallResult =
-  | { success: true }
-  | { success: false; error: string };
+type RestartAndInstallResult = { success: true } | { success: false; error: string };
 
 type RestartAndInstallOptions = {
   isInstallReady: () => boolean;
@@ -72,25 +68,23 @@ export function createSuspendUpdaterForOfflineMode({
   };
 }
 
-export function createAutoUpdaterErrorHandler(
-  {
-    getPhase,
-    setPhase,
-    isInstallReady,
-    isInstallingUpdate,
-    isOfflineSuppressed,
-    setUpdateStatus,
-    onInstallFailure,
-    logInfo,
-  }: AutoUpdaterErrorHandlerOptions,
-): (error: unknown) => void {
+export function createAutoUpdaterErrorHandler({
+  getPhase,
+  setPhase,
+  isInstallReady,
+  isInstallingUpdate,
+  isOfflineSuppressed,
+  setUpdateStatus,
+  onInstallFailure,
+  logInfo,
+}: AutoUpdaterErrorHandlerOptions): (error: unknown) => void {
   return (error) => {
     const errorPhase = getPhase();
     const classified = classifyUpdateError(error, errorPhase);
     setPhase('check');
     logInfo(
-      `[Update] Updater error classified as ${classified.state}` +
-      `/${classified.reason}:`, classified.detail
+      `[Update] Updater error classified as ${classified.state}` + `/${classified.reason}:`,
+      classified.detail,
     );
     if (isInstallingUpdate()) {
       logInfo('[Update] Installation failed after shutdown; relaunching the current version');
@@ -98,7 +92,9 @@ export function createAutoUpdaterErrorHandler(
       return;
     }
     if (isInstallReady()) {
-      logInfo('[Update] Preserving ready-to-install status while staged update awaits installation');
+      logInfo(
+        '[Update] Preserving ready-to-install status while staged update awaits installation',
+      );
       return;
     }
     if (isOfflineSuppressed?.()) {
@@ -108,7 +104,7 @@ export function createAutoUpdaterErrorHandler(
     setUpdateStatus({
       status: classified.state,
       reason: classified.reason,
-      error: classified.detail
+      error: classified.detail,
     });
   };
 }
@@ -146,7 +142,10 @@ export function createRestartAndInstallHandler({
     } catch (installError) {
       error('[Update] quitAndInstall failed:', installError);
       onInstallFailure(installError);
-      return { success: false, error: installError instanceof Error ? installError.message : String(installError) };
+      return {
+        success: false,
+        error: installError instanceof Error ? installError.message : String(installError),
+      };
     }
   };
 }

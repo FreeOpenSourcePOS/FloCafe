@@ -367,7 +367,9 @@ async function main() {
       }
     }
 
-    console.log('\n--- 3. Pending image, tax-pack, and telemetry requests abort on Offline mode ---');
+    console.log(
+      '\n--- 3. Pending image, tax-pack, and telemetry requests abort on Offline mode ---',
+    );
     {
       // 3a. fetchPinnedHttps aborts when Offline mode turns on mid-connection.
       const sockets = new Set<any>();
@@ -438,9 +440,21 @@ async function main() {
       } catch (err: any) {
         taxCatalogErrCode = err?.code ?? '';
       }
-      assertEqualOrThrow(catalogSignalAborted, true, 'tax-pack catalog fetch signal aborted on Offline mode');
-      assertEqualOrThrow(taxCatalogErrCode, 'offline_mode', 'aborted tax-pack catalog throws OfflineModeError');
-      assertEqualOrThrow(taxPackFetchCalls, 1, 'tax-pack catalog made no follow-up requests after abort');
+      assertEqualOrThrow(
+        catalogSignalAborted,
+        true,
+        'tax-pack catalog fetch signal aborted on Offline mode',
+      );
+      assertEqualOrThrow(
+        taxCatalogErrCode,
+        'offline_mode',
+        'aborted tax-pack catalog throws OfflineModeError',
+      );
+      assertEqualOrThrow(
+        taxPackFetchCalls,
+        1,
+        'tax-pack catalog made no follow-up requests after abort',
+      );
 
       let stepTwoCalled = false;
       const multiStepCatalog = fetchRemoteTaxPackCatalog(async (url: any) => {
@@ -475,8 +489,16 @@ async function main() {
       } finally {
         upsertSettings({ offline_mode: 'false' });
       }
-      assertEqualOrThrow(multiStepErrCode, 'offline_mode', 'tax-pack catalog re-checks Offline mode before downloading asset');
-      assertEqualOrThrow(stepTwoCalled, false, 'tax-pack catalog skips second download step once Offline mode is on');
+      assertEqualOrThrow(
+        multiStepErrCode,
+        'offline_mode',
+        'tax-pack catalog re-checks Offline mode before downloading asset',
+      );
+      assertEqualOrThrow(
+        stepTwoCalled,
+        false,
+        'tax-pack catalog skips second download step once Offline mode is on',
+      );
 
       let packDownloadAborted = false;
       const validEntry = {
@@ -514,8 +536,16 @@ async function main() {
       } catch (err: any) {
         downloadPackErrCode = err?.code ?? '';
       }
-      assertEqualOrThrow(packDownloadAborted, true, 'tax-pack artifact download signal aborts on Offline mode');
-      assertEqualOrThrow(downloadPackErrCode, 'offline_mode', 'aborted tax-pack download throws OfflineModeError');
+      assertEqualOrThrow(
+        packDownloadAborted,
+        true,
+        'tax-pack artifact download signal aborts on Offline mode',
+      );
+      assertEqualOrThrow(
+        downloadPackErrCode,
+        'offline_mode',
+        'aborted tax-pack download throws OfflineModeError',
+      );
 
       // 3c. Anonymous telemetry sendEvent and sendAnonymousDiagnosticReport abort on Offline mode.
       const savedNodeEnv = process.env.NODE_ENV;
@@ -552,7 +582,11 @@ async function main() {
         }) as typeof fetch;
 
         const sent = await sendEvent('feature_used', { feature: 'pos' });
-        assertEqualOrThrow(telemetryAborted, true, 'in-flight telemetry sendEvent aborts on Offline mode');
+        assertEqualOrThrow(
+          telemetryAborted,
+          true,
+          'in-flight telemetry sendEvent aborts on Offline mode',
+        );
         assertEqualOrThrow(sent, false, 'aborted telemetry sendEvent resolves to false');
 
         let diagAborted = false;
@@ -592,7 +626,11 @@ async function main() {
           facts: {},
           examples: [{ correlation_id: '22222222-2222-4222-8222-222222222222' }],
         });
-        assertEqualOrThrow(diagAborted, true, 'in-flight anonymous diagnostic report aborts on Offline mode');
+        assertEqualOrThrow(
+          diagAborted,
+          true,
+          'in-flight anonymous diagnostic report aborts on Offline mode',
+        );
         assertEqualOrThrow(
           diagResult.disposition,
           'network_error',
@@ -735,7 +773,9 @@ async function main() {
       }
     }
 
-    console.log('\n--- 6. Updater suspends in-flight checks and ignores late results in Offline mode ---');
+    console.log(
+      '\n--- 6. Updater suspends in-flight checks and ignores late results in Offline mode ---',
+    );
     {
       let phase: 'check' | 'download' = 'check';
       let status: any = { status: 'checking' };

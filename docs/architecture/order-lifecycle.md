@@ -91,8 +91,9 @@ Common rules, enforced in the handlers:
   without falling back to scanning other managers.
 - A percentage discount applies to the fresh item subtotal, and a flat discount is capped at that
   subtotal. Re-applying a discount never compounds on the previous one.
-- The discount rescales each line's tax by the discounted share of the subtotal and rounds to the
-  currency, so tax is charged on the discounted amount.
+- Order and bill discounts scale item taxes by the discounted share of the subtotal while keeping
+  stored `order_items` taxes un-order-discounted; see
+  [Taxation](taxation.md#where-the-amount-came-from).
 - Applying a discount to an order that has an unpaid bill re-syncs the bill's totals and balance.
   A zero `discount_value` clears an order discount, and a zero `value` clears a bill discount,
   subject to the bill endpoint's discount-mode checks. The item endpoint requires a positive

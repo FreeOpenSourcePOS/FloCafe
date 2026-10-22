@@ -2158,15 +2158,11 @@ async function main() {
     );
 
     // Removing the 100% discount recovers the original 10.02 tax because order_items kept un-order-discounted snapshots
-    const ce3Restored = await api(
-      baseUrl,
-      `/api/bills/${ce3Bill.data.bill.id}/applyDiscount`,
-      {
-        method: 'POST',
-        headers: authHeader,
-        body: { type: 'percentage', value: 0 },
-      },
-    );
+    const ce3Restored = await api(baseUrl, `/api/bills/${ce3Bill.data.bill.id}/applyDiscount`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'percentage', value: 0 },
+    });
     assertEqual(ce3Restored.status, 200, 'CE3 discount cleared back to 0%');
     assertEqual(
       ce3Restored.data.bill.tax_amount,

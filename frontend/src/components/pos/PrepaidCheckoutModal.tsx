@@ -541,7 +541,10 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         tag === 'SELECT' ||
         Boolean(target?.isContentEditable);
       const isInsideModal =
-        !modalRef.current || !target || modalRef.current.contains(target as Node);
+        !modalRef.current ||
+        !target ||
+        (typeof Node !== 'undefined' && !(target instanceof Node)) ||
+        modalRef.current.contains(target as Node);
       const isInteractive =
         isInput ||
         (isInsideModal &&

@@ -1461,7 +1461,13 @@ console.log(
       walletAmount: number;
       discount: unknown;
     }> = [];
-    PrepaidCheckoutModal({
+    class MockDomNode {}
+    const prevNode = (globalThis as Record<string, unknown>).Node;
+    (globalThis as Record<string, unknown>).Node = MockDomNode;
+    const makeDomTarget = (props: Record<string, unknown>) =>
+      Object.assign(new MockDomNode(), props);
+
+    const prepaidTree = PrepaidCheckoutModal({
       currency: 'INR',
       onClose: () => {
         prepaidClosed += 1;
@@ -1469,7 +1475,19 @@ console.log(
       onConfirm: (payments: unknown, walletAmount: number, discount: unknown) => {
         prepaidConfirms.push({ payments, walletAmount, discount });
       },
-    });
+    }) as { props?: { ref?: { current: unknown } } };
+    if (prepaidTree?.props?.ref) {
+      prepaidTree.props.ref.current = {
+        contains: (candidate: unknown) => {
+          if (!(candidate instanceof MockDomNode)) {
+            throw new TypeError(
+              "Failed to execute 'contains' on 'Node': parameter 1 is not of type 'Node'.",
+            );
+          }
+          return true;
+        },
+      };
+    }
     assert.strictEqual(modalListeners.size, 1, 'PrepaidCheckoutModal registers keydown listener');
 
     const dispatchPrepaidKey = (eventInit: Record<string, unknown>) => {
@@ -1489,23 +1507,23 @@ console.log(
     };
 
     const interactiveTargets: Array<{ label: string; target: Record<string, unknown> }> = [
-      { label: 'BUTTON', target: { tagName: 'BUTTON' } },
-      { label: 'SELECT', target: { tagName: 'SELECT' } },
-      { label: 'INPUT', target: { tagName: 'INPUT' } },
-      { label: 'A', target: { tagName: 'A' } },
+      { label: 'BUTTON', target: makeDomTarget({ tagName: 'BUTTON' }) },
+      { label: 'SELECT', target: makeDomTarget({ tagName: 'SELECT' }) },
+      { label: 'INPUT', target: makeDomTarget({ tagName: 'INPUT' }) },
+      { label: 'A', target: makeDomTarget({ tagName: 'A' }) },
       {
         label: '[role="button"]',
-        target: {
+        target: makeDomTarget({
           tagName: 'DIV',
           getAttribute: (attr: string) => (attr === 'role' ? 'button' : null),
-        },
+        }),
       },
       {
         label: 'child inside button',
-        target: {
+        target: makeDomTarget({
           tagName: 'SPAN',
           closest: (selector: string) => (selector.includes('button') ? {} : null),
-        },
+        }),
       },
     ];
 
@@ -1528,11 +1546,28 @@ console.log(
       }
     }
 
+    const repeatWindowSpace = dispatchPrepaidKey({
+      key: ' ',
+      code: 'Space',
+      repeat: true,
+      target: (globalThis as Record<string, unknown>).window,
+    });
+    assert.strictEqual(
+      repeatWindowSpace.defaultPrevented,
+      true,
+      'PrepaidCheckoutModal prevents default on repeat Space dispatched directly on window (non-Node target)',
+    );
+    assert.strictEqual(
+      prepaidConfirms.length,
+      0,
+      'PrepaidCheckoutModal does not confirm on repeat Space dispatched on window',
+    );
+
     const repeatSurfaceSpace = dispatchPrepaidKey({
       key: ' ',
       code: 'Space',
       repeat: true,
-      target: { tagName: 'DIV' },
+      target: makeDomTarget({ tagName: 'DIV' }),
     });
     assert.strictEqual(
       repeatSurfaceSpace.defaultPrevented,
@@ -1549,7 +1584,7 @@ console.log(
       key: ' ',
       code: 'Space',
       repeat: false,
-      target: { tagName: 'DIV' },
+      target: makeDomTarget({ tagName: 'DIV' }),
     });
     assert.strictEqual(
       surfaceSpace.defaultPrevented,
@@ -1574,7 +1609,7 @@ console.log(
     const escRes = dispatchPrepaidKey({
       key: 'Escape',
       code: 'Escape',
-      target: { tagName: 'BUTTON' },
+      target: makeDomTarget({ tagName: 'BUTTON' }),
     });
     assert.strictEqual(
       escRes.defaultPrevented,
@@ -1582,6 +1617,8 @@ console.log(
       'PrepaidCheckoutModal Escape preventsDefault',
     );
     assert.strictEqual(prepaidClosed, 1, 'PrepaidCheckoutModal Escape closes modal');
+    if (prevNode === undefined) delete (globalThis as Record<string, unknown>).Node;
+    else (globalThis as Record<string, unknown>).Node = prevNode;
   } finally {
     moduleApi._load = originalLoad;
     moduleApi._resolveFilename = originalResolveFilename;

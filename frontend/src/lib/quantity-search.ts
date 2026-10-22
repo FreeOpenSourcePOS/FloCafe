@@ -4,8 +4,8 @@ export interface QuantitySearchResult {
 }
 
 /**
- * Parses search strings with quantity multiplier prefixes like "3*latte" or "5xcroissant".
- * Returns the parsed numeric quantity and target query, or null if no multiplier is present.
+ * Parses search strings with quantity multiplier prefixes like "3*latte", "3*", or "5xcroissant".
+ * Trailing "*" permits an empty query so the POS grid stays unfiltered mid-keystroke; "x"/"X" requires a non-empty query.
  */
 export function parseQuantitySearch(input: string): QuantitySearchResult | null {
   const trimmed = input.trim();

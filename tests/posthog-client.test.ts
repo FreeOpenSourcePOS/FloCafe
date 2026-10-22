@@ -108,6 +108,7 @@ const {
   capturePostHogException,
   capturePostHogUsage,
   checkPostHogMilestones,
+  invalidatePostHogConsentCache,
   maybeSendPostHogDailyPing,
   postHogApiFailureMiddleware,
   readDailyUsageSummary,
@@ -903,6 +904,7 @@ async function main() {
     'direct SQLite settings mutation invalidates cached diagnostics consent via trigger',
   );
   setSetting('diagnostics_consent', 'true');
+  invalidatePostHogConsentCache();
   const revisionBeforeReopen = getSettingsRevision();
   closeDatabase();
   assert.equal(getSettingsRevision() > revisionBeforeReopen, true);

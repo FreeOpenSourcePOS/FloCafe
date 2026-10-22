@@ -114,7 +114,7 @@ interface CachedConsentState {
 
 let cachedConsent: CachedConsentState | null = null;
 
-function invalidatePostHogConsentCache(): void {
+export function invalidatePostHogConsentCache(): void {
   cachedConsent = null;
 }
 

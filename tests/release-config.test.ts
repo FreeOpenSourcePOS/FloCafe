@@ -1204,6 +1204,7 @@ exit 1
   assert.equal(matrixWorkflow.concurrency['cancel-in-progress'], false);
   const matrixJob = matrixWorkflow.jobs['build-matrix'];
   assert.equal(matrixJob.name, 'build-${{ matrix.name }}');
+  assert.equal(matrixJob['timeout-minutes'], 60);
   assert.deepEqual(
     matrixJob.strategy.matrix.include.map((entry: any) => entry.name).sort(),
     ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64'].sort(),

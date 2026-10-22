@@ -40,12 +40,19 @@ let credentialWriteStarted!: () => void;
 const credentialWriteStartedPromise = new Promise<void>((resolve) => { credentialWriteStarted = resolve; });
 let releaseCredentialWrite!: () => void;
 const credentialWriteGate = new Promise<void>((resolve) => { releaseCredentialWrite = resolve; });
+let holdPresence = false;
+let sentMsgSeq = 0;
 const fakeSocket = {
   ev: { on: (event: string, handler: (value: any) => void) => { eventHandlers.set(event, handler); } },
-  onWhatsApp: async () => [{ exists: true, jid: '15555550100@s.whatsapp.net' }],
-  presenceSubscribe: async () => { presenceStarted(); return pendingPresence; },
+  onWhatsApp: async (jid: string) => [{ exists: true, jid }],
+  presenceSubscribe: async () => {
+    if (holdPresence) {
+      presenceStarted();
+      return pendingPresence;
+    }
+  },
   sendPresenceUpdate: async () => {},
-  sendMessage: async () => ({ key: { id: 'shutdown-test-message' } }),
+  sendMessage: async () => ({ key: { id: `shutdown-test-message-${++sentMsgSeq}` } }),
   end: () => {},
 };
 const fakeBaileys = {
@@ -265,6 +272,260 @@ async function main(): Promise<void> {
     assert(cancelledRequestResult === 'rejected', 'aborted connect request is rejected');
     assert(retriedRequestResult.ok === true, 'retry joins request-independent startup');
     assert(authStateCalls === authStateCallsBeforeRequestCancellation + 1, 'request cancellation does not restart shared auth loading');
+
+    // Connect the socket and run Issue #1239 automation & safety tests
+    eventHandlers.get('connection.update')?.({ connection: 'open' });
+    await new Promise((resolve) => setImmediate(resolve));
+    process.env.FLO_WHATSAPP_FAST_DELAY = '1';
+
+    // 1. Placeholder interpolation (renderWhatsAppTemplate) across customer, bill, loyalty, and store fields
+    const interpolated = whatsapp.renderWhatsAppTemplate(
+      'Dear {customer_name} ({customer_phone}), Visit #{visit_count} since {last_visit_date} (Spent {total_spent}). Bill #{bill_no} on {order_date}:\n{order_items}\nTotal: {total} via {payment_method}. Earned {points_earned}, Balance {points_balance} ({points_value}). Store: {store_name} {store_phone} {feedback_link} {instagram}',
+      {
+        customer_name: 'Priya Verma {total}',
+        customer_phone: '+919876543210',
+        visit_count: 5,
+        last_visit_date: '2026-10-01',
+        total_spent: '₹2,500.00',
+        bill_no: 'BILL-009',
+        order_date: '2026-10-22',
+        order_items: '2x Latte - ₹400.00',
+        total: '₹400.00',
+        payment_method: 'UPI',
+        points_earned: 40,
+        points_balance: 240,
+        points_value: '₹240.00',
+        store_name: 'Flo Bistro',
+        store_phone: '+919800000000',
+        feedback_link: 'https://flocafe.example.com/review',
+        instagram: '@flobistro',
+      },
+    );
+    assert(
+      interpolated.includes('Dear Priya Verma {total} (+919876543210)') &&
+        interpolated.includes('Visit #5 since 2026-10-01 (Spent ₹2,500.00)') &&
+        interpolated.includes('Bill #BILL-009 on 2026-10-22') &&
+        interpolated.includes('2x Latte - ₹400.00') &&
+        interpolated.includes('Total: ₹400.00 via UPI. Earned 40, Balance 240 (₹240.00)') &&
+        interpolated.includes('Store: Flo Bistro +919800000000 https://flocafe.example.com/review @flobistro'),
+      'renderWhatsAppTemplate interpolates all 16 placeholders and prevents recursive placeholder injection',
+    );
+
+    // 2. Auto opt-out on inbound STOP / UNSUBSCRIBE adds sender to whatsapp_blocklist
+    eventHandlers.get('messages.upsert')?.({
+      messages: [
+        {
+          key: { id: 'inbound-stop-1', fromMe: false, remoteJid: '15555550199@s.whatsapp.net' },
+          message: { conversation: '  stop! ' },
+        },
+        {
+          key: { id: 'inbound-unsub-2', fromMe: false, remoteJid: '15555550198@s.whatsapp.net' },
+          message: { extendedTextMessage: { text: 'UNSUBSCRIBE' } },
+        },
+      ],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const blocklistAfterStop = whatsapp.listBlocklist();
+    assert(
+      blocklistAfterStop.some(
+        (b: { phone_e164: string; blocked_by_user_id: string | null }) =>
+          b.phone_e164 === '+15555550199' && b.blocked_by_user_id === 'system:auto_opt_out',
+      ),
+      'inbound STOP automatically adds sender to whatsapp_blocklist',
+    );
+    assert(
+      blocklistAfterStop.some(
+        (b: { phone_e164: string; blocked_by_user_id: string | null }) =>
+          b.phone_e164 === '+15555550198' && b.blocked_by_user_id === 'system:auto_opt_out',
+      ),
+      'inbound UNSUBSCRIBE automatically adds sender to whatsapp_blocklist',
+    );
+
+    // 3. Quiet hours and weekly per-customer cap block auto_followup sends while allowing manual replies
+    assert(
+      whatsapp.isTimeWithinQuietHours('23:15', '22:00', '09:00') === true &&
+        whatsapp.isTimeWithinQuietHours('08:30', '22:00', '09:00') === true &&
+        whatsapp.isTimeWithinQuietHours('14:00', '22:00', '09:00') === false,
+      'isTimeWithinQuietHours handles overnight quiet-hours windows accurately',
+    );
+    // Set an all-day quiet window (00:00 -> 23:59) except current minute? Better: test both windows covering 24h by setting start='00:00', end='23:59'
+    whatsapp.saveAutomationConfig({
+      safety: {
+        autoOptOutEnabled: true,
+        quietHoursEnabled: true,
+        quietHoursStart: '00:00',
+        quietHoursEnd: '23:59',
+        maxPerCustomerPerWeek: 2,
+        rateLimitPerHour: 10,
+        feedbackLink: 'https://flocafe.example.com/feedback',
+        instagram: '@flocafe',
+      },
+    });
+    const blockedByQuietHours = await whatsapp.sendMessage({
+      phoneE164: '+15555550120',
+      body: 'Auto follow-up during quiet hours',
+      billId: null,
+      customerId: null,
+      kind: 'auto_followup',
+      userId: 'rule:feedback_delay',
+    });
+    assert(
+      blockedByQuietHours.ok === false && blockedByQuietHours.reason === 'quiet_hours',
+      'quiet hours block automated follow-up sends',
+    );
+    const manualDuringQuietHours = await whatsapp.sendMessage({
+      phoneE164: '+15555550120',
+      body: 'Manual reply during quiet hours',
+      billId: null,
+      customerId: null,
+      kind: 'manual_reply',
+      userId: 'staff-1',
+    });
+    assert(
+      manualDuringQuietHours.ok === true,
+      'quiet hours still allow manual staff replies',
+    );
+
+    // Disable quiet hours and verify weekly cap (maxPerCustomerPerWeek = 2)
+    whatsapp.saveAutomationConfig({
+      safety: {
+        autoOptOutEnabled: true,
+        quietHoursEnabled: false,
+        quietHoursStart: '22:00',
+        quietHoursEnd: '09:00',
+        maxPerCustomerPerWeek: 2,
+        rateLimitPerHour: 10,
+        feedbackLink: 'https://flocafe.example.com/feedback',
+        instagram: '@flocafe',
+      },
+    });
+    const autoSend1 = await whatsapp.sendMessage({
+      phoneE164: '+15555550121',
+      body: 'Auto 1',
+      billId: null,
+      customerId: null,
+      kind: 'auto_followup',
+      userId: 'rule:winback',
+    });
+    const autoSend2 = await whatsapp.sendMessage({
+      phoneE164: '+15555550121',
+      body: 'Auto 2',
+      billId: null,
+      customerId: null,
+      kind: 'auto_followup',
+      userId: 'rule:winback',
+    });
+    const autoSend3 = await whatsapp.sendMessage({
+      phoneE164: '+15555550121',
+      body: 'Auto 3 over weekly cap',
+      billId: null,
+      customerId: null,
+      kind: 'auto_followup',
+      userId: 'rule:winback',
+    });
+    const manualAfterCap = await whatsapp.sendMessage({
+      phoneE164: '+15555550121',
+      body: 'Manual reply after weekly cap',
+      billId: null,
+      customerId: null,
+      kind: 'manual_reply',
+      userId: 'staff-1',
+    });
+    assert(autoSend1.ok === true && autoSend2.ok === true, 'automated sends under weekly cap succeed');
+    assert(
+      autoSend3.ok === false && autoSend3.reason === 'weekly_cap',
+      'weekly per-customer cap blocks automated sends once reached',
+    );
+    assert(
+      manualAfterCap.ok === true,
+      'weekly per-customer cap still allows manual staff replies',
+    );
+
+    // 4. Automated rules on bill payment completion (after_payment, points_threshold, nth_visit) + trigger_rule in listMessages
+    const db = getDatabase();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US'), ('currency', 'USD'), ('business_name', 'Flo Test Cafe')").run();
+    db.prepare(`
+      INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+      VALUES ('cust-auto-1', 'Maya Lin', '+14089961010', 'US', 1, datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO orders (id, order_number, type, status, customer_id, subtotal, tax_amount, discount_amount, total, created_at, updated_at)
+      VALUES (901, 'ORD-901', 'dine_in', 'completed', 'cust-auto-1', 50, 0, 0, 50, datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total, status)
+      VALUES (901, 'prod-auto-1', 'Cappuccino', 2, 25, 50, 0, 50, 'delivered')
+    `).run();
+    db.prepare(`
+      INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+      VALUES (901, 'INV-901', 901, 'cust-auto-1', 50, 0, 0, 50, 50, 0, 'paid', '[{"method":"card","amount":50}]', datetime('now'), datetime('now'), datetime('now'))
+    `).run();
+    db.prepare(`
+      INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)
+      VALUES ('cust-auto-1', 901, 'credit', 150, 'Cashback on bill INV-901', datetime('now'), datetime('now'))
+    `).run();
+
+    whatsapp.saveAutomationConfig({
+      safety: {
+        autoOptOutEnabled: true,
+        quietHoursEnabled: false,
+        quietHoursStart: '22:00',
+        quietHoursEnd: '09:00',
+        maxPerCustomerPerWeek: 10,
+        rateLimitPerHour: 10,
+        feedbackLink: 'https://flocafe.example.com/feedback',
+        instagram: '@flotestcafe',
+      },
+      rules: [
+        { id: 'after_payment', trigger: 'after_payment', enabled: true, templateId: 'receipt' },
+        { id: 'points_threshold', trigger: 'points_threshold', enabled: true, templateId: 'loyalty_milestone', pointsThreshold: 100 },
+        { id: 'nth_visit', trigger: 'nth_visit', enabled: true, templateId: 'feedback', nthVisit: 1, repeatEveryNth: true },
+        { id: 'feedback_delay', trigger: 'feedback_delay', enabled: false, templateId: 'feedback', delayHours: 2 },
+        { id: 'winback', trigger: 'winback', enabled: false, templateId: 'winback', inactiveDays: 14 },
+      ],
+    });
+
+    const autoTriggerRes = await whatsapp.triggerBillPaidAutomation(901, { pointsEarned: 150 });
+    assert(
+      autoTriggerRes.triggered.includes('after_payment') &&
+        autoTriggerRes.triggered.includes('points_threshold') &&
+        autoTriggerRes.triggered.includes('nth_visit'),
+      `bill payment automation fires after_payment, points_threshold, and nth_visit (got ${autoTriggerRes.triggered.join(',')})`,
+    );
+
+    const billMessages = whatsapp.listMessages({ phone: '+14089961010', limit: 20, offset: 0, canViewReports: true });
+    const triggerRulesRecorded = billMessages.map((m: { trigger_rule: string | null }) => m.trigger_rule);
+    assert(
+      triggerRulesRecorded.includes('after_payment') &&
+        triggerRulesRecorded.includes('points_threshold') &&
+        triggerRulesRecorded.includes('nth_visit'),
+      `listMessages returns trigger_rule attribution for automated sends (got ${triggerRulesRecorded.join(',')})`,
+    );
+    const receiptMsg = billMessages.find((m: { trigger_rule: string | null }) => m.trigger_rule === 'after_payment');
+    assert(
+      receiptMsg?.body.includes('Maya Lin') &&
+        receiptMsg?.body.includes('INV-901') &&
+        receiptMsg?.body.includes('2x Cappuccino'),
+      'automated receipt message interpolates customer, bill number, and order items',
+    );
+
+    const broadcastRes = await whatsapp.runBroadcast({
+      templateId: 'winback',
+      minVisits: 1,
+      limit: 5,
+    });
+    assert(
+      broadcastRes.sent >= 1,
+      `runBroadcast sends template to matching customer segment (sent=${broadcastRes.sent})`,
+    );
+    const afterBroadcastMessages = whatsapp.listMessages({ phone: '+14089961010', limit: 20, offset: 0, canViewReports: true });
+    assert(
+      afterBroadcastMessages.some((m: { trigger_rule: string | null }) => m.trigger_rule === 'broadcast'),
+      'listMessages records trigger_rule=broadcast for segment broadcasts',
+    );
+
+    delete process.env.FLO_WHATSAPP_FAST_DELAY;
+    holdPresence = true;
 
     const sendAbort = new AbortController();
     const sendPromise = whatsapp.sendMessage({

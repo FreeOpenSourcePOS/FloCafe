@@ -3161,6 +3161,47 @@
       "phone_required": "Kërkohet numri i telefonit",
       "phone_required_pairing": "Kërkohet telefon për kodin e çiftimit"
     },
+    "automation": {
+      "autoOptOutLabel": "Çregjistrim automatik kur vjen STOP / UNSUBSCRIBE (shton në listën e bllokimit)",
+      "broadcastDescription": "Dërgo një shabllon te një segment i filtruar klientësh (respekton bllokimet, orët e qeta dhe kufijtë).",
+      "broadcastInactiveDays": "Joaktiv >= ditë",
+      "broadcastMinPoints": "Pikët min.",
+      "broadcastMinVisits": "Vizitat min.",
+      "broadcastSendCta": "Dërgo transmetimin",
+      "broadcastSuccess": "Transmetimi përfundoi: {sent} dërguar, {skipped} anashkaluar ({matched} përputhur).",
+      "broadcastTitle": "Transmetim për segmentin e klientëve",
+      "feedbackLinkLabel": "Lidhja e vlerësimit të dyqanit",
+      "instagramLabel": "Llogaria Instagram e dyqanit",
+      "maxPerWeekLabel": "Maks. mesazhe automatike për klient në javë",
+      "placeholdersLabel": "Kliko për të shtuar variabël",
+      "previewTitle": "Pamje e drejtpërdrejtë (të dhëna shembull)",
+      "quietHoursEnd": "Fundi i orëve të qeta",
+      "quietHoursLabel": "Ndalo dërgimet automatike gjatë orëve të qeta",
+      "quietHoursStart": "Fillimi i orëve të qeta",
+      "resetDefault": "Kthe në parazgjedhje",
+      "ruleAfterPaymentHint": "Dërgo automatikisht shabllonin e faturës kur paguhet një faturë me numër telefoni të klientit.",
+      "ruleFeedbackDelayHint": "Dërgo kërkesë për përshtypje pas një porosie të paguar (orë pas pagesës).",
+      "ruleNthVisitHint": "Dërgo një mesazh falënderimi çdo N vizita të paguara.",
+      "rulePointsThresholdHint": "Dërgo njoftim shpërblimi kur bilanci i pikëve kalon pragun.",
+      "rulesDescription": "Aktivizo rregullat automatike dhe cakto pragjet për faturat, ndjekjet dhe shpërblimet.",
+      "rulesTitle": "Rregullat e dërgimit automatik",
+      "ruleWinbackHint": "Dërgo ofertë rikthimi për klientët joaktivë për të paktën N ditë.",
+      "runSweepCta": "Ekzekuto rregullat e planifikuara tani",
+      "safetyDescription": "Mbroni numrin tuaj të lidhur me çregjistrim automatik, orë të qeta dhe kufij javorë.",
+      "safetyTitle": "Kontrollet e sigurisë dhe kundër spam-it",
+      "saveCta": "Ruaj cilësimet e automatizimit",
+      "savedSuccess": "Cilësimet e automatizimit u ruajtën.",
+      "sweepResult": "Rregullat e planifikuara u kontrolluan ({sent} dërguar).",
+      "templateBodyLabel": "Përmbajtja e mesazhit",
+      "templateNameLabel": "Emri i shabllonit",
+      "templatesDescription": "Personalizoni mesazhet automatike WhatsApp me variabla për klientin, faturën, pikët dhe dyqanin.",
+      "templateSelectLabel": "Shablloni i zgjedhur",
+      "templatesTitle": "Shabllonet e mesazheve",
+      "thresholdDays": "Ditë joaktive",
+      "thresholdHours": "Orë vonese",
+      "thresholdPoints": "Pragu i pikëve",
+      "thresholdVisits": "Çdo N vizita"
+    },
     "blocklist": {
       "addCta": "Shtoni",
       "addedSuccess": "Shtuar në listën e bllokimit.",
@@ -3253,6 +3294,14 @@
       "rate_limited": "Shkalla e dërgimit të kufizuar nga WhatsApp ({code}). Duke u ftohur për 5 minuta.",
       "reconnecting": "Lidhja u mbyll ({code}). Duke u rilidhur {seconds} s…"
     },
+    "rule": {
+      "after_payment": "Faturë automatike pas pagesës",
+      "broadcast": "Dërgim sipas segmentit",
+      "feedback_delay": "Kërkesë për vlerësim",
+      "nth_visit": "Arritje e numrit të vizitave",
+      "points_threshold": "Pragu i pikëve të besnikërisë",
+      "winback": "Rikthim i klientëve joaktivë"
+    },
     "send": {
       "customerPhoneRequired": "Shto numrin e telefonit të këtij klienti përpara se ta dërgosh.",
       "error": {
@@ -3314,6 +3363,7 @@
       "typing": "Duke shkruar"
     },
     "tabs": {
+      "automation": "Shabllonet dhe rregullat",
       "connection": "Lidhja",
       "inbox": "Të ardhura",
       "sent": "Dërguar"

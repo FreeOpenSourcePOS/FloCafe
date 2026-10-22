@@ -6,6 +6,61 @@ import { parsePhoneNumber } from 'libphonenumber-js';
 import { getDatabase, getSettingValue, now } from '../db';
 import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
 import { isOfflineMode } from './offline-mode';
+import { getCountryByCode, getCurrencyFractionDigits } from '../countries';
+import { parsePhoneE164 } from '../lib/phone';
+import {
+  WHATSAPP_AUTOMATION_SETTING_KEY,
+  WHATSAPP_PLACEHOLDER_KEYS,
+  WHATSAPP_PLACEHOLDER_GROUPS,
+  WHATSAPP_PLACEHOLDERS,
+  DEFAULT_WHATSAPP_AUTOMATION_CONFIG,
+  DEFAULT_WHATSAPP_TEMPLATES,
+  DEFAULT_WHATSAPP_RULES,
+  DEFAULT_WHATSAPP_SAFETY,
+  SAMPLE_WHATSAPP_TEMPLATE_CONTEXT,
+  renderWhatsAppTemplate,
+  buildSampleWhatsAppContext,
+  normalizeWhatsAppAutomationConfig,
+  isAutoOptOutText,
+  isTimeWithinQuietHours,
+  extractTriggerRule,
+  type WhatsAppPlaceholderKey,
+  type WhatsAppPlaceholderDefinition,
+  type WhatsAppTemplateContext,
+  type WhatsAppTriggerType,
+  type WhatsAppRuleAttribution,
+  type WhatsAppTemplate,
+  type WhatsAppAutomationRule,
+  type WhatsAppSafetyConfig,
+  type WhatsAppAutomationConfig,
+} from '../../shared/whatsapp-automation';
+
+export {
+  WHATSAPP_AUTOMATION_SETTING_KEY,
+  WHATSAPP_PLACEHOLDER_KEYS,
+  WHATSAPP_PLACEHOLDER_GROUPS,
+  WHATSAPP_PLACEHOLDERS,
+  DEFAULT_WHATSAPP_AUTOMATION_CONFIG,
+  DEFAULT_WHATSAPP_TEMPLATES,
+  DEFAULT_WHATSAPP_RULES,
+  DEFAULT_WHATSAPP_SAFETY,
+  SAMPLE_WHATSAPP_TEMPLATE_CONTEXT,
+  renderWhatsAppTemplate,
+  buildSampleWhatsAppContext,
+  normalizeWhatsAppAutomationConfig,
+  isAutoOptOutText,
+  isTimeWithinQuietHours,
+  extractTriggerRule,
+  type WhatsAppPlaceholderKey,
+  type WhatsAppPlaceholderDefinition,
+  type WhatsAppTemplateContext,
+  type WhatsAppTriggerType,
+  type WhatsAppRuleAttribution,
+  type WhatsAppTemplate,
+  type WhatsAppAutomationRule,
+  type WhatsAppSafetyConfig,
+  type WhatsAppAutomationConfig,
+};
 
 const { loadBaileys: loadBaileysModule } = require('../baileys-loader.cjs') as {
   loadBaileys: () => Promise<typeof import('@whiskeysockets/baileys')>;
@@ -146,11 +201,13 @@ interface QueuedSend {
   phoneE164: string;
   body: string;
   billId: number | null;
-  customerId: number | null;
+  customerId: string | number | null;
   kind: 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report';
   userId: string | null;
   signal?: AbortSignal;
 }
+
+const AUTOMATION_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 const state: {
   enabled: boolean;
@@ -165,6 +222,7 @@ const state: {
   cooldownUntil: string | null;
   cooldownTimer: NodeJS.Timeout | null;
   reconnectTimer: NodeJS.Timeout | null;
+  automationTimer: NodeJS.Timeout | null;
   lastSendByPhone: Map<string, number>;
   recentBodies: Map<string, { body: string; at: number }[]>;
   sentMessageCache: Map<string, any>;
@@ -182,6 +240,7 @@ const state: {
   cooldownUntil: null,
   cooldownTimer: null,
   reconnectTimer: null,
+  automationTimer: null,
   lastSendByPhone: new Map(),
   recentBodies: new Map(),
   sentMessageCache: new Map(),
@@ -390,7 +449,7 @@ async function resolveJid(
   let normalized: string;
   try {
     const pn = parsePhoneNumber(phoneE164);
-    if (!pn?.isValid()) return null;
+    if (!pn?.isValid() && !pn?.isPossible()) return null;
     normalized = pn.number;
   } catch {
     return null;
@@ -444,10 +503,86 @@ async function translateJid(
 }
 
 function randomDelayMs(body: string): number {
+  if (process.env.FLO_WHATSAPP_FAST_DELAY === '1') return 5;
   const perHundred = Math.ceil(body.length / 100);
   const lower = TYPING_MIN_MS * perHundred;
   const upper = TYPING_MAX_PER_100_CHARS_MS * perHundred;
   return lower + Math.floor(Math.random() * (upper - lower));
+}
+
+export function getAutomationConfig(): WhatsAppAutomationConfig {
+  const raw = getSettingValue(WHATSAPP_AUTOMATION_SETTING_KEY);
+  const config = normalizeWhatsAppAutomationConfig(raw);
+  if (!config.safety.instagram) {
+    const storeInstagram = getSettingValue('instagram_handle');
+    if (storeInstagram) config.safety.instagram = storeInstagram;
+  }
+  return config;
+}
+
+export function saveAutomationConfig(raw: unknown): WhatsAppAutomationConfig {
+  const normalized = normalizeWhatsAppAutomationConfig(raw);
+  writeSetting(WHATSAPP_AUTOMATION_SETTING_KEY, JSON.stringify(normalized));
+  if (typeof normalized.safety.instagram === 'string') {
+    writeSetting('instagram_handle', normalized.safety.instagram);
+  }
+  return normalized;
+}
+
+export function isCurrentlyQuietHours(
+  safety: WhatsAppSafetyConfig = getAutomationConfig().safety,
+  nowDate: Date = new Date(),
+): boolean {
+  if (!safety.quietHoursEnabled) return false;
+  const tz = getSettingValue('timezone') || 'UTC';
+  let currentHhMm = '00:00';
+  try {
+    const formatted = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(nowDate);
+    currentHhMm = formatted.replace(/^24:/, '00:');
+  } catch {
+    const formatted = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'UTC',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(nowDate);
+    currentHhMm = formatted.replace(/^24:/, '00:');
+  }
+  return isTimeWithinQuietHours(currentHhMm, safety.quietHoursStart, safety.quietHoursEnd);
+}
+
+export function isOverWeeklyAutomatedCap(
+  phoneE164: string,
+  maxPerCustomerPerWeek = getAutomationConfig().safety.maxPerCustomerPerWeek,
+): boolean {
+  if (!Number.isFinite(maxPerCustomerPerWeek) || maxPerCustomerPerWeek <= 0) return false;
+  const db = getDatabase();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .replace('T', ' ')
+    .replace(/\..*$/, '');
+  const row = db
+    .prepare(`
+      SELECT COUNT(*) AS c FROM whatsapp_messages
+      WHERE phone_e164 = ?
+        AND direction = 'outbound'
+        AND (kind = 'auto_followup' OR created_by_user_id LIKE 'rule:%')
+        AND queued_at >= ?
+    `)
+    .get(phoneE164, sevenDaysAgo) as { c: number };
+  return row.c >= maxPerCustomerPerWeek;
+}
+
+function isAutomatedSend(req: QueuedSend): boolean {
+  return (
+    req.kind === 'auto_followup' ||
+    (typeof req.userId === 'string' && req.userId.startsWith('rule:'))
+  );
 }
 
 function hasShortenerOrNonHttps(body: string): string | null {
@@ -495,12 +630,18 @@ function isBlocked(phoneE164: string): boolean {
   return !!row;
 }
 
-function isOverRateLimit(phoneE164: string): { limited: boolean; retryAfterMs?: number } {
-  const last = state.lastSendByPhone.get(phoneE164);
-  if (last) {
-    const gap = Date.now() - last;
-    if (gap < RATE_LIMIT_MIN_GAP_MS) {
-      return { limited: true, retryAfterMs: RATE_LIMIT_MIN_GAP_MS - gap };
+function isOverRateLimit(
+  phoneE164: string,
+  maxPerHour = RATE_LIMIT_MAX_PER_HOUR,
+  skipMinGap = false,
+): { limited: boolean; retryAfterMs?: number } {
+  if (!skipMinGap && process.env.FLO_WHATSAPP_FAST_DELAY !== '1') {
+    const last = state.lastSendByPhone.get(phoneE164);
+    if (last) {
+      const gap = Date.now() - last;
+      if (gap < RATE_LIMIT_MIN_GAP_MS) {
+        return { limited: true, retryAfterMs: RATE_LIMIT_MIN_GAP_MS - gap };
+      }
     }
   }
   const db = getDatabase();
@@ -516,7 +657,7 @@ function isOverRateLimit(phoneE164: string): { limited: boolean; retryAfterMs?: 
     WHERE phone_e164 = ? AND direction = 'outbound' AND queued_at >= ?
   `)
     .get(phoneE164, oneHourAgo) as { c: number };
-  if (row.c >= RATE_LIMIT_MAX_PER_HOUR) {
+  if (row.c >= maxPerHour) {
     return { limited: true };
   }
   return { limited: false };
@@ -551,7 +692,7 @@ function recordMessageRow(row: {
   external_message_id?: string | null;
   error?: string | null;
   bill_id?: number | null;
-  customer_id?: number | null;
+  customer_id?: string | number | null;
   created_by_user_id?: string | null;
   timestamp_field?: 'seen_at' | 'typing_at' | 'sent_at' | 'delivered_at' | 'read_at' | 'failed_at';
   external_id?: string;
@@ -662,13 +803,23 @@ function findMessageByExternalId(externalId: string): { id: number; phone_e164: 
   return row ?? null;
 }
 
+export function processInboundOptOut(phoneE164: string, body: string): boolean {
+  if (!phoneE164 || !isAutoOptOutText(body)) return false;
+  const safety = getAutomationConfig().safety;
+  if (!safety.autoOptOutEnabled) return false;
+  const keyword = body.trim().toUpperCase().slice(0, 40);
+  addToBlocklist(phoneE164, `Auto opt-out: ${keyword}`, 'system:auto_opt_out');
+  return true;
+}
+
 async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
   if (!msg?.message) return;
   const signal = whatsappAbortController.signal;
   const rawJid: string = msg.key?.remoteJid ?? '';
   if (!rawJid || rawJid === 'status@broadcast') return;
+  const isGroup = rawJid.endsWith('@g.us');
   // Translate DM @lid to phone JID while preserving group chat @g.us JIDs.
-  const resolvedJid = rawJid.endsWith('@g.us')
+  const resolvedJid = isGroup
     ? rawJid
     : await translateJid(rawJid, msg.key?.remoteJidAlt, sock, signal);
   if (!isActiveSocket(sock)) return;
@@ -690,6 +841,9 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
     external_message_id: msg.key?.id ?? null,
     created_by_user_id: null,
   });
+  if (!isGroup) {
+    processInboundOptOut(phone, body);
+  }
 }
 
 async function runSocketPhase<T>(
@@ -1043,6 +1197,21 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
   return sharedPromise;
 }
 
+function ensureAutomationTimer(): void {
+  if (state.automationTimer) {
+    clearInterval(state.automationTimer);
+    state.automationTimer = null;
+  }
+  if (!state.enabled || isWhatsAppTerminal() || process.env.FLO_WHATSAPP_SOCKET_DISABLED === '1') {
+    return;
+  }
+  state.automationTimer = setInterval(() => {
+    if (!state.enabled || isWhatsAppTerminal() || state.state !== 'connected') return;
+    void runScheduledAutomationSweep().catch(() => {});
+  }, AUTOMATION_SWEEP_INTERVAL_MS);
+  state.automationTimer.unref?.();
+}
+
 export async function enable(userId: string): Promise<{ ok: boolean; error?: string }> {
   if (whatsappShutdownPromise || whatsappShutdownRequested)
     return { ok: false, error: 'WhatsApp is shutting down.' };
@@ -1057,6 +1226,7 @@ export async function enable(userId: string): Promise<{ ok: boolean; error?: str
   writeSetting('whatsapp_disclosure_version_acknowledged', '1');
   state.lastError = null;
   state.lastErrorReason = null;
+  ensureAutomationTimer();
   // Restore session from existing credentials if present to avoid unneeded re-pairing.
   const credsPath = path.join(getAuthDir(), 'creds.json');
   if (fs.existsSync(credsPath)) {
@@ -1084,6 +1254,10 @@ export function disable(): void {
   if (state.reconnectTimer) {
     clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
+  }
+  if (state.automationTimer) {
+    clearInterval(state.automationTimer);
+    state.automationTimer = null;
   }
   state.state = 'disconnected';
   state.connectedPhone = null;
@@ -1189,6 +1363,10 @@ export function disconnect(): void {
     clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
   }
+  if (state.automationTimer) {
+    clearInterval(state.automationTimer);
+    state.automationTimer = null;
+  }
   state.state = 'disconnected';
   state.connectedPhone = null;
   state.lastQr = null;
@@ -1207,6 +1385,8 @@ export interface SendResult {
     | 'feature_off'
     | 'no_phone'
     | 'blocked'
+    | 'quiet_hours'
+    | 'weekly_cap'
     | 'rate_limited'
     | 'cooldown'
     | 'not_connected'
@@ -1291,6 +1471,19 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   if (!state.enabled || isWhatsAppTerminal())
     return { ok: false, error: 'WhatsApp is not enabled.', reason: 'feature_off' };
   if (!req.phoneE164) return { ok: false, error: 'Phone number required.', reason: 'no_phone' };
+  if (isBlocked(req.phoneE164)) {
+    return { ok: false, error: 'This number asked to stop receiving messages.', reason: 'blocked' };
+  }
+  const automationConfig = getAutomationConfig();
+  const automated = isAutomatedSend(req);
+  if (automated) {
+    if (automationConfig.safety.quietHoursEnabled && isCurrentlyQuietHours(automationConfig.safety)) {
+      return { ok: false, error: 'Automated messages are paused during quiet hours.', reason: 'quiet_hours' };
+    }
+    if (isOverWeeklyAutomatedCap(req.phoneE164, automationConfig.safety.maxPerCustomerPerWeek)) {
+      return { ok: false, error: 'Weekly automated message limit reached for this customer.', reason: 'weekly_cap' };
+    }
+  }
   if (state.state !== 'connected' || !state.socket) {
     return { ok: false, error: 'Flo is not connected to WhatsApp.', reason: 'not_connected' };
   }
@@ -1308,10 +1501,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   if (isInCooldown()) {
     return { ok: false, error: 'Send is temporarily paused.', reason: 'cooldown' };
   }
-  if (isBlocked(req.phoneE164)) {
-    return { ok: false, error: 'This number asked to stop receiving messages.', reason: 'blocked' };
-  }
-  const rate = isOverRateLimit(req.phoneE164);
+  const rate = isOverRateLimit(req.phoneE164, automationConfig.safety.rateLimitPerHour, automated);
   if (rate.limited) {
     return { ok: false, error: 'Rate limit reached for this number.', reason: 'rate_limited' };
   }
@@ -1344,9 +1534,11 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   let resolvedKind = req.kind;
   let resolvedCustomerId = req.customerId;
   if (bill) {
-    if (bill.customer_id && String(bill.customer_id) === String(bill.order_customer_id)) {
+    if (!resolvedCustomerId && (bill.customer_id || bill.order_customer_id)) {
+      resolvedCustomerId = bill.customer_id || bill.order_customer_id;
+    }
+    if (req.kind !== 'auto_followup' && bill.customer_id && String(bill.customer_id) === String(bill.order_customer_id)) {
       resolvedKind = 'bill_receipt';
-      resolvedCustomerId = bill.customer_id;
     }
   }
 
@@ -1458,7 +1650,7 @@ export interface SentMessageRow {
   id: number;
   phone_e164: string;
   bill_id: number | null;
-  customer_id: number | null;
+  customer_id: string | number | null;
   direction: 'inbound' | 'outbound';
   kind: 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report';
   status: string;
@@ -1472,6 +1664,7 @@ export interface SentMessageRow {
   read_at: string | null;
   failed_at: string | null;
   created_by_user_id: string | null;
+  trigger_rule: WhatsAppRuleAttribution | null;
 }
 
 export function listMessages(opts: {
@@ -1480,8 +1673,8 @@ export function listMessages(opts: {
   phone?: string;
   billId?: number;
   limit: number;
-  offset: number;
-  canViewReports: boolean;
+  offset?: number;
+  canViewReports?: boolean;
 }): SentMessageRow[] {
   const where: string[] = [];
   const params: any[] = [];
@@ -1503,8 +1696,8 @@ export function listMessages(opts: {
   }
   if (!opts.canViewReports) where.push("kind != 'z_report'");
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  params.push(opts.limit, opts.offset);
-  return getDatabase()
+  params.push(opts.limit, opts.offset ?? 0);
+  const rows = getDatabase()
     .prepare(`
     SELECT id, phone_e164, bill_id, customer_id, direction, kind, status,
            body, error, queued_at, seen_at, typing_at, sent_at,
@@ -1514,7 +1707,11 @@ export function listMessages(opts: {
     ORDER BY queued_at DESC
     LIMIT ? OFFSET ?
   `)
-    .all(...params) as SentMessageRow[];
+    .all(...params) as Omit<SentMessageRow, 'trigger_rule'>[];
+  return rows.map((row) => ({
+    ...row,
+    trigger_rule: extractTriggerRule(row.created_by_user_id),
+  }));
 }
 
 export interface BlocklistRow {
@@ -1549,6 +1746,736 @@ export function removeFromBlocklist(phoneE164: string): boolean {
   return result.changes > 0;
 }
 
+function formatCurrencyForTemplate(amount: number, currency: string, country: string): string {
+  const safe = Number.isFinite(amount) ? amount : 0;
+  const locale = getCountryByCode(country)?.locale || 'en-US';
+  if (currency) {
+    try {
+      const decimals = getCurrencyFractionDigits(currency);
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency,
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      }).format(safe);
+    } catch {
+      // Fall back to plain decimal formatting below.
+    }
+  }
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(safe);
+}
+
+function formatDateForTemplate(
+  rawTs: string | null | undefined,
+  country: string,
+  timezone: string,
+  includeTime = false,
+): string {
+  if (!rawTs) return '';
+  try {
+    const iso = rawTs.includes('T') ? rawTs : `${rawTs.replace(' ', 'T')}Z`;
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return String(rawTs);
+    const locale = getCountryByCode(country)?.locale || 'en-US';
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium',
+      ...(includeTime ? { timeStyle: 'short' } : {}),
+      timeZone: timezone || 'UTC',
+    }).format(date);
+  } catch {
+    return String(rawTs);
+  }
+}
+
+export function buildWhatsAppTemplateContext(opts: {
+  billId?: number | null;
+  customerId?: string | number | null;
+  pointsEarned?: number;
+}): WhatsAppTemplateContext {
+  const db = getDatabase();
+  const config = getAutomationConfig();
+  const country = getSettingValue('country') || '';
+  const currency = getSettingValue('currency') || '';
+  const timezone = getSettingValue('timezone') || 'UTC';
+  const storeName = getSettingValue('business_name') || 'Store';
+  const storePhone =
+    getSettingValue('business_phone') ||
+    getSettingValue('phone') ||
+    state.connectedPhone ||
+    '';
+  const feedbackLink = config.safety.feedbackLink || '';
+  const instagram = config.safety.instagram || getSettingValue('instagram_handle') || '';
+
+  const context: WhatsAppTemplateContext = {
+    customer_name: 'Guest',
+    customer_phone: '',
+    visit_count: 0,
+    last_visit_date: '',
+    total_spent: formatCurrencyForTemplate(0, currency, country),
+    bill_no: '',
+    order_date: '',
+    order_items: '',
+    total: formatCurrencyForTemplate(0, currency, country),
+    payment_method: '',
+    points_earned: opts.pointsEarned ?? 0,
+    points_balance: 0,
+    points_value: formatCurrencyForTemplate(0, currency, country),
+    store_name: storeName,
+    store_phone: storePhone,
+    feedback_link: feedbackLink,
+    instagram,
+  };
+
+  let resolvedCustomerId: string | null =
+    opts.customerId !== undefined && opts.customerId !== null ? String(opts.customerId) : null;
+
+  if (opts.billId != null) {
+    const bill = db
+      .prepare('SELECT * FROM bills WHERE id = ?')
+      .get(Number(opts.billId)) as any;
+    if (bill) {
+      const order = bill.order_id
+        ? (db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as any)
+        : null;
+      if (!resolvedCustomerId && (bill.customer_id || order?.customer_id)) {
+        resolvedCustomerId = String(bill.customer_id || order.customer_id);
+      }
+      context.bill_no = String(bill.bill_number || bill.id);
+      context.order_date = formatDateForTemplate(
+        bill.paid_at || order?.created_at || bill.created_at,
+        country,
+        timezone,
+        true,
+      );
+      context.total = formatCurrencyForTemplate(Number(bill.total || 0), currency, country);
+
+      if (bill.order_id) {
+        const items = db
+          .prepare(`
+            SELECT product_name, quantity, total
+            FROM order_items
+            WHERE order_id = ?
+              AND (status IS NULL OR status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded'))
+            ORDER BY id
+          `)
+          .all(bill.order_id) as Array<{ product_name: string; quantity: number; total: number }>;
+        context.order_items = items
+          .map(
+            (item) =>
+              `${item.quantity}x ${item.product_name} - ${formatCurrencyForTemplate(Number(item.total || 0), currency, country)}`,
+          )
+          .join('\n');
+      }
+
+      if (bill.payment_details) {
+        try {
+          const parsed = JSON.parse(bill.payment_details);
+          const lines = Array.isArray(parsed) ? parsed : [parsed];
+          const methods = Array.from(
+            new Set(
+              lines
+                .map((p: any) => String(p?.method || '').trim())
+                .filter(Boolean)
+                .map((m) => m.charAt(0).toUpperCase() + m.slice(1)),
+            ),
+          );
+          context.payment_method = methods.join(', ') || 'Paid';
+        } catch {
+          context.payment_method = 'Paid';
+        }
+      } else {
+        context.payment_method = bill.payment_status === 'paid' ? 'Paid' : '';
+      }
+
+      if (opts.pointsEarned === undefined) {
+        const earnedRow = db
+          .prepare(`
+            SELECT COALESCE(SUM(amount), 0) AS total
+            FROM loyalty_ledger
+            WHERE bill_id = ? AND type = 'credit'
+          `)
+          .get(bill.id) as { total: number } | undefined;
+        context.points_earned = Math.round(Number(earnedRow?.total || 0));
+      }
+    }
+  }
+
+  if (resolvedCustomerId) {
+    const customer = db
+      .prepare('SELECT id, name, phone, country_code FROM customers WHERE id = ?')
+      .get(resolvedCustomerId) as
+      | { id: string; name: string; phone: string | null; country_code: string | null }
+      | undefined;
+    if (customer) {
+      context.customer_name = customer.name || 'Guest';
+      const parsedPhone = customer.phone
+        ? parsePhoneE164(customer.phone, country || customer.country_code || '')
+        : null;
+      context.customer_phone = parsedPhone?.e164 || customer.phone || '';
+
+      const stats = db
+        .prepare(`
+          SELECT
+            COUNT(DISTINCT b.order_id) AS visit_count,
+            COALESCE(SUM(b.total), 0) AS total_spent,
+            MAX(COALESCE(b.paid_at, b.created_at)) AS last_visit_at
+          FROM bills b
+          LEFT JOIN orders o ON o.id = b.order_id
+          WHERE (b.customer_id = ? OR o.customer_id = ?)
+            AND b.payment_status = 'paid'
+        `)
+        .get(resolvedCustomerId, resolvedCustomerId) as {
+        visit_count: number;
+        total_spent: number;
+        last_visit_at: string | null;
+      };
+
+      let visitCount = Number(stats?.visit_count || 0);
+      let totalSpent = Number(stats?.total_spent || 0);
+      let lastVisitAt = stats?.last_visit_at || null;
+
+      if (visitCount === 0) {
+        const orderStats = db
+          .prepare(`
+            SELECT
+              COUNT(*) AS visit_count,
+              COALESCE(SUM(total), 0) AS total_spent,
+              MAX(created_at) AS last_visit_at
+            FROM orders
+            WHERE customer_id = ? AND status != 'cancelled'
+          `)
+          .get(resolvedCustomerId) as {
+          visit_count: number;
+          total_spent: number;
+          last_visit_at: string | null;
+        };
+        visitCount = Number(orderStats?.visit_count || 0);
+        totalSpent = Number(orderStats?.total_spent || 0);
+        lastVisitAt = orderStats?.last_visit_at || null;
+      }
+
+      context.visit_count = visitCount;
+      context.total_spent = formatCurrencyForTemplate(totalSpent, currency, country);
+      context.last_visit_date = lastVisitAt
+        ? formatDateForTemplate(lastVisitAt, country, timezone, false)
+        : '';
+
+      const ledgerRow = db
+        .prepare(`
+          SELECT
+            COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN type = 'debit' THEN amount ELSE 0 END), 0) AS balance
+          FROM loyalty_ledger
+          WHERE customer_id = ?
+        `)
+        .get(resolvedCustomerId) as { balance: number } | undefined;
+      const balance = Math.max(0, Math.round(Number(ledgerRow?.balance || 0)));
+      context.points_balance = balance;
+      context.points_value = formatCurrencyForTemplate(balance, currency, country);
+    }
+  }
+
+  return context;
+}
+
+export function renderReceiptForBill(
+  billId: number,
+  opts?: { pointsEarned?: number; templateId?: string },
+): string {
+  const config = getAutomationConfig();
+  const templateId = opts?.templateId || 'receipt';
+  const template =
+    config.templates.find((t) => t.id === templateId) ||
+    DEFAULT_WHATSAPP_TEMPLATES.find((t) => t.id === 'receipt')!;
+  const context = buildWhatsAppTemplateContext({
+    billId,
+    pointsEarned: opts?.pointsEarned,
+  });
+  return renderWhatsAppTemplate(template.body, context);
+}
+
+function hasRuleMessageForBill(billId: number, ruleUserId: string): boolean {
+  const row = getDatabase()
+    .prepare(
+      'SELECT 1 FROM whatsapp_messages WHERE bill_id = ? AND created_by_user_id = ? LIMIT 1',
+    )
+    .get(billId, ruleUserId);
+  return !!row;
+}
+
+export async function triggerBillPaidAutomation(
+  billId: number,
+  opts?: { pointsEarned?: number },
+): Promise<{ triggered: WhatsAppTriggerType[]; results: Record<string, SendResult> }> {
+  const triggered: WhatsAppTriggerType[] = [];
+  const results: Record<string, SendResult> = {};
+  try {
+    if (!state.enabled || isWhatsAppTerminal()) {
+      return { triggered, results };
+    }
+    const db = getDatabase();
+    const bill = db
+      .prepare(`
+        SELECT b.*, o.customer_id AS order_customer_id
+        FROM bills b
+        LEFT JOIN orders o ON o.id = b.order_id
+        WHERE b.id = ?
+      `)
+      .get(billId) as any;
+    if (!bill || bill.payment_status !== 'paid') {
+      return { triggered, results };
+    }
+    const customerId = bill.customer_id || bill.order_customer_id;
+    if (!customerId) {
+      return { triggered, results };
+    }
+    const customer = db
+      .prepare('SELECT id, name, phone, country_code, is_active FROM customers WHERE id = ?')
+      .get(String(customerId)) as
+      | { id: string; name: string; phone: string | null; country_code: string | null; is_active: number }
+      | undefined;
+    if (!customer || !customer.phone || customer.is_active === 0) {
+      return { triggered, results };
+    }
+    const tenantCountry = getSettingValue('country') || customer.country_code || '';
+    const parsedPhone = parsePhoneE164(customer.phone, tenantCountry);
+    if (!parsedPhone) {
+      return { triggered, results };
+    }
+
+    const config = getAutomationConfig();
+    const templateMap = new Map(config.templates.map((t) => [t.id, t]));
+    const context = buildWhatsAppTemplateContext({
+      billId,
+      customerId: String(customerId),
+      pointsEarned: opts?.pointsEarned,
+    });
+
+    const findRule = (trigger: WhatsAppTriggerType) =>
+      config.rules.find((r) => r.trigger === trigger);
+
+    // 1. After payment (receipt)
+    const afterPaymentRule = findRule('after_payment');
+    if (afterPaymentRule?.enabled && !hasRuleMessageForBill(billId, 'rule:after_payment')) {
+      const tpl = templateMap.get(afterPaymentRule.templateId) ?? templateMap.get('receipt');
+      if (tpl) {
+        const body = renderWhatsAppTemplate(tpl.body, context);
+        if (body) {
+          const res = await sendMessage({
+            phoneE164: parsedPhone.e164,
+            body,
+            billId,
+            customerId: String(customerId),
+            kind: 'bill_receipt',
+            userId: 'rule:after_payment',
+          });
+          results.after_payment = res;
+          if (res.ok) triggered.push('after_payment');
+        }
+      }
+    }
+
+    // 2. Points threshold
+    const pointsRule = findRule('points_threshold');
+    if (pointsRule?.enabled && !hasRuleMessageForBill(billId, 'rule:points_threshold')) {
+      const threshold = pointsRule.pointsThreshold ?? 100;
+      const balance = Number(context.points_balance || 0);
+      const earned = Number(context.points_earned || 0);
+      const prevBalance = balance - earned;
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .replace('T', ' ')
+        .replace(/\..*$/, '');
+      const recentPointsReminder = db
+        .prepare(`
+          SELECT 1 FROM whatsapp_messages
+          WHERE phone_e164 = ? AND created_by_user_id = 'rule:points_threshold' AND queued_at >= ?
+          LIMIT 1
+        `)
+        .get(parsedPhone.e164, sevenDaysAgo);
+      if (balance >= threshold && (prevBalance < threshold || !recentPointsReminder)) {
+        const tpl =
+          templateMap.get(pointsRule.templateId) ?? templateMap.get('loyalty_milestone');
+        if (tpl) {
+          const body = renderWhatsAppTemplate(tpl.body, context);
+          if (body) {
+            const res = await sendMessage({
+              phoneE164: parsedPhone.e164,
+              body,
+              billId,
+              customerId: String(customerId),
+              kind: 'auto_followup',
+              userId: 'rule:points_threshold',
+            });
+            results.points_threshold = res;
+            if (res.ok) triggered.push('points_threshold');
+          }
+        }
+      }
+    }
+
+    // 3. Nth visit milestone
+    const nthVisitRule = findRule('nth_visit');
+    if (nthVisitRule?.enabled && !hasRuleMessageForBill(billId, 'rule:nth_visit')) {
+      const nth = nthVisitRule.nthVisit ?? 5;
+      const visitCount = Number(context.visit_count || 0);
+      const matchesNth =
+        visitCount > 0 &&
+        (nthVisitRule.repeatEveryNth !== false ? visitCount % nth === 0 : visitCount === nth);
+      if (matchesNth) {
+        const tpl =
+          templateMap.get(nthVisitRule.templateId) ?? templateMap.get('loyalty_milestone');
+        if (tpl) {
+          const body = renderWhatsAppTemplate(tpl.body, context);
+          if (body) {
+            const res = await sendMessage({
+              phoneE164: parsedPhone.e164,
+              body,
+              billId,
+              customerId: String(customerId),
+              kind: 'auto_followup',
+              userId: 'rule:nth_visit',
+            });
+            results.nth_visit = res;
+            if (res.ok) triggered.push('nth_visit');
+          }
+        }
+      }
+    }
+
+    // 4. Feedback request when delayHours === 0
+    const feedbackRule = findRule('feedback_delay');
+    if (
+      feedbackRule?.enabled &&
+      (feedbackRule.delayHours ?? 2) === 0 &&
+      !hasRuleMessageForBill(billId, 'rule:feedback_delay')
+    ) {
+      const tpl = templateMap.get(feedbackRule.templateId) ?? templateMap.get('feedback');
+      if (tpl) {
+        const body = renderWhatsAppTemplate(tpl.body, context);
+        if (body) {
+          const res = await sendMessage({
+            phoneE164: parsedPhone.e164,
+            body,
+            billId,
+            customerId: String(customerId),
+            kind: 'auto_followup',
+            userId: 'rule:feedback_delay',
+          });
+          results.feedback_delay = res;
+          if (res.ok) triggered.push('feedback_delay');
+        }
+      }
+    }
+  } catch (err) {
+    logWhatsApp('warn', 'bill_automation_error', {
+      billId,
+      error: sanitizeLogText(err),
+    });
+  }
+  return { triggered, results };
+}
+
+export async function runScheduledAutomationSweep(
+  nowMs: number = Date.now(),
+): Promise<{ feedbackSent: number; winbackSent: number }> {
+  let feedbackSent = 0;
+  let winbackSent = 0;
+  if (!state.enabled || isWhatsAppTerminal()) {
+    return { feedbackSent, winbackSent };
+  }
+  const db = getDatabase();
+  const config = getAutomationConfig();
+  const templateMap = new Map(config.templates.map((t) => [t.id, t]));
+  const tenantCountry = getSettingValue('country') || '';
+
+  // 1. Delayed feedback requests (X hours after paid_at, within last 7 days)
+  const feedbackRule = config.rules.find((r) => r.trigger === 'feedback_delay');
+  if (feedbackRule?.enabled) {
+    const delayHours = feedbackRule.delayHours ?? 2;
+    const cutoff = new Date(nowMs - delayHours * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\..*$/, '');
+    const sevenDaysAgo = new Date(nowMs - 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\..*$/, '');
+    const dueBills = db
+      .prepare(`
+        SELECT b.id AS bill_id, COALESCE(b.customer_id, o.customer_id) AS customer_id
+        FROM bills b
+        LEFT JOIN orders o ON o.id = b.order_id
+        WHERE b.payment_status = 'paid'
+          AND COALESCE(b.paid_at, b.created_at) <= ?
+          AND COALESCE(b.paid_at, b.created_at) >= ?
+          AND COALESCE(b.customer_id, o.customer_id) IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM whatsapp_messages wm
+            WHERE wm.bill_id = b.id AND wm.created_by_user_id = 'rule:feedback_delay'
+          )
+        ORDER BY COALESCE(b.paid_at, b.created_at) DESC
+        LIMIT 25
+      `)
+      .all(cutoff, sevenDaysAgo) as Array<{ bill_id: number; customer_id: string }>;
+
+    const tpl = templateMap.get(feedbackRule.templateId) ?? templateMap.get('feedback');
+    if (tpl) {
+      for (const row of dueBills) {
+        if (isWhatsAppTerminal()) break;
+        const customer = db
+          .prepare('SELECT id, phone, country_code, is_active FROM customers WHERE id = ?')
+          .get(String(row.customer_id)) as
+          | { id: string; phone: string | null; country_code: string | null; is_active: number }
+          | undefined;
+        if (!customer?.phone || customer.is_active === 0) continue;
+        const parsedPhone = parsePhoneE164(
+          customer.phone,
+          tenantCountry || customer.country_code || '',
+        );
+        if (!parsedPhone) continue;
+        const context = buildWhatsAppTemplateContext({
+          billId: row.bill_id,
+          customerId: customer.id,
+        });
+        const body = renderWhatsAppTemplate(tpl.body, context);
+        if (!body) continue;
+        const res = await sendMessage({
+          phoneE164: parsedPhone.e164,
+          body,
+          billId: row.bill_id,
+          customerId: customer.id,
+          kind: 'auto_followup',
+          userId: 'rule:feedback_delay',
+        });
+        if (res.ok) feedbackSent++;
+      }
+    }
+  }
+
+  // 2. Win-back rule (customers whose last paid bill was >= X days ago)
+  const winbackRule = config.rules.find((r) => r.trigger === 'winback');
+  if (winbackRule?.enabled) {
+    const inactiveDays = winbackRule.inactiveDays ?? 14;
+    const cutoff = new Date(nowMs - inactiveDays * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\..*$/, '');
+    const dueCustomers = db
+      .prepare(`
+        WITH cust_visits AS (
+          SELECT
+            COALESCE(b.customer_id, o.customer_id) AS customer_id,
+            MAX(COALESCE(b.paid_at, b.created_at)) AS last_visit_at,
+            COUNT(DISTINCT b.order_id) AS visit_count
+          FROM bills b
+          LEFT JOIN orders o ON o.id = b.order_id
+          WHERE b.payment_status = 'paid'
+            AND COALESCE(b.customer_id, o.customer_id) IS NOT NULL
+          GROUP BY COALESCE(b.customer_id, o.customer_id)
+        )
+        SELECT c.id, c.phone, c.country_code, cv.last_visit_at
+        FROM cust_visits cv
+        JOIN customers c ON c.id = cv.customer_id
+        WHERE c.is_active = 1
+          AND c.phone IS NOT NULL AND c.phone != ''
+          AND cv.visit_count >= 1
+          AND cv.last_visit_at <= ?
+          AND NOT EXISTS (
+            SELECT 1 FROM whatsapp_messages wm
+            WHERE wm.customer_id = c.id
+              AND wm.created_by_user_id = 'rule:winback'
+              AND wm.queued_at >= ?
+          )
+        ORDER BY cv.last_visit_at DESC
+        LIMIT 25
+      `)
+      .all(cutoff, cutoff) as Array<{
+      id: string;
+      phone: string;
+      country_code: string | null;
+      last_visit_at: string;
+    }>;
+
+    const tpl = templateMap.get(winbackRule.templateId) ?? templateMap.get('winback');
+    if (tpl) {
+      for (const cust of dueCustomers) {
+        if (isWhatsAppTerminal()) break;
+        const parsedPhone = parsePhoneE164(
+          cust.phone,
+          tenantCountry || cust.country_code || '',
+        );
+        if (!parsedPhone) continue;
+        const context = buildWhatsAppTemplateContext({ customerId: cust.id });
+        const body = renderWhatsAppTemplate(tpl.body, context);
+        if (!body) continue;
+        const res = await sendMessage({
+          phoneE164: parsedPhone.e164,
+          body,
+          billId: null,
+          customerId: cust.id,
+          kind: 'auto_followup',
+          userId: 'rule:winback',
+        });
+        if (res.ok) winbackSent++;
+      }
+    }
+  }
+
+  return { feedbackSent, winbackSent };
+}
+
+export interface BroadcastSegmentOptions {
+  templateId?: string;
+  body?: string;
+  customBody?: string;
+  minVisits?: number;
+  inactiveDays?: number;
+  minPoints?: number;
+  limit?: number;
+  signal?: AbortSignal;
+}
+
+export async function runBroadcast(opts: BroadcastSegmentOptions): Promise<{
+  ok: boolean;
+  matched: number;
+  attempted: number;
+  sent: number;
+  skipped: number;
+  error?: string;
+  reason?: string;
+  errors: Array<{ phone: string; reason?: string }>;
+}> {
+  const db = getDatabase();
+  const config = getAutomationConfig();
+  const tpl = opts.templateId
+    ? config.templates.find((t) => t.id === opts.templateId)
+    : undefined;
+  const candidateBody = opts.body ?? opts.customBody;
+  const rawTemplateBody = (typeof candidateBody === 'string' && candidateBody.trim()) || tpl?.body || '';
+  if (!rawTemplateBody) {
+    return {
+      ok: false,
+      matched: 0,
+      attempted: 0,
+      sent: 0,
+      skipped: 0,
+      error: 'Template body required',
+      reason: 'body_required',
+      errors: [],
+    };
+  }
+
+  const maxLimit = Math.max(1, Math.min(50, Math.round(Number(opts.limit || 25))));
+  const minVisits = Math.max(0, Math.round(Number(opts.minVisits || 0)));
+  const minPoints = Math.max(0, Math.round(Number(opts.minPoints || 0)));
+  const inactiveDays = Math.max(0, Math.round(Number(opts.inactiveDays || 0)));
+  const inactiveCutoff =
+    inactiveDays > 0
+      ? new Date(Date.now() - inactiveDays * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .replace('T', ' ')
+          .replace(/\..*$/, '')
+      : null;
+
+  const customers = db
+    .prepare(`
+      WITH bill_stats AS (
+        SELECT
+          COALESCE(b.customer_id, o.customer_id) AS customer_id,
+          COUNT(DISTINCT b.order_id) AS visits_count,
+          MAX(COALESCE(b.paid_at, b.created_at)) AS last_visit_at
+        FROM bills b
+        LEFT JOIN orders o ON o.id = b.order_id
+        WHERE b.payment_status = 'paid'
+          AND COALESCE(b.customer_id, o.customer_id) IS NOT NULL
+        GROUP BY COALESCE(b.customer_id, o.customer_id)
+      ),
+      loyalty_stats AS (
+        SELECT
+          customer_id,
+          MAX(0, COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE -amount END), 0)) AS points_balance
+        FROM loyalty_ledger
+        GROUP BY customer_id
+      )
+      SELECT
+        c.id,
+        c.phone,
+        c.country_code,
+        COALESCE(bs.visits_count, 0) AS visits_count,
+        bs.last_visit_at,
+        COALESCE(ls.points_balance, 0) AS points_balance
+      FROM customers c
+      LEFT JOIN bill_stats bs ON bs.customer_id = c.id
+      LEFT JOIN loyalty_stats ls ON ls.customer_id = c.id
+      WHERE c.is_active = 1
+        AND c.phone IS NOT NULL AND c.phone != ''
+      ORDER BY c.created_at DESC
+      LIMIT 200
+    `)
+    .all() as Array<{
+    id: string;
+    phone: string;
+    country_code: string | null;
+    visits_count: number;
+    last_visit_at: string | null;
+    points_balance: number;
+  }>;
+
+  const tenantCountry = getSettingValue('country') || '';
+  const filtered = customers
+    .filter((c) => {
+      if (minVisits > 0 && Number(c.visits_count) < minVisits) return false;
+      if (minPoints > 0 && Number(c.points_balance) < minPoints) return false;
+      if (inactiveCutoff) {
+        if (!c.last_visit_at || c.last_visit_at > inactiveCutoff) return false;
+      }
+      return true;
+    })
+    .slice(0, maxLimit);
+
+  let attempted = 0;
+  let sent = 0;
+  let skipped = 0;
+  const errors: Array<{ phone: string; reason?: string }> = [];
+
+  for (const cust of filtered) {
+    if (isWhatsAppTerminal() || opts.signal?.aborted) break;
+    const parsedPhone = parsePhoneE164(cust.phone, tenantCountry || cust.country_code || '');
+    if (!parsedPhone) {
+      skipped++;
+      continue;
+    }
+    attempted++;
+    const context = buildWhatsAppTemplateContext({ customerId: cust.id });
+    const rendered = renderWhatsAppTemplate(rawTemplateBody, context);
+    if (!rendered) {
+      skipped++;
+      continue;
+    }
+    const res = await sendMessage({
+      phoneE164: parsedPhone.e164,
+      body: rendered,
+      billId: null,
+      customerId: cust.id,
+      kind: 'auto_followup',
+      userId: 'rule:broadcast',
+      signal: opts.signal,
+    });
+    if (res.ok) {
+      sent++;
+    } else {
+      skipped++;
+      errors.push({ phone: parsedPhone.e164, reason: res.reason });
+    }
+  }
+
+  return { ok: true, matched: filtered.length, attempted, sent, skipped, errors };
+}
+
 export function initFromDb(): void {
   // creds.json is the source of truth for the paired phone; the DB setting
   // is just a fallback when creds.json is missing (fresh install) or corrupt.
@@ -1575,6 +2502,7 @@ export function initFromDb(): void {
     hasCredentials: fs.existsSync(credsPath),
     connectedPhone: maskPhone(state.connectedPhone),
   });
+  ensureAutomationTimer();
   if (state.enabled) {
     void startSocket().catch(() => {});
   }
@@ -1607,6 +2535,10 @@ export function requestShutdown(): void {
   if (state.reconnectTimer) {
     clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
+  }
+  if (state.automationTimer) {
+    clearInterval(state.automationTimer);
+    state.automationTimer = null;
   }
   const socket = state.socket;
   shutdownSocket = socket;

@@ -3161,6 +3161,47 @@
       "phone_required": "需要电话号码",
       "phone_required_pairing": "配对码需要电话号码"
     },
+    "automation": {
+      "autoOptOutLabel": "收到 STOP / UNSUBSCRIBE 时自动退订（加入黑名单）",
+      "broadcastDescription": "向筛选出的客户群体发送模板消息（遵守黑名单、免打扰时段和速率限制）。",
+      "broadcastInactiveDays": "未到店天数 >=",
+      "broadcastMinPoints": "最低积分",
+      "broadcastMinVisits": "最低到店次数",
+      "broadcastSendCta": "发送群发消息",
+      "broadcastSuccess": "群发完成：已发 {sent} 条，跳过 {skipped} 条（匹配 {matched} 人）。",
+      "broadcastTitle": "客户分群广播",
+      "feedbackLinkLabel": "门店评价链接",
+      "instagramLabel": "门店 Instagram 账号",
+      "maxPerWeekLabel": "每位客户每周最多自动发送条数",
+      "placeholdersLabel": "点击插入占位变量",
+      "previewTitle": "实时预览（示例数据）",
+      "quietHoursEnd": "免打扰结束时间",
+      "quietHoursLabel": "在免打扰时段暂停自动发送",
+      "quietHoursStart": "免打扰开始时间",
+      "resetDefault": "恢复默认模板",
+      "ruleAfterPaymentHint": "当绑定客户电话的账单完成付款时，自动发送小票模板。",
+      "ruleFeedbackDelayHint": "在订单付款指定小时后自动发送评价邀请。",
+      "ruleNthVisitHint": "客户每完成 N 次付款到店时发送感谢福利。",
+      "rulePointsThresholdHint": "当客户积分余额达到阈值时发送奖励提醒。",
+      "rulesDescription": "开启或关闭自动触发规则，并设置付款小票、回访及里程碑的触发条件。",
+      "rulesTitle": "自动发送规则",
+      "ruleWinbackHint": "向至少 N 天未到店的客户发送召回优惠。",
+      "runSweepCta": "立即运行定时规则",
+      "safetyDescription": "通过自动退订、免打扰时段和每周上限保护已绑定的手机号。",
+      "safetyTitle": "安全与防封控设置",
+      "saveCta": "保存自动化设置",
+      "savedSuccess": "自动化设置已保存。",
+      "sweepResult": "已检查定时规则（已发送 {sent} 条）。",
+      "templateBodyLabel": "消息正文",
+      "templateNameLabel": "模板名称",
+      "templatesDescription": "使用客户、账单、会员积分和门店动态占位符自定义 WhatsApp 消息。",
+      "templateSelectLabel": "选用模板",
+      "templatesTitle": "消息模板",
+      "thresholdDays": "未到店天数",
+      "thresholdHours": "延迟小时数",
+      "thresholdPoints": "积分阈值",
+      "thresholdVisits": "每 N 次到店"
+    },
     "blocklist": {
       "addCta": "添加",
       "addedSuccess": "已加入黑名单。",
@@ -3253,6 +3294,14 @@
       "rate_limited": "发送被 WhatsApp 限流 ({code})。冷却 5 分钟。",
       "reconnecting": "连接已关闭 ({code})。{seconds} 秒后重连…"
     },
+    "rule": {
+      "after_payment": "付款后自动发送小票",
+      "broadcast": "客户分群广播",
+      "feedback_delay": "评价回访提醒",
+      "nth_visit": "到店次数里程碑",
+      "points_threshold": "积分达标提醒",
+      "winback": "沉睡客户召回"
+    },
     "send": {
       "customerPhoneRequired": "发送前请先添加此顾客的电话号码。",
       "error": {
@@ -3314,6 +3363,7 @@
       "typing": "正在输入"
     },
     "tabs": {
+      "automation": "模板与自动规则",
       "connection": "连接",
       "inbox": "收件箱",
       "sent": "已发送"

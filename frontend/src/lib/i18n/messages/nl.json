@@ -3161,6 +3161,47 @@
       "phone_required": "Telefoonnummer vereist",
       "phone_required_pairing": "Telefoon vereist voor koppelingscode"
     },
+    "automation": {
+      "autoOptOutLabel": "Automatisch afmelden bij STOP / UNSUBSCRIBE (voegt afzender toe aan blokkeerlijst)",
+      "broadcastDescription": "Stuur een sjabloon naar een gefilterd klantsegment (houdt rekening met blokkeerlijst, stille uren en limieten).",
+      "broadcastInactiveDays": "Inactief >= dagen",
+      "broadcastMinPoints": "Min. punten",
+      "broadcastMinVisits": "Min. bezoeken",
+      "broadcastSendCta": "Verzending starten",
+      "broadcastSuccess": "Verzending voltooid: {sent} verzonden, {skipped} overgeslagen ({matched} overeenkomsten).",
+      "broadcastTitle": "Klantsegment-verzending",
+      "feedbackLinkLabel": "Feedbacklink van winkel",
+      "instagramLabel": "Instagram-handle van winkel",
+      "maxPerWeekLabel": "Max. automatische berichten per klant per week",
+      "placeholdersLabel": "Klik om plaatsaanduiding in te voegen",
+      "previewTitle": "Live voorbeeld (voorbeeldgegevens)",
+      "quietHoursEnd": "Einde stille uren",
+      "quietHoursLabel": "Automatische verzendingen onderdrukken tijdens stille uren",
+      "quietHoursStart": "Start stille uren",
+      "resetDefault": "Standaard herstellen",
+      "ruleAfterPaymentHint": "Stuur automatisch het bonsjabloon zodra een rekening met klanttelefoon is betaald.",
+      "ruleFeedbackDelayHint": "Stuur een feedbackverzoek na een betaalde bestelling (uren na betaling).",
+      "ruleNthVisitHint": "Stuur elke N betaalde bezoeken een bedankbericht.",
+      "rulePointsThresholdHint": "Stuur een beloningsbericht wanneer het puntensaldo de drempel bereikt.",
+      "rulesDescription": "Schakel automatische triggers in en stel drempelwaarden in voor bonnen, opvolging en mijlpalen.",
+      "rulesTitle": "Automatische verzendregels",
+      "ruleWinbackHint": "Stuur een win-backaanbieding naar klanten die minstens N dagen inactief zijn.",
+      "runSweepCta": "Geplande regels nu uitvoeren",
+      "safetyDescription": "Bescherm uw gekoppelde nummer met automatische afmelding, stille uren en wekelijkse limieten.",
+      "safetyTitle": "Veiligheids- en antispaminstellingen",
+      "saveCta": "Automatisering opslaan",
+      "savedSuccess": "Automatiseringsinstellingen opgeslagen.",
+      "sweepResult": "Geplande regels gecontroleerd ({sent} verzonden).",
+      "templateBodyLabel": "Berichttekst",
+      "templateNameLabel": "Sjabloonnaam",
+      "templatesDescription": "Pas automatische WhatsApp-berichten aan met dynamische klant-, bon-, loyaliteits- en winkelvariabelen.",
+      "templateSelectLabel": "Geselecteerd sjabloon",
+      "templatesTitle": "Berichtsjablonen",
+      "thresholdDays": "Inactieve dagen",
+      "thresholdHours": "Wachturen",
+      "thresholdPoints": "Puntendrempel",
+      "thresholdVisits": "Elke N bezoeken"
+    },
     "blocklist": {
       "addCta": "Toevoegen",
       "addedSuccess": "Toegevoegd aan blokkeerlijst.",
@@ -3253,6 +3294,14 @@
       "rate_limited": "WhatsApp heeft de verzendfrequentie beperkt ({code}). Wacht 5 minuten.",
       "reconnecting": "Verbinding gesloten ({code}). Opnieuw verbinding maken over {seconds}s…"
     },
+    "rule": {
+      "after_payment": "Automatische bon na betaling",
+      "broadcast": "Segment-verzending",
+      "feedback_delay": "Feedback-opvolging",
+      "nth_visit": "Bezoekmijlpaal",
+      "points_threshold": "Puntenmijlpaal",
+      "winback": "Inactieve klant terugwinnen"
+    },
     "send": {
       "customerPhoneRequired": "Voeg het telefoonnummer van deze klant toe voordat u het verzendt.",
       "error": {
@@ -3314,6 +3363,7 @@
       "typing": "Typen"
     },
     "tabs": {
+      "automation": "Sjablonen & regels",
       "connection": "Verbinding",
       "inbox": "Inbox",
       "sent": "Verzonden"

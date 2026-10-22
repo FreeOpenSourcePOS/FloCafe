@@ -3161,6 +3161,47 @@
       "phone_required": "Número de telefone obrigatório",
       "phone_required_pairing": "Telefone obrigatório para o código de pareamento"
     },
+    "automation": {
+      "autoOptOutLabel": "Descadastro automático ao receber STOP / UNSUBSCRIBE (adiciona à lista de bloqueio)",
+      "broadcastDescription": "Envie um modelo para um segmento filtrado de clientes (respeita bloqueios, horário de silêncio e limites).",
+      "broadcastInactiveDays": "Inativo >= dias",
+      "broadcastMinPoints": "Pontos mín.",
+      "broadcastMinVisits": "Visitas mín.",
+      "broadcastSendCta": "Enviar disparo",
+      "broadcastSuccess": "Disparo concluído: {sent} enviados, {skipped} ignorados ({matched} encontrados).",
+      "broadcastTitle": "Disparo para segmento de clientes",
+      "feedbackLinkLabel": "Link de avaliação da loja",
+      "instagramLabel": "Instagram da loja",
+      "maxPerWeekLabel": "Máx. de mensagens automáticas por cliente por semana",
+      "placeholdersLabel": "Clique para inserir variável",
+      "previewTitle": "Pré-visualização ao vivo (dados de exemplo)",
+      "quietHoursEnd": "Fim do horário de silêncio",
+      "quietHoursLabel": "Pausar envios automáticos durante o horário de silêncio",
+      "quietHoursStart": "Início do horário de silêncio",
+      "resetDefault": "Restaurar padrão",
+      "ruleAfterPaymentHint": "Envia o modelo de recibo automaticamente quando uma conta com telefone de cliente é paga.",
+      "ruleFeedbackDelayHint": "Envia um pedido de avaliação após um pedido pago (horas após o pagamento).",
+      "ruleNthVisitHint": "Envia uma mensagem de agradecimento a cada N visitas pagas.",
+      "rulePointsThresholdHint": "Envia um aviso de recompensa quando o saldo de pontos atingir o limite.",
+      "rulesDescription": "Ative gatilhos automáticos e configure limites para recibos, acompanhamentos e marcos.",
+      "rulesTitle": "Regras de envio automático",
+      "ruleWinbackHint": "Envia uma oferta de retorno para clientes inativos há pelo menos N dias.",
+      "runSweepCta": "Executar regras agendadas agora",
+      "safetyDescription": "Proteja seu número conectado com descadastro automático, horário de silêncio e limites semanais.",
+      "safetyTitle": "Controles de segurança e antispam",
+      "saveCta": "Salvar configurações de automação",
+      "savedSuccess": "Configurações de automação salvas.",
+      "sweepResult": "Regras agendadas verificadas ({sent} enviados).",
+      "templateBodyLabel": "Corpo da mensagem",
+      "templateNameLabel": "Nome do modelo",
+      "templatesDescription": "Personalize mensagens automáticas do WhatsApp com variáveis dinâmicas de cliente, conta, fidelidade e loja.",
+      "templateSelectLabel": "Modelo selecionado",
+      "templatesTitle": "Modelos de mensagens",
+      "thresholdDays": "Dias inativos",
+      "thresholdHours": "Horas de espera",
+      "thresholdPoints": "Limite de pontos",
+      "thresholdVisits": "A cada N visitas"
+    },
     "blocklist": {
       "addCta": "Adicionar",
       "addedSuccess": "Adicionado à lista de bloqueio.",
@@ -3253,6 +3294,14 @@
       "rate_limited": "Envio limitado pelo WhatsApp ({code}). Em espera por 5 minutos.",
       "reconnecting": "Conexão encerrada ({code}). Reconectando em {seconds}s…"
     },
+    "rule": {
+      "after_payment": "Recibo automático após pagamento",
+      "broadcast": "Disparo por segmento",
+      "feedback_delay": "Pedido de avaliação",
+      "nth_visit": "Marco de visitas",
+      "points_threshold": "Marco de pontos de fidelidade",
+      "winback": "Recuperação de cliente inativo"
+    },
     "send": {
       "customerPhoneRequired": "Adicione o número de telefone do cliente antes de enviar.",
       "error": {
@@ -3314,6 +3363,7 @@
       "typing": "Digitando"
     },
     "tabs": {
+      "automation": "Modelos e regras",
       "connection": "Conexão",
       "inbox": "Caixa de Entrada",
       "sent": "Enviadas"

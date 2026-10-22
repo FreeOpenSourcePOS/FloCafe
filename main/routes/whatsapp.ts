@@ -96,7 +96,7 @@ router.post('/disconnect', requirePermission('whatsapp.manage'), (_req: Request,
 });
 
 router.post('/send', requirePermission('whatsapp.use'), asyncHandler(async (req, res) => {
-  const { bill_id, phone_e164, body, kind } = req.body ?? {};
+  const { bill_id, phone_e164, body, kind, use_template } = req.body ?? {};
   if (!phone_e164) {
     res.status(400).json({ error: 'phone_e164 required', reason: 'phone_required' });
     return;
@@ -107,14 +107,18 @@ router.post('/send', requirePermission('whatsapp.use'), asyncHandler(async (req,
     res.status(400).json({ error: 'Valid phone_e164 required', reason: 'invalid_phone' });
     return;
   }
-  if (!body || typeof body !== 'string') {
+  let resolvedBody = typeof body === 'string' ? body : '';
+  if (use_template && bill_id != null && !resolvedBody.trim()) {
+    resolvedBody = whatsapp.renderReceiptForBill(Number(bill_id)) || '';
+  }
+  if (!resolvedBody || typeof resolvedBody !== 'string') {
     res.status(400).json({ error: 'body required', reason: 'body_required' });
     return;
   }
   const userId = (req as any).user?.userId ?? null;
   const result = await trackHttpRequestWork(req, whatsapp.sendMessage({
     phoneE164: parsedPhone.e164,
-    body: String(body),
+    body: String(resolvedBody),
     billId: bill_id != null ? Number(bill_id) : null,
     customerId: null,
     kind: (kind as any) || 'manual_reply',
@@ -127,6 +131,68 @@ router.post('/send', requirePermission('whatsapp.use'), asyncHandler(async (req,
     return;
   }
   res.json({ ok: true, messageId: result.messageId });
+}));
+
+router.get('/automation', requirePermission('whatsapp.use'), (_req: Request, res: Response) => {
+  res.json({
+    config: whatsapp.getAutomationConfig(),
+    placeholders: whatsapp.WHATSAPP_PLACEHOLDERS,
+  });
+});
+
+router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {
+  const config = whatsapp.saveAutomationConfig(req.body ?? {});
+  res.json({ ok: true, config });
+});
+
+router.post('/automation/preview', requirePermission('whatsapp.use'), (req: Request, res: Response) => {
+  const { body, bill_id, customer_id } = req.body ?? {};
+  if (typeof body !== 'string') {
+    res.status(400).json({ error: 'body must be a string', reason: 'body_required' });
+    return;
+  }
+  const config = whatsapp.getAutomationConfig();
+  const context =
+    bill_id != null || customer_id != null
+      ? whatsapp.buildWhatsAppTemplateContext({
+          billId: bill_id != null ? Number(bill_id) : null,
+          customerId: customer_id != null ? String(customer_id) : null,
+        })
+      : whatsapp.buildSampleWhatsAppContext({
+          store_name: getSettingValue('business_name') || undefined,
+          store_phone: getSettingValue('phone') || undefined,
+          feedback_link: config.safety.feedbackLink || undefined,
+          instagram: config.safety.instagram || getSettingValue('instagram_handle') || undefined,
+        });
+  res.json({
+    ok: true,
+    rendered: whatsapp.renderWhatsAppTemplate(body, context),
+    context,
+  });
+});
+
+router.post('/automation/broadcast', requirePermission('whatsapp.manage'), asyncHandler(async (req, res) => {
+  const { template_id, body, min_visits, inactive_days, min_points, limit } = req.body ?? {};
+  const result = await trackHttpRequestWork(req, whatsapp.runBroadcast({
+    templateId: typeof template_id === 'string' ? template_id : undefined,
+    customBody: typeof body === 'string' ? body : undefined,
+    minVisits: min_visits != null && min_visits !== '' ? Number(min_visits) : undefined,
+    inactiveDays: inactive_days != null && inactive_days !== '' ? Number(inactive_days) : undefined,
+    minPoints: min_points != null && min_points !== '' ? Number(min_points) : undefined,
+    limit: limit != null && limit !== '' ? Number(limit) : undefined,
+    signal: getHttpRequestSignal(req),
+  }));
+  if (!result.ok) {
+    const status = result.reason === 'not_connected' ? 503 : 400;
+    res.status(status).json({ error: result.error, reason: result.reason });
+    return;
+  }
+  res.json(result);
+}));
+
+router.post('/automation/run-sweep', requirePermission('whatsapp.manage'), asyncHandler(async (req, res) => {
+  const result = await trackHttpRequestWork(req, whatsapp.runScheduledAutomationSweep());
+  res.json({ ok: true, ...result });
 }));
 
 router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: Response) => {

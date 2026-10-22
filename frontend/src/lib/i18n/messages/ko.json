@@ -3161,6 +3161,47 @@
       "phone_required": "전화번호가 필요합니다",
       "phone_required_pairing": "페어링 코드에는 전화번호가 필요합니다"
     },
+    "automation": {
+      "autoOptOutLabel": "STOP / UNSUBSCRIBE 수신 시 자동 수신 거부(차단 목록에 추가)",
+      "broadcastDescription": "조건에 맞는 고객 그룹에 템플릿을 발송합니다(차단 목록, 방해 금지 시간, 속도 제한 준수).",
+      "broadcastInactiveDays": "미방문 일수 >=",
+      "broadcastMinPoints": "최소 포인트",
+      "broadcastMinVisits": "최소 방문 수",
+      "broadcastSendCta": "세그먼트 발송",
+      "broadcastSuccess": "발송 완료: {sent}건 성공, {skipped}건 건너뜀(대상 {matched}명).",
+      "broadcastTitle": "고객 세그먼트 단체 발송",
+      "feedbackLinkLabel": "매장 피드백 링크",
+      "instagramLabel": "매장 인스타그램 계정",
+      "maxPerWeekLabel": "고객당 주간 최대 자동 발송 횟수",
+      "placeholdersLabel": "클릭하여 치환 변수 삽입",
+      "previewTitle": "실시간 미리보기(샘플 데이터)",
+      "quietHoursEnd": "방해 금지 종료 시간",
+      "quietHoursLabel": "방해 금지 시간 동안 자동 발송 일시 중지",
+      "quietHoursStart": "방해 금지 시작 시간",
+      "resetDefault": "기본값으로 재설정",
+      "ruleAfterPaymentHint": "고객 전화번호가 있는 청구서가 결제되면 영수증 템플릿을 자동 발송합니다.",
+      "ruleFeedbackDelayHint": "결제 완료 후 지정된 시간이 지나면 피드백 요청을 보냅니다.",
+      "ruleNthVisitHint": "유료 방문 N회마다 감사 리워드 메시지를 보냅니다.",
+      "rulePointsThresholdHint": "포인트 잔액이 기준치를 넘으면 혜택 알림을 보냅니다.",
+      "rulesDescription": "결제 후 영수증, 후속 알림, 마일스톤에 대한 자동 규칙과 기준값을 설정합니다.",
+      "rulesTitle": "자동 발송 규칙",
+      "ruleWinbackHint": "최소 N일 동안 방문하지 않은 고객에게 재방문 혜택을 보냅니다.",
+      "runSweepCta": "예약 규칙 지금 실행",
+      "safetyDescription": "자동 수신 거부, 방해 금지 시간, 주간 발송 한도로 연결된 번호를 보호합니다.",
+      "safetyTitle": "안전 및 스팸 방지 설정",
+      "saveCta": "자동화 설정 저장",
+      "savedSuccess": "자동화 설정이 저장되었습니다.",
+      "sweepResult": "예약 규칙 확인 완료({sent}건 발송).",
+      "templateBodyLabel": "메시지 본문",
+      "templateNameLabel": "템플릿 이름",
+      "templatesDescription": "고객, 청구서, 포인트, 매장 변수를 활용해 자동 WhatsApp 메시지를 꾸미세요.",
+      "templateSelectLabel": "선택된 템플릿",
+      "templatesTitle": "메시지 템플릿",
+      "thresholdDays": "미방문 일수",
+      "thresholdHours": "지연 시간(시간)",
+      "thresholdPoints": "포인트 기준",
+      "thresholdVisits": "N회 방문마다"
+    },
     "blocklist": {
       "addCta": "추가",
       "addedSuccess": "차단 목록에 추가했습니다.",
@@ -3253,6 +3294,14 @@
       "rate_limited": "WhatsApp으로 인한 발송 속도 제한({code}). 5분간 대기합니다.",
       "reconnecting": "연결이 종료되었습니다({code}). {seconds}초 후 재연결…"
     },
+    "rule": {
+      "after_payment": "결제 후 자동 영수증",
+      "broadcast": "고객 세그먼트 발송",
+      "feedback_delay": "피드백 요청 알림",
+      "nth_visit": "방문 횟수 달성",
+      "points_threshold": "포인트 기준 달성",
+      "winback": "휴면 고객 재방문 유도"
+    },
     "send": {
       "customerPhoneRequired": "발송 전에 이 고객의 전화번호를 추가하세요.",
       "error": {
@@ -3314,6 +3363,7 @@
       "typing": "입력 중"
     },
     "tabs": {
+      "automation": "템플릿 및 자동 규칙",
       "connection": "연결",
       "inbox": "수신함",
       "sent": "보냄"

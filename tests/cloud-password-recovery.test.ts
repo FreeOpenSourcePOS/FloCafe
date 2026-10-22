@@ -180,7 +180,7 @@ async function main() {
 
   res = await request(app)
     .post(`${cloud}/complete`)
-    .send({ reset_id: RESET_ID, new_password: 'weak' });
+    .send({ reset_id: RESET_ID, new_password: 'abc' });
   assertEqualOrThrow(res.status, 400, 'weak password is rejected');
   assertEqualOrThrow(redeemCalls, 0, 'a weak password never consumes the grant');
 

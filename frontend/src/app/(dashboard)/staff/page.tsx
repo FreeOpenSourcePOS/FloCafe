@@ -11,6 +11,7 @@ import { useTranslations, type AppConfig } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import { PermissionMatrix } from '@/components/settings/PermissionMatrix';
 import { PermissionAuditLog } from '@/components/settings/PermissionAuditLog';
+import { validatePassword } from '@shared/password-policy';
 import { ROLE_ACCESS, ROLE_KEYS, hasRole } from '@shared/role-permissions';
 import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
 import { tenantCan } from '@/lib/permissions';
@@ -154,6 +155,10 @@ export default function StaffPage() {
       toast.error(tSetup('passwordsMismatch'));
       return;
     }
+    if (form.password && !validatePassword(form.password)) {
+      toast.error(tSetup('errorPasswordRequirementsNotMet'));
+      return;
+    }
     try {
       if (editingStaff) {
         await api.put(`/staff/${editingStaff.id}`, {
@@ -186,6 +191,10 @@ export default function StaffPage() {
     if (!resetPwStaff || !newPassword) return;
     if (newPassword !== confirmNewPassword) {
       toast.error(tSetup('passwordsMismatch'));
+      return;
+    }
+    if (!validatePassword(newPassword)) {
+      toast.error(tSetup('errorPasswordRequirementsNotMet'));
       return;
     }
     try {

@@ -220,7 +220,7 @@ async function main() {
     'owner cannot create staff with weak password (vuln-0006)',
   );
   assert(
-    weakCreateRes.body.error.includes('at least 8 characters'),
+    weakCreateRes.body.error.includes('at least 4 characters'),
     'create staff returns policy error',
   );
 

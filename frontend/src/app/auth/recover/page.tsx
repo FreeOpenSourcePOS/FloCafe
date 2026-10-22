@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
+import { validatePassword } from '@shared/password-policy';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -112,13 +113,7 @@ export default function RecoverAccessPage() {
   const passwordsEntered = newPassword.length > 0 && confirmPassword.length > 0;
   const passwordsMatch = !passwordsEntered || newPassword === confirmPassword;
 
-  const isPasswordValid = (password: string) => {
-    if (!password || password.length < 8) return false;
-    if (!/[A-Z]/.test(password)) return false;
-    if (!/[a-z]/.test(password)) return false;
-    if (!/[0-9]/.test(password)) return false;
-    return true;
-  };
+  const isPasswordValid = validatePassword;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -35,6 +35,7 @@ import {
 } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
+import { PASSWORD_POLICY_MESSAGE } from '../../shared/password-policy';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { isSupportedCurrencyCode } from '../../shared/currencies';
 import {
@@ -512,8 +513,7 @@ router.post('/password/change', authRateLimit(), (req: Request, res: Response) =
     resetPasswordChangeRateLimit(user.id);
     if (!validatePassword(password)) {
       return res.status(400).json({
-        error:
-          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.',
+        error: PASSWORD_POLICY_MESSAGE,
       });
     }
 
@@ -614,8 +614,7 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     }
     if (!new_password || !validatePassword(new_password)) {
       return res.status(400).json({
-        error:
-          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.',
+        error: PASSWORD_POLICY_MESSAGE,
       });
     }
 
@@ -773,8 +772,7 @@ router.post(
     }
     if (!newPassword || !validatePassword(newPassword)) {
       return res.status(400).json({
-        error:
-          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.',
+        error: PASSWORD_POLICY_MESSAGE,
       });
     }
 
@@ -935,8 +933,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     }
     if (!validatePassword(password)) {
       return res.status(400).json({
-        error:
-          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.',
+        error: PASSWORD_POLICY_MESSAGE,
       });
     }
 

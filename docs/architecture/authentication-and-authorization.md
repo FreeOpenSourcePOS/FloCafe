@@ -188,6 +188,17 @@ All three HTTP listeners (`:3001` Main API, `:3002` Standalone KDS, and `:3003` 
 3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP once role and permission checks pass.
 4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures and do not clear previously accumulated failed-login attempts.
 
+## Password policy
+
+A password must be at least 4 characters long. There are no uppercase, lowercase, digit, or symbol
+requirements. The rule lives only in
+[`shared/password-policy.ts`](../../shared/password-policy.ts); the backend (`validatePassword`
+re-exported from `main/middleware/security.ts`) and every frontend form that sets a password
+(first-run setup, staff create and edit, staff password reset, recovery) import it, and the
+`password-policy` test fails if a source file re-implements a password rule. Every route that
+writes a password enforces it: setup, staff create and update, password change, and both recovery
+paths. The 4-digit Master PIN and approval PINs are separate secrets with their own rules.
+
 ## Owner password recovery
 
 A locked-out owner has two recovery paths, both local-only requests (loopback) with no JWT, and

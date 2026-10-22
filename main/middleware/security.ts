@@ -574,11 +574,5 @@ export const corsOptions = {
   },
 };
 
-/** Validates password complexity: >= 8 chars with uppercase, lowercase, and digit. */
-export function validatePassword(password: string): boolean {
-  if (!password || password.length < 8) return false;
-  if (!/[A-Z]/.test(password)) return false;
-  if (!/[a-z]/.test(password)) return false;
-  if (!/[0-9]/.test(password)) return false;
-  return true;
-}
+/** The single password policy shared by backend routes and frontend forms. */
+export { validatePassword } from '../../shared/password-policy';

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
+import { validatePassword } from '@shared/password-policy';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { Button } from '@/components/ui/button';
@@ -141,13 +142,7 @@ export default function SetupPage() {
   const cloudEnabled = true;
   const [cloudServerUrl, setCloudServerUrl] = useState(DEFAULT_CLOUD_SERVER_URL);
 
-  const isPasswordValid = (password: string) => {
-    if (!password || password.length < 8) return false;
-    if (!/[A-Z]/.test(password)) return false;
-    if (!/[a-z]/.test(password)) return false;
-    if (!/[0-9]/.test(password)) return false;
-    return true;
-  };
+  const isPasswordValid = validatePassword;
   const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
   const t = useTranslations('setup');
   const tAnalytics = useTranslations('productAnalytics');

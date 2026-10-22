@@ -3,6 +3,7 @@
 import axios, { AxiosInstance } from 'axios';
 import toast from 'react-hot-toast';
 import {
+  ArrowRightLeft,
   Bell,
   CheckCircle2,
   ChefHat,
@@ -21,7 +22,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerTrigger } from '@/components/ui/drawer';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parsePhone } from '@/lib/phone';
 import { getLanguageDirection, getLanguageLocale, useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -36,8 +37,12 @@ import { generateCartItemId } from '@/lib/cart-identity';
 import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
 import AddonModal from '@/components/pos/AddonModal';
 import ProductGrid from '@/components/pos/ProductGrid';
+import MoveTableModal from '@/components/tables/MoveTableModal';
+import { tenantCan } from '@/lib/permissions';
 import type {
   Order as FullOrder,
+  Table as FullTable,
+  Tenant,
   Product,
   Addon,
   CartItem,
@@ -46,7 +51,7 @@ import type {
 } from '@/lib/types';
 import { cartItemToOrderItem } from '@/lib/cart-order-item';
 
-type User = { id: string; name: string; email: string; role: string };
+type User = { id: string; name: string; email: string; role: string; permission_ids?: string[] };
 type Table = {
   id: string;
   name?: string;
@@ -149,6 +154,7 @@ function money(value: number | string, regional: ServerAppInfo | null) {
 
 type SendSnapshot = {
   tableId: string;
+  requestTableId?: string;
   tableName: string | undefined;
   orderId: number | null;
   orderCustomer: Order['customer'] | null;
@@ -209,6 +215,7 @@ export default function ServerStandalonePage() {
   const [addonModalVariant, setAddonModalVariant] = useState<ProductVariant | null>(null);
   const [editingDraftLine, setEditingDraftLine] = useState<DraftLine | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [moveTableModalOpen, setMoveTableModalOpen] = useState(false);
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -236,6 +243,36 @@ export default function ServerStandalonePage() {
   const orderLoadedTableIdRef = useRef('');
   const orderLookupFailedRef = useRef(false);
   const orderLoadSeqRef = useRef(0);
+  const authSessionSeqRef = useRef(0);
+
+  const loadUser = useCallback(async () => {
+    if (!api || sendInFlightRef.current) return;
+    const requestToken = localStorage.getItem(TOKEN_KEY);
+    if (!requestToken) return;
+    const sessionSeq = authSessionSeqRef.current;
+    const res = await api.get('/api/auth/me');
+    if (
+      sendInFlightRef.current ||
+      sessionSeq !== authSessionSeqRef.current ||
+      localStorage.getItem(TOKEN_KEY) !== requestToken ||
+      !res.data?.user
+    ) {
+      return;
+    }
+    const nextUser: User = res.data.user;
+    setUser((prev) => {
+      if (!prev || prev.id !== nextUser.id) return prev;
+      if (
+        prev.role === nextUser.role &&
+        prev.name === nextUser.name &&
+        prev.email === nextUser.email &&
+        (prev.permission_ids || []).join(',') === (nextUser.permission_ids || []).join(',')
+      ) {
+        return prev;
+      }
+      return nextUser;
+    });
+  }, [api]);
 
   async function loadAll(options?: { allowWhileSending?: boolean }) {
     if (!api) return;
@@ -277,7 +314,7 @@ export default function ServerStandalonePage() {
         params: {
           table_id: tableId,
           type: 'dine_in',
-          status: 'pending,preparing,ready',
+          status: 'pending,preparing,ready,served',
           per_page: 1,
         },
       });
@@ -347,8 +384,10 @@ export default function ServerStandalonePage() {
     };
   }, [api]);
 
+  const userId = user?.id;
+
   useEffect(() => {
-    if (!user || !api) return;
+    if (!userId || !api) return;
     let cancelled = false;
     Promise.all([
       api.get('/api/categories', { params: { active: 'true' } }),
@@ -371,10 +410,10 @@ export default function ServerStandalonePage() {
     return () => {
       cancelled = true;
     };
-  }, [api, selectedTableId, user, t]);
+  }, [api, selectedTableId, userId, t]);
 
   useEffect(() => {
-    if (!selectedTableId || !user || !api) return;
+    if (!selectedTableId || !userId || !api) return;
     let cancelled = false;
     const loadSeq = ++orderLoadSeqRef.current;
     const targetTableId = selectedTableId;
@@ -386,7 +425,7 @@ export default function ServerStandalonePage() {
         params: {
           table_id: targetTableId,
           type: 'dine_in',
-          status: 'pending,preparing,ready',
+          status: 'pending,preparing,ready,served',
           per_page: 1,
         },
       })
@@ -436,7 +475,18 @@ export default function ServerStandalonePage() {
     return () => {
       cancelled = true;
     };
-  }, [api, selectedTableId, user]);
+  }, [api, selectedTableId, userId]);
+
+  useEffect(() => {
+    if (!userId || !api) return;
+    const onFocus = () => {
+      loadUser().catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [api, loadUser, userId]);
 
   useEffect(() => {
     return () => {
@@ -510,6 +560,7 @@ export default function ServerStandalonePage() {
       return;
     }
     selectedTableIdRef.current = tableId;
+    setMoveTableModalOpen(false);
     orderLookupFailedRef.current = false;
     orderLoadedTableIdRef.current = '';
     setOrderLoadedTableId('');
@@ -528,8 +579,8 @@ export default function ServerStandalonePage() {
   function handleRefresh() {
     if (sendInFlightRef.current) return;
     const tableId = selectedTableIdRef.current;
-    Promise.all([loadAll(), tableId ? loadOrder(tableId) : Promise.resolve()]).catch(() =>
-      toast.error(t('refreshFailed')),
+    Promise.all([loadUser(), loadAll(), tableId ? loadOrder(tableId) : Promise.resolve()]).catch(
+      () => toast.error(t('refreshFailed')),
     );
   }
 
@@ -561,6 +612,7 @@ export default function ServerStandalonePage() {
         password,
         remember_me: rememberMe,
       });
+      authSessionSeqRef.current += 1;
       localStorage.setItem(TOKEN_KEY, res.data.access_token);
       setUser(res.data.user);
     } catch (error: unknown) {
@@ -571,6 +623,7 @@ export default function ServerStandalonePage() {
   }
 
   async function logout() {
+    authSessionSeqRef.current += 1;
     try {
       await api?.post('/api/auth/logout');
     } catch {}
@@ -824,7 +877,8 @@ export default function ServerStandalonePage() {
       };
     }
     const { nonce, snapshot } = sendAttemptRef.current;
-    const idempotencyKey = `server-app-${snapshot.tableId}-${nonce}`;
+    const requestTableId = snapshot.requestTableId ?? snapshot.tableId;
+    const idempotencyKey = `server-app-${requestTableId}-${nonce}`;
     sendSeqRef.current += 1;
     orderLoadSeqRef.current += 1;
     cancelPendingCustomerLookup();
@@ -855,7 +909,7 @@ export default function ServerStandalonePage() {
         const { data } = await api.post(
           '/api/orders',
           {
-            table_id: snapshot.tableId,
+            table_id: requestTableId,
             customer_id: customerId,
             type: 'dine_in',
             special_instructions: specialInstructions,
@@ -914,6 +968,7 @@ export default function ServerStandalonePage() {
   }
 
   const activeTable = tables.find((table) => table.id === selectedTableId) || null;
+  const canMoveTable = tenantCan(user as unknown as Tenant, 'tables.orders.move');
   const draftTotal = draft.reduce((sum, line) => {
     const addonTotal = line.addons.reduce(
       (addonSum, addon) => addonSum + Number(addon.price || 0) * (addon.quantity || 1),
@@ -1004,7 +1059,24 @@ export default function ServerStandalonePage() {
 
   const ticketPanelBody = (
     <>
-      <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
+        {currentOrder && activeTable && canMoveTable && (
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => {
+              if (sendInFlightRef.current) return;
+              setMobileCartOpen(false);
+              setMoveTableModalOpen(true);
+            }}
+            className="flex items-center gap-1 text-xs font-medium text-brand hover:underline disabled:opacity-50"
+          >
+            <ArrowRightLeft size={13} />
+            {tTables('moveTable')}
+          </button>
+        )}
+      </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <input
           value={customerPhone}
@@ -1341,6 +1413,53 @@ export default function ServerStandalonePage() {
             updateDraftLine(editingDraftLine.id, quantity, addons, instructions, variant);
           }}
           onClose={() => setEditingDraftLine(null)}
+        />
+      )}
+
+      {moveTableModalOpen && activeTable && currentOrder && canMoveTable && (
+        <MoveTableModal
+          sourceTable={
+            {
+              ...activeTable,
+              activeOrder: currentOrder,
+            } as unknown as FullTable
+          }
+          apiClient={api || undefined}
+          formatPrice={(amount) => money(amount, regional)}
+          onClose={() => setMoveTableModalOpen(false)}
+          onSuccess={async (movedData) => {
+            const sourceTableId = String(
+              (movedData.sourceTable as Table | undefined)?.id ?? activeTable.id,
+            );
+            const targetTable = movedData.targetTable as Table;
+            const targetTableId = String(targetTable.id);
+            const targetTableName = targetTable.name || targetTable.number;
+            if (sendAttemptRef.current?.snapshot.tableId === sourceTableId) {
+              const prevAttempt = sendAttemptRef.current;
+              const nextSnapshot: SendSnapshot = {
+                ...prevAttempt.snapshot,
+                tableId: targetTableId,
+                requestTableId: prevAttempt.snapshot.requestTableId ?? prevAttempt.snapshot.tableId,
+                tableName: targetTableName ?? prevAttempt.snapshot.tableName,
+              };
+              sendAttemptRef.current = {
+                signature: sendAttemptSignature(
+                  targetTableId,
+                  nextSnapshot.draftLines,
+                  nextSnapshot.customerName,
+                  nextSnapshot.customerPhone,
+                  nextSnapshot.orderNotes,
+                ),
+                nonce: prevAttempt.nonce,
+                snapshot: nextSnapshot,
+              };
+            }
+            setMoveTableModalOpen(false);
+            if (selectedTableIdRef.current === sourceTableId) {
+              selectTable(targetTableId);
+            }
+            await loadAll().catch(() => {});
+          }}
         />
       )}
     </div>

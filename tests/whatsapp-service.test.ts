@@ -916,8 +916,9 @@ async function main(): Promise<void> {
     });
     const fracTrigger = await whatsapp.triggerBillPaidAutomation(910, { pointsEarned: 99.5 });
     assert(
-      !fracTrigger.triggered.includes('points_threshold'),
-      '99.5 loyalty points does not prematurely trigger points_threshold=100',
+      !fracTrigger.triggered.includes('points_threshold') &&
+        fracTrigger.triggered.includes('nth_visit'),
+      '99.5 loyalty points does not prematurely trigger points_threshold=100 while first split check triggers nth_visit',
     );
 
     // 5b. Split checks on the same order do not repeat nth_visit milestone for the same customer
@@ -973,7 +974,15 @@ async function main(): Promise<void> {
       db.prepare(`
         INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
         VALUES (?, ?, ?, ?, 10, 0, 0, 10, 10, 0, 'paid', ?, ?, ?)
-      `).run(bid, `INV-${bid}`, bid, cid, sevenDaysPlusTwoHoursAgo, sevenDaysPlusTwoHoursAgo, sevenDaysPlusTwoHoursAgo);
+      `).run(
+        bid,
+        `INV-${bid}`,
+        bid,
+        cid,
+        sevenDaysPlusTwoHoursAgo,
+        sevenDaysPlusTwoHoursAgo,
+        sevenDaysPlusTwoHoursAgo,
+      );
     }
     const origOnWhatsApp = fakeSocket.onWhatsApp;
     fakeSocket.onWhatsApp = async (jid: string) => {

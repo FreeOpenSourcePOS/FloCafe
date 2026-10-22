@@ -516,7 +516,18 @@ export function getAutomationConfig(): WhatsAppAutomationConfig {
 }
 
 export function saveAutomationConfig(raw: unknown): WhatsAppAutomationConfig {
-  const normalized = normalizeWhatsAppAutomationConfig(raw);
+  const current = getAutomationConfig();
+  const patch =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const merged = {
+    templates: patch.templates !== undefined ? patch.templates : current.templates,
+    rules: patch.rules !== undefined ? patch.rules : current.rules,
+    safety:
+      patch.safety && typeof patch.safety === 'object' && !Array.isArray(patch.safety)
+        ? { ...current.safety, ...(patch.safety as Record<string, unknown>) }
+        : current.safety,
+  };
+  const normalized = normalizeWhatsAppAutomationConfig(merged);
   writeSetting(WHATSAPP_AUTOMATION_SETTING_KEY, JSON.stringify(normalized));
   sweepRecipientCooldownUntil.clear();
   return normalized;
@@ -2302,10 +2313,7 @@ async function runScheduledAutomationSweepImpl(
   if (feedbackRule?.enabled) {
     const delayHours = Math.max(1, feedbackRule.delayHours ?? 2);
     const cutoffMs = nowMs - delayHours * 60 * 60 * 1000;
-    const cutoff = new Date(cutoffMs)
-      .toISOString()
-      .replace('T', ' ')
-      .replace(/\..*$/, '');
+    const cutoff = new Date(cutoffMs).toISOString().replace('T', ' ').replace(/\..*$/, '');
     const lookbackFloor = new Date(cutoffMs - 7 * 24 * 60 * 60 * 1000)
       .toISOString()
       .replace('T', ' ')

@@ -319,8 +319,8 @@ re-parsed as tokens. All five automated rules ship disabled (`enabled: false`):
   `after_payment`, `points_threshold`, and `nth_visit`.
 - While WhatsApp is enabled and connected, a 5-minute background timer (`runScheduledAutomationSweep()`,
   also callable on demand via `POST /api/whatsapp/automation/run-sweep`) evaluates `feedback_delay`
-  (bills settled at least `delayHours` ago within the last 7 days) and `winback` (active customers
-  whose last paid visit was at least `inactiveDays` ago).
+  (bills settled at least `delayHours` ago and within 7 days of becoming due) and `winback` (active
+  customers whose last paid visit was at least `inactiveDays` ago).
 - `POST /api/whatsapp/automation/broadcast` sends a selected template to up to 50 active customers
   matching visit, inactivity, and loyalty-point filters.
 - Automated sends record `created_by_user_id` as `rule:<trigger>` (or `rule:broadcast`), which

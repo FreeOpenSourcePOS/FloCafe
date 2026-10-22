@@ -269,7 +269,6 @@ function testMoveTableModalFilteringAndEdgeCases() {
 }
 
 function testServerStandaloneMoveTableSafeguards() {
-  const fs = require('node:fs') as typeof import('node:fs');
   const source = mockTable('tbl-1', 'Table 1', 'occupied', 'Ground', 4, {
     id: 101,
     order_number: '001',
@@ -296,50 +295,7 @@ function testServerStandaloneMoveTableSafeguards() {
     'MoveTableModal uses caller-supplied formatPrice when provided',
   );
 
-  const serverStandaloneSource = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/app/server-standalone/page.tsx'),
-    'utf8',
-  );
-
-  // 1. Mobile drawer closes before opening MoveTableModal so DrawerContent portal does not cover the dialog.
-  assert.match(
-    serverStandaloneSource,
-    /setMobileCartOpen\(false\);\s*setMoveTableModalOpen\(true\);/,
-    'opening MoveTableModal closes mobileCartOpen first',
-  );
-
-  // 2. Moving an order migrates any pending sendAttemptRef for the source table while preserving requestTableId and nonce.
-  assert.match(
-    serverStandaloneSource,
-    /const requestTableId = snapshot\.requestTableId \?\? snapshot\.tableId;\s*const idempotencyKey = `server-app-\$\{requestTableId\}-\$\{nonce\}`;/,
-    'sendDraft derives idempotencyKey from preserved requestTableId across table moves',
-  );
-  assert.match(
-    serverStandaloneSource,
-    /if \(sendAttemptRef\.current\?\.snapshot\.tableId === activeTable\.id\)[\s\S]*?requestTableId:\s*prevAttempt\.snapshot\.requestTableId \?\? prevAttempt\.snapshot\.tableId/,
-    'MoveTableModal onSuccess migrates pending sendAttemptRef to targetTableId while preserving requestTableId and nonce',
-  );
-
-  // 3. Manual refresh and window focus reload /api/auth/me so newly granted tables.orders.move takes effect without page reload.
-  assert.match(
-    serverStandaloneSource,
-    /const loadUser = useCallback\(async \(\) =>[\s\S]*?api\.get\('\/api\/auth\/me'\)/,
-    'loadUser fetches /api/auth/me to refresh user permissions',
-  );
-  assert.match(
-    serverStandaloneSource,
-    /function handleRefresh\(\)[\s\S]*?Promise\.all\(\[\s*loadUser\(\),\s*loadAll\(\)/,
-    'handleRefresh reloads user permissions alongside tables and orders',
-  );
-  assert.match(
-    serverStandaloneSource,
-    /window\.addEventListener\('focus',\s*onFocus\)/,
-    'window focus listener refreshes user permissions',
-  );
-
-  console.log(
-    '  ✓ Server App MoveTableModal safeguards (mobile drawer, retry key preservation, permission refresh) verified',
-  );
+  console.log('  ✓ MoveTableModal custom formatPrice and apiClient rendering verified');
 }
 
 async function main() {

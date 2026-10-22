@@ -39,95 +39,129 @@ router.post('/settings', requirePermission('whatsapp.manage'), (req: Request, re
   res.json({ ok: true, filterGroups: next });
 });
 
-router.get('/qr', requirePermission('whatsapp.manage'), asyncHandler(async (_req, res) => {
-  const status = whatsapp.getStatus();
-  if (!status.qr) {
-    res.status(404).json({ error: 'no QR available', reason: 'no_qr' });
-    return;
-  }
-  const dataUrl = await QRCode.toDataURL(status.qr, { margin: 1, width: 320 });
-  res.json({ dataUrl });
-}));
+router.get(
+  '/qr',
+  requirePermission('whatsapp.manage'),
+  asyncHandler(async (_req, res) => {
+    const status = whatsapp.getStatus();
+    if (!status.qr) {
+      res.status(404).json({ error: 'no QR available', reason: 'no_qr' });
+      return;
+    }
+    const dataUrl = await QRCode.toDataURL(status.qr, { margin: 1, width: 320 });
+    res.json({ dataUrl });
+  }),
+);
 
-router.get('/pairing-code', requirePermission('whatsapp.manage'), (_req: Request, res: Response) => {
-  const status = whatsapp.getStatus();
-  if (!status.pairingCode) {
-    res.status(404).json({ error: 'no pairing code available', reason: 'no_pairing_code' });
-    return;
-  }
-  res.json({ code: status.pairingCode });
-});
+router.get(
+  '/pairing-code',
+  requirePermission('whatsapp.manage'),
+  (_req: Request, res: Response) => {
+    const status = whatsapp.getStatus();
+    if (!status.pairingCode) {
+      res.status(404).json({ error: 'no pairing code available', reason: 'no_pairing_code' });
+      return;
+    }
+    res.json({ code: status.pairingCode });
+  },
+);
 
-router.post('/enable', requirePermission('whatsapp.manage'), asyncHandler(async (req, res) => {
-  const userId = (req as any).user?.userId ?? null;
-  const result = await whatsapp.enable(userId ?? 'unknown');
-  res.json(result);
-}));
+router.post(
+  '/enable',
+  requirePermission('whatsapp.manage'),
+  asyncHandler(async (req, res) => {
+    const userId = (req as any).user?.userId ?? null;
+    const result = await whatsapp.enable(userId ?? 'unknown');
+    res.json(result);
+  }),
+);
 
 router.post('/disable', requirePermission('whatsapp.manage'), (_req: Request, res: Response) => {
   whatsapp.disable();
   res.json({ ok: true });
 });
 
-router.post('/connect', requirePermission('whatsapp.manage'), asyncHandler(async (req, res) => {
-  const { method, phone } = req.body ?? {};
-  if (method === 'qr') {
-    res.json(await trackHttpRequestWork(req, whatsapp.connectWithQr(getHttpRequestSignal(req))));
-  } else if (method === 'pairing_code') {
-    if (!phone) {
-      res.status(400).json({ error: 'phone required for pairing code', reason: 'phone_required_pairing' });
-      return;
+router.post(
+  '/connect',
+  requirePermission('whatsapp.manage'),
+  asyncHandler(async (req, res) => {
+    const { method, phone } = req.body ?? {};
+    if (method === 'qr') {
+      res.json(await trackHttpRequestWork(req, whatsapp.connectWithQr(getHttpRequestSignal(req))));
+    } else if (method === 'pairing_code') {
+      if (!phone) {
+        res
+          .status(400)
+          .json({ error: 'phone required for pairing code', reason: 'phone_required_pairing' });
+        return;
+      }
+      const tenantCountry = getSettingValue('country') || '';
+      const parsedPhone = parsePhoneE164(String(phone), tenantCountry);
+      if (!parsedPhone) {
+        res
+          .status(400)
+          .json({ error: 'Valid phone number required for pairing code', reason: 'invalid_phone' });
+        return;
+      }
+      res.json(
+        await trackHttpRequestWork(
+          req,
+          whatsapp.connectWithPairingCode(parsedPhone.e164, getHttpRequestSignal(req)),
+        ),
+      );
+    } else {
+      res
+        .status(400)
+        .json({ error: 'method must be "qr" or "pairing_code"', reason: 'bad_connect_method' });
     }
-    const tenantCountry = getSettingValue('country') || '';
-    const parsedPhone = parsePhoneE164(String(phone), tenantCountry);
-    if (!parsedPhone) {
-      res.status(400).json({ error: 'Valid phone number required for pairing code', reason: 'invalid_phone' });
-      return;
-    }
-    res.json(await trackHttpRequestWork(req, whatsapp.connectWithPairingCode(parsedPhone.e164, getHttpRequestSignal(req))));
-  } else {
-    res.status(400).json({ error: 'method must be "qr" or "pairing_code"', reason: 'bad_connect_method' });
-  }
-}));
+  }),
+);
 
 router.post('/disconnect', requirePermission('whatsapp.manage'), (_req: Request, res: Response) => {
   whatsapp.disconnect();
   res.json({ ok: true });
 });
 
-router.post('/send', requirePermission('whatsapp.use'), asyncHandler(async (req, res) => {
-  const { bill_id, phone_e164, body, kind } = req.body ?? {};
-  if (!phone_e164) {
-    res.status(400).json({ error: 'phone_e164 required', reason: 'phone_required' });
-    return;
-  }
-  const tenantCountry = getSettingValue('country') || '';
-  const parsedPhone = parsePhoneE164(String(phone_e164), tenantCountry);
-  if (!parsedPhone) {
-    res.status(400).json({ error: 'Valid phone_e164 required', reason: 'invalid_phone' });
-    return;
-  }
-  if (!body || typeof body !== 'string') {
-    res.status(400).json({ error: 'body required', reason: 'body_required' });
-    return;
-  }
-  const userId = (req as any).user?.userId ?? null;
-  const result = await trackHttpRequestWork(req, whatsapp.sendMessage({
-    phoneE164: parsedPhone.e164,
-    body: String(body),
-    billId: bill_id != null ? Number(bill_id) : null,
-    customerId: null,
-    kind: (kind as any) || 'manual_reply',
-    userId,
-    signal: getHttpRequestSignal(req),
-  }));
-  if (!result.ok) {
-    const status = result.reason === 'not_connected' || result.reason === 'cooldown' ? 503 : 400;
-    res.status(status).json({ error: result.error, reason: result.reason });
-    return;
-  }
-  res.json({ ok: true, messageId: result.messageId });
-}));
+router.post(
+  '/send',
+  requirePermission('whatsapp.use'),
+  asyncHandler(async (req, res) => {
+    const { bill_id, phone_e164, body, kind } = req.body ?? {};
+    if (!phone_e164) {
+      res.status(400).json({ error: 'phone_e164 required', reason: 'phone_required' });
+      return;
+    }
+    const tenantCountry = getSettingValue('country') || '';
+    const parsedPhone = parsePhoneE164(String(phone_e164), tenantCountry);
+    if (!parsedPhone) {
+      res.status(400).json({ error: 'Valid phone_e164 required', reason: 'invalid_phone' });
+      return;
+    }
+    if (!body || typeof body !== 'string') {
+      res.status(400).json({ error: 'body required', reason: 'body_required' });
+      return;
+    }
+    const userId = (req as any).user?.userId ?? null;
+    const result = await trackHttpRequestWork(
+      req,
+      whatsapp.sendMessage({
+        phoneE164: parsedPhone.e164,
+        body: String(body),
+        billId: bill_id != null ? Number(bill_id) : null,
+        customerId: null,
+        kind: (kind as any) || 'manual_reply',
+        userId,
+        signal: getHttpRequestSignal(req),
+      }),
+    );
+    if (!result.ok) {
+      const status = result.reason === 'not_connected' || result.reason === 'cooldown' ? 503 : 400;
+      res.status(status).json({ error: result.error, reason: result.reason });
+      return;
+    }
+    res.json({ ok: true, messageId: result.messageId });
+  }),
+);
 
 router.get('/automation', requirePermission('whatsapp.use'), (_req: Request, res: Response) => {
   res.json({
@@ -141,28 +175,40 @@ router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, r
   res.json({ ok: true, config });
 });
 
-router.post('/automation/broadcast', requirePermission('whatsapp.manage'), asyncHandler(async (req, res) => {
-  const { template_id, min_visits, inactive_days, min_points, limit } = req.body ?? {};
-  const result = await trackHttpRequestWork(req, whatsapp.runBroadcast({
-    templateId: typeof template_id === 'string' ? template_id : undefined,
-    minVisits: min_visits != null && min_visits !== '' ? Number(min_visits) : undefined,
-    inactiveDays: inactive_days != null && inactive_days !== '' ? Number(inactive_days) : undefined,
-    minPoints: min_points != null && min_points !== '' ? Number(min_points) : undefined,
-    limit: limit != null && limit !== '' ? Number(limit) : undefined,
-    signal: getHttpRequestSignal(req),
-  }));
-  if (!result.ok) {
-    const status = result.reason === 'not_connected' ? 503 : 400;
-    res.status(status).json({ error: result.error, reason: result.reason });
-    return;
-  }
-  res.json(result);
-}));
+router.post(
+  '/automation/broadcast',
+  requirePermission('whatsapp.manage'),
+  asyncHandler(async (req, res) => {
+    const { template_id, min_visits, inactive_days, min_points, limit } = req.body ?? {};
+    const result = await trackHttpRequestWork(
+      req,
+      whatsapp.runBroadcast({
+        templateId: typeof template_id === 'string' ? template_id : undefined,
+        minVisits: min_visits != null && min_visits !== '' ? Number(min_visits) : undefined,
+        inactiveDays:
+          inactive_days != null && inactive_days !== '' ? Number(inactive_days) : undefined,
+        minPoints: min_points != null && min_points !== '' ? Number(min_points) : undefined,
+        limit: limit != null && limit !== '' ? Number(limit) : undefined,
+        signal: getHttpRequestSignal(req),
+      }),
+    );
+    if (!result.ok) {
+      const status = result.reason === 'not_connected' ? 503 : 400;
+      res.status(status).json({ error: result.error, reason: result.reason });
+      return;
+    }
+    res.json(result);
+  }),
+);
 
-router.post('/automation/run-sweep', requirePermission('whatsapp.manage'), asyncHandler(async (req, res) => {
-  const result = await trackHttpRequestWork(req, whatsapp.runScheduledAutomationSweep());
-  res.json({ ok: true, ...result });
-}));
+router.post(
+  '/automation/run-sweep',
+  requirePermission('whatsapp.manage'),
+  asyncHandler(async (req, res) => {
+    const result = await trackHttpRequestWork(req, whatsapp.runScheduledAutomationSweep());
+    res.json({ ok: true, ...result });
+  }),
+);
 
 router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: Response) => {
   const limitValue = parsePaginationParam(req.query.limit, 50, 200);
@@ -174,7 +220,10 @@ router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: R
     return res.status(400).json({ error: 'offset must be a non-negative integer' });
   }
   const limit = limitValue;
-  const direction = req.query.direction === 'inbound' || req.query.direction === 'outbound' ? req.query.direction : undefined;
+  const direction =
+    req.query.direction === 'inbound' || req.query.direction === 'outbound'
+      ? req.query.direction
+      : undefined;
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
   const phone = typeof req.query.phone === 'string' ? req.query.phone : undefined;
   const billId = req.query.bill_id != null ? parsePaginationParam(req.query.bill_id, 0) : undefined;
@@ -183,7 +232,17 @@ router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: R
   }
   const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
   const canViewReports = hasPermission(userId, 'reports.view');
-  res.json({ messages: whatsapp.listMessages({ direction, status, phone, billId, limit, offset, canViewReports }) });
+  res.json({
+    messages: whatsapp.listMessages({
+      direction,
+      status,
+      phone,
+      billId,
+      limit,
+      offset,
+      canViewReports,
+    }),
+  });
 });
 
 router.get('/inbox', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {
@@ -199,36 +258,44 @@ router.get('/inbox', requirePermission('whatsapp.manage'), (req: Request, res: R
   res.json({ messages: whatsapp.listInbox(limit, offset) });
 });
 
-router.post('/inbox/:messageId/reply', requirePermission('whatsapp.manage'), asyncHandler(async (req, res) => {
-  const { body } = req.body ?? {};
-  if (!body || typeof body !== 'string') {
-    res.status(400).json({ error: 'body required', reason: 'body_required' });
-    return;
-  }
-  const db = getDatabase();
-  const msg = db.prepare('SELECT phone_e164 FROM whatsapp_messages WHERE id = ? AND direction = ?')
-    .get(Number(req.params.messageId), 'inbound') as { phone_e164: string } | undefined;
-  if (!msg) {
-    res.status(404).json({ error: 'inbound message not found', reason: 'inbound_not_found' });
-    return;
-  }
-  const userId = (req as any).user?.userId ?? null;
-  const result = await trackHttpRequestWork(req, whatsapp.sendMessage({
-    phoneE164: msg.phone_e164,
-    body: String(body),
-    billId: null,
-    customerId: null,
-    kind: 'manual_reply',
-    userId,
-    signal: getHttpRequestSignal(req),
-  }));
-  if (!result.ok) {
-    const status = result.reason === 'not_connected' || result.reason === 'cooldown' ? 503 : 400;
-    res.status(status).json({ error: result.error, reason: result.reason });
-    return;
-  }
-  res.json({ ok: true, messageId: result.messageId });
-}));
+router.post(
+  '/inbox/:messageId/reply',
+  requirePermission('whatsapp.manage'),
+  asyncHandler(async (req, res) => {
+    const { body } = req.body ?? {};
+    if (!body || typeof body !== 'string') {
+      res.status(400).json({ error: 'body required', reason: 'body_required' });
+      return;
+    }
+    const db = getDatabase();
+    const msg = db
+      .prepare('SELECT phone_e164 FROM whatsapp_messages WHERE id = ? AND direction = ?')
+      .get(Number(req.params.messageId), 'inbound') as { phone_e164: string } | undefined;
+    if (!msg) {
+      res.status(404).json({ error: 'inbound message not found', reason: 'inbound_not_found' });
+      return;
+    }
+    const userId = (req as any).user?.userId ?? null;
+    const result = await trackHttpRequestWork(
+      req,
+      whatsapp.sendMessage({
+        phoneE164: msg.phone_e164,
+        body: String(body),
+        billId: null,
+        customerId: null,
+        kind: 'manual_reply',
+        userId,
+        signal: getHttpRequestSignal(req),
+      }),
+    );
+    if (!result.ok) {
+      const status = result.reason === 'not_connected' || result.reason === 'cooldown' ? 503 : 400;
+      res.status(status).json({ error: result.error, reason: result.reason });
+      return;
+    }
+    res.json({ ok: true, messageId: result.messageId });
+  }),
+);
 
 router.get('/blocklist', requirePermission('whatsapp.manage'), (_req: Request, res: Response) => {
   res.json({ blocklist: whatsapp.listBlocklist() });
@@ -247,13 +314,17 @@ router.post('/blocklist', requirePermission('whatsapp.manage'), (req: Request, r
   res.json({ ok: true });
 });
 
-router.delete('/blocklist/:phone', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {
-  const removed = whatsapp.removeFromBlocklist(String(req.params.phone));
-  if (!removed) {
-    res.status(404).json({ error: 'phone not in blocklist', reason: 'phone_not_in_blocklist' });
-    return;
-  }
-  res.json({ ok: true });
-});
+router.delete(
+  '/blocklist/:phone',
+  requirePermission('whatsapp.manage'),
+  (req: Request, res: Response) => {
+    const removed = whatsapp.removeFromBlocklist(String(req.params.phone));
+    if (!removed) {
+      res.status(404).json({ error: 'phone not in blocklist', reason: 'phone_not_in_blocklist' });
+      return;
+    }
+    res.json({ ok: true });
+  },
+);
 
 export const whatsappRoutes = router;

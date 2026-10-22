@@ -299,13 +299,40 @@ channel and their outbox is unaffected by diagnostics preferences.
 
 ## WhatsApp receipt delivery
 
-Sends a receipt to the customer's phone number over WhatsApp.
+Sends receipts and automated customer follow-ups over WhatsApp ([`main/services/whatsapp.ts`](../../main/services/whatsapp.ts),
+[`shared/whatsapp-automation.ts`](../../shared/whatsapp-automation.ts)).
 
 **Enabled by** the merchant through the WhatsApp settings route, which calls `enable()`. The module
 starts with `state.enabled` false, so nothing is connected until a merchant turns it on.
 
 Receipt outcome is summarised on the order as `whatsapp_receipt_status`, which `GET /api/orders`
 returns per order.
+
+**Templates and automated rules.** `whatsapp_automation_config` in `settings` stores customizable
+templates (`receipt`, `feedback`, `loyalty_milestone`, `visit_milestone`, `winback`), five trigger
+rules, and safety settings. `renderWhatsAppTemplate()` performs single-pass `{...}` placeholder
+substitution across customer, order, loyalty, and store fields so substituted values are never
+re-parsed as tokens. All five automated rules ship disabled (`enabled: false`):
+
+- When a bill transitions to `paid`, `POST /api/bills/:id/payment` and `POST /api/bills/:id/payments`
+  trigger `triggerBillPaidAutomation()` asynchronously in the background to evaluate
+  `after_payment`, `points_threshold`, and `nth_visit`.
+- While WhatsApp is enabled and connected, a 5-minute background timer (`runScheduledAutomationSweep()`,
+  also callable on demand via `POST /api/whatsapp/automation/run-sweep`) evaluates `feedback_delay`
+  (bills settled at least `delayHours` ago within the last 7 days) and `winback` (active customers
+  whose last paid visit was at least `inactiveDays` ago).
+- `POST /api/whatsapp/automation/broadcast` sends a selected template to up to 50 active customers
+  matching visit, inactivity, and loyalty-point filters.
+- Automated sends record `created_by_user_id` as `rule:<trigger>` (or `rule:broadcast`), which
+  `GET /api/whatsapp/messages` exposes as `trigger_rule`.
+
+**Safety and anti-ban controls.** Inbound non-group DMs matching opt-out keywords (`STOP`,
+`UNSUBSCRIBE`, `OPT OUT`, `OPTOUT`) automatically add the sender to `whatsapp_blocklist` when
+`autoOptOutEnabled` is on. Automated sends check store-timezone quiet hours (`quietHoursEnabled`,
+`quietHoursStart` to `quietHoursEnd`) and a per-customer 7-day automated message cap
+(`maxPerCustomerPerWeek`), returning `quiet_hours` or `weekly_cap` when blocked. All outbound sends
+enforce the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`), a 1-hour duplicate-body
+filter, simulated typing delay, and a content filter that rejects non-HTTPS URLs and URL shorteners.
 
 **Offline behaviour.** No work is started when the module is disabled, when it is in a terminal
 shutdown state, or when the request signal is aborted. Work already in flight is cancelled during

@@ -1469,11 +1469,22 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   const automationConfig = getAutomationConfig();
   const automated = isAutomatedSend(req);
   if (automated) {
-    if (automationConfig.safety.quietHoursEnabled && isCurrentlyQuietHours(automationConfig.safety)) {
-      return { ok: false, error: 'Automated messages are paused during quiet hours.', reason: 'quiet_hours' };
+    if (
+      automationConfig.safety.quietHoursEnabled &&
+      isCurrentlyQuietHours(automationConfig.safety)
+    ) {
+      return {
+        ok: false,
+        error: 'Automated messages are paused during quiet hours.',
+        reason: 'quiet_hours',
+      };
     }
     if (isOverWeeklyAutomatedCap(req.phoneE164, automationConfig.safety.maxPerCustomerPerWeek)) {
-      return { ok: false, error: 'Weekly automated message limit reached for this customer.', reason: 'weekly_cap' };
+      return {
+        ok: false,
+        error: 'Weekly automated message limit reached for this customer.',
+        reason: 'weekly_cap',
+      };
     }
   }
   if (state.state !== 'connected' || !state.socket) {
@@ -1529,7 +1540,11 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     if (!resolvedCustomerId && (bill.customer_id || bill.order_customer_id)) {
       resolvedCustomerId = bill.customer_id || bill.order_customer_id;
     }
-    if (req.kind !== 'auto_followup' && bill.customer_id && String(bill.customer_id) === String(bill.order_customer_id)) {
+    if (
+      req.kind !== 'auto_followup' &&
+      bill.customer_id &&
+      String(bill.customer_id) === String(bill.order_customer_id)
+    ) {
       resolvedKind = 'bill_receipt';
     }
   }
@@ -1794,10 +1809,7 @@ export function buildWhatsAppTemplateContext(opts: {
   const timezone = getSettingValue('timezone') || 'UTC';
   const storeName = getSettingValue('business_name') || 'Store';
   const storePhone =
-    getSettingValue('business_phone') ||
-    getSettingValue('phone') ||
-    state.connectedPhone ||
-    '';
+    getSettingValue('business_phone') || getSettingValue('phone') || state.connectedPhone || '';
   const feedbackLink = config.safety.feedbackLink || '';
   const instagram = getSettingValue('instagram_handle') || '';
 
@@ -1825,15 +1837,30 @@ export function buildWhatsAppTemplateContext(opts: {
     opts.customerId !== undefined && opts.customerId !== null ? String(opts.customerId) : null;
 
   if (opts.billId != null) {
-    const bill = db
-      .prepare('SELECT * FROM bills WHERE id = ?')
-      .get(Number(opts.billId)) as any;
+    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(Number(opts.billId)) as
+      | {
+          id: number;
+          order_id?: string | number | null;
+          customer_id?: string | number | null;
+          bill_number?: string | null;
+          paid_at?: string | null;
+          created_at?: string | null;
+          total?: number | null;
+          payment_details?: string | null;
+          payment_status?: string | null;
+        }
+      | undefined;
     if (bill) {
       const order = bill.order_id
-        ? (db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as any)
+        ? (db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as
+            | {
+                customer_id?: string | number | null;
+                created_at?: string | null;
+              }
+            | undefined)
         : null;
       if (!resolvedCustomerId && (bill.customer_id || order?.customer_id)) {
-        resolvedCustomerId = String(bill.customer_id || order.customer_id);
+        resolvedCustomerId = String(bill.customer_id || order?.customer_id);
       }
       context.bill_no = String(bill.bill_number || bill.id);
       context.order_date = formatDateForTemplate(
@@ -1899,7 +1926,7 @@ export function buildWhatsAppTemplateContext(opts: {
           const methods = Array.from(
             new Set(
               lines
-                .map((p: any) => String(p?.method || '').trim())
+                .map((p: { method?: unknown } | null | undefined) => String(p?.method || '').trim())
                 .filter(Boolean)
                 .map((m) => m.charAt(0).toUpperCase() + m.slice(1)),
             ),
@@ -1985,9 +2012,7 @@ export function buildWhatsAppTemplateContext(opts: {
 
 function hasRuleMessageForBill(billId: number, ruleUserId: string): boolean {
   const row = getDatabase()
-    .prepare(
-      'SELECT 1 FROM whatsapp_messages WHERE bill_id = ? AND created_by_user_id = ? LIMIT 1',
-    )
+    .prepare('SELECT 1 FROM whatsapp_messages WHERE bill_id = ? AND created_by_user_id = ? LIMIT 1')
     .get(billId, ruleUserId);
   return !!row;
 }
@@ -2034,7 +2059,13 @@ async function triggerBillPaidAutomationImpl(
         LEFT JOIN orders o ON o.id = b.order_id
         WHERE b.id = ?
       `)
-      .get(billId) as any;
+      .get(billId) as
+      | {
+          payment_status?: string | null;
+          customer_id?: string | number | null;
+          order_customer_id?: string | number | null;
+        }
+      | undefined;
     if (!bill || bill.payment_status !== 'paid') {
       return { triggered, results };
     }
@@ -2045,7 +2076,13 @@ async function triggerBillPaidAutomationImpl(
     const customer = db
       .prepare('SELECT id, name, phone, country_code, is_active FROM customers WHERE id = ?')
       .get(String(customerId)) as
-      | { id: string; name: string; phone: string | null; country_code: string | null; is_active: number }
+      | {
+          id: string;
+          name: string;
+          phone: string | null;
+          country_code: string | null;
+          is_active: number;
+        }
       | undefined;
     if (!customer || !customer.phone || customer.is_active === 0) {
       return { triggered, results };
@@ -2115,8 +2152,7 @@ async function triggerBillPaidAutomationImpl(
         `)
         .get(parsedPhone.e164, sevenDaysAgo);
       if (balance >= threshold && (prevBalance < threshold || !recentPointsReminder)) {
-        const tpl =
-          templateMap.get(pointsRule.templateId) ?? templateMap.get('loyalty_milestone');
+        const tpl = templateMap.get(pointsRule.templateId) ?? templateMap.get('loyalty_milestone');
         if (tpl) {
           const body = renderWhatsAppTemplate(tpl.body, context);
           if (body) {
@@ -2249,10 +2285,7 @@ async function runScheduledAutomationSweepImpl(
       let attempted = 0;
       for (const row of dueBills) {
         if (isWhatsAppTerminal() || attempted >= 25) break;
-        const parsedPhone = parsePhoneE164(
-          row.phone,
-          tenantCountry || row.country_code || '',
-        );
+        const parsedPhone = parsePhoneE164(row.phone, tenantCountry || row.country_code || '');
         if (!parsedPhone || isBlocked(parsedPhone.e164)) continue;
         const context = buildWhatsAppTemplateContext({
           billId: row.bill_id,
@@ -2326,10 +2359,7 @@ async function runScheduledAutomationSweepImpl(
       let attempted = 0;
       for (const cust of dueCustomers) {
         if (isWhatsAppTerminal() || attempted >= 25) break;
-        const parsedPhone = parsePhoneE164(
-          cust.phone,
-          tenantCountry || cust.country_code || '',
-        );
+        const parsedPhone = parsePhoneE164(cust.phone, tenantCountry || cust.country_code || '');
         if (!parsedPhone || isBlocked(parsedPhone.e164)) continue;
         const context = buildWhatsAppTemplateContext({ customerId: cust.id });
         const body = renderWhatsAppTemplate(tpl.body, context);
@@ -2372,9 +2402,7 @@ export async function runBroadcast(opts: BroadcastSegmentOptions): Promise<{
 }> {
   const db = getDatabase();
   const config = getAutomationConfig();
-  const tpl = opts.templateId
-    ? config.templates.find((t) => t.id === opts.templateId)
-    : undefined;
+  const tpl = opts.templateId ? config.templates.find((t) => t.id === opts.templateId) : undefined;
   const rawTemplateBody = tpl?.body?.trim() || '';
   if (!rawTemplateBody) {
     return {

@@ -12,38 +12,64 @@ const realLoad = (Module as any)._load;
 
 const eventHandlers = new Map<string, (value: any) => void>();
 let presenceStarted!: () => void;
-const presenceStartedPromise = new Promise<void>((resolve) => { presenceStarted = resolve; });
+const presenceStartedPromise = new Promise<void>((resolve) => {
+  presenceStarted = resolve;
+});
 let releasePendingPresence!: () => void;
-const pendingPresence = new Promise<void>((resolve) => { releasePendingPresence = resolve; });
+const pendingPresence = new Promise<void>((resolve) => {
+  releasePendingPresence = resolve;
+});
 let presenceSettled = false;
-void pendingPresence.then(() => { presenceSettled = true; });
+void pendingPresence.then(() => {
+  presenceSettled = true;
+});
 let makeSocketCalls = 0;
 let authStateCalls = 0;
 let holdAuthState = false;
 let authStateStarted!: () => void;
-const authStateStartedPromise = new Promise<void>((resolve) => { authStateStarted = resolve; });
+const authStateStartedPromise = new Promise<void>((resolve) => {
+  authStateStarted = resolve;
+});
 let releaseAuthState!: () => void;
-const authStateGate = new Promise<void>((resolve) => { releaseAuthState = resolve; });
+const authStateGate = new Promise<void>((resolve) => {
+  releaseAuthState = resolve;
+});
 let holdRecoveryAuthState = false;
 let recoveryAuthStateStarted!: () => void;
-const recoveryAuthStateStartedPromise = new Promise<void>((resolve) => { recoveryAuthStateStarted = resolve; });
+const recoveryAuthStateStartedPromise = new Promise<void>((resolve) => {
+  recoveryAuthStateStarted = resolve;
+});
 let releaseRecoveryAuthState!: () => void;
-const recoveryAuthStateGate = new Promise<void>((resolve) => { releaseRecoveryAuthState = resolve; });
+const recoveryAuthStateGate = new Promise<void>((resolve) => {
+  releaseRecoveryAuthState = resolve;
+});
 let holdRequestAuthState = false;
 let requestAuthStateStarted!: () => void;
-const requestAuthStateStartedPromise = new Promise<void>((resolve) => { requestAuthStateStarted = resolve; });
+const requestAuthStateStartedPromise = new Promise<void>((resolve) => {
+  requestAuthStateStarted = resolve;
+});
 let releaseRequestAuthState!: () => void;
-const requestAuthStateGate = new Promise<void>((resolve) => { releaseRequestAuthState = resolve; });
+const requestAuthStateGate = new Promise<void>((resolve) => {
+  releaseRequestAuthState = resolve;
+});
 const baileysLogLines: string[] = [];
 let holdCredentialWrite = false;
 let credentialWriteStarted!: () => void;
-const credentialWriteStartedPromise = new Promise<void>((resolve) => { credentialWriteStarted = resolve; });
+const credentialWriteStartedPromise = new Promise<void>((resolve) => {
+  credentialWriteStarted = resolve;
+});
 let releaseCredentialWrite!: () => void;
-const credentialWriteGate = new Promise<void>((resolve) => { releaseCredentialWrite = resolve; });
+const credentialWriteGate = new Promise<void>((resolve) => {
+  releaseCredentialWrite = resolve;
+});
 let holdPresence = false;
 let sentMsgSeq = 0;
 const fakeSocket = {
-  ev: { on: (event: string, handler: (value: any) => void) => { eventHandlers.set(event, handler); } },
+  ev: {
+    on: (event: string, handler: (value: any) => void) => {
+      eventHandlers.set(event, handler);
+    },
+  },
   onWhatsApp: async (jid: string) => [{ exists: true, jid }],
   presenceSubscribe: async () => {
     if (holdPresence) {
@@ -83,7 +109,10 @@ const fakeBaileys = {
   },
   makeWASocket: (options: any) => {
     makeSocketCalls++;
-    options.logger.warn({ body: 'private bill body', phone: '+15555550100' }, 'Baileys warning for +15555550100');
+    options.logger.warn(
+      { body: 'private bill body', phone: '+15555550100' },
+      'Baileys warning for +15555550100',
+    );
     return fakeSocket;
   },
   Browsers: { macOS: () => ({}) },
@@ -133,8 +162,9 @@ async function main(): Promise<void> {
   assert(typeof whatsapp.shutdown === 'function', 'exports shutdown()');
   assert(typeof whatsapp.initFromDb === 'function', 'exports initFromDb()');
   assert(
-    whatsapp.sanitizeLogText(new Error('recipient +1 555 555 0100 via https://wa.me/15555550100?text=private-bill'))
-      === 'recipient [redacted-number] via [redacted-url]',
+    whatsapp.sanitizeLogText(
+      new Error('recipient +1 555 555 0100 via https://wa.me/15555550100?text=private-bill'),
+    ) === 'recipient [redacted-number] via [redacted-url]',
     'diagnostic sanitizer redacts formatted phone numbers and share URLs',
   );
   const jsonCredentialDiagnostics = [
@@ -144,15 +174,18 @@ async function main(): Promise<void> {
   for (const diagnostic of jsonCredentialDiagnostics) {
     const sanitized = whatsapp.sanitizeLogText(diagnostic) ?? '';
     assert(
-      !sanitized.includes('credential-value')
-        && !sanitized.includes('token-value')
-        && !sanitized.includes('auth-value')
-        && !sanitized.includes('api-key-value')
-        && sanitized.includes('[redacted]'),
+      !sanitized.includes('credential-value') &&
+        !sanitized.includes('token-value') &&
+        !sanitized.includes('auth-value') &&
+        !sanitized.includes('api-key-value') &&
+        sanitized.includes('[redacted]'),
       'diagnostic sanitizer redacts JSON-style credential fields',
     );
   }
-  for (const diagnostic of ['Authorization=Bearer secret-token', 'Authorization: Bearer secret-token']) {
+  for (const diagnostic of [
+    'Authorization=Bearer secret-token',
+    'Authorization: Bearer secret-token',
+  ]) {
     const sanitized = whatsapp.sanitizeLogText(diagnostic) ?? '';
     assert(
       !sanitized.includes('secret-token') && sanitized.includes('[redacted]'),
@@ -174,7 +207,14 @@ async function main(): Promise<void> {
   assert(typeof s.enabled === 'boolean', 'status.enabled is boolean');
   assert(typeof s.state === 'string', 'status.state is string');
   assert(
-    ['disconnected', 'connecting', 'waiting_qr', 'waiting_pairing', 'connected', 'cooldown'].includes(s.state),
+    [
+      'disconnected',
+      'connecting',
+      'waiting_qr',
+      'waiting_pairing',
+      'connected',
+      'cooldown',
+    ].includes(s.state),
     `status.state is one of the known values (got ${s.state})`,
   );
 
@@ -188,7 +228,10 @@ async function main(): Promise<void> {
     userId: null,
   });
   assert(result.ok === false, 'sendMessage returns ok=false when feature is off');
-  assert(result.reason === 'feature_off', `sendMessage reason is 'feature_off' (got ${result.reason})`);
+  assert(
+    result.reason === 'feature_off',
+    `sendMessage reason is 'feature_off' (got ${result.reason})`,
+  );
 
   const testDir = path.join(os.tmpdir(), 'flo-whatsapp-shutdown-test');
   const originalFetch = globalThis.fetch;
@@ -206,7 +249,10 @@ async function main(): Promise<void> {
     await authStateStartedPromise;
     releaseAuthState();
     await new Promise((resolve) => setImmediate(resolve));
-    assert(makeSocketCalls === socketCallsBeforeRace + 1, 'duplicate startup initialization creates one socket');
+    assert(
+      makeSocketCalls === socketCallsBeforeRace + 1,
+      'duplicate startup initialization creates one socket',
+    );
     assert(
       baileysLogLines.some((line) => line.includes('Baileys warning for [redacted-number]')),
       'Baileys warning details are retained and sanitized in diagnostics',
@@ -229,13 +275,26 @@ async function main(): Promise<void> {
     await whatsapp.enable('credential-recovery-test-user');
     const credentialRecovery = whatsapp.connectWithQr();
     let credentialRecoverySettled = false;
-    void credentialRecovery.then(() => { credentialRecoverySettled = true; }, () => { credentialRecoverySettled = true; });
+    void credentialRecovery.then(
+      () => {
+        credentialRecoverySettled = true;
+      },
+      () => {
+        credentialRecoverySettled = true;
+      },
+    );
     await new Promise((resolve) => setImmediate(resolve));
-    assert(!credentialRecoverySettled, 'startup waits for asynchronous credential persistence before reopening auth');
+    assert(
+      !credentialRecoverySettled,
+      'startup waits for asynchronous credential persistence before reopening auth',
+    );
     releaseCredentialWrite();
     holdCredentialWrite = false;
     await credentialRecovery;
-    assert(authStateCalls === authStateCallsBeforeCredentialRecovery + 1, 'credential cleanup completes before the replacement startup');
+    assert(
+      authStateCalls === authStateCallsBeforeCredentialRecovery + 1,
+      'credential cleanup completes before the replacement startup',
+    );
 
     holdRecoveryAuthState = true;
     const authStateCallsBeforeRecovery = authStateCalls;
@@ -249,29 +308,47 @@ async function main(): Promise<void> {
     releaseRecoveryAuthState();
     holdRecoveryAuthState = false;
     await cancelledStartup;
-    assert(whatsapp.getStatus().lastErrorReason === null, 'intentional startup cancellation does not report a failure');
+    assert(
+      whatsapp.getStatus().lastErrorReason === null,
+      'intentional startup cancellation does not report a failure',
+    );
     await whatsapp.enable('startup-recovery-test-user');
     const restartedStartup = whatsapp.connectWithQr();
     const restartedResult = await restartedStartup;
     assert(restartedResult.ok === true, 're-enable starts a fresh socket after cancellation');
-    assert(makeSocketCalls === socketCallsBeforeRecovery + 1, 'cancelled startup does not create a duplicate socket');
-    assert(authStateCalls === authStateCallsBeforeRecovery + 2, 're-enable waits for the cancelled startup before retrying');
+    assert(
+      makeSocketCalls === socketCallsBeforeRecovery + 1,
+      'cancelled startup does not create a duplicate socket',
+    );
+    assert(
+      authStateCalls === authStateCallsBeforeRecovery + 2,
+      're-enable waits for the cancelled startup before retrying',
+    );
 
     holdRequestAuthState = true;
     const authStateCallsBeforeRequestCancellation = authStateCalls;
     whatsapp.disconnect();
     await whatsapp.enable('request-cancellation-test-user');
     const requestAbort = new AbortController();
-    const cancelledRequest = whatsapp.connectWithQr(requestAbort.signal).then(() => 'resolved', () => 'rejected');
+    const cancelledRequest = whatsapp.connectWithQr(requestAbort.signal).then(
+      () => 'resolved',
+      () => 'rejected',
+    );
     await requestAuthStateStartedPromise;
     requestAbort.abort();
     const retriedRequest = whatsapp.connectWithQr();
     releaseRequestAuthState();
     holdRequestAuthState = false;
-    const [cancelledRequestResult, retriedRequestResult] = await Promise.all([cancelledRequest, retriedRequest]);
+    const [cancelledRequestResult, retriedRequestResult] = await Promise.all([
+      cancelledRequest,
+      retriedRequest,
+    ]);
     assert(cancelledRequestResult === 'rejected', 'aborted connect request is rejected');
     assert(retriedRequestResult.ok === true, 'retry joins request-independent startup');
-    assert(authStateCalls === authStateCallsBeforeRequestCancellation + 1, 'request cancellation does not restart shared auth loading');
+    assert(
+      authStateCalls === authStateCallsBeforeRequestCancellation + 1,
+      'request cancellation does not restart shared auth loading',
+    );
 
     // Connect the socket and run Issue #1239 automation & safety tests
     eventHandlers.get('connection.update')?.({ connection: 'open' });
@@ -307,7 +384,9 @@ async function main(): Promise<void> {
         interpolated.includes('Bill #BILL-009 on 2026-10-22') &&
         interpolated.includes('2x Latte - ₹400.00') &&
         interpolated.includes('Total: ₹400.00 via UPI. Earned 40, Balance 240 (₹240.00)') &&
-        interpolated.includes('Store: Flo Bistro +919800000000 https://flocafe.example.com/review @flobistro'),
+        interpolated.includes(
+          'Store: Flo Bistro +919800000000 https://flocafe.example.com/review @flobistro',
+        ),
       'renderWhatsAppTemplate interpolates all 16 placeholders and prevents recursive placeholder injection',
     );
 
@@ -379,10 +458,7 @@ async function main(): Promise<void> {
       kind: 'manual_reply',
       userId: 'staff-1',
     });
-    assert(
-      manualDuringQuietHours.ok === true,
-      'quiet hours still allow manual staff replies',
-    );
+    assert(manualDuringQuietHours.ok === true, 'quiet hours still allow manual staff replies');
 
     // Disable quiet hours and verify weekly cap (maxPerCustomerPerWeek = 2)
     whatsapp.saveAutomationConfig({
@@ -427,19 +503,21 @@ async function main(): Promise<void> {
       kind: 'manual_reply',
       userId: 'staff-1',
     });
-    assert(autoSend1.ok === true && autoSend2.ok === true, 'automated sends under weekly cap succeed');
+    assert(
+      autoSend1.ok === true && autoSend2.ok === true,
+      'automated sends under weekly cap succeed',
+    );
     assert(
       autoSend3.ok === false && autoSend3.reason === 'weekly_cap',
       'weekly per-customer cap blocks automated sends once reached',
     );
-    assert(
-      manualAfterCap.ok === true,
-      'weekly per-customer cap still allows manual staff replies',
-    );
+    assert(manualAfterCap.ok === true, 'weekly per-customer cap still allows manual staff replies');
 
     // 4. Automated rules on bill payment completion (after_payment, points_threshold, nth_visit) + trigger_rule in listMessages
     const db = getDatabase();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US'), ('currency', 'USD'), ('business_name', 'Flo Test Cafe'), ('instagram_handle', '@flotestcafe')").run();
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US'), ('currency', 'USD'), ('business_name', 'Flo Test Cafe'), ('instagram_handle', '@flotestcafe')",
+    ).run();
     db.prepare(`
       INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
       VALUES ('cust-auto-1', 'Maya Lin', '+14089961010', 'US', 1, datetime('now'), datetime('now'))
@@ -472,10 +550,34 @@ async function main(): Promise<void> {
       },
       rules: [
         { id: 'after_payment', trigger: 'after_payment', enabled: true, templateId: 'receipt' },
-        { id: 'points_threshold', trigger: 'points_threshold', enabled: true, templateId: 'loyalty_milestone', pointsThreshold: 100 },
-        { id: 'nth_visit', trigger: 'nth_visit', enabled: true, templateId: 'visit_milestone', nthVisit: 1 },
-        { id: 'feedback_delay', trigger: 'feedback_delay', enabled: false, templateId: 'feedback', delayHours: 2 },
-        { id: 'winback', trigger: 'winback', enabled: false, templateId: 'winback', inactiveDays: 14 },
+        {
+          id: 'points_threshold',
+          trigger: 'points_threshold',
+          enabled: true,
+          templateId: 'loyalty_milestone',
+          pointsThreshold: 100,
+        },
+        {
+          id: 'nth_visit',
+          trigger: 'nth_visit',
+          enabled: true,
+          templateId: 'visit_milestone',
+          nthVisit: 1,
+        },
+        {
+          id: 'feedback_delay',
+          trigger: 'feedback_delay',
+          enabled: false,
+          templateId: 'feedback',
+          delayHours: 2,
+        },
+        {
+          id: 'winback',
+          trigger: 'winback',
+          enabled: false,
+          templateId: 'winback',
+          inactiveDays: 14,
+        },
       ],
     });
 
@@ -487,15 +589,24 @@ async function main(): Promise<void> {
       `bill payment automation fires after_payment, points_threshold, and nth_visit (got ${autoTriggerRes.triggered.join(',')})`,
     );
 
-    const billMessages = whatsapp.listMessages({ phone: '+14089961010', limit: 20, offset: 0, canViewReports: true });
-    const triggerRulesRecorded = billMessages.map((m: { trigger_rule: string | null }) => m.trigger_rule);
+    const billMessages = whatsapp.listMessages({
+      phone: '+14089961010',
+      limit: 20,
+      offset: 0,
+      canViewReports: true,
+    });
+    const triggerRulesRecorded = billMessages.map(
+      (m: { trigger_rule: string | null }) => m.trigger_rule,
+    );
     assert(
       triggerRulesRecorded.includes('after_payment') &&
         triggerRulesRecorded.includes('points_threshold') &&
         triggerRulesRecorded.includes('nth_visit'),
       `listMessages returns trigger_rule attribution for automated sends (got ${triggerRulesRecorded.join(',')})`,
     );
-    const receiptMsg = billMessages.find((m: { trigger_rule: string | null }) => m.trigger_rule === 'after_payment');
+    const receiptMsg = billMessages.find(
+      (m: { trigger_rule: string | null }) => m.trigger_rule === 'after_payment',
+    );
     assert(
       receiptMsg?.body.includes('Maya Lin') &&
         receiptMsg?.body.includes('INV-901') &&
@@ -512,9 +623,16 @@ async function main(): Promise<void> {
       broadcastRes.sent >= 1,
       `runBroadcast sends template to matching customer segment (sent=${broadcastRes.sent})`,
     );
-    const afterBroadcastMessages = whatsapp.listMessages({ phone: '+14089961010', limit: 20, offset: 0, canViewReports: true });
+    const afterBroadcastMessages = whatsapp.listMessages({
+      phone: '+14089961010',
+      limit: 20,
+      offset: 0,
+      canViewReports: true,
+    });
     assert(
-      afterBroadcastMessages.some((m: { trigger_rule: string | null }) => m.trigger_rule === 'broadcast'),
+      afterBroadcastMessages.some(
+        (m: { trigger_rule: string | null }) => m.trigger_rule === 'broadcast',
+      ),
       'listMessages records trigger_rule=broadcast for segment broadcasts',
     );
 
@@ -591,14 +709,28 @@ async function main(): Promise<void> {
         ('cust-sweep-blocked', 'Blocked User', '+15555550199', 'US', 1, ?, ?),
         ('cust-sweep-feedback', 'Feedback User', '+14089961021', 'US', 1, ?, ?),
         ('cust-sweep-winback', 'Winback User', '+14089961022', 'US', 1, ?, ?)
-    `).run(twentyDaysAgo, twentyDaysAgo, threeHoursAgo, threeHoursAgo, twentyDaysAgo, twentyDaysAgo);
+    `).run(
+      twentyDaysAgo,
+      twentyDaysAgo,
+      threeHoursAgo,
+      threeHoursAgo,
+      twentyDaysAgo,
+      twentyDaysAgo,
+    );
     db.prepare(`
       INSERT INTO orders (id, order_number, type, status, customer_id, subtotal, tax_amount, discount_amount, total, created_at, updated_at)
       VALUES
         (905, 'ORD-905', 'dine_in', 'completed', 'cust-sweep-blocked', 20, 0, 0, 20, ?, ?),
         (906, 'ORD-906', 'dine_in', 'completed', 'cust-sweep-feedback', 30, 0, 0, 30, ?, ?),
         (907, 'ORD-907', 'dine_in', 'completed', 'cust-sweep-winback', 40, 0, 0, 40, ?, ?)
-    `).run(threeHoursAgo, threeHoursAgo, threeHoursAgo, threeHoursAgo, twentyDaysAgo, twentyDaysAgo);
+    `).run(
+      threeHoursAgo,
+      threeHoursAgo,
+      threeHoursAgo,
+      threeHoursAgo,
+      twentyDaysAgo,
+      twentyDaysAgo,
+    );
     db.prepare(`
       INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
       VALUES
@@ -627,10 +759,34 @@ async function main(): Promise<void> {
       },
       rules: [
         { id: 'after_payment', trigger: 'after_payment', enabled: false, templateId: 'receipt' },
-        { id: 'points_threshold', trigger: 'points_threshold', enabled: false, templateId: 'loyalty_milestone', pointsThreshold: 100 },
-        { id: 'nth_visit', trigger: 'nth_visit', enabled: false, templateId: 'visit_milestone', nthVisit: 5 },
-        { id: 'feedback_delay', trigger: 'feedback_delay', enabled: true, templateId: 'feedback', delayHours: 2 },
-        { id: 'winback', trigger: 'winback', enabled: true, templateId: 'winback', inactiveDays: 14 },
+        {
+          id: 'points_threshold',
+          trigger: 'points_threshold',
+          enabled: false,
+          templateId: 'loyalty_milestone',
+          pointsThreshold: 100,
+        },
+        {
+          id: 'nth_visit',
+          trigger: 'nth_visit',
+          enabled: false,
+          templateId: 'visit_milestone',
+          nthVisit: 5,
+        },
+        {
+          id: 'feedback_delay',
+          trigger: 'feedback_delay',
+          enabled: true,
+          templateId: 'feedback',
+          delayHours: 2,
+        },
+        {
+          id: 'winback',
+          trigger: 'winback',
+          enabled: true,
+          templateId: 'winback',
+          inactiveDays: 14,
+        },
       ],
     });
     const [sweep1, sweep2] = await Promise.all([
@@ -644,15 +800,24 @@ async function main(): Promise<void> {
         sweep2.winbackSent === 1,
       `concurrent runScheduledAutomationSweep calls deduplicate in-flight work (got ${JSON.stringify(sweep1)})`,
     );
-    const feedbackRecipientMsgs = whatsapp.listMessages({ phone: '+14089961021', limit: 10, offset: 0, canViewReports: true });
+    const feedbackRecipientMsgs = whatsapp.listMessages({
+      phone: '+14089961021',
+      limit: 10,
+      offset: 0,
+      canViewReports: true,
+    });
     assert(
-      feedbackRecipientMsgs.length === 1 && feedbackRecipientMsgs[0]?.trigger_rule === 'feedback_delay',
+      feedbackRecipientMsgs.length === 1 &&
+        feedbackRecipientMsgs[0]?.trigger_rule === 'feedback_delay',
       'scheduled sweep sends exactly one feedback_delay message to eligible customer',
     );
 
     whatsapp.disconnect();
     await whatsapp.enable('broadcast-disconnected-check');
-    const disconnectedBroadcast = await whatsapp.runBroadcast({ templateId: 'winback', minVisits: 1 });
+    const disconnectedBroadcast = await whatsapp.runBroadcast({
+      templateId: 'winback',
+      minVisits: 1,
+    });
     assert(
       disconnectedBroadcast.ok === false && disconnectedBroadcast.reason === 'not_connected',
       `runBroadcast returns ok=false and reason=not_connected when disconnected (got ${JSON.stringify(disconnectedBroadcast)})`,
@@ -686,23 +851,49 @@ async function main(): Promise<void> {
     const shutdownPromise = shutdownEntrypoints.runCleanup();
     sendAbort.abort();
     let sendSettled = false;
-    void sendPromise.then(() => { sendSettled = true; }, () => { sendSettled = true; });
+    void sendPromise.then(
+      () => {
+        sendSettled = true;
+      },
+      () => {
+        sendSettled = true;
+      },
+    );
     let shutdownSettled = false;
-    void shutdownPromise.then(() => { shutdownSettled = true; }, () => { shutdownSettled = true; });
+    void shutdownPromise.then(
+      () => {
+        shutdownSettled = true;
+      },
+      () => {
+        shutdownSettled = true;
+      },
+    );
     await new Promise((resolve) => setImmediate(resolve));
     assert(!sendSettled, 'shutdown joins the send wrapper until raw WhatsApp work settles');
     assert(!shutdownSettled, 'shutdown remains pending while underlying WhatsApp work is active');
     releasePendingPresence();
     const cancelled = await sendPromise;
     await shutdownPromise;
-    const row = getDatabase().prepare(`
+    const row = getDatabase()
+      .prepare(`
       SELECT status, error, failed_at FROM whatsapp_messages
       WHERE direction = 'outbound' AND body = ?
       ORDER BY id DESC LIMIT 1
-    `).get('shutdown cancellation test') as { status: string; error: string; failed_at: string | null };
-    assert(cancelled.ok === false && cancelled.reason === 'send_failed', 'shutdown-cancelled send returns send_failed');
+    `)
+      .get('shutdown cancellation test') as {
+      status: string;
+      error: string;
+      failed_at: string | null;
+    };
+    assert(
+      cancelled.ok === false && cancelled.reason === 'send_failed',
+      'shutdown-cancelled send returns send_failed',
+    );
     assert(row.status === 'failed', 'shutdown-cancelled send persists a failed status');
-    assert(row.error === 'WhatsApp is shutting down.' && row.failed_at !== null, 'shutdown-cancelled send records its failure details');
+    assert(
+      row.error === 'WhatsApp is shutting down.' && row.failed_at !== null,
+      'shutdown-cancelled send records its failure details',
+    );
     assert(presenceSettled, 'shutdown waits for the underlying WhatsApp operation to settle');
   } finally {
     console.warn = originalConsoleWarn;

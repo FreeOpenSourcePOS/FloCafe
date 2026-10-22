@@ -1357,7 +1357,9 @@ export default function WhatsAppPage() {
                                 className="w-20 h-8 text-xs"
                                 value={rule.delayHours ?? 2}
                                 onChange={(e) =>
-                                  updateRule({ delayHours: Math.max(1, Number(e.target.value) || 1) })
+                                  updateRule({
+                                    delayHours: Math.max(1, Number(e.target.value) || 1),
+                                  })
                                 }
                               />
                             </div>
@@ -1506,11 +1508,7 @@ export default function WhatsAppPage() {
                       />
                     </div>
 
-                    <Button
-                      type="button"
-                      onClick={sendBroadcastNow}
-                      disabled={broadcasting}
-                    >
+                    <Button type="button" onClick={sendBroadcastNow} disabled={broadcasting}>
                       {broadcasting && <Loader2 className="size-4 animate-spin" />}{' '}
                       <Send className="size-4" /> {tAutomation('broadcastSendCta')}
                     </Button>

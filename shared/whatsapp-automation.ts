@@ -7,31 +7,10 @@
 export const WHATSAPP_AUTOMATION_SETTING_KEY = 'whatsapp_automation_config';
 
 export const WHATSAPP_PLACEHOLDER_GROUPS = {
-  customer: [
-    'customer_name',
-    'customer_phone',
-    'visit_count',
-    'last_visit_date',
-    'total_spent',
-  ],
-  order: [
-    'bill_no',
-    'order_date',
-    'order_items',
-    'total',
-    'payment_method',
-  ],
-  loyalty: [
-    'points_earned',
-    'points_balance',
-    'points_value',
-  ],
-  store: [
-    'store_name',
-    'store_phone',
-    'feedback_link',
-    'instagram',
-  ],
+  customer: ['customer_name', 'customer_phone', 'visit_count', 'last_visit_date', 'total_spent'],
+  order: ['bill_no', 'order_date', 'order_items', 'total', 'payment_method'],
+  loyalty: ['points_earned', 'points_balance', 'points_value'],
+  store: ['store_name', 'store_phone', 'feedback_link', 'instagram'],
 } as const;
 
 export type WhatsAppPlaceholderCategory = keyof typeof WHATSAPP_PLACEHOLDER_GROUPS;
@@ -238,29 +217,128 @@ export interface WhatsAppPlaceholderDefinition {
 }
 
 export const WHATSAPP_PLACEHOLDERS: readonly WhatsAppPlaceholderDefinition[] = [
-  { key: 'customer_name', token: '{customer_name}', category: 'customer', label: 'Customer Name', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.customer_name },
-  { key: 'customer_phone', token: '{customer_phone}', category: 'customer', label: 'Customer Phone', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.customer_phone },
-  { key: 'visit_count', token: '{visit_count}', category: 'customer', label: 'Visit Count', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.visit_count },
-  { key: 'last_visit_date', token: '{last_visit_date}', category: 'customer', label: 'Last Visit Date', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.last_visit_date },
-  { key: 'total_spent', token: '{total_spent}', category: 'customer', label: 'Total Spent', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.total_spent },
-  { key: 'bill_no', token: '{bill_no}', category: 'order', label: 'Bill #', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.bill_no },
-  { key: 'order_date', token: '{order_date}', category: 'order', label: 'Order Date', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.order_date },
-  { key: 'order_items', token: '{order_items}', category: 'order', label: 'Order Items', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.order_items },
-  { key: 'total', token: '{total}', category: 'order', label: 'Bill Total', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.total },
-  { key: 'payment_method', token: '{payment_method}', category: 'order', label: 'Payment Method', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.payment_method },
-  { key: 'points_earned', token: '{points_earned}', category: 'loyalty', label: 'Points Earned', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.points_earned },
-  { key: 'points_balance', token: '{points_balance}', category: 'loyalty', label: 'Points Balance', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.points_balance },
-  { key: 'points_value', token: '{points_value}', category: 'loyalty', label: 'Points Value', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.points_value },
-  { key: 'store_name', token: '{store_name}', category: 'store', label: 'Store Name', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.store_name },
-  { key: 'store_phone', token: '{store_phone}', category: 'store', label: 'Store Phone', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.store_phone },
-  { key: 'feedback_link', token: '{feedback_link}', category: 'store', label: 'Feedback Link', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.feedback_link },
-  { key: 'instagram', token: '{instagram}', category: 'store', label: 'Instagram', sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.instagram },
+  {
+    key: 'customer_name',
+    token: '{customer_name}',
+    category: 'customer',
+    label: 'Customer Name',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.customer_name,
+  },
+  {
+    key: 'customer_phone',
+    token: '{customer_phone}',
+    category: 'customer',
+    label: 'Customer Phone',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.customer_phone,
+  },
+  {
+    key: 'visit_count',
+    token: '{visit_count}',
+    category: 'customer',
+    label: 'Visit Count',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.visit_count,
+  },
+  {
+    key: 'last_visit_date',
+    token: '{last_visit_date}',
+    category: 'customer',
+    label: 'Last Visit Date',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.last_visit_date,
+  },
+  {
+    key: 'total_spent',
+    token: '{total_spent}',
+    category: 'customer',
+    label: 'Total Spent',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.total_spent,
+  },
+  {
+    key: 'bill_no',
+    token: '{bill_no}',
+    category: 'order',
+    label: 'Bill #',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.bill_no,
+  },
+  {
+    key: 'order_date',
+    token: '{order_date}',
+    category: 'order',
+    label: 'Order Date',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.order_date,
+  },
+  {
+    key: 'order_items',
+    token: '{order_items}',
+    category: 'order',
+    label: 'Order Items',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.order_items,
+  },
+  {
+    key: 'total',
+    token: '{total}',
+    category: 'order',
+    label: 'Bill Total',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.total,
+  },
+  {
+    key: 'payment_method',
+    token: '{payment_method}',
+    category: 'order',
+    label: 'Payment Method',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.payment_method,
+  },
+  {
+    key: 'points_earned',
+    token: '{points_earned}',
+    category: 'loyalty',
+    label: 'Points Earned',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.points_earned,
+  },
+  {
+    key: 'points_balance',
+    token: '{points_balance}',
+    category: 'loyalty',
+    label: 'Points Balance',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.points_balance,
+  },
+  {
+    key: 'points_value',
+    token: '{points_value}',
+    category: 'loyalty',
+    label: 'Points Value',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.points_value,
+  },
+  {
+    key: 'store_name',
+    token: '{store_name}',
+    category: 'store',
+    label: 'Store Name',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.store_name,
+  },
+  {
+    key: 'store_phone',
+    token: '{store_phone}',
+    category: 'store',
+    label: 'Store Phone',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.store_phone,
+  },
+  {
+    key: 'feedback_link',
+    token: '{feedback_link}',
+    category: 'store',
+    label: 'Feedback Link',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.feedback_link,
+  },
+  {
+    key: 'instagram',
+    token: '{instagram}',
+    category: 'store',
+    label: 'Instagram',
+    sample: SAMPLE_WHATSAPP_TEMPLATE_CONTEXT.instagram,
+  },
 ];
 
-const PLACEHOLDER_REGEX = new RegExp(
-  `\\{(${WHATSAPP_PLACEHOLDER_KEYS.join('|')})\\}`,
-  'g',
-);
+const PLACEHOLDER_REGEX = new RegExp(`\\{(${WHATSAPP_PLACEHOLDER_KEYS.join('|')})\\}`, 'g');
 
 /**
  * Pure single-pass placeholder renderer. Values substituted from customer/order
@@ -271,11 +349,14 @@ export function renderWhatsAppTemplate(
   context: Partial<WhatsAppTemplateContext>,
 ): string {
   if (typeof templateBody !== 'string' || !templateBody) return '';
-  const rendered = templateBody.replace(PLACEHOLDER_REGEX, (_match, key: WhatsAppPlaceholderKey) => {
-    const val = context[key];
-    if (val === null || val === undefined) return '';
-    return String(val);
-  });
+  const rendered = templateBody.replace(
+    PLACEHOLDER_REGEX,
+    (_match, key: WhatsAppPlaceholderKey) => {
+      const val = context[key];
+      if (val === null || val === undefined) return '';
+      return String(val);
+    },
+  );
   return rendered
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -331,9 +412,15 @@ export function normalizeWhatsAppAutomationConfig(raw: unknown): WhatsAppAutomat
   for (const item of rawTemplates) {
     if (!item || typeof item !== 'object') continue;
     const rec = item as Record<string, unknown>;
-    const id = String(rec.id ?? '').trim().slice(0, 64);
-    const name = String(rec.name ?? '').trim().slice(0, 80);
-    const body = String(rec.body ?? '').trim().slice(0, 4000);
+    const id = String(rec.id ?? '')
+      .trim()
+      .slice(0, 64);
+    const name = String(rec.name ?? '')
+      .trim()
+      .slice(0, 80);
+    const body = String(rec.body ?? '')
+      .trim()
+      .slice(0, 4000);
     if (!id || !name || !body || seenTemplateIds.has(id)) continue;
     seenTemplateIds.add(id);
     templates.push({ id, name, body });
@@ -378,7 +465,12 @@ export function normalizeWhatsAppAutomationConfig(raw: unknown): WhatsAppAutomat
     } else if (def.trigger === 'winback') {
       rule.inactiveDays = clampInt(custom?.inactiveDays, def.inactiveDays ?? 14, 1, 365);
     } else if (def.trigger === 'points_threshold') {
-      rule.pointsThreshold = clampInt(custom?.pointsThreshold, def.pointsThreshold ?? 100, 1, 1_000_000);
+      rule.pointsThreshold = clampInt(
+        custom?.pointsThreshold,
+        def.pointsThreshold ?? 100,
+        1,
+        1_000_000,
+      );
     } else if (def.trigger === 'nth_visit') {
       rule.nthVisit = clampInt(custom?.nthVisit, def.nthVisit ?? 5, 1, 1000);
     }
@@ -435,7 +527,10 @@ export function normalizeWhatsAppAutomationConfig(raw: unknown): WhatsAppAutomat
  */
 export function isAutoOptOutText(body: string): boolean {
   if (typeof body !== 'string') return false;
-  const cleaned = body.trim().replace(/[.!,?]+$/g, '').trim();
+  const cleaned = body
+    .trim()
+    .replace(/[.!,?]+$/g, '')
+    .trim();
   return /^(stop|unsubscribe|opt\s*out)$/i.test(cleaned);
 }
 

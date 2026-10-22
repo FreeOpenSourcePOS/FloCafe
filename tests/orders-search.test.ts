@@ -861,8 +861,7 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
       return { render, flushEffects, cleanupAll };
     };
 
-    // 1. Verify TablesPage wires FloorplanEditor onViewOrder to /orders?table=<id>
-    //    and FloorplanEditor passes the clicked occupied table to onViewOrder(tb).
+    // 1. Verify TablesPage wires FloorplanEditor onViewOrder to /orders?table=<id>.
     const tablesRenderer = createRenderer();
     const floorplanRenderer = createRenderer();
     try {
@@ -931,9 +930,7 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
       tablesRenderer.cleanupAll();
     }
 
-    // 2. Verify OrdersPage populates table options and syncs ?table= from useSearchParams() into
-    //    filters.table for both tables_required: false and tables_required: true, requests GET /orders
-    //    with table_id, and preserves manual table dropdown edits on re-render.
+    // Cover query sync and manual overrides with tables_required both enabled and disabled.
     for (const tablesRequired of [false, true]) {
       mockTablesRequired = tablesRequired;
       orderRequests.length = 0;

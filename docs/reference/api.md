@@ -913,21 +913,23 @@ The Server App implements no business logic. It authenticates the caller, checks
 `http://127.0.0.1:<main port>/api/...`. [System overview](../architecture/overview.md#the-server-app-is-a-filtered-proxy-not-a-second-api)
 owns that boundary model; this section is the allowlist.
 
-Nineteen routes in total, eleven of which forward:
+Twenty-one routes in total, thirteen of which forward:
 
-| Method | Path                       | Forwards to                     |
-| ------ | -------------------------- | ------------------------------- |
-| `GET`  | `/api/categories`          | `GET /api/categories`           |
-| `GET`  | `/api/products`            | `GET /api/products`             |
-| `GET`  | `/api/tables`              | `GET /api/tables`               |
-| `GET`  | `/api/orders`              | `GET /api/orders`               |
-| `POST` | `/api/orders`              | `POST /api/orders`              |
-| `POST` | `/api/orders/:id/items`    | `POST /api/orders/:id/items`    |
-| `GET`  | `/api/customers-search`    | `GET /api/customers-search`     |
-| `GET`  | `/api/crm/lookup`          | `GET /api/crm/lookup`           |
-| `POST` | `/api/customers`           | `POST /api/customers`           |
-| `POST` | `/api/printers/print-kot`  | `POST /api/printers/print-kot`  |
-| `POST` | `/api/printers/print-bill` | `POST /api/printers/print-bill` |
+| Method | Path                         | Forwards to                       |
+| ------ | ---------------------------- | --------------------------------- |
+| `GET`  | `/api/categories`            | `GET /api/categories`             |
+| `GET`  | `/api/products`              | `GET /api/products`               |
+| `GET`  | `/api/products/:id/image`    | `GET /api/products/:id/image`     |
+| `GET`  | `/api/tables`                | `GET /api/tables`                 |
+| `POST` | `/api/tables/:id/move-order` | `POST /api/tables/:id/move-order` |
+| `GET`  | `/api/orders`                | `GET /api/orders`                 |
+| `POST` | `/api/orders`                | `POST /api/orders`                |
+| `POST` | `/api/orders/:id/items`      | `POST /api/orders/:id/items`      |
+| `GET`  | `/api/customers-search`      | `GET /api/customers-search`       |
+| `GET`  | `/api/crm/lookup`            | `GET /api/crm/lookup`             |
+| `POST` | `/api/customers`             | `POST /api/customers`             |
+| `POST` | `/api/printers/print-kot`    | `POST /api/printers/print-kot`    |
+| `POST` | `/api/printers/print-bill`   | `POST /api/printers/print-bill`   |
 
 Adding a route to `3001` does not expose it on `3003`. A path becomes reachable from the Server App
 only when a forwarding route is added to `main/server-app.ts`.
@@ -947,8 +949,9 @@ The seven routes that are not forwards:
 When the frontend export is missing, the `GET /` redirect is replaced by a placeholder page instead,
 so `GET /` is two mutually exclusive registrations rather than two routes.
 
-`requireServerAppAuth` is applied to every route except `/api/health` and `/api/server-app/info`, and
-it runs the feature check **before** the token check. Behaviour by condition:
+`requireServerAppAuth` is applied to every route except `/api/health`, `/api/server-app/info`, and
+`/api/products/:id/image`, and it runs the feature check **before** the token check. Behaviour by
+condition:
 
 - Feature disabled: `404` with `{ error: "Not found" }`, so the surface is not advertised.
 - Main API unreachable: `502` with `{ error: "Could not reach the local POS API" }` from the
@@ -1134,18 +1137,18 @@ documents only the two routes.
 
 ## Coverage
 
-This page lists 308 HTTP route registrations across 307 distinct rows, and one WebSocket contract:
+This page lists 310 HTTP route registrations across 309 distinct rows, and one WebSocket contract:
 
 - `281` on the main API: 273 router registrations, 7 inline registrations in `main/routes/index.ts`,
   and `GET /api/health` in `main/server.ts`.
 - `8` REST routes on the KDS server, plus 3 static handlers.
-- `19` route registrations on the Server App, of which 11 forward to the main API. Two of those 19
-  are mutually exclusive `GET /` handlers under one path, which is why 19 registrations render as 18
+- `21` route registrations on the Server App, of which 13 forward to the main API. Two of those 21
+  are mutually exclusive `GET /` handlers under one path, which is why 21 registrations render as 20
   rows.
 
-Every one of the 307 rows is listed with its method, path, authorization gate, and the parameters
-its handler reads. The **Response** column carries a note for 171 of them: 145 main-API endpoints,
-all 8 KDS-server routes, and the 18 Server App routes. The remaining 146 main-API endpoints are
+Every one of the 309 rows is listed with its method, path, authorization gate, and the parameters
+its handler reads. The **Response** column carries a note for 173 of them: 145 main-API endpoints,
+all 8 KDS-server routes, and the 20 Server App routes. The remaining 146 main-API endpoints are
 listed with method, path, gate, and parameters only, and this page asserts nothing about what they
 return. Those rows are complete as a route inventory and silent as a contract; the handler in
 `main/routes/` is authoritative for them. A `-` in the Response column means that, not that the

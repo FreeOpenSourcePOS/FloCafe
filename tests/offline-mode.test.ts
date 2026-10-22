@@ -57,6 +57,7 @@ const {
   sendEvent,
   sendAnonymousDiagnosticReport,
   telemetry,
+  TELEMETRY_URL,
 } = require('../main/services/telemetry');
 const { postHogEnvironment } = require('../main/services/posthog-config');
 const {
@@ -287,8 +288,7 @@ async function main() {
       let releaseInFlightFetch: (() => void) | null = null;
       const posthogFetchStarted = new Promise<void>((resolve) => {
         globalThis.fetch = (async (input: any, init?: RequestInit) => {
-          const url = String(input);
-          if (url.includes('posthog.example')) {
+          if (new URL(String(input)).hostname === 'posthog.example') {
             posthogFetchCount += 1;
             init?.signal?.addEventListener(
               'abort',
@@ -458,7 +458,7 @@ async function main() {
 
       let stepTwoCalled = false;
       const multiStepCatalog = fetchRemoteTaxPackCatalog(async (url: any) => {
-        if (String(url).includes('/releases?')) {
+        if (new URL(String(url)).pathname.endsWith('/releases')) {
           upsertSettings({ offline_mode: 'true' });
           return new Response(
             JSON.stringify([
@@ -652,7 +652,7 @@ async function main() {
       const savedTelemetryDev = process.env.FLO_TELEMETRY_DEV;
       const savedFetch = globalThis.fetch;
       globalThis.fetch = (async (input: any, init?: RequestInit) => {
-        if (String(input).includes('telemetry.flopos.com')) {
+        if (String(input) === TELEMETRY_URL) {
           return new Response(null, { status: 204 });
         }
         return savedFetch(input, init);

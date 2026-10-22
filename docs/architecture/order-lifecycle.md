@@ -90,7 +90,10 @@ Common rules, enforced in the handlers:
   `user_id`) on an order, item, or bill discount, PIN verification is restricted to that active user
   without falling back to scanning other managers.
 - A percentage discount applies to the fresh item subtotal, and a flat discount is capped at that
-  subtotal. Re-applying a discount never compounds on the previous one.
+  subtotal. Re-applying a discount never compounds on the previous one. When a later item discount,
+  price override, item cancellation or restoration, or customer update changes the order subtotal,
+  an existing percentage order discount scales to the new subtotal while a flat order discount stays
+  at its fixed amount, capped at the new subtotal.
 - Order and bill discounts scale item taxes by the discounted share of the subtotal while keeping
   stored `order_items` taxes un-order-discounted; see
   [Taxation](taxation.md#where-the-amount-came-from).
@@ -137,11 +140,28 @@ complimentary item. The permission `orders.item.price_override` is owner-only an
 
 ## Bills
 
-`POST /api/bills/generate` creates the order's bill, or, when a bill already exists and is not paid,
-re-syncs its totals, discount, and charges from the order and recomputes `balance` against
-`paid_amount`. A paid bill is never rewritten. Bills snapshot subtotal, discount, tax, charges,
-`total`, `paid_amount`, `balance`, and `payment_status`; payable rounding may add a `round_off`
-adjustment for packs that define one.
+`POST /api/bills/generate` creates the order's bill, or, when a bill already exists in `unpaid`,
+`partial`, or `partially_paid` status, re-syncs its totals, discount, tax, and charges from the
+order and recomputes `balance` against `paid_amount`. A `paid`, `partially_refunded`, or `refunded`
+bill (including a zero-total `paid` bill) is never rewritten by bill generation or order-to-bill
+synchronization (`syncUnpaidBillsForOrder`), except for a zero-total `paid` split sibling during
+split-bill reallocation. Bills snapshot subtotal, discount, tax, charges, `total`, `paid_amount`,
+`balance`, and `payment_status`; payable rounding may add a `round_off` adjustment for packs that
+define one.
+
+Order mutations that change the customer (`PATCH /api/orders/:id/customer`) or convert a dine-in
+order to takeaway (`PATCH /api/orders/:id/convert-to-takeaway`) re-sync open bills under the same
+rules:
+
+- `PATCH /api/orders/:id/customer` requires an active order (`400` on `completed` or `cancelled`),
+  refuses changes once any bill has payments, a split, or a refund (`409`), re-evaluates
+  non-terminal item taxes for the new customer when taxes are enabled, recomputes order and open-bill
+  totals, and records `customer_updated` in `order_audit_log`.
+- `PATCH /api/orders/:id/convert-to-takeaway` requires an active `dine_in` order (`400`), refuses
+  split, paid, or refunded bills (`409`), re-resolves charges for `takeaway`, rejects conversions
+  whose payable total would fall below already-collected payments (`409` with
+  `below_collected_funds`), re-syncs open bills, releases the table to `available`, and records
+  `converted_to_takeaway` in `order_audit_log`.
 
 A split order can have multiple bills, each with its own payments and balance. An order completes
 only once every bill of the order is settled; the API reference documents split eligibility and
@@ -217,10 +237,11 @@ When a payment settles the last unpaid bill of an order, the order becomes `comp
 already completed or cancelled) and its dine-in table is released to `available`. A payment never
 resurrects a terminal order.
 
-When an order, item, or bill discount reduces the remaining balance of a partially paid bill to exactly
-zero (where collected funds equal the discounted total), auto-settlement to `paid` is gated by kitchen
-delivery status. When `require_kitchen_delivered_before_settlement` is enabled, `kds_enabled` is not
-`false`, and `billing_type` is not `prepaid`:
+When a discount, an order mutation (`syncUnpaidBillsForOrder`), or a `POST /api/bills/generate`
+re-sync reduces the remaining balance of a partially paid bill to exactly zero (where collected funds
+equal the updated payable total), auto-settlement to `paid` is gated by kitchen delivery status. When
+`require_kitchen_delivered_before_settlement` is enabled, `kds_enabled` is not `false`, and
+`billing_type` is not `prepaid`:
 
 - If kitchen items remain undelivered (`pending`, `preparing`, or `ready`), auto-settlement is held:
   the discount applies and reduces the balance to zero, but the bill remains in `partial` status
@@ -272,6 +293,7 @@ movements, and refunds have their own end-of-business-day cutoff described above
 ```sh
 npm run test:integration-order-hold-payment   # hold, discount, tax, installments, gates, replay
 npm run test:financial-safety-remediation     # payment replay idempotency, PIN decoupling, discount revalidation
+npm run test:issue-terminal-state-guards      # terminal bill/order guards, takeaway/customer sync, flat discount caps
 npm run test:issue-exact-balance-settlement    # auto-settle bill and complete order on exact-balance discount
 npm run test:integration-happy                # order to payment, discount recalculated
 npm run test:integration-payments             # payment methods and split lines

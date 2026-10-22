@@ -210,7 +210,7 @@ test.describe('Database Settings JSON Export and Import', () => {
 
     const contaminatedPayload = {
       app: 'FloDesktop',
-      schema_version: '115',
+      schema_version: '116',
       data: {
         settings: [],
         categories: [],

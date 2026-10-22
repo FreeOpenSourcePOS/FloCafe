@@ -313,6 +313,7 @@ test('OrdersPage renders Load More and fetches the next page when search is empt
     '@/components/pos/CreateCustomerModal': { __esModule: true, default: () => null },
     '@/components/pos/AddonModal': { __esModule: true, default: () => null },
     '@/components/orders/RefundModal': { __esModule: true, default: () => null },
+    '@/components/orders/PriceOverrideModal': { PriceOverrideModal: () => null },
     '@/lib/countries': {
       getCurrencySymbol: () => '$',
       getCountryByCode: () => ({ locale: 'en-US' }),

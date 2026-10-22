@@ -36,6 +36,7 @@ import {
   Download,
   Loader2,
   Pencil,
+  Tag,
 } from 'lucide-react';
 import type { Order, OrderItem, Bill, Customer } from '@/lib/types';
 import { receiptChargeLines } from '@/lib/charges';
@@ -187,6 +188,8 @@ interface OrderCardProps {
   onDownloadPrintPreview?: (billId: number) => void;
   canEditItems?: boolean;
   onEditItem?: (order: Order, item: OrderItem) => void;
+  canOverridePrice?: boolean;
+  onOverridePrice?: (order: Order, item: OrderItem) => void;
   onItemEditResolved?: (orderId: number) => Promise<boolean> | void;
   onDeleteItem?: (orderId: number, itemId: number) => void;
   onVoidItem?: (orderId: number, itemId: number, productName: string) => void;
@@ -229,6 +232,8 @@ export function OrderCard({
   onDownloadPrintPreview,
   canEditItems = false,
   onEditItem,
+  canOverridePrice = false,
+  onOverridePrice,
   onDeleteItem,
   onVoidItem,
   onRestoreItem,
@@ -718,6 +723,21 @@ export function OrderCard({
                           <Pencil size={14} />
                         </button>
                       )}
+                    {canOverridePrice &&
+                      onOverridePrice &&
+                      !isPaid &&
+                      !['completed', 'cancelled'].includes(order.status) &&
+                      !['cancelled', 'voided', 'void_adjustment'].includes(item.status) &&
+                      !itemEditBlocked(item.id) && (
+                        <button
+                          type="button"
+                          onClick={() => onOverridePrice(order, item)}
+                          className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 rounded-md hover:bg-muted transition-colors touch-manipulation"
+                          title={tOrders('overridePrice')}
+                        >
+                          <Tag size={14} />
+                        </button>
+                      )}
                     {/* Touchscreen-accessible item actions for Manager */}
                     {canCancelItems &&
                       !isPaid &&
@@ -751,6 +771,13 @@ export function OrderCard({
                 </div>
 
                 {/* Add-ons subline */}
+                {Boolean(item.price_overridden) && (
+                  <div className="ps-6 mt-0.5 text-xs text-amber-600 dark:text-amber-400">
+                    {tOrders('priceOverriddenMenu', {
+                      price: fmt(Number(item.original_unit_price ?? 0)),
+                    })}
+                  </div>
+                )}
                 {item.addons && item.addons.length > 0 && (
                   <div className="ps-4 mt-0.5 text-[11px] text-muted-foreground truncate">
                     {item.addons

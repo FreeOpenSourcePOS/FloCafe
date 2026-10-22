@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "جارٍ فتح واتساب مع التقرير...",
     "salesSummary": "ملخص المبيعات",
     "paymentBreakdown": "المدفوعات",
-    "drawerReconciliation": "مطابقة درج النقد"
+    "drawerReconciliation": "مطابقة درج النقد",
+    "priceExceptions": "استثناءات الأسعار",
+    "priceExceptionsEmpty": "لا توجد تغييرات في الأسعار خلال هذه الفترة",
+    "priceExceptionsCount": "التغييرات: {count}",
+    "priceExceptionsComps": "المجانية: {count}",
+    "priceExceptionsTotal": "إجمالي الفرق: {amount}",
+    "priceExceptionOrder": "الطلب",
+    "priceExceptionItem": "الصنف",
+    "priceExceptionOriginal": "سعر القائمة",
+    "priceExceptionBilled": "السعر المفوتر",
+    "priceExceptionDifference": "الفرق",
+    "priceExceptionBy": "غيّره",
+    "priceExceptionAt": "الوقت",
+    "priceExceptionReason": "السبب"
   },
   "expenses": {
     "addTitle": "إضافة مصروف",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "تعذّر قراءة التعديل المحفوظ أو تحديثه. تم الاحتفاظ به على هذا الجهاز.",
     "pendingItemEditAuthRequired": "سجّل الدخول بالحساب الأصلي لإتمام هذا التعديل.",
     "pendingItemEditRateLimited": "عدد كبير من الطلبات. انتظر ثم أعد المحاولة.",
-    "pendingItemEditRefreshFailed": "تم تأكيد التعديل، لكن تعذّر تحديث تفاصيل الطلب الحالية."
+    "pendingItemEditRefreshFailed": "تم تأكيد التعديل، لكن تعذّر تحديث تفاصيل الطلب الحالية.",
+    "overridePrice": "تغيير السعر",
+    "overridePriceTitle": "تغيير سعر الصنف",
+    "overridePriceHint": "حدّد سعر البيع لهذا السطر. أدخل 0 لصنف مجاني.",
+    "overridePriceNewPrice": "سعر الوحدة الجديد",
+    "overridePriceReason": "السبب",
+    "overridePriceReasonPlaceholder": "مثال: حلوى مجانية",
+    "overridePriceSave": "تطبيق السعر",
+    "overridePriceSaved": "تم تحديث السعر",
+    "overridePriceFailed": "تعذّر تحديث السعر",
+    "priceOverriddenMenu": "تم تغيير السعر (القائمة {price})"
   },
   "pos": {
     "addCustomer": "إضافة عميل",
@@ -2699,7 +2722,8 @@
       "databaseTools": "استخدام أدوات قواعد البيانات والنسخ الاحتياطية",
       "serverApp": "استخدم تطبيق الخادم المستقل",
       "support": "الاتصال بدعم العملاء والاطلاع على التشخيصات",
-      "inventoryManage": "إدارة المواد والوصفات"
+      "inventoryManage": "إدارة المواد والوصفات",
+      "orderItemPriceOverride": "تغيير أسعار أصناف الطلب"
     },
     "editorSubtitle": "قم بتكوين إعدادات الأدوار الافتراضية أو أنشئ استثناءً لموظف واحد. يتم تطبيق التغييرات على إجراءاته التالية.",
     "roleDefaultsTab": "إعدادات الدور",

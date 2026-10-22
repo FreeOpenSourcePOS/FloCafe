@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "Открываем WhatsApp с отчётом...",
     "salesSummary": "СВОДКА ПРОДАЖ",
     "paymentBreakdown": "ПЛАТЕЖИ",
-    "drawerReconciliation": "СВЕРКА ДЕНЕЖНОГО ЯЩИКА"
+    "drawerReconciliation": "СВЕРКА ДЕНЕЖНОГО ЯЩИКА",
+    "priceExceptions": "Исключения по цене",
+    "priceExceptionsEmpty": "Нет изменений цены за этот период",
+    "priceExceptionsCount": "Изменений: {count}",
+    "priceExceptionsComps": "Бесплатных: {count}",
+    "priceExceptionsTotal": "Общая разница: {amount}",
+    "priceExceptionOrder": "Заказ",
+    "priceExceptionItem": "Позиция",
+    "priceExceptionOriginal": "Цена в меню",
+    "priceExceptionBilled": "Цена к оплате",
+    "priceExceptionDifference": "Разница",
+    "priceExceptionBy": "Изменил",
+    "priceExceptionAt": "Когда",
+    "priceExceptionReason": "Причина"
   },
   "expenses": {
     "addTitle": "Добавить расход",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "Не удалось прочитать или обновить сохранённое изменение. Оно сохранено на этом устройстве.",
     "pendingItemEditAuthRequired": "Для разрешения этого изменения войдите в исходную учётную запись.",
     "pendingItemEditRateLimited": "Слишком много запросов. Подождите и повторите попытку.",
-    "pendingItemEditRefreshFailed": "Изменение подтверждено, но не удалось обновить текущие данные заказа."
+    "pendingItemEditRefreshFailed": "Изменение подтверждено, но не удалось обновить текущие данные заказа.",
+    "overridePrice": "Изменить цену",
+    "overridePriceTitle": "Изменить цену позиции",
+    "overridePriceHint": "Задайте цену продажи для этой строки. Введите 0 для бесплатной позиции.",
+    "overridePriceNewPrice": "Новая цена за единицу",
+    "overridePriceReason": "Причина",
+    "overridePriceReasonPlaceholder": "напр. Десерт в подарок",
+    "overridePriceSave": "Применить цену",
+    "overridePriceSaved": "Цена обновлена",
+    "overridePriceFailed": "Не удалось обновить цену",
+    "priceOverriddenMenu": "Цена изменена (меню {price})"
   },
   "pos": {
     "addCustomer": "Добавить клиента",
@@ -2699,7 +2722,8 @@
       "databaseTools": "Используйте инструменты базы данных и резервные копии",
       "serverApp": "Используйте автономное серверное приложение",
       "support": "Обратитесь в службу поддержки и просмотрите диагностику",
-      "inventoryManage": "Управление расходными материалами и рецептами"
+      "inventoryManage": "Управление расходными материалами и рецептами",
+      "orderItemPriceOverride": "Изменение цен позиций заказа"
     },
     "editorSubtitle": "Настройте значения по умолчанию для роли или сделайте исключение для одного сотрудника. Изменения применяются к его следующему действию.",
     "roleDefaultsTab": "Значения роли по умолчанию",

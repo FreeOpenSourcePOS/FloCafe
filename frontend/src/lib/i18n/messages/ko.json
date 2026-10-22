@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "보고서와 함께 WhatsApp을 여는 중...",
     "salesSummary": "매출 요약",
     "paymentBreakdown": "결제",
-    "drawerReconciliation": "현금 서랍 대사"
+    "drawerReconciliation": "현금 서랍 대사",
+    "priceExceptions": "가격 예외",
+    "priceExceptionsEmpty": "이 기간에 가격 변경이 없습니다",
+    "priceExceptionsCount": "변경: {count}",
+    "priceExceptionsComps": "무료 제공: {count}",
+    "priceExceptionsTotal": "총 차액: {amount}",
+    "priceExceptionOrder": "주문",
+    "priceExceptionItem": "품목",
+    "priceExceptionOriginal": "메뉴 가격",
+    "priceExceptionBilled": "청구 가격",
+    "priceExceptionDifference": "차액",
+    "priceExceptionBy": "변경자",
+    "priceExceptionAt": "시각",
+    "priceExceptionReason": "사유"
   },
   "expenses": {
     "addTitle": "경비 추가",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "저장된 수정을 읽거나 업데이트할 수 없습니다. 이 기기에 보존되었습니다.",
     "pendingItemEditAuthRequired": "이 수정을 해결하려면 원래 계정으로 로그인하세요.",
     "pendingItemEditRateLimited": "요청이 너무 많습니다. 잠시 후 다시 시도하세요.",
-    "pendingItemEditRefreshFailed": "수정은 확인되었지만 현재 주문 세부 정보를 새로 고치지 못했습니다."
+    "pendingItemEditRefreshFailed": "수정은 확인되었지만 현재 주문 세부 정보를 새로 고치지 못했습니다.",
+    "overridePrice": "가격 변경",
+    "overridePriceTitle": "품목 가격 변경",
+    "overridePriceHint": "이 줄의 판매 가격을 설정합니다. 무료 품목은 0을 입력하세요.",
+    "overridePriceNewPrice": "새 단가",
+    "overridePriceReason": "사유",
+    "overridePriceReasonPlaceholder": "예: 서비스 디저트",
+    "overridePriceSave": "가격 적용",
+    "overridePriceSaved": "가격이 업데이트되었습니다",
+    "overridePriceFailed": "가격을 업데이트할 수 없습니다",
+    "priceOverriddenMenu": "가격 변경됨(메뉴 {price})"
   },
   "pos": {
     "addCustomer": "고객 추가",
@@ -2699,7 +2722,8 @@
       "cloudAccountData": "클라우드 계정 및 데이터 관리",
       "databaseTools": "데이터베이스 도구 및 백업 사용",
       "serverApp": "독립형 서버 앱(Server App) 사용",
-      "support": "지원팀 문의 및 진단 정보 보기"
+      "support": "지원팀 문의 및 진단 정보 보기",
+      "orderItemPriceOverride": "주문 품목 가격 변경"
     },
     "editorSubtitle": "역할 기본값을 구성하거나 특정 직원에 대한 예외를 만드세요. 변경 사항은 다음 작업부터 적용됩니다.",
     "roleDefaultsTab": "역할 기본값",

@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "WhatsApp wordt geopend met het rapport...",
     "salesSummary": "VERKOOPOVERZICHT",
     "paymentBreakdown": "BETALINGEN",
-    "drawerReconciliation": "KASLA-RECONCILIATIE"
+    "drawerReconciliation": "KASLA-RECONCILIATIE",
+    "priceExceptions": "Prijsuitzonderingen",
+    "priceExceptionsEmpty": "Geen prijsaanpassingen in deze periode",
+    "priceExceptionsCount": "Aanpassingen: {count}",
+    "priceExceptionsComps": "Gratis: {count}",
+    "priceExceptionsTotal": "Totaal verschil: {amount}",
+    "priceExceptionOrder": "Bestelling",
+    "priceExceptionItem": "Artikel",
+    "priceExceptionOriginal": "Menuprijs",
+    "priceExceptionBilled": "Gefactureerde prijs",
+    "priceExceptionDifference": "Verschil",
+    "priceExceptionBy": "Gewijzigd door",
+    "priceExceptionAt": "Wanneer",
+    "priceExceptionReason": "Reden"
   },
   "expenses": {
     "addTitle": "Onkost toevoegen",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "De opgeslagen wijziging kon niet worden gelezen of bijgewerkt. Deze is bewaard op dit apparaat.",
     "pendingItemEditAuthRequired": "Log in met het oorspronkelijke account om deze wijziging op te lossen.",
     "pendingItemEditRateLimited": "Te veel aanvragen. Wacht even en probeer het opnieuw.",
-    "pendingItemEditRefreshFailed": "De wijziging is bevestigd, maar de huidige bestelgegevens konden niet worden vernieuwd."
+    "pendingItemEditRefreshFailed": "De wijziging is bevestigd, maar de huidige bestelgegevens konden niet worden vernieuwd.",
+    "overridePrice": "Prijs aanpassen",
+    "overridePriceTitle": "Artikelprijs aanpassen",
+    "overridePriceHint": "Stel de verkoopprijs voor deze regel in. Voer 0 in voor een gratis artikel.",
+    "overridePriceNewPrice": "Nieuwe stuksprijs",
+    "overridePriceReason": "Reden",
+    "overridePriceReasonPlaceholder": "bijv. Gratis dessert",
+    "overridePriceSave": "Prijs toepassen",
+    "overridePriceSaved": "Prijs bijgewerkt",
+    "overridePriceFailed": "Prijs kon niet worden bijgewerkt",
+    "priceOverriddenMenu": "Prijs aangepast (menu {price})"
   },
   "pos": {
     "addCustomer": "Klant toevoegen",
@@ -2699,7 +2722,8 @@
       "databaseTools": "Gebruik databasetools en back-ups",
       "serverApp": "Gebruik de zelfstandige server-app",
       "support": "Neem contact op met ondersteuning en bekijk de diagnostiek",
-      "inventoryManage": "Voorraadartikelen en recepten beheren"
+      "inventoryManage": "Voorraadartikelen en recepten beheren",
+      "orderItemPriceOverride": "Prijzen van bestelde artikelen aanpassen"
     },
     "editorSubtitle": "Standaardinstellingen per rol configureren of een uitzondering maken voor één medewerker. Wijzigingen gelden vanaf diens volgende actie.",
     "roleDefaultsTab": "Rolstandaarden",

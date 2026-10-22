@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "Po hapet WhatsApp me raportin...",
     "salesSummary": "PËRMBLEDHJE E SHITJEVE",
     "paymentBreakdown": "PAGESAT",
-    "drawerReconciliation": "RAKORDIMI I ARKËS"
+    "drawerReconciliation": "RAKORDIMI I ARKËS",
+    "priceExceptions": "Përjashtime çmimi",
+    "priceExceptionsEmpty": "Nuk ka ndryshime çmimi në këtë periudhë",
+    "priceExceptionsCount": "Ndryshime: {count}",
+    "priceExceptionsComps": "Falas: {count}",
+    "priceExceptionsTotal": "Diferenca totale: {amount}",
+    "priceExceptionOrder": "Porosia",
+    "priceExceptionItem": "Artikulli",
+    "priceExceptionOriginal": "Çmimi i menusë",
+    "priceExceptionBilled": "Çmimi i faturuar",
+    "priceExceptionDifference": "Diferenca",
+    "priceExceptionBy": "Ndryshuar nga",
+    "priceExceptionAt": "Kur",
+    "priceExceptionReason": "Arsyeja"
   },
   "expenses": {
     "addTitle": "Shto shpenzim",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "Redaktimi i ruajtur nuk mund të lexohej ose përditësohej. U mbajt në këtë pajisje.",
     "pendingItemEditAuthRequired": "Hyr me llogarinë origjinale për ta zgjidhur këtë redaktim.",
     "pendingItemEditRateLimited": "Shumë kërkesa. Prit, pastaj provo sërish.",
-    "pendingItemEditRefreshFailed": "Redaktimi u konfirmua, por detajet aktuale të porosisë nuk mund të përditësoheshin."
+    "pendingItemEditRefreshFailed": "Redaktimi u konfirmua, por detajet aktuale të porosisë nuk mund të përditësoheshin.",
+    "overridePrice": "Ndrysho çmimin",
+    "overridePriceTitle": "Ndrysho çmimin e artikullit",
+    "overridePriceHint": "Cakto çmimin e shitjes për këtë rresht. Shkruaj 0 për një artikull falas.",
+    "overridePriceNewPrice": "Çmimi i ri për njësi",
+    "overridePriceReason": "Arsyeja",
+    "overridePriceReasonPlaceholder": "p.sh. Ëmbëlsirë falas",
+    "overridePriceSave": "Apliko çmimin",
+    "overridePriceSaved": "Çmimi u përditësua",
+    "overridePriceFailed": "Çmimi nuk mund të përditësohej",
+    "priceOverriddenMenu": "Çmimi u ndryshua (menuja {price})"
   },
   "pos": {
     "addCustomer": "Shto klient",
@@ -2699,7 +2722,8 @@
       "databaseTools": "Përdorni mjetet e bazës së të dhënave dhe kopjet rezerve",
       "serverApp": "Përdorni Server App të pavarur",
       "support": "Kontaktoni me mbështetjen dhe shikoni diagnostikimin",
-      "inventoryManage": "Menaxhoni furnizimet dhe recetat"
+      "inventoryManage": "Menaxhoni furnizimet dhe recetat",
+      "orderItemPriceOverride": "Ndrysho çmimet e artikujve të porosisë"
     },
     "editorSubtitle": "Konfiguroni vlerat e parazgjedhura të rolit ose bëni një përjashtim për një staf. Ndryshimet zbatohen në veprimin e tij të ardhshëm.",
     "roleDefaultsTab": "Vlerat e parazgjedhura të rolit",

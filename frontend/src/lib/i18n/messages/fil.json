@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "Binubuksan ang WhatsApp kasama ang ulat...",
     "salesSummary": "BUOD NG BENTA",
     "paymentBreakdown": "MGA BAYAD",
-    "drawerReconciliation": "PAGTUTUGMA NG CASH DRAWER"
+    "drawerReconciliation": "PAGTUTUGMA NG CASH DRAWER",
+    "priceExceptions": "Mga eksepsyon sa presyo",
+    "priceExceptionsEmpty": "Walang pagbabago sa presyo sa panahong ito",
+    "priceExceptionsCount": "Mga pagbabago: {count}",
+    "priceExceptionsComps": "Libre: {count}",
+    "priceExceptionsTotal": "Kabuuang pagkakaiba: {amount}",
+    "priceExceptionOrder": "Numero ng order",
+    "priceExceptionItem": "Produkto",
+    "priceExceptionOriginal": "Presyo sa menu",
+    "priceExceptionBilled": "Siningil na presyo",
+    "priceExceptionDifference": "Pagkakaiba",
+    "priceExceptionBy": "Binago ni",
+    "priceExceptionAt": "Kailan",
+    "priceExceptionReason": "Dahilan"
   },
   "expenses": {
     "addTitle": "Magdagdag ng gastos",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "Hindi nabasa o na-update ang na-save na pag-edit. Nakaingatan ito sa device na ito.",
     "pendingItemEditAuthRequired": "Mag-sign in gamit ang orihinal na account para malutas ang pag-edit na ito.",
     "pendingItemEditRateLimited": "Sobrang daming request. Maghintay, pagkatapos ay subukan muli.",
-    "pendingItemEditRefreshFailed": "Nakumpirma ang pag-edit, ngunit hindi na-refresh ang kasalukuyang detalye ng order."
+    "pendingItemEditRefreshFailed": "Nakumpirma ang pag-edit, ngunit hindi na-refresh ang kasalukuyang detalye ng order.",
+    "overridePrice": "Baguhin ang presyo",
+    "overridePriceTitle": "Baguhin ang presyo ng item",
+    "overridePriceHint": "Itakda ang presyo ng bentahan para sa linyang ito. Ilagay ang 0 para sa libreng item.",
+    "overridePriceNewPrice": "Bagong presyo bawat piraso",
+    "overridePriceReason": "Dahilan",
+    "overridePriceReasonPlaceholder": "hal. Libreng panghimagas",
+    "overridePriceSave": "Ilapat ang presyo",
+    "overridePriceSaved": "Na-update ang presyo",
+    "overridePriceFailed": "Hindi ma-update ang presyo",
+    "priceOverriddenMenu": "Binago ang presyo (menu {price})"
   },
   "pos": {
     "addCustomer": "Magdagdag ng Customer",
@@ -2699,7 +2722,8 @@
       "databaseTools": "Gamitin ang mga tool sa database at backup",
       "serverApp": "Gamitin ang standalone Server App",
       "support": "Makipag-ugnayan sa suporta at tingnan ang diagnostics",
-      "inventoryManage": "Pamahalaan ang mga supply at recipe"
+      "inventoryManage": "Pamahalaan ang mga supply at recipe",
+      "orderItemPriceOverride": "Baguhin ang presyo ng mga item sa order"
     },
     "editorSubtitle": "I-configure ang mga default ng tungkulin o gumawa ng eksepsiyon para sa isang miyembro ng staff. Magkakabisa ang mga pagbabago sa susunod nilang aksyon.",
     "roleDefaultsTab": "Mga default ng tungkulin",

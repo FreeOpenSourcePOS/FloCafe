@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "رپورٹ کے ساتھ WhatsApp کھولا جا رہا ہے...",
     "salesSummary": "فروخت کا خلاصہ",
     "paymentBreakdown": "ادائیگیاں",
-    "drawerReconciliation": "کیش دراز کی مطابقت"
+    "drawerReconciliation": "کیش دراز کی مطابقت",
+    "priceExceptions": "قیمت کے استثنا",
+    "priceExceptionsEmpty": "اس مدت میں قیمت میں کوئی تبدیلی نہیں",
+    "priceExceptionsCount": "تبدیلیاں: {count}",
+    "priceExceptionsComps": "مفت: {count}",
+    "priceExceptionsTotal": "کل فرق: {amount}",
+    "priceExceptionOrder": "آرڈر",
+    "priceExceptionItem": "آئٹم",
+    "priceExceptionOriginal": "مینو کی قیمت",
+    "priceExceptionBilled": "بل کی قیمت",
+    "priceExceptionDifference": "فرق",
+    "priceExceptionBy": "تبدیل کرنے والا",
+    "priceExceptionAt": "کب",
+    "priceExceptionReason": "وجہ"
   },
   "expenses": {
     "addTitle": "خرچ شامل کریں",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "محفوظ کردہ ترمیم پڑھی یا اپ ڈیٹ نہیں جا سکی۔ اسے اس ڈیوائس پر رکھا گیا ہے۔",
     "pendingItemEditAuthRequired": "اس ترمیم کو حل کرنے کے لیے اصل اکاؤنٹ سے سائن اِن کریں۔",
     "pendingItemEditRateLimited": "بہت زیادہ درخواستیں۔ انتظار کریں پھر دوبارہ کوشش کریں۔",
-    "pendingItemEditRefreshFailed": "ترمیم کی تصدیق ہو گئی، مگر موجودہ آرڈر کی تفصیلات دوبارہ حاصل نہیں ہو سکتیں۔"
+    "pendingItemEditRefreshFailed": "ترمیم کی تصدیق ہو گئی، مگر موجودہ آرڈر کی تفصیلات دوبارہ حاصل نہیں ہو سکتیں۔",
+    "overridePrice": "قیمت تبدیل کریں",
+    "overridePriceTitle": "آئٹم کی قیمت تبدیل کریں",
+    "overridePriceHint": "اس لائن کی فروخت کی قیمت مقرر کریں۔ مفت آئٹم کے لیے 0 درج کریں۔",
+    "overridePriceNewPrice": "نئی فی یونٹ قیمت",
+    "overridePriceReason": "وجہ",
+    "overridePriceReasonPlaceholder": "مثلاً مفت میٹھا",
+    "overridePriceSave": "قیمت لاگو کریں",
+    "overridePriceSaved": "قیمت اپ ڈیٹ ہو گئی",
+    "overridePriceFailed": "قیمت اپ ڈیٹ نہیں ہو سکی",
+    "priceOverriddenMenu": "قیمت تبدیل کی گئی (مینو {price})"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",
@@ -2699,7 +2722,8 @@
       "databaseTools": "ڈیٹابیس ٹولز اور بیک اپس استعمال کریں",
       "serverApp": "خودمختار Server App استعمال کریں",
       "support": "معاونت سے رابطہ کریں اور تشخیصی معلومات دیکھیں",
-      "inventoryManage": "سامان اور ترکیبات منظم کریں"
+      "inventoryManage": "سامان اور ترکیبات منظم کریں",
+      "orderItemPriceOverride": "آرڈر آئٹم کی قیمتیں تبدیل کریں"
     },
     "editorSubtitle": "کردار کی طے شدہ ترتیبات ترتیب دیں یا ایک ملازم کے لیے استثنیٰ کریں۔ تبدیلیاں اس کے اگلے عمل پر لاگو ہوں گی۔",
     "roleDefaultsTab": "کردار کی طے شدہ ترتیبات",

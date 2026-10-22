@@ -60,6 +60,7 @@ import { OrderCard } from '@/components/orders/OrderCard';
 import { OrdersMasterList } from '@/components/orders/OrdersMasterList';
 import { OrderDetailPanel } from '@/components/orders/OrderDetailPanel';
 import EditOrderItemModal from '@/components/orders/EditOrderItemModal';
+import { PriceOverrideModal } from '@/components/orders/PriceOverrideModal';
 import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 import { useManagerApprovers } from '@/hooks/useManagerApprovers';
 import { ApproverSelect } from '@/components/ApproverSelect';
@@ -216,6 +217,10 @@ export default function OrdersPage() {
 
   // Void (in-progress item) modal state
   const [voidItemModal, setVoidItemModal] = useState<VoidItemModal | null>(null);
+  const [priceOverrideTarget, setPriceOverrideTarget] = useState<{
+    order: Order;
+    item: OrderItem;
+  } | null>(null);
   const [editItemTarget, setEditItemTarget] = useState<{ order: Order; item: OrderItem } | null>(
     null,
   );
@@ -317,6 +322,7 @@ export default function OrdersPage() {
   const selectedOrderLookupInProgressRef = useRef<number | null>(null);
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
   const canEditItems = tenantCan(currentTenant, 'orders.item.edit');
+  const canOverridePrice = tenantCan(currentTenant, 'orders.item.price_override');
   const canRestoreItems = tenantCan(currentTenant, 'orders.item.restore');
   const canRefund = tenantCan(currentTenant, 'refunds.initiate');
 
@@ -1813,6 +1819,8 @@ export default function OrdersPage() {
               canCancelItems={canCancelItems}
               canEditItems={canEditItems}
               onEditItem={(order, item) => setEditItemTarget({ order, item })}
+              canOverridePrice={canOverridePrice}
+              onOverridePrice={(order, item) => setPriceOverrideTarget({ order, item })}
               canRestoreItems={canRestoreItems}
               canRefund={canRefund}
               isWhatsAppReady={isWhatsAppReady}
@@ -1895,6 +1903,8 @@ export default function OrdersPage() {
               canCancelItems={canCancelItems}
               canEditItems={canEditItems}
               onEditItem={(order, item) => setEditItemTarget({ order, item })}
+              canOverridePrice={canOverridePrice}
+              onOverridePrice={(order, item) => setPriceOverrideTarget({ order, item })}
               canRestoreItems={canRestoreItems}
               canRefund={canRefund}
               isWhatsAppReady={isWhatsAppReady}
@@ -2159,6 +2169,14 @@ export default function OrdersPage() {
         </div>
       )}
 
+      {priceOverrideTarget && (
+        <PriceOverrideModal
+          orderId={priceOverrideTarget.order.id}
+          item={priceOverrideTarget.item}
+          onClose={() => setPriceOverrideTarget(null)}
+          onSaved={() => fetchOrders(undefined, { refreshLoadedPages: true })}
+        />
+      )}
       {/* Void In-Progress Item Modal */}
       {editItemTarget && (
         <EditOrderItemModal

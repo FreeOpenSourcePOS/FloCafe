@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "レポートを添えてWhatsAppを開いています...",
     "salesSummary": "売上概要",
     "paymentBreakdown": "支払い",
-    "drawerReconciliation": "レジ現金の照合"
+    "drawerReconciliation": "レジ現金の照合",
+    "priceExceptions": "価格例外",
+    "priceExceptionsEmpty": "この期間に価格変更はありません",
+    "priceExceptionsCount": "変更：{count}",
+    "priceExceptionsComps": "サービス品：{count}",
+    "priceExceptionsTotal": "差額合計：{amount}",
+    "priceExceptionOrder": "注文",
+    "priceExceptionItem": "商品",
+    "priceExceptionOriginal": "メニュー価格",
+    "priceExceptionBilled": "請求価格",
+    "priceExceptionDifference": "差額",
+    "priceExceptionBy": "変更者",
+    "priceExceptionAt": "日時",
+    "priceExceptionReason": "理由"
   },
   "expenses": {
     "addTitle": "経費を追加",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "保存済みの編集を読み込めず、更新もできませんでした。この端末に保持されています。",
     "pendingItemEditAuthRequired": "この編集を解決するには、元のアカウントでサインインしてください。",
     "pendingItemEditRateLimited": "リクエストが多すぎます。しばらく待ってから、もう一度お試しください。",
-    "pendingItemEditRefreshFailed": "編集は確認されましたが、現在の注文内容を更新できませんでした。"
+    "pendingItemEditRefreshFailed": "編集は確認されましたが、現在の注文内容を更新できませんでした。",
+    "overridePrice": "価格を変更",
+    "overridePriceTitle": "商品の価格を変更",
+    "overridePriceHint": "この明細の販売価格を設定します。サービス品は0を入力してください。",
+    "overridePriceNewPrice": "新しい単価",
+    "overridePriceReason": "理由",
+    "overridePriceReasonPlaceholder": "例：サービスのデザート",
+    "overridePriceSave": "価格を適用",
+    "overridePriceSaved": "価格を更新しました",
+    "overridePriceFailed": "価格を更新できませんでした",
+    "priceOverriddenMenu": "価格変更済み（メニュー {price}）"
   },
   "pos": {
     "addCustomer": "顧客を追加",
@@ -2699,7 +2722,8 @@
       "cloudAccountData": "クラウドアカウントとデータ制御を管理",
       "databaseTools": "データベースツールとバックアップを使用",
       "serverApp": "スタンドアロンのサーバーアプリを使用",
-      "support": "サポートに連絡し診断情報を表示"
+      "support": "サポートに連絡し診断情報を表示",
+      "orderItemPriceOverride": "注文商品の価格を変更"
     },
     "editorSubtitle": "役割の既定値を設定するか、特定のスタッフの例外を作成します。変更は次の操作から適用されます。",
     "roleDefaultsTab": "役割の既定値",

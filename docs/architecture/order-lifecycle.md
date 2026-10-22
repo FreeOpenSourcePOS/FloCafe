@@ -73,11 +73,11 @@ table `occupied`.
 Three surfaces apply discounts, all gated by the discount permission for their scope and by the same
 settings:
 
-| Surface | Endpoint | Notes |
-| --- | --- | --- |
-| Order | `PATCH /api/orders/:id/discount` | Percentage or flat amount against the item subtotal; split or refunded bills or discounts below collected payments return `409`, and completed or cancelled orders return `400`. |
+| Surface    | Endpoint                                       | Notes                                                                                                                                                                                          |
+| ---------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Order      | `PATCH /api/orders/:id/discount`               | Percentage or flat amount against the item subtotal; split or refunded bills or discounts below collected payments return `409`, and completed or cancelled orders return `400`.               |
 | Order item | `PATCH /api/orders/:id/items/:itemId/discount` | One line; split or refunded bills or discounts below collected payments return `409`, and completed or cancelled orders or cancelled, voided, void-adjustment, or refunded items return `400`. |
-| Bill | `POST /api/bills/:id/applyDiscount` | Recomputes the bill and order; paid bills return `400`, split or refunded bills, completed or cancelled orders, and discounts below collected payments return `409`. |
+| Bill       | `POST /api/bills/:id/applyDiscount`            | Recomputes the bill and order; paid bills return `400`, split or refunded bills, completed or cancelled orders, and discounts below collected payments return `409`.                           |
 
 Common rules, enforced in the handlers:
 
@@ -104,6 +104,29 @@ Common rules, enforced in the handlers:
 - Applying an order or bill discount records an `order_discount_applied` action in
   `order_audit_log` with the authenticated actor, discount details, and the approving manager ID
   when a manager PIN override was used (the raw PIN is never stored).
+
+## Manual item price overrides
+
+The owner (only) can sell one line at a price other than its menu price, including `0` for a
+complimentary item. The permission `orders.item.price_override` is owner-only and not configurable.
+
+- `PATCH /api/orders/:id/items/:itemId/price` takes `price` and a required `reason`. The same
+  `price_override: { price, reason }` object is accepted on a line when an order is created or items
+  are added, and a request from any other role is a `403`.
+- The line's `unit_price` becomes the override. The first menu price stays in `original_unit_price`
+  across repeated overrides, and `price_overridden`, `price_override_reason`, `price_overridden_by`,
+  and `price_overridden_at` record the change. Receipts and bills read `unit_price`, so they show the
+  selling price.
+- The backend recomputes item tax, order totals, and an open bill. An existing item discount stays,
+  capped at the new line total.
+- Overrides are allowed once a line has been sent to the kitchen, because only the price changes.
+  They are refused (`409`) once a bill has payments, a split, or a refund, and (`400`) on completed or
+  cancelled orders and cancelled or voided lines.
+- A quantity edit keeps the override flag and menu price on the replacement line; replacing the line
+  with a different product or variant starts at that product's menu price.
+- Each override records an `item_price_overridden` action in `order_audit_log`.
+- `GET /api/reports/price-exceptions` lists overridden, non-cancelled lines whose override time falls
+  in the selected store-timezone date range, and the dashboard shows them as the price exceptions card.
 
 ## Bills
 

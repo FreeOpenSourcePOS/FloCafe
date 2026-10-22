@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "Membuka WhatsApp dengan laporan...",
     "salesSummary": "RINGKASAN PENJUALAN",
     "paymentBreakdown": "PEMBAYARAN",
-    "drawerReconciliation": "REKONSILIASI LACI KAS"
+    "drawerReconciliation": "REKONSILIASI LACI KAS",
+    "priceExceptions": "Pengecualian harga",
+    "priceExceptionsEmpty": "Tidak ada perubahan harga pada periode ini",
+    "priceExceptionsCount": "Perubahan: {count}",
+    "priceExceptionsComps": "Gratis: {count}",
+    "priceExceptionsTotal": "Total selisih: {amount}",
+    "priceExceptionOrder": "Pesanan",
+    "priceExceptionItem": "Barang",
+    "priceExceptionOriginal": "Harga menu",
+    "priceExceptionBilled": "Harga ditagihkan",
+    "priceExceptionDifference": "Selisih",
+    "priceExceptionBy": "Diubah oleh",
+    "priceExceptionAt": "Kapan",
+    "priceExceptionReason": "Alasan"
   },
   "expenses": {
     "addTitle": "Tambah pengeluaran",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "Perubahan yang tersimpan tidak dapat dibaca atau diperbarui. Tetap disimpan di perangkat ini.",
     "pendingItemEditAuthRequired": "Masuk dengan akun asli untuk menyelesaikan perubahan ini.",
     "pendingItemEditRateLimited": "Terlalu banyak permintaan. Tunggu, lalu coba lagi.",
-    "pendingItemEditRefreshFailed": "Perubahan dikonfirmasi, tetapi detail pesanan terkini tidak dapat disegarkan."
+    "pendingItemEditRefreshFailed": "Perubahan dikonfirmasi, tetapi detail pesanan terkini tidak dapat disegarkan.",
+    "overridePrice": "Ubah harga",
+    "overridePriceTitle": "Ubah harga item",
+    "overridePriceHint": "Tentukan harga jual untuk baris ini. Masukkan 0 untuk item gratis.",
+    "overridePriceNewPrice": "Harga satuan baru",
+    "overridePriceReason": "Alasan",
+    "overridePriceReasonPlaceholder": "mis. Hidangan penutup gratis",
+    "overridePriceSave": "Terapkan harga",
+    "overridePriceSaved": "Harga diperbarui",
+    "overridePriceFailed": "Tidak dapat memperbarui harga",
+    "priceOverriddenMenu": "Harga diubah (menu {price})"
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",
@@ -2699,7 +2722,8 @@
       "cloudAccountData": "Mengelola kontrol akun dan data cloud",
       "databaseTools": "Menggunakan alat basis data dan pencadangan",
       "serverApp": "Menggunakan Aplikasi Server mandiri",
-      "support": "Menghubungi dukungan dan melihat diagnostik"
+      "support": "Menghubungi dukungan dan melihat diagnostik",
+      "orderItemPriceOverride": "Mengubah harga item pesanan"
     },
     "editorSubtitle": "Konfigurasikan default peran atau buat pengecualian untuk satu staf. Perubahan berlaku pada tindakan berikutnya.",
     "roleDefaultsTab": "Default peran",

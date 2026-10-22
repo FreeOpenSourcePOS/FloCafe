@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "正在打开附带报表的 WhatsApp...",
     "salesSummary": "销售摘要",
     "paymentBreakdown": "付款",
-    "drawerReconciliation": "钱箱对账"
+    "drawerReconciliation": "钱箱对账",
+    "priceExceptions": "价格例外",
+    "priceExceptionsEmpty": "此期间没有价格修改",
+    "priceExceptionsCount": "修改：{count}",
+    "priceExceptionsComps": "赠送：{count}",
+    "priceExceptionsTotal": "差额合计：{amount}",
+    "priceExceptionOrder": "订单",
+    "priceExceptionItem": "商品",
+    "priceExceptionOriginal": "菜单价",
+    "priceExceptionBilled": "结算价",
+    "priceExceptionDifference": "差额",
+    "priceExceptionBy": "修改人",
+    "priceExceptionAt": "时间",
+    "priceExceptionReason": "原因"
   },
   "expenses": {
     "addTitle": "添加支出",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "无法读取或更新已保存的修改。该修改已保留在此设备上。",
     "pendingItemEditAuthRequired": "请使用原账号登录以解决此修改。",
     "pendingItemEditRateLimited": "请求过多。请稍候后再试。",
-    "pendingItemEditRefreshFailed": "修改已确认，但无法刷新当前订单详情。"
+    "pendingItemEditRefreshFailed": "修改已确认，但无法刷新当前订单详情。",
+    "overridePrice": "修改价格",
+    "overridePriceTitle": "修改商品价格",
+    "overridePriceHint": "设置此行的销售价格。赠送商品请输入 0。",
+    "overridePriceNewPrice": "新单价",
+    "overridePriceReason": "原因",
+    "overridePriceReasonPlaceholder": "例如：赠送甜点",
+    "overridePriceSave": "应用价格",
+    "overridePriceSaved": "价格已更新",
+    "overridePriceFailed": "无法更新价格",
+    "priceOverriddenMenu": "价格已修改（菜单价 {price}）"
   },
   "pos": {
     "addCustomer": "添加顾客",
@@ -2699,7 +2722,8 @@
       "cloudAccountData": "管理云账户和数据控制",
       "databaseTools": "使用数据库工具和备份",
       "serverApp": "使用独立服务员应用",
-      "support": "联系支持并查看诊断"
+      "support": "联系支持并查看诊断",
+      "orderItemPriceOverride": "修改订单商品价格"
     },
     "editorSubtitle": "配置角色默认权限，或为某位员工设置例外。更改将在其下次操作时生效。",
     "roleDefaultsTab": "角色默认值",

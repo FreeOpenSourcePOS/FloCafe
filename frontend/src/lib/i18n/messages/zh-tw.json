@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "正在開啟含報表的 WhatsApp...",
     "salesSummary": "銷售摘要",
     "paymentBreakdown": "付款",
-    "drawerReconciliation": "錢櫃核對"
+    "drawerReconciliation": "錢櫃核對",
+    "priceExceptions": "價格例外",
+    "priceExceptionsEmpty": "此期間沒有價格修改",
+    "priceExceptionsCount": "修改：{count}",
+    "priceExceptionsComps": "招待：{count}",
+    "priceExceptionsTotal": "差額合計：{amount}",
+    "priceExceptionOrder": "訂單",
+    "priceExceptionItem": "商品",
+    "priceExceptionOriginal": "菜單價",
+    "priceExceptionBilled": "結帳價",
+    "priceExceptionDifference": "差額",
+    "priceExceptionBy": "修改者",
+    "priceExceptionAt": "時間",
+    "priceExceptionReason": "原因"
   },
   "expenses": {
     "addTitle": "新增支出",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "無法讀取或更新已儲存的修改。該修改已保留在此裝置上。",
     "pendingItemEditAuthRequired": "請使用原始帳號登入以解決此修改。",
     "pendingItemEditRateLimited": "請求過多。請稍候再試。",
-    "pendingItemEditRefreshFailed": "修改已確認，但無法重新整理目前訂單詳細資料。"
+    "pendingItemEditRefreshFailed": "修改已確認，但無法重新整理目前訂單詳細資料。",
+    "overridePrice": "修改價格",
+    "overridePriceTitle": "修改商品價格",
+    "overridePriceHint": "設定此行的銷售價格。贈送商品請輸入 0。",
+    "overridePriceNewPrice": "新單價",
+    "overridePriceReason": "原因",
+    "overridePriceReasonPlaceholder": "例如：招待甜點",
+    "overridePriceSave": "套用價格",
+    "overridePriceSaved": "價格已更新",
+    "overridePriceFailed": "無法更新價格",
+    "priceOverriddenMenu": "價格已修改（菜單價 {price}）"
   },
   "pos": {
     "addCustomer": "新增顧客",
@@ -2699,7 +2722,8 @@
       "cloudAccountData": "管理雲端帳戶和資料控制",
       "databaseTools": "使用資料庫工具和備份",
       "serverApp": "使用獨立服務員應用程式",
-      "support": "聯絡支援並檢視診斷"
+      "support": "聯絡支援並檢視診斷",
+      "orderItemPriceOverride": "修改訂單商品價格"
     },
     "editorSubtitle": "設定角色預設值，或為單一位員工建立例外。變更會從他的下一個操作開始生效。",
     "roleDefaultsTab": "角色預設值",

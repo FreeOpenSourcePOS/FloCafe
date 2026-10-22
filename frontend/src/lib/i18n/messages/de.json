@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "WhatsApp mit Bericht wird geöffnet...",
     "salesSummary": "UMSATZÜBERSICHT",
     "paymentBreakdown": "ZAHLUNGEN",
-    "drawerReconciliation": "KASSENABSTIMMUNG"
+    "drawerReconciliation": "KASSENABSTIMMUNG",
+    "priceExceptions": "Preisausnahmen",
+    "priceExceptionsEmpty": "Keine Preisänderungen in diesem Zeitraum",
+    "priceExceptionsCount": "Änderungen: {count}",
+    "priceExceptionsComps": "Aufs Haus: {count}",
+    "priceExceptionsTotal": "Gesamtdifferenz: {amount}",
+    "priceExceptionOrder": "Bestellung",
+    "priceExceptionItem": "Artikel",
+    "priceExceptionOriginal": "Kartenpreis",
+    "priceExceptionBilled": "Berechneter Preis",
+    "priceExceptionDifference": "Differenz",
+    "priceExceptionBy": "Geändert von",
+    "priceExceptionAt": "Wann",
+    "priceExceptionReason": "Grund"
   },
   "expenses": {
     "addTitle": "Ausgabe hinzufügen",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "Die gespeicherte Änderung konnte nicht gelesen oder aktualisiert werden. Sie blieb auf diesem Gerät erhalten.",
     "pendingItemEditAuthRequired": "Melden Sie sich mit dem ursprünglichen Konto an, um diese Änderung aufzulösen.",
     "pendingItemEditRateLimited": "Zu viele Anfragen. Bitte warten und dann erneut versuchen.",
-    "pendingItemEditRefreshFailed": "Die Änderung wurde bestätigt, aber die aktuellen Bestelldetails konnten nicht aktualisiert werden."
+    "pendingItemEditRefreshFailed": "Die Änderung wurde bestätigt, aber die aktuellen Bestelldetails konnten nicht aktualisiert werden.",
+    "overridePrice": "Preis ändern",
+    "overridePriceTitle": "Artikelpreis ändern",
+    "overridePriceHint": "Legen Sie den Verkaufspreis für diese Zeile fest. Geben Sie 0 für einen kostenlosen Artikel ein.",
+    "overridePriceNewPrice": "Neuer Einzelpreis",
+    "overridePriceReason": "Grund",
+    "overridePriceReasonPlaceholder": "z. B. Dessert aufs Haus",
+    "overridePriceSave": "Preis anwenden",
+    "overridePriceSaved": "Preis aktualisiert",
+    "overridePriceFailed": "Preis konnte nicht aktualisiert werden",
+    "priceOverriddenMenu": "Preis geändert (Karte {price})"
   },
   "pos": {
     "addCustomer": "Kunde hinzufügen",
@@ -2699,7 +2722,8 @@
       "databaseTools": "Datenbankwerkzeuge und Sicherungen nutzen",
       "serverApp": "Eigenständige Bedienungs-App verwenden",
       "support": "Support kontaktieren und Diagnosedaten einsehen",
-      "inventoryManage": "Vorräte und Rezepte verwalten"
+      "inventoryManage": "Vorräte und Rezepte verwalten",
+      "orderItemPriceOverride": "Preise von Bestellartikeln ändern"
     },
     "editorSubtitle": "Konfigurieren Sie Rollenvorgaben oder legen Sie eine Ausnahme für ein Teammitglied fest. Änderungen gelten ab der nächsten Aktion.",
     "roleDefaultsTab": "Rollenvorgaben",

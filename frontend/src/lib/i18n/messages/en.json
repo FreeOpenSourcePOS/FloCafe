@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "Opening WhatsApp with report...",
     "salesSummary": "SALES SUMMARY",
     "paymentBreakdown": "PAYMENTS",
-    "drawerReconciliation": "DRAWER RECONCILIATION"
+    "drawerReconciliation": "DRAWER RECONCILIATION",
+    "priceExceptions": "Price exceptions",
+    "priceExceptionsEmpty": "No price overrides in this period",
+    "priceExceptionsCount": "Overrides: {count}",
+    "priceExceptionsComps": "Complimentary: {count}",
+    "priceExceptionsTotal": "Total difference: {amount}",
+    "priceExceptionOrder": "Order",
+    "priceExceptionItem": "Item",
+    "priceExceptionOriginal": "Menu price",
+    "priceExceptionBilled": "Billed price",
+    "priceExceptionDifference": "Difference",
+    "priceExceptionBy": "Changed by",
+    "priceExceptionAt": "When",
+    "priceExceptionReason": "Reason"
   },
   "expenses": {
     "addTitle": "Add expense",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "The saved edit could not be read or updated. It has been kept on this device.",
     "pendingItemEditAuthRequired": "Sign in with the original account to resolve this edit.",
     "pendingItemEditRateLimited": "Too many requests. Wait, then try resolving again.",
-    "pendingItemEditRefreshFailed": "The edit was confirmed, but current order details could not be refreshed."
+    "pendingItemEditRefreshFailed": "The edit was confirmed, but current order details could not be refreshed.",
+    "overridePrice": "Override price",
+    "overridePriceTitle": "Override item price",
+    "overridePriceHint": "Set the selling price for this line. Enter 0 for a complimentary item.",
+    "overridePriceNewPrice": "New unit price",
+    "overridePriceReason": "Reason",
+    "overridePriceReasonPlaceholder": "e.g. Complimentary dessert",
+    "overridePriceSave": "Apply price",
+    "overridePriceSaved": "Price updated",
+    "overridePriceFailed": "Could not update the price",
+    "priceOverriddenMenu": "Price overridden (menu {price})"
   },
   "pos": {
     "addCustomer": "Add Customer",
@@ -2699,7 +2722,8 @@
       "databaseTools": "Use database tools and backups",
       "serverApp": "Use the standalone Server App",
       "support": "Contact support and view diagnostics",
-      "inventoryManage": "Manage supplies and recipes"
+      "inventoryManage": "Manage supplies and recipes",
+      "orderItemPriceOverride": "Override order item prices"
     },
     "editorSubtitle": "Configure role defaults or make an exception for one staff member. Changes apply to their next action.",
     "roleDefaultsTab": "Role defaults",

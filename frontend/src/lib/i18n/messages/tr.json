@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "Raporla birlikte WhatsApp açılıyor...",
     "salesSummary": "SATIŞ ÖZETİ",
     "paymentBreakdown": "ÖDEMELER",
-    "drawerReconciliation": "KASA MUTABAKATI"
+    "drawerReconciliation": "KASA MUTABAKATI",
+    "priceExceptions": "Fiyat istisnaları",
+    "priceExceptionsEmpty": "Bu dönemde fiyat değişikliği yok",
+    "priceExceptionsCount": "Değişiklik: {count}",
+    "priceExceptionsComps": "İkram: {count}",
+    "priceExceptionsTotal": "Toplam fark: {amount}",
+    "priceExceptionOrder": "Sipariş",
+    "priceExceptionItem": "Ürün",
+    "priceExceptionOriginal": "Menü fiyatı",
+    "priceExceptionBilled": "Faturalanan fiyat",
+    "priceExceptionDifference": "Fark",
+    "priceExceptionBy": "Değiştiren",
+    "priceExceptionAt": "Ne zaman",
+    "priceExceptionReason": "Neden"
   },
   "expenses": {
     "addTitle": "Gider ekle",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "Kaydedilen düzenleme okunamadı veya güncellenemedi. Cihazda saklandı.",
     "pendingItemEditAuthRequired": "Bu düzenlemeyi çözmek için özgün hesapla giriş yapın.",
     "pendingItemEditRateLimited": "Çok fazla istek var. Bekleyin ve tekrar deneyin.",
-    "pendingItemEditRefreshFailed": "Düzenleme doğrulandı ancak siparişin güncel ayrıntıları yenilenemedi."
+    "pendingItemEditRefreshFailed": "Düzenleme doğrulandı ancak siparişin güncel ayrıntıları yenilenemedi.",
+    "overridePrice": "Fiyatı değiştir",
+    "overridePriceTitle": "Ürün fiyatını değiştir",
+    "overridePriceHint": "Bu satırın satış fiyatını belirleyin. İkram ürün için 0 girin.",
+    "overridePriceNewPrice": "Yeni birim fiyat",
+    "overridePriceReason": "Neden",
+    "overridePriceReasonPlaceholder": "örn. İkram tatlı",
+    "overridePriceSave": "Fiyatı uygula",
+    "overridePriceSaved": "Fiyat güncellendi",
+    "overridePriceFailed": "Fiyat güncellenemedi",
+    "priceOverriddenMenu": "Fiyat değiştirildi (menü {price})"
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",
@@ -2699,7 +2722,8 @@
       "databaseTools": "Veritabanı araçlarını ve yedeklemeyi kullanma",
       "serverApp": "Bağımsız Garson Uygulamasını kullanma",
       "support": "Destek ekibiyle iletişime geçme ve sistem tanılamayı görme",
-      "inventoryManage": "Sarf malzemelerini ve tarifleri yönetme"
+      "inventoryManage": "Sarf malzemelerini ve tarifleri yönetme",
+      "orderItemPriceOverride": "Sipariş ürün fiyatlarını değiştir"
     },
     "editorSubtitle": "Rol varsayılanlarını yapılandırın veya tek bir personel için istisna oluşturun. Değişiklikler bir sonraki işlemlerinde geçerli olur.",
     "roleDefaultsTab": "Rol varsayılanları",

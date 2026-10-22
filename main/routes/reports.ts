@@ -15,6 +15,7 @@ import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import * as whatsapp from '../services/whatsapp';
 import { parsePhoneE164 } from '../lib/phone';
 import { getOrdersWithItemsForBills } from './bills';
+import { listPriceExceptions } from '../services/item-price-override';
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
@@ -442,6 +443,49 @@ router.get('/tax-components', requirePermission('reports.view'), (req: Request, 
       .json({ error: error.statusCode ? error.message : 'Internal server error' });
   }
 });
+
+router.get(
+  '/price-exceptions',
+  requirePermission('reports.view'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const today = reportToday();
+      const startDate = reportDate(req.query.start_date, today);
+      const endDate = reportDate(req.query.end_date, today);
+      if (startDate > endDate) {
+        captureReportsDateRangeRejection('reversed_range');
+        return res.status(400).json({ error: 'start_date must be on or before end_date' });
+      }
+      const rows = listPriceExceptions(
+        db,
+        reportDayBounds(startDate)[0],
+        reportDayBounds(endDate)[1],
+      );
+      const complimentary = rows.filter((row) => row.billed_unit_price === 0).length;
+      const totalDifference = rows.reduce(
+        (sum, row) => sum.plus(row.difference * row.quantity),
+        new Decimal(0),
+      );
+      res.json({
+        priceExceptions: {
+          startDate,
+          endDate,
+          count: rows.length,
+          complimentaryCount: complimentary,
+          totalDifference: totalDifference.toDecimalPlaces(6).toNumber(),
+          rows,
+        },
+      });
+    } catch (error: unknown) {
+      console.error('[API] Price exceptions report failed:', error);
+      const failure = error as { statusCode?: number; message?: string };
+      res
+        .status(failure.statusCode || 500)
+        .json({ error: failure.statusCode ? failure.message : 'Internal server error' });
+    }
+  },
+);
 
 router.get('/sales', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {

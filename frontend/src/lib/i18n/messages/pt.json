@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "Abrindo o WhatsApp com o relatório...",
     "salesSummary": "RESUMO DE VENDAS",
     "paymentBreakdown": "PAGAMENTOS",
-    "drawerReconciliation": "CONCILIAÇÃO DO CAIXA"
+    "drawerReconciliation": "CONCILIAÇÃO DO CAIXA",
+    "priceExceptions": "Exceções de preço",
+    "priceExceptionsEmpty": "Nenhuma alteração de preço neste período",
+    "priceExceptionsCount": "Alterações: {count}",
+    "priceExceptionsComps": "Cortesias: {count}",
+    "priceExceptionsTotal": "Diferença total: {amount}",
+    "priceExceptionOrder": "Pedido",
+    "priceExceptionItem": "Item",
+    "priceExceptionOriginal": "Preço do cardápio",
+    "priceExceptionBilled": "Preço cobrado",
+    "priceExceptionDifference": "Diferença",
+    "priceExceptionBy": "Alterado por",
+    "priceExceptionAt": "Quando",
+    "priceExceptionReason": "Motivo"
   },
   "expenses": {
     "addTitle": "Adicionar despesa",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "A edição salva não pôde ser lida nem atualizada. Foi mantida neste dispositivo.",
     "pendingItemEditAuthRequired": "Entre com a conta original para resolver esta edição.",
     "pendingItemEditRateLimited": "Muitas solicitações. Aguarde e tente resolver novamente.",
-    "pendingItemEditRefreshFailed": "A edição foi confirmada, mas não foi possível atualizar os detalhes atuais do pedido."
+    "pendingItemEditRefreshFailed": "A edição foi confirmada, mas não foi possível atualizar os detalhes atuais do pedido.",
+    "overridePrice": "Alterar preço",
+    "overridePriceTitle": "Alterar preço do item",
+    "overridePriceHint": "Defina o preço de venda desta linha. Digite 0 para um item de cortesia.",
+    "overridePriceNewPrice": "Novo preço unitário",
+    "overridePriceReason": "Motivo",
+    "overridePriceReasonPlaceholder": "ex.: Sobremesa de cortesia",
+    "overridePriceSave": "Aplicar preço",
+    "overridePriceSaved": "Preço atualizado",
+    "overridePriceFailed": "Não foi possível atualizar o preço",
+    "priceOverriddenMenu": "Preço alterado (cardápio {price})"
   },
   "pos": {
     "addCustomer": "Adicionar Cliente",
@@ -2699,7 +2722,8 @@
       "databaseTools": "Usar ferramentas e backups do banco de dados",
       "serverApp": "Usar o aplicativo independente do servidor",
       "support": "Contatar o suporte e ver diagnósticos",
-      "inventoryManage": "Gerenciar insumos e receitas"
+      "inventoryManage": "Gerenciar insumos e receitas",
+      "orderItemPriceOverride": "Alterar preços dos itens do pedido"
     },
     "editorSubtitle": "Configure os padrões da função ou crie uma exceção para um funcionário. As alterações se aplicam na próxima ação dele.",
     "roleDefaultsTab": "Padrões da função",

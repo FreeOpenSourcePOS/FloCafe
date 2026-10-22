@@ -403,7 +403,20 @@
     "reportOpeningWhatsAppWeb": "प्रतिवेदनसहित WhatsApp खोलिँदैछ...",
     "salesSummary": "बिक्री सारांश",
     "paymentBreakdown": "भुक्तानी",
-    "drawerReconciliation": "नगद दराज मिलान"
+    "drawerReconciliation": "नगद दराज मिलान",
+    "priceExceptions": "मूल्य अपवाद",
+    "priceExceptionsEmpty": "यस अवधिमा कुनै मूल्य परिवर्तन छैन",
+    "priceExceptionsCount": "परिवर्तन: {count}",
+    "priceExceptionsComps": "निःशुल्क: {count}",
+    "priceExceptionsTotal": "कुल फरक: {amount}",
+    "priceExceptionOrder": "अर्डर",
+    "priceExceptionItem": "वस्तु",
+    "priceExceptionOriginal": "मेनु मूल्य",
+    "priceExceptionBilled": "बिल गरिएको मूल्य",
+    "priceExceptionDifference": "फरक",
+    "priceExceptionBy": "परिवर्तन गर्ने",
+    "priceExceptionAt": "कहिले",
+    "priceExceptionReason": "कारण"
   },
   "expenses": {
     "addTitle": "खर्च थप्नुहोस्",
@@ -784,7 +797,17 @@
     "pendingItemEditStorageError": "सुरक्षित सम्पादन पढ्न वा अद्यावधिक गर्न सकिएन। यस उपकरणमा सुरक्षित राखिएको छ।",
     "pendingItemEditAuthRequired": "यो सम्पादन समाधान गर्न मूल खातामा साइन इन गर्नुहोस्।",
     "pendingItemEditRateLimited": "धेरै अनुरोध। पर्खनुहोस्, अनि फेरि प्रयास गर्नुहोस्।",
-    "pendingItemEditRefreshFailed": "सम्पादन पुष्टि भयो, तर हालको अर्डरको विवरण ताजा गर्न सकिएन।"
+    "pendingItemEditRefreshFailed": "सम्पादन पुष्टि भयो, तर हालको अर्डरको विवरण ताजा गर्न सकिएन।",
+    "overridePrice": "मूल्य परिवर्तन गर्नुहोस्",
+    "overridePriceTitle": "वस्तुको मूल्य परिवर्तन गर्नुहोस्",
+    "overridePriceHint": "यो पङ्क्तिको बिक्री मूल्य तोक्नुहोस्। निःशुल्क वस्तुका लागि 0 लेख्नुहोस्।",
+    "overridePriceNewPrice": "नयाँ एकाइ मूल्य",
+    "overridePriceReason": "कारण",
+    "overridePriceReasonPlaceholder": "जस्तै: निःशुल्क मिठाई",
+    "overridePriceSave": "मूल्य लागू गर्नुहोस्",
+    "overridePriceSaved": "मूल्य अद्यावधिक भयो",
+    "overridePriceFailed": "मूल्य अद्यावधिक गर्न सकिएन",
+    "priceOverriddenMenu": "मूल्य परिवर्तन गरियो (मेनु {price})"
   },
   "pos": {
     "addCustomer": "ग्राहक थप्नुहोस्",
@@ -2699,7 +2722,8 @@
       "databaseTools": "डाटाबेस उपकरण र ब्याकअप प्रयोग गर्नुहोस्",
       "serverApp": "स्ट्यान्डअलोन सर्भर एप प्रयोग गर्नुहोस्",
       "support": "सहायतालाई सम्पर्क गर्नुहोस् र निदान हेर्नुहोस्",
-      "inventoryManage": "आपूर्ति र व्यञ्जनहरू प्रबन्ध गर्नुहोस्"
+      "inventoryManage": "आपूर्ति र व्यञ्जनहरू प्रबन्ध गर्नुहोस्",
+      "orderItemPriceOverride": "अर्डर वस्तुको मूल्य परिवर्तन गर्नुहोस्"
     },
     "editorSubtitle": "भूमिकाका पूर्वनिर्धारित सेटिङ कन्फिगर गर्नुहोस् वा एक कर्मचारीका लागि अपवाद बनाउनुहोस्। परिवर्तनहरू उनको अर्को कार्यमा लागू हुनेछन्।",
     "roleDefaultsTab": "भूमिका पूर्वनिर्धारित",

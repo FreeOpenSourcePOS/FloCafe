@@ -40,6 +40,7 @@ import { useCashClose } from '@/hooks/useCashClose';
 import toast from 'react-hot-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
+import { PriceExceptionsCard } from '@/components/dashboard/PriceExceptionsCard';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -932,6 +933,10 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="mt-5">
+            <PriceExceptionsCard startDate={range.startDate} endDate={range.endDate} />
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">

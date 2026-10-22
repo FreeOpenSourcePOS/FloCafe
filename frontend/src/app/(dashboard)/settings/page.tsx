@@ -7,8 +7,6 @@ import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type BillTemplate } from '@/store/pos-settings';
 import { useThemeMode, type ThemeMode } from '@/store/theme';
 import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
-import { usePosSortPreference } from '@/hooks/usePosSort';
-import { POS_CATEGORY_SORTS, POS_ITEM_SORTS } from '@/lib/pos-sort';
 import { CustomerDisplayCard } from '@/components/settings/CustomerDisplayCard';
 import type {
   KotLanguagePolicy,
@@ -42,7 +40,6 @@ import {
   Percent,
   AlertTriangle,
   SunMoon,
-  ArrowUpDown,
   LayoutPanelTop,
 } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
@@ -486,7 +483,6 @@ export default function SettingsPage() {
 
   const themeMode = useThemeMode((s) => s.mode);
   const { layout: ordersLayout, save: saveOrdersLayout } = useOrdersLayoutPreference();
-  const { categorySort, itemSort, save: savePosSort } = usePosSortPreference();
   const setThemeMode = useThemeMode((s) => s.setMode);
   const markUserSelectedTheme = useThemeMode((s) => s.markUserSelected);
 
@@ -4112,65 +4108,6 @@ export default function SettingsPage() {
                         </button>
                       );
                     })}
-                  </div>
-                </div>
-
-                <div className="bg-card rounded-xl border border-border p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <ArrowUpDown size={20} className="text-muted-foreground" />
-                    <h2 className="font-semibold text-foreground">{t('posSortTitle')}</h2>
-                  </div>
-                  <p className="mb-4 text-xs text-muted-foreground">{t('posSortHint')}</p>
-                  <div className="flex flex-col gap-4">
-                    <label className="flex items-center justify-between gap-4 text-sm text-foreground">
-                      {t('posCategorySortLabel')}
-                      <select
-                        value={categorySort}
-                        disabled={!isAdmin}
-                        onChange={(e) =>
-                          void savePosSort(
-                            'pos_category_sort',
-                            e.target.value as typeof categorySort,
-                          )
-                        }
-                        className="w-56 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand bg-card"
-                      >
-                        {POS_CATEGORY_SORTS.map((option) => (
-                          <option key={option} value={option}>
-                            {t(
-                              `posSort_${option}` as
-                                | 'posSort_saved'
-                                | 'posSort_name'
-                                | 'posSort_price_asc'
-                                | 'posSort_price_desc',
-                            )}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="flex items-center justify-between gap-4 text-sm text-foreground">
-                      {t('posItemSortLabel')}
-                      <select
-                        value={itemSort}
-                        disabled={!isAdmin}
-                        onChange={(e) =>
-                          void savePosSort('pos_item_sort', e.target.value as typeof itemSort)
-                        }
-                        className="w-56 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand bg-card"
-                      >
-                        {POS_ITEM_SORTS.map((option) => (
-                          <option key={option} value={option}>
-                            {t(
-                              `posSort_${option}` as
-                                | 'posSort_saved'
-                                | 'posSort_name'
-                                | 'posSort_price_asc'
-                                | 'posSort_price_desc',
-                            )}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
                   </div>
                 </div>
               </SettingsTabShell>

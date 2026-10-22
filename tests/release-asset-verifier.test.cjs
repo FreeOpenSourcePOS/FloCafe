@@ -22,7 +22,10 @@ function manifestFor(files) {
   return [
     `version: ${VERSION}`,
     'files:',
-    ...files.flatMap((file) => [`  - url: ${file.url}`, `    sha512: ${file.sha512}`]),
+    ...files.flatMap((file) => [
+      `  - url: ${file.url}`,
+      `    sha512: ${file.sha512}`,
+    ]),
     `path: ${first.url}`,
     `sha512: ${first.sha512}`,
     'releaseDate: 2026-08-23T00:00:00.000Z',
@@ -35,7 +38,6 @@ function makeFixture() {
     ...MANIFESTS,
     'uninstall-macos.sh',
     'uninstall-windows.ps1',
-    'uninstall-windows.exe',
     `flocafe-${VERSION}-win-x64.exe`,
     `flocafe-${VERSION}-win-x64.exe.blockmap`,
     `flocafe-${VERSION}-win-x64.appx`,
@@ -58,22 +60,18 @@ function makeFixture() {
   const payloads = new Map(names.map((name) => [name, Buffer.from(`uploaded:${name}`)]));
   const filesByManifest = {
     'latest.yml': [`flocafe-${VERSION}-win-x64.exe`],
-    'latest-mac.yml': [`flocafe-${VERSION}-mac-x64.zip`, `flocafe-${VERSION}-mac-arm64.zip`],
+    'latest-mac.yml': [
+      `flocafe-${VERSION}-mac-x64.zip`,
+      `flocafe-${VERSION}-mac-arm64.zip`,
+    ],
     'latest-linux.yml': [`flocafe-${VERSION}-linux-x64.appimage`],
     'latest-linux-arm64.yml': [`flocafe-${VERSION}-linux-arm64.appimage`],
   };
   for (const [manifestName, fileNames] of Object.entries(filesByManifest)) {
-    payloads.set(
-      manifestName,
-      Buffer.from(
-        manifestFor(
-          fileNames.map((url) => ({
-            url,
-            sha512: sha512(payloads.get(url)),
-          })),
-        ),
-      ),
-    );
+    payloads.set(manifestName, Buffer.from(manifestFor(fileNames.map((url) => ({
+      url,
+      sha512: sha512(payloads.get(url)),
+    })))));
   }
 
   const assets = names.map((name, index) => ({
@@ -92,8 +90,7 @@ function makeFixture() {
 function requestFor(fixture, unavailable = new Set()) {
   return async (asset) => {
     const payload = fixture.payloads.get(asset.name);
-    if (!payload || unavailable.has(asset.name))
-      return new Response('unavailable', { status: 404 });
+    if (!payload || unavailable.has(asset.name)) return new Response('unavailable', { status: 404 });
     return new Response(payload, { status: 200 });
   };
 }
@@ -102,148 +99,90 @@ const fixture = makeFixture();
 const assets = fixture.release.assets;
 assert.doesNotThrow(() => assertReleaseAssetInventory(assets, MANIFESTS, VERSION));
 assert.throws(
-  () =>
-    assertReleaseAssetInventory(
-      assets.filter((asset) => !asset.name.endsWith('.appx')),
-      MANIFESTS,
-      VERSION,
-    ),
+  () => assertReleaseAssetInventory(assets.filter((asset) => !asset.name.endsWith('.appx')), MANIFESTS, VERSION),
   /missing:.*appx/,
 );
 assert.throws(
-  () =>
-    assertReleaseAssetInventory(
-      [...assets, { name: `flocafe-3.2.9-win-x64.exe`, size: 1 }],
-      MANIFESTS,
-      VERSION,
-    ),
+  () => assertReleaseAssetInventory([
+    ...assets,
+    { name: `flocafe-3.2.9-win-x64.exe`, size: 1 },
+  ], MANIFESTS, VERSION),
   /unexpected assets:.*3\.2\.9/,
 );
 
-const parsedManifest = parseManifest(
-  fixture.payloads.get('latest.yml').toString('utf8'),
-  'latest.yml',
-);
+const parsedManifest = parseManifest(fixture.payloads.get('latest.yml').toString('utf8'), 'latest.yml');
 assert.deepEqual(parsedManifest, {
   version: VERSION,
   path: `flocafe-${VERSION}-win-x64.exe`,
-  files: [
-    {
-      url: `flocafe-${VERSION}-win-x64.exe`,
-      sha512: sha512(fixture.payloads.get(`flocafe-${VERSION}-win-x64.exe`)),
-    },
-  ],
+  files: [{
+    url: `flocafe-${VERSION}-win-x64.exe`,
+    sha512: sha512(fixture.payloads.get(`flocafe-${VERSION}-win-x64.exe`)),
+  }],
 });
 assert.throws(
   () => parseManifest('files: not-a-list\nversion: 3.3.0\n', 'latest.yml'),
   /does not reference any update artifact/,
 );
 assert.throws(
-  () =>
-    parseManifest(
-      'files:\n  - url: artifact.exe\n    sha512: not-a-sha512\nversion: 3.3.0\n',
-      'latest.yml',
-    ),
+  () => parseManifest('files:\n  - url: artifact.exe\n    sha512: not-a-sha512\nversion: 3.3.0\n', 'latest.yml'),
   /valid SHA-512/,
 );
 
-assert.doesNotThrow(() =>
-  assertManifestPlatformMapping(
-    'latest.yml',
-    VERSION,
-    [{ url: `flocafe-${VERSION}-win-x64.exe` }],
-    `flocafe-${VERSION}-win-x64.exe`,
-  ),
-);
+assert.doesNotThrow(() => assertManifestPlatformMapping('latest.yml', VERSION, [
+  { url: `flocafe-${VERSION}-win-x64.exe` },
+], `flocafe-${VERSION}-win-x64.exe`));
 assert.throws(
-  () =>
-    assertManifestPlatformMapping('latest.yml', VERSION, [
-      { url: `flocafe-${VERSION}-win-x64.exe` },
-    ]),
+  () => assertManifestPlatformMapping('latest.yml', VERSION, [
+    { url: `flocafe-${VERSION}-win-x64.exe` },
+  ]),
   /updater path must/,
 );
-assert.doesNotThrow(() =>
-  assertManifestPlatformMapping(
-    'latest-mac.yml',
-    VERSION,
-    [
-      { url: `flocafe-${VERSION}-mac-x64.zip` },
-      { url: `flocafe-${VERSION}-mac-arm64.zip` },
-      { url: `flocafe-${VERSION}-mac-x64.dmg` },
-      { url: `flocafe-${VERSION}-mac-arm64.dmg` },
-    ],
-    `flocafe-${VERSION}-mac-x64.zip`,
-  ),
-);
+assert.doesNotThrow(() => assertManifestPlatformMapping('latest-mac.yml', VERSION, [
+  { url: `flocafe-${VERSION}-mac-x64.zip` },
+  { url: `flocafe-${VERSION}-mac-arm64.zip` },
+  { url: `flocafe-${VERSION}-mac-x64.dmg` },
+  { url: `flocafe-${VERSION}-mac-arm64.dmg` },
+], `flocafe-${VERSION}-mac-x64.zip`));
 assert.throws(
-  () =>
-    assertManifestPlatformMapping(
-      'latest-mac.yml',
-      VERSION,
-      [{ url: `flocafe-${VERSION}-mac-x64.zip` }, { url: `flocafe-${VERSION}-mac-arm64.zip` }],
-      `flocafe-${VERSION}-mac-x64.dmg`,
-    ),
+  () => assertManifestPlatformMapping('latest-mac.yml', VERSION, [
+    { url: `flocafe-${VERSION}-mac-x64.zip` },
+    { url: `flocafe-${VERSION}-mac-arm64.zip` },
+  ], `flocafe-${VERSION}-mac-x64.dmg`),
   /updater path must/,
 );
-assert.doesNotThrow(() =>
-  assertManifestPlatformMapping(
-    'latest-linux.yml',
-    VERSION,
-    [
-      { url: `flocafe-${VERSION}-linux-x64.appimage` },
-      // electron-builder lists every Linux target from the same invocation (#468).
-      { url: `flocafe-${VERSION}-linux-x64.deb` },
-      { url: `flocafe-${VERSION}-linux-x64.rpm` },
-    ],
-    `flocafe-${VERSION}-linux-x64.appimage`,
-  ),
-);
-assert.doesNotThrow(() =>
-  assertManifestPlatformMapping(
-    'latest-linux-arm64.yml',
-    VERSION,
-    [
-      { url: `flocafe-${VERSION}-linux-arm64.appimage` },
-      { url: `flocafe-${VERSION}-linux-arm64.deb` },
-    ],
-    `flocafe-${VERSION}-linux-arm64.appimage`,
-  ),
-);
+assert.doesNotThrow(() => assertManifestPlatformMapping('latest-linux.yml', VERSION, [
+  { url: `flocafe-${VERSION}-linux-x64.appimage` },
+  // electron-builder lists every Linux target from the same invocation (#468).
+  { url: `flocafe-${VERSION}-linux-x64.deb` },
+  { url: `flocafe-${VERSION}-linux-x64.rpm` },
+], `flocafe-${VERSION}-linux-x64.appimage`));
+assert.doesNotThrow(() => assertManifestPlatformMapping('latest-linux-arm64.yml', VERSION, [
+  { url: `flocafe-${VERSION}-linux-arm64.appimage` },
+  { url: `flocafe-${VERSION}-linux-arm64.deb` },
+], `flocafe-${VERSION}-linux-arm64.appimage`));
 assert.throws(
-  () =>
-    assertManifestPlatformMapping('latest.yml', VERSION, [
-      { url: `flocafe-${VERSION}-mac-x64.zip` },
-    ]),
+  () => assertManifestPlatformMapping('latest.yml', VERSION, [
+    { url: `flocafe-${VERSION}-mac-x64.zip` },
+  ]),
   /another platform or architecture/,
 );
 assert.throws(
-  () =>
-    assertManifestPlatformMapping(
-      'latest-linux-arm64.yml',
-      VERSION,
-      [{ url: `flocafe-${VERSION}-linux-x64.appimage` }],
-      `flocafe-${VERSION}-linux-x64.appimage`,
-    ),
+  () => assertManifestPlatformMapping('latest-linux-arm64.yml', VERSION, [
+    { url: `flocafe-${VERSION}-linux-x64.appimage` },
+  ], `flocafe-${VERSION}-linux-x64.appimage`),
   /another platform or architecture/,
 );
 assert.throws(
-  () =>
-    assertManifestPlatformMapping(
-      'latest-linux.yml',
-      VERSION,
-      [
-        { url: `flocafe-${VERSION}-linux-x64.appimage` },
-        { url: `flocafe-${VERSION}-linux-x64.deb` },
-      ],
-      `flocafe-${VERSION}-linux-x64.deb`,
-    ),
+  () => assertManifestPlatformMapping('latest-linux.yml', VERSION, [
+    { url: `flocafe-${VERSION}-linux-x64.appimage` },
+    { url: `flocafe-${VERSION}-linux-x64.deb` },
+  ], `flocafe-${VERSION}-linux-x64.deb`),
   /updater path must/,
 );
 assert.throws(
-  () =>
-    assertManifestPlatformMapping('latest-mac.yml', VERSION, [
-      { url: `flocafe-${VERSION}-mac-x64.zip` },
-    ]),
+  () => assertManifestPlatformMapping('latest-mac.yml', VERSION, [
+    { url: `flocafe-${VERSION}-mac-x64.zip` },
+  ]),
   /missing required platform artifacts/,
 );
 
@@ -256,22 +195,10 @@ assert.throws(
       return requestFor(fixture)(asset);
     },
   });
-  assert.ok(
-    requestedAssets.includes('uninstall-macos.sh'),
-    'non-manifest assets must be availability-checked',
-  );
-  assert.ok(
-    requestedAssets.includes(`flocafe-${VERSION}-win-x64.exe`),
-    'Windows representative must be downloaded and hashed',
-  );
-  assert.ok(
-    requestedAssets.includes(`flocafe-${VERSION}-mac-x64.zip`),
-    'macOS representative must be downloaded and hashed',
-  );
-  assert.ok(
-    requestedAssets.includes(`flocafe-${VERSION}-linux-x64.appimage`),
-    'Linux representative must be downloaded and hashed',
-  );
+  assert.ok(requestedAssets.includes('uninstall-macos.sh'), 'non-manifest assets must be availability-checked');
+  assert.ok(requestedAssets.includes(`flocafe-${VERSION}-win-x64.exe`), 'Windows representative must be downloaded and hashed');
+  assert.ok(requestedAssets.includes(`flocafe-${VERSION}-mac-x64.zip`), 'macOS representative must be downloaded and hashed');
+  assert.ok(requestedAssets.includes(`flocafe-${VERSION}-linux-x64.appimage`), 'Linux representative must be downloaded and hashed');
 
   const candidateManifest = await createCandidateManifest({
     release: fixture.release,
@@ -281,26 +208,13 @@ assert.throws(
     signingStatuses: { windows: 'not-verified', mac: 'signed', linux: 'not-applicable' },
   });
   const candidateManifestBytes = Buffer.from(`${JSON.stringify(candidateManifest, null, 2)}\n`);
-  const releaseSummary = createReleaseSummary({
-    manifest: candidateManifest,
-    candidateManifestBytes,
-  });
+  const releaseSummary = createReleaseSummary({ manifest: candidateManifest, candidateManifestBytes });
   const summaryBytes = Buffer.from(`${JSON.stringify(releaseSummary, null, 2)}\n`);
   fixture.payloads.set('candidate-manifest.json', candidateManifestBytes);
   fixture.payloads.set('release-summary.json', summaryBytes);
   fixture.release.assets.push(
-    {
-      name: 'candidate-manifest.json',
-      id: 1001,
-      size: candidateManifestBytes.length,
-      url: 'https://assets.test/candidate-manifest.json',
-    },
-    {
-      name: 'release-summary.json',
-      id: 1002,
-      size: summaryBytes.length,
-      url: 'https://assets.test/release-summary.json',
-    },
+    { name: 'candidate-manifest.json', id: 1001, size: candidateManifestBytes.length, url: 'https://assets.test/candidate-manifest.json' },
+    { name: 'release-summary.json', id: 1002, size: summaryBytes.length, url: 'https://assets.test/release-summary.json' },
   );
   await verifyReleaseAssets(fixture.release, {
     channel: 'latest',
@@ -313,77 +227,49 @@ assert.throws(
   const originalUninstaller = fixture.payloads.get('uninstall-macos.sh');
   fixture.payloads.set('uninstall-macos.sh', Buffer.from('changed after manifest creation'));
   await assert.rejects(
-    () =>
-      verifyReleaseAssets(fixture.release, {
-        channel: 'latest',
-        requestAsset: requestFor(fixture),
-        requireCandidateManifest: true,
-        candidateManifestAssetId: 1001,
-        candidateManifestCommit: 'a'.repeat(40),
-      }),
+    () => verifyReleaseAssets(fixture.release, {
+      channel: 'latest',
+      requestAsset: requestFor(fixture),
+      requireCandidateManifest: true,
+      candidateManifestAssetId: 1001,
+      candidateManifestCommit: 'a'.repeat(40),
+    }),
     /candidate digest binding mismatch for uninstall-macos\.sh/,
   );
   fixture.payloads.set('uninstall-macos.sh', originalUninstaller);
 
   const missingManifest = makeFixture();
-  missingManifest.release.assets = missingManifest.release.assets.filter(
-    (asset) => asset.name !== 'latest-linux-arm64.yml',
-  );
+  missingManifest.release.assets = missingManifest.release.assets.filter((asset) => asset.name !== 'latest-linux-arm64.yml');
   await assert.rejects(
-    () =>
-      verifyReleaseAssets(missingManifest.release, {
-        channel: 'latest',
-        requestAsset: requestFor(missingManifest),
-      }),
+    () => verifyReleaseAssets(missingManifest.release, { channel: 'latest', requestAsset: requestFor(missingManifest) }),
     /missing latest-linux-arm64\.yml/,
   );
 
   const badUrl = makeFixture();
   const badUrlName = `flocafe-${VERSION}-win-x64.exe`;
-  badUrl.payloads.set(
-    'latest.yml',
-    Buffer.from(
-      manifestFor([
-        {
-          url: badUrlName,
-          sha512: sha512(badUrl.payloads.get(badUrlName)),
-        },
-      ]),
-    ),
-  );
+  badUrl.payloads.set('latest.yml', Buffer.from(manifestFor([{
+    url: badUrlName,
+    sha512: sha512(badUrl.payloads.get(badUrlName)),
+  }])));
   await assert.rejects(
-    () =>
-      verifyReleaseAssets(badUrl.release, {
-        channel: 'latest',
-        requestAsset: requestFor(badUrl, new Set([badUrlName])),
-      }),
+    () => verifyReleaseAssets(badUrl.release, {
+      channel: 'latest',
+      requestAsset: requestFor(badUrl, new Set([badUrlName])),
+    }),
     /HTTP 200.*404/,
   );
 
   const badHash = makeFixture();
-  badHash.payloads.set(
-    'latest.yml',
-    Buffer.from(
-      manifestFor([
-        {
-          url: badUrlName,
-          sha512: sha512(Buffer.from('different uploaded content')),
-        },
-      ]),
-    ),
-  );
+  badHash.payloads.set('latest.yml', Buffer.from(manifestFor([{
+    url: badUrlName,
+    sha512: sha512(Buffer.from('different uploaded content')),
+  }])));
   await assert.rejects(
-    () =>
-      verifyReleaseAssets(badHash.release, {
-        channel: 'latest',
-        requestAsset: requestFor(badHash),
-      }),
+    () => verifyReleaseAssets(badHash.release, { channel: 'latest', requestAsset: requestFor(badHash) }),
     /SHA-512 mismatch.*win-x64\.exe/,
   );
 
-  console.log(
-    '✅ Draft release verifier success, missing-manifest, bad-URL, and bad-hash simulations passed',
-  );
+  console.log('✅ Draft release verifier success, missing-manifest, bad-URL, and bad-hash simulations passed');
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

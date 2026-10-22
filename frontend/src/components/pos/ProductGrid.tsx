@@ -16,12 +16,6 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
 import { subscribeToQuickSearch } from '@/lib/quick-search';
 import { parseQuantitySearch } from '@/lib/quantity-search';
-import {
-  sortCategories,
-  sortProducts,
-  type PosCategorySort,
-  type PosItemSort,
-} from '@/lib/pos-sort';
 import CollapsiblePosChoices from './CollapsiblePosChoices';
 
 /** The category chip shared by both category row modes. */
@@ -303,8 +297,6 @@ interface Props {
   disabled?: boolean;
   /** Cashier-POS opt-in: measured collapsed category row with a toggle. */
   collapseCategories?: boolean;
-  categorySort?: PosCategorySort;
-  itemSort?: PosItemSort;
 }
 
 export default function ProductGrid({
@@ -325,8 +317,6 @@ export default function ProductGrid({
   searchPlaceholder,
   disabled = false,
   collapseCategories = false,
-  categorySort = 'saved',
-  itemSort = 'saved',
 }: Props) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cart = useCartStore();
@@ -359,13 +349,7 @@ export default function ProductGrid({
   const parsedSearch = useMemo(() => parseQuantitySearch(search), [search]);
   const activeQuery = parsedSearch ? parsedSearch.query : search;
 
-  const sortedCategories = useMemo(
-    () => sortCategories(categories, categorySort),
-    [categories, categorySort],
-  );
-  const sortedProducts = useMemo(() => sortProducts(products, itemSort), [products, itemSort]);
-
-  const filtered = sortedProducts.filter((p) => {
+  const filtered = products.filter((p) => {
     const matchCat = !selectedCategory || p.category_id === selectedCategory;
     const matchSearch = !activeQuery || p.name.toLowerCase().includes(activeQuery.toLowerCase());
     return matchCat && matchSearch;
@@ -443,7 +427,7 @@ export default function ProductGrid({
         <CategoryRow
           className="pb-1"
           collapse={collapseCategories}
-          categories={sortedCategories}
+          categories={categories}
           selectedCategory={selectedCategory}
           setSelectedCategory={setSelectedCategory}
           allLabel={t('allCategories')}

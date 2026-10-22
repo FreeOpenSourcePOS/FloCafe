@@ -44,7 +44,6 @@ import {
 } from './server-app-state';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
-import { readPosSortSettings } from './lib/pos-sort';
 import { resolveContainedPath } from './lib/path-containment';
 import { RegionalNotConfiguredError, resolveRegionalSnapshot } from './countries';
 import {
@@ -265,7 +264,6 @@ export function startServerApp(): Promise<void> {
         currency_position: snapshot.currencyPosition,
         currency_fraction_digits: snapshot.currencyFractionDigits,
         kds_enabled: settings.kds_enabled !== 'false',
-        ...readPosSortSettings(settings),
       });
     });
 

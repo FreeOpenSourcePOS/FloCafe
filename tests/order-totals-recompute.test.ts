@@ -780,6 +780,31 @@ async function main() {
         }),
         '100% item discount reallocates document remainder to unchanged 100.10 charge (5.01 tax, 105.11 total)',
       );
+
+      // 4. Flat 20.20 discount on 100.10 item -> exact Decimal 79.90 discounted subtotal -> 4.00 tax, 83.90 total
+      const o4 = await createOrder({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-doc-10010-a', quantity: 1 }],
+      });
+      assertEqualOrThrow(o4.status, 201, '100.10 single-item order created');
+      const d4 = await api(baseUrl, `/api/orders/${o4.data.order.id}/discount`, {
+        method: 'PATCH',
+        body: { discount_type: 'amount', discount_value: 20.2 },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(d4.status, 200, 'flat 20.20 discount applied to 100.10 item');
+      assertEqualOrThrow(
+        JSON.stringify(totalsRow(db, 'orders', o4.data.order.id)),
+        JSON.stringify({
+          subtotal: 100.1,
+          tax_amount: 4,
+          discount_amount: 20.2,
+          total: 83.9,
+          round_off: 0,
+          components: '[[["Tax A",2.5,2],["Tax B",2.5,2]]]',
+        }),
+        'flat 20.20 discount on 100.10 item uses Decimal subtraction for 4.00 tax (83.90 total)',
+      );
     }
   } finally {
     server.close();

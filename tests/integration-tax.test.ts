@@ -2171,6 +2171,90 @@ async function main() {
     );
     assertEqual(ce3Restored.data.bill.total, 210.32, 'CE3 restored bill total = 210.32');
 
+    // Counterexample 4: 100.10 item with flat 20.20 discount -> Decimal 79.90 base -> 4.00 tax, 83.90 total
+    const ce4Items = [{ product_id: 'prod-disc-10010-a', quantity: 1 }];
+    const ce4Preview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      headers: authHeader,
+      body: { items: ce4Items, discount_type: 'amount', discount_value: 20.2 },
+    });
+    assertEqual(ce4Preview.status, 200, 'CE4 flat discount preview succeeds');
+    assertEqual(ce4Preview.data.summary.tax_amount, 4.0, 'CE4 preview tax = 4.00');
+    assertEqual(ce4Preview.data.summary.total, 83.9, 'CE4 preview total = 83.90');
+
+    const ce4Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: ce4Items },
+    });
+    assertEqual(ce4Order.status, 201, 'CE4 order created');
+    const ce4Discount = await api(baseUrl, `/api/orders/${ce4Order.data.order.id}/discount`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { discount_type: 'amount', discount_value: 20.2 },
+    });
+    assertEqual(ce4Discount.status, 200, 'CE4 flat 20.20 order discount applied');
+    assertEqual(ce4Discount.data.order.tax_amount, 4.0, 'CE4 discounted order tax = 4.00');
+    assertEqual(ce4Discount.data.order.total, 83.9, 'CE4 discounted order total = 83.90');
+
+    const ce4Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      headers: authHeader,
+      body: { order_id: ce4Order.data.order.id },
+    });
+    assertEqual(ce4Bill.status, 201, 'CE4 bill generated');
+    assertEqual(ce4Bill.data.bill.tax_amount, 4.0, 'CE4 bill tax = 4.00');
+    assertEqual(ce4Bill.data.bill.total, 83.9, 'CE4 bill total = 83.90');
+
+    // Counterexample 5: 100.22 item + taxable 100.10 packaging charge with 50% discount -> 7.51 tax, report components sum to 7.51
+    seedProduct(db, 'prod-disc-10022', 'cat-tax', 'Disc 100.22', 100.22, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    const ce5Items = [{ product_id: 'prod-disc-10022', quantity: 1 }];
+    const ce5Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: ce5Items, packaging_charge: 100.1 },
+    });
+    assertEqual(ce5Order.status, 201, 'CE5 order created');
+    const ce5Discount = await api(baseUrl, `/api/orders/${ce5Order.data.order.id}/discount`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { discount_type: 'percentage', discount_value: 50 },
+    });
+    assertEqual(ce5Discount.status, 200, 'CE5 50% order discount applied');
+    assertEqual(ce5Discount.data.order.tax_amount, 7.51, 'CE5 discounted order tax = 7.51');
+    assertEqual(ce5Discount.data.order.total, 157.72, 'CE5 discounted order total = 157.72');
+
+    const ce5Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      headers: authHeader,
+      body: { order_id: ce5Order.data.order.id },
+    });
+    assertEqual(ce5Bill.status, 201, 'CE5 bill generated');
+    assertEqual(ce5Bill.data.bill.tax_amount, 7.51, 'CE5 bill tax = 7.51');
+    const ce5FetchedBill = await api(baseUrl, `/api/bills/${ce5Bill.data.bill.id}`, {
+      headers: authHeader,
+    });
+    assertEqual(ce5FetchedBill.status, 200, 'CE5 bill fetched with projected items');
+    const ce5ResolvedComponents = resolveTaxComponents({
+      tax_amount: ce5FetchedBill.data.bill.tax_amount,
+      tax_snapshot: ce5FetchedBill.data.bill.tax_snapshot,
+      tax_breakdown: ce5FetchedBill.data.bill.tax_breakdown,
+      items: ce5FetchedBill.data.bill.order?.items || [],
+    });
+    const ce5ResolvedSum = Number(
+      ce5ResolvedComponents
+        .reduce((acc: number, c: any) => acc + Number(c.amount || 0), 0)
+        .toFixed(2),
+    );
+    assertEqual(
+      ce5ResolvedSum,
+      7.51,
+      'CE5 projected items + charge resolveTaxComponents sum = 7.51 (no extra cent)',
+    );
+
     const s17Report = await api(baseUrl, '/api/reports/tax-components', {
       headers: authHeader,
     });

@@ -56,17 +56,17 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
       item.status === null || item.status === undefined || !isTerminalItemStatus(item.status),
   );
 
-  let subtotal = 0;
-  let totalTax = 0;
-  let exclusiveTax = 0;
+  let subtotalDec = new Decimal(0);
+  let totalTaxDec = new Decimal(0);
+  let exclusiveTaxDec = new Decimal(0);
   const allTaxBreakdowns: TaxBreakdown[][] = [];
   const allTaxSnapshots: (string | null)[] = [];
 
   for (const item of activeItems) {
-    subtotal += item.subtotal || 0;
-    totalTax += item.tax_amount || 0;
+    subtotalDec = subtotalDec.plus(item.subtotal || 0);
+    totalTaxDec = totalTaxDec.plus(item.tax_amount || 0);
     if (item.tax_type !== 'inclusive') {
-      exclusiveTax += item.tax_amount || 0;
+      exclusiveTaxDec = exclusiveTaxDec.plus(item.tax_amount || 0);
     }
     if (item.tax_breakdown) {
       try {
@@ -78,9 +78,9 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
   }
 
   return {
-    subtotal,
-    totalTax,
-    exclusiveTax,
+    subtotal: subtotalDec.toNumber(),
+    totalTax: totalTaxDec.toNumber(),
+    exclusiveTax: exclusiveTaxDec.toNumber(),
     allTaxBreakdowns,
     allTaxSnapshots,
     activeItems,
@@ -167,10 +167,15 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
       (engineOwns('service_charge') ? chargeColumns!.service_charge : chargeContext.service_charge),
   };
   const subtotal = totals.subtotal;
+  const subtotalDec = new Decimal(subtotal);
   // The discount can never exceed the subtotal it is deducted from, so a
   // caller-supplied figure cannot drive the discounted share outside 0..1.
-  const effectiveDiscount = Math.max(0, Math.min(discountAmount, subtotal));
-  const discountedSubtotal = Math.max(0, subtotal - effectiveDiscount);
+  const effectiveDiscountDec = Decimal.max(
+    0,
+    Decimal.min(new Decimal(discountAmount || 0), subtotalDec),
+  );
+  const discountedSubtotalDec = Decimal.max(0, subtotalDec.minus(effectiveDiscountDec));
+  const discountedSubtotal = discountedSubtotalDec.toNumber();
 
   let chargeTaxes: ChargeTaxSummary = {
     taxAmount: 0,
@@ -234,10 +239,11 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
     });
   }
 
-  const applyDiscountScaling = taxScaling === 'always' || (discountAmount > 0 && subtotal > 0);
+  const applyDiscountScaling =
+    taxScaling === 'always' || (effectiveDiscountDec.gt(0) && subtotalDec.gt(0));
   const taxRatioDec =
-    applyDiscountScaling && subtotal > 0
-      ? new Decimal(discountedSubtotal).div(subtotal)
+    applyDiscountScaling && subtotalDec.gt(0)
+      ? discountedSubtotalDec.div(subtotalDec)
       : new Decimal(1);
   const taxRatio = taxRatioDec.toNumber();
 
@@ -297,14 +303,13 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
     });
   }
 
-  const preRoundTotal =
-    discountedSubtotal +
-    taxRollup.exclusiveTaxAmount +
-    Number(effectiveChargeContext.delivery_charge || 0) +
-    Number(effectiveChargeContext.packaging_charge || 0) +
-    Number(effectiveChargeContext.service_charge || 0) +
-    otherCharges;
-  const total = Number(preRoundTotal.toFixed(decimals));
+  const preRoundTotal = discountedSubtotalDec
+    .plus(taxRollup.exclusiveTaxAmount)
+    .plus(effectiveChargeContext.delivery_charge || 0)
+    .plus(effectiveChargeContext.packaging_charge || 0)
+    .plus(effectiveChargeContext.service_charge || 0)
+    .plus(otherCharges);
+  const total = preRoundTotal.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP).toNumber();
   if (!Number.isSafeInteger(Math.round(total * minorFactor))) {
     throw new ChargeValidationError('Order total exceeds the supported currency precision');
   }

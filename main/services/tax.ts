@@ -757,7 +757,10 @@ export function scaleTaxSnapshots(
     for (const line of snapshot.lines) {
       if (!Array.isArray(line.components)) continue;
       for (const component of line.components) {
-        const raw = new Decimal(component.amount || 0).mul(scale);
+        const unscaledRaw = new Decimal(component.amount || 0).plus(
+          component.roundingRemainder || 0,
+        );
+        const raw = unscaledRaw.mul(scale);
         const rounded = raw.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
         entries.push({ component, line, raw, rounded, remainder: raw.minus(rounded) });
       }
@@ -766,8 +769,7 @@ export function scaleTaxSnapshots(
 
   if (entries.length > 0) {
     const targetTaxAmount = entries
-      .reduce((sum, entry) => sum.plus(new Decimal(entry.component.amount || 0)), new Decimal(0))
-      .mul(scale)
+      .reduce((sum, entry) => sum.plus(entry.raw), new Decimal(0))
       .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
     const roundedTotal = entries.reduce((sum, entry) => sum.plus(entry.rounded), new Decimal(0));
     const centsDelta = targetTaxAmount
@@ -898,16 +900,12 @@ export interface DocumentTaxAllocationItemOutput {
   snapshotJson: string | null;
 }
 
-/**
- * Reconstructs raw unrounded tax components from item and charge snapshots,
- * optionally scaling item raw amounts by an order-discount ratio before
- * performing document-scope largest_remainder allocation across the combined
- * document group.
- */
+/** Scales raw item tax components before document-scope remainder allocation across items and charges. */
 export function allocateDocumentTaxRounding(args: {
   items: DocumentTaxAllocationItemInput[];
   chargeTaxes: ChargeTaxSummary;
   currency: string;
+  minorFactor?: number;
   itemTaxRatio?: Decimal;
 }): {
   itemOutputs: DocumentTaxAllocationItemOutput[];
@@ -915,6 +913,12 @@ export function allocateDocumentTaxRounding(args: {
 } {
   const ratio = args.itemTaxRatio ?? new Decimal(1);
   const isScaled = !ratio.eq(1);
+  const resolvePlaces = (currencyCode?: string) => {
+    const code = args.currency || currencyCode || '';
+    if (code) return getCurrencyFractionDigits(code);
+    if (args.minorFactor && args.minorFactor > 0) return Math.round(Math.log10(args.minorFactor));
+    return getCurrencyFractionDigits('');
+  };
   const itemOutputs: DocumentTaxAllocationItemOutput[] = args.items.map(() => ({
     handled: false,
     taxAmount: 0,
@@ -975,7 +979,7 @@ export function allocateDocumentTaxRounding(args: {
       line.lineId = itemInput.lineIdOverride;
     }
     if (isScaled) {
-      const places = getCurrencyFractionDigits(args.currency || snap.currency || '');
+      const places = resolvePlaces(snap.currency);
       const scaleLineAmount = (val: unknown) =>
         typeof val === 'string' || typeof val === 'number'
           ? new Decimal(val)
@@ -1066,7 +1070,7 @@ export function allocateDocumentTaxRounding(args: {
   }
 
   for (const group of groups.values()) {
-    const places = getCurrencyFractionDigits(args.currency || group.currency || '');
+    const places = resolvePlaces(group.currency);
     const quantum = new Decimal(10).pow(-places);
     const sumRaw = group.components.reduce((sum, c) => sum.plus(c.raw), new Decimal(0));
     const target = roundPlaces(sumRaw, places, group.taxRounding.method);
@@ -1171,11 +1175,7 @@ export interface DiscountedTaxItemInput {
   lineIdOverride?: string;
 }
 
-/**
- * Computes the order/bill/preview tax rollup across items and charges, applying
- * document-scope discount scaling before remainder allocation when an order
- * discount applies.
- */
+/** Rolls up item and charge taxes, scaling document-scoped raw item components before rounding. */
 export function rollupOrderTaxes(args: {
   items: DiscountedTaxItemInput[];
   chargeTaxes: ChargeTaxSummary;

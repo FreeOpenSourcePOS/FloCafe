@@ -47,7 +47,14 @@ export {
   PIN_MAX_ATTEMPTS,
   PIN_WINDOW_MS,
 };
-import { getActiveCountryPack, scaleTaxSnapshots, type Customer } from '../services/tax';
+import Decimal from 'decimal.js';
+import {
+  allocateDocumentTaxRounding,
+  getActiveCountryPack,
+  scaleTaxSnapshots,
+  type Customer,
+  type DocumentTaxAllocationItemOutput,
+} from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
 import {
@@ -434,11 +441,23 @@ function scaleTaxBreakdown(
 
 type ChildItemAllocation = { weights: number[]; index: number };
 
-function getTaxDiscountRatio(subtotal: unknown, discountAmount: unknown): number {
+function getTaxDiscountRatioDecimal(subtotal: unknown, discountAmount: unknown): Decimal {
   const base = Number(subtotal || 0);
-  if (!Number.isFinite(base) || base <= 0) return 1;
-  const discount = Math.max(0, Number(discountAmount || 0));
-  return Math.max(0, Math.min(1, (base - discount) / base));
+  if (!Number.isFinite(base) || base <= 0) return new Decimal(1);
+  const baseDec = new Decimal(subtotal as number | string);
+  const rawDiscount = Number(discountAmount || 0);
+  const discountDec = Decimal.max(
+    0,
+    Decimal.min(
+      new Decimal(Number.isFinite(rawDiscount) ? (discountAmount as number | string) : 0),
+      baseDec,
+    ),
+  );
+  return Decimal.max(0, Decimal.min(1, baseDec.minus(discountDec).div(baseDec)));
+}
+
+function getTaxDiscountRatio(subtotal: unknown, discountAmount: unknown): number {
+  return getTaxDiscountRatioDecimal(subtotal, discountAmount).toNumber();
 }
 
 export function projectOrderItems(
@@ -451,8 +470,46 @@ export function projectOrderItems(
   const allocated = new Map(
     allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]),
   );
-  const taxDiscountRatio = getTaxDiscountRatio(order.subtotal, order.discount_amount);
+  const taxDiscountRatioDec = getTaxDiscountRatioDecimal(order?.subtotal, order?.discount_amount);
+  const taxDiscountRatio = taxDiscountRatioDec.toNumber();
   const decimals = Math.log10(minorFactor);
+  const docOutputByItem = new Map<any, DocumentTaxAllocationItemOutput>();
+  if (!taxDiscountRatioDec.eq(1)) {
+    const parsedOrderSnap = parseTaxSnapshot(order?.tax_snapshot);
+    const orderSnapEntries = Array.isArray(parsedOrderSnap)
+      ? parsedOrderSnap
+      : parsedOrderSnap
+        ? [parsedOrderSnap]
+        : [];
+    const chargeSnapJson = orderSnapEntries
+      .filter(
+        (entry) =>
+          entry && typeof entry === 'object' && typeof (entry as any).chargeKind === 'string',
+      )
+      .map((entry) => JSON.stringify(entry));
+    const activeItems = rawItemRows.filter(
+      (item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item?.status),
+    );
+    const docAllocated = allocateDocumentTaxRounding({
+      items: activeItems.map((item, idx) => ({
+        snapshot: item.tax_snapshot,
+        lineIdOverride: `line-${String(idx + 1).padStart(4, '0')}:${item.id}`,
+      })),
+      chargeTaxes: {
+        taxAmount: 0,
+        exclusiveTaxAmount: 0,
+        breakdowns: chargeSnapJson.map(() => []),
+        snapshotJson: chargeSnapJson,
+      },
+      currency: '',
+      minorFactor,
+      itemTaxRatio: taxDiscountRatioDec,
+    });
+    activeItems.forEach((item, idx) => {
+      const out = docAllocated.itemOutputs[idx];
+      if (out?.handled) docOutputByItem.set(item, out);
+    });
+  }
   return rawItemRows
     .filter((item) => allocations.length === 0 || allocated.has(Number(item.id)))
     .map((item) => {
@@ -461,23 +518,32 @@ export function projectOrderItems(
       const quantityRatio =
         quantity === undefined || originalQuantity <= 0 ? 1 : quantity / originalQuantity;
       const ownerAllocation = childItemAllocations.get(Number(item.id));
-      const sourceTaxMinor = Math.round(
-        Number(item.tax_amount || 0) * taxDiscountRatio * minorFactor,
-      );
+      const docOut = docOutputByItem.get(item);
+      const sourceTaxMinor = docOut
+        ? Math.round(docOut.taxAmount * minorFactor)
+        : new Decimal(item.tax_amount || 0)
+            .mul(taxDiscountRatioDec)
+            .mul(minorFactor)
+            .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+            .toNumber();
       const taxMinor = ownerAllocation
         ? allocateSignedMinorUnits(sourceTaxMinor, ownerAllocation.weights)[ownerAllocation.index]
         : Math.round(sourceTaxMinor * quantityRatio);
       const hasSnapshot = hasSnapshotLines(item.tax_snapshot);
-      const scaledBreakdown = hasSnapshot
-        ? item.tax_breakdown
-        : scaleTaxBreakdown(
-            item.tax_breakdown,
-            taxDiscountRatio,
-            undefined,
-            0,
-            undefined,
-            minorFactor,
-          );
+      const scaledBreakdown = docOut
+        ? typeof item.tax_breakdown === 'string'
+          ? JSON.stringify(docOut.breakdown)
+          : docOut.breakdown
+        : hasSnapshot
+          ? item.tax_breakdown
+          : scaleTaxBreakdown(
+              item.tax_breakdown,
+              taxDiscountRatio,
+              undefined,
+              0,
+              undefined,
+              minorFactor,
+            );
       const taxBreakdown = ownerAllocation
         ? scaleTaxBreakdown(
             scaledBreakdown,
@@ -488,15 +554,30 @@ export function projectOrderItems(
             minorFactor,
           )
         : scaleTaxBreakdown(scaledBreakdown, quantityRatio, undefined, 0, undefined, minorFactor);
+      const discountedSnapshot = docOut
+        ? typeof item.tax_snapshot === 'string'
+          ? docOut.snapshotJson
+          : docOut.snapshotJson
+            ? JSON.parse(docOut.snapshotJson)
+            : null
+        : item.tax_snapshot;
       const taxSnapshot =
-        ownerAllocation || !hasSnapshot || (taxDiscountRatio === 1 && quantityRatio === 1)
+        ownerAllocation || !hasSnapshot || (taxDiscountRatioDec.eq(1) && quantityRatio === 1)
           ? item.tax_snapshot
-          : scaleTaxSnapshots(
-              [item.tax_snapshot],
-              taxDiscountRatio * quantityRatio,
-              minorFactor,
-            )[0] || null;
-      if (quantity === undefined && taxDiscountRatio === 1 && !ownerAllocation) return item;
+          : docOut
+            ? quantityRatio === 1
+              ? discountedSnapshot
+              : scaleTaxSnapshots([docOut.snapshotJson], quantityRatio, minorFactor)[0] || null
+            : scaleTaxSnapshots(
+                [
+                  typeof item.tax_snapshot === 'string'
+                    ? item.tax_snapshot
+                    : JSON.stringify(item.tax_snapshot),
+                ],
+                taxDiscountRatioDec.mul(quantityRatio).toNumber(),
+                minorFactor,
+              )[0] || null;
+      if (quantity === undefined && taxDiscountRatioDec.eq(1) && !ownerAllocation) return item;
       return {
         ...item,
         ...(quantity === undefined ? {} : { quantity }),

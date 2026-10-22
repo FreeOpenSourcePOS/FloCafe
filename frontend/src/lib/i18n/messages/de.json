@@ -2492,7 +2492,10 @@
     "chargeKind": "Gebührenart",
     "chargePresetCustom": "Benutzerdefiniert",
     "editCharge": "Gebühr bearbeiten",
-    "chargeReopenRequired": "Diese Gebühr ist nicht mehr verfügbar. Bitte erneut öffnen und wiederholen."
+    "chargeReopenRequired": "Diese Gebühr ist nicht mehr verfügbar. Bitte erneut öffnen und wiederholen.",
+    "offlineModeTitle": "Offline-Modus",
+    "offlineModeDescription": "Schaltet jede optionale Internetverbindung ab: Cloud-Sync, Google-Drive-Sicherungen, WhatsApp, Update-Prüfungen, Nutzungsanalysen und den Bildimport aus dem Web. Bestellungen, Abrechnung, Drucken und Geräte im lokalen Netzwerk funktionieren weiter.",
+    "offlineModeFailed": "Der Offline-Modus konnte nicht geändert werden"
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",
@@ -2724,7 +2727,8 @@
       "serverApp": "Eigenständige Bedienungs-App verwenden",
       "support": "Support kontaktieren und Diagnosedaten einsehen",
       "inventoryManage": "Vorräte und Rezepte verwalten",
-      "orderItemPriceOverride": "Preise von Bestellartikeln ändern"
+      "orderItemPriceOverride": "Preise von Bestellartikeln ändern",
+      "offlineMode": "Offline-Modus ein- oder ausschalten"
     },
     "editorSubtitle": "Konfigurieren Sie Rollenvorgaben oder legen Sie eine Ausnahme für ein Teammitglied fest. Änderungen gelten ab der nächsten Aktion.",
     "roleDefaultsTab": "Rollenvorgaben",

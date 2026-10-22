@@ -2492,7 +2492,10 @@
     "chargeKind": "Uri ng bayarin",
     "chargePresetCustom": "Pasadya",
     "editCharge": "I-edit ang bayarin",
-    "chargeReopenRequired": "Hindi na available ang bayaring ito. Pakibuksan muli at subukang muli."
+    "chargeReopenRequired": "Hindi na available ang bayaring ito. Pakibuksan muli at subukang muli.",
+    "offlineModeTitle": "Mode na walang internet",
+    "offlineModeDescription": "Pinapatay nito ang bawat opsyonal na koneksyon sa internet: cloud sync, backup sa Google Drive, WhatsApp, pag-check ng update, usage analytics at pag-import ng larawan mula sa web. Patuloy na gumagana ang mga order, billing, pag-print at mga device sa iyong local network.",
+    "offlineModeFailed": "Hindi mabago ang Offline mode"
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",
@@ -2724,7 +2727,8 @@
       "serverApp": "Gamitin ang standalone Server App",
       "support": "Makipag-ugnayan sa suporta at tingnan ang diagnostics",
       "inventoryManage": "Pamahalaan ang mga supply at recipe",
-      "orderItemPriceOverride": "Baguhin ang presyo ng mga item sa order"
+      "orderItemPriceOverride": "Baguhin ang presyo ng mga item sa order",
+      "offlineMode": "I-on o i-off ang Offline mode"
     },
     "editorSubtitle": "I-configure ang mga default ng tungkulin o gumawa ng eksepsiyon para sa isang miyembro ng staff. Magkakabisa ang mga pagbabago sa susunod nilang aksyon.",
     "roleDefaultsTab": "Mga default ng tungkulin",

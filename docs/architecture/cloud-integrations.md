@@ -8,6 +8,25 @@ inventory, not the rationale.
 All outbound work is either an outbox flush or a best-effort background task. Nothing on this page
 sits on a path between an order and a paid bill.
 
+## Offline mode
+
+The owner can switch every optional outbound connection off with the `offline_mode` setting
+(`PUT /api/settings/offline-mode`, permission `offline-mode.manage`, Settings → Privacy). It is off
+by default. `main/services/offline-mode.ts` exposes `isOfflineMode()`, which is also true when
+`FLO_MATRIX_OFFLINE` is `1`. While it is on:
+
+- FloAdmin cloud sync starts no timers and `trackedFetch` refuses every request.
+- Google Drive scheduled backups do not run, and connecting, listing, backing up and restoring fail
+  with the `offline` error code. Disconnecting still clears local tokens and records the revoke as
+  unconfirmed.
+- WhatsApp closes its socket without unpairing, refuses to connect and does not start; turning the
+  mode off reconnects it.
+- Update checks and downloads report the `offline` update state.
+- Telemetry, diagnostics and PostHog send nothing, and web image import returns `503`.
+
+The Express API, KDS and Server App stay bound to `0.0.0.0`, so devices on the local network keep
+working.
+
 ## Google Drive backup
 
 Backs up the local database to a folder in the merchant's own Google Drive, and restores from it.

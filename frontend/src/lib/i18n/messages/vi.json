@@ -2492,7 +2492,10 @@
     "chargeKind": "Loại phí",
     "chargePresetCustom": "Tùy chỉnh",
     "editCharge": "Chỉnh sửa phí",
-    "chargeReopenRequired": "Khoản phí này không còn khả dụng. Vui lòng mở lại và thử lại."
+    "chargeReopenRequired": "Khoản phí này không còn khả dụng. Vui lòng mở lại và thử lại.",
+    "offlineModeTitle": "Chế độ ngoại tuyến",
+    "offlineModeDescription": "Tắt mọi kết nối internet tùy chọn: đồng bộ đám mây, sao lưu Google Drive, WhatsApp, kiểm tra cập nhật, phân tích mức sử dụng và nhập ảnh từ web. Đơn hàng, thanh toán, in ấn và các thiết bị trong mạng cục bộ vẫn hoạt động.",
+    "offlineModeFailed": "Không thể thay đổi chế độ ngoại tuyến"
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",
@@ -2724,7 +2727,8 @@
       "serverApp": "Sử dụng Server App độc lập",
       "support": "Liên hệ hỗ trợ và xem chẩn đoán",
       "inventoryManage": "Quản lý vật tư và công thức",
-      "orderItemPriceOverride": "Đổi giá món trong đơn hàng"
+      "orderItemPriceOverride": "Đổi giá món trong đơn hàng",
+      "offlineMode": "Bật hoặc tắt chế độ ngoại tuyến"
     },
     "editorSubtitle": "Cấu hình mặc định theo vai trò hoặc tạo ngoại lệ cho một nhân viên. Thay đổi sẽ áp dụng từ hành động tiếp theo của họ.",
     "roleDefaultsTab": "Mặc định vai trò",

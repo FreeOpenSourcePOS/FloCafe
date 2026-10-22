@@ -1,5 +1,6 @@
 /** PostHog project configuration. Without a token the client sends nothing. */
 
+import { isOfflineMode } from './offline-mode';
 import { getSettingValue } from '../db';
 import { isOfficialReleaseBuild, readBuildPostHogSettings } from './build-identity';
 
@@ -37,7 +38,7 @@ export type PostHogEnvironment = 'production' | 'development';
  */
 export function postHogEnvironment(): PostHogEnvironment | null {
   if (process.env.CI) return null;
-  if (process.env.FLO_MATRIX_OFFLINE === '1') return null;
+  if (isOfflineMode()) return null;
   if (process.env.E2E_TASK_LOCAL_PORTS) return null;
   if (process.env.NODE_ENV === 'test') return null;
   if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK === '1') return null;

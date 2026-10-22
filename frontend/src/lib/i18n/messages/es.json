@@ -2492,7 +2492,10 @@
     "chargeKind": "Tipo de cargo",
     "chargePresetCustom": "Personalizado",
     "editCharge": "Editar cargo",
-    "chargeReopenRequired": "Este cargo ya no está disponible. Vuelva a abrirlo e inténtelo de nuevo."
+    "chargeReopenRequired": "Este cargo ya no está disponible. Vuelva a abrirlo e inténtelo de nuevo.",
+    "offlineModeTitle": "Modo sin conexión",
+    "offlineModeDescription": "Desactiva toda conexión opcional a internet: sincronización en la nube, copias de seguridad en Google Drive, WhatsApp, búsqueda de actualizaciones, analíticas de uso e importación de imágenes desde la web. Los pedidos, la facturación, la impresión y los dispositivos de tu red local siguen funcionando.",
+    "offlineModeFailed": "No se pudo cambiar el modo sin conexión"
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",
@@ -2724,7 +2727,8 @@
       "serverApp": "Usar la aplicación independiente para servidores",
       "support": "Contactar con soporte y ver diagnósticos",
       "inventoryManage": "Gestionar insumos y recetas",
-      "orderItemPriceOverride": "Cambiar precios de artículos del pedido"
+      "orderItemPriceOverride": "Cambiar precios de artículos del pedido",
+      "offlineMode": "Activar o desactivar el modo sin conexión"
     },
     "editorSubtitle": "Configura los valores predeterminados de los roles o crea una excepción para un miembro del personal. Los cambios se aplican en su próxima acción.",
     "roleDefaultsTab": "Valores del rol",

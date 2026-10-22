@@ -2492,7 +2492,10 @@
     "chargeKind": "Lloji i tarifës",
     "chargePresetCustom": "E personalizuar",
     "editCharge": "Ndrysho tarifën",
-    "chargeReopenRequired": "Kjo tarifë nuk është më e disponueshme. Ju lutemi rihapeni dhe provoni përsëri."
+    "chargeReopenRequired": "Kjo tarifë nuk është më e disponueshme. Ju lutemi rihapeni dhe provoni përsëri.",
+    "offlineModeTitle": "Modaliteti pa internet",
+    "offlineModeDescription": "Çaktivizon çdo lidhje opsionale me internetin: sinkronizimin në re, kopjet rezervë në Google Drive, WhatsApp, kontrollin e përditësimeve, analizat e përdorimit dhe importimin e imazheve nga uebi. Porositë, faturimi, printimi dhe pajisjet në rrjetin tuaj lokal vazhdojnë të punojnë.",
+    "offlineModeFailed": "Modaliteti pa internet nuk u ndryshua dot"
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",
@@ -2724,7 +2727,8 @@
       "serverApp": "Përdorni Server App të pavarur",
       "support": "Kontaktoni me mbështetjen dhe shikoni diagnostikimin",
       "inventoryManage": "Menaxhoni furnizimet dhe recetat",
-      "orderItemPriceOverride": "Ndrysho çmimet e artikujve të porosisë"
+      "orderItemPriceOverride": "Ndrysho çmimet e artikujve të porosisë",
+      "offlineMode": "Ndez ose fik modalitetin pa internet"
     },
     "editorSubtitle": "Konfiguroni vlerat e parazgjedhura të rolit ose bëni një përjashtim për një staf. Ndryshimet zbatohen në veprimin e tij të ardhshëm.",
     "roleDefaultsTab": "Vlerat e parazgjedhura të rolit",

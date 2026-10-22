@@ -32,6 +32,7 @@ import {
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { getTenantCurrency } from './refund';
 import { getCurrencyMinorUnitFactor } from '../countries';
+import { assertOnlineAllowed, isOfflineMode } from './offline-mode';
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
@@ -1011,6 +1012,7 @@ export class CloudSyncService {
   reload() {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     this.stop();
+    if (isOfflineMode()) return;
     const persisted = this.loadSettings(false);
     this.settings = persisted;
     if (!persisted || isCloudDeletionBlocking(persisted.cloud_deletion_status)) return;
@@ -3102,6 +3104,7 @@ export class CloudSyncService {
 
   /** Register on startup to sync updated store metadata with FloAdmin. */
   private maybeAutoRegister() {
+    if (isOfflineMode()) return;
     const db = getDatabase();
     const settings = this.readSettings(db);
     if (
@@ -3848,6 +3851,7 @@ export class CloudSyncService {
   ): Promise<Response> {
     if (this.cloudDeletionInProgress && !allowDuringDeletion)
       throw new Error('Cloud deletion in progress');
+    assertOnlineAllowed('Cloud sync');
     this.cloudNetworkOperations += 1;
     let released = false;
     const release = () => {

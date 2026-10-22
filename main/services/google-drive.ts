@@ -27,6 +27,7 @@ import {
 } from '../db';
 import type { BackupPaginationOptions, DatabaseReplacementJournalHandle } from '../db';
 import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
+import { isOfflineMode } from './offline-mode';
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from '../middleware/security';
 import { clearJWTSecretCache } from '../security/jwt-secret';
 
@@ -1186,7 +1187,8 @@ class GoogleDriveService {
       this.restoreInvalidationActive() ||
       this.operationRunning ||
       this.backingUp ||
-      this.activeJobs.size > 0
+      this.activeJobs.size > 0 ||
+      isOfflineMode()
     )
       return;
     const settings = this.readSettings();
@@ -1428,6 +1430,7 @@ class GoogleDriveService {
     warningAcknowledged = false,
   ): Promise<GoogleDriveStatus> {
     if (signal?.aborted) throw createDriveShutdownError('Google Drive connection');
+    if (isOfflineMode()) throw createDriveError('offline');
     const allowRestoreRecovery = this.restoreInvalidationCleanupPending;
     return this.queueOperation(
       (operationSignal) =>
@@ -1584,6 +1587,7 @@ class GoogleDriveService {
       const token = envelope?.refresh_token || envelope?.access_token;
       if (token && !cleanupPending) {
         try {
+          if (isOfflineMode()) throw createDriveError('offline');
           const response = await fetch('https://oauth2.googleapis.com/revoke', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -3067,6 +3071,7 @@ class GoogleDriveService {
 
   private async getAuthorizedClient(signal?: AbortSignal): Promise<OAuth2Client> {
     if (signal?.aborted) throw createDriveShutdownError('Google Drive operation');
+    if (isOfflineMode()) throw createDriveError('offline');
     const creds = getClientCredentials();
     if (!creds) throw createDriveError('configuration_unavailable');
     if (!isSecureStorageAvailable()) throw createDriveError('secure_storage_unavailable');

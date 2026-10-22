@@ -134,6 +134,7 @@ An owner can flip any configurable cell for a role, or for one user, from the in
 | Integrations | Manage Google Drive backups                                |   ✓   |    —    |    —    |   —    |  —   |
 | Integrations | Manage cloud account and data controls                     |   ✓   |    —    |    —    |   —    |  —   |
 | System       | Use database tools and backups                             |   ✓   |    —    |    —    |   —    |  —   |
+| System       | Turn Offline mode on or off                                |   ✓   |    —    |    —    |   —    |  —   |
 | System       | Manage mobile access (FloAdmin sync and device pairing)    |   ✓   |    —    |    —    |   —    |  —   |
 | Orders       | Use the standalone Server App                              |   ✓   |    ✓    |    —    |   ✓    |  —   |
 | Support      | Contact support and view diagnostics                       |   ✓   |    ✓    |    ✓    |   ✓    |  ✓   |

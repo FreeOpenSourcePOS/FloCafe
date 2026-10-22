@@ -2492,7 +2492,10 @@
     "chargeKind": "Kostensoort",
     "chargePresetCustom": "Aangepast",
     "editCharge": "Kosten bewerken",
-    "chargeReopenRequired": "Deze kosten zijn niet meer beschikbaar. Open opnieuw en probeer het nog eens."
+    "chargeReopenRequired": "Deze kosten zijn niet meer beschikbaar. Open opnieuw en probeer het nog eens.",
+    "offlineModeTitle": "Offlinemodus",
+    "offlineModeDescription": "Schakelt elke optionele internetverbinding uit: cloudsynchronisatie, Google Drive-back-ups, WhatsApp, updatecontroles, gebruiksanalyse en afbeeldingen importeren van het web. Bestellingen, facturatie, afdrukken en apparaten op je lokale netwerk blijven werken.",
+    "offlineModeFailed": "De offlinemodus kon niet worden gewijzigd"
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",
@@ -2724,7 +2727,8 @@
       "serverApp": "Gebruik de zelfstandige server-app",
       "support": "Neem contact op met ondersteuning en bekijk de diagnostiek",
       "inventoryManage": "Voorraadartikelen en recepten beheren",
-      "orderItemPriceOverride": "Prijzen van bestelde artikelen aanpassen"
+      "orderItemPriceOverride": "Prijzen van bestelde artikelen aanpassen",
+      "offlineMode": "Offlinemodus aan- of uitzetten"
     },
     "editorSubtitle": "Standaardinstellingen per rol configureren of een uitzondering maken voor één medewerker. Wijzigingen gelden vanaf diens volgende actie.",
     "roleDefaultsTab": "Rolstandaarden",

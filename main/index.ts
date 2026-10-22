@@ -32,6 +32,7 @@ import {
 import { computeTaxPackUpdates, fetchRemoteTaxPackCatalog } from './tax-packs/catalog';
 import { startServer, stopServer, getLocalIP, isServerRunning, getServerPort } from './server';
 import { cloudSync } from './services/cloud-sync';
+import { isOfflineMode } from './services/offline-mode';
 import { telemetry } from './services/telemetry';
 import { capturePostHogException, startPostHog, stopPostHog } from './services/posthog';
 import { googleDrive } from './services/google-drive';
@@ -296,6 +297,11 @@ function setupAutoUpdater(): void {
 }
 
 function checkForUpdates(): void {
+  if (isOfflineMode()) {
+    setUpdateStatus({ status: 'offline', reason: 'unknown', error: 'Offline mode is on' });
+    return;
+  }
+
   if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
     log.info('[Update] Ignoring check while a staged update awaits installation');
     return;
@@ -378,6 +384,7 @@ function checkForUpdates(): void {
 }
 
 function downloadUpdate(): { success: boolean; error?: string } {
+  if (isOfflineMode()) return { success: false, error: 'Offline mode is on' };
   if (!canStartUpdateDownload(storedUpdateStatus, updaterPhase, stagedUpdateReady)) {
     return { success: false, error: 'No update is waiting to be downloaded' };
   }

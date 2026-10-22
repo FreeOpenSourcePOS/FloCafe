@@ -5,6 +5,7 @@ import type { WASocket as BaileysSocket, WAMessageKey } from '@whiskeysockets/ba
 import { parsePhoneNumber } from 'libphonenumber-js';
 import { getDatabase, getSettingValue, now } from '../db';
 import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
+import { isOfflineMode } from './offline-mode';
 
 const { loadBaileys: loadBaileysModule } = require('../baileys-loader.cjs') as {
   loadBaileys: () => Promise<typeof import('@whiskeysockets/baileys')>;
@@ -763,6 +764,10 @@ async function resolveWaWebVersion(signal: AbortSignal): Promise<[number, number
 async function startSocketImpl(attemptId: number): Promise<void> {
   const signal = whatsappAbortController.signal;
   if (!state.enabled || isWhatsAppTerminal() || signal.aborted) return;
+  if (isOfflineMode()) {
+    logWhatsApp('info', 'socket_start_skipped', { attemptId, reason: 'offline_mode' });
+    return;
+  }
   await authCleanupPromise;
   await credentialWriteTail;
   if (!state.enabled || isWhatsAppTerminal() || signal.aborted) return;
@@ -948,6 +953,7 @@ export function disable(): void {
 
 export async function connectWithQr(requestSignal?: AbortSignal): Promise<{ ok: boolean; qr?: string; error?: string }> {
   if (!state.enabled) return { ok: false, error: 'WhatsApp is not enabled.' };
+  if (isOfflineMode()) return { ok: false, error: 'Offline mode is on.' };
   if (whatsappShutdownPromise || whatsappShutdownRequested) return { ok: false, error: 'WhatsApp is shutting down.' };
   state.shuttingDown = false;
   if (whatsappAbortController.signal.aborted) whatsappAbortController = new AbortController();
@@ -964,6 +970,7 @@ export async function connectWithQr(requestSignal?: AbortSignal): Promise<{ ok: 
 
 export async function connectWithPairingCode(phone: string, requestSignal?: AbortSignal): Promise<{ ok: boolean; code?: string; error?: string }> {
   if (!state.enabled) return { ok: false, error: 'WhatsApp is not enabled.' };
+  if (isOfflineMode()) return { ok: false, error: 'Offline mode is on.' };
   if (whatsappShutdownPromise || whatsappShutdownRequested) return { ok: false, error: 'WhatsApp is shutting down.' };
   state.shuttingDown = false;
   if (whatsappAbortController.signal.aborted) whatsappAbortController = new AbortController();
@@ -984,6 +991,23 @@ export async function connectWithPairingCode(phone: string, requestSignal?: Abor
   } catch (err: any) {
     return { ok: false, error: err.message ?? 'Failed to request pairing code.' };
   }
+}
+
+/** Closes the live socket without unpairing so Offline mode can be switched off again. */
+export function suspendForOfflineMode(): void {
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
+  }
+  if (state.socket) {
+    try {
+      state.socket.end(undefined);
+    } catch {
+      /* ignore */
+    }
+    state.socket = null;
+  }
+  state.state = 'disconnected';
 }
 
 export function disconnect(): void {

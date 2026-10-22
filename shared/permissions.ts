@@ -549,6 +549,13 @@ export const PERMISSION_DEFINITIONS = [
   },
 
   {
+    id: 'offline-mode.manage',
+    area: 'system',
+    defaultRoles: OWNER,
+    configurable: false,
+    risk: 'sensitive',
+  },
+  {
     id: 'database.manage',
     area: 'system',
     defaultRoles: OWNER,

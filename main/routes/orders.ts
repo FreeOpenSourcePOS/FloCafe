@@ -1067,6 +1067,40 @@ interface EditableOrderRow extends EngineChargeOrderRow {
   delivery_charge: number | null;
 }
 
+function resolveOrderLevelDiscountAmount(
+  order: {
+    subtotal?: number | null;
+    discount_amount?: number | null;
+    discount_type?: string | null;
+    discount_value?: number | null;
+  },
+  subtotal: number,
+  decimals: number,
+): number {
+  if (subtotal <= 0) return 0;
+  const existingDiscountAmount = Number(order.discount_amount || 0);
+  const configuredValue = Number(order.discount_value || 0);
+  if (order.discount_type === 'percentage') {
+    if (configuredValue > 0) {
+      return Math.min(subtotal, Number(((subtotal * configuredValue) / 100).toFixed(decimals)));
+    }
+    const previousSubtotal = Number(order.subtotal || 0);
+    if (existingDiscountAmount > 0 && previousSubtotal > 0) {
+      return Math.min(
+        subtotal,
+        Number((existingDiscountAmount * (subtotal / previousSubtotal)).toFixed(decimals)),
+      );
+    }
+    return 0;
+  }
+  const flatDiscount =
+    order.discount_type === 'amount' && configuredValue > 0
+      ? configuredValue
+      : existingDiscountAmount;
+  if (flatDiscount <= 0) return 0;
+  return Math.min(subtotal, Number(flatDiscount.toFixed(decimals)));
+}
+
 interface OrderItemRow {
   id: number;
   status: string;
@@ -2250,15 +2284,7 @@ router.post(
         // BUG #12 FIX: Preserve order-level discount (scale percentage proportionally)
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
-        const existingDiscountAmount = currentOrder.discount_amount || 0;
-        let newDiscountAmount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
-          if (currentOrder.discount_type === 'percentage') {
-            const pct = currentOrder.discount_value || 0;
-            newDiscountAmount = Number(((subtotal * pct) / 100).toFixed(decimals));
-          }
-          // amount type: keep same value
-        }
+        const newDiscountAmount = resolveOrderLevelDiscountAmount(currentOrder, subtotal, decimals);
 
         const engineCharges = resolveEngineCharges(currentOrder, subtotal, newDiscountAmount);
         const { taxRollup, total, roundOff } = recomputeOrderTotals({
@@ -3134,17 +3160,11 @@ router.patch(
 
         const totals = calculateOrderTotals(db, req.params.id as string);
         const decimals = getCurrencyFractionDigits(tenantInfo.currency);
-        let discountAmount = Number(currentOrder.discount_amount || 0);
-        if (discountAmount > 0 && totals.subtotal > 0) {
-          if (currentOrder.discount_type === 'percentage') {
-            const pct = Number(currentOrder.discount_value || 0);
-            discountAmount = Number(((totals.subtotal * pct) / 100).toFixed(decimals));
-          } else {
-            discountAmount = Math.min(totals.subtotal, Number(discountAmount.toFixed(decimals)));
-          }
-        } else if (totals.subtotal === 0) {
-          discountAmount = 0;
-        }
+        const discountAmount = resolveOrderLevelDiscountAmount(
+          currentOrder,
+          totals.subtotal,
+          decimals,
+        );
 
         const engineCharges = resolveEngineCharges(currentOrder, totals.subtotal, discountAmount);
         const { taxRollup, total, roundOff } = recomputeOrderTotals({
@@ -4316,29 +4336,11 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
       const orderTotals = calculateOrderTotals(db, req.params.id as string);
 
       // Recalculate order-level discount on new subtotal (scale percentage; clamp flat amount)
-      const existingDiscountAmount = Number(currentOrder.discount_amount || 0);
-      let newOrderDiscount = existingDiscountAmount;
-      if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
-        if (currentOrder.discount_type === 'percentage') {
-          newOrderDiscount =
-            Number(currentOrder.discount_value || 0) > 0
-              ? Number(
-                  ((orderTotals.subtotal * Number(currentOrder.discount_value || 0)) / 100).toFixed(
-                    decimals,
-                  ),
-                )
-              : Number(
-                  (existingDiscountAmount * (orderTotals.subtotal / currentOrder.subtotal)).toFixed(
-                    decimals,
-                  ),
-                );
-        } else {
-          newOrderDiscount = Math.min(
-            orderTotals.subtotal,
-            Number(existingDiscountAmount.toFixed(decimals)),
-          );
-        }
-      }
+      const newOrderDiscount = resolveOrderLevelDiscountAmount(
+        currentOrder,
+        orderTotals.subtotal,
+        decimals,
+      );
 
       // Recalculate tax on discounted subtotal
       const engineCharges = resolveEngineCharges(
@@ -4642,29 +4644,11 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
       });
 
       const orderTotals = calculateOrderTotals(db, req.params.id as string);
-      const existingDiscountAmount = Number(currentOrder.discount_amount || 0);
-      let newOrderDiscount = existingDiscountAmount;
-      if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
-        if (currentOrder.discount_type === 'percentage') {
-          newOrderDiscount =
-            Number(currentOrder.discount_value || 0) > 0
-              ? Number(
-                  ((orderTotals.subtotal * Number(currentOrder.discount_value || 0)) / 100).toFixed(
-                    decimals,
-                  ),
-                )
-              : Number(
-                  (existingDiscountAmount * (orderTotals.subtotal / currentOrder.subtotal)).toFixed(
-                    decimals,
-                  ),
-                );
-        } else {
-          newOrderDiscount = Math.min(
-            orderTotals.subtotal,
-            Number(existingDiscountAmount.toFixed(decimals)),
-          );
-        }
-      }
+      const newOrderDiscount = resolveOrderLevelDiscountAmount(
+        currentOrder,
+        orderTotals.subtotal,
+        decimals,
+      );
       const engineCharges = resolveEngineCharges(
         currentOrder,
         orderTotals.subtotal,
@@ -5183,19 +5167,7 @@ router.patch(
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
-        const existingDiscountAmount = Number(currentOrder.discount_amount || 0);
-        let newDiscountAmount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
-          if (currentOrder.discount_type === 'percentage') {
-            const pct = currentOrder.discount_value || 0;
-            newDiscountAmount = Number(((subtotal * pct) / 100).toFixed(decimals));
-          } else {
-            newDiscountAmount = Math.min(
-              subtotal,
-              Number(existingDiscountAmount.toFixed(decimals)),
-            );
-          }
-        }
+        const newDiscountAmount = resolveOrderLevelDiscountAmount(currentOrder, subtotal, decimals);
 
         const tenantInfo = {
           country: getSettingValue('country') || '',
@@ -5762,16 +5734,7 @@ router.patch(
 
         const orderTotals = calculateOrderTotals(db, orderId);
         const { subtotal } = orderTotals;
-        let newDiscountAmount = currentOrder.discount_amount || 0;
-        if (newDiscountAmount > 0 && currentOrder.subtotal > 0) {
-          if (currentOrder.discount_type === 'percentage') {
-            newDiscountAmount = Number(
-              ((subtotal * (currentOrder.discount_value || 0)) / 100).toFixed(decimals),
-            );
-          } else {
-            newDiscountAmount = Math.min(subtotal, Number(newDiscountAmount.toFixed(decimals)));
-          }
-        }
+        const newDiscountAmount = resolveOrderLevelDiscountAmount(currentOrder, subtotal, decimals);
         const engineCharges = resolveEngineCharges(currentOrder, subtotal, newDiscountAmount);
         const { taxRollup, total, roundOff } = recomputeOrderTotals({
           tenantInfo,
@@ -6031,15 +5994,7 @@ router.patch(
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
-        const existingDiscountAmount = currentOrder.discount_amount || 0;
-        let newDiscountAmount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
-          if (currentOrder.discount_type === 'percentage') {
-            const pct = currentOrder.discount_value || 0;
-            newDiscountAmount = Number(((subtotal * pct) / 100).toFixed(decimals));
-          }
-          // amount type: keep same value
-        }
+        const newDiscountAmount = resolveOrderLevelDiscountAmount(currentOrder, subtotal, decimals);
 
         const tenantInfo = {
           country: getSettingValue('country') || '',

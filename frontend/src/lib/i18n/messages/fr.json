@@ -2498,7 +2498,9 @@
     "chargeReopenRequired": "Ce frais n’est plus disponible. Veuillez rouvrir et réessayer.",
     "offlineModeTitle": "Mode hors ligne",
     "offlineModeDescription": "Coupe toute connexion facultative à internet : synchronisation cloud, sauvegardes Google Drive, WhatsApp, recherche de mises à jour, statistiques d'usage et import d'images depuis le web. Les commandes, la facturation, l'impression et les appareils de votre réseau local continuent de fonctionner.",
-    "offlineModeFailed": "Impossible de modifier le mode hors ligne"
+    "offlineModeFailed": "Impossible de modifier le mode hors ligne",
+    "offlineModeReadFailed": "Impossible de lire le réglage actuel du mode hors ligne.",
+    "offlineModeRetry": "Réessayer"
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",

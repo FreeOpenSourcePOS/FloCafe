@@ -2498,7 +2498,9 @@
     "chargeReopenRequired": "This charge is no longer available. Please reopen and try again.",
     "offlineModeTitle": "Offline mode",
     "offlineModeDescription": "Turns off every optional internet connection: cloud sync, Google Drive backups, WhatsApp, update checks, usage analytics and image import from the web. Orders, billing, printing and devices on your local network keep working.",
-    "offlineModeFailed": "Could not change Offline mode"
+    "offlineModeFailed": "Could not change Offline mode",
+    "offlineModeReadFailed": "Could not read the current Offline mode setting.",
+    "offlineModeRetry": "Retry"
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

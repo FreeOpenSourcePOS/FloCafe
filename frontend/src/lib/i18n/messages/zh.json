@@ -2498,7 +2498,9 @@
     "chargeReopenRequired": "此费用已不可用。请重新打开后再试。",
     "offlineModeTitle": "离线模式",
     "offlineModeDescription": "关闭所有可选的互联网连接：云同步、Google Drive 备份、WhatsApp、更新检查、使用分析以及从网络导入图片。订单、结账、打印和本地网络中的设备仍可正常使用。",
-    "offlineModeFailed": "无法更改离线模式"
+    "offlineModeFailed": "无法更改离线模式",
+    "offlineModeReadFailed": "无法读取当前的离线模式设置。",
+    "offlineModeRetry": "重试"
   },
   "setup": {
     "alreadyCompleted": "此安装已完成设置。正在跳转到登录…",

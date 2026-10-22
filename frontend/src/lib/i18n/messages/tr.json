@@ -2498,7 +2498,9 @@
     "chargeReopenRequired": "Bu ücret artık mevcut değil. Lütfen yeniden açıp tekrar deneyin.",
     "offlineModeTitle": "Çevrimdışı mod",
     "offlineModeDescription": "Tüm isteğe bağlı internet bağlantılarını kapatır: bulut eşitleme, Google Drive yedekleri, WhatsApp, güncelleme denetimi, kullanım analizi ve web'den görsel içe aktarma. Siparişler, faturalama, yazdırma ve yerel ağınızdaki cihazlar çalışmaya devam eder.",
-    "offlineModeFailed": "Çevrimdışı mod değiştirilemedi"
+    "offlineModeFailed": "Çevrimdışı mod değiştirilemedi",
+    "offlineModeReadFailed": "Geçerli çevrimdışı mod ayarı okunamadı.",
+    "offlineModeRetry": "Yeniden dene"
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",

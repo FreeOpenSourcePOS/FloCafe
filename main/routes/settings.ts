@@ -1599,13 +1599,15 @@ router.put(
            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
         )
         .run(OFFLINE_MODE_SETTING, value ? 'true' : 'false', now());
-      cloudSync.reload();
       syncPostHogIdentity();
       if (value) {
+        cloudSync.suspendForOfflineMode();
         whatsapp.suspendForOfflineMode();
         googleDrive.suspendForOfflineMode();
         notifyOfflineModeEnabled();
       } else {
+        cloudSync.reload();
+        cloudSync.refreshRegistrationProfile();
         whatsapp.initFromDb();
       }
       res.json({ offline_mode: isOfflineMode() });

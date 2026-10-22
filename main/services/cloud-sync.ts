@@ -991,6 +991,7 @@ export class CloudSyncService {
 
   // Zero-touch registration state.
   private autoRegisterTimer: ReturnType<typeof setTimeout> | null = null;
+  private offlineAbort = new AbortController();
   private autoRegisterAttempts = 0;
   private autoRegisterInFlight = false;
   private runtimeStarted = false;
@@ -3118,6 +3119,13 @@ export class CloudSyncService {
     this.attemptAutoRegister();
   }
 
+  /** Aborts in-flight FloAdmin requests when Offline mode is switched on. */
+  suspendForOfflineMode() {
+    this.offlineAbort.abort();
+    this.offlineAbort = new AbortController();
+    this.reload();
+  }
+
   /** Refresh FloAdmin after setup or store-profile settings change. */
   refreshRegistrationProfile() {
     // Skip registration retries when desktop runtime is not running.
@@ -3864,7 +3872,10 @@ export class CloudSyncService {
       }
     };
     try {
-      const response = await fetch(url, init);
+      const signal = init.signal
+        ? AbortSignal.any([init.signal, this.offlineAbort.signal])
+        : this.offlineAbort.signal;
+      const response = await fetch(url, { ...init, signal });
       if (this.cloudDeletionInProgress && !allowDuringDeletion) {
         release();
         throw new Error('Cloud deletion in progress');

@@ -2498,7 +2498,9 @@
     "chargeReopenRequired": "Kjo tarifë nuk është më e disponueshme. Ju lutemi rihapeni dhe provoni përsëri.",
     "offlineModeTitle": "Modaliteti pa internet",
     "offlineModeDescription": "Çaktivizon çdo lidhje opsionale me internetin: sinkronizimin në re, kopjet rezervë në Google Drive, WhatsApp, kontrollin e përditësimeve, analizat e përdorimit dhe importimin e imazheve nga uebi. Porositë, faturimi, printimi dhe pajisjet në rrjetin tuaj lokal vazhdojnë të punojnë.",
-    "offlineModeFailed": "Modaliteti pa internet nuk u ndryshua dot"
+    "offlineModeFailed": "Modaliteti pa internet nuk u ndryshua dot",
+    "offlineModeReadFailed": "Cilësimi aktual i modalitetit pa internet nuk u lexua dot.",
+    "offlineModeRetry": "Provo përsëri"
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

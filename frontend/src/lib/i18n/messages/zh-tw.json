@@ -2498,7 +2498,9 @@
     "chargeReopenRequired": "此費用已無法使用。請重新開啟後再試。",
     "offlineModeTitle": "離線模式",
     "offlineModeDescription": "關閉所有選用的網際網路連線：雲端同步、Google Drive 備份、WhatsApp、更新檢查、使用分析與從網路匯入圖片。訂單、結帳、列印與區域網路中的裝置仍可正常運作。",
-    "offlineModeFailed": "無法變更離線模式"
+    "offlineModeFailed": "無法變更離線模式",
+    "offlineModeReadFailed": "無法讀取目前的離線模式設定。",
+    "offlineModeRetry": "重試"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",

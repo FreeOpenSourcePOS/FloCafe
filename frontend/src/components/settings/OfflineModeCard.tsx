@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { WifiOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
@@ -8,19 +8,31 @@ import api from '@/lib/api';
 import { Toggle } from '@/components/settings/Toggle';
 import { PRIVACY_CHANGED_EVENT } from '@/lib/privacy-events';
 
+type ReadState = 'loading' | 'ready' | 'failed';
+
 export function OfflineModeCard({ canManage }: { canManage: boolean }) {
   const t = useTranslations('settings');
   const [enabled, setEnabled] = useState(false);
+  const [readState, setReadState] = useState<ReadState>('loading');
   const [busy, setBusy] = useState(false);
+
+  const load = useCallback((signal?: AbortSignal) => {
+    api
+      .get('/settings/offline-mode', { signal })
+      .then((res) => {
+        setEnabled(res.data?.offline_mode === true);
+        setReadState('ready');
+      })
+      .catch(() => {
+        if (!signal?.aborted) setReadState('failed');
+      });
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    api
-      .get('/settings/offline-mode', { signal: controller.signal })
-      .then((res) => setEnabled(res.data?.offline_mode === true))
-      .catch(() => {});
+    load(controller.signal);
     return () => controller.abort();
-  }, []);
+  }, [load]);
 
   const change = async (next: boolean) => {
     setBusy(true);
@@ -43,13 +55,28 @@ export function OfflineModeCard({ canManage }: { canManage: boolean }) {
           <div>
             <h3 className="font-semibold text-foreground">{t('offlineModeTitle')}</h3>
             <p className="text-sm text-muted-foreground mt-1">{t('offlineModeDescription')}</p>
+            {readState === 'failed' && (
+              <p className="text-sm text-destructive mt-2">
+                {t('offlineModeReadFailed')}{' '}
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() => {
+                    setReadState('loading');
+                    load();
+                  }}
+                >
+                  {t('offlineModeRetry')}
+                </button>
+              </p>
+            )}
           </div>
         </div>
         <Toggle
           value={enabled}
           onChange={(next) => void change(next)}
           label={t('offlineModeTitle')}
-          disabled={!canManage || busy}
+          disabled={!canManage || busy || readState !== 'ready'}
         />
       </div>
     </div>

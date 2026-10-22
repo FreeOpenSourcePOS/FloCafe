@@ -2498,7 +2498,9 @@
     "chargeReopenRequired": "Hindi na available ang bayaring ito. Pakibuksan muli at subukang muli.",
     "offlineModeTitle": "Mode na walang internet",
     "offlineModeDescription": "Pinapatay nito ang bawat opsyonal na koneksyon sa internet: cloud sync, backup sa Google Drive, WhatsApp, pag-check ng update, usage analytics at pag-import ng larawan mula sa web. Patuloy na gumagana ang mga order, billing, pag-print at mga device sa iyong local network.",
-    "offlineModeFailed": "Hindi mabago ang Offline mode"
+    "offlineModeFailed": "Hindi mabago ang Offline mode",
+    "offlineModeReadFailed": "Hindi mabasa ang kasalukuyang setting ng Offline mode.",
+    "offlineModeRetry": "Subukan muli"
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

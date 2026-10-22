@@ -889,7 +889,7 @@ async function startSocketImpl(attemptId: number): Promise<void> {
   }
   await authCleanupPromise;
   await credentialWriteTail;
-  if (!state.enabled || isWhatsAppTerminal() || signal.aborted) return;
+  if (!state.enabled || isWhatsAppTerminal() || signal.aborted || isOfflineMode()) return;
   logWhatsApp('info', 'socket_start', { attemptId });
   if (state.socket) {
     logWhatsApp('info', 'socket_start_skipped', { attemptId, reason: 'socket_exists' });
@@ -930,7 +930,7 @@ async function startSocketImpl(attemptId: number): Promise<void> {
       },
     }),
   );
-  if (isWhatsAppTerminal() || signal.aborted) {
+  if (isWhatsAppTerminal() || signal.aborted || isOfflineMode()) {
     try {
       socket.end(undefined);
     } catch {}
@@ -979,6 +979,10 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
   // third-party latency and a reconnect loop to an otherwise deterministic run.
   if (process.env.FLO_WHATSAPP_SOCKET_DISABLED === '1') {
     logWhatsApp('info', 'socket_start_skipped', { reason: 'externally_disabled' });
+    return Promise.resolve();
+  }
+  if (isOfflineMode()) {
+    logWhatsApp('info', 'socket_start_skipped', { reason: 'offline_mode' });
     return Promise.resolve();
   }
   const previousStart = whatsappStartPromise;

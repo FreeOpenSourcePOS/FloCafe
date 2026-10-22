@@ -2498,7 +2498,9 @@
     "chargeReopenRequired": "Diese Gebühr ist nicht mehr verfügbar. Bitte erneut öffnen und wiederholen.",
     "offlineModeTitle": "Offline-Modus",
     "offlineModeDescription": "Schaltet jede optionale Internetverbindung ab: Cloud-Sync, Google-Drive-Sicherungen, WhatsApp, Update-Prüfungen, Nutzungsanalysen und den Bildimport aus dem Web. Bestellungen, Abrechnung, Drucken und Geräte im lokalen Netzwerk funktionieren weiter.",
-    "offlineModeFailed": "Der Offline-Modus konnte nicht geändert werden"
+    "offlineModeFailed": "Der Offline-Modus konnte nicht geändert werden",
+    "offlineModeReadFailed": "Die aktuelle Offline-Modus-Einstellung konnte nicht gelesen werden.",
+    "offlineModeRetry": "Erneut versuchen"
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",

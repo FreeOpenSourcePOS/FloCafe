@@ -2498,7 +2498,9 @@
     "chargeReopenRequired": "Questa spesa non è più disponibile. Riapri e riprova.",
     "offlineModeTitle": "Modalità offline",
     "offlineModeDescription": "Disattiva ogni connessione a internet facoltativa: sincronizzazione cloud, backup su Google Drive, WhatsApp, controllo aggiornamenti, analisi d'uso e importazione di immagini dal web. Ordini, fatturazione, stampa e dispositivi della rete locale continuano a funzionare.",
-    "offlineModeFailed": "Impossibile cambiare la modalità offline"
+    "offlineModeFailed": "Impossibile cambiare la modalità offline",
+    "offlineModeReadFailed": "Impossibile leggere l'impostazione attuale della modalità offline.",
+    "offlineModeRetry": "Riprova"
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",

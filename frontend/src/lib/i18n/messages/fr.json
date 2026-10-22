@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Écart",
     "priceExceptionBy": "Modifié par",
     "priceExceptionAt": "Quand",
-    "priceExceptionReason": "Motif"
+    "priceExceptionReason": "Motif",
+    "priceExceptionsAllShifts": "Toute la période",
+    "priceExceptionsShift": "Service",
+    "priceExceptionsShiftOpen": "ouvert"
   },
   "expenses": {
     "addTitle": "Ajouter une dépense",

@@ -416,7 +416,10 @@
     "priceExceptionDifference": "差額",
     "priceExceptionBy": "修改者",
     "priceExceptionAt": "時間",
-    "priceExceptionReason": "原因"
+    "priceExceptionReason": "原因",
+    "priceExceptionsAllShifts": "整段期間",
+    "priceExceptionsShift": "班次",
+    "priceExceptionsShiftOpen": "進行中"
   },
   "expenses": {
     "addTitle": "新增支出",

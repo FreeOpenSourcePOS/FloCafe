@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Diferenca",
     "priceExceptionBy": "Ndryshuar nga",
     "priceExceptionAt": "Kur",
-    "priceExceptionReason": "Arsyeja"
+    "priceExceptionReason": "Arsyeja",
+    "priceExceptionsAllShifts": "E gjithë periudha",
+    "priceExceptionsShift": "Turni",
+    "priceExceptionsShiftOpen": "hapur"
   },
   "expenses": {
     "addTitle": "Shto shpenzim",

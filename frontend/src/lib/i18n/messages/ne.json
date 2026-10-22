@@ -416,7 +416,10 @@
     "priceExceptionDifference": "फरक",
     "priceExceptionBy": "परिवर्तन गर्ने",
     "priceExceptionAt": "कहिले",
-    "priceExceptionReason": "कारण"
+    "priceExceptionReason": "कारण",
+    "priceExceptionsAllShifts": "पूरा अवधि",
+    "priceExceptionsShift": "शिफ्ट",
+    "priceExceptionsShiftOpen": "खुला"
   },
   "expenses": {
     "addTitle": "खर्च थप्नुहोस्",

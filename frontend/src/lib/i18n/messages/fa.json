@@ -416,7 +416,10 @@
     "priceExceptionDifference": "اختلاف",
     "priceExceptionBy": "تغییر توسط",
     "priceExceptionAt": "زمان",
-    "priceExceptionReason": "دلیل"
+    "priceExceptionReason": "دلیل",
+    "priceExceptionsAllShifts": "کل بازه",
+    "priceExceptionsShift": "شیفت",
+    "priceExceptionsShiftOpen": "باز"
   },
   "expenses": {
     "addTitle": "افزودن هزینه",

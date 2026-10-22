@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Differenz",
     "priceExceptionBy": "Geändert von",
     "priceExceptionAt": "Wann",
-    "priceExceptionReason": "Grund"
+    "priceExceptionReason": "Grund",
+    "priceExceptionsAllShifts": "Gesamter Zeitraum",
+    "priceExceptionsShift": "Schicht",
+    "priceExceptionsShiftOpen": "offen"
   },
   "expenses": {
     "addTitle": "Ausgabe hinzufügen",

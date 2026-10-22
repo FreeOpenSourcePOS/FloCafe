@@ -416,7 +416,10 @@
     "priceExceptionDifference": "अंतर",
     "priceExceptionBy": "किसने बदला",
     "priceExceptionAt": "कब",
-    "priceExceptionReason": "कारण"
+    "priceExceptionReason": "कारण",
+    "priceExceptionsAllShifts": "पूरी अवधि",
+    "priceExceptionsShift": "शिफ्ट",
+    "priceExceptionsShiftOpen": "खुली"
   },
   "expenses": {
     "addTitle": "व्यय जोड़ें",

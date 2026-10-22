@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Разница",
     "priceExceptionBy": "Изменил",
     "priceExceptionAt": "Когда",
-    "priceExceptionReason": "Причина"
+    "priceExceptionReason": "Причина",
+    "priceExceptionsAllShifts": "Весь период",
+    "priceExceptionsShift": "Смена",
+    "priceExceptionsShiftOpen": "открыта"
   },
   "expenses": {
     "addTitle": "Добавить расход",

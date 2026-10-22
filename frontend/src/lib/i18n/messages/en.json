@@ -416,7 +416,10 @@
     "priceExceptionDifference": "Difference",
     "priceExceptionBy": "Changed by",
     "priceExceptionAt": "When",
-    "priceExceptionReason": "Reason"
+    "priceExceptionReason": "Reason",
+    "priceExceptionsAllShifts": "Whole period",
+    "priceExceptionsShift": "Shift",
+    "priceExceptionsShiftOpen": "open"
   },
   "expenses": {
     "addTitle": "Add expense",

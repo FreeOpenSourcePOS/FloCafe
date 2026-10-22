@@ -239,9 +239,27 @@ test('live validation: floorplan View Order navigation and OrdersPage ?table= qu
     for (const ord of [order101, order102]) {
       if (ord.id) {
         await request
-          .post(`${BASE}/api/orders/${ord.id}/cancel`, { headers: auth })
+          .patch(`${BASE}/api/orders/${ord.id}/status`, {
+            headers: auth,
+            data: { status: 'cancelled', reason: 'E2E cleanup' },
+          })
           .catch(() => {});
       }
+    }
+    const createdTableIds = [t101.id, t102.id, t103.id].filter(Boolean);
+    if (createdTableIds.length > 0) {
+      await request
+        .patch(`${BASE}/api/tables/positions`, {
+          headers: auth,
+          data: {
+            positions: createdTableIds.map((id) => ({
+              id,
+              position_x: null,
+              position_y: null,
+            })),
+          },
+        })
+        .catch(() => {});
     }
     for (const tbl of [t101, t102, t103]) {
       if (tbl.id) {

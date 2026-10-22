@@ -1137,18 +1137,18 @@ documents only the two routes.
 
 ## Coverage
 
-This page lists 308 HTTP route registrations across 307 distinct rows, and one WebSocket contract:
+This page lists 310 HTTP route registrations across 309 distinct rows, and one WebSocket contract:
 
 - `281` on the main API: 273 router registrations, 7 inline registrations in `main/routes/index.ts`,
   and `GET /api/health` in `main/server.ts`.
 - `8` REST routes on the KDS server, plus 3 static handlers.
-- `19` route registrations on the Server App, of which 11 forward to the main API. Two of those 19
-  are mutually exclusive `GET /` handlers under one path, which is why 19 registrations render as 18
+- `21` route registrations on the Server App, of which 13 forward to the main API. Two of those 21
+  are mutually exclusive `GET /` handlers under one path, which is why 21 registrations render as 20
   rows.
 
-Every one of the 307 rows is listed with its method, path, authorization gate, and the parameters
-its handler reads. The **Response** column carries a note for 171 of them: 145 main-API endpoints,
-all 8 KDS-server routes, and the 18 Server App routes. The remaining 146 main-API endpoints are
+Every one of the 309 rows is listed with its method, path, authorization gate, and the parameters
+its handler reads. The **Response** column carries a note for 173 of them: 145 main-API endpoints,
+all 8 KDS-server routes, and the 20 Server App routes. The remaining 146 main-API endpoints are
 listed with method, path, gate, and parameters only, and this page asserts nothing about what they
 return. Those rows are complete as a route inventory and silent as a contract; the handler in
 `main/routes/` is authoritative for them. A `-` in the Response column means that, not that the

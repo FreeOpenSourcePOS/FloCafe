@@ -32,7 +32,7 @@ export default function MoveTableModal({
   const t = useTranslations('tables');
   const tCommon = useTranslations('common');
   const client = apiClient || api;
-  const basePath = client.defaults.baseURL?.endsWith('/api') ? '' : '/api';
+  const basePath = client.defaults && !client.defaults.baseURL?.endsWith('/api') ? '/api' : '';
   const defaultFmt = useFormatCurrency();
   const fmt = formatPrice || defaultFmt;
 

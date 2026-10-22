@@ -1378,7 +1378,7 @@ export default function ServerStandalonePage() {
           onSuccess={async (movedData) => {
             setMoveTableModalOpen(false);
             selectTable(String(movedData.targetTable.id));
-            await loadAll();
+            await loadAll().catch(() => {});
           }}
         />
       )}

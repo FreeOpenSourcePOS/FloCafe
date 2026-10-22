@@ -10,7 +10,10 @@ import * as crypto from 'node:crypto';
 
 let pendingSelection: { path: string; token: string } | null = null;
 
-export function rememberRestoreFileSelection(selectedPath: string): { path: string; token: string } {
+export function rememberRestoreFileSelection(selectedPath: string): {
+  path: string;
+  token: string;
+} {
   const selection = { path: selectedPath, token: crypto.randomBytes(32).toString('hex') };
   pendingSelection = selection;
   return selection;
@@ -20,13 +23,21 @@ export function clearRestoreFileSelection(): void {
   pendingSelection = null;
 }
 
-/** Returns the picked path once for a matching token, otherwise null. */
-export function consumeRestoreFileSelection(token: string): string | null {
+/** Returns the picked path for a matching token without consuming it, otherwise null. */
+export function peekRestoreFileSelection(token: string): string | null {
   const selection = pendingSelection;
   if (!selection || !token) return null;
   const presented = Buffer.from(token, 'utf8');
   const expected = Buffer.from(selection.token, 'utf8');
-  if (presented.length !== expected.length || !crypto.timingSafeEqual(presented, expected)) return null;
-  pendingSelection = null;
+  if (presented.length !== expected.length || !crypto.timingSafeEqual(presented, expected))
+    return null;
   return selection.path;
+}
+
+/** Returns the picked path once for a matching token, otherwise null. */
+export function consumeRestoreFileSelection(token: string): string | null {
+  const path = peekRestoreFileSelection(token);
+  if (!path) return null;
+  pendingSelection = null;
+  return path;
 }

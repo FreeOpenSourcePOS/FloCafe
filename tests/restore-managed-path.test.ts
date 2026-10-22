@@ -8,11 +8,16 @@ const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-restore-managed-'));
 
 const ipcHandlers = new Map<string, Function>();
+const mainFrame = { frameToken: 'frame-main', detached: false };
+const mainWin = { isDestroyed: () => false };
 
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return {
       app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' },
+      BrowserWindow: {
+        fromWebContents: (sender: any) => sender?.ownerWindow ?? null,
+      },
       ipcMain: {
         on: () => {},
         handle: (channel: string, handler: Function) => {
@@ -59,7 +64,11 @@ async function run(): Promise<void> {
 
   const wrongName = path.join(backupDir, 'evil.db');
   fs.writeFileSync(wrongName, 'sqlite-bytes');
-  assert.equal(isManagedBackupFile(wrongName), false, 'non-backup-named file inside backups/ is rejected');
+  assert.equal(
+    isManagedBackupFile(wrongName),
+    false,
+    'non-backup-named file inside backups/ is rejected',
+  );
 
   if (process.platform !== 'win32') {
     const link = path.join(backupDir, 'flo-backup-link.db');
@@ -67,68 +76,120 @@ async function run(): Promise<void> {
     assert.equal(isManagedBackupFile(link), false, 'symlink escaping backups/ is rejected');
   }
 
-  assert.equal(isManagedBackupFile(path.join(backupDir, 'flo-backup-missing.db')), false, 'missing file is rejected');
+  assert.equal(
+    isManagedBackupFile(path.join(backupDir, 'flo-backup-missing.db')),
+    false,
+    'missing file is rejected',
+  );
   assert.equal(isManagedBackupFile(''), false, 'empty path is rejected');
   assert.equal(isManagedBackupFile(123 as unknown as string), false, 'non-string path is rejected');
 
   // Verify IPC 'restore-backup' handler enforces the boundary on renderer-preset paths
-  registerIpcHandlers();
+  registerIpcHandlers(undefined, () => mainWin as any);
   const restoreHandler = ipcHandlers.get('restore-backup');
   assert.ok(restoreHandler, 'restore-backup IPC handler registered');
   // 'restore-backup' is origin-checked, so these boundary cases are driven as the
   // trusted localhost renderer the real caller is.
-  const trustedSender = { sender: { getURL: () => 'http://localhost:3001/' } };
+  const trustedSender = {
+    sender: {
+      ownerWindow: mainWin,
+      mainFrame,
+      getURL: () => 'http://localhost:3001/',
+    },
+    senderFrame: mainFrame,
+  };
 
   // Attempt to restore unmanaged external database path
   const unmanagedResult = await restoreHandler(trustedSender, '1234', outside);
-  assert.deepEqual(unmanagedResult, {
-    success: false,
-    error: 'Restore source must be a Flo-managed backup file',
-  }, 'IPC rejects unmanaged external database path');
+  assert.deepEqual(
+    unmanagedResult,
+    {
+      success: false,
+      error: 'Restore source must be a Flo-managed backup file',
+    },
+    'IPC rejects unmanaged external database path',
+  );
 
   // Attempt to restore file with invalid name inside backup dir
   const invalidNameResult = await restoreHandler(trustedSender, '1234', wrongName);
-  assert.deepEqual(invalidNameResult, {
-    success: false,
-    error: 'Restore source must be a Flo-managed backup file',
-  }, 'IPC rejects unmanaged filename inside backups directory');
+  assert.deepEqual(
+    invalidNameResult,
+    {
+      success: false,
+      error: 'Restore source must be a Flo-managed backup file',
+    },
+    'IPC rejects unmanaged filename inside backups directory',
+  );
 
   // Attempt to restore symlink escaping backup dir
   if (process.platform !== 'win32') {
-    const symlinkResult = await restoreHandler(trustedSender, '1234', path.join(backupDir, 'flo-backup-link.db'));
-    assert.deepEqual(symlinkResult, {
-      success: false,
-      error: 'Restore source must be a Flo-managed backup file',
-    }, 'IPC rejects symlink escaping backups directory');
+    const symlinkResult = await restoreHandler(
+      trustedSender,
+      '1234',
+      path.join(backupDir, 'flo-backup-link.db'),
+    );
+    assert.deepEqual(
+      symlinkResult,
+      {
+        success: false,
+        error: 'Restore source must be a Flo-managed backup file',
+      },
+      'IPC rejects symlink escaping backups directory',
+    );
   }
 
   // Attempt to restore missing file
-  const missingResult = await restoreHandler(trustedSender, '1234', path.join(backupDir, 'flo-backup-missing.db'));
-  assert.deepEqual(missingResult, {
-    success: false,
-    error: 'Backup file no longer exists',
-  }, 'IPC rejects missing preset file');
+  const missingResult = await restoreHandler(
+    trustedSender,
+    '1234',
+    path.join(backupDir, 'flo-backup-missing.db'),
+  );
+  assert.deepEqual(
+    missingResult,
+    {
+      success: false,
+      error: 'Backup file no longer exists',
+    },
+    'IPC rejects missing preset file',
+  );
 
   // Attempt to restore managed file (passes boundary check and reaches schema validation)
   const managedResult = await restoreHandler(trustedSender, '1234', managed);
-  assert.deepEqual(managedResult, {
-    success: false,
-    error: 'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of FloDesktop.',
-  }, 'IPC allows managed backup path past the boundary to schema inspection');
+  assert.deepEqual(
+    managedResult,
+    {
+      success: false,
+      error:
+        'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of FloDesktop.',
+    },
+    'IPC allows managed backup path past the boundary to schema inspection',
+  );
 
   initDatabase();
   const validManaged = path.join(backupDir, 'flo-backup-2026-08-15T00-00-00-000Z-valid123.db');
   await createBackup(validManaged);
 
   const cleanUnconfiguredRestore = await restoreHandler(trustedSender, '1234', validManaged);
-  assert.equal(cleanUnconfiguredRestore.success, true, 'unconfigured Drive still permits a clean local restore');
+  assert.equal(
+    cleanUnconfiguredRestore.success,
+    true,
+    'unconfigured Drive still permits a clean local restore',
+  );
 
   const restoreIntentPath = path.join(testDir, 'google-drive-restore.pending');
   const tokenPath = path.join(testDir, 'google-drive-token.enc');
-  fs.writeFileSync(restoreIntentPath, JSON.stringify({ phase: 'prepared', database_account_subject: null }), { mode: 0o600 });
+  fs.writeFileSync(
+    restoreIntentPath,
+    JSON.stringify({ phase: 'prepared', database_account_subject: null }),
+    { mode: 0o600 },
+  );
   fs.writeFileSync(tokenPath, 'unreadable-token', { mode: 0o600 });
   const ambiguousRestore = await restoreHandler(trustedSender, '1234', validManaged);
-  assert.deepEqual(ambiguousRestore, { success: false, error: 'conflict' }, 'ambiguous restore state blocks an unconfigured local restore');
+  assert.deepEqual(
+    ambiguousRestore,
+    { success: false, error: 'conflict' },
+    'ambiguous restore state blocks an unconfigured local restore',
+  );
   assert.equal(fs.existsSync(restoreIntentPath), true, 'ambiguous restore state remains protected');
 
   console.log('✅ Restore managed-path boundary and IPC tests passed');

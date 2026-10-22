@@ -3002,6 +3002,8 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
         })
         .toBe(1);
       await budgetPage.clock.runFor(1);
+      await expect(budgetPage.locator('header')).toBeVisible();
+      await budgetPage.clock.runFor(1);
       await slowPage1Arrived;
 
       const slowPage2Arrived = waitForNextSlowPage();

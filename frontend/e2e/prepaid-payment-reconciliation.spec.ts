@@ -144,6 +144,146 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
   await expect(page.getByText(/Order #ORD-\d+-\d+ paid!/)).toBeVisible();
 });
 
+test('prepaid checkout preserves the saved discount and bill when retrying after a rejected card reference', async ({
+  page,
+  request,
+}, testInfo) => {
+  const originalDiscountRes = await request.get(`${BASE}/api/settings/discount`, {
+    headers: managerHeaders,
+  });
+  expect(originalDiscountRes.ok()).toBeTruthy();
+  const originalDiscountSettings = await originalDiscountRes.json();
+  const originalCardRefRes = await request.get(
+    `${BASE}/api/settings/card_transaction_id_required`,
+    { headers: managerHeaders },
+  );
+  expect(originalCardRefRes.ok()).toBeTruthy();
+  const originalCardRefRequired = (await originalCardRefRes.json())?.setting?.value === 'true';
+  const cleanupRequest = await playwrightRequest.newContext();
+
+  try {
+    const enableDiscountRes = await request.put(`${BASE}/api/settings/discount`, {
+      headers: managerHeaders,
+      data: {
+        discount_mode: 'both',
+        discount_requires_approval: false,
+      },
+    });
+    expect(enableDiscountRes.ok()).toBeTruthy();
+    const disableCardRefRes = await request.put(
+      `${BASE}/api/settings/card_transaction_id_required`,
+      {
+        headers: managerHeaders,
+        data: { value: false },
+      },
+    );
+    expect(disableCardRefRes.ok()).toBeTruthy();
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('manager@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/pos`);
+
+    await page.getByTestId('pos-product-card').click();
+    await page.getByRole('button', { name: 'Place Order' }).click();
+
+    await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeVisible();
+    await page.getByRole('button', { name: 'Discounts' }).click();
+    await page.locator('input[placeholder="0"]').fill('10');
+    await expect(page.getByRole('button', { name: 'Confirm Payment · ฿57.78' })).toBeVisible();
+    await page.getByRole('button', { name: 'Card', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Confirm Payment · ฿57.78' })).toBeEnabled();
+
+    const enableCardRefRes = await request.put(
+      `${BASE}/api/settings/card_transaction_id_required`,
+      {
+        headers: managerHeaders,
+        data: { value: true },
+      },
+    );
+    expect(enableCardRefRes.ok()).toBeTruthy();
+
+    let orderCreations = 0;
+    let discountUpdates = 0;
+    let billGenerations = 0;
+    page.on('request', (browserRequest) => {
+      const path = new URL(browserRequest.url()).pathname;
+      if (browserRequest.method() === 'POST' && path === '/api/orders') orderCreations += 1;
+      if (browserRequest.method() === 'PATCH' && /^\/api\/orders\/[^/]+\/discount$/.test(path))
+        discountUpdates += 1;
+      if (browserRequest.method() === 'POST' && path === '/api/bills/generate')
+        billGenerations += 1;
+    });
+
+    const firstBillResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'POST' && url.pathname === '/api/bills/generate';
+    });
+    const rejectedPaymentResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        response.request().method() === 'POST' &&
+        /^\/api\/bills\/[^/]+\/payments$/.test(url.pathname)
+      );
+    });
+
+    await page.getByRole('button', { name: 'Confirm Payment · ฿57.78' }).click();
+
+    const firstBillPayload = await (await firstBillResponse).json();
+    const rejectedPayment = await rejectedPaymentResponse;
+    expect(firstBillPayload.bill.total).toBe(57.78);
+    expect(rejectedPayment.status()).toBe(400);
+    expect((await rejectedPayment.json()).display_code).toBe('card_transaction_id_required');
+    expect(orderCreations).toBe(1);
+    expect(discountUpdates).toBe(1);
+    expect(billGenerations).toBe(1);
+
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect(page.getByRole('button', { name: 'Confirm Payment · ฿57.78' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Card', exact: true }).click();
+    const cardRefInput = page.getByLabel('Terminal transaction number');
+    await expect(cardRefInput).toBeVisible();
+    const uniqueRef = `TXN-RETRY-5778-${Date.now()}-${testInfo.repeatEachIndex}-${testInfo.retry}`;
+    await cardRefInput.fill(uniqueRef);
+
+    const retryPaymentResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        response.request().method() === 'POST' &&
+        /^\/api\/bills\/[^/]+\/payments$/.test(url.pathname)
+      );
+    });
+
+    await page.getByRole('button', { name: 'Confirm Payment · ฿57.78' }).click();
+
+    const retryPayment = await retryPaymentResponse;
+    expect(retryPayment.status()).toBe(200);
+    const retryPaymentPayload = await retryPayment.json();
+    expect(retryPaymentPayload.bill.id).toBe(firstBillPayload.bill.id);
+    expect(retryPaymentPayload.bill.total).toBe(57.78);
+    expect(retryPaymentPayload.bill.paid_amount).toBe(57.78);
+    expect(retryPaymentPayload.bill.payment_status).toBe('paid');
+    expect(orderCreations).toBe(1);
+    expect(discountUpdates).toBe(1);
+    expect(billGenerations).toBe(1);
+    await expect(page.getByText(/Order #ORD-\d+-\d+ paid!/)).toBeVisible();
+  } finally {
+    await cleanupRequest.put(`${BASE}/api/settings/discount`, {
+      headers: managerHeaders,
+      data: originalDiscountSettings,
+    });
+    await cleanupRequest.put(`${BASE}/api/settings/card_transaction_id_required`, {
+      headers: managerHeaders,
+      data: { value: originalCardRefRequired },
+    });
+    await cleanupRequest.dispose();
+  }
+});
+
 test('prepaid checkout never reports success when the payment response is partial', async ({
   page,
 }) => {

@@ -290,6 +290,7 @@ export interface Bill {
         timestamp: string;
         tendered_amount?: number;
         change_amount?: number;
+        transaction_id?: string;
       }[]
     | null;
   split_group_id?: string | null;

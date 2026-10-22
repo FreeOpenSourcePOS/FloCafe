@@ -21,6 +21,7 @@ import { printReceipt } from '../services/receipt';
 import { cloudSync } from '../services/cloud-sync';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import {
   getOpenSession,
   isCashTender,
@@ -47,7 +48,15 @@ export {
   PIN_MAX_ATTEMPTS,
   PIN_WINDOW_MS,
 };
-import { getActiveCountryPack, scaleTaxSnapshots, type Customer } from '../services/tax';
+import Decimal from 'decimal.js';
+import {
+  allocateDocumentTaxRounding,
+  computeDiscountTaxRatio,
+  getActiveCountryPack,
+  scaleTaxSnapshots,
+  type Customer,
+  type DocumentTaxAllocationItemOutput,
+} from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
 import {
@@ -126,6 +135,11 @@ function structuredBillFailure(
   } catch {
     /* Diagnostics must not affect billing. */
   }
+  const responseDisplayCode =
+    capturePoint === 'fc.backend.payment.create.validation' &&
+    displayCode === 'card_transaction_id_required'
+      ? displayCode
+      : failure.facts.display_code;
   return {
     error,
     reason_code: failure.reason_code,
@@ -134,7 +148,7 @@ function structuredBillFailure(
     classification: failure.classification,
     outcome: failure.outcome,
     correlation_id: failure.correlation_id,
-    ...(failure.facts.display_code ? { display_code: failure.facts.display_code } : {}),
+    ...(responseDisplayCode ? { display_code: responseDisplayCode } : {}),
   };
 }
 
@@ -393,7 +407,7 @@ export function addBillLoyaltyFields(
 
 function scaleTaxBreakdown(
   raw: unknown,
-  ratio: number,
+  ratio: Decimal.Value,
   ownerWeights?: number[],
   childIndex = 0,
   sourceTaxMinor?: number,
@@ -402,7 +416,8 @@ function scaleTaxBreakdown(
   if (ownerWeights && ownerWeights.length > 0) {
     return allocateTaxBreakdownForChild(raw, ownerWeights, childIndex, sourceTaxMinor, minorFactor);
   }
-  if (raw === null || raw === undefined || ratio === 1) return raw;
+  const ratioDec = Decimal.isDecimal(ratio) ? ratio : new Decimal(ratio);
+  if (raw === null || raw === undefined || ratioDec.eq(1)) return raw;
   const wasString = typeof raw === 'string';
   let parsed = raw;
   if (wasString) {
@@ -412,6 +427,7 @@ function scaleTaxBreakdown(
       return raw;
     }
   }
+  const decimals = Math.log10(minorFactor);
 
   const scale = (value: any): any => {
     if (Array.isArray(value)) return value.map(scale);
@@ -420,9 +436,12 @@ function scaleTaxBreakdown(
     if (Object.prototype.hasOwnProperty.call(result, 'amount')) {
       const amount = Number(result.amount);
       if (Number.isFinite(amount)) {
-        const scaled = Number((amount * ratio).toFixed(Math.log10(minorFactor)));
-        result.amount =
-          typeof value.amount === 'string' ? scaled.toFixed(Math.log10(minorFactor)) : scaled;
+        const scaled = new Decimal(amount)
+          .mul(ratioDec)
+          .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
+          .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
+          .toNumber();
+        result.amount = typeof value.amount === 'string' ? scaled.toFixed(decimals) : scaled;
       }
     }
     return result;
@@ -434,11 +453,23 @@ function scaleTaxBreakdown(
 
 type ChildItemAllocation = { weights: number[]; index: number };
 
-function getTaxDiscountRatio(subtotal: unknown, discountAmount: unknown): number {
+function getTaxDiscountRatioDecimal(subtotal: unknown, discountAmount: unknown): Decimal {
   const base = Number(subtotal || 0);
-  if (!Number.isFinite(base) || base <= 0) return 1;
-  const discount = Math.max(0, Number(discountAmount || 0));
-  return Math.max(0, Math.min(1, (base - discount) / base));
+  if (!Number.isFinite(base) || base <= 0) return new Decimal(1);
+  const baseDec = new Decimal((subtotal || 0) as number | string);
+  const rawDiscount = Number(discountAmount || 0);
+  const discountDec = Decimal.max(
+    0,
+    Decimal.min(
+      new Decimal(Number.isFinite(rawDiscount) ? ((discountAmount || 0) as number | string) : 0),
+      baseDec,
+    ),
+  );
+  return computeDiscountTaxRatio(baseDec.minus(discountDec), baseDec);
+}
+
+function getTaxDiscountRatio(subtotal: unknown, discountAmount: unknown): number {
+  return getTaxDiscountRatioDecimal(subtotal, discountAmount).toNumber();
 }
 
 export function projectOrderItems(
@@ -451,8 +482,104 @@ export function projectOrderItems(
   const allocated = new Map(
     allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]),
   );
-  const taxDiscountRatio = getTaxDiscountRatio(order.subtotal, order.discount_amount);
+  const taxDiscountRatioDec = getTaxDiscountRatioDecimal(order?.subtotal, order?.discount_amount);
   const decimals = Math.log10(minorFactor);
+  const docOutputByItem = new Map<unknown, DocumentTaxAllocationItemOutput>();
+  if (!taxDiscountRatioDec.eq(1)) {
+    const parsedOrderSnap = parseTaxSnapshot(order?.tax_snapshot);
+    const orderSnapEntries = Array.isArray(parsedOrderSnap)
+      ? parsedOrderSnap
+      : parsedOrderSnap
+        ? [parsedOrderSnap]
+        : [];
+    const nonChargeSnapEntries = orderSnapEntries.filter(
+      (entry): entry is Record<string, unknown> =>
+        Boolean(entry) &&
+        typeof entry === 'object' &&
+        typeof (entry as Record<string, unknown>).chargeKind !== 'string' &&
+        Array.isArray((entry as Record<string, unknown>).lines) &&
+        ((entry as Record<string, unknown>).lines as unknown[]).length > 0,
+    );
+    const toSavedDocOutput = (
+      snap: Record<string, unknown>,
+    ): DocumentTaxAllocationItemOutput | null => {
+      const lines = snap.lines as Record<string, unknown>[] | undefined;
+      if (!Array.isArray(lines) || lines.length === 0) {
+        return null;
+      }
+      const line = lines[0];
+      const components = line?.components as Record<string, unknown>[] | undefined;
+      if (!line || !Array.isArray(components)) return null;
+      const lineTax = components.reduce(
+        (sum: Decimal, c) => sum.plus(new Decimal((c.amount as string | number) || 0)),
+        new Decimal(0),
+      );
+      return {
+        handled: true,
+        taxAmount: lineTax.toNumber(),
+        breakdown: components.map((c) => ({
+          title: String(c.label ?? c.title ?? c.name ?? ''),
+          rate: Number(c.rate ?? c.amountPer ?? 0),
+          amount: Number(c.amount || 0),
+        })),
+        snapshotJson: JSON.stringify(snap),
+      };
+    };
+    const itemById = new Map(
+      rawItemRows
+        .filter((item) => item?.id !== undefined && item?.id !== null)
+        .map((item) => [String(item.id), item]),
+    );
+    for (const snap of nonChargeSnapEntries) {
+      const lines = snap.lines as Record<string, unknown>[] | undefined;
+      const lineId = String(lines?.[0]?.lineId || '');
+      const idMatch = /^line-\d+:(.+)$/.exec(lineId);
+      if (idMatch) {
+        const matchedItem = itemById.get(idMatch[1]);
+        const out = matchedItem ? toSavedDocOutput(snap) : null;
+        if (matchedItem && out) docOutputByItem.set(matchedItem, out);
+      }
+    }
+    const billSnapshotItems = rawItemRows.filter(
+      (item) => !isExcludedFromBillReceipt(item?.status) && hasSnapshotLines(item?.tax_snapshot),
+    );
+    if (docOutputByItem.size === 0 && nonChargeSnapEntries.length === billSnapshotItems.length) {
+      billSnapshotItems.forEach((item, idx) => {
+        const out = toSavedDocOutput(nonChargeSnapEntries[idx]);
+        if (out) docOutputByItem.set(item, out);
+      });
+    }
+    if (docOutputByItem.size === 0 && nonChargeSnapEntries.length === 0) {
+      const chargeSnapJson = orderSnapEntries
+        .filter(
+          (entry) =>
+            entry &&
+            typeof entry === 'object' &&
+            typeof (entry as Record<string, unknown>).chargeKind === 'string',
+        )
+        .map((entry) => JSON.stringify(entry));
+      const activeItems = rawItemRows.filter((item) => !isExcludedFromBillReceipt(item?.status));
+      const docAllocated = allocateDocumentTaxRounding({
+        items: activeItems.map((item, idx) => ({
+          snapshot: item.tax_snapshot,
+          lineIdOverride: `line-${String(idx + 1).padStart(4, '0')}:${item.id}`,
+        })),
+        chargeTaxes: {
+          taxAmount: 0,
+          exclusiveTaxAmount: 0,
+          breakdowns: chargeSnapJson.map(() => []),
+          snapshotJson: chargeSnapJson,
+        },
+        currency: '',
+        minorFactor,
+        itemTaxRatio: taxDiscountRatioDec,
+      });
+      activeItems.forEach((item, idx) => {
+        const out = docAllocated.itemOutputs[idx];
+        if (out?.handled) docOutputByItem.set(item, out);
+      });
+    }
+  }
   return rawItemRows
     .filter((item) => allocations.length === 0 || allocated.has(Number(item.id)))
     .map((item) => {
@@ -461,23 +588,33 @@ export function projectOrderItems(
       const quantityRatio =
         quantity === undefined || originalQuantity <= 0 ? 1 : quantity / originalQuantity;
       const ownerAllocation = childItemAllocations.get(Number(item.id));
-      const sourceTaxMinor = Math.round(
-        Number(item.tax_amount || 0) * taxDiscountRatio * minorFactor,
-      );
+      const docOut = docOutputByItem.get(item);
+      const sourceTaxMinor = docOut
+        ? Math.round(docOut.taxAmount * minorFactor)
+        : new Decimal(item.tax_amount || 0)
+            .mul(taxDiscountRatioDec)
+            .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
+            .mul(minorFactor)
+            .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+            .toNumber();
       const taxMinor = ownerAllocation
         ? allocateSignedMinorUnits(sourceTaxMinor, ownerAllocation.weights)[ownerAllocation.index]
         : Math.round(sourceTaxMinor * quantityRatio);
       const hasSnapshot = hasSnapshotLines(item.tax_snapshot);
-      const scaledBreakdown = hasSnapshot
-        ? item.tax_breakdown
-        : scaleTaxBreakdown(
-            item.tax_breakdown,
-            taxDiscountRatio,
-            undefined,
-            0,
-            undefined,
-            minorFactor,
-          );
+      const scaledBreakdown = docOut
+        ? typeof item.tax_breakdown === 'string'
+          ? JSON.stringify(docOut.breakdown)
+          : docOut.breakdown
+        : hasSnapshot
+          ? item.tax_breakdown
+          : scaleTaxBreakdown(
+              item.tax_breakdown,
+              taxDiscountRatioDec,
+              undefined,
+              0,
+              undefined,
+              minorFactor,
+            );
       const taxBreakdown = ownerAllocation
         ? scaleTaxBreakdown(
             scaledBreakdown,
@@ -488,15 +625,30 @@ export function projectOrderItems(
             minorFactor,
           )
         : scaleTaxBreakdown(scaledBreakdown, quantityRatio, undefined, 0, undefined, minorFactor);
+      const discountedSnapshot = docOut
+        ? typeof item.tax_snapshot === 'string'
+          ? docOut.snapshotJson
+          : docOut.snapshotJson
+            ? JSON.parse(docOut.snapshotJson)
+            : null
+        : item.tax_snapshot;
       const taxSnapshot =
-        ownerAllocation || !hasSnapshot || (taxDiscountRatio === 1 && quantityRatio === 1)
+        ownerAllocation || !hasSnapshot || (taxDiscountRatioDec.eq(1) && quantityRatio === 1)
           ? item.tax_snapshot
-          : scaleTaxSnapshots(
-              [item.tax_snapshot],
-              taxDiscountRatio * quantityRatio,
-              minorFactor,
-            )[0] || null;
-      if (quantity === undefined && taxDiscountRatio === 1 && !ownerAllocation) return item;
+          : docOut
+            ? quantityRatio === 1
+              ? discountedSnapshot
+              : scaleTaxSnapshots([docOut.snapshotJson], quantityRatio, minorFactor)[0] || null
+            : scaleTaxSnapshots(
+                [
+                  typeof item.tax_snapshot === 'string'
+                    ? item.tax_snapshot
+                    : JSON.stringify(item.tax_snapshot),
+                ],
+                taxDiscountRatioDec.mul(quantityRatio),
+                minorFactor,
+              )[0] || null;
+      if (quantity === undefined && taxDiscountRatioDec.eq(1) && !ownerAllocation) return item;
       return {
         ...item,
         ...(quantity === undefined ? {} : { quantity }),
@@ -2785,12 +2937,17 @@ function validatePaymentFields(payment: PaymentInput, index: number, currency: s
     ['notes', 1024],
   ] as const) {
     const value = payment[field];
-    if (
-      value !== undefined &&
-      (typeof value !== 'string' ||
-        value.length > maxLength ||
-        (field === 'transaction_id' && value.trim() === ''))
-    ) {
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || value.length > maxLength) {
+      throw paymentValidationError(`${field} is invalid or too long`, 'payment_input_invalid');
+    }
+    if (field === 'transaction_id' && value.trim() === '') {
+      if (payment.method === 'card' && getSettingValue('card_transaction_id_required') === 'true') {
+        throw paymentValidationError(
+          `Card transaction_id is required at line ${index + 1}`,
+          'card_transaction_id_required',
+        );
+      }
       throw paymentValidationError(`${field} is invalid or too long`, 'payment_input_invalid');
     }
   }
@@ -2889,8 +3046,12 @@ function preparePaymentBatch(
   const currency = getTenantCurrency();
   const minorFactor = getCurrencyMinorUnitFactor(currency);
   payments.forEach((payment, index) => validatePaymentFields(payment, index, currency));
-  const resolvedPayments = payments.map((payment, index) => {
-    if (PAYMENT_METHODS.has(payment.method)) return payment;
+  const resolvedPayments = payments.map((payment, index): PaymentInput => {
+    if (PAYMENT_METHODS.has(payment.method)) {
+      if (payment.payment_method_id === undefined) return payment;
+      const { payment_method_id: _ignored, ...builtInPayment } = payment;
+      return builtInPayment;
+    }
     const configured =
       payment.method === 'custom'
         ? (db
@@ -3003,6 +3164,20 @@ function preparePaymentBatch(
   );
   if (replay) {
     return { bill, prepared: [], existingPayments, effectiveCustomerId, idempotentReplay: true };
+  }
+  if (getSettingValue('card_transaction_id_required') === 'true') {
+    resolvedPayments.forEach((payment, index) => {
+      if (
+        payment.method === 'card' &&
+        payment.payment_method_id === undefined &&
+        (typeof payment.transaction_id !== 'string' || payment.transaction_id.trim() === '')
+      ) {
+        throw paymentValidationError(
+          `Card transaction_id is required at line ${index + 1}`,
+          'card_transaction_id_required',
+        );
+      }
+    });
   }
   const seenTransactionKeys = new Set<string>();
   for (const key of requestTransactionKeys) {

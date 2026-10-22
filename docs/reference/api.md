@@ -913,21 +913,23 @@ The Server App implements no business logic. It authenticates the caller, checks
 `http://127.0.0.1:<main port>/api/...`. [System overview](../architecture/overview.md#the-server-app-is-a-filtered-proxy-not-a-second-api)
 owns that boundary model; this section is the allowlist.
 
-Nineteen routes in total, eleven of which forward:
+Twenty-one routes in total, thirteen of which forward:
 
-| Method | Path                       | Forwards to                     |
-| ------ | -------------------------- | ------------------------------- |
-| `GET`  | `/api/categories`          | `GET /api/categories`           |
-| `GET`  | `/api/products`            | `GET /api/products`             |
-| `GET`  | `/api/tables`              | `GET /api/tables`               |
-| `GET`  | `/api/orders`              | `GET /api/orders`               |
-| `POST` | `/api/orders`              | `POST /api/orders`              |
-| `POST` | `/api/orders/:id/items`    | `POST /api/orders/:id/items`    |
-| `GET`  | `/api/customers-search`    | `GET /api/customers-search`     |
-| `GET`  | `/api/crm/lookup`          | `GET /api/crm/lookup`           |
-| `POST` | `/api/customers`           | `POST /api/customers`           |
-| `POST` | `/api/printers/print-kot`  | `POST /api/printers/print-kot`  |
-| `POST` | `/api/printers/print-bill` | `POST /api/printers/print-bill` |
+| Method | Path                         | Forwards to                       |
+| ------ | ---------------------------- | --------------------------------- |
+| `GET`  | `/api/categories`            | `GET /api/categories`             |
+| `GET`  | `/api/products`              | `GET /api/products`               |
+| `GET`  | `/api/products/:id/image`    | `GET /api/products/:id/image`     |
+| `GET`  | `/api/tables`                | `GET /api/tables`                 |
+| `POST` | `/api/tables/:id/move-order` | `POST /api/tables/:id/move-order` |
+| `GET`  | `/api/orders`                | `GET /api/orders`                 |
+| `POST` | `/api/orders`                | `POST /api/orders`                |
+| `POST` | `/api/orders/:id/items`      | `POST /api/orders/:id/items`      |
+| `GET`  | `/api/customers-search`      | `GET /api/customers-search`       |
+| `GET`  | `/api/crm/lookup`            | `GET /api/crm/lookup`             |
+| `POST` | `/api/customers`             | `POST /api/customers`             |
+| `POST` | `/api/printers/print-kot`    | `POST /api/printers/print-kot`    |
+| `POST` | `/api/printers/print-bill`   | `POST /api/printers/print-bill`   |
 
 Adding a route to `3001` does not expose it on `3003`. A path becomes reachable from the Server App
 only when a forwarding route is added to `main/server-app.ts`.
@@ -947,8 +949,9 @@ The seven routes that are not forwards:
 When the frontend export is missing, the `GET /` redirect is replaced by a placeholder page instead,
 so `GET /` is two mutually exclusive registrations rather than two routes.
 
-`requireServerAppAuth` is applied to every route except `/api/health` and `/api/server-app/info`, and
-it runs the feature check **before** the token check. Behaviour by condition:
+`requireServerAppAuth` is applied to every route except `/api/health`, `/api/server-app/info`, and
+`/api/products/:id/image`, and it runs the feature check **before** the token check. Behaviour by
+condition:
 
 - Feature disabled: `404` with `{ error: "Not found" }`, so the surface is not advertised.
 - Main API unreachable: `502` with `{ error: "Could not reach the local POS API" }` from the

@@ -3,6 +3,7 @@
 import axios, { AxiosInstance } from 'axios';
 import toast from 'react-hot-toast';
 import {
+  ArrowRightLeft,
   Bell,
   CheckCircle2,
   ChefHat,
@@ -36,8 +37,12 @@ import { generateCartItemId } from '@/lib/cart-identity';
 import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
 import AddonModal from '@/components/pos/AddonModal';
 import ProductGrid from '@/components/pos/ProductGrid';
+import MoveTableModal from '@/components/tables/MoveTableModal';
+import { tenantCan } from '@/lib/permissions';
 import type {
   Order as FullOrder,
+  Table as FullTable,
+  Tenant,
   Product,
   Addon,
   CartItem,
@@ -46,7 +51,7 @@ import type {
 } from '@/lib/types';
 import { cartItemToOrderItem } from '@/lib/cart-order-item';
 
-type User = { id: string; name: string; email: string; role: string };
+type User = { id: string; name: string; email: string; role: string; permission_ids?: string[] };
 type Table = {
   id: string;
   name?: string;
@@ -209,6 +214,7 @@ export default function ServerStandalonePage() {
   const [addonModalVariant, setAddonModalVariant] = useState<ProductVariant | null>(null);
   const [editingDraftLine, setEditingDraftLine] = useState<DraftLine | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [moveTableModalOpen, setMoveTableModalOpen] = useState(false);
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -914,6 +920,7 @@ export default function ServerStandalonePage() {
   }
 
   const activeTable = tables.find((table) => table.id === selectedTableId) || null;
+  const canMoveTable = tenantCan(user as unknown as Tenant, 'tables.orders.move');
   const draftTotal = draft.reduce((sum, line) => {
     const addonTotal = line.addons.reduce(
       (addonSum, addon) => addonSum + Number(addon.price || 0) * (addon.quantity || 1),
@@ -1004,7 +1011,20 @@ export default function ServerStandalonePage() {
 
   const ticketPanelBody = (
     <>
-      <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
+        {currentOrder && activeTable && canMoveTable && (
+          <button
+            type="button"
+            disabled={sending}
+            onClick={() => setMoveTableModalOpen(true)}
+            className="flex items-center gap-1 text-xs font-medium text-brand hover:underline disabled:opacity-50"
+          >
+            <ArrowRightLeft size={13} />
+            {tTables('moveTable')}
+          </button>
+        )}
+      </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <input
           value={customerPhone}
@@ -1341,6 +1361,25 @@ export default function ServerStandalonePage() {
             updateDraftLine(editingDraftLine.id, quantity, addons, instructions, variant);
           }}
           onClose={() => setEditingDraftLine(null)}
+        />
+      )}
+
+      {moveTableModalOpen && activeTable && currentOrder && (
+        <MoveTableModal
+          sourceTable={
+            {
+              ...activeTable,
+              activeOrder: currentOrder,
+            } as unknown as FullTable
+          }
+          apiClient={api || undefined}
+          formatPrice={(amount) => money(amount, regional)}
+          onClose={() => setMoveTableModalOpen(false)}
+          onSuccess={async (movedData) => {
+            setMoveTableModalOpen(false);
+            selectTable(String(movedData.targetTable.id));
+            await loadAll();
+          }}
         />
       )}
     </div>

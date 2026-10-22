@@ -995,6 +995,29 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
         '',
         'Manual reset to All Tables is preserved on re-render when ?table= is unchanged',
       );
+
+      // Select a table again, then navigate back to /orders (clearing ?table=), which resets filters.table to ''.
+      findTableSelect(afterManualClearTree).props.onChange({ target: { value: 'tbl-99' } });
+      currentSearchParams = new URLSearchParams();
+      renderOrdersWithSync();
+      ordersRenderer.flushEffects();
+      const afterUrlClearTree = renderOrdersWithSync();
+      ordersRenderer.flushEffects();
+      assert.equal(
+        findTableSelect(afterUrlClearTree).props.value,
+        '',
+        'Removing ?table= from the URL resets filters.table to All Tables',
+      );
+
+      // Manually selecting a table while on /orders (no ?table= in URL) is preserved on re-render.
+      findTableSelect(afterUrlClearTree).props.onChange({ target: { value: 'tbl-99' } });
+      const afterManualSelectWithoutParamTree = renderOrdersWithSync();
+      ordersRenderer.flushEffects();
+      assert.equal(
+        findTableSelect(afterManualSelectWithoutParamTree).props.value,
+        'tbl-99',
+        'Manual table filter selection is preserved on re-render when ?table= is absent',
+      );
     } finally {
       ordersRenderer.cleanupAll();
     }

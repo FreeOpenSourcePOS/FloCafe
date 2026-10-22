@@ -146,7 +146,6 @@ function OrdersTableQuerySync({
   const tableParam = useSearchParams()?.get('table')?.trim() || '';
 
   useEffect(() => {
-    if (!tableParam) return;
     onFiltersChange((prev) => (prev.table === tableParam ? prev : { ...prev, table: tableParam }));
   }, [tableParam, onFiltersChange]);
 

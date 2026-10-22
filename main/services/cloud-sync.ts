@@ -1438,7 +1438,9 @@ export class CloudSyncService {
 
   /** True when cloud services are on and the store has an owner email FloAdmin can verify and mail. */
   isEmailRecoveryAvailable(): boolean {
-    return this.isCloudAccountAvailable() && Boolean(this.getRegisteredOwnerEmail());
+    return (
+      !isOfflineMode() && this.isCloudAccountAvailable() && Boolean(this.getRegisteredOwnerEmail())
+    );
   }
 
   async isOwnerEmailVerified(signal?: AbortSignal): Promise<boolean> {

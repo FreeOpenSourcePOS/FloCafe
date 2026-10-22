@@ -25,6 +25,7 @@ const {
   seedCategory,
   seedProduct,
   seedTable,
+  installAndActivateTestTaxPack,
   api,
   assert,
   assertEqual,
@@ -35,8 +36,9 @@ const {
 } = require('./helpers/test-setup');
 
 const { orderRoutes, resetPinRateLimitForTests } = require('../main/routes/orders');
-const { billRoutes } = require('../main/routes/bills');
+const { billRoutes, syncUnpaidBillsForOrder } = require('../main/routes/bills');
 const { refundRoutes } = require('../main/routes/refunds');
+const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
 
 function setSetting(db: any, key: string, value: string): void {
   db.prepare(
@@ -714,6 +716,804 @@ async function main(): Promise<void> {
         'issue-1176: order completed after settlement',
       );
     }
+
+    // ── Issue #1295: 1. syncUnpaidBillsForOrder & POST /api/bills/generate preserve refunded, partially_refunded, and Rs.0 paid bills ──
+    console.log(
+      '\n─── Issue #1295 (1): syncUnpaidBillsForOrder and /bills/generate do not overwrite refunded/partially_refunded/Rs.0 paid bills ───',
+    );
+    {
+      resetPinRateLimitForTests();
+      setSetting(db, 'discount_requires_approval', 'false');
+
+      // 1a. Rs.0 paid bill (total = 0, paid_amount = 0, payment_status = 'paid')
+      const { orderId: zeroOrderId, billId: zeroBillId } = await newTakeawayOrder('prod-1000');
+      const fullDisc = await applyOrderDiscount(zeroOrderId, {
+        discount_type: 'amount',
+        discount_value: 1000,
+      });
+      assertEqual(fullDisc.status, 200, 'issue-1295-1a: 100% discount applied');
+      const settleZero = await pay(zeroBillId, { method: 'cash', amount: null });
+      assertEqual(settleZero.status, 200, 'issue-1295-1a: Rs.0 bill settled to paid');
+      assertEqual(
+        billRow(db, zeroBillId).payment_status,
+        'paid',
+        'issue-1295-1a: bill status is paid',
+      );
+      assertEqual(Number(billRow(db, zeroBillId).total), 0, 'issue-1295-1a: bill total is 0');
+      assertEqual(
+        Number(billRow(db, zeroBillId).paid_amount),
+        0,
+        'issue-1295-1a: bill paid_amount is 0',
+      );
+
+      // Even if order row has non-zero totals, syncUnpaidBillsForOrder and /bills/generate must not overwrite Rs.0 paid bill
+      db.prepare('UPDATE orders SET discount_amount = 0, total = 1000 WHERE id = ?').run(
+        zeroOrderId,
+      );
+      syncUnpaidBillsForOrder(
+        db,
+        zeroOrderId,
+        {
+          subtotal: 1000,
+          taxAmount: 0,
+          taxBreakdown: '[]',
+          taxSnapshot: null,
+          discountAmount: 0,
+          deliveryCharge: 0,
+          packagingCharge: 0,
+          serviceCharge: 0,
+          chargesBreakdown: null,
+          total: 1000,
+        },
+        'IN',
+      );
+      const afterSyncZero = billRow(db, zeroBillId);
+      assertEqual(
+        afterSyncZero.payment_status,
+        'paid',
+        'issue-1295-1a: Rs.0 paid bill stays paid after syncUnpaidBillsForOrder',
+      );
+      assertEqual(
+        Number(afterSyncZero.total),
+        0,
+        'issue-1295-1a: Rs.0 paid bill total stays 0 after syncUnpaidBillsForOrder',
+      );
+      assertEqual(
+        Number(afterSyncZero.balance),
+        0,
+        'issue-1295-1a: Rs.0 paid bill balance stays 0 after syncUnpaidBillsForOrder',
+      );
+
+      const genZeroAgain = await generateBill(zeroOrderId);
+      assertEqual(genZeroAgain.status, 200, 'issue-1295-1a: /bills/generate returns existing bill');
+      assertEqual(
+        Number(genZeroAgain.data.bill.total),
+        0,
+        'issue-1295-1a: /bills/generate does not overwrite Rs.0 paid bill total',
+      );
+      assertEqual(
+        Number(genZeroAgain.data.bill.balance),
+        0,
+        'issue-1295-1a: /bills/generate does not overwrite Rs.0 paid bill balance',
+      );
+
+      // 1b. Refunded and partially_refunded bills are not overwritten by syncUnpaidBillsForOrder or /bills/generate
+      const { orderId: refOrderId, billId: refBillId } = await newTakeawayOrder('prod-1000');
+      await pay(refBillId, { method: 'cash', amount: 600 });
+      const partRef = await refund({
+        bill_id: refBillId,
+        amount: 200,
+        method: 'cash',
+        reason: '1295 partial refund',
+        override_pin: pin,
+        approver_id: approver,
+      });
+      assertEqual(partRef.status, 201, 'issue-1295-1b: partial refund created');
+      assertEqual(
+        billRow(db, refBillId).payment_status,
+        'partially_refunded',
+        'issue-1295-1b: status is partially_refunded',
+      );
+
+      db.prepare('UPDATE orders SET subtotal = 1400, total = 1400 WHERE id = ?').run(refOrderId);
+      syncUnpaidBillsForOrder(
+        db,
+        refOrderId,
+        {
+          subtotal: 1400,
+          taxAmount: 0,
+          taxBreakdown: '[]',
+          taxSnapshot: null,
+          discountAmount: 0,
+          deliveryCharge: 0,
+          packagingCharge: 0,
+          serviceCharge: 0,
+          chargesBreakdown: null,
+          total: 1400,
+        },
+        'IN',
+      );
+      const genPartRef = await generateBill(refOrderId);
+      assertEqual(genPartRef.status, 200, 'issue-1295-1b: /bills/generate on partially_refunded');
+      assertEqual(
+        Number(billRow(db, refBillId).total),
+        1000,
+        'issue-1295-1b: partially_refunded bill total preserved at 1000',
+      );
+
+      const remRef = await refund({
+        bill_id: refBillId,
+        amount: 400,
+        method: 'cash',
+        reason: '1295 full refund',
+        override_pin: pin,
+        approver_id: approver,
+      });
+      assertEqual(remRef.status, 201, 'issue-1295-1b: remaining refund created');
+      assertEqual(
+        billRow(db, refBillId).payment_status,
+        'refunded',
+        'issue-1295-1b: status is refunded',
+      );
+      syncUnpaidBillsForOrder(
+        db,
+        refOrderId,
+        {
+          subtotal: 1800,
+          taxAmount: 0,
+          taxBreakdown: '[]',
+          taxSnapshot: null,
+          discountAmount: 0,
+          deliveryCharge: 0,
+          packagingCharge: 0,
+          serviceCharge: 0,
+          chargesBreakdown: null,
+          total: 1800,
+        },
+        'IN',
+      );
+      const genFullRef = await generateBill(refOrderId);
+      assertEqual(genFullRef.status, 200, 'issue-1295-1b: /bills/generate on refunded');
+      assertEqual(
+        Number(billRow(db, refBillId).total),
+        1000,
+        'issue-1295-1b: refunded bill total preserved at 1000',
+      );
+    }
+
+    // ── Issue #1295: 2 & 3. convert-to-takeaway guards, below_collected_funds, audit log, and exact-balance settlement ──
+    console.log(
+      '\n─── Issue #1295 (2 & 3): convert-to-takeaway guards, below_collected_funds, audit, and exact-balance settlement ───',
+    );
+    {
+      resetPinRateLimitForTests();
+      seedTable(db, 'table-1295-1', 10);
+      seedTable(db, 'table-1295-2', 11);
+      seedTable(db, 'table-1295-3', 12);
+
+      // Configure a dine-in-only fixed service charge of 200 so converting to takeaway drops order total by 200
+      setSetting(
+        db,
+        'custom_charges',
+        JSON.stringify([
+          {
+            id: 'service_charge',
+            name: 'Dine-In Service',
+            type: 'fixed',
+            value: 200,
+            calculation_basis: 'gross',
+            order_types: ['dine_in'],
+            is_optional: true,
+            is_default_active: true,
+            is_active: true,
+          },
+        ]),
+      );
+
+      // 2a. Rejects convert-to-takeaway when a paid or refunded bill exists
+      const paidDineIn = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-1295-1',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
+      assertEqual(paidDineIn.status, 201, 'issue-1295-2a: dine-in order created (total 1200)');
+      const paidDineInOrderId = paidDineIn.data.order.id;
+      const paidDineInBill = await generateBill(paidDineInOrderId);
+      const paidDineInBillId = paidDineInBill.data.bill.id;
+      await pay(paidDineInBillId, { method: 'cash', amount: 600 });
+      await refund({
+        bill_id: paidDineInBillId,
+        amount: 200,
+        method: 'cash',
+        reason: '1295-2a partial refund',
+        override_pin: pin,
+        approver_id: approver,
+      });
+      const convPartRef = await api(
+        baseUrl,
+        `/api/orders/${paidDineInOrderId}/convert-to-takeaway`,
+        {
+          method: 'PATCH',
+          headers: A,
+        },
+      );
+      assertEqual(
+        convPartRef.status,
+        409,
+        'issue-1295-2a: convert-to-takeaway rejected on partially_refunded bill with 409',
+      );
+      await refund({
+        bill_id: paidDineInBillId,
+        amount: 400,
+        method: 'cash',
+        reason: '1295-2a full refund',
+        override_pin: pin,
+        approver_id: approver,
+      });
+      const convFullRef = await api(
+        baseUrl,
+        `/api/orders/${paidDineInOrderId}/convert-to-takeaway`,
+        {
+          method: 'PATCH',
+          headers: A,
+        },
+      );
+      assertEqual(
+        convFullRef.status,
+        409,
+        'issue-1295-2a: convert-to-takeaway rejected on refunded bill with 409',
+      );
+      // Free table-1295-1 for next test
+      db.prepare("UPDATE tables SET status = 'available' WHERE id = 'table-1295-1'").run();
+
+      // 2b. Rejects convert-to-takeaway with below_collected_funds when takeaway total < paid_amount
+      const belowOrder = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-1295-1',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
+      assertEqual(belowOrder.status, 201, 'issue-1295-2b: dine-in order created (total 1200)');
+      const belowOrderId = belowOrder.data.order.id;
+      const belowBill = await generateBill(belowOrderId);
+      const belowBillId = belowBill.data.bill.id;
+      assertEqual(Number(belowBill.data.bill.total), 1200, 'issue-1295-2b: dine-in bill is 1200');
+      // Pay 1100 out of 1200; converting to takeaway removes 200 service charge -> 1000 < 1100 collected
+      const pay1100 = await pay(belowBillId, { method: 'cash', amount: 1100 });
+      assertEqual(pay1100.status, 200, 'issue-1295-2b: partial payment of 1100 accepted');
+
+      const convBelow = await api(baseUrl, `/api/orders/${belowOrderId}/convert-to-takeaway`, {
+        method: 'PATCH',
+        headers: A,
+      });
+      assertEqual(
+        convBelow.status,
+        409,
+        'issue-1295-2b: convert-to-takeaway below collected funds rejected with 409',
+      );
+      assertEqual(
+        convBelow.data.display_code,
+        'below_collected_funds',
+        'issue-1295-2b: display_code is below_collected_funds',
+      );
+      assertEqual(
+        Number(billRow(db, belowBillId).total),
+        1200,
+        'issue-1295-2b: bill total unchanged after rejected conversion',
+      );
+
+      // 2c & 3a. Exact-balance settlement + converted_to_takeaway audit on convert-to-takeaway
+      const exactConvOrder = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-1295-2',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
+      assertEqual(exactConvOrder.status, 201, 'issue-1295-3a: dine-in order created (total 1200)');
+      const exactConvOrderId = exactConvOrder.data.order.id;
+      const exactConvBill = await generateBill(exactConvOrderId);
+      const exactConvBillId = exactConvBill.data.bill.id;
+      // Pay 1000 out of 1200; converting to takeaway drops 200 dine-in charge so new total = 1000 === paid_amount
+      const pay1000 = await pay(exactConvBillId, { method: 'cash', amount: 1000 });
+      assertEqual(pay1000.status, 200, 'issue-1295-3a: partial payment of 1000 accepted');
+      assertEqual(
+        billRow(db, exactConvBillId).payment_status,
+        'partial',
+        'issue-1295-3a: bill is partial before conversion',
+      );
+
+      const convExact = await api(baseUrl, `/api/orders/${exactConvOrderId}/convert-to-takeaway`, {
+        method: 'PATCH',
+        headers: A,
+      });
+      assertEqual(convExact.status, 200, 'issue-1295-3a: convert-to-takeaway succeeds');
+      const billAfterConv = db
+        .prepare('SELECT * FROM bills WHERE id = ?')
+        .get(exactConvBillId) as any;
+      assertEqual(
+        billAfterConv.payment_status,
+        'paid',
+        'issue-1295-3a: bill auto-settles to paid on exact balance after takeaway conversion',
+      );
+      assertEqual(Number(billAfterConv.total), 1000, 'issue-1295-3a: bill total is 1000');
+      assertEqual(Number(billAfterConv.balance), 0, 'issue-1295-3a: bill balance is 0');
+      assertEqual(Boolean(billAfterConv.paid_at), true, 'issue-1295-3a: bill paid_at is populated');
+      assertEqual(
+        orderRow(db, exactConvOrderId).status,
+        'completed',
+        'issue-1295-3a: order completes on exact-balance takeaway conversion',
+      );
+      const convAudit = db
+        .prepare('SELECT * FROM order_audit_log WHERE order_id = ? AND action = ?')
+        .get(exactConvOrderId, 'converted_to_takeaway') as any;
+      assertEqual(
+        Boolean(convAudit),
+        true,
+        'issue-1295-2c: converted_to_takeaway audit row recorded',
+      );
+      assertEqual(
+        convAudit.actor_user_id,
+        ownerId,
+        'issue-1295-2c: converted_to_takeaway audit records actor',
+      );
+
+      // Clear custom_charges for subsequent tests
+      db.prepare("DELETE FROM settings WHERE key = 'custom_charges'").run();
+
+      // 3b. Exact-balance settlement on PATCH /api/orders/:orderId/items/:itemId/edit
+      const editOrder = await createOrder({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-400', quantity: 2 }],
+      });
+      assertEqual(editOrder.status, 201, 'issue-1295-3b: order with 2x400=800 created');
+      const editOrderId = editOrder.data.order.id;
+      const editItem = editOrder.data.order.items[0];
+      const editBill = await generateBill(editOrderId);
+      const editBillId = editBill.data.bill.id;
+      const pay400 = await pay(editBillId, { method: 'cash', amount: 400 });
+      assertEqual(pay400.status, 200, 'issue-1295-3b: partial payment of 400 accepted');
+      assertEqual(
+        billRow(db, editBillId).payment_status,
+        'partial',
+        'issue-1295-3b: bill is partial before item edit',
+      );
+
+      const editRes = await api(baseUrl, `/api/orders/${editOrderId}/items/${editItem.id}/edit`, {
+        method: 'PATCH',
+        headers: { ...A, 'Idempotency-Key': 'idem-1295-3b-exact' },
+        body: {
+          quantity: 1,
+          expected_edit_version: editItem.edit_version ?? 0,
+          reason: 'reduce to 1 for exact balance',
+        },
+      });
+      assertEqual(editRes.status, 200, 'issue-1295-3b: item quantity reduced from 2 to 1');
+      const billAfterEdit = db.prepare('SELECT * FROM bills WHERE id = ?').get(editBillId) as any;
+      assertEqual(
+        billAfterEdit.payment_status,
+        'paid',
+        'issue-1295-3b: bill auto-settles to paid when item edit brings total to paid_amount',
+      );
+      assertEqual(Number(billAfterEdit.total), 400, 'issue-1295-3b: bill total is 400');
+      assertEqual(Number(billAfterEdit.balance), 0, 'issue-1295-3b: bill balance is 0');
+      assertEqual(Boolean(billAfterEdit.paid_at), true, 'issue-1295-3b: paid_at is populated');
+      assertEqual(
+        orderRow(db, editOrderId).status,
+        'completed',
+        'issue-1295-3b: order status transitions to completed after exact-balance item edit',
+      );
+
+      // 3c. Exact-balance settlement on POST /api/bills/generate when existing partial bill matches reduced order total
+      const genSettleOrder = await createOrder({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
+      const genSettleOrderId = genSettleOrder.data.order.id;
+      const genSettleBill = await generateBill(genSettleOrderId);
+      const genSettleBillId = genSettleBill.data.bill.id;
+      await pay(genSettleBillId, { method: 'cash', amount: 600 });
+      // Simulate order discounted to 600 prior to /bills/generate resync
+      db.prepare(
+        "UPDATE orders SET discount_amount = 400, discount_type = 'amount', discount_value = 400, total = 600 WHERE id = ?",
+      ).run(genSettleOrderId);
+      const regenRes = await generateBill(genSettleOrderId);
+      assertEqual(regenRes.status, 200, 'issue-1295-3c: /bills/generate resyncs partial bill');
+      assertEqual(
+        regenRes.data.bill.payment_status,
+        'paid',
+        'issue-1295-3c: /bills/generate auto-settles partial bill to paid on exact balance',
+      );
+      assertEqual(
+        Number(regenRes.data.bill.balance),
+        0,
+        'issue-1295-3c: /bills/generate sets balance to 0',
+      );
+      assertEqual(
+        Boolean(regenRes.data.bill.paid_at),
+        true,
+        'issue-1295-3c: /bills/generate populates paid_at',
+      );
+      assertEqual(
+        orderRow(db, genSettleOrderId).status,
+        'completed',
+        'issue-1295-3c: /bills/generate completes order on exact-balance settlement',
+      );
+    }
+
+    // ── Issue #1295: 4. Restore item guards against partially_refunded, refunded, and Rs.0 paid bills ──
+    console.log(
+      '\n─── Issue #1295 (4): Restore item rejected on partially_refunded, refunded, and Rs.0 paid bills ───',
+    );
+    {
+      resetPinRateLimitForTests();
+      const restoreCreate = await createOrder({
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-1000', quantity: 1 },
+          { product_id: 'prod-400', quantity: 1 },
+        ],
+      });
+      assertEqual(restoreCreate.status, 201, 'issue-1295-4: order created');
+      const restoreOrderId = restoreCreate.data.order.id;
+      const item400 = restoreCreate.data.order.items.find((i: any) => i.product_id === 'prod-400');
+      const cancelRes = await api(
+        baseUrl,
+        `/api/orders/${restoreOrderId}/items/${item400.id}/cancel`,
+        {
+          method: 'PATCH',
+          body: { reason: 'cancel 400 before zero-pay settle' },
+          headers: A,
+        },
+      );
+      assertEqual(cancelRes.status, 200, 'issue-1295-4: 400 item cancelled');
+
+      const restoreBill = await generateBill(restoreOrderId);
+      const restoreBillId = restoreBill.data.bill.id;
+      await applyOrderDiscount(restoreOrderId, { discount_type: 'amount', discount_value: 1000 });
+      await pay(restoreBillId, { method: 'cash', amount: null });
+      // Keep order status pending to directly test the bill status guard on Rs.0 paid bill
+      db.prepare("UPDATE orders SET status = 'pending' WHERE id = ?").run(restoreOrderId);
+      assertEqual(
+        billRow(db, restoreBillId).payment_status,
+        'paid',
+        'issue-1295-4: bill is Rs.0 paid',
+      );
+      assertEqual(
+        Number(billRow(db, restoreBillId).paid_amount),
+        0,
+        'issue-1295-4: bill paid_amount is 0',
+      );
+
+      const restoreOnZeroPaid = await api(
+        baseUrl,
+        `/api/orders/${restoreOrderId}/items/${item400.id}/restore`,
+        {
+          method: 'PATCH',
+          body: {},
+          headers: A,
+        },
+      );
+      assertEqual(
+        restoreOnZeroPaid.status,
+        400,
+        'issue-1295-4: restore rejected on Rs.0 paid bill with 400',
+      );
+      assertEqual(
+        Number(billRow(db, restoreBillId).total),
+        0,
+        'issue-1295-4: Rs.0 paid bill total remains 0',
+      );
+    }
+
+    // ── Issue #1295: 5. Flat order discount preserved and clamped across item discount, price override, and item cancel ──
+    console.log(
+      '\n─── Issue #1295 (5): Flat order discount preserved (not scaled) and clamped to newSubtotal ───',
+    );
+    {
+      resetPinRateLimitForTests();
+      setSetting(db, 'discount_mode', 'both');
+      setSetting(db, 'discount_requires_approval', 'false');
+
+      // 5a. handleItemDiscount preserves flat order discount and clamps when newSubtotal < flatDiscount
+      const ord5a = await createOrder({
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-1000', quantity: 1 },
+          { product_id: 'prod-400', quantity: 1 },
+        ],
+      });
+      const ord5aId = ord5a.data.order.id;
+      const item5a1000 = ord5a.data.order.items.find((i: any) => i.product_id === 'prod-1000').id;
+      const item5a400 = ord5a.data.order.items.find((i: any) => i.product_id === 'prod-400').id;
+      await applyOrderDiscount(ord5aId, { discount_type: 'amount', discount_value: 200 });
+      assertEqual(
+        Number(orderRow(db, ord5aId).discount_amount),
+        200,
+        'issue-1295-5a: flat 200 order discount applied on 1400 subtotal',
+      );
+
+      // Discount 400 item by 100 -> newSubtotal = 1300; flat order discount MUST stay 200 (not scaled by 1300/1400)
+      const itemDisc1 = await api(baseUrl, `/api/orders/${ord5aId}/items/${item5a400}/discount`, {
+        method: 'PATCH',
+        body: { discount_type: 'amount', discount_value: 100 },
+        headers: A,
+      });
+      assertEqual(itemDisc1.status, 200, 'issue-1295-5a: item discount 100 applied');
+      assertEqual(
+        Number(orderRow(db, ord5aId).subtotal),
+        1300,
+        'issue-1295-5a: order subtotal is 1300',
+      );
+      assertEqual(
+        Number(orderRow(db, ord5aId).discount_amount),
+        200,
+        'issue-1295-5a: flat order discount preserved at 200 without proportional scaling',
+      );
+
+      // Discount 1000 item by 950 and 400 item by 300 -> newSubtotal = 50 + 100 = 150 < 200 -> clamped to 150
+      await api(baseUrl, `/api/orders/${ord5aId}/items/${item5a1000}/discount`, {
+        method: 'PATCH',
+        body: { discount_type: 'amount', discount_value: 950 },
+        headers: A,
+      });
+      await api(baseUrl, `/api/orders/${ord5aId}/items/${item5a400}/discount`, {
+        method: 'PATCH',
+        body: { discount_type: 'amount', discount_value: 300 },
+        headers: A,
+      });
+      assertEqual(
+        Number(orderRow(db, ord5aId).subtotal),
+        150,
+        'issue-1295-5a: order subtotal is 150',
+      );
+      assertEqual(
+        Number(orderRow(db, ord5aId).discount_amount),
+        150,
+        'issue-1295-5a: flat order discount clamped to 150 subtotal',
+      );
+      assertEqual(Number(orderRow(db, ord5aId).total), 0, 'issue-1295-5a: order total is 0');
+
+      // 5b. handleItemPriceOverride preserves flat order discount and clamps when newSubtotal < flatDiscount
+      const ord5b = await createOrder({
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-1000', quantity: 1 },
+          { product_id: 'prod-400', quantity: 1 },
+        ],
+      });
+      const ord5bId = ord5b.data.order.id;
+      const item5b1000 = ord5b.data.order.items.find((i: any) => i.product_id === 'prod-1000').id;
+      const item5b400 = ord5b.data.order.items.find((i: any) => i.product_id === 'prod-400').id;
+      await applyOrderDiscount(ord5bId, { discount_type: 'amount', discount_value: 200 });
+
+      const ovr1 = await api(baseUrl, `/api/orders/${ord5bId}/items/${item5b400}/price`, {
+        method: 'PATCH',
+        body: { price: 200, reason: 'override 400 to 200' },
+        headers: A,
+      });
+      assertEqual(ovr1.status, 200, 'issue-1295-5b: price override to 200 applied');
+      assertEqual(
+        Number(orderRow(db, ord5bId).subtotal),
+        1200,
+        'issue-1295-5b: order subtotal is 1200',
+      );
+      assertEqual(
+        Number(orderRow(db, ord5bId).discount_amount),
+        200,
+        'issue-1295-5b: flat order discount preserved at 200 after price override',
+      );
+
+      const ovr2 = await api(baseUrl, `/api/orders/${ord5bId}/items/${item5b1000}/price`, {
+        method: 'PATCH',
+        body: { price: 0, reason: 'comp 1000 item' },
+        headers: A,
+      });
+      assertEqual(ovr2.status, 200, 'issue-1295-5b: price override to 0 applied');
+      const ovr3 = await api(baseUrl, `/api/orders/${ord5bId}/items/${item5b400}/price`, {
+        method: 'PATCH',
+        body: { price: 120, reason: 'reduce to 120' },
+        headers: A,
+      });
+      assertEqual(ovr3.status, 200, 'issue-1295-5b: price override to 120 applied');
+      assertEqual(
+        Number(orderRow(db, ord5bId).subtotal),
+        120,
+        'issue-1295-5b: order subtotal is 120',
+      );
+      assertEqual(
+        Number(orderRow(db, ord5bId).discount_amount),
+        120,
+        'issue-1295-5b: flat order discount clamped to 120 subtotal',
+      );
+
+      // 5c. PATCH /api/orders/:orderId/items/:itemId/cancel clamps flat order discount to newSubtotal
+      const ord5c = await createOrder({
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-1000', quantity: 1 },
+          { product_id: 'prod-400', quantity: 1 },
+        ],
+      });
+      const ord5cId = ord5c.data.order.id;
+      const item5c1000 = ord5c.data.order.items.find((i: any) => i.product_id === 'prod-1000').id;
+      await applyOrderDiscount(ord5cId, { discount_type: 'amount', discount_value: 600 });
+      assertEqual(
+        Number(orderRow(db, ord5cId).discount_amount),
+        600,
+        'issue-1295-5c: flat 600 discount applied on 1400 order',
+      );
+
+      const cancel1000 = await api(baseUrl, `/api/orders/${ord5cId}/items/${item5c1000}/cancel`, {
+        method: 'PATCH',
+        body: { reason: 'cancel 1000 item' },
+        headers: A,
+      });
+      assertEqual(cancel1000.status, 200, 'issue-1295-5c: 1000 item cancelled');
+      assertEqual(
+        Number(orderRow(db, ord5cId).subtotal),
+        400,
+        'issue-1295-5c: remaining subtotal is 400',
+      );
+      assertEqual(
+        Number(orderRow(db, ord5cId).discount_amount),
+        400,
+        'issue-1295-5c: flat discount clamped from 600 to 400 subtotal',
+      );
+      assertEqual(Number(orderRow(db, ord5cId).total), 0, 'issue-1295-5c: order total is 0');
+    }
+
+    // ── Issue #1295: 6. PATCH /api/orders/:id/customer guards, tax recomputation, bill sync, and audit ──
+    console.log(
+      '\n─── Issue #1295 (6): PATCH /orders/:id/customer guards settled/partial/split bills and recomputes customer taxes ───',
+    );
+    {
+      resetPinRateLimitForTests();
+      db.exec('ALTER TABLE customers ADD COLUMN customer_state_code TEXT');
+      db.exec('ALTER TABLE customers ADD COLUMN taxRegistrationNumber TEXT');
+      const custIntra = 'cust-1295-intra';
+      const custInter = 'cust-1295-inter';
+      db.prepare(
+        `INSERT INTO customers (id, name, phone, customer_state_code, taxRegistrationNumber, created_at, updated_at)
+         VALUES (?, 'Intra Guest', '+919999912951', 'MH', '27AAAAA0000A1Z5', ?, ?),
+                (?, 'Inter Guest', '+919999912952', 'KA', '29AAAAA0000A1Z5', ?, ?)`,
+      ).run(custIntra, now(), now(), custInter, now(), now());
+
+      // 6a. Rejects customer reassignment on partial, paid, partially_refunded, refunded, or split bills
+      const { orderId: guardOrdId, billId: guardBillId } = await newTakeawayOrder('prod-1000');
+      await pay(guardBillId, { method: 'cash', amount: 300 });
+      const custOnPartial = await api(baseUrl, `/api/orders/${guardOrdId}/customer`, {
+        method: 'PATCH',
+        body: { customer_id: custIntra },
+        headers: A,
+      });
+      assertEqual(
+        custOnPartial.status,
+        409,
+        'issue-1295-6a: customer change rejected on partially paid bill with 409',
+      );
+
+      await refund({
+        bill_id: guardBillId,
+        amount: 100,
+        method: 'cash',
+        reason: '1295-6a partial refund',
+        override_pin: pin,
+        approver_id: approver,
+      });
+      const custOnPartRef = await api(baseUrl, `/api/orders/${guardOrdId}/customer`, {
+        method: 'PATCH',
+        body: { customer_id: custIntra },
+        headers: A,
+      });
+      assertEqual(
+        custOnPartRef.status,
+        409,
+        'issue-1295-6a: customer change rejected on partially_refunded bill with 409',
+      );
+
+      // 6b. Active order with unpaid bill: recomputes customer-dependent taxes, syncs unpaid bill, and records audit
+      const customPack = {
+        ...dualRatePackData,
+        id: 'test-1295-customer-tax-pack',
+        country: 'IN',
+        currency: 'INR',
+        publisher: 'FreeOpenSourcePOS',
+        rules: dualRatePackData.rules.map((r: any) =>
+          r.id === 'rate-c' ? { ...r, rate: '10' } : r,
+        ),
+      };
+      installAndActivateTestTaxPack(db, customPack);
+      setSetting(db, 'state_code', 'MH');
+      seedProduct(db, 'prod-tax-1000', 'cat-tsg', 'Taxable Thousand', 1000, {
+        tax_category_id: 'standard',
+        tax_behavior: 'exclusive',
+      });
+
+      const taxOrd = await createOrder({
+        type: 'takeaway',
+        customer_id: custIntra,
+        items: [{ product_id: 'prod-tax-1000', quantity: 1 }],
+      });
+      assertEqual(taxOrd.status, 201, 'issue-1295-6b: intrastate order created');
+      const taxOrdId = taxOrd.data.order.id;
+      assertEqual(
+        Number(taxOrd.data.order.tax_amount),
+        50,
+        'issue-1295-6b: intrastate tax is 50 (2.5% + 2.5%)',
+      );
+      assertEqual(
+        Number(taxOrd.data.order.total),
+        1050,
+        'issue-1295-6b: intrastate order total is 1050',
+      );
+      const taxBill = await generateBill(taxOrdId);
+      const taxBillId = taxBill.data.bill.id;
+      assertEqual(
+        Number(taxBill.data.bill.total),
+        1050,
+        'issue-1295-6b: unpaid bill initial total is 1050',
+      );
+
+      // Reassign to interstate customer (KA != MH -> rate-c 10% applies -> tax = 100, total = 1100)
+      const reassignRes = await api(baseUrl, `/api/orders/${taxOrdId}/customer`, {
+        method: 'PATCH',
+        body: { customer_id: custInter },
+        headers: A,
+      });
+      assertEqual(reassignRes.status, 200, 'issue-1295-6b: customer reassignment succeeds');
+      assertEqual(
+        reassignRes.data.order.customer_id,
+        custInter,
+        'issue-1295-6b: order customer_id updated to interstate customer',
+      );
+      assertEqual(
+        Number(reassignRes.data.order.tax_amount),
+        100,
+        'issue-1295-6b: order tax_amount recomputed to 100 (10% interstate)',
+      );
+      assertEqual(
+        Number(reassignRes.data.order.total),
+        1100,
+        'issue-1295-6b: order total recomputed to 1100',
+      );
+
+      const syncedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(taxBillId) as any;
+      assertEqual(
+        syncedBill.customer_id,
+        custInter,
+        'issue-1295-6b: unpaid bill customer_id updated',
+      );
+      assertEqual(
+        Number(syncedBill.tax_amount),
+        100,
+        'issue-1295-6b: unpaid bill tax_amount synced to 100',
+      );
+      assertEqual(
+        Number(syncedBill.total),
+        1100,
+        'issue-1295-6b: unpaid bill total synced to 1100',
+      );
+      assertEqual(
+        Number(syncedBill.balance),
+        1100,
+        'issue-1295-6b: unpaid bill balance synced to 1100',
+      );
+
+      const custAudit = db
+        .prepare('SELECT * FROM order_audit_log WHERE order_id = ? AND action = ?')
+        .get(taxOrdId, 'customer_updated') as any;
+      assertEqual(Boolean(custAudit), true, 'issue-1295-6b: customer_updated audit row recorded');
+      assertEqual(custAudit.actor_user_id, ownerId, 'issue-1295-6b: audit attributed to actor');
+      const custAuditDetails = JSON.parse(custAudit.details_json);
+      assertEqual(
+        custAuditDetails.previous_customer_id,
+        custIntra,
+        'issue-1295-6b: audit records previous_customer_id',
+      );
+      assertEqual(
+        custAuditDetails.customer_id,
+        custInter,
+        'issue-1295-6b: audit records new customer_id',
+      );
+    }
   } finally {
     server.close();
     closeDatabase();
@@ -728,6 +1528,7 @@ async function main(): Promise<void> {
     process.exit(1);
   } else {
     console.log('ALL PASSED');
+    process.exit(0);
   }
 }
 

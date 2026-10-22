@@ -807,7 +807,8 @@
     "overridePriceSave": "Apliko çmimin",
     "overridePriceSaved": "Çmimi u përditësua",
     "overridePriceFailed": "Çmimi nuk mund të përditësohej",
-    "priceOverriddenMenu": "Çmimi u ndryshua (menuja {price})"
+    "priceOverriddenMenu": "Çmimi u ndryshua (menuja {price})",
+    "overridePriceClear": "Përdor çmimin e menusë"
   },
   "pos": {
     "addCustomer": "Shto klient",
@@ -2461,6 +2462,14 @@
     "ordersLayoutSplitHint": "Listë e kompaktuar e porosive në të majtë dhe detajet e plota të porosisë në të djathtë.",
     "ordersLayoutCards": "Rrjetë kartash",
     "ordersLayoutCardsHint": "Rrjetë klasike e kartave të veçanta të porosive.",
+    "posSortTitle": "Renditja e menysë së POS",
+    "posSortHint": "Përcakton renditjen e kategorive dhe artikujve në POS dhe në aplikacionin e serverit.",
+    "posCategorySortLabel": "Kategoritë",
+    "posItemSortLabel": "Artikujt e menysë",
+    "posSort_saved": "Si është ruajtur (renditje manuale)",
+    "posSort_name": "Alfabetike (A–Zh)",
+    "posSort_price_asc": "Çmimi: nga më i ulëti",
+    "posSort_price_desc": "Çmimi: nga më i larti",
     "chargesAndSurcharges": "Ngarkesa dhe mbi-ngarkesa",
     "chargesAndSurchargesHint": "Ngarkesa shërbimi, tarifa paketimi dhe mbi-ngarkesa të aplikuar automatikisht por urdherat.",
     "noChargesConfigured": "Nuk janë konfiguruar ende ngarkesa.",

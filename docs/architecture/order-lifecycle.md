@@ -122,6 +122,11 @@ complimentary item. The permission `orders.item.price_override` is owner-only an
 - Overrides are allowed once a line has been sent to the kitchen, because only the price changes.
   They are refused (`409`) once a bill has payments, a split, or a refund, and (`400`) on completed or
   cancelled orders and cancelled or voided lines.
+- In the POS the owner sees a price control on each cart line (also when adding items to an open
+  order). The override is part of the line's cart identity, so it never merges into a menu-price
+  line, survives holding and resuming, and is quoted by `POST /api/tax/preview` through an optional
+  per-item `price_override: { price }`. The placed order re-checks the owner permission, so a held
+  cart with an override placed by another role is refused with `403`.
 - A quantity edit keeps the override flag and menu price on the replacement line; replacing the line
   with a different product or variant starts at that product's menu price.
 - Each override records an `item_price_overridden` action in `order_audit_log`.

@@ -178,6 +178,52 @@ async function main() {
       'create total uses the override',
     );
 
+    console.log('\n--- Add-items and tax preview ---');
+    const addItems = (headers: any, item: Record<string, unknown>) =>
+      api(baseUrl, `/api/orders/${viaCart.data.order.id}/items`, {
+        method: 'POST',
+        body: { items: [{ product_id: 'prod-po', quantity: 1, ...item }] },
+        headers: { ...headers, 'Idempotency-Key': `po-add-${Math.random()}` },
+      });
+    assertEqualOrThrow(
+      (await addItems(managerAuth, { price_override: { price: 1, reason: 'x' } })).status,
+      403,
+      'a non-owner cannot override when adding items',
+    );
+    const added = await addItems(ownerAuth, {
+      price_override: { price: 100, reason: 'Comp half' },
+    });
+    assertEqualOrThrow(added.status, 200, 'the owner can override when adding items');
+    const addedRow = db
+      .prepare('SELECT * FROM order_items WHERE order_id = ? AND unit_price = 100')
+      .get(viaCart.data.order.id) as any;
+    assertEqualOrThrow(addedRow.original_unit_price, 500, 'add-items keeps the menu price');
+    assertEqualOrThrow(
+      orderRow(viaCart.data.order.id).total,
+      700,
+      'order total includes the added override',
+    );
+
+    const preview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-po', quantity: 2, price_override: { price: 300 } }],
+      },
+      headers: ownerAuth,
+    });
+    assertEqualOrThrow(preview.status, 200, 'the tax preview accepts an override');
+    assertEqualOrThrow(preview.data.summary.subtotal, 600, 'the preview quotes the override price');
+    const menuPreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: { items: [{ product_id: 'prod-po', quantity: 2 }] },
+      headers: ownerAuth,
+    });
+    assertEqualOrThrow(
+      menuPreview.data.summary.subtotal,
+      1000,
+      'the preview quotes the menu price without one',
+    );
+
     console.log('\n--- Blocked states ---');
     const paidOrder = await createOrder(ownerAuth);
     const paidOrderId = paidOrder.data.order.id;

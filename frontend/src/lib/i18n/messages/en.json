@@ -807,7 +807,8 @@
     "overridePriceSave": "Apply price",
     "overridePriceSaved": "Price updated",
     "overridePriceFailed": "Could not update the price",
-    "priceOverriddenMenu": "Price overridden (menu {price})"
+    "priceOverriddenMenu": "Price overridden (menu {price})",
+    "overridePriceClear": "Use menu price"
   },
   "pos": {
     "addCustomer": "Add Customer",
@@ -2461,6 +2462,14 @@
     "ordersLayoutSplitHint": "Compact order list on the left with full order details on the right.",
     "ordersLayoutCards": "Cards Grid",
     "ordersLayoutCardsHint": "Classic grid of standalone order cards.",
+    "posSortTitle": "POS Menu Sorting",
+    "posSortHint": "Controls how categories and items are ordered on the POS and Server App.",
+    "posCategorySortLabel": "Categories",
+    "posItemSortLabel": "Menu items",
+    "posSort_saved": "As saved (manual order)",
+    "posSort_name": "Alphabetical (A–Z)",
+    "posSort_price_asc": "Price: low to high",
+    "posSort_price_desc": "Price: high to low",
     "chargesAndSurcharges": "Charges & Surcharges",
     "chargesAndSurchargesHint": "Service charges, packaging fees and surcharges applied to orders automatically.",
     "noChargesConfigured": "No charges configured yet.",

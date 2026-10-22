@@ -807,7 +807,8 @@
     "overridePriceSave": "Fiyatı uygula",
     "overridePriceSaved": "Fiyat güncellendi",
     "overridePriceFailed": "Fiyat güncellenemedi",
-    "priceOverriddenMenu": "Fiyat değiştirildi (menü {price})"
+    "priceOverriddenMenu": "Fiyat değiştirildi (menü {price})",
+    "overridePriceClear": "Menü fiyatını kullan"
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",
@@ -2461,6 +2462,14 @@
     "ordersLayoutSplitHint": "Solda kompakt sipariş listesi, sağda siparişin tüm ayrıntıları.",
     "ordersLayoutCards": "Kart Izgara",
     "ordersLayoutCardsHint": "Bağımsız sipariş kartlarından oluşan klasik ızgara.",
+    "posSortTitle": "POS Menü Sıralaması",
+    "posSortHint": "POS ve Sunucu Uygulaması'nda kategorilerin ve ürünlerin sıralamasını belirler.",
+    "posCategorySortLabel": "Kategoriler",
+    "posItemSortLabel": "Menü ürünleri",
+    "posSort_saved": "Kaydedildiği gibi (manuel sıra)",
+    "posSort_name": "Alfabetik (A–Z)",
+    "posSort_price_asc": "Fiyat: düşükten yükseğe",
+    "posSort_price_desc": "Fiyat: yüksekten düşüğe",
     "chargesAndSurcharges": "Ücretler ve ek ücretler",
     "chargesAndSurchargesHint": "Siparişlere otomatik olarak uygulanan servis ücretleri, paketleme ücretleri ve ek ücretler.",
     "noChargesConfigured": "Henüz ücret tanımlanmadı.",

@@ -28,7 +28,10 @@ function canonicalize(value: unknown): string {
       }
       const entries = Object.keys(value as Record<string, unknown>)
         .sort()
-        .map((key) => `${JSON.stringify(key)}:${canonicalize((value as Record<string, unknown>)[key])}`);
+        .map(
+          (key) =>
+            `${JSON.stringify(key)}:${canonicalize((value as Record<string, unknown>)[key])}`,
+        );
       return `{${entries.join(',')}}`;
     }
     default:
@@ -59,6 +62,7 @@ export function generateCartItemId(
   variantId: string | null,
   addons: Addon[],
   specialInstructions: string,
+  priceOverride?: { price: number; reason: string } | null,
 ): string {
   const normalizedAddons = addons.map((addon) => ({
     ...addon,
@@ -72,14 +76,20 @@ export function generateCartItemId(
     return 0;
   });
 
-  return `cart-v3:${lineDigest(canonicalize({ productId, variantId, addons: sortedAddons, specialInstructions }))}`;
+  return `cart-v3:${lineDigest(canonicalize({ productId, variantId, addons: sortedAddons, specialInstructions, ...(priceOverride ? { priceOverride: { price: priceOverride.price, reason: priceOverride.reason } } : {}) }))}`;
 }
 
 /** Normalize persisted/held cart lines to the current identity format. */
 export function normalizeCartItems(items: CartItem[]): CartItem[] {
   const normalized: CartItem[] = [];
   for (const item of items) {
-    const id = generateCartItemId(item.product.id, item.variant?.id ?? null, item.addons || [], item.special_instructions || '');
+    const id = generateCartItemId(
+      item.product.id,
+      item.variant?.id ?? null,
+      item.addons || [],
+      item.special_instructions || '',
+      item.price_override,
+    );
     const existing = normalized.find((candidate) => candidate.id === id);
     if (existing) {
       existing.quantity += item.quantity;

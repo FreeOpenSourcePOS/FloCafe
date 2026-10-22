@@ -807,7 +807,8 @@
     "overridePriceSave": "Terapkan harga",
     "overridePriceSaved": "Harga diperbarui",
     "overridePriceFailed": "Tidak dapat memperbarui harga",
-    "priceOverriddenMenu": "Harga diubah (menu {price})"
+    "priceOverriddenMenu": "Harga diubah (menu {price})",
+    "overridePriceClear": "Gunakan harga menu"
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",
@@ -2461,6 +2462,14 @@
     "ordersLayoutSplitHint": "Daftar pesanan ringkas di kiri dan detail pesanan lengkap di kanan.",
     "ordersLayoutCards": "Grid Kartu",
     "ordersLayoutCardsHint": "Grid klasik kartu pesanan mandiri.",
+    "posSortTitle": "Urutan Menu POS",
+    "posSortHint": "Mengatur urutan kategori dan item di POS dan aplikasi server.",
+    "posCategorySortLabel": "Kategori",
+    "posItemSortLabel": "Item menu",
+    "posSort_saved": "Sesuai tersimpan (urutan manual)",
+    "posSort_name": "Abjad (A–Z)",
+    "posSort_price_asc": "Harga: rendah ke tinggi",
+    "posSort_price_desc": "Harga: tinggi ke rendah",
     "chargesAndSurcharges": "Biaya dan surcharge",
     "chargesAndSurchargesHint": "Biaya layanan, biaya kemasan, dan surcharge yang diterapkan otomatis ke pesanan.",
     "noChargesConfigured": "Belum ada biaya yang dikonfigurasi.",

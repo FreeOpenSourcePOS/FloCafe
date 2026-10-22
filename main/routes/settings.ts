@@ -52,6 +52,7 @@ import { countryConfirmationPatch } from '../services/country-provenance';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
+import { isPosCategorySort, isPosItemSort, readPosSortSettings } from '../lib/pos-sort';
 import {
   CORE_BILL_TEMPLATES,
   isAvailableBillTemplate,
@@ -169,6 +170,9 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   theme_mode: 'system',
   // Orders screen layout (#639): master/detail split view is the default.
   orders_layout: 'split',
+  // POS catalog ordering: 'saved' keeps the stored sort_order.
+  pos_category_sort: 'saved',
+  pos_item_sort: 'saved',
 };
 
 /** Single authority for the orders_layout enum; both write transports gate on it. */
@@ -745,6 +749,23 @@ router.put(
       syncPostHogIdentity();
       res.json(readProductAnalyticsChoice());
     } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// ─── POS catalog sort (must come BEFORE /:key wildcard) ─────────────────────
+
+// Every role that can ring up orders needs the ordering, not only settings.view.
+router.get(
+  '/pos-sort',
+  settingsReadRateLimit,
+  requireAnyPermission('settings.view', 'orders.read', 'orders.create'),
+  (_req: Request, res: Response) => {
+    try {
+      res.json(readPosSortSettings(getAllSettings(getDatabase())));
+    } catch (error) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -1625,6 +1646,8 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'calendar',
   'theme_mode',
   'orders_layout',
+  'pos_category_sort',
+  'pos_item_sort',
   'require_open_shift',
 ]);
 
@@ -1892,6 +1915,14 @@ router.put(
       }
       if (req.params.key === 'orders_layout' && !isOrdersLayout(value)) {
         return res.status(400).json({ error: 'orders_layout must be "split" or "cards"' });
+      }
+      if (req.params.key === 'pos_category_sort' && !isPosCategorySort(value)) {
+        return res.status(400).json({ error: 'pos_category_sort must be "saved" or "name"' });
+      }
+      if (req.params.key === 'pos_item_sort' && !isPosItemSort(value)) {
+        return res.status(400).json({
+          error: 'pos_item_sort must be "saved", "name", "price_asc" or "price_desc"',
+        });
       }
       let valueToPersist: unknown = value;
       if (req.params.key === 'require_open_shift') {

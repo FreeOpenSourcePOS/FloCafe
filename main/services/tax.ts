@@ -951,9 +951,15 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       // The cashier is quoted from the same catalog lookup the order is priced
       // from, so a variant basket cannot be quoted at the parent price.
       const variant = resolveOrderItemVariant(db, product, itemData, isOnlineOrder);
-      const unitPrice = variant
+      const menuUnitPrice = variant
         ? variantUnitPrice(variant, isOnlineOrder)
         : parseFloat(product.price) || 0;
+      // A cart line the owner has overridden is quoted at its override price.
+      const overridePrice = Number(itemData.price_override?.price);
+      const unitPrice =
+        itemData.price_override && Number.isFinite(overridePrice) && overridePrice >= 0
+          ? overridePrice
+          : menuUnitPrice;
       const rawQty = Number(itemData.quantity);
       const quantity = Number.isFinite(rawQty) && rawQty > 0 ? rawQty : 1;
       const rawDisc = Number(itemData.discount_amount);

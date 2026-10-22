@@ -807,7 +807,8 @@
     "overridePriceSave": "Preis anwenden",
     "overridePriceSaved": "Preis aktualisiert",
     "overridePriceFailed": "Preis konnte nicht aktualisiert werden",
-    "priceOverriddenMenu": "Preis geändert (Karte {price})"
+    "priceOverriddenMenu": "Preis geändert (Karte {price})",
+    "overridePriceClear": "Kartenpreis verwenden"
   },
   "pos": {
     "addCustomer": "Kunde hinzufügen",
@@ -2461,6 +2462,14 @@
     "ordersLayoutSplitHint": "Kompakte Bestellliste links, vollständige Bestelldetails rechts.",
     "ordersLayoutCards": "Kartenraster",
     "ordersLayoutCardsHint": "Klassisches Raster aus eigenständigen Bestellkarten.",
+    "posSortTitle": "Sortierung der Kassenkarte",
+    "posSortHint": "Legt fest, wie Kategorien und Artikel an der Kasse und in der Server-App sortiert werden.",
+    "posCategorySortLabel": "Kategorien",
+    "posItemSortLabel": "Menüartikel",
+    "posSort_saved": "Wie gespeichert (manuelle Reihenfolge)",
+    "posSort_name": "Alphabetisch (A–Z)",
+    "posSort_price_asc": "Preis: aufsteigend",
+    "posSort_price_desc": "Preis: absteigend",
     "chargesAndSurcharges": "Gebühren und Zuschläge",
     "chargesAndSurchargesHint": "Servicegebühren, Verpackungsgebühren und Zuschläge, die automatisch auf Bestellungen angewendet werden.",
     "noChargesConfigured": "Noch keine Gebühren konfiguriert.",

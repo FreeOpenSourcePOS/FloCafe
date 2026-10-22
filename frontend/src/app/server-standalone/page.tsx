@@ -36,6 +36,7 @@ import { generateCartItemId } from '@/lib/cart-identity';
 import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
 import AddonModal from '@/components/pos/AddonModal';
 import ProductGrid from '@/components/pos/ProductGrid';
+import type { PosCategorySort, PosItemSort } from '@/lib/pos-sort';
 import type {
   Order as FullOrder,
   Product,
@@ -78,6 +79,8 @@ type ServerAppInfo = {
   currency_symbol: string;
   currency_position: 'prefix' | 'suffix';
   currency_fraction_digits: number;
+  category_sort?: PosCategorySort;
+  item_sort?: PosItemSort;
 };
 
 type ServerAppKey = keyof AppConfig['Messages']['serverApp'];
@@ -1253,6 +1256,8 @@ export default function ServerStandalonePage() {
               search={query}
               setSearch={setQuery}
               currency={regional?.currency || ''}
+              categorySort={regional?.category_sort}
+              itemSort={regional?.item_sort}
               disabled={sending}
               onProductClick={(product, quantity) => {
                 if (sendInFlightRef.current) return;

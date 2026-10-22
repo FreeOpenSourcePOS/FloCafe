@@ -807,7 +807,8 @@
     "overridePriceSave": "Aplicar preço",
     "overridePriceSaved": "Preço atualizado",
     "overridePriceFailed": "Não foi possível atualizar o preço",
-    "priceOverriddenMenu": "Preço alterado (cardápio {price})"
+    "priceOverriddenMenu": "Preço alterado (cardápio {price})",
+    "overridePriceClear": "Usar preço do cardápio"
   },
   "pos": {
     "addCustomer": "Adicionar Cliente",
@@ -2461,6 +2462,14 @@
     "ordersLayoutSplitHint": "Lista compacta de pedidos à esquerda e detalhes completos do pedido à direita.",
     "ordersLayoutCards": "Grade de cartões",
     "ordersLayoutCardsHint": "Grade clássica de cartões de pedido independentes.",
+    "posSortTitle": "Ordenação do menu do PDV",
+    "posSortHint": "Define como categorias e itens são ordenados no PDV e no app de servidor.",
+    "posCategorySortLabel": "Categorias",
+    "posItemSortLabel": "Itens do menu",
+    "posSort_saved": "Como salvo (ordem manual)",
+    "posSort_name": "Alfabética (A–Z)",
+    "posSort_price_asc": "Preço: menor para maior",
+    "posSort_price_desc": "Preço: maior para menor",
     "chargesAndSurcharges": "Taxas e sobretaxas",
     "chargesAndSurchargesHint": "Taxa de serviço, taxa de embalagem e sobretaxas aplicadas automaticamente aos pedidos.",
     "noChargesConfigured": "Nenhuma taxa configurada ainda.",

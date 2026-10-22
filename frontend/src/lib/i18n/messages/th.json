@@ -807,7 +807,8 @@
     "overridePriceSave": "ใช้ราคา",
     "overridePriceSaved": "อัปเดตราคาแล้ว",
     "overridePriceFailed": "ไม่สามารถอัปเดตราคาได้",
-    "priceOverriddenMenu": "เปลี่ยนราคาแล้ว (เมนู {price})"
+    "priceOverriddenMenu": "เปลี่ยนราคาแล้ว (เมนู {price})",
+    "overridePriceClear": "ใช้ราคาตามเมนู"
   },
   "pos": {
     "addCustomer": "เพิ่มลูกค้า",
@@ -2461,6 +2462,14 @@
     "ordersLayoutSplitHint": "รายการคำสั่งซื้อแบบกระชับทางซ้าย และรายละเอียดคำสั่งซื้อทั้งหมดทางขวา",
     "ordersLayoutCards": "ตารางการ์ด",
     "ordersLayoutCardsHint": "ตารางการ์ดคำสั่งซื้อแยกแบบดั้งเดิม",
+    "posSortTitle": "การเรียงลำดับเมนู POS",
+    "posSortHint": "กำหนดลำดับหมวดหมู่และรายการใน POS และแอปเซิร์ฟเวอร์",
+    "posCategorySortLabel": "หมวดหมู่",
+    "posItemSortLabel": "รายการเมนู",
+    "posSort_saved": "ตามที่บันทึกไว้ (เรียงเอง)",
+    "posSort_name": "ตามตัวอักษร (A–Z)",
+    "posSort_price_asc": "ราคา: ต่ำไปสูง",
+    "posSort_price_desc": "ราคา: สูงไปต่ำ",
     "chargesAndSurcharges": "ค่าธรรมเนียมและค่าเพิ่มเติม",
     "chargesAndSurchargesHint": "ค่าบริการ ค่าบรรจุหีบห่อ และค่าเพิ่มเติมที่ใช้กับคำสั่งซื้อโดยอัตโนมัติ",
     "noChargesConfigured": "ยังไม่มีการตั้งค่าค่าธรรมเนียม",

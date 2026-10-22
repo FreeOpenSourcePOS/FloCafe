@@ -807,7 +807,8 @@
     "overridePriceSave": "套用價格",
     "overridePriceSaved": "價格已更新",
     "overridePriceFailed": "無法更新價格",
-    "priceOverriddenMenu": "價格已修改（菜單價 {price}）"
+    "priceOverriddenMenu": "價格已修改（菜單價 {price}）",
+    "overridePriceClear": "使用菜單價"
   },
   "pos": {
     "addCustomer": "新增顧客",
@@ -2461,6 +2462,14 @@
     "ordersLayoutSplitHint": "左側為精簡的訂單清單，右側為完整的訂單詳情。",
     "ordersLayoutCards": "卡片格狀版面",
     "ordersLayoutCardsHint": "由獨立訂單卡片組成的傳統格狀版面。",
+    "posSortTitle": "POS 菜單排序",
+    "posSortHint": "設定分類與品項在 POS 與伺服器應用程式中的排序方式。",
+    "posCategorySortLabel": "分類",
+    "posItemSortLabel": "菜單品項",
+    "posSort_saved": "依儲存順序（手動）",
+    "posSort_name": "依名稱（A–Z）",
+    "posSort_price_asc": "價格：由低到高",
+    "posSort_price_desc": "價格：由高到低",
     "chargesAndSurcharges": "費用與附加費",
     "chargesAndSurchargesHint": "服務費、包裝費以及自動套用於訂單的附加費。",
     "noChargesConfigured": "尚未設定任何費用。",

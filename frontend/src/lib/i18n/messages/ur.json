@@ -807,7 +807,8 @@
     "overridePriceSave": "قیمت لاگو کریں",
     "overridePriceSaved": "قیمت اپ ڈیٹ ہو گئی",
     "overridePriceFailed": "قیمت اپ ڈیٹ نہیں ہو سکی",
-    "priceOverriddenMenu": "قیمت تبدیل کی گئی (مینو {price})"
+    "priceOverriddenMenu": "قیمت تبدیل کی گئی (مینو {price})",
+    "overridePriceClear": "مینو کی قیمت استعمال کریں"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",
@@ -2461,6 +2462,14 @@
     "ordersLayoutSplitHint": "بائیں طرف مختصر آرڈر فہرست اور دائیں طرف آرڈر کی مکمل تفصیلات۔",
     "ordersLayoutCards": "کارڈ گرڈ",
     "ordersLayoutCardsHint": "الگ آرڈر کارڈز کا کلاسیکی گرڈ۔",
+    "posSortTitle": "POS مینیو کی ترتیب",
+    "posSortHint": "POS اور سرور ایپ میں زمرہ جات اور آئٹمز کی ترتیب طے کرتا ہے۔",
+    "posCategorySortLabel": "زمرہ جات",
+    "posItemSortLabel": "مینیو آئٹمز",
+    "posSort_saved": "محفوظ شدہ ترتیب کے مطابق (دستی)",
+    "posSort_name": "حروفِ تہجی کے مطابق",
+    "posSort_price_asc": "قیمت: کم سے زیادہ",
+    "posSort_price_desc": "قیمت: زیادہ سے کم",
     "chargesAndSurcharges": "فیس اور اضافی فیس",
     "chargesAndSurchargesHint": "سروس فیس، پیکجنگ فیس اور اضافی فیس جو آرڈرز پر خودکار طور پر لاگو ہوتی ہیں۔",
     "noChargesConfigured": "ابھی کوئی فیس ترتیب نہیں دی گئی۔",

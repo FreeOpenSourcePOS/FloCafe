@@ -807,7 +807,8 @@
     "overridePriceSave": "Применить цену",
     "overridePriceSaved": "Цена обновлена",
     "overridePriceFailed": "Не удалось обновить цену",
-    "priceOverriddenMenu": "Цена изменена (меню {price})"
+    "priceOverriddenMenu": "Цена изменена (меню {price})",
+    "overridePriceClear": "Вернуть цену из меню"
   },
   "pos": {
     "addCustomer": "Добавить клиента",
@@ -2461,6 +2462,14 @@
     "ordersLayoutSplitHint": "Компактный список заказов слева и полные детали заказа справа.",
     "ordersLayoutCards": "Сетка карточек",
     "ordersLayoutCardsHint": "Классическая сетка отдельных карточек заказа.",
+    "posSortTitle": "Сортировка меню кассы",
+    "posSortHint": "Определяет порядок категорий и позиций на кассе и в серверном приложении.",
+    "posCategorySortLabel": "Категории",
+    "posItemSortLabel": "Позиции меню",
+    "posSort_saved": "Как сохранено (ручной порядок)",
+    "posSort_name": "По алфавиту (А–Я)",
+    "posSort_price_asc": "Цена: по возрастанию",
+    "posSort_price_desc": "Цена: по убыванию",
     "chargesAndSurcharges": "Сборы и надбавки",
     "chargesAndSurchargesHint": "Сбор за обслуживание, упаковка и надбавки, автоматически применяемые к заказам.",
     "noChargesConfigured": "Сборы пока не настроены.",

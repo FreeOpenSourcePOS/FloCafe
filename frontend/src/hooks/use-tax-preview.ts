@@ -64,24 +64,31 @@ export function useTaxPreview(
       // price it. It is part of requestKey, so switching variant re-quotes.
       variant_id: item.variant?.id ?? null,
       quantity: item.quantity,
-      addons: item.addons.map((a) => ({ price: Number(a.price), quantity: Number(a.quantity) || 1 })),
+      addons: item.addons.map((a) => ({
+        price: Number(a.price),
+        quantity: Number(a.quantity) || 1,
+      })),
       discount_amount: 0,
+      ...(item.price_override ? { price_override: { price: item.price_override.price } } : {}),
     })),
     customer_id: customerId || null,
     packaging_charge: packagingCharge || 0,
     discount_type: discount?.type,
     discount_value: discount?.value,
-    ...(chargeContext ? {
-      order_type: chargeContext.orderType,
-      // The backend prices an online quote from variant.online_price, so the
-      // platform travels with the quote or the shown total can disagree with
-      // the created order.
-      online_platform: chargeContext.orderType === 'online' && chargeContext.onlinePlatform.trim().length > 0
-        ? chargeContext.onlinePlatform
-        : undefined,
-      waived_charge_ids: chargeContext.waivedChargeIds,
-      opted_in_charge_ids: chargeContext.optedInChargeIds,
-    } : {}),
+    ...(chargeContext
+      ? {
+          order_type: chargeContext.orderType,
+          // The backend prices an online quote from variant.online_price, so the
+          // platform travels with the quote or the shown total can disagree with
+          // the created order.
+          online_platform:
+            chargeContext.orderType === 'online' && chargeContext.onlinePlatform.trim().length > 0
+              ? chargeContext.onlinePlatform
+              : undefined,
+          waived_charge_ids: chargeContext.waivedChargeIds,
+          opted_in_charge_ids: chargeContext.optedInChargeIds,
+        }
+      : {}),
   };
   const requestKey = JSON.stringify(requestPayload);
   const [tax, setTax] = useState<{ requestKey: string; summary: TaxPreview } | null>(null);
@@ -130,9 +137,13 @@ export function useTaxPreview(
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const { data } = await api.post<TaxPreviewResponse>('/tax/preview', JSON.parse(requestKey), {
-          signal: controller.signal,
-        });
+        const { data } = await api.post<TaxPreviewResponse>(
+          '/tax/preview',
+          JSON.parse(requestKey),
+          {
+            signal: controller.signal,
+          },
+        );
 
         if (abortRef.current === controller && !controller.signal.aborted) {
           setTax({ requestKey, summary: data.summary });
@@ -166,7 +177,8 @@ export function useTaxPreview(
   const currentError = error?.requestKey === requestKey ? error.message : null;
   return {
     tax: currentTax,
-    loading: !isEmpty && (loading || syncedRequestKey !== requestKey || (!currentTax && !currentError)),
+    loading:
+      !isEmpty && (loading || syncedRequestKey !== requestKey || (!currentTax && !currentError)),
     error: currentError,
   };
 }

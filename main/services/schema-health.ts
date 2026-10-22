@@ -1,5 +1,12 @@
 import Database from 'better-sqlite3';
-import { getDatabase, buildIdealSchemaDb, getTables, isSafeIdentifier, MIGRATIONS } from '../db';
+import {
+  getDatabase,
+  buildIdealSchemaDb,
+  getTables,
+  isSafeIdentifier,
+  MIGRATIONS,
+  registerSettingsRevisionTriggers,
+} from '../db';
 
 export interface ColumnDef {
   name: string;
@@ -437,6 +444,9 @@ export function applySafeFixes(findingIds?: string[]): ApplySafeFixesResult {
       result.applied = [];
     } else {
       db.exec('COMMIT');
+      if (result.applied.length > 0) {
+        registerSettingsRevisionTriggers(db);
+      }
     }
   } catch (error: any) {
     try {

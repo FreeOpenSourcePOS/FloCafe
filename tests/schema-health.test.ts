@@ -286,6 +286,34 @@ function main() {
     'held_orders is NOT left behind when a later fix fails (batch rolled back)',
   );
   console.log('   ✓ applySafeFixes() rolls back the whole batch when any fix fails');
+
+  // ── Missing users table does not block initDatabase() and applySafeFixes() restores revision triggers ──
+  const { getSettingsRevision } = require('../main/db');
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('DROP TABLE users');
+  db.exec('PRAGMA foreign_keys = ON');
+  closeDatabase();
+  initDatabase();
+  const reopenedDb = getDatabase();
+  const repairUsers = applySafeFixes(['missing_table:users']);
+  assert.deepEqual(
+    repairUsers.applied,
+    ['missing_table:users'],
+    'applySafeFixes() recreates missing users table after startup',
+  );
+  const revBeforeUserInsert = getSettingsRevision();
+  reopenedDb
+    .prepare(
+      "INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES ('repaired-owner', 'Owner', 'owner@test.local', 'hash', 'owner', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')",
+    )
+    .run();
+  assert.ok(
+    getSettingsRevision() > revBeforeUserInsert,
+    'applySafeFixes() installs missing revision triggers on repaired users table',
+  );
+  console.log(
+    '   ✓ initDatabase() tolerates missing users table and applySafeFixes() installs revision triggers',
+  );
 }
 
 try {

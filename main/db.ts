@@ -1362,31 +1362,50 @@ export function registerOrderSearchFunctions(dbInstance: Database.Database): voi
   }
 }
 
-function registerSettingsRevisionTriggers(dbInstance: Database.Database): void {
-  dbInstance.function('flo_bump_settings_revision', () => {
-    settingsRevision += 1;
-    return 0;
-  });
-  dbInstance.exec(`
-    CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_ai AFTER INSERT ON main.settings BEGIN
-      SELECT flo_bump_settings_revision();
-    END;
-    CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_au AFTER UPDATE ON main.settings BEGIN
-      SELECT flo_bump_settings_revision();
-    END;
-    CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_ad AFTER DELETE ON main.settings BEGIN
-      SELECT flo_bump_settings_revision();
-    END;
-    CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_ai AFTER INSERT ON main.users BEGIN
-      SELECT flo_bump_settings_revision();
-    END;
-    CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_au AFTER UPDATE ON main.users BEGIN
-      SELECT flo_bump_settings_revision();
-    END;
-    CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_ad AFTER DELETE ON main.users BEGIN
-      SELECT flo_bump_settings_revision();
-    END;
-  `);
+export function registerSettingsRevisionTriggers(dbInstance: Database.Database = db): void {
+  try {
+    dbInstance.function('flo_bump_settings_revision', () => {
+      settingsRevision += 1;
+      return 0;
+    });
+  } catch {
+    // Function already registered or connection closed
+  }
+  const existingTables = new Set(
+    (
+      dbInstance
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('settings', 'users')",
+        )
+        .all() as { name: string }[]
+    ).map((r) => r.name),
+  );
+  if (existingTables.has('settings')) {
+    dbInstance.exec(`
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_ai AFTER INSERT ON main.settings BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_au AFTER UPDATE ON main.settings BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_settings_revision_ad AFTER DELETE ON main.settings BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+    `);
+  }
+  if (existingTables.has('users')) {
+    dbInstance.exec(`
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_ai AFTER INSERT ON main.users BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_au AFTER UPDATE ON main.users BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+      CREATE TEMP TRIGGER IF NOT EXISTS trg_users_revision_ad AFTER DELETE ON main.users BEGIN
+        SELECT flo_bump_settings_revision();
+      END;
+    `);
+  }
 }
 
 export function initDatabase(

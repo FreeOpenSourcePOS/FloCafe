@@ -521,8 +521,18 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
       const isInput =
-        target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        Boolean(target?.isContentEditable);
+      const isInteractive =
+        isInput ||
+        tag === 'BUTTON' ||
+        tag === 'A' ||
+        target?.getAttribute?.('role') === 'button' ||
+        Boolean(target?.closest?.('button, a, [role="button"]'));
 
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -533,8 +543,12 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       if (isInput) return;
 
       if (e.key === ' ' || e.code === 'Space' || e.key === 'Enter') {
+        if (e.repeat) {
+          e.preventDefault();
+          return;
+        }
+        if (isInteractive) return;
         e.preventDefault();
-        if (e.repeat) return;
         if (processing || taxLoading || !preview || hasInvalidFixedDiscount) return;
 
         if (totalPaymentMinor < remainingMinor) {

@@ -60,12 +60,25 @@ assert.deepStrictEqual(
   'parses barcode target 12*890103001',
 );
 
-// 5. Negative and invalid inputs should return null
+// 5. Trailing asterisk with empty product query keeps grid unfiltered mid-keystroke
+assert.deepStrictEqual(
+  parseQuantitySearch('3*'),
+  { quantity: 3, query: '' },
+  'trailing asterisk 3* returns quantity 3 with empty query',
+);
+assert.deepStrictEqual(
+  parseQuantitySearch('3*   '),
+  { quantity: 3, query: '' },
+  'trailing asterisk with whitespace returns quantity 3 with empty query',
+);
+
+// 6. Negative and invalid inputs should return null
 assert.strictEqual(parseQuantitySearch('latte'), null, 'normal search query returns null');
 assert.strictEqual(parseQuantitySearch('latte*3'), null, 'inverted syntax returns null');
 assert.strictEqual(parseQuantitySearch('0*item'), null, 'zero quantity returns null');
+assert.strictEqual(parseQuantitySearch('0*'), null, 'zero quantity trailing asterisk returns null');
 assert.strictEqual(parseQuantitySearch('-5*item'), null, 'negative quantity returns null');
-assert.strictEqual(parseQuantitySearch('3*'), null, 'empty target query returns null');
+assert.strictEqual(parseQuantitySearch('3x'), null, 'empty target query with x returns null');
 assert.strictEqual(parseQuantitySearch('   '), null, 'blank input returns null');
 assert.strictEqual(parseQuantitySearch('abc*def'), null, 'non-numeric prefix returns null');
 
@@ -489,6 +502,42 @@ try {
     'non-composing Enter adds matched product to cart',
   );
   assert.deepStrictEqual(searchUpdates, [''], 'non-composing Enter clears search input');
+  // 5. Trailing asterisk "3*" keeps product card visible and does not add on premature Enter
+  addedProducts.length = 0;
+  searchUpdates.length = 0;
+  const starTree = ProductGrid({
+    categories: [],
+    products: [coffeeProduct],
+    selectedCategory: null,
+    setSelectedCategory: () => undefined,
+    search: '3*',
+    setSearch: (s: string) => searchUpdates.push(s),
+    currency: 'USD',
+    onProductClick: (product: unknown, quantity: number) =>
+      addedProducts.push({ product, quantity }),
+    onScannedVariant: () => undefined,
+    onScaledProduct: () => undefined,
+  });
+  const starCard = findByTestId(starTree, 'pos-product-card');
+  assert.ok(starCard, 'product grid remains visible when search is "3*"');
+  const starInput = findByTestId(starTree, 'pos-product-search');
+  assert.ok(starInput, 'renders search input for "3*"');
+  (starInput.props.onKeyDown as (e: Record<string, unknown>) => void)({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+  });
+  assert.strictEqual(
+    addedProducts.length,
+    0,
+    'Enter on incomplete "3*" does not prematurely add a product',
+  );
+  (starCard.props.onClick as () => void)();
+  assert.deepStrictEqual(
+    addedProducts,
+    [{ product: coffeeProduct, quantity: 3 }],
+    'clicking a product card while search is "3*" adds quantity 3',
+  );
 } finally {
   moduleApi._load = originalLoad;
   moduleApi._resolveFilename = originalResolveFilename;
@@ -949,4 +998,315 @@ try {
 }
 
 console.log('✓ All modifier and physical key guard tests passed.');
+
+console.log(
+  'Testing CreateCustomerModal, EditCustomerModal, CustomerSearch, AddonModal, and PrepaidCheckoutModal...',
+);
+
+{
+  const fs = require('node:fs');
+  const createCustomerSrc = fs.readFileSync(
+    path.join(ROOT, 'frontend/src/components/pos/CreateCustomerModal.tsx'),
+    'utf8',
+  );
+  assert.ok(
+    createCustomerSrc.includes("e.key === 'Escape' && !saving"),
+    'CreateCustomerModal handles Escape key when not saving',
+  );
+
+  const editCustomerSrc = fs.readFileSync(
+    path.join(ROOT, 'frontend/src/components/pos/EditCustomerModal.tsx'),
+    'utf8',
+  );
+  assert.ok(
+    editCustomerSrc.includes("e.key === 'Escape' && !saving"),
+    'EditCustomerModal handles Escape key when not saving',
+  );
+  assert.ok(
+    editCustomerSrc.includes("t('invalidPhone', { country: countryName(country) })"),
+    'EditCustomerModal formats invalidPhone toast with countryName(country)',
+  );
+
+  const customerSearchSrc = fs.readFileSync(
+    path.join(ROOT, 'frontend/src/components/pos/CustomerSearch.tsx'),
+    'utf8',
+  );
+  assert.ok(
+    customerSearchSrc.includes('data-testid="pos-customer-select-btn"'),
+    'CustomerSearch exposes pos-customer-select-btn testid when a customer is selected',
+  );
+  assert.ok(
+    customerSearchSrc.includes('onModalOpenChange'),
+    'CustomerSearch notifies parent when CreateCustomerModal or EditCustomerModal is open',
+  );
+
+  const posPageSrc = fs.readFileSync(
+    path.join(ROOT, 'frontend/src/app/(dashboard)/pos/page.tsx'),
+    'utf8',
+  );
+  assert.ok(
+    posPageSrc.includes('customerModalOpen') &&
+      posPageSrc.includes('[data-testid="pos-customer-search-input"]') &&
+      posPageSrc.includes('[data-testid="pos-customer-select-btn"]'),
+    'pos/page.tsx includes customerModalOpen in anyOtherModalOpen and wires F6 to customer search/select testids',
+  );
+
+  const addonModalSrc = fs.readFileSync(
+    path.join(ROOT, 'frontend/src/components/pos/AddonModal.tsx'),
+    'utf8',
+  );
+  assert.ok(
+    addonModalSrc.includes('Boolean(group.max_selection && count >= group.max_selection)'),
+    'AddonModal disables + buttons when group max_selection is reached',
+  );
+
+  const prepaidCheckoutSrc = fs.readFileSync(
+    path.join(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx'),
+    'utf8',
+  );
+  assert.ok(
+    prepaidCheckoutSrc.includes("tag === 'SELECT'") &&
+      prepaidCheckoutSrc.includes("tag === 'BUTTON'") &&
+      prepaidCheckoutSrc.includes('closest?.(\'button, a, [role="button"]\')') &&
+      prepaidCheckoutSrc.includes('if (isInteractive) return;'),
+    'PrepaidCheckoutModal skips global Space/Enter confirm when a button or select is focused',
+  );
+
+  // Runtime behavioral checks for CreateCustomerModal, EditCustomerModal, and AddonModal
+  const modalListeners = new Set<(e: Record<string, unknown>) => void>();
+  const prevWin = (globalThis as Record<string, unknown>).window;
+  (globalThis as Record<string, unknown>).window = {
+    addEventListener: (type: string, fn: (e: Record<string, unknown>) => void) => {
+      if (type === 'keydown') modalListeners.add(fn);
+    },
+    removeEventListener: (type: string, fn: (e: Record<string, unknown>) => void) => {
+      if (type === 'keydown') modalListeners.delete(fn);
+    },
+  };
+
+  const toastErrors: string[] = [];
+  const ReactRuntime = require(path.join(ROOT, 'frontend/node_modules/react'));
+  let stateOverrides: Record<number, unknown> = {};
+  let stateCallIdx = 0;
+
+  try {
+    moduleApi._resolveFilename = function (
+      request: string,
+      parent: unknown,
+      isMain: boolean,
+      options?: unknown,
+    ) {
+      const resolvedRequest =
+        request === '@countries'
+          ? path.resolve(ROOT, 'main/countries.ts')
+          : request.startsWith('@/')
+            ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+            : request;
+      return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+    };
+
+    const runtimeMocks: Record<string, unknown> = {
+      react: {
+        ...ReactRuntime,
+        useState: (init: unknown) => {
+          const idx = stateCallIdx++;
+          const val =
+            idx in stateOverrides
+              ? stateOverrides[idx]
+              : typeof init === 'function'
+                ? (init as () => unknown)()
+                : init;
+          return [val, () => undefined];
+        },
+        useEffect: (fn: () => void | (() => void)) => {
+          fn();
+        },
+        useRef: (init: unknown) => ({ current: init }),
+        useMemo: (fn: () => unknown) => fn(),
+      },
+      'lucide-react': {
+        X: () => null,
+        Plus: () => null,
+        Minus: () => null,
+      },
+      'react-hot-toast': {
+        __esModule: true,
+        default: {
+          error: (msg: string) => toastErrors.push(msg),
+          success: () => undefined,
+        },
+      },
+      'use-intl': {
+        useTranslations: (ns: string) => (key: string, params?: Record<string, unknown>) =>
+          params ? `${ns}.${key}:${JSON.stringify(params)}` : `${ns}.${key}`,
+      },
+      '@/store/auth': {
+        useAuthStore: (selector?: (s: Record<string, unknown>) => unknown) => {
+          const state = { currentTenant: { country: 'IN', currency: 'INR' } };
+          return selector ? selector(state) : state;
+        },
+      },
+      '@/components/ui/button': {
+        Button: (props: Record<string, unknown>) => ({ type: 'Button', props }),
+      },
+      '@/hooks/useFormatCurrency': {
+        useFormatCurrency: () => (n: number) => String(n),
+      },
+      '@/lib/api': {
+        __esModule: true,
+        default: {
+          post: async () => ({ data: {} }),
+          put: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    moduleApi._load = function (request: string, parent: unknown, isMain: boolean) {
+      if (request in runtimeMocks) return runtimeMocks[request];
+      return originalLoad.call(this, request, parent, isMain);
+    };
+
+    delete require.cache[require.resolve('../frontend/src/components/pos/CreateCustomerModal')];
+    delete require.cache[require.resolve('../frontend/src/components/pos/EditCustomerModal')];
+    delete require.cache[require.resolve('../frontend/src/components/pos/AddonModal')];
+
+    const CreateCustomerModal =
+      require('../frontend/src/components/pos/CreateCustomerModal').default;
+    const EditCustomerModal = require('../frontend/src/components/pos/EditCustomerModal').default;
+    const AddonModal = require('../frontend/src/components/pos/AddonModal').default;
+
+    // 1. CreateCustomerModal Escape closes modal
+    modalListeners.clear();
+    stateOverrides = {};
+    stateCallIdx = 0;
+    let createClosed = 0;
+    CreateCustomerModal({
+      initialSearch: 'Alice',
+      onClose: () => {
+        createClosed += 1;
+      },
+      onCreated: () => undefined,
+    });
+    assert.strictEqual(modalListeners.size, 1, 'CreateCustomerModal registers keydown listener');
+    let escPrevented = false;
+    for (const fn of modalListeners) {
+      fn({
+        key: 'Escape',
+        preventDefault: () => {
+          escPrevented = true;
+        },
+      });
+    }
+    assert.strictEqual(createClosed, 1, 'Escape closes CreateCustomerModal when not saving');
+    assert.strictEqual(escPrevented, true, 'Escape prevents default in CreateCustomerModal');
+
+    // 2. EditCustomerModal Escape closes modal & invalidPhone uses countryName('IN') -> 'India'
+    modalListeners.clear();
+    stateOverrides = {};
+    stateCallIdx = 0;
+    let editClosed = 0;
+    const editTree = EditCustomerModal({
+      customer: {
+        id: 'cust-1',
+        name: 'Bob',
+        phone: '123',
+        email: null,
+        visits_count: 1,
+        total_spent: 10,
+        last_visit_at: null,
+        country_code: 'IN',
+      },
+      onClose: () => {
+        editClosed += 1;
+      },
+      onSaved: () => undefined,
+    });
+    for (const fn of modalListeners) {
+      fn({ key: 'Escape', preventDefault: () => undefined });
+    }
+    assert.strictEqual(editClosed, 1, 'Escape closes EditCustomerModal when not saving');
+
+    // Trigger Save button on EditCustomerModal with invalid phone '123' for country 'IN'
+    function findButtons(node: unknown, out: Array<{ props: Record<string, unknown> }> = []) {
+      if (Array.isArray(node)) {
+        for (const c of node) findButtons(c, out);
+        return out;
+      }
+      if (!node || typeof node !== 'object') return out;
+      const el = node as { type?: unknown; props?: Record<string, unknown> };
+      if (el.type === 'button' || typeof el.type === 'function') {
+        out.push(el as { props: Record<string, unknown> });
+      }
+      if (el.props?.children) findButtons(el.props.children, out);
+      return out;
+    }
+    const editButtons = findButtons(editTree);
+    const saveBtn = editButtons.find((b) => b.props.children === 'common.save');
+    assert.ok(saveBtn, 'EditCustomerModal renders Save button');
+    toastErrors.length = 0;
+    void (saveBtn.props.onClick as () => Promise<void>)();
+    assert.strictEqual(
+      toastErrors[0],
+      'pos.invalidPhone:{"country":"India"}',
+      'EditCustomerModal passes resolved country name ("India") instead of raw ISO code ("IN")',
+    );
+
+    // 3. AddonModal disables + buttons when group max_selection is reached
+    stateOverrides = {};
+    stateCallIdx = 0;
+    const addonA = {
+      id: 'addon-a',
+      addon_group_id: 'grp-1',
+      name: 'Syrup A',
+      price: 1,
+      is_active: true,
+    };
+    const addonB = {
+      id: 'addon-b',
+      addon_group_id: 'grp-1',
+      name: 'Syrup B',
+      price: 1,
+      is_active: true,
+    };
+    const addonTree = AddonModal({
+      product: {
+        id: 'prod-1',
+        name: 'Latte',
+        price: 5,
+        category_id: 'cat-1',
+        is_active: true,
+        variants: [],
+        addon_groups: [
+          {
+            id: 'grp-1',
+            name: 'Syrups',
+            is_required: false,
+            min_selection: 0,
+            max_selection: 1,
+            allow_multiple_quantities: true,
+            addons: [addonA, addonB],
+          },
+        ],
+      },
+      currency: 'INR',
+      initialQuantity: 1,
+      initialAddons: [{ ...addonA, quantity: 1 }],
+      onAdd: () => undefined,
+      onClose: () => undefined,
+    });
+    const addonButtons = findButtons(addonTree);
+    // Both the selected addon's + button and the unselected addon's + button must be disabled at cap
+    const disabledPlusButtons = addonButtons.filter((b) => b.props.disabled === true);
+    assert.ok(
+      disabledPlusButtons.length >= 2,
+      'AddonModal disables + buttons for both selected and unselected addons when group max_selection is reached',
+    );
+  } finally {
+    moduleApi._load = originalLoad;
+    moduleApi._resolveFilename = originalResolveFilename;
+    if (prevWin === undefined) delete (globalThis as Record<string, unknown>).window;
+    else (globalThis as Record<string, unknown>).window = prevWin;
+  }
+}
+
 console.log('All POS keyboard shortcuts unit tests passed successfully.');

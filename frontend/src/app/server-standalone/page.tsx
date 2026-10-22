@@ -243,16 +243,26 @@ export default function ServerStandalonePage() {
   const orderLoadedTableIdRef = useRef('');
   const orderLookupFailedRef = useRef(false);
   const orderLoadSeqRef = useRef(0);
+  const authSessionSeqRef = useRef(0);
 
   const loadUser = useCallback(async () => {
     if (!api || sendInFlightRef.current) return;
+    const requestToken = localStorage.getItem(TOKEN_KEY);
+    if (!requestToken) return;
+    const sessionSeq = authSessionSeqRef.current;
     const res = await api.get('/api/auth/me');
-    if (sendInFlightRef.current || !res.data?.user) return;
+    if (
+      sendInFlightRef.current ||
+      sessionSeq !== authSessionSeqRef.current ||
+      localStorage.getItem(TOKEN_KEY) !== requestToken ||
+      !res.data?.user
+    ) {
+      return;
+    }
     const nextUser: User = res.data.user;
     setUser((prev) => {
+      if (!prev || prev.id !== nextUser.id) return prev;
       if (
-        prev &&
-        prev.id === nextUser.id &&
         prev.role === nextUser.role &&
         prev.name === nextUser.name &&
         prev.email === nextUser.email &&
@@ -601,6 +611,7 @@ export default function ServerStandalonePage() {
         password,
         remember_me: rememberMe,
       });
+      authSessionSeqRef.current += 1;
       localStorage.setItem(TOKEN_KEY, res.data.access_token);
       setUser(res.data.user);
     } catch (error: unknown) {
@@ -611,6 +622,7 @@ export default function ServerStandalonePage() {
   }
 
   async function logout() {
+    authSessionSeqRef.current += 1;
     try {
       await api?.post('/api/auth/logout');
     } catch {}

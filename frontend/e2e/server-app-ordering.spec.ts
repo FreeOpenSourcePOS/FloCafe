@@ -563,9 +563,23 @@ test.describe('Server App tableside ordering', () => {
     // Start on a phone viewport with tables.orders.move initially omitted from /api/auth/me.
     await page.setViewportSize({ width: 390, height: 844 });
     let grantMovePermission = false;
+    let delayNextAuthMe = false;
+    let markAuthMeIntercepted: () => void = () => {};
+    let releaseAuthMe: () => void = () => {};
+    const authMeIntercepted = new Promise<void>((resolve) => {
+      markAuthMeIntercepted = resolve;
+    });
+    const authMeGate = new Promise<void>((resolve) => {
+      releaseAuthMe = resolve;
+    });
     await page.route('**/api/auth/me', async (route) => {
       const response = await route.fetch();
       const json = await response.json();
+      if (delayNextAuthMe) {
+        delayNextAuthMe = false;
+        markAuthMeIntercepted();
+        await authMeGate;
+      }
       if (!grantMovePermission && Array.isArray(json?.user?.permission_ids)) {
         json.user.permission_ids = json.user.permission_ids.filter(
           (id: string) => id !== 'tables.orders.move',
@@ -658,5 +672,18 @@ test.describe('Server App tableside ordering', () => {
       .filter((item: { product_name: string }) => item.product_name === 'E2E Coffee')
       .reduce((sum: number, item: { quantity: number }) => sum + item.quantity, 0);
     expect(totalCoffeeQty).toBe(2);
+
+    // A late /api/auth/me reply finishing after logout must not restore the logged-out user.
+    await page.keyboard.press('Escape');
+    delayNextAuthMe = true;
+    const delayedAuthMeResponse = page.waitForResponse((res) => res.url().includes('/api/auth/me'));
+    await page.locator('header').getByRole('button', { name: 'Refresh' }).click();
+    await authMeIntercepted;
+    await page.locator('header').getByRole('button', { name: 'Logout' }).click();
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    releaseAuthMe();
+    await delayedAuthMeResponse;
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve(null))));
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
   });
 });

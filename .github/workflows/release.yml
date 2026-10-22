@@ -843,11 +843,15 @@ jobs:
             }
           }
 
+      - name: Build standalone Windows uninstaller
+        # Built outside release\ so the installer upload glob below never picks it up.
+        run: ./scripts/uninstallers/windows-exe/build.ps1 -OutFile uninstaller-out\uninstall-windows.exe
+
       - name: Upload Windows assets to GitHub release
         run: |
           $VERSION = node -p "require('./package.json').version"
           $manifestPrefix = "${{ needs.create-release.outputs.manifest_prefix }}"
-          $files = @(Get-ChildItem release\*.exe, release\*.exe.blockmap, release\*.appx, "release\$manifestPrefix.yml" | Select-Object -ExpandProperty FullName)
+          $files = @(Get-ChildItem release\*.exe, release\*.exe.blockmap, release\*.appx, "release\$manifestPrefix.yml", uninstaller-out\uninstall-windows.exe | Select-Object -ExpandProperty FullName)
           if ($files.Count -eq 0) { throw "No Windows release assets were produced." }
           $uploadArgs = @('scripts/release-gate/ensure-release-assets.cjs', '--repo', '${{ github.repository }}', '--tag', $VERSION)
           foreach ($file in $files) { $uploadArgs += @('--file', $file) }

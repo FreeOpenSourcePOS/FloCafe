@@ -235,6 +235,7 @@ function expectedArtifactNames(version) {
   return [
     'uninstall-macos.sh',
     'uninstall-windows.ps1',
+    'uninstall-windows.exe',
     `${base}-win-x64.exe`,
     `${base}-win-x64.exe.blockmap`,
     `${base}-win-x64.appx`,

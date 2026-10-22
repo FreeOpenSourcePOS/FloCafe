@@ -192,7 +192,7 @@ function classifyAsset(name) {
     architecture = name.includes('linux-arm64') ? 'arm64' : 'multi';
   } else if (name === 'uninstall-macos.sh') {
     platform = 'mac'; architecture = 'multi'; kind = 'utility';
-  } else if (name === 'uninstall-windows.ps1') {
+  } else if (name === 'uninstall-windows.ps1' || name === 'uninstall-windows.exe') {
     platform = 'windows'; architecture = 'multi'; kind = 'utility';
   } else if (name.startsWith('snap-publication-') && name.endsWith('.json')) {
     const match = name.match(/^snap-publication-(x64|arm64)\.json$/);

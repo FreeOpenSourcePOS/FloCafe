@@ -82,6 +82,8 @@ irm https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/uninst
 powershell -ExecutionPolicy Bypass -File .\uninstall-windows.ps1
 ```
 
+Prefer a double-click? Download [`uninstall-windows.exe`](https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/uninstall-windows.exe) and run it. It is available in all supported languages, warns that it will delete **all** Flo Cafe data (so you will need to reinstall from scratch), and asks for confirmation first. The `.exe` is not code-signed, so Windows SmartScreen may show a warning.
+
 Both scripts ask whether to keep application data. Do not choose their data-purge options unless you intend to remove the local database and backups.
 
 </details>

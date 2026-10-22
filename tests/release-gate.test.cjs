@@ -49,6 +49,7 @@ const releaseAssets = [
   asset('beta-linux-arm64.yml', 104),
   asset('uninstall-macos.sh', 105),
   asset('uninstall-windows.ps1', 106),
+  asset('uninstall-windows.exe', 115),
   asset('flocafe-3.3.1-beta.1-win-x64.exe', 107),
   asset('flocafe-3.3.1-beta.1-win-x64.exe.blockmap', 108),
   asset('flocafe-3.3.1-beta.1-mac-x64.zip', 109),

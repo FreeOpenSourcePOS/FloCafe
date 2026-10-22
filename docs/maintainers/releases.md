@@ -112,7 +112,12 @@ names and no substitutes.
 | macOS | `flocafe-<version>-mac-x64.dmg`, `flocafe-<version>-mac-arm64.dmg`, `flocafe-<version>-mac-x64.zip`, `flocafe-<version>-mac-arm64.zip`, `flocafe-<version>-mac-x64.zip.blockmap`, `flocafe-<version>-mac-arm64.zip.blockmap` |
 | Linux | `flocafe-<version>-linux-x64.appimage`, `flocafe-<version>-linux-arm64.appimage`, `flocafe-<version>-linux-x64.deb`, `flocafe-<version>-linux-arm64.deb`, `flocafe-<version>-linux-x64.rpm`, `flocafe-<version>-linux-arm64.rpm`, `flocafe-<version>-linux-x64.snap`, `flocafe-<version>-linux-arm64.snap` |
 
-Plus the two uninstaller scripts `uninstall-macos.sh` and `uninstall-windows.ps1`.
+Plus the three standalone uninstaller assets `uninstall-macos.sh`, `uninstall-windows.ps1` and
+`uninstall-windows.exe`. The `.exe` is a localized launcher (one entry per UI locale in
+[`scripts/uninstallers/windows-exe/Strings.cs`](../../scripts/uninstallers/windows-exe/Strings.cs))
+that confirms the deletion of all app data and runs the embedded `uninstall-windows.ps1` with
+`-PurgeData`; `release-windows` builds it with
+[`build.ps1`](../../scripts/uninstallers/windows-exe/build.ps1).
 
 The architecture token is `x64` or `arm64`. electron-builder's own target spellings
 (`x86_64`, `amd64`, `aarch64`) are not used in release asset names, and a release using them fails

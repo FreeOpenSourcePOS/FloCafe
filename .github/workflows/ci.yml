@@ -410,6 +410,9 @@ jobs:
       - name: Run Windows uninstaller Pester tests
         run: node tests/run-windows-uninstaller-tests.cjs
 
+      - name: Build uninstall-windows.exe
+        run: ./scripts/uninstallers/windows-exe/build.ps1 -OutFile uninstaller-out\uninstall-windows.exe
+
   # 6b. Windows Contributor Tooling
   # The full cross-platform matrix only runs on main, nightly, and dispatch, so Windows-only
   # tooling breakage (junction handling, CRLF checkouts) reached main twice in a row. This reruns

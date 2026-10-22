@@ -38,6 +38,7 @@ function makeFixture() {
     ...MANIFESTS,
     'uninstall-macos.sh',
     'uninstall-windows.ps1',
+    'uninstall-windows.exe',
     `flocafe-${VERSION}-win-x64.exe`,
     `flocafe-${VERSION}-win-x64.exe.blockmap`,
     `flocafe-${VERSION}-win-x64.appx`,

@@ -130,7 +130,7 @@ function getConsentState(): CachedConsentState {
     level,
     identity: resolvedIdentity,
     config,
-    revision,
+    revision: getSettingsRevision(),
     expiresAt: nowMs + CONSENT_CACHE_TTL_MS,
   };
   return cachedConsent;

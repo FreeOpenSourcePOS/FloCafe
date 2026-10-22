@@ -567,6 +567,7 @@ export function clearGoogleDriveRestoreBinding(dbInstance: Database.Database = d
   dbInstance
     .prepare(`DELETE FROM settings WHERE key IN (${placeholders})`)
     .run(...GOOGLE_DRIVE_PRIVATE_SETTING_KEYS);
+  settingsRevision += 1;
 }
 
 function upsertSetting(key: string, value: string): void {
@@ -574,6 +575,7 @@ function upsertSetting(key: string, value: string): void {
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `).run(key, value, now());
+  settingsRevision += 1;
 }
 
 function insertSettingIfMissing(key: string, value: string): void {
@@ -582,6 +584,7 @@ function insertSettingIfMissing(key: string, value: string): void {
     value,
     now(),
   );
+  settingsRevision += 1;
 }
 
 export function getDbHealth(): { ok: boolean; error?: string } {
@@ -1386,6 +1389,7 @@ export function initDatabase(
   console.log(`[DB] Opening database at: ${dbPath}`);
   dbHealthError = null;
   db = new Database(dbPath);
+  settingsRevision += 1;
   registerOrderSearchFunctions(db);
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
@@ -1803,6 +1807,7 @@ export function closeDatabase(): void {
   if (db) {
     db.close();
     db = null as unknown as Database.Database;
+    settingsRevision += 1;
     console.log('[DB] Database closed');
   }
 }
@@ -3103,6 +3108,7 @@ export function mergeRestoreProtectedSettings(
   );
   const hasPosHash = states.some((state) => state.key === 'cloud_pos_hash' && state.present);
   if (!hasDeviceSecret || !hasPosHash) ensureCloudIdentity();
+  settingsRevision += 1;
 }
 
 export function captureRestoreOutboxState(dbInstance: Database.Database): RestoreOutboxState {

@@ -346,17 +346,16 @@ for the channel list and the absence assertions; argument and return-type change
 presence-only member need a look at both files.
 
 Every privileged channel in [`main/ipc.ts`](../../main/ipc.ts) is registered through the `handle`
-wrapper (or the dedicated backup/restore dialog helpers), which calls `isTrustedMainWindowSender`
-before the listener runs and returns `{ error: 'Unauthorized sender' }` to anything else.
-`isTrustedMainWindowSender` requires the caller to be the active main `BrowserWindow`, its current
-top-level `mainFrame`, and `http:` on `localhost` or `127.0.0.1` at the active Express server port.
-That establishes **which window is calling**. It does not establish **who is signed in**, and the
-single POS window serves every role from chef to owner. Everything else in this section follows from
-that gap.
+wrapper, which calls `isTrustedMainWindowSender` before the listener runs and returns
+`{ error: 'Unauthorized sender' }` to anything else. `isTrustedMainWindowSender` requires the caller
+to be the active main `BrowserWindow`, its current top-level `mainFrame`, and `http:` on `localhost`
+or `127.0.0.1` at the active Express server port. That establishes **which window is calling**. It
+does not establish **who is signed in**, and the single POS window serves every role from chef to
+owner. Everything else in this section follows from that gap.
 
 Registering a privileged channel with a bare `ipcMain.handle` skips the check. All privileged
-channels in [`main/ipc.ts`](../../main/ipc.ts) go through `handle` (or the dialog helpers) and
-direct update and status handlers in [`main/update-ipc.ts`](../../main/update-ipc.ts) go through
+channels in [`main/ipc.ts`](../../main/ipc.ts) go through the `handle` wrapper, and direct update
+and status handlers in [`main/update-ipc.ts`](../../main/update-ipc.ts) go through
 `registerDirectUpdateIpcHandlers`, both using `isTrustedMainWindowSender`; any new channel must
 enforce sender validation.
 
@@ -425,8 +424,9 @@ reopen.
 Write it on the HTTP settings route, gated on the same permission as its neighbours, and read it
 through `api`. Use the IPC settings channel for nothing. A genuinely new native capability needs
 three things together: a `contextBridge` entry in `preload.ts`, a `handle` wrapper in `ipc.ts` so
-`isTrustedSender` applies, and a matching entry in `ElectronAPI`. If it is a privileged write, it
-also needs an authorization step that can see the signed-in user, because the origin check cannot.
+`isTrustedMainWindowSender` applies, and a matching entry in `ElectronAPI`. If it is a privileged
+write, it also needs an authorization step that can see the signed-in user, because the origin check
+cannot.
 
 ## State stores
 

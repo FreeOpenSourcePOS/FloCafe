@@ -83,13 +83,14 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
+const { initDatabase, getDatabase, closeDatabase, getSettingsRevision, now } = require('../main/db');
 const {
   apiRoutePattern,
   capturePostHogApiFailure,
   capturePostHogException,
   capturePostHogUsage,
   checkPostHogMilestones,
+  invalidatePostHogConsentCache,
   maybeSendPostHogDailyPing,
   postHogApiFailureMiddleware,
   readDailyUsageSummary,
@@ -851,6 +852,8 @@ async function main() {
   );
   assert.equal(latest().events.at(-1).distinctId, account, 'an email edit keeps the person');
 
+  deleteSetting('posthog_account_ref');
+  invalidatePostHogConsentCache();
   capturePostHogUsage('feature_used', { feature: 'split_checks', action: 'enabled' });
   const mirrored = latest().events.at(-1);
   assert.equal(mirrored.event, 'feature_used');
@@ -872,8 +875,14 @@ async function main() {
   assert.equal(
     capturePrepareCalls,
     0,
-    'subsequent capturePostHogUsage reuses cached consent and identity without synchronous SQLite reads',
+    'subsequent capturePostHogUsage reuses cached consent and identity without synchronous SQLite reads even after identity seed generation',
   );
+  const revisionBeforeReopen = getSettingsRevision();
+  closeDatabase();
+  assert.equal(getSettingsRevision() > revisionBeforeReopen, true);
+  const revisionAfterClose = getSettingsRevision();
+  initDatabase(false, true);
+  assert.equal(getSettingsRevision() > revisionAfterClose, true);
   const summary = readDailyUsageSummary();
   assert.equal(summary.orders_24h, 0);
   assert.equal(summary.active_staff_count, 2);

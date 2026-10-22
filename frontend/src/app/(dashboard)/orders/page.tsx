@@ -811,12 +811,11 @@ export default function OrdersPage() {
 
       if (isTablesRequired) {
         heldOrdersStore.fetchHeldOrders();
+        api
+          .get('/tables')
+          .then((res) => setTables(res.data.tables || []))
+          .catch(() => {});
       }
-
-      api
-        .get('/tables')
-        .then((res) => setTables(res.data.tables || []))
-        .catch(() => {});
 
       api
         .get('/settings/discount')
@@ -847,6 +846,14 @@ export default function OrdersPage() {
 
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [setTablesRequired]);
+
+  useEffect(() => {
+    if (!filters.table || tables.length > 0) return;
+    api
+      .get('/tables')
+      .then((res) => setTables(res.data.tables || []))
+      .catch(() => {});
+  }, [filters.table, tables.length]);
 
   const handleCreateNewOrderForCustomer = async (order: Order) => {
     if (!order.customer) return;

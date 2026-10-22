@@ -955,9 +955,12 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
         ordersRenderer.flushEffects();
         await new Promise((resolve) => setTimeout(resolve, 20));
 
-        const syncedTree = renderOrdersWithSync();
+        renderOrdersWithSync();
         ordersRenderer.flushEffects();
         await new Promise((resolve) => setTimeout(resolve, 350));
+
+        const syncedTree = renderOrdersWithSync();
+        ordersRenderer.flushEffects();
 
         const findTableSelect = (tree: unknown) =>
           collectElements(

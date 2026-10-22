@@ -987,9 +987,8 @@ export function allocateDocumentTaxRounding(args: {
       line.taxableBase = scaleLineAmount(line.taxableBase) as string | undefined;
     }
 
-    const mode: RoundingMethod = snap.taxRounding.method || 'half_up';
-    const allocation = snap.taxRounding.remainderAllocation || 'largest_remainder';
-    const groupKey = `${snap.packId || ''}:${snap.packVersion || ''}:${mode}:${allocation}`;
+    const taxRoundingKey = JSON.stringify(snap.taxRounding);
+    const groupKey = `${snap.packId}\0${taxRoundingKey}`;
 
     let group = groups.get(groupKey);
     if (!group) {
@@ -1036,9 +1035,8 @@ export function allocateDocumentTaxRounding(args: {
 
       chargeSnapshots.set(cIdx, snap);
       const line = snap.lines[0];
-      const mode: RoundingMethod = snap.taxRounding.method || 'half_up';
-      const allocation = snap.taxRounding.remainderAllocation || 'largest_remainder';
-      const groupKey = `${snap.packId || ''}:${snap.packVersion || ''}:${mode}:${allocation}`;
+      const taxRoundingKey = JSON.stringify(snap.taxRounding);
+      const groupKey = `${snap.packId}\0${taxRoundingKey}`;
 
       let group = groups.get(groupKey);
       if (!group) {

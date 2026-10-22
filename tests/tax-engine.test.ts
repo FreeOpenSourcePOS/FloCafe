@@ -877,4 +877,83 @@ test('allocateDocumentTaxRounding applies order discount ratio before document l
 
   assert.equal(allocatedWithCharge.itemOutputs[0].taxAmount, 0);
   assert.equal(allocatedWithCharge.chargeTaxes.taxAmount.toFixed(2), chargeOracle.taxAmount);
+
+  const single10010 = TaxEngine.calculate({
+    pack: officialIndiaPack,
+    currency: 'INR',
+    country: 'IN',
+    businessType: 'restaurant',
+    storeStateCode: 'KA',
+    transactionDate: '2026-06-01',
+    lines: [
+      line({
+        lineId: 'line-0001',
+        unitPrice: '100.10',
+        productCategoryId: 'standard',
+        taxBehavior: 'exclusive',
+      }),
+    ],
+  });
+  const charge10010 = TaxEngine.calculate({
+    pack: { ...officialIndiaPack, version: '2026.2.0' },
+    currency: 'INR',
+    country: 'IN',
+    businessType: 'restaurant',
+    storeStateCode: 'KA',
+    transactionDate: '2026-06-01',
+    lines: [
+      line({
+        lineId: 'charge:packaging',
+        kind: 'packaging',
+        unitPrice: '100.10',
+        merchantCategoryId: 'standard',
+        taxBehavior: 'country_default',
+      }),
+    ],
+  });
+  const mixedVersionItemsAlloc = allocateDocumentTaxRounding({
+    items: [
+      {
+        snapshot: { ...single10010.snapshot, lines: [single10010.lines[0]] },
+        lineIdOverride: 'line-0001',
+      },
+      {
+        snapshot: { ...charge10010.snapshot, lines: [single10010.lines[0]] },
+        lineIdOverride: 'line-0002',
+      },
+    ],
+    chargeTaxes: { taxAmount: 0, exclusiveTaxAmount: 0, breakdowns: [], snapshotJson: [] },
+    currency: 'INR',
+    itemTaxRatio: new Decimal('0.5'),
+  });
+  const mixedItemTax = mixedVersionItemsAlloc.itemOutputs
+    .reduce((acc, out) => acc.plus(out.taxAmount), new Decimal(0))
+    .toFixed(2);
+  assert.equal(mixedItemTax, '5.01');
+
+  const mixedVersionItemAndChargeAlloc = allocateDocumentTaxRounding({
+    items: [
+      {
+        snapshot: { ...single10010.snapshot, lines: [single10010.lines[0]] },
+        lineIdOverride: 'line-0001',
+      },
+    ],
+    chargeTaxes: {
+      taxAmount: Number(charge10010.lines[0].taxAmount),
+      exclusiveTaxAmount: Number(charge10010.lines[0].taxAmount),
+      breakdowns: [[]],
+      snapshotJson: [
+        JSON.stringify({
+          ...charge10010.snapshot,
+          lines: [charge10010.lines[0]],
+          chargeKind: 'packaging',
+        }),
+      ],
+    },
+    currency: 'INR',
+  });
+  const mixedItemAndChargeTax = new Decimal(mixedVersionItemAndChargeAlloc.itemOutputs[0].taxAmount)
+    .plus(mixedVersionItemAndChargeAlloc.chargeTaxes.taxAmount)
+    .toFixed(2);
+  assert.equal(mixedItemAndChargeTax, '10.01');
 });

@@ -3113,6 +3113,7 @@ router.patch(
         };
 
         if (tenantInfo.taxes_enabled) {
+          const activePack = getActiveCountryPack(tenantInfo.country);
           const itemRows = db
             .prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid ASC')
             .all(req.params.id) as Array<{
@@ -3120,6 +3121,7 @@ router.patch(
             product_id: string | null;
             subtotal: number | null;
             status: string | null;
+            tax_snapshot: string | null;
           }>;
           const updateItemTax = db.prepare(
             `UPDATE order_items
@@ -3134,13 +3136,62 @@ router.patch(
             ) {
               continue;
             }
-            if (!item.product_id) continue;
-            const product = db
-              .prepare('SELECT * FROM products WHERE id = ?')
-              .get(item.product_id) as ProductRow | undefined;
-            if (!product) continue;
+            if (!item.tax_snapshot) continue;
+            let savedSnapshot: {
+              packId?: string;
+              lines?: Array<{
+                categoryId?: string | null;
+                categorySource?: string;
+                taxBehavior?: 'exclusive' | 'inclusive' | 'exempt';
+              }>;
+              merchantOverridesApplied?: unknown[];
+            } | null = null;
+            try {
+              savedSnapshot =
+                typeof item.tax_snapshot === 'string'
+                  ? JSON.parse(item.tax_snapshot)
+                  : item.tax_snapshot;
+            } catch {
+              continue;
+            }
+            const savedLine = Array.isArray(savedSnapshot?.lines) ? savedSnapshot.lines[0] : null;
+            if (
+              !savedLine?.categoryId ||
+              !activePack ||
+              (savedSnapshot?.packId && activePack.id !== savedSnapshot.packId) ||
+              !activePack.categories.some((cat) => cat.id === savedLine.categoryId)
+            ) {
+              continue;
+            }
+            const effectiveProduct: Parameters<typeof calculateItemTax>[1] = {
+              tax_type: 'exclusive',
+              tax_rate: 0,
+              tax_category_id: savedLine.categoryId,
+              tax_category: savedLine.categoryId,
+              tax_behavior: savedLine.taxBehavior || 'country_default',
+            };
             const itemSubtotal = Number(item.subtotal || 0);
-            const taxResult = calculateItemTax(tenantInfo, product, itemSubtotal, customer);
+            const taxResult = calculateItemTax(
+              tenantInfo,
+              effectiveProduct,
+              itemSubtotal,
+              customer,
+            );
+            if (
+              taxResult.tax_snapshot &&
+              Array.isArray((taxResult.tax_snapshot as { lines?: unknown[] }).lines) &&
+              (taxResult.tax_snapshot as { lines: Array<Record<string, unknown>> }).lines[0]
+            ) {
+              if (savedLine.categorySource) {
+                (
+                  taxResult.tax_snapshot as { lines: Array<Record<string, unknown>> }
+                ).lines[0].categorySource = savedLine.categorySource;
+              }
+              if (Array.isArray(savedSnapshot?.merchantOverridesApplied)) {
+                (taxResult.tax_snapshot as Record<string, unknown>).merchantOverridesApplied =
+                  savedSnapshot.merchantOverridesApplied;
+              }
+            }
             const itemTotal =
               itemSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
             const itemTaxSnapshotJson = taxResult.tax_snapshot

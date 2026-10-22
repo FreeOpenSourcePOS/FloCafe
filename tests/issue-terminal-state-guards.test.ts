@@ -1460,7 +1460,7 @@ async function main(): Promise<void> {
         'customer-guard: customer change rejected on partially_refunded bill with 409',
       );
 
-      // Active order with unpaid bill on real schema: recomputes taxes, syncs unpaid bill, and records audit
+      // Active order with unpaid bill on real schema: preserves saved product tax rules across product-tax changes, recomputes taxes, syncs unpaid bill, and records audit
       const customPack = {
         ...dualRatePackData,
         id: 'test-customer-recompute-pack',
@@ -1473,34 +1473,42 @@ async function main(): Promise<void> {
       };
       installAndActivateTestTaxPack(db, customPack);
       setSetting(db, 'state_code', 'MH');
+      setSetting(db, 'taxes_enabled', 'true');
       seedProduct(db, 'prod-tax-1000', 'cat-tsg', 'Taxable Thousand', 1000, {
         tax_category_id: 'standard',
         tax_behavior: 'exclusive',
       });
 
-      setSetting(db, 'taxes_enabled', 'false');
       const taxOrd = await createOrder({
         type: 'takeaway',
         customer_id: custInitial,
         items: [{ product_id: 'prod-tax-1000', quantity: 1 }],
       });
-      assertEqual(taxOrd.status, 201, 'customer-recompute: order created before tax activation');
+      assertEqual(taxOrd.status, 201, 'customer-recompute: taxed order created');
       const taxOrdId = taxOrd.data.order.id;
       assertEqual(
         Number(taxOrd.data.order.tax_amount),
-        0,
-        'customer-recompute: initial order tax is 0 while taxes_enabled is false',
+        50,
+        'customer-recompute: initial order tax is 50 (2.5% + 2.5%)',
       );
       const taxBill = await generateBill(taxOrdId);
       const taxBillId = taxBill.data.bill.id;
       assertEqual(
         Number(taxBill.data.bill.total),
-        1000,
-        'customer-recompute: unpaid bill initial total is 1000',
+        1050,
+        'customer-recompute: unpaid bill initial total is 1050',
       );
 
-      // Enable taxes and reassign customer: route recomputes item and order taxes and syncs unpaid bill
-      setSetting(db, 'taxes_enabled', 'true');
+      // Change catalog product to exempt after order placement and put stale totals on order/bill
+      db.prepare(
+        "UPDATE products SET tax_behavior = 'exempt', tax_category_id = NULL WHERE id = 'prod-tax-1000'",
+      ).run();
+      db.prepare('UPDATE orders SET tax_amount = 0, total = 1000 WHERE id = ?').run(taxOrdId);
+      db.prepare('UPDATE bills SET tax_amount = 0, total = 1000, balance = 1000 WHERE id = ?').run(
+        taxBillId,
+      );
+
+      // Reassign customer: route preserves saved product tax rules from tax_snapshot, recomputes order tax, and syncs unpaid bill
       const reassignRes = await api(baseUrl, `/api/orders/${taxOrdId}/customer`, {
         method: 'PATCH',
         body: { customer_id: custReassigned },
@@ -1515,13 +1523,31 @@ async function main(): Promise<void> {
       assertEqual(
         Number(reassignRes.data.order.tax_amount),
         50,
-        'customer-recompute: order tax_amount recomputed to 50 (2.5% + 2.5%)',
+        'customer-recompute: order tax_amount recomputed to 50 from saved product tax rules despite product becoming exempt',
       );
       assertEqual(
         Number(reassignRes.data.order.total),
         1050,
         'customer-recompute: order total recomputed to 1050',
       );
+
+      const savedItemRow = db
+        .prepare('SELECT tax_amount, tax_type, tax_snapshot FROM order_items WHERE order_id = ?')
+        .get(taxOrdId) as any;
+      const savedItemSnap = JSON.parse(savedItemRow.tax_snapshot);
+      assertEqual(
+        savedItemSnap.lines[0].categoryId,
+        'standard',
+        'customer-recompute: item tax_snapshot preserves standard categoryId after product-tax change',
+      );
+      assertEqual(
+        savedItemSnap.lines[0].taxBehavior,
+        'exclusive',
+        'customer-recompute: item tax_snapshot preserves exclusive taxBehavior after product-tax change',
+      );
+      db.prepare(
+        "UPDATE products SET tax_behavior = 'exclusive', tax_category_id = 'standard' WHERE id = 'prod-tax-1000'",
+      ).run();
 
       const syncedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(taxBillId) as any;
       assertEqual(

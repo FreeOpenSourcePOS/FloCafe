@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import api, {
   captureClientOperationFailure,
   createOperationReference,
@@ -27,7 +27,7 @@ import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatReceiptErrorToast, extractPrinterErrorMessage } from '@/lib/printer/warnings';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
@@ -136,6 +136,21 @@ interface DiscountModal {
   type: DiscountType;
   value: number;
   reason: string;
+}
+
+function OrdersTableQuerySync({
+  onFiltersChange,
+}: {
+  onFiltersChange: React.Dispatch<React.SetStateAction<Filters>>;
+}) {
+  const tableParam = useSearchParams()?.get('table')?.trim() || '';
+
+  useEffect(() => {
+    if (!tableParam) return;
+    onFiltersChange((prev) => (prev.table === tableParam ? prev : { ...prev, table: tableParam }));
+  }, [tableParam, onFiltersChange]);
+
+  return null;
 }
 
 export default function OrdersPage() {
@@ -1590,6 +1605,9 @@ export default function OrdersPage() {
   // tabs and filters stay on screen while the order content scrolls below them.
   return (
     <div className="h-full min-h-0 flex flex-col gap-4">
+      <Suspense fallback={null}>
+        <OrdersTableQuerySync onFiltersChange={setFilters} />
+      </Suspense>
       {/* Header */}
       <div className="flex items-center justify-between mb-4 shrink-0">
         <h1 className="text-2xl font-bold text-foreground">{tNav('orders')}</h1>

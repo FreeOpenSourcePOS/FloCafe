@@ -1,4 +1,5 @@
 import type { Addon, CartItem } from './types';
+import { normalizeOverridePrice } from './cart-price';
 
 /** Serializes cart identity into a typed, sorted canonical representation. */
 function canonicalize(value: unknown): string {
@@ -76,25 +77,35 @@ export function generateCartItemId(
     return 0;
   });
 
-  return `cart-v3:${lineDigest(canonicalize({ productId, variantId, addons: sortedAddons, specialInstructions, ...(priceOverride ? { priceOverride: { price: priceOverride.price, reason: priceOverride.reason } } : {}) }))}`;
+  return `cart-v3:${lineDigest(canonicalize({ productId, variantId, addons: sortedAddons, specialInstructions, ...(priceOverride ? { priceOverride: { price: normalizeOverridePrice(priceOverride.price), reason: priceOverride.reason } } : {}) }))}`;
 }
 
 /** Normalize persisted/held cart lines to the current identity format. */
 export function normalizeCartItems(items: CartItem[]): CartItem[] {
   const normalized: CartItem[] = [];
   for (const item of items) {
+    const normalizedOverride = item.price_override
+      ? {
+          price: normalizeOverridePrice(item.price_override.price),
+          reason: item.price_override.reason,
+        }
+      : item.price_override;
     const id = generateCartItemId(
       item.product.id,
       item.variant?.id ?? null,
       item.addons || [],
       item.special_instructions || '',
-      item.price_override,
+      normalizedOverride,
     );
     const existing = normalized.find((candidate) => candidate.id === id);
     if (existing) {
       existing.quantity += item.quantity;
     } else {
-      normalized.push({ ...item, id });
+      normalized.push({
+        ...item,
+        ...(normalizedOverride !== undefined ? { price_override: normalizedOverride } : {}),
+        id,
+      });
     }
   }
   return normalized;

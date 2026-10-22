@@ -978,6 +978,8 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
 
       // Manually change the table dropdown to another table while ?table=tbl-42 stays in URL.
       tableSelect.props.onChange({ target: { value: 'tbl-99' } });
+      renderOrdersWithSync();
+      ordersRenderer.flushEffects();
       const afterManualSelectTree = renderOrdersWithSync();
       ordersRenderer.flushEffects();
       assert.equal(
@@ -988,6 +990,8 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
 
       // Manually reset the table dropdown to All Tables ('') while ?table=tbl-42 stays in URL.
       findTableSelect(afterManualSelectTree).props.onChange({ target: { value: '' } });
+      renderOrdersWithSync();
+      ordersRenderer.flushEffects();
       const afterManualClearTree = renderOrdersWithSync();
       ordersRenderer.flushEffects();
       assert.equal(
@@ -1011,6 +1015,8 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
 
       // Manually selecting a table while on /orders (no ?table= in URL) is preserved on re-render.
       findTableSelect(afterUrlClearTree).props.onChange({ target: { value: 'tbl-99' } });
+      renderOrdersWithSync();
+      ordersRenderer.flushEffects();
       const afterManualSelectWithoutParamTree = renderOrdersWithSync();
       ordersRenderer.flushEffects();
       assert.equal(

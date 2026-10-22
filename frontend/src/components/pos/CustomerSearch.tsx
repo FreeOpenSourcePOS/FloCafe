@@ -256,6 +256,7 @@ export default function CustomerSearch({
       initialSearch: trimmedQuery,
       initialField: field,
     });
+    onModalOpenChange?.(true);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -312,7 +313,10 @@ export default function CustomerSearch({
         <>
           <div className="min-h-10 flex items-center gap-2 px-3 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-lg min-w-0 w-full sm:w-auto">
             <button
-              onClick={() => setEditingCustomer(true)}
+              onClick={() => {
+                setEditingCustomer(true);
+                onModalOpenChange?.(true);
+              }}
               title={t('editCustomer')}
               data-testid="pos-customer-select-btn"
               className="touch-target flex-1 min-w-0 justify-start gap-x-2 flex-wrap text-start cursor-pointer"
@@ -343,7 +347,10 @@ export default function CustomerSearch({
           {editingCustomer && (
             <EditCustomerModal
               customer={customer}
-              onClose={() => setEditingCustomer(false)}
+              onClose={() => {
+                setEditingCustomer(false);
+                onModalOpenChange?.(false);
+              }}
               onSaved={(updated) => cart.setCustomer(updated)}
             />
           )}
@@ -355,7 +362,10 @@ export default function CustomerSearch({
       <div className="space-y-1">
         <div className="flex items-center justify-between px-3 py-2 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-lg text-sm">
           <button
-            onClick={() => setEditingCustomer(true)}
+            onClick={() => {
+              setEditingCustomer(true);
+              onModalOpenChange?.(true);
+            }}
             data-testid="pos-customer-select-btn"
             className="touch-target flex-1 min-w-0 justify-start gap-2 text-start cursor-pointer"
           >
@@ -387,7 +397,10 @@ export default function CustomerSearch({
         {editingCustomer && (
           <EditCustomerModal
             customer={customer}
-            onClose={() => setEditingCustomer(false)}
+            onClose={() => {
+              setEditingCustomer(false);
+              onModalOpenChange?.(false);
+            }}
             onSaved={(updated) => cart.setCustomer(updated)}
           />
         )}
@@ -558,10 +571,14 @@ export default function CustomerSearch({
         <CreateCustomerModal
           initialSearch={creatingModal.initialSearch}
           initialField={creatingModal.initialField}
-          onClose={() => setCreatingModal(null)}
+          onClose={() => {
+            setCreatingModal(null);
+            onModalOpenChange?.(false);
+          }}
           onCreated={(created) => {
             cart.setCustomer(created);
             setCreatingModal(null);
+            onModalOpenChange?.(false);
             searchCustomers('');
             setQuery('');
             onSelected?.();

@@ -1389,6 +1389,11 @@ console.log(
       key: 'Enter',
       preventDefault: () => undefined,
     });
+    assert.strictEqual(
+      modalOpenHistory.at(-1),
+      true,
+      'CustomerSearch synchronously notifies onModalOpenChange(true) when CreateCustomerModal opens',
+    );
     stateCallIdx = 0;
     CustomerSearch({
       onModalOpenChange: (open: boolean) => modalOpenHistory.push(open),
@@ -1396,7 +1401,7 @@ console.log(
     assert.strictEqual(
       modalOpenHistory.at(-1),
       true,
-      'CustomerSearch notifies onModalOpenChange(true) when CreateCustomerModal opens',
+      'CustomerSearch keeps onModalOpenChange(true) after CreateCustomerModal render',
     );
 
     cartState.setCustomer({
@@ -1431,6 +1436,11 @@ console.log(
       'CustomerSearch reports modal closed before EditCustomerModal opens',
     );
     (csSelectBtn.props.onClick as () => void)();
+    assert.strictEqual(
+      modalOpenHistory.at(-1),
+      true,
+      'CustomerSearch synchronously notifies onModalOpenChange(true) when EditCustomerModal opens',
+    );
     stateCallIdx = 0;
     CustomerSearch({
       variant: 'topbar',
@@ -1439,7 +1449,7 @@ console.log(
     assert.strictEqual(
       modalOpenHistory.at(-1),
       true,
-      'CustomerSearch notifies onModalOpenChange(true) when EditCustomerModal opens',
+      'CustomerSearch keeps onModalOpenChange(true) after EditCustomerModal render',
     );
     cartState.setCustomer(null);
 

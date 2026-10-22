@@ -748,6 +748,8 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
 
     await page.goto(`${BASE}/order-history-demo`);
     await page.waitForURL('**/pos**', { timeout: 10_000 });
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+    await page.waitForLoadState('networkidle');
     expect(new URL(page.url()).pathname).toMatch(/^\/pos\/?$/);
 
     // Server role lacks both printers.manage and dashboard.view -> redirected from both /print-test and /order-history-demo to /orders
@@ -760,10 +762,12 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
 
     await page.goto(`${BASE}/print-test`);
     await page.waitForURL('**/orders**', { timeout: 10_000 });
+    await page.waitForLoadState('networkidle');
     expect(new URL(page.url()).pathname).toMatch(/^\/orders\/?$/);
 
     await page.goto(`${BASE}/order-history-demo`);
     await page.waitForURL('**/orders**', { timeout: 10_000 });
+    await page.waitForLoadState('networkidle');
     expect(new URL(page.url()).pathname).toMatch(/^\/orders\/?$/);
 
     // Owner has dashboard.view -> can open /order-history-demo

@@ -46,14 +46,21 @@ export function usePosKeyboardShortcuts(
 ) {
   const { enabled = true, anyModalOpen, tablePickerOpen, cartItemCount } = options;
   const handlersRef = useRef(handlers);
+  const optionsRef = useRef({ anyModalOpen, tablePickerOpen, cartItemCount });
   useEffect(() => {
     handlersRef.current = handlers;
+    optionsRef.current = { anyModalOpen, tablePickerOpen, cartItemCount };
   });
 
   useEffect(() => {
     if (!enabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const {
+        anyModalOpen: modalOpen,
+        tablePickerOpen: pickerOpen,
+        cartItemCount: itemCount,
+      } = optionsRef.current;
       const target = e.target as HTMLElement | null;
       const isInput = isTypingTarget(target);
       const noModifiers = !e.ctrlKey && !e.metaKey && !e.altKey;
@@ -77,14 +84,14 @@ export function usePosKeyboardShortcuts(
         return;
       }
 
-      if (tablePickerOpen && ((isPlainKey && e.key === 'F2') || isAltDigit('2'))) {
+      if (pickerOpen && ((isPlainKey && e.key === 'F2') || isAltDigit('2'))) {
         e.preventDefault();
         handlersRef.current.onToggleTables?.();
         return;
       }
 
       if (
-        !anyModalOpen &&
+        !modalOpen &&
         ((isPlainKey && e.key === 'F1') || (noModifiers && e.key === '?' && !isInput))
       ) {
         e.preventDefault();
@@ -93,7 +100,7 @@ export function usePosKeyboardShortcuts(
       }
 
       // 2. Modal Guard: suppress POS canvas shortcuts when modal is open
-      if (anyModalOpen) {
+      if (modalOpen) {
         return;
       }
 
@@ -122,7 +129,7 @@ export function usePosKeyboardShortcuts(
         if (target instanceof HTMLElement && target.matches('button, [role="button"]')) {
           return;
         }
-        if (cartItemCount > 0) {
+        if (itemCount > 0) {
           e.preventDefault();
           if (e.repeat) return;
           handlersRef.current.onTender();

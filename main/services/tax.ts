@@ -1421,7 +1421,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     const isOnlineOrder = typeof online_platform === 'string' && online_platform.trim().length > 0;
 
     const itemResults: any[] = [];
-    let totalSubtotal = 0;
+    let totalSubtotalDec = new Decimal(0);
 
     const resolvedItems: Array<{
       product: Product;
@@ -1461,13 +1461,16 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       const rawDisc = Number(itemData.discount_amount);
       const itemDiscount = Number.isFinite(rawDisc) && rawDisc >= 0 ? rawDisc : 0;
 
-      let subtotal = unitPrice * quantity;
+      let subtotalDec = new Decimal(unitPrice).mul(quantity);
       if (itemData.addons) {
         for (const addon of itemData.addons) {
-          subtotal += (addon.price || 0) * (addon.quantity || 1) * quantity;
+          subtotalDec = subtotalDec.plus(
+            new Decimal(addon.price || 0).mul(addon.quantity || 1).mul(quantity),
+          );
         }
       }
-      subtotal = Math.max(0, subtotal - itemDiscount);
+      subtotalDec = Decimal.max(0, subtotalDec.minus(itemDiscount));
+      const subtotal = subtotalDec.toNumber();
 
       resolvedItems.push({
         product,
@@ -1477,8 +1480,9 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         itemDiscount,
         subtotal,
       });
-      totalSubtotal += subtotal;
+      totalSubtotalDec = totalSubtotalDec.plus(subtotalDec);
     }
+    const totalSubtotal = totalSubtotalDec.toNumber();
 
     let packaging = normalizeChargeAmount(packaging_charge, 'packaging');
     const delivery = normalizeChargeAmount(delivery_charge, 'delivery');
@@ -1495,7 +1499,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         res.status(400).json({ error: 'discount_value must be a finite non-negative number' });
         return;
       }
-      const subtotalDecimal = new Decimal(totalSubtotal);
+      const subtotalDecimal = totalSubtotalDec;
       if (discount_type === 'percentage') {
         if (parsedDiscount > 100) {
           res.status(400).json({ error: 'discount_value must not exceed 100 percent' });
@@ -1568,7 +1572,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       });
     }
 
-    const subtotalDecimal = new Decimal(totalSubtotal);
+    const subtotalDecimal = totalSubtotalDec;
     const discountedSubtotal = Decimal.max(0, subtotalDecimal.minus(discountAmount));
     const taxRatio =
       discountAmount.gt(0) && subtotalDecimal.gt(0)

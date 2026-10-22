@@ -21,6 +21,7 @@ import { printReceipt } from '../services/receipt';
 import { cloudSync } from '../services/cloud-sync';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import {
   getOpenSession,
   isCashTender,
@@ -445,12 +446,12 @@ type ChildItemAllocation = { weights: number[]; index: number };
 function getTaxDiscountRatioDecimal(subtotal: unknown, discountAmount: unknown): Decimal {
   const base = Number(subtotal || 0);
   if (!Number.isFinite(base) || base <= 0) return new Decimal(1);
-  const baseDec = new Decimal(subtotal as number | string);
+  const baseDec = new Decimal((subtotal || 0) as number | string);
   const rawDiscount = Number(discountAmount || 0);
   const discountDec = Decimal.max(
     0,
     Decimal.min(
-      new Decimal(Number.isFinite(rawDiscount) ? (discountAmount as number | string) : 0),
+      new Decimal(Number.isFinite(rawDiscount) ? ((discountAmount || 0) as number | string) : 0),
       baseDec,
     ),
   );
@@ -482,36 +483,94 @@ export function projectOrderItems(
       : parsedOrderSnap
         ? [parsedOrderSnap]
         : [];
-    const chargeSnapJson = orderSnapEntries
-      .filter(
-        (entry) =>
-          entry &&
-          typeof entry === 'object' &&
-          typeof (entry as Record<string, unknown>).chargeKind === 'string',
-      )
-      .map((entry) => JSON.stringify(entry));
-    const activeItems = rawItemRows.filter(
-      (item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item?.status),
+    const nonChargeSnapEntries = orderSnapEntries.filter(
+      (entry): entry is Record<string, unknown> =>
+        Boolean(entry) &&
+        typeof entry === 'object' &&
+        typeof (entry as Record<string, unknown>).chargeKind !== 'string' &&
+        Array.isArray((entry as Record<string, unknown>).lines) &&
+        ((entry as Record<string, unknown>).lines as unknown[]).length > 0,
     );
-    const docAllocated = allocateDocumentTaxRounding({
-      items: activeItems.map((item, idx) => ({
-        snapshot: item.tax_snapshot,
-        lineIdOverride: `line-${String(idx + 1).padStart(4, '0')}:${item.id}`,
-      })),
-      chargeTaxes: {
-        taxAmount: 0,
-        exclusiveTaxAmount: 0,
-        breakdowns: chargeSnapJson.map(() => []),
-        snapshotJson: chargeSnapJson,
-      },
-      currency: '',
-      minorFactor,
-      itemTaxRatio: taxDiscountRatioDec,
-    });
-    activeItems.forEach((item, idx) => {
-      const out = docAllocated.itemOutputs[idx];
-      if (out?.handled) docOutputByItem.set(item, out);
-    });
+    const toSavedDocOutput = (
+      snap: Record<string, unknown>,
+    ): DocumentTaxAllocationItemOutput | null => {
+      const taxRounding = snap.taxRounding as Record<string, unknown> | undefined;
+      const lines = snap.lines as Record<string, unknown>[] | undefined;
+      if (taxRounding?.scope !== 'document' || !Array.isArray(lines) || lines.length === 0) {
+        return null;
+      }
+      const line = lines[0];
+      const components = line?.components as Record<string, unknown>[] | undefined;
+      if (!line || !Array.isArray(components)) return null;
+      const lineTax = components.reduce(
+        (sum: Decimal, c) => sum.plus(new Decimal((c.amount as string | number) || 0)),
+        new Decimal(0),
+      );
+      return {
+        handled: true,
+        taxAmount: lineTax.toNumber(),
+        breakdown: components.map((c) => ({
+          title: String(c.label ?? c.title ?? c.name ?? ''),
+          rate: Number(c.rate ?? c.amountPer ?? 0),
+          amount: Number(c.amount || 0),
+        })),
+        snapshotJson: JSON.stringify(snap),
+      };
+    };
+    const itemById = new Map(
+      rawItemRows
+        .filter((item) => item?.id !== undefined && item?.id !== null)
+        .map((item) => [String(item.id), item]),
+    );
+    for (const snap of nonChargeSnapEntries) {
+      const lines = snap.lines as Record<string, unknown>[] | undefined;
+      const lineId = String(lines?.[0]?.lineId || '');
+      const idMatch = /^line-\d+:(.+)$/.exec(lineId);
+      if (idMatch) {
+        const matchedItem = itemById.get(idMatch[1]);
+        const out = matchedItem ? toSavedDocOutput(snap) : null;
+        if (matchedItem && out) docOutputByItem.set(matchedItem, out);
+      }
+    }
+    const billSnapshotItems = rawItemRows.filter(
+      (item) => !isExcludedFromBillReceipt(item?.status) && hasSnapshotLines(item?.tax_snapshot),
+    );
+    if (docOutputByItem.size === 0 && nonChargeSnapEntries.length === billSnapshotItems.length) {
+      billSnapshotItems.forEach((item, idx) => {
+        const out = toSavedDocOutput(nonChargeSnapEntries[idx]);
+        if (out) docOutputByItem.set(item, out);
+      });
+    }
+    if (docOutputByItem.size === 0 && nonChargeSnapEntries.length === 0) {
+      const chargeSnapJson = orderSnapEntries
+        .filter(
+          (entry) =>
+            entry &&
+            typeof entry === 'object' &&
+            typeof (entry as Record<string, unknown>).chargeKind === 'string',
+        )
+        .map((entry) => JSON.stringify(entry));
+      const activeItems = rawItemRows.filter((item) => !isExcludedFromBillReceipt(item?.status));
+      const docAllocated = allocateDocumentTaxRounding({
+        items: activeItems.map((item, idx) => ({
+          snapshot: item.tax_snapshot,
+          lineIdOverride: `line-${String(idx + 1).padStart(4, '0')}:${item.id}`,
+        })),
+        chargeTaxes: {
+          taxAmount: 0,
+          exclusiveTaxAmount: 0,
+          breakdowns: chargeSnapJson.map(() => []),
+          snapshotJson: chargeSnapJson,
+        },
+        currency: '',
+        minorFactor,
+        itemTaxRatio: taxDiscountRatioDec,
+      });
+      activeItems.forEach((item, idx) => {
+        const out = docAllocated.itemOutputs[idx];
+        if (out?.handled) docOutputByItem.set(item, out);
+      });
+    }
   }
   return rawItemRows
     .filter((item) => allocations.length === 0 || allocated.has(Number(item.id)))

@@ -2255,6 +2255,192 @@ async function main() {
       'CE5 projected items + charge resolveTaxComponents sum = 7.51 (no extra cent)',
     );
 
+    // 6. Unequal-price items (100.05 + 100.10 = 200.15) with flat 100.05 discount: preview matches order (5.01 tax, 105.11 total)
+    const ce6Preview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [
+          { product_id: 'prod-disc-10005-a', quantity: 1 },
+          { product_id: 'prod-disc-10010-a', quantity: 1 },
+        ],
+        discount_type: 'amount',
+        discount_value: 100.05,
+        order_type: 'takeaway',
+      },
+      headers: authHeader,
+    });
+    assertEqual(ce6Preview.status, 200, 'CE6 preview status 200');
+    assertEqual(ce6Preview.data.summary.subtotal, 200.15, 'CE6 preview subtotal = 200.15');
+    assertEqual(ce6Preview.data.summary.tax_amount, 5.01, 'CE6 preview tax = 5.01');
+    assertEqual(ce6Preview.data.summary.total, 105.11, 'CE6 preview total = 105.11');
+
+    // 7. Historical bill saved before discounted-raw allocation (100.00 + 100.20 items, 0.10 packaging, 50% discount) preserves 5.01 in resolveTaxComponents
+    const ce7Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        packaging_charge: 0.1,
+        items: [
+          { product_id: 'prod-disc-10020', quantity: 1 },
+          { product_id: 'prod-disc-10010-a', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(ce7Order.status, 201, 'CE7 base order created');
+    const ce7Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: ce7Order.data.order.id },
+      headers: authHeader,
+    });
+    assertEqual(ce7Bill.status, 201, 'CE7 bill generated');
+    const historicalSnap = JSON.stringify([
+      {
+        packId: 'test-in-pack',
+        packVersion: '1.0.0',
+        currency: 'INR',
+        taxRounding: {
+          scope: 'document',
+          method: 'half_up',
+          decimalPlaces: 2,
+          remainderAllocation: 'largest_remainder',
+        },
+        lines: [
+          {
+            lineId: 'line-0001',
+            grossAmount: '50.00',
+            taxableBase: '50.00',
+            taxAmount: '2.50',
+            components: [
+              {
+                ruleId: 'tax-a',
+                label: 'Tax A',
+                rate: '2.5',
+                amount: '1.25',
+                roundingRemainder: '0',
+              },
+              {
+                ruleId: 'tax-b',
+                label: 'Tax B',
+                rate: '2.5',
+                amount: '1.25',
+                roundingRemainder: '0',
+              },
+            ],
+          },
+        ],
+      },
+      {
+        packId: 'test-in-pack',
+        packVersion: '1.0.0',
+        currency: 'INR',
+        taxRounding: {
+          scope: 'document',
+          method: 'half_up',
+          decimalPlaces: 2,
+          remainderAllocation: 'largest_remainder',
+        },
+        lines: [
+          {
+            lineId: 'line-0002',
+            grossAmount: '50.10',
+            taxableBase: '50.10',
+            taxAmount: '2.51',
+            components: [
+              {
+                ruleId: 'tax-a',
+                label: 'Tax A',
+                rate: '2.5',
+                amount: '1.26',
+                roundingRemainder: '-0.0075',
+              },
+              {
+                ruleId: 'tax-b',
+                label: 'Tax B',
+                rate: '2.5',
+                amount: '1.25',
+                roundingRemainder: '0.0025',
+              },
+            ],
+          },
+        ],
+      },
+      {
+        packId: 'test-in-pack',
+        packVersion: '1.0.0',
+        currency: 'INR',
+        chargeKind: 'packaging',
+        taxRounding: {
+          scope: 'document',
+          method: 'half_up',
+          decimalPlaces: 2,
+          remainderAllocation: 'largest_remainder',
+        },
+        lines: [
+          {
+            lineId: 'charge:packaging',
+            grossAmount: '0.10',
+            taxableBase: '0.10',
+            taxAmount: '0.00',
+            components: [
+              {
+                ruleId: 'tax-a',
+                label: 'Tax A',
+                rate: '2.5',
+                amount: '0.00',
+                roundingRemainder: '0.0025',
+              },
+              {
+                ruleId: 'tax-b',
+                label: 'Tax B',
+                rate: '2.5',
+                amount: '0.00',
+                roundingRemainder: '0.0025',
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    const historicalBreakdown = JSON.stringify([
+      { title: 'Tax A', rate: 2.5, amount: 2.51 },
+      { title: 'Tax B', rate: 2.5, amount: 2.5 },
+    ]);
+    db.prepare(
+      'UPDATE orders SET subtotal = 200.2, discount_amount = 100.1, tax_amount = 5.01, tax_breakdown = ?, tax_snapshot = ? WHERE id = ?',
+    ).run(historicalBreakdown, historicalSnap, ce7Order.data.order.id);
+    db.prepare(
+      'UPDATE bills SET subtotal = 200.2, discount_amount = 100.1, tax_amount = 5.01, tax_breakdown = ?, tax_snapshot = ? WHERE id = ?',
+    ).run(historicalBreakdown, historicalSnap, ce7Bill.data.bill.id);
+    const ce7Fetched = await api(baseUrl, `/api/bills/${ce7Bill.data.bill.id}`, {
+      headers: authHeader,
+    });
+    assertEqual(ce7Fetched.status, 200, 'CE7 historical bill fetched');
+    const ce7Resolved = resolveTaxComponents({
+      tax_amount: ce7Fetched.data.bill.tax_amount,
+      tax_snapshot: ce7Fetched.data.bill.tax_snapshot,
+      tax_breakdown: ce7Fetched.data.bill.tax_breakdown,
+      items: ce7Fetched.data.bill.order?.items || [],
+    });
+    const ce7Sum = Number(
+      ce7Resolved.reduce((acc: number, c: any) => acc + Number(c.amount || 0), 0).toFixed(2),
+    );
+    assertEqual(ce7Sum, 5.01, 'CE7 historical bill resolveTaxComponents sum = 5.01 (not 5.02)');
+
+    // 8. Nullable discount_amount on order does not break bill reads or tax-components report
+    db.prepare('UPDATE orders SET discount_amount = NULL WHERE id = ?').run(ce1Order.data.order.id);
+    const ce1WithNullDiscount = await api(baseUrl, `/api/bills/${ce1Bill.data.bill.id}`, {
+      headers: authHeader,
+    });
+    assertEqual(
+      ce1WithNullDiscount.status,
+      200,
+      'bill fetch succeeds when order.discount_amount is NULL',
+    );
+    db.prepare('UPDATE orders SET discount_amount = 100.1 WHERE id = ?').run(
+      ce1Order.data.order.id,
+    );
+
     const s17Report = await api(baseUrl, '/api/reports/tax-components', {
       headers: authHeader,
     });

@@ -90,10 +90,10 @@ Common rules, enforced in the handlers:
   `user_id`) on an order, item, or bill discount, PIN verification is restricted to that active user
   without falling back to scanning other managers.
 - A percentage discount applies to the fresh item subtotal, and a flat discount is capped at that
-  subtotal. Re-applying a discount never compounds on the previous one. When a later item discount,
-  price override, item cancellation or restoration, or customer update changes the order subtotal,
-  an existing percentage order discount scales to the new subtotal while a flat order discount stays
-  at its fixed amount, capped at the new subtotal.
+  subtotal. Re-applying a discount never compounds on the previous one. When a later item addition,
+  edit, discount, price override, cancellation, or restoration, or a customer update changes the
+  order subtotal, an existing percentage order discount scales to the new subtotal while a flat
+  order discount stays at its fixed amount, capped at the new subtotal.
 - Order and bill discounts scale item taxes by the discounted share of the subtotal while keeping
   stored `order_items` taxes un-order-discounted; see
   [Taxation](taxation.md#where-the-amount-came-from).

@@ -22,7 +22,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerTrigger } from '@/components/ui/drawer';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parsePhone } from '@/lib/phone';
 import { getLanguageDirection, getLanguageLocale, useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -154,6 +154,7 @@ function money(value: number | string, regional: ServerAppInfo | null) {
 
 type SendSnapshot = {
   tableId: string;
+  requestTableId?: string;
   tableName: string | undefined;
   orderId: number | null;
   orderCustomer: Order['customer'] | null;
@@ -242,6 +243,26 @@ export default function ServerStandalonePage() {
   const orderLoadedTableIdRef = useRef('');
   const orderLookupFailedRef = useRef(false);
   const orderLoadSeqRef = useRef(0);
+
+  const loadUser = useCallback(async () => {
+    if (!api || sendInFlightRef.current) return;
+    const res = await api.get('/api/auth/me');
+    if (sendInFlightRef.current || !res.data?.user) return;
+    const nextUser: User = res.data.user;
+    setUser((prev) => {
+      if (
+        prev &&
+        prev.id === nextUser.id &&
+        prev.role === nextUser.role &&
+        prev.name === nextUser.name &&
+        prev.email === nextUser.email &&
+        (prev.permission_ids || []).join(',') === (nextUser.permission_ids || []).join(',')
+      ) {
+        return prev;
+      }
+      return nextUser;
+    });
+  }, [api]);
 
   async function loadAll(options?: { allowWhileSending?: boolean }) {
     if (!api) return;
@@ -353,8 +374,10 @@ export default function ServerStandalonePage() {
     };
   }, [api]);
 
+  const userId = user?.id;
+
   useEffect(() => {
-    if (!user || !api) return;
+    if (!userId || !api) return;
     let cancelled = false;
     Promise.all([
       api.get('/api/categories', { params: { active: 'true' } }),
@@ -377,10 +400,10 @@ export default function ServerStandalonePage() {
     return () => {
       cancelled = true;
     };
-  }, [api, selectedTableId, user, t]);
+  }, [api, selectedTableId, userId, t]);
 
   useEffect(() => {
-    if (!selectedTableId || !user || !api) return;
+    if (!selectedTableId || !userId || !api) return;
     let cancelled = false;
     const loadSeq = ++orderLoadSeqRef.current;
     const targetTableId = selectedTableId;
@@ -442,7 +465,18 @@ export default function ServerStandalonePage() {
     return () => {
       cancelled = true;
     };
-  }, [api, selectedTableId, user]);
+  }, [api, selectedTableId, userId]);
+
+  useEffect(() => {
+    if (!userId || !api) return;
+    const onFocus = () => {
+      loadUser().catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [api, loadUser, userId]);
 
   useEffect(() => {
     return () => {
@@ -534,8 +568,8 @@ export default function ServerStandalonePage() {
   function handleRefresh() {
     if (sendInFlightRef.current) return;
     const tableId = selectedTableIdRef.current;
-    Promise.all([loadAll(), tableId ? loadOrder(tableId) : Promise.resolve()]).catch(() =>
-      toast.error(t('refreshFailed')),
+    Promise.all([loadUser(), loadAll(), tableId ? loadOrder(tableId) : Promise.resolve()]).catch(
+      () => toast.error(t('refreshFailed')),
     );
   }
 
@@ -830,7 +864,8 @@ export default function ServerStandalonePage() {
       };
     }
     const { nonce, snapshot } = sendAttemptRef.current;
-    const idempotencyKey = `server-app-${snapshot.tableId}-${nonce}`;
+    const requestTableId = snapshot.requestTableId ?? snapshot.tableId;
+    const idempotencyKey = `server-app-${requestTableId}-${nonce}`;
     sendSeqRef.current += 1;
     orderLoadSeqRef.current += 1;
     cancelPendingCustomerLookup();
@@ -861,7 +896,7 @@ export default function ServerStandalonePage() {
         const { data } = await api.post(
           '/api/orders',
           {
-            table_id: snapshot.tableId,
+            table_id: requestTableId,
             customer_id: customerId,
             type: 'dine_in',
             special_instructions: specialInstructions,
@@ -1017,7 +1052,11 @@ export default function ServerStandalonePage() {
           <button
             type="button"
             disabled={sending}
-            onClick={() => setMoveTableModalOpen(true)}
+            onClick={() => {
+              if (sendInFlightRef.current) return;
+              setMobileCartOpen(false);
+              setMoveTableModalOpen(true);
+            }}
             className="flex items-center gap-1 text-xs font-medium text-brand hover:underline disabled:opacity-50"
           >
             <ArrowRightLeft size={13} />
@@ -1364,7 +1403,7 @@ export default function ServerStandalonePage() {
         />
       )}
 
-      {moveTableModalOpen && activeTable && currentOrder && (
+      {moveTableModalOpen && activeTable && currentOrder && canMoveTable && (
         <MoveTableModal
           sourceTable={
             {
@@ -1376,8 +1415,30 @@ export default function ServerStandalonePage() {
           formatPrice={(amount) => money(amount, regional)}
           onClose={() => setMoveTableModalOpen(false)}
           onSuccess={async (movedData) => {
+            const targetTableId = String(movedData.targetTable.id);
+            const targetTableName = movedData.targetTable.name || movedData.targetTable.number;
+            if (sendAttemptRef.current?.snapshot.tableId === activeTable.id) {
+              const prevAttempt = sendAttemptRef.current;
+              const nextSnapshot: SendSnapshot = {
+                ...prevAttempt.snapshot,
+                tableId: targetTableId,
+                requestTableId: prevAttempt.snapshot.requestTableId ?? prevAttempt.snapshot.tableId,
+                tableName: targetTableName ?? prevAttempt.snapshot.tableName,
+              };
+              sendAttemptRef.current = {
+                signature: sendAttemptSignature(
+                  targetTableId,
+                  nextSnapshot.draftLines,
+                  nextSnapshot.customerName,
+                  nextSnapshot.customerPhone,
+                  nextSnapshot.orderNotes,
+                ),
+                nonce: prevAttempt.nonce,
+                snapshot: nextSnapshot,
+              };
+            }
             setMoveTableModalOpen(false);
-            selectTable(String(movedData.targetTable.id));
+            selectTable(targetTableId);
             await loadAll().catch(() => {});
           }}
         />

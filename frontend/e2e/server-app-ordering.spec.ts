@@ -530,4 +530,133 @@ test.describe('Server App tableside ordering', () => {
     const { orders: ordersB } = await ordersBRes.json();
     expect(ordersB).toHaveLength(0);
   });
+
+  test('refreshes move-table permission, closes mobile ticket drawer when opening MoveTableModal, and preserves pending send retry key across a table move', async ({
+    page,
+  }) => {
+    const managerToken = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
+    const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
+    const headers = { Authorization: `Bearer ${managerToken}` };
+    await page.request.put(`${E2E_BASE_URL}/api/settings/language`, {
+      headers,
+      data: { value: 'en' },
+    });
+
+    const stamp = Date.now();
+    const tableSrcName = `MoveSrc ${stamp}`;
+    const tableDstName = `MoveDst ${stamp}`;
+    const [srcRes, dstRes] = await Promise.all([
+      page.request.post(`${E2E_BASE_URL}/api/tables`, {
+        headers,
+        data: { number: tableSrcName, capacity: 4 },
+      }),
+      page.request.post(`${E2E_BASE_URL}/api/tables`, {
+        headers,
+        data: { number: tableDstName, capacity: 4 },
+      }),
+    ]);
+    expect(srcRes.ok()).toBeTruthy();
+    expect(dstRes.ok()).toBeTruthy();
+    const { table: tableSrc } = await srcRes.json();
+    const { table: tableDst } = await dstRes.json();
+
+    // Start on a phone viewport with tables.orders.move initially omitted from /api/auth/me.
+    await page.setViewportSize({ width: 390, height: 844 });
+    let grantMovePermission = false;
+    await page.route('**/api/auth/me', async (route) => {
+      const response = await route.fetch();
+      const json = await response.json();
+      if (!grantMovePermission && Array.isArray(json?.user?.permission_ids)) {
+        json.user.permission_ids = json.user.permission_ids.filter(
+          (id: string) => id !== 'tables.orders.move',
+        );
+      }
+      await route.fulfill({ response, json });
+    });
+
+    await openServerApp(page, serverToken);
+    await page.getByRole('button', { name: new RegExp(tableSrcName) }).click();
+
+    // Create the initial dine-in order on Table Src.
+    const search = page.getByTestId('pos-product-grid').getByPlaceholder('Search menu');
+    await search.fill('E2E Coffee');
+    await search.press('Enter');
+    await page.getByRole('button', { name: 'Current ticket' }).click();
+    await page.getByRole('button', { name: 'Send to kitchen' }).last().click();
+    await expect(page.getByText('Order sent').first()).toBeVisible();
+
+    // Open mobile ticket drawer: Move Table is hidden while tables.orders.move is not granted.
+    await page.getByRole('button', { name: 'Current ticket' }).click();
+    await expect(page.getByRole('button', { name: 'Move Table' })).toHaveCount(0);
+
+    // Close drawer, grant tables.orders.move, and tap Refresh: Move Table appears without reloading the page.
+    await page.keyboard.press('Escape');
+    grantMovePermission = true;
+    const authMeRefresh = page.waitForResponse(
+      (res) => res.url().includes('/api/auth/me') && res.ok(),
+    );
+    await page.locator('header').getByRole('button', { name: 'Refresh' }).click();
+    await authMeRefresh;
+
+    // Add a second item whose append commits on the backend while its HTTP reply is lost (500).
+    await search.fill('E2E Coffee');
+    await search.press('Enter');
+
+    const appendIdempotencyKeys: string[] = [];
+    let simulateLostAppendReply = true;
+    await page.route('**/api/orders/*/items', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      appendIdempotencyKeys.push(route.request().headers()['idempotency-key'] || '');
+      if (simulateLostAppendReply) {
+        simulateLostAppendReply = false;
+        const committed = await route.fetch();
+        expect(committed.ok()).toBeTruthy();
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Temporary failure after append commit' }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.getByRole('button', { name: 'Current ticket' }).click();
+    const moveTableButton = page.getByRole('button', { name: 'Move Table' }).last();
+    await expect(moveTableButton).toBeVisible();
+    await page.getByRole('button', { name: 'Add to order' }).last().click();
+    await expect(page.getByRole('button', { name: 'Add to order' }).last()).toBeEnabled();
+    expect(appendIdempotencyKeys).toHaveLength(1);
+    expect(appendIdempotencyKeys[0]).toContain(`server-app-${tableSrc.id}-`);
+
+    // Tap Move Table inside the mobile ticket drawer: the drawer closes so MoveTableModal is uncovered and clickable.
+    await moveTableButton.click();
+    const modal = page.getByTestId('move-table-modal');
+    await expect(modal).toBeVisible();
+    await modal.getByRole('button', { name: new RegExp(tableDstName) }).click();
+    await modal.getByRole('button', { name: new RegExp(`Move to ${tableDstName}`) }).click();
+    await expect(modal).toBeHidden();
+    await expect(page.locator('header')).toContainText(tableDstName);
+
+    // Retry sending the pending draft on Table Dst: must reuse the original Idempotency-Key and not duplicate the item.
+    await page.getByRole('button', { name: 'Current ticket' }).click();
+    await page.getByRole('button', { name: 'Add to order' }).last().click();
+    await expect(page.getByText('Order sent').first()).toBeVisible();
+    expect(appendIdempotencyKeys).toHaveLength(2);
+    expect(appendIdempotencyKeys[1]).toBe(appendIdempotencyKeys[0]);
+
+    const dstOrdersRes = await page.request.get(`${E2E_BASE_URL}/api/orders`, {
+      headers,
+      params: { table_id: tableDst.id, type: 'dine_in', per_page: 5 },
+    });
+    const { orders: dstOrders } = await dstOrdersRes.json();
+    expect(dstOrders).toHaveLength(1);
+    const totalCoffeeQty = (dstOrders[0]?.items || [])
+      .filter((item: { product_name: string }) => item.product_name === 'E2E Coffee')
+      .reduce((sum: number, item: { quantity: number }) => sum + item.quantity, 0);
+    expect(totalCoffeeQty).toBe(2);
+  });
 });

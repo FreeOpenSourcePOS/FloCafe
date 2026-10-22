@@ -1004,77 +1004,10 @@ console.log(
 );
 
 {
-  const fs = require('node:fs');
-  const createCustomerSrc = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/components/pos/CreateCustomerModal.tsx'),
-    'utf8',
-  );
-  assert.ok(
-    createCustomerSrc.includes("e.key === 'Escape' && !saving"),
-    'CreateCustomerModal handles Escape key when not saving',
-  );
-
-  const editCustomerSrc = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/components/pos/EditCustomerModal.tsx'),
-    'utf8',
-  );
-  assert.ok(
-    editCustomerSrc.includes("e.key === 'Escape' && !saving"),
-    'EditCustomerModal handles Escape key when not saving',
-  );
-  assert.ok(
-    editCustomerSrc.includes("t('invalidPhone', { country: countryName(country) })"),
-    'EditCustomerModal formats invalidPhone toast with countryName(country)',
-  );
-
-  const customerSearchSrc = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/components/pos/CustomerSearch.tsx'),
-    'utf8',
-  );
-  assert.ok(
-    customerSearchSrc.includes('data-testid="pos-customer-select-btn"'),
-    'CustomerSearch exposes pos-customer-select-btn testid when a customer is selected',
-  );
-  assert.ok(
-    customerSearchSrc.includes('onModalOpenChange'),
-    'CustomerSearch notifies parent when CreateCustomerModal or EditCustomerModal is open',
-  );
-
-  const posPageSrc = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/app/(dashboard)/pos/page.tsx'),
-    'utf8',
-  );
-  assert.ok(
-    posPageSrc.includes('customerModalOpen') &&
-      posPageSrc.includes('[data-testid="pos-customer-search-input"]') &&
-      posPageSrc.includes('[data-testid="pos-customer-select-btn"]'),
-    'pos/page.tsx includes customerModalOpen in anyOtherModalOpen and wires F6 to customer search/select testids',
-  );
-
-  const addonModalSrc = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/components/pos/AddonModal.tsx'),
-    'utf8',
-  );
-  assert.ok(
-    addonModalSrc.includes('Boolean(group.max_selection && count >= group.max_selection)'),
-    'AddonModal disables + buttons when group max_selection is reached',
-  );
-
-  const prepaidCheckoutSrc = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/components/pos/PrepaidCheckoutModal.tsx'),
-    'utf8',
-  );
-  assert.ok(
-    prepaidCheckoutSrc.includes("tag === 'SELECT'") &&
-      prepaidCheckoutSrc.includes("tag === 'BUTTON'") &&
-      prepaidCheckoutSrc.includes('closest?.(\'button, a, [role="button"]\')') &&
-      prepaidCheckoutSrc.includes('if (isInteractive) return;'),
-    'PrepaidCheckoutModal skips global Space/Enter confirm when a button or select is focused',
-  );
-
-  // Runtime behavioral checks for CreateCustomerModal, EditCustomerModal, and AddonModal
+  // Runtime behavioral checks for CreateCustomerModal, EditCustomerModal, CustomerSearch, AddonModal, and PrepaidCheckoutModal
   const modalListeners = new Set<(e: Record<string, unknown>) => void>();
   const prevWin = (globalThis as Record<string, unknown>).window;
+  const prevDoc = (globalThis as Record<string, unknown>).document;
   (globalThis as Record<string, unknown>).window = {
     addEventListener: (type: string, fn: (e: Record<string, unknown>) => void) => {
       if (type === 'keydown') modalListeners.add(fn);
@@ -1083,11 +1016,44 @@ console.log(
       if (type === 'keydown') modalListeners.delete(fn);
     },
   };
+  (globalThis as Record<string, unknown>).document = {
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  };
 
   const toastErrors: string[] = [];
   const ReactRuntime = require(path.join(ROOT, 'frontend/node_modules/react'));
+  let stateSlots: unknown[] = [];
   let stateOverrides: Record<number, unknown> = {};
   let stateCallIdx = 0;
+  const resetState = (overrides: Record<number, unknown> = {}) => {
+    stateSlots = [];
+    stateOverrides = overrides;
+    stateCallIdx = 0;
+  };
+
+  const cartState: {
+    customer: Record<string, unknown> | null;
+    customerId: string | null;
+    items: Array<Record<string, unknown>>;
+    orderType: string;
+    onlinePlatform: string | null;
+    waivedChargeIds: Set<number>;
+    optedInChargeIds: Set<number>;
+    setCustomer: (c: Record<string, unknown> | null) => void;
+  } = {
+    customer: null,
+    customerId: null,
+    items: [{ id: 'item-1', price: 100, quantity: 1 }],
+    orderType: 'dine_in',
+    onlinePlatform: null,
+    waivedChargeIds: new Set(),
+    optedInChargeIds: new Set(),
+    setCustomer: (c) => {
+      cartState.customer = c;
+      cartState.customerId = (c?.id as string | undefined) ?? null;
+    },
+  };
 
   try {
     moduleApi._resolveFilename = function (
@@ -1110,13 +1076,21 @@ console.log(
         ...ReactRuntime,
         useState: (init: unknown) => {
           const idx = stateCallIdx++;
-          const val =
-            idx in stateOverrides
-              ? stateOverrides[idx]
-              : typeof init === 'function'
-                ? (init as () => unknown)()
-                : init;
-          return [val, () => undefined];
+          if (idx >= stateSlots.length) {
+            stateSlots[idx] =
+              idx in stateOverrides
+                ? stateOverrides[idx]
+                : typeof init === 'function'
+                  ? (init as () => unknown)()
+                  : init;
+          }
+          const setState = (next: unknown) => {
+            stateSlots[idx] =
+              typeof next === 'function'
+                ? (next as (prev: unknown) => unknown)(stateSlots[idx])
+                : next;
+          };
+          return [stateSlots[idx], setState];
         },
         useEffect: (fn: () => void | (() => void)) => {
           fn();
@@ -1124,11 +1098,7 @@ console.log(
         useRef: (init: unknown) => ({ current: init }),
         useMemo: (fn: () => unknown) => fn(),
       },
-      'lucide-react': {
-        X: () => null,
-        Plus: () => null,
-        Minus: () => null,
-      },
+      'lucide-react': new Proxy({}, { get: () => () => null }),
       'react-hot-toast': {
         __esModule: true,
         default: {
@@ -1146,15 +1116,78 @@ console.log(
           return selector ? selector(state) : state;
         },
       },
+      '@/store/cart': {
+        useCartStore: (selector?: (s: typeof cartState) => unknown) =>
+          selector ? selector(cartState) : cartState,
+      },
+      '@/store/charges': {
+        chargesForOrderType: () => [],
+        useChargesStore: (selector?: (s: Record<string, unknown>) => unknown) => {
+          const state = { charges: [], load: async () => undefined };
+          return selector ? selector(state) : state;
+        },
+      },
+      '@/components/layout/Ltr': {
+        Ltr: ({ children }: { children: unknown }) => children,
+      },
       '@/components/ui/button': {
         Button: (props: Record<string, unknown>) => ({ type: 'Button', props }),
+      },
+      '@/components/pos/TaxBreakdown': {
+        __esModule: true,
+        default: () => null,
+      },
+      '@/components/pos/TouchNumberPad': {
+        CurrencyTouchNumberPad: () => null,
+      },
+      '@/components/ApproverSelect': {
+        ApproverSelect: () => null,
       },
       '@/hooks/useFormatCurrency': {
         useFormatCurrency: () => (n: number) => String(n),
       },
+      '@/hooks/useFormatNumber': {
+        useFormatNumber: () => (n: number) => String(n),
+      },
+      '@/hooks/useCurrencyUnitAdapter': {
+        useCurrencyUnitAdapter: () => ({
+          toDisplay: (n: number) => n,
+          toStored: (n: number) => n,
+          label: 'INR',
+          step: '1',
+          maxDecimals: 2,
+          formatInput: (n: number) => String(n),
+        }),
+      },
+      '@/hooks/use-tax-preview': {
+        useTaxPreview: () => ({
+          tax: {
+            subtotal: 100,
+            discount_amount: 0,
+            discounted_subtotal: 100,
+            tax_amount: 0,
+            tax_breakdown: [],
+            packaging_charge: 0,
+            charges_breakdown: [],
+            round_off: 0,
+            total: 100,
+          },
+          loading: false,
+        }),
+      },
+      '@/hooks/useManagerApprovers': {
+        useManagerApprovers: () => ({
+          approvers: [],
+          selectedApproverId: null,
+          setSelectedApproverId: () => undefined,
+          loading: false,
+          loadFailed: false,
+        }),
+      },
       '@/lib/api': {
         __esModule: true,
         default: {
+          get: async () => ({ data: {} }),
           post: async () => ({ data: {} }),
           put: async () => ({ data: {} }),
         },
@@ -1168,17 +1201,39 @@ console.log(
 
     delete require.cache[require.resolve('../frontend/src/components/pos/CreateCustomerModal')];
     delete require.cache[require.resolve('../frontend/src/components/pos/EditCustomerModal')];
+    delete require.cache[require.resolve('../frontend/src/components/pos/CustomerSearch')];
     delete require.cache[require.resolve('../frontend/src/components/pos/AddonModal')];
+    delete require.cache[require.resolve('../frontend/src/components/pos/PrepaidCheckoutModal')];
 
     const CreateCustomerModal =
       require('../frontend/src/components/pos/CreateCustomerModal').default;
     const EditCustomerModal = require('../frontend/src/components/pos/EditCustomerModal').default;
+    const CustomerSearch = require('../frontend/src/components/pos/CustomerSearch').default;
     const AddonModal = require('../frontend/src/components/pos/AddonModal').default;
+    const PrepaidCheckoutModal =
+      require('../frontend/src/components/pos/PrepaidCheckoutModal').default;
 
-    // 1. CreateCustomerModal Escape closes modal
+    function findElementByTestId(
+      node: unknown,
+      testId: string,
+    ): { props: Record<string, unknown> } | null {
+      if (Array.isArray(node)) {
+        for (const child of node) {
+          const found = findElementByTestId(child, testId);
+          if (found) return found;
+        }
+        return null;
+      }
+      if (!node || typeof node !== 'object') return null;
+      const el = node as { props?: Record<string, unknown> };
+      if (el.props?.['data-testid'] === testId) return el as { props: Record<string, unknown> };
+      if (el.props?.children) return findElementByTestId(el.props.children, testId);
+      return null;
+    }
+
+    // 1. CreateCustomerModal Escape closes modal when not saving, and ignores Escape while saving
     modalListeners.clear();
-    stateOverrides = {};
-    stateCallIdx = 0;
+    resetState();
     let createClosed = 0;
     CreateCustomerModal({
       initialSearch: 'Alice',
@@ -1200,10 +1255,23 @@ console.log(
     assert.strictEqual(createClosed, 1, 'Escape closes CreateCustomerModal when not saving');
     assert.strictEqual(escPrevented, true, 'Escape prevents default in CreateCustomerModal');
 
+    modalListeners.clear();
+    resetState({ 3: true });
+    CreateCustomerModal({
+      initialSearch: 'Alice',
+      onClose: () => {
+        createClosed += 1;
+      },
+      onCreated: () => undefined,
+    });
+    for (const fn of modalListeners) {
+      fn({ key: 'Escape', preventDefault: () => undefined });
+    }
+    assert.strictEqual(createClosed, 1, 'Escape does not close CreateCustomerModal while saving');
+
     // 2. EditCustomerModal Escape closes modal & invalidPhone uses countryName('IN') -> 'India'
     modalListeners.clear();
-    stateOverrides = {};
-    stateCallIdx = 0;
+    resetState();
     let editClosed = 0;
     const editTree = EditCustomerModal({
       customer: {
@@ -1251,9 +1319,88 @@ console.log(
       'EditCustomerModal passes resolved country name ("India") instead of raw ISO code ("IN")',
     );
 
-    // 3. AddonModal disables + buttons when group max_selection is reached
-    stateOverrides = {};
+    // 3. CustomerSearch exposes search/select testids and notifies onModalOpenChange for Create & Edit modals
+    cartState.setCustomer(null);
+    resetState({ 0: 'Alice', 3: true, 5: true, 6: 0 });
+    const modalOpenHistory: boolean[] = [];
+    const csSearchTree = CustomerSearch({
+      onModalOpenChange: (open: boolean) => modalOpenHistory.push(open),
+    });
+    const csSearchInput = findElementByTestId(csSearchTree, 'pos-customer-search-input');
+    assert.ok(
+      csSearchInput,
+      'CustomerSearch renders pos-customer-search-input when no customer is selected',
+    );
+    assert.strictEqual(
+      findElementByTestId(csSearchTree, 'pos-customer-select-btn'),
+      null,
+      'CustomerSearch does not render pos-customer-select-btn when no customer is selected',
+    );
+    assert.strictEqual(
+      modalOpenHistory.at(-1),
+      false,
+      'CustomerSearch reports modal closed before CreateCustomerModal opens',
+    );
+    (csSearchInput.props.onKeyDown as (e: Record<string, unknown>) => void)({
+      key: 'Enter',
+      preventDefault: () => undefined,
+    });
     stateCallIdx = 0;
+    CustomerSearch({
+      onModalOpenChange: (open: boolean) => modalOpenHistory.push(open),
+    });
+    assert.strictEqual(
+      modalOpenHistory.at(-1),
+      true,
+      'CustomerSearch notifies onModalOpenChange(true) when CreateCustomerModal opens',
+    );
+
+    cartState.setCustomer({
+      id: 'cust-1',
+      name: 'Bob',
+      phone: '+919876543210',
+      email: null,
+      visits_count: 1,
+      total_spent: 100,
+      last_visit_at: null,
+      country_code: 'IN',
+    });
+    resetState();
+    modalOpenHistory.length = 0;
+    const csSelectedTree = CustomerSearch({
+      variant: 'topbar',
+      onModalOpenChange: (open: boolean) => modalOpenHistory.push(open),
+    });
+    const csSelectBtn = findElementByTestId(csSelectedTree, 'pos-customer-select-btn');
+    assert.ok(
+      csSelectBtn,
+      'CustomerSearch renders pos-customer-select-btn when a customer is selected',
+    );
+    assert.strictEqual(
+      findElementByTestId(csSelectedTree, 'pos-customer-search-input'),
+      null,
+      'CustomerSearch does not render pos-customer-search-input when a customer is selected',
+    );
+    assert.strictEqual(
+      modalOpenHistory.at(-1),
+      false,
+      'CustomerSearch reports modal closed before EditCustomerModal opens',
+    );
+    (csSelectBtn.props.onClick as () => void)();
+    stateCallIdx = 0;
+    CustomerSearch({
+      variant: 'topbar',
+      onModalOpenChange: (open: boolean) => modalOpenHistory.push(open),
+    });
+    assert.strictEqual(
+      modalOpenHistory.at(-1),
+      true,
+      'CustomerSearch notifies onModalOpenChange(true) when EditCustomerModal opens',
+    );
+    cartState.setCustomer(null);
+
+    // 4. AddonModal disables + buttons when group max_selection is reached
+    resetState();
     const addonA = {
       id: 'addon-a',
       addon_group_id: 'grp-1',
@@ -1301,11 +1448,140 @@ console.log(
       disabledPlusButtons.length >= 2,
       'AddonModal disables + buttons for both selected and unselected addons when group max_selection is reached',
     );
+
+    // 5. PrepaidCheckoutModal skips global Space/Enter confirm when a button, select, or interactive control is focused
+    modalListeners.clear();
+    resetState();
+    let prepaidClosed = 0;
+    const prepaidConfirms: Array<{
+      payments: unknown;
+      walletAmount: number;
+      discount: unknown;
+    }> = [];
+    PrepaidCheckoutModal({
+      currency: 'INR',
+      onClose: () => {
+        prepaidClosed += 1;
+      },
+      onConfirm: (payments: unknown, walletAmount: number, discount: unknown) => {
+        prepaidConfirms.push({ payments, walletAmount, discount });
+      },
+    });
+    assert.strictEqual(modalListeners.size, 1, 'PrepaidCheckoutModal registers keydown listener');
+
+    const dispatchPrepaidKey = (eventInit: Record<string, unknown>) => {
+      let defaultPrevented = false;
+      for (const fn of modalListeners) {
+        fn({
+          key: '',
+          code: '',
+          repeat: false,
+          preventDefault: () => {
+            defaultPrevented = true;
+          },
+          ...eventInit,
+        });
+      }
+      return { defaultPrevented };
+    };
+
+    const interactiveTargets: Array<{ label: string; target: Record<string, unknown> }> = [
+      { label: 'BUTTON', target: { tagName: 'BUTTON' } },
+      { label: 'SELECT', target: { tagName: 'SELECT' } },
+      { label: 'INPUT', target: { tagName: 'INPUT' } },
+      { label: 'A', target: { tagName: 'A' } },
+      {
+        label: '[role="button"]',
+        target: {
+          tagName: 'DIV',
+          getAttribute: (attr: string) => (attr === 'role' ? 'button' : null),
+        },
+      },
+      {
+        label: 'child inside button',
+        target: {
+          tagName: 'SPAN',
+          closest: (selector: string) => (selector.includes('button') ? {} : null),
+        },
+      },
+    ];
+
+    for (const { label, target } of interactiveTargets) {
+      for (const keyInit of [
+        { key: ' ', code: 'Space' },
+        { key: 'Enter', code: 'Enter' },
+      ]) {
+        const res = dispatchPrepaidKey({ ...keyInit, target });
+        assert.strictEqual(
+          res.defaultPrevented,
+          false,
+          `PrepaidCheckoutModal must not preventDefault on ${keyInit.code} when ${label} is focused`,
+        );
+        assert.strictEqual(
+          prepaidConfirms.length,
+          0,
+          `PrepaidCheckoutModal must not confirm on ${keyInit.code} when ${label} is focused`,
+        );
+      }
+    }
+
+    const repeatSurfaceSpace = dispatchPrepaidKey({
+      key: ' ',
+      code: 'Space',
+      repeat: true,
+      target: { tagName: 'DIV' },
+    });
+    assert.strictEqual(
+      repeatSurfaceSpace.defaultPrevented,
+      true,
+      'PrepaidCheckoutModal prevents default on repeat Space on modal surface',
+    );
+    assert.strictEqual(
+      prepaidConfirms.length,
+      0,
+      'PrepaidCheckoutModal does not confirm on repeat Space',
+    );
+
+    const surfaceSpace = dispatchPrepaidKey({
+      key: ' ',
+      code: 'Space',
+      repeat: false,
+      target: { tagName: 'DIV' },
+    });
+    assert.strictEqual(
+      surfaceSpace.defaultPrevented,
+      true,
+      'PrepaidCheckoutModal prevents default on non-repeat Space on modal surface',
+    );
+    assert.strictEqual(
+      prepaidConfirms.length,
+      1,
+      'PrepaidCheckoutModal confirms order on non-repeat Space on modal surface',
+    );
+    assert.deepStrictEqual(
+      prepaidConfirms[0],
+      {
+        payments: [{ method: 'cash', amount: 100 }],
+        walletAmount: 0,
+        discount: null,
+      },
+      'PrepaidCheckoutModal auto-allocates remaining balance to cash and confirms',
+    );
+
+    const escRes = dispatchPrepaidKey({
+      key: 'Escape',
+      code: 'Escape',
+      target: { tagName: 'BUTTON' },
+    });
+    assert.strictEqual(escRes.defaultPrevented, true, 'PrepaidCheckoutModal Escape preventsDefault');
+    assert.strictEqual(prepaidClosed, 1, 'PrepaidCheckoutModal Escape closes modal');
   } finally {
     moduleApi._load = originalLoad;
     moduleApi._resolveFilename = originalResolveFilename;
     if (prevWin === undefined) delete (globalThis as Record<string, unknown>).window;
     else (globalThis as Record<string, unknown>).window = prevWin;
+    if (prevDoc === undefined) delete (globalThis as Record<string, unknown>).document;
+    else (globalThis as Record<string, unknown>).document = prevDoc;
   }
 }
 

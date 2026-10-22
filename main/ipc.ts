@@ -484,9 +484,7 @@ export function registerIpcHandlers(
 
   handle('open-application-menu', (event, key: unknown, x: unknown, y: unknown) => {
     if (process.platform === 'darwin') return { error: 'Application menu is native on macOS' };
-    // The popup is a privileged native surface on the main window, so bind it
-    // to that window's own current renderer frame. The trusted-sender check
-    // alone also admits the KDS window, which is served from localhost too.
+    // Bind the popup to the main window's own current renderer frame.
     let currentFrame: Electron.WebFrameMain | null = null;
     try {
       currentFrame = event.sender.mainFrame;

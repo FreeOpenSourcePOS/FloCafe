@@ -669,7 +669,9 @@ export function buildActiveOrdersSnapshot(
     }
   }
 
-  const orderById = new Map((orders as any[]).map((o: any) => [o.id, o]));
+  const orderById = new Map(
+    (orders as Array<{ id: string; kitchen_station_id?: string | null }>).map((o) => [o.id, o]),
+  );
   const allVisibleItems = (orders as any[])
     .flatMap((o: any) => itemsByOrder[o.id] || [])
     .filter(

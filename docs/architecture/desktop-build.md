@@ -117,9 +117,9 @@ the `open-application-menu` IPC.
 
 `createMenu()` is the single source of the menu. `get-application-menu` returns only the descriptor a
 label needs, and `open-application-menu` pops the same `Menu` object that was applied, so roles,
-accelerators, and click handlers are the native ones. The popup is a privileged native surface, so the
-handler binds the request to the main window's own `webContents` and current renderer frame rather
-than relying on the trusted-origin check alone, which the KDS window also passes.
+accelerators, and click handlers are the native ones. The popup is a privileged native surface: in
+addition to `handle`'s `isTrustedMainWindowSender` check, the handler verifies the main window's own
+`webContents` and current renderer frame via `isApplicationMenuSender`.
 
 macOS keeps its native top-level menu: the handler returns an empty entry list on `darwin` and the
 renderer draws nothing.

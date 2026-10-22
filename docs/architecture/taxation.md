@@ -158,13 +158,16 @@ undiscounted document tax rounding across active item and charge snapshots befor
 un-order-discounted line allocations to `order_items`, so subsequent discount edits never compound
 on a prior order discount. For the order, bill, and tax-preview (`calculateTaxPreview()`) rollup,
 `rollupOrderTaxes()` in `main/services/tax.ts` applies any order-discount ratio
-(`discountedSubtotal / subtotal`) before combining item and charge taxes: on `document`-scoped
-lines, `allocateDocumentTaxRounding()` scales raw unrounded item tax components
-(`amount + roundingRemainder`) by the exact `Decimal` ratio before performing document-scope
-`largest_remainder` allocation across the combined discounted-item and unchanged-charge components,
-while non-document lines scale via `scaleTaxBreakdowns()` and `scaleTaxSnapshots()` before
-`combineItemAndChargeTaxes()` folds the item and charge snapshots into an order or bill level array
-with `aggregateTaxSnapshots()`.
+(`computeDiscountTaxRatio(discountedSubtotal, subtotal)`) before combining item and charge taxes:
+on `document`-scoped lines, `allocateDocumentTaxRounding()` scales raw unrounded item tax
+components (`amount + roundingRemainder`) by the 40-digit `Decimal` ratio before performing
+document-scope `largest_remainder` allocation across the combined discounted-item and
+unchanged-charge components, while non-document lines scale via `scaleTaxBreakdowns()` and
+`scaleTaxSnapshots()` before `combineItemAndChargeTaxes()` folds the item and charge snapshots into
+an order or bill level array with `aggregateTaxSnapshots()`. Bill item projection
+(`projectOrderItems()` in `main/routes/bills.ts`) runs the same `allocateDocumentTaxRounding()` pass
+across active order items and any charge snapshots on `order.tax_snapshot` so projected line taxes
+and component reports match the discounted bill rollup.
 Once bills are settled or paid, transactions preserve the recorded snapshots, and
 `invertTaxSnapshot()` negates the line amounts for a void or refund adjustment row, so an adjustment
 reverses the recorded numbers rather than recomputing them.

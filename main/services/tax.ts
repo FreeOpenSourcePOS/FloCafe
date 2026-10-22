@@ -16,6 +16,18 @@ import {
   type AppliedCharge,
 } from './charges';
 
+const TaxDecimal = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
+
+export function computeDiscountTaxRatio(
+  discountedSubtotal: Decimal.Value,
+  subtotal: Decimal.Value,
+): Decimal {
+  const base = new TaxDecimal(subtotal);
+  if (!base.isFinite() || base.lte(0)) return new TaxDecimal(1);
+  const discounted = Decimal.max(0, Decimal.min(new TaxDecimal(discountedSubtotal), base));
+  return new TaxDecimal(discounted.toString()).div(base);
+}
+
 export interface TenantInfo {
   country: string;
   business_type: string;
@@ -757,10 +769,7 @@ export function scaleTaxSnapshots(
     for (const line of snapshot.lines) {
       if (!Array.isArray(line.components)) continue;
       for (const component of line.components) {
-        const unscaledRaw = new Decimal(component.amount || 0).plus(
-          component.roundingRemainder || 0,
-        );
-        const raw = unscaledRaw.mul(scale);
+        const raw = new Decimal(component.amount || 0).mul(scale);
         const rounded = raw.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
         entries.push({ component, line, raw, rounded, remainder: raw.minus(rounded) });
       }
@@ -769,7 +778,8 @@ export function scaleTaxSnapshots(
 
   if (entries.length > 0) {
     const targetTaxAmount = entries
-      .reduce((sum, entry) => sum.plus(entry.raw), new Decimal(0))
+      .reduce((sum, entry) => sum.plus(new Decimal(entry.component.amount || 0)), new Decimal(0))
+      .mul(scale)
       .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
     const roundedTotal = entries.reduce((sum, entry) => sum.plus(entry.rounded), new Decimal(0));
     const centsDelta = targetTaxAmount
@@ -982,8 +992,9 @@ export function allocateDocumentTaxRounding(args: {
       const places = resolvePlaces(snap.currency);
       const scaleLineAmount = (val: unknown) =>
         typeof val === 'string' || typeof val === 'number'
-          ? new Decimal(val)
-              .mul(ratio)
+          ? new TaxDecimal(val)
+              .mul(new TaxDecimal(ratio))
+              .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
               .toDecimalPlaces(places, Decimal.ROUND_HALF_UP)
               .toFixed(places)
           : val;
@@ -1008,8 +1019,15 @@ export function allocateDocumentTaxRounding(args: {
 
     group.affectedItemIndices.add(idx);
     for (const comp of line.components || []) {
-      const unscaledRaw = new Decimal(comp.amount).plus(comp.roundingRemainder || '0');
-      const raw = isScaled ? unscaledRaw.mul(ratio) : unscaledRaw;
+      const unscaledRaw = new TaxDecimal(comp.amount).plus(comp.roundingRemainder || '0');
+      const raw = isScaled
+        ? new Decimal(
+            unscaledRaw
+              .mul(new TaxDecimal(ratio))
+              .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
+              .toString(),
+          )
+        : new Decimal(unscaledRaw.toString());
       group.components.push({
         comp,
         raw,
@@ -1554,7 +1572,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     const discountedSubtotal = Decimal.max(0, subtotalDecimal.minus(discountAmount));
     const taxRatio =
       discountAmount.gt(0) && subtotalDecimal.gt(0)
-        ? discountedSubtotal.div(subtotalDecimal)
+        ? computeDiscountTaxRatio(discountedSubtotal, subtotalDecimal)
         : new Decimal(1);
 
     const { taxRollup } = rollupOrderTaxes({

@@ -5,6 +5,7 @@ import {
   allocateDocumentTaxRounding,
   calculateConfiguredChargeTaxes,
   combineItemAndChargeTaxes,
+  computeDiscountTaxRatio,
   rollupOrderTaxes,
   type ChargeTaxContext,
   type ChargeTaxSummary,
@@ -243,7 +244,7 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
     taxScaling === 'always' || (effectiveDiscountDec.gt(0) && subtotalDec.gt(0));
   const taxRatioDec =
     applyDiscountScaling && subtotalDec.gt(0)
-      ? discountedSubtotalDec.div(subtotalDec)
+      ? computeDiscountTaxRatio(discountedSubtotalDec, subtotalDec)
       : new Decimal(1);
   const taxRatio = taxRatioDec.toNumber();
 

@@ -50,6 +50,7 @@ export {
 import Decimal from 'decimal.js';
 import {
   allocateDocumentTaxRounding,
+  computeDiscountTaxRatio,
   getActiveCountryPack,
   scaleTaxSnapshots,
   type Customer,
@@ -453,7 +454,7 @@ function getTaxDiscountRatioDecimal(subtotal: unknown, discountAmount: unknown):
       baseDec,
     ),
   );
-  return Decimal.max(0, Decimal.min(1, baseDec.minus(discountDec).div(baseDec)));
+  return computeDiscountTaxRatio(baseDec.minus(discountDec), baseDec);
 }
 
 function getTaxDiscountRatio(subtotal: unknown, discountAmount: unknown): number {

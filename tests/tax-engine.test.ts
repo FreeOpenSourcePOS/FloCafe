@@ -13,7 +13,9 @@ import {
   allocateDocumentTaxRounding,
   calculateDocumentItemTaxes,
   calculateItemTax,
+  computeDiscountTaxRatio,
   previewCategoryRate,
+  scaleTaxSnapshots,
 } from '../main/services/tax';
 import type {
   CountryPack,
@@ -956,4 +958,92 @@ test('allocateDocumentTaxRounding applies order discount ratio before document l
     .plus(mixedVersionItemAndChargeAlloc.chargeTaxes.taxAmount)
     .toFixed(2);
   assert.equal(mixedItemAndChargeTax, '10.01');
+
+  // Repeating-decimal flat discount ratio: 104.00 item + 0.10 charge with 88.00 flat discount (16 / 104)
+  const item104WithCharge = TaxEngine.calculate({
+    pack: officialIndiaPack,
+    currency: 'INR',
+    country: 'IN',
+    businessType: 'restaurant',
+    storeStateCode: 'KA',
+    transactionDate: '2026-06-01',
+    lines: [
+      line({
+        lineId: 'line-0001',
+        unitPrice: '104.00',
+        productCategoryId: 'standard',
+        taxBehavior: 'exclusive',
+      }),
+      line({
+        lineId: 'charge:packaging',
+        kind: 'packaging',
+        unitPrice: '0.10',
+        merchantCategoryId: 'standard',
+        taxBehavior: 'country_default',
+      }),
+    ],
+  });
+  const repeatingRatio = computeDiscountTaxRatio('16.00', '104.00');
+  const repeatingAlloc = allocateDocumentTaxRounding({
+    items: [
+      {
+        snapshot: { ...item104WithCharge.snapshot, lines: [item104WithCharge.lines[0]] },
+        lineIdOverride: 'line-0001',
+      },
+    ],
+    chargeTaxes: {
+      taxAmount: Number(item104WithCharge.lines[1].taxAmount),
+      exclusiveTaxAmount: Number(item104WithCharge.lines[1].taxAmount),
+      breakdowns: [[]],
+      snapshotJson: [
+        JSON.stringify({
+          ...item104WithCharge.snapshot,
+          lines: [item104WithCharge.lines[1]],
+          chargeKind: 'packaging',
+        }),
+      ],
+    },
+    currency: 'INR',
+    itemTaxRatio: repeatingRatio,
+  });
+  assert.equal(repeatingAlloc.itemOutputs[0].taxAmount.toFixed(2), '0.80');
+  assert.equal(repeatingAlloc.chargeTaxes.taxAmount.toFixed(2), '0.01');
+
+  // Line-scoped scaleTaxSnapshots keeps line-rounded amounts and does not sum discarded remainders
+  const lineScopedScaled = scaleTaxSnapshots(
+    [
+      JSON.stringify({
+        packId: 'line-pack',
+        taxRounding: { scope: 'line', method: 'half_up' },
+        lines: [
+          {
+            lineId: 'line-0001',
+            grossAmount: '10.16',
+            taxableBase: '10.16',
+            taxAmount: '0.50',
+            components: [
+              {
+                ruleId: 'a',
+                name: 'Tax A',
+                rate: '2.5',
+                amount: '0.25',
+                roundingRemainder: '0.004',
+              },
+              {
+                ruleId: 'b',
+                name: 'Tax B',
+                rate: '2.5',
+                amount: '0.25',
+                roundingRemainder: '0.004',
+              },
+            ],
+          },
+        ],
+      }),
+    ],
+    computeDiscountTaxRatio('10.14', '10.16'),
+    100,
+  );
+  const parsedLineScoped = JSON.parse(lineScopedScaled[0]);
+  assert.equal(parsedLineScoped.lines[0].taxAmount, '0.50');
 });

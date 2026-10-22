@@ -73,10 +73,10 @@ The main window is created with `contextIsolation: true`, `nodeIntegration: fals
 `sandbox: true`, so `main/preload.ts` may use only `electron` and web APIs. See
 [Authentication and authorization](authentication-and-authorization.md#boundaries-we-do-not-harden).
 
-Every IPC handler validates the sender. General handlers in [`main/ipc.ts`](../../main/ipc.ts)
-verify sender origin via `isTrustedSender` (`http:` on `localhost` or `127.0.0.1`). Direct update
-handlers, status, and theme in [`main/update-ipc.ts`](../../main/update-ipc.ts) are registered via
-`registerDirectUpdateIpcHandlers` and enforce strict sender validation via
+Every IPC handler validates the sender. Both general handlers in [`main/ipc.ts`](../../main/ipc.ts)
+(registered via `handle`, `registerSaveBackupDialogIpc`, and `registerPickRestoreFileDialogIpc`) and
+direct update, status, and theme handlers in [`main/update-ipc.ts`](../../main/update-ipc.ts)
+(registered via `registerDirectUpdateIpcHandlers`) enforce strict sender validation via
 `isTrustedMainWindowSender`, requiring the caller to be the active main `BrowserWindow`, current
 top-level frame, and matching loopback server port.
 

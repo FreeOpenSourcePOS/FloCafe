@@ -19,19 +19,37 @@ const mockApp = {
   getVersion: () => 'test',
 };
 
+let memoryDbOpenCount = 0;
+
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') return { app: mockApp };
+  if (request === 'better-sqlite3') {
+    const RealDatabase = originalLoad.apply(this, arguments as any);
+    function WrappedDatabase(filename?: string, options?: unknown) {
+      if (filename === ':memory:') memoryDbOpenCount += 1;
+      return new RealDatabase(filename, options);
+    }
+    Object.setPrototypeOf(WrappedDatabase, RealDatabase);
+    WrappedDatabase.prototype = RealDatabase.prototype;
+    return WrappedDatabase;
+  }
   return originalLoad.apply(this, arguments as any);
 };
 
 const {
-  initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, buildIdealSchemaDb,
+  initDatabase,
+  getDatabase,
+  closeDatabase,
+  getCurrentSchemaVersion,
+  buildIdealSchemaDb,
 } = require('../main/db');
 const { runHealthCheck, applySafeFixes } = require('../main/services/schema-health');
 
 function isNativeAbiMismatch(error: any): boolean {
-  return error?.code === 'ERR_DLOPEN_FAILED'
-    && String(error?.message || '').includes('NODE_MODULE_VERSION');
+  return (
+    error?.code === 'ERR_DLOPEN_FAILED' &&
+    String(error?.message || '').includes('NODE_MODULE_VERSION')
+  );
 }
 
 function main() {
@@ -50,17 +68,40 @@ function main() {
 
   // ── buildIdealSchemaDb tracks MIGRATIONS automatically ──────────────────
   const idealDb = buildIdealSchemaDb();
-  assert.equal(idealDb.pragma('user_version', { simple: true }), getCurrentSchemaVersion(),
-    'ideal schema db reaches the same version as a fresh real install');
+  assert.equal(
+    idealDb.pragma('user_version', { simple: true }),
+    getCurrentSchemaVersion(),
+    'ideal schema db reaches the same version as a fresh real install',
+  );
   idealDb.close();
   console.log('   ✓ buildIdealSchemaDb() tracks the live MIGRATIONS array');
 
   // ── Fresh install matches its own ideal schema (no false positives) ─────
+  const memoryDbBeforeCold = memoryDbOpenCount;
   let report = runHealthCheck();
-  assert.equal(report.findings.length, 0, 'fresh database has zero findings against its own ideal schema');
+  assert.equal(
+    report.findings.length,
+    0,
+    'fresh database has zero findings against its own ideal schema',
+  );
   assert.equal(report.summary.safeCount, 0);
   assert.equal(report.summary.manualReviewCount, 0);
-  console.log('   ✓ runHealthCheck() reports zero findings on a fresh install');
+  assert.equal(
+    memoryDbOpenCount - memoryDbBeforeCold,
+    1,
+    'cold runHealthCheck() builds the ideal schema snapshot once',
+  );
+  const memoryDbBeforeWarm = memoryDbOpenCount;
+  const warmReport = runHealthCheck();
+  assert.equal(warmReport.findings.length, 0);
+  assert.equal(
+    memoryDbOpenCount - memoryDbBeforeWarm,
+    0,
+    'subsequent runHealthCheck() reuses the cached ideal schema snapshot without rebuilding :memory: DB',
+  );
+  console.log(
+    '   ✓ runHealthCheck() reports zero findings on a fresh install and caches ideal schema',
+  );
 
   const db = getDatabase();
 
@@ -92,7 +133,10 @@ function main() {
     bills: ['tax_snapshot', 'service_charge'],
   };
   for (const [table, expected] of Object.entries(expectedTaxColumns)) {
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
+    const columns = db
+      .prepare(`PRAGMA table_info(${table})`)
+      .all()
+      .map((column: any) => column.name);
     for (const column of expected) {
       assert.ok(columns.includes(column), `${table}.${column} exists on a fresh install`);
     }
@@ -104,15 +148,18 @@ function main() {
     'fresh installs register only the generic tax pack',
   );
   assert.equal(
-    (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number }).count,
+    (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number })
+      .count,
     1,
     'fresh installs register only the generic tax pack version',
   );
   assert.ok(
-    (db.prepare(`
+    db
+      .prepare(`
       SELECT 1 FROM country_pack_versions
       WHERE pack_id = 'local-generic' AND version = '1.0.0' AND status = 'active'
-    `).get()),
+    `)
+      .get(),
     'fresh installs activate the generic no-tax pack version',
   );
   console.log('   ✓ fresh installs register only the generic pack artifact used by Settings');
@@ -120,16 +167,24 @@ function main() {
   // ── Extra column is flagged manual_review, never auto-applicable ────────
   db.exec(`ALTER TABLE products ADD COLUMN __test_extra_col TEXT`);
   report = runHealthCheck();
-  const extraColFinding = report.findings.find((f: any) => f.id === 'extra_column:products.__test_extra_col');
+  const extraColFinding = report.findings.find(
+    (f: any) => f.id === 'extra_column:products.__test_extra_col',
+  );
   assert.ok(extraColFinding, 'unexpected column is detected');
-  assert.equal(extraColFinding.risk, 'manual_review', 'extra column is manual_review, never auto-applied');
+  assert.equal(
+    extraColFinding.risk,
+    'manual_review',
+    'extra column is manual_review, never auto-applied',
+  );
   assert.equal(extraColFinding.autoApplicable, false);
   console.log('   ✓ an unexpected extra column is flagged manual_review, not auto-fixed');
 
   // ── Missing table is flagged safe with a suggested CREATE TABLE ─────────
   db.exec(`DROP TABLE IF EXISTS held_orders`);
   report = runHealthCheck();
-  const missingTableFinding = report.findings.find((f: any) => f.id === 'missing_table:held_orders');
+  const missingTableFinding = report.findings.find(
+    (f: any) => f.id === 'missing_table:held_orders',
+  );
   assert.ok(missingTableFinding, 'missing table is detected');
   assert.equal(missingTableFinding.risk, 'safe');
   assert.equal(missingTableFinding.autoApplicable, true);
@@ -138,25 +193,37 @@ function main() {
 
   // ── applySafeFixes recreates the missing table; a second check is clean ─
   const fixResult = applySafeFixes(['missing_table:held_orders']);
-  assert.ok(fixResult.applied.includes('missing_table:held_orders'), 'the missing table fix was applied');
+  assert.ok(
+    fixResult.applied.includes('missing_table:held_orders'),
+    'the missing table fix was applied',
+  );
   assert.equal(fixResult.errors.length, 0);
 
-  const tableExists = db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='held_orders'`).get();
+  const tableExists = db
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='held_orders'`)
+    .get();
   assert.ok(tableExists, 'held_orders table exists again after applying the safe fix');
 
   report = runHealthCheck();
-  assert.ok(!report.findings.some((f: any) => f.id === 'missing_table:held_orders'), 'missing_table finding is gone after the fix');
+  assert.ok(
+    !report.findings.some((f: any) => f.id === 'missing_table:held_orders'),
+    'missing_table finding is gone after the fix',
+  );
   console.log('   ✓ applySafeFixes() recreates a missing table and a re-check no longer flags it');
 
   // extra column finding is untouched by applySafeFixes (never targeted, never auto-applicable)
-  assert.ok(report.findings.some((f: any) => f.id === 'extra_column:products.__test_extra_col'),
-    'extra column finding persists — applySafeFixes never removes columns');
+  assert.ok(
+    report.findings.some((f: any) => f.id === 'extra_column:products.__test_extra_col'),
+    'extra column finding persists — applySafeFixes never removes columns',
+  );
   console.log('   ✓ applySafeFixes() never touches manual_review findings');
 
   // ── Foreign-key ON DELETE/ON UPDATE actions are compared ────────────────
   db.exec('PRAGMA foreign_keys = OFF');
   try {
-    const addonRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='order_item_addons'").get() as { sql: string };
+    const addonRow = db
+      .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='order_item_addons'")
+      .get() as { sql: string };
     assert.ok(addonRow?.sql, 'order_item_addons has a CREATE TABLE statement to rebuild');
     const modified = addonRow.sql.replace(
       'REFERENCES order_items(id) ON DELETE CASCADE',
@@ -171,10 +238,20 @@ function main() {
     db.exec('PRAGMA foreign_keys = ON');
   }
   report = runHealthCheck();
-  const fkFinding = report.findings.find((f: any) => f.id === 'foreign_key_mismatch:order_item_addons');
+  const fkFinding = report.findings.find(
+    (f: any) => f.id === 'foreign_key_mismatch:order_item_addons',
+  );
   assert.ok(fkFinding, 'an ON DELETE action difference is reported as a foreign_key_mismatch');
-  assert.match(fkFinding.currentState, /RESTRICT/, 'current state surfaces the live ON DELETE action');
-  assert.match(fkFinding.idealState, /CASCADE/, 'ideal state surfaces the expected ON DELETE action');
+  assert.match(
+    fkFinding.currentState,
+    /RESTRICT/,
+    'current state surfaces the live ON DELETE action',
+  );
+  assert.match(
+    fkFinding.idealState,
+    /CASCADE/,
+    'ideal state surfaces the expected ON DELETE action',
+  );
   console.log('   ✓ foreign-key ON DELETE/ON UPDATE actions are compared');
 
   // ── applySafeFixes is atomic: a failed fix rolls back the whole batch ──
@@ -182,18 +259,28 @@ function main() {
   db.exec('DROP INDEX IF EXISTS idx_customers_phone_digits_unique');
   // phone_digits is a VIRTUAL generated column, so seed duplicate phones and
   // let the generated digits collide to make the unique index rebuild fail.
-  db.prepare("INSERT INTO customers (id, name, phone) VALUES ('atomic-a', 'Atomic A', '+1 555 000 1111')").run();
-  db.prepare("INSERT INTO customers (id, name, phone) VALUES ('atomic-b', 'Atomic B', '+1 555 000 1111')").run();
+  db.prepare(
+    "INSERT INTO customers (id, name, phone) VALUES ('atomic-a', 'Atomic A', '+1 555 000 1111')",
+  ).run();
+  db.prepare(
+    "INSERT INTO customers (id, name, phone) VALUES ('atomic-b', 'Atomic B', '+1 555 000 1111')",
+  ).run();
 
   const atomicResult = applySafeFixes([
     'missing_table:held_orders',
     'missing_index:customers.idx_customers_phone_digits_unique',
   ]);
   assert.ok(
-    atomicResult.errors.some((e: any) => e.id === 'missing_index:customers.idx_customers_phone_digits_unique'),
+    atomicResult.errors.some(
+      (e: any) => e.id === 'missing_index:customers.idx_customers_phone_digits_unique',
+    ),
     'the duplicate-data unique index fix fails',
   );
-  assert.equal(atomicResult.applied.length, 0, 'no fix is reported applied when the batch rolls back');
+  assert.equal(
+    atomicResult.applied.length,
+    0,
+    'no fix is reported applied when the batch rolls back',
+  );
   assert.ok(
     !db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='held_orders'").get(),
     'held_orders is NOT left behind when a later fix fails (batch rolled back)',
@@ -208,7 +295,9 @@ try {
   fs.rmSync(testDir, { recursive: true, force: true });
   console.log('\n✅ Schema health check tests passed');
 } catch (error) {
-  try { closeDatabase(); } catch { }
+  try {
+    closeDatabase();
+  } catch {}
   Module._load = originalLoad;
   fs.rmSync(testDir, { recursive: true, force: true });
   console.error(error);

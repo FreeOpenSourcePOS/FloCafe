@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { getDatabase, buildIdealSchemaDb, getTables, isSafeIdentifier } from '../db';
+import { getDatabase, buildIdealSchemaDb, getTables, isSafeIdentifier, MIGRATIONS } from '../db';
 
 export interface ColumnDef {
   name: string;
@@ -38,9 +38,15 @@ export interface DbSchemaSnapshot {
 }
 
 export type FindingKind =
-  | 'missing_table' | 'missing_column' | 'missing_index'
-  | 'extra_table' | 'extra_column' | 'extra_index'
-  | 'column_type_mismatch' | 'column_notnull_mismatch' | 'column_default_mismatch'
+  | 'missing_table'
+  | 'missing_column'
+  | 'missing_index'
+  | 'extra_table'
+  | 'extra_column'
+  | 'extra_index'
+  | 'column_type_mismatch'
+  | 'column_notnull_mismatch'
+  | 'column_default_mismatch'
   | 'foreign_key_mismatch';
 
 export interface HealthFinding {
@@ -72,11 +78,13 @@ function snapshotSchema(dbInstance: Database.Database): DbSchemaSnapshot {
     // SQLite metadata can contain arbitrary object names in a damaged or
     // user-supplied database. Never interpolate an unsafe name into PRAGMA.
     if (!isSafeIdentifier(name)) continue;
-    const createRow = dbInstance.prepare(
-      `SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`
-    ).get(name) as { sql: string | null } | undefined;
+    const createRow = dbInstance
+      .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(name) as { sql: string | null } | undefined;
 
-    const columns: ColumnDef[] = (dbInstance.prepare(`PRAGMA table_info(${name})`).all() as any[]).map((c) => ({
+    const columns: ColumnDef[] = (
+      dbInstance.prepare(`PRAGMA table_info(${name})`).all() as any[]
+    ).map((c) => ({
       name: c.name,
       type: String(c.type || '').toUpperCase(),
       notnull: !!c.notnull,
@@ -91,12 +99,18 @@ function snapshotSchema(dbInstance: Database.Database): DbSchemaSnapshot {
       .filter((i) => !String(i.name).startsWith('sqlite_autoindex_'))
       .filter((i) => isSafeIdentifier(String(i.name)))
       .map((i) => {
-        const cols = (dbInstance.prepare(`PRAGMA index_info(${i.name})`).all() as any[]).map((c) => c.name);
-        const sqlRow = dbInstance.prepare(`SELECT sql FROM sqlite_master WHERE type='index' AND name = ?`).get(i.name) as { sql: string | null } | undefined;
+        const cols = (dbInstance.prepare(`PRAGMA index_info(${i.name})`).all() as any[]).map(
+          (c) => c.name,
+        );
+        const sqlRow = dbInstance
+          .prepare(`SELECT sql FROM sqlite_master WHERE type='index' AND name = ?`)
+          .get(i.name) as { sql: string | null } | undefined;
         return { name: i.name, unique: !!i.unique, columns: cols, createSql: sqlRow?.sql ?? null };
       });
 
-    const foreignKeys: ForeignKeyDef[] = (dbInstance.prepare(`PRAGMA foreign_key_list(${name})`).all() as any[]).map((fk) => ({
+    const foreignKeys: ForeignKeyDef[] = (
+      dbInstance.prepare(`PRAGMA foreign_key_list(${name})`).all() as any[]
+    ).map((fk) => ({
       table: fk.table,
       from: fk.from,
       to: fk.to,
@@ -111,12 +125,18 @@ function snapshotSchema(dbInstance: Database.Database): DbSchemaSnapshot {
 }
 
 function normalizeType(type: string): string {
-  return type.trim().toUpperCase().replace(/\(\d+(,\s*\d+)?\)/, '');
+  return type
+    .trim()
+    .toUpperCase()
+    .replace(/\(\d+(,\s*\d+)?\)/, '');
 }
 
 function normalizeCreateIfNotExists(sql: string): string {
   if (/\bIF\s+NOT\s+EXISTS\b/i.test(sql)) return sql;
-  return sql.replace(/^\s*CREATE\s+(UNIQUE\s+)?(TABLE|INDEX)\s+/i, (m, unique = '') => `CREATE ${unique}${m.trim().split(/\s+/).pop()} IF NOT EXISTS `);
+  return sql.replace(
+    /^\s*CREATE\s+(UNIQUE\s+)?(TABLE|INDEX)\s+/i,
+    (m, unique = '') => `CREATE ${unique}${m.trim().split(/\s+/).pop()} IF NOT EXISTS `,
+  );
 }
 
 function sameColumnList(a: string[], b: string[]): boolean {
@@ -135,8 +155,12 @@ function sameForeignKeys(a: ForeignKeyDef[], b: ForeignKeyDef[]): boolean {
 }
 
 function mismatchFinding(
-  table: string, column: string, kind: FindingKind, description: string,
-  currentState: string, idealState: string,
+  table: string,
+  column: string,
+  kind: FindingKind,
+  description: string,
+  currentState: string,
+  idealState: string,
 ): HealthFinding {
   return {
     id: `${kind}:${table}.${column}`,
@@ -166,7 +190,9 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
         risk: 'safe',
         autoApplicable: !!idealTable.createSql,
         description: `Table "${tableName}" is missing.`,
-        suggestedDdl: idealTable.createSql ? normalizeCreateIfNotExists(idealTable.createSql) : undefined,
+        suggestedDdl: idealTable.createSql
+          ? normalizeCreateIfNotExists(idealTable.createSql)
+          : undefined,
         idealState: idealTable.createSql ?? undefined,
       });
       continue;
@@ -196,18 +222,40 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
       }
 
       if (normalizeType(liveCol.type) !== normalizeType(idealCol.type)) {
-        findings.push(mismatchFinding(tableName, idealCol.name, 'column_type_mismatch',
-          `Column "${idealCol.name}" type differs from the expected schema.`, liveCol.type || '(none)', idealCol.type || '(none)'));
+        findings.push(
+          mismatchFinding(
+            tableName,
+            idealCol.name,
+            'column_type_mismatch',
+            `Column "${idealCol.name}" type differs from the expected schema.`,
+            liveCol.type || '(none)',
+            idealCol.type || '(none)',
+          ),
+        );
       }
       if (liveCol.notnull !== idealCol.notnull) {
-        findings.push(mismatchFinding(tableName, idealCol.name, 'column_notnull_mismatch',
-          `Column "${idealCol.name}" NOT NULL constraint differs from the expected schema.`,
-          liveCol.notnull ? 'NOT NULL' : 'nullable', idealCol.notnull ? 'NOT NULL' : 'nullable'));
+        findings.push(
+          mismatchFinding(
+            tableName,
+            idealCol.name,
+            'column_notnull_mismatch',
+            `Column "${idealCol.name}" NOT NULL constraint differs from the expected schema.`,
+            liveCol.notnull ? 'NOT NULL' : 'nullable',
+            idealCol.notnull ? 'NOT NULL' : 'nullable',
+          ),
+        );
       }
       if ((liveCol.dfltValue ?? null) !== (idealCol.dfltValue ?? null)) {
-        findings.push(mismatchFinding(tableName, idealCol.name, 'column_default_mismatch',
-          `Column "${idealCol.name}" default value differs from the expected schema.`,
-          liveCol.dfltValue ?? 'none', idealCol.dfltValue ?? 'none'));
+        findings.push(
+          mismatchFinding(
+            tableName,
+            idealCol.name,
+            'column_default_mismatch',
+            `Column "${idealCol.name}" default value differs from the expected schema.`,
+            liveCol.dfltValue ?? 'none',
+            idealCol.dfltValue ?? 'none',
+          ),
+        );
       }
     }
 
@@ -227,7 +275,9 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
     }
 
     for (const idealIdx of idealTable.indexes) {
-      const hasEquivalent = liveTable.indexes.some((i) => sameColumnList(i.columns, idealIdx.columns) && i.unique === idealIdx.unique);
+      const hasEquivalent = liveTable.indexes.some(
+        (i) => sameColumnList(i.columns, idealIdx.columns) && i.unique === idealIdx.unique,
+      );
       if (!hasEquivalent) {
         findings.push({
           id: `missing_index:${tableName}.${idealIdx.name}`,
@@ -237,13 +287,17 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
           risk: 'safe',
           autoApplicable: !!idealIdx.createSql,
           description: `Index "${idealIdx.name}" (${idealIdx.columns.join(', ')}) is missing on "${tableName}".`,
-          suggestedDdl: idealIdx.createSql ? normalizeCreateIfNotExists(idealIdx.createSql) : undefined,
+          suggestedDdl: idealIdx.createSql
+            ? normalizeCreateIfNotExists(idealIdx.createSql)
+            : undefined,
         });
       }
     }
 
     for (const liveIdx of liveTable.indexes) {
-      const hasEquivalent = idealTable.indexes.some((i) => sameColumnList(i.columns, liveIdx.columns) && i.unique === liveIdx.unique);
+      const hasEquivalent = idealTable.indexes.some(
+        (i) => sameColumnList(i.columns, liveIdx.columns) && i.unique === liveIdx.unique,
+      );
       if (!hasEquivalent) {
         findings.push({
           id: `extra_index:${tableName}.${liveIdx.name}`,
@@ -265,8 +319,20 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
         risk: 'manual_review',
         autoApplicable: false,
         description: `Foreign keys on "${tableName}" differ from the expected schema. SQLite can't add or alter constraints on an existing table without a full rebuild — review manually.`,
-        currentState: liveTable.foreignKeys.map((f) => `${f.from} → ${f.table}.${f.to} (ON DELETE ${f.onDelete}, ON UPDATE ${f.onUpdate})`).join(', ') || 'none',
-        idealState: idealTable.foreignKeys.map((f) => `${f.from} → ${f.table}.${f.to} (ON DELETE ${f.onDelete}, ON UPDATE ${f.onUpdate})`).join(', ') || 'none',
+        currentState:
+          liveTable.foreignKeys
+            .map(
+              (f) =>
+                `${f.from} → ${f.table}.${f.to} (ON DELETE ${f.onDelete}, ON UPDATE ${f.onUpdate})`,
+            )
+            .join(', ') || 'none',
+        idealState:
+          idealTable.foreignKeys
+            .map(
+              (f) =>
+                `${f.from} → ${f.table}.${f.to} (ON DELETE ${f.onDelete}, ON UPDATE ${f.onUpdate})`,
+            )
+            .join(', ') || 'none',
       });
     }
   }
@@ -287,26 +353,43 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
   return findings;
 }
 
-export function runHealthCheck(): HealthCheckReport {
-  const liveDb = getDatabase();
+let cachedIdealSchema: { identity: string; snapshot: DbSchemaSnapshot } | null = null;
+
+function getMigrationRegistryIdentity(): string {
+  const last = MIGRATIONS[MIGRATIONS.length - 1];
+  return `${MIGRATIONS.length}:${last?.version ?? 0}:${last?.name ?? ''}`;
+}
+
+function getIdealSchemaSnapshot(): DbSchemaSnapshot {
+  const currentIdentity = getMigrationRegistryIdentity();
+  if (cachedIdealSchema && cachedIdealSchema.identity === currentIdentity) {
+    return cachedIdealSchema.snapshot;
+  }
   const idealDb = buildIdealSchemaDb();
   try {
-    const live = snapshotSchema(liveDb);
-    const ideal = snapshotSchema(idealDb);
-    const findings = diffSchemas(live, ideal);
-    return {
-      generatedAt: new Date().toISOString(),
-      liveSchemaVersion: live.schemaVersion,
-      idealSchemaVersion: ideal.schemaVersion,
-      findings,
-      summary: {
-        safeCount: findings.filter((f) => f.risk === 'safe').length,
-        manualReviewCount: findings.filter((f) => f.risk === 'manual_review').length,
-      },
-    };
+    const snapshot = snapshotSchema(idealDb);
+    cachedIdealSchema = { identity: currentIdentity, snapshot };
+    return snapshot;
   } finally {
     idealDb.close();
   }
+}
+
+export function runHealthCheck(): HealthCheckReport {
+  const liveDb = getDatabase();
+  const live = snapshotSchema(liveDb);
+  const ideal = getIdealSchemaSnapshot();
+  const findings = diffSchemas(live, ideal);
+  return {
+    generatedAt: new Date().toISOString(),
+    liveSchemaVersion: live.schemaVersion,
+    idealSchemaVersion: ideal.schemaVersion,
+    findings,
+    summary: {
+      safeCount: findings.filter((f) => f.risk === 'safe').length,
+      manualReviewCount: findings.filter((f) => f.risk === 'manual_review').length,
+    },
+  };
 }
 
 export interface ApplySafeFixesResult {
@@ -321,8 +404,8 @@ export function applySafeFixes(findingIds?: string[]): ApplySafeFixesResult {
   const db = getDatabase();
   const result: ApplySafeFixesResult = { applied: [], skipped: [], errors: [] };
 
-  const targets = report.findings.filter((f) =>
-    f.autoApplicable && f.risk === 'safe' && (!findingIds || findingIds.includes(f.id))
+  const targets = report.findings.filter(
+    (f) => f.autoApplicable && f.risk === 'safe' && (!findingIds || findingIds.includes(f.id)),
   );
 
   if (targets.length === 0) return result;
@@ -331,9 +414,10 @@ export function applySafeFixes(findingIds?: string[]): ApplySafeFixesResult {
   db.exec('BEGIN IMMEDIATE');
   try {
     for (const finding of targets) {
-      const identifiersSafe = isSafeIdentifier(finding.table)
-        && (!finding.column || isSafeIdentifier(finding.column))
-        && (!finding.index || isSafeIdentifier(finding.index));
+      const identifiersSafe =
+        isSafeIdentifier(finding.table) &&
+        (!finding.column || isSafeIdentifier(finding.column)) &&
+        (!finding.index || isSafeIdentifier(finding.index));
 
       if (!identifiersSafe || !finding.suggestedDdl) {
         result.skipped.push(finding.id);
@@ -355,7 +439,9 @@ export function applySafeFixes(findingIds?: string[]): ApplySafeFixesResult {
       db.exec('COMMIT');
     }
   } catch (error: any) {
-    try { db.exec('ROLLBACK'); } catch { }
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     result.applied = [];
     result.errors.push({ id: 'transaction', error: error.message });
   }

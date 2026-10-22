@@ -606,7 +606,7 @@ function sendSerializedSnapshot(ws: WebSocket, serialized: string): void {
 }
 
 /** Queries and serializes the snapshot for one filter signature; identical for every client sharing it. */
-function buildActiveOrdersSnapshot(
+export function buildActiveOrdersSnapshot(
   categoryIds: string[],
   stationIds: string[] = [],
   restrictedPayload = categoryIds.length > 0,
@@ -669,6 +669,7 @@ function buildActiveOrdersSnapshot(
     }
   }
 
+  const orderById = new Map((orders as any[]).map((o: any) => [o.id, o]));
   const allVisibleItems = (orders as any[])
     .flatMap((o: any) => itemsByOrder[o.id] || [])
     .filter(
@@ -679,13 +680,11 @@ function buildActiveOrdersSnapshot(
         isKdsStationItemAllowed(
           stationIds,
           stationRoutingCategoryIds,
-          (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id,
+          orderById.get(i.order_id)?.kitchen_station_id,
           i.category_id,
-          (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id
+          orderById.get(i.order_id)?.kitchen_station_id
             ? stationScope.categoryIdsByStation[
-                String(
-                  (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id,
-                )
+                String(orderById.get(i.order_id)?.kitchen_station_id)
               ]
             : undefined,
           stationScope.hasUnrestrictedStation,

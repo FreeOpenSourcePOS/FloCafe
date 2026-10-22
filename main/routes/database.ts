@@ -44,7 +44,10 @@ import { parsePhoneE164 } from '../lib/phone';
 import { isRole } from '../../shared/role-permissions';
 import { randomUUID } from 'node:crypto';
 import { googleDrive } from '../services/google-drive';
-import { consumeRestoreFileSelection } from '../services/restore-file-selection';
+import {
+  consumeRestoreFileSelection,
+  peekRestoreFileSelection,
+} from '../services/restore-file-selection';
 
 const router = Router();
 
@@ -791,11 +794,15 @@ router.post(
 
     const selectionToken =
       typeof req.body?.selection_token === 'string' ? req.body.selection_token : '';
-    const backupPath = consumeRestoreFileSelection(selectionToken);
+    const backupPath = peekRestoreFileSelection(selectionToken);
     if (!backupPath) {
       return res
         .status(400)
         .json({ error: 'Choose a backup file in the restore dialog before confirming' });
+    }
+
+    if (!fs.existsSync(backupPath)) {
+      return res.status(404).json({ error: 'Backup file no longer exists' });
     }
 
     const backupVersion = getSchemaVersionFromBackup(backupPath);
@@ -804,6 +811,12 @@ router.post(
         error:
           'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of Flo.',
       });
+    }
+
+    if (!consumeRestoreFileSelection(selectionToken)) {
+      return res
+        .status(400)
+        .json({ error: 'Choose a backup file in the restore dialog before confirming' });
     }
 
     const currentVersion = getCurrentSchemaVersion();

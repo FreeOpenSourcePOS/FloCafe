@@ -522,6 +522,12 @@ export function tenantBusinessDayStartTime(customDb?: ReturnType<typeof getDatab
   return normalizeBusinessDayStartTime(typeof raw === 'string' ? raw : null);
 }
 
+let settingsRevision = 0;
+
+export function getSettingsRevision(): number {
+  return settingsRevision;
+}
+
 export function upsertSettings(entries: Record<string, string | undefined | null>): void {
   const stmt = db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -530,6 +536,7 @@ export function upsertSettings(entries: Record<string, string | undefined | null
   for (const [key, val] of Object.entries(entries)) {
     if (val !== undefined) stmt.run(key, val ?? '', now());
   }
+  settingsRevision += 1;
 }
 
 export const GOOGLE_DRIVE_PRIVATE_SETTING_KEYS = [

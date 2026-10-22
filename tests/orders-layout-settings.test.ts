@@ -38,10 +38,26 @@ const mockApp = {
   getName: () => 'FloCafe',
   getVersion: () => '0.0.0-test',
 };
+const mainFrame = { frameToken: 'frame-main', detached: false };
 const mockBrowserWindow = class {
   loadURL() {}
   on() {}
-  webContents = { send: () => {}, on: () => {} };
+  isDestroyed() {
+    return false;
+  }
+  webContents = { send: () => {}, on: () => {}, mainFrame };
+  static fromWebContents(sender: any) {
+    return sender?.ownerWindow ?? null;
+  }
+};
+const mainWin = new mockBrowserWindow();
+const trustedSender = {
+  sender: {
+    ownerWindow: mainWin,
+    mainFrame,
+    getURL: () => 'http://localhost:3001/',
+  },
+  senderFrame: mainFrame,
 };
 
 Module._load = function (request: string, parent: any, isMain: boolean) {
@@ -100,7 +116,13 @@ async function httpRequest(baseUrl: string, urlPath: string, options: any = {}):
 
   return new Promise<any>((resolve) => {
     const req = http.request(
-      { hostname: url.hostname, port: url.port, path: url.pathname, method: options.method || 'GET', headers },
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        method: options.method || 'GET',
+        headers,
+      },
       (res: any) => {
         let body = '';
         res.on('data', (chunk: any) => (body += chunk));
@@ -120,22 +142,29 @@ async function httpRequest(baseUrl: string, urlPath: string, options: any = {}):
 
 function readStored(key: string): string | undefined {
   const { getDatabase } = require('../main/db');
-  const row = getDatabase()
-    .prepare('SELECT value FROM settings WHERE key = ?')
-    .get(key) as { value: string } | undefined;
+  const row = getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined;
   return row?.value;
 }
 
 async function testPreferenceRecovery() {
-  const source = fs.readFileSync(path.join(__dirname, '../frontend/src/hooks/useOrdersLayout.ts'), 'utf8');
+  const source = fs.readFileSync(
+    path.join(__dirname, '../frontend/src/hooks/useOrdersLayout.ts'),
+    'utf8',
+  );
   const code = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const state = {
     layout: 'split',
     userSelected: false,
-    setLayout: (value: string) => { state.layout = value; },
-    markUserSelected: () => { state.userSelected = true; },
+    setLayout: (value: string) => {
+      state.layout = value;
+    },
+    markUserSelected: () => {
+      state.userSelected = true;
+    },
   };
   const store = Object.assign((select: (value: typeof state) => unknown) => select(state), {
     getState: () => state,
@@ -146,32 +175,47 @@ async function testPreferenceRecovery() {
   const writes: { value: string; resolve: () => void; reject: () => void }[] = [];
   const errors: string[] = [];
   let completeRead: (value: unknown) => void = () => {};
-  const recoveredRead = new Promise((resolve) => { completeRead = resolve; });
+  const recoveredRead = new Promise((resolve) => {
+    completeRead = resolve;
+  });
   const api = {
     get: async () => {
       reads++;
       if (failRead) throw new Error('temporarily offline');
       return recoveredRead;
     },
-    put: (_url: string, { value }: { value: string }) => new Promise<void>((resolve, reject) => {
-      writes.push({ value, resolve: () => { persisted = value; resolve(); }, reject: () => reject(new Error('write failed')) });
-    }),
+    put: (_url: string, { value }: { value: string }) =>
+      new Promise<void>((resolve, reject) => {
+        writes.push({
+          value,
+          resolve: () => {
+            persisted = value;
+            resolve();
+          },
+          reject: () => reject(new Error('write failed')),
+        });
+      }),
   };
-  const module = { exports: {} as { useOrdersLayoutPreference: () => { save: (value: string) => Promise<void> } } };
+  const module = {
+    exports: {} as { useOrdersLayoutPreference: () => { save: (value: string) => Promise<void> } },
+  };
   vm.runInNewContext(code, {
     exports: module.exports,
     require: (name: string) => {
-      if (name === 'react') return {
-        useEffect: (effect: () => void) => effect(),
-        useCallback: (callback: unknown) => callback,
-      };
-      if (name === 'react-hot-toast') return { default: { error: (value: string) => errors.push(value) } };
+      if (name === 'react')
+        return {
+          useEffect: (effect: () => void) => effect(),
+          useCallback: (callback: unknown) => callback,
+        };
+      if (name === 'react-hot-toast')
+        return { default: { error: (value: string) => errors.push(value) } };
       if (name === 'use-intl') return { useTranslations: () => (key: string) => key };
       if (name === '@/lib/api') return { default: api };
-      if (name === '@/store/orders-layout') return {
-        useOrdersLayoutStore: store,
-        isOrdersLayoutValue: (value: unknown) => value === 'split' || value === 'cards',
-      };
+      if (name === '@/store/orders-layout')
+        return {
+          useOrdersLayoutStore: store,
+          isOrdersLayoutValue: (value: unknown) => value === 'split' || value === 'cards',
+        };
       throw new Error(`Unexpected hook dependency: ${name}`);
     },
   });
@@ -206,7 +250,11 @@ async function testPreferenceRecovery() {
   await newer;
   assert.equal(state.layout, 'cards', 'newer successful save stays selected');
   assert.equal(state.layout, persisted, 'display matches persistence after superseded failure');
-  assert.deepEqual(writes.slice(1).map(({ value }) => value), ['split', 'cards'], 'writes follow selection order');
+  assert.deepEqual(
+    writes.slice(1).map(({ value }) => value),
+    ['split', 'cards'],
+    'writes follow selection order',
+  );
   assert.equal(errors.length, 1, 'superseded failure does not report an obsolete error');
 
   const latest = save('split');
@@ -259,13 +307,15 @@ async function main() {
 
   // requirePermission() resolves effective permissions from a real users row
   // keyed by req.user.userId — seed an active owner so settings checks pass.
-  getDatabase().prepare(`
+  getDatabase()
+    .prepare(`
     INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
     VALUES ('orders-layout-owner', 'Test Owner', 'orders-layout-owner@test.local', 'unused', 'owner', 1, ?, ?)
     ON CONFLICT(id) DO NOTHING
-  `).run(now(), now());
+  `)
+    .run(now(), now());
 
-  registerIpcHandlers();
+  registerIpcHandlers(undefined, () => mainWin as any);
 
   const app = express();
   app.use(express.json());
@@ -332,7 +382,6 @@ async function main() {
     {
       const handler = registered.get('set-setting');
       assert.ok(!!handler, 'set-setting IPC handler is registered');
-      const trustedSender = { sender: { getURL: () => 'http://localhost:3001/' } };
       for (const value of INVALID_STRINGS) {
         const result = await handler(trustedSender, 'orders_layout', value);
         assert.equal(result?.success, false, `rejects ${JSON.stringify(value)}`);
@@ -346,13 +395,16 @@ async function main() {
         const result = await handler(trustedSender, 'orders_layout', value);
         assert.equal(result?.success, false, `rejects non-string ${JSON.stringify(value)}`);
       }
-      assert.equal(readStored('orders_layout'), 'cards', 'no rejected value reached SQLite via IPC');
+      assert.equal(
+        readStored('orders_layout'),
+        'cards',
+        'no rejected value reached SQLite via IPC',
+      );
     }
 
     console.log('\n4. IPC set-setting("orders_layout", "split" | "cards") → { success: true }');
     {
       const handler = registered.get('set-setting');
-      const trustedSender = { sender: { getURL: () => 'http://localhost:3001/' } };
       for (const value of VALID) {
         const result = await handler(trustedSender, 'orders_layout', value);
         assert.equal(result?.success, true, `accepts ${value}`);
@@ -379,7 +431,9 @@ async function main() {
         VALUES ('orders-layout-server', 'Test Server', 'orders-layout-server@test.local', 'unused', 'server', 1, ?, ?)
         ON CONFLICT(id) DO NOTHING
       `).run(now(), now());
-      db.prepare("DELETE FROM user_permission_overrides WHERE user_id = 'orders-layout-server'").run();
+      db.prepare(
+        "DELETE FROM user_permission_overrides WHERE user_id = 'orders-layout-server'",
+      ).run();
       db.prepare(`
         INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
         VALUES ('orders-layout-server', 'settings.view', 'deny', 'orders-layout-owner', ?, ?)
@@ -400,7 +454,11 @@ async function main() {
         body: JSON.stringify({ value: 'cards' }),
       });
       assert.equal(write.status, 403, 'writes still require settings.manage');
-      assert.notEqual(readStored('orders_layout'), 'cards', 'the refused write never reached SQLite');
+      assert.notEqual(
+        readStored('orders_layout'),
+        'cards',
+        'the refused write never reached SQLite',
+      );
     }
 
     console.log('\n8. Unknown keys are still refused by the wildcard route');

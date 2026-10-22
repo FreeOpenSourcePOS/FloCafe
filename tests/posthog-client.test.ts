@@ -856,6 +856,24 @@ async function main() {
   assert.equal(mirrored.event, 'feature_used');
   assert.equal(mirrored.properties?.feature, 'split_checks');
   assert.equal(typeof mirrored.properties?.app_version, 'string');
+
+  const dbForCount = getDatabase();
+  const originalPrepare = dbForCount.prepare.bind(dbForCount);
+  let capturePrepareCalls = 0;
+  dbForCount.prepare = ((sql: string) => {
+    capturePrepareCalls += 1;
+    return originalPrepare(sql);
+  }) as typeof dbForCount.prepare;
+  try {
+    capturePostHogUsage('feature_used', { feature: 'split_checks', action: 'disabled' });
+  } finally {
+    dbForCount.prepare = originalPrepare;
+  }
+  assert.equal(
+    capturePrepareCalls,
+    0,
+    'subsequent capturePostHogUsage reuses cached consent and identity without synchronous SQLite reads',
+  );
   const summary = readDailyUsageSummary();
   assert.equal(summary.orders_24h, 0);
   assert.equal(summary.active_staff_count, 2);

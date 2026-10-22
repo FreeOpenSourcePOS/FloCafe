@@ -477,11 +477,12 @@ router.get(
           rows,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[API] Price exceptions report failed:', error);
+      const failure = error as { statusCode?: number; message?: string };
       res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+        .status(failure.statusCode || 500)
+        .json({ error: failure.statusCode ? failure.message : 'Internal server error' });
     }
   },
 );

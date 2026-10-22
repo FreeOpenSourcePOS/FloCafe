@@ -4286,7 +4286,7 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
     const currency = getTenantCurrency();
     const decimals = getCurrencyFractionDigits(currency);
     const override = parsePriceOverrideInput(req.body, decimals);
-    const actorId = (req as any).user.userId as string;
+    const actorId = (req as Request & { user: { userId: string } }).user.userId;
 
     const updatedItem = withTxn(() => {
       const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
@@ -4524,11 +4524,12 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
     cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyOrderUpdated();
     res.json({ item: updatedItem });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[API] Internal error:', error);
+    const failure = error as { statusCode?: number; message?: string };
     res
-      .status(error.statusCode || 500)
-      .json({ error: error.statusCode ? error.message : 'Internal server error' });
+      .status(failure.statusCode || 500)
+      .json({ error: failure.statusCode ? failure.message : 'Internal server error' });
   }
 });
 

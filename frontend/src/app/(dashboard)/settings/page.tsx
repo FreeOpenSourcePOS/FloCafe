@@ -62,6 +62,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import AutoUpdateCheckToggle from '@/components/settings/AutoUpdateCheckToggle';
 import BetaChannelToggle from '@/components/settings/BetaChannelToggle';
+import { OfflineModeCard } from '@/components/settings/OfflineModeCard';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
 import { CurrencyResetDialog } from '@/components/settings/CurrencyResetDialog';
@@ -5505,6 +5506,7 @@ export default function SettingsPage() {
           {/* Privacy — anonymous telemetry (from the old Integrations tab) + cloud privacy controls (from Account) */}
           <TabsContent value="privacy">
             <SettingsTabShell>
+              <OfflineModeCard canManage={tenantCan(currentTenant, 'offline-mode.manage')} />
               <div className="bg-card rounded-xl border border-border p-6 space-y-4">
                 <div className="flex items-center gap-2">
                   <Lock size={20} className="text-muted-foreground" />

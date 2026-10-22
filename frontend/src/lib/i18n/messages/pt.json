@@ -2500,7 +2500,12 @@
     "chargeKind": "Tipo de taxa",
     "chargePresetCustom": "Personalizado",
     "editCharge": "Editar taxa",
-    "chargeReopenRequired": "Esta taxa não está mais disponível. Reabra e tente novamente."
+    "chargeReopenRequired": "Esta taxa não está mais disponível. Reabra e tente novamente.",
+    "offlineModeTitle": "Modo offline",
+    "offlineModeDescription": "Desativa toda conexão opcional com a internet: sincronização na nuvem, backups no Google Drive, WhatsApp, verificação de atualizações, análises de uso e importação de imagens da web. Pedidos, faturação, impressão e dispositivos da sua rede local continuam a funcionar.",
+    "offlineModeFailed": "Não foi possível alterar o modo offline",
+    "offlineModeReadFailed": "Não foi possível ler a definição atual do modo offline.",
+    "offlineModeRetry": "Tentar novamente"
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",
@@ -2732,7 +2737,8 @@
       "serverApp": "Usar o aplicativo independente do servidor",
       "support": "Contatar o suporte e ver diagnósticos",
       "inventoryManage": "Gerenciar insumos e receitas",
-      "orderItemPriceOverride": "Alterar preços dos itens do pedido"
+      "orderItemPriceOverride": "Alterar preços dos itens do pedido",
+      "offlineMode": "Ativar ou desativar o modo offline"
     },
     "editorSubtitle": "Configure os padrões da função ou crie uma exceção para um funcionário. As alterações se aplicam na próxima ação dele.",
     "roleDefaultsTab": "Padrões da função",

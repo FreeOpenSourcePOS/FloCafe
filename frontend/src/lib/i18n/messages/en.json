@@ -2500,7 +2500,12 @@
     "chargeKind": "Fee Type",
     "chargePresetCustom": "Custom",
     "editCharge": "Edit Charge",
-    "chargeReopenRequired": "This charge is no longer available. Please reopen and try again."
+    "chargeReopenRequired": "This charge is no longer available. Please reopen and try again.",
+    "offlineModeTitle": "Offline mode",
+    "offlineModeDescription": "Turns off every optional internet connection: cloud sync, Google Drive backups, WhatsApp, update checks, usage analytics and image import from the web. Orders, billing, printing and devices on your local network keep working.",
+    "offlineModeFailed": "Could not change Offline mode",
+    "offlineModeReadFailed": "Could not read the current Offline mode setting.",
+    "offlineModeRetry": "Retry"
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",
@@ -2732,7 +2737,8 @@
       "serverApp": "Use the standalone Server App",
       "support": "Contact support and view diagnostics",
       "inventoryManage": "Manage supplies and recipes",
-      "orderItemPriceOverride": "Override order item prices"
+      "orderItemPriceOverride": "Override order item prices",
+      "offlineMode": "Turn Offline mode on or off"
     },
     "editorSubtitle": "Configure role defaults or make an exception for one staff member. Changes apply to their next action.",
     "roleDefaultsTab": "Role defaults",

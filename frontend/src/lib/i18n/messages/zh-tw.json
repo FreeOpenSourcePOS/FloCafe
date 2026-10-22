@@ -2500,7 +2500,12 @@
     "chargeKind": "費用類型",
     "chargePresetCustom": "自訂",
     "editCharge": "編輯費用",
-    "chargeReopenRequired": "此費用已無法使用。請重新開啟後再試。"
+    "chargeReopenRequired": "此費用已無法使用。請重新開啟後再試。",
+    "offlineModeTitle": "離線模式",
+    "offlineModeDescription": "關閉所有選用的網際網路連線：雲端同步、Google Drive 備份、WhatsApp、更新檢查、使用分析與從網路匯入圖片。訂單、結帳、列印與區域網路中的裝置仍可正常運作。",
+    "offlineModeFailed": "無法變更離線模式",
+    "offlineModeReadFailed": "無法讀取目前的離線模式設定。",
+    "offlineModeRetry": "重試"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",
@@ -2732,7 +2737,8 @@
       "databaseTools": "使用資料庫工具和備份",
       "serverApp": "使用獨立服務員應用程式",
       "support": "聯絡支援並檢視診斷",
-      "orderItemPriceOverride": "修改訂單商品價格"
+      "orderItemPriceOverride": "修改訂單商品價格",
+      "offlineMode": "開啟或關閉離線模式"
     },
     "editorSubtitle": "設定角色預設值，或為單一位員工建立例外。變更會從他的下一個操作開始生效。",
     "roleDefaultsTab": "角色預設值",

@@ -2500,7 +2500,12 @@
     "chargeKind": "Jenis biaya",
     "chargePresetCustom": "Kustom",
     "editCharge": "Ubah biaya",
-    "chargeReopenRequired": "Biaya ini sudah tidak tersedia. Silakan buka kembali dan coba lagi."
+    "chargeReopenRequired": "Biaya ini sudah tidak tersedia. Silakan buka kembali dan coba lagi.",
+    "offlineModeTitle": "Mode offline",
+    "offlineModeDescription": "Mematikan semua koneksi internet opsional: sinkronisasi cloud, cadangan Google Drive, WhatsApp, pemeriksaan pembaruan, analitik penggunaan, dan impor gambar dari web. Pesanan, penagihan, pencetakan, dan perangkat di jaringan lokal Anda tetap berfungsi.",
+    "offlineModeFailed": "Tidak dapat mengubah mode offline",
+    "offlineModeReadFailed": "Tidak dapat membaca pengaturan mode offline saat ini.",
+    "offlineModeRetry": "Coba lagi"
   },
   "setup": {
     "alreadyCompleted": "Pengaturan awal sudah selesai dilakukan pada instalasi ini. Mengalihkan ke layar masuk…",
@@ -2732,7 +2737,8 @@
       "databaseTools": "Menggunakan alat basis data dan pencadangan",
       "serverApp": "Menggunakan Aplikasi Server mandiri",
       "support": "Menghubungi dukungan dan melihat diagnostik",
-      "orderItemPriceOverride": "Mengubah harga item pesanan"
+      "orderItemPriceOverride": "Mengubah harga item pesanan",
+      "offlineMode": "Aktifkan atau nonaktifkan mode offline"
     },
     "editorSubtitle": "Konfigurasikan default peran atau buat pengecualian untuk satu staf. Perubahan berlaku pada tindakan berikutnya.",
     "roleDefaultsTab": "Default peran",

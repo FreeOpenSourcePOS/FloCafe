@@ -51,6 +51,7 @@
     "recoverEmailSend": "寄送重設連結給我",
     "recoverEmailSending": "寄送中...",
     "recoverEmailSent": "請查看 {email} 並點擊連結核准。此頁面會自動更新。",
+    "recoverEmailVerifying": "您的店主電子郵件尚未驗證。我們已寄出驗證郵件至 {email}。點擊其中的連結後，我們會自動寄出重設連結。",
     "recoverEmailResend": "重新寄送",
     "recoverEmailExpired": "此連結已過期，請重新寄送。",
     "recoverEmailUnavailable": "無法連線至 FloAdmin。請檢查網路或使用主 PIN。",

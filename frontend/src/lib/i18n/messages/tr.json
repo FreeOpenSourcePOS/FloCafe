@@ -51,6 +51,7 @@
     "recoverEmailSend": "Bana bağlantı gönder",
     "recoverEmailSending": "Gönderiliyor...",
     "recoverEmailSent": "{email} adresini kontrol edin ve onaylamak için bağlantıya tıklayın. Bu sayfa otomatik güncellenir.",
+    "recoverEmailVerifying": "Sahip e-postanız henüz doğrulanmadı. {email} adresine bir doğrulama e-postası gönderdik. İçindeki bağlantıya tıklayın, sıfırlama bağlantısını otomatik göndereceğiz.",
     "recoverEmailResend": "Tekrar gönder",
     "recoverEmailExpired": "Bu bağlantının süresi doldu. Yenisini isteyin.",
     "recoverEmailUnavailable": "FloAdmin'e ulaşılamadı. Bağlantınızı kontrol edin veya ana PIN'i kullanın.",

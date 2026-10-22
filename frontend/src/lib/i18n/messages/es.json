@@ -51,6 +51,7 @@
     "recoverEmailSend": "Enviarme un enlace",
     "recoverEmailSending": "Enviando...",
     "recoverEmailSent": "Revisa {email} y haz clic en el enlace para aprobar. Esta página se actualiza sola.",
+    "recoverEmailVerifying": "Tu correo de propietario aún no está verificado. Enviamos un correo de verificación a {email}. Haz clic en el enlace y enviaremos el enlace de restablecimiento automáticamente.",
     "recoverEmailResend": "Enviar de nuevo",
     "recoverEmailExpired": "Este enlace caducó. Envía uno nuevo.",
     "recoverEmailUnavailable": "No se pudo contactar con FloAdmin. Revisa tu conexión o usa el PIN maestro.",

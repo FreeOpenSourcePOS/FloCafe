@@ -51,6 +51,7 @@
     "recoverEmailSend": "Kirim tautan ke email saya",
     "recoverEmailSending": "Mengirim...",
     "recoverEmailSent": "Periksa {email} dan klik tautan untuk menyetujui. Halaman ini diperbarui otomatis.",
+    "recoverEmailVerifying": "Email pemilik belum terverifikasi. Kami mengirim email verifikasi ke {email}. Klik tautan di dalamnya dan kami akan mengirim tautan reset secara otomatis.",
     "recoverEmailResend": "Kirim ulang",
     "recoverEmailExpired": "Tautan ini kedaluwarsa. Kirim yang baru.",
     "recoverEmailUnavailable": "Tidak dapat terhubung ke FloAdmin. Periksa koneksi atau gunakan PIN utama.",

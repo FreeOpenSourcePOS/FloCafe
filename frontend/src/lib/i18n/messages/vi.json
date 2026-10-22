@@ -51,6 +51,7 @@
     "recoverEmailSend": "Gửi liên kết cho tôi",
     "recoverEmailSending": "Đang gửi...",
     "recoverEmailSent": "Kiểm tra {email} và nhấp vào liên kết để phê duyệt. Trang này tự cập nhật.",
+    "recoverEmailVerifying": "Email chủ cửa hàng chưa được xác minh. Chúng tôi đã gửi email xác minh tới {email}. Nhấp vào liên kết trong đó, chúng tôi sẽ tự động gửi liên kết đặt lại.",
     "recoverEmailResend": "Gửi lại",
     "recoverEmailExpired": "Liên kết này đã hết hạn. Hãy gửi liên kết mới.",
     "recoverEmailUnavailable": "Không thể kết nối FloAdmin. Kiểm tra kết nối hoặc dùng PIN chính.",

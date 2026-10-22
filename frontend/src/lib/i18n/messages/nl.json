@@ -51,6 +51,7 @@
     "recoverEmailSend": "Mail me een link",
     "recoverEmailSending": "Verzenden...",
     "recoverEmailSent": "Controleer {email} en klik op de link om goed te keuren. Deze pagina wordt automatisch bijgewerkt.",
+    "recoverEmailVerifying": "Je eigenaarsadres is nog niet geverifieerd. We hebben een verificatiemail gestuurd naar {email}. Klik op de link, dan sturen we automatisch de resetlink.",
     "recoverEmailResend": "Opnieuw verzenden",
     "recoverEmailExpired": "Deze link is verlopen. Vraag een nieuwe aan.",
     "recoverEmailUnavailable": "FloAdmin is onbereikbaar. Controleer je verbinding of gebruik de master-pincode.",

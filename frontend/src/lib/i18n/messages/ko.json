@@ -51,6 +51,7 @@
     "recoverEmailSend": "재설정 링크 보내기",
     "recoverEmailSending": "전송 중...",
     "recoverEmailSent": "{email}을(를) 확인하고 링크를 눌러 승인하세요. 이 페이지는 자동으로 업데이트됩니다.",
+    "recoverEmailVerifying": "소유자 이메일이 아직 인증되지 않았습니다. {email}(으)로 인증 이메일을 보냈습니다. 링크를 누르면 재설정 링크를 자동으로 보내드립니다.",
     "recoverEmailResend": "다시 보내기",
     "recoverEmailExpired": "이 링크가 만료되었습니다. 새로 보내세요.",
     "recoverEmailUnavailable": "FloAdmin에 연결할 수 없습니다. 연결을 확인하거나 마스터 PIN을 사용하세요.",

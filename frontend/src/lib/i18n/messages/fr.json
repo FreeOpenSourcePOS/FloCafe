@@ -51,6 +51,7 @@
     "recoverEmailSend": "M'envoyer un lien",
     "recoverEmailSending": "Envoi...",
     "recoverEmailSent": "Consultez {email} et cliquez sur le lien pour approuver. Cette page se met à jour automatiquement.",
+    "recoverEmailVerifying": "Votre e-mail de propriétaire n'est pas encore vérifié. Nous avons envoyé un e-mail de vérification à {email}. Cliquez sur le lien et nous enverrons automatiquement le lien de réinitialisation.",
     "recoverEmailResend": "Renvoyer",
     "recoverEmailExpired": "Ce lien a expiré. Demandez-en un nouveau.",
     "recoverEmailUnavailable": "FloAdmin est injoignable. Vérifiez votre connexion ou utilisez le PIN principal.",

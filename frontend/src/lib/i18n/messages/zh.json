@@ -51,6 +51,7 @@
     "recoverEmailSend": "给我发送重置链接",
     "recoverEmailSending": "发送中...",
     "recoverEmailSent": "请查看 {email} 并点击链接批准。此页面会自动更新。",
+    "recoverEmailVerifying": "您的店主邮箱尚未验证。我们已向 {email} 发送验证邮件。点击其中的链接后，我们会自动发送重置链接。",
     "recoverEmailResend": "重新发送",
     "recoverEmailExpired": "此链接已过期，请重新发送。",
     "recoverEmailUnavailable": "无法连接 FloAdmin。请检查网络或使用主 PIN。",

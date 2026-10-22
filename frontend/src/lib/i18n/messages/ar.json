@@ -51,6 +51,7 @@
     "recoverEmailSend": "أرسل لي رابطاً",
     "recoverEmailSending": "جارٍ الإرسال...",
     "recoverEmailSent": "تحقق من {email} وانقر على الرابط للموافقة. تتحدث هذه الصفحة تلقائياً.",
+    "recoverEmailVerifying": "بريد المالك غير موثّق بعد. أرسلنا رسالة توثيق إلى {email}. انقر على الرابط فيها وسنرسل رابط إعادة التعيين تلقائياً.",
     "recoverEmailResend": "إعادة الإرسال",
     "recoverEmailExpired": "انتهت صلاحية هذا الرابط. أرسل رابطاً جديداً.",
     "recoverEmailUnavailable": "تعذر الوصول إلى FloAdmin. تحقق من الاتصال أو استخدم الرمز السري الرئيسي.",

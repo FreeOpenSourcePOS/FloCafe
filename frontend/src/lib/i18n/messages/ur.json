@@ -51,6 +51,7 @@
     "recoverEmailSend": "مجھے لنک ای میل کریں",
     "recoverEmailSending": "بھیجا جا رہا ہے...",
     "recoverEmailSent": "{email} دیکھیں اور منظوری کے لیے لنک پر کلک کریں۔ یہ صفحہ خود بخود اپ ڈیٹ ہوتا ہے۔",
+    "recoverEmailVerifying": "مالک کا ای میل ابھی تصدیق شدہ نہیں ہے۔ ہم نے {email} پر تصدیقی ای میل بھیجی ہے۔ اس میں لنک پر کلک کریں تو ہم ری سیٹ لنک خود بھیج دیں گے۔",
     "recoverEmailResend": "دوبارہ بھیجیں",
     "recoverEmailExpired": "یہ لنک ختم ہو گیا ہے۔ نیا بھیجیں۔",
     "recoverEmailUnavailable": "FloAdmin تک رسائی نہیں ہو سکی۔ کنکشن چیک کریں یا ماسٹر پن استعمال کریں۔",

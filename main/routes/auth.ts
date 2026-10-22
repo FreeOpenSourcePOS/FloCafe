@@ -674,11 +674,16 @@ function cloudRecoveryPrecheck(req: Request, res: Response): boolean {
     });
     return false;
   }
-  if (!cloudSync.isPasswordResetAvailable()) {
+  if (!cloudSync.isEmailRecoveryAvailable()) {
     res.status(409).json({ error: 'Email recovery is not available on this install.' });
     return false;
   }
   return true;
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  return local && domain ? `${local[0]}***@${domain}` : '';
 }
 
 function sendCloudRecoveryFailure(res: Response, error: unknown) {
@@ -703,12 +708,34 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     if (!cloudRecoveryPrecheck(req, res)) return;
     try {
-      const data = await cloudSync.requestPasswordReset(getHttpRequestSignal(req));
+      const signal = getHttpRequestSignal(req);
+      // An unverified owner email gets the verification email first; the reset follows once verified.
+      if (!(await cloudSync.ensureOwnerEmailVerification(signal))) {
+        return res.status(202).json({
+          step: 'verify_email',
+          email_hint: maskEmail(cloudSync.getRegisteredOwnerEmail()),
+        });
+      }
+      const data = await cloudSync.requestPasswordReset(signal);
       res.status(202).json({
+        step: 'reset',
         reset_id: String(data.reset_id || ''),
         expires_at: typeof data.expires_at === 'string' ? data.expires_at : null,
         email_hint: typeof data.email_hint === 'string' ? data.email_hint : null,
       });
+    } catch (error) {
+      sendCloudRecoveryFailure(res, error);
+    }
+  }),
+);
+
+router.get(
+  '/recover-password/cloud/verification',
+  authRateLimit({ max: 600 }),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!cloudRecoveryPrecheck(req, res)) return;
+    try {
+      res.json({ verified: await cloudSync.isOwnerEmailVerified(getHttpRequestSignal(req)) });
     } catch (error) {
       sendCloudRecoveryFailure(res, error);
     }
@@ -803,7 +830,7 @@ router.get('/setup/status', (_req: Request, res: Response) => {
       initialRole: INITIAL_ADMIN_ROLE,
       schemaVersion: getCurrentSchemaVersion(),
       masterPinAvailable: isMasterPinAvailable(),
-      cloudRecoveryAvailable: cloudSync.isPasswordResetAvailable(),
+      cloudRecoveryAvailable: cloudSync.isEmailRecoveryAvailable(),
       currencyReset,
     });
   } catch (error: any) {

@@ -15,7 +15,11 @@ const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-cloud-recovery-'));
 
-const mockApp = { isPackaged: true, getPath: (_name: string) => testDir, getVersion: () => 'test' };
+const mockApp = {
+  isPackaged: true,
+  getPath: (_name: string) => testDir,
+  getVersion: () => 'test',
+};
 const mockSafeStorage = {
   isEncryptionAvailable: () => true,
   encryptString: (s: string) => Buffer.from(s, 'utf8'),
@@ -64,6 +68,8 @@ const ORIGINAL = 'OriginalPass123';
 const NEW_PASSWORD = 'BrandNewPass123';
 
 let available = true;
+let ownerVerified = true;
+let verificationSends = 0;
 let registeredEmail = 'owner@example.com';
 let remoteStatus = 'pending';
 let redeemCalls = 0;
@@ -71,7 +77,13 @@ let redeemError: unknown = null;
 let requestError: unknown = null;
 
 Object.assign(cloudSync, {
-  isPasswordResetAvailable: () => available,
+  isEmailRecoveryAvailable: () => available,
+  isOwnerEmailVerified: async () => ownerVerified,
+  ensureOwnerEmailVerification: async () => {
+    if (ownerVerified) return true;
+    verificationSends++;
+    return false;
+  },
   getRegisteredOwnerEmail: () => registeredEmail,
   requestPasswordReset: async () => {
     if (requestError) throw requestError;
@@ -114,13 +126,39 @@ async function main() {
 
   available = false;
   res = await request(app).post(`${cloud}/request`).send({});
-  assertEqualOrThrow(res.status, 409, 'request is blocked when no verified cloud email exists');
+  assertEqualOrThrow(
+    res.status,
+    409,
+    'request is blocked when cloud email recovery is unavailable',
+  );
   res = await request(app).get('/api/auth/setup/status');
   assertEqualOrThrow(res.body.cloudRecoveryAvailable, false, 'setup status hides cloud recovery');
   available = true;
 
+  ownerVerified = false;
+  res = await request(app).post(`${cloud}/request`).send({});
+  assertEqualOrThrow(res.status, 202, 'unverified email still gets a 202');
+  assertEqualOrThrow(
+    res.body.step,
+    'verify_email',
+    'unverified email starts with the verification step',
+  );
+  assertEqualOrThrow(
+    res.body.email_hint,
+    'o***@example.com',
+    'verification step masks the owner email',
+  );
+  assertEqualOrThrow(verificationSends, 1, 'the verification email is sent first');
+  res = await request(app).get(`${cloud}/verification`);
+  assertEqualOrThrow(res.body.verified, false, 'verification poll reports unverified');
+  ownerVerified = true;
+  res = await request(app).get(`${cloud}/verification`);
+  assertEqualOrThrow(res.body.verified, true, 'verification poll reports verified');
+
   res = await request(app).post(`${cloud}/request`).send({});
   assertEqualOrThrow(res.status, 202, 'request succeeds');
+  assertEqualOrThrow(res.body.step, 'reset', 'verified email goes straight to the reset step');
+  assertEqualOrThrow(verificationSends, 1, 'a verified email sends no further verification email');
   assertEqualOrThrow(res.body.reset_id, RESET_ID, 'request returns the reset id');
   assertEqualOrThrow(res.body.email_hint, 'o***@example.com', 'request returns the masked email');
 

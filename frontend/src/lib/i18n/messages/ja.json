@@ -51,6 +51,7 @@
     "recoverEmailSend": "リンクをメールで送信",
     "recoverEmailSending": "送信中...",
     "recoverEmailSent": "{email} を確認し、リンクをクリックして承認してください。このページは自動的に更新されます。",
+    "recoverEmailVerifying": "オーナーのメールアドレスはまだ確認されていません。{email} に確認メールを送信しました。メール内のリンクをクリックすると、リセット用リンクを自動的に送信します。",
     "recoverEmailResend": "再送信",
     "recoverEmailExpired": "このリンクは期限切れです。新しいリンクを送信してください。",
     "recoverEmailUnavailable": "FloAdmin に接続できません。接続を確認するか、マスターPINを使用してください。",

@@ -51,6 +51,7 @@
     "recoverEmailSend": "Email me a reset link",
     "recoverEmailSending": "Sending...",
     "recoverEmailSent": "Check {email} and click the link to approve. This page updates automatically.",
+    "recoverEmailVerifying": "Your owner email isn't verified yet. We sent a verification email to {email}. Click the link in it and we'll send the reset link automatically.",
     "recoverEmailResend": "Send again",
     "recoverEmailExpired": "This reset link expired. Send a new one.",
     "recoverEmailUnavailable": "Could not reach FloAdmin. Check your connection or use the Master PIN.",

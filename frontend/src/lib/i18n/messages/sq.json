@@ -51,6 +51,7 @@
     "recoverEmailSend": "Dërgomë një lidhje",
     "recoverEmailSending": "Duke dërguar...",
     "recoverEmailSent": "Kontrollo {email} dhe kliko lidhjen për miratim. Kjo faqe përditësohet vetë.",
+    "recoverEmailVerifying": "Email-i i pronarit ende nuk është verifikuar. Dërguam një email verifikimi te {email}. Kliko lidhjen aty dhe do të dërgojmë vetë lidhjen e rivendosjes.",
     "recoverEmailResend": "Dërgo përsëri",
     "recoverEmailExpired": "Kjo lidhje ka skaduar. Dërgo një të re.",
     "recoverEmailUnavailable": "FloAdmin nuk u arrit. Kontrollo lidhjen ose përdor PIN-in kryesor.",

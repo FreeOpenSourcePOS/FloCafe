@@ -1436,12 +1436,20 @@ export class CloudSyncService {
     return data;
   }
 
-  /** True when FloAdmin holds a verified owner email it can send a password reset to. */
-  isPasswordResetAvailable(): boolean {
-    return (
-      this.isCloudAccountAvailable() &&
-      this.readSettings(getDatabase()).cloud_email_verified === 'true'
-    );
+  /** True when cloud services are on and the store has an owner email FloAdmin can verify and mail. */
+  isEmailRecoveryAvailable(): boolean {
+    return this.isCloudAccountAvailable() && Boolean(this.getRegisteredOwnerEmail());
+  }
+
+  async isOwnerEmailVerified(signal?: AbortSignal): Promise<boolean> {
+    return (await this.getEmailPreferences(signal)).verified === true;
+  }
+
+  /** Sends the verification email when the owner email is unverified; returns whether it already is. */
+  async ensureOwnerEmailVerification(signal?: AbortSignal): Promise<boolean> {
+    if (await this.isOwnerEmailVerified(signal)) return true;
+    const sent = await this.requestEmailVerification({ source: 'password-recovery' }, signal);
+    return sent.verified === true;
   }
 
   /** The owner email the store registered with, which FloAdmin mails the reset link to. */

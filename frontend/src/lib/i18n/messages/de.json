@@ -51,6 +51,7 @@
     "recoverEmailSend": "Link per E-Mail senden",
     "recoverEmailSending": "Wird gesendet...",
     "recoverEmailSent": "Prüfen Sie {email} und klicken Sie zur Bestätigung auf den Link. Diese Seite aktualisiert sich automatisch.",
+    "recoverEmailVerifying": "Ihre Inhaber-E-Mail ist noch nicht bestätigt. Wir haben eine Bestätigungs-E-Mail an {email} gesendet. Klicken Sie auf den Link darin, dann senden wir automatisch den Link zum Zurücksetzen.",
     "recoverEmailResend": "Erneut senden",
     "recoverEmailExpired": "Dieser Link ist abgelaufen. Fordern Sie einen neuen an.",
     "recoverEmailUnavailable": "FloAdmin ist nicht erreichbar. Prüfen Sie die Verbindung oder verwenden Sie die Master-PIN.",

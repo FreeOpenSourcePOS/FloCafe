@@ -51,6 +51,7 @@
     "recoverEmailSend": "Padalhan ako ng link",
     "recoverEmailSending": "Ipinapadala...",
     "recoverEmailSent": "Tingnan ang {email} at i-click ang link para aprubahan. Awtomatikong nag-a-update ang pahinang ito.",
+    "recoverEmailVerifying": "Hindi pa na-verify ang email ng may-ari. Nagpadala kami ng verification email sa {email}. I-click ang link doon at awtomatiko naming ipapadala ang reset link.",
     "recoverEmailResend": "Ipadala muli",
     "recoverEmailExpired": "Nag-expire na ang link na ito. Magpadala ng bago.",
     "recoverEmailUnavailable": "Hindi maabot ang FloAdmin. Suriin ang koneksyon o gamitin ang Master PIN.",

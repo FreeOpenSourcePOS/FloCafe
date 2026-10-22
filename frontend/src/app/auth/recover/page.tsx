@@ -14,7 +14,7 @@ import { ArrowLeft, Eye, EyeOff, KeyRound, Mail } from 'lucide-react';
 const RESET_POLL_INTERVAL_MS = 3000;
 
 type RecoveryMethod = 'email' | 'pin';
-type EmailStep = 'idle' | 'waiting' | 'approved';
+type EmailStep = 'idle' | 'verifying' | 'waiting' | 'approved';
 
 export default function RecoverAccessPage() {
   const router = useRouter();
@@ -63,10 +63,27 @@ export default function RecoverAccessPage() {
     setLoading(true);
     try {
       const { data } = await api.post('/auth/recover-password/cloud/request');
-      setResetId(data.reset_id);
-      setEmailHint(data.email_hint || '');
-      setEmailStep('waiting');
       stopPolling();
+      setEmailHint(data.email_hint || '');
+      if (data.step === 'verify_email') {
+        setEmailStep('verifying');
+        pollTimer.current = setInterval(async () => {
+          try {
+            const { data: verification } = await api.get(
+              '/auth/recover-password/cloud/verification',
+            );
+            if (verification.verified) {
+              stopPolling();
+              void requestEmailReset();
+            }
+          } catch {
+            // Transient failures keep polling; the owner can resend.
+          }
+        }, RESET_POLL_INTERVAL_MS);
+        return;
+      }
+      setResetId(data.reset_id);
+      setEmailStep('waiting');
       pollTimer.current = setInterval(async () => {
         try {
           const { data: status } = await api.get('/auth/recover-password/cloud/status', {
@@ -271,22 +288,24 @@ export default function RecoverAccessPage() {
                     <div className="space-y-3 text-center">
                       <Mail className="w-6 h-6 mx-auto text-primary" />
                       <p className="text-sm text-muted-foreground">
-                        {emailStep === 'waiting'
-                          ? t('recoverEmailSent', { email: emailHint })
-                          : t('recoverEmailIntro')}
+                        {emailStep === 'verifying'
+                          ? t('recoverEmailVerifying', { email: emailHint })
+                          : emailStep === 'waiting'
+                            ? t('recoverEmailSent', { email: emailHint })
+                            : t('recoverEmailIntro')}
                       </p>
                       <Button
                         type="button"
-                        variant={emailStep === 'waiting' ? 'outline' : 'default'}
+                        variant={emailStep === 'idle' ? 'default' : 'outline'}
                         className="w-full"
                         disabled={loading}
                         onClick={requestEmailReset}
                       >
                         {loading
                           ? t('recoverEmailSending')
-                          : emailStep === 'waiting'
-                            ? t('recoverEmailResend')
-                            : t('recoverEmailSend')}
+                          : emailStep === 'idle'
+                            ? t('recoverEmailSend')
+                            : t('recoverEmailResend')}
                       </Button>
                     </div>
                   )

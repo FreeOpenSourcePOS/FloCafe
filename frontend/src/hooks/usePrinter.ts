@@ -213,8 +213,23 @@ export const usePrinterStore = create<PrinterState>()(
       printBill: async (bill, tenant, opts, reservedWindow) => {
         set({ lastError: null });
         let windowTransferred = false;
+        const authTenantIdAtStart = useAuthStore.getState().currentTenant?.id ?? null;
+        const isSameTenant = () =>
+          (useAuthStore.getState().currentTenant?.id ?? null) === authTenantIdAtStart;
+        const cancelIfTenantChanged = (): boolean => {
+          if (isSameTenant()) return false;
+          if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+          windowTransferred = true;
+          return true;
+        };
         try {
-          await ensureReceiptSettingsLoaded().catch(() => {});
+          const readyForTenant = await ensureReceiptSettingsLoaded(authTenantIdAtStart).catch(() =>
+            isSameTenant(),
+          );
+          if (!readyForTenant || cancelIfTenantChanged()) {
+            if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+            return [];
+          }
           const {
             billTemplate,
             billTemplateSource,
@@ -334,6 +349,7 @@ export const usePrinterStore = create<PrinterState>()(
           // Await startup silent reconnect before checking isConnected
           // to avoid premature browser print fallbacks.
           await printerService.awaitPendingReconnect();
+          if (cancelIfTenantChanged()) return [];
 
           if (
             get().printMethod === 'browser' ||
@@ -351,6 +367,7 @@ export const usePrinterStore = create<PrinterState>()(
           // ESC/POS thermal path: load requested language bundles before resolving labels.
           const languages = opts?.languages ?? resolveBillPrintLanguages();
           const failedLanguages = await ensurePrintLanguagesLoaded(languages);
+          if (cancelIfTenantChanged()) return [];
           // Surface failed locale loads as warnings when labels fall back to English.
           const warnings: PrintWarning[] = failedLanguages.map((language) => ({
             field: 'receipt language',
@@ -483,8 +500,16 @@ export const usePrinterStore = create<PrinterState>()(
 
       printTaxBill: async (bill, tenant, opts) => {
         set({ lastError: null });
+        const authTenantIdAtStart = useAuthStore.getState().currentTenant?.id ?? null;
+        const isSameTenant = () =>
+          (useAuthStore.getState().currentTenant?.id ?? null) === authTenantIdAtStart;
         try {
-          await ensureReceiptSettingsLoaded().catch(() => {});
+          const readyForTenant = await ensureReceiptSettingsLoaded(authTenantIdAtStart).catch(() =>
+            isSameTenant(),
+          );
+          if (!readyForTenant || !isSameTenant()) {
+            return [];
+          }
           const {
             printerUseUnicode,
             printerArabicShaping,
@@ -519,6 +544,7 @@ export const usePrinterStore = create<PrinterState>()(
           // Fall back to browser print when no WebUSB thermal transport is connected.
           // Await any in-flight startup reconnect before checking connection status.
           await printerService.awaitPendingReconnect();
+          if (!isSameTenant()) return [];
           const noThermalTransport = !printerService.isConnected && get().printMethod === 'escpos';
           if (get().printMethod === 'browser' || noThermalTransport) {
             if (noThermalTransport) {
@@ -554,6 +580,7 @@ export const usePrinterStore = create<PrinterState>()(
           }
 
           const failedLanguages = await ensurePrintLanguagesLoaded(languages);
+          if (!isSameTenant()) return [];
           const warnings: PrintWarning[] = failedLanguages.map((language) => ({
             field: 'receipt language',
             text: language,

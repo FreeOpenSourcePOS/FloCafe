@@ -1436,6 +1436,63 @@ export class CloudSyncService {
     return data;
   }
 
+  /** True when FloAdmin holds a verified owner email it can send a password reset to. */
+  isPasswordResetAvailable(): boolean {
+    return (
+      this.isCloudAccountAvailable() &&
+      this.readSettings(getDatabase()).cloud_email_verified === 'true'
+    );
+  }
+
+  /** The owner email the store registered with, which FloAdmin mails the reset link to. */
+  getRegisteredOwnerEmail(): string {
+    return String(this.readSettings(getDatabase()).email || '')
+      .trim()
+      .toLowerCase();
+  }
+
+  private async passwordResetCall(
+    pathname: string,
+    method: 'GET' | 'POST',
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
+    throwIfRequestAborted(signal);
+    const res = await this.signedFetch(pathname, {
+      method,
+      body: method === 'POST' ? '{}' : undefined,
+      signal,
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    throwIfRequestAborted(signal);
+    if (!res.ok) {
+      throw new CloudRequestError(
+        String(data.error || data.status || `Password reset request failed (${res.status})`),
+        res.status,
+      );
+    }
+    return data;
+  }
+
+  requestPasswordReset(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.passwordResetCall('/api/pos/password-reset/request', 'POST', signal);
+  }
+
+  getPasswordResetStatus(resetId: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.passwordResetCall(
+      `/api/pos/password-reset/${encodeURIComponent(resetId)}`,
+      'GET',
+      signal,
+    );
+  }
+
+  redeemPasswordReset(resetId: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.passwordResetCall(
+      `/api/pos/password-reset/${encodeURIComponent(resetId)}/redeem`,
+      'POST',
+      signal,
+    );
+  }
+
   async stopAllCloudServices(signal?: AbortSignal): Promise<Record<string, unknown>> {
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     await this.setDiagnosticsConsent(false, signal);

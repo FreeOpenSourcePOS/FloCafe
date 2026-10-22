@@ -29,10 +29,12 @@ import {
 import { countryConfirmationPatch } from '../services/country-provenance';
 import {
   cloudSync,
+  CloudRequestError,
   DEFAULT_CLOUD_SERVER_URL,
   normalizeCloudServerUrl,
 } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
+import { getHttpRequestSignal } from '../shutdown';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { isSupportedCurrencyCode } from '../../shared/currencies';
 import {
@@ -529,6 +531,65 @@ router.post('/password/change', authRateLimit(), (req: Request, res: Response) =
   }
 });
 
+/** Writes the recovered password and audit trail; shared by Master PIN and cloud email recovery. */
+function applyOwnerRecovery(
+  db: ReturnType<typeof getDatabase>,
+  user: { id: string },
+  newPassword: string,
+  via: string,
+): { ok: true; restoredOwnerAccess: boolean } | { ok: false } {
+  const hashedPassword = bcrypt.hashSync(newPassword, 10);
+  const changedAt = now();
+  let restoredOwnerAccess = false;
+  const updated = db.transaction(() => {
+    // Re-checked in the transaction, so a concurrent write cannot turn a
+    // plain reset into a promotion.
+    if (hasActiveAdministrator()) {
+      return db
+        .prepare(
+          'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND role = ? AND is_active = 1',
+        )
+        .run(hashedPassword, changedAt, changedAt, user.id, INITIAL_ADMIN_ROLE);
+    }
+
+    restoredOwnerAccess = true;
+    return db
+      .prepare(`
+        UPDATE users SET password = ?, role = ?, tokens_valid_after = ?, updated_at = ?
+        WHERE id = ? AND is_active = 1
+      `)
+      .run(hashedPassword, INITIAL_ADMIN_ROLE, changedAt, changedAt, user.id);
+  })();
+  if (updated.changes === 0) {
+    const failure = serializeOperationFailure({
+      capture_point: 'fc.backend.auth.recovery.owner_state_changed',
+      outcome: 'not_applied',
+    });
+    try {
+      if (failure) cloudSync.captureOperationFailure(failure);
+    } catch {
+      // Diagnostics cannot change the recovery conflict response.
+    }
+    return { ok: false };
+  }
+  invalidateUserAuthCache(user.id);
+
+  upsertSettings(db, {
+    last_password_recovery_at: now(),
+    last_password_recovery_user_id: String(user.id),
+    ...(restoredOwnerAccess
+      ? {
+          last_owner_recovery_at: now(),
+          last_owner_recovery_user_id: String(user.id),
+        }
+      : {}),
+  });
+  console.warn(
+    `[Auth] Password recovery: ${restoredOwnerAccess ? 'owner access' : 'owner password'} was reset locally via ${via} for user ${user.id}`,
+  );
+  return { ok: true, restoredOwnerAccess };
+}
+
 // ── POST /api/auth/recover-password ───────────────────────────────────────────
 // Local password recovery for locked-out owner gated by Master PIN; requires no active JWT.
 
@@ -581,56 +642,11 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       });
     }
 
-    const hashedPassword = bcrypt.hashSync(new_password, 10);
-    const changedAt = now();
-    let restoredOwnerAccess = false;
-    const updated = db.transaction(() => {
-      // Re-checked in the transaction, so a concurrent write cannot turn a
-      // plain reset into a promotion.
-      if (hasActiveAdministrator()) {
-        return db
-          .prepare(
-            'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND role = ? AND is_active = 1',
-          )
-          .run(hashedPassword, changedAt, changedAt, user.id, INITIAL_ADMIN_ROLE);
-      }
-
-      restoredOwnerAccess = true;
-      return db
-        .prepare(`
-        UPDATE users SET password = ?, role = ?, tokens_valid_after = ?, updated_at = ?
-        WHERE id = ? AND is_active = 1
-      `)
-        .run(hashedPassword, INITIAL_ADMIN_ROLE, changedAt, changedAt, user.id);
-    })();
-    if (updated.changes === 0) {
-      const failure = serializeOperationFailure({
-        capture_point: 'fc.backend.auth.recovery.owner_state_changed',
-        outcome: 'not_applied',
-      });
-      try {
-        if (failure) cloudSync.captureOperationFailure(failure);
-      } catch {
-        // Diagnostics cannot change the recovery conflict response.
-      }
+    const recovery = applyOwnerRecovery(db, user, new_password, 'Master PIN');
+    if (!recovery.ok) {
       return res.status(409).json({ error: 'Owner access changed during recovery. Try again.' });
     }
-    invalidateUserAuthCache(user.id);
-
-    // Record recovery timestamp and user ID in settings table for audit purposes.
-    upsertSettings(db, {
-      last_password_recovery_at: now(),
-      last_password_recovery_user_id: String(user.id),
-      ...(restoredOwnerAccess
-        ? {
-            last_owner_recovery_at: now(),
-            last_owner_recovery_user_id: String(user.id),
-          }
-        : {}),
-    });
-    console.warn(
-      `[Auth] Password recovery: ${restoredOwnerAccess ? 'owner access' : 'owner password'} was reset locally via Master PIN for user ${user.id}`,
-    );
+    const { restoredOwnerAccess } = recovery;
 
     res.json({
       message: restoredOwnerAccess
@@ -643,6 +659,134 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ── Cloud email recovery (FloAdmin) ───────────────────────────────────────────
+// The owner approves a reset from the email FloAdmin sends; the new password is
+// chosen and stored here and never leaves this device.
+
+const RESET_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
+
+function cloudRecoveryPrecheck(req: Request, res: Response): boolean {
+  if (!requireLocalSetup(req, res)) return false;
+  if (getUserCount(getDatabase()) === 0) {
+    res.status(409).json({
+      error: 'Setup has not been completed yet. Use first-run setup to create the owner account.',
+    });
+    return false;
+  }
+  if (!cloudSync.isPasswordResetAvailable()) {
+    res.status(409).json({ error: 'Email recovery is not available on this install.' });
+    return false;
+  }
+  return true;
+}
+
+function sendCloudRecoveryFailure(res: Response, error: unknown) {
+  if (error instanceof CloudRequestError) {
+    if (error.status === 429) {
+      return res.status(429).json({ error: 'Too many reset requests. Try again later.' });
+    }
+    if (error.status === 409) {
+      return res.status(409).json({ error: 'Email recovery is not available on this install.' });
+    }
+    if (error.status === 404) {
+      return res.status(404).json({ error: 'Reset request not found.' });
+    }
+  }
+  console.error('[Auth] Cloud password recovery error:', error);
+  return res.status(502).json({ error: 'Could not reach FloAdmin.' });
+}
+
+router.post(
+  '/recover-password/cloud/request',
+  authRateLimit(),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!cloudRecoveryPrecheck(req, res)) return;
+    try {
+      const data = await cloudSync.requestPasswordReset(getHttpRequestSignal(req));
+      res.status(202).json({
+        reset_id: String(data.reset_id || ''),
+        expires_at: typeof data.expires_at === 'string' ? data.expires_at : null,
+        email_hint: typeof data.email_hint === 'string' ? data.email_hint : null,
+      });
+    } catch (error) {
+      sendCloudRecoveryFailure(res, error);
+    }
+  }),
+);
+
+router.get(
+  '/recover-password/cloud/status',
+  authRateLimit({ max: 600 }),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!cloudRecoveryPrecheck(req, res)) return;
+    const resetId = String(req.query.reset_id || '');
+    if (!RESET_ID_PATTERN.test(resetId)) {
+      return res.status(400).json({ error: 'A valid reset_id is required' });
+    }
+    try {
+      const data = await cloudSync.getPasswordResetStatus(resetId, getHttpRequestSignal(req));
+      res.json({ status: String(data.status || 'pending') });
+    } catch (error) {
+      sendCloudRecoveryFailure(res, error);
+    }
+  }),
+);
+
+router.post(
+  '/recover-password/cloud/complete',
+  authRateLimit(),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!cloudRecoveryPrecheck(req, res)) return;
+    const db = getDatabase();
+    const resetId = String(req.body?.reset_id || '');
+    const newPassword = req.body?.new_password;
+    if (!RESET_ID_PATTERN.test(resetId)) {
+      return res.status(400).json({ error: 'A valid reset_id is required' });
+    }
+    if (!newPassword || !validatePassword(newPassword)) {
+      return res.status(400).json({
+        error:
+          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.',
+      });
+    }
+
+    // Resolve the account before consuming the single-use grant.
+    const email = cloudSync.getRegisteredOwnerEmail();
+    const stranded = !hasActiveAdministrator();
+    const user = (
+      stranded
+        ? db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email)
+        : db
+            .prepare('SELECT * FROM users WHERE email = ? AND role = ? AND is_active = 1')
+            .get(email, INITIAL_ADMIN_ROLE)
+    ) as any;
+    if (!user) {
+      return res
+        .status(404)
+        .json({ error: 'No active owner account matches the registered email.' });
+    }
+
+    try {
+      await cloudSync.redeemPasswordReset(resetId, getHttpRequestSignal(req));
+    } catch (error) {
+      if (error instanceof CloudRequestError && error.status === 409) {
+        return res.status(409).json({ error: 'This reset has not been approved or has expired.' });
+      }
+      return sendCloudRecoveryFailure(res, error);
+    }
+
+    const recovery = applyOwnerRecovery(db, user, newPassword, 'FloAdmin email approval');
+    if (!recovery.ok) {
+      return res.status(409).json({ error: 'Owner access changed during recovery. Try again.' });
+    }
+    res.json({
+      message: recovery.restoredOwnerAccess
+        ? 'Owner access restored. You can now log in with your new password.'
+        : 'Password reset successfully. You can now log in with your new password.',
+    });
+  }),
+);
 
 // ── GET /api/auth/setup/status ──────────────────────────────────────────────────
 // Returns whether the app needs setup (no users exist yet)
@@ -659,6 +803,7 @@ router.get('/setup/status', (_req: Request, res: Response) => {
       initialRole: INITIAL_ADMIN_ROLE,
       schemaVersion: getCurrentSchemaVersion(),
       masterPinAvailable: isMasterPinAvailable(),
+      cloudRecoveryAvailable: cloudSync.isPasswordResetAvailable(),
       currencyReset,
     });
   } catch (error: any) {

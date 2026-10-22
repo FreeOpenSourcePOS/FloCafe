@@ -115,7 +115,7 @@ interface RawLine {
   components: RawComponent[];
 }
 
-const ROUNDING: Record<RoundingMethod, Decimal.Rounding> = {
+export const ROUNDING: Record<RoundingMethod, Decimal.Rounding> = {
   half_up: Decimal.ROUND_HALF_UP,
   half_even: Decimal.ROUND_HALF_EVEN,
   floor: Decimal.ROUND_FLOOR,
@@ -128,12 +128,12 @@ function decimal(value: string | undefined, fallback = '0'): Decimal {
   return result;
 }
 
-function canonical(value: Decimal): string {
+export function canonical(value: Decimal): string {
   if (value.isZero()) return '0';
   return value.toFixed().replace(/(?:\.0+|(\.\d+?)0+)$/, '$1');
 }
 
-function roundPlaces(value: Decimal, places: number, method: RoundingMethod): Decimal {
+export function roundPlaces(value: Decimal, places: number, method: RoundingMethod): Decimal {
   return value.toDecimalPlaces(places, ROUNDING[method]);
 }
 
@@ -147,9 +147,9 @@ function resolvePayableIncrement(pack: CountryPack, currency?: string): string {
   const configuredIncrement = new TaxDecimal(pack.payableRounding.increment);
   const configuredDecimals = configuredIncrement.decimalPlaces() ?? 0;
   if (
-    currency !== undefined
-    && pack.currency === 'XXX'
-    && getCurrencyFractionDigits(currency) > configuredDecimals
+    currency !== undefined &&
+    pack.currency === 'XXX' &&
+    getCurrencyFractionDigits(currency) > configuredDecimals
   ) {
     return new TaxDecimal(1).div(getCurrencyMinorUnitFactor(currency)).toString();
   }
@@ -180,11 +180,7 @@ export function resolveTaxCategory(pack: CountryPack, line: TaxEngineLine): Cate
   return { categoryId: pack.unclassifiedCategoryId, source: 'unclassified' };
 }
 
-function matchesRule(
-  rule: TaxRule,
-  input: TaxEngineInput,
-  categoryId: string,
-): boolean {
+function matchesRule(rule: TaxRule, input: TaxEngineInput, categoryId: string): boolean {
   if (!rule.categoryIds.includes(categoryId)) return false;
   const conditions = rule.conditions;
   if (!conditions) return true;
@@ -192,16 +188,18 @@ function matchesRule(
   if (conditions.businessTypes && !conditions.businessTypes.includes(input.businessType || '')) {
     return false;
   }
-  if (conditions.customerExempt !== undefined
-    && Boolean(input.customer?.exempt) !== conditions.customerExempt) {
+  if (
+    conditions.customerExempt !== undefined &&
+    Boolean(input.customer?.exempt) !== conditions.customerExempt
+  ) {
     return false;
   }
 
   const isInterstate = Boolean(
-    input.customer?.registrationNumber
-      && input.customer.stateCode
-      && input.storeStateCode
-      && input.customer.stateCode !== input.storeStateCode,
+    input.customer?.registrationNumber &&
+    input.customer.stateCode &&
+    input.storeStateCode &&
+    input.customer.stateCode !== input.storeStateCode,
   );
   if (conditions.customerStateRelation === 'interstate' && !isInterstate) return false;
   if (conditions.customerStateRelation === 'intra_or_unspecified' && isInterstate) return false;
@@ -254,11 +252,14 @@ function calculateRawLine(input: TaxEngineInput, line: TaxEngineLine): RawLine {
   const unitPrice = decimal(line.unitPrice);
   const discount = decimal(line.discount);
   if (quantity.lte(0)) throw new Error(`Line ${line.lineId} quantity must be greater than zero`);
-  if (unitPrice.lt(0) || discount.lt(0)) throw new Error(`Line ${line.lineId} has a negative amount`);
+  if (unitPrice.lt(0) || discount.lt(0))
+    throw new Error(`Line ${line.lineId} has a negative amount`);
 
   const grossAmount = unitPrice.mul(quantity);
   if (discount.gt(grossAmount)) {
-    console.warn(`[TaxEngine] Line ${line.lineId} discount (${discount}) exceeds gross amount (${grossAmount}), clamping gross to 0.`);
+    console.warn(
+      `[TaxEngine] Line ${line.lineId} discount (${discount}) exceeds gross amount (${grossAmount}), clamping gross to 0.`,
+    );
   }
   const gross = Decimal.max(new TaxDecimal('0'), grossAmount.minus(discount));
   const resolution = resolveTaxCategory(input.pack, line);
@@ -270,19 +271,30 @@ function calculateRawLine(input: TaxEngineInput, line: TaxEngineLine): RawLine {
   }
 
   const requestedBehavior = line.taxBehavior || category?.defaultBehavior || 'country_default';
-  const behavior: RawLine['behavior'] = requestedBehavior === 'country_default'
-    ? (input.pack.inclusivePricingDefault ? 'inclusive' : 'exclusive')
-    : requestedBehavior;
+  const behavior: RawLine['behavior'] =
+    requestedBehavior === 'country_default'
+      ? input.pack.inclusivePricingDefault
+        ? 'inclusive'
+        : 'exclusive'
+      : requestedBehavior;
 
   if (resolution.source === 'transaction_exemption' || behavior === 'exempt') {
-    return { input: line, resolution, behavior: 'exempt', gross, taxableBase: gross, components: [] };
+    return {
+      input: line,
+      resolution,
+      behavior: 'exempt',
+      gross,
+      taxableBase: gross,
+      components: [],
+    };
   }
 
   const categoryRuleIds = new Set(category?.ruleIds || []);
   const selected = input.pack.rules.filter(
-    (rule) => categoryRuleIds.has(rule.id)
-      && resolution.categoryId !== null
-      && matchesRule(rule, input, resolution.categoryId),
+    (rule) =>
+      categoryRuleIds.has(rule.id) &&
+      resolution.categoryId !== null &&
+      matchesRule(rule, input, resolution.categoryId),
   );
   const ordered = topologicalRules(selected);
   const fixed = ordered.filter((rule) => rule.type === 'fixed');
@@ -314,7 +326,9 @@ function calculateRawLine(input: TaxEngineInput, line: TaxEngineLine): RawLine {
       for (const dependencyId of rule.baseRuleIds || []) {
         const dependency = selected.find((candidate) => candidate.id === dependencyId);
         if (!dependency) {
-          throw new Error(`Tax rule ${rule.id} has unresolved line-local dependency ${dependencyId}`);
+          throw new Error(
+            `Tax rule ${rule.id} has unresolved line-local dependency ${dependencyId}`,
+          );
         }
         if (dependency.type === 'fixed') {
           interceptBase = interceptBase.plus(fixedAmounts.get(dependencyId) || 0);
@@ -336,9 +350,11 @@ function calculateRawLine(input: TaxEngineInput, line: TaxEngineLine): RawLine {
       new TaxDecimal('0'),
     );
     const divisor = coefficientTotal.plus('1');
-    if (divisor.isZero()) throw new Error(`Inclusive tax calculation divisor is zero on line ${line.lineId}`);
+    if (divisor.isZero())
+      throw new Error(`Inclusive tax calculation divisor is zero on line ${line.lineId}`);
     taxableBase = remainderGross.minus(interceptTotal).div(divisor);
-    if (taxableBase.lt(0)) throw new Error(`Inclusive taxes exceed gross amount on line ${line.lineId}`);
+    if (taxableBase.lt(0))
+      throw new Error(`Inclusive taxes exceed gross amount on line ${line.lineId}`);
     for (const rule of percentages) {
       rawAmounts.set(
         rule.id,
@@ -352,7 +368,9 @@ function calculateRawLine(input: TaxEngineInput, line: TaxEngineLine): RawLine {
       for (const dependencyId of rule.baseRuleIds || []) {
         const dependencyAmount = rawAmounts.get(dependencyId);
         if (!dependencyAmount) {
-          throw new Error(`Tax rule ${rule.id} has unresolved line-local dependency ${dependencyId}`);
+          throw new Error(
+            `Tax rule ${rule.id} has unresolved line-local dependency ${dependencyId}`,
+          );
         }
         base = base.plus(dependencyAmount);
       }
@@ -412,9 +430,10 @@ function applyTaxRounding(
     component.rounded = component.amount.toDecimalPlaces(decimalPlaces, Decimal.ROUND_FLOOR);
     component.remainder = component.amount.minus(component.rounded);
   }
-  let units = target.minus(
-    components.reduce((sum, component) => sum.plus(component.rounded), new TaxDecimal('0')),
-  ).div(quantum).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+  let units = target
+    .minus(components.reduce((sum, component) => sum.plus(component.rounded), new TaxDecimal('0')))
+    .div(quantum)
+    .toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
 
   const ordered = [...components].sort((left, right) => {
     const remainderOrder = right.remainder.comparedTo(left.remainder);
@@ -434,9 +453,10 @@ function applyTaxRounding(
 export class TaxEngine {
   static calculate(input: TaxEngineInput): TaxCalculation {
     const rawLines = input.lines.map((line) => calculateRawLine(input, line));
-    const places = input.currency !== undefined
-      ? getCurrencyFractionDigits(input.currency)
-      : input.pack.taxRounding.decimalPlaces;
+    const places =
+      input.currency !== undefined
+        ? getCurrencyFractionDigits(input.currency)
+        : input.pack.taxRounding.decimalPlaces;
     applyTaxRounding(input.pack, rawLines, places);
     const lineResults: TaxLineResult[] = rawLines.map((line) => {
       const components = line.components.map((component) => ({
@@ -466,7 +486,10 @@ export class TaxEngine {
     });
 
     const subtotal = rawLines.reduce((sum, line) => sum.plus(line.gross), new TaxDecimal('0'));
-    const taxAmount = lineResults.reduce((sum, line) => sum.plus(line.taxAmount), new TaxDecimal('0'));
+    const taxAmount = lineResults.reduce(
+      (sum, line) => sum.plus(line.taxAmount),
+      new TaxDecimal('0'),
+    );
     const totalBeforePayableRounding = rawLines.reduce((sum, line, index) => {
       const lineTax = decimal(lineResults[index].taxAmount);
       return sum.plus(line.behavior === 'inclusive' ? line.gross : line.gross.plus(lineTax));
@@ -476,9 +499,11 @@ export class TaxEngine {
       resolvePayableIncrement(input.pack, input.currency),
       input.pack.payableRounding.method,
     );
-    const appliedRuleIds = [...new Set(
-      lineResults.flatMap((line) => line.components.map((component) => component.ruleId)),
-    )].sort();
+    const appliedRuleIds = [
+      ...new Set(
+        lineResults.flatMap((line) => line.components.map((component) => component.ruleId)),
+      ),
+    ].sort();
     const snapshot = {
       packId: input.pack.id,
       packVersion: input.pack.version,
@@ -508,9 +533,14 @@ export function applyPayableRounding(
   pack: CountryPack,
   currency?: string,
 ): { total: number; adjustment: number } {
-  const places = currency !== undefined ? getCurrencyFractionDigits(currency) : pack.taxRounding.decimalPlaces;
+  const places =
+    currency !== undefined ? getCurrencyFractionDigits(currency) : pack.taxRounding.decimalPlaces;
   const cleaned = new TaxDecimal(exactTotal).toDecimalPlaces(places, Decimal.ROUND_HALF_UP);
-  const rounded = roundIncrement(cleaned, resolvePayableIncrement(pack, currency), pack.payableRounding.method);
+  const rounded = roundIncrement(
+    cleaned,
+    resolvePayableIncrement(pack, currency),
+    pack.payableRounding.method,
+  );
   return {
     total: rounded.toNumber(),
     adjustment: rounded.minus(cleaned).toNumber(),

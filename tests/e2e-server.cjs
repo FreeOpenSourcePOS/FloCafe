@@ -66,6 +66,7 @@ const {
 } = require('../dist/main/services/whatsapp');
 const { startStandaloneServers } = require('../dist/main/standalone-startup');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
+const officialIndiaPackData = require('./fixtures/legacy-tax-packs/official-india.json');
 // Country/currency stay TH/THB (this fixture's configured business country)
 // so getActiveCountryPack('TH') actually resolves this pack.
 const testTaxPack = {
@@ -237,6 +238,7 @@ function seedPosFixture() {
     );
   }
   installAndActivateTaxPack(db, testTaxPack);
+  installAndActivateTaxPack(db, officialIndiaPackData);
   db.prepare(
     'INSERT INTO categories (id, name, sort_order, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)',
   ).run('e2e-category', 'E2E Menu', 1, createdAt, createdAt);

@@ -69,7 +69,9 @@ Two independent policies decide how amounts round, and they are set separately o
 
 In `document` scope the tie-break order is fixed and deterministic: remainder descending, then
 `ruleId` ascending, then `lineId` ascending. The same transaction therefore allocates the same
-extra units on every machine and on every run.
+extra units on every machine and on every run. Document-scoped packs evaluate all transaction
+lines (items and configured charges) together across the complete document, distributing
+remainders across both rather than rounding items or charges in isolation.
 
 **Payable rounding** is `payableRounding`, which has its own `increment` and its own `method`. It
 decides the smallest amount a customer can actually be charged, which is a cash-handling question
@@ -103,8 +105,11 @@ interface TaxEngineInput {
 standard `packaging`, `delivery`, and `service_charge` kinds. Applied custom-fee snapshots in
 `charges_breakdown` contribute to order and bill totals but are not converted into tax-engine
 lines. A custom charge's `tax_category_id`, when present, is stored metadata and does not
-affect tax calculation. The configured charge-tax adapter calculates tax for the standard charge
-columns when their tax categories are configured.
+affect tax calculation. During initial transaction pricing (tax preview and order creation),
+`calculateDocumentTaxes()` evaluates items and configured standard charge columns
+(`packaging`, `delivery`, `service_charge`) together in a single `TaxEngine.calculate()` call with
+stable line identities. `calculateConfiguredChargeTaxes()` delegates to `calculateDocumentTaxes()`
+with an empty items array when charges are evaluated in isolation.
 
 Step 6 of category resolution looks up `defaultCategories[line.kind]`, which is why the pack
 declares a default for each supported tax-line kind.
@@ -145,6 +150,12 @@ at a category the new version dropped.
 
 Once a transaction is written, its tax is a snapshot, not a live calculation. `tax_snapshot` is
 stored on `orders`, `order_items`, and `bills`, holding the item-level line amounts as strings.
+During active order mutations (such as item edits, cancellations, discounts, or charge updates),
+`recomputeOrderTotals()` preserves existing items' saved `tax_snapshot` rules without re-evaluating
+them against the active catalog, evaluates configured charge taxes against the active pack via
+`calculateConfiguredChargeTaxes()`, and reallocates document tax rounding across the combined active
+item and charge snapshots before persisting updated line snapshots to `order_items`.
+Once bills are settled or paid, transactions preserve the recorded snapshots.
 `aggregateTaxSnapshots()` in `main/services/tax.ts` folds the item snapshots into an order or bill
 level array, and `invertTaxSnapshot()` negates the line amounts for a void or refund adjustment
 row, so an adjustment reverses the recorded numbers rather than recomputing them.
@@ -302,6 +313,7 @@ author cannot rely on any of them.
 ```sh
 npm run test:tax-engine
 npm run test:tax-components
+npm run test:integration-tax
 npm run test:tax-pack-catalog
 npm run test:tax-pack-management
 npm run test:manual-tax-config

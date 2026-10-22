@@ -4,10 +4,17 @@ import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
 
 type EnabledSetting = { setting: { key: string; value: string } };
-type PackList = { store_country: string; packs: Array<{ id: string; status: string; active_for_store: boolean; override_count: number }> };
+type PackList = {
+  store_country: string;
+  packs: Array<{ id: string; status: string; active_for_store: boolean; override_count: number }>;
+};
 type AuditList = { audit: Array<{ id: number; action: string; pack_id: string | null }> };
 
-async function api<T>(page: Page, path: string, init?: { method?: string; data?: unknown }): Promise<T> {
+async function api<T>(
+  page: Page,
+  path: string,
+  init?: { method?: string; data?: unknown },
+): Promise<T> {
   const token = await page.evaluate(() => localStorage.getItem('token'));
   const method = init?.method ?? 'GET';
   const res = await page.request.fetch(`${BASE}/api${path}`, {
@@ -16,7 +23,7 @@ async function api<T>(page: Page, path: string, init?: { method?: string; data?:
     data: init?.data as never,
   });
   expect(res.ok(), `${method} ${path} must succeed (got ${res.status()})`).toBeTruthy();
-  return await res.json() as T;
+  return (await res.json()) as T;
 }
 
 async function login(page: Page): Promise<void> {
@@ -29,8 +36,9 @@ async function login(page: Page): Promise<void> {
 
 async function openTaxTab(page: Page): Promise<void> {
   await page.goto(`${BASE}/settings?tab=tax`);
-  await expect(page.getByRole('heading', { name: 'Tax configuration', exact: true }))
-    .toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: 'Tax configuration', exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await page.waitForLoadState('networkidle');
 }
 
@@ -40,7 +48,9 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     await setLanguage(page, 'en');
   });
 
-  test('the global tax switch persists across a reload and is owner-reachable', async ({ page }) => {
+  test('the global tax switch persists across a reload and is owner-reachable', async ({
+    page,
+  }) => {
     await openTaxTab(page);
 
     const before = await api<EnabledSetting>(page, '/settings/taxes_enabled');
@@ -67,24 +77,35 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     try {
       await offSegment.click();
 
-      await expect.poll(async () =>
-        (await api<EnabledSetting>(page, '/settings/taxes_enabled')).setting.value, { timeout: 20_000 })
+      await expect
+        .poll(
+          async () => (await api<EnabledSetting>(page, '/settings/taxes_enabled')).setting.value,
+          { timeout: 20_000 },
+        )
         .toBe('false');
 
       await openTaxTab(page);
-      await expect(page.getByRole('button', { name: 'Turn Off Tax', exact: true })).toHaveClass(/shadow-sm/);
-      await expect(page.getByRole('button', { name: 'Official Tax Pack', exact: true }))
-        .not.toHaveClass(/shadow-sm/);
+      await expect(page.getByRole('button', { name: 'Turn Off Tax', exact: true })).toHaveClass(
+        /shadow-sm/,
+      );
+      await expect(
+        page.getByRole('button', { name: 'Official Tax Pack', exact: true }),
+      ).not.toHaveClass(/shadow-sm/);
     } finally {
       await api(page, '/settings/taxes_enabled', { method: 'PUT', data: { value: 'true' } });
       await openTaxTab(page);
-      expect((await api<EnabledSetting>(page, '/settings/taxes_enabled')).setting.value).toBe('true');
-      await expect(page.getByRole('button', { name: 'Official Tax Pack', exact: true }))
-        .toHaveClass(/shadow-sm/);
+      expect((await api<EnabledSetting>(page, '/settings/taxes_enabled')).setting.value).toBe(
+        'true',
+      );
+      await expect(
+        page.getByRole('button', { name: 'Official Tax Pack', exact: true }),
+      ).toHaveClass(/shadow-sm/);
     }
   });
 
-  test('the active tax pack for the store country is real and matches the registry', async ({ page }) => {
+  test('the active tax pack for the store country is real and matches the registry', async ({
+    page,
+  }) => {
     await openTaxTab(page);
 
     const packs = await api<PackList>(page, '/tax-packs');
@@ -92,13 +113,17 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     expect(active.length, 'exactly one pack may be active for the store').toBe(1);
     expect(packs.store_country).toBeTruthy();
 
-    await expect(page.getByRole('button', { name: 'Official Tax Pack', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Official Tax Pack', exact: true }),
+    ).toBeVisible();
     // Advanced tools is collapsed by default; expanding it must reveal real
     // override tooling rather than a placeholder.
     const advanced = page.getByRole('button', { name: /Advanced tax tools/ });
     await expect(advanced).toBeVisible();
     await advanced.click();
-    await expect(page.getByRole('heading', { name: 'Advanced tax tools', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Advanced tax tools', exact: true }),
+    ).toBeVisible();
   });
 
   test('the tax pack audit history renders an entry returned by the API', async ({ page }) => {
@@ -141,5 +166,128 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     const packs = await api<PackList>(page, '/tax-packs');
     // A catalog refresh must not have activated or removed anything.
     expect(packs.packs.filter((entry) => entry.active_for_store).length).toBe(1);
+  });
+
+  test('document tax rounding applies across transaction documents and preserves rounding consistency', async ({
+    page,
+  }) => {
+    // Configure store for official-india (document-scoped pack: 2.5% CGST + 2.5% SGST, largest remainder)
+    await api(page, '/settings/country', { method: 'PUT', data: { value: 'IN' } });
+
+    let categoryId: string | null = null;
+    let prod1Id: string | null = null;
+    let prod2Id: string | null = null;
+
+    try {
+      const catRes = await api<{ category: { id: string } }>(page, '/categories', {
+        method: 'POST',
+        data: { name: 'Tax Rounding Category' },
+      });
+      categoryId = catRes.category.id;
+
+      const prod1Res = await api<{ product: { id: string } }>(page, '/products', {
+        method: 'POST',
+        data: {
+          category_id: categoryId,
+          name: 'Rounding Item 1',
+          price: 100.1,
+          tax_category_id: 'standard',
+          tax_behavior: 'exclusive',
+        },
+      });
+      prod1Id = prod1Res.product.id;
+
+      const prod2Res = await api<{ product: { id: string } }>(page, '/products', {
+        method: 'POST',
+        data: {
+          category_id: categoryId,
+          name: 'Rounding Item 2',
+          price: 100.1,
+          tax_category_id: 'standard',
+          tax_behavior: 'exclusive',
+        },
+      });
+      prod2Id = prod2Res.product.id;
+
+      await openTaxTab(page);
+
+      // Expand advanced tax tools
+      const advanced = page.getByRole('button', { name: /Advanced tax tools/ });
+      await expect(advanced).toBeVisible();
+      await advanced.click();
+
+      // Verify test calculation panel is available and performs calculation
+      const calcSection = page.locator('section').filter({
+        has: page.getByRole('heading', { name: 'Test calculation', exact: true }),
+      });
+      await expect(calcSection).toBeVisible();
+
+      const amountInput = calcSection.getByPlaceholder('Amount');
+      await expect(amountInput).toBeVisible();
+      await amountInput.fill('100.10');
+
+      const calcButton = calcSection.getByRole('button', { name: 'Calculate', exact: true });
+      await calcButton.click();
+      await expect(calcSection.getByText('Taxable Base')).toBeVisible();
+
+      // Verify multi-item document preview allocates and rounds across the document:
+      // Two 100.10 items at 2.5% CGST + 2.5% SGST produce document tax 10.01 and total 210.21
+      // (line-by-line rounding would produce 5.01 + 5.01 = 10.02 and 210.22)
+      const preview = await api<{
+        summary: { subtotal: number; tax_amount: number; total: number };
+        items: Array<{ subtotal: number; tax_amount: number; total: number }>;
+      }>(page, '/tax/preview', {
+        method: 'POST',
+        data: {
+          items: [
+            { product_id: prod1Id, quantity: 1, addons: [] },
+            { product_id: prod2Id, quantity: 1, addons: [] },
+          ],
+        },
+      });
+      expect(preview.summary.subtotal).toBe(200.2);
+      expect(preview.summary.tax_amount).toBe(10.01);
+      expect(preview.summary.total).toBe(210.21);
+
+      // Verify order creation retains the document-calculated tax
+      const orderRes = await api<{
+        order: { id: string; subtotal: number; tax_amount: number; total: number };
+      }>(page, '/orders', {
+        method: 'POST',
+        data: {
+          type: 'takeaway',
+          items: [
+            { product_id: prod1Id, quantity: 1 },
+            { product_id: prod2Id, quantity: 1 },
+          ],
+        },
+      });
+      expect(orderRes.order.subtotal).toBe(200.2);
+      expect(orderRes.order.tax_amount).toBe(10.01);
+      expect(orderRes.order.total).toBe(210.21);
+
+      // Verify bill generation matches order
+      const billRes = await api<{
+        bill: { id: string; subtotal: number; tax_amount: number; total: number };
+      }>(page, '/bills/generate', {
+        method: 'POST',
+        data: { order_id: orderRes.order.id },
+      });
+      expect(billRes.bill.subtotal).toBe(200.2);
+      expect(billRes.bill.tax_amount).toBe(10.01);
+      expect(billRes.bill.total).toBe(210.21);
+    } finally {
+      if (prod1Id) {
+        await api(page, `/products/${prod1Id}`, { method: 'DELETE' }).catch(() => {});
+      }
+      if (prod2Id) {
+        await api(page, `/products/${prod2Id}`, { method: 'DELETE' }).catch(() => {});
+      }
+      if (categoryId) {
+        await api(page, `/categories/${categoryId}`, { method: 'DELETE' }).catch(() => {});
+      }
+      // Restore default store country
+      await api(page, '/settings/country', { method: 'PUT', data: { value: 'TH' } });
+    }
   });
 });

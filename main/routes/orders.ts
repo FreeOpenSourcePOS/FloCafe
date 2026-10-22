@@ -20,7 +20,7 @@ import {
 } from '../db';
 import { asyncHandler } from '../middleware/async-handler';
 import {
-  calculateConfiguredChargeTaxes,
+  calculateDocumentTaxes,
   calculateItemTax,
   combineItemAndChargeTaxes,
   getActiveCountryPack,
@@ -1688,7 +1688,19 @@ router.post(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
-        for (const item of items) {
+        const validatedItems: Array<{
+          item: any;
+          product: ProductRow;
+          quantity: number;
+          variant: ReturnType<typeof resolveOrderItemVariant>;
+          unitPrice: number;
+          deduction: ReturnType<typeof resolveInventoryDeduction>;
+          itemSubtotal: number;
+          itemId: string;
+        }> = [];
+
+        for (let idx = 0; idx < items.length; idx++) {
+          const item = items[idx];
           const product = db
             .prepare('SELECT * FROM products WHERE id = ?')
             .get(item.product_id) as any;
@@ -1740,7 +1752,64 @@ router.post(
           }
           itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
 
-          const taxResult = calculateItemTax(tenantInfo, product, itemSubtotal, customer);
+          const itemId = String(item.id || item.product_id || idx + 1);
+          validatedItems.push({
+            item,
+            product,
+            quantity,
+            variant,
+            unitPrice,
+            deduction,
+            itemSubtotal,
+            itemId,
+          });
+        }
+
+        const itemsSubtotal = validatedItems.reduce((acc, v) => acc + v.itemSubtotal, 0);
+
+        const currency = getTenantCurrency();
+        const decimals = getCurrencyFractionDigits(currency);
+        const minorFactor = getCurrencyMinorUnitFactor(currency);
+
+        const resolvedCharges = buildAppliedCharges({
+          currency,
+          orderType: type,
+          subtotal: itemsSubtotal,
+          discountAmount: 0,
+          waivedIds: waivedChargeIds,
+          optedInIds: optedInChargeIds,
+        });
+        const engineColumns = resolvedCharges.configured ? resolvedCharges.columns : null;
+        const appliedServiceCharge = resolvedCharges.ownsServiceChargeColumn
+          ? resolvedCharges.columns.service_charge
+          : serviceCharge;
+        const appliedPackagingCharge = resolvedCharges.ownsPackagingChargeColumn
+          ? resolvedCharges.columns.packaging_charge
+          : pkgCharge;
+        const otherCharges = engineColumns ? engineColumns.other_charges : 0;
+        const appliedChargeContext: typeof chargeContext = {
+          ...chargeContext,
+          service_charge: appliedServiceCharge,
+          packaging_charge: appliedPackagingCharge,
+        };
+
+        const { itemResults: documentTaxResults, chargeTaxes } = calculateDocumentTaxes(
+          tenantInfo,
+          {
+            items: validatedItems.map((v, idx) => ({
+              lineId: `line-${String(idx + 1).padStart(4, '0')}:${v.itemId}`,
+              product: v.product,
+              taxableAmount: v.itemSubtotal,
+            })),
+            chargeContext: appliedChargeContext,
+            customer,
+          },
+        );
+
+        for (let idx = 0; idx < validatedItems.length; idx++) {
+          const { item, product, quantity, variant, unitPrice, deduction, itemSubtotal } =
+            validatedItems[idx];
+          const taxResult = documentTaxResults[idx];
 
           totalTax += taxResult.tax_amount;
           if (taxResult.tax_type !== 'inclusive') {
@@ -1781,7 +1850,7 @@ router.post(
             JSON.stringify(taxResult.tax_breakdown),
             itemTaxSnapshotJson,
             taxResult.tax_type,
-            itemDiscount,
+            0,
             itemTotal,
             variant
               ? variantSelectionSnapshot(variant)
@@ -1823,41 +1892,6 @@ router.post(
           }
         }
 
-        const currency = getTenantCurrency();
-        const decimals = getCurrencyFractionDigits(currency);
-        const minorFactor = getCurrencyMinorUnitFactor(currency);
-
-        // Unified charges & fees engine. Charges the merchant configured for this
-        // order type are applied here and the standard ids are projected onto the
-        // dedicated columns. Manually entered amounts survive when no configured
-        // or retained charge owns the corresponding standard column.
-        const resolvedCharges = buildAppliedCharges({
-          currency,
-          orderType: type,
-          subtotal,
-          discountAmount: 0,
-          waivedIds: waivedChargeIds,
-          optedInIds: optedInChargeIds,
-        });
-        const engineColumns = resolvedCharges.configured ? resolvedCharges.columns : null;
-        const appliedServiceCharge = resolvedCharges.ownsServiceChargeColumn
-          ? resolvedCharges.columns.service_charge
-          : serviceCharge;
-        const appliedPackagingCharge = resolvedCharges.ownsPackagingChargeColumn
-          ? resolvedCharges.columns.packaging_charge
-          : pkgCharge;
-        const otherCharges = engineColumns ? engineColumns.other_charges : 0;
-        const appliedChargeContext: typeof chargeContext = {
-          ...chargeContext,
-          service_charge: appliedServiceCharge,
-          packaging_charge: appliedPackagingCharge,
-        };
-
-        const chargeTaxes = calculateConfiguredChargeTaxes(
-          tenantInfo,
-          appliedChargeContext,
-          customer,
-        );
         const taxRollup = combineItemAndChargeTaxes({
           itemTaxAmount: totalTax,
           itemExclusiveTaxAmount: exclusiveTax,

@@ -7,11 +7,18 @@ import type { NextFunction, Request, Response } from 'express';
 import {
   getDatabase,
   getSettingValue,
+  getSettingsRevision,
   now,
   upsertSettings,
   isDiagnosticsTransmissionEnabled,
 } from '../db';
-import { postHogEnvironment, postHogNetworkSuppressed, readPostHogConfig } from './posthog-config';
+import {
+  postHogEnvironment,
+  postHogNetworkSuppressed,
+  readPostHogConfig,
+  type PostHogConfig,
+  type PostHogEnvironment,
+} from './posthog-config';
 import { readCountryProvenance } from './country-provenance';
 import { getInstallSource, getRunMode } from './telemetry';
 import {
@@ -21,6 +28,7 @@ import {
   readProductAnalyticsLevel,
   resolvePostHogIdentity,
   type PostHogIdentity,
+  type ProductAnalyticsLevel,
 } from './posthog-identity';
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 import {
@@ -94,12 +102,65 @@ function appVersion(): string {
   return (require('../../package.json') as { version: string }).version;
 }
 
+const CONSENT_CACHE_TTL_MS = 30_000;
+
+interface CachedConsentState {
+  level: ProductAnalyticsLevel;
+  identity: PostHogIdentity;
+  config: PostHogConfig | null;
+  diagnosticsEnabled: boolean;
+  environment: PostHogEnvironment | null;
+  envKey: string;
+  revision: number;
+  expiresAt: number;
+}
+
+let cachedConsent: CachedConsentState | null = null;
+
+export function invalidatePostHogConsentCache(): void {
+  cachedConsent = null;
+}
+
+function getEnvCacheKey(): string {
+  return `${process.env.CI ?? ''}|${process.env.FLO_MATRIX_OFFLINE ?? ''}|${process.env.E2E_TASK_LOCAL_PORTS ?? ''}|${process.env.NODE_ENV ?? ''}|${process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK ?? ''}|${(process as NodeJS.Process & { type?: string }).type ?? ''}|${process.env.FLO_POSTHOG_DEV ?? ''}|${process.env.FLO_POSTHOG_DEV_TOKEN ?? ''}|${process.env.FLO_POSTHOG_DEV_HOST ?? ''}`;
+}
+
+function getConsentState(): CachedConsentState {
+  const nowMs = Date.now();
+  const revision = getSettingsRevision();
+  const envKey = getEnvCacheKey();
+  if (
+    cachedConsent &&
+    cachedConsent.expiresAt > nowMs &&
+    cachedConsent.revision === revision &&
+    cachedConsent.envKey === envKey
+  ) {
+    return cachedConsent;
+  }
+  const level = readProductAnalyticsLevel();
+  const resolvedIdentity = resolvePostHogIdentity(level);
+  const config = readPostHogConfig();
+  const diagnosticsEnabled = isDiagnosticsTransmissionEnabled();
+  const environment = postHogEnvironment();
+  cachedConsent = {
+    level,
+    identity: resolvedIdentity,
+    config,
+    diagnosticsEnabled,
+    environment,
+    envKey,
+    revision: getSettingsRevision(),
+    expiresAt: nowMs + CONSENT_CACHE_TTL_MS,
+  };
+  return cachedConsent;
+}
+
 function usageEnabled(): boolean {
-  return readProductAnalyticsLevel() !== 'off';
+  return getConsentState().level !== 'off';
 }
 
 function identity(): PostHogIdentity {
-  return resolvePostHogIdentity(readProductAnalyticsLevel());
+  return getConsentState().identity;
 }
 
 /** Release and channel, plus the device and, at the `full` level, the account (`store_ref`). */
@@ -109,7 +170,7 @@ export function readSuperProperties(current: PostHogIdentity = identity()): Supe
     platform: process.platform,
     run_mode: getRunMode(),
     install_source: getInstallSource(),
-    environment: postHogEnvironment() ?? 'development',
+    environment: getConsentState().environment ?? 'development',
     release_channel: /-beta\b/.test(appVersion()) ? 'beta' : 'stable',
     ...(current.installRef ? { install_ref: current.installRef } : {}),
     ...(current.accountRef ? { store_ref: current.accountRef } : {}),
@@ -224,20 +285,22 @@ function createClient(token: string, host: string): PostHogClient {
     enableLocalEvaluation: false,
     flushAt: 1,
     flushInterval: 0,
-    before_send: (event: ScrubbableEvent | null) =>
-      scrubPostHogEvent(event, {
-        telemetryEnabled: readProductAnalyticsLevel() !== 'off',
-        accountLinked: readProductAnalyticsLevel() === 'full',
-        allowExceptions: isDiagnosticsTransmissionEnabled(),
-      }),
+    before_send: (event: ScrubbableEvent | null) => {
+      const { level, diagnosticsEnabled } = getConsentState();
+      return scrubPostHogEvent(event, {
+        telemetryEnabled: level !== 'off',
+        accountLinked: level === 'full',
+        allowExceptions: diagnosticsEnabled,
+      });
+    },
   });
 }
 
 function activeClient(): PostHogClient | null {
-  if (postHogNetworkSuppressed()) return null;
-  const config = readPostHogConfig();
+  const { config, level, diagnosticsEnabled, environment } = getConsentState();
+  if (environment === null) return null;
   if (!config) return null;
-  if (!usageEnabled() && !isDiagnosticsTransmissionEnabled()) return null;
+  if (level === 'off' && !diagnosticsEnabled) return null;
   const key = `${config.host}\n${config.token}`;
   if (client && clientKey === key) return client;
   const previous = client;
@@ -249,6 +312,7 @@ function activeClient(): PostHogClient | null {
 
 /** The sharing level for Settings and the one-time question, asked only where PostHog can send. */
 export function readProductAnalyticsChoice() {
+  invalidatePostHogConsentCache();
   return {
     level: readProductAnalyticsLevel(),
     choice_pending:
@@ -261,6 +325,7 @@ export function readProductAnalyticsChoice() {
 }
 
 export function readPostHogBootstrap(): PostHogBootstrap | PostHogBootstrapReady {
+  invalidatePostHogConsentCache();
   if (postHogNetworkSuppressed()) return { enabled: false };
   const config = readPostHogConfig();
   if (!config) return { enabled: false };
@@ -289,11 +354,12 @@ export function readPostHogBootstrap(): PostHogBootstrap | PostHogBootstrapReady
  */
 export function syncPostHogIdentity(): void {
   try {
+    invalidatePostHogConsentCache();
     if (!readPostHogConfig()) {
       if (client) void stopPostHog();
       return;
     }
-    if (!usageEnabled() && !isDiagnosticsTransmissionEnabled()) {
+    if (!usageEnabled() && !getConsentState().diagnosticsEnabled) {
       void stopPostHog();
       return;
     }
@@ -421,6 +487,7 @@ export function startPostHog(): void {
 }
 
 export async function stopPostHog(): Promise<void> {
+  invalidatePostHogConsentCache();
   const current = client;
   client = null;
   clientKey = null;
@@ -456,7 +523,7 @@ export function capturePostHogException(
 ): void {
   try {
     if (!isPostHogCapturePoint(capturePoint)) return;
-    if (!isDiagnosticsTransmissionEnabled()) return;
+    if (!getConsentState().diagnosticsEnabled) return;
     const current = activeClient();
     if (!current) return;
     const who = identity();

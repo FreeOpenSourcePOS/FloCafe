@@ -119,11 +119,13 @@ async function main() {
     assertEqualOrThrow(off.data.offline_mode, false, 'the owner switches it back off');
     assertEqualOrThrow(isOfflineMode(), false, 'connections are allowed again');
     assertOrThrow(
-      (await api(baseUrl, '/api/products/fetch-url', {
-        method: 'POST',
-        body: { url: 'http://insecure.example/a.png' },
-        headers: ownerAuth,
-      })).status === 400,
+      (
+        await api(baseUrl, '/api/products/fetch-url', {
+          method: 'POST',
+          body: { url: 'http://insecure.example/a.png' },
+          headers: ownerAuth,
+        })
+      ).status === 400,
       'image import is reachable again',
     );
   } finally {

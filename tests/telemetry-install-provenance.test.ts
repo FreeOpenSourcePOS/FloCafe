@@ -308,6 +308,19 @@ async function main() {
       { run_mode: 'dev', install_source: 'dev' },
       'a dev run reports dev/dev over the wire',
     );
+
+    detect({ app: undefined, platform: 'darwin' });
+    body = null;
+    assert.equal(
+      await sendEvent('daily_ping'),
+      true,
+      'headless/non-Electron telemetry delivery succeeds without throwing',
+    );
+    assert.equal(
+      body?.app_version,
+      '0.0.0',
+      'headless/non-Electron sendEvent falls back to app_version 0.0.0',
+    );
   } finally {
     delete process.env.FLO_TELEMETRY_DEV;
     globalThis.fetch = originalFetch;

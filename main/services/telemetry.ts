@@ -1,6 +1,6 @@
 /** Anonymous usage telemetry using a randomized local UUID, independent of cloud sync. */
 
-import { app } from 'electron';
+import type { app } from 'electron';
 import * as fs from 'fs';
 import { readCountryProvenance } from './country-provenance';
 import log from 'electron-log';
@@ -143,7 +143,7 @@ export function isTelemetrySuppressed(): boolean {
   if (process.env.NODE_ENV === 'test' || Boolean(process.env.CI)) {
     return true;
   }
-  const version = typeof app?.getVersion === 'function' ? app.getVersion() : '';
+  const version = electronApp()?.getVersion?.() ?? '0.0.0';
   if (
     version === '1.0.0-test' ||
     version === 'test' ||
@@ -152,7 +152,7 @@ export function isTelemetrySuppressed(): boolean {
   ) {
     return true;
   }
-  const isDev = !app?.isPackaged || getBuildIdentity() === 'dev';
+  const isDev = !electronApp()?.isPackaged || getBuildIdentity() === 'dev';
   if (isDev) return true;
   return false;
 }
@@ -185,7 +185,7 @@ async function sendEventImpl(
       body: JSON.stringify({
         anon_id: anonId,
         app: 'flocafe',
-        app_version: app.getVersion(),
+        app_version: electronApp()?.getVersion?.() ?? '0.0.0',
         event_type: eventType,
         platform: process.platform,
         run_mode: getRunMode(),
@@ -366,7 +366,7 @@ export async function sendAnonymousDiagnosticReport(
       body: JSON.stringify({
         anon_id: anonId,
         app: 'flocafe',
-        app_version: app.getVersion(),
+        app_version: electronApp()?.getVersion?.() ?? '0.0.0',
         app_build: build,
         event_type: 'diagnostic_counts',
         platform: process.platform,
@@ -424,6 +424,9 @@ export const telemetry = {
   start(): void {
     telemetryStopping = false;
     telemetryStopPromise = null;
+    try {
+      (require('./posthog') as typeof import('./posthog')).invalidatePostHogConsentCache();
+    } catch {}
     if (dailyPingTimer) {
       clearInterval(dailyPingTimer);
       dailyPingTimer = null;
@@ -442,6 +445,9 @@ export const telemetry = {
   stop(): Promise<void> {
     if (telemetryStopPromise) return telemetryStopPromise;
     telemetryStopping = true;
+    try {
+      (require('./posthog') as typeof import('./posthog')).invalidatePostHogConsentCache();
+    } catch {}
     if (dailyPingTimer) {
       clearInterval(dailyPingTimer);
       dailyPingTimer = null;

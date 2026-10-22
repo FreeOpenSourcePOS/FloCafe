@@ -15,6 +15,7 @@ import {
 } from './db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from './middleware/security';
 import { getLocalIP } from './server';
+import { getServerPort } from './server-state';
 import { clearJWTSecretCache } from './security/jwt-secret';
 import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
@@ -123,11 +124,23 @@ export function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender
   }
 }
 
+type MainWindowGetter = () => BrowserWindow | null;
+type IpcHandler<Args extends unknown[] = unknown[]> = (
+  event: Electron.IpcMainInvokeEvent,
+  ...args: Args
+) => unknown | Promise<unknown>;
+
+let activeMainWindowGetter: MainWindowGetter | undefined;
+
 /** Verifies that IPC sender is the active main BrowserWindow, current top-level frame, and exact local app origin. */
 export function isTrustedMainWindowSender(
   event: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
-  mainWindowOrGetter: BrowserWindow | null | (() => BrowserWindow | null),
-  port: number,
+  mainWindowOrGetter:
+    | BrowserWindow
+    | null
+    | (() => BrowserWindow | null)
+    | undefined = activeMainWindowGetter,
+  port: number = getServerPort(),
   browserWindowClass: {
     fromWebContents: (sender: Electron.WebContents) => BrowserWindow | null;
   } = BrowserWindow,
@@ -179,12 +192,6 @@ export function isTrustedMainWindowSender(
   return true;
 }
 
-type MainWindowGetter = () => BrowserWindow | null;
-type IpcHandler<Args extends unknown[] = unknown[]> = (
-  event: Electron.IpcMainInvokeEvent,
-  ...args: Args
-) => unknown | Promise<unknown>;
-
 /** Preload origin check before Chromium has committed localhost URL. */
 function isEarlyMainWindowSender(
   event: Pick<Electron.IpcMainEvent, 'sender'>,
@@ -207,7 +214,7 @@ function isEarlyMainWindowSender(
 
 function handle<Args extends unknown[]>(channel: string, listener: IpcHandler<Args>): void {
   ipcMain.handle(channel, (event: Electron.IpcMainInvokeEvent, ...args: Args) => {
-    if (!isTrustedSender(event)) return { error: 'Unauthorized sender' };
+    if (!isTrustedMainWindowSender(event)) return { error: 'Unauthorized sender' };
     return listener(event, ...args);
   });
 }
@@ -218,6 +225,7 @@ export function registerIpcHandlers(
   showMainWindow: (window: BrowserWindow) => boolean = () => false,
   getCurrentEffectiveIsDark?: () => boolean,
 ): void {
+  activeMainWindowGetter = getMainWindow;
   ipcMain.on('window-document', (event, documentNonce: unknown) => {
     let currentFrame: Electron.WebFrameMain | null = null;
     try {
@@ -476,9 +484,7 @@ export function registerIpcHandlers(
 
   handle('open-application-menu', (event, key: unknown, x: unknown, y: unknown) => {
     if (process.platform === 'darwin') return { error: 'Application menu is native on macOS' };
-    // The popup is a privileged native surface on the main window, so bind it
-    // to that window's own current renderer frame. The trusted-sender check
-    // alone also admits the KDS window, which is served from localhost too.
+    // Bind the popup to the main window's own current renderer frame.
     let currentFrame: Electron.WebFrameMain | null = null;
     try {
       currentFrame = event.sender.mainFrame;

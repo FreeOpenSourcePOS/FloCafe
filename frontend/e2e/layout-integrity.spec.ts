@@ -2064,12 +2064,8 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       initialOrders.filter((order) => order.status === 'ready').map((order) => order.id),
     );
     await page.goto(`${BASE}/customer-display`);
-    await expect
-      .poll(async () => {
-        await page.clock.runFor(1);
-        return page.locator('header').count();
-      })
-      .toBe(1);
+    await page.clock.runFor(1);
+    await expect(page.locator('header')).toBeVisible();
     await page.clock.runFor(1);
 
     const ready = page.getByTestId('customer-display-ready-scroll');
@@ -3005,6 +3001,8 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
           return budgetPage.locator('header').count();
         })
         .toBe(1);
+      await budgetPage.clock.runFor(1);
+      await expect(budgetPage.locator('header')).toBeVisible();
       await budgetPage.clock.runFor(1);
       await slowPage1Arrived;
 

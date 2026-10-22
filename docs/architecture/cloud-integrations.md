@@ -185,7 +185,9 @@ a later opt-in on the same database links to the same device again.
 Only the main process sets the person, on launch and when the level, email or store settings change.
 The renderer does not call `posthog.init` until main returns the id over `get-posthog-bootstrap`;
 init disables persistence and bootstraps that id, so the SDK cannot mint another one. Main checks
-consent and the id on every send; the renderer re-reads both every 30 seconds and on focus and
+consent and the id on every send (cached for up to 30 seconds and invalidated immediately when
+`settings` or `users` rows change via `getSettingsRevision()` or `invalidatePostHogConsentCache()`);
+the renderer re-reads both every 30 seconds and on focus and
 stamps the current id on each event, so a level change takes effect without a reload. When usage
 and diagnostics were both off at load, the same check starts PostHog once either is turned on, and
 the current screen is recorded then. At `off`, renderer events move to the per-launch id and the

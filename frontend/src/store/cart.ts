@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem, ProductVariant } from '@/lib/types';
 import { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
-import { cartLineUnitPrice } from '@/lib/cart-price';
+import { cartLineUnitPrice, normalizeOverridePrice } from '@/lib/cart-price';
 
 export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 
@@ -213,7 +213,9 @@ export const useCartStore = create<CartState>((set, get) => ({
     const items = get().items;
     const target = items.find((i) => i.id === cartItemId);
     if (!target) return;
-    const nextOverride = override ? { price: override.price, reason: override.reason } : null;
+    const nextOverride = override
+      ? { price: normalizeOverridePrice(override.price), reason: override.reason }
+      : null;
     const newId = generateCartItemId(
       target.product.id,
       target.variant?.id ?? null,
@@ -337,7 +339,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         (a, addon) => a + (Number(addon.price) || 0) * (Number(addon.quantity) || 1),
         0,
       );
-      return sum + (itemPrice + addonTotal) * itemQty;
+      return normalizeOverridePrice(sum + (itemPrice + addonTotal) * itemQty);
     }, 0);
   },
 

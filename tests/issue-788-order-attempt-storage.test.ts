@@ -566,6 +566,7 @@ function main() {
     'idempotency_conflict',
     'payment_method_unavailable',
     'payment_input_invalid',
+    'card_transaction_id_required',
   ]) {
     const paymentRejection = classifyOrderRequestFailure(
       {

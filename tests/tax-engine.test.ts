@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import Decimal from 'decimal.js';
 import {
   TaxEngine,
   applyPayableRounding,
@@ -9,9 +10,12 @@ import {
   type TaxEngineLine,
 } from '../main/services/tax-engine';
 import {
+  allocateDocumentTaxRounding,
   calculateDocumentItemTaxes,
   calculateItemTax,
+  computeDiscountTaxRatio,
   previewCategoryRate,
+  scaleTaxSnapshots,
 } from '../main/services/tax';
 import type {
   CountryPack,
@@ -731,4 +735,353 @@ test('calculateDocumentItemTaxes does not skip zero-price categorized items', ()
   ]);
   assert.equal(results[0].tax_amount, 0);
   assert.ok(results[0].tax_snapshot, 'zero-price categorized item must receive a tax snapshot');
+});
+
+test('allocateDocumentTaxRounding applies order discount ratio before document largest_remainder rounding', () => {
+  const officialIndiaPack = JSON.parse(
+    fs.readFileSync(path.join(__dirname, 'fixtures/legacy-tax-packs/official-india.json'), 'utf8'),
+  ) as CountryPack;
+  for (const price of ['100.10', '100.05']) {
+    const undiscounted = TaxEngine.calculate({
+      pack: officialIndiaPack,
+      currency: 'INR',
+      country: 'IN',
+      businessType: 'restaurant',
+      storeStateCode: 'KA',
+      transactionDate: '2026-06-01',
+      lines: [
+        line({
+          lineId: 'line-0001',
+          unitPrice: price,
+          productCategoryId: 'standard',
+          taxBehavior: 'exclusive',
+        }),
+        line({
+          lineId: 'line-0002',
+          unitPrice: price,
+          productCategoryId: 'standard',
+          taxBehavior: 'exclusive',
+        }),
+      ],
+    });
+    const oracle = TaxEngine.calculate({
+      pack: officialIndiaPack,
+      currency: 'INR',
+      country: 'IN',
+      businessType: 'restaurant',
+      storeStateCode: 'KA',
+      transactionDate: '2026-06-01',
+      lines: [
+        line({
+          lineId: 'line-0001',
+          unitPrice: price,
+          discount: new Decimal(price).div(2).toString(),
+          productCategoryId: 'standard',
+          taxBehavior: 'exclusive',
+        }),
+        line({
+          lineId: 'line-0002',
+          unitPrice: price,
+          discount: new Decimal(price).div(2).toString(),
+          productCategoryId: 'standard',
+          taxBehavior: 'exclusive',
+        }),
+      ],
+    });
+
+    const allocated = allocateDocumentTaxRounding({
+      items: undiscounted.lines.map((l) => ({
+        snapshot: { ...undiscounted.snapshot, lines: [l] },
+        lineIdOverride: l.lineId,
+      })),
+      chargeTaxes: { taxAmount: 0, exclusiveTaxAmount: 0, breakdowns: [], snapshotJson: [] },
+      currency: 'INR',
+      itemTaxRatio: new Decimal('0.5'),
+    });
+
+    const totalAllocatedTax = allocated.itemOutputs
+      .reduce((acc, out) => acc.plus(out.taxAmount), new Decimal(0))
+      .toFixed(2);
+    assert.equal(totalAllocatedTax, oracle.taxAmount);
+  }
+
+  // 100.20 item + 100.10 charge with 100% item discount (itemTaxRatio = 0)
+  const undiscountedWithCharge = TaxEngine.calculate({
+    pack: officialIndiaPack,
+    currency: 'INR',
+    country: 'IN',
+    businessType: 'restaurant',
+    storeStateCode: 'KA',
+    transactionDate: '2026-06-01',
+    lines: [
+      line({
+        lineId: 'line-0001',
+        unitPrice: '100.20',
+        productCategoryId: 'standard',
+        taxBehavior: 'exclusive',
+      }),
+      line({
+        lineId: 'charge:packaging',
+        kind: 'packaging',
+        unitPrice: '100.10',
+        merchantCategoryId: 'standard',
+        taxBehavior: 'country_default',
+      }),
+    ],
+  });
+  const chargeOracle = TaxEngine.calculate({
+    pack: officialIndiaPack,
+    currency: 'INR',
+    country: 'IN',
+    businessType: 'restaurant',
+    storeStateCode: 'KA',
+    transactionDate: '2026-06-01',
+    lines: [
+      line({
+        lineId: 'line-0001',
+        unitPrice: '100.20',
+        discount: '100.20',
+        productCategoryId: 'standard',
+        taxBehavior: 'exclusive',
+      }),
+      line({
+        lineId: 'charge:packaging',
+        kind: 'packaging',
+        unitPrice: '100.10',
+        merchantCategoryId: 'standard',
+        taxBehavior: 'country_default',
+      }),
+    ],
+  });
+
+  const allocatedWithCharge = allocateDocumentTaxRounding({
+    items: [
+      {
+        snapshot: { ...undiscountedWithCharge.snapshot, lines: [undiscountedWithCharge.lines[0]] },
+        lineIdOverride: 'line-0001',
+      },
+    ],
+    chargeTaxes: {
+      taxAmount: Number(undiscountedWithCharge.lines[1].taxAmount),
+      exclusiveTaxAmount: Number(undiscountedWithCharge.lines[1].taxAmount),
+      breakdowns: [[]],
+      snapshotJson: [
+        JSON.stringify({
+          ...undiscountedWithCharge.snapshot,
+          lines: [undiscountedWithCharge.lines[1]],
+          chargeKind: 'packaging',
+        }),
+      ],
+    },
+    currency: 'INR',
+    itemTaxRatio: new Decimal(0),
+  });
+
+  assert.equal(allocatedWithCharge.itemOutputs[0].taxAmount, 0);
+  assert.equal(allocatedWithCharge.chargeTaxes.taxAmount.toFixed(2), chargeOracle.taxAmount);
+
+  const single10010 = TaxEngine.calculate({
+    pack: officialIndiaPack,
+    currency: 'INR',
+    country: 'IN',
+    businessType: 'restaurant',
+    storeStateCode: 'KA',
+    transactionDate: '2026-06-01',
+    lines: [
+      line({
+        lineId: 'line-0001',
+        unitPrice: '100.10',
+        productCategoryId: 'standard',
+        taxBehavior: 'exclusive',
+      }),
+    ],
+  });
+  const charge10010 = TaxEngine.calculate({
+    pack: { ...officialIndiaPack, version: '2026.2.0' },
+    currency: 'INR',
+    country: 'IN',
+    businessType: 'restaurant',
+    storeStateCode: 'KA',
+    transactionDate: '2026-06-01',
+    lines: [
+      line({
+        lineId: 'charge:packaging',
+        kind: 'packaging',
+        unitPrice: '100.10',
+        merchantCategoryId: 'standard',
+        taxBehavior: 'country_default',
+      }),
+    ],
+  });
+  const mixedVersionItemsAlloc = allocateDocumentTaxRounding({
+    items: [
+      {
+        snapshot: { ...single10010.snapshot, lines: [single10010.lines[0]] },
+        lineIdOverride: 'line-0001',
+      },
+      {
+        snapshot: { ...charge10010.snapshot, lines: [single10010.lines[0]] },
+        lineIdOverride: 'line-0002',
+      },
+    ],
+    chargeTaxes: { taxAmount: 0, exclusiveTaxAmount: 0, breakdowns: [], snapshotJson: [] },
+    currency: 'INR',
+    itemTaxRatio: new Decimal('0.5'),
+  });
+  const mixedItemTax = mixedVersionItemsAlloc.itemOutputs
+    .reduce((acc, out) => acc.plus(out.taxAmount), new Decimal(0))
+    .toFixed(2);
+  assert.equal(mixedItemTax, '5.01');
+
+  const mixedVersionItemAndChargeAlloc = allocateDocumentTaxRounding({
+    items: [
+      {
+        snapshot: { ...single10010.snapshot, lines: [single10010.lines[0]] },
+        lineIdOverride: 'line-0001',
+      },
+    ],
+    chargeTaxes: {
+      taxAmount: Number(charge10010.lines[0].taxAmount),
+      exclusiveTaxAmount: Number(charge10010.lines[0].taxAmount),
+      breakdowns: [[]],
+      snapshotJson: [
+        JSON.stringify({
+          ...charge10010.snapshot,
+          lines: [charge10010.lines[0]],
+          chargeKind: 'packaging',
+        }),
+      ],
+    },
+    currency: 'INR',
+  });
+  const mixedItemAndChargeTax = new Decimal(mixedVersionItemAndChargeAlloc.itemOutputs[0].taxAmount)
+    .plus(mixedVersionItemAndChargeAlloc.chargeTaxes.taxAmount)
+    .toFixed(2);
+  assert.equal(mixedItemAndChargeTax, '10.01');
+
+  // Repeating-decimal flat discount ratio: 104.00 item + 0.10 charge with 88.00 flat discount (16 / 104)
+  const item104WithCharge = TaxEngine.calculate({
+    pack: officialIndiaPack,
+    currency: 'INR',
+    country: 'IN',
+    businessType: 'restaurant',
+    storeStateCode: 'KA',
+    transactionDate: '2026-06-01',
+    lines: [
+      line({
+        lineId: 'line-0001',
+        unitPrice: '104.00',
+        productCategoryId: 'standard',
+        taxBehavior: 'exclusive',
+      }),
+      line({
+        lineId: 'charge:packaging',
+        kind: 'packaging',
+        unitPrice: '0.10',
+        merchantCategoryId: 'standard',
+        taxBehavior: 'country_default',
+      }),
+    ],
+  });
+  const repeatingRatio = computeDiscountTaxRatio('16.00', '104.00');
+  const repeatingAlloc = allocateDocumentTaxRounding({
+    items: [
+      {
+        snapshot: { ...item104WithCharge.snapshot, lines: [item104WithCharge.lines[0]] },
+        lineIdOverride: 'line-0001',
+      },
+    ],
+    chargeTaxes: {
+      taxAmount: Number(item104WithCharge.lines[1].taxAmount),
+      exclusiveTaxAmount: Number(item104WithCharge.lines[1].taxAmount),
+      breakdowns: [[]],
+      snapshotJson: [
+        JSON.stringify({
+          ...item104WithCharge.snapshot,
+          lines: [item104WithCharge.lines[1]],
+          chargeKind: 'packaging',
+        }),
+      ],
+    },
+    currency: 'INR',
+    itemTaxRatio: repeatingRatio,
+  });
+  assert.equal(repeatingAlloc.itemOutputs[0].taxAmount.toFixed(2), '0.80');
+  assert.equal(repeatingAlloc.chargeTaxes.taxAmount.toFixed(2), '0.01');
+
+  // Line-scoped scaleTaxSnapshots keeps line-rounded amounts and does not sum discarded remainders
+  const lineScopedScaled = scaleTaxSnapshots(
+    [
+      JSON.stringify({
+        packId: 'line-pack',
+        taxRounding: { scope: 'line', method: 'half_up' },
+        lines: [
+          {
+            lineId: 'line-0001',
+            grossAmount: '10.16',
+            taxableBase: '10.16',
+            taxAmount: '0.50',
+            components: [
+              {
+                ruleId: 'a',
+                name: 'Tax A',
+                rate: '2.5',
+                amount: '0.25',
+                roundingRemainder: '0.004',
+              },
+              {
+                ruleId: 'b',
+                name: 'Tax B',
+                rate: '2.5',
+                amount: '0.25',
+                roundingRemainder: '0.004',
+              },
+            ],
+          },
+        ],
+      }),
+    ],
+    computeDiscountTaxRatio('10.14', '10.16'),
+    100,
+  );
+  const parsedLineScoped = JSON.parse(lineScopedScaled[0]);
+  assert.equal(parsedLineScoped.lines[0].taxAmount, '0.50');
+
+  // Line-scoped scaleTaxSnapshots preserves full Decimal ratio precision (16.10 / 104.00)
+  const lineScopedRepeating = scaleTaxSnapshots(
+    [
+      JSON.stringify({
+        packId: 'line-pack',
+        taxRounding: { scope: 'line', method: 'half_up' },
+        lines: [
+          {
+            lineId: 'line-0001',
+            grossAmount: '104.00',
+            taxableBase: '104.00',
+            taxAmount: '5.20',
+            components: [
+              {
+                ruleId: 'cgst',
+                name: 'CGST',
+                rate: '2.5',
+                amount: '2.60',
+                roundingRemainder: '0',
+              },
+              {
+                ruleId: 'sgst',
+                name: 'SGST',
+                rate: '2.5',
+                amount: '2.60',
+                roundingRemainder: '0',
+              },
+            ],
+          },
+        ],
+      }),
+    ],
+    computeDiscountTaxRatio('16.10', '104.00'),
+    100,
+  );
+  const parsedLineRepeating = JSON.parse(lineScopedRepeating[0]);
+  assert.equal(parsedLineRepeating.lines[0].taxAmount, '0.81');
 });

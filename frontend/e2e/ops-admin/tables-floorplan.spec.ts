@@ -7,11 +7,24 @@ import { login, ownerAuth, overlay, openOrderOverflowMenu } from './helpers';
 const RUN = Date.now().toString(36).slice(-4);
 const created: string[] = [];
 
-type Table = { id: string; number: string; name?: string; capacity: number; floor: string; section: string | null; status: string; is_active?: number; position_x?: number | null; position_y?: number | null };
+type Table = {
+  id: string;
+  number: string;
+  name?: string;
+  capacity: number;
+  floor: string;
+  section: string | null;
+  status: string;
+  is_active?: number;
+  position_x?: number | null;
+  position_y?: number | null;
+};
 
 async function fetchTables(page: import('@playwright/test').Page): Promise<Table[]> {
   const token = await page.evaluate(() => localStorage.getItem('token'));
-  const res = await page.request.get(`${E2E_BASE_URL}/api/tables`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await page.request.get(`${E2E_BASE_URL}/api/tables`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   expect(res.ok()).toBeTruthy();
   return (await res.json()).tables as Table[];
 }
@@ -43,12 +56,11 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
     const form = overlay(page);
     await expect(form).toBeVisible();
 
-    // The form's labels are not wired to their inputs, so the fields are
-    // addressed by placeholder and input type rather than by label text.
     const number = `Ops${RUN}A`;
     await form.getByPlaceholder('e.g., T1, Table 1').fill(number);
     await form.locator('input[type="number"]').fill('4');
-    await form.locator('input[type="text"]').nth(1).fill(`OpsFloor${RUN}`);
+    await form.locator('#floorplan-table-floor').selectOption('__new__');
+    await form.locator('#floorplan-table-newfloor').fill(`OpsFloor${RUN}`);
     await form.getByRole('button', { name: 'Create Table' }).click();
     await expect(page.getByText('Table created')).toBeVisible({ timeout: 20_000 });
 
@@ -64,7 +76,9 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
 
   test('renaming a table and moving it to another floor persists', async ({ page }) => {
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     const number = `Ops${RUN}B`;
     const createdRes = await page.request.post(`${E2E_BASE_URL}/api/tables`, {
@@ -81,7 +95,10 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
       headers,
       data: { number: renamed, capacity: 6, floor: `OpsRoof${RUN}` },
     });
-    expect(updated.ok(), `renaming a table must succeed (got ${updated.status()} ${await updated.text()})`).toBeTruthy();
+    expect(
+      updated.ok(),
+      `renaming a table must succeed (got ${updated.status()} ${await updated.text()})`,
+    ).toBeTruthy();
 
     const stored = (await fetchTables(page)).find((t) => t.id === table.id);
     expect(stored).toMatchObject({ number: renamed, capacity: 6, floor: `OpsRoof${RUN}` });
@@ -96,7 +113,9 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
 
   test('placing a table on the floor plan persists its position', async ({ page }) => {
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     const number = `Ops${RUN}C`;
     const createdRes = await page.request.post(`${E2E_BASE_URL}/api/tables`, {
@@ -134,9 +153,13 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
     await expect(page.getByTestId(`floorplan-tray-${number}`)).toBeHidden();
   });
 
-  test('an order opened on a table round-trips: it shows on the table, and freeing it frees the table', async ({ page }) => {
+  test('an order opened on a table round-trips: it shows on the table, and freeing it frees the table', async ({
+    page,
+  }) => {
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     const number = `Ops${RUN}D`;
     const createdRes = await page.request.post(`${E2E_BASE_URL}/api/tables`, {
@@ -150,14 +173,28 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
     // Open a real dine-in order against that table.
     const orderRes = await page.request.post(`${E2E_BASE_URL}/api/orders`, {
       headers,
-      data: { type: 'dine_in', table_id: table.id, guest_count: 2, items: [{ product_id: 'e2e-product', quantity: 2 }] },
+      data: {
+        type: 'dine_in',
+        table_id: table.id,
+        guest_count: 2,
+        items: [{ product_id: 'e2e-product', quantity: 2 }],
+      },
     });
     expect(orderRes.status()).toBe(201);
-    const { order } = (await orderRes.json()) as { order: { id: number; order_number: string; subtotal: number; total: number } };
+    const { order } = (await orderRes.json()) as {
+      order: { id: number; order_number: string; subtotal: number; total: number };
+    };
 
     // The order names its table in the record.
     const listed = await page.request.get(`${E2E_BASE_URL}/api/orders`, { headers });
-    const { orders } = (await listed.json()) as { orders: Array<{ order_number: string; table: { number: string } | null; subtotal: number; total: number }> };
+    const { orders } = (await listed.json()) as {
+      orders: Array<{
+        order_number: string;
+        table: { number: string } | null;
+        subtotal: number;
+        total: number;
+      }>;
+    };
     const onTable = orders.find((o) => o.order_number === order.order_number);
     expect(onTable?.table?.number, 'the order must carry the table it was opened on').toBe(number);
 
@@ -168,7 +205,11 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
 
     // The Orders screen agrees, and names the same table.
     await page.goto(`${E2E_BASE_URL}/orders`);
-    await page.getByRole('button').filter({ hasText: `#${order.order_number}` }).first().click();
+    await page
+      .getByRole('button')
+      .filter({ hasText: `#${order.order_number}` })
+      .first()
+      .click();
     await expect(page.getByText(`#${order.order_number}`).nth(1)).toBeVisible();
     await expect(page.getByText(number, { exact: true }).first()).toBeVisible();
 
@@ -178,15 +219,21 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
     const sheet = overlay(page);
     await expect(sheet).toBeVisible();
     await sheet.getByRole('button', { name: /Confirm Cancel/i }).click();
-    await expect(page.getByText(/Order cancelled successfully/i).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Order cancelled successfully/i).first()).toBeVisible({
+      timeout: 30_000,
+    });
 
     const after = (await fetchTables(page)).find((t) => t.id === table.id);
-    expect(after?.status, 'a cancelled order must not leave its table occupied').not.toBe('occupied');
+    expect(after?.status, 'a cancelled order must not leave its table occupied').not.toBe(
+      'occupied',
+    );
   });
 
   test('a table can be deactivated and brought back', async ({ page }) => {
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     const number = `Ops${RUN}E`;
     const createdRes = await page.request.post(`${E2E_BASE_URL}/api/tables`, {
@@ -197,10 +244,17 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
     const table = ((await createdRes.json()) as { table: Table }).table;
     created.push(table.id);
 
-    const off = await page.request.post(`${E2E_BASE_URL}/api/tables/${table.id}/deactivate`, { headers });
-    expect(off.ok(), `deactivating a table must succeed (got ${off.status()} ${await off.text()})`).toBeTruthy();
+    const off = await page.request.post(`${E2E_BASE_URL}/api/tables/${table.id}/deactivate`, {
+      headers,
+    });
+    expect(
+      off.ok(),
+      `deactivating a table must succeed (got ${off.status()} ${await off.text()})`,
+    ).toBeTruthy();
 
-    const on = await page.request.post(`${E2E_BASE_URL}/api/tables/${table.id}/reactivate`, { headers });
+    const on = await page.request.post(`${E2E_BASE_URL}/api/tables/${table.id}/reactivate`, {
+      headers,
+    });
     expect(on.ok(), `reactivating a table must succeed (got ${on.status()})`).toBeTruthy();
 
     const stored = (await fetchTables(page)).find((t) => t.id === table.id);

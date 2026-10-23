@@ -925,6 +925,48 @@ test('FloorplanEditor View order navigates to /orders?table=<id> and OrdersPage 
         ['/orders?table=tbl-42'],
         'Clicking View order routes to /orders?table=<tableId>',
       );
+
+      // Verify List View unified floor tab bar, Add Table Floor <select>, and FloorplanEditor Unassigned option.
+      const listAddFloorBtn = collectElements(
+        tablesTree,
+        (el) => el.props?.['data-testid'] === 'list-add-floor',
+      )[0];
+      assert.ok(listAddFloorBtn, 'TablesPage List View renders + Add Floor button');
+      const listFloorMenuBtn = collectElements(
+        tablesTree,
+        (el) => el.props?.['data-testid'] === 'list-floor-menu-Ground',
+      )[0];
+      assert.ok(listFloorMenuBtn, 'TablesPage List View renders floor actions menu trigger');
+
+      const addTableBtn = collectElements(
+        tablesTree,
+        (el) =>
+          (el.type === 'button' || el.type === ButtonStub) &&
+          Array.isArray(el.props?.children) &&
+          el.props.children.includes('tables.addTable'),
+      )[0];
+      assert.ok(addTableBtn, 'TablesPage renders + Add Table button');
+      addTableBtn.props.onClick();
+
+      const modalTree = tablesRenderer.render(TablesPage, {});
+      const floorSelect = collectElements(
+        modalTree,
+        (el) => el.type === 'select' && el.props?.id === 'floorplan-table-floor',
+      )[0];
+      assert.ok(floorSelect, 'TablesPage Add Table modal renders Floor <select>');
+      const floorOptions = collectElements(floorSelect, (opt) => opt.type === 'option').map(
+        (opt) => opt.props?.value,
+      );
+      assert.deepEqual(
+        floorOptions,
+        ['', 'Ground', '__new__'],
+        'TablesPage Floor <select> includes Unassigned, existing floors, and + New Floor',
+      );
+      const sectionInput = collectElements(
+        modalTree,
+        (el) => el.type === 'input' && el.props?.id === 'table-form-section',
+      );
+      assert.equal(sectionInput.length, 0, 'New table modal omits legacy Section input');
     } finally {
       floorplanRenderer.cleanupAll();
       tablesRenderer.cleanupAll();

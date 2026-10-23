@@ -156,21 +156,18 @@ function main(): void {
   seedPopulatedPriorDatabase(db);
 
   // Compare the columns the prior schema already had, so a later additive column on
-  // order_items does not read as the migration rewriting existing rows.
-  const priorOrderItemColumns = (
-    db.prepare('PRAGMA table_info(order_items)').all() as { name: string }[]
-  )
-    .map((column) => column.name)
-    .join(', ');
+  // any preserved table does not read as the migration rewriting existing rows.
+  const selectPriorColumns = (table: string) =>
+    `SELECT ${columns(db, table).join(', ')} FROM ${table} ORDER BY id`;
   const preservedSelections = {
     users: `SELECT id, name, email, role FROM users ORDER BY id`,
-    orders: `SELECT * FROM orders ORDER BY id`,
-    order_items: `SELECT ${priorOrderItemColumns} FROM order_items ORDER BY id`,
-    bills: `SELECT * FROM bills ORDER BY id`,
-    supplies: `SELECT * FROM supplies ORDER BY id`,
-    supply_movements: `SELECT * FROM supply_movements ORDER BY id`,
-    cash_sessions: `SELECT * FROM cash_sessions ORDER BY id`,
-    cash_drawer_movements: `SELECT * FROM cash_drawer_movements ORDER BY id`,
+    orders: selectPriorColumns('orders'),
+    order_items: selectPriorColumns('order_items'),
+    bills: selectPriorColumns('bills'),
+    supplies: selectPriorColumns('supplies'),
+    supply_movements: selectPriorColumns('supply_movements'),
+    cash_sessions: selectPriorColumns('cash_sessions'),
+    cash_drawer_movements: selectPriorColumns('cash_drawer_movements'),
   };
   const before = snapshot(db, preservedSelections);
   const backupsBefore = backupFiles().length;

@@ -45,6 +45,7 @@ interface Props {
   submitting: boolean;
   onPlaceOrder: () => void;
   onEditItem?: (item: CartItem) => void;
+  onModalOpenChange?: (open: boolean) => void;
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
 }
@@ -160,6 +161,7 @@ export default function CartPanel({
   submitting,
   onPlaceOrder,
   onEditItem,
+  onModalOpenChange,
   variant = 'sidebar',
   existingOrder,
 }: Props) {
@@ -168,6 +170,14 @@ export default function CartPanel({
   const { currentTenant } = useAuthStore();
   const canOverridePrice = tenantCan(currentTenant, 'orders.item.price_override');
   const [priceOverrideItemId, setPriceOverrideItemId] = useState<string | null>(null);
+  const priceOverrideTarget = priceOverrideItemId
+    ? cart.items.find((i) => i.id === priceOverrideItemId)
+    : undefined;
+  const priceOverrideOpen = Boolean(priceOverrideTarget);
+  useEffect(() => {
+    onModalOpenChange?.(priceOverrideOpen);
+    return () => onModalOpenChange?.(false);
+  }, [priceOverrideOpen, onModalOpenChange]);
   const billingType = usePosSettingsStore((s) => s.billingType);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
@@ -695,20 +705,16 @@ export default function CartPanel({
           </Button>
         </div>
       </div>
-      {priceOverrideItemId &&
-        (() => {
-          const target = cart.items.find((i) => i.id === priceOverrideItemId);
-          return target ? (
-            <CartPriceOverrideModal
-              item={target}
-              onlinePlatformSelected={
-                cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0
-              }
-              onApply={(override) => cart.setItemPriceOverride(target.id, override)}
-              onClose={() => setPriceOverrideItemId(null)}
-            />
-          ) : null;
-        })()}
+      {priceOverrideTarget && (
+        <CartPriceOverrideModal
+          item={priceOverrideTarget}
+          onlinePlatformSelected={
+            cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0
+          }
+          onApply={(override) => cart.setItemPriceOverride(priceOverrideTarget.id, override)}
+          onClose={() => setPriceOverrideItemId(null)}
+        />
+      )}
     </div>
   );
 }

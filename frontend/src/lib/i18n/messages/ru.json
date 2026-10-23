@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Смена",
     "priceExceptionsShiftOpen": "открыта",
     "dayCloseOpenShiftBlocks": "Закройте открытую смену #{id} ({name}) перед закрытием этого операционного дня.",
-    "dayCloseOpenShiftBlocksGeneric": "Закройте открытую смену за этот операционный день перед закрытием дня."
+    "dayCloseOpenShiftBlocksGeneric": "Закройте открытую смену за этот операционный день перед закрытием дня.",
+    "ingredientCost": "Себестоимость ингредиентов",
+    "grossProfit": "Валовая прибыль",
+    "grossMargin": "Валовая маржа",
+    "costUnknown": "Себестоимость неизвестна",
+    "partialCost": "Частичная себестоимость",
+    "ingredientCostLabel": "Себестоимость: {amount}",
+    "profitMarginLabel": "Прибыль: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Добавить расход",
@@ -544,7 +551,11 @@
     "saveFailed": "Не удалось сохранить.",
     "deleteFailed": "Не удалось удалить",
     "confirmDeleteSupply": "Удалить запас {name}? История его перемещения будет сохранена.",
-    "confirmDeleteRecipe": "Удалить рецепт {name}?"
+    "confirmDeleteRecipe": "Удалить рецепт {name}?",
+    "unitCost": "Себестоимость за единицу",
+    "totalBatchCost": "Общая стоимость партии",
+    "recipeCost": "Себестоимость рецепта",
+    "costUnknown": "Себестоимость неизвестна"
   },
   "kds": {
     "addonsLabel": "Дополнения",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "Последняя копия: {time}",
     "localBackupNone": "Резервных копий пока нет",
     "localBackupUpdateFailed": "Не удалось обновить настройку резервного копирования",
+    "localBackupLoadFailed": "Не удалось загрузить настройку резервного копирования",
     "backupKindAuto": "Авто",
     "backupSchemaVersion": "схема v{version}",
     "billContent": "Содержимое чека",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "Резервная копия создается автоматически перед удалением чего-либо.",
     "initializeDialogBody": "При этом безвозвратно удаляются все товары, заказы, клиенты и настройки, а база данных сбрасывается до пустой установки. После этого вам снова придется выполнить первоначальную настройку.",
     "initializeFailedGeneric": "Инициализация не удалась",
+    "initializeLocalBackupFailed": "База данных инициализирована, но не удалось сохранить резервную копию в папку автоматических резервных копий. Резервная копия, созданная перед сбросом, по-прежнему находится в папке данных приложения.",
     "initializeMasterPinPrompt": "Введите главный PIN-код вашего устройства, чтобы окончательно инициализировать базу данных.",
     "initializeTypeConfirm": "Введите {phrase}, чтобы продолжить.",
     "instagramHandle": "Дескриптор Instagram",

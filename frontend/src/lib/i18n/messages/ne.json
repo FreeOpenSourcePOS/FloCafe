@@ -432,7 +432,14 @@
     "priceExceptionsShift": "शिफ्ट",
     "priceExceptionsShiftOpen": "खुला",
     "dayCloseOpenShiftBlocks": "यो व्यावसायिक दिन बन्द गर्नुअघि खुला सिफ्ट #{id} ({name}) बन्द गर्नुहोस्।",
-    "dayCloseOpenShiftBlocksGeneric": "दिन बन्द गर्नुअघि यो व्यावसायिक दिनको खुला सिफ्ट बन्द गर्नुहोस्।"
+    "dayCloseOpenShiftBlocksGeneric": "दिन बन्द गर्नुअघि यो व्यावसायिक दिनको खुला सिफ्ट बन्द गर्नुहोस्।",
+    "ingredientCost": "सामग्री लागत",
+    "grossProfit": "कुल नाफा",
+    "grossMargin": "कुल मार्जिन",
+    "costUnknown": "लागत थाहा छैन",
+    "partialCost": "आंशिक लागत",
+    "ingredientCostLabel": "लागत: {amount}",
+    "profitMarginLabel": "नाफा: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "खर्च थप्नुहोस्",
@@ -544,7 +551,11 @@
     "saveFailed": "बचत गर्न असफल भयो",
     "deleteFailed": "मेटाउन असफल भयो",
     "confirmDeleteSupply": "आपूर्ति मेटाउनुहोस् {name}? यसको आन्दोलनको इतिहास राखिनेछ।",
-    "confirmDeleteRecipe": "को लागि नुस्खा मेटाउनुहोस् {name}?"
+    "confirmDeleteRecipe": "को लागि नुस्खा मेटाउनुहोस् {name}?",
+    "unitCost": "एकाइ लागत",
+    "totalBatchCost": "कुल ब्याच लागत",
+    "recipeCost": "रेसिपी लागत",
+    "costUnknown": "लागत थाहा छैन"
   },
   "kds": {
     "addonsLabel": "एडअनहरू",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "पछिल्लो ब्याकअप: {time}",
     "localBackupNone": "अहिलेसम्म कुनै ब्याकअप छैन",
     "localBackupUpdateFailed": "ब्याकअप सेटिङ अपडेट गर्न सकिएन",
+    "localBackupLoadFailed": "ब्याकअप सेटिङ लोड गर्न सकिएन",
     "backupKindAuto": "अटो",
     "backupSchemaVersion": "योजना v{version}",
     "billContent": "बिल सामग्री",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "कुनै पनि चीज मेटाउनु अघि ब्याकअप स्वचालित रूपमा सिर्जना हुन्छ।",
     "initializeDialogBody": "यसले स्थायी रूपमा प्रत्येक उत्पादन, अर्डर, ग्राहक, र सेटिङहरू मेटाउँछ, र डाटाबेसलाई खाली स्थापनामा रिसेट गर्छ। तपाईं पछि फेरि पहिलो-रन सेटअप मार्फत जानुहुनेछ।",
     "initializeFailedGeneric": "प्रारम्भ असफल भयो",
+    "initializeLocalBackupFailed": "डाटाबेस इनिसियलाइज भयो, तर ब्याकअप प्रतिलिपि स्वचालित ब्याकअप फोल्डरमा सुरक्षित गर्न सकिएन। रिसेट अघिको ब्याकअप अझै पनि एपको डाटा फोल्डरमा छ।",
     "initializeMasterPinPrompt": "स्थायी रूपमा डाटाबेस प्रारम्भ गर्न आफ्नो उपकरण मास्टर PIN प्रविष्ट गर्नुहोस्।",
     "initializeTypeConfirm": "टाइप गर्नुहोस् {phrase} जारी राख्न",
     "instagramHandle": "इन्स्टाग्राम ह्यान्डल",

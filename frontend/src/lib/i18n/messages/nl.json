@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Dienst",
     "priceExceptionsShiftOpen": "geopend",
     "dayCloseOpenShiftBlocks": "Sluit eerst de geopende dienst #{id} ({name}) voordat u deze werkdag afsluit.",
-    "dayCloseOpenShiftBlocksGeneric": "Sluit de geopende dienst voor deze werkdag voordat u de dag afsluit."
+    "dayCloseOpenShiftBlocksGeneric": "Sluit de geopende dienst voor deze werkdag voordat u de dag afsluit.",
+    "ingredientCost": "Ingrediëntkosten",
+    "grossProfit": "Brutowinst",
+    "grossMargin": "Brutomarge",
+    "costUnknown": "Kostprijs onbekend",
+    "partialCost": "Gedeeltelijke kostprijs",
+    "ingredientCostLabel": "Kostprijs: {amount}",
+    "profitMarginLabel": "Winst: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Onkost toevoegen",
@@ -544,7 +551,11 @@
     "saveFailed": "Kan niet opslaan",
     "deleteFailed": "Kan niet verwijderen",
     "confirmDeleteSupply": "Voorraadartikel {name} verwijderen? De mutatiegeschiedenis blijft behouden.",
-    "confirmDeleteRecipe": "Het recept voor {name} verwijderen?"
+    "confirmDeleteRecipe": "Het recept voor {name} verwijderen?",
+    "unitCost": "Eenheidskost",
+    "totalBatchCost": "Totale partijkost",
+    "recipeCost": "Receptkost",
+    "costUnknown": "Kostprijs onbekend"
   },
   "kds": {
     "addonsLabel": "Add-ons",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "Laatste back-up: {time}",
     "localBackupNone": "Nog geen back-up",
     "localBackupUpdateFailed": "De back-upinstelling kon niet worden bijgewerkt",
+    "localBackupLoadFailed": "De back-upinstelling kon niet worden geladen",
     "backupKindAuto": "Auto",
     "backupSchemaVersion": "schema v{version}",
     "billContent": "Boninhoud",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "Er wordt automatisch een back-up gemaakt voordat er iets wordt verwijderd.",
     "initializeDialogBody": "Hiermee worden elk product, bestelling, klant en instelling permanent verwijderd en wordt de database opnieuw ingesteld op een lege installatie. Daarna doorloopt u de eerste configuratie opnieuw.",
     "initializeFailedGeneric": "Initialiseren is mislukt",
+    "initializeLocalBackupFailed": "De database is geïnitialiseerd, maar de back-upkopie kon niet worden opgeslagen in de map voor automatische back-ups. De back-up van vóór het resetten staat nog in de gegevensmap van de app.",
     "initializeMasterPinPrompt": "Voer uw apparaatmaster-PIN in om de database permanent te initialiseren.",
     "initializeTypeConfirm": "Typ {phrase} om door te gaan",
     "instagramHandle": "Instagram-handvat",

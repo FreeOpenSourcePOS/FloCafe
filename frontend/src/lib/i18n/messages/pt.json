@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Turno",
     "priceExceptionsShiftOpen": "aberto",
     "dayCloseOpenShiftBlocks": "Feche o turno aberto #{id} ({name}) antes de fechar este dia comercial.",
-    "dayCloseOpenShiftBlocksGeneric": "Feche o turno aberto deste dia comercial antes de fechar o dia."
+    "dayCloseOpenShiftBlocksGeneric": "Feche o turno aberto deste dia comercial antes de fechar o dia.",
+    "ingredientCost": "Custo dos ingredientes",
+    "grossProfit": "Lucro bruto",
+    "grossMargin": "Margem bruta",
+    "costUnknown": "Custo desconhecido",
+    "partialCost": "Custo parcial",
+    "ingredientCostLabel": "Custo: {amount}",
+    "profitMarginLabel": "Lucro: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Adicionar despesa",
@@ -544,7 +551,11 @@
     "saveFailed": "Falha ao salvar",
     "deleteFailed": "Falha ao excluir",
     "confirmDeleteSupply": "Excluir o insumo {name}? O histórico de movimentações será mantido.",
-    "confirmDeleteRecipe": "Excluir a receita de {name}?"
+    "confirmDeleteRecipe": "Excluir a receita de {name}?",
+    "unitCost": "Custo unitário",
+    "totalBatchCost": "Custo total do lote",
+    "recipeCost": "Custo da receita",
+    "costUnknown": "Custo desconhecido"
   },
   "kds": {
     "addonsLabel": "Adicionais",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "Último backup: {time}",
     "localBackupNone": "Ainda não há backups",
     "localBackupUpdateFailed": "Não foi possível atualizar a configuração de backup",
+    "localBackupLoadFailed": "Não foi possível carregar a configuração de backup",
     "backupKindAuto": "Automático",
     "backupSchemaVersion": "schema v{version}",
     "billContent": "Conteúdo da nota",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "Um backup é criado automaticamente antes de qualquer exclusão.",
     "initializeDialogBody": "Isso exclui permanentemente todos os produtos, pedidos, clientes e configurações e redefine o banco de dados para uma instalação em branco. Você passará pela configuração inicial novamente depois.",
     "initializeFailedGeneric": "Falha na inicialização",
+    "initializeLocalBackupFailed": "O banco de dados foi inicializado, mas não foi possível salvar a cópia de backup na pasta de backups automáticos. O backup anterior à redefinição continua na pasta de dados do aplicativo.",
     "initializeMasterPinPrompt": "Digite o PIN Mestre do seu dispositivo para inicializar permanentemente o banco de dados.",
     "initializeTypeConfirm": "Digite {phrase} para continuar",
     "instagramHandle": "Usuário do Instagram",

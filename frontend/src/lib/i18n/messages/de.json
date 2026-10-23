@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Schicht",
     "priceExceptionsShiftOpen": "offen",
     "dayCloseOpenShiftBlocks": "Schließen Sie die offene Schicht #{id} ({name}), bevor Sie diesen Geschäftstag abschließen.",
-    "dayCloseOpenShiftBlocksGeneric": "Schließen Sie die offene Schicht für diesen Geschäftstag, bevor Sie den Tag abschließen."
+    "dayCloseOpenShiftBlocksGeneric": "Schließen Sie die offene Schicht für diesen Geschäftstag, bevor Sie den Tag abschließen.",
+    "ingredientCost": "Zutatenkosten",
+    "grossProfit": "Rohertrag",
+    "grossMargin": "Rohertragsmarge",
+    "costUnknown": "Kosten unbekannt",
+    "partialCost": "Teilweise Kosten",
+    "ingredientCostLabel": "Kosten: {amount}",
+    "profitMarginLabel": "Gewinn: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Ausgabe hinzufügen",
@@ -544,7 +551,11 @@
     "saveFailed": "Speichern fehlgeschlagen",
     "deleteFailed": "Löschen fehlgeschlagen",
     "confirmDeleteSupply": "Vorrat {name} löschen? Die Bewegungshistorie bleibt erhalten.",
-    "confirmDeleteRecipe": "Rezept für {name} löschen?"
+    "confirmDeleteRecipe": "Rezept für {name} löschen?",
+    "unitCost": "Stückkosten",
+    "totalBatchCost": "Gesamte Chargenkosten",
+    "recipeCost": "Rezeptkosten",
+    "costUnknown": "Kosten unbekannt"
   },
   "kds": {
     "addonsLabel": "Zusätze",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "Letzte Sicherung: {time}",
     "localBackupNone": "Noch keine Sicherung",
     "localBackupUpdateFailed": "Die Sicherungseinstellung konnte nicht aktualisiert werden",
+    "localBackupLoadFailed": "Die Sicherungseinstellung konnte nicht geladen werden",
     "backupKindAuto": "Automatisch",
     "backupSchemaVersion": "Schema v{version}",
     "billContent": "Rechnungsinhalt",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "Vor dem Löschen von Daten wird automatisch eine Sicherung erstellt.",
     "initializeDialogBody": "Dadurch werden jedes Produkt, jede Bestellung, jeder Kunde und jede Einstellung dauerhaft gelöscht und die Datenbank zurückgesetzt. Anschließend durchlaufen Sie die Ersteinrichtung erneut.",
     "initializeFailedGeneric": "Initialisierung fehlgeschlagen",
+    "initializeLocalBackupFailed": "Die Datenbank wurde initialisiert, aber die Sicherungskopie konnte nicht im Ordner für automatische Sicherungen gespeichert werden. Die Sicherung vor dem Zurücksetzen liegt weiterhin im Datenordner der App.",
     "initializeMasterPinPrompt": "Geben Sie die Master-PIN Ihres Geräts ein, um die Datenbank dauerhaft zu initialisieren.",
     "initializeTypeConfirm": "Geben Sie {phrase} ein, um fortzufahren",
     "instagramHandle": "Instagram-Benutzername",

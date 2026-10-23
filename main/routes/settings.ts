@@ -1051,6 +1051,16 @@ router.put('/cloud', requirePermission('cloud.manage'), (req: Request, res: Resp
       cloud_reports_enabled,
       cloud_command_polling_enabled,
     } = req.body;
+    const isOwner = (req as Request & { user?: { role?: string } }).user?.role === 'owner';
+    const hasUnmaskedApiKey = cloud_api_key !== undefined && !isMaskedSecret(cloud_api_key);
+    if (
+      !isOwner &&
+      (cloud_server_url !== undefined || hasUnmaskedApiKey || cloud_store_id !== undefined)
+    ) {
+      return res
+        .status(403)
+        .json({ error: 'Only the store owner can modify cloud credentials or server URL' });
+    }
     const db = getDatabase();
     const updates: Record<string, string | undefined> = {
       cloud_store_id: cloud_store_id === undefined ? undefined : String(cloud_store_id || ''),
@@ -1061,18 +1071,11 @@ router.put('/cloud', requirePermission('cloud.manage'), (req: Request, res: Resp
     };
 
     if (cloud_server_url !== undefined) {
-      const requestedUrl = normalizeCloudServerUrl(cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
-      if (
-        requestedUrl !== normalizeCloudServerUrl(DEFAULT_CLOUD_SERVER_URL) &&
-        (req as Request & { user?: { role?: string } }).user?.role !== 'owner'
-      ) {
-        return res
-          .status(403)
-          .json({ error: 'Only the store owner can configure a custom cloud server URL' });
-      }
-      updates.cloud_server_url = requestedUrl;
+      updates.cloud_server_url = normalizeCloudServerUrl(
+        cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
+      );
     }
-    if (cloud_api_key !== undefined && !isMaskedSecret(cloud_api_key)) {
+    if (hasUnmaskedApiKey) {
       updates.cloud_api_key = String(cloud_api_key || '');
     }
     const enablingCloud = [
@@ -1114,6 +1117,17 @@ router.post(
   requirePermission('cloud.manage'),
   asyncHandler(async (req: Request, res: Response) => {
     try {
+      let requestedUrl: string | undefined;
+      if (req.body?.cloud_server_url !== undefined) {
+        if ((req as Request & { user?: { role?: string } }).user?.role !== 'owner') {
+          return res
+            .status(403)
+            .json({ error: 'Only the store owner can modify cloud credentials or server URL' });
+        }
+        requestedUrl = normalizeCloudServerUrl(
+          req.body.cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
+        );
+      }
       const deletionRequest = await cloudSync.getDeletionRequestStatus({
         allowRemote: cloudSync.isCloudAccountAvailable(),
         signal: getHttpRequestSignal(req),
@@ -1124,30 +1138,21 @@ router.post(
             'A cloud deletion request is pending review. Cancel it before re-enabling cloud services.',
         });
       }
-      if (cloudSync.getStatus().cloud_services_disabled_by_user) {
+      const currentStatus = cloudSync.getStatus();
+      if (currentStatus.cloud_services_disabled_by_user) {
         return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
       }
-      if (req.body?.cloud_server_url !== undefined) {
-        const requestedUrl = normalizeCloudServerUrl(
-          req.body.cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
-        );
-        if (
-          requestedUrl !== normalizeCloudServerUrl(DEFAULT_CLOUD_SERVER_URL) &&
-          (req as Request & { user?: { role?: string } }).user?.role !== 'owner'
-        ) {
-          return res
-            .status(403)
-            .json({ error: 'Only the store owner can configure a custom cloud server URL' });
-        }
-        upsertSettings(getDatabase(), {
-          cloud_server_url: requestedUrl,
-        });
-      }
-      if (cloudSync.getStatus().cloud_deletion_blocked) {
+      if (currentStatus.cloud_deletion_blocked) {
         return res.status(409).json({
           error:
             'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.',
         });
+      }
+      if (requestedUrl !== undefined) {
+        upsertSettings(getDatabase(), {
+          cloud_server_url: requestedUrl,
+        });
+        cloudSync.reload();
       }
       // Registration sends contact metadata for FloAdmin support; it does not
       // create a cloud owner account or grant authentication access.

@@ -432,7 +432,14 @@
     "priceExceptionsShift": "شفٹ",
     "priceExceptionsShiftOpen": "کھلی",
     "dayCloseOpenShiftBlocks": "اس کاروباری دن کو بند کرنے سے پہلے کھلی شفٹ #{id} ({name}) کو بند کریں۔",
-    "dayCloseOpenShiftBlocksGeneric": "دن بند کرنے سے پہلے اس کاروباری دن کی کھلی شفٹ بند کریں۔"
+    "dayCloseOpenShiftBlocksGeneric": "دن بند کرنے سے پہلے اس کاروباری دن کی کھلی شفٹ بند کریں۔",
+    "ingredientCost": "اجزاء کی لاگت",
+    "grossProfit": "مجموعی منافع",
+    "grossMargin": "مجموعی مارجن",
+    "costUnknown": "لاگت نامعلوم",
+    "partialCost": "جزوی لاگت",
+    "ingredientCostLabel": "لاگت: {amount}",
+    "profitMarginLabel": "منافع: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "خرچ شامل کریں",
@@ -544,7 +551,11 @@
     "saveFailed": "محفوظ نہیں ہو سکا",
     "deleteFailed": "حذف نہیں ہو سکا",
     "confirmDeleteSupply": "سامان {name} حذف کریں؟ اس کی حرکت کی تاریخ محفوظ رہے گی۔",
-    "confirmDeleteRecipe": "{name} کی ترکیب حذف کریں؟"
+    "confirmDeleteRecipe": "{name} کی ترکیب حذف کریں؟",
+    "unitCost": "فی یونٹ لاگت",
+    "totalBatchCost": "کل کھیپ کی لاگت",
+    "recipeCost": "ترکیب کی لاگت",
+    "costUnknown": "لاگت نامعلوم"
   },
   "kds": {
     "addonsLabel": "ایڈ آنز",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "آخری بیک اپ: {time}",
     "localBackupNone": "ابھی تک کوئی بیک اپ نہیں",
     "localBackupUpdateFailed": "بیک اپ کی سیٹنگ اپ ڈیٹ نہیں ہو سکی",
+    "localBackupLoadFailed": "بیک اپ کی ترتیب لوڈ نہیں ہو سکی",
     "backupKindAuto": "خودکار",
     "backupSchemaVersion": "schema v{version}",
     "billContent": "بل کا مواد",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "کچھ بھی حذف ہونے سے پہلے خودکار بیک اپ بنایا جاتا ہے۔",
     "initializeDialogBody": "یہ تمام پروڈکٹ، آرڈر، گاہک اور ترتیبات مستقل طور پر حذف کر کے ڈیٹابیس کو خالی انسٹال پر ری سیٹ کرتا ہے۔ اس کے بعد دوبارہ پہلی بار کا سیٹ اپ کرنا ہوگا۔",
     "initializeFailedGeneric": "شروع کرنا ناکام",
+    "initializeLocalBackupFailed": "ڈیٹابیس انیشیلائز ہو گیا، لیکن بیک اپ کاپی خودکار بیک اپ فولڈر میں محفوظ نہیں ہو سکی۔ ری سیٹ سے پہلے کا بیک اپ اب بھی ایپ کے ڈیٹا فولڈر میں موجود ہے۔",
     "initializeMasterPinPrompt": "ڈیٹابیس کو مستقل طور پر شروع کرنے کے لیے اپنے ڈیوائس کا ماسٹر PIN درج کریں۔",
     "initializeTypeConfirm": "جاری رکھنے کے لیے {phrase} لکھیں",
     "instagramHandle": "Instagram ہینڈل",

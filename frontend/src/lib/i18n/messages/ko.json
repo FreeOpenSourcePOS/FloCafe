@@ -432,7 +432,14 @@
     "priceExceptionsShift": "근무조",
     "priceExceptionsShiftOpen": "진행 중",
     "dayCloseOpenShiftBlocks": "이 영업일을 마감하기 전에 열려 있는 교대근무 #{id}({name})를 마감하세요.",
-    "dayCloseOpenShiftBlocksGeneric": "영업일을 마감하기 전에 이 영업일의 열려 있는 교대근무를 마감하세요."
+    "dayCloseOpenShiftBlocksGeneric": "영업일을 마감하기 전에 이 영업일의 열려 있는 교대근무를 마감하세요.",
+    "ingredientCost": "재료 원가",
+    "grossProfit": "매출총이익",
+    "grossMargin": "매출총이익률",
+    "costUnknown": "원가 미지정",
+    "partialCost": "일부 원가 반영",
+    "ingredientCostLabel": "원가: {amount}",
+    "profitMarginLabel": "이익: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "경비 추가",
@@ -544,7 +551,11 @@
     "saveFailed": "저장하지 못했습니다",
     "deleteFailed": "삭제하지 못했습니다",
     "confirmDeleteSupply": "재고 품목 {name}을(를) 삭제할까요? 변동 기록은 유지됩니다.",
-    "confirmDeleteRecipe": "{name}의 레시피를 삭제할까요?"
+    "confirmDeleteRecipe": "{name}의 레시피를 삭제할까요?",
+    "unitCost": "단위 원가",
+    "totalBatchCost": "배치 총원가",
+    "recipeCost": "레시피 원가",
+    "costUnknown": "원가 미지정"
   },
   "kds": {
     "addonsLabel": "추가 메뉴",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "마지막 백업: {time}",
     "localBackupNone": "아직 백업이 없습니다",
     "localBackupUpdateFailed": "백업 설정을 업데이트하지 못했습니다",
+    "localBackupLoadFailed": "백업 설정을 불러올 수 없습니다",
     "backupKindAuto": "자동",
     "backupSchemaVersion": "스키마 v{version}",
     "billContent": "청구서 내용",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "삭제하기 전에 자동으로 백업이 생성됩니다.",
     "initializeDialogBody": "이 작업은 모든 상품, 주문, 고객, 설정을 영구적으로 삭제하고 데이터베이스를 빈 설치로 재설정합니다. 이후 처음 설정 과정을 다시 거치게 됩니다.",
     "initializeFailedGeneric": "초기화 실패",
+    "initializeLocalBackupFailed": "데이터베이스가 초기화되었지만 백업 사본을 자동 백업 폴더에 저장하지 못했습니다. 초기화 전 백업은 앱 데이터 폴더에 그대로 있습니다.",
     "initializeMasterPinPrompt": "데이터베이스를 영구적으로 초기화하려면 기기 마스터 PIN을 입력하세요.",
     "initializeTypeConfirm": "계속하려면 {phrase} 입력",
     "instagramHandle": "Instagram 계정",

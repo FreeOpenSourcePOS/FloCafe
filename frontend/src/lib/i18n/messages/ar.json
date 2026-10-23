@@ -432,7 +432,14 @@
     "priceExceptionsShift": "الوردية",
     "priceExceptionsShiftOpen": "مفتوحة",
     "dayCloseOpenShiftBlocks": "أغلق الوردية المفتوحة #{id} ({name}) قبل إغلاق يوم العمل هذا.",
-    "dayCloseOpenShiftBlocksGeneric": "أغلق الوردية المفتوحة ليوم العمل هذا قبل إغلاق اليوم."
+    "dayCloseOpenShiftBlocksGeneric": "أغلق الوردية المفتوحة ليوم العمل هذا قبل إغلاق اليوم.",
+    "ingredientCost": "تكلفة المكونات",
+    "grossProfit": "إجمالي الربح",
+    "grossMargin": "هامش الربح الإجمالي",
+    "costUnknown": "التكلفة غير معروفة",
+    "partialCost": "تكلفة جزئية",
+    "ingredientCostLabel": "التكلفة: {amount}",
+    "profitMarginLabel": "الربح: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "إضافة مصروف",
@@ -544,7 +551,11 @@
     "saveFailed": "فشل الحفظ",
     "deleteFailed": "فشل الحذف",
     "confirmDeleteSupply": "هل تريد حذف المادة {name}؟ سيتم الاحتفاظ بسجل تحركاتها.",
-    "confirmDeleteRecipe": "هل تريد حذف الوصفة الخاصة بـ {name}؟"
+    "confirmDeleteRecipe": "هل تريد حذف الوصفة الخاصة بـ {name}؟",
+    "unitCost": "تكلفة الوحدة",
+    "totalBatchCost": "إجمالي تكلفة الدفعة",
+    "recipeCost": "تكلفة الوصفة",
+    "costUnknown": "التكلفة غير معروفة"
   },
   "kds": {
     "addonsLabel": "الإضافات",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "آخر نسخة احتياطية: {time}",
     "localBackupNone": "لا توجد نسخة احتياطية بعد",
     "localBackupUpdateFailed": "تعذر تحديث إعداد النسخ الاحتياطي",
+    "localBackupLoadFailed": "تعذّر تحميل إعداد النسخ الاحتياطي",
     "backupKindAuto": "تلقائي",
     "backupSchemaVersion": "المخطط v{version}",
     "billContent": "مضمون مشروع القانون",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "يتم إنشاء نسخة احتياطية تلقائيًا قبل حذف أي شيء.",
     "initializeDialogBody": "سيؤدي هذا إلى الحذف النهائي لجميع المنتجات والطلبات والعملاء والإعدادات، وإعادة ضبط قاعدة البيانات إلى حالة التثبيت الفارغة. وستضطر بعد ذلك إلى إجراء عملية الإعداد الأولي مرة أخرى.",
     "initializeFailedGeneric": "فشل التهيئة",
+    "initializeLocalBackupFailed": "تمت تهيئة قاعدة البيانات، لكن تعذّر حفظ نسخة احتياطية في مجلد النسخ الاحتياطي التلقائي. لا تزال النسخة الاحتياطية السابقة لإعادة التعيين في مجلد بيانات التطبيق.",
     "initializeMasterPinPrompt": "أدخل رقم التعريف الشخصي الرئيسي (PIN) الخاص بجهازك لتهيئة قاعدة البيانات بشكل نهائي.",
     "initializeTypeConfirm": "اكتب {phrase} للمتابعة",
     "instagramHandle": "اسم المستخدم على إنستغرام",

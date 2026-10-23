@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Service",
     "priceExceptionsShiftOpen": "ouvert",
     "dayCloseOpenShiftBlocks": "Fermez le service ouvert #{id} ({name}) avant de clôturer cette journée commerciale.",
-    "dayCloseOpenShiftBlocksGeneric": "Fermez le service ouvert de cette journée commerciale avant de clôturer la journée."
+    "dayCloseOpenShiftBlocksGeneric": "Fermez le service ouvert de cette journée commerciale avant de clôturer la journée.",
+    "ingredientCost": "Coût des ingrédients",
+    "grossProfit": "Bénéfice brut",
+    "grossMargin": "Marge brute",
+    "costUnknown": "Coût inconnu",
+    "partialCost": "Coût partiel",
+    "ingredientCostLabel": "Coût : {amount}",
+    "profitMarginLabel": "Bénéfice : {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Ajouter une dépense",
@@ -544,7 +551,11 @@
     "saveFailed": "Échec de l’enregistrement",
     "deleteFailed": "Échec de la suppression",
     "confirmDeleteSupply": "Supprimer l’approvisionnement {name} ? Son historique des mouvements sera conservé.",
-    "confirmDeleteRecipe": "Supprimer la recette de {name} ?"
+    "confirmDeleteRecipe": "Supprimer la recette de {name} ?",
+    "unitCost": "Coût unitaire",
+    "totalBatchCost": "Coût total du lot",
+    "recipeCost": "Coût de la recette",
+    "costUnknown": "Coût inconnu"
   },
   "kds": {
     "addonsLabel": "Options",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "Dernière sauvegarde : {time}",
     "localBackupNone": "Aucune sauvegarde pour le moment",
     "localBackupUpdateFailed": "Impossible de mettre à jour le paramètre de sauvegarde",
+    "localBackupLoadFailed": "Impossible de charger le paramètre de sauvegarde",
     "backupKindAuto": "Automatique",
     "backupSchemaVersion": "schéma v{version}",
     "billContent": "Contenu de la facture",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "Une sauvegarde est automatiquement créée avant toute suppression.",
     "initializeDialogBody": "Cette action supprime définitivement tous les produits, commandes, clients et paramètres, puis rétablit une installation vierge. Vous devrez ensuite reprendre la configuration initiale.",
     "initializeFailedGeneric": "Échec de l’initialisation",
+    "initializeLocalBackupFailed": "La base de données a été initialisée, mais la copie de sauvegarde n'a pas pu être enregistrée dans le dossier des sauvegardes automatiques. La sauvegarde d'avant la réinitialisation se trouve toujours dans le dossier de données de l'application.",
     "initializeMasterPinPrompt": "Saisissez le code PIN principal de votre appareil pour initialiser définitivement la base de données.",
     "initializeTypeConfirm": "Saisissez {phrase} pour continuer",
     "instagramHandle": "Identifiant Instagram",

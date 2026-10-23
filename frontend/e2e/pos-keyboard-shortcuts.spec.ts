@@ -238,6 +238,41 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     });
   });
 
+  test('F4 is suspended while the cart price override dialog is open', async ({ page }) => {
+    // Price override is owner-only, so switch the session from manager to owner.
+    await page.goto(`${BASE}/auth/login`);
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL((url) => !url.pathname.includes('/auth/login'), { timeout: 20_000 });
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/pos`);
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Takeaway' }).click();
+    await page.getByTestId('pos-product-card').first().click();
+    const cartItem = page.getByTestId('cart-item').first();
+    await expect(cartItem).toBeVisible({ timeout: 5_000 });
+
+    await cartItem.getByRole('button', { name: 'Override price' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    const cancel = dialog.getByRole('button', { name: 'Cancel' });
+    await cancel.focus();
+    await expect(cancel).toBeFocused();
+
+    await page.keyboard.press('F4');
+    await cancel.click();
+    await expect(dialog).toHaveCount(0);
+    const checkoutModal = page.getByTestId('prepaid-checkout-modal');
+    await expect(checkoutModal).toHaveCount(0);
+
+    await page.keyboard.press('F4');
+    await expect(checkoutModal).toBeVisible({ timeout: 5_000 });
+  });
+
   test('holding Space to open checkout or repeating Space/Enter inside modal does not auto-confirm until a fresh press', async ({
     page,
   }) => {

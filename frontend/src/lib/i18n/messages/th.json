@@ -432,7 +432,14 @@
     "priceExceptionsShift": "กะ",
     "priceExceptionsShiftOpen": "เปิดอยู่",
     "dayCloseOpenShiftBlocks": "ปิดกะที่เปิดอยู่ #{id} ({name}) ก่อนปิดวันทำการนี้",
-    "dayCloseOpenShiftBlocksGeneric": "ปิดกะที่เปิดอยู่ของวันทำการนี้ก่อนปิดวัน"
+    "dayCloseOpenShiftBlocksGeneric": "ปิดกะที่เปิดอยู่ของวันทำการนี้ก่อนปิดวัน",
+    "ingredientCost": "ต้นทุนวัตถุดิบ",
+    "grossProfit": "กำไรขั้นต้น",
+    "grossMargin": "อัตรากำไรขั้นต้น",
+    "costUnknown": "ไม่ทราบต้นทุน",
+    "partialCost": "ต้นทุนบางส่วน",
+    "ingredientCostLabel": "ต้นทุน: {amount}",
+    "profitMarginLabel": "กำไร: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "เพิ่มค่าใช้จ่าย",
@@ -544,7 +551,11 @@
     "saveFailed": "บันทึกไม่สำเร็จ",
     "deleteFailed": "ลบไม่สำเร็จ",
     "confirmDeleteSupply": "ลบวัสดุ {name} หรือไม่? ประวัติการเคลื่อนไหวจะยังคงอยู่",
-    "confirmDeleteRecipe": "ลบสูตรของ {name} หรือไม่?"
+    "confirmDeleteRecipe": "ลบสูตรของ {name} หรือไม่?",
+    "unitCost": "ต้นทุนต่อหน่วย",
+    "totalBatchCost": "ต้นทุนรวมของล็อต",
+    "recipeCost": "ต้นทุนสูตร",
+    "costUnknown": "ไม่ทราบต้นทุน"
   },
   "kds": {
     "addonsLabel": "ตัวเลือกเพิ่ม",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "สำรองล่าสุด: {time}",
     "localBackupNone": "ยังไม่มีข้อมูลสำรอง",
     "localBackupUpdateFailed": "ไม่สามารถอัปเดตการตั้งค่าการสำรองข้อมูลได้",
+    "localBackupLoadFailed": "ไม่สามารถโหลดการตั้งค่าการสำรองข้อมูลได้",
     "backupKindAuto": "อัตโนมัติ",
     "backupSchemaVersion": "สคีมา v{version}",
     "billContent": "เนื้อหาในบิล",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "ระบบจะสร้างข้อมูลสำรองโดยอัตโนมัติก่อนลบข้อมูลใด",
     "initializeDialogBody": "การดำเนินการนี้จะลบสินค้า คำสั่งซื้อ ลูกค้า และการตั้งค่าทั้งหมดอย่างถาวร แล้วรีเซ็ตฐานข้อมูลเป็นการติดตั้งใหม่ที่ว่างเปล่า จากนั้นคุณจะต้องตั้งค่าครั้งแรกอีกครั้ง",
     "initializeFailedGeneric": "เริ่มต้นไม่สำเร็จ",
+    "initializeLocalBackupFailed": "เริ่มต้นฐานข้อมูลแล้ว แต่ไม่สามารถบันทึกสำเนาสำรองลงในโฟลเดอร์สำรองข้อมูลอัตโนมัติได้ ข้อมูลสำรองก่อนการรีเซ็ตยังอยู่ในโฟลเดอร์ข้อมูลของแอป",
     "initializeMasterPinPrompt": "ป้อน PIN หลักของอุปกรณ์เพื่อเริ่มต้นฐานข้อมูลอย่างถาวร",
     "initializeTypeConfirm": "พิมพ์ {phrase} เพื่อดำเนินการต่อ",
     "instagramHandle": "ชื่อผู้ใช้ Instagram",

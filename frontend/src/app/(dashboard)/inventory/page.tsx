@@ -20,6 +20,7 @@ import {
   Scale,
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { tenantCan } from '@/lib/permissions';
@@ -33,6 +34,7 @@ interface Supply {
   base_unit: SupplyUnit;
   stock_quantity: number;
   low_stock_threshold: number | null;
+  unit_cost: number | null;
   is_active: number;
   is_low_stock?: number;
 }
@@ -45,6 +47,9 @@ interface SupplyMovement {
   movement_type: string;
   unit: SupplyUnit;
   stock_after: number;
+  unit_cost?: number | null;
+  total_cost?: number | null;
+  unit_cost_after?: number | null;
   reason: string | null;
   actor_name: string | null;
   created_at: string;
@@ -57,6 +62,8 @@ interface RecipeItem {
   quantity: number;
   unit: SupplyUnit;
   quantity_in_base: number;
+  supply_unit_cost?: number | null;
+  component_cost?: number | null;
 }
 
 interface Recipe {
@@ -65,12 +72,25 @@ interface Recipe {
   product_name: string | null;
   yield_quantity: number;
   is_active: number;
+  cost_known?: boolean;
+  total_cost?: number | null;
+  unit_cost?: number | null;
   items: RecipeItem[];
 }
 
 interface Product {
   id: string;
   name: string;
+  price?: number;
+}
+
+function convertUnitClient(quantity: number, from: SupplyUnit, to: SupplyUnit): number | null {
+  if (from === to) return quantity;
+  if (from === 'kg' && to === 'g') return quantity * 1000;
+  if (from === 'g' && to === 'kg') return quantity / 1000;
+  if (from === 'l' && to === 'ml') return quantity * 1000;
+  if (from === 'ml' && to === 'l') return quantity / 1000;
+  return null;
 }
 
 const movementTypeIcons: Record<string, typeof ArrowUpCircle> = {
@@ -88,6 +108,7 @@ export default function InventoryPage() {
   const tNav = useTranslations('nav');
   const tCommon = useTranslations('common');
   const { formatDate } = useFormatDate();
+  const fmt = useFormatCurrency();
   const fmtNum = useFormatNumber();
   const canManage = tenantCan(currentTenant, 'inventory.manage');
 
@@ -116,6 +137,8 @@ export default function InventoryPage() {
     base_unit: 'each' as SupplyUnit,
     stock_quantity: '0',
     low_stock_threshold: '',
+    unit_cost: '',
+    unit_cost_unit: 'each' as SupplyUnit,
   });
 
   const [movementSupply, setMovementSupply] = useState<Supply | null>(null);
@@ -123,6 +146,8 @@ export default function InventoryPage() {
     movement_type: 'receive',
     quantity: '',
     unit: 'each' as SupplyUnit,
+    cost_mode: 'unit_cost' as 'unit_cost' | 'total_cost',
+    cost_amount: '',
     reason: '',
   });
 
@@ -234,7 +259,14 @@ export default function InventoryPage() {
 
   const openAddSupply = () => {
     setEditingSupply(null);
-    setSupplyForm({ name: '', base_unit: 'each', stock_quantity: '0', low_stock_threshold: '' });
+    setSupplyForm({
+      name: '',
+      base_unit: 'each',
+      stock_quantity: '0',
+      low_stock_threshold: '',
+      unit_cost: '',
+      unit_cost_unit: 'each',
+    });
     setShowSupplyForm(true);
   };
 
@@ -245,6 +277,8 @@ export default function InventoryPage() {
       base_unit: s.base_unit,
       stock_quantity: String(s.stock_quantity),
       low_stock_threshold: s.low_stock_threshold === null ? '' : String(s.low_stock_threshold),
+      unit_cost: s.unit_cost === null || s.unit_cost === undefined ? '' : String(s.unit_cost),
+      unit_cost_unit: s.base_unit,
     });
     setShowSupplyForm(true);
   };
@@ -252,17 +286,22 @@ export default function InventoryPage() {
   const handleSaveSupply = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const unitCostVal = supplyForm.unit_cost === '' ? null : Number(supplyForm.unit_cost);
       const payload = {
         name: supplyForm.name,
         base_unit: supplyForm.base_unit,
         stock_quantity: Number(supplyForm.stock_quantity),
         low_stock_threshold:
           supplyForm.low_stock_threshold === '' ? null : Number(supplyForm.low_stock_threshold),
+        unit_cost: unitCostVal,
+        unit_cost_unit: supplyForm.unit_cost_unit,
       };
       if (editingSupply) {
         await api.put(`/supplies/${editingSupply.id}`, {
           name: payload.name,
           low_stock_threshold: payload.low_stock_threshold,
+          unit_cost: payload.unit_cost,
+          unit_cost_unit: payload.unit_cost_unit,
         });
         toast.success(tCommon('save'));
       } else {
@@ -284,15 +323,32 @@ export default function InventoryPage() {
     e.preventDefault();
     if (!movementSupply) return;
     try {
+      const costNum =
+        movementForm.movement_type === 'receive' && movementForm.cost_amount !== ''
+          ? Number(movementForm.cost_amount)
+          : undefined;
       await api.post(`/supplies/${movementSupply.id}/movements`, {
         movement_type: movementForm.movement_type,
         quantity: Number(movementForm.quantity),
         unit: movementForm.unit,
+        ...(costNum !== undefined && movementForm.cost_mode === 'unit_cost'
+          ? { unit_cost: costNum }
+          : {}),
+        ...(costNum !== undefined && movementForm.cost_mode === 'total_cost'
+          ? { total_cost: costNum }
+          : {}),
         reason: movementForm.reason || undefined,
       });
       toast.success(tCommon('save'));
       setMovementSupply(null);
-      setMovementForm({ movement_type: 'receive', quantity: '', unit: 'each', reason: '' });
+      setMovementForm({
+        movement_type: 'receive',
+        quantity: '',
+        unit: 'each',
+        cost_mode: 'unit_cost',
+        cost_amount: '',
+        reason: '',
+      });
       refresh();
     } catch (err: unknown) {
       const message =
@@ -479,6 +535,9 @@ export default function InventoryPage() {
                     {t('stock')}
                   </th>
                   <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('unitCost')}
+                  </th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
                     {t('threshold')}
                   </th>
                   <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
@@ -507,6 +566,33 @@ export default function InventoryPage() {
                       {fmtNum(Number(s.stock_quantity))} {s.base_unit}
                     </td>
                     <td className="p-4 text-end text-sm text-muted-foreground">
+                      {s.unit_cost === null || s.unit_cost === undefined ? (
+                        <span className="text-xs italic">{t('costUnknown')}</span>
+                      ) : (s.base_unit === 'g' || s.base_unit === 'ml') &&
+                        Number(s.unit_cost) > 0 &&
+                        fmt(Number(s.unit_cost)) === fmt(0) ? (
+                        <div>
+                          <span className="font-medium text-foreground">
+                            {fmt(Number(s.unit_cost) * 1000)} / {s.base_unit === 'g' ? 'kg' : 'L'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="font-medium text-foreground">
+                            {fmt(Number(s.unit_cost))} / {s.base_unit}
+                          </span>
+                          {(s.base_unit === 'g' || s.base_unit === 'ml') &&
+                            Number(s.unit_cost) > 0 &&
+                            Number(s.unit_cost) < 1 && (
+                              <div className="text-xs text-muted-foreground">
+                                ({fmt(Number(s.unit_cost) * 1000)} /{' '}
+                                {s.base_unit === 'g' ? 'kg' : 'L'})
+                              </div>
+                            )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-4 text-end text-sm text-muted-foreground">
                       {s.low_stock_threshold === null ? '—' : fmtNum(Number(s.low_stock_threshold))}
                     </td>
                     <td className="p-4 text-center text-sm">
@@ -523,6 +609,8 @@ export default function InventoryPage() {
                               movement_type: 'receive',
                               quantity: '',
                               unit: s.base_unit,
+                              cost_mode: 'unit_cost',
+                              cost_amount: '',
                               reason: '',
                             });
                           }}
@@ -585,49 +673,87 @@ export default function InventoryPage() {
                   <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
                     {t('components')}
                   </th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('recipeCost')}
+                  </th>
                   <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
                     {t('actions')}
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {visibleRecipes.map((r) => (
-                  <tr key={r.id} className="hover:bg-muted">
-                    <td className="p-4 font-medium text-foreground">
-                      {r.product_name || r.product_id}
-                    </td>
-                    <td className="p-4 text-center text-sm">{fmtNum(Number(r.yield_quantity))}</td>
-                    <td className="p-4 text-sm text-muted-foreground">
-                      <ul className="space-y-0.5">
-                        {r.items.map((item) => (
-                          <li key={item.supply_id}>
-                            {item.supply_name}: {fmtNum(Number(item.quantity))} {item.unit}
-                          </li>
-                        ))}
-                      </ul>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEditRecipe(r)}
-                          title={tCommon('edit')}
-                        >
-                          <Edit size={14} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeletingRecipe(r)}
-                          title={tCommon('delete')}
-                        >
-                          <Trash2 size={14} />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {visibleRecipes.map((r) => {
+                  const productObj = products.find((p) => p.id === r.product_id);
+                  const sellPrice =
+                    productObj?.price !== undefined ? Number(productObj.price) : null;
+                  const unitCost =
+                    r.cost_known && r.unit_cost !== null && r.unit_cost !== undefined
+                      ? Number(r.unit_cost)
+                      : null;
+                  const marginPct =
+                    unitCost !== null && sellPrice !== null && sellPrice > 0
+                      ? Math.round(((sellPrice - unitCost) / sellPrice) * 1000) / 10
+                      : null;
+                  return (
+                    <tr key={r.id} className="hover:bg-muted">
+                      <td className="p-4 font-medium text-foreground">
+                        {r.product_name || r.product_id}
+                      </td>
+                      <td className="p-4 text-center text-sm">
+                        {fmtNum(Number(r.yield_quantity))}
+                      </td>
+                      <td className="p-4 text-sm text-muted-foreground">
+                        <ul className="space-y-0.5">
+                          {r.items.map((item) => (
+                            <li key={item.supply_id}>
+                              {item.supply_name}: {fmtNum(Number(item.quantity))} {item.unit}
+                              {item.component_cost !== null &&
+                                item.component_cost !== undefined && (
+                                  <span className="ms-1 text-xs text-muted-foreground">
+                                    ({fmt(Number(item.component_cost))})
+                                  </span>
+                                )}
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td className="p-4 text-end text-sm">
+                        {unitCost !== null ? (
+                          <div>
+                            <span className="font-medium text-foreground">{fmt(unitCost)}</span>
+                            {marginPct !== null && (
+                              <div className="text-xs text-emerald-600 dark:text-emerald-400">
+                                {fmt(sellPrice! - unitCost)} ({marginPct}%)
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <Badge variant="outline">{t('costUnknown')}</Badge>
+                        )}
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditRecipe(r)}
+                            title={tCommon('edit')}
+                          >
+                            <Edit size={14} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeletingRecipe(r)}
+                            title={tCommon('delete')}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             {visibleRecipes.length === 0 && (
@@ -721,8 +847,17 @@ export default function InventoryPage() {
                       <td
                         className={`p-4 text-end text-sm font-medium whitespace-nowrap ${Number(m.quantity_delta) < 0 ? 'text-red-600' : 'text-emerald-600'}`}
                       >
-                        {Number(m.quantity_delta) > 0 ? '+' : ''}
-                        {fmtNum(Number(m.quantity_delta))} {m.unit}
+                        <div>
+                          {Number(m.quantity_delta) > 0 ? '+' : ''}
+                          {fmtNum(Number(m.quantity_delta))} {m.unit}
+                        </div>
+                        {m.movement_type === 'receive' &&
+                          m.total_cost !== null &&
+                          m.total_cost !== undefined && (
+                            <div className="text-xs text-muted-foreground">
+                              {fmt(Number(m.total_cost))}
+                            </div>
+                          )}
                       </td>
                       <td className="p-4 text-end text-sm text-muted-foreground whitespace-nowrap">
                         {fmtNum(Number(m.stock_after))} {m.unit}
@@ -774,9 +909,14 @@ export default function InventoryPage() {
                 <>
                   <select
                     value={supplyForm.base_unit}
-                    onChange={(e) =>
-                      setSupplyForm({ ...supplyForm, base_unit: e.target.value as SupplyUnit })
-                    }
+                    onChange={(e) => {
+                      const nextBase = e.target.value as SupplyUnit;
+                      setSupplyForm({
+                        ...supplyForm,
+                        base_unit: nextBase,
+                        unit_cost_unit: nextBase,
+                      });
+                    }}
                     className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                   >
                     {SUPPLY_UNITS.map((u) => (
@@ -799,6 +939,33 @@ export default function InventoryPage() {
                   />
                 </>
               )}
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder={t('unitCost')}
+                  value={supplyForm.unit_cost}
+                  onChange={(e) => setSupplyForm({ ...supplyForm, unit_cost: e.target.value })}
+                  className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                />
+                <select
+                  value={supplyForm.unit_cost_unit}
+                  onChange={(e) =>
+                    setSupplyForm({
+                      ...supplyForm,
+                      unit_cost_unit: e.target.value as SupplyUnit,
+                    })
+                  }
+                  className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                >
+                  {SUPPLY_UNITS.map((u) => (
+                    <option key={u} value={u}>
+                      / {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <input
                 type="number"
                 step="any"
@@ -866,6 +1033,38 @@ export default function InventoryPage() {
                   ))}
                 </select>
               </div>
+              {movementForm.movement_type === 'receive' && (
+                <div className="flex gap-2">
+                  <select
+                    value={movementForm.cost_mode}
+                    onChange={(e) =>
+                      setMovementForm({
+                        ...movementForm,
+                        cost_mode: e.target.value as 'unit_cost' | 'total_cost',
+                      })
+                    }
+                    className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card text-sm"
+                  >
+                    <option value="unit_cost">
+                      {t('unitCost')} (/ {movementForm.unit})
+                    </option>
+                    <option value="total_cost">{t('totalBatchCost')}</option>
+                  </select>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder={
+                      movementForm.cost_mode === 'unit_cost' ? t('unitCost') : t('totalBatchCost')
+                    }
+                    value={movementForm.cost_amount}
+                    onChange={(e) =>
+                      setMovementForm({ ...movementForm, cost_amount: e.target.value })
+                    }
+                    className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  />
+                </div>
+              )}
               <input
                 type="text"
                 placeholder={t('reason')}
@@ -1013,6 +1212,34 @@ export default function InventoryPage() {
                     </Button>
                   </div>
                 ))}
+                {recipeForm.items.length > 0 && (
+                  <div className="mt-3 rounded-lg bg-muted/60 px-3 py-2 flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{t('recipeCost')}:</span>
+                    <span className="font-semibold text-foreground">
+                      {(() => {
+                        const yieldQty = Number(recipeForm.yield_quantity);
+                        if (!(yieldQty > 0)) return t('costUnknown');
+                        let total = 0;
+                        for (const entry of recipeForm.items) {
+                          const sup = supplies.find((s) => s.id === entry.supply_id);
+                          const qty = Number(entry.quantity);
+                          if (
+                            !sup ||
+                            sup.unit_cost === null ||
+                            sup.unit_cost === undefined ||
+                            !(qty > 0)
+                          ) {
+                            return t('costUnknown');
+                          }
+                          const converted = convertUnitClient(qty, entry.unit, sup.base_unit);
+                          if (converted === null) return t('costUnknown');
+                          total += converted * Number(sup.unit_cost);
+                        }
+                        return fmt(total / yieldQty);
+                      })()}
+                    </span>
+                  </div>
+                )}
               </div>
               <Button type="submit" className="w-full" disabled={recipeForm.items.length === 0}>
                 {tCommon('save')}

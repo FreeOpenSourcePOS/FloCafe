@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Shift sa trabaho",
     "priceExceptionsShiftOpen": "bukas",
     "dayCloseOpenShiftBlocks": "Isara muna ang bukas na shift #{id} ({name}) bago isara ang araw ng negosyong ito.",
-    "dayCloseOpenShiftBlocksGeneric": "Isara muna ang bukas na shift para sa araw ng negosyong ito bago isara ang araw."
+    "dayCloseOpenShiftBlocksGeneric": "Isara muna ang bukas na shift para sa araw ng negosyong ito bago isara ang araw.",
+    "ingredientCost": "Gastos sa sangkap",
+    "grossProfit": "Kabuuang tubo",
+    "grossMargin": "Gross margin",
+    "costUnknown": "Hindi alam ang gastos",
+    "partialCost": "Bahagyang gastos",
+    "ingredientCostLabel": "Gastos: {amount}",
+    "profitMarginLabel": "Tubo: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Magdagdag ng gastos",
@@ -544,7 +551,11 @@
     "saveFailed": "Hindi na-save",
     "deleteFailed": "Hindi na-delete",
     "confirmDeleteSupply": "I-delete ang supply {name}? Mapapanatili ang kasaysayan ng mga galaw nito.",
-    "confirmDeleteRecipe": "I-delete ang recipe para sa {name}?"
+    "confirmDeleteRecipe": "I-delete ang recipe para sa {name}?",
+    "unitCost": "Gastos kada yunit",
+    "totalBatchCost": "Kabuuang gastos ng batch",
+    "recipeCost": "Gastos sa recipe",
+    "costUnknown": "Hindi alam ang gastos"
   },
   "kds": {
     "addonsLabel": "Mga Addon",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "Huling backup: {time}",
     "localBackupNone": "Wala pang backup",
     "localBackupUpdateFailed": "Hindi ma-update ang setting ng backup",
+    "localBackupLoadFailed": "Hindi ma-load ang setting ng backup",
     "backupKindAuto": "Auto",
     "backupSchemaVersion": "schema v{version}",
     "billContent": "Nilalaman ng Bill",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "Kusang gumagawa ng backup bago burahin ang anuman.",
     "initializeDialogBody": "Permanenteng buburahin nito ang bawat produkto, order, customer, at setting. Pupunta ka muli sa unang setup pagkatapos.",
     "initializeFailedGeneric": "Nabigo ang pag-initialize",
+    "initializeLocalBackupFailed": "Na-initialize ang database, pero hindi na-save ang kopya ng backup sa folder ng awtomatikong backup. Nasa data folder pa rin ng app ang backup bago ang reset.",
     "initializeMasterPinPrompt": "Ilagay ang iyong Master PIN upang permanenteng i-initialize ang database.",
     "initializeTypeConfirm": "I-type ang {phrase} upang magpatuloy",
     "instagramHandle": "Instagram Handle",

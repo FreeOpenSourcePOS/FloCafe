@@ -90,6 +90,18 @@ interface RefundActivity {
   approved_by_name: string;
 }
 
+interface PeriodProfitability {
+  total_quantity: number;
+  net_revenue: number;
+  known_cost_revenue: number;
+  known_cost_quantity: number;
+  unknown_cost_quantity: number;
+  cost_status: 'known' | 'partial' | 'unknown';
+  ingredient_cost: number | null;
+  profit: number | null;
+  margin_percent: number | null;
+}
+
 interface FinancialSummary {
   startDate: string;
   endDate: string;
@@ -101,14 +113,23 @@ interface FinancialSummary {
   averageOrderValue: number;
   paymentMethods: PaymentMethodBreakdown[];
   refunds: RefundActivity[];
+  profitability?: PeriodProfitability;
 }
 
 interface TopProduct {
-  product_id: number;
+  product_id: number | string;
   product_name: string;
   total_quantity: number;
   total_revenue: number;
   order_count: number;
+  net_revenue?: number;
+  known_cost_revenue?: number;
+  known_cost_quantity?: number;
+  unknown_cost_quantity?: number;
+  cost_status?: 'known' | 'partial' | 'unknown';
+  ingredient_cost?: number | null;
+  profit?: number | null;
+  margin_percent?: number | null;
 }
 
 interface RecentOrder {
@@ -811,6 +832,57 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {canViewFinancials && financialSummary?.profitability && (
+            <div className="mt-5 grid grid-cols-1 overflow-hidden rounded-2xl border border-border bg-card shadow-sm sm:grid-cols-3">
+              <div className="flex items-center gap-3 p-4 sm:p-5">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                  <ChefHat size={18} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-muted-foreground">{t('ingredientCost')}</p>
+                  <p className="mt-1 text-lg font-semibold text-foreground">
+                    {financialSummary.profitability.ingredient_cost !== null
+                      ? fmt(Number(financialSummary.profitability.ingredient_cost))
+                      : t('costUnknown')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 border-t border-border p-4 sm:border-s sm:border-t-0 sm:p-5">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                  <TrendingUp size={18} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-muted-foreground">{t('grossProfit')}</p>
+                  <p className="mt-1 text-lg font-semibold text-foreground">
+                    {financialSummary.profitability.profit !== null
+                      ? fmt(Number(financialSummary.profitability.profit))
+                      : t('costUnknown')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 border-t border-border p-4 sm:border-s sm:border-t-0 sm:p-5">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300">
+                  <BarChart3 size={18} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-muted-foreground">{t('grossMargin')}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <p className="text-lg font-semibold text-foreground">
+                      {financialSummary.profitability.margin_percent !== null
+                        ? `${financialSummary.profitability.margin_percent}%`
+                        : t('costUnknown')}
+                    </p>
+                    {financialSummary.profitability.cost_status === 'partial' && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                        {t('partialCost')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
             {/* Recent Orders */}
             <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
@@ -912,12 +984,19 @@ export default function DashboardPage() {
                   {topProducts.map((product) => (
                     <div
                       key={product.product_id}
-                      className="flex items-center justify-between px-5 py-3"
+                      className="flex items-center justify-between gap-3 px-5 py-3"
                     >
                       <div className="min-w-0">
-                        <span className="text-sm font-medium text-foreground">
-                          {product.product_name}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">
+                            {product.product_name}
+                          </span>
+                          {canViewFinancials && product.cost_status === 'partial' && (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                              {t('partialCost')}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           {t('productSoldOrders', {
                             quantity: product.total_quantity,
@@ -925,9 +1004,39 @@ export default function DashboardPage() {
                           })}
                         </p>
                       </div>
-                      <span className="text-sm font-semibold text-foreground shrink-0">
-                        {fmt(Number(product.total_revenue))}
-                      </span>
+                      <div className="shrink-0 text-end">
+                        <span className="text-sm font-semibold text-foreground">
+                          {fmt(Number(product.total_revenue))}
+                        </span>
+                        {canViewFinancials && product.cost_status && (
+                          <div className="text-xs text-muted-foreground">
+                            {product.cost_status === 'unknown' ||
+                            product.ingredient_cost === null ||
+                            product.ingredient_cost === undefined ? (
+                              <span>{t('costUnknown')}</span>
+                            ) : (
+                              <span>
+                                {t('ingredientCostLabel', {
+                                  amount: fmt(Number(product.ingredient_cost)),
+                                })}
+                                {product.profit !== null && product.profit !== undefined && (
+                                  <>
+                                    {' · '}
+                                    {t('profitMarginLabel', {
+                                      profit: fmt(Number(product.profit)),
+                                      margin:
+                                        product.margin_percent !== null &&
+                                        product.margin_percent !== undefined
+                                          ? `${product.margin_percent}%`
+                                          : '—',
+                                    })}
+                                  </>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

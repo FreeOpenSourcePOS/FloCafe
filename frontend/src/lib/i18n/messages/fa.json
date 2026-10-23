@@ -432,7 +432,14 @@
     "priceExceptionsShift": "شیفت",
     "priceExceptionsShiftOpen": "باز",
     "dayCloseOpenShiftBlocks": "پیش از بستن این روز کاری، شیفت باز #{id} ({name}) را ببندید.",
-    "dayCloseOpenShiftBlocksGeneric": "پیش از بستن روز، شیفت باز این روز کاری را ببندید."
+    "dayCloseOpenShiftBlocksGeneric": "پیش از بستن روز، شیفت باز این روز کاری را ببندید.",
+    "ingredientCost": "هزینه مواد اولیه",
+    "grossProfit": "سود ناخالص",
+    "grossMargin": "حاشیه سود ناخالص",
+    "costUnknown": "هزینه نامشخص",
+    "partialCost": "هزینه جزئی",
+    "ingredientCostLabel": "هزینه: {amount}",
+    "profitMarginLabel": "سود: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "افزودن هزینه",
@@ -544,7 +551,11 @@
     "saveFailed": "ذخیره ناموفق بود",
     "deleteFailed": "حذف ناموفق بود",
     "confirmDeleteSupply": "ماده اولیه {name} حذف شود؟ تاریخچه جابه‌جایی‌ها حفظ می‌شود.",
-    "confirmDeleteRecipe": "دستور {name} حذف شود؟"
+    "confirmDeleteRecipe": "دستور {name} حذف شود؟",
+    "unitCost": "هزینه هر واحد",
+    "totalBatchCost": "هزینه کل محموله",
+    "recipeCost": "هزینه دستور تهیه",
+    "costUnknown": "هزینه نامشخص"
   },
   "kds": {
     "addonsLabel": "افزودنی‌ها",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "آخرین پشتیبان: {time}",
     "localBackupNone": "هنوز پشتیبانی وجود ندارد",
     "localBackupUpdateFailed": "به‌روزرسانی تنظیم پشتیبان‌گیری ممکن نشد",
+    "localBackupLoadFailed": "بارگیری تنظیم پشتیبان‌گیری ممکن نشد",
     "backupKindAuto": "خودکار",
     "backupSchemaVersion": "ساختار v{version}",
     "billContent": "محتوای صورتحساب",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "پیش از حذف هر چیزی، به‌طور خودکار یک پشتیبان ساخته می‌شود.",
     "initializeDialogBody": "این کار هر کالا، سفارش، مشتری و تنظیمی را برای همیشه پاک می‌کند و پایگاه داده را به یک نصب خالی بازنشانی می‌کند. پس از آن دوباره راه‌اندازی نخست را پشت سر می‌گذارید.",
     "initializeFailedGeneric": "بازنشانی انجام نشد",
+    "initializeLocalBackupFailed": "پایگاه داده راه‌اندازی اولیه شد، اما نسخه پشتیبان در پوشه پشتیبان‌گیری خودکار ذخیره نشد. نسخه پشتیبان پیش از بازنشانی همچنان در پوشه داده‌های برنامه است.",
     "initializeMasterPinPrompt": "برای بازنشانی دائمی پایگاه داده، رمز اصلی دستگاه را وارد کنید.",
     "initializeTypeConfirm": "برای ادامه، {phrase} را بنویسید",
     "instagramHandle": "نام کاربری اینستاگرام",

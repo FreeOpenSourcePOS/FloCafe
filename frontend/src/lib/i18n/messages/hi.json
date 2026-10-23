@@ -432,7 +432,14 @@
     "priceExceptionsShift": "शिफ्ट",
     "priceExceptionsShiftOpen": "खुली",
     "dayCloseOpenShiftBlocks": "इस व्यावसायिक दिन को बंद करने से पहले खुली शिफ्ट #{id} ({name}) को बंद करें।",
-    "dayCloseOpenShiftBlocksGeneric": "दिन बंद करने से पहले इस व्यावसायिक दिन की खुली शिफ्ट को बंद करें।"
+    "dayCloseOpenShiftBlocksGeneric": "दिन बंद करने से पहले इस व्यावसायिक दिन की खुली शिफ्ट को बंद करें।",
+    "ingredientCost": "सामग्री लागत",
+    "grossProfit": "सकल लाभ",
+    "grossMargin": "सकल मार्जिन",
+    "costUnknown": "लागत अज्ञात",
+    "partialCost": "आंशिक लागत",
+    "ingredientCostLabel": "लागत: {amount}",
+    "profitMarginLabel": "लाभ: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "व्यय जोड़ें",
@@ -544,7 +551,11 @@
     "saveFailed": "सहेजने में विफल",
     "deleteFailed": "हटाने में विफल",
     "confirmDeleteSupply": "आपूर्ति {name} हटाएं? इसके मूवमेंट का इतिहास रखा जाएगा।",
-    "confirmDeleteRecipe": "{name} के लिए नुस्खा हटाएं?"
+    "confirmDeleteRecipe": "{name} के लिए नुस्खा हटाएं?",
+    "unitCost": "इकाई लागत",
+    "totalBatchCost": "कुल बैच लागत",
+    "recipeCost": "रेसिपी लागत",
+    "costUnknown": "लागत अज्ञात"
   },
   "kds": {
     "addonsLabel": "ऐड-ऑन",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "आख़िरी बैकअप: {time}",
     "localBackupNone": "अभी तक कोई बैकअप नहीं",
     "localBackupUpdateFailed": "बैकअप सेटिंग अपडेट नहीं हो सकी",
+    "localBackupLoadFailed": "बैकअप सेटिंग लोड नहीं हो सकी",
     "backupKindAuto": "ऑटो",
     "backupSchemaVersion": "schema v{version}",
     "billContent": "बिल सामग्री",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "कुछ भी डिलीट होने से पहले एक बैकअप स्वचालित रूप से बनाया जाता है।",
     "initializeDialogBody": "यह प्रत्येक उत्पाद, ऑर्डर, ग्राहक और सेटिंग को स्थायी रूप से हटा देता है, और डेटाबेस को रिक्त इंस्टॉल पर रीसेट कर देता है। आप बाद में फिर से फर्स्ट-रन सेटअप से गुजरेंगे।",
     "initializeFailedGeneric": "प्रारंभ विफल रहा",
+    "initializeLocalBackupFailed": "डेटाबेस इनिशियलाइज़ हो गया, लेकिन बैकअप कॉपी स्वचालित बैकअप फ़ोल्डर में सहेजी नहीं जा सकी। रीसेट से पहले का बैकअप अभी भी ऐप के डेटा फ़ोल्डर में है।",
     "initializeMasterPinPrompt": "डेटाबेस को स्थायी रूप से प्रारंभ करने के लिए अपना डिवाइस मास्टर पिन दर्ज करें।",
     "initializeTypeConfirm": "जारी रखने के लिए {phrase} टाइप करें",
     "instagramHandle": "इंस्टाग्राम हैंडल",

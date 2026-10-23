@@ -432,7 +432,14 @@
     "priceExceptionsShift": "শিফট",
     "priceExceptionsShiftOpen": "চালু",
     "dayCloseOpenShiftBlocks": "এই ব্যবসায়িক দিনটি বন্ধ করার আগে খোলা শিফট #{id} ({name}) বন্ধ করুন।",
-    "dayCloseOpenShiftBlocksGeneric": "দিন বন্ধ করার আগে এই ব্যবসায়িক দিনের খোলা শিফটটি বন্ধ করুন।"
+    "dayCloseOpenShiftBlocksGeneric": "দিন বন্ধ করার আগে এই ব্যবসায়িক দিনের খোলা শিফটটি বন্ধ করুন।",
+    "ingredientCost": "উপকরণ খরচ",
+    "grossProfit": "মোট লাভ",
+    "grossMargin": "মোট মার্জিন",
+    "costUnknown": "খরচ অজানা",
+    "partialCost": "আংশিক খরচ",
+    "ingredientCostLabel": "খরচ: {amount}",
+    "profitMarginLabel": "লাভ: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "খরচ যোগ করুন",
@@ -544,7 +551,11 @@
     "saveFailed": "সংরক্ষণ করতে ব্যর্থ হয়েছে",
     "deleteFailed": "মুছে ফেলতে ব্যর্থ হয়েছে।",
     "confirmDeleteSupply": "{name} মুছে ফেলবেন? এর সরবরাহের ইতিহাস সংরক্ষিত থাকবে।",
-    "confirmDeleteRecipe": "{name} রেসিপি মুছে ফেলবেন?"
+    "confirmDeleteRecipe": "{name} রেসিপি মুছে ফেলবেন?",
+    "unitCost": "একক খরচ",
+    "totalBatchCost": "মোট ব্যাচ খরচ",
+    "recipeCost": "রেসিপি খরচ",
+    "costUnknown": "খরচ অজানা"
   },
   "kds": {
     "addonsLabel": "অ্যাড-অন",
@@ -1717,6 +1728,7 @@
     "localBackupLast": "সর্বশেষ ব্যাকআপ: {time}",
     "localBackupNone": "এখনও কোনো ব্যাকআপ নেই",
     "localBackupUpdateFailed": "ব্যাকআপ সেটিং আপডেট করা যায়নি",
+    "localBackupLoadFailed": "ব্যাকআপ সেটিং লোড করা যায়নি",
     "backupKindAuto": "অটো",
     "backupSchemaVersion": "স্কিমা v{version}",
     "billContent": "বিল বিষয়বস্তু",
@@ -2021,6 +2033,7 @@
     "initializeDialogBackup": "কিছু মুছে ফেলার আগে একটি ব্যাকআপ স্বয়ংক্রিয়ভাবে তৈরি হয়।",
     "initializeDialogBody": "এটি স্থায়ীভাবে প্রতিটি পণ্য, অর্ডার, গ্রাহক এবং সেটিং মুছে দেয় এবং ডাটাবেসটিকে একটি ফাঁকা ইনস্টলে পুনরায় সেট করে। আপনি পরে আবার প্রথম-রান সেটআপের মধ্য দিয়ে যাবেন।",
     "initializeFailedGeneric": "সূচনা ব্যর্থ হয়েছে।",
+    "initializeLocalBackupFailed": "ডেটাবেস ইনিশিয়ালাইজ হয়েছে, কিন্তু স্বয়ংক্রিয় ব্যাকআপ ফোল্ডারে ব্যাকআপ কপি সংরক্ষণ করা যায়নি। রিসেটের আগের ব্যাকআপটি এখনও অ্যাপের ডেটা ফোল্ডারে আছে।",
     "initializeMasterPinPrompt": "স্থায়ীভাবে ডাটাবেস আরম্ভ করতে আপনার ডিভাইস মাস্টার পিন লিখুন.",
     "initializeTypeConfirm": "টাইপ {phrase} চালিয়ে যেতে",
     "instagramHandle": "ইনস্টাগ্রাম হ্যান্ডেল",

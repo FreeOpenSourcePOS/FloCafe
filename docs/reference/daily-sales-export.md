@@ -28,7 +28,7 @@ Backend owns all logic; the frontend never computes totals.
 - **`net_collected = gross_collected - refunds_issued`.**
 - **Counts:** both `order_count` (distinct orders) and `paid_bill_count`.
 - **Payment methods:** `paymentMethodBreakdown(paidOnly, refunds-by-created_at, keyByPaidAt)` so `Σ payment totals = net_collected`. Only totals are exported (no per-method `count` - that count covers payment+refund lines, not payments). Summary keys use stable snake_case (`payment_visa_terminal_2` for `Visa Terminal 2`).
-- **Items:** products on paid bills, split via `bill_items`; exclude `status IN ('cancelled','voided','void_adjustment')`; include `refunded` originals (they were collected; cash reversal lives only in `refunds_issued`). Group by `product_id` + snapshot `product_name` + `product_sku`. Add-ons fold into the parent item. Order-level discounts are Summary-only.
+- **Items:** products on paid bills, split via `bill_items`; exclude `status IN ('cancelled','voided','void_adjustment')`; include `refunded` originals (they were collected; cash reversal lives only in `refunds_issued`). Group by `product_id` + snapshot `product_name` + `product_sku`. Add-ons fold into the parent item. Order-level discounts are Summary-only. Ingredient cost, profit, and margin use frozen `order_items.ingredient_cost` on lines with `ingredient_cost_known = 1` (allocated by `bi.quantity / oi.quantity` on split bills) against ex-tax net item sales of those known-cost lines (`known_cost_net_item_sales`); `cost_status` and `cost_coverage_status` are `known`, `partial`, or `unknown` (when `unknown`, cost, profit, and margin are `null`; see [product invariants](product-invariants.md#supplies-stock-and-recipe-depletion)).
 - **Payments:** one row per `bills.payment_details` ledger line of every bill paid in the window, including lines recorded on an earlier day for a bill settled in this one. `payment_time` is the line's timestamp in the store timezone (`YYYY-MM-DD HH:MM:SS`); `method` resolves custom methods to their current name; `transaction_id` is the stored external reference verbatim (empty when none), so card lines can be matched against the card terminal's batch report. Refunds are not rows here.
 - **`discount_total`** = order-level (`bills.discount_amount`) + item-level discounts.
 - **No** tips, no alternate refund attribution, no `net_ex_tax` metric.
@@ -45,17 +45,17 @@ Backend owns all logic; the frontend never computes totals.
 
 ## File formats
 
-- **XLSX:** sheets `Summary`, `Items`, then `Payments`. Money cells are numeric with `moneyNumFmt(fractionDigits)`; no formulas. Frozen header row.
+- **XLSX:** sheets `Summary`, `Items`, then `Payments`. Money cells are numeric with `moneyNumFmt(fractionDigits)` and percentage cells (`*_percent`) use `'0.00'`; `null` cost, profit, and margin values are empty string `""`; no formulas. Frozen header row.
 - **CSV:** stable English snake_case headers; ASCII `.` decimals; formula-neutralized via shared `toCsvRow`.
 - **Filenames:** `daily-sales-YYYY-MM-DD.xlsx`, `daily-sales-YYYY-MM-DD-summary.csv`, `daily-sales-YYYY-MM-DD-items.csv`, `daily-sales-YYYY-MM-DD-payments.csv` (from `dailySalesExportFilename`).
 
 ### Summary metric field order
 
-`business_date`, `timezone`, `business_day_start`, `currency`, `order_count`, `paid_bill_count`, `gross_collected`, `refunds_issued`, `net_collected`, `tax_total`, `discount_total`, `service_charge_total`, `packaging_charge_total`, `delivery_charge_total`, then one `payment_<method>` total per method (snake_case key via `dailySalesPaymentMetricKey`).
+`business_date`, `timezone`, `business_day_start`, `currency`, `order_count`, `paid_bill_count`, `gross_collected`, `refunds_issued`, `net_collected`, `tax_total`, `discount_total`, `service_charge_total`, `packaging_charge_total`, `delivery_charge_total`, `known_cost_net_item_sales`, `ingredient_cost_total`, `gross_profit_total`, `gross_margin_percent`, `cost_coverage_status`, then one `payment_<method>` total per method (snake_case key via `dailySalesPaymentMetricKey`).
 
 ### Items columns
 
-`product_id`, `product_name`, `product_sku`, `quantity`, `gross_item_sales`, `item_discounts`, `net_item_sales`, `tax_amount`.
+`product_id`, `product_name`, `product_sku`, `quantity`, `gross_item_sales`, `item_discounts`, `net_item_sales`, `tax_amount`, `ingredient_cost`, `profit`, `margin_percent`, `cost_status`.
 
 ### Payments columns
 

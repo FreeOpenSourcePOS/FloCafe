@@ -289,6 +289,7 @@ export default function POSPage() {
   const [topbarCustomerModalOpen, setTopbarCustomerModalOpen] = useState(false);
   const [promptCustomerModalOpen, setPromptCustomerModalOpen] = useState(false);
   const customerModalOpen = topbarCustomerModalOpen || promptCustomerModalOpen;
+  const [cartPanelModalOpen, setCartPanelModalOpen] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [prepaidModalAttempt, setPrepaidModalAttempt] = useState<PrepaidAttempt | null>(null);
   const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(false);
@@ -1141,6 +1142,7 @@ export default function POSPage() {
     !!paymentBill ||
     showCustomerPrompt ||
     customerModalOpen ||
+    cartPanelModalOpen ||
     showPrepaidCheckout ||
     cashDrawer.open ||
     shift.openModalOpen ||
@@ -2283,6 +2285,7 @@ export default function POSPage() {
     submitting,
     onPlaceOrder: handlePlaceOrder,
     onEditItem: setEditingCartItem,
+    onModalOpenChange: setCartPanelModalOpen,
     existingOrder: pendingOrder,
   };
 
@@ -2374,7 +2377,7 @@ export default function POSPage() {
           setShowKeyboardShortcutsModal(false);
           return true;
         }
-        if (customerModalOpen) {
+        if (customerModalOpen || cartPanelModalOpen) {
           return false;
         }
         const activeEl = document.activeElement as HTMLElement | null;

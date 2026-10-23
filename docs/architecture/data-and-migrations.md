@@ -169,8 +169,10 @@ ahead of the clock rank below every other file because their time cannot be trus
 written is always kept, and the newest `LOCAL_BACKUP_RETENTION` (5) are kept in total. Failures are
 logged and retried on the next check. These files are plain SQLite and unencrypted. They are not part
 of `listBackups()`; restore one through `POST /api/db/restore` with the file picker.
-`POST /api/db-tools/initialize` also copies its pre-reset backup here (`retainBackupLocally`) when the
-setting is on.
+`POST /api/db-tools/initialize`, `POST /api/db-tools/currency-reset`, and the `db-initialize` IPC
+channel preserve `local_backup_enabled` across the reset and copy their pre-reset backup here
+(`retainBackupLocally`) when the setting is on; `restoreBackup()` likewise preserves the live
+`local_backup_enabled` setting across a restore.
 
 ### Durability
 

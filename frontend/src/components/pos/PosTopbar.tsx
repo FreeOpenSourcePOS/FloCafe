@@ -113,7 +113,11 @@ export default function PosTopbar({
                 {tDashboard('cashMovement')}
               </DropdownMenuItem>
               {canUseShift && (
-                <DropdownMenuItem onSelect={onShowShift} disabled={shiftLoading} title={shiftError ?? undefined}>
+                <DropdownMenuItem
+                  onSelect={onShowShift}
+                  disabled={shiftLoading}
+                  title={shiftError ?? undefined}
+                >
                   {shiftHasOpenSession ? <Lock size={16} /> : <LockOpen size={16} />}
                   {shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
                 </DropdownMenuItem>

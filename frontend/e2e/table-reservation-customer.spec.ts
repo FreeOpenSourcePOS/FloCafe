@@ -289,7 +289,7 @@ test('table selection preserves explicit customers and replaces or clears inheri
       if (currentTableName) {
         await page.getByRole('button', { name: `Table: ${currentTableName}`, exact: true }).click();
       } else {
-        await page.getByRole('button', { name: 'Select Table' }).click();
+        await page.getByRole('button', { name: /Select Table|Table: / }).click();
       }
       const picker = page
         .locator('div.fixed.inset-0')

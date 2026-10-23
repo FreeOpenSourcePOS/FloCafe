@@ -601,11 +601,11 @@ test.describe('checkout controls stay visible while catalog and cart content scr
       page.getByTestId('pos-product-card').filter({ hasText: SYNTHETIC_PRODUCT_PREFIX }).first(),
     ).toBeVisible();
 
-    const cashControl = page.getByTitle('Cash movement');
+    const cashControl = page.getByRole('button', { name: 'More actions' });
     const searchInput = page.getByTestId('pos-product-grid').locator('input[type="text"]').first();
     const categoryRow = page.getByTestId('pos-category-row');
     const pinned = {
-      cash: await elementTop(cashControl, 'cash movement control'),
+      cash: await elementTop(cashControl, 'more actions control'),
       search: await elementTop(searchInput, 'product search'),
       categories: await elementTop(categoryRow, 'category chips'),
     };
@@ -624,9 +624,9 @@ test.describe('checkout controls stay visible while catalog and cart content scr
     ).toBeGreaterThan(0);
 
     expectPinned(
-      await elementTop(cashControl, 'cash movement control'),
+      await elementTop(cashControl, 'more actions control'),
       pinned.cash,
-      'cash movement control',
+      'more actions control',
     );
     expectPinned(await elementTop(searchInput, 'product search'), pinned.search, 'product search');
     expectPinned(
@@ -3532,7 +3532,7 @@ test.describe('POS collapse rows and cart table control', () => {
     }
   });
 
-  test('the dine-in table control moves into the cart beside Pax', async ({ page }) => {
+  test('the dine-in table control sits in the top bar', async ({ page }) => {
     const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
     const businessResponse = await page.request.get(`${BASE}/api/settings/business`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -3548,11 +3548,10 @@ test.describe('POS collapse rows and cart table control', () => {
 
       await page.setViewportSize({ width: 1366, height: 768 });
       await loginAsManager(page);
-      const cart = page.getByTestId('cart-shell');
-      await expect(cart).toBeVisible();
+      await expect(page.getByTestId('cart-shell')).toBeVisible();
 
       await page.getByRole('button', { name: 'Dine in' }).first().click();
-      await expect(cart.getByRole('button', { name: /Select Table|Table / })).toBeVisible();
+      await expect(page.getByTestId('cart-table-button')).toBeVisible();
     } finally {
       await page.request.put(`${BASE}/api/settings/business`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -3561,7 +3560,7 @@ test.describe('POS collapse rows and cart table control', () => {
     }
   });
 
-  test('the cart table control opens the picker from the mobile drawer too', async ({ page }) => {
+  test('the top bar table control stays reachable on mobile', async ({ page }) => {
     const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
     const businessResponse = await page.request.get(`${BASE}/api/settings/business`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -3582,7 +3581,8 @@ test.describe('POS collapse rows and cart table control', () => {
       const drawerCart = page.getByTestId('cart-shell').last();
       await expect(drawerCart).toBeVisible();
       await drawerCart.getByRole('button', { name: 'Dine in' }).first().click();
-      await expect(drawerCart.getByRole('button', { name: /Select Table|Table / })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('cart-table-button')).toBeVisible();
     } finally {
       await page.request.put(`${BASE}/api/settings/business`, {
         headers: { Authorization: `Bearer ${token}` },

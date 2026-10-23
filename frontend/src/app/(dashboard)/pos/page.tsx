@@ -1172,7 +1172,9 @@ export default function POSPage() {
       !pendingOrder &&
       !checkoutTable;
     if (cart.tableId && !staleSelection) return;
-    const next = tables.find((tbl) => tbl.status === 'available' && !heldOrders.hasHeldOrder(tbl.id));
+    const next = tables.find(
+      (tbl) => tbl.status === 'available' && !heldOrders.hasHeldOrder(tbl.id),
+    );
     if (next) cart.setTableId(next.id);
   }, [
     isRestaurant,

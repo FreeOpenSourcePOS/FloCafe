@@ -277,6 +277,7 @@ export default function POSPage() {
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [addonInitialQuantity, setAddonInitialQuantity] = useState(1);
   // The variant a scanned barcode named, preselected in the customizer.
@@ -1149,6 +1150,7 @@ export default function POSPage() {
     shift.closeModalOpen ||
     showPrintMenuModal ||
     showKeyboardShortcutsModal ||
+    actionsMenuOpen ||
     isConfirmOpen;
   const anyModalOpen = showTablePicker || anyOtherModalOpen;
 
@@ -1165,7 +1167,11 @@ export default function POSPage() {
 
   const tablesLoaded = tables.length > 0;
   useEffect(() => {
-    if (!isRestaurant || cart.orderType !== 'dine_in' || !tablesRequired || !tablesLoaded) return;
+    if (cart.orderType !== 'dine_in') {
+      if (cart.tableId && !pendingOrder) cart.setTableId(null);
+      return;
+    }
+    if (!isRestaurant || !tablesRequired || !tablesLoaded) return;
     const selected = tables.find((tbl) => tbl.id === cart.tableId);
     const staleSelection =
       !!selected &&
@@ -1178,6 +1184,7 @@ export default function POSPage() {
       (tbl) => tbl.status === 'available' && !heldOrders.hasHeldOrder(tbl.id),
     );
     if (next) cart.setTableId(next.id);
+    else if (staleSelection) cart.setTableId(null);
   }, [
     isRestaurant,
     tablesRequired,
@@ -2606,6 +2613,7 @@ export default function POSPage() {
         showTableButton={isRestaurant && cart.orderType === 'dine_in' && tablesRequired}
         tableName={tables.find((tbl) => tbl.id === cart.tableId)?.name ?? null}
         onShowTablePicker={() => setShowTablePicker(true)}
+        onActionsMenuOpenChange={setActionsMenuOpen}
         onShowCashMovement={cashDrawer.openModal}
         // Re-fetch on entry: the mount snapshot can be hours stale on a
         // multi-terminal POS (backend still guards stale operations). On a

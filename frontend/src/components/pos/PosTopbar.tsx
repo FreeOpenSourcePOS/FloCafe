@@ -28,6 +28,7 @@ interface Props {
   showTableButton: boolean;
   tableName: string | null;
   onShowTablePicker: () => void;
+  onActionsMenuOpenChange: (open: boolean) => void;
   onShowCashMovement: () => void;
   onShowShift: () => void;
   shiftHasOpenSession: boolean;
@@ -46,6 +47,7 @@ export default function PosTopbar({
   showTableButton,
   tableName,
   onShowTablePicker,
+  onActionsMenuOpenChange,
   onShowCashMovement,
   onShowShift,
   shiftHasOpenSession,
@@ -96,7 +98,7 @@ export default function PosTopbar({
           <div className="shrink-0">
             <PrinterStatus />
           </div>
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={onActionsMenuOpenChange}>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"

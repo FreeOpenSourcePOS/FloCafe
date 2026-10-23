@@ -32,7 +32,12 @@ moduleApi._resolveFilename = function (
 };
 
 const { generateCartItemId, normalizeCartItems } = require('../frontend/src/lib/cart-identity');
-const { cartLineUnitPrice } = require('../frontend/src/lib/cart-price');
+const {
+  cartLineUnitPrice,
+  clampCartPriceOverride,
+  resolveActiveCurrencyDecimals,
+  roundCartMoney,
+} = require('../frontend/src/lib/cart-price');
 const { cartItemToOrderItem } = require('../frontend/src/lib/cart-order-item');
 const { useCartStore } = require('../frontend/src/store/cart');
 
@@ -173,5 +178,106 @@ for (const [rawPrice, expectedUnitPrice, expectedSubtotal] of [
   );
 }
 cart().clearCart();
+
+// Currency fraction digits resolver and clampCartPriceOverride for 3-decimal and 0-decimal currencies.
+for (const code of ['KWD', 'BHD', 'OMR', 'JOD', 'TND', 'KW', 'BH', 'OM', 'JO', 'TN']) {
+  assert.equal(resolveActiveCurrencyDecimals(code), 3, `${code} resolves to 3 fraction digits`);
+}
+for (const code of ['JPY', 'KRW', 'VND', 'COP', 'JP', 'KR', 'VN', 'CO']) {
+  assert.equal(resolveActiveCurrencyDecimals(code), 0, `${code} resolves to 0 fraction digits`);
+}
+assert.equal(clampCartPriceOverride(1.234, 2.5, 'KWD'), 1.234, 'KWD preserves 1.234');
+assert.equal(clampCartPriceOverride(0.004, 2.5, 'KWD'), 0.004, 'KWD preserves 0.004 (four fils)');
+assert.equal(clampCartPriceOverride(1.2345, 2.5, 'KWD'), 1.235, 'KWD rounds half-up at 3dp');
+assert.equal(clampCartPriceOverride(1080, 1200, 'JPY'), 1080, 'JPY preserves integer 1080');
+assert.equal(clampCartPriceOverride(1080.7, 1200, 'JPY'), 1081, 'JPY rounds 1080.7 -> 1081');
+assert.equal(clampCartPriceOverride(1080.4, 1200, 'JPY'), 1080, 'JPY rounds 1080.4 -> 1080');
+assert.equal(clampCartPriceOverride('', 10, 'KWD'), null, 'blank override clamps to null');
+assert.equal(clampCartPriceOverride(-0.001, 10, 'KWD'), null, 'negative override clamps to null');
+
+const previousLocalStorageDesc = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+const mockStorage = new Map<string, string>();
+Object.defineProperty(globalThis, 'localStorage', {
+  value: {
+    getItem: (key: string) => mockStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => mockStorage.set(key, value),
+    removeItem: (key: string) => mockStorage.delete(key),
+  },
+  configurable: true,
+  writable: true,
+});
+try {
+  // Active 3-decimal currency (KWD): cart store, line identity, subtotal, and payload keep 3dp.
+  mockStorage.set(
+    'pos-auth',
+    JSON.stringify({ state: { tenant: { country: 'KW', currency: 'KWD' } } }),
+  );
+  assert.equal(resolveActiveCurrencyDecimals(), 3, 'active KWD tenant resolves to 3 decimals');
+  assert.equal(roundCartMoney(1.234), 1.234, 'roundCartMoney preserves 1.234 under KWD');
+
+  const kwdItem: any = { id: 'kwd-item', name: 'Arabic Coffee', price: 2.5, sale_unit: 'each' };
+  cart().clearCart();
+  cart().addItem(kwdItem, 1);
+  cart().setItemPriceOverride(cart().items[0].id, {
+    price: 1.234,
+    reason: 'KWD 3-decimal override',
+  });
+  assert.equal(cart().items[0].price_override?.price, 1.234, 'KWD cart override keeps 1.234');
+  assert.equal(cart().subtotal(), 1.234, 'KWD cart subtotal keeps 1.234');
+  assert.equal(
+    cartItemToOrderItem(cart().items[0]).price_override?.price,
+    1.234,
+    'KWD order payload keeps 1.234',
+  );
+
+  cart().setItemPriceOverride(cart().items[0].id, {
+    price: 0.004,
+    reason: 'Four fils override',
+  });
+  assert.equal(
+    cart().items[0].price_override?.price,
+    0.004,
+    'KWD cart override keeps 0.004 instead of rounding to 0',
+  );
+  assert.equal(cart().subtotal(), 0.004, 'KWD cart subtotal keeps 0.004');
+  assert.equal(
+    cartItemToOrderItem(cart().items[0]).price_override?.price,
+    0.004,
+    'KWD order payload keeps 0.004',
+  );
+  assert.notEqual(
+    generateCartItemId('kwd-item', null, [], '', { price: 1.234, reason: 'KWD' }),
+    generateCartItemId('kwd-item', null, [], '', { price: 1.23, reason: 'KWD' }),
+    '1.234 and 1.230 KWD overrides produce distinct cart line ids',
+  );
+
+  // Active 0-decimal currency (JPY): fractional overrides round to whole yen.
+  mockStorage.set(
+    'pos-auth',
+    JSON.stringify({ state: { tenant: { country: 'JP', currency: 'JPY' } } }),
+  );
+  assert.equal(resolveActiveCurrencyDecimals(), 0, 'active JPY tenant resolves to 0 decimals');
+  const jpyItem: any = { id: 'jpy-item', name: 'Matcha Latte', price: 1200, sale_unit: 'each' };
+  cart().clearCart();
+  cart().addItem(jpyItem, 2);
+  cart().setItemPriceOverride(cart().items[0].id, {
+    price: 1080.7,
+    reason: 'JPY integer override',
+  });
+  assert.equal(cart().items[0].price_override?.price, 1081, 'JPY override rounds 1080.7 -> 1081');
+  assert.equal(cart().subtotal(), 2162, 'JPY subtotal at qty 2 uses 1081');
+  assert.equal(
+    cartItemToOrderItem(cart().items[0]).price_override?.price,
+    1081,
+    'JPY order payload carries 1081',
+  );
+  cart().clearCart();
+} finally {
+  if (previousLocalStorageDesc) {
+    Object.defineProperty(globalThis, 'localStorage', previousLocalStorageDesc);
+  } else {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
+}
 
 console.log('✓ cart price override checks passed');

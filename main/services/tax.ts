@@ -51,6 +51,7 @@ export interface Product {
 
 export interface Customer {
   taxRegistrationNumber?: string;
+  tax_registration_number?: string;
   customer_state_code?: string;
 }
 
@@ -130,6 +131,38 @@ export function getActiveCountryPack(country: string): CountryPack {
     // Fall back to immutable bundled pack JSON if DB migrations haven't run.
   }
   return getBundledCountryPack(country);
+}
+
+// Resolves a specific installed pack version for historical order items, falling back to the active pack.
+export function getCountryPackByVersion(
+  packId: string | null | undefined,
+  version: string | null | undefined,
+  fallbackCountryCode = '',
+): CountryPack {
+  if (
+    typeof packId === 'string' &&
+    packId.trim() &&
+    typeof version === 'string' &&
+    version.trim()
+  ) {
+    try {
+      const db = getDatabase();
+      const row = db
+        .prepare(
+          `SELECT pack_json FROM country_pack_versions WHERE pack_id = ? AND version = ? LIMIT 1`,
+        )
+        .get(packId.trim(), version.trim()) as { pack_json: string } | undefined;
+      if (row) {
+        const parsed = JSON.parse(row.pack_json) as CountryPack;
+        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.rules)) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Fall back to the active country pack if the historical version is unavailable.
+    }
+  }
+  return getActiveCountryPack(fallbackCountryCode);
 }
 
 // Checks if taxation is enabled and backed by an official active country pack.
@@ -323,6 +356,7 @@ export interface DocumentTaxCalculationInput {
   items?: Array<{ lineId?: string; product: Product; taxableAmount: number }>;
   chargeContext?: ChargeTaxContext | null;
   customer?: Customer | null;
+  packOverride?: CountryPack | null;
 }
 
 export interface DocumentTaxResult {
@@ -360,7 +394,7 @@ export function calculateDocumentTaxes(
     return { itemResults, chargeTaxes };
   }
 
-  const pack = getActiveCountryPack(tenant.country);
+  const pack = input.packOverride ?? getActiveCountryPack(tenant.country);
 
   const itemEntries: Array<{
     itemIndex: number;
@@ -456,7 +490,7 @@ export function calculateDocumentTaxes(
       transactionDate: new Date().toISOString(),
       customer: customer
         ? {
-            registrationNumber: customer.taxRegistrationNumber,
+            registrationNumber: customer.taxRegistrationNumber || customer.tax_registration_number,
             stateCode: customer.customer_state_code,
           }
         : null,
@@ -560,8 +594,10 @@ export function calculateDocumentItemTaxes(
   items: Array<{ lineId?: string; product: Product; taxableAmount: number }>,
   customer: Customer | null = null,
   chargeContext?: ChargeTaxContext | null,
+  packOverride?: CountryPack | null,
 ): TaxResult[] {
-  return calculateDocumentTaxes(tenant, { items, chargeContext, customer }).itemResults;
+  return calculateDocumentTaxes(tenant, { items, chargeContext, customer, packOverride })
+    .itemResults;
 }
 
 /** Single-item adapter for legacy callers evaluating an isolated item. */
@@ -570,11 +606,14 @@ export function calculateItemTax(
   product: Product,
   taxableAmount: number,
   customer: Customer | null,
+  packOverride?: CountryPack | null,
 ): TaxResult {
   return calculateDocumentItemTaxes(
     tenant,
     [{ lineId: 'legacy-item-adapter', product, taxableAmount }],
     customer,
+    undefined,
+    packOverride,
   )[0];
 }
 
@@ -583,9 +622,14 @@ export function calculateConfiguredChargeTaxes(
   tenant: TenantInfo,
   context: ChargeTaxContext,
   customer: Customer | null = null,
+  packOverride?: CountryPack | null,
 ): ChargeTaxSummary {
-  return calculateDocumentTaxes(tenant, { items: [], chargeContext: context, customer })
-    .chargeTaxes;
+  return calculateDocumentTaxes(tenant, {
+    items: [],
+    chargeContext: context,
+    customer,
+    packOverride,
+  }).chargeTaxes;
 }
 
 export function aggregateTaxBreakdown(
@@ -949,10 +993,19 @@ export function allocateDocumentTaxRounding(args: {
 } {
   const ratio = args.itemTaxRatio ?? new Decimal(1);
   const isScaled = !ratio.eq(1);
-  const resolvePlaces = (currencyCode?: string) => {
+  const resolvePlaces = (currencyCode?: string, fallbackPlaces?: number) => {
     const code = args.currency || currencyCode || '';
     if (code) return getCurrencyFractionDigits(code);
-    if (args.minorFactor && args.minorFactor > 0) return Math.round(Math.log10(args.minorFactor));
+    if (args.minorFactor !== undefined && args.minorFactor > 0) {
+      return Math.round(Math.log10(args.minorFactor));
+    }
+    if (
+      typeof fallbackPlaces === 'number' &&
+      Number.isInteger(fallbackPlaces) &&
+      fallbackPlaces >= 0
+    ) {
+      return fallbackPlaces;
+    }
     return getCurrencyFractionDigits('');
   };
   const itemOutputs: DocumentTaxAllocationItemOutput[] = args.items.map(() => ({
@@ -1015,7 +1068,7 @@ export function allocateDocumentTaxRounding(args: {
       line.lineId = itemInput.lineIdOverride;
     }
     if (isScaled) {
-      const places = resolvePlaces(snap.currency);
+      const places = resolvePlaces(snap.currency, snap.taxRounding.decimalPlaces);
       const scaleLineAmount = (val: unknown) =>
         typeof val === 'string' || typeof val === 'number'
           ? new TaxDecimal(val)
@@ -1114,7 +1167,7 @@ export function allocateDocumentTaxRounding(args: {
   }
 
   for (const group of groups.values()) {
-    const places = resolvePlaces(group.currency);
+    const places = resolvePlaces(group.currency, group.taxRounding.decimalPlaces);
     const quantum = new Decimal(10).pow(-places);
     const sumRaw = group.components.reduce((sum, c) => sum.plus(c.raw), new Decimal(0));
     const target = roundPlaces(sumRaw, places, group.taxRounding.method);

@@ -346,17 +346,18 @@ for the channel list and the absence assertions; argument and return-type change
 presence-only member need a look at both files.
 
 Every privileged channel in [`main/ipc.ts`](../../main/ipc.ts) is registered through the `handle`
-wrapper, which calls `isTrustedSender` before the listener runs and returns
-`{ error: 'Unauthorized sender' }` to anything else. `isTrustedSender` requires the calling
-frame's URL to be `http:` on `localhost` or `127.0.0.1`. That establishes **which window is
-calling**. It does not establish **who is signed in**, and the single POS window serves every role
-from chef to owner. Everything else in this section follows from that gap.
+wrapper, which calls `isTrustedMainWindowSender` before the listener runs and returns
+`{ error: 'Unauthorized sender' }` to anything else. `isTrustedMainWindowSender` requires the caller
+to be the active main `BrowserWindow`, its current top-level `mainFrame`, and `http:` on `localhost`
+or `127.0.0.1` at the active Express server port. That establishes **which window is calling**. It
+does not establish **who is signed in**, and the single POS window serves every role from chef to
+owner. Everything else in this section follows from that gap.
 
 Registering a privileged channel with a bare `ipcMain.handle` skips the check. All privileged
 channels in [`main/ipc.ts`](../../main/ipc.ts) go through the `handle` wrapper, and direct update
 and status handlers in [`main/update-ipc.ts`](../../main/update-ipc.ts) go through
-`registerDirectUpdateIpcHandlers` using `isTrustedMainWindowSender`; any new channel must enforce
-sender validation.
+`registerDirectUpdateIpcHandlers`, both using `isTrustedMainWindowSender`; any new channel must
+enforce sender validation.
 
 ### What the settings channel may write
 
@@ -423,8 +424,9 @@ reopen.
 Write it on the HTTP settings route, gated on the same permission as its neighbours, and read it
 through `api`. Use the IPC settings channel for nothing. A genuinely new native capability needs
 three things together: a `contextBridge` entry in `preload.ts`, a `handle` wrapper in `ipc.ts` so
-`isTrustedSender` applies, and a matching entry in `ElectronAPI`. If it is a privileged write, it
-also needs an authorization step that can see the signed-in user, because the origin check cannot.
+`isTrustedMainWindowSender` applies, and a matching entry in `ElectronAPI`. If it is a privileged
+write, it also needs an authorization step that can see the signed-in user, because the origin check
+cannot.
 
 ## State stores
 
@@ -449,10 +451,13 @@ instead of the shared one.
 The renderer's print surface is a decision tree, not a single path. All of it lives in
 [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts), and the shared kernel, renderers, and
 transports are described in [Printing architecture](printing.md). Before dispatching a bill or tax
-bill, `usePrinterStore` awaits receipt settings hydration (`ensureReceiptSettingsLoaded()`, backed
-by [`useReceiptSettingsSync`](../../frontend/src/hooks/useReceiptSettingsSync.ts)) so storefront
+bill, `usePrinterStore` awaits tenant-scoped receipt settings hydration
+(`ensureReceiptSettingsLoaded(expectedTenantId)`, backed by
+[`useReceiptSettingsSync`](../../frontend/src/hooks/useReceiptSettingsSync.ts)) so storefront
 branding and receipt metadata are loaded into `pos-settings.ts` from `GET /api/settings/business`
-before rendering.
+before rendering. Switching `currentTenant` invalidates cached hydration and forces an immediate
+re-sync (bypassing the 60-second focus throttle), and any in-flight bill or tax-bill print whose
+active tenant changes aborts with `PrintCancelledOnTenantChangeError`.
 
 For a bill or a kitchen ticket, in the order the store tries them:
 

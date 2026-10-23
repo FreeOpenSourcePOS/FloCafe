@@ -337,8 +337,8 @@
     "exportSales": "Exporter les ventes",
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
-    "exportCsvHint": "Le CSV télécharge deux fichiers : résumé et articles.",
-    "exportCsvStarted": "Téléchargement des fichiers CSV résumé et articles…",
+    "exportCsvHint": "Le CSV télécharge trois fichiers : résumé, articles et paiements.",
+    "exportCsvStarted": "Téléchargement des fichiers CSV résumé, articles et paiements…",
     "liveNow": "En direct",
     "kpiChangeVsSameDayLastWeek": "{percent} % par rapport au même jour la semaine dernière",
     "kpiNewVsSameDayLastWeek": "Nouveau par rapport au même jour la semaine dernière",
@@ -430,7 +430,9 @@
     "priceExceptionReason": "Motif",
     "priceExceptionsAllShifts": "Toute la période",
     "priceExceptionsShift": "Service",
-    "priceExceptionsShiftOpen": "ouvert"
+    "priceExceptionsShiftOpen": "ouvert",
+    "dayCloseOpenShiftBlocks": "Fermez le service ouvert #{id} ({name}) avant de clôturer cette journée commerciale.",
+    "dayCloseOpenShiftBlocksGeneric": "Fermez le service ouvert de cette journée commerciale avant de clôturer la journée."
   },
   "expenses": {
     "addTitle": "Ajouter une dépense",
@@ -725,6 +727,7 @@
     "printReceiptTitle": "Imprimer le reçu",
     "printed": "Imprimé",
     "printedCount": "{count, plural, one {Imprimé 1 fois} other {Imprimé # fois}}",
+    "transactionNumber": "N° de transaction",
     "printing": "Impression...",
     "ready": "Prête",
     "receiptPrintFailedHint": "Échec de l’impression du reçu - vérifiez la connexion de l’imprimante",
@@ -1132,6 +1135,8 @@
     "paymentIdempotencyConflict": "Cette demande de paiement est déjà liée à un autre paiement. Vérifiez la facture avant de réessayer.",
     "paymentMethodUnavailable": "Ce moyen de paiement n’est plus disponible. Choisissez-en un autre.",
     "paymentInputInvalid": "Les informations de paiement sont invalides. Vérifiez le moyen, le montant et la référence de transaction.",
+    "cardTransactionIdLabel": "N° de transaction du terminal",
+    "cardTransactionIdMissing": "Saisissez le numéro de transaction du terminal de paiement.",
     "paymentCompletionApplied": "Le paiement a été enregistré, mais FloCafe n’a pas pu terminer une mise à jour suivante. Vérifiez la facture avant d’encaisser un autre paiement.",
     "paymentCorrectAndRetry": "Corrigez les informations de paiement ou choisissez un autre moyen, puis réessayez.",
     "chargeRequired": "Sélectionnez des frais avant de les modifier.",
@@ -1177,7 +1182,12 @@
     "splitCheckCheckAvailability": "Vérifier la disponibilité",
     "viewMore": "Voir plus",
     "viewLess": "Voir moins",
-    "splitCheckSettingDenied": "Ce compte ne peut pas vérifier la disponibilité de la répartition."
+    "splitCheckSettingDenied": "Ce compte ne peut pas vérifier la disponibilité de la répartition.",
+    "dayCloseBlockedByOpenShiftTitle": "Le service ouvert doit d’abord être fermé",
+    "dayCloseBlockedByOpenShiftHint": "Fermez le service ouvert #{id} ({name}) avant de clôturer cette journée commerciale.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# commande ouverte sera reportée} other {# commandes ouvertes seront reportées}}",
+    "shiftCloseUnpaidWarningHint": "Ces commandes restent ouvertes pour le service suivant. La clôture de ce service ne rapproche que les paiements en espèces déjà encaissés pendant ce service.",
+    "shiftCloseUnpaidMoreCount": "+{count} autres commandes ouvertes"
   },
   "printTest": {
     "amt": "Montant",
@@ -2308,6 +2318,8 @@
     "softwareUpdatesHintStore": "Cette version est distribuée par l’App Store. Les mises à jour sont gérées par la boutique.",
     "splitChecks": "Diviser les additions",
     "splitChecksHint": "Autoriser la répartition des articles ou des quantités consommés sur place entre plusieurs factures. Désactivé par défaut.",
+    "cardTransactionIdRequired": "Exiger le numéro de transaction carte",
+    "cardTransactionIdRequiredHint": "Les paiements par carte doivent inclure le numéro de transaction émis par le terminal de paiement, afin de rapprocher les rapports du terminal. Désactivé par défaut.",
     "stationAssignedCategories": "Affectées ailleurs — sélectionner pour déplacer",
     "stationAvailableCategories": "Catégories disponibles",
     "stationCategories": "Catégories acheminées ici",
@@ -3172,6 +3184,47 @@
       "phone_required": "Le numéro de téléphone est requis",
       "phone_required_pairing": "Le téléphone est requis pour le code d’association"
     },
+    "automation": {
+      "autoOptOutLabel": "Désinscription auto sur réception de STOP / UNSUBSCRIBE (ajout à la liste noire)",
+      "broadcastDescription": "Envoyer un modèle à un segment de clients filtré (respecte la liste noire, les heures calmes et les limites).",
+      "broadcastInactiveDays": "Inactif >= jours",
+      "broadcastMinPoints": "Points min.",
+      "broadcastMinVisits": "Visites min.",
+      "broadcastSendCta": "Envoyer la diffusion",
+      "broadcastSuccess": "Diffusion terminée : {sent} envoyés, {skipped} ignorés ({matched} correspondants).",
+      "broadcastTitle": "Diffusion par segment client",
+      "feedbackLinkLabel": "Lien d’avis de la boutique",
+      "instagramLabel": "Compte Instagram de la boutique",
+      "maxPerWeekLabel": "Nombre max. de messages auto par client et par semaine",
+      "placeholdersLabel": "Cliquer pour insérer une variable",
+      "previewTitle": "Aperçu en direct (données d’exemple)",
+      "quietHoursEnd": "Fin des heures calmes",
+      "quietHoursLabel": "Suspendre les envois automatiques pendant les heures calmes",
+      "quietHoursStart": "Début des heures calmes",
+      "resetDefault": "Réinitialiser par défaut",
+      "ruleAfterPaymentHint": "Envoyer automatiquement le modèle de reçu lorsqu’une facture avec téléphone client est réglée.",
+      "ruleFeedbackDelayHint": "Envoyer une demande d’avis après une commande payée (heures après paiement).",
+      "ruleNthVisitHint": "Envoyer un message de récompense toutes les N visites payées.",
+      "rulePointsThresholdHint": "Envoyer une notification lorsque le solde de points franchit le seuil.",
+      "rulesDescription": "Activez les déclencheurs automatiques et configurez les seuils pour les reçus, suivis et paliers.",
+      "rulesTitle": "Règles d’envoi automatique",
+      "ruleWinbackHint": "Envoyer une offre de relance aux clients inactifs depuis au moins N jours.",
+      "runSweepCta": "Exécuter les règles planifiées maintenant",
+      "safetyDescription": "Protégez votre numéro connecté avec désinscription auto, heures calmes et plafonds hebdomadaires.",
+      "safetyTitle": "Contrôles de sécurité et anti-spam",
+      "saveCta": "Enregistrer l’automatisation",
+      "savedSuccess": "Paramètres d’automatisation enregistrés.",
+      "sweepResult": "Règles planifiées vérifiées ({sent} envoyés).",
+      "templateBodyLabel": "Corps du message",
+      "templateNameLabel": "Nom du modèle",
+      "templatesDescription": "Personnalisez les messages WhatsApp automatiques avec des variables client, facture, fidélité et boutique.",
+      "templateSelectLabel": "Modèle sélectionné",
+      "templatesTitle": "Modèles de messages",
+      "thresholdDays": "Jours d’inactivité",
+      "thresholdHours": "Heures de délai",
+      "thresholdPoints": "Seuil de points",
+      "thresholdVisits": "Toutes les N visites"
+    },
     "blocklist": {
       "addCta": "Ajouter",
       "addedSuccess": "Ajouté à la liste de blocage.",
@@ -3264,6 +3317,14 @@
       "rate_limited": "Débit d’envoi limité par WhatsApp ({code}). Pause de 5 minutes.",
       "reconnecting": "Connexion fermée ({code}). Reconnexion dans {seconds} s…"
     },
+    "rule": {
+      "after_payment": "Reçu auto après paiement",
+      "broadcast": "Diffusion par segment",
+      "feedback_delay": "Suivi d’avis client",
+      "nth_visit": "Palier de visites",
+      "points_threshold": "Palier de points fidélité",
+      "winback": "Relance client inactif"
+    },
     "send": {
       "customerPhoneRequired": "Ajoutez le numéro de téléphone de ce client avant l’envoi.",
       "error": {
@@ -3325,6 +3386,7 @@
       "typing": "Saisie"
     },
     "tabs": {
+      "automation": "Modèles et règles",
       "connection": "Connexion",
       "inbox": "Boîte de réception",
       "sent": "Envoyés"

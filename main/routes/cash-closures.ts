@@ -8,8 +8,8 @@
  *    using the verbatim financial-summary template (main/routes/reports.ts)
  *    for display totals, plus the drawer-reality rules:
  *      * `expected_cash_cents`: opening float plus active Pay In, Pay Out, and
- *        Safe Drop movements, cash sales from the raw pre-join
- *        `method = 'cash'` filter, and cash refunds by `refunds.created_at`
+ *        Safe Drop movements, cash sales from each cash line's timestamp
+ *        (includes partial tenders), and cash refunds by `refunds.created_at`
  *        (the day the cash left the drawer, not the day the original bill was
  *        paid).
  *      * `tax_components_json`: aggregated via `aggregateTaxComponents`
@@ -45,6 +45,7 @@ import {
 import { requirePermission } from '../services/authorization';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
+import { openSessionBlockingDayClose } from '../services/cash-day-close-guards';
 import {
   getOpenSession,
   NO_CASH_SESSION_ID,
@@ -350,8 +351,8 @@ export interface DayAggregates {
 }
 
 /**
- * Shared by financial-summary (reports.ts, called with paidOnly/attributeRefundsToBillDate=true)
- * and cash-closure snapshots; defaults false/false/false.
+ * Shared by reports (financial-summary, summary, sales, daily-stats, daily-sales-export)
+ * and cash-closure snapshots; boolean flags default to false.
  *
  * `keyByPaidAt` is true only for the day-close snapshot: a bill paid in
  * installments carries one `timestamp` per payment line, so keying lines
@@ -366,6 +367,7 @@ export interface PaymentMethodBreakdownOptions {
   startDate?: string;
   endDate?: string;
   paidOnly?: boolean;
+  excludeCancelledOrders?: boolean;
   attributeRefundsToBillDate?: boolean;
   keyByPaidAt?: boolean;
   /** Raw timestamp window for session attribution (#279). */
@@ -380,6 +382,7 @@ export function paymentMethodBreakdown(
     startDate = '',
     endDate,
     paidOnly = false,
+    excludeCancelledOrders = false,
     attributeRefundsToBillDate = false,
     keyByPaidAt = false,
     explicitWindow,
@@ -399,6 +402,7 @@ export function paymentMethodBreakdown(
     WITH payment_lines AS (
       SELECT b.paid_at, b.created_at, je.value AS line
       FROM bills b
+      LEFT JOIN orders o ON o.id = b.order_id
       JOIN json_each(CASE
         WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array'
           THEN b.payment_details
@@ -410,6 +414,7 @@ export function paymentMethodBreakdown(
         AND b.created_at < ?
         AND (b.paid_at IS NULL OR b.paid_at >= ?)
         AND (? = 0 OR b.paid_at IS NOT NULL)
+        AND (? = 0 OR COALESCE(o.status, '') != 'cancelled')
         AND json_type(je.value) = 'object'
     ), normalized AS (
       SELECT
@@ -427,6 +432,8 @@ export function paymentMethodBreakdown(
         datetime(CASE WHEN ? = 1 THEN b.paid_at ELSE r.created_at END)
       FROM refunds r
       JOIN bills b ON b.id = r.bill_id
+      LEFT JOIN orders o ON o.id = b.order_id
+      WHERE (? = 0 OR COALESCE(o.status, '') != 'cancelled')
     )
     SELECT COALESCE(pm.name, normalized.method) AS method, COUNT(*) AS count,
       COALESCE(SUM(CASE WHEN typeof(amount) IN ('integer', 'real') THEN amount ELSE 0 END), 0) AS total
@@ -439,9 +446,11 @@ export function paymentMethodBreakdown(
       end,
       start,
       paidOnly ? 1 : 0,
+      excludeCancelledOrders ? 1 : 0,
       keyByPaidAt ? 1 : 0,
       minorFactor,
       attributeRefundsToBillDate ? 1 : 0,
+      excludeCancelledOrders ? 1 : 0,
       start,
       end,
     ) as PaymentMethodRow[];
@@ -503,10 +512,11 @@ export function expectedCashFromAggregates(
   );
 }
 /**
- * Drawer-reality cash inputs for one raw timestamp window: cash sales by
- * paid_at (raw pre-join method='cash' lines) and cash refunds by created_at
- * (the day the cash left the drawer). Shared by the full aggregate pipeline
- * and the lightweight live-expected path (#279).
+ * Drawer-reality cash inputs for one raw timestamp window: cash sales by each
+ * payment line's timestamp (includes partial tenders before `paid_at` is set)
+ * and cash refunds by created_at (the day the cash left the drawer). Display
+ * gross/staff/tax still use `paid_at`; only expected-cash drawer math uses
+ * this path. Shared by the full aggregate pipeline and session snapshots.
  */
 export function cashDrawerSalesAndRefunds(
   db: ReturnType<typeof getDatabase>,
@@ -516,8 +526,19 @@ export function cashDrawerSalesAndRefunds(
 ): { salesCents: number; refundsCents: number } {
   const row = db
     .prepare(`
-    WITH cash_sales AS (
-      SELECT COALESCE(SUM(CAST(json_extract(je.value, '$.amount') AS REAL) * ?), 0) AS sales_cents
+    WITH cash_named_custom_methods AS (
+      SELECT id FROM payment_methods WHERE lower(trim(name)) = 'cash'
+    ),
+    payment_lines AS (
+      SELECT
+        CAST(json_extract(je.value, '$.amount') AS REAL) AS amount,
+        COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), '') AS method,
+        CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER) AS payment_method_id,
+        COALESCE(
+          datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+          datetime(NULLIF(b.paid_at, '')),
+          datetime(NULLIF(b.created_at, ''))
+        ) AS line_time
       FROM bills b
       JOIN json_each(
         CASE
@@ -528,20 +549,30 @@ export function cashDrawerSalesAndRefunds(
           ELSE '[]'
         END
       ) je
-      WHERE b.paid_at >= ? AND b.paid_at < ?
+      WHERE b.created_at < datetime(?)
+        AND (b.paid_at IS NULL OR b.paid_at >= datetime(?, '-1 day'))
         AND json_type(je.value) = 'object'
-        AND COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), '') = 'cash'
+    ),
+    cash_sales AS (
+      SELECT COALESCE(SUM(pl.amount * ?), 0) AS sales_cents
+      FROM payment_lines pl
+      LEFT JOIN cash_named_custom_methods pm ON pm.id = pl.payment_method_id
+      WHERE pl.line_time >= datetime(?) AND pl.line_time < datetime(?)
+        AND (lower(trim(pl.method)) = 'cash' OR pm.id IS NOT NULL)
     ), cash_refunds AS (
       SELECT COALESCE(SUM(amount_cents), 0) AS refunds_cents
       FROM refunds
-      WHERE method = 'cash'
+      WHERE lower(method) = 'cash'
         AND created_at >= ? AND created_at < ?
     )
     SELECT
       (SELECT sales_cents FROM cash_sales) AS sales_cents,
       (SELECT refunds_cents FROM cash_refunds) AS refunds_cents
   `)
-    .get(minorFactor, start, end, start, end) as { sales_cents: number; refunds_cents: number };
+    .get(end, start, minorFactor, start, end, start, end) as {
+    sales_cents: number;
+    refunds_cents: number;
+  };
   return {
     salesCents: Math.round(Number(row.sales_cents || 0)),
     refundsCents: Number(row.refunds_cents || 0),
@@ -586,10 +617,10 @@ export function sumCashMovements(
  * opening_float movements are not summed here because
  * the float lives on the session row.
  *
- * Sessions intentionally use the effective shift-gate cash classifier
- * (including a configured method named Cash); day close keeps its narrower
- * exact-'cash' settlement rule. The JSON scan is correctness-first; use an
- * event ledger if bill volume makes session polling hot.
+ * Session and day expected cash share the same drawer classifier: built-in
+ * cash plus configured payment methods whose name resolves to Cash (via
+ * payment_method_id). The JSON scan is correctness-first; use an event ledger
+ * if bill volume makes session polling hot.
  */
 export function sessionExpectedCash(
   db: ReturnType<typeof getDatabase>,
@@ -1100,6 +1131,23 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
     if (!closedBy) throw httpError('Authentication required', 401);
 
     const db = getDatabase();
+    const blockingSession = openSessionBlockingDayClose(db, businessDate);
+    if (blockingSession) {
+      throw Object.assign(
+        httpError(
+          `Close open shift #${blockingSession.id} (${blockingSession.opened_by_name}) before closing business day ${businessDate}`,
+          409,
+          'open_shift_blocks_day_close',
+        ),
+        {
+          blockingShift: {
+            id: blockingSession.id,
+            opened_by_name: blockingSession.opened_by_name,
+            opened_at: blockingSession.opened_at,
+          },
+        },
+      );
+    }
     const [periodStart, periodEnd] = dayBoundsInTimezone(
       businessDate,
       tenantTimezone(),
@@ -1274,6 +1322,9 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
               error.diagnosticCode,
             )
           : { error: safeMessage };
+    if (error?.blockingShift) {
+      (payload as { blocking_shift?: unknown }).blocking_shift = error.blockingShift;
+    }
     res.status(status).json(payload);
   }
 });

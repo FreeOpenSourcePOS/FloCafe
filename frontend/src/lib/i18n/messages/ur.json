@@ -337,8 +337,8 @@
     "exportSales": "فروخت برآمد کریں",
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
-    "exportCsvHint": "CSV دو فائلیں ڈاؤن لوڈ کرتا ہے: خلاصہ اور آئٹمز۔",
-    "exportCsvStarted": "خلاصہ اور آئٹمز کی CSV فائلیں ڈاؤن لوڈ ہو رہی ہیں…",
+    "exportCsvHint": "CSV تین فائلیں ڈاؤن لوڈ کرتا ہے: خلاصہ، آئٹمز اور ادائیگیاں۔",
+    "exportCsvStarted": "خلاصہ، آئٹمز اور ادائیگیوں کی CSV فائلیں ڈاؤن لوڈ ہو رہی ہیں…",
     "liveNow": "ابھی براہ راست",
     "kpiChangeVsSameDayLastWeek": "پچھلے ہفتے کے اِسی دن سے {percent}% تبدیلی",
     "kpiNewVsSameDayLastWeek": "پچھلے ہفتے کے اِسی دن کے مقابلے میں نئے",
@@ -430,7 +430,9 @@
     "priceExceptionReason": "وجہ",
     "priceExceptionsAllShifts": "پورا عرصہ",
     "priceExceptionsShift": "شفٹ",
-    "priceExceptionsShiftOpen": "کھلی"
+    "priceExceptionsShiftOpen": "کھلی",
+    "dayCloseOpenShiftBlocks": "اس کاروباری دن کو بند کرنے سے پہلے کھلی شفٹ #{id} ({name}) کو بند کریں۔",
+    "dayCloseOpenShiftBlocksGeneric": "دن بند کرنے سے پہلے اس کاروباری دن کی کھلی شفٹ بند کریں۔"
   },
   "expenses": {
     "addTitle": "خرچ شامل کریں",
@@ -725,6 +727,7 @@
     "printReceiptTitle": "رسید پرنٹ کریں",
     "printed": "پرنٹ شدہ",
     "printedCount": "{count, plural, one {1 بار پرنٹ ہوا} other {# بار پرنٹ ہوا}}",
+    "transactionNumber": "ٹرانزیکشن نمبر",
     "printing": "پرنٹ ہو رہا ہے...",
     "ready": "تیار",
     "receiptPrintFailedHint": "رسید پرنٹ نہیں ہو سکی — پرنٹر کا کنکشن چیک کریں",
@@ -1132,6 +1135,8 @@
     "paymentIdempotencyConflict": "ادائیگی کی یہ درخواست پہلے ہی کسی دوسری ادائیگی سے منسلک ہے۔ دوبارہ کوشش سے پہلے بل دیکھیں۔",
     "paymentMethodUnavailable": "ادائیگی کا یہ طریقہ اب دستیاب نہیں۔ کوئی دوسرا طریقہ منتخب کریں۔",
     "paymentInputInvalid": "ادائیگی کی تفصیلات درست نہیں۔ طریقہ، رقم اور لین دین کا حوالہ دیکھیں۔",
+    "cardTransactionIdLabel": "ٹرمینل ٹرانزیکشن نمبر",
+    "cardTransactionIdMissing": "کارڈ ٹرمینل سے ٹرانزیکشن نمبر درج کریں۔",
     "paymentCompletionApplied": "ادائیگی درج ہوگئی، لیکن FloCafe بعد کی تازہ کاری مکمل نہیں کر سکا۔ دوسری ادائیگی لینے سے پہلے بل دیکھیں۔",
     "paymentCorrectAndRetry": "ادائیگی کی تفصیلات درست کریں یا کوئی دوسرا طریقہ منتخب کرکے دوبارہ کوشش کریں۔",
     "chargeRequired": "اپ ڈیٹ سے پہلے کوئی چارج منتخب کریں۔",
@@ -1177,7 +1182,12 @@
     "splitCheckCheckAvailability": "دستیابی چیک کریں",
     "viewMore": "مزید دیکھیں",
     "viewLess": "کم دکھائیں",
-    "splitCheckSettingDenied": "یہ اکاؤنٹ بل کی تقسیم کی دستیابی چیک نہیں کر سکتا۔"
+    "splitCheckSettingDenied": "یہ اکاؤنٹ بل کی تقسیم کی دستیابی چیک نہیں کر سکتا۔",
+    "dayCloseBlockedByOpenShiftTitle": "پہلے کھلی شفٹ بند کرنا ضروری ہے",
+    "dayCloseBlockedByOpenShiftHint": "اس کاروباری دن کو بند کرنے سے پہلے کھلی شفٹ #{id} ({name}) کو بند کریں۔",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# کھلا آرڈر اگلی شفٹ میں منتقل ہوگا} other {# کھلے آرڈرز اگلی شفٹ میں منتقل ہوں گے}}",
+    "shiftCloseUnpaidWarningHint": "یہ آرڈرز اگلی شفٹ کے لیے کھلے رہیں گے۔ اس شفٹ کو بند کرنے سے صرف وہ نقد ادائیگیاں ملائی جاتی ہیں جو اس شفٹ کے دوران وصول ہو چکی ہیں۔",
+    "shiftCloseUnpaidMoreCount": "+{count} مزید کھلے آرڈرز"
   },
   "printTest": {
     "amt": "رقم",
@@ -2308,6 +2318,8 @@
     "softwareUpdatesHintStore": "یہ ورژن App Store کے ذریعے تقسیم ہوتا ہے۔ اپ ڈیٹس اسٹور سنبھالتا ہے۔",
     "splitChecks": "بل تقسیم کریں",
     "splitChecksHint": "میز پر کھانے والے آئٹم یا مقدار کو مختلف بلوں میں تقسیم کرنے دیں۔ طے شدہ طور پر بند ہے۔",
+    "cardTransactionIdRequired": "کارڈ ٹرانزیکشن نمبر لازمی کریں",
+    "cardTransactionIdRequiredHint": "کارڈ ادائیگیوں میں کارڈ ٹرمینل کا جاری کردہ ٹرانزیکشن نمبر شامل ہونا چاہیے تاکہ رپورٹس کا ٹرمینل سے موازنہ کیا جا سکے۔ بطور ڈیفالٹ غیر فعال۔",
     "stationAssignedCategories": "کہیں اور مقرر ہیں — منتقل کرنے کے لیے منتخب کریں",
     "stationAvailableCategories": "دستیاب زمرے",
     "stationCategories": "یہاں بھیجے گئے زمرے",
@@ -3172,6 +3184,47 @@
       "phone_required": "فون نمبر درکار ہے",
       "phone_required_pairing": "جوڑی کے کوڈ کے لیے فون نمبر درکار ہے"
     },
+    "automation": {
+      "autoOptOutLabel": "STOP / UNSUBSCRIBE موصول ہونے پر خودکار ان سبسکرائب (بلاک لسٹ میں شامل کریں)",
+      "broadcastDescription": "فلٹر شدہ کسٹمر سیگمنٹ کو ٹیمپلیٹ بھیجیں (بلاک لسٹ، خاموش اوقات اور حد کا خیال رکھتا ہے)۔",
+      "broadcastInactiveDays": "غیر فعال >= دن",
+      "broadcastMinPoints": "کم از کم پوائنٹس",
+      "broadcastMinVisits": "کم از کم وزٹس",
+      "broadcastSendCta": "براڈکاسٹ بھیجیں",
+      "broadcastSuccess": "براڈکاسٹ مکمل: {sent} بھیجے گئے، {skipped} چھوڑے گئے ({matched} مماثل)۔",
+      "broadcastTitle": "کسٹمر سیگمنٹ براڈکاسٹ",
+      "feedbackLinkLabel": "اسٹور فیڈ بیک لنک",
+      "instagramLabel": "اسٹور انسٹاگرام ہینڈل",
+      "maxPerWeekLabel": "فی کسٹمر فی ہفتہ زیادہ سے زیادہ خودکار پیغامات",
+      "placeholdersLabel": "پلیس ہولڈر شامل کرنے کے لیے کلک کریں",
+      "previewTitle": "لائیو پریویو (نمونہ ڈیٹا)",
+      "quietHoursEnd": "خاموش اوقات کا اختتام",
+      "quietHoursLabel": "خاموش اوقات میں خودکار پیغامات روکیں",
+      "quietHoursStart": "خاموش اوقات کا آغاز",
+      "resetDefault": "ڈیفالٹ پر بحال کریں",
+      "ruleAfterPaymentHint": "جب کسٹمر فون والا بل ادا ہو جائے تو خودکار طور پر رسید ٹیمپلیٹ بھیجیں۔",
+      "ruleFeedbackDelayHint": "ادا شدہ آرڈر کے بعد فیڈ بیک کی درخواست بھیجیں (ادائیگی کے بعد گھنٹے)۔",
+      "ruleNthVisitHint": "ہر N ادا شدہ وزٹس پر شکریہ کا انعامی پیغام بھیجیں۔",
+      "rulePointsThresholdHint": "جب پوائنٹس بیلنس مقررہ حد سے تجاوز کرے تو انعامی اطلاع بھیجیں۔",
+      "rulesDescription": "ادائیگی کے بعد رسیدوں، فالو اپس اور سنگ میل کے لیے خودکار اصول اور حدیں مقرر کریں۔",
+      "rulesTitle": "خودکار ترسیل کے اصول",
+      "ruleWinbackHint": "کم از کم N دنوں سے غیر فعال کسٹمرز کو واپسی کی پیشکش بھیجیں۔",
+      "runSweepCta": "طے شدہ اصول ابھی چلائیں",
+      "safetyDescription": "خودکار آپٹ آؤٹ، خاموش اوقات اور ہفتہ وار حد کے ذریعے اپنے منسلک نمبر کی حفاظت کریں۔",
+      "safetyTitle": "حفاظتی اور اینٹی اسپام کنٹرولز",
+      "saveCta": "آٹومیشن ترتیبات محفوظ کریں",
+      "savedSuccess": "آٹومیشن ترتیبات محفوظ ہو گئیں۔",
+      "sweepResult": "طے شدہ اصول چیک کیے گئے ({sent} بھیجے گئے)۔",
+      "templateBodyLabel": "پیغام کا متن",
+      "templateNameLabel": "ٹیمپلیٹ کا نام",
+      "templatesDescription": "کسٹمر، بل، وفاداری اور اسٹور کے پلیس ہولڈرز کے ساتھ خودکار واٹس ایپ پیغامات ترتیب دیں۔",
+      "templateSelectLabel": "منتخب ٹیمپلیٹ",
+      "templatesTitle": "پیغام کے ٹیمپلیٹس",
+      "thresholdDays": "غیر فعال دن",
+      "thresholdHours": "تاخیر کے گھنٹے",
+      "thresholdPoints": "پوائنٹس کی حد",
+      "thresholdVisits": "ہر N وزٹس"
+    },
     "blocklist": {
       "addCta": "شامل کریں",
       "addedSuccess": "بلاک لسٹ میں شامل ہو گیا۔",
@@ -3264,6 +3317,14 @@
       "rate_limited": "WhatsApp نے بھیجتنے کی شرح محدود کر دی ({code})۔ 5 منٹ کے لیے ٹھنکیں۔",
       "reconnecting": "کنکشن بند ہو گیا ({code})۔ {seconds} سیکنڈ میں دوبارہ منسلک ہو رہا ہے…"
     },
+    "rule": {
+      "after_payment": "ادائیگی کے بعد خودکار رسید",
+      "broadcast": "کسٹمر سیگمنٹ نشریات",
+      "feedback_delay": "فیڈ بیک فالو اپ",
+      "nth_visit": "وزٹ سنگ میل",
+      "points_threshold": "وفاداری پوائنٹس سنگ میل",
+      "winback": "غیر فعال کسٹمر واپسی"
+    },
     "send": {
       "customerPhoneRequired": "بھیجنے سے پہلے اس گاہک کا فون نمبر شامل کریں۔",
       "error": {
@@ -3325,6 +3386,7 @@
       "typing": "لکھ رہے ہیں"
     },
     "tabs": {
+      "automation": "ٹیمپلیٹس اور اصول",
       "connection": "کنکشن",
       "inbox": "ان باکس",
       "sent": "بھیجے گئے"

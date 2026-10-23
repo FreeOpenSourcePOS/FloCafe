@@ -12,18 +12,25 @@ sits on a path between an order and a paid bill.
 
 The owner can switch every optional outbound connection off with the `offline_mode` setting
 (`PUT /api/settings/offline-mode`, permission `offline-mode.manage`, Settings → Privacy). It is off
-by default. `main/services/offline-mode.ts` exposes `isOfflineMode()`, which is also true when
-`FLO_MATRIX_OFFLINE` is `1`. While it is on:
+by default and is restore-protected across database restore and import.
+`main/services/offline-mode.ts` exposes `isOfflineMode()`, which is also true when
+`FLO_MATRIX_OFFLINE` is `1`, and `getOfflineModeAbortSignal()`, which aborts when Offline mode turns
+on. While it is on:
 
-- FloAdmin cloud sync starts no timers and `trackedFetch` refuses every request.
+- FloAdmin cloud sync starts no timers (including auto-registration retries) and `trackedFetch`
+  refuses or aborts every request; turning the mode off reloads sync and refreshes registration.
 - Google Drive scheduled backups do not run, and connecting, listing, backing up and restoring fail
   with the `offline` error code, and in-flight Drive work is cancelled. Disconnecting retains the
   local tokens and records the revoke as unconfirmed, which blocks further Drive access.
 - WhatsApp closes its socket without unpairing, refuses to connect and does not start; turning the
   mode off reconnects it.
-- Update checks report the `offline` update state, an in-flight update download is cancelled, and
-  the startup tax pack check and the tax pack catalog download are refused.
-- Telemetry, diagnostics and PostHog send nothing, and web image import returns `503`.
+- Update checks report the `offline` update state, an in-flight update check or download is
+  cancelled into the `offline` state, and the startup tax pack check and tax pack catalog and
+  artifact downloads (including in-flight requests) are refused or aborted.
+- Telemetry, diagnostics and PostHog send nothing (stopping the daily ping timer, aborting in-flight
+  telemetry, diagnostics and PostHog requests, and shutting down the PostHog client without flushing
+  queued events; turning the mode off resumes the daily telemetry timer without resending
+  `app_launch`), and web image import returns `503` (aborting in-flight fetches).
 
 The Express API, KDS and Server App stay bound to `0.0.0.0`, so devices on the local network keep
 working.
@@ -185,7 +192,9 @@ a later opt-in on the same database links to the same device again.
 Only the main process sets the person, on launch and when the level, email or store settings change.
 The renderer does not call `posthog.init` until main returns the id over `get-posthog-bootstrap`;
 init disables persistence and bootstraps that id, so the SDK cannot mint another one. Main checks
-consent and the id on every send; the renderer re-reads both every 30 seconds and on focus and
+consent and the id on every send (cached for up to 30 seconds and invalidated immediately when
+`settings` or `users` rows change via `getSettingsRevision()` or `invalidatePostHogConsentCache()`);
+the renderer re-reads both every 30 seconds and on focus and
 stamps the current id on each event, so a level change takes effect without a reload. When usage
 and diagnostics were both off at load, the same check starts PostHog once either is turned on, and
 the current screen is recorded then. At `off`, renderer events move to the per-launch id and the
@@ -299,13 +308,40 @@ channel and their outbox is unaffected by diagnostics preferences.
 
 ## WhatsApp receipt delivery
 
-Sends a receipt to the customer's phone number over WhatsApp.
+Sends receipts and automated customer follow-ups over WhatsApp ([`main/services/whatsapp.ts`](../../main/services/whatsapp.ts),
+[`shared/whatsapp-automation.ts`](../../shared/whatsapp-automation.ts)).
 
 **Enabled by** the merchant through the WhatsApp settings route, which calls `enable()`. The module
 starts with `state.enabled` false, so nothing is connected until a merchant turns it on.
 
 Receipt outcome is summarised on the order as `whatsapp_receipt_status`, which `GET /api/orders`
 returns per order.
+
+**Templates and automated rules.** `whatsapp_automation_config` in `settings` stores customizable
+templates (`receipt`, `feedback`, `loyalty_milestone`, `visit_milestone`, `winback`), five trigger
+rules, and safety settings. `renderWhatsAppTemplate()` performs single-pass `{...}` placeholder
+substitution across customer, order, loyalty, and store fields so substituted values are never
+re-parsed as tokens. All five automated rules ship disabled (`enabled: false`):
+
+- When a bill transitions to `paid`, `POST /api/bills/:id/payment` and `POST /api/bills/:id/payments`
+  trigger `triggerBillPaidAutomation()` asynchronously in the background to evaluate
+  `after_payment`, `points_threshold`, and `nth_visit`.
+- While WhatsApp is enabled and connected, a 5-minute background timer (`runScheduledAutomationSweep()`,
+  also callable on demand via `POST /api/whatsapp/automation/run-sweep`) evaluates `feedback_delay`
+  (bills settled at least `delayHours` ago and within 7 days of becoming due) and `winback` (active
+  customers whose last paid visit was at least `inactiveDays` ago).
+- `POST /api/whatsapp/automation/broadcast` sends a selected template to up to 50 active customers
+  matching visit, inactivity, and loyalty-point filters.
+- Automated sends record `created_by_user_id` as `rule:<trigger>` (or `rule:broadcast`), which
+  `GET /api/whatsapp/messages` exposes as `trigger_rule`.
+
+**Safety and anti-ban controls.** Inbound non-group DMs matching opt-out keywords (`STOP`,
+`UNSUBSCRIBE`, `OPT OUT`, `OPTOUT`) automatically add the sender to `whatsapp_blocklist` when
+`autoOptOutEnabled` is on. Automated sends check store-timezone quiet hours (`quietHoursEnabled`,
+`quietHoursStart` to `quietHoursEnd`) and a per-customer 7-day automated message cap
+(`maxPerCustomerPerWeek`), returning `quiet_hours` or `weekly_cap` when blocked. All outbound sends
+enforce the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`), a 10-minute duplicate-body
+filter, simulated typing delay, and a content filter that rejects non-HTTPS URLs and URL shorteners.
 
 **Offline behaviour.** No work is started when the module is disabled, when it is in a terminal
 shutdown state, or when the request signal is aborted. Work already in flight is cancelled during
@@ -451,6 +487,7 @@ For support-ticket correlation, see
 ## Verification
 
 ```sh
+npm run test:offline-mode
 npm run test:google-drive
 npm run test:telemetry
 npm run test:support-ticket

@@ -400,8 +400,8 @@
     "exportSales": "売上をエクスポート",
     "exportXlsx": "Excel（.xlsx）",
     "exportCsv": "CSV（.csv）",
-    "exportCsvHint": "CSVでは概要と明細の2つのファイルをダウンロードします。",
-    "exportCsvStarted": "概要と明細のCSVファイルをダウンロードしています…",
+    "exportCsvHint": "CSVでは概要、明細、支払いの3つのファイルをダウンロードします。",
+    "exportCsvStarted": "概要、明細、支払いのCSVファイルをダウンロードしています…",
     "liveNow": "現在",
     "kpiChangeVsSameDayLastWeek": "先週の同じ曜日と比べて{percent}%",
     "kpiNewVsSameDayLastWeek": "先週の同じ曜日と比べて新規",
@@ -430,7 +430,9 @@
     "priceExceptionReason": "理由",
     "priceExceptionsAllShifts": "期間全体",
     "priceExceptionsShift": "シフト",
-    "priceExceptionsShiftOpen": "営業中"
+    "priceExceptionsShiftOpen": "営業中",
+    "dayCloseOpenShiftBlocks": "この営業日を締める前に、開始中のシフト #{id}（{name}）を閉じてください。",
+    "dayCloseOpenShiftBlocksGeneric": "営業日を締める前に、この営業日の開始中のシフトを閉じてください。"
   },
   "expenses": {
     "addTitle": "経費を追加",
@@ -725,6 +727,7 @@
     "printReceiptTitle": "レシートを印刷",
     "printed": "印刷済み",
     "printedCount": "{count, plural, one {1回印刷} other {#回印刷}}",
+    "transactionNumber": "取引番号",
     "printing": "印刷中…",
     "ready": "準備完了",
     "receiptPrintFailedHint": "レシートの印刷に失敗しました - プリンターの接続を確認してください",
@@ -1132,6 +1135,8 @@
     "paymentIdempotencyConflict": "この支払いリクエストは別の支払いにすでに関連付けられています。再試行する前に請求書を確認してください。",
     "paymentMethodUnavailable": "この支払い方法は利用できなくなりました。別の方法を選択してください。",
     "paymentInputInvalid": "支払い情報が無効です。方法、金額、取引参照を確認してください。",
+    "cardTransactionIdLabel": "端末の取引番号",
+    "cardTransactionIdMissing": "カード端末の取引番号を入力してください。",
     "paymentCompletionApplied": "支払いは記録されましたが、FloCafeは後続の更新を完了できませんでした。次の支払いを受け取る前に請求書を確認してください。",
     "paymentCorrectAndRetry": "支払い情報を修正するか別の方法を選んで、もう一度お試しください。",
     "chargeRequired": "更新する前に料金を選択してください。",
@@ -1177,7 +1182,12 @@
     "splitCheckCheckAvailability": "利用可否を確認",
     "viewMore": "さらに表示",
     "viewLess": "表示を減らす",
-    "splitCheckSettingDenied": "このアカウントでは伝票分割の利用可否を確認できません。"
+    "splitCheckSettingDenied": "このアカウントでは伝票分割の利用可否を確認できません。",
+    "dayCloseBlockedByOpenShiftTitle": "開始中のシフトを先に閉じる必要があります",
+    "dayCloseBlockedByOpenShiftHint": "この営業日を締める前に、開始中のシフト #{id}（{name}）を閉じてください。",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# 件の未会計注文が次のシフトに引き継がれます} other {# 件の未会計注文が次のシフトに引き継がれます}}",
+    "shiftCloseUnpaidWarningHint": "これらの注文は次のシフトに引き継がれます。このシフトの精算では、このシフト中に受け取った現金支払いのみを集計します。",
+    "shiftCloseUnpaidMoreCount": "他 +{count} 件の未会計注文"
   },
   "printTest": {
     "amt": "金額",
@@ -2308,6 +2318,8 @@
     "softwareUpdatesHintStore": "このバージョンはApp Store経由で配布されています。更新はストアで管理されます。",
     "splitChecks": "会計を分割",
     "splitChecksHint": "店内飲食の商品や数量を複数の請求書に分けられるようにします。既定では無効です。",
+    "cardTransactionIdRequired": "カード取引番号を必須にする",
+    "cardTransactionIdRequiredHint": "カード決済には、レポートを端末と照合できるよう、カード端末が発行した取引番号を含める必要があります。既定では無効です。",
     "stationAssignedCategories": "他のステーションに割り当て済み — 選択して移動",
     "stationAvailableCategories": "利用可能なカテゴリ",
     "stationCategories": "ここに割り当てたカテゴリ",
@@ -3172,6 +3184,47 @@
       "phone_required": "電話番号が必要です",
       "phone_required_pairing": "ペアリングコードには電話番号が必要です"
     },
+    "automation": {
+      "autoOptOutLabel": "STOP / UNSUBSCRIBE 受信時に自動配信停止（ブロックリストに追加）",
+      "broadcastDescription": "条件で絞り込んだ顧客層にテンプレートを送信します（ブロック・休止時間・制限を遵守）。",
+      "broadcastInactiveDays": "未来店日数 >=",
+      "broadcastMinPoints": "最低ポイント",
+      "broadcastMinVisits": "最低来店回数",
+      "broadcastSendCta": "一斉配信を実行",
+      "broadcastSuccess": "配信完了: {sent}件送信、{skipped}件スキップ（対象{matched}件）。",
+      "broadcastTitle": "顧客セグメント配信",
+      "feedbackLinkLabel": "店舗フィードバックURL",
+      "instagramLabel": "店舗Instagramアカウント",
+      "maxPerWeekLabel": "顧客1人あたりの週間最大自動送信数",
+      "placeholdersLabel": "クリックして変数を挿入",
+      "previewTitle": "ライブプレビュー（サンプルデータ）",
+      "quietHoursEnd": "休止時間の終了",
+      "quietHoursLabel": "休止時間中は自動送信を停止する",
+      "quietHoursStart": "休止時間の開始",
+      "resetDefault": "初期値に戻す",
+      "ruleAfterPaymentHint": "電話番号のある顧客の会計完了時にレシートテンプレートを自動送信します。",
+      "ruleFeedbackDelayHint": "会計完了から指定時間後に感想・レビュー依頼を送信します。",
+      "ruleNthVisitHint": "N回の会計ごとに感謝メッセージを送信します。",
+      "rulePointsThresholdHint": "ポイント残高がしきい値を超えた際に特典通知を送信します。",
+      "rulesDescription": "会計後レシート、フォローアップ、マイルストーン通知の自動トリガーと条件を設定します。",
+      "rulesTitle": "自動送信ルール",
+      "ruleWinbackHint": "N日間以上来店がない顧客に再来店オファーを送信します。",
+      "runSweepCta": "定期ルールを今すぐ実行",
+      "safetyDescription": "自動オプトアウト、休止時間、週次上限により接続番号の凍結リスクを抑えます。",
+      "safetyTitle": "安全・スパム防止設定",
+      "saveCta": "自動化設定を保存",
+      "savedSuccess": "自動化設定を保存しました。",
+      "sweepResult": "定期ルールを実行しました（{sent}件送信）。",
+      "templateBodyLabel": "メッセージ本文",
+      "templateNameLabel": "テンプレート名",
+      "templatesDescription": "顧客・伝票・ポイント・店舗情報の変数を使って自動WhatsAppメッセージを編集します。",
+      "templateSelectLabel": "使用するテンプレート",
+      "templatesTitle": "メッセージテンプレート",
+      "thresholdDays": "未来店日数",
+      "thresholdHours": "経過時間（時間）",
+      "thresholdPoints": "ポイントしきい値",
+      "thresholdVisits": "N回来店ごと"
+    },
     "blocklist": {
       "addCta": "追加",
       "addedSuccess": "ブロックリストに追加しました。",
@@ -3264,6 +3317,14 @@
       "rate_limited": "WhatsAppによって送信が制限されました（{code}）。5分間停止します。",
       "reconnecting": "接続が閉じられました（{code}）。{seconds}秒後に再接続します…"
     },
+    "rule": {
+      "after_payment": "会計後の自動レシート送信",
+      "broadcast": "セグメント一斉配信",
+      "feedback_delay": "フィードバック依頼",
+      "nth_visit": "来店回数マイルストーン",
+      "points_threshold": "ポイント達成通知",
+      "winback": "休眠顧客の再来店促進"
+    },
     "send": {
       "customerPhoneRequired": "送信する前にこの顧客の電話番号を追加してください。",
       "error": {
@@ -3325,6 +3386,7 @@
       "typing": "入力中"
     },
     "tabs": {
+      "automation": "テンプレートと自動ルール",
       "connection": "接続",
       "inbox": "受信トレイ",
       "sent": "送信済み"

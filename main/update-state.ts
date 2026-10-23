@@ -170,6 +170,15 @@ export function isUpdateCheckInFlight(
   return stored.status === 'checking' || phase === 'download';
 }
 
+export function canAcceptUpdateCheckResult(
+  stored: StoredUpdateStatus,
+  phase: UpdateErrorPhase,
+  offlineMode: boolean,
+  checkActive = true,
+): boolean {
+  return !offlineMode && checkActive && phase === 'check' && stored.status === 'checking';
+}
+
 /** Downloads start only after the user accepts an available update. */
 export function canStartUpdateDownload(
   stored: StoredUpdateStatus,

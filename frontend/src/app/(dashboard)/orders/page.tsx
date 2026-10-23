@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import api, {
   captureClientOperationFailure,
   createOperationReference,
@@ -22,12 +22,12 @@ import type { Order, OrderItem, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
-import { usePrinterStore } from '@/hooks/usePrinter';
+import { isPrintCancelledOnTenantChangeError, usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatReceiptErrorToast, extractPrinterErrorMessage } from '@/lib/printer/warnings';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
@@ -136,6 +136,20 @@ interface DiscountModal {
   type: DiscountType;
   value: number;
   reason: string;
+}
+
+function OrdersTableQuerySync({
+  onFiltersChange,
+}: {
+  onFiltersChange: React.Dispatch<React.SetStateAction<Filters>>;
+}) {
+  const tableParam = useSearchParams()?.get('table')?.trim() || '';
+
+  useEffect(() => {
+    onFiltersChange((prev) => (prev.table === tableParam ? prev : { ...prev, table: tableParam }));
+  }, [tableParam, onFiltersChange]);
+
+  return null;
 }
 
 export default function OrdersPage() {
@@ -833,6 +847,14 @@ export default function OrdersPage() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [setTablesRequired]);
 
+  useEffect(() => {
+    if (!filters.table || tables.length > 0) return;
+    api
+      .get('/tables')
+      .then((res) => setTables(res.data.tables || []))
+      .catch(() => {});
+  }, [filters.table, tables.length]);
+
   const handleCreateNewOrderForCustomer = async (order: Order) => {
     if (!order.customer) return;
 
@@ -969,9 +991,13 @@ export default function OrdersPage() {
     fetchOrders(undefined, { refreshLoadedPages: true });
 
     if (bill && autoPrintBill) {
+      const tenantIdAtStart = currentTenant?.id ?? null;
       try {
         const fallbackOrder = orders.find((o) => o.bill?.id === bill.id);
         const { data } = await api.get(`/bills/${bill.id}`);
+        if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
+          return;
+        }
         const latestBill = preferChildScopedBill(data.bill as Bill, fallbackOrder);
         const printWarnings = await printBill(
           latestBill,
@@ -993,6 +1019,7 @@ export default function OrdersPage() {
           /* best-effort history tracking */
         }
       } catch (err) {
+        if (isPrintCancelledOnTenantChangeError(err)) return;
         const msg = extractPrinterErrorMessage(err);
         toast.error(
           `${tPos('saleCompletePrintFailed')} ${tPos('saleCompleteReprintNextStep')} ${formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint'))}`,
@@ -1008,9 +1035,13 @@ export default function OrdersPage() {
       return;
     }
     const isReprint = (printHistory[billId]?.length ?? 0) > 0;
+    const tenantIdAtStart = currentTenant?.id ?? null;
     setPrintingBillId(billId);
     try {
       const { data } = await api.get(`/bills/${billId}`);
+      if ((useAuthStore.getState().currentTenant?.id ?? null) !== tenantIdAtStart) {
+        return;
+      }
       const latestBill = preferChildScopedBill(data.bill as Bill, order);
       // Actually attempt the print first — only log/report success if the printer accepted the job,
       // otherwise a disconnected printer would silently report "success" (it was only logging before).
@@ -1036,6 +1067,7 @@ export default function OrdersPage() {
         /* best-effort history tracking */
       }
     } catch (err) {
+      if (isPrintCancelledOnTenantChangeError(err)) return;
       const detail = extractPrinterErrorMessage(err);
       toast.error(formatReceiptErrorToast(detail, tOrders('printReceiptFailed')));
     } finally {
@@ -1590,6 +1622,9 @@ export default function OrdersPage() {
   // tabs and filters stay on screen while the order content scrolls below them.
   return (
     <div className="h-full min-h-0 flex flex-col gap-4">
+      <Suspense fallback={null}>
+        <OrdersTableQuerySync onFiltersChange={setFilters} />
+      </Suspense>
       {/* Header */}
       <div className="flex items-center justify-between mb-4 shrink-0">
         <h1 className="text-2xl font-bold text-foreground">{tNav('orders')}</h1>

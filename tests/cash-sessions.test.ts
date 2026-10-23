@@ -858,8 +858,8 @@ async function main() {
     'adjacent session sharing the boundary second does not double-count',
   );
 
-  // ── Section 4: close guards ───────────────────────────────────────────
-  console.log('Section 4: unpaid-bills block + stale auto-close');
+  // ── Section 4: close guards & carry-over handover ────────────────────
+  console.log('Section 4: unpaid-bills carry-over preview + stale auto-close');
   const guardOpen = await request(app)
     .post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`)
@@ -868,43 +868,65 @@ async function main() {
   const guardId = guardOpen.body?.id;
   db.prepare(`UPDATE cash_sessions SET opened_at = ? WHERE id = ?`).run(past(3600_000), guardId);
   const guardBill = seedUnpaidBill('guard');
-  const blockedClose = await request(app)
+  const closePreview = await request(app)
+    .get('/api/cash-sessions/current/close-preview')
+    .set('Authorization', `Bearer ${cashierToken}`);
+  assert(closePreview.status === 200, 'close-preview returns 200');
+  assert(
+    closePreview.body?.unpaid_in_shift?.count === 1 &&
+      closePreview.body?.unpaid_in_shift?.bill_count === 1,
+    'close-preview counts unpaid bill in shift window',
+  );
+  assert(
+    closePreview.body?.unpaid_in_shift?.pending_cents === 5000,
+    'close-preview sums pending balance in cents',
+  );
+  assert(
+    Array.isArray(closePreview.body?.unpaid_in_shift?.sample) &&
+      closePreview.body.unpaid_in_shift.sample.length === 1,
+    'close-preview includes sample of unpaid orders in shift window',
+  );
+  assert(
+    closePreview.body?.would_block_close === false,
+    'close-preview reports would_block_close: false (carry-over is non-blocking)',
+  );
+  const nonBlockingClose = await request(app)
     .post(`/api/cash-sessions/${guardId}/close`)
     .set('x-operation-id', '33333333-3333-4333-8333-333333333333')
     .set('Authorization', `Bearer ${cashierToken}`)
     .send({ counted_cash_cents: 0 });
-  assert(blockedClose.status === 409, 'close with an unpaid bill in-window is 409');
-  assert(/unpaid/i.test(String(blockedClose.body?.error || '')), '409 names unpaid bills');
   assert(
-    blockedClose.body?.display_code === 'unpaid_bills_remaining',
-    'unpaid close guard is typed without uploading the count',
+    nonBlockingClose.status === 200,
+    'close with an unpaid bill in-window succeeds (200) and carries bill over',
   );
-  const unpaidCloseDiagnostic = await waitForDiagnostic(
-    db,
-    'cash.session_rejected',
-    (metadata) => metadata.display_code === 'unpaid_bills_remaining',
-  );
+  const guardBillStillUnpaid = db
+    .prepare(`SELECT payment_status, balance FROM bills WHERE id = ?`)
+    .get(guardBill) as { payment_status: string; balance: number };
   assert(
-    unpaidCloseDiagnostic?.metadata?.display_code === 'unpaid_bills_remaining',
-    'cash close stores only the safe unpaid guard code',
+    guardBillStillUnpaid?.payment_status === 'unpaid' && guardBillStillUnpaid?.balance === 50,
+    'carried-over bill remains unpaid with full balance after shift close',
   );
-  const payGuard = await request(app)
-    .post(`/api/bills/${guardBill}/payment`)
-    .set('Authorization', `Bearer ${cashierToken}`)
-    .send({ method: 'cash', amount: 50 });
-  assert(payGuard.status === 200, 'unpaid bill can still be paid (200)');
-  const unblockedClose = await request(app)
-    .post(`/api/cash-sessions/${guardId}/close`)
-    .set('Authorization', `Bearer ${cashierToken}`)
-    .send({ counted_cash_cents: 5000 });
-  assert(unblockedClose.status === 200, 'close succeeds once bills are paid (200)');
 
   const cancelledSession = await request(app)
     .post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`)
     .send({ opening_float_cents: 0 });
-  assert(cancelledSession.status === 200, 'cancelled-guard session opens');
+  assert(cancelledSession.status === 200, 'next shift opens after carry-over');
   const cancelledSessionId = cancelledSession.body?.id;
+  const payGuard = await request(app)
+    .post(`/api/bills/${guardBill}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ method: 'cash', amount: 50 });
+  assert(payGuard.status === 200, 'carried-over unpaid bill settles in the next shift (200)');
+  const settledGuardBill = db
+    .prepare(`SELECT payment_status, payment_details FROM bills WHERE id = ?`)
+    .get(guardBill) as { payment_status: string; payment_details: string };
+  assert(
+    settledGuardBill?.payment_status === 'paid' &&
+      JSON.parse(settledGuardBill.payment_details || '[]')[0]?.cash_session_id ===
+        Number(cancelledSessionId),
+    'settled carry-over bill records cash_session_id of the shift that collected the payment',
+  );
   const cancelledMoment = past(600_000);
   db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
     VALUES ('ORD-CANCELLED-SESS', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?, NULL)`).run(
@@ -927,12 +949,11 @@ async function main() {
   const cancelledClose = await request(app)
     .post(`/api/cash-sessions/${cancelledSessionId}/close`)
     .set('Authorization', `Bearer ${cashierToken}`)
-    .send({ counted_cash_cents: 0 });
+    .send({ counted_cash_cents: 5000 });
   assert(cancelledClose.status === 200, 'cancelled zero-balance bill does not block shift close');
 
-  // Closing-second unpaid bill guard
+  // Closing-second boundary: partial tender stays in Shift 1 drawer while open balance carries over
   const tShift1OpenIso = '2026-06-20T08:00:00.000Z';
-  const tPreceding = '2026-06-20 11:59:59';
   const tClose = '2026-06-20 12:00:00';
   const tCloseIso = '2026-06-20T12:00:00.000Z';
   const tShift2OpenIso = '2026-06-20T12:00:01.000Z';
@@ -948,40 +969,6 @@ async function main() {
     shift1Id = Number(res.body?.id);
   });
 
-  // 1. Preceding-second unpaid bill (T_close - 1s) -> 409
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
-    VALUES ('ORD-GUARD-PRECEDING', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?)`).run(
-    tPreceding,
-    tPreceding,
-  );
-  const precOrderId = Number(
-    (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-GUARD-PRECEDING'`).get() as any)
-      .id,
-  );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
-    VALUES ('BILL-GUARD-PRECEDING', ?, 50, 50, 0, 50, 'unpaid', '[]', ?, ?)`).run(
-    precOrderId,
-    tPreceding,
-    tPreceding,
-  );
-
-  await withFixedClock(tCloseIso, async () => {
-    const res = await request(app)
-      .post(`/api/cash-sessions/${shift1Id}/close`)
-      .set('Authorization', `Bearer ${cashierToken}`)
-      .send({ counted_cash_cents: 0 });
-    assert(res.status === 409, 'preceding-second unpaid bill blocks shift close (409)');
-    assert(
-      res.body?.display_code === 'unpaid_bills_remaining',
-      'preceding-second unpaid bill returns unpaid_bills_remaining',
-    );
-  });
-
-  // Remove preceding bill before same-second tests
-  db.prepare(`DELETE FROM bills WHERE bill_number = 'BILL-GUARD-PRECEDING'`).run();
-  db.prepare(`DELETE FROM orders WHERE order_number = 'ORD-GUARD-PRECEDING'`).run();
-
-  // 2. Same-second unpaid bill (created_at === T_close) -> 409, shift remains open
   db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
     VALUES ('ORD-GUARD-SAME', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?)`).run(
     tClose,
@@ -991,55 +978,11 @@ async function main() {
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-GUARD-SAME'`).get() as any).id,
   );
   db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
-    VALUES ('BILL-GUARD-SAME', ?, 50, 50, 0, 50, 'unpaid', '[]', ?, ?)`).run(
+    VALUES ('BILL-GUARD-SAME', ?, 50, 50, 20, 30, 'partial', ?, ?, ?)`).run(
     sameOrderId,
-    tClose,
-    tClose,
-  );
-
-  await withFixedClock(tCloseIso, async () => {
-    const res = await request(app)
-      .post(`/api/cash-sessions/${shift1Id}/close`)
-      .set('Authorization', `Bearer ${cashierToken}`)
-      .send({ counted_cash_cents: 0 });
-    assert(res.status === 409, 'same-second unpaid bill blocks shift close (409)');
-    assert(
-      res.body?.display_code === 'unpaid_bills_remaining',
-      'same-second unpaid bill returns unpaid_bills_remaining',
-    );
-  });
-  const shift1AfterUnpaid = db
-    .prepare(`SELECT status FROM cash_sessions WHERE id = ?`)
-    .get(shift1Id) as any;
-  assert(shift1AfterUnpaid?.status === 'open', 'same-second unpaid bill leaves shift open');
-
-  // 3. Same-second partially paid bill (payment_status = 'partial', balance > 0, created_at === T_close) -> 409
-  db.prepare(`UPDATE bills SET payment_status = 'partial', paid_amount = 20, balance = 30,
-    payment_details = ? WHERE bill_number = 'BILL-GUARD-SAME'`).run(
     JSON.stringify([{ method: 'cash', amount: 20, timestamp: tClose, cash_session_id: shift1Id }]),
-  );
-
-  await withFixedClock(tCloseIso, async () => {
-    const res = await request(app)
-      .post(`/api/cash-sessions/${shift1Id}/close`)
-      .set('Authorization', `Bearer ${cashierToken}`)
-      .send({ counted_cash_cents: 2000 });
-    assert(res.status === 409, 'same-second partial bill blocks shift close (409)');
-    assert(
-      res.body?.display_code === 'unpaid_bills_remaining',
-      'same-second partial bill returns unpaid_bills_remaining',
-    );
-  });
-  const shift1AfterPartial = db
-    .prepare(`SELECT status FROM cash_sessions WHERE id = ?`)
-    .get(shift1Id) as any;
-  assert(shift1AfterPartial?.status === 'open', 'same-second partial bill leaves shift open');
-
-  // Same-second exclusions: paid bills and cancelled orders do not block close.
-  db.prepare(`UPDATE bills SET payment_status = 'paid', paid_amount = 50, balance = 0, paid_at = ?,
-    payment_details = ? WHERE bill_number = 'BILL-GUARD-SAME'`).run(
     tClose,
-    JSON.stringify([{ method: 'cash', amount: 50, timestamp: tClose, cash_session_id: shift1Id }]),
+    tClose,
   );
 
   db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
@@ -1059,17 +1002,30 @@ async function main() {
   );
 
   await withFixedClock(tCloseIso, async () => {
+    const previewRes = await request(app)
+      .get('/api/cash-sessions/current/close-preview')
+      .set('Authorization', `Bearer ${cashierToken}`);
+    assert(previewRes.status === 200, 'closing-second close-preview returns 200');
+    assert(
+      previewRes.body?.unpaid_in_shift?.count === 1,
+      'closing-second close-preview includes same-second partial order and excludes cancelled order',
+    );
+    assert(
+      previewRes.body?.would_block_close === false,
+      'closing-second close-preview reports would_block_close: false',
+    );
+
     const res = await request(app)
       .post(`/api/cash-sessions/${shift1Id}/close`)
       .set('Authorization', `Bearer ${cashierToken}`)
-      .send({ counted_cash_cents: 5000 });
+      .send({ counted_cash_cents: 2000 });
     assert(
       res.status === 200,
-      'same-second cancelled order and paid bill do not block shift close (200)',
+      'same-second partial bill and cancelled order do not block shift close (200)',
     );
     assert(
-      res.body?.expected_cash_cents === 5000,
-      'same-second cash tender is included once in shift 1 expected cash',
+      res.body?.expected_cash_cents === 2000,
+      'same-second partial cash tender is included once in shift 1 expected cash',
     );
   });
 
@@ -1089,7 +1045,7 @@ async function main() {
       .post(`/api/cash-sessions/${shift2Id}/close`)
       .set('Authorization', `Bearer ${cashierToken}`)
       .send({ counted_cash_cents: 0 });
-    assert(res.status === 200, 'shift 2 closes cleanly with no new unpaid bills (200)');
+    assert(res.status === 200, 'shift 2 closes cleanly (200)');
     assert(
       res.body?.expected_cash_cents === 0,
       'shift 2 does not double-count shift 1 tender (expected_cash_cents === 0)',
@@ -1428,8 +1384,111 @@ async function main() {
   assert(managerDayPrint.status === 403, 'manager cannot print day-close Z (403)');
   db.prepare(`DELETE FROM cash_closures WHERE id = ?`).run(dayClose.body?.zReport?.id);
 
+  console.log('Section 6b: open shift blocks day close on same business date');
+  const shiftForDay = await request(app)
+    .post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ opening_float_cents: 0 });
+  assert(shiftForDay.status === 200, 'shift opens for day-close guard test');
+  const blockedDayClose = await request(app)
+    .post('/api/cash-closures')
+    .set('Authorization', `Bearer ${ownerToken}`)
+    .send({ business_date: todayLocal, opening_float_cents: 0, counted_cash_cents: 0 });
+  assert(
+    blockedDayClose.status === 409,
+    `day close blocked while shift open (409, got ${blockedDayClose.status})`,
+  );
+  assert(
+    blockedDayClose.body?.display_code === 'open_shift_blocks_day_close',
+    'day close rejection uses open_shift_blocks_day_close',
+  );
+  assert(
+    Number(blockedDayClose.body?.blocking_shift?.id) === Number(shiftForDay.body?.id),
+    'response includes blocking_shift id',
+  );
+  const shiftCloseForDay = await request(app)
+    .post(`/api/cash-sessions/${shiftForDay.body?.id}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ counted_cash_cents: 0 });
+  assert(shiftCloseForDay.status === 200, 'shift closes so day close can proceed');
+  const recordedOpeningFloat = Number(
+    (
+      db
+        .prepare(
+          `SELECT amount_cents FROM cash_drawer_movements
+           WHERE business_date = ? AND movement_type = 'opening_float' AND voided_at IS NULL LIMIT 1`,
+        )
+        .get(todayLocal) as { amount_cents: number } | undefined
+    )?.amount_cents ?? 0,
+  );
+  const allowedDayClose = await request(app)
+    .post('/api/cash-closures')
+    .set('Authorization', `Bearer ${ownerToken}`)
+    .send({
+      business_date: todayLocal,
+      opening_float_cents: recordedOpeningFloat,
+      counted_cash_cents: recordedOpeningFloat,
+    });
+  assert(
+    allowedDayClose.status === 201,
+    `day close allowed after shift closed (got ${allowedDayClose.status}, code=${allowedDayClose.body?.display_code})`,
+  );
+  db.prepare(`DELETE FROM cash_closures WHERE id = ?`).run(allowedDayClose.body?.zReport?.id);
+
+  console.log('Section Phase-1 validation: multi-shift same day + pending order carry-over');
+  const turnA = await request(app)
+    .post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ opening_float_cents: 1000 });
+  assert(turnA.status === 200, 'phase1: first shift opens');
+  const closeTurnA = await request(app)
+    .post(`/api/cash-sessions/${turnA.body?.id}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ counted_cash_cents: 1000 });
+  assert(closeTurnA.status === 200, 'phase1: first shift closes on same commercial day');
+  const turnB = await request(app)
+    .post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ opening_float_cents: 0 });
+  assert(turnB.status === 200, 'phase1: second shift opens on same commercial day');
+  const turnBId = Number(turnB.body?.id);
+  const carryMoment = now();
+  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-CARRY-PH1', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?, NULL)`).run(
+    carryMoment,
+    carryMoment,
+  );
+  const carryOrderId = Number(
+    (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-CARRY-PH1'`).get() as any).id,
+  );
+  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('CARRY-PH1', ?, 50, 50, 0, 50, 'unpaid', '[]', NULL, ?, ?)`).run(
+    carryOrderId,
+    carryMoment,
+    carryMoment,
+  );
+  const closeTurnB = await request(app)
+    .post(`/api/cash-sessions/${turnBId}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ counted_cash_cents: 0 });
+  assert(
+    closeTurnB.status === 200,
+    'phase1: second shift closes while in-shift unpaid bill exists and carries over',
+  );
+  const carryOrder = db
+    .prepare(`SELECT status FROM orders WHERE order_number = 'ORD-CARRY-PH1'`)
+    .get() as { status: string };
+  assert(carryOrder?.status === 'pending', 'phase1: pending order remains after shift turnover');
+  const carryBill = db
+    .prepare(`SELECT balance, payment_status FROM bills WHERE bill_number = 'CARRY-PH1'`)
+    .get() as { balance: number; payment_status: string };
+  assert(carryBill?.balance === 50, 'phase1: unpaid balance unchanged (no duplicate charge)');
+  assert(carryBill?.payment_status === 'unpaid', 'phase1: bill still collectible on next shift');
+  db.prepare(`DELETE FROM bills WHERE bill_number = 'CARRY-PH1'`).run();
+  db.prepare(`DELETE FROM orders WHERE order_number = 'ORD-CARRY-PH1'`).run();
+
   // ── Section 7: round-2 review findings ────────────────────────────────
-  console.log('Section 7: partial block, case-insensitive gate, refund gate');
+  console.log('Section 7: partial carry-over, case-insensitive gate, refund gate');
   const { refundRoutes } = require('../main/routes/refunds');
   app.use('/api/refunds', refundRoutes);
   assert(!!refundRoutes, 'refunds router mounts');
@@ -1462,11 +1521,29 @@ async function main() {
     pm,
     pm,
   );
+  const partPreview = await request(app)
+    .get('/api/cash-sessions/current/close-preview')
+    .set('Authorization', `Bearer ${cashierToken}`);
+  assert(
+    partPreview.status === 200 &&
+      partPreview.body?.unpaid_in_shift?.count === 1 &&
+      partPreview.body?.unpaid_in_shift?.pending_cents === 3000 &&
+      partPreview.body?.would_block_close === false,
+    'close-preview surfaces partial bill carry-over without blocking close',
+  );
   const partClose = await request(app)
     .post(`/api/cash-sessions/${pOpen.body?.id}/close`)
     .set('Authorization', `Bearer ${cashierToken}`)
-    .send({ counted_cash_cents: 0 });
-  assert(partClose.status === 409, 'close with a partial bill in-window is 409');
+    .send({ counted_cash_cents: 2000 });
+  assert(
+    partClose.status === 200 && partClose.body?.expected_cash_cents === 2000,
+    'close with a partial bill in-window succeeds (200) and reconciles the 20 cash collected',
+  );
+  const pOpenCarry = await request(app)
+    .post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ opening_float_cents: 0 });
+  assert(pOpenCarry.status === 200, 'follow-up session opens to settle carried-over partial bill');
   const partBillId = Number(
     (db.prepare(`SELECT id FROM bills WHERE bill_number = 'PART-1'`).get() as any).id,
   );
@@ -1474,12 +1551,15 @@ async function main() {
     .post(`/api/bills/${partBillId}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`)
     .send({ method: 'cash', amount: 30 });
-  assert(payPart.status === 200, 'partial bill settles (200)');
+  assert(payPart.status === 200, 'partial bill settles in follow-up shift (200)');
   const closePart = await request(app)
-    .post(`/api/cash-sessions/${pOpen.body?.id}/close`)
+    .post(`/api/cash-sessions/${pOpenCarry.body?.id}/close`)
     .set('Authorization', `Bearer ${cashierToken}`)
-    .send({ counted_cash_cents: 2000 });
-  assert(closePart.status === 200, 'close succeeds once partial is settled (200)');
+    .send({ counted_cash_cents: 3000 });
+  assert(
+    closePart.status === 200 && closePart.body?.expected_cash_cents === 3000,
+    'follow-up shift closes cleanly with remaining 30 cash collected (200)',
+  );
 
   // Case-insensitive gate: custom method named "Cash" is still cash.
   db.prepare(`UPDATE settings SET value = 'true' WHERE key = 'require_open_shift'`).run();

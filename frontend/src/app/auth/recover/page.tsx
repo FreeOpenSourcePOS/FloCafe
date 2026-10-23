@@ -38,25 +38,34 @@ export default function RecoverAccessPage() {
   const [resetId, setResetId] = useState('');
   const [emailHint, setEmailHint] = useState('');
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollInFlight = useRef(false);
+  const unmounted = useRef(false);
 
   const stopPolling = () => {
     if (pollTimer.current) clearInterval(pollTimer.current);
     pollTimer.current = null;
+    pollInFlight.current = false;
   };
 
   useEffect(() => {
+    unmounted.current = false;
     api
       .get('/auth/setup/status')
       .then(({ data }) => {
+        if (unmounted.current) return;
         setPinAvailable(!!data.masterPinAvailable);
         setCloudAvailable(!!data.cloudRecoveryAvailable);
         if (data.cloudRecoveryAvailable) setMethod('email');
       })
       .catch(() => {
+        if (unmounted.current) return;
         console.warn('[RecoverAccess] Could not verify recovery availability');
         setPinAvailable(false);
       });
-    return stopPolling;
+    return () => {
+      unmounted.current = true;
+      stopPolling();
+    };
   }, []);
 
   const requestEmailReset = async () => {
@@ -64,21 +73,27 @@ export default function RecoverAccessPage() {
     setLoading(true);
     try {
       const { data } = await api.post('/auth/recover-password/cloud/request');
+      if (unmounted.current) return;
       stopPolling();
       setEmailHint(data.email_hint || '');
       if (data.step === 'verify_email') {
         setEmailStep('verifying');
         pollTimer.current = setInterval(async () => {
+          if (pollInFlight.current || unmounted.current) return;
+          pollInFlight.current = true;
           try {
             const { data: verification } = await api.get(
               '/auth/recover-password/cloud/verification',
             );
+            if (unmounted.current) return;
             if (verification.verified) {
               stopPolling();
               void requestEmailReset();
             }
           } catch {
             // Transient failures keep polling; the owner can resend.
+          } finally {
+            pollInFlight.current = false;
           }
         }, RESET_POLL_INTERVAL_MS);
         return;
@@ -86,10 +101,13 @@ export default function RecoverAccessPage() {
       setResetId(data.reset_id);
       setEmailStep('waiting');
       pollTimer.current = setInterval(async () => {
+        if (pollInFlight.current || unmounted.current) return;
+        pollInFlight.current = true;
         try {
           const { data: status } = await api.get('/auth/recover-password/cloud/status', {
             params: { reset_id: data.reset_id },
           });
+          if (unmounted.current) return;
           if (status.status === 'approved') {
             stopPolling();
             setEmailStep('approved');
@@ -100,13 +118,16 @@ export default function RecoverAccessPage() {
           }
         } catch {
           // Transient failures keep polling; the owner can resend.
+        } finally {
+          pollInFlight.current = false;
         }
       }, RESET_POLL_INTERVAL_MS);
     } catch (err: unknown) {
+      if (unmounted.current) return;
       const status = (err as { response?: { status?: number } }).response?.status;
       setFormError(status === 429 ? t('recoverEmailRateLimited') : t('recoverEmailUnavailable'));
     } finally {
-      setLoading(false);
+      if (!unmounted.current) setLoading(false);
     }
   };
 

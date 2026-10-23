@@ -803,7 +803,10 @@ router.post(
 
     const recovery = applyOwnerRecovery(db, user, newPassword, 'FloAdmin email approval');
     if (!recovery.ok) {
-      return res.status(409).json({ error: 'Owner access changed during recovery. Try again.' });
+      return res.status(409).json({
+        error:
+          'Owner access changed during recovery. This reset approval was used and cannot be reused. Request a new password reset.',
+      });
     }
     res.json({
       message: recovery.restoredOwnerAccess

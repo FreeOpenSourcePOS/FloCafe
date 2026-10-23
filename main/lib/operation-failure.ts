@@ -167,6 +167,7 @@ const CASH_DAY_CLOSE_DISPLAY_CODES = [
   'notes_too_long',
   'day_already_closed',
   'opening_float_mismatch',
+  'open_shift_blocks_day_close',
 ] as const;
 const KDS_ITEM_STATUS_DISPLAY_CODES = [
   'invalid_status',
@@ -1424,8 +1425,15 @@ export function serializeOperationFailure(input: {
           return null;
         facts[key] = value;
       } else {
-        if (typeof value !== 'string' || !rule.values.includes(value)) return null;
-        facts[key] = value;
+        const normalizedValue =
+          definition.capture_point === 'fc.backend.payment.create.validation' &&
+          key === 'display_code' &&
+          value === 'card_transaction_id_required'
+            ? 'payment_input_invalid'
+            : value;
+        if (typeof normalizedValue !== 'string' || !rule.values.includes(normalizedValue))
+          return null;
+        facts[key] = normalizedValue;
       }
     }
     for (const [key, rule] of Object.entries(definition.facts)) {

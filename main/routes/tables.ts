@@ -213,7 +213,7 @@ router.delete(
       const db = getDatabase();
       const result = db
         .prepare(`
-      UPDATE tables SET floor = NULL, updated_at = ?
+      UPDATE tables SET floor = NULL, position_x = NULL, position_y = NULL, updated_at = ?
       WHERE floor = ?
     `)
         .run(now(), name);

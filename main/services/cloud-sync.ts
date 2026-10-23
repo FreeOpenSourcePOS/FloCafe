@@ -1343,6 +1343,7 @@ export class CloudSyncService {
         if (
           !this.cloudDeletionInProgress &&
           !this.shutdownRequested &&
+          !isOfflineMode() &&
           currentSettings.cloud_services_disabled_by_user !== 'true'
         ) {
           this.upsertSettings({
@@ -1381,7 +1382,12 @@ export class CloudSyncService {
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
-    if (!res.ok) throw new Error(String(data.error || `Email status failed (${res.status})`));
+    if (!res.ok) {
+      throw new CloudRequestError(
+        String(data.error || `Email status failed (${res.status})`),
+        res.status,
+      );
+    }
     this.upsertSettings({
       cloud_email_verified: data.verified ? 'true' : 'false',
       cloud_email_verification_sent_at:
@@ -1436,10 +1442,28 @@ export class CloudSyncService {
     return data;
   }
 
+  isTrustedRecoveryServerUrl(rawUrl?: string): boolean {
+    if (Boolean(app && !app.isPackaged && process.env.FLOCAFE_ALLOW_DEV_CLOUD_RECOVERY === '1')) {
+      return true;
+    }
+    try {
+      const candidate =
+        rawUrl || this.readSettings(getDatabase()).cloud_server_url || DEFAULT_CLOUD_SERVER_URL;
+      return (
+        normalizeCloudServerUrl(candidate) === normalizeCloudServerUrl(DEFAULT_CLOUD_SERVER_URL)
+      );
+    } catch {
+      return false;
+    }
+  }
+
   /** True when cloud services are on and the store has an owner email FloAdmin can verify and mail. */
   isEmailRecoveryAvailable(): boolean {
     return (
-      !isOfflineMode() && this.isCloudAccountAvailable() && Boolean(this.getRegisteredOwnerEmail())
+      !isOfflineMode() &&
+      this.isCloudAccountAvailable() &&
+      this.isTrustedRecoveryServerUrl() &&
+      Boolean(this.getRegisteredOwnerEmail())
     );
   }
 
@@ -1466,6 +1490,9 @@ export class CloudSyncService {
     method: 'GET' | 'POST',
     signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
+    if (!this.isTrustedRecoveryServerUrl()) {
+      throw new CloudRequestError('Password recovery requires the official FloAdmin server', 403);
+    }
     throwIfRequestAborted(signal);
     const res = await this.signedFetch(pathname, {
       method,
@@ -3201,7 +3228,7 @@ export class CloudSyncService {
   }
 
   private attemptAutoRegister() {
-    if (this.shutdownRequested) return;
+    if (this.shutdownRequested || isOfflineMode()) return;
     let settings: Record<string, string>;
     try {
       settings = this.readSettings(getDatabase());
@@ -3225,7 +3252,7 @@ export class CloudSyncService {
         })
         .catch(() => {
           this.autoRegisterInFlight = false;
-          if (this.shutdownRequested) return;
+          if (this.shutdownRequested || isOfflineMode()) return;
           const currentSettings = this.readSettings(getDatabase());
           if (
             this.cloudDeletionInProgress ||
@@ -3241,7 +3268,7 @@ export class CloudSyncService {
           this.autoRegisterAttempts++;
           this.autoRegisterTimer = setTimeout(() => {
             this.autoRegisterTimer = null;
-            if (!this.shutdownRequested) this.attemptAutoRegister();
+            if (!this.shutdownRequested && !isOfflineMode()) this.attemptAutoRegister();
           }, delay);
         }),
       'auto-registration',

@@ -432,6 +432,7 @@ const PAYMENT_DISPLAY_CODES = [
   'payment_method_unavailable',
   'payment_input_invalid',
   'cash_session_required',
+  'card_transaction_id_required',
 ] as const;
 const CHARGE_DISPLAY_CODES = [
   'charge_required',

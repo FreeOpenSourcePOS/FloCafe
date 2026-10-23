@@ -337,8 +337,8 @@
     "exportSales": "निर्यात बिक्री",
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
-    "exportCsvHint": "सीएसवी दो फ़ाइलें डाउनलोड करता है: सारांश और आइटम।",
-    "exportCsvStarted": "सारांश और आइटम CSV फ़ाइलें डाउनलोड हो रही हैं…",
+    "exportCsvHint": "सीएसवी तीन फ़ाइलें डाउनलोड करता है: सारांश, आइटम और भुगतान।",
+    "exportCsvStarted": "सारांश, आइटम और भुगतान CSV फ़ाइलें डाउनलोड हो रही हैं…",
     "liveNow": "अभी जियो",
     "kpiChangeVsSameDayLastWeek": "{percent}% बनाम पिछले सप्ताह का समान दिन",
     "kpiNewVsSameDayLastWeek": "नया बनाम पिछले सप्ताह का वही दिन",
@@ -430,7 +430,9 @@
     "priceExceptionReason": "कारण",
     "priceExceptionsAllShifts": "पूरी अवधि",
     "priceExceptionsShift": "शिफ्ट",
-    "priceExceptionsShiftOpen": "खुली"
+    "priceExceptionsShiftOpen": "खुली",
+    "dayCloseOpenShiftBlocks": "इस व्यावसायिक दिन को बंद करने से पहले खुली शिफ्ट #{id} ({name}) को बंद करें।",
+    "dayCloseOpenShiftBlocksGeneric": "दिन बंद करने से पहले इस व्यावसायिक दिन की खुली शिफ्ट को बंद करें।"
   },
   "expenses": {
     "addTitle": "व्यय जोड़ें",
@@ -725,6 +727,7 @@
     "printReceiptTitle": "बिल प्रिंट करें",
     "printed": "मुद्रित",
     "printedCount": "{count, plural, one {1 बार प्रिंट किया गया} other {# बार प्रिंट किया गया}}",
+    "transactionNumber": "लेनदेन सं.",
     "printing": "मुद्रण...",
     "ready": "तैयार",
     "receiptPrintFailedHint": "रसीद प्रिंट विफल - प्रिंटर कनेक्शन की जाँच करें",
@@ -1132,6 +1135,8 @@
     "paymentIdempotencyConflict": "यह भुगतान अनुरोध पहले से किसी दूसरे भुगतान से जुड़ा है। फिर से कोशिश करने से पहले बिल जाँचें।",
     "paymentMethodUnavailable": "भुगतान का यह तरीका अब उपलब्ध नहीं है। कोई दूसरा तरीका चुनें।",
     "paymentInputInvalid": "भुगतान का विवरण अमान्य है। तरीका, राशि और लेन-देन का संदर्भ जाँचें।",
+    "cardTransactionIdLabel": "टर्मिनल लेनदेन संख्या",
+    "cardTransactionIdMissing": "कार्ड टर्मिनल से लेनदेन संख्या दर्ज करें।",
     "paymentCompletionApplied": "भुगतान दर्ज हो गया, लेकिन FloCafe अगला अपडेट पूरा नहीं कर सका। दूसरा भुगतान लेने से पहले बिल जाँचें।",
     "paymentCorrectAndRetry": "भुगतान का विवरण ठीक करें या कोई दूसरा तरीका चुनें, फिर दोबारा कोशिश करें।",
     "chargeRequired": "अपडेट करने से पहले शुल्क चुनें।",
@@ -1177,7 +1182,12 @@
     "splitCheckCheckAvailability": "उपलब्धता जाँचें",
     "viewMore": "और देखें",
     "viewLess": "कम देखें",
-    "splitCheckSettingDenied": "यह खाता बिल विभाजन की उपलब्धता जाँच नहीं सकता।"
+    "splitCheckSettingDenied": "यह खाता बिल विभाजन की उपलब्धता जाँच नहीं सकता।",
+    "dayCloseBlockedByOpenShiftTitle": "खुली शिफ्ट को पहले बंद करना होगा",
+    "dayCloseBlockedByOpenShiftHint": "इस व्यावसायिक दिन को बंद करने से पहले खुली शिफ्ट #{id} ({name}) को बंद करें।",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# खुला ऑर्डर अगली शिफ्ट में आगे जाएगा} other {# खुले ऑर्डर अगली शिफ्ट में आगे जाएंगे}}",
+    "shiftCloseUnpaidWarningHint": "ये ऑर्डर अगली शिफ्ट के लिए खुले रहते हैं। इस शिफ्ट को बंद करने पर केवल इस शिफ्ट के दौरान पहले से प्राप्त नकद भुगतानों का मिलान होता है।",
+    "shiftCloseUnpaidMoreCount": "+{count} और खुले ऑर्डर"
   },
   "printTest": {
     "amt": "राशि",
@@ -2319,6 +2329,8 @@
     "softwareUpdatesHintStore": "यह संस्करण ऐप स्टोर के माध्यम से वितरित किया जाता है। अपडेट स्टोर द्वारा प्रबंधित किए जाते हैं.",
     "splitChecks": "विभाजित जाँचें",
     "splitChecksHint": "भोजन की वस्तुओं या मात्राओं को अलग-अलग बिलों में विभाजित करने की अनुमति दें। डिफ़ॉल्ट रूप से अक्षम.",
+    "cardTransactionIdRequired": "कार्ड लेनदेन संख्या अनिवार्य करें",
+    "cardTransactionIdRequiredHint": "कार्ड भुगतानों में कार्ड टर्मिनल द्वारा जारी लेनदेन संख्या शामिल होनी चाहिए, ताकि रिपोर्ट का टर्मिनल से मिलान किया जा सके। डिफ़ॉल्ट रूप से बंद।",
     "stationAssignedCategories": "अन्यत्र असाइन किया गया - स्थानांतरित करने के लिए चयन करें",
     "stationAvailableCategories": "उपलब्ध श्रेणियां",
     "stationCategories": "श्रेणियाँ यहाँ रूट की गईं",
@@ -3172,6 +3184,47 @@
       "phone_required": "फ़ोन नंबर आवश्यक है",
       "phone_required_pairing": "पेयरिंग कोड के लिए फ़ोन आवश्यक है"
     },
+    "automation": {
+      "autoOptOutLabel": "STOP / UNSUBSCRIBE आने पर स्वतः ऑप्ट-आउट (ब्लॉकलिस्ट में जोड़ता है)",
+      "broadcastDescription": "फ़िल्टर किए गए ग्राहक समूह को टेम्पलेट भेजें (ब्लॉकलिस्ट, शांत घंटे और सीमा का पालन करता है)।",
+      "broadcastInactiveDays": "निष्क्रिय >= दिन",
+      "broadcastMinPoints": "न्यूनतम पॉइंट्स",
+      "broadcastMinVisits": "न्यूनतम विज़िट",
+      "broadcastSendCta": "ब्रॉडकास्ट भेजें",
+      "broadcastSuccess": "ब्रॉडकास्ट पूरा हुआ: {sent} भेजे गए, {skipped} छोड़े गए ({matched} मिले)।",
+      "broadcastTitle": "ग्राहक समूह ब्रॉडकास्ट",
+      "feedbackLinkLabel": "स्टोर फ़ीडबैक लिंक",
+      "instagramLabel": "स्टोर इंस्टाग्राम हैंडल",
+      "maxPerWeekLabel": "प्रति ग्राहक प्रति सप्ताह अधिकतम ऑटो संदेश",
+      "placeholdersLabel": "प्लेसहोल्डर जोड़ने के लिए क्लिक करें",
+      "previewTitle": "लाइव पूर्वावलोकन (नमूना डेटा)",
+      "quietHoursEnd": "शांत घंटे समाप्ति",
+      "quietHoursLabel": "शांत घंटों के दौरान ऑटो संदेश रोकें",
+      "quietHoursStart": "शांत घंटे प्रारंभ",
+      "resetDefault": "डिफ़ॉल्ट पर रीसेट करें",
+      "ruleAfterPaymentHint": "ग्राहक फ़ोन वाले बिल का भुगतान होने पर रसीद टेम्पलेट स्वतः भेजें।",
+      "ruleFeedbackDelayHint": "भुगतान के निर्धारित घंटों बाद फ़ीडबैक अनुरोध भेजें।",
+      "ruleNthVisitHint": "हर N भुगतान की गई विज़िट पर धन्यवाद संदेश भेजें।",
+      "rulePointsThresholdHint": "पॉइंट्स बैलेंस सीमा पार करने पर रिवॉर्ड सूचना भेजें।",
+      "rulesDescription": "भुगतान के बाद रसीद, फ़ॉलो-अप और उपलब्धियों के लिए ऑटो नियम व सीमाएँ सेट करें।",
+      "rulesTitle": "स्वचालित संदेश नियम",
+      "ruleWinbackHint": "कम से कम N दिनों से न आने वाले ग्राहकों को वापसी ऑफ़र भेजें।",
+      "runSweepCta": "निर्धारित नियम अभी चलाएँ",
+      "safetyDescription": "ऑटो ऑप्ट-आउट, शांत घंटे और साप्ताहिक सीमा से अपने जुड़े नंबर को सुरक्षित रखें।",
+      "safetyTitle": "सुरक्षा और एंटी-स्पैम नियंत्रण",
+      "saveCta": "ऑटोमेशन सेटिंग सहेजें",
+      "savedSuccess": "ऑटोमेशन सेटिंग सहेजी गईं।",
+      "sweepResult": "निर्धारित नियम जाँचे गए ({sent} भेजे गए)।",
+      "templateBodyLabel": "संदेश सामग्री",
+      "templateNameLabel": "टेम्पलेट नाम",
+      "templatesDescription": "ग्राहक, बिल, लॉयल्टी और स्टोर प्लेसहोल्डर के साथ स्वचालित WhatsApp संदेश कस्टमाइज़ करें।",
+      "templateSelectLabel": "चयनित टेम्पलेट",
+      "templatesTitle": "संदेश टेम्पलेट",
+      "thresholdDays": "निष्क्रिय दिन",
+      "thresholdHours": "देरी के घंटे",
+      "thresholdPoints": "पॉइंट्स सीमा",
+      "thresholdVisits": "हर N विज़िट"
+    },
     "blocklist": {
       "addCta": "जोड़ें",
       "addedSuccess": "ब्लॉकलिस्ट में जोड़ा गया.",
@@ -3264,6 +3317,14 @@
       "rate_limited": "WhatsApp द्वारा रेट-सीमित भेजें ({code})। 5 मिनट तक ठंडा करें।",
       "reconnecting": "कनेक्शन बंद ({code})। {seconds}s में पुनः कनेक्ट हो रहा है..."
     },
+    "rule": {
+      "after_payment": "भुगतान के बाद ऑटो रसीद",
+      "broadcast": "ग्राहक समूह ब्रॉडकास्ट",
+      "feedback_delay": "फ़ीडबैक फ़ॉलो-अप",
+      "nth_visit": "विज़िट उपलब्धि",
+      "points_threshold": "लॉयल्टी पॉइंट्स उपलब्धि",
+      "winback": "निष्क्रिय ग्राहक वापसी"
+    },
     "send": {
       "customerPhoneRequired": "भेजने से पहले इस ग्राहक का फ़ोन नंबर जोड़ें.",
       "error": {
@@ -3325,6 +3386,7 @@
       "typing": "टाइपिंग"
     },
     "tabs": {
+      "automation": "टेम्पलेट और नियम",
       "connection": "कनेक्शन",
       "inbox": "इनबॉक्स",
       "sent": "भेजे गए"

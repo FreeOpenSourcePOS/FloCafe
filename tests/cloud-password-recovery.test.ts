@@ -39,7 +39,12 @@ const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
 const { authRoutes } = require('../main/routes/auth');
-const { cloudSync, CloudRequestError } = require('../main/services/cloud-sync');
+const {
+  cloudSync,
+  CloudRequestError,
+  CloudSyncService,
+  DEFAULT_CLOUD_SERVER_URL,
+} = require('../main/services/cloud-sync');
 const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
 
 function isNativeAbiMismatch(error: any): boolean {
@@ -228,6 +233,63 @@ async function main() {
 
   const users = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
   assertEqualOrThrow(users, 1, 'recovery does not add or remove users');
+
+  const upsertSetting = db.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `);
+  upsertSetting.run('cloud_registration_status', 'registered');
+  upsertSetting.run('cloud_api_key', 'test-api-key');
+  upsertSetting.run('cloud_services_disabled_by_user', 'false');
+  upsertSetting.run('cloud_deletion_status', '');
+  upsertSetting.run('email', 'owner@example.com');
+  upsertSetting.run('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
+
+  const realCloudSync = new CloudSyncService();
+  assertEqualOrThrow(
+    realCloudSync.isTrustedRecoveryServerUrl(),
+    true,
+    'DEFAULT_CLOUD_SERVER_URL is trusted for password recovery',
+  );
+  assertEqualOrThrow(
+    realCloudSync.isEmailRecoveryAvailable(),
+    true,
+    'email recovery is available with DEFAULT_CLOUD_SERVER_URL',
+  );
+
+  upsertSetting.run('cloud_server_url', 'https://evil.example.com/');
+  assertEqualOrThrow(
+    realCloudSync.isTrustedRecoveryServerUrl(),
+    false,
+    'custom cloud_server_url is untrusted for password recovery',
+  );
+  assertEqualOrThrow(
+    realCloudSync.isEmailRecoveryAvailable(),
+    false,
+    'email recovery is unavailable when cloud_server_url points to a custom server',
+  );
+
+  let rejectedRequest: unknown = null;
+  try {
+    await realCloudSync.requestPasswordReset();
+  } catch (err) {
+    rejectedRequest = err;
+  }
+  assertOrThrow(
+    rejectedRequest instanceof CloudRequestError && rejectedRequest.status === 403,
+    'requestPasswordReset rejects with 403 CloudRequestError on untrusted server URL',
+  );
+
+  let rejectedRedeem: unknown = null;
+  try {
+    await realCloudSync.redeemPasswordReset(RESET_ID);
+  } catch (err) {
+    rejectedRedeem = err;
+  }
+  assertOrThrow(
+    rejectedRedeem instanceof CloudRequestError && rejectedRedeem.status === 403,
+    'redeemPasswordReset rejects with 403 CloudRequestError on untrusted server URL',
+  );
 }
 
 main()

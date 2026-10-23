@@ -337,8 +337,8 @@
     "exportSales": "Экспорт продаж",
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
-    "exportCsvHint": "CSV загружает два файла: сводку и элементы.",
-    "exportCsvStarted": "Загрузка CSV-файлов сводки и позиций…",
+    "exportCsvHint": "CSV загружает три файла: сводку, позиции и платежи.",
+    "exportCsvStarted": "Загрузка CSV-файлов сводки, позиций и платежей…",
     "liveNow": "Сейчас",
     "kpiChangeVsSameDayLastWeek": "{percent}% по сравнению с тем же днем на прошлой неделе",
     "kpiNewVsSameDayLastWeek": "Новое по сравнению с тем же днем на прошлой неделе",
@@ -430,7 +430,9 @@
     "priceExceptionReason": "Причина",
     "priceExceptionsAllShifts": "Весь период",
     "priceExceptionsShift": "Смена",
-    "priceExceptionsShiftOpen": "открыта"
+    "priceExceptionsShiftOpen": "открыта",
+    "dayCloseOpenShiftBlocks": "Закройте открытую смену #{id} ({name}) перед закрытием этого операционного дня.",
+    "dayCloseOpenShiftBlocksGeneric": "Закройте открытую смену за этот операционный день перед закрытием дня."
   },
   "expenses": {
     "addTitle": "Добавить расход",
@@ -725,6 +727,7 @@
     "printReceiptTitle": "Печать чека",
     "printed": "Напечатано",
     "printedCount": "{count, plural, one {Напечатано 1 раз} few {Напечатано # раза} many {Напечатано # раз} other {Напечатано # раза}}",
+    "transactionNumber": "№ транзакции",
     "printing": "Печать...",
     "ready": "Готово",
     "receiptPrintFailedHint": "Не удалось распечатать чек — проверьте подключение принтера.",
@@ -1132,6 +1135,8 @@
     "paymentIdempotencyConflict": "Этот запрос на оплату уже связан с другим платежом. Проверьте счёт перед повторной попыткой.",
     "paymentMethodUnavailable": "Этот способ оплаты больше недоступен. Выберите другой способ.",
     "paymentInputInvalid": "Данные платежа неверны. Проверьте способ, сумму и ссылку на транзакцию.",
+    "cardTransactionIdLabel": "Номер транзакции терминала",
+    "cardTransactionIdMissing": "Введите номер транзакции с платёжного терминала.",
     "paymentCompletionApplied": "Платёж записан, но FloCafe не удалось завершить последующее обновление. Проверьте счёт, прежде чем принимать следующий платёж.",
     "paymentCorrectAndRetry": "Исправьте данные платежа или выберите другой способ и повторите попытку.",
     "chargeRequired": "Выберите сбор перед изменением.",
@@ -1177,7 +1182,12 @@
     "splitCheckCheckAvailability": "Проверить доступность",
     "viewMore": "Показать ещё",
     "viewLess": "Свернуть",
-    "splitCheckSettingDenied": "Эта учётная запись не может проверять доступность разделения счета."
+    "splitCheckSettingDenied": "Эта учётная запись не может проверять доступность разделения счета.",
+    "dayCloseBlockedByOpenShiftTitle": "Сначала необходимо закрыть открытую смену",
+    "dayCloseBlockedByOpenShiftHint": "Закройте открытую смену #{id} ({name}) перед закрытием этого операционного дня.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# открытый заказ перейдет в следующую смену} other {# открытых заказов перейдут в следующую смену}}",
+    "shiftCloseUnpaidWarningHint": "Эти заказы остаются открытыми для следующей смены. Закрытие этой смены сверяет только наличные платежи, уже принятые в течение этой смены.",
+    "shiftCloseUnpaidMoreCount": "+ещё {count} открытых заказов"
   },
   "printTest": {
     "amt": "Сумма",
@@ -2308,6 +2318,8 @@
     "softwareUpdatesHintStore": "Эта версия распространяется через App Store. Обновления управляются магазином.",
     "splitChecks": "Раздельные чеки",
     "splitChecksHint": "Разрешить разделение позиций или их количества на отдельные счета. По умолчанию отключено.",
+    "cardTransactionIdRequired": "Требовать номер транзакции по карте",
+    "cardTransactionIdRequiredHint": "Оплаты картой должны содержать номер транзакции, выданный платёжным терминалом, чтобы сверять отчёты с терминалом. По умолчанию выключено.",
     "stationAssignedCategories": "Назначено в другом месте — выберите, чтобы переместить",
     "stationAvailableCategories": "Доступные категории",
     "stationCategories": "Категории перенаправлены сюда",
@@ -3172,6 +3184,47 @@
       "phone_required": "Требуется номер телефона",
       "phone_required_pairing": "Для кода сопряжения требуется телефон"
     },
+    "automation": {
+      "autoOptOutLabel": "Авто-отписка при входящем STOP / UNSUBSCRIBE (добавляет номер в черный список)",
+      "broadcastDescription": "Отправить шаблон выбранному сегменту клиентов (с учетом блокировок, тихих часов и лимитов).",
+      "broadcastInactiveDays": "Неактивен >= дней",
+      "broadcastMinPoints": "Мин. баллов",
+      "broadcastMinVisits": "Мин. визитов",
+      "broadcastSendCta": "Отправить рассылку",
+      "broadcastSuccess": "Рассылка завершена: {sent} отправлено, {skipped} пропущено ({matched} найдено).",
+      "broadcastTitle": "Рассылка по сегменту клиентов",
+      "feedbackLinkLabel": "Ссылка для отзывов о заведении",
+      "instagramLabel": "Профиль Instagram заведения",
+      "maxPerWeekLabel": "Макс. автоматических сообщений клиенту в неделю",
+      "placeholdersLabel": "Нажмите, чтобы вставить переменную",
+      "previewTitle": "Предпросмотр (пример данных)",
+      "quietHoursEnd": "Конец тихих часов",
+      "quietHoursLabel": "Не отправлять авто-сообщения в тихие часы",
+      "quietHoursStart": "Начало тихих часов",
+      "resetDefault": "Сбросить по умолчанию",
+      "ruleAfterPaymentHint": "Автоматически отправлять шаблон чека при оплате счета с телефоном клиента.",
+      "ruleFeedbackDelayHint": "Отправлять запрос отзыва через указанное число часов после оплаты.",
+      "ruleNthVisitHint": "Отправлять благодарность за каждые N оплаченных визитов.",
+      "rulePointsThresholdHint": "Отправлять уведомление о награде при достижении порога баллов.",
+      "rulesDescription": "Настройте триггеры и пороги для автоматических чеков, отзывов и бонусных уведомлений.",
+      "rulesTitle": "Правила автоотправки",
+      "ruleWinbackHint": "Отправлять спецпредложение клиентам, не посещавшим заведение N дней.",
+      "runSweepCta": "Запустить проверку правил сейчас",
+      "safetyDescription": "Защитите подключенный номер с помощью авто-отписки, тихих часов и недельных лимитов.",
+      "safetyTitle": "Безопасность и защита от спама",
+      "saveCta": "Сохранить настройки автоматизации",
+      "savedSuccess": "Настройки автоматизации сохранены.",
+      "sweepResult": "Правила проверены ({sent} отправлено).",
+      "templateBodyLabel": "Текст сообщения",
+      "templateNameLabel": "Название шаблона",
+      "templatesDescription": "Настройте шаблоны сообщений WhatsApp с переменными клиента, счета, бонусов и заведения.",
+      "templateSelectLabel": "Выбранный шаблон",
+      "templatesTitle": "Шаблоны сообщений",
+      "thresholdDays": "Дней без визитов",
+      "thresholdHours": "Задержка (часов)",
+      "thresholdPoints": "Порог баллов",
+      "thresholdVisits": "Каждые N визитов"
+    },
     "blocklist": {
       "addCta": "Добавить",
       "addedSuccess": "Добавлен в черный список.",
@@ -3264,6 +3317,14 @@
       "rate_limited": "Скорость отправки ограничена WhatsApp ({code}). Пауза на 5 минут.",
       "reconnecting": "Соединение закрыто ({code}). Повторное подключение через {seconds} с…"
     },
+    "rule": {
+      "after_payment": "Авто-чек после оплаты",
+      "broadcast": "Рассылка по сегменту",
+      "feedback_delay": "Запрос отзыва",
+      "nth_visit": "Юбилейный визит",
+      "points_threshold": "Порог бонусных баллов",
+      "winback": "Возврат неактивных клиентов"
+    },
     "send": {
       "customerPhoneRequired": "Перед отправкой добавьте номер телефона этого клиента.",
       "error": {
@@ -3325,6 +3386,7 @@
       "typing": "Ввод текста"
     },
     "tabs": {
+      "automation": "Шаблоны и правила",
       "connection": "Соединение",
       "inbox": "Входящие",
       "sent": "Отправлено"

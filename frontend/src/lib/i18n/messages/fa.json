@@ -337,8 +337,8 @@
     "exportSales": "صدور فروش",
     "exportXlsx": "اکسل (.xlsx)",
     "exportCsv": "CSV",
-    "exportCsvHint": "CSV دو فایل دانلود می‌کند: خلاصه و اقلام.",
-    "exportCsvStarted": "در حال دانلود فایل‌های CSV خلاصه و اقلام…",
+    "exportCsvHint": "CSV سه فایل دانلود می‌کند: خلاصه، اقلام و پرداخت‌ها.",
+    "exportCsvStarted": "در حال دانلود فایل‌های CSV خلاصه، اقلام و پرداخت‌ها…",
     "liveNow": "زنده",
     "kpiChangeVsSameDayLastWeek": "{percent}٪ نسبت به همان روز هفته قبل",
     "kpiNewVsSameDayLastWeek": "جدید نسبت به همان روز هفته قبل",
@@ -430,7 +430,9 @@
     "priceExceptionReason": "دلیل",
     "priceExceptionsAllShifts": "کل بازه",
     "priceExceptionsShift": "شیفت",
-    "priceExceptionsShiftOpen": "باز"
+    "priceExceptionsShiftOpen": "باز",
+    "dayCloseOpenShiftBlocks": "پیش از بستن این روز کاری، شیفت باز #{id} ({name}) را ببندید.",
+    "dayCloseOpenShiftBlocksGeneric": "پیش از بستن روز، شیفت باز این روز کاری را ببندید."
   },
   "expenses": {
     "addTitle": "افزودن هزینه",
@@ -725,6 +727,7 @@
     "printReceiptTitle": "چاپ رسید",
     "printed": "چاپ‌شده",
     "printedCount": "{count, plural, one {۱ بار چاپ شده} other {# بار چاپ شده}}",
+    "transactionNumber": "شماره تراکنش",
     "printing": "در حال چاپ",
     "ready": "آماده",
     "receiptPrintFailedHint": "چاپ رسید انجام نشد — پیوند چاپگر را بررسی کنید",
@@ -1132,6 +1135,8 @@
     "paymentIdempotencyConflict": "این درخواست پرداخت به پرداخت دیگری پیوند خورده است. پیش از تلاش دوباره، صورت‌حساب را بررسی کنید.",
     "paymentMethodUnavailable": "این روش پرداخت دیگر در دسترس نیست. روش دیگری انتخاب کنید.",
     "paymentInputInvalid": "جزئیات پرداخت معتبر نیست. روش، مبلغ و شناسهٔ تراکنش را بررسی کنید.",
+    "cardTransactionIdLabel": "شماره تراکنش کارت‌خوان",
+    "cardTransactionIdMissing": "شماره تراکنش کارت‌خوان را وارد کنید.",
     "paymentCompletionApplied": "پرداخت ثبت شد، اما FloCafe نتوانست به‌روزرسانی بعدی را کامل کند. پیش از دریافت پرداخت دیگری، صورت‌حساب را بررسی کنید.",
     "paymentCorrectAndRetry": "جزئیات پرداخت را اصلاح کنید یا روش دیگری انتخاب کنید و دوباره تلاش کنید.",
     "chargeRequired": "پیش از به‌روزرسانی، یک هزینه انتخاب کنید.",
@@ -1177,7 +1182,12 @@
     "splitCheckCheckAvailability": "بررسی دسترس‌پذیری",
     "viewMore": "نمایش بیشتر",
     "viewLess": "نمایش کمتر",
-    "splitCheckSettingDenied": "این حساب نمی‌تواند دسترس‌پذیری تقسیم صورتحساب را بررسی کند."
+    "splitCheckSettingDenied": "این حساب نمی‌تواند دسترس‌پذیری تقسیم صورتحساب را بررسی کند.",
+    "dayCloseBlockedByOpenShiftTitle": "ابتدا باید شیفت باز بسته شود",
+    "dayCloseBlockedByOpenShiftHint": "پیش از بستن این روز کاری، شیفت باز #{id} ({name}) را ببندید.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# سفارش باز به شیفت بعد منتقل می‌شود} other {# سفارش باز به شیفت بعد منتقل می‌شوند}}",
+    "shiftCloseUnpaidWarningHint": "این سفارش‌ها برای شیفت بعدی باز می‌مانند. بستن این شیفت فقط پرداخت‌های نقدی دریافت‌شده در همین شیفت را تسویه می‌کند.",
+    "shiftCloseUnpaidMoreCount": "+{count} سفارش باز دیگر"
   },
   "printTest": {
     "amt": "مبلغ",
@@ -2308,6 +2318,8 @@
     "softwareUpdatesHintStore": "این نسخه از طریق فروشگاه برنامه توزیع می‌شود. به‌روزرسانی‌ها توسط فروشگاه مدیریت می‌شوند.",
     "splitChecks": "جدا کردن صورت‌حساب‌ها",
     "splitChecksHint": "اجازه می‌دهد کالاها یا شمار آن‌ها در سفارش‌های داخل رستوران میان چند صورت‌حساب جدا شوند. به‌گونه پیش‌گزیده خاموش است.",
+    "cardTransactionIdRequired": "الزامی کردن شماره تراکنش کارت",
+    "cardTransactionIdRequiredHint": "پرداخت‌های کارتی باید شماره تراکنش صادرشده توسط کارت‌خوان را داشته باشند تا گزارش‌ها با دستگاه تطبیق داده شوند. به‌طور پیش‌فرض غیرفعال است.",
     "stationAssignedCategories": "اختصاص‌یافته در جای دیگر — برای انتقال انتخاب کنید",
     "stationAvailableCategories": "دسته‌های در دسترس",
     "stationCategories": "دسته‌های هدایت‌شده به اینجا",
@@ -3172,6 +3184,47 @@
       "phone_required": "شماره تلفن لازم است",
       "phone_required_pairing": "برای کد جفت‌سازی، تلفن لازم است"
     },
+    "automation": {
+      "autoOptOutLabel": "لغو عضویت خودکار با دریافت STOP / UNSUBSCRIBE (افزودن به لیست مسدود)",
+      "broadcastDescription": "ارسال قالب به بخش فیلترشده مشتریان (با رعایت لیست مسدود، ساعات سکوت و محدودیت‌ها).",
+      "broadcastInactiveDays": "غیرفعال >= روز",
+      "broadcastMinPoints": "حداقل امتیاز",
+      "broadcastMinVisits": "حداقل مراجعه",
+      "broadcastSendCta": "ارسال پیام گروهی",
+      "broadcastSuccess": "ارسال گروهی انجام شد: {sent} ارسال شد، {skipped} رد شد ({matched} منطبق).",
+      "broadcastTitle": "ارسال به بخش مشتریان",
+      "feedbackLinkLabel": "لینک نظرسنجی فروشگاه",
+      "instagramLabel": "نام کاربری اینستاگرام فروشگاه",
+      "maxPerWeekLabel": "حداکثر پیام خودکار برای هر مشتری در هفته",
+      "placeholdersLabel": "برای درج متغیر کلیک کنید",
+      "previewTitle": "پیش‌نمایش زنده (داده‌های نمونه)",
+      "quietHoursEnd": "پایان ساعات سکوت",
+      "quietHoursLabel": "توقف ارسال خودکار در ساعات سکوت",
+      "quietHoursStart": "شروع ساعات سکوت",
+      "resetDefault": "بازنشانی به پیش‌فرض",
+      "ruleAfterPaymentHint": "هنگام تسویه صورتحساب دارای شماره تلفن مشتری، قالب رسید به صورت خودکار ارسال شود.",
+      "ruleFeedbackDelayHint": "ارسال درخواست نظر پس از سفارش پرداخت‌شده (ساعت پس از پرداخت).",
+      "ruleNthVisitHint": "ارسال پیام تشکر به ازای هر N مراجعه موفق.",
+      "rulePointsThresholdHint": "ارسال اعلان پاداش هنگام عبور موجودی امتیاز از حد نصاب.",
+      "rulesDescription": "قوانین خودکار و حد نصاب‌ها را برای رسید پس از پرداخت، پیگیری و امتیازات تنظیم کنید.",
+      "rulesTitle": "قوانین ارسال خودکار",
+      "ruleWinbackHint": "ارسال پیشنهاد بازگشت به مشتریانی که حداقل N روز مراجعه نکرده‌اند.",
+      "runSweepCta": "اجرای قوانین زمان‌بندی‌شده اکنون",
+      "safetyDescription": "با لغو خودکار، ساعات سکوت و سقف هفتگی از شماره متصل خود محافظت کنید.",
+      "safetyTitle": "کنترل‌های ایمنی و ضد اسپم",
+      "saveCta": "ذخیره تنظیمات خودکارسازی",
+      "savedSuccess": "تنظیمات خودکارسازی ذخیره شد.",
+      "sweepResult": "قوانین زمان‌بندی‌شده بررسی شد ({sent} ارسال شد).",
+      "templateBodyLabel": "متن پیام",
+      "templateNameLabel": "نام قالب",
+      "templatesDescription": "پیام‌های خودکار واتساپ را با متغیرهای مشتری، صورتحساب، وفاداری و فروشگاه سفارشی کنید.",
+      "templateSelectLabel": "قالب انتخاب‌شده",
+      "templatesTitle": "قالب‌های پیام",
+      "thresholdDays": "روزهای عدم مراجعه",
+      "thresholdHours": "ساعت تاخیر",
+      "thresholdPoints": "حد نصاب امتیاز",
+      "thresholdVisits": "هر N مراجعه"
+    },
     "blocklist": {
       "addCta": "افزودن",
       "addedSuccess": "به فهرست مسدود افزوده شد.",
@@ -3264,6 +3317,14 @@
       "rate_limited": "ارسال توسط واتساپ محدود شد ({code}). به‌مدت ۵ دقیقه در توقف موقت.",
       "reconnecting": "اتصال بسته شد ({code}). اتصال دوباره در {seconds} ثانیه…"
     },
+    "rule": {
+      "after_payment": "رسید خودکار پس از پرداخت",
+      "broadcast": "ارسال گروهی به بخش مشتریان",
+      "feedback_delay": "پیگیری نظرسنجی",
+      "nth_visit": "حد نصاب تعداد مراجعه",
+      "points_threshold": "حد نصاب امتیاز وفاداری",
+      "winback": "بازگشت مشتری غیرفعال"
+    },
     "send": {
       "customerPhoneRequired": "پیش از ارسال، شماره تلفن این مشتری را بیفزایید.",
       "error": {
@@ -3325,6 +3386,7 @@
       "typing": "در حال تایپ"
     },
     "tabs": {
+      "automation": "قالب‌ها و قوانین",
       "connection": "اتصال",
       "inbox": "صندوق ورودی",
       "sent": "ارسال‌شده"

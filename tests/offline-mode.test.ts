@@ -79,7 +79,10 @@ const {
   createAutoUpdaterErrorHandler,
   createSuspendUpdaterForOfflineMode,
   createUpdateCheckTracker,
+  linkUpdateCheckRequests,
 } = require('../main/updater-shutdown');
+const { CancellationError, CancellationToken } = require('builder-util-runtime');
+const { GitHubProvider } = require('electron-updater/out/providers/GitHubProvider');
 const net = require('net');
 
 function seedUser(db: any, id: string, role: string) {
@@ -937,6 +940,89 @@ async function main() {
         canAcceptUpdateCheckResult(status, phase, offline, tracker.canAcceptCheckEvent()),
         true,
         'new check result is accepted after the invalidated check settles',
+      );
+    }
+
+    console.log(
+      '\n--- 7. Enabling Offline mode aborts the in-flight update-check request chain ---',
+    );
+    {
+      const requests: string[] = [];
+      const abortedRequests: string[] = [];
+      const pending: Array<(body: string) => void> = [];
+      const executor = {
+        request: (options: any, token: any) =>
+          token.createPromise((resolve: (body: string) => void, _reject: unknown, onCancel: any) => {
+            requests.push(options.path);
+            onCancel(() => abortedRequests.push(options.path));
+            pending.push(resolve);
+          }),
+      };
+      let checkToken: any = null;
+      linkUpdateCheckRequests(executor, () => checkToken);
+      const provider = new GitHubProvider(
+        { provider: 'github', owner: 'flo', repo: 'flocafe' },
+        { channel: null, allowPrerelease: false, fullChangelog: false },
+        { executor, platform: 'darwin', isUseMultipleRangeRequest: true },
+      );
+
+      let phase: 'check' | 'download' = 'check';
+      let status: any = { status: 'checking' };
+      const tracker = createUpdateCheckTracker();
+      let checkOutcome: Promise<unknown> = Promise.resolve();
+      tracker.beginCheck(() => {
+        checkToken = new CancellationToken();
+        checkOutcome = provider.getLatestVersion().then(
+          () => 'resolved',
+          (error: Error) => error,
+        );
+        return checkOutcome;
+      });
+      const suspendUpdater = createSuspendUpdaterForOfflineMode({
+        getPhase: () => phase,
+        setPhase: (next) => {
+          phase = next;
+        },
+        getStatus: () => status,
+        setUpdateStatus: (next) => {
+          status = next;
+        },
+        cancelDownload: () => {},
+        invalidateCheck: () => {
+          checkToken?.cancel();
+          tracker.invalidateActiveCheck();
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      assertEqualOrThrow(requests.length, 1, 'update check issues the release-feed request');
+      suspendUpdater();
+      const requestsAtOffline = requests.length;
+      for (const resolve of pending.splice(0)) {
+        resolve(
+          '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry>' +
+            '<link href="https://github.com/flo/flocafe/releases/tag/v99.0.0"/></entry></feed>',
+        );
+      }
+      const outcome = await Promise.race([
+        checkOutcome,
+        new Promise((resolve) => setTimeout(() => resolve('still pending'), 50)),
+      ]);
+
+      assertEqualOrThrow(status.status, 'offline', 'status reports offline after the switch');
+      assertEqualOrThrow(
+        abortedRequests.length,
+        1,
+        'enabling Offline mode aborts the in-flight release-feed request',
+      );
+      assertEqualOrThrow(
+        requests.length - requestsAtOffline,
+        0,
+        'no further update metadata request is issued after Offline mode is enabled',
+      );
+      assertOrThrow(
+        outcome instanceof CancellationError,
+        'the cancelled update check settles with a cancellation error',
       );
     }
   } finally {

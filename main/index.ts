@@ -72,6 +72,8 @@ import {
   createRestartAndInstallHandler,
   createSuspendUpdaterForOfflineMode,
   createUpdateCheckTracker,
+  linkUpdateCheckRequests,
+  type UpdateRequestExecutor,
   type UpdateShutdownState,
 } from './updater-shutdown';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
@@ -246,6 +248,16 @@ function setupAutoUpdater(): void {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
 
+  // electron-updater has no public check cancellation; every provider metadata request uses this executor.
+  const updaterHttpExecutor = (
+    autoUpdater as unknown as { httpExecutor?: UpdateRequestExecutor | null }
+  ).httpExecutor;
+  if (updaterHttpExecutor) {
+    linkUpdateCheckRequests(updaterHttpExecutor, () => updateCheckToken);
+  } else {
+    log.warn('[Update] Updater HTTP executor unavailable; Offline mode cannot abort checks');
+  }
+
   autoUpdater.on('checking-for-update', () => {
     if (isOfflineMode() || !updateCheckTracker.canAcceptCheckEvent()) return;
     console.log('[Update] Checking for updates...');
@@ -414,13 +426,21 @@ function checkForUpdates(): void {
   updateCheckTracker.beginCheck(() => {
     updaterPhase = 'check';
     setUpdateStatus({ status: 'checking' });
-    return autoUpdater.checkForUpdates().catch((err) => {
-      // Record error state; catch prevents unhandled rejection.
-      console.error('[Update] Check failed:', err);
-    });
+    const checkToken = new CancellationToken();
+    updateCheckToken = checkToken;
+    return autoUpdater
+      .checkForUpdates()
+      .catch((err) => {
+        // Record error state; catch prevents unhandled rejection.
+        console.error('[Update] Check failed:', err);
+      })
+      .finally(() => {
+        if (updateCheckToken === checkToken) updateCheckToken = null;
+      });
   });
 }
 
+let updateCheckToken: CancellationToken | null = null;
 let updateDownloadToken: CancellationToken | null = null;
 
 const suspendUpdaterForOfflineMode = createSuspendUpdaterForOfflineMode({
@@ -435,6 +455,7 @@ const suspendUpdaterForOfflineMode = createSuspendUpdaterForOfflineMode({
     updateDownloadToken = null;
   },
   invalidateCheck: () => {
+    updateCheckToken?.cancel();
     updateCheckTracker.invalidateActiveCheck();
   },
 });

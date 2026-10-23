@@ -1,3 +1,5 @@
+import type { RequestOptions } from 'http';
+import { CancellationToken } from 'builder-util-runtime';
 import {
   classifyUpdateError,
   type StoredUpdateStatus,
@@ -94,6 +96,28 @@ export function createUpdateCheckTracker(options?: {
       return checkId === undefined || checkId === acceptedCheckId;
     },
     hasPendingInvalidatedCheck: () => pendingInvalidatedChecks.size > 0,
+  };
+}
+
+export type UpdateRequestExecutor = {
+  request: (
+    options: RequestOptions,
+    cancellationToken?: CancellationToken,
+    data?: { [name: string]: unknown } | null,
+  ) => Promise<string | null>;
+};
+
+// Providers create their own per-check token, so the active check token is attached as its
+// parent: cancelling it aborts the in-flight request and rejects every later one in the chain.
+export function linkUpdateCheckRequests(
+  executor: UpdateRequestExecutor,
+  getCheckToken: () => CancellationToken | null,
+): void {
+  const request = executor.request.bind(executor);
+  executor.request = (options, cancellationToken = new CancellationToken(), data) => {
+    const checkToken = getCheckToken();
+    if (checkToken) cancellationToken.parent = checkToken;
+    return request(options, cancellationToken, data);
   };
 }
 

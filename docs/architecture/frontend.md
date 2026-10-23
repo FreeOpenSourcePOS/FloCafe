@@ -451,10 +451,13 @@ instead of the shared one.
 The renderer's print surface is a decision tree, not a single path. All of it lives in
 [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts), and the shared kernel, renderers, and
 transports are described in [Printing architecture](printing.md). Before dispatching a bill or tax
-bill, `usePrinterStore` awaits receipt settings hydration (`ensureReceiptSettingsLoaded()`, backed
-by [`useReceiptSettingsSync`](../../frontend/src/hooks/useReceiptSettingsSync.ts)) so storefront
+bill, `usePrinterStore` awaits tenant-scoped receipt settings hydration
+(`ensureReceiptSettingsLoaded(expectedTenantId)`, backed by
+[`useReceiptSettingsSync`](../../frontend/src/hooks/useReceiptSettingsSync.ts)) so storefront
 branding and receipt metadata are loaded into `pos-settings.ts` from `GET /api/settings/business`
-before rendering.
+before rendering. Switching `currentTenant` invalidates cached hydration and forces an immediate
+re-sync (bypassing the 60-second focus throttle), and any in-flight bill or tax-bill print whose
+active tenant changes aborts with `PrintCancelledOnTenantChangeError`.
 
 For a bill or a kitchen ticket, in the order the store tries them:
 

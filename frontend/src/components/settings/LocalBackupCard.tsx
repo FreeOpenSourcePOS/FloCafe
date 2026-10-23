@@ -22,6 +22,7 @@ export function LocalBackupCard() {
   const [status, setStatus] = useState<LocalBackupStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
@@ -29,10 +30,16 @@ export function LocalBackupCard() {
     api
       .get('/db-tools/local-backup')
       .then(({ data }) => {
-        if (!cancelled) setStatus(data);
+        if (!cancelled) {
+          setStatus(data);
+          setLoadFailed(false);
+        }
       })
       .catch(() => {
         if (!cancelled) setLoadFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setRetrying(false);
       });
     return () => {
       cancelled = true;
@@ -54,7 +61,8 @@ export function LocalBackupCard() {
   };
 
   const retryLoad = () => {
-    setLoadFailed(false);
+    if (retrying) return;
+    setRetrying(true);
     setLoadAttempt((attempt) => attempt + 1);
   };
 
@@ -71,7 +79,7 @@ export function LocalBackupCard() {
               {t('localBackupLoadFailed')}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={retryLoad}>
+          <Button variant="outline" size="sm" onClick={retryLoad} disabled={retrying}>
             {t('retry')}
           </Button>
         </div>

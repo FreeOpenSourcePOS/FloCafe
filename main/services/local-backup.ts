@@ -51,11 +51,21 @@ export function parseLocalBackupTime(fileName: string): number | null {
   return Number.isNaN(time) ? null : time;
 }
 
+let lastPublish = { wallMs: 0, stampMs: 0 };
+
+function currentNowMs(): number {
+  const now = Date.now();
+  return now >= lastPublish.wallMs ? Math.max(now, lastPublish.stampMs) : now;
+}
+
 /**
  * Newest first. Files dated ahead of the clock sort last: their time cannot be trusted.
  * Only files this service wrote are ever listed.
  */
-export function listLocalBackups(dir: string = getLocalBackupDir(), nowMs = Date.now()): string[] {
+export function listLocalBackups(
+  dir: string = getLocalBackupDir(),
+  nowMs = currentNowMs(),
+): string[] {
   try {
     return fs
       .readdirSync(dir)
@@ -78,7 +88,10 @@ export function getLastLocalBackupAt(dir?: string): string | null {
   return newest ? new Date(parseLocalBackupTime(newest) as number).toISOString() : null;
 }
 
-export function isLocalBackupDue(newestFileName: string | undefined, nowMs = Date.now()): boolean {
+export function isLocalBackupDue(
+  newestFileName: string | undefined,
+  nowMs = currentNowMs(),
+): boolean {
   if (!newestFileName) return true;
   const last = parseLocalBackupTime(newestFileName);
   return last === null || last > nowMs || nowMs - last >= DAY_MS;
@@ -121,7 +134,10 @@ function stagingPath(dir: string): string {
 
 /** Links a staged file in under the first free backup name; never replaces an existing file. */
 function publishBackup(stagedPath: string, dir: string): string {
-  for (let stamp = Date.now(); ; stamp++) {
+  const wallMs = Date.now();
+  const startStamp =
+    wallMs >= lastPublish.wallMs ? Math.max(wallMs, lastPublish.stampMs) : wallMs;
+  for (let stamp = startStamp; ; stamp++) {
     const name = localBackupFileName(new Date(stamp));
     try {
       fs.linkSync(stagedPath, path.join(dir, name));
@@ -129,6 +145,7 @@ function publishBackup(stagedPath: string, dir: string): string {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue;
       throw error;
     }
+    lastPublish = { wallMs, stampMs: stamp };
     removeQuietly(stagedPath);
     return name;
   }

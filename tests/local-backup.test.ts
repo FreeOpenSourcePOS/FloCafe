@@ -203,6 +203,49 @@ async function main(): Promise<void> {
   assert.ok(fs.existsSync(firstCopy as string) && fs.existsSync(secondCopy as string));
 
   for (const name of listLocalBackups(backupDir)) fs.unlinkSync(path.join(backupDir, name));
+  for (let day = 1; day <= LOCAL_BACKUP_RETENTION; day++) {
+    const name = localBackupFileName(new Date(Date.UTC(2026, 0, day, 3, 0, 0)));
+    fs.writeFileSync(path.join(backupDir, name), 'old');
+  }
+  const realDateNow = Date.now;
+  const pinnedNow = realDateNow() - 10_000;
+  Date.now = () => pinnedNow;
+  try {
+    const burst: string[] = [];
+    for (let idx = 0; idx < LOCAL_BACKUP_RETENTION + 2; idx++) {
+      const copyPath = retainBackupLocally(source);
+      assert.ok(copyPath, 'same-millisecond copy succeeds');
+      burst.push(path.basename(copyPath));
+      if (idx === 1) {
+        assert.deepEqual(
+          listLocalBackups(backupDir).slice(0, 2),
+          [burst[1], burst[0]],
+          'same-millisecond copies sort newest-first ahead of older backups',
+        );
+      }
+    }
+    assert.deepEqual(
+      burst,
+      Array.from({ length: LOCAL_BACKUP_RETENTION + 2 }, (_, idx) =>
+        localBackupFileName(new Date(pinnedNow + idx)),
+      ),
+      'same-millisecond copies advance monotonically even after earlier slots are pruned',
+    );
+    assert.deepEqual(
+      listLocalBackups(backupDir),
+      burst.slice(-LOCAL_BACKUP_RETENTION).reverse(),
+      'retention keeps the newest same-millisecond copies',
+    );
+    assert.equal(
+      getLastLocalBackupAt(backupDir),
+      new Date(pinnedNow + LOCAL_BACKUP_RETENTION + 1).toISOString(),
+    );
+    assert.equal(isLocalBackupDue(listLocalBackups(backupDir)[0]), false);
+  } finally {
+    Date.now = realDateNow;
+  }
+
+  for (const name of listLocalBackups(backupDir)) fs.unlinkSync(path.join(backupDir, name));
   const legacyName = 'flo-backup-2026-01-02T03-00-00Z.db';
   const precise = localBackupFileName(new Date('2026-01-02T03:00:00.500Z'));
   fs.writeFileSync(path.join(backupDir, legacyName), 'legacy');

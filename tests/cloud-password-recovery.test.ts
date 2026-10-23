@@ -370,11 +370,7 @@ async function main() {
     realCloudSync.reload();
     realCloudSync.stop();
     await realCloudSync.requestPasswordReset();
-    assertEqualOrThrow(
-      dispatchedUrls.length,
-      1,
-      'trusted recovery request dispatches one fetch',
-    );
+    assertEqualOrThrow(dispatchedUrls.length, 1, 'trusted recovery request dispatches one fetch');
     assertOrThrow(
       dispatchedUrls[0].startsWith(DEFAULT_CLOUD_SERVER_URL),
       `trusted recovery request dispatches to DEFAULT_CLOUD_SERVER_URL (got ${dispatchedUrls[0]})`,
@@ -462,8 +458,11 @@ async function main() {
   );
 
   assertEqualOrThrow(
-    (db.prepare("SELECT value FROM settings WHERE key = 'cloud_api_key'").get() as { value: string })
-      .value,
+    (
+      db.prepare("SELECT value FROM settings WHERE key = 'cloud_api_key'").get() as {
+        value: string;
+      }
+    ).value,
     'owner-api-key',
     'cloud_api_key remains unchanged after rejected manager requests',
   );

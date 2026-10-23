@@ -294,6 +294,7 @@ export default function FloorplanEditor({
   // Render-time prop adjustment: drop converged or deleted-table overrides.
   const [syncedTables, setSyncedTables] = useState(tables);
   if (tables !== syncedTables) {
+    const prevFloors = new Map(syncedTables.map((tb) => [tb.id, (tb.floor || '').trim()]));
     setSyncedTables(tables);
     const prune = (prev: Record<string, XY>) => {
       let changed = false;
@@ -301,6 +302,11 @@ export default function FloorplanEditor({
       for (const [id, p] of Object.entries(prev)) {
         const tb = tables.find((x) => x.id === id);
         if (!tb) {
+          changed = true;
+          continue;
+        }
+        const prevFloor = prevFloors.get(id);
+        if (prevFloor !== undefined && prevFloor !== (tb.floor || '').trim()) {
           changed = true;
           continue;
         }
@@ -583,27 +589,18 @@ export default function FloorplanEditor({
         const floorChanged = floor !== previousFloor;
         let positionUpdate: { position_x?: number | null; position_y?: number | null } = {};
         if (floorChanged) {
-          if (floor && editingTable?.position_x != null && editingTable?.position_y != null) {
+          if (floor && editingTable && posOf(editingTable) !== null) {
             const others = tables
-              .filter(
-                (tb) =>
-                  tb.id !== editingId &&
-                  (tb.floor || '').trim() === floor &&
-                  tb.position_x != null &&
-                  tb.position_y != null,
-              )
-              .map((tb) => ({ x: tb.position_x!, y: tb.position_y!, capacity: tb.capacity }));
+              .filter((tb) => tb.id !== editingId && (tb.floor || '').trim() === floor)
+              .flatMap((tb) => {
+                const p = posOf(tb);
+                return p ? [{ x: p.x, y: p.y, capacity: tb.capacity }] : [];
+              });
             const pos = findNextFreePosition(capacity, others);
             positionUpdate = { position_x: pos.x, position_y: pos.y };
           } else {
             positionUpdate = { position_x: null, position_y: null };
           }
-          setEdits((prev) => {
-            if (!(editingId in prev)) return prev;
-            const next = { ...prev };
-            delete next[editingId];
-            return next;
-          });
         }
         await api.put(`/tables/${editingId}`, {
           number: name,
@@ -612,6 +609,14 @@ export default function FloorplanEditor({
           section: form.section.trim() || null,
           ...positionUpdate,
         });
+        if (floorChanged) {
+          setEdits((prev) => {
+            if (!(editingId in prev)) return prev;
+            const next = { ...prev };
+            delete next[editingId];
+            return next;
+          });
+        }
         toast.success(t('tableUpdated'), { position: 'top-center' });
       } else {
         // Auto-place on canvas at next free grid corner;
@@ -620,10 +625,11 @@ export default function FloorplanEditor({
         let position_y: number | null = null;
         if (floor) {
           const others = tables
-            .filter(
-              (tb) => (tb.floor || '') === floor && tb.position_x != null && tb.position_y != null,
-            )
-            .map((tb) => ({ x: tb.position_x!, y: tb.position_y!, capacity: tb.capacity }));
+            .filter((tb) => (tb.floor || '').trim() === floor)
+            .flatMap((tb) => {
+              const p = posOf(tb);
+              return p ? [{ x: p.x, y: p.y, capacity: tb.capacity }] : [];
+            });
           const pos = findNextFreePosition(capacity, others);
           position_x = pos.x;
           position_y = pos.y;

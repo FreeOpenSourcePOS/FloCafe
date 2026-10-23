@@ -952,11 +952,13 @@ async function main() {
       const pending: Array<(body: string) => void> = [];
       const executor = {
         request: (options: any, token: any) =>
-          token.createPromise((resolve: (body: string) => void, _reject: unknown, onCancel: any) => {
-            requests.push(options.path);
-            onCancel(() => abortedRequests.push(options.path));
-            pending.push(resolve);
-          }),
+          token.createPromise(
+            (resolve: (body: string) => void, _reject: unknown, onCancel: any) => {
+              requests.push(options.path);
+              onCancel(() => abortedRequests.push(options.path));
+              pending.push(resolve);
+            },
+          ),
       };
       let checkToken: any = null;
       linkUpdateCheckRequests(executor, () => checkToken);

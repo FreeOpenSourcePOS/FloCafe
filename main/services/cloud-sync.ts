@@ -1377,8 +1377,16 @@ export class CloudSyncService {
     return { ok: true, status: this.getStatus() };
   }
 
-  async getEmailPreferences(signal?: AbortSignal): Promise<Record<string, unknown>> {
-    const res = await this.signedFetch('/api/pos/email-preferences', { method: 'GET', signal });
+  async getEmailPreferences(
+    signal?: AbortSignal,
+    serverUrlOverride?: string,
+  ): Promise<Record<string, unknown>> {
+    const res = await this.signedFetch(
+      '/api/pos/email-preferences',
+      { method: 'GET', signal },
+      false,
+      serverUrlOverride,
+    );
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
@@ -1418,13 +1426,19 @@ export class CloudSyncService {
   async requestEmailVerification(
     preferences: { product_updates?: boolean; marketing?: boolean; source?: string } = {},
     signal?: AbortSignal,
+    serverUrlOverride?: string,
   ): Promise<Record<string, unknown>> {
     throwIfRequestAborted(signal);
-    const res = await this.signedFetch('/api/pos/email/verification', {
-      method: 'POST',
-      body: JSON.stringify(preferences),
-      signal,
-    });
+    const res = await this.signedFetch(
+      '/api/pos/email/verification',
+      {
+        method: 'POST',
+        body: JSON.stringify(preferences),
+        signal,
+      },
+      false,
+      serverUrlOverride,
+    );
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
@@ -1442,39 +1456,89 @@ export class CloudSyncService {
     return data;
   }
 
+  private isDevCloudRecoveryAllowed(): boolean {
+    return Boolean(app && !app.isPackaged && process.env.FLOCAFE_ALLOW_DEV_CLOUD_RECOVERY === '1');
+  }
+
   isTrustedRecoveryServerUrl(rawUrl?: string): boolean {
-    if (Boolean(app && !app.isPackaged && process.env.FLOCAFE_ALLOW_DEV_CLOUD_RECOVERY === '1')) {
-      return true;
-    }
+    const trustedDefault = normalizeCloudServerUrl(DEFAULT_CLOUD_SERVER_URL);
+    const isTrustedCandidate = (candidate: string): boolean => {
+      const normalized = normalizeCloudServerUrl(candidate);
+      return this.isDevCloudRecoveryAllowed() || normalized === trustedDefault;
+    };
     try {
-      const candidate =
-        rawUrl || this.readSettings(getDatabase()).cloud_server_url || DEFAULT_CLOUD_SERVER_URL;
-      return (
-        normalizeCloudServerUrl(candidate) === normalizeCloudServerUrl(DEFAULT_CLOUD_SERVER_URL)
-      );
+      if (rawUrl !== undefined) {
+        return isTrustedCandidate(rawUrl || DEFAULT_CLOUD_SERVER_URL);
+      }
+      const persisted =
+        this.readSettings(getDatabase()).cloud_server_url || DEFAULT_CLOUD_SERVER_URL;
+      if (!isTrustedCandidate(persisted)) return false;
+      if (this.settings?.server_url) {
+        if (!isTrustedCandidate(this.settings.server_url)) return false;
+        if (
+          normalizeCloudServerUrl(this.settings.server_url) !== normalizeCloudServerUrl(persisted)
+        ) {
+          return false;
+        }
+      }
+      return true;
     } catch {
       return false;
     }
   }
 
-  /** True when cloud services are on and the store has an owner email FloAdmin can verify and mail. */
+  private resolveTrustedRecoveryServerUrl(): string {
+    if (!this.isTrustedRecoveryServerUrl()) {
+      throw new CloudRequestError('Password recovery requires the official FloAdmin server', 403);
+    }
+    if (this.isDevCloudRecoveryAllowed()) {
+      const persisted =
+        this.readSettings(getDatabase()).cloud_server_url || DEFAULT_CLOUD_SERVER_URL;
+      return normalizeCloudServerUrl(persisted);
+    }
+    return normalizeCloudServerUrl(DEFAULT_CLOUD_SERVER_URL);
+  }
+
+  private hasMatchingActiveOwnerEmail(email = this.getRegisteredOwnerEmail()): boolean {
+    if (!email) return false;
+    try {
+      const row = getDatabase()
+        .prepare(
+          "SELECT 1 FROM users WHERE lower(email) = ? AND role = 'owner' AND is_active = 1 LIMIT 1",
+        )
+        .get(email);
+      return Boolean(row);
+    } catch {
+      return false;
+    }
+  }
+
+  /** True when cloud services are on and the store has an active owner matching the registered email. */
   isEmailRecoveryAvailable(): boolean {
+    const email = this.getRegisteredOwnerEmail();
     return (
       !isOfflineMode() &&
       this.isCloudAccountAvailable() &&
       this.isTrustedRecoveryServerUrl() &&
-      Boolean(this.getRegisteredOwnerEmail())
+      Boolean(email) &&
+      this.hasMatchingActiveOwnerEmail(email)
     );
   }
 
   async isOwnerEmailVerified(signal?: AbortSignal): Promise<boolean> {
-    return (await this.getEmailPreferences(signal)).verified === true;
+    const trustedServerUrl = this.resolveTrustedRecoveryServerUrl();
+    return (await this.getEmailPreferences(signal, trustedServerUrl)).verified === true;
   }
 
   /** Sends the verification email when the owner email is unverified; returns whether it already is. */
   async ensureOwnerEmailVerification(signal?: AbortSignal): Promise<boolean> {
+    const trustedServerUrl = this.resolveTrustedRecoveryServerUrl();
     if (await this.isOwnerEmailVerified(signal)) return true;
-    const sent = await this.requestEmailVerification({ source: 'password-recovery' }, signal);
+    const sent = await this.requestEmailVerification(
+      { source: 'password-recovery' },
+      signal,
+      trustedServerUrl,
+    );
     return sent.verified === true;
   }
 
@@ -1490,15 +1554,18 @@ export class CloudSyncService {
     method: 'GET' | 'POST',
     signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
-    if (!this.isTrustedRecoveryServerUrl()) {
-      throw new CloudRequestError('Password recovery requires the official FloAdmin server', 403);
-    }
+    const trustedServerUrl = this.resolveTrustedRecoveryServerUrl();
     throwIfRequestAborted(signal);
-    const res = await this.signedFetch(pathname, {
-      method,
-      body: method === 'POST' ? '{}' : undefined,
-      signal,
-    });
+    const res = await this.signedFetch(
+      pathname,
+      {
+        method,
+        body: method === 'POST' ? '{}' : undefined,
+        signal,
+      },
+      false,
+      trustedServerUrl,
+    );
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     throwIfRequestAborted(signal);
     if (!res.ok) {
@@ -3878,6 +3945,7 @@ export class CloudSyncService {
     pathname: string,
     init: RequestInit,
     allowDuringDeletion = false,
+    serverUrlOverride?: string,
   ): Promise<Response> {
     if (this.cloudDeletionInProgress && !allowDuringDeletion)
       throw new Error('Cloud deletion in progress');
@@ -3887,14 +3955,23 @@ export class CloudSyncService {
         'Cloud deletion is unresolved; retry or cancel it before using cloud services',
       );
     }
-    const cfg = this.settings ?? this.loadSettings();
+    const cfg = serverUrlOverride
+      ? (this.loadSettings(false) ?? this.settings)
+      : (this.settings ?? this.loadSettings());
     if (!cfg?.api_key) throw new Error('Cloud POS is not registered');
     if (!allowDuringDeletion && !this.isCloudAccountAvailable()) {
       throw new Error('Cloud account services are unavailable while Cloud services are stopped');
     }
+    if (
+      serverUrlOverride !== undefined &&
+      (!this.isTrustedRecoveryServerUrl(serverUrlOverride) ||
+        !this.isTrustedRecoveryServerUrl(cfg.server_url))
+    ) {
+      throw new CloudRequestError('Password recovery requires the official FloAdmin server', 403);
+    }
 
     const method = (init.method || 'GET').toUpperCase();
-    const url = endpoint(cfg.server_url, pathname);
+    const url = endpoint(serverUrlOverride || cfg.server_url, pathname);
     const body = typeof init.body === 'string' ? init.body : '';
     const signedPath = `${url.pathname}${url.search}`;
     const signedHeaders = this.buildSignedHeaders(

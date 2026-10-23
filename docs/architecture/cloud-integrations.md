@@ -22,8 +22,8 @@ on. While it is on:
 - Google Drive scheduled backups do not run, and connecting, listing, backing up and restoring fail
   with the `offline` error code, and in-flight Drive work is cancelled. Disconnecting retains the
   local tokens and records the revoke as unconfirmed, which blocks further Drive access.
-- WhatsApp closes its socket without unpairing, refuses to connect and does not start; turning the
-  mode off reconnects it.
+- WhatsApp closes its socket without unpairing, cancels in-flight connection and version-lookup
+  work, refuses to connect and does not start; turning the mode off reconnects it.
 - Update checks report the `offline` update state, an in-flight update check or download is
   cancelled into the `offline` state, and the startup tax pack check and tax pack catalog and
   artifact downloads (including in-flight requests) are refused or aborted.
@@ -320,12 +320,15 @@ returns per order.
 **Templates and automated rules.** `whatsapp_automation_config` in `settings` stores customizable
 templates (`receipt`, `feedback`, `loyalty_milestone`, `visit_milestone`, `winback`), five trigger
 rules, and safety settings. `renderWhatsAppTemplate()` performs single-pass `{...}` placeholder
-substitution across customer, order, loyalty, and store fields so substituted values are never
-re-parsed as tokens. All five automated rules ship disabled (`enabled: false`):
+substitution across customer, order, loyalty, and store fields (formatting monetary amounts and
+rounding loyalty points to the tenant currency's `currencyFractionDigits`) so substituted values are
+never re-parsed as tokens. All five automated rules ship disabled (`enabled: false`):
 
-- When a bill transitions to `paid`, `POST /api/bills/:id/payment` and `POST /api/bills/:id/payments`
-  trigger `triggerBillPaidAutomation()` asynchronously in the background to evaluate
-  `after_payment`, `points_threshold`, and `nth_visit`.
+- When a bill transitions to `paid` (through `POST /api/bills/:id/payment`,
+  `POST /api/bills/:id/payments`, or committed exact-balance auto-settlement via
+  `completeExactBalanceSettlement()`), `triggerBillPaidAutomation()` runs asynchronously in the
+  background to evaluate `after_payment`, `points_threshold`, and `nth_visit` (`nth_visit` is
+  deduplicated per order and customer across concurrent and sequential split-bill settlements).
 - While WhatsApp is enabled and connected, a 5-minute background timer (`runScheduledAutomationSweep()`,
   also callable on demand via `POST /api/whatsapp/automation/run-sweep`) evaluates `feedback_delay`
   (bills settled at least `delayHours` ago and within 7 days of becoming due) and `winback` (active
@@ -343,9 +346,9 @@ re-parsed as tokens. All five automated rules ship disabled (`enabled: false`):
 enforce the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`), a 10-minute duplicate-body
 filter, simulated typing delay, and a content filter that rejects non-HTTPS URLs and URL shorteners.
 
-**Offline behaviour.** No work is started when the module is disabled, when it is in a terminal
-shutdown state, or when the request signal is aborted. Work already in flight is cancelled during
-shutdown rather than left to fail late.
+**Offline behaviour.** No work is started when the module is disabled, when Offline mode is on, when
+it is in a terminal shutdown state, or when the request signal is aborted. Work already in flight is
+cancelled when Offline mode turns on or during shutdown rather than left to fail late.
 
 **Credential handling.** The session directory is created with mode `0o700`. The session credential
 is not encrypted at rest, which is a deliberate consequence of the library FloCafe uses for the

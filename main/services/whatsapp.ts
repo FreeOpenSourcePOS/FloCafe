@@ -1040,7 +1040,7 @@ async function resolveWaWebVersion(
     const { fetchLatestWaWebVersion } = await abortable(() => loadBaileys(), effectiveSignal);
     if (effectiveSignal.aborted || isOfflineMode()) return undefined;
     const { version } = await abortable(
-      () => fetchLatestWaWebVersion({ signal: effectiveSignal } as any),
+      () => fetchLatestWaWebVersion({ signal: effectiveSignal }),
       effectiveSignal,
     );
     if (effectiveSignal.aborted || isOfflineMode()) return undefined;
@@ -1375,7 +1375,7 @@ export async function connectWithPairingCode(
   }
 }
 
-/** Closes the live socket without unpairing so Offline mode can be switched off again. */
+/** Aborts in-flight WhatsApp work and closes the live socket without unpairing so Offline mode can be switched off again. */
 export function suspendForOfflineMode(): void {
   whatsappAbortController.abort();
   whatsappAbortController = new AbortController();

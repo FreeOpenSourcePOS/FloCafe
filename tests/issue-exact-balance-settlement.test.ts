@@ -928,9 +928,7 @@ async function main(): Promise<void> {
     }
 
     // ── 12. Paid-Bill Automation Dispatch on Exact-Balance Auto-Settlement ──
-    console.log(
-      '\n─── 12. Paid-Bill Automation Dispatch on Exact-Balance Auto-Settlement ───',
-    );
+    console.log('\n─── 12. Paid-Bill Automation Dispatch on Exact-Balance Auto-Settlement ───');
     {
       const whatsapp = require('../main/services/whatsapp');
       const originalTrigger = whatsapp.triggerBillPaidAutomation;
@@ -964,19 +962,15 @@ async function main(): Promise<void> {
         assertEqual(pay12a.status, 200, '12a. partial payment 400 recorded');
         assertEqual(automationCalls.length, 0, '12a. no paid-bill automation on partial payment');
 
-        const edit12a = await api(
-          baseUrl,
-          `/api/orders/${orderId12a}/items/${item12a.id}/edit`,
-          {
-            method: 'PATCH',
-            body: {
-              quantity: 1,
-              expected_edit_version: item12a.edit_version ?? 0,
-              reason: 'Reduce quantity to match paid amount',
-            },
-            headers: { ...A, 'Idempotency-Key': 'eb-auto-12a' },
+        const edit12a = await api(baseUrl, `/api/orders/${orderId12a}/items/${item12a.id}/edit`, {
+          method: 'PATCH',
+          body: {
+            quantity: 1,
+            expected_edit_version: item12a.edit_version ?? 0,
+            reason: 'Reduce quantity to match paid amount',
           },
-        );
+          headers: { ...A, 'Idempotency-Key': 'eb-auto-12a' },
+        });
         assertEqual(edit12a.status, 200, '12a. item quantity edit to exact paid balance succeeded');
         assertEqual(
           billRow(db, billId12a).payment_status,

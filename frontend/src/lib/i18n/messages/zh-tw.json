@@ -3166,6 +3166,47 @@
       "phone_required": "需要電話號碼",
       "phone_required_pairing": "配對碼需要電話號碼"
     },
+    "automation": {
+      "autoOptOutLabel": "收到 STOP / UNSUBSCRIBE 時自動退訂（加入封鎖名單）",
+      "broadcastDescription": "向篩選後的客群發送範本訊息（遵守封鎖名單、勿擾時段與速率限制）。",
+      "broadcastInactiveDays": "未造訪天數 >=",
+      "broadcastMinPoints": "最低點數",
+      "broadcastMinVisits": "最低造訪次數",
+      "broadcastSendCta": "發送分眾廣播",
+      "broadcastSuccess": "廣播完成：已發送 {sent} 則，略過 {skipped} 則（符合 {matched} 人）。",
+      "broadcastTitle": "客群分眾廣播",
+      "feedbackLinkLabel": "門市評價連結",
+      "instagramLabel": "門市 Instagram 帳號",
+      "maxPerWeekLabel": "每位顧客每週自動發送上限",
+      "placeholdersLabel": "點擊插入動態變數",
+      "previewTitle": "即時預覽（範例資料）",
+      "quietHoursEnd": "勿擾結束時間",
+      "quietHoursLabel": "於勿擾時段暫停自動發送",
+      "quietHoursStart": "勿擾開始時間",
+      "resetDefault": "重設為預設值",
+      "ruleAfterPaymentHint": "當綁定顧客電話的帳單完成付款時，自動發送收據範本。",
+      "ruleFeedbackDelayHint": "於訂單付款指定小時後自動發送評價邀請。",
+      "ruleNthVisitHint": "顧客每完成 N 次付款造訪時發送感謝回饋。",
+      "rulePointsThresholdHint": "當顧客點數餘額達到門檻時發送獎勵通知。",
+      "rulesDescription": "切換自動觸發規則並設定收據、回訪與里程碑的觸發門檻。",
+      "rulesTitle": "自動發送規則",
+      "ruleWinbackHint": "向至少 N 天未造訪的顧客發送喚回優惠。",
+      "runSweepCta": "立即執行排程規則",
+      "safetyDescription": "透過自動退訂、勿擾時段與每週上限保護您連結的電話號碼。",
+      "safetyTitle": "安全與防濫發控制",
+      "saveCta": "儲存自動化設定",
+      "savedSuccess": "自動化設定已儲存。",
+      "sweepResult": "已檢查排程規則（已發送 {sent} 則）。",
+      "templateBodyLabel": "訊息內容",
+      "templateNameLabel": "範本名稱",
+      "templatesDescription": "使用顧客、帳單、點數與門市動態變數自訂 WhatsApp 自動訊息。",
+      "templateSelectLabel": "選用範本",
+      "templatesTitle": "訊息範本",
+      "thresholdDays": "未造訪天數",
+      "thresholdHours": "延遲小時數",
+      "thresholdPoints": "點數門檻",
+      "thresholdVisits": "每 N 次造訪"
+    },
     "blocklist": {
       "addCta": "新增",
       "addedSuccess": "已加入黑名單。",
@@ -3258,6 +3299,14 @@
       "rate_limited": "傳送被 WhatsApp 限流 ({code})。冷卻 5 分鐘。",
       "reconnecting": "連線已關閉 ({code})。{seconds} 秒後重連…"
     },
+    "rule": {
+      "after_payment": "付款後自動發送收據",
+      "broadcast": "客群分眾廣播",
+      "feedback_delay": "顧客評價回訪",
+      "nth_visit": "造訪次數里程碑",
+      "points_threshold": "點數達標通知",
+      "winback": "沉睡顧客喚回"
+    },
     "send": {
       "customerPhoneRequired": "傳送前請先新增此顧客的電話號碼。",
       "error": {
@@ -3319,6 +3368,7 @@
       "typing": "正在輸入"
     },
     "tabs": {
+      "automation": "範本與自動規則",
       "connection": "連線",
       "inbox": "收件箱",
       "sent": "已傳送"

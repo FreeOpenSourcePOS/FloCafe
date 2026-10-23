@@ -4,10 +4,9 @@ import fs from 'node:fs';
 import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 
-const SCREENSHOTS_DIR = path.resolve(
-  __dirname,
-  '../../data/flocafe-pos-keyboard-shortcuts-r1/screenshots',
-);
+const SCREENSHOTS_DIR =
+  process.env.E2E_EVIDENCE_DIR ||
+  path.resolve(__dirname, '../../data/flocafe-pos-keyboard-shortcuts-r1/screenshots');
 const managerHeaders = {
   Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}`,
 };
@@ -517,5 +516,273 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(cartItem).toContainText('E2E Coffee');
     await expect(cartItem.getByTestId('cart-item-qty')).toHaveText('1');
     await expect(searchInput).toHaveValue('');
+  });
+
+  test('trailing asterisk "3*", F6 customer search open/collapsed, customer modal shortcut isolation, Escape close, and country name', async ({
+    page,
+  }) => {
+    // 1. Trailing asterisk "3*" keeps product grid visible mid-keystroke and adds qty 3 on click
+    const searchInput = page.getByTestId('pos-product-search');
+    await searchInput.fill('3*');
+    const productCard = page.getByTestId('pos-product-card').first();
+    await expect(productCard).toBeVisible();
+    await searchInput.press('Enter');
+    await expect(page.getByTestId('cart-item')).toHaveCount(0);
+    await productCard.click();
+    const cartItem = page.getByTestId('cart-item').first();
+    await expect(cartItem).toBeVisible({ timeout: 5_000 });
+    await expect(cartItem.getByTestId('cart-item-qty')).toHaveText('3');
+    await page.screenshot({
+      path: path.join(SCREENSHOTS_DIR, 'pos-trailing-asterisk-quantity-search.png'),
+    });
+
+    // 2. F6 focuses customer search input when no customer is selected
+    await page.locator('body').click({ position: { x: 10, y: 10 } });
+    await page.keyboard.press('F6');
+    const customerSearchInput = page.getByTestId('pos-customer-search-input').first();
+    await expect(customerSearchInput).toBeFocused();
+
+    // 3. CreateCustomerModal suppresses background POS shortcuts and closes on Escape
+    await customerSearchInput.fill('NewModalGuest');
+    await expect(page.getByText('No matching results')).toBeVisible({ timeout: 5_000 });
+    const createBtn = page.getByRole('button').filter({ hasText: 'NewModalGuest' }).first();
+    await expect(createBtn).toBeVisible();
+    await createBtn.click();
+
+    const createModal = page.locator('div.fixed.inset-0').filter({
+      has: page.getByRole('heading', { name: 'Add Customer' }),
+    });
+    await expect(createModal).toBeVisible({ timeout: 5_000 });
+    const createModalInput = createModal.locator('input').first();
+    await createModalInput.focus();
+    await expect(createModalInput).toBeFocused();
+    await page.keyboard.press('Control+k');
+    await page.keyboard.press('Meta+k');
+    await expect(searchInput).not.toBeFocused();
+    await createModal.getByRole('heading', { name: 'Add Customer' }).click();
+    await page.keyboard.press('F2');
+    await page.keyboard.press('F4');
+    await page.keyboard.press('?');
+    await expect(page.getByTestId('keyboard-shortcuts-modal')).not.toBeVisible();
+    await expect(page.getByTestId('prepaid-checkout-modal')).not.toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(createModal).not.toBeVisible();
+
+    // 4. Select existing customer -> F6 clicks pos-customer-select-btn and opens EditCustomerModal
+    await customerSearchInput.fill('E2E Guest');
+    const guestResult = page.getByRole('button').filter({ hasText: 'E2E Guest' }).first();
+    await expect(guestResult).toBeVisible({ timeout: 5_000 });
+    await guestResult.click();
+    await expect(page.getByTestId('pos-customer-select-btn').first()).toBeVisible();
+
+    await page.locator('body').click({ position: { x: 10, y: 10 } });
+    await page.keyboard.press('F6');
+    const editModal = page.locator('div.fixed.inset-0').filter({
+      has: page.getByRole('heading', { name: 'Edit Customer' }),
+    });
+    await expect(editModal).toBeVisible({ timeout: 5_000 });
+    await page.screenshot({
+      path: path.join(SCREENSHOTS_DIR, 'f6-customer-shortcut-edit-modal.png'),
+    });
+
+    // Suppresses background POS shortcuts (including Ctrl/Cmd+K in modal inputs) while EditCustomerModal is open
+    const editModalInput = editModal.locator('input').first();
+    await editModalInput.focus();
+    await expect(editModalInput).toBeFocused();
+    await page.keyboard.press('Control+k');
+    await page.keyboard.press('Meta+k');
+    await expect(searchInput).not.toBeFocused();
+    await editModal.getByRole('heading', { name: 'Edit Customer' }).click();
+    await page.keyboard.press('F2');
+    await page.keyboard.press('F4');
+    await page.keyboard.press('?');
+    await expect(page.getByTestId('keyboard-shortcuts-modal')).not.toBeVisible();
+    await expect(page.getByTestId('prepaid-checkout-modal')).not.toBeVisible();
+
+    // Invalid phone shows resolved country name ("Thailand") instead of raw ISO ("TH")
+    const phoneInput = editModal.locator('input[type="tel"]');
+    await phoneInput.fill('123');
+    await editModal.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText(/Thailand/)).toBeVisible({ timeout: 5_000 });
+    await page.screenshot({
+      path: path.join(SCREENSHOTS_DIR, 'edit-customer-invalid-phone-country-name.png'),
+    });
+
+    // Escape closes EditCustomerModal
+    await page.keyboard.press('Escape');
+    await expect(editModal).not.toBeVisible();
+    await page.getByRole('button', { name: 'Remove', exact: true }).first().click();
+  });
+
+  test('PrepaidCheckoutModal focused buttons are not hijacked by global Space/Enter quick-pay', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Takeaway' }).click();
+    await page.getByTestId('pos-product-card').first().click();
+    await expect(page.getByTestId('cart-item').first()).toBeVisible({ timeout: 5_000 });
+
+    let orderCreateRequests = 0;
+    const onRequest = (req: { method: () => string; url: () => string }) => {
+      if (req.method() === 'POST' && req.url().endsWith('/api/orders')) orderCreateRequests += 1;
+    };
+    page.on('request', onRequest);
+
+    try {
+      await page.locator('body').click({ position: { x: 10, y: 10 } });
+      await page.keyboard.press('F4');
+      const checkoutModal = page.getByTestId('prepaid-checkout-modal');
+      await expect(checkoutModal).toBeVisible({ timeout: 5_000 });
+      await expect(checkoutModal.getByText(/Total Due/i)).toBeVisible({ timeout: 5_000 });
+
+      const cardBtn = checkoutModal.getByRole('button', { name: /Card/i }).first();
+      await cardBtn.focus();
+      await expect(cardBtn).toBeFocused();
+      await page.keyboard.press('Space');
+
+      // Modal stays open and no order was prematurely submitted
+      await expect(checkoutModal).toBeVisible();
+      expect(orderCreateRequests).toBe(0);
+      await page.screenshot({
+        path: path.join(SCREENSHOTS_DIR, 'prepaid-checkout-focused-button-guard.png'),
+      });
+
+      // Focusing Close button and pressing Enter closes modal without submitting
+      const closeBtn = checkoutModal.getByRole('button', { name: /Close|Cancel/i }).first();
+      await closeBtn.focus();
+      await expect(closeBtn).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(checkoutModal).not.toBeVisible();
+      expect(orderCreateRequests).toBe(0);
+    } finally {
+      page.off('request', onRequest);
+    }
+  });
+
+  test('AddonModal disables + buttons at max_selection cap and AuthGuard enforces /print-test and /order-history-demo permissions', async ({
+    page,
+  }) => {
+    const suffix = Date.now().toString(36);
+    const groupRes = await page.request.post(`${BASE}/api/addon-groups`, {
+      headers: managerHeaders,
+      data: {
+        name: `Syrups ${suffix}`,
+        is_required: false,
+        min_selection: 0,
+        max_selection: 2,
+        allow_multiple_quantities: true,
+        addons: [
+          { name: 'Vanilla Syrup', price: 10 },
+          { name: 'Hazelnut Syrup', price: 15 },
+        ],
+      },
+    });
+    expect(groupRes.status()).toBe(201);
+    const groupId = (await groupRes.json()).addon_group.id as string;
+
+    let productId: string | undefined;
+    try {
+      const prodRes = await page.request.post(`${BASE}/api/products`, {
+        headers: managerHeaders,
+        data: {
+          name: `Addon Latte ${suffix}`,
+          category_id: 'e2e-category',
+          price: 80,
+          addon_group_ids: [groupId],
+        },
+      });
+      expect(prodRes.status()).toBe(201);
+      productId = (await prodRes.json()).product.id as string;
+
+      await page.reload();
+      const addonCard = page
+        .getByTestId('pos-product-card')
+        .filter({ hasText: `Addon Latte ${suffix}` })
+        .first();
+      await expect(addonCard).toBeVisible({ timeout: 10_000 });
+      await addonCard.click();
+
+      const addonModal = page.locator('div.fixed.inset-0').filter({
+        has: page.getByRole('heading', { name: `Addon Latte ${suffix}` }),
+      });
+      await expect(addonModal).toBeVisible({ timeout: 5_000 });
+
+      const vanillaRow = addonModal
+        .locator('div.min-h-14')
+        .filter({ hasText: 'Vanilla Syrup' })
+        .first();
+      // Click + on Vanilla Syrup twice to reach max_selection = 2
+      const vanillaPlus = vanillaRow.locator('button').last();
+      await expect(vanillaPlus).toBeEnabled();
+      await vanillaPlus.click();
+      await expect(vanillaPlus).toBeEnabled();
+      await vanillaPlus.click();
+
+      await expect(addonModal.getByText(/Selection complete/i)).toBeVisible();
+      await expect(vanillaPlus).toBeDisabled();
+
+      const hazelnutRow = addonModal
+        .locator('div.min-h-14')
+        .filter({ hasText: 'Hazelnut Syrup' })
+        .first();
+      const hazelnutPlus = hazelnutRow.locator('button').last();
+      await expect(hazelnutPlus).toBeDisabled();
+
+      await page.screenshot({
+        path: path.join(SCREENSHOTS_DIR, 'addon-modal-max-selection-plus-disabled.png'),
+      });
+      await addonModal.getByRole('button', { name: 'Close' }).click();
+    } finally {
+      if (productId) {
+        await page.request.delete(`${BASE}/api/products/${productId}`, { headers: managerHeaders });
+      }
+      await page.request.delete(`${BASE}/api/addon-groups/${groupId}`, {
+        headers: managerHeaders,
+      });
+    }
+
+    // Manager has printers.manage (can open /print-test) but lacks dashboard.view (redirected from /order-history-demo to /pos)
+    await page.goto(`${BASE}/print-test`);
+    await expect(
+      page.getByRole('heading', { name: 'Printing Test Page', exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    await page.goto(`${BASE}/order-history-demo`);
+    await page.waitForURL('**/pos**', { timeout: 10_000 });
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    expect(new URL(page.url()).pathname).toMatch(/^\/pos\/?$/);
+
+    // Server role lacks both printers.manage and dashboard.view -> redirected from both /print-test and /order-history-demo to /orders
+    await page.evaluate(() => localStorage.clear());
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('server@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL((u) => !u.pathname.includes('/auth/login'), { timeout: 20_000 });
+
+    await page.goto(`${BASE}/print-test`);
+    await page.waitForURL('**/orders**', { timeout: 10_000 });
+    await page.waitForLoadState('networkidle');
+    expect(new URL(page.url()).pathname).toMatch(/^\/orders\/?$/);
+
+    await page.goto(`${BASE}/order-history-demo`);
+    await page.waitForURL('**/orders**', { timeout: 10_000 });
+    await page.waitForLoadState('networkidle');
+    expect(new URL(page.url()).pathname).toMatch(/^\/orders\/?$/);
+
+    // Owner has dashboard.view -> can open /order-history-demo
+    await page.evaluate(() => localStorage.clear());
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL((u) => !u.pathname.includes('/auth/login'), { timeout: 20_000 });
+
+    await page.goto(`${BASE}/order-history-demo`);
+    await page.waitForLoadState('networkidle');
+    expect(new URL(page.url()).pathname).toMatch(/^\/order-history-demo\/?$/);
+    await page.screenshot({
+      path: path.join(SCREENSHOTS_DIR, 'authguard-role-redirect-and-access.png'),
+    });
   });
 });

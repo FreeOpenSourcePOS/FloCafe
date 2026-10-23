@@ -19,6 +19,7 @@ interface Props {
   onShowPrintMenu: () => void;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
+  onCustomerModalOpenChange?: (open: boolean) => void;
 }
 
 export default function PosTopbar({
@@ -33,6 +34,7 @@ export default function PosTopbar({
   onShowPrintMenu,
   fullscreen,
   onToggleFullscreen,
+  onCustomerModalOpenChange,
 }: Props) {
   const t = useTranslations('pos');
   const tDashboard = useTranslations('dashboard');
@@ -44,7 +46,7 @@ export default function PosTopbar({
     <div className="flex flex-col border-b bg-card shrink-0 px-3 py-2 sm:px-4 sm:py-2.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex-1 min-w-0">
-          <CustomerSearch variant="topbar" />
+          <CustomerSearch variant="topbar" onModalOpenChange={onCustomerModalOpenChange} />
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
+import { normalizeOverridePrice } from '@/lib/cart-price';
 import type { CartItem } from '@/lib/types';
 import type { AppliedCharge } from '@/lib/charges';
 import type { CartOrderType } from '@/store/cart';
@@ -69,7 +70,9 @@ export function useTaxPreview(
         quantity: Number(a.quantity) || 1,
       })),
       discount_amount: 0,
-      ...(item.price_override ? { price_override: { price: item.price_override.price } } : {}),
+      ...(item.price_override
+        ? { price_override: { price: normalizeOverridePrice(item.price_override.price) } }
+        : {}),
     })),
     customer_id: customerId || null,
     packaging_charge: packagingCharge || 0,

@@ -585,16 +585,45 @@ export default function PrepaidCheckoutModal({
     onConfirm(splitLines, walletAmt, finalDiscount);
   };
 
+  const modalRef = useRef<HTMLDivElement>(null);
   const handleConfirmRef = useRef(handleConfirm);
   useEffect(() => {
     handleConfirmRef.current = handleConfirm;
   });
 
   useEffect(() => {
+    if (
+      typeof document !== 'undefined' &&
+      modalRef.current &&
+      document.activeElement &&
+      !modalRef.current.contains(document.activeElement) &&
+      typeof (document.activeElement as HTMLElement).blur === 'function'
+    ) {
+      (document.activeElement as HTMLElement).blur();
+    }
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
       const isInput =
-        target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        Boolean(target?.isContentEditable);
+      const isInsideModal =
+        !modalRef.current ||
+        !target ||
+        (typeof Node !== 'undefined' && !(target instanceof Node)) ||
+        modalRef.current.contains(target as Node);
+      const isInteractive =
+        isInput ||
+        (isInsideModal &&
+          (tag === 'BUTTON' ||
+            tag === 'A' ||
+            target?.getAttribute?.('role') === 'button' ||
+            Boolean(target?.closest?.('button, a, [role="button"]'))));
 
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -605,8 +634,12 @@ export default function PrepaidCheckoutModal({
       if (isInput) return;
 
       if (e.key === ' ' || e.code === 'Space' || e.key === 'Enter') {
+        if (e.repeat) {
+          e.preventDefault();
+          return;
+        }
+        if (isInteractive) return;
         e.preventDefault();
-        if (e.repeat) return;
         if (processing || taxLoading || !preview || hasInvalidFixedDiscount) return;
 
         if (totalPaymentMinor < remainingMinor) {
@@ -651,6 +684,7 @@ export default function PrepaidCheckoutModal({
 
   return (
     <div
+      ref={modalRef}
       data-testid="prepaid-checkout-modal"
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
     >

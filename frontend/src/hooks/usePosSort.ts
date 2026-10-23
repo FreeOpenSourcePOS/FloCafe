@@ -10,10 +10,12 @@ import {
   type PosCategorySort,
   type PosItemSort,
 } from '@/lib/pos-sort';
+import { useAuthStore } from '@/store/auth';
 
 /** Reads the tenant-wide POS catalog ordering; falls back to the saved order. */
 export function usePosSortPreference() {
   const t = useTranslations('settings');
+  const tenantId = useAuthStore((s) => s.currentTenant?.id);
   const [categorySort, setCategorySort] = useState<PosCategorySort>('saved');
   const [itemSort, setItemSort] = useState<PosItemSort>('saved');
 
@@ -30,18 +32,26 @@ export function usePosSortPreference() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [tenantId]);
 
   const save = useCallback(
     async (key: 'pos_category_sort' | 'pos_item_sort', value: PosCategorySort | PosItemSort) => {
-      const previousCategory = categorySort;
+      if (key === 'pos_category_sort') {
+        const previousCategory = categorySort;
+        setCategorySort(value as PosCategorySort);
+        try {
+          await api.put(`/settings/${key}`, { value });
+        } catch {
+          setCategorySort(previousCategory);
+          toast.error(t('saveFailed'));
+        }
+        return;
+      }
       const previousItem = itemSort;
-      if (key === 'pos_category_sort') setCategorySort(value as PosCategorySort);
-      else setItemSort(value as PosItemSort);
+      setItemSort(value as PosItemSort);
       try {
         await api.put(`/settings/${key}`, { value });
       } catch {
-        setCategorySort(previousCategory);
         setItemSort(previousItem);
         toast.error(t('saveFailed'));
       }

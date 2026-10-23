@@ -34,7 +34,6 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 process.env.JWT_SECRET = 'test-secret-cloud-recovery';
 process.env.FLO_AUTH_RATE_LIMIT_MAX = '100';
 
-const express = require('express');
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -56,7 +55,7 @@ const {
   CloudSyncService,
   DEFAULT_CLOUD_SERVER_URL,
 } = require('../main/services/cloud-sync');
-const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
+const { createApp, assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
 
 function isNativeAbiMismatch(error: any): boolean {
   return (
@@ -75,22 +74,11 @@ try {
   throw error;
 }
 
-const app = express();
-app.use(express.json());
-app.use((req: any, _res: any, next: any) => {
-  const header = String(req.headers.authorization || '');
-  if (header.startsWith('Bearer ')) {
-    try {
-      req.user = jwt.verify(header.slice(7), getJWTSecret());
-    } catch {
-      // Leave unauthenticated when token is invalid.
-    }
-  }
-  next();
+const app = createApp({
+  '/api/auth': authRoutes,
+  '/api/settings': settingsRoutes,
+  '/api/staff': staffRoutes,
 });
-app.use('/api/auth', authRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/staff', staffRoutes);
 
 const RESET_ID = 'reset-1234-abcd';
 const ORIGINAL = 'OriginalPass123';

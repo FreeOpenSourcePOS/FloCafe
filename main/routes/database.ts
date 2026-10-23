@@ -252,6 +252,22 @@ router.post(
             });
           }
 
+          const invalidSupplyCostIndex = Array.isArray(importData.supplies)
+            ? importData.supplies.findIndex(
+                (supply) =>
+                  supply?.unit_cost !== undefined &&
+                  supply?.unit_cost !== null &&
+                  (typeof supply.unit_cost !== 'number' ||
+                    !Number.isFinite(supply.unit_cost) ||
+                    supply.unit_cost < 0),
+              )
+            : -1;
+          if (invalidSupplyCostIndex >= 0) {
+            return res.status(400).json({
+              error: `supplies[${invalidSupplyCostIndex}].unit_cost must be a non-negative finite number or null`,
+            });
+          }
+
           if (Array.isArray(importData.products) && importData.products.length > 0) {
             if (!Array.isArray(importData.inventory_movements)) {
               const legacyZeroStockImport =

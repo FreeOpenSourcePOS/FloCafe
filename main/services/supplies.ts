@@ -1,6 +1,35 @@
 import { randomBytes } from 'crypto';
+import Decimal from 'decimal.js';
+import { getCurrencyFractionDigits } from '../countries';
 import { getDatabase, now, withTxn } from '../db';
 import { SupplyUnit, assertSupplyUnit, convertQuantity, roundQuantity } from './units';
+
+export const COST_PRECISION = 10;
+
+export function roundUnitCost(value: number | Decimal): number {
+  const rounded = new Decimal(value)
+    .toDecimalPlaces(COST_PRECISION, Decimal.ROUND_HALF_UP)
+    .toNumber();
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+export function roundCurrencyCost(value: number | Decimal, fractionDigits: number): number {
+  const rounded = new Decimal(value)
+    .toDecimalPlaces(fractionDigits, Decimal.ROUND_HALF_UP)
+    .toNumber();
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+export function resolveDbCurrencyFractionDigits(db: ReturnType<typeof getDatabase>): number {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as
+      | { value?: string | null }
+      | undefined;
+    return getCurrencyFractionDigits(row?.value || '');
+  } catch {
+    return 2;
+  }
+}
 
 export type SupplyMovementType =
   | 'receive'
@@ -16,6 +45,7 @@ export type SupplyServiceDiagnosticCode =
   | 'quantity_invalid'
   | 'unit_invalid'
   | 'threshold_invalid'
+  | 'cost_invalid'
   | 'movement_reason_required'
   | 'movement_reason_too_long'
   | 'movement_quantity_invalid'
@@ -40,6 +70,7 @@ export interface SupplyRecord {
   base_unit: SupplyUnit;
   stock_quantity: number;
   low_stock_threshold: number | null;
+  unit_cost: number | null;
   is_active: number;
   deleted_at: string | null;
   created_at: string;
@@ -55,6 +86,9 @@ export interface SupplyMovement {
   movement_type: SupplyMovementType;
   unit: SupplyUnit;
   stock_after: number;
+  unit_cost: number | null;
+  total_cost: number | null;
+  unit_cost_after: number | null;
   reason: string | null;
   actor_user_id: string;
   actor_name: string | null;
@@ -69,6 +103,8 @@ export interface CreateSupplyInput {
   baseUnit: string;
   stockQuantity?: number;
   lowStockThreshold?: number | null;
+  unitCost?: number | null;
+  unitCostUnit?: string;
   isActive?: boolean;
   actorUserId?: string;
 }
@@ -78,6 +114,8 @@ export interface RecordMovementInput {
   movementType: 'receive' | 'count' | 'adjustment' | 'waste';
   quantity: number;
   unit?: string;
+  unitCost?: number | null;
+  totalCost?: number | null;
   reason?: string | null;
   actorUserId: string;
   referenceType?: string | null;
@@ -118,6 +156,33 @@ function normalizeQuantity(
     throw new SupplyServiceError(400, `${field} must be a finite number`, diagnosticCode);
   }
   return quantity;
+}
+
+function normalizeCost(value: unknown, field = 'unit_cost'): number {
+  const cost = typeof value === 'string' ? Number(value) : value;
+  if (typeof cost !== 'number' || !Number.isFinite(cost) || cost < 0) {
+    throw new SupplyServiceError(
+      400,
+      `${field} must be a non-negative finite number`,
+      'cost_invalid',
+    );
+  }
+  return cost;
+}
+
+function normalizeUnitCostInBase(
+  rawCost: unknown,
+  costUnitRaw: string | undefined,
+  baseUnit: SupplyUnit,
+  field = 'unit_cost',
+): number {
+  const cost = normalizeCost(rawCost, field);
+  const costUnit =
+    costUnitRaw === undefined || costUnitRaw === null
+      ? baseUnit
+      : assertSupplyUnit(costUnitRaw, `${field}_unit`);
+  const factorToBase = convertQuantity(1, costUnit, baseUnit);
+  return roundUnitCost(new Decimal(cost).div(factorToBase));
 }
 
 export function getSupply(db: ReturnType<typeof getDatabase>, id: string): SupplyRecord {
@@ -195,24 +260,36 @@ export function createSupply(
     input.lowStockThreshold === undefined || input.lowStockThreshold === null
       ? null
       : roundQuantity(normalizeQuantity(input.lowStockThreshold, 'low_stock_threshold'));
+  const unitCost =
+    input.unitCost === undefined || input.unitCost === null
+      ? null
+      : normalizeUnitCostInBase(input.unitCost, input.unitCostUnit, baseUnit, 'unit_cost');
   const id = input.id || newId();
   const timestamp = now();
   const isActive = input.isActive === false ? 0 : 1;
 
   withTxn(() => {
     db.prepare(`
-      INSERT INTO supplies (id, name, base_unit, stock_quantity, low_stock_threshold, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, 0, ?, ?, ?, ?)
-    `).run(id, name, baseUnit, lowStockThreshold, isActive, timestamp, timestamp);
+      INSERT INTO supplies (id, name, base_unit, stock_quantity, low_stock_threshold, unit_cost, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
+    `).run(id, name, baseUnit, lowStockThreshold, unitCost, isActive, timestamp, timestamp);
 
     if (stockQuantity !== 0) {
       if (!input.actorUserId)
         throw new SupplyServiceError(400, 'actor_user_id is required for opening stock');
+      const fractionDigits = resolveDbCurrencyFractionDigits(db);
+      const openingTotalCost =
+        unitCost !== null && stockQuantity > 0
+          ? roundCurrencyCost(new Decimal(stockQuantity).mul(unitCost), fractionDigits)
+          : null;
       applySupplyStockChange(db, {
         supplyId: id,
         quantityDelta: stockQuantity,
         movementType: 'adjustment',
         unit: baseUnit,
+        unitCost: unitCost !== null && stockQuantity > 0 ? unitCost : null,
+        totalCost: openingTotalCost,
+        unitCostAfter: unitCost,
         reason: 'Opening balance',
         actorUserId: input.actorUserId,
         referenceType: 'opening_balance',
@@ -228,7 +305,13 @@ export function createSupply(
 export function updateSupply(
   db: ReturnType<typeof getDatabase>,
   id: string,
-  input: { name?: string; isActive?: boolean; lowStockThreshold?: number | null },
+  input: {
+    name?: string;
+    isActive?: boolean;
+    lowStockThreshold?: number | null;
+    unitCost?: number | null;
+    unitCostUnit?: string;
+  },
 ): SupplyRecord {
   const supply = getSupply(db, id);
   const name = input.name === undefined ? supply.name : String(input.name).trim();
@@ -253,11 +336,25 @@ export function updateSupply(
       lowStockThreshold = roundQuantity(threshold);
     }
   }
+  let unitCost: number | null =
+    supply.unit_cost === undefined || supply.unit_cost === null ? null : Number(supply.unit_cost);
+  if (input.unitCost !== undefined) {
+    if (input.unitCost === null) {
+      unitCost = null;
+    } else {
+      unitCost = normalizeUnitCostInBase(
+        input.unitCost,
+        input.unitCostUnit,
+        supply.base_unit,
+        'unit_cost',
+      );
+    }
+  }
   const isActive = input.isActive === undefined ? supply.is_active : input.isActive ? 1 : 0;
   db.prepare(`
-    UPDATE supplies SET name = ?, low_stock_threshold = ?, is_active = ?, updated_at = ?
+    UPDATE supplies SET name = ?, low_stock_threshold = ?, unit_cost = ?, is_active = ?, updated_at = ?
     WHERE id = ? AND deleted_at IS NULL
-  `).run(name, lowStockThreshold, isActive, now(), id);
+  `).run(name, lowStockThreshold, unitCost, isActive, now(), id);
   return getSupply(db, id);
 }
 
@@ -279,6 +376,9 @@ export function applySupplyStockChange(
     quantityDelta: number;
     movementType: SupplyMovementType;
     unit?: string;
+    unitCost?: number | null;
+    totalCost?: number | null;
+    unitCostAfter?: number | null;
     reason?: string | null;
     actorUserId: string;
     referenceType?: string | null;
@@ -306,19 +406,22 @@ export function applySupplyStockChange(
   const stockBefore = Number(supply.stock_quantity);
   const stockAfter = roundQuantity(stockBefore + deltaInBase);
   const timestamp = options.createdAt || now();
+  const currentUnitCost =
+    supply.unit_cost === undefined || supply.unit_cost === null ? null : Number(supply.unit_cost);
+  const nextUnitCost =
+    options.unitCostAfter === undefined ? currentUnitCost : options.unitCostAfter;
 
-  db.prepare('UPDATE supplies SET stock_quantity = ?, updated_at = ? WHERE id = ?').run(
-    stockAfter,
-    timestamp,
-    options.supplyId,
-  );
+  db.prepare(
+    'UPDATE supplies SET stock_quantity = ?, unit_cost = ?, updated_at = ? WHERE id = ?',
+  ).run(stockAfter, nextUnitCost, timestamp, options.supplyId);
 
   const movement = db
     .prepare(`
     INSERT INTO supply_movements (
       supply_id, quantity_delta, movement_type, unit, stock_after,
+      unit_cost, total_cost, unit_cost_after,
       reason, actor_user_id, reference_type, reference_id, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
     .run(
       options.supplyId,
@@ -326,6 +429,9 @@ export function applySupplyStockChange(
       options.movementType,
       supply.base_unit,
       stockAfter,
+      options.unitCost ?? null,
+      options.totalCost ?? null,
+      nextUnitCost,
       options.reason ?? null,
       options.actorUserId,
       options.referenceType ?? null,
@@ -348,6 +454,16 @@ function recordSupplyMovementInTxn(
   const unit = input.unit === undefined ? supply.base_unit : assertSupplyUnit(input.unit, 'unit');
   const reason = assertReason(input);
   const timestamp = input.createdAt || now();
+
+  const hasUnitCostInput = input.unitCost !== undefined && input.unitCost !== null;
+  const hasTotalCostInput = input.totalCost !== undefined && input.totalCost !== null;
+  if ((hasUnitCostInput || hasTotalCostInput) && input.movementType !== 'receive') {
+    throw new SupplyServiceError(
+      400,
+      'Purchase cost can only be recorded on receive movements',
+      'cost_invalid',
+    );
+  }
 
   let delta: number;
   switch (input.movementType) {
@@ -392,11 +508,49 @@ function recordSupplyMovementInTxn(
       );
   }
 
+  const oldUnitCost =
+    supply.unit_cost === undefined || supply.unit_cost === null ? null : Number(supply.unit_cost);
+  let batchUnitCostInBase: number | null = null;
+  let batchTotalCost: number | null = null;
+  let nextUnitCost: number | null = oldUnitCost;
+
+  if (input.movementType === 'receive' && (hasUnitCostInput || hasTotalCostInput)) {
+    const fractionDigits = resolveDbCurrencyFractionDigits(db);
+    if (hasUnitCostInput) {
+      const enteredUnitCost = normalizeCost(input.unitCost, 'unit_cost');
+      const factorToBase = convertQuantity(1, unit, supply.base_unit);
+      batchUnitCostInBase = roundUnitCost(new Decimal(enteredUnitCost).div(factorToBase));
+      batchTotalCost = hasTotalCostInput
+        ? roundCurrencyCost(normalizeCost(input.totalCost, 'total_cost'), fractionDigits)
+        : roundCurrencyCost(new Decimal(enteredUnitCost).mul(quantity), fractionDigits);
+    } else if (hasTotalCostInput) {
+      const enteredTotalCost = normalizeCost(input.totalCost, 'total_cost');
+      batchTotalCost = roundCurrencyCost(enteredTotalCost, fractionDigits);
+      batchUnitCostInBase = roundUnitCost(new Decimal(enteredTotalCost).div(delta));
+    }
+
+    const stockBefore = Number(supply.stock_quantity);
+    if (batchUnitCostInBase !== null) {
+      if (oldUnitCost === null || stockBefore <= 0) {
+        nextUnitCost = batchUnitCostInBase;
+      } else {
+        const weightedTotal = new Decimal(stockBefore)
+          .mul(oldUnitCost)
+          .plus(new Decimal(delta).mul(batchUnitCostInBase));
+        const newStock = new Decimal(stockBefore).plus(delta);
+        nextUnitCost = roundUnitCost(weightedTotal.div(newStock));
+      }
+    }
+  }
+
   const { movementId } = applySupplyStockChange(db, {
     supplyId: input.supplyId,
     quantityDelta: delta,
     movementType: input.movementType,
     unit: supply.base_unit,
+    unitCost: batchUnitCostInBase,
+    totalCost: batchTotalCost,
+    unitCostAfter: nextUnitCost,
     reason,
     actorUserId: input.actorUserId,
     referenceType: input.referenceType ?? null,
@@ -408,7 +562,8 @@ function recordSupplyMovementInTxn(
     .prepare(`
     SELECT
       m.id, m.supply_id, s.name AS supply_name, m.quantity_delta, m.movement_type, m.unit,
-      m.stock_after, m.reason, m.actor_user_id, u.name AS actor_name,
+      m.stock_after, m.unit_cost, m.total_cost, m.unit_cost_after,
+      m.reason, m.actor_user_id, u.name AS actor_name,
       m.reference_type, m.reference_id, m.created_at
     FROM supply_movements m
     LEFT JOIN supplies s ON s.id = m.supply_id
@@ -468,7 +623,8 @@ export function listSupplyMovements(
     .prepare(`
     SELECT
       m.id, m.supply_id, s.name AS supply_name, m.quantity_delta, m.movement_type, m.unit,
-      m.stock_after, m.reason, m.actor_user_id, u.name AS actor_name,
+      m.stock_after, m.unit_cost, m.total_cost, m.unit_cost_after,
+      m.reason, m.actor_user_id, u.name AS actor_name,
       m.reference_type, m.reference_id, m.created_at
     FROM supply_movements m
     LEFT JOIN supplies s ON s.id = m.supply_id

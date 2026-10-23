@@ -7664,6 +7664,35 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 117,
+    name: 'add_ingredient_cost_tracking',
+    up: () => {
+      const supplyColumns = getColumns(db, 'supplies');
+      if (!supplyColumns.includes('unit_cost')) {
+        db.exec('ALTER TABLE supplies ADD COLUMN unit_cost REAL DEFAULT NULL');
+      }
+
+      const movementColumns = getColumns(db, 'supply_movements');
+      const addMovementCol = (name: string, definition: string) => {
+        if (!movementColumns.includes(name)) {
+          db.exec(`ALTER TABLE supply_movements ADD COLUMN ${name} ${definition}`);
+        }
+      };
+      addMovementCol('unit_cost', 'REAL DEFAULT NULL');
+      addMovementCol('total_cost', 'REAL DEFAULT NULL');
+      addMovementCol('unit_cost_after', 'REAL DEFAULT NULL');
+
+      const orderItemColumns = getColumns(db, 'order_items');
+      const addOrderItemCol = (name: string, definition: string) => {
+        if (!orderItemColumns.includes(name)) {
+          db.exec(`ALTER TABLE order_items ADD COLUMN ${name} ${definition}`);
+        }
+      };
+      addOrderItemCol('ingredient_cost', 'REAL DEFAULT NULL');
+      addOrderItemCol('ingredient_cost_known', 'INTEGER NOT NULL DEFAULT 0');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

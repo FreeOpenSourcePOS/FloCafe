@@ -394,13 +394,22 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
 
   if (item) {
     // Insert negative void_adjustment row to reverse item cost while preserving audit trail.
+    const reversedIngredientCost =
+      Number(item.ingredient_cost_known) === 1 &&
+      typeof item.ingredient_cost === 'number' &&
+      Number.isFinite(item.ingredient_cost)
+        ? item.ingredient_cost === 0
+          ? 0
+          : -item.ingredient_cost
+        : null;
+    const reversedIngredientCostKnown = reversedIngredientCost !== null ? 1 : 0;
     const adjustmentResult = db
       .prepare(`
       INSERT INTO order_items (
         order_id, product_id, product_name, product_sku, unit_price, quantity,
         subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total,
-        variant_selection, modifier_selection, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'void_adjustment', ?, ?)
+        variant_selection, modifier_selection, ingredient_cost, ingredient_cost_known, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'void_adjustment', ?, ?)
     `)
       .run(
         item.order_id,
@@ -418,6 +427,8 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
         -item.total,
         item.variant_selection,
         item.modifier_selection,
+        reversedIngredientCost,
+        reversedIngredientCostKnown,
         timestamp,
         timestamp,
       );

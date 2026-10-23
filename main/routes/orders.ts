@@ -48,7 +48,13 @@ import {
   variantUnitPrice,
   type ProductVariant,
 } from '../services/product-variants';
-import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
+import {
+  applyRecipeSnapshot,
+  buildRecipeSnapshot,
+  extractOrderItemCostFromSnapshot,
+  parseRecipeSnapshot,
+  scaleRecipeSnapshot,
+} from '../services/recipes';
 import {
   carryPriceOverride,
   ITEM_PRICE_OVERRIDE_PERMISSION,
@@ -864,8 +870,8 @@ function insertOrderItems(
   const insertItem = db.prepare(`
   INSERT INTO order_items (order_id, product_id, variant_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id, inventory_variant_id,
     subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
-    modifier_selection, special_instructions, recipe_snapshot, status, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    modifier_selection, special_instructions, recipe_snapshot, ingredient_cost, ingredient_cost_known, status, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
   const insertedItemIds: (number | bigint)[] = [];
@@ -974,6 +980,8 @@ function insertOrderItems(
       context.preserveSelections && item.recipe_snapshot !== undefined
         ? (item.recipe_snapshot as ReturnType<typeof buildRecipeSnapshot>)
         : buildRecipeSnapshot(db, product.id, quantity, variant?.recipe_multiplier ?? 1);
+    const { ingredientCost, ingredientCostKnown } =
+      extractOrderItemCostFromSnapshot(recipeSnapshot);
     const insertItemResult = insertItem.run(
       orderId,
       product.id,
@@ -1000,6 +1008,8 @@ function insertOrderItems(
       JSON.stringify(item.modifier_selection || null),
       item.special_instructions || null,
       recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
+      ingredientCost,
+      ingredientCostKnown,
       initialStatus,
       itemCreatedAt,
       itemCreatedAt,
@@ -1115,6 +1125,8 @@ interface OrderItemRow {
   inventory_product_id: string | null;
   inventory_variant_id: string | null;
   recipe_snapshot: string | null;
+  ingredient_cost?: number | null;
+  ingredient_cost_known?: number;
   updated_at: string;
 }
 
@@ -1763,8 +1775,8 @@ router.post(
         const insertItem = db.prepare(`
         INSERT INTO order_items (order_id, product_id, variant_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id, inventory_variant_id,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
-          modifier_selection, special_instructions, recipe_snapshot, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          modifier_selection, special_instructions, recipe_snapshot, ingredient_cost, ingredient_cost_known, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
         const validatedItems: Array<{
@@ -1940,6 +1952,8 @@ router.post(
             quantity,
             variant?.recipe_multiplier ?? 1,
           );
+          const { ingredientCost, ingredientCostKnown } =
+            extractOrderItemCostFromSnapshot(recipeSnapshot);
           const insertItemResult = insertItem.run(
             orderId,
             product.id,
@@ -1964,6 +1978,8 @@ router.post(
             JSON.stringify(item.modifier_selection || null),
             item.special_instructions || null,
             recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
+            ingredientCost,
+            ingredientCostKnown,
             itemCreatedAt,
             itemCreatedAt,
           );
@@ -5634,12 +5650,30 @@ router.patch(
           // stock returning to available when a back-to-pending line is edited).
           const heldRatio = newQuantity / oldQuantity;
           const heldRecipeSnapshot = parseRecipeSnapshot(oldItem.recipe_snapshot);
+          const scaledRecipeSnapshot = heldRecipeSnapshot
+            ? scaleRecipeSnapshot(heldRecipeSnapshot, heldRatio, decimals)
+            : null;
+          const {
+            ingredientCost: scaledIngredientCost,
+            ingredientCostKnown: scaledIngredientCostKnown,
+          } = scaledRecipeSnapshot
+            ? extractOrderItemCostFromSnapshot(scaledRecipeSnapshot)
+            : Number(oldItem.ingredient_cost_known) === 1 &&
+                typeof oldItem.ingredient_cost === 'number' &&
+                Number.isFinite(oldItem.ingredient_cost)
+              ? {
+                  ingredientCost: Number((oldItem.ingredient_cost * heldRatio).toFixed(decimals)),
+                  ingredientCostKnown: 1 as const,
+                }
+              : { ingredientCost: null, ingredientCostKnown: 0 as const };
 
           db.prepare(`
             UPDATE order_items
             SET quantity = ?,
                 inventory_deducted_quantity = ?,
                 recipe_snapshot = ?,
+                ingredient_cost = ?,
+                ingredient_cost_known = ?,
                 subtotal = ?,
                 tax_amount = ?,
                 tax_breakdown = ?,
@@ -5652,15 +5686,9 @@ router.patch(
           `).run(
             newQuantity,
             Number((Number(oldItem.inventory_deducted_quantity) * heldRatio).toFixed(6)),
-            heldRecipeSnapshot
-              ? JSON.stringify({
-                  ...heldRecipeSnapshot,
-                  components: heldRecipeSnapshot.components.map((component) => ({
-                    ...component,
-                    quantity: Number((component.quantity * heldRatio).toFixed(6)),
-                  })),
-                })
-              : oldItem.recipe_snapshot,
+            scaledRecipeSnapshot ? JSON.stringify(scaledRecipeSnapshot) : oldItem.recipe_snapshot,
+            scaledIngredientCost,
+            scaledIngredientCostKnown,
             itemSubtotal,
             taxResult.tax_amount,
             JSON.stringify(taxResult.tax_breakdown),
@@ -5743,13 +5771,7 @@ router.patch(
               }));
               const heldRecipeSnapshot = parseRecipeSnapshot(oldItem.recipe_snapshot);
               newItem.recipe_snapshot = heldRecipeSnapshot
-                ? {
-                    ...heldRecipeSnapshot,
-                    components: heldRecipeSnapshot.components.map((component) => ({
-                      ...component,
-                      quantity: Number((component.quantity * heldRatio).toFixed(6)),
-                    })),
-                  }
+                ? scaleRecipeSnapshot(heldRecipeSnapshot, heldRatio, decimals)
                 : null;
               const oldTarget = orderItemInventoryTarget(db, oldItem);
               newItem.inventory_deducted_quantity = Number(

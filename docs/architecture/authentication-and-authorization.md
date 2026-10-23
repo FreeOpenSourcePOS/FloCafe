@@ -188,6 +188,41 @@ All three HTTP listeners (`:3001` Main API, `:3002` Standalone KDS, and `:3003` 
 3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP once role and permission checks pass.
 4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures and do not clear previously accumulated failed-login attempts.
 
+## Password policy
+
+A password must be at least 4 characters long. There are no uppercase, lowercase, digit, or symbol
+requirements. The rule lives only in
+[`shared/password-policy.ts`](../../shared/password-policy.ts); the backend (`validatePassword`
+re-exported from `main/middleware/security.ts`) and every frontend form that sets a password
+(first-run setup, staff create and edit, staff password reset, recovery) import it, and the
+`password-policy` test fails if a source file re-implements a password rule. Every route that
+writes a password enforces it: setup, staff create and update, password change, and both recovery
+paths. The 4-digit Master PIN and approval PINs are separate secrets with their own rules.
+
+## Owner password recovery
+
+A locked-out owner has two recovery paths, both local-only requests (loopback) with no JWT, and
+both ending in the same write (`applyOwnerRecovery` in
+[`main/routes/auth.ts`](../../main/routes/auth.ts)): the new bcrypt hash, a bumped
+`tokens_valid_after`, and the `last_password_recovery_*` audit settings.
+
+- **Master PIN:** `POST /api/auth/recover-password` with the owner email, the Master PIN, and the
+  new password. Works offline.
+- **FloAdmin email approval:** available when cloud account services are on and the store has a
+  registered owner email (`cloudSync.isEmailRecoveryAvailable()`, advertised as
+  `cloudRecoveryAvailable` by `GET /api/auth/setup/status`). If FloAdmin has not verified that
+  email, the request first sends the verification email (`step: 'verify_email'`) and the recover
+  page polls `GET /api/auth/recover-password/cloud/verification`; once verified it requests the
+  reset automatically. FloAdmin then emails the registered owner a link, the POS polls the
+  approval status, and after approval the owner chooses the new password on the POS.
+  `POST /api/auth/recover-password/cloud/complete` resolves the owner whose email matches the
+  registered cloud email, redeems the single-use grant with FloAdmin, and only then writes the
+  password. The password is never sent to FloAdmin. Cloud requests are signed with the
+  install's `api_key` like every other `/api/pos/*` call.
+
+If the owner email matches no active owner, nothing is redeemed. When no active administrator
+remains, either path restores owner access to the matched account.
+
 ## Master PIN as a second factor
 
 The master PIN is a 4-digit PIN, separate from a staff password, used to gate destructive

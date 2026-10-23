@@ -1061,9 +1061,16 @@ router.put('/cloud', requirePermission('cloud.manage'), (req: Request, res: Resp
     };
 
     if (cloud_server_url !== undefined) {
-      updates.cloud_server_url = normalizeCloudServerUrl(
-        cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
-      );
+      const requestedUrl = normalizeCloudServerUrl(cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
+      if (
+        requestedUrl !== normalizeCloudServerUrl(DEFAULT_CLOUD_SERVER_URL) &&
+        (req as Request & { user?: { role?: string } }).user?.role !== 'owner'
+      ) {
+        return res
+          .status(403)
+          .json({ error: 'Only the store owner can configure a custom cloud server URL' });
+      }
+      updates.cloud_server_url = requestedUrl;
     }
     if (cloud_api_key !== undefined && !isMaskedSecret(cloud_api_key)) {
       updates.cloud_api_key = String(cloud_api_key || '');
@@ -1121,10 +1128,19 @@ router.post(
         return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
       }
       if (req.body?.cloud_server_url !== undefined) {
+        const requestedUrl = normalizeCloudServerUrl(
+          req.body.cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
+        );
+        if (
+          requestedUrl !== normalizeCloudServerUrl(DEFAULT_CLOUD_SERVER_URL) &&
+          (req as Request & { user?: { role?: string } }).user?.role !== 'owner'
+        ) {
+          return res
+            .status(403)
+            .json({ error: 'Only the store owner can configure a custom cloud server URL' });
+        }
         upsertSettings(getDatabase(), {
-          cloud_server_url: normalizeCloudServerUrl(
-            req.body.cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
-          ),
+          cloud_server_url: requestedUrl,
         });
       }
       if (cloudSync.getStatus().cloud_deletion_blocked) {

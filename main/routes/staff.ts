@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { getDatabase, now } from '../db';
 import { validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
+import { PASSWORD_POLICY_MESSAGE } from '../../shared/password-policy';
 import { hasPermission, requireAnyPermission, requirePermission } from '../services/authorization';
 import {
   AdministrationUnreachableError,
@@ -225,8 +226,7 @@ router.post('/', requireStaffWrite, authRateLimit(), (req: Request, res: Respons
     if (!validatePassword(password)) {
       captureStaffValidation('fc.backend.staff.create.validation', 'password_policy');
       return res.status(400).json({
-        error:
-          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.',
+        error: PASSWORD_POLICY_MESSAGE,
       });
     }
 
@@ -426,8 +426,7 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
     if (password && !validatePassword(password)) {
       captureStaffValidation('fc.backend.staff.update.validation', 'password_policy');
       return res.status(400).json({
-        error:
-          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.',
+        error: PASSWORD_POLICY_MESSAGE,
       });
     }
 

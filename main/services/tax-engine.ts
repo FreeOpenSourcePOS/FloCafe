@@ -143,13 +143,13 @@ function roundIncrement(value: Decimal, incrementValue: string, method: Rounding
   return value.div(increment).toDecimalPlaces(0, ROUNDING[method]).mul(increment);
 }
 
-function resolvePayableIncrement(pack: CountryPack, currency?: string): string {
+export function resolvePayableIncrement(pack: CountryPack, currency?: string): string {
   const configuredIncrement = new TaxDecimal(pack.payableRounding.increment);
   const configuredDecimals = configuredIncrement.decimalPlaces() ?? 0;
   if (
     currency !== undefined &&
     pack.currency === 'XXX' &&
-    getCurrencyFractionDigits(currency) > configuredDecimals
+    getCurrencyFractionDigits(currency) !== configuredDecimals
   ) {
     return new TaxDecimal(1).div(getCurrencyMinorUnitFactor(currency)).toString();
   }

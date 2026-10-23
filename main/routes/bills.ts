@@ -1238,6 +1238,7 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
       return { bill: newBill, isNew: true };
     });
     operationCommitted = true;
+    flushPendingExactBalanceAutomations();
 
     notifyOrderUpdated();
     const orderWithItems = getOrderWithItems(db, order_id, Number(result.bill.id));
@@ -3405,6 +3406,53 @@ function calculateCashback(
   return Math.floor(fullOrderCashback * splitRatio);
 }
 
+const pendingExactBalanceAutomations = new Map<
+  number,
+  { db: ReturnType<typeof getDatabase>; pointsEarned: number }
+>();
+let exactBalanceFlushScheduled = false;
+
+export function flushPendingExactBalanceAutomations(): void {
+  for (const [billId, entry] of pendingExactBalanceAutomations.entries()) {
+    if (entry.db.inTransaction) continue;
+    pendingExactBalanceAutomations.delete(billId);
+    let isPaid = false;
+    try {
+      const current = entry.db
+        .prepare('SELECT payment_status FROM bills WHERE id = ?')
+        .get(billId) as { payment_status?: string } | undefined;
+      isPaid = current?.payment_status === 'paid';
+    } catch {
+      isPaid = false;
+    }
+    if (isPaid) {
+      void whatsapp
+        .triggerBillPaidAutomation(billId, { pointsEarned: entry.pointsEarned })
+        .catch(() => {});
+    }
+  }
+}
+
+function queueExactBalanceAutomation(
+  db: ReturnType<typeof getDatabase>,
+  billId: number,
+  pointsEarned: number,
+): void {
+  if (!Number.isFinite(billId) || billId <= 0) return;
+  pendingExactBalanceAutomations.set(billId, { db, pointsEarned });
+  if (!db.inTransaction) {
+    flushPendingExactBalanceAutomations();
+    return;
+  }
+  if (!exactBalanceFlushScheduled) {
+    exactBalanceFlushScheduled = true;
+    queueMicrotask(() => {
+      exactBalanceFlushScheduled = false;
+      flushPendingExactBalanceAutomations();
+    });
+  }
+}
+
 export function completeExactBalanceSettlement(
   db: ReturnType<typeof getDatabase>,
   billId: string | number,
@@ -3431,6 +3479,11 @@ export function completeExactBalanceSettlement(
   if (!kitchenStatus.allowed) {
     return parseRowJson(bill);
   }
+
+  const orderBefore = db.prepare('SELECT status FROM orders WHERE id = ?').get(bill.order_id) as
+    | { status?: string }
+    | undefined;
+  const wasAlreadySettled = bill.payment_status === 'paid' && orderBefore?.status === 'completed';
 
   db.prepare(
     `UPDATE bills SET payment_status = 'paid', paid_at = COALESCE(paid_at, ?), balance = 0, updated_at = ? WHERE id = ?`,
@@ -3469,6 +3522,7 @@ export function completeExactBalanceSettlement(
   const alreadyCredited = db
     .prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`)
     .get(bill.id);
+  let loyaltyPointsEarned = 0;
   if (cashback > 0 && !alreadyCredited) {
     let existingPayments: any[] = [];
     try {
@@ -3485,6 +3539,7 @@ export function completeExactBalanceSettlement(
       cashback * (1 - Math.min(1, walletCents / Math.max(1, totalCents))),
     );
     if (finalCashback > 0) {
+      loyaltyPointsEarned = finalCashback;
       db.prepare(
         `INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at) VALUES (?, ?, 'credit', ?, ?, ?, ?)`,
       ).run(
@@ -3496,6 +3551,10 @@ export function completeExactBalanceSettlement(
         changedAt,
       );
     }
+  }
+
+  if (!wasAlreadySettled) {
+    queueExactBalanceAutomation(db, Number(bill.id), loyaltyPointsEarned);
   }
 
   return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId));
@@ -4892,6 +4951,7 @@ router.post(
         return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));
       });
       operationCommitted = true;
+      flushPendingExactBalanceAutomations();
 
       notifyOrderUpdated();
       res.json({ bill: updatedBill });
@@ -5234,6 +5294,7 @@ router.patch(
         return updatedBill;
       });
       operationCommitted = true;
+      flushPendingExactBalanceAutomations();
 
       notifyOrderUpdated();
       res.json({ bill: updated });

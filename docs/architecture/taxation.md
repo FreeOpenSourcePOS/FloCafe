@@ -76,9 +76,9 @@ remainders across both rather than rounding items or charges in isolation.
 **Payable rounding** is `payableRounding`, which has its own `increment` and its own `method`. It
 decides the smallest amount a customer can actually be charged, which is a cash-handling question
 rather than a tax-arithmetic one, so it is never inferred from `taxRounding`. A pack that declares
-`currency: 'XXX'` and a configured currency with more fraction digits resolves its increment from
-the configured currency instead, so a placeholder-currency pack still produces a payable amount in
-real minor units.
+`currency: 'XXX'` and a configured currency whose fraction digits differ from the pack's increment
+resolves its increment from the configured currency instead, so a placeholder-currency pack still
+produces a payable amount in real minor units.
 
 `decimalPlaces` is bounded at install: an integer from 0 to 6. The payable increment must be finite,
 positive, and at most 1000.

@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Service",
     "priceExceptionsShiftOpen": "ouvert",
     "dayCloseOpenShiftBlocks": "Fermez le service ouvert #{id} ({name}) avant de clôturer cette journée commerciale.",
-    "dayCloseOpenShiftBlocksGeneric": "Fermez le service ouvert de cette journée commerciale avant de clôturer la journée."
+    "dayCloseOpenShiftBlocksGeneric": "Fermez le service ouvert de cette journée commerciale avant de clôturer la journée.",
+    "ingredientCost": "Coût des ingrédients",
+    "grossProfit": "Bénéfice brut",
+    "grossMargin": "Marge brute",
+    "costUnknown": "Coût inconnu",
+    "partialCost": "Coût partiel",
+    "ingredientCostLabel": "Coût : {amount}",
+    "profitMarginLabel": "Bénéfice : {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Ajouter une dépense",
@@ -544,7 +551,11 @@
     "saveFailed": "Échec de l’enregistrement",
     "deleteFailed": "Échec de la suppression",
     "confirmDeleteSupply": "Supprimer l’approvisionnement {name} ? Son historique des mouvements sera conservé.",
-    "confirmDeleteRecipe": "Supprimer la recette de {name} ?"
+    "confirmDeleteRecipe": "Supprimer la recette de {name} ?",
+    "unitCost": "Coût unitaire",
+    "totalBatchCost": "Coût total du lot",
+    "recipeCost": "Coût de la recette",
+    "costUnknown": "Coût inconnu"
   },
   "kds": {
     "addonsLabel": "Options",

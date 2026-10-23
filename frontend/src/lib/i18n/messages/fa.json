@@ -432,7 +432,14 @@
     "priceExceptionsShift": "شیفت",
     "priceExceptionsShiftOpen": "باز",
     "dayCloseOpenShiftBlocks": "پیش از بستن این روز کاری، شیفت باز #{id} ({name}) را ببندید.",
-    "dayCloseOpenShiftBlocksGeneric": "پیش از بستن روز، شیفت باز این روز کاری را ببندید."
+    "dayCloseOpenShiftBlocksGeneric": "پیش از بستن روز، شیفت باز این روز کاری را ببندید.",
+    "ingredientCost": "هزینه مواد اولیه",
+    "grossProfit": "سود ناخالص",
+    "grossMargin": "حاشیه سود ناخالص",
+    "costUnknown": "هزینه نامشخص",
+    "partialCost": "هزینه جزئی",
+    "ingredientCostLabel": "هزینه: {amount}",
+    "profitMarginLabel": "سود: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "افزودن هزینه",
@@ -544,7 +551,11 @@
     "saveFailed": "ذخیره ناموفق بود",
     "deleteFailed": "حذف ناموفق بود",
     "confirmDeleteSupply": "ماده اولیه {name} حذف شود؟ تاریخچه جابه‌جایی‌ها حفظ می‌شود.",
-    "confirmDeleteRecipe": "دستور {name} حذف شود؟"
+    "confirmDeleteRecipe": "دستور {name} حذف شود؟",
+    "unitCost": "هزینه هر واحد",
+    "totalBatchCost": "هزینه کل محموله",
+    "recipeCost": "هزینه دستور تهیه",
+    "costUnknown": "هزینه نامشخص"
   },
   "kds": {
     "addonsLabel": "افزودنی‌ها",

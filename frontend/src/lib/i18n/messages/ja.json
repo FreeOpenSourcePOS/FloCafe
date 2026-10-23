@@ -432,7 +432,14 @@
     "priceExceptionsShift": "シフト",
     "priceExceptionsShiftOpen": "営業中",
     "dayCloseOpenShiftBlocks": "この営業日を締める前に、開始中のシフト #{id}（{name}）を閉じてください。",
-    "dayCloseOpenShiftBlocksGeneric": "営業日を締める前に、この営業日の開始中のシフトを閉じてください。"
+    "dayCloseOpenShiftBlocksGeneric": "営業日を締める前に、この営業日の開始中のシフトを閉じてください。",
+    "ingredientCost": "材料原価",
+    "grossProfit": "粗利益",
+    "grossMargin": "粗利率",
+    "costUnknown": "原価未設定",
+    "partialCost": "一部原価のみ",
+    "ingredientCostLabel": "原価: {amount}",
+    "profitMarginLabel": "利益: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "経費を追加",
@@ -544,7 +551,11 @@
     "saveFailed": "保存に失敗しました",
     "deleteFailed": "削除に失敗しました",
     "confirmDeleteSupply": "食材「{name}」を削除しますか？入出庫履歴は保持されます。",
-    "confirmDeleteRecipe": "{name}のレシピを削除しますか？"
+    "confirmDeleteRecipe": "{name}のレシピを削除しますか？",
+    "unitCost": "単位原価",
+    "totalBatchCost": "仕入合計原価",
+    "recipeCost": "レシピ原価",
+    "costUnknown": "原価未設定"
   },
   "kds": {
     "addonsLabel": "追加項目",

@@ -432,7 +432,14 @@
     "priceExceptionsShift": "กะ",
     "priceExceptionsShiftOpen": "เปิดอยู่",
     "dayCloseOpenShiftBlocks": "ปิดกะที่เปิดอยู่ #{id} ({name}) ก่อนปิดวันทำการนี้",
-    "dayCloseOpenShiftBlocksGeneric": "ปิดกะที่เปิดอยู่ของวันทำการนี้ก่อนปิดวัน"
+    "dayCloseOpenShiftBlocksGeneric": "ปิดกะที่เปิดอยู่ของวันทำการนี้ก่อนปิดวัน",
+    "ingredientCost": "ต้นทุนวัตถุดิบ",
+    "grossProfit": "กำไรขั้นต้น",
+    "grossMargin": "อัตรากำไรขั้นต้น",
+    "costUnknown": "ไม่ทราบต้นทุน",
+    "partialCost": "ต้นทุนบางส่วน",
+    "ingredientCostLabel": "ต้นทุน: {amount}",
+    "profitMarginLabel": "กำไร: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "เพิ่มค่าใช้จ่าย",
@@ -544,7 +551,11 @@
     "saveFailed": "บันทึกไม่สำเร็จ",
     "deleteFailed": "ลบไม่สำเร็จ",
     "confirmDeleteSupply": "ลบวัสดุ {name} หรือไม่? ประวัติการเคลื่อนไหวจะยังคงอยู่",
-    "confirmDeleteRecipe": "ลบสูตรของ {name} หรือไม่?"
+    "confirmDeleteRecipe": "ลบสูตรของ {name} หรือไม่?",
+    "unitCost": "ต้นทุนต่อหน่วย",
+    "totalBatchCost": "ต้นทุนรวมของล็อต",
+    "recipeCost": "ต้นทุนสูตร",
+    "costUnknown": "ไม่ทราบต้นทุน"
   },
   "kds": {
     "addonsLabel": "ตัวเลือกเพิ่ม",

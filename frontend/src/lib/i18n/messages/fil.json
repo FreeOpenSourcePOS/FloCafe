@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Shift sa trabaho",
     "priceExceptionsShiftOpen": "bukas",
     "dayCloseOpenShiftBlocks": "Isara muna ang bukas na shift #{id} ({name}) bago isara ang araw ng negosyong ito.",
-    "dayCloseOpenShiftBlocksGeneric": "Isara muna ang bukas na shift para sa araw ng negosyong ito bago isara ang araw."
+    "dayCloseOpenShiftBlocksGeneric": "Isara muna ang bukas na shift para sa araw ng negosyong ito bago isara ang araw.",
+    "ingredientCost": "Gastos sa sangkap",
+    "grossProfit": "Kabuuang tubo",
+    "grossMargin": "Gross margin",
+    "costUnknown": "Hindi alam ang gastos",
+    "partialCost": "Bahagyang gastos",
+    "ingredientCostLabel": "Gastos: {amount}",
+    "profitMarginLabel": "Tubo: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Magdagdag ng gastos",
@@ -544,7 +551,11 @@
     "saveFailed": "Hindi na-save",
     "deleteFailed": "Hindi na-delete",
     "confirmDeleteSupply": "I-delete ang supply {name}? Mapapanatili ang kasaysayan ng mga galaw nito.",
-    "confirmDeleteRecipe": "I-delete ang recipe para sa {name}?"
+    "confirmDeleteRecipe": "I-delete ang recipe para sa {name}?",
+    "unitCost": "Gastos kada yunit",
+    "totalBatchCost": "Kabuuang gastos ng batch",
+    "recipeCost": "Gastos sa recipe",
+    "costUnknown": "Hindi alam ang gastos"
   },
   "kds": {
     "addonsLabel": "Mga Addon",

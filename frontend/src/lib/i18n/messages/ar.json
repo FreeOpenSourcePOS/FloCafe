@@ -432,7 +432,14 @@
     "priceExceptionsShift": "الوردية",
     "priceExceptionsShiftOpen": "مفتوحة",
     "dayCloseOpenShiftBlocks": "أغلق الوردية المفتوحة #{id} ({name}) قبل إغلاق يوم العمل هذا.",
-    "dayCloseOpenShiftBlocksGeneric": "أغلق الوردية المفتوحة ليوم العمل هذا قبل إغلاق اليوم."
+    "dayCloseOpenShiftBlocksGeneric": "أغلق الوردية المفتوحة ليوم العمل هذا قبل إغلاق اليوم.",
+    "ingredientCost": "تكلفة المكونات",
+    "grossProfit": "إجمالي الربح",
+    "grossMargin": "هامش الربح الإجمالي",
+    "costUnknown": "التكلفة غير معروفة",
+    "partialCost": "تكلفة جزئية",
+    "ingredientCostLabel": "التكلفة: {amount}",
+    "profitMarginLabel": "الربح: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "إضافة مصروف",
@@ -544,7 +551,11 @@
     "saveFailed": "فشل الحفظ",
     "deleteFailed": "فشل الحذف",
     "confirmDeleteSupply": "هل تريد حذف المادة {name}؟ سيتم الاحتفاظ بسجل تحركاتها.",
-    "confirmDeleteRecipe": "هل تريد حذف الوصفة الخاصة بـ {name}؟"
+    "confirmDeleteRecipe": "هل تريد حذف الوصفة الخاصة بـ {name}؟",
+    "unitCost": "تكلفة الوحدة",
+    "totalBatchCost": "إجمالي تكلفة الدفعة",
+    "recipeCost": "تكلفة الوصفة",
+    "costUnknown": "التكلفة غير معروفة"
   },
   "kds": {
     "addonsLabel": "الإضافات",

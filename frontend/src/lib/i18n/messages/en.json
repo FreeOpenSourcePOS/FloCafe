@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Shift",
     "priceExceptionsShiftOpen": "open",
     "dayCloseOpenShiftBlocks": "Close open shift #{id} ({name}) before closing this business day.",
-    "dayCloseOpenShiftBlocksGeneric": "Close the open shift for this business day before closing the day."
+    "dayCloseOpenShiftBlocksGeneric": "Close the open shift for this business day before closing the day.",
+    "ingredientCost": "Ingredient Cost",
+    "grossProfit": "Gross Profit",
+    "grossMargin": "Gross Margin",
+    "costUnknown": "Cost unknown",
+    "partialCost": "Partial cost",
+    "ingredientCostLabel": "Cost: {amount}",
+    "profitMarginLabel": "Profit: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Add expense",
@@ -544,7 +551,11 @@
     "saveFailed": "Failed to save",
     "deleteFailed": "Failed to delete",
     "confirmDeleteSupply": "Delete supply {name}? Its movement history will be kept.",
-    "confirmDeleteRecipe": "Delete the recipe for {name}?"
+    "confirmDeleteRecipe": "Delete the recipe for {name}?",
+    "unitCost": "Unit cost",
+    "totalBatchCost": "Total batch cost",
+    "recipeCost": "Recipe cost",
+    "costUnknown": "Cost unknown"
   },
   "kds": {
     "addonsLabel": "Add-ons",

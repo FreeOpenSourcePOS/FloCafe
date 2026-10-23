@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Ca",
     "priceExceptionsShiftOpen": "đang mở",
     "dayCloseOpenShiftBlocks": "Hãy đóng ca đang mở #{id} ({name}) trước khi chốt ngày kinh doanh này.",
-    "dayCloseOpenShiftBlocksGeneric": "Hãy đóng ca đang mở của ngày kinh doanh này trước khi chốt ngày."
+    "dayCloseOpenShiftBlocksGeneric": "Hãy đóng ca đang mở của ngày kinh doanh này trước khi chốt ngày.",
+    "ingredientCost": "Chi phí nguyên liệu",
+    "grossProfit": "Lợi nhuận gộp",
+    "grossMargin": "Biên lợi nhuận gộp",
+    "costUnknown": "Chưa rõ giá vốn",
+    "partialCost": "Giá vốn một phần",
+    "ingredientCostLabel": "Giá vốn: {amount}",
+    "profitMarginLabel": "Lợi nhuận: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Thêm chi phí",
@@ -544,7 +551,11 @@
     "saveFailed": "Không thể lưu",
     "deleteFailed": "Không thể xóa",
     "confirmDeleteSupply": "Xóa vật tư {name}? Lịch sử biến động vẫn được giữ lại.",
-    "confirmDeleteRecipe": "Xóa công thức của {name}?"
+    "confirmDeleteRecipe": "Xóa công thức của {name}?",
+    "unitCost": "Giá vốn đơn vị",
+    "totalBatchCost": "Tổng chi phí lô hàng",
+    "recipeCost": "Giá vốn công thức",
+    "costUnknown": "Chưa rõ giá vốn"
   },
   "kds": {
     "addonsLabel": "Tuỳ chọn",

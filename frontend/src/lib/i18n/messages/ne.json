@@ -432,7 +432,14 @@
     "priceExceptionsShift": "शिफ्ट",
     "priceExceptionsShiftOpen": "खुला",
     "dayCloseOpenShiftBlocks": "यो व्यावसायिक दिन बन्द गर्नुअघि खुला सिफ्ट #{id} ({name}) बन्द गर्नुहोस्।",
-    "dayCloseOpenShiftBlocksGeneric": "दिन बन्द गर्नुअघि यो व्यावसायिक दिनको खुला सिफ्ट बन्द गर्नुहोस्।"
+    "dayCloseOpenShiftBlocksGeneric": "दिन बन्द गर्नुअघि यो व्यावसायिक दिनको खुला सिफ्ट बन्द गर्नुहोस्।",
+    "ingredientCost": "सामग्री लागत",
+    "grossProfit": "कुल नाफा",
+    "grossMargin": "कुल मार्जिन",
+    "costUnknown": "लागत थाहा छैन",
+    "partialCost": "आंशिक लागत",
+    "ingredientCostLabel": "लागत: {amount}",
+    "profitMarginLabel": "नाफा: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "खर्च थप्नुहोस्",
@@ -544,7 +551,11 @@
     "saveFailed": "बचत गर्न असफल भयो",
     "deleteFailed": "मेटाउन असफल भयो",
     "confirmDeleteSupply": "आपूर्ति मेटाउनुहोस् {name}? यसको आन्दोलनको इतिहास राखिनेछ।",
-    "confirmDeleteRecipe": "को लागि नुस्खा मेटाउनुहोस् {name}?"
+    "confirmDeleteRecipe": "को लागि नुस्खा मेटाउनुहोस् {name}?",
+    "unitCost": "एकाइ लागत",
+    "totalBatchCost": "कुल ब्याच लागत",
+    "recipeCost": "रेसिपी लागत",
+    "costUnknown": "लागत थाहा छैन"
   },
   "kds": {
     "addonsLabel": "एडअनहरू",

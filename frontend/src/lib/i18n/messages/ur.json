@@ -432,7 +432,14 @@
     "priceExceptionsShift": "شفٹ",
     "priceExceptionsShiftOpen": "کھلی",
     "dayCloseOpenShiftBlocks": "اس کاروباری دن کو بند کرنے سے پہلے کھلی شفٹ #{id} ({name}) کو بند کریں۔",
-    "dayCloseOpenShiftBlocksGeneric": "دن بند کرنے سے پہلے اس کاروباری دن کی کھلی شفٹ بند کریں۔"
+    "dayCloseOpenShiftBlocksGeneric": "دن بند کرنے سے پہلے اس کاروباری دن کی کھلی شفٹ بند کریں۔",
+    "ingredientCost": "اجزاء کی لاگت",
+    "grossProfit": "مجموعی منافع",
+    "grossMargin": "مجموعی مارجن",
+    "costUnknown": "لاگت نامعلوم",
+    "partialCost": "جزوی لاگت",
+    "ingredientCostLabel": "لاگت: {amount}",
+    "profitMarginLabel": "منافع: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "خرچ شامل کریں",
@@ -544,7 +551,11 @@
     "saveFailed": "محفوظ نہیں ہو سکا",
     "deleteFailed": "حذف نہیں ہو سکا",
     "confirmDeleteSupply": "سامان {name} حذف کریں؟ اس کی حرکت کی تاریخ محفوظ رہے گی۔",
-    "confirmDeleteRecipe": "{name} کی ترکیب حذف کریں؟"
+    "confirmDeleteRecipe": "{name} کی ترکیب حذف کریں؟",
+    "unitCost": "فی یونٹ لاگت",
+    "totalBatchCost": "کل کھیپ کی لاگت",
+    "recipeCost": "ترکیب کی لاگت",
+    "costUnknown": "لاگت نامعلوم"
   },
   "kds": {
     "addonsLabel": "ایڈ آنز",

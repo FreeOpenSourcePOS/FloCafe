@@ -412,7 +412,7 @@ export default function DashboardPage() {
         return;
       }
       toast(t('exportCsvStarted'));
-      for (const part of ['summary', 'items'] as const) {
+      for (const part of ['summary', 'items', 'payments'] as const) {
         const res = await api.get('/reports/daily-sales/export', {
           params: { date: selectedDate, format: 'csv', part },
           responseType: 'blob',

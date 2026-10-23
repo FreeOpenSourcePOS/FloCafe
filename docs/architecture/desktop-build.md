@@ -73,12 +73,11 @@ The main window is created with `contextIsolation: true`, `nodeIntegration: fals
 `sandbox: true`, so `main/preload.ts` may use only `electron` and web APIs. See
 [Authentication and authorization](authentication-and-authorization.md#boundaries-we-do-not-harden).
 
-Every IPC handler validates the sender. General handlers in [`main/ipc.ts`](../../main/ipc.ts)
-verify sender origin via `isTrustedSender` (`http:` on `localhost` or `127.0.0.1`). Direct update
-handlers, status, and theme in [`main/update-ipc.ts`](../../main/update-ipc.ts) are registered via
-`registerDirectUpdateIpcHandlers` and enforce strict sender validation via
-`isTrustedMainWindowSender`, requiring the caller to be the active main `BrowserWindow`, current
-top-level frame, and matching loopback server port.
+Every IPC handler validates the sender. Both general handlers in [`main/ipc.ts`](../../main/ipc.ts)
+(registered via `handle`) and direct update, status, and theme handlers in
+[`main/update-ipc.ts`](../../main/update-ipc.ts) (registered via `registerDirectUpdateIpcHandlers`)
+enforce strict sender validation via `isTrustedMainWindowSender`, requiring the caller to be the
+active main `BrowserWindow`, current top-level frame, and matching loopback server port.
 
 ## The native title bar
 
@@ -118,9 +117,9 @@ the `open-application-menu` IPC.
 
 `createMenu()` is the single source of the menu. `get-application-menu` returns only the descriptor a
 label needs, and `open-application-menu` pops the same `Menu` object that was applied, so roles,
-accelerators, and click handlers are the native ones. The popup is a privileged native surface, so the
-handler binds the request to the main window's own `webContents` and current renderer frame rather
-than relying on the trusted-origin check alone, which the KDS window also passes.
+accelerators, and click handlers are the native ones. The popup is a privileged native surface: in
+addition to `handle`'s `isTrustedMainWindowSender` check, the handler verifies the main window's own
+`webContents` and current renderer frame via `isApplicationMenuSender`.
 
 macOS keeps its native top-level menu: the handler returns an empty entry list on `darwin` and the
 renderer draws nothing.

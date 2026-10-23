@@ -24,6 +24,7 @@ export const LANDING_PAGE_CANDIDATES = [
   ['staff.view', '/staff'],
   ['settings.view', '/settings'],
   ['support.use', '/support'],
+  ['printers.manage', '/print-test'],
 ] as const;
 
 export function getLandingPage(tenant?: Tenant | null): string {
@@ -47,6 +48,7 @@ const PUBLIC_PATHS = [
 export const PAGE_PERMISSIONS = [
   ['/pos', 'pos.use'],
   ['/dashboard', 'dashboard.view'],
+  ['/order-history-demo', 'dashboard.view'],
   ['/orders', 'orders.read'],
   ['/products', 'catalog.manage'],
   ['/addon-groups', 'catalog.manage'],
@@ -56,6 +58,7 @@ export const PAGE_PERMISSIONS = [
   ['/customers', 'customers.view'],
   ['/whatsapp', 'whatsapp.use'],
   ['/support', 'support.use'],
+  ['/print-test', 'printers.manage'],
 ] as const;
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {

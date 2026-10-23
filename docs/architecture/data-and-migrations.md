@@ -141,8 +141,10 @@ Two routes reach `restoreBackup`, and they differ only in how the operator is au
 
 The HTTP route never accepts a path the renderer invented. `pick-restore-file` shows the native
 dialog in the main process and hands the chosen path to `main/services/restore-file-selection.ts`,
-which returns it once for a single-use token. A path with no matching outstanding selection is
-refused, so a compromised renderer cannot aim the restore at a file of its choosing.
+which pairs it with a single-use token (`peekRestoreFileSelection` validates the token during
+preflight file-existence and schema-version checks, and `consumeRestoreFileSelection` consumes it
+only once those checks pass). A request with no matching outstanding selection is refused, so a
+compromised renderer cannot aim the restore at a file of its choosing.
 
 A successful restore keeps the snapshot of what it replaced. `retainRestoreSafetyCopy` stamps
 `_flo_meta` onto the replacement-journal snapshot, copies it to
@@ -184,7 +186,9 @@ requires a clean `integrity_check`, no foreign-key violations outside an explici
 schema version above zero and within the supported range, an `_flo_meta` stamp that matches the
 pragma, and a table and column set, plus normalised `CREATE` definitions, that match the ideal
 schema built by running the whole migration pipeline in memory (cached across health checks and
-invalidated on migration registry changes).
+invalidated on migration registry changes). `runHealthCheck()` in
+[`main/services/schema-health.ts`](../../main/services/schema-health.ts) likewise caches its ideal
+`DbSchemaSnapshot` in memory and invalidates it when the `MIGRATIONS` registry identity changes.
 
 ## Adding a migration
 

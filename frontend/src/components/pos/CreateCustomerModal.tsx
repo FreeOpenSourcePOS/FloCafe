@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { X, ArrowUpDown } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -44,6 +44,17 @@ export default function CreateCustomerModal({
   // reach the user as a message rather than a silently shortened address.
   const [address, setAddress] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving) {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [saving, onClose]);
 
   const handleSwapFields = () => {
     setName(phone);

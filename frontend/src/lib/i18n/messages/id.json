@@ -3166,6 +3166,47 @@
       "phone_required": "Nomor telepon wajib diisi",
       "phone_required_pairing": "Telepon wajib diisi untuk kode pemasangan"
     },
+    "automation": {
+      "autoOptOutLabel": "Berhenti otomatis saat menerima STOP / UNSUBSCRIBE (masuk daftar blokir)",
+      "broadcastDescription": "Kirim templat ke segmen pelanggan terpilih (mematuhi daftar blokir, jam tenang, dan batas kirim).",
+      "broadcastInactiveDays": "Tidak aktif >= hari",
+      "broadcastMinPoints": "Min. poin",
+      "broadcastMinVisits": "Min. kunjungan",
+      "broadcastSendCta": "Kirim siaran",
+      "broadcastSuccess": "Siaran selesai: {sent} terkirim, {skipped} dilewati ({matched} cocok).",
+      "broadcastTitle": "Siaran segmen pelanggan",
+      "feedbackLinkLabel": "Tautan ulasan toko",
+      "instagramLabel": "Akun Instagram toko",
+      "maxPerWeekLabel": "Maks. pesan otomatis per pelanggan per minggu",
+      "placeholdersLabel": "Klik untuk menyisipkan variabel",
+      "previewTitle": "Pratinjau langsung (data contoh)",
+      "quietHoursEnd": "Akhir jam tenang",
+      "quietHoursLabel": "Tahan pengiriman otomatis selama jam tenang",
+      "quietHoursStart": "Mulai jam tenang",
+      "resetDefault": "Kembalikan ke bawaan",
+      "ruleAfterPaymentHint": "Kirim templat struk secara otomatis saat tagihan dengan nomor pelanggan lunas.",
+      "ruleFeedbackDelayHint": "Kirim permintaan ulasan setelah pesanan dibayar (jam setelah pembayaran).",
+      "ruleNthVisitHint": "Kirim pesan apresiasi setiap N kunjungan berbayar.",
+      "rulePointsThresholdHint": "Kirim pemberitahuan hadiah saat saldo poin melewati ambang batas.",
+      "rulesDescription": "Aktifkan pemicu otomatis dan atur ambang batas untuk struk, tindak lanjut, dan pencapaian.",
+      "rulesTitle": "Aturan pengiriman otomatis",
+      "ruleWinbackHint": "Kirim promo kembali untuk pelanggan yang tidak berkunjung minimal N hari.",
+      "runSweepCta": "Jalankan aturan terjadwal sekarang",
+      "safetyDescription": "Lindungi nomor terhubung dengan berhenti otomatis, jam tenang, dan batas mingguan.",
+      "safetyTitle": "Kontrol keamanan & anti-spam",
+      "saveCta": "Simpan pengaturan otomatisasi",
+      "savedSuccess": "Pengaturan otomatisasi disimpan.",
+      "sweepResult": "Aturan terjadwal diperiksa ({sent} terkirim).",
+      "templateBodyLabel": "Isi pesan",
+      "templateNameLabel": "Nama templat",
+      "templatesDescription": "Sesuaikan pesan WhatsApp otomatis dengan variabel pelanggan, tagihan, loyalitas, dan toko.",
+      "templateSelectLabel": "Templat terpilih",
+      "templatesTitle": "Templat pesan",
+      "thresholdDays": "Hari tidak aktif",
+      "thresholdHours": "Jam tunda",
+      "thresholdPoints": "Ambang poin",
+      "thresholdVisits": "Setiap N kunjungan"
+    },
     "blocklist": {
       "addCta": "Tambah",
       "addedSuccess": "Ditambahkan ke daftar blokir.",
@@ -3258,6 +3299,14 @@
       "rate_limited": "Pengiriman dibatasi oleh WhatsApp ({code}). Menunggu jeda 5 menit.",
       "reconnecting": "Koneksi ditutup ({code}). Menyambungkan kembali dalam {seconds} dtk…"
     },
+    "rule": {
+      "after_payment": "Struk otomatis setelah bayar",
+      "broadcast": "Siaran segmen pelanggan",
+      "feedback_delay": "Tindak lanjut ulasan",
+      "nth_visit": "Pencapaian kunjungan ke-N",
+      "points_threshold": "Ambang poin loyalitas",
+      "winback": "Sapa pelanggan tidak aktif"
+    },
     "send": {
       "customerPhoneRequired": "Tambahkan nomor telepon pelanggan ini sebelum mengirim.",
       "error": {
@@ -3319,6 +3368,7 @@
       "typing": "Mengetik"
     },
     "tabs": {
+      "automation": "Templat & Aturan",
       "connection": "Koneksi",
       "inbox": "Kotak masuk",
       "sent": "Terkirim"

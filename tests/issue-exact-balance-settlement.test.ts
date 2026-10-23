@@ -926,6 +926,148 @@ async function main(): Promise<void> {
       // Restore settings
       setSetting(db, 'require_kitchen_delivered_before_settlement', 'false');
     }
+
+    // ── 12. Paid-Bill Automation Dispatch on Exact-Balance Auto-Settlement ──
+    console.log('\n─── 12. Paid-Bill Automation Dispatch on Exact-Balance Auto-Settlement ───');
+    {
+      const whatsapp = require('../main/services/whatsapp');
+      const originalTrigger = whatsapp.triggerBillPaidAutomation;
+      const automationCalls: Array<{ billId: number; opts: any }> = [];
+      whatsapp.triggerBillPaidAutomation = async (billId: number, opts?: any) => {
+        automationCalls.push({ billId: Number(billId), opts });
+        return { triggered: [], results: {} };
+      };
+
+      try {
+        setSetting(db, 'cashback_percentage', '10');
+        db.prepare(
+          `INSERT OR IGNORE INTO customers (id, name, phone, created_at, updated_at)
+           VALUES ('cust-eb-auto', 'Auto Settlement Customer', '+14155550199', ?, ?)`,
+        ).run(now(), now());
+
+        // 12a. Order item edit reducing order total to match collected paid_amount triggers automation
+        const create12a = await createOrder({
+          type: 'takeaway',
+          customer_id: 'cust-eb-auto',
+          items: [{ product_id: 'prod-400', quantity: 2 }],
+        });
+        assertEqual(create12a.status, 201, '12a. order with 2x 400 created');
+        const orderId12a = create12a.data.order.id;
+        const item12a = create12a.data.order.items[0];
+        const gen12a = await generateBill(orderId12a);
+        assertEqual(gen12a.status, 201, '12a. bill generated');
+        const billId12a = Number(gen12a.data.bill.id);
+
+        const pay12a = await pay(billId12a, { method: 'cash', amount: 400 });
+        assertEqual(pay12a.status, 200, '12a. partial payment 400 recorded');
+        assertEqual(automationCalls.length, 0, '12a. no paid-bill automation on partial payment');
+
+        const edit12a = await api(baseUrl, `/api/orders/${orderId12a}/items/${item12a.id}/edit`, {
+          method: 'PATCH',
+          body: {
+            quantity: 1,
+            expected_edit_version: item12a.edit_version ?? 0,
+            reason: 'Reduce quantity to match paid amount',
+          },
+          headers: { ...A, 'Idempotency-Key': 'eb-auto-12a' },
+        });
+        assertEqual(edit12a.status, 200, '12a. item quantity edit to exact paid balance succeeded');
+        assertEqual(
+          billRow(db, billId12a).payment_status,
+          'paid',
+          '12a. bill auto-settled to paid on item edit',
+        );
+        assertEqual(
+          automationCalls.length,
+          1,
+          '12a. triggerBillPaidAutomation called once after syncUnpaidBillsForOrder auto-settlement',
+        );
+        assertEqual(
+          automationCalls[0]?.billId,
+          billId12a,
+          '12a. triggerBillPaidAutomation called with auto-settled billId',
+        );
+        assert(
+          Number(automationCalls[0]?.opts?.pointsEarned) > 0,
+          '12a. triggerBillPaidAutomation receives loyalty pointsEarned from auto-settlement',
+        );
+
+        // 12b. Bill discount reducing balance to 0 triggers automation; failed 409 discount does not
+        automationCalls.length = 0;
+        const create12b = await createOrder({
+          type: 'takeaway',
+          customer_id: 'cust-eb-auto',
+          items: [{ product_id: 'prod-1000', quantity: 1 }],
+        });
+        const orderId12b = create12b.data.order.id;
+        const gen12b = await generateBill(orderId12b);
+        const billId12b = Number(gen12b.data.bill.id);
+        await pay(billId12b, { method: 'cash', amount: 600 });
+        assertEqual(automationCalls.length, 0, '12b. no automation after partial payment');
+
+        const overDisc12b = await applyBillDiscount(billId12b, {
+          type: 'amount',
+          value: 500,
+          reason: 'Exceeds remaining balance',
+        });
+        assertEqual(overDisc12b.status, 409, '12b. discount below collected funds rejected');
+        assertEqual(
+          automationCalls.length,
+          0,
+          '12b. rolled-back/rejected discount does not trigger paid-bill automation',
+        );
+
+        const exactDisc12b = await applyBillDiscount(billId12b, {
+          type: 'amount',
+          value: 400,
+          reason: 'Exact remaining balance discount',
+        });
+        assertEqual(exactDisc12b.status, 200, '12b. exact-balance bill discount succeeded');
+        assertEqual(
+          automationCalls.length,
+          1,
+          '12b. triggerBillPaidAutomation called once after exact-balance bill discount',
+        );
+        assertEqual(
+          automationCalls[0]?.billId,
+          billId12b,
+          '12b. triggerBillPaidAutomation received discounted billId',
+        );
+
+        // 12c. POST /api/bills/generate auto-settling a partial bill whose order total matches paid_amount triggers automation
+        automationCalls.length = 0;
+        const create12c = await createOrder({
+          type: 'takeaway',
+          customer_id: 'cust-eb-auto',
+          items: [{ product_id: 'prod-1000', quantity: 1 }],
+        });
+        const orderId12c = create12c.data.order.id;
+        const gen12cInitial = await generateBill(orderId12c);
+        const billId12c = Number(gen12cInitial.data.bill.id);
+        await pay(billId12c, { method: 'cash', amount: 600 });
+        // Simulate an order total already reduced to 600 while bill remained partial before /generate resync
+        db.prepare('UPDATE orders SET subtotal = 600, total = 600 WHERE id = ?').run(orderId12c);
+        const regen12c = await generateBill(orderId12c);
+        assertEqual(regen12c.status, 200, '12c. bill generate resync succeeded');
+        assertEqual(
+          regen12c.data.bill.payment_status,
+          'paid',
+          '12c. bill auto-settled to paid during generate resync',
+        );
+        assertEqual(
+          automationCalls.length,
+          1,
+          '12c. triggerBillPaidAutomation called once after POST /api/bills/generate auto-settlement',
+        );
+        assertEqual(
+          automationCalls[0]?.billId,
+          billId12c,
+          '12c. triggerBillPaidAutomation received regenerated billId',
+        );
+      } finally {
+        whatsapp.triggerBillPaidAutomation = originalTrigger;
+      }
+    }
   } finally {
     server.close();
     closeDatabase();

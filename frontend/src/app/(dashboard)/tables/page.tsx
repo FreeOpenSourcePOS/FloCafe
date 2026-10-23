@@ -665,7 +665,7 @@ export default function TablesPage() {
       : baseSelectableFloors;
 
   const floorSections =
-    floorFilter === 'all' && namedFloors.length > 0
+    floorFilter === 'all' && (namedFloors.length > 0 || unassignedCount > 0)
       ? [
           ...namedFloors.map((floorName) => ({
             key: floorName,
@@ -750,7 +750,7 @@ export default function TablesPage() {
               {tTables('showOrderDetails')}
             </label>
           )}
-          {canManageTables && (
+          {view === 'list' && canManageTables && (
             <Button onClick={() => openCreate()}>
               <Plus size={16} className="me-1" /> {tTables('addTable')}
             </Button>
@@ -933,62 +933,97 @@ export default function TablesPage() {
                   </div>
                 )}
 
-                {displaysOrderDetails ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {section.items.map((table) => {
-                      const tableOrders = ordersByTable.get(table.id) || [];
-                      const hasOrders = tableOrders.length > 0;
-                      const showFooter =
-                        canManageTables ||
-                        (canMoveTable && table.status === 'occupied') ||
-                        (canReadOrders && hasOrders);
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {section.items.map((table) => {
+                    const tableOrders = ordersByTable.get(table.id) || [];
+                    const hasOrders = displaysOrderDetails && tableOrders.length > 0;
+                    const canViewTableOrder = canReadOrders && hasOrders;
+                    const canMoveThisTable = canMoveTable && table.status === 'occupied';
+                    const canMarkAvailable =
+                      canManageTables &&
+                      (table.status === 'occupied' ||
+                        table.status === 'reserved' ||
+                        table.status === 'cleaning');
+                    const canReserveTable =
+                      canManageTables && Boolean(table.is_active) && table.status === 'available';
+                    const showFooter =
+                      canViewTableOrder || canMoveThisTable || canMarkAvailable || canReserveTable;
 
-                      return (
-                        <div
-                          key={table.id}
-                          data-testid={`table-card-${table.id}`}
-                          className={`bg-card rounded-xl border border-border flex flex-col justify-between hover:shadow-md transition-shadow ${
-                            hasOrders ? 'border-s-4 border-s-brand' : ''
-                          } ${!table.is_active ? 'opacity-60' : ''}`}
-                        >
-                          {/* Zone 1: Header */}
-                          <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                              <h3 className="font-bold text-foreground truncate">{table.name}</h3>
-                              <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                · {tTables('capacitySeats', { count: table.capacity })}
-                              </span>
-                              {locationBadge(table, hideFloorInBadge)}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {table.status === 'occupied' && table.seated_at && (
-                                <TableTurnoverBadge seatedAt={table.seated_at} />
-                              )}
-                              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-foreground">
-                                <span
-                                  className={`w-2 h-2 rounded-full ${statusColors[table.status]}`}
-                                />
-                                {tTables(TABLE_STATUS_LABEL_KEYS[table.status])}
-                              </span>
-                            </div>
+                    return (
+                      <div
+                        key={table.id}
+                        data-testid={`table-card-${table.id}`}
+                        className={`bg-card rounded-xl border border-border flex flex-col justify-between hover:shadow-md transition-shadow ${
+                          hasOrders ? 'border-s-4 border-s-brand' : ''
+                        } ${!table.is_active ? 'opacity-60' : ''}`}
+                      >
+                        {/* Zone 1: Header */}
+                        <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                            <h3 className="font-bold text-foreground truncate">{table.name}</h3>
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              · {tTables('capacitySeats', { count: table.capacity })}
+                            </span>
+                            {locationBadge(table, hideFloorInBadge)}
                           </div>
-
-                          {/* Zone 2: Body */}
-                          <div className="px-4 py-3 flex-1 flex flex-col justify-center space-y-2.5">
-                            {table.status === 'reserved' && table.reservation_customer_name && (
-                              <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950/40 px-3 py-2">
-                                <p className="text-xs text-yellow-700 dark:text-yellow-300 font-medium truncate">
-                                  {table.reservation_customer_name}
-                                </p>
-                                {table.reservation_customer_phone && (
-                                  <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-0.5">
-                                    <Ltr>{table.reservation_customer_phone}</Ltr>
-                                  </p>
-                                )}
+                          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                            {table.status === 'occupied' && table.seated_at && (
+                              <TableTurnoverBadge seatedAt={table.seated_at} />
+                            )}
+                            <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-foreground">
+                              <span
+                                className={`w-2 h-2 rounded-full ${statusColors[table.status]}`}
+                              />
+                              {tTables(TABLE_STATUS_LABEL_KEYS[table.status])}
+                            </span>
+                            {canManageTables && (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(table)}
+                                  className="text-xs text-muted-foreground hover:text-foreground font-medium inline-flex items-center gap-1"
+                                >
+                                  <Pencil size={12} /> {tTables('editTable')}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleActive(table)}
+                                  className={`text-xs font-medium inline-flex items-center gap-1 ${
+                                    !table.is_active
+                                      ? 'text-green-600 hover:text-green-700'
+                                      : 'text-red-500 hover:text-red-700'
+                                  }`}
+                                >
+                                  {!table.is_active ? (
+                                    <>
+                                      <RotateCcw size={12} /> {tTables('reactivate')}
+                                    </>
+                                  ) : (
+                                    tTables('deactivate')
+                                  )}
+                                </button>
                               </div>
                             )}
+                          </div>
+                        </div>
 
-                            {hasOrders ? (
+                        {/* Zone 2: Body */}
+                        <div className="px-4 py-3 flex-1 flex flex-col justify-center space-y-2.5">
+                          {table.status === 'reserved' && table.reservation_customer_name && (
+                            <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950/40 px-3 py-2">
+                              <p className="text-xs text-yellow-700 dark:text-yellow-300 font-medium truncate">
+                                {table.reservation_customer_name}
+                              </p>
+                              {table.reservation_customer_phone && (
+                                <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-0.5">
+                                  <Ltr>{table.reservation_customer_phone}</Ltr>
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {displaysOrderDetails ? (
+                            hasOrders ? (
                               <div className="space-y-2.5">
                                 {tableOrders.map((order) => {
                                   const activeItems = (order.items ?? []).filter(
@@ -1085,183 +1120,63 @@ export default function TablesPage() {
                               <p className="text-xs text-muted-foreground">
                                 {tTables('noActiveOrders')}
                               </p>
+                            )
+                          ) : table.status === 'reserved' && !table.reservation_customer_name ? (
+                            <p className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">
+                              {tTables(TABLE_STATUS_LABEL_KEYS.reserved)}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        {/* Zone 3: Footer */}
+                        {showFooter && (
+                          <div className="px-4 py-2.5 border-t border-border flex flex-wrap items-center gap-2">
+                            {canViewTableOrder && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  router.push(
+                                    `/orders?table=${encodeURIComponent(String(table.id))}`,
+                                  )
+                                }
+                                className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1"
+                              >
+                                <Eye size={12} /> {tTables('viewOrder')}
+                              </button>
                             )}
-                          </div>
-
-                          {/* Zone 3: Footer */}
-                          {showFooter && (
-                            <div className="px-4 py-2.5 border-t border-border flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                {canReadOrders && hasOrders && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      router.push(
-                                        `/orders?table=${encodeURIComponent(String(table.id))}`,
-                                      )
-                                    }
-                                    className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1"
-                                  >
-                                    <Eye size={12} /> {tTables('viewOrder')}
-                                  </button>
-                                )}
-                                {canMoveTable && table.status === 'occupied' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setMovingTable(table)}
-                                    className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1"
-                                  >
-                                    <ArrowRightLeft size={12} /> {tTables('moveTable')}
-                                  </button>
-                                )}
-                                {canManageTables &&
-                                  (table.status === 'occupied' ||
-                                    table.status === 'reserved' ||
-                                    table.status === 'cleaning') && (
-                                    <button
-                                      type="button"
-                                      onClick={() => updateStatus(table.id, 'available')}
-                                      className="text-xs text-brand hover:text-brand-hover font-medium"
-                                    >
-                                      {tTables('markAvailable')}
-                                    </button>
-                                  )}
-                                {canManageTables &&
-                                  Boolean(table.is_active) &&
-                                  table.status === 'available' && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setReservingTable(table)}
-                                      className="text-xs text-yellow-600 dark:text-yellow-400 hover:text-yellow-700 font-medium"
-                                    >
-                                      {tTables('reserve')}
-                                    </button>
-                                  )}
-                              </div>
-
-                              {canManageTables && (
-                                <div className="flex items-center gap-2 ms-auto">
-                                  <button
-                                    type="button"
-                                    onClick={() => openEdit(table)}
-                                    className="text-xs text-muted-foreground hover:text-foreground font-medium inline-flex items-center gap-1"
-                                  >
-                                    <Pencil size={12} /> {tTables('editTable')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleActive(table)}
-                                    className={`text-xs font-medium inline-flex items-center gap-1 ${
-                                      !table.is_active
-                                        ? 'text-green-600 hover:text-green-700'
-                                        : 'text-red-500 hover:text-red-700'
-                                    }`}
-                                  >
-                                    {!table.is_active ? (
-                                      <>
-                                        <RotateCcw size={12} /> {tTables('reactivate')}
-                                      </>
-                                    ) : (
-                                      tTables('deactivate')
-                                    )}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                    {section.items.map((table) => (
-                      <div
-                        key={table.id}
-                        data-testid={`table-card-${table.id}`}
-                        className={`bg-card rounded-xl p-5 border border-border text-center hover:shadow-md transition-shadow ${!table.is_active ? 'opacity-60' : ''}`}
-                      >
-                        <div
-                          className={`w-3 h-3 rounded-full ${statusColors[table.status]} mx-auto mb-3`}
-                        />
-                        <h3 className="font-bold text-lg text-foreground">{table.name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {tTables('capacitySeats', { count: table.capacity })}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {tTables(TABLE_STATUS_LABEL_KEYS[table.status])}
-                        </p>
-                        {table.status === 'occupied' && table.seated_at && (
-                          <div className="mt-1">
-                            <TableTurnoverBadge seatedAt={table.seated_at} />
-                          </div>
-                        )}
-                        <div className="mt-2 flex justify-center">
-                          {locationBadge(table, hideFloorInBadge)}
-                        </div>
-                        {table.status === 'reserved' && table.reservation_customer_name && (
-                          <p className="text-xs text-yellow-700 font-medium mt-1 truncate">
-                            {table.reservation_customer_name}
-                          </p>
-                        )}
-                        {table.status === 'reserved' && table.reservation_customer_phone && (
-                          <p className="text-xs text-yellow-600 mt-0.5">
-                            <Ltr>{table.reservation_customer_phone}</Ltr>
-                          </p>
-                        )}
-
-                        {canMoveTable && table.status === 'occupied' && (
-                          <button
-                            type="button"
-                            onClick={() => setMovingTable(table)}
-                            className="mt-3 mx-auto text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1"
-                          >
-                            <ArrowRightLeft size={12} /> {tTables('moveTable')}
-                          </button>
-                        )}
-
-                        {canManageTables && (
-                          <>
-                            {(table.status === 'occupied' ||
-                              table.status === 'reserved' ||
-                              table.status === 'cleaning') && (
+                            {canMoveThisTable && (
+                              <button
+                                type="button"
+                                onClick={() => setMovingTable(table)}
+                                className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1"
+                              >
+                                <ArrowRightLeft size={12} /> {tTables('moveTable')}
+                              </button>
+                            )}
+                            {canMarkAvailable && (
                               <button
                                 type="button"
                                 onClick={() => updateStatus(table.id, 'available')}
-                                className="mt-3 text-xs text-brand hover:text-brand-hover font-medium"
+                                className="text-xs text-brand hover:text-brand-hover font-medium"
                               >
                                 {tTables('markAvailable')}
                               </button>
                             )}
-                            {Boolean(table.is_active) && table.status === 'available' && (
+                            {canReserveTable && (
                               <button
                                 type="button"
                                 onClick={() => setReservingTable(table)}
-                                className="mt-3 text-xs text-yellow-600 hover:text-yellow-700 font-medium"
+                                className="text-xs text-yellow-600 dark:text-yellow-400 hover:text-yellow-700 font-medium"
                               >
                                 {tTables('reserve')}
                               </button>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => openEdit(table)}
-                              className="mt-2 mx-auto text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1"
-                            >
-                              <Pencil size={12} /> {tTables('editTable')}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => toggleActive(table)}
-                              className={`mt-2 block mx-auto text-xs font-medium ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}
-                            >
-                              {!table.is_active ? tTables('reactivate') : tTables('deactivate')}
-                            </button>
-                          </>
+                          </div>
                         )}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  })}
+                </div>
               </section>
             );
           })}

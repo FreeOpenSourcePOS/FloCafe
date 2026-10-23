@@ -45,6 +45,11 @@ import { isSafeWhatsAppShareUrl } from './security/url-allowlist';
 import log from 'electron-log/main';
 import { randomUUID } from 'crypto';
 import { cloudSync } from './services/cloud-sync';
+import {
+  isLocalBackupEnabled,
+  retainBackupLocally,
+  setLocalBackupEnabled,
+} from './services/local-backup';
 import { readPostHogBootstrap } from './services/posthog';
 
 // Cap on the log content attached to a support ticket (most recent bytes only).
@@ -449,12 +454,24 @@ export function registerIpcHandlers(
         // never resolve on its own; the reset invalidates Drive state either way.
         await googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true });
         restorePrepared = true;
+        const keepLocalBackup = isLocalBackupEnabled();
         const { backupPath } = await resetDatabaseWithBackup(shutdownSignal);
+        let localBackupFailed = false;
+        if (keepLocalBackup) {
+          localBackupFailed = retainBackupLocally(backupPath) === null;
+        } else {
+          setLocalBackupEnabled(false);
+        }
         const cleanup = googleDrive.completeDatabaseRestore();
         clearUserAuthCache();
         clearInMemoryRevokedTokens();
         clearJWTSecretCache();
-        return { success: true, backupPath, cleanupPending: cleanup.cleanupPending };
+        return {
+          success: true,
+          backupPath,
+          cleanupPending: cleanup.cleanupPending,
+          localBackupFailed,
+        };
       } catch (error: unknown) {
         console.error('[IPC] db-initialize: Error:', error);
         return { success: false, error: getErrorMessage(error) };

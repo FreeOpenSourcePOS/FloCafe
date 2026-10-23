@@ -228,11 +228,18 @@ router.post(
     try {
       await googleDrive.prepareForDatabaseRestore();
       restorePrepared = true;
+      const keepLocalBackup = isLocalBackupEnabled();
       const result = await resetDatabaseForCurrencyChange(
         currency,
         impact.currentCurrency,
         getHttpRequestSignal(req),
       );
+      let localBackupFailed = false;
+      if (keepLocalBackup) {
+        localBackupFailed = retainBackupLocally(result.backupPath) === null;
+      } else {
+        setLocalBackupEnabled(false);
+      }
       const cleanup = googleDrive.completeDatabaseRestore();
       clearUserAuthCache();
       clearInMemoryRevokedTokens();
@@ -242,6 +249,7 @@ router.post(
         currency,
         backupPath: result.backupPath,
         cleanupPending: result.cleanupPending || cleanup.cleanupPending,
+        localBackupFailed,
       });
     } catch (error: unknown) {
       if (

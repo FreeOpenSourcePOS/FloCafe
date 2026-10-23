@@ -2031,7 +2031,13 @@ async function resetDatabaseWithBackupUnlocked(
   const { path: backupPath } = await createBackupUnlocked(undefined, maintenanceSignal);
   throwIfDatabaseMaintenanceAborted(maintenanceSignal);
   const dbPath = getDbPath();
-  const baselineForeignKeyViolations = getForeignKeyViolationKeys(getDatabase());
+  const currentDb = getDatabase();
+  const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
+  const localBackupEnabled = (
+    currentDb.prepare("SELECT value FROM settings WHERE key = 'local_backup_enabled'").get() as
+      | { value?: string }
+      | undefined
+  )?.value;
   const recoveryPath = path.join(
     getBackupDir(),
     `flo-reset-recovery-${crypto.randomBytes(8).toString('hex')}.db`,
@@ -2065,7 +2071,14 @@ async function resetDatabaseWithBackupUnlocked(
     initDatabase(false, true);
     await new Promise<void>((resolve) => setImmediate(resolve));
     throwIfDatabaseMaintenanceAborted(maintenanceSignal);
-    afterInit?.(getDatabase());
+    const freshDb = getDatabase();
+    if (localBackupEnabled !== undefined) {
+      freshDb
+        .prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+        .run('local_backup_enabled', localBackupEnabled, now());
+      settingsRevision += 1;
+    }
+    afterInit?.(freshDb);
     throwIfDatabaseMaintenanceAborted(maintenanceSignal);
     (db ?? getDatabase()).pragma('wal_checkpoint(TRUNCATE)');
     syncFile(dbPath);
@@ -2290,9 +2303,12 @@ export async function resetDatabaseForCurrencyChange(
 ): Promise<{ backupPath: string; committed?: boolean; cleanupPending?: boolean }> {
   return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
     const currentDb = getDatabase();
+    const PRESERVED_SETTINGS = ['country', 'currency', 'timezone', 'local_backup_enabled'] as const;
     const settingsRows = currentDb
-      .prepare("SELECT key, value FROM settings WHERE key IN ('country', 'currency', 'timezone')")
-      .all() as { key: string; value: string }[];
+      .prepare(
+        `SELECT key, value FROM settings WHERE key IN (${PRESERVED_SETTINGS.map(() => '?').join(', ')})`,
+      )
+      .all(...PRESERVED_SETTINGS) as { key: string; value: string }[];
     const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
     if (settings.currency !== expectedCurrentCurrency || settings.currency === targetCurrency) {
       throw Object.assign(new Error('Active currency changed'), { code: 'ERR_CURRENCY_CHANGED' });
@@ -2315,6 +2331,9 @@ export async function resetDatabaseForCurrencyChange(
         writeSetting.run('currency', regional.currency, now());
         writeSetting.run('currency_symbol', regional.currencySymbol, now());
         writeSetting.run('timezone', regional.timezone, now());
+        if (settings.local_backup_enabled !== undefined) {
+          writeSetting.run('local_backup_enabled', settings.local_backup_enabled, now());
+        }
         freshDb.prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)').run(
           'currency_reset_pending',
           JSON.stringify({
@@ -3097,6 +3116,7 @@ const RESTORE_PROTECTED_SETTING_KEYS = [
   'cloud_device_secret',
   'cloud_pos_hash',
   'offline_mode',
+  'local_backup_enabled',
   'telemetry_enabled',
   'product_analytics_level',
   'diagnostics_consent',

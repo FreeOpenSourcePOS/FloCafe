@@ -49,8 +49,14 @@ export async function serializeDailySalesExportXlsx(
 
   for (const row of dailySalesSummaryMetricRows(dataset.summary)) {
     const entry = summarySheet.addRow({ metric: row.metric, value: row.value });
-    if (typeof row.value === 'number' && !row.metric.endsWith('_count')) {
+    if (
+      typeof row.value === 'number' &&
+      !row.metric.endsWith('_count') &&
+      !row.metric.endsWith('_percent')
+    ) {
       entry.getCell('value').numFmt = moneyFmt;
+    } else if (typeof row.value === 'number' && row.metric.endsWith('_percent')) {
+      entry.getCell('value').numFmt = '0.00';
     }
   }
 
@@ -64,6 +70,10 @@ export async function serializeDailySalesExportXlsx(
     { header: 'item_discounts', key: 'item_discounts', width: 16 },
     { header: 'net_item_sales', key: 'net_item_sales', width: 16 },
     { header: 'tax_amount', key: 'tax_amount', width: 14 },
+    { header: 'ingredient_cost', key: 'ingredient_cost', width: 16 },
+    { header: 'profit', key: 'profit', width: 16 },
+    { header: 'margin_percent', key: 'margin_percent', width: 16 },
+    { header: 'cost_status', key: 'cost_status', width: 14 },
   ];
   itemsSheet.getRow(1).font = { bold: true };
   itemsSheet.views = [{ state: 'frozen', ySplit: 1 }];
@@ -78,6 +88,10 @@ export async function serializeDailySalesExportXlsx(
       item_discounts: item.item_discounts,
       net_item_sales: item.net_item_sales,
       tax_amount: item.tax_amount,
+      ingredient_cost: item.ingredient_cost ?? '',
+      profit: item.profit ?? '',
+      margin_percent: item.margin_percent ?? '',
+      cost_status: item.cost_status,
     });
     entry.getCell('quantity').numFmt = '#,##0.###';
     for (const col of [
@@ -87,6 +101,15 @@ export async function serializeDailySalesExportXlsx(
       'tax_amount',
     ] as const) {
       entry.getCell(col).numFmt = moneyFmt;
+    }
+    if (typeof item.ingredient_cost === 'number') {
+      entry.getCell('ingredient_cost').numFmt = moneyFmt;
+    }
+    if (typeof item.profit === 'number') {
+      entry.getCell('profit').numFmt = moneyFmt;
+    }
+    if (typeof item.margin_percent === 'number') {
+      entry.getCell('margin_percent').numFmt = '0.00';
     }
   }
 
@@ -139,6 +162,10 @@ export function serializeDailySalesExportCsv(
           item.item_discounts,
           item.net_item_sales,
           item.tax_amount,
+          item.ingredient_cost ?? '',
+          item.profit ?? '',
+          item.margin_percent ?? '',
+          item.cost_status,
         ]),
       );
     }

@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Turni",
     "priceExceptionsShiftOpen": "hapur",
     "dayCloseOpenShiftBlocks": "Mbyllni turnin e hapur #{id} ({name}) përpara se të mbyllni këtë ditë pune.",
-    "dayCloseOpenShiftBlocksGeneric": "Mbyllni turnin e hapur për këtë ditë pune përpara se të mbyllni ditën."
+    "dayCloseOpenShiftBlocksGeneric": "Mbyllni turnin e hapur për këtë ditë pune përpara se të mbyllni ditën.",
+    "ingredientCost": "Kosto e përbërësve",
+    "grossProfit": "Fitimi bruto",
+    "grossMargin": "Marzhi bruto",
+    "costUnknown": "Kosto e panjohur",
+    "partialCost": "Kosto e pjesshme",
+    "ingredientCostLabel": "Kosto: {amount}",
+    "profitMarginLabel": "Fitimi: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Shto shpenzim",
@@ -544,7 +551,11 @@
     "saveFailed": "Ruajtja dështoi",
     "deleteFailed": "Fshirja dështoi",
     "confirmDeleteSupply": "Të fshihet materiali {name}? Historiku i lëvizjeve do të ruhet.",
-    "confirmDeleteRecipe": "Të fshihet receta për {name}?"
+    "confirmDeleteRecipe": "Të fshihet receta për {name}?",
+    "unitCost": "Kosto për njësi",
+    "totalBatchCost": "Kosto totale e partisë",
+    "recipeCost": "Kosto e recetës",
+    "costUnknown": "Kosto e panjohur"
   },
   "kds": {
     "addonsLabel": "Shtesat",

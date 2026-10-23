@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3';
+import Decimal from 'decimal.js';
 import {
   dayBoundsInTimezone,
   getDatabase,
@@ -6,11 +7,18 @@ import {
   getSettingValue,
   tenantBusinessDayStartTime,
 } from '../db';
-import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
+import {
+  getCurrencyFractionDigits,
+  getCurrencyMinorUnitFactor,
+  resolveRegionalSnapshot,
+} from '../countries';
 import { getTenantCurrency } from './refund';
+import { roundCurrencyCost } from './supplies';
 import { aggregateTaxComponents } from './tax-components';
 import { getOrdersWithItemsForBills } from '../routes/bills';
 import { paymentMethodBreakdown } from '../routes/cash-closures';
+
+export type DailySalesCostStatus = 'known' | 'partial' | 'unknown';
 
 export type DailySalesExportItemRow = {
   product_id: string;
@@ -21,6 +29,10 @@ export type DailySalesExportItemRow = {
   item_discounts: number;
   net_item_sales: number;
   tax_amount: number;
+  ingredient_cost: number | null;
+  profit: number | null;
+  margin_percent: number | null;
+  cost_status: DailySalesCostStatus;
 };
 
 export type DailySalesExportPaymentRow = {
@@ -52,6 +64,11 @@ export type DailySalesExportSummary = {
   service_charge_total: number;
   packaging_charge_total: number;
   delivery_charge_total: number;
+  known_cost_net_item_sales: number;
+  ingredient_cost_total: number | null;
+  gross_profit_total: number | null;
+  gross_margin_percent: number | null;
+  cost_coverage_status: DailySalesCostStatus;
   payment_methods: DailySalesExportPaymentRow[];
 };
 
@@ -118,6 +135,7 @@ export function buildDailySalesExportDataset(
   const [start, end] = dayBoundsInTimezone(businessDate, timezone, businessDayStart);
   const currency = getTenantCurrency(db);
   const minorFactor = getCurrencyMinorUnitFactor(currency);
+  const fractionDigits = getCurrencyFractionDigits(currency);
 
   const billRow = db
     .prepare(`
@@ -198,7 +216,29 @@ export function buildDailySalesExportDataset(
       SUM(CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
                THEN COALESCE(oi.tax_amount, 0)
                ELSE COALESCE(oi.tax_amount, 0) * bi.quantity / NULLIF(oi.quantity, 0)
-          END) AS tax_amount
+          END) AS tax_amount,
+      SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+               THEN (CASE WHEN b.split_group_id IS NULL OR b.split_group_id = '' THEN oi.quantity ELSE bi.quantity END)
+               ELSE 0
+          END) AS known_cost_quantity,
+      SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+               THEN 0
+               ELSE (CASE WHEN b.split_group_id IS NULL OR b.split_group_id = '' THEN oi.quantity ELSE bi.quantity END)
+          END) AS unknown_cost_quantity,
+      SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+               THEN (CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
+                          THEN (oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END)
+                          ELSE (oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END) * bi.quantity / NULLIF(oi.quantity, 0)
+                     END)
+               ELSE 0
+          END) AS known_cost_net_item_sales,
+      SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+               THEN (CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
+                          THEN oi.ingredient_cost
+                          ELSE oi.ingredient_cost * bi.quantity / NULLIF(oi.quantity, 0)
+                     END)
+               ELSE 0
+          END) AS known_ingredient_cost
     FROM bills b
     JOIN orders o ON o.id = b.order_id
     JOIN order_items oi ON oi.order_id = o.id
@@ -218,18 +258,94 @@ export function buildDailySalesExportDataset(
     item_discounts: number;
     net_item_sales: number;
     tax_amount: number;
+    known_cost_quantity: number;
+    unknown_cost_quantity: number;
+    known_cost_net_item_sales: number;
+    known_ingredient_cost: number;
   }>;
 
-  const items: DailySalesExportItemRow[] = itemRows.map((row) => ({
-    product_id: String(row.product_id),
-    product_name: String(row.product_name),
-    product_sku: row.product_sku == null ? null : String(row.product_sku),
-    quantity: Number(row.quantity || 0),
-    gross_item_sales: Number(row.gross_item_sales || 0),
-    item_discounts: Number(row.item_discounts || 0),
-    net_item_sales: Number(row.net_item_sales || 0),
-    tax_amount: Number(row.tax_amount || 0),
-  }));
+  const items: DailySalesExportItemRow[] = itemRows.map((row) => {
+    const knownQty = Number(row.known_cost_quantity || 0);
+    const unknownQty = Number(row.unknown_cost_quantity || 0);
+    const costStatus: DailySalesCostStatus =
+      knownQty > 0 ? (unknownQty === 0 ? 'known' : 'partial') : 'unknown';
+    let ingredientCost: number | null = null;
+    let profit: number | null = null;
+    let marginPercent: number | null = null;
+    if (knownQty > 0) {
+      ingredientCost = roundCurrencyCost(Number(row.known_ingredient_cost || 0), fractionDigits);
+      const knownRev = roundCurrencyCost(
+        Number(row.known_cost_net_item_sales || 0),
+        fractionDigits,
+      );
+      profit = roundCurrencyCost(new Decimal(knownRev).minus(ingredientCost), fractionDigits);
+      marginPercent =
+        knownRev > 0
+          ? new Decimal(profit)
+              .div(knownRev)
+              .mul(100)
+              .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+              .toNumber()
+          : null;
+    }
+    return {
+      product_id: String(row.product_id),
+      product_name: String(row.product_name),
+      product_sku: row.product_sku == null ? null : String(row.product_sku),
+      quantity: Number(row.quantity || 0),
+      gross_item_sales: Number(row.gross_item_sales || 0),
+      item_discounts: Number(row.item_discounts || 0),
+      net_item_sales: Number(row.net_item_sales || 0),
+      tax_amount: Number(row.tax_amount || 0),
+      ingredient_cost: ingredientCost,
+      profit,
+      margin_percent: marginPercent,
+      cost_status: costStatus,
+    };
+  });
+
+  const totalKnownQty = itemRows.reduce(
+    (sum, row) => sum + Number(row.known_cost_quantity || 0),
+    0,
+  );
+  const totalUnknownQty = itemRows.reduce(
+    (sum, row) => sum + Number(row.unknown_cost_quantity || 0),
+    0,
+  );
+  const costCoverageStatus: DailySalesCostStatus =
+    totalKnownQty > 0 ? (totalUnknownQty === 0 ? 'known' : 'partial') : 'unknown';
+  const knownCostNetItemSales = roundCurrencyCost(
+    itemRows.reduce(
+      (sum, row) => sum.plus(Number(row.known_cost_net_item_sales || 0)),
+      new Decimal(0),
+    ),
+    fractionDigits,
+  );
+  const ingredientCostTotal =
+    totalKnownQty > 0
+      ? roundCurrencyCost(
+          itemRows.reduce(
+            (sum, row) => sum.plus(Number(row.known_ingredient_cost || 0)),
+            new Decimal(0),
+          ),
+          fractionDigits,
+        )
+      : null;
+  const grossProfitTotal =
+    ingredientCostTotal !== null
+      ? roundCurrencyCost(
+          new Decimal(knownCostNetItemSales).minus(ingredientCostTotal),
+          fractionDigits,
+        )
+      : null;
+  const grossMarginPercent =
+    grossProfitTotal !== null && knownCostNetItemSales > 0
+      ? new Decimal(grossProfitTotal)
+          .div(knownCostNetItemSales)
+          .mul(100)
+          .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+          .toNumber()
+      : null;
 
   const itemDiscountsTotal = items.reduce((sum, item) => sum + item.item_discounts, 0);
   const grossCollected = Number(billRow.gross_collected || 0);
@@ -309,6 +425,11 @@ export function buildDailySalesExportDataset(
       service_charge_total: Number(billRow.service_charge_total || 0),
       packaging_charge_total: Number(billRow.packaging_charge_total || 0),
       delivery_charge_total: Number(billRow.delivery_charge_total || 0),
+      known_cost_net_item_sales: knownCostNetItemSales,
+      ingredient_cost_total: ingredientCostTotal,
+      gross_profit_total: grossProfitTotal,
+      gross_margin_percent: grossMarginPercent,
+      cost_coverage_status: costCoverageStatus,
       payment_methods: paymentMethods,
     },
     items,
@@ -335,6 +456,11 @@ export function dailySalesSummaryMetricRows(
     { metric: 'service_charge_total', value: summary.service_charge_total },
     { metric: 'packaging_charge_total', value: summary.packaging_charge_total },
     { metric: 'delivery_charge_total', value: summary.delivery_charge_total },
+    { metric: 'known_cost_net_item_sales', value: summary.known_cost_net_item_sales },
+    { metric: 'ingredient_cost_total', value: summary.ingredient_cost_total ?? '' },
+    { metric: 'gross_profit_total', value: summary.gross_profit_total ?? '' },
+    { metric: 'gross_margin_percent', value: summary.gross_margin_percent ?? '' },
+    { metric: 'cost_coverage_status', value: summary.cost_coverage_status },
   ];
   for (const payment of summary.payment_methods) {
     rows.push({
@@ -354,6 +480,10 @@ export const DAILY_SALES_ITEM_COLUMNS = [
   'item_discounts',
   'net_item_sales',
   'tax_amount',
+  'ingredient_cost',
+  'profit',
+  'margin_percent',
+  'cost_status',
 ] as const;
 
 export const DAILY_SALES_PAYMENT_COLUMNS = [

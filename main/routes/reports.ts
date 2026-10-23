@@ -10,7 +10,7 @@ import {
   parseDbTimestamp,
   tenantBusinessDayStartTime,
 } from '../db';
-import { requirePermission } from '../services/authorization';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import * as whatsapp from '../services/whatsapp';
 import { parsePhoneE164 } from '../lib/phone';
@@ -30,7 +30,11 @@ import {
   paymentMethodBreakdown,
 } from './cash-closures';
 import { getCurrencyFractionDigits } from '../countries';
-import { buildDailySalesExportDataset } from '../services/daily-sales-export';
+import { roundCurrencyCost } from '../services/supplies';
+import {
+  buildDailySalesExportDataset,
+  type DailySalesCostStatus,
+} from '../services/daily-sales-export';
 import {
   dailySalesExportFilename,
   serializeDailySalesExportCsv,
@@ -381,6 +385,8 @@ router.get(
         .all(minorFactor, start, end);
       const grossCollected = Number(collections.gross_collected || 0);
       const refunded = Number(refundTotals.refunded || 0);
+      const fractionDigits = getCurrencyFractionDigits(getTenantCurrency(db));
+      const profitability = computePeriodProfitabilitySummary(db, start, end, fractionDigits);
 
       res.json({
         financialSummary: {
@@ -401,6 +407,7 @@ router.get(
             attributeRefundsToBillDate: true,
           }),
           refunds,
+          profitability,
         },
       });
     } catch (error: any) {
@@ -595,6 +602,104 @@ router.get('/sales', requirePermission('reports.view'), (req: Request, res: Resp
   }
 });
 
+type RawProfitabilityAggregate = {
+  total_quantity: number;
+  ex_tax_revenue: number;
+  known_cost_quantity: number;
+  unknown_cost_quantity: number;
+  known_cost_revenue: number;
+  known_ingredient_cost: number;
+};
+
+function deriveProfitabilityMetrics(
+  row: RawProfitabilityAggregate,
+  fractionDigits: number,
+): {
+  net_revenue: number;
+  known_cost_revenue: number;
+  known_cost_quantity: number;
+  unknown_cost_quantity: number;
+  cost_status: DailySalesCostStatus;
+  ingredient_cost: number | null;
+  profit: number | null;
+  margin_percent: number | null;
+} {
+  const knownQty = Number(row.known_cost_quantity || 0);
+  const unknownQty = Number(row.unknown_cost_quantity || 0);
+  const costStatus: DailySalesCostStatus =
+    knownQty > 0 ? (unknownQty === 0 ? 'known' : 'partial') : 'unknown';
+  const netRevenue = roundCurrencyCost(Number(row.ex_tax_revenue || 0), fractionDigits);
+  const knownCostRevenue = roundCurrencyCost(Number(row.known_cost_revenue || 0), fractionDigits);
+  if (knownQty <= 0) {
+    return {
+      net_revenue: netRevenue,
+      known_cost_revenue: 0,
+      known_cost_quantity: 0,
+      unknown_cost_quantity: unknownQty,
+      cost_status: costStatus,
+      ingredient_cost: null,
+      profit: null,
+      margin_percent: null,
+    };
+  }
+  const ingredientCost = roundCurrencyCost(Number(row.known_ingredient_cost || 0), fractionDigits);
+  const profit = roundCurrencyCost(
+    new Decimal(knownCostRevenue).minus(ingredientCost),
+    fractionDigits,
+  );
+  const marginPercent =
+    knownCostRevenue > 0
+      ? new Decimal(profit)
+          .div(knownCostRevenue)
+          .mul(100)
+          .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+          .toNumber()
+      : null;
+  return {
+    net_revenue: netRevenue,
+    known_cost_revenue: knownCostRevenue,
+    known_cost_quantity: knownQty,
+    unknown_cost_quantity: unknownQty,
+    cost_status: costStatus,
+    ingredient_cost: ingredientCost,
+    profit,
+    margin_percent: marginPercent,
+  };
+}
+
+function computePeriodProfitabilitySummary(
+  db: ReturnType<typeof getDatabase>,
+  windowStart: string,
+  windowEnd: string,
+  fractionDigits: number,
+) {
+  const row = db
+    .prepare(
+      `
+      SELECT
+        COALESCE(SUM(oi.quantity), 0) as total_quantity,
+        COALESCE(SUM(oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END), 0) as ex_tax_revenue,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN oi.quantity ELSE 0 END), 0) as known_cost_quantity,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN 0 ELSE oi.quantity END), 0) as unknown_cost_quantity,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+                          THEN (oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END)
+                          ELSE 0 END), 0) as known_cost_revenue,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN oi.ingredient_cost ELSE 0 END), 0) as known_ingredient_cost
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      WHERE o.created_at >= ? AND o.created_at < ?
+        AND o.status != 'cancelled'
+        AND COALESCE(oi.status, 'active') NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
+    `,
+    )
+    .get(windowStart, windowEnd) as RawProfitabilityAggregate;
+
+  return {
+    total_quantity: Number(row.total_quantity || 0),
+    ...deriveProfitabilityMetrics(row, fractionDigits),
+  };
+}
+
 router.get('/topProducts', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -611,13 +716,31 @@ router.get('/topProducts', requirePermission('reports.view'), (req: Request, res
       : 10;
     const windowStart = reportDayBounds(startDate)[0];
     const windowEnd = reportDayBounds(endDate)[1];
+    const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    const canViewFinancials = userId ? hasPermission(userId, 'reports.financial.view') : false;
+    const fractionDigits = getCurrencyFractionDigits(getTenantCurrency(db));
 
-    const topProducts = db
-      .prepare(`
+    type RawTopProductRow = RawProfitabilityAggregate & {
+      product_id: string;
+      product_name: string;
+      total_revenue: number;
+      order_count: number;
+    };
+
+    const rawTopProducts = db
+      .prepare(
+        `
       SELECT oi.product_id, oi.product_name,
         SUM(oi.quantity) as total_quantity,
         SUM(oi.subtotal) as total_revenue,
-        COUNT(DISTINCT oi.order_id) as order_count
+        COUNT(DISTINCT oi.order_id) as order_count,
+        SUM(oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END) as ex_tax_revenue,
+        SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN oi.quantity ELSE 0 END) as known_cost_quantity,
+        SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN 0 ELSE oi.quantity END) as unknown_cost_quantity,
+        SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+                 THEN (oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END)
+                 ELSE 0 END) as known_cost_revenue,
+        SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN oi.ingredient_cost ELSE 0 END) as known_ingredient_cost
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       WHERE o.created_at >= ? AND o.created_at < ?
@@ -626,8 +749,34 @@ router.get('/topProducts', requirePermission('reports.view'), (req: Request, res
       GROUP BY oi.product_id
       ORDER BY total_quantity DESC
       LIMIT ?
-    `)
-      .all(windowStart, windowEnd, limit);
+    `,
+      )
+      .all(windowStart, windowEnd, limit) as RawTopProductRow[];
+
+    const topProducts = rawTopProducts.map((row) => {
+      const base = {
+        product_id: row.product_id,
+        product_name: row.product_name,
+        total_quantity: Number(row.total_quantity || 0),
+        total_revenue: Number(row.total_revenue || 0),
+        order_count: Number(row.order_count || 0),
+      };
+      if (!canViewFinancials) return base;
+      return {
+        ...base,
+        ...deriveProfitabilityMetrics(row, fractionDigits),
+      };
+    });
+
+    if (canViewFinancials) {
+      const profitability = computePeriodProfitabilitySummary(
+        db,
+        windowStart,
+        windowEnd,
+        fractionDigits,
+      );
+      return res.json({ topProducts, profitability });
+    }
 
     res.json({ topProducts });
   } catch (error: any) {

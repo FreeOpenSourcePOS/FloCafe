@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Schicht",
     "priceExceptionsShiftOpen": "offen",
     "dayCloseOpenShiftBlocks": "Schließen Sie die offene Schicht #{id} ({name}), bevor Sie diesen Geschäftstag abschließen.",
-    "dayCloseOpenShiftBlocksGeneric": "Schließen Sie die offene Schicht für diesen Geschäftstag, bevor Sie den Tag abschließen."
+    "dayCloseOpenShiftBlocksGeneric": "Schließen Sie die offene Schicht für diesen Geschäftstag, bevor Sie den Tag abschließen.",
+    "ingredientCost": "Zutatenkosten",
+    "grossProfit": "Rohertrag",
+    "grossMargin": "Rohertragsmarge",
+    "costUnknown": "Kosten unbekannt",
+    "partialCost": "Teilweise Kosten",
+    "ingredientCostLabel": "Kosten: {amount}",
+    "profitMarginLabel": "Gewinn: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Ausgabe hinzufügen",
@@ -544,7 +551,11 @@
     "saveFailed": "Speichern fehlgeschlagen",
     "deleteFailed": "Löschen fehlgeschlagen",
     "confirmDeleteSupply": "Vorrat {name} löschen? Die Bewegungshistorie bleibt erhalten.",
-    "confirmDeleteRecipe": "Rezept für {name} löschen?"
+    "confirmDeleteRecipe": "Rezept für {name} löschen?",
+    "unitCost": "Stückkosten",
+    "totalBatchCost": "Gesamte Chargenkosten",
+    "recipeCost": "Rezeptkosten",
+    "costUnknown": "Kosten unbekannt"
   },
   "kds": {
     "addonsLabel": "Zusätze",

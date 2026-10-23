@@ -432,7 +432,14 @@
     "priceExceptionsShift": "근무조",
     "priceExceptionsShiftOpen": "진행 중",
     "dayCloseOpenShiftBlocks": "이 영업일을 마감하기 전에 열려 있는 교대근무 #{id}({name})를 마감하세요.",
-    "dayCloseOpenShiftBlocksGeneric": "영업일을 마감하기 전에 이 영업일의 열려 있는 교대근무를 마감하세요."
+    "dayCloseOpenShiftBlocksGeneric": "영업일을 마감하기 전에 이 영업일의 열려 있는 교대근무를 마감하세요.",
+    "ingredientCost": "재료 원가",
+    "grossProfit": "매출총이익",
+    "grossMargin": "매출총이익률",
+    "costUnknown": "원가 미지정",
+    "partialCost": "일부 원가 반영",
+    "ingredientCostLabel": "원가: {amount}",
+    "profitMarginLabel": "이익: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "경비 추가",
@@ -544,7 +551,11 @@
     "saveFailed": "저장하지 못했습니다",
     "deleteFailed": "삭제하지 못했습니다",
     "confirmDeleteSupply": "재고 품목 {name}을(를) 삭제할까요? 변동 기록은 유지됩니다.",
-    "confirmDeleteRecipe": "{name}의 레시피를 삭제할까요?"
+    "confirmDeleteRecipe": "{name}의 레시피를 삭제할까요?",
+    "unitCost": "단위 원가",
+    "totalBatchCost": "배치 총원가",
+    "recipeCost": "레시피 원가",
+    "costUnknown": "원가 미지정"
   },
   "kds": {
     "addonsLabel": "추가 메뉴",

@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Vardiya",
     "priceExceptionsShiftOpen": "açık",
     "dayCloseOpenShiftBlocks": "Bu iş gününü kapatmadan önce açık vardiya #{id} ({name}) kaydını kapatın.",
-    "dayCloseOpenShiftBlocksGeneric": "Günü kapatmadan önce bu iş gününe ait açık vardiyayı kapatın."
+    "dayCloseOpenShiftBlocksGeneric": "Günü kapatmadan önce bu iş gününe ait açık vardiyayı kapatın.",
+    "ingredientCost": "Malzeme Maliyeti",
+    "grossProfit": "Brüt Kâr",
+    "grossMargin": "Brüt Marj",
+    "costUnknown": "Maliyet bilinmiyor",
+    "partialCost": "Kısmi maliyet",
+    "ingredientCostLabel": "Maliyet: {amount}",
+    "profitMarginLabel": "Kâr: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Gider ekle",
@@ -544,7 +551,11 @@
     "saveFailed": "Kaydedilemedi",
     "deleteFailed": "Silinemedi",
     "confirmDeleteSupply": "{name} sarf malzemesi silinsin mi? Hareket geçmişi korunacak.",
-    "confirmDeleteRecipe": "{name} için tarif silinsin mi?"
+    "confirmDeleteRecipe": "{name} için tarif silinsin mi?",
+    "unitCost": "Birim maliyet",
+    "totalBatchCost": "Toplam parti maliyeti",
+    "recipeCost": "Reçete maliyeti",
+    "costUnknown": "Maliyet bilinmiyor"
   },
   "kds": {
     "addonsLabel": "Eklentiler",

@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Смена",
     "priceExceptionsShiftOpen": "открыта",
     "dayCloseOpenShiftBlocks": "Закройте открытую смену #{id} ({name}) перед закрытием этого операционного дня.",
-    "dayCloseOpenShiftBlocksGeneric": "Закройте открытую смену за этот операционный день перед закрытием дня."
+    "dayCloseOpenShiftBlocksGeneric": "Закройте открытую смену за этот операционный день перед закрытием дня.",
+    "ingredientCost": "Себестоимость ингредиентов",
+    "grossProfit": "Валовая прибыль",
+    "grossMargin": "Валовая маржа",
+    "costUnknown": "Себестоимость неизвестна",
+    "partialCost": "Частичная себестоимость",
+    "ingredientCostLabel": "Себестоимость: {amount}",
+    "profitMarginLabel": "Прибыль: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Добавить расход",
@@ -544,7 +551,11 @@
     "saveFailed": "Не удалось сохранить.",
     "deleteFailed": "Не удалось удалить",
     "confirmDeleteSupply": "Удалить запас {name}? История его перемещения будет сохранена.",
-    "confirmDeleteRecipe": "Удалить рецепт {name}?"
+    "confirmDeleteRecipe": "Удалить рецепт {name}?",
+    "unitCost": "Себестоимость за единицу",
+    "totalBatchCost": "Общая стоимость партии",
+    "recipeCost": "Себестоимость рецепта",
+    "costUnknown": "Себестоимость неизвестна"
   },
   "kds": {
     "addonsLabel": "Дополнения",

@@ -326,16 +326,39 @@ tables (`supplies`, `supply_movements`) with a signed ledger, separate from prod
    to later sales after a recipe becomes active. Portions must be positive finite numbers; catalog
    writes and database imports reject invalid supplied values, and recipe snapshot creation rejects
    an invalid portion before depletion.
+8. **Supply purchase costs use Weighted Average Cost (WAC) per base unit and stay separate from the
+   expenses ledger.** A supply's `unit_cost` is stored in major currency units per `base_unit`
+   (rounded to 10 decimal places so sub-minor-unit gram and millilitre costs never collapse to zero,
+   including 0-decimal currencies such as JPY). When a `receive` movement includes a batch cost
+   (`unit_cost` per movement unit or `total_cost` for the batch), it is normalized to `base_unit`.
+   If `stock_before <= 0` or `supplies.unit_cost IS NULL`, `unit_cost` resets to the new batch cost;
+   otherwise it blends by WAC (`(stock_before * old_cost + delta * batch_cost) / stock_after`).
+   Unpriced `receive` movements leave `supplies.unit_cost` unchanged. Recording a supply receive cost
+   updates inventory valuation only and never creates an `expenses` row.
+9. **Order-item ingredient cost is recipe-derived, frozen at sale time, and never understated.**
+   When an order line is created, `buildRecipeSnapshot()` computes the line's ingredient cost from
+   its active recipe and variant `recipe_multiplier`, rounds the line total to the tenant currency's
+   fraction digits (`0`, `2`, or `3`), and freezes `ingredient_cost` and `ingredient_cost_known` on
+   `order_items` alongside `recipe_snapshot`. If a product has no active recipe or **any** recipe
+   component supply has `unit_cost IS NULL`, `ingredient_cost` is `NULL` and `ingredient_cost_known`
+   is `0` ("cost unknown" - never a partial cost and never 100% margin); legacy `products.cost` is
+   not used. Subsequent supply cost or recipe edits never alter existing `order_items`, and pending
+   or started quantity reductions scale the frozen cost from the line's held `recipe_snapshot`. In
+   sales reports and daily sales exports (gated by `reports.financial.view` and
+   `reports.daily-sales.export`), profit and margin are computed strictly over ex-tax net item sales
+   of known-cost lines (`known_cost_revenue`).
 
 **Reason:** POS availability during a stockout matters more than ledger neatness. A store that
 cannot sell because flour has not been counted in yet is worse than a negative row to reconcile
-later. Snapshots keep historical cancellations correct under recipe edits, mirroring the existing
-`tax_snapshot` pattern.
+later. Snapshots keep historical cancellations and historical profitability reports accurate under
+recipe or supply cost edits, mirroring the existing `tax_snapshot` pattern.
 
 **Enforced by:** `applySupplyStockChange()` in `main/services/supplies.ts`, which does not clamp;
-`buildRecipeSnapshot()` and `applyRecipeSnapshot()` in `main/services/recipes.ts`; the order
+`buildRecipeSnapshot()`, `scaleRecipeSnapshot()`, and `applyRecipeSnapshot()` in
+`main/services/recipes.ts`; the order
 creation, item append, order and item cancel, item edit, and item restore paths in
-`main/routes/orders.ts`. Restore acts only on a non-superseded `cancelled` item, re-deducts its
+`main/routes/orders.ts`; and profitability aggregation in `main/routes/reports.ts` and
+`main/services/daily-sales-export.ts`. Restore acts only on a non-superseded `cancelled` item, re-deducts its
 inventory and recipe components, and returns it to `pending`; a `voided` or superseded item is
 never restored. The
 portion comes from
@@ -348,6 +371,7 @@ before depletion. The migration gives existing variants a default portion of 1 i
 
 ```sh
 npm run test:recipe-order-lifecycle   # deplete, restore, void-no-restore, snapshot immutability
+npm run test:ingredient-cost          # WAC, negative-stock reset, frozen cost, profitability reports
 npm run test:order-item-edit          # pending vs started item edits, waste, superseded restore rejection
 npm run test:supplies-service         # negative stock, ledger, pagination
 npm run test:product-variants-orders  # half / whole / double portions across create, append, void

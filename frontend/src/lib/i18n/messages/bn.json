@@ -432,7 +432,14 @@
     "priceExceptionsShift": "শিফট",
     "priceExceptionsShiftOpen": "চালু",
     "dayCloseOpenShiftBlocks": "এই ব্যবসায়িক দিনটি বন্ধ করার আগে খোলা শিফট #{id} ({name}) বন্ধ করুন।",
-    "dayCloseOpenShiftBlocksGeneric": "দিন বন্ধ করার আগে এই ব্যবসায়িক দিনের খোলা শিফটটি বন্ধ করুন।"
+    "dayCloseOpenShiftBlocksGeneric": "দিন বন্ধ করার আগে এই ব্যবসায়িক দিনের খোলা শিফটটি বন্ধ করুন।",
+    "ingredientCost": "উপকরণ খরচ",
+    "grossProfit": "মোট লাভ",
+    "grossMargin": "মোট মার্জিন",
+    "costUnknown": "খরচ অজানা",
+    "partialCost": "আংশিক খরচ",
+    "ingredientCostLabel": "খরচ: {amount}",
+    "profitMarginLabel": "লাভ: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "খরচ যোগ করুন",
@@ -544,7 +551,11 @@
     "saveFailed": "সংরক্ষণ করতে ব্যর্থ হয়েছে",
     "deleteFailed": "মুছে ফেলতে ব্যর্থ হয়েছে।",
     "confirmDeleteSupply": "{name} মুছে ফেলবেন? এর সরবরাহের ইতিহাস সংরক্ষিত থাকবে।",
-    "confirmDeleteRecipe": "{name} রেসিপি মুছে ফেলবেন?"
+    "confirmDeleteRecipe": "{name} রেসিপি মুছে ফেলবেন?",
+    "unitCost": "একক খরচ",
+    "totalBatchCost": "মোট ব্যাচ খরচ",
+    "recipeCost": "রেসিপি খরচ",
+    "costUnknown": "খরচ অজানা"
   },
   "kds": {
     "addonsLabel": "অ্যাড-অন",

@@ -432,7 +432,14 @@
     "priceExceptionsShift": "班次",
     "priceExceptionsShiftOpen": "進行中",
     "dayCloseOpenShiftBlocks": "請在日結此營業日之前先關閉未關班次 #{id}（{name}）。",
-    "dayCloseOpenShiftBlocksGeneric": "請在日結之前先關閉此營業日的未關班次。"
+    "dayCloseOpenShiftBlocksGeneric": "請在日結之前先關閉此營業日的未關班次。",
+    "ingredientCost": "原料成本",
+    "grossProfit": "毛利潤",
+    "grossMargin": "毛利率",
+    "costUnknown": "成本未知",
+    "partialCost": "部分已知成本",
+    "ingredientCostLabel": "成本: {amount}",
+    "profitMarginLabel": "利潤: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "新增支出",
@@ -544,7 +551,11 @@
     "saveFailed": "儲存失敗",
     "deleteFailed": "刪除失敗",
     "confirmDeleteSupply": "要刪除庫存品“{name}”嗎？其變動記錄將保留。",
-    "confirmDeleteRecipe": "要刪除{name}的配方嗎？"
+    "confirmDeleteRecipe": "要刪除{name}的配方嗎？",
+    "unitCost": "單位成本",
+    "totalBatchCost": "批次總成本",
+    "recipeCost": "配方成本",
+    "costUnknown": "成本未知"
   },
   "kds": {
     "addonsLabel": "加購",

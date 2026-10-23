@@ -432,7 +432,14 @@
     "priceExceptionsShift": "班次",
     "priceExceptionsShiftOpen": "进行中",
     "dayCloseOpenShiftBlocks": "请在日结此营业日之前先关闭未关班次 #{id}（{name}）。",
-    "dayCloseOpenShiftBlocksGeneric": "请在日结之前先关闭此营业日的未关班次。"
+    "dayCloseOpenShiftBlocksGeneric": "请在日结之前先关闭此营业日的未关班次。",
+    "ingredientCost": "原料成本",
+    "grossProfit": "毛利润",
+    "grossMargin": "毛利率",
+    "costUnknown": "成本未知",
+    "partialCost": "部分已知成本",
+    "ingredientCostLabel": "成本: {amount}",
+    "profitMarginLabel": "利润: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "添加支出",
@@ -544,7 +551,11 @@
     "saveFailed": "保存失败",
     "deleteFailed": "删除失败",
     "confirmDeleteSupply": "要删除库存品“{name}”吗？其变动记录将保留。",
-    "confirmDeleteRecipe": "要删除{name}的配方吗？"
+    "confirmDeleteRecipe": "要删除{name}的配方吗？",
+    "unitCost": "单位成本",
+    "totalBatchCost": "批次总成本",
+    "recipeCost": "配方成本",
+    "costUnknown": "成本未知"
   },
   "kds": {
     "addonsLabel": "加购",

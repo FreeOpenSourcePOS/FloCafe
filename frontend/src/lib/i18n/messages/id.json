@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Giliran kerja",
     "priceExceptionsShiftOpen": "terbuka",
     "dayCloseOpenShiftBlocks": "Tutup shift terbuka #{id} ({name}) sebelum menutup hari kerja ini.",
-    "dayCloseOpenShiftBlocksGeneric": "Tutup shift terbuka untuk hari kerja ini sebelum menutup hari."
+    "dayCloseOpenShiftBlocksGeneric": "Tutup shift terbuka untuk hari kerja ini sebelum menutup hari.",
+    "ingredientCost": "Biaya Bahan",
+    "grossProfit": "Laba Kotor",
+    "grossMargin": "Margin Kotor",
+    "costUnknown": "Biaya belum diketahui",
+    "partialCost": "Biaya sebagian",
+    "ingredientCostLabel": "Biaya: {amount}",
+    "profitMarginLabel": "Laba: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Tambah pengeluaran",
@@ -544,7 +551,11 @@
     "saveFailed": "Gagal menyimpan",
     "deleteFailed": "Gagal menghapus",
     "confirmDeleteSupply": "Hapus persediaan {name}? Riwayat pergerakannya akan disimpan.",
-    "confirmDeleteRecipe": "Hapus resep untuk {name}?"
+    "confirmDeleteRecipe": "Hapus resep untuk {name}?",
+    "unitCost": "Biaya per unit",
+    "totalBatchCost": "Total biaya batch",
+    "recipeCost": "Biaya resep",
+    "costUnknown": "Biaya belum diketahui"
   },
   "kds": {
     "addonsLabel": "Tambahan",

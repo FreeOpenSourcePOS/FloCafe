@@ -432,7 +432,14 @@
     "priceExceptionsShift": "Turno",
     "priceExceptionsShiftOpen": "aperto",
     "dayCloseOpenShiftBlocks": "Chiudi il turno aperto #{id} ({name}) prima di chiudere questa giornata lavorativa.",
-    "dayCloseOpenShiftBlocksGeneric": "Chiudi il turno aperto di questa giornata lavorativa prima di chiudere la giornata."
+    "dayCloseOpenShiftBlocksGeneric": "Chiudi il turno aperto di questa giornata lavorativa prima di chiudere la giornata.",
+    "ingredientCost": "Costo ingredienti",
+    "grossProfit": "Profitto lordo",
+    "grossMargin": "Margine lordo",
+    "costUnknown": "Costo sconosciuto",
+    "partialCost": "Costo parziale",
+    "ingredientCostLabel": "Costo: {amount}",
+    "profitMarginLabel": "Profitto: {profit} ({margin})"
   },
   "expenses": {
     "addTitle": "Aggiungi spesa",
@@ -544,7 +551,11 @@
     "saveFailed": "Salvataggio non riuscito",
     "deleteFailed": "Eliminazione non riuscita",
     "confirmDeleteSupply": "Eliminare la scorta {name}? La cronologia dei movimenti verrà conservata.",
-    "confirmDeleteRecipe": "Eliminare la ricetta di {name}?"
+    "confirmDeleteRecipe": "Eliminare la ricetta di {name}?",
+    "unitCost": "Costo unitario",
+    "totalBatchCost": "Costo totale del lotto",
+    "recipeCost": "Costo della ricetta",
+    "costUnknown": "Costo sconosciuto"
   },
   "kds": {
     "addonsLabel": "Extra",

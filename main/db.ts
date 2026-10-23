@@ -3092,6 +3092,7 @@ export type RestoreOutboxState = {
 };
 const RESTORE_PROTECTED_SETTING_KEYS = [
   'jwt_secret',
+  'email',
   'cloud_api_key',
   'cloud_device_secret',
   'cloud_pos_hash',
@@ -3150,6 +3151,29 @@ export function mergeRestoreProtectedSettings(
     if (state.present) upsert.run(state.key, state.value, now());
     else if (!state.key.startsWith('cloud_'))
       dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
+  }
+  try {
+    const activeOwners = dbInstance
+      .prepare(
+        "SELECT lower(trim(email)) AS email FROM users WHERE role = 'owner' AND is_active = 1 AND email IS NOT NULL AND trim(email) != '' ORDER BY created_at ASC, id ASC",
+      )
+      .all() as { email: string }[];
+    if (activeOwners.length > 0) {
+      const currentEmail = String(
+        (
+          dbInstance.prepare("SELECT value FROM settings WHERE key = 'email'").get() as
+            | { value: string | null }
+            | undefined
+        )?.value || '',
+      )
+        .trim()
+        .toLowerCase();
+      if (!activeOwners.some((row) => row.email === currentEmail)) {
+        upsert.run('email', activeOwners[0].email, now());
+      }
+    }
+  } catch {
+    // Skip owner email resync if users table is unavailable in a partial fixture.
   }
   const hasDeviceSecret = states.some(
     (state) => state.key === 'cloud_device_secret' && state.present,

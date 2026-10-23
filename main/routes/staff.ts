@@ -98,6 +98,52 @@ function normalizeStaffEmail(email: unknown): string {
     .toLowerCase();
 }
 
+function syncRegisteredOwnerEmail(
+  db: ReturnType<typeof getDatabase>,
+  previousOwnerEmail?: string,
+  nextOwnerEmail?: string,
+): boolean {
+  const currentSettingRow = db.prepare("SELECT value FROM settings WHERE key = 'email'").get() as
+    | { value: string | null }
+    | undefined;
+  const currentSettingEmail = normalizeStaffEmail(currentSettingRow?.value);
+  const normalizedPrev = normalizeStaffEmail(previousOwnerEmail);
+  const normalizedNext = normalizeStaffEmail(nextOwnerEmail);
+
+  let targetEmail = '';
+  if (normalizedNext && (!currentSettingEmail || currentSettingEmail === normalizedPrev)) {
+    targetEmail = normalizedNext;
+  } else {
+    const matchesActiveOwner = currentSettingEmail
+      ? Boolean(
+          db
+            .prepare(
+              "SELECT 1 FROM users WHERE lower(email) = ? AND role = 'owner' AND is_active = 1 LIMIT 1",
+            )
+            .get(currentSettingEmail),
+        )
+      : false;
+    if (matchesActiveOwner) return false;
+    if (normalizedNext) {
+      targetEmail = normalizedNext;
+    } else {
+      const fallbackOwner = db
+        .prepare(
+          "SELECT email FROM users WHERE role = 'owner' AND is_active = 1 AND email IS NOT NULL AND trim(email) != '' ORDER BY created_at ASC, id ASC LIMIT 1",
+        )
+        .get() as { email: string } | undefined;
+      targetEmail = normalizeStaffEmail(fallbackOwner?.email);
+    }
+  }
+
+  if (!targetEmail || targetEmail === currentSettingEmail) return false;
+  db.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES ('email', ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(targetEmail, now());
+  return true;
+}
+
 function normalizeStationIds(value: unknown): string[] | null {
   if (value === undefined) return [];
   if (
@@ -464,33 +510,48 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
       role: targetRole,
       isActive: member.is_active === 1,
     });
-    const result = db
-      .prepare(`
-      UPDATE users SET
-        name       = COALESCE(?, name),
-        email      = COALESCE(?, email),
-        password   = ?,
-        role       = COALESCE(?, role),
-        pin_hash   = ?,
-        tokens_valid_after = ?,
-        updated_at = ?
-      WHERE id = ?
-        AND (
-          ? = 0
-          OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1
-        )
-    `)
-      .run(
-        name || null,
-        normalizedEmail || null,
-        hashedPassword,
-        role || null,
-        hashedPin,
-        tokensValidAfter,
-        now(),
-        req.params.id,
-        demotesActiveOwner ? 1 : 0,
-      );
+    let ownerEmailSynced = false;
+    const result = db.transaction(() => {
+      const updateResult = db
+        .prepare(`
+        UPDATE users SET
+          name       = COALESCE(?, name),
+          email      = COALESCE(?, email),
+          password   = ?,
+          role       = COALESCE(?, role),
+          pin_hash   = ?,
+          tokens_valid_after = ?,
+          updated_at = ?
+        WHERE id = ?
+          AND (
+            ? = 0
+            OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1
+          )
+      `)
+        .run(
+          name || null,
+          normalizedEmail || null,
+          hashedPassword,
+          role || null,
+          hashedPin,
+          tokensValidAfter,
+          now(),
+          req.params.id,
+          demotesActiveOwner ? 1 : 0,
+        );
+      if (
+        updateResult.changes > 0 &&
+        member.is_active === 1 &&
+        (member.role === 'owner' || targetRole === 'owner')
+      ) {
+        ownerEmailSynced = syncRegisteredOwnerEmail(
+          db,
+          member.role === 'owner' ? member.email : undefined,
+          targetRole === 'owner' ? normalizedEmail || member.email : undefined,
+        );
+      }
+      return updateResult;
+    })();
     if (result.changes === 0) {
       captureAdministrationAccessGuard();
       return res.status(400).json({
@@ -500,6 +561,13 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
     }
     invalidateUserAuthCache(req.params.id as string);
     syncPostHogIdentity();
+    if (ownerEmailSynced) {
+      try {
+        cloudSync.refreshRegistrationProfile();
+      } catch {
+        // Cloud profile refresh is best-effort and must not fail staff updates.
+      }
+    }
 
     const updated = db
       .prepare(`SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`)
@@ -538,18 +606,32 @@ router.post('/:id/deactivate', requireStaffWrite, (req: Request, res: Response) 
       role: member.role,
       isActive: false,
     });
-    const result = db
-      .prepare(`
-      UPDATE users SET is_active = 0, tokens_valid_after = ?, updated_at = ?
-      WHERE id = ? AND is_active = 1
-        AND (role != 'owner' OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1)
-    `)
-      .run(changedAt, changedAt, req.params.id);
+    let ownerEmailSynced = false;
+    const result = db.transaction(() => {
+      const updateResult = db
+        .prepare(`
+        UPDATE users SET is_active = 0, tokens_valid_after = ?, updated_at = ?
+        WHERE id = ? AND is_active = 1
+          AND (role != 'owner' OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1)
+      `)
+        .run(changedAt, changedAt, req.params.id);
+      if (updateResult.changes > 0 && member.role === 'owner') {
+        ownerEmailSynced = syncRegisteredOwnerEmail(db);
+      }
+      return updateResult;
+    })();
     if (result.changes === 0) {
       captureAdministrationAccessGuard();
       return res.status(400).json({ error: 'Cannot deactivate the last owner account' });
     }
     invalidateUserAuthCache(req.params.id as string);
+    if (ownerEmailSynced) {
+      try {
+        cloudSync.refreshRegistrationProfile();
+      } catch {
+        // Cloud profile refresh is best-effort and must not fail staff deactivation.
+      }
+    }
     const updated = db
       .prepare(`SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`)
       .get(req.params.id);

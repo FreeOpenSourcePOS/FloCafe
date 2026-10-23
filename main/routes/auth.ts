@@ -544,7 +544,7 @@ function applyOwnerRecovery(
   const updated = db.transaction(() => {
     // Re-checked in the transaction, so a concurrent write cannot turn a
     // plain reset into a promotion.
-    if (hasActiveAdministrator()) {
+    if (via === 'FloAdmin email approval' || hasActiveAdministrator()) {
       return db
         .prepare(
           'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND role = ? AND is_active = 1',
@@ -706,13 +706,20 @@ router.post(
   authRateLimit(),
   asyncHandler(async (req: Request, res: Response) => {
     if (!cloudRecoveryPrecheck(req, res)) return;
+    const email = cloudSync.getRegisteredOwnerEmail();
+    const owner = getDatabase()
+      .prepare('SELECT id FROM users WHERE lower(email) = ? AND role = ? AND is_active = 1')
+      .get(email, INITIAL_ADMIN_ROLE);
+    if (!owner) {
+      return res.status(409).json({ error: 'Email recovery is not available on this install.' });
+    }
     try {
       const signal = getHttpRequestSignal(req);
       // An unverified owner email gets the verification email first; the reset follows once verified.
       if (!(await cloudSync.ensureOwnerEmailVerification(signal))) {
         return res.status(202).json({
           step: 'verify_email',
-          email_hint: maskEmail(cloudSync.getRegisteredOwnerEmail()),
+          email_hint: maskEmail(email),
         });
       }
       const data = await cloudSync.requestPasswordReset(signal);
@@ -778,14 +785,9 @@ router.post(
 
     // Resolve the account before consuming the single-use grant.
     const email = cloudSync.getRegisteredOwnerEmail();
-    const stranded = !hasActiveAdministrator();
-    const user = (
-      stranded
-        ? db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email)
-        : db
-            .prepare('SELECT * FROM users WHERE email = ? AND role = ? AND is_active = 1')
-            .get(email, INITIAL_ADMIN_ROLE)
-    ) as any;
+    const user = db
+      .prepare('SELECT * FROM users WHERE lower(email) = ? AND role = ? AND is_active = 1')
+      .get(email, INITIAL_ADMIN_ROLE) as any;
     if (!user) {
       return res
         .status(404)

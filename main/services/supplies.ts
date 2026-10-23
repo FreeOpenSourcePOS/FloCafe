@@ -2,6 +2,7 @@ import { randomBytes } from 'crypto';
 import Decimal from 'decimal.js';
 import { getCurrencyFractionDigits } from '../countries';
 import { getDatabase, now, withTxn } from '../db';
+import { getTenantCurrency } from './refund';
 import { SupplyUnit, assertSupplyUnit, convertQuantity, roundQuantity } from './units';
 
 export const COST_PRECISION = 10;
@@ -22,12 +23,16 @@ export function roundCurrencyCost(value: number | Decimal, fractionDigits: numbe
 
 export function resolveDbCurrencyFractionDigits(db: ReturnType<typeof getDatabase>): number {
   try {
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as
-      | { value?: string | null }
-      | undefined;
-    return getCurrencyFractionDigits(row?.value || '');
+    return getCurrencyFractionDigits(getTenantCurrency(db));
   } catch {
-    return 2;
+    try {
+      const row = db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as
+        | { value?: string | null }
+        | undefined;
+      return getCurrencyFractionDigits(row?.value || '');
+    } catch {
+      return 2;
+    }
   }
 }
 

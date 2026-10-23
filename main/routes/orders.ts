@@ -1125,8 +1125,6 @@ interface OrderItemRow {
   inventory_product_id: string | null;
   inventory_variant_id: string | null;
   recipe_snapshot: string | null;
-  ingredient_cost?: number | null;
-  ingredient_cost_known?: number;
   updated_at: string;
 }
 
@@ -5656,16 +5654,7 @@ router.patch(
           const {
             ingredientCost: scaledIngredientCost,
             ingredientCostKnown: scaledIngredientCostKnown,
-          } = scaledRecipeSnapshot
-            ? extractOrderItemCostFromSnapshot(scaledRecipeSnapshot)
-            : Number(oldItem.ingredient_cost_known) === 1 &&
-                typeof oldItem.ingredient_cost === 'number' &&
-                Number.isFinite(oldItem.ingredient_cost)
-              ? {
-                  ingredientCost: Number((oldItem.ingredient_cost * heldRatio).toFixed(decimals)),
-                  ingredientCostKnown: 1 as const,
-                }
-              : { ingredientCost: null, ingredientCostKnown: 0 as const };
+          } = extractOrderItemCostFromSnapshot(scaledRecipeSnapshot);
 
           db.prepare(`
             UPDATE order_items

@@ -568,6 +568,14 @@ export default function InventoryPage() {
                     <td className="p-4 text-end text-sm text-muted-foreground">
                       {s.unit_cost === null || s.unit_cost === undefined ? (
                         <span className="text-xs italic">{t('costUnknown')}</span>
+                      ) : (s.base_unit === 'g' || s.base_unit === 'ml') &&
+                        Number(s.unit_cost) > 0 &&
+                        fmt(Number(s.unit_cost)) === fmt(0) ? (
+                        <div>
+                          <span className="font-medium text-foreground">
+                            {fmt(Number(s.unit_cost) * 1000)} / {s.base_unit === 'g' ? 'kg' : 'L'}
+                          </span>
+                        </div>
                       ) : (
                         <div>
                           <span className="font-medium text-foreground">
@@ -575,10 +583,10 @@ export default function InventoryPage() {
                           </span>
                           {(s.base_unit === 'g' || s.base_unit === 'ml') &&
                             Number(s.unit_cost) > 0 &&
-                            Number(s.unit_cost) < 0.1 && (
+                            Number(s.unit_cost) < 1 && (
                               <div className="text-xs text-muted-foreground">
                                 ({fmt(Number(s.unit_cost) * 1000)} /{' '}
-                                {s.base_unit === 'g' ? 'kg' : 'l'})
+                                {s.base_unit === 'g' ? 'kg' : 'L'})
                               </div>
                             )}
                         </div>

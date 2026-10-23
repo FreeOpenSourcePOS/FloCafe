@@ -125,8 +125,8 @@ router.post('/', requirePermission('supplies.manage'), (req: Request, res: Respo
       baseUnit: body.base_unit,
       stockQuantity: body.stock_quantity,
       lowStockThreshold: body.low_stock_threshold,
-      unitCost: body.unit_cost !== undefined ? body.unit_cost : body.unitCost,
-      unitCostUnit: body.unit_cost_unit !== undefined ? body.unit_cost_unit : body.unitCostUnit,
+      unitCost: body.unit_cost,
+      unitCostUnit: body.unit_cost_unit,
       isActive: body.is_active,
       actorUserId: actorId,
     });
@@ -198,8 +198,8 @@ router.put('/:id', requirePermission('supplies.manage'), (req: Request, res: Res
       name: body.name,
       isActive: body.is_active,
       lowStockThreshold: body.low_stock_threshold,
-      unitCost: body.unit_cost !== undefined ? body.unit_cost : body.unitCost,
-      unitCostUnit: body.unit_cost_unit !== undefined ? body.unit_cost_unit : body.unitCostUnit,
+      unitCost: body.unit_cost,
+      unitCostUnit: body.unit_cost_unit,
     });
     res.json({ supply });
   } catch (error: unknown) {
@@ -239,8 +239,8 @@ router.post(
         movementType,
         quantity: body.quantity,
         unit: body.unit,
-        unitCost: body.unit_cost !== undefined ? body.unit_cost : body.unitCost,
-        totalCost: body.total_cost !== undefined ? body.total_cost : body.totalCost,
+        unitCost: body.unit_cost,
+        totalCost: body.total_cost,
         reason: body.reason,
         actorUserId: actorId,
       });

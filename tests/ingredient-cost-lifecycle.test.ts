@@ -357,7 +357,26 @@ async function main() {
       'KWD (3 decimals) rounds 0.0225 total_ingredient_cost to 0.023',
     );
 
+    // Country-only currency fallback (settings.country = 'JP' or 'KW' without settings.currency)
+    db.prepare("DELETE FROM settings WHERE key = 'currency'").run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'KW')").run();
+    const snapKwCountry = buildRecipeSnapshot(db, 'prod-matcha', 1);
+    assertEqualOrThrow(
+      snapKwCountry.total_ingredient_cost,
+      0.023,
+      'settings.country = KW (without settings.currency) resolves 3 fraction digits (KWD)',
+    );
+    updateSupply(db, matcha.id, { unitCost: 250, unitCostUnit: 'kg' }); // 0.25/g -> 3.75 for 15g
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'JP')").run();
+    const snapJpCountry = buildRecipeSnapshot(db, 'prod-matcha', 1);
+    assertEqualOrThrow(
+      snapJpCountry.total_ingredient_cost,
+      4,
+      'settings.country = JP (without settings.currency) resolves 0 fraction digits (JPY)',
+    );
+
     // Restore USD (2 decimals)
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US')").run();
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('currency', 'USD')").run();
 
     // ── 4. Unknown cost, partial recipe cost, variant portions, and order lifecycle immutability ──

@@ -78,8 +78,16 @@ async function main(): Promise<void> {
   }
 
   const stamp = new Date('2026-10-22T13:05:09.456Z');
-  assert.equal(localBackupFileName(stamp), 'flo-backup-2026-10-22T13-05-09Z.db');
-  assert.equal(parseLocalBackupTime(localBackupFileName(stamp)), Date.UTC(2026, 9, 22, 13, 5, 9));
+  assert.equal(localBackupFileName(stamp), 'flo-backup-2026-10-22T13-05-09-456Z.db');
+  assert.equal(
+    parseLocalBackupTime(localBackupFileName(stamp)),
+    Date.UTC(2026, 9, 22, 13, 5, 9, 456),
+  );
+  assert.equal(
+    parseLocalBackupTime('flo-backup-2026-10-22T13-05-09Z.db'),
+    Date.UTC(2026, 9, 22, 13, 5, 9),
+    'backups named before millisecond precision are still recognized',
+  );
   assert.equal(parseLocalBackupTime('flo-backup-2026-10-22T13-05-09Z.db.tmp'), null);
   assert.equal(parseLocalBackupTime('notes.db'), null);
 
@@ -183,17 +191,65 @@ async function main(): Promise<void> {
     LOCAL_BACKUP_RETENTION,
     'retention still applies',
   );
+
+  assert.notEqual(
+    localBackupFileName(new Date('2026-10-22T13:05:09.100Z')),
+    localBackupFileName(new Date('2026-10-22T13:05:09.900Z')),
+    'snapshots in the same second get distinct names',
+  );
+  const firstCopy = retainBackupLocally(source);
+  const secondCopy = retainBackupLocally(source);
+  assert.ok(firstCopy && secondCopy && firstCopy !== secondCopy, 'back-to-back copies never share a name');
+  assert.ok(fs.existsSync(firstCopy as string) && fs.existsSync(secondCopy as string));
+
+  for (const name of listLocalBackups(backupDir)) fs.unlinkSync(path.join(backupDir, name));
+  const legacyName = 'flo-backup-2026-01-02T03-00-00Z.db';
+  const precise = localBackupFileName(new Date('2026-01-02T03:00:00.500Z'));
+  fs.writeFileSync(path.join(backupDir, legacyName), 'legacy');
+  fs.writeFileSync(path.join(backupDir, precise), 'precise');
+  assert.deepEqual(
+    listLocalBackups(backupDir),
+    [precise, legacyName],
+    'legacy and current names are listed together in time order',
+  );
+
+  for (const name of listLocalBackups(backupDir)) fs.unlinkSync(path.join(backupDir, name));
+  const futureNames = Array.from({ length: LOCAL_BACKUP_RETENTION }, (_, idx) =>
+    localBackupFileName(new Date(Date.now() + (idx + 1) * 24 * HOUR)),
+  );
+  for (const name of futureNames) fs.writeFileSync(path.join(backupDir, name), 'future');
+  await localBackup.runIfDue();
+  const afterClockFix = listLocalBackups(backupDir);
+  assert.equal(afterClockFix.length, LOCAL_BACKUP_RETENTION, 'retention still applies after a clock fix');
+  const written = afterClockFix.filter((name) => !futureNames.includes(name));
+  assert.equal(written.length, 1, 'the snapshot written after a clock fix is kept');
+  assert.ok((parseLocalBackupTime(written[0]) as number) <= Date.now());
+  assert.equal(afterClockFix[0], written[0], 'future-dated backups rank below the real one');
+  assert.equal(
+    getLastLocalBackupAt(backupDir),
+    new Date(parseLocalBackupTime(written[0]) as number).toISOString(),
+    'last backup time ignores future-dated files',
+  );
+  await localBackup.runIfDue();
+  assert.deepEqual(
+    listLocalBackups(backupDir),
+    afterClockFix,
+    'future-dated backups do not make a fresh real backup due again',
+  );
+
   setLocalBackupEnabled(false);
   assert.equal(retainBackupLocally(source), null, 'respects the off switch');
 
   for (const name of listLocalBackups(backupDir)) {
     fs.unlinkSync(path.join(backupDir, name));
   }
-  getDatabase()
-    .prepare(
-      "INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('owner-1', 'Owner', 'hash', 'owner', 1)",
-    )
-    .run();
+  const ensureOwner = () =>
+    getDatabase()
+      .prepare(
+        "INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('owner-1', 'Owner', 'hash', 'owner', 1)",
+      )
+      .run();
+  ensureOwner();
   resetMasterPin('1234');
   setLocalBackupEnabled(false);
 
@@ -219,6 +275,27 @@ async function main(): Promise<void> {
     false,
     'local_backup_enabled remains false after database initialize',
   );
+  assert.equal(initRes.body.localBackupFailed, false, 'no warning when local backup is off');
+
+  ensureOwner();
+  setLocalBackupEnabled(true);
+  const keptRes = await request(api)
+    .post('/api/db-tools/initialize')
+    .send({ master_pin: '1234', confirmation_phrase: 'INITIALIZE' });
+  assert.equal(keptRes.status, 200);
+  assert.equal(keptRes.body.localBackupFailed, false, 'no warning when the copy is kept');
+  assert.equal(listLocalBackups(backupDir).length, 1, 'initialize keeps a local copy when enabled');
+
+  fs.rmSync(backupDir, { recursive: true, force: true });
+  fs.writeFileSync(backupDir, 'not a folder');
+  ensureOwner();
+  const failedRes = await request(api)
+    .post('/api/db-tools/initialize')
+    .send({ master_pin: '1234', confirmation_phrase: 'INITIALIZE' });
+  assert.equal(failedRes.status, 200, 'the committed reset is still reported as done');
+  assert.equal(failedRes.body.success, true);
+  assert.equal(failedRes.body.localBackupFailed, true, 'a failed local copy is reported');
+  fs.rmSync(backupDir, { force: true });
 
   await localBackup.stop();
   closeDatabase();

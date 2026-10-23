@@ -5,6 +5,7 @@ import { HardDrive } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import { Toggle } from '@/components/settings/Toggle';
+import { Button } from '@/components/ui/button';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import api from '@/lib/api';
 
@@ -20,6 +21,8 @@ export function LocalBackupCard() {
   const { formatDateTime } = useFormatDate();
   const [status, setStatus] = useState<LocalBackupStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,13 +31,15 @@ export function LocalBackupCard() {
       .then(({ data }) => {
         if (!cancelled) setStatus(data);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAttempt]);
 
-  if (!status) return null;
+  if (!status && !loadFailed) return null;
 
   const handleChange = async (enabled: boolean) => {
     setBusy(true);
@@ -47,6 +52,32 @@ export function LocalBackupCard() {
       setBusy(false);
     }
   };
+
+  const retryLoad = () => {
+    setLoadFailed(false);
+    setLoadAttempt((attempt) => attempt + 1);
+  };
+
+  if (!status) {
+    return (
+      <div className="bg-card rounded-xl border border-border p-6" data-testid="local-backup-card">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <HardDrive size={20} className="text-muted-foreground" />
+              <h2 className="font-semibold text-foreground">{t('localBackupTitle')}</h2>
+            </div>
+            <p role="alert" className="text-sm text-destructive">
+              {t('localBackupLoadFailed')}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={retryLoad}>
+            {t('retry')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-card rounded-xl border border-border p-6" data-testid="local-backup-card">

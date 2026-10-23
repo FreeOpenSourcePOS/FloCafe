@@ -1,6 +1,7 @@
 /** Daily automatic database backups kept outside the app's data folder. */
 
 import { app } from 'electron';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createBackup, getDatabase, getSettingValue, upsertSettings } from '../db';
@@ -11,7 +12,8 @@ export const LOCAL_BACKUP_RETENTION = 5;
 const DAY_MS = 24 * 60 * 60_000;
 const CHECK_INTERVAL_MS = 60 * 60_000;
 const STARTUP_DELAY_MS = 2 * 60_000;
-const BACKUP_FILE_PATTERN = /^flo-backup-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})Z\.db$/;
+const BACKUP_FILE_PATTERN =
+  /^flo-backup-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})(?:-(\d{3}))?Z\.db$/;
 
 export function getLocalBackupDir(): string {
   try {
@@ -30,28 +32,42 @@ export function setLocalBackupEnabled(enabled: boolean): void {
 }
 
 export function localBackupFileName(at: Date): string {
-  return `flo-backup-${at
-    .toISOString()
-    .replace(/\.\d{3}Z$/, 'Z')
-    .replace(/:/g, '-')}.db`;
+  return `flo-backup-${at.toISOString().replace(/[:.]/g, '-')}.db`;
 }
 
 export function parseLocalBackupTime(fileName: string): number | null {
   const match = BACKUP_FILE_PATTERN.exec(fileName);
   if (!match) return null;
-  const [, y, mo, d, h, mi, s] = match;
-  const time = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s));
+  const [, y, mo, d, h, mi, s, ms = '0'] = match;
+  const time = Date.UTC(
+    Number(y),
+    Number(mo) - 1,
+    Number(d),
+    Number(h),
+    Number(mi),
+    Number(s),
+    Number(ms),
+  );
   return Number.isNaN(time) ? null : time;
 }
 
-/** Newest first. Only files this service wrote are ever listed. */
-export function listLocalBackups(dir: string = getLocalBackupDir()): string[] {
+/**
+ * Newest first. Files dated ahead of the clock sort last: their time cannot be trusted.
+ * Only files this service wrote are ever listed.
+ */
+export function listLocalBackups(dir: string = getLocalBackupDir(), nowMs = Date.now()): string[] {
   try {
     return fs
       .readdirSync(dir)
-      .filter((name) => parseLocalBackupTime(name) !== null)
-      .sort()
-      .reverse();
+      .map((name) => ({ name, time: parseLocalBackupTime(name) }))
+      .filter((entry): entry is { name: string; time: number } => entry.time !== null)
+      .sort(
+        (a, b) =>
+          Number(a.time > nowMs) - Number(b.time > nowMs) ||
+          b.time - a.time ||
+          b.name.localeCompare(a.name),
+      )
+      .map((entry) => entry.name);
   } catch {
     return [];
   }
@@ -68,9 +84,19 @@ export function isLocalBackupDue(newestFileName: string | undefined, nowMs = Dat
   return last === null || last > nowMs || nowMs - last >= DAY_MS;
 }
 
-export function pruneLocalBackups(dir: string, keep: number = LOCAL_BACKUP_RETENTION): string[] {
+/** Keeps the newest backups by listing order; `justWritten` is always kept. */
+export function pruneLocalBackups(
+  dir: string,
+  keep: number = LOCAL_BACKUP_RETENTION,
+  justWritten?: string,
+): string[] {
+  const listed = listLocalBackups(dir);
+  const ranked =
+    justWritten && listed.includes(justWritten)
+      ? [justWritten, ...listed.filter((name) => name !== justWritten)]
+      : listed;
   const removed: string[] = [];
-  for (const name of listLocalBackups(dir).slice(keep)) {
+  for (const name of ranked.slice(keep)) {
     try {
       fs.unlinkSync(path.join(dir, name));
       removed.push(name);
@@ -81,6 +107,33 @@ export function pruneLocalBackups(dir: string, keep: number = LOCAL_BACKUP_RETEN
   return removed;
 }
 
+function removeQuietly(filePath: string): void {
+  try {
+    fs.unlinkSync(filePath);
+  } catch {
+    // Ignore cleanup failure
+  }
+}
+
+function stagingPath(dir: string): string {
+  return path.join(dir, `.flo-backup-${randomUUID()}.tmp`);
+}
+
+/** Links a staged file in under the first free backup name; never replaces an existing file. */
+function publishBackup(stagedPath: string, dir: string): string {
+  for (let stamp = Date.now(); ; stamp++) {
+    const name = localBackupFileName(new Date(stamp));
+    try {
+      fs.linkSync(stagedPath, path.join(dir, name));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue;
+      throw error;
+    }
+    removeQuietly(stagedPath);
+    return name;
+  }
+}
+
 /** Copies a finished backup into the local backup folder and applies retention. Best effort. */
 export function retainBackupLocally(sourcePath: string): string | null {
   if (!isLocalBackupEnabled()) return null;
@@ -88,21 +141,14 @@ export function retainBackupLocally(sourcePath: string): string | null {
   try {
     const dir = getLocalBackupDir();
     fs.mkdirSync(dir, { recursive: true });
-    const target = path.join(dir, localBackupFileName(new Date()));
-    tempTarget = `${target}.tmp-${process.pid}-${Date.now()}`;
+    tempTarget = stagingPath(dir);
     fs.copyFileSync(sourcePath, tempTarget);
-    fs.renameSync(tempTarget, target);
+    const name = publishBackup(tempTarget, dir);
     tempTarget = null;
-    pruneLocalBackups(dir);
-    return target;
+    pruneLocalBackups(dir, LOCAL_BACKUP_RETENTION, name);
+    return path.join(dir, name);
   } catch (error) {
-    if (tempTarget) {
-      try {
-        fs.unlinkSync(tempTarget);
-      } catch {
-        // Ignore cleanup failure
-      }
-    }
+    if (tempTarget) removeQuietly(tempTarget);
     console.warn('[LocalBackup] Could not keep a copy of the backup:', error);
     return null;
   }
@@ -161,9 +207,16 @@ class LocalBackupService {
 
     fs.mkdirSync(dir, { recursive: true });
     this.abortController = new AbortController();
-    const target = path.join(dir, localBackupFileName(new Date()));
-    await createBackup(target, this.abortController.signal);
-    pruneLocalBackups(dir);
+    const staged = stagingPath(dir);
+    let name: string;
+    try {
+      await createBackup(staged, this.abortController.signal);
+      name = publishBackup(staged, dir);
+    } catch (error) {
+      removeQuietly(staged);
+      throw error;
+    }
+    pruneLocalBackups(dir, LOCAL_BACKUP_RETENTION, name);
   }
 }
 

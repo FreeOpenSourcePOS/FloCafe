@@ -278,8 +278,9 @@ router.post(
       restorePrepared = true;
       const keepLocalBackup = isLocalBackupEnabled();
       const { backupPath } = await resetDatabaseWithBackup(getHttpRequestSignal(req));
+      let localBackupFailed = false;
       if (keepLocalBackup) {
-        retainBackupLocally(backupPath);
+        localBackupFailed = retainBackupLocally(backupPath) === null;
       } else {
         setLocalBackupEnabled(false);
       }
@@ -287,7 +288,12 @@ router.post(
       clearUserAuthCache();
       clearInMemoryRevokedTokens();
       clearJWTSecretCache();
-      res.json({ success: true, backupPath, cleanupPending: cleanup.cleanupPending });
+      res.json({
+        success: true,
+        backupPath,
+        cleanupPending: cleanup.cleanupPending,
+        localBackupFailed,
+      });
     } catch (error: any) {
       console.error('[DB Tools] initialize error:', error);
       res.status(500).json({ error: 'Initialize failed' });

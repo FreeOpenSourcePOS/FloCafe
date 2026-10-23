@@ -1161,6 +1161,30 @@ export default function POSPage() {
     }
   }, !anyModalOpen);
 
+  const tablesLoaded = tables.length > 0;
+  useEffect(() => {
+    if (!isRestaurant || cart.orderType !== 'dine_in' || !tablesRequired || !tablesLoaded) return;
+    const selected = tables.find((tbl) => tbl.id === cart.tableId);
+    const staleSelection =
+      !!selected &&
+      selected.status === 'occupied' &&
+      cart.items.length === 0 &&
+      !pendingOrder &&
+      !checkoutTable;
+    if (cart.tableId && !staleSelection) return;
+    const next = tables.find((tbl) => tbl.status === 'available' && !heldOrders.hasHeldOrder(tbl.id));
+    if (next) cart.setTableId(next.id);
+  }, [
+    isRestaurant,
+    tablesRequired,
+    tablesLoaded,
+    tables,
+    cart,
+    heldOrders,
+    pendingOrder,
+    checkoutTable,
+  ]);
+
   const validateOrderPreflight = () => {
     if (cart.items.length === 0) {
       toast.error(t('cartEmpty'));
@@ -2256,7 +2280,6 @@ export default function POSPage() {
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
-    onShowTablePicker: () => setShowTablePicker(true),
     onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
   };
@@ -2575,6 +2598,9 @@ export default function POSPage() {
       <PosTopbar
         products={products}
         onTopItemSelect={handleProductClick}
+        showTableButton={isRestaurant && cart.orderType === 'dine_in' && tablesRequired}
+        tableName={tables.find((tbl) => tbl.id === cart.tableId)?.name ?? null}
+        onShowTablePicker={() => setShowTablePicker(true)}
         onShowCashMovement={cashDrawer.openModal}
         // Re-fetch on entry: the mount snapshot can be hours stale on a
         // multi-terminal POS (backend still guards stale operations). On a

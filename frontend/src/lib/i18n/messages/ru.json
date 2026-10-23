@@ -999,6 +999,7 @@
     "selectCustomer": "Выберите клиента",
     "selectName": "Выберите {name}",
     "selectTable": "Выбрать стол",
+    "moreActions": "Другие действия",
     "selectTableFirst": "Сначала выберите стол",
     "selectionComplete": "Выбор завершен",
     "sendViaWhatsApp": "Отправить чек через WhatsApp",

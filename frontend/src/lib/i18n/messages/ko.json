@@ -999,6 +999,7 @@
     "selectCustomer": "고객 선택",
     "selectName": "{name} 선택",
     "selectTable": "테이블 선택",
+    "moreActions": "더 보기",
     "selectTableFirst": "먼저 테이블을 선택하세요",
     "selectionComplete": "선택 완료",
     "sendViaWhatsApp": "WhatsApp으로 영수증 보내기",

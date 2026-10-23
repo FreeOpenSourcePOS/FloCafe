@@ -39,6 +39,7 @@ import dynamic from 'next/dynamic';
 import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
 import { ShiftCloseModal } from '@/components/dashboard/ShiftCloseModal';
 import { useCashSession } from '@/hooks/useCashSession';
+import { usePosSortPreference } from '@/hooks/usePosSort';
 import { tenantCan } from '@/lib/permissions';
 import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
 import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
@@ -263,6 +264,7 @@ export default function POSPage() {
   // backend route gates (backend still enforces; this only hides the entry).
   const canUseShift = tenantCan(currentTenant, 'cash.shifts.view');
 
+  const { categorySort, itemSort } = usePosSortPreference();
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
@@ -2613,6 +2615,8 @@ export default function POSPage() {
             onScannedVariant={handleScannedVariant}
             onScaledProduct={(product, quantity) => cart.addItem(product, quantity)}
             sidebarOpen={leftSidebarOpen}
+            categorySort={categorySort}
+            itemSort={itemSort}
             collapseCategories
           />
         </div>

@@ -1068,6 +1068,183 @@ async function main(): Promise<void> {
       "INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US'), ('currency', 'USD'), ('timezone', 'UTC')",
     ).run();
 
+    // 5f. roundLoyaltyAmount and buildWhatsAppTemplateContext honor 3-decimal (KWD) and 0-decimal (JPY) currencies
+    {
+      assert(
+        whatsapp.roundLoyaltyAmount(12.3456, 3) === 12.346,
+        `roundLoyaltyAmount rounds to 3 decimal places when fractionDigits=3 (got ${whatsapp.roundLoyaltyAmount(12.3456, 3)})`,
+      );
+      assert(
+        whatsapp.roundLoyaltyAmount(12.6, 0) === 13,
+        `roundLoyaltyAmount rounds to 0 decimal places when fractionDigits=0 (got ${whatsapp.roundLoyaltyAmount(12.6, 0)})`,
+      );
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'KW'), ('currency', 'KWD')",
+      ).run();
+      const kwdContext = whatsapp.buildWhatsAppTemplateContext({
+        billId: 910,
+        customerId: 'cust-auto-1',
+        pointsEarned: 1.235,
+      });
+      assert(
+        kwdContext.points_earned === 1.235,
+        `buildWhatsAppTemplateContext preserves 3-decimal points_earned for KWD (got ${kwdContext.points_earned})`,
+      );
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'JP'), ('currency', 'JPY')",
+      ).run();
+      const jpyContext = whatsapp.buildWhatsAppTemplateContext({
+        billId: 910,
+        customerId: 'cust-auto-1',
+        pointsEarned: 12.6,
+      });
+      assert(
+        jpyContext.points_earned === 13,
+        `buildWhatsAppTemplateContext rounds points_earned to 0 decimals for JPY (got ${jpyContext.points_earned})`,
+      );
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('country', 'US'), ('currency', 'USD'), ('timezone', 'UTC')",
+      ).run();
+    }
+
+    // 5g. Concurrent split-bill triggerBillPaidAutomation deduplicates nth_visit while onWhatsApp is in flight
+    {
+      db.prepare(`
+        INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+        VALUES ('cust-split-nth', 'Split Milestone Guest', '+14089961099', 'US', 1, datetime('now'), datetime('now'))
+      `).run();
+      db.prepare(`
+        INSERT INTO orders (id, order_number, type, status, customer_id, subtotal, tax_amount, discount_amount, total, created_at, updated_at)
+        VALUES (9901, 'ORD-9901', 'dine_in', 'pending', 'cust-split-nth', 100, 0, 0, 100, datetime('now'), datetime('now'))
+      `).run();
+      const insertSplitBill = db.prepare(`
+        INSERT INTO bills (id, bill_number, order_id, customer_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, split_group_id, paid_at, created_at, updated_at)
+        VALUES (?, ?, 9901, 'cust-split-nth', 50, 0, 0, 50, 50, 0, 'paid', 'split-9901', datetime('now'), datetime('now'), datetime('now'))
+      `);
+      insertSplitBill.run(9901, 'BILL-9901');
+      whatsapp.saveAutomationConfig({
+        safety: { quietHoursEnabled: false, maxPerCustomerPerWeek: 10 },
+        rules: [
+          { id: 'after_payment', trigger: 'after_payment', enabled: false, templateId: 'receipt' },
+          {
+            id: 'points_threshold',
+            trigger: 'points_threshold',
+            enabled: false,
+            templateId: 'loyalty_milestone',
+            pointsThreshold: 100,
+          },
+          {
+            id: 'nth_visit',
+            trigger: 'nth_visit',
+            enabled: true,
+            templateId: 'visit_milestone',
+            nthVisit: 1,
+          },
+        ],
+      });
+      const prevOnWhatsApp = fakeSocket.onWhatsApp;
+      let releaseNthLookup!: () => void;
+      let nthLookupReached!: () => void;
+      const nthLookupGate = new Promise<void>((resolve) => {
+        releaseNthLookup = resolve;
+      });
+      const nthLookupStarted = new Promise<void>((resolve) => {
+        nthLookupReached = resolve;
+      });
+      let holdNthLookup = true;
+      fakeSocket.onWhatsApp = async (jid: string) => {
+        if (holdNthLookup) {
+          holdNthLookup = false;
+          nthLookupReached();
+          await nthLookupGate;
+        }
+        return [{ exists: true, jid }];
+      };
+      try {
+        const firstSplitAuto = whatsapp.triggerBillPaidAutomation(9901);
+        await nthLookupStarted;
+        insertSplitBill.run(9902, 'BILL-9902');
+        const secondSplitAuto = whatsapp.triggerBillPaidAutomation(9902);
+        releaseNthLookup();
+        const [res1, res2] = await Promise.all([firstSplitAuto, secondSplitAuto]);
+        const nthRows = db
+          .prepare(
+            "SELECT bill_id, status FROM whatsapp_messages WHERE customer_id = 'cust-split-nth' AND created_by_user_id = 'rule:nth_visit'",
+          )
+          .all() as Array<{ bill_id: number; status: string }>;
+        assert(
+          nthRows.length === 1,
+          `concurrent split-bill automation records exactly 1 nth_visit message for the order (got ${nthRows.length})`,
+        );
+        assert(
+          res1.triggered.includes('nth_visit') && !res2.triggered.includes('nth_visit'),
+          `only the first concurrent split bill triggers nth_visit (got ${JSON.stringify([res1.triggered, res2.triggered])})`,
+        );
+      } finally {
+        fakeSocket.onWhatsApp = prevOnWhatsApp;
+      }
+    }
+
+    // 5h. Offline mode aborts in-flight version lookup and blocks Baileys fallback version fetch
+    {
+      whatsapp.disconnect();
+      await whatsapp.enable('offline-version-abort-check');
+      let releaseVersionFetch!: () => void;
+      let versionFetchReached!: () => void;
+      const versionFetchGate = new Promise<void>((resolve) => {
+        releaseVersionFetch = resolve;
+      });
+      const versionFetchStarted = new Promise<void>((resolve) => {
+        versionFetchReached = resolve;
+      });
+      let capturedVersionSignal: AbortSignal | undefined;
+      let fallbackVersionCalls = 0;
+      const prevFetch = globalThis.fetch;
+      const prevFetchLatest = fakeBaileys.fetchLatestWaWebVersion;
+      const { notifyOfflineModeEnabled } = require('../main/services/offline-mode');
+      globalThis.fetch = (async (_url: any, init?: RequestInit) => {
+        capturedVersionSignal = init?.signal ?? undefined;
+        versionFetchReached();
+        await versionFetchGate;
+        return { ok: false } as any;
+      }) as typeof fetch;
+      fakeBaileys.fetchLatestWaWebVersion = async () => {
+        fallbackVersionCalls++;
+        return { version: [2, 3000, 1] };
+      };
+      try {
+        const connectDuringOffline = whatsapp.connectWithQr();
+        await versionFetchStarted;
+        const fallbackBeforeOffline = fallbackVersionCalls;
+        db.prepare(
+          "INSERT OR REPLACE INTO settings (key, value) VALUES ('offline_mode', 'true')",
+        ).run();
+        whatsapp.suspendForOfflineMode();
+        notifyOfflineModeEnabled();
+        const abortedAtOffline = Boolean(capturedVersionSignal?.aborted);
+        releaseVersionFetch();
+        const offlineConnectRes = await connectDuringOffline;
+        assert(
+          abortedAtOffline === true,
+          'enabling Offline mode aborts the in-flight WhatsApp version lookup signal immediately',
+        );
+        assert(
+          fallbackVersionCalls - fallbackBeforeOffline === 0,
+          `Offline mode blocks Baileys fallback version lookup after abort (got ${fallbackVersionCalls - fallbackBeforeOffline} calls)`,
+        );
+        assert(
+          offlineConnectRes.ok === false && whatsapp.getStatus().state === 'disconnected',
+          `connectWithQr aborted by Offline mode resolves disconnected (got ${JSON.stringify(offlineConnectRes)}, state=${whatsapp.getStatus().state})`,
+        );
+      } finally {
+        db.prepare(
+          "INSERT OR REPLACE INTO settings (key, value) VALUES ('offline_mode', 'false')",
+        ).run();
+        globalThis.fetch = prevFetch;
+        fakeBaileys.fetchLatestWaWebVersion = prevFetchLatest;
+      }
+    }
+
     whatsapp.disconnect();
     await whatsapp.enable('broadcast-disconnected-check');
     const disconnectedBroadcast = await whatsapp.runBroadcast({

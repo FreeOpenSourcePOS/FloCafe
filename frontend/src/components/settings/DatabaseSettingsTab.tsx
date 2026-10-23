@@ -25,6 +25,7 @@ import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { Button } from '@/components/ui/button';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
+import { LocalBackupCard } from '@/components/settings/LocalBackupCard';
 import {
   Dialog,
   DialogContent,
@@ -317,6 +318,8 @@ export function DatabaseSettingsTab({
 
   return (
     <SettingsTabShell title={t('tabBackupData')}>
+      <LocalBackupCard />
+
       {/* Database Export */}
       <div className="bg-card rounded-xl border border-border p-6">
         <div className="flex items-center gap-2 mb-4">

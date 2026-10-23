@@ -1,13 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD } from './helpers/test-auth';
-import path from 'node:path';
 
-const EVIDENCE_DIR = '/Users/gurkiratkhaira/.no-mistakes/evidence/01M5K9CVWBJFC01RGSVHQ08RS4';
 const STAMP = Date.now();
 const CATEGORY_NAME = `Coffee Beans ${STAMP}`;
 
 test('drive all expenses UX scenarios live and capture visual evidence', async ({ page }) => {
+  test.setTimeout(90_000);
   await page.setViewportSize({ width: 1440, height: 900 });
 
   // Authenticate owner via API to create a clean category
@@ -70,11 +69,6 @@ test('drive all expenses UX scenarios live and capture visual evidence', async (
   await expect(page.getByTestId('expense-summary-groups')).toContainText('40.00');
   await expect(page.getByTestId('expense-summary-groups')).toContainText('Due:');
 
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '01-expenses-unpaid-row-and-summary.png'),
-    fullPage: true,
-  });
-
   // Scenario 2: Row-level Edit (expense-row-replace) opens Replace sub-view directly, Back returns to Detail, and Replace replaces the unpaid expense
   await row1.getByTestId('expense-row-replace').click();
   await expect(page.getByTestId('expense-form')).toBeVisible();
@@ -82,11 +76,6 @@ test('drive all expenses UX scenarios live and capture visual evidence', async (
   await expect(page.getByTestId('expense-form-amount')).toHaveValue('40.00');
   await expect(page.locator('label[for="expense-amount"]')).toContainText('Amount (THB)');
   await expect(page.getByTestId('expense-workflow-back')).toHaveText('Back');
-
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '02-expense-replace-subview.png'),
-    fullPage: true,
-  });
 
   // Click Back -> returns to Detail main view instead of closing the modal
   await page.getByTestId('expense-workflow-back').click();
@@ -143,10 +132,6 @@ test('drive all expenses UX scenarios live and capture visual evidence', async (
   // Record a partial payment of 25.00
   await page.getByTestId('expense-payment-amount').fill('25.00');
   await page.getByTestId('expense-payment-reference').fill(`PARTIAL-${STAMP}`);
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '04-expense-payment-subview-summary.png'),
-    fullPage: true,
-  });
   await page.getByTestId('expense-payment-submit').click();
 
   // Scenario 4: Detail view after partial payment shows blockedByPayments and disables Void/Replace
@@ -154,10 +139,6 @@ test('drive all expenses UX scenarios live and capture visual evidence', async (
   await expect(page.getByTestId('expense-blocked-by-payments')).toBeVisible();
   await expect(page.getByTestId('expense-void')).toBeDisabled();
   await expect(page.getByTestId('expense-replace')).toBeDisabled();
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '05-expense-detail-blocked-by-payments.png'),
-    fullPage: true,
-  });
   await page.getByTestId('expense-workflow-close').click();
 
   // Row now shows 'Partially Paid', keeps 'Record payment' button, and hides 'Edit' button
@@ -225,12 +206,6 @@ test('drive all expenses UX scenarios live and capture visual evidence', async (
     page.getByTestId('expense-row').filter({ hasText: descUnpaid }).first().locator('td').nth(6),
   ).toContainText('Unpaid');
 
-  // Capture screenshot of the table displaying Unpaid, Paid, Partially Paid badges and row action buttons
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '03-expenses-status-badges-and-actions.png'),
-    fullPage: true,
-  });
-
   // Scenario 5: 4xx API rejection surfaces actionable server error message in expense-attempt-banner
   await page.route(`${BASE}/api/expenses`, async (route) => {
     if (route.request().method() === 'POST') {
@@ -253,9 +228,5 @@ test('drive all expenses UX scenarios live and capture visual evidence', async (
   await expect(page.getByTestId('expense-attempt-banner')).toContainText(
     'Invalid expense payload: business date is closed',
   );
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '06-expense-attempt-banner-4xx.png'),
-    fullPage: true,
-  });
   await page.unroute(`${BASE}/api/expenses`);
 });

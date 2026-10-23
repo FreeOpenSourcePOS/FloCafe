@@ -3,13 +3,32 @@
 import PrinterStatus from './PrinterStatus';
 import CustomerSearch from './CustomerSearch';
 import CustomerTopItems from './CustomerTopItems';
-import { Banknote, Maximize2, Minimize2, LockOpen, Lock, Printer } from 'lucide-react';
+import {
+  Banknote,
+  EllipsisVertical,
+  Maximize2,
+  Minimize2,
+  LockOpen,
+  Lock,
+  Printer,
+  UtensilsCrossed,
+} from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { Product } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 
 interface Props {
   products: Product[];
   onTopItemSelect: (product: Product) => void;
+  showTableButton: boolean;
+  tableName: string | null;
+  onShowTablePicker: () => void;
+  onActionsMenuOpenChange: (open: boolean) => void;
   onShowCashMovement: () => void;
   onShowShift: () => void;
   shiftHasOpenSession: boolean;
@@ -25,6 +44,10 @@ interface Props {
 export default function PosTopbar({
   products,
   onTopItemSelect,
+  showTableButton,
+  tableName,
+  onShowTablePicker,
+  onActionsMenuOpenChange,
   onShowCashMovement,
   onShowShift,
   shiftHasOpenSession,
@@ -50,34 +73,24 @@ export default function PosTopbar({
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onShowCashMovement}
-            className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted active:bg-muted whitespace-nowrap"
-            title={tDashboard('cashMovement')}
-            aria-label={tDashboard('cashMovement')}
-          >
-            <Banknote size={16} />
-            <span className="hidden sm:inline">{tDashboard('cashMovement')}</span>
-          </button>
-
-          {canUseShift && (
+          {showTableButton && (
             <button
               type="button"
-              onClick={onShowShift}
-              disabled={shiftLoading}
-              className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted active:bg-muted whitespace-nowrap disabled:opacity-50"
-              title={
-                shiftError ??
-                (shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift'))
-              }
-              aria-label={
-                shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')
-              }
+              onClick={onShowTablePicker}
+              data-testid="cart-table-button"
+              className="touch-target shrink-0 gap-2 rounded-lg border border-border bg-card ps-1.5 pe-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted active:bg-muted whitespace-nowrap"
+              title={t('selectTable')}
+              aria-label={tableName ? t('tableLabel', { name: tableName }) : t('selectTable')}
             >
-              {shiftHasOpenSession ? <Lock size={16} /> : <LockOpen size={16} />}
-              <span className="hidden sm:inline">
-                {shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
+              <span className="flex size-8 items-center justify-center rounded-md bg-yellow-400 text-yellow-950">
+                <UtensilsCrossed size={16} />
+              </span>
+              <span className="text-base font-bold tabular-nums">{tableName ?? '—'}</span>
+              <span
+                aria-hidden="true"
+                className="hidden sm:inline-flex rounded border border-current px-1 text-[10px] font-mono opacity-60"
+              >
+                F2
               </span>
             </button>
           )}
@@ -85,15 +98,38 @@ export default function PosTopbar({
           <div className="shrink-0">
             <PrinterStatus />
           </div>
-          <button
-            type="button"
-            onClick={onShowPrintMenu}
-            className="touch-target shrink-0 rounded-lg border border-border bg-card px-3 text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
-            title={tProducts('printMenu')}
-            aria-label={tProducts('printMenu')}
-          >
-            <Printer size={16} />
-          </button>
+          <DropdownMenu onOpenChange={onActionsMenuOpenChange}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="touch-target shrink-0 rounded-lg border border-border bg-card px-3 text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
+                title={t('moreActions')}
+                aria-label={t('moreActions')}
+              >
+                <EllipsisVertical size={16} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={onShowCashMovement}>
+                <Banknote size={16} />
+                {tDashboard('cashMovement')}
+              </DropdownMenuItem>
+              {canUseShift && (
+                <DropdownMenuItem
+                  onSelect={onShowShift}
+                  disabled={shiftLoading}
+                  title={shiftError ?? undefined}
+                >
+                  {shiftHasOpenSession ? <Lock size={16} /> : <LockOpen size={16} />}
+                  {shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={onShowPrintMenu}>
+                <Printer size={16} />
+                {tProducts('printMenu')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             type="button"
             onClick={onToggleFullscreen}

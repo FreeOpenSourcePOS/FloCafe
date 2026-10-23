@@ -4,7 +4,10 @@ import { E2E_PASSWORD, getE2eToken } from './helpers/test-auth';
 
 const evidence = process.env.FLO_E2E_EVIDENCE_DIR;
 
-test('menu modal suspends barcode scans and browser fallback includes selected details on Letter paper', async ({ page, context }) => {
+test('menu modal suspends barcode scans and browser fallback includes selected details on Letter paper', async ({
+  page,
+  context,
+}) => {
   await context.addInitScript(() => {
     window.print = () => {};
     // Keep the generated document inspectable after the stubbed print dialog returns.
@@ -14,15 +17,28 @@ test('menu modal suspends barcode scans and browser fallback includes selected d
     if (route.request().method() !== 'GET') return route.continue();
     const response = await route.fetch();
     const data = await response.json();
-    data.products = data.products.map((product: { id: string }) => product.id === 'e2e-product' ? {
-      ...product,
-      barcode: '9780123456789',
-      description: 'Fresh menu coffee',
-      addon_groups: [{ id: 'menu-milk', name: 'Milk', is_active: true, addons: [{ id: 'menu-oat', name: 'Oat milk', price: 2, is_active: true }] }],
-    } : product);
+    data.products = data.products.map((product: { id: string }) =>
+      product.id === 'e2e-product'
+        ? {
+            ...product,
+            barcode: '9780123456789',
+            description: 'Fresh menu coffee',
+            addon_groups: [
+              {
+                id: 'menu-milk',
+                name: 'Milk',
+                is_active: true,
+                addons: [{ id: 'menu-oat', name: 'Oat milk', price: 2, is_active: true }],
+              },
+            ],
+          }
+        : product,
+    );
     await route.fulfill({ response, json: data });
   });
-  await page.route('**/api/printers/print-menu', (route) => route.fulfill({ status: 502, json: { error: 'Printer offline' } }));
+  await page.route('**/api/printers/print-menu', (route) =>
+    route.fulfill({ status: 502, json: { error: 'Printer offline' } }),
+  );
   await page.goto(`${BASE}/auth/login`);
   await page.getByLabel('Email').fill('owner@flo.local');
   await page.getByLabel('Password').fill(E2E_PASSWORD);
@@ -35,10 +51,15 @@ test('menu modal suspends barcode scans and browser fallback includes selected d
     for (const key of '9780123456789') window.dispatchEvent(new KeyboardEvent('keydown', { key }));
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
   });
-  await expect(page.getByRole('heading', { name: 'E2E Coffee', exact: true, level: 2 })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'E2E Coffee', exact: true, level: 2 }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'E2E Coffee', exact: true, level: 2 })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Print Menu', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'E2E Coffee', exact: true, level: 2 }),
+  ).toHaveCount(0);
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Print Menu', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).focus();
@@ -59,12 +80,22 @@ test('menu modal suspends barcode scans and browser fallback includes selected d
   await expect(popup.getByText(/Milk: Oat milk/)).toBeVisible();
   await expect.poll(() => popup.locator('style').textContent()).toContain('size: Letter portrait');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'E2E Coffee', exact: true, level: 2 })).toHaveCount(0);
-  if (evidence) await popup.screenshot({ path: `${evidence}/print-menu-letter-browser-preview.png`, fullPage: true });
+  await expect(
+    page.getByRole('heading', { name: 'E2E Coffee', exact: true, level: 2 }),
+  ).toHaveCount(0);
+  if (evidence)
+    await popup.screenshot({
+      path: `${evidence}/print-menu-letter-browser-preview.png`,
+      fullPage: true,
+    });
   await popup.close();
 });
 
-test('print menu offers receipt, paper, and PDF destinations', async ({ page, context, request }) => {
+test('print menu offers receipt, paper, and PDF destinations', async ({
+  page,
+  context,
+  request,
+}) => {
   await context.addInitScript(() => {
     window.print = () => {};
     // Keep the generated document inspectable after the stubbed print dialog returns.
@@ -85,7 +116,8 @@ test('print menu offers receipt, paper, and PDF destinations', async ({ page, co
   await expect.poll(() => page.evaluate(() => localStorage.getItem('token'))).not.toBeNull();
   await page.goto(`${BASE}/pos`);
   await expect(page.getByRole('button', { name: /E2E Coffee/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Print Menu', exact: true }).click();
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Print Menu', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
 
@@ -115,7 +147,9 @@ test('print menu offers receipt, paper, and PDF destinations', async ({ page, co
   await expect(receiptDestination).toHaveClass(/border-brand/);
   await expect(paperDestination).toHaveAttribute('aria-checked', 'false');
   const printerPicker = dialog.getByRole('combobox', { name: 'Printer', exact: true });
-  await expect(printerPicker.getByRole('option', { name: printerName, exact: true })).toHaveCount(1);
+  await expect(printerPicker.getByRole('option', { name: printerName, exact: true })).toHaveCount(
+    1,
+  );
   await printerPicker.selectOption(printer.id);
   await expect(printerPicker).toHaveValue(printer.id);
   const rollWidth = dialog.getByRole('combobox', { name: 'Paper Size' });
@@ -123,8 +157,17 @@ test('print menu offers receipt, paper, and PDF destinations', async ({ page, co
   await rollWidth.selectOption('80');
   await expect(rollWidth).toHaveValue('80');
   await expect(dialog.getByRole('button', { name: 'Print Menu', exact: true })).toBeEnabled();
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-  if (evidence) await page.screenshot({ path: `${evidence}/print-menu-receipt-destination.png`, fullPage: true });
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  if (evidence)
+    await page.screenshot({
+      path: `${evidence}/print-menu-receipt-destination.png`,
+      fullPage: true,
+    });
 
   // Without the desktop bridge, saving as PDF still produces a printable
   // document through the browser print dialog.
@@ -135,6 +178,7 @@ test('print menu offers receipt, paper, and PDF destinations', async ({ page, co
   await expect(popup.getByRole('heading', { name: 'Menu', level: 1 })).toBeVisible();
   await expect.poll(() => popup.locator('style').textContent()).toContain('size: A4 portrait');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  if (evidence) await popup.screenshot({ path: `${evidence}/print-menu-a4-pdf-preview.png`, fullPage: true });
+  if (evidence)
+    await popup.screenshot({ path: `${evidence}/print-menu-a4-pdf-preview.png`, fullPage: true });
   await popup.close();
 });

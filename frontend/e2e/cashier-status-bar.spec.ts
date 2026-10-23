@@ -320,7 +320,8 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
       await page.waitForURL(/\/pos/, { timeout: 20000 });
 
       // Open shift close modal by clicking the shift action in topbar
-      const shiftButton = page.getByRole('button', { name: /close shift/i });
+      await page.getByRole('button', { name: 'More actions' }).click();
+      const shiftButton = page.getByRole('menuitem', { name: /close shift/i });
       await expect(shiftButton).toBeVisible();
       await shiftButton.click();
 

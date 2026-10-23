@@ -1010,6 +1010,7 @@
     "selectCustomer": "选择顾客",
     "selectName": "选择 {name}",
     "selectTable": "选择桌台",
+    "moreActions": "更多操作",
     "selectTableFirst": "请先选择桌台",
     "selectionComplete": "选择完成",
     "sendViaWhatsApp": "通过 WhatsApp 发送小票",

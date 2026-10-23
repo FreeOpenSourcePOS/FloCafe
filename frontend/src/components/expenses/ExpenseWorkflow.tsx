@@ -59,9 +59,10 @@ function readStoredAttemptState(
 interface ExpenseWorkflowProps {
   mode: 'create' | 'detail';
   expense: ExpenseRecord | null;
+  initialView?: 'main' | 'payment' | 'replace';
   categories: ExpenseCategory[];
   context: ExpenseContext;
-  minorFactor: number;
+  minorFactor?: number;
   onClose: () => void;
   /** Re-read the filtered list and summary after a committed mutation. */
   onChanged: () => void;
@@ -83,9 +84,9 @@ interface FieldErrors {
 export default function ExpenseWorkflow({
   mode,
   expense,
+  initialView,
   categories,
   context,
-  minorFactor,
   onClose,
   onChanged,
   onCategoryCreated,
@@ -106,7 +107,26 @@ export default function ExpenseWorkflow({
   const canReverse = tenantCan(currentTenant, 'expenses.reverse');
   const canMoveDrawer = tenantCan(currentTenant, 'cash.movements.manage');
 
-  const [view, setView] = useState<'main' | 'payment' | 'reverse' | 'void' | 'replace'>('main');
+  const initialViewResolved: 'main' | 'payment' | 'replace' =
+    mode === 'detail' &&
+    initialView === 'payment' &&
+    canPay &&
+    expense &&
+    expense.status === 'active' &&
+    (expense.due_minor ?? 0) > 0
+      ? 'payment'
+      : mode === 'detail' &&
+          initialView === 'replace' &&
+          canManage &&
+          expense &&
+          expense.status === 'active' &&
+          expense.paid_minor === 0
+        ? 'replace'
+        : 'main';
+
+  const [view, setView] = useState<'main' | 'payment' | 'reverse' | 'void' | 'replace'>(
+    initialViewResolved,
+  );
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [attemptState, setAttemptState] = useState<ExpenseAttemptState>(() =>
@@ -122,18 +142,43 @@ export default function ExpenseWorkflow({
   const focusAmount = () => amountFieldRef.current?.querySelector('input')?.focus();
 
   // Shared form state for create/replace, which submit the same field set.
-  const [categoryId, setCategoryId] = useState('');
+  const [categoryId, setCategoryId] = useState(() =>
+    initialViewResolved === 'replace' && expense ? expense.category_id : '',
+  );
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showNewCategory, setShowNewCategory] = useState(false);
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState<number | ''>('');
-  const [incurredOn, setIncurredOn] = useState(context.business_date);
-  const [payee, setPayee] = useState('');
-  const [notes, setNotes] = useState('');
+  const [description, setDescription] = useState(() =>
+    initialViewResolved === 'replace' && expense ? expense.description : '',
+  );
+  const [amount, setAmount] = useState<number | ''>(() => {
+    if (initialViewResolved === 'replace' && expense && expense.amount_minor !== null) {
+      const factor = getCurrencyMinorUnitFactor(expense.currency_code ?? context.currency_code);
+      return unitAdapter.toDisplay(expense.amount_minor / factor);
+    }
+    return '';
+  });
+  const [incurredOn, setIncurredOn] = useState(() =>
+    initialViewResolved === 'replace' && expense ? expense.incurred_on : context.business_date,
+  );
+  const [payee, setPayee] = useState(() =>
+    initialViewResolved === 'replace' && expense ? (expense.payee ?? '') : '',
+  );
+  const [notes, setNotes] = useState(() =>
+    initialViewResolved === 'replace' && expense ? (expense.notes ?? '') : '',
+  );
   const [reason, setReason] = useState('');
 
-  const [paymentMethod, setPaymentMethod] = useState<ExpensePaymentMethod>('cash');
-  const [paymentAmount, setPaymentAmount] = useState<number | ''>('');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] =
+    useState<ExpensePaymentMethod | null>(null);
+  const paymentMethod: ExpensePaymentMethod =
+    selectedPaymentMethod ?? (canMoveDrawer && context.cash_session_open ? 'cash' : 'card');
+  const [paymentAmount, setPaymentAmount] = useState<number | ''>(() => {
+    if (initialViewResolved === 'payment' && expense) {
+      const factor = getCurrencyMinorUnitFactor(expense.currency_code ?? context.currency_code);
+      return unitAdapter.toDisplay((expense.due_minor ?? 0) / factor);
+    }
+    return '';
+  });
   const [paymentReference, setPaymentReference] = useState('');
   const [reversalTarget, setReversalTarget] = useState<ExpensePaymentRecord | null>(null);
   const [cashReturned, setCashReturned] = useState(false);
@@ -144,28 +189,31 @@ export default function ExpenseWorkflow({
     setAttemptState({ attempt: next, storageBlocked: false });
   // The freshly loaded record wins over the list row once it is that same record.
   const record = detail && detail.id === expense?.id ? detail : expense;
+  const currencyCode = record?.currency_code ?? context.currency_code;
+  const obligationMinorFactor = getCurrencyMinorUnitFactor(currencyCode);
   const fmtMinor = (amountMinor: number | null) =>
     amountMinor === null
       ? tCommon('notAvailable')
-      : fmt(
-          amountMinor / getCurrencyMinorUnitFactor(record?.currency_code ?? context.currency_code),
-        );
+      : fmt(amountMinor / getCurrencyMinorUnitFactor(currencyCode));
 
   /** Replacing copies the source values into the fresh form. */
   const openReplace = () => {
     setErrors({});
     setReason('');
-    if (expense) {
-      setDescription(expense.description);
-      setCategoryId(expense.category_id);
+    if (record) {
+      setDescription(record.description);
+      setCategoryId(record.category_id);
       setAmount(
-        expense.amount_minor === null
+        record.amount_minor === null
           ? ''
-          : unitAdapter.toDisplay(expense.amount_minor / minorFactor),
+          : unitAdapter.toDisplay(
+              record.amount_minor /
+                getCurrencyMinorUnitFactor(record.currency_code ?? context.currency_code),
+            ),
       );
-      setIncurredOn(expense.incurred_on);
-      setPayee(expense.payee ?? '');
-      setNotes(expense.notes ?? '');
+      setIncurredOn(record.incurred_on);
+      setPayee(record.payee ?? '');
+      setNotes(record.notes ?? '');
     }
     setView('replace');
   };
@@ -266,7 +314,11 @@ export default function ExpenseWorkflow({
           }
           if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey))
             setAttempt(null);
-          setErrors({ form: t('saveFailed') });
+          const apiError = (error as { response?: { data?: { error?: unknown } } })?.response?.data
+            ?.error;
+          setErrors({
+            form: typeof apiError === 'string' && apiError.trim() ? apiError : t('saveFailed'),
+          });
           return null;
         }
       });
@@ -317,7 +369,11 @@ export default function ExpenseWorkflow({
       if (isUnresolvedExpenseFailure(error) || status === 401 || status === 403) {
         setErrors({ form: t('attemptNotice') });
       } else {
-        setErrors({ form: t('saveFailed') });
+        const apiError = (error as { response?: { data?: { error?: unknown } } })?.response?.data
+          ?.error;
+        setErrors({
+          form: typeof apiError === 'string' && apiError.trim() ? apiError : t('saveFailed'),
+        });
       }
     } finally {
       setBusy(false);
@@ -346,7 +402,7 @@ export default function ExpenseWorkflow({
     if (!description.trim()) next.description = t('descriptionRequired');
     if (!categoryId) next.category = t('categoryRequired');
     if (!incurredOn) next.date = t('dateRequired');
-    const cents = displayAmountToCents(String(amount ?? ''), unitAdapter, minorFactor);
+    const cents = displayAmountToCents(String(amount ?? ''), unitAdapter, obligationMinorFactor);
     if (cents === null || cents <= 0) next.amount = t('amountRequired');
     if (prefix === 'replace' && !reason.trim()) next.reason = t('reasonRequired');
     return next;
@@ -359,7 +415,7 @@ export default function ExpenseWorkflow({
       focusFirstError(next);
       return;
     }
-    const cents = displayAmountToCents(String(amount ?? ''), unitAdapter, minorFactor);
+    const cents = displayAmountToCents(String(amount ?? ''), unitAdapter, obligationMinorFactor);
     const result = await sendMutation('expense.create', '/expenses', {
       category_id: categoryId,
       description: description.trim(),
@@ -379,7 +435,7 @@ export default function ExpenseWorkflow({
       focusFirstError(next);
       return;
     }
-    const cents = displayAmountToCents(String(amount ?? ''), unitAdapter, minorFactor);
+    const cents = displayAmountToCents(String(amount ?? ''), unitAdapter, obligationMinorFactor);
     const result = await sendMutation('expense.replace', `/expenses/${expense.id}/replace`, {
       category_id: categoryId,
       description: description.trim(),
@@ -400,7 +456,7 @@ export default function ExpenseWorkflow({
     setPaymentAmount(unitAdapter.toDisplay((record?.due_minor ?? 0) / paymentMinorFactor));
     setPaymentReference('');
     setCashReturned(false);
-    setPaymentMethod(canMoveDrawer && context.cash_session_open ? 'cash' : 'card');
+    setSelectedPaymentMethod(null);
     setView('payment');
   };
 
@@ -494,8 +550,13 @@ export default function ExpenseWorkflow({
       setCategoryId(created.id);
       setNewCategoryName('');
       setShowNewCategory(false);
-    } catch {
-      setErrors({ form: t('addCategoryFailed') });
+    } catch (error) {
+      const apiError = (error as { response?: { data?: { error?: unknown } } })?.response?.data
+        ?.error;
+      setErrors({
+        form:
+          typeof apiError === 'string' && apiError.trim() ? apiError : t('addCategoryFailed'),
+      });
     } finally {
       setBusy(false);
     }
@@ -658,7 +719,7 @@ export default function ExpenseWorkflow({
               <div className="flex gap-3">
                 <div className="flex-1" ref={amountFieldRef}>
                   <label className="mb-1 block text-sm font-medium" htmlFor="expense-amount">
-                    {tCommon('amount')}
+                    {tCommon('amount')} ({currencyCode})
                   </label>
                   <CurrencyAmountInput
                     id="expense-amount"
@@ -874,6 +935,29 @@ export default function ExpenseWorkflow({
 
           {open === 'payment' && record && (
             <div className="space-y-3" data-testid="expense-payment-form">
+              <div
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs"
+                data-testid="expense-payment-summary"
+              >
+                <span>
+                  <span className="text-muted-foreground">{tCommon('amount')}:</span>{' '}
+                  <span className="font-semibold text-foreground">
+                    {fmtMinor(record.amount_minor)}
+                  </span>
+                </span>
+                <span>
+                  <span className="text-muted-foreground">{t('netPaid')}:</span>{' '}
+                  <span className="font-semibold text-foreground">
+                    {fmtMinor(record.paid_minor)}
+                  </span>
+                </span>
+                <span>
+                  <span className="text-muted-foreground">{t('due')}:</span>{' '}
+                  <span className="font-semibold text-foreground">
+                    {fmtMinor(record.due_minor ?? 0)}
+                  </span>
+                </span>
+              </div>
               <div>
                 <label className="mb-1 block text-sm font-medium" htmlFor="expense-payment-method">
                   {t('method')}
@@ -882,7 +966,9 @@ export default function ExpenseWorkflow({
                   id="expense-payment-method"
                   data-testid="expense-payment-method"
                   value={paymentMethod}
-                  onChange={(event) => setPaymentMethod(event.target.value as ExpensePaymentMethod)}
+                  onChange={(event) =>
+                    setSelectedPaymentMethod(event.target.value as ExpensePaymentMethod)
+                  }
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none focus:ring-2 focus:ring-brand"
                 >
                   {PAYMENT_METHODS.map((method) => (
@@ -935,25 +1021,35 @@ export default function ExpenseWorkflow({
                   className="w-full rounded-lg border border-border px-3 py-2 outline-none focus:ring-2 focus:ring-brand"
                 />
               </div>
-              <p className="rounded-lg bg-muted p-3 text-sm" data-testid="expense-payment-review">
-                {t('reviewPayment', {
-                  amount: fmtMinor(
-                    displayAmountToCents(
-                      String(paymentAmount ?? ''),
-                      unitAdapter,
-                      getCurrencyMinorUnitFactor(record.currency_code),
-                    ) ?? 0,
-                  ),
-                  method:
-                    paymentMethod === 'cash'
-                      ? tPos('methodCash')
-                      : paymentMethod === 'card'
-                        ? tPos('methodCard')
-                        : paymentMethod === 'bank_transfer'
-                          ? t('methodBankTransfer')
-                          : t('methodOther'),
-                })}
-              </p>
+              {(() => {
+                const paymentMinor =
+                  displayAmountToCents(
+                    String(paymentAmount ?? ''),
+                    unitAdapter,
+                    getCurrencyMinorUnitFactor(record.currency_code),
+                  ) ?? 0;
+                return (
+                  <p
+                    className="rounded-lg bg-muted p-3 text-sm"
+                    data-testid="expense-payment-review"
+                  >
+                    {t('reviewPayment', {
+                      amount: fmtMinor(paymentMinor),
+                      method:
+                        paymentMethod === 'cash'
+                          ? tPos('methodCash')
+                          : paymentMethod === 'card'
+                            ? tPos('methodCard')
+                            : paymentMethod === 'bank_transfer'
+                              ? t('methodBankTransfer')
+                              : t('methodOther'),
+                    })}
+                    {paymentMinor > 0 && paymentMinor < (record.due_minor ?? 0)
+                      ? ` (${t('due')}: ${fmtMinor((record.due_minor ?? 0) - paymentMinor)})`
+                      : ''}
+                  </p>
+                );
+              })()}
               {paymentMethod === 'cash' && (
                 <p
                   className="text-sm text-muted-foreground"
@@ -1038,105 +1134,141 @@ export default function ExpenseWorkflow({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border px-6 py-4">
-          <div className="flex gap-2">
-            {open === 'main' && mode === 'detail' && record && (
-              <>
-                {canPay && (
-                  <Button
-                    type="button"
-                    onClick={openPayment}
-                    disabled={busy || locked || record.status !== 'active' || !record.due_minor}
-                    data-testid="expense-record-payment"
-                  >
-                    {t('paymentTitle')}
-                  </Button>
-                )}
-                {canManage && record.status === 'active' && (
-                  <>
+        <div className="flex flex-col gap-2 border-t border-border px-6 py-4">
+          {open === 'main' &&
+            mode === 'detail' &&
+            record &&
+            canManage &&
+            record.status === 'active' &&
+            hasUnreversedPayments && (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="expense-blocked-by-payments"
+              >
+                {t('blockedByPayments')}
+              </p>
+            )}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex gap-2">
+              {open === 'main' && mode === 'detail' && record && (
+                <>
+                  {canPay && (
                     <Button
                       type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setErrors({});
-                        setReason('');
-                        setView('void');
-                      }}
-                      disabled={busy || locked || hasUnreversedPayments}
-                      title={hasUnreversedPayments ? t('blockedByPayments') : undefined}
-                      data-testid="expense-void"
+                      onClick={openPayment}
+                      disabled={busy || locked || record.status !== 'active' || !record.due_minor}
+                      data-testid="expense-record-payment"
                     >
-                      {t('voidTitle')}
+                      {t('paymentTitle')}
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={openReplace}
-                      disabled={busy || locked || hasUnreversedPayments}
-                      title={hasUnreversedPayments ? t('blockedByPayments') : undefined}
-                      data-testid="expense-replace"
-                    >
-                      {t('replaceTitle')}
-                    </Button>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
-              {tCommon('cancel')}
-            </Button>
-            {open === 'create' && (
+                  )}
+                  {canManage && record.status === 'active' && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setErrors({});
+                          setReason('');
+                          setView('void');
+                        }}
+                        disabled={busy || locked || hasUnreversedPayments}
+                        title={hasUnreversedPayments ? t('blockedByPayments') : undefined}
+                        data-testid="expense-void"
+                      >
+                        {t('voidTitle')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={openReplace}
+                        disabled={busy || locked || hasUnreversedPayments}
+                        title={hasUnreversedPayments ? t('blockedByPayments') : undefined}
+                        data-testid="expense-replace"
+                      >
+                        {t('replaceTitle')}
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="flex gap-2">
               <Button
                 type="button"
-                onClick={submitCreate}
-                disabled={busy || locked}
-                data-testid="expense-form-submit"
+                variant="ghost"
+                onClick={() => {
+                  if (mode === 'detail' && view !== 'main') {
+                    setErrors({});
+                    setView('main');
+                  } else {
+                    onClose();
+                  }
+                }}
+                disabled={busy}
+                data-testid={
+                  mode === 'detail' && view !== 'main'
+                    ? 'expense-workflow-back'
+                    : 'expense-workflow-close'
+                }
               >
-                {tCommon('save')}
+                {mode === 'create'
+                  ? tCommon('cancel')
+                  : view === 'main'
+                    ? tCommon('close')
+                    : tCommon('back')}
               </Button>
-            )}
-            {open === 'replace' && (
-              <Button
-                type="button"
-                onClick={submitReplace}
-                disabled={busy || locked}
-                data-testid="expense-form-submit"
-              >
-                {tCommon('save')}
-              </Button>
-            )}
-            {open === 'payment' && (
-              <Button
-                type="button"
-                onClick={submitPayment}
-                disabled={busy || locked || cashBlocked}
-                data-testid="expense-payment-submit"
-              >
-                {t('paymentTitle')}
-              </Button>
-            )}
-            {open === 'reverse' && (
-              <Button
-                type="button"
-                onClick={submitReversal}
-                disabled={busy || locked || cashReversalBlocked}
-                data-testid="expense-reversal-submit"
-              >
-                {t('reversalTitle')}
-              </Button>
-            )}
-            {open === 'void' && (
-              <Button
-                type="button"
-                onClick={submitVoid}
-                disabled={busy || locked}
-                data-testid="expense-void-submit"
-              >
-                {t('voidTitle')}
-              </Button>
-            )}
+              {open === 'create' && (
+                <Button
+                  type="button"
+                  onClick={submitCreate}
+                  disabled={busy || locked}
+                  data-testid="expense-form-submit"
+                >
+                  {tCommon('save')}
+                </Button>
+              )}
+              {open === 'replace' && (
+                <Button
+                  type="button"
+                  onClick={submitReplace}
+                  disabled={busy || locked}
+                  data-testid="expense-form-submit"
+                >
+                  {tCommon('save')}
+                </Button>
+              )}
+              {open === 'payment' && (
+                <Button
+                  type="button"
+                  onClick={submitPayment}
+                  disabled={busy || locked || cashBlocked}
+                  data-testid="expense-payment-submit"
+                >
+                  {t('paymentTitle')}
+                </Button>
+              )}
+              {open === 'reverse' && (
+                <Button
+                  type="button"
+                  onClick={submitReversal}
+                  disabled={busy || locked || cashReversalBlocked}
+                  data-testid="expense-reversal-submit"
+                >
+                  {t('reversalTitle')}
+                </Button>
+              )}
+              {open === 'void' && (
+                <Button
+                  type="button"
+                  onClick={submitVoid}
+                  disabled={busy || locked}
+                  data-testid="expense-void-submit"
+                >
+                  {t('voidTitle')}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -88,19 +88,18 @@ test('the expenses page owns one scroll region and shows filters plus a period-s
     'expense-filter-to',
     'expense-filter-category',
     'expense-filter-status',
-    'expense-filter-currency',
   ]) {
     await expect(page.getByTestId(id)).toBeVisible();
   }
+  await expect(page.getByTestId('expense-filter-currency')).toHaveCount(0);
 
   // Default range: the store's own business month, not the host clock.
   const context = await page.request.get(`${BASE}/api/expenses/context`, { headers });
-  const { business_date: businessDate, currency_code: currencyCode } = await context.json();
+  const { business_date: businessDate } = await context.json();
   await expect(page.getByTestId('expense-filter-from')).toHaveValue(
     `${businessDate.slice(0, 7)}-01`,
   );
   await expect(page.getByTestId('expense-filter-to')).toHaveValue(businessDate);
-  await expect(page.getByTestId('expense-filter-currency')).toContainText(currencyCode);
 
   // The summary states its basis and never reports a profit or in-period cash figure.
   const basis = page.getByTestId('expense-summary-basis');
@@ -161,11 +160,14 @@ test('recording a card payment settles the balance through the ledger', async ({
   await page.getByTestId('expense-filter-status').selectOption('all');
   const row = page.getByTestId('expense-row').filter({ hasText: DESCRIPTION }).first();
   await expect(row).toBeVisible({ timeout: 15000 });
-  await row.getByTestId('expense-open-detail').click();
+  await expect(row.getByTestId('expense-row-replace')).toBeVisible();
+  await row.getByTestId('expense-row-pay').click();
 
+  const form = page.getByTestId('expense-payment-form');
+  await expect(form).toBeVisible();
+  await page.getByTestId('expense-workflow-back').click();
   await expect(page.getByTestId('expense-detail')).toBeVisible();
   await page.getByTestId('expense-record-payment').click();
-  const form = page.getByTestId('expense-payment-form');
   await expect(form).toBeVisible();
   await page.getByTestId('expense-payment-method').selectOption('card');
   await page.getByTestId('expense-payment-reference').fill(`E2E-REF-${STAMP}`);
@@ -177,6 +179,7 @@ test('recording a card payment settles the balance through the ledger', async ({
   await expect(page.getByTestId('expense-payments-empty')).toHaveCount(0);
   await expect(page.getByTestId('expense-payment-row').first()).toContainText(FULL_AMOUNT);
   await expect(page.getByTestId('expense-detail-due')).toContainText(ZERO_AMOUNT);
+  await expect(page.getByTestId('expense-blocked-by-payments')).toBeVisible();
   expect(
     await page.evaluate((key) => window.localStorage.getItem(key), scopedAttemptKey()),
   ).toBeNull();
@@ -335,7 +338,7 @@ test('string-actor attempt clears on 4xx and create/pay, locks on 5xx, and repla
   await page.getByTestId('expense-form-amount').fill('12.00');
   await page.getByTestId('expense-form-submit').click();
 
-  await expect(page.getByTestId('expense-attempt-banner')).toBeVisible();
+  await expect(page.getByTestId('expense-attempt-banner')).toContainText('Invalid expense payload');
   expect(await page.evaluate((k) => window.localStorage.getItem(k), key)).toBeNull();
   await page.unroute(`${BASE}/api/expenses`);
 

@@ -208,20 +208,25 @@ both ending in the same write (`applyOwnerRecovery` in
 
 - **Master PIN:** `POST /api/auth/recover-password` with the owner email, the Master PIN, and the
   new password. Works offline.
-- **FloAdmin email approval:** available when cloud account services are on and the store has a
-  registered owner email (`cloudSync.isEmailRecoveryAvailable()`, advertised as
-  `cloudRecoveryAvailable` by `GET /api/auth/setup/status`). If FloAdmin has not verified that
+- **FloAdmin email approval:** available when cloud account services are on, the cloud server URL
+  is the official FloAdmin endpoint in both SQLite and active runtime state, and an active owner
+  account matches the registered owner email (`cloudSync.isEmailRecoveryAvailable()`, advertised as
+  `cloudRecoveryAvailable` by `GET /api/auth/setup/status`). Updating an active owner's email in
+  staff management keeps `settings.email` in sync, and database backup restore and import preserve
+  and resync `settings.email` from the preserved active owner account. If FloAdmin has not verified that
   email, the request first sends the verification email (`step: 'verify_email'`) and the recover
   page polls `GET /api/auth/recover-password/cloud/verification`; once verified it requests the
   reset automatically. FloAdmin then emails the registered owner a link, the POS polls the
   approval status, and after approval the owner chooses the new password on the POS.
-  `POST /api/auth/recover-password/cloud/complete` resolves the owner whose email matches the
+  `POST /api/auth/recover-password/cloud/complete` resolves the active owner whose email matches the
   registered cloud email, redeems the single-use grant with FloAdmin, and only then writes the
-  password. The password is never sent to FloAdmin. Cloud requests are signed with the
-  install's `api_key` like every other `/api/pos/*` call.
+  password. The password is never sent to FloAdmin. Recovery requests are pinned to the trusted
+  FloAdmin server URL and signed with the install's `api_key` like every other `/api/pos/*` call.
 
 If the owner email matches no active owner, nothing is redeemed. When no active administrator
-remains, either path restores owner access to the matched account.
+remains, the Master PIN path restores owner access to the matched active account; the FloAdmin
+email path always requires an active owner matching the registered email and never promotes a
+non-owner account.
 
 ## Master PIN as a second factor
 

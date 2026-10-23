@@ -34,18 +34,28 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 process.env.JWT_SECRET = 'test-secret-cloud-recovery';
 process.env.FLO_AUTH_RATE_LIMIT_MAX = '100';
 
-const express = require('express');
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
-const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
-const { authRoutes } = require('../main/routes/auth');
+const jwt = require('jsonwebtoken');
+const {
+  initDatabase,
+  getDatabase,
+  closeDatabase,
+  createBackup,
+  restoreBackup,
+  captureRestoreProtectedSettings,
+  mergeRestoreProtectedSettings,
+} = require('../main/db');
+const { authRoutes, getJWTSecret } = require('../main/routes/auth');
+const { settingsRoutes } = require('../main/routes/settings');
+const { staffRoutes } = require('../main/routes/staff');
 const {
   cloudSync,
   CloudRequestError,
   CloudSyncService,
   DEFAULT_CLOUD_SERVER_URL,
 } = require('../main/services/cloud-sync');
-const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
+const { createApp, assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
 
 function isNativeAbiMismatch(error: any): boolean {
   return (
@@ -64,9 +74,11 @@ try {
   throw error;
 }
 
-const app = express();
-app.use(express.json());
-app.use('/api/auth', authRoutes);
+const app = createApp({
+  '/api/auth': authRoutes,
+  '/api/settings': settingsRoutes,
+  '/api/staff': staffRoutes,
+});
 
 const RESET_ID = 'reset-1234-abcd';
 const ORIGINAL = 'OriginalPass123';
@@ -289,6 +301,301 @@ async function main() {
   assertOrThrow(
     rejectedRedeem instanceof CloudRequestError && rejectedRedeem.status === 403,
     'redeemPasswordReset rejects with 403 CloudRequestError on untrusted server URL',
+  );
+
+  // ── F1(a): Trust check vs in-memory server_url divergence ─────────────────
+  realCloudSync.reload();
+  realCloudSync.stop();
+  upsertSetting.run('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
+  assertEqualOrThrow(
+    realCloudSync.isTrustedRecoveryServerUrl(),
+    false,
+    'isTrustedRecoveryServerUrl rejects when in-memory server_url is untrusted despite SQLite default URL',
+  );
+  assertEqualOrThrow(
+    realCloudSync.isEmailRecoveryAvailable(),
+    false,
+    'isEmailRecoveryAvailable is false when in-memory server_url is untrusted',
+  );
+
+  let dispatchedUrls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    dispatchedUrls.push(String(input));
+    return new Response(JSON.stringify({ verified: true, reset_id: RESET_ID, status: 'pending' }), {
+      status: 200,
+    });
+  }) as typeof fetch;
+
+  try {
+    let staleMemRequestErr: unknown = null;
+    try {
+      await realCloudSync.requestPasswordReset();
+    } catch (err) {
+      staleMemRequestErr = err;
+    }
+    assertOrThrow(
+      staleMemRequestErr instanceof CloudRequestError && staleMemRequestErr.status === 403,
+      'requestPasswordReset rejects when in-memory server_url is untrusted',
+    );
+    assertEqualOrThrow(
+      dispatchedUrls.length,
+      0,
+      'no network call is dispatched when in-memory server_url is untrusted',
+    );
+
+    let staleMemVerifyErr: unknown = null;
+    try {
+      await realCloudSync.isOwnerEmailVerified();
+    } catch (err) {
+      staleMemVerifyErr = err;
+    }
+    assertOrThrow(
+      staleMemVerifyErr instanceof CloudRequestError && staleMemVerifyErr.status === 403,
+      'isOwnerEmailVerified rejects when in-memory server_url is untrusted',
+    );
+
+    realCloudSync.reload();
+    realCloudSync.stop();
+    await realCloudSync.requestPasswordReset();
+    assertEqualOrThrow(dispatchedUrls.length, 1, 'trusted recovery request dispatches one fetch');
+    assertOrThrow(
+      dispatchedUrls[0].startsWith(DEFAULT_CLOUD_SERVER_URL),
+      `trusted recovery request dispatches to DEFAULT_CLOUD_SERVER_URL (got ${dispatchedUrls[0]})`,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  // ── F1(b): POST /api/settings/cloud/register early-return before SQLite write ─
+  const ownerToken = jwt.sign(
+    { userId: 'owner-1', email: 'owner@example.com', role: 'owner' },
+    getJWTSecret(),
+    { expiresIn: '1h' },
+  );
+  upsertSetting.run('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
+  upsertSetting.run('cloud_deletion_status', 'failed');
+  upsertSetting.run('cloud_services_disabled_by_user', 'false');
+
+  res = await request(app)
+    .post('/api/settings/cloud/register')
+    .set('Authorization', `Bearer ${ownerToken}`)
+    .send({ cloud_server_url: 'https://custom-blocked.example.com' });
+  assertEqualOrThrow(
+    res.status,
+    409,
+    'POST /api/settings/cloud/register returns 409 when cloud_deletion_blocked is true',
+  );
+  const storedUrlAfterBlockedRegister = (
+    db.prepare("SELECT value FROM settings WHERE key = 'cloud_server_url'").get() as
+      | { value: string }
+      | undefined
+  )?.value;
+  assertEqualOrThrow(
+    storedUrlAfterBlockedRegister,
+    DEFAULT_CLOUD_SERVER_URL,
+    'blocked cloud register does not write cloud_server_url to SQLite before early return',
+  );
+  upsertSetting.run('cloud_deletion_status', '');
+
+  // ── F1(c): Manager cannot overwrite cloud credentials or server URL ───────
+  db.prepare(
+    `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES ('manager-1', 'Manager', 'manager@example.com', ?, 'manager', 1, datetime('now'), datetime('now'))`,
+  ).run(bcrypt.hashSync('ManagerPass123', 10));
+  const managerToken = jwt.sign(
+    { userId: 'manager-1', email: 'manager@example.com', role: 'manager' },
+    getJWTSecret(),
+    { expiresIn: '1h' },
+  );
+
+  upsertSetting.run('cloud_api_key', 'owner-api-key');
+  upsertSetting.run('cloud_store_id', 'owner-store-id');
+  upsertSetting.run('cloud_server_url', 'https://custom-owner.example.com');
+
+  res = await request(app)
+    .put('/api/settings/cloud')
+    .set('Authorization', `Bearer ${managerToken}`)
+    .send({ cloud_api_key: 'attacker-api-key' });
+  assertEqualOrThrow(res.status, 403, 'manager cannot overwrite cloud_api_key via PUT /cloud');
+
+  res = await request(app)
+    .put('/api/settings/cloud')
+    .set('Authorization', `Bearer ${managerToken}`)
+    .send({ cloud_store_id: 'attacker-store-id' });
+  assertEqualOrThrow(res.status, 403, 'manager cannot overwrite cloud_store_id via PUT /cloud');
+
+  res = await request(app)
+    .put('/api/settings/cloud')
+    .set('Authorization', `Bearer ${managerToken}`)
+    .send({ cloud_server_url: DEFAULT_CLOUD_SERVER_URL });
+  assertEqualOrThrow(
+    res.status,
+    403,
+    'manager cannot reset cloud_server_url to DEFAULT_CLOUD_SERVER_URL via PUT /cloud',
+  );
+
+  res = await request(app)
+    .post('/api/settings/cloud/register')
+    .set('Authorization', `Bearer ${managerToken}`)
+    .send({ cloud_server_url: DEFAULT_CLOUD_SERVER_URL });
+  assertEqualOrThrow(
+    res.status,
+    403,
+    'manager cannot set cloud_server_url via POST /cloud/register',
+  );
+
+  assertEqualOrThrow(
+    (
+      db.prepare("SELECT value FROM settings WHERE key = 'cloud_api_key'").get() as {
+        value: string;
+      }
+    ).value,
+    'owner-api-key',
+    'cloud_api_key remains unchanged after rejected manager requests',
+  );
+  assertEqualOrThrow(
+    (
+      db.prepare("SELECT value FROM settings WHERE key = 'cloud_store_id'").get() as {
+        value: string;
+      }
+    ).value,
+    'owner-store-id',
+    'cloud_store_id remains unchanged after rejected manager requests',
+  );
+  assertEqualOrThrow(
+    (
+      db.prepare("SELECT value FROM settings WHERE key = 'cloud_server_url'").get() as {
+        value: string;
+      }
+    ).value,
+    'https://custom-owner.example.com',
+    'cloud_server_url remains unchanged after rejected manager requests',
+  );
+
+  res = await request(app)
+    .put('/api/settings/cloud')
+    .set('Authorization', `Bearer ${managerToken}`)
+    .send({ cloud_sync_enabled: true, cloud_orders_enabled: true });
+  assertEqualOrThrow(
+    res.status,
+    200,
+    'manager with cloud.manage can still toggle cloud sync/orders flags',
+  );
+
+  res = await request(app)
+    .put('/api/settings/cloud')
+    .set('Authorization', `Bearer ${ownerToken}`)
+    .send({
+      cloud_server_url: DEFAULT_CLOUD_SERVER_URL,
+      cloud_api_key: 'owner-api-key',
+      cloud_store_id: 'owner-store-id',
+    });
+  assertEqualOrThrow(
+    res.status,
+    200,
+    'owner can update cloud_server_url, cloud_api_key, and cloud_store_id',
+  );
+  cloudSync.stop();
+  realCloudSync.reload();
+  realCloudSync.stop();
+
+  // ── F2(a): Staff email update keeps settings.email in sync ────────────────
+  res = await request(app)
+    .put('/api/staff/owner-1')
+    .set('Authorization', `Bearer ${ownerToken}`)
+    .send({ email: 'new-owner@example.com' });
+  assertEqualOrThrow(res.status, 200, 'owner email update via PUT /api/staff/:id succeeds');
+  assertEqualOrThrow(
+    realCloudSync.getRegisteredOwnerEmail(),
+    'new-owner@example.com',
+    'PUT /api/staff/:id syncs settings.email when active owner email changes',
+  );
+  assertEqualOrThrow(
+    realCloudSync.isEmailRecoveryAvailable(),
+    true,
+    'email recovery remains available after owner email update',
+  );
+
+  // ── F2(b): Backup restore & protected settings preserve/resync owner email ─
+  db.prepare("UPDATE settings SET value = 'stale@backup.example.com' WHERE key = 'email'").run();
+  const staleBackup = await createBackup(path.join(testDir, 'stale-email-backup.db'));
+  // Restore live state to new-owner@example.com, then restore staleBackup.path
+  upsertSetting.run('email', 'new-owner@example.com');
+  const preservedSettings = captureRestoreProtectedSettings(db);
+  upsertSetting.run('email', 'stale@backup.example.com');
+  mergeRestoreProtectedSettings(db, preservedSettings);
+  assertEqualOrThrow(
+    realCloudSync.getRegisteredOwnerEmail(),
+    'new-owner@example.com',
+    'captureRestoreProtectedSettings and mergeRestoreProtectedSettings preserve settings.email',
+  );
+
+  const restoreRes = restoreBackup(staleBackup.path);
+  assertEqualOrThrow(restoreRes.success, true, 'restoreBackup succeeds');
+  assertEqualOrThrow(
+    realCloudSync.getRegisteredOwnerEmail(),
+    'new-owner@example.com',
+    'restoreBackup preserves active owner email in settings.email over stale backup email',
+  );
+  fs.rmSync(staleBackup.path, { force: true });
+
+  // ── F2(c): Recovery precheck & stranded store non-owner escalation guard ──
+  const postRestoreDb = getDatabase();
+  postRestoreDb
+    .prepare(
+      `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+       VALUES ('cashier-1', 'Cashier', 'cashier@example.com', ?, 'cashier', 1, datetime('now'), datetime('now'))`,
+    )
+    .run(bcrypt.hashSync('CashierPass123', 10));
+
+  postRestoreDb
+    .prepare("UPDATE settings SET value = 'cashier@example.com' WHERE key = 'email'")
+    .run();
+  assertEqualOrThrow(
+    realCloudSync.isEmailRecoveryAvailable(),
+    false,
+    'isEmailRecoveryAvailable is false when settings.email matches only a non-owner account',
+  );
+
+  registeredEmail = 'cashier@example.com';
+  res = await request(app).post(`${cloud}/request`).send({});
+  assertEqualOrThrow(
+    res.status,
+    409,
+    'POST /recover-password/cloud/request rejects when registered email does not match an active owner',
+  );
+
+  // Strand the store by denying administrative permissions on owner-1.
+  for (const permissionId of ['settings.manage', 'staff.operational.manage']) {
+    postRestoreDb
+      .prepare(
+        `INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+         VALUES ('owner-1', ?, 'deny', 'owner-1', datetime('now'), datetime('now'))`,
+      )
+      .run(permissionId);
+  }
+  const callsBeforeStranded = redeemCalls;
+  res = await request(app)
+    .post(`${cloud}/complete`)
+    .send({ reset_id: RESET_ID, new_password: 'EscalatedPassword123' });
+  assertEqualOrThrow(
+    res.status,
+    404,
+    'POST /recover-password/cloud/complete refuses to match a non-owner even when the store is stranded',
+  );
+  assertEqualOrThrow(
+    redeemCalls,
+    callsBeforeStranded,
+    'stranded non-owner complete attempt does not consume the reset grant',
+  );
+  const cashierRole = (
+    postRestoreDb.prepare("SELECT role FROM users WHERE id = 'cashier-1'").get() as { role: string }
+  ).role;
+  assertEqualOrThrow(
+    cashierRole,
+    'cashier',
+    'cashier-1 is not promoted to owner on a stranded store via stale cloud email',
   );
 }
 

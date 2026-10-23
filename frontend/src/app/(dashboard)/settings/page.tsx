@@ -993,12 +993,14 @@ export default function SettingsPage() {
     setPinGate({ mode: 'delete-backup', payload: { fileName: backup.fileName } });
   };
 
+  const initializeLocalBackupFailedRef = useRef(false);
   const handleInitializeDatabase = async (pin: string) => {
     try {
       const { data } = await api.post('/db-tools/initialize', {
         master_pin: pin,
         confirmation_phrase: 'INITIALIZE',
       });
+      initializeLocalBackupFailedRef.current = data.localBackupFailed === true;
       return { success: true, backupPath: data.backupPath };
     } catch {
       return { success: false, error: t('initializeFailedGeneric') };
@@ -6599,7 +6601,11 @@ export default function SettingsPage() {
         onConfirm={handleInitializeDatabase}
         onSuccess={() => {
           toast.success(t('dbInitializedRedirecting'));
-          setTimeout(() => window.location.replace('/setup'), 1200);
+          const localBackupFailed = initializeLocalBackupFailedRef.current;
+          if (localBackupFailed) {
+            toast.error(t('initializeLocalBackupFailed'), { duration: 6000 });
+          }
+          setTimeout(() => window.location.replace('/setup'), localBackupFailed ? 6000 : 1200);
         }}
       />
       <CurrencyResetDialog

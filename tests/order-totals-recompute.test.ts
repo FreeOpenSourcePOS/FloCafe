@@ -27,6 +27,24 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-order-totals-recompute-'));
+const ROOT = path.join(__dirname, '..');
+const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));
+const zustandPath = frontendRequire.resolve('zustand');
+const originalResolveFilename = Module._resolveFilename;
+Module._resolveFilename = function (
+  request: string,
+  parent: unknown,
+  isMain: boolean,
+  options?: unknown,
+) {
+  const resolvedRequest =
+    request === 'zustand'
+      ? zustandPath
+      : request.startsWith('@/')
+        ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+        : request;
+  return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+};
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron')
     return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
@@ -54,6 +72,8 @@ const { orderRoutes, resetPinRateLimitForTests } = require('../main/routes/order
 const { billRoutes } = require('../main/routes/bills');
 const { recomputeOrderTotals } = require('../main/services/orders');
 const { registerRoutes } = require('../main/routes/index');
+const { useCartStore } = require('../frontend/src/store/cart');
+const { cartItemToOrderItem } = require('../frontend/src/lib/cart-order-item');
 const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
 const testTaxPack = {
   ...dualRatePackData,
@@ -805,6 +825,177 @@ async function main() {
         }),
         'flat 20.20 discount on 100.10 item uses Decimal subtraction for 4.00 tax (83.90 total)',
       );
+    }
+
+    console.log('\n─── PATCH /:id/customer preserves saved packVersion after tax-pack update ───');
+    {
+      seedProduct(db, 'prod-cust-1000', 'cat-totals', 'Thousand', 1000, taxable);
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('state_code', 'MH', datetime('now'))",
+      ).run();
+      try {
+        db.exec('ALTER TABLE customers ADD COLUMN tax_registration_number TEXT');
+      } catch {}
+      try {
+        db.exec('ALTER TABLE customers ADD COLUMN customer_state_code TEXT');
+      } catch {}
+      db.prepare(
+        "INSERT INTO customers (id, name, phone, created_at, updated_at) VALUES ('cust-b2c', 'Ordinary Customer', '+919876543210', datetime('now'), datetime('now'))",
+      ).run();
+      db.prepare(
+        "INSERT INTO customers (id, name, phone, tax_registration_number, customer_state_code, created_at, updated_at) VALUES ('cust-b2b-ka', 'Interstate Customer', '+919876543211', 'GSTIN-KA-001', 'KA', datetime('now'), datetime('now'))",
+      ).run();
+
+      const created = await createOrder({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-cust-1000', quantity: 1 }],
+      });
+      assertEqualOrThrow(created.status, 201, 'order created under pack v1.0.0');
+      const orderId = created.data.order.id;
+      const bill = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: orderId },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(bill.status, 201, 'unpaid bill generated under pack v1.0.0');
+      const billId = bill.data.bill.id;
+
+      // Activate version 1.0.1 with doubled rates (5% + 5% = 10% intra-state, 10% inter-state).
+      const upgradedPack = {
+        ...testTaxPack,
+        version: '1.0.1',
+        rules: testTaxPack.rules.map((r: any) => ({
+          ...r,
+          rate: r.id === 'rate-c' ? '10' : '5',
+        })),
+      };
+      installAndActivateTestTaxPack(db, upgradedPack);
+
+      // 1. Attaching an ordinary B2C customer must not recalculate item tax to v1.0.1.
+      const attachB2c = await api(baseUrl, `/api/orders/${orderId}/customer`, {
+        method: 'PATCH',
+        body: { customer_id: 'cust-b2c' },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(attachB2c.status, 200, 'ordinary customer attached after pack upgrade');
+      const afterB2cOrder = db
+        .prepare('SELECT tax_amount, total, tax_snapshot FROM orders WHERE id = ?')
+        .get(orderId) as any;
+      const afterB2cBill = db
+        .prepare('SELECT tax_amount, total FROM bills WHERE id = ?')
+        .get(billId) as any;
+      assertEqualOrThrow(afterB2cOrder.tax_amount, 50, 'order tax stays 50 under v1.0.0');
+      assertEqualOrThrow(afterB2cOrder.total, 1050, 'order total stays 1050 under v1.0.0');
+      assertEqualOrThrow(afterB2cBill.tax_amount, 50, 'unpaid bill tax stays 50 under v1.0.0');
+      assertEqualOrThrow(afterB2cBill.total, 1050, 'unpaid bill total stays 1050 under v1.0.0');
+      assertEqualOrThrow(
+        JSON.parse(afterB2cOrder.tax_snapshot)[0].packVersion,
+        '1.0.0',
+        'order tax_snapshot preserves packVersion 1.0.0',
+      );
+
+      // 2. Switching to an inter-state B2B customer re-evaluates rules against saved v1.0.0 (5% Tax C, not 10%).
+      const attachB2b = await api(baseUrl, `/api/orders/${orderId}/customer`, {
+        method: 'PATCH',
+        body: { customer_id: 'cust-b2b-ka' },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(attachB2b.status, 200, 'inter-state B2B customer attached');
+      const afterB2bOrder = db
+        .prepare('SELECT tax_amount, total, tax_breakdown, tax_snapshot FROM orders WHERE id = ?')
+        .get(orderId) as any;
+      assertEqualOrThrow(
+        afterB2bOrder.tax_amount,
+        50,
+        'inter-state B2B recalculation uses v1.0.0 rate (50), not v1.0.1 (100)',
+      );
+      assertEqualOrThrow(afterB2bOrder.total, 1050, 'inter-state B2B order total stays 1050');
+      assertEqualOrThrow(
+        JSON.parse(afterB2bOrder.tax_snapshot)[0].packVersion,
+        '1.0.0',
+        'inter-state B2B recalculation preserves packVersion 1.0.0',
+      );
+      assertEqualOrThrow(
+        JSON.stringify(
+          JSON.parse(afterB2bOrder.tax_breakdown).map((g: any[]) =>
+            g.map((c: any) => [c.title, c.rate, c.amount]),
+          ),
+        ),
+        '[[["Tax C",5,50]]]',
+        'inter-state B2B breakdown switches to v1.0.0 Tax C at 5%',
+      );
+
+      // Restore v1.0.0 as active for any subsequent checks.
+      installAndActivateTestTaxPack(db, testTaxPack);
+    }
+
+    console.log(
+      '\n─── KWD 3-decimal cart price overrides (1.234 and 0.004) flow into orders and bills ───',
+    );
+    {
+      const setSetting = (k: string, v: string) =>
+        db
+          .prepare(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+          )
+          .run(k, v);
+      setSetting('country', 'KW');
+      setSetting('currency', 'KWD');
+      setSetting('taxes_enabled', 'false');
+      seedProduct(db, 'prod-kwd-coffee', 'cat-totals', 'KWD Coffee', 2.5);
+
+      const kwdProduct = {
+        id: 'prod-kwd-coffee',
+        name: 'KWD Coffee',
+        price: 2.5,
+        sale_unit: 'each',
+      };
+      useCartStore.getState().clearCart();
+      useCartStore.getState().addItem(kwdProduct, 1);
+      useCartStore.getState().setItemPriceOverride(useCartStore.getState().items[0].id, {
+        price: 1.234,
+        reason: 'KWD 3-decimal override',
+      });
+      const payload1234 = cartItemToOrderItem(useCartStore.getState().items[0]);
+      assertEqualOrThrow(
+        payload1234.price_override?.price,
+        1.234,
+        'cartItemToOrderItem preserves 1.234 KWD override',
+      );
+      const order1234 = await createOrder({ type: 'takeaway', items: [payload1234] });
+      assertEqualOrThrow(order1234.status, 201, '1.234 KWD order created');
+      assertEqualOrThrow(order1234.data.order.total, 1.234, '1.234 KWD order total is 1.234');
+      const bill1234 = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: order1234.data.order.id },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(bill1234.status, 201, '1.234 KWD bill generated');
+      assertEqualOrThrow(bill1234.data.bill.subtotal, 1.234, '1.234 KWD bill subtotal is 1.234');
+      assertEqualOrThrow(bill1234.data.bill.total, 1.234, '1.234 KWD bill total is 1.234');
+
+      useCartStore.getState().setItemPriceOverride(useCartStore.getState().items[0].id, {
+        price: 0.004,
+        reason: 'Four fils override',
+      });
+      const payload0004 = cartItemToOrderItem(useCartStore.getState().items[0]);
+      assertEqualOrThrow(
+        payload0004.price_override?.price,
+        0.004,
+        'cartItemToOrderItem preserves 0.004 KWD override',
+      );
+      const order0004 = await createOrder({ type: 'takeaway', items: [payload0004] });
+      assertEqualOrThrow(order0004.status, 201, '0.004 KWD order created');
+      assertEqualOrThrow(order0004.data.order.total, 0.004, '0.004 KWD order total is 0.004');
+      const bill0004 = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: order0004.data.order.id },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(bill0004.status, 201, '0.004 KWD bill generated');
+      assertEqualOrThrow(bill0004.data.bill.subtotal, 0.004, '0.004 KWD bill subtotal is 0.004');
+      assertEqualOrThrow(bill0004.data.bill.total, 0.004, '0.004 KWD bill total is 0.004');
+      useCartStore.getState().clearCart();
     }
   } finally {
     server.close();

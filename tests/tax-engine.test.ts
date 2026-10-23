@@ -6,6 +6,7 @@ import Decimal from 'decimal.js';
 import {
   TaxEngine,
   applyPayableRounding,
+  resolvePayableIncrement,
   resolveTaxCategory,
   type TaxEngineLine,
 } from '../main/services/tax-engine';
@@ -1084,4 +1085,110 @@ test('allocateDocumentTaxRounding applies order discount ratio before document l
   );
   const parsedLineRepeating = JSON.parse(lineScopedRepeating[0]);
   assert.equal(parsedLineRepeating.lines[0].taxAmount, '0.81');
+});
+
+test('3-decimal (KWD, BHD, OMR, JOD, TND) and 0-decimal (JPY, KRW, VND, COP) currency precision and Japan pack', () => {
+  const genericPack: CountryPack = {
+    ...packWith([
+      { id: 'vat-5', label: 'VAT', type: 'percent', categoryIds: ['standard'], rate: '5' },
+    ]),
+    currency: 'XXX',
+  };
+
+  for (const code of ['KWD', 'BHD', 'OMR', 'JOD', 'TND']) {
+    assert.equal(
+      resolvePayableIncrement(genericPack, code),
+      '0.001',
+      `${code} resolves to 0.001 payable increment on generic XXX pack`,
+    );
+    const exact3dp = applyPayableRounding(1.234, genericPack, code);
+    assert.equal(exact3dp.total, 1.234, `${code} preserves 1.234 payable total`);
+    assert.equal(exact3dp.adjustment, 0);
+    const fourFils = applyPayableRounding(0.004, genericPack, code);
+    assert.equal(fourFils.total, 0.004, `${code} preserves 0.004 payable total`);
+    assert.equal(fourFils.adjustment, 0);
+
+    const calc3dp = TaxEngine.calculate({
+      pack: genericPack,
+      currency: code,
+      country: 'KW',
+      transactionDate: '2026-07-27',
+      lines: [
+        line({
+          unitPrice: '1.234',
+          productCategoryId: 'standard',
+          taxBehavior: 'exclusive',
+        }),
+      ],
+    });
+    assert.equal(calc3dp.lines[0].grossAmount, '1.234');
+    assert.equal(calc3dp.lines[0].taxableBase, '1.234');
+    assert.equal(calc3dp.lines[0].taxAmount, '0.062');
+    assert.equal(calc3dp.taxAmount, '0.062');
+    assert.equal(calc3dp.payableTotal, '1.296');
+  }
+
+  for (const code of ['JPY', 'KRW', 'VND', 'COP']) {
+    assert.equal(
+      resolvePayableIncrement(genericPack, code),
+      '1',
+      `${code} resolves to whole-unit payable increment '1' on generic XXX pack`,
+    );
+    const rounded0dp = applyPayableRounding(1080.4, genericPack, code);
+    assert.equal(rounded0dp.total, 1080, `${code} rounds payable total to whole unit`);
+    assert.equal(rounded0dp.adjustment, 0);
+
+    const calc0dp = TaxEngine.calculate({
+      pack: genericPack,
+      currency: code,
+      country: 'JP',
+      transactionDate: '2026-07-27',
+      lines: [
+        line({
+          unitPrice: '105',
+          productCategoryId: 'standard',
+          taxBehavior: 'exclusive',
+        }),
+      ],
+    });
+    assert.equal(calc0dp.taxAmount, '5');
+    assert.equal(calc0dp.payableTotal, '110');
+    assert.equal(calc0dp.payableRoundingAdjustment, '0');
+  }
+
+  const japanPack = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '../main/tax-packs/community-japan.json'), 'utf8'),
+  ) as CountryPack;
+  assert.equal(japanPack.country, 'JP');
+  assert.equal(japanPack.currency, 'JPY');
+  assert.equal(resolvePayableIncrement(japanPack, 'JPY'), '1');
+
+  const jpCalc = TaxEngine.calculate({
+    pack: japanPack,
+    currency: 'JPY',
+    country: 'JP',
+    transactionDate: '2026-08-24',
+    lines: [
+      line({
+        lineId: 'dine-in-ramen',
+        unitPrice: '1100',
+        productCategoryId: 'standard',
+        taxBehavior: 'inclusive',
+      }),
+      line({
+        lineId: 'takeaway-bento',
+        unitPrice: '1080',
+        productCategoryId: 'takeaway',
+        taxBehavior: 'inclusive',
+      }),
+    ],
+  });
+  assert.equal(jpCalc.snapshot.taxRounding.decimalPlaces, 0);
+  assert.equal(jpCalc.snapshot.payableRounding.increment, '1');
+  assert.equal(jpCalc.lines[0].taxableBase, '1000');
+  assert.equal(jpCalc.lines[0].taxAmount, '100');
+  assert.equal(jpCalc.lines[1].taxableBase, '1000');
+  assert.equal(jpCalc.lines[1].taxAmount, '80');
+  assert.equal(jpCalc.taxAmount, '180');
+  assert.equal(jpCalc.payableTotal, '2180');
 });

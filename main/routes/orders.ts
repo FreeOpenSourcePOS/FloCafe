@@ -25,6 +25,7 @@ import {
   combineItemAndChargeTaxes,
   getActiveCountryPack,
   getConfiguredChargeTaxCategories,
+  getCountryPackByVersion,
   invertTaxBreakdown,
   invertTaxSnapshot,
   normalizeChargeAmount,
@@ -3095,6 +3096,11 @@ router.patch(
           );
         }
 
+        const oldCustomer = currentOrder.customer_id
+          ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+              | Customer
+              | undefined) ?? null)
+          : null;
         const customer = customer_id
           ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id) as
               | Customer
@@ -3113,7 +3119,16 @@ router.patch(
         };
 
         if (tenantInfo.taxes_enabled) {
-          const activePack = getActiveCountryPack(tenantInfo.country);
+          const oldRegNum =
+            oldCustomer?.taxRegistrationNumber || oldCustomer?.tax_registration_number;
+          const oldCustomerState = oldCustomer?.customer_state_code ?? undefined;
+          const oldIsB2B = Boolean(oldRegNum && oldCustomerState);
+          const newRegNum = customer?.taxRegistrationNumber || customer?.tax_registration_number;
+          const newCustomerState = customer?.customer_state_code ?? undefined;
+          const newIsB2B = Boolean(newRegNum && newCustomerState);
+          const customerTaxContextUnchanged =
+            oldIsB2B === newIsB2B && (oldCustomerState ?? null) === (newCustomerState ?? null);
+
           const itemRows = db
             .prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid ASC')
             .all(req.params.id) as Array<{
@@ -3123,89 +3138,117 @@ router.patch(
             status: string | null;
             tax_snapshot: string | null;
           }>;
-          const updateItemTax = db.prepare(
-            `UPDATE order_items
-             SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, tax_type = ?, total = ?, updated_at = ?
-             WHERE id = ?`,
+          const activeItemRows = itemRows.filter(
+            (item) =>
+              item.status === null ||
+              item.status === undefined ||
+              !isTerminalItemStatus(item.status),
           );
-          for (const item of itemRows) {
-            if (
-              item.status !== null &&
-              item.status !== undefined &&
-              isTerminalItemStatus(item.status)
-            ) {
-              continue;
-            }
-            if (!item.tax_snapshot) continue;
-            let savedSnapshot: {
-              packId?: string;
-              lines?: Array<{
-                categoryId?: string | null;
-                categorySource?: string;
-                taxBehavior?: 'exclusive' | 'inclusive' | 'exempt';
-              }>;
-              merchantOverridesApplied?: unknown[];
-            } | null = null;
-            try {
-              savedSnapshot =
-                typeof item.tax_snapshot === 'string'
-                  ? JSON.parse(item.tax_snapshot)
-                  : item.tax_snapshot;
-            } catch {
-              continue;
-            }
-            const savedLine = Array.isArray(savedSnapshot?.lines) ? savedSnapshot.lines[0] : null;
-            if (
-              !savedLine?.categoryId ||
-              !activePack ||
-              (savedSnapshot?.packId && activePack.id !== savedSnapshot.packId) ||
-              !activePack.categories.some((cat) => cat.id === savedLine.categoryId)
-            ) {
-              continue;
-            }
-            const effectiveProduct: Parameters<typeof calculateItemTax>[1] = {
-              tax_type: 'exclusive',
-              tax_rate: 0,
-              tax_category_id: savedLine.categoryId,
-              tax_category: savedLine.categoryId,
-              tax_behavior: savedLine.taxBehavior || 'country_default',
-            };
-            const itemSubtotal = Number(item.subtotal || 0);
-            const taxResult = calculateItemTax(
-              tenantInfo,
-              effectiveProduct,
-              itemSubtotal,
-              customer,
-            );
-            if (
-              taxResult.tax_snapshot &&
-              Array.isArray((taxResult.tax_snapshot as { lines?: unknown[] }).lines) &&
-              (taxResult.tax_snapshot as { lines: Array<Record<string, unknown>> }).lines[0]
-            ) {
-              if (savedLine.categorySource) {
-                (
-                  taxResult.tax_snapshot as { lines: Array<Record<string, unknown>> }
-                ).lines[0].categorySource = savedLine.categorySource;
+          const allActiveItemsHaveValidTaxSnapshot =
+            activeItemRows.length > 0 &&
+            activeItemRows.every((item) => {
+              if (!item.tax_snapshot) return false;
+              try {
+                const parsed =
+                  typeof item.tax_snapshot === 'string'
+                    ? JSON.parse(item.tax_snapshot)
+                    : item.tax_snapshot;
+                return Boolean(
+                  parsed &&
+                  typeof parsed === 'object' &&
+                  Array.isArray(parsed.lines) &&
+                  parsed.lines[0]?.categoryId,
+                );
+              } catch {
+                return false;
               }
-              if (Array.isArray(savedSnapshot?.merchantOverridesApplied)) {
-                (taxResult.tax_snapshot as Record<string, unknown>).merchantOverridesApplied =
-                  savedSnapshot.merchantOverridesApplied;
-              }
-            }
-            const itemTotal =
-              itemSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
-            const itemTaxSnapshotJson = taxResult.tax_snapshot
-              ? JSON.stringify(taxResult.tax_snapshot)
-              : null;
-            updateItemTax.run(
-              taxResult.tax_amount,
-              JSON.stringify(taxResult.tax_breakdown),
-              itemTaxSnapshotJson,
-              taxResult.tax_type,
-              itemTotal,
-              nowStr,
-              item.id,
+            });
+
+          if (!(customerTaxContextUnchanged && allActiveItemsHaveValidTaxSnapshot)) {
+            const updateItemTax = db.prepare(
+              `UPDATE order_items
+               SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, tax_type = ?, total = ?, updated_at = ?
+               WHERE id = ?`,
             );
+            for (const item of activeItemRows) {
+              if (!item.tax_snapshot) continue;
+              let savedSnapshot: {
+                packId?: string;
+                packVersion?: string;
+                lines?: Array<{
+                  categoryId?: string | null;
+                  categorySource?: string;
+                  taxBehavior?: 'exclusive' | 'inclusive' | 'exempt';
+                }>;
+                merchantOverridesApplied?: unknown[];
+              } | null = null;
+              try {
+                savedSnapshot =
+                  typeof item.tax_snapshot === 'string'
+                    ? JSON.parse(item.tax_snapshot)
+                    : item.tax_snapshot;
+              } catch {
+                continue;
+              }
+              const savedLine = Array.isArray(savedSnapshot?.lines) ? savedSnapshot.lines[0] : null;
+              const itemPack = getCountryPackByVersion(
+                savedSnapshot?.packId,
+                savedSnapshot?.packVersion,
+                tenantInfo.country,
+              );
+              if (
+                !savedLine?.categoryId ||
+                !itemPack ||
+                (savedSnapshot?.packId && itemPack.id !== savedSnapshot.packId) ||
+                !itemPack.categories.some((cat) => cat.id === savedLine.categoryId)
+              ) {
+                continue;
+              }
+              const effectiveProduct: Parameters<typeof calculateItemTax>[1] = {
+                tax_type: 'exclusive',
+                tax_rate: 0,
+                tax_category_id: savedLine.categoryId,
+                tax_category: savedLine.categoryId,
+                tax_behavior: savedLine.taxBehavior || 'country_default',
+              };
+              const itemSubtotal = Number(item.subtotal || 0);
+              const taxResult = calculateItemTax(
+                tenantInfo,
+                effectiveProduct,
+                itemSubtotal,
+                customer,
+                itemPack,
+              );
+              if (
+                taxResult.tax_snapshot &&
+                Array.isArray((taxResult.tax_snapshot as { lines?: unknown[] }).lines) &&
+                (taxResult.tax_snapshot as { lines: Array<Record<string, unknown>> }).lines[0]
+              ) {
+                if (savedLine.categorySource) {
+                  (
+                    taxResult.tax_snapshot as { lines: Array<Record<string, unknown>> }
+                  ).lines[0].categorySource = savedLine.categorySource;
+                }
+                if (Array.isArray(savedSnapshot?.merchantOverridesApplied)) {
+                  (taxResult.tax_snapshot as Record<string, unknown>).merchantOverridesApplied =
+                    savedSnapshot.merchantOverridesApplied;
+                }
+              }
+              const itemTotal =
+                itemSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
+              const itemTaxSnapshotJson = taxResult.tax_snapshot
+                ? JSON.stringify(taxResult.tax_snapshot)
+                : null;
+              updateItemTax.run(
+                taxResult.tax_amount,
+                JSON.stringify(taxResult.tax_breakdown),
+                itemTaxSnapshotJson,
+                taxResult.tax_type,
+                itemTotal,
+                nowStr,
+                item.id,
+              );
+            }
           }
         }
 

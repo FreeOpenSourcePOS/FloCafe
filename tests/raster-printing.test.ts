@@ -12,16 +12,45 @@ import {
   rasterWebUsbPathEnabled,
   type RasterBand,
 } from '../shared/print/raster';
-import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '../shared/print/thermal-capabilities';
-import { buildBillDocument, buildKotDocument, isKotDocument, isPrintDocument } from '../shared/print/document';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  type ThermalPrinterCapabilities,
+} from '../shared/print/thermal-capabilities';
+import { paintRasterRequest, type RasterCanvas } from '../shared/print/raster-canvas';
+import {
+  buildBillDocument,
+  buildKotDocument,
+  isKotDocument,
+  isPrintDocument,
+} from '../shared/print/document';
 import { resolveTenantCurrency } from '../main/countries';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
-import { getSupportedPrinterProfiles, dotsForPaperWidth, capabilitiesForPrinter } from '../main/printers/profiles';
-import { buildEscPos, escPosToText, financialRows, itemRows, normalizeThermalText, resolvePrinterContext } from '../main/printers/thermal';
+import {
+  getSupportedPrinterProfiles,
+  dotsForPaperWidth,
+  capabilitiesForPrinter,
+  resolvePrinterProfile,
+} from '../main/printers/profiles';
+import {
+  buildEscPos,
+  escPosToText,
+  financialRows,
+  itemRows,
+  normalizeThermalText,
+  pluginReceiptLines,
+  receiptDocumentLines,
+  resolvePrinterContext,
+} from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
 import { buildKotPrintData, renderKotDocumentToLines } from '../main/printers/document-kot';
-import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from '../main/printers/document-classic';
-import { renderBillDocumentToCompactLines, renderCompactReceiptViaDocument } from '../main/printers/document-compact';
+import {
+  renderBillDocumentToClassicLines,
+  renderClassicReceiptViaDocument,
+} from '../main/printers/document-classic';
+import {
+  renderBillDocumentToCompactLines,
+  renderCompactReceiptViaDocument,
+} from '../main/printers/document-compact';
 import {
   ChromiumRasterRenderer,
   getSharedRasterRenderer,
@@ -29,18 +58,25 @@ import {
   rasterRendererHtml,
   renderRasterSemanticUnit,
   renderUnsupportedRasterLines,
+  whenRasterRendererReady,
 } from '../main/printers/raster-renderer';
 
 function loadFrontendRasterEncoder(): typeof import('../frontend/src/lib/printer/raster-encoder') {
   const path = require('node:path') as typeof import('node:path');
   const moduleApi = require('node:module') as { _resolveFilename: (...args: any[]) => string };
   const originalResolveFilename = moduleApi._resolveFilename;
-  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
-    const resolvedRequest = request === '@print/raster'
-      ? path.resolve(__dirname, '../shared/print/raster.ts')
-      : request === '@print/thermal-capabilities'
-        ? path.resolve(__dirname, '../shared/print/thermal-capabilities.ts')
-        : request;
+  moduleApi._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
+    const resolvedRequest =
+      request === '@print/raster'
+        ? path.resolve(__dirname, '../shared/print/raster.ts')
+        : request === '@print/thermal-capabilities'
+          ? path.resolve(__dirname, '../shared/print/thermal-capabilities.ts')
+          : request;
     return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
   };
   try {
@@ -54,7 +90,12 @@ function loadFrontendPrintDocument(): typeof import('../frontend/src/lib/printer
   const path = require('node:path') as typeof import('node:path');
   const moduleApi = require('node:module') as { _resolveFilename: (...args: any[]) => string };
   const originalResolveFilename = moduleApi._resolveFilename;
-  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  moduleApi._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
     let resolvedRequest = request;
     if (request === '@countries') {
       resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
@@ -86,16 +127,36 @@ function capability(): ThermalPrinterCapabilities {
 }
 
 async function run(): Promise<void> {
-  const twoRows: RasterBand = { widthDots: 9, heightDots: 2, pixels: Uint8Array.from([1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1]) };
+  const twoRows: RasterBand = {
+    widthDots: 9,
+    heightDots: 2,
+    pixels: Uint8Array.from([1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1]),
+  };
   const unit = { unitId: 'row-1', financial: false, complete: true, bands: [twoRows] } as const;
-  assert.deepEqual(Array.from(encodeGsV0Band(twoRows, 2)), [
-    0x1D, 0x76, 0x30, 0x00, 0x02, 0x00, 0x02, 0x00,
-    0x81, 0x80, 0x40, 0x80,
-  ]);
-  assert.throws(() => encodeGsV0Band({ ...twoRows, heightDots: 3, pixels: new Uint8Array(27) }, 2), /maximum height/);
-  assert.throws(() => encodeGsV0Band({ ...twoRows, pixels: new Uint8Array(1) }, 2), /one value per pixel/);
-  assert.throws(() => encodeGsV0Band({ widthDots: 524288, heightDots: 1, pixels: new Uint8Array(524288) }), /GS v 0 limit/);
-  assert.throws(() => encodeGsV0Band({ widthDots: 8, heightDots: 65536, pixels: new Uint8Array(8 * 65536) }, 0xFFFF), /GS v 0 limit/);
+  assert.deepEqual(
+    Array.from(encodeGsV0Band(twoRows, 2)),
+    [0x1d, 0x76, 0x30, 0x00, 0x02, 0x00, 0x02, 0x00, 0x81, 0x80, 0x40, 0x80],
+  );
+  assert.throws(
+    () => encodeGsV0Band({ ...twoRows, heightDots: 3, pixels: new Uint8Array(27) }, 2),
+    /maximum height/,
+  );
+  assert.throws(
+    () => encodeGsV0Band({ ...twoRows, pixels: new Uint8Array(1) }, 2),
+    /one value per pixel/,
+  );
+  assert.throws(
+    () => encodeGsV0Band({ widthDots: 524288, heightDots: 1, pixels: new Uint8Array(524288) }),
+    /GS v 0 limit/,
+  );
+  assert.throws(
+    () =>
+      encodeGsV0Band(
+        { widthDots: 8, heightDots: 65536, pixels: new Uint8Array(8 * 65536) },
+        0xffff,
+      ),
+    /GS v 0 limit/,
+  );
   assert.throws(() => encodeGsV0Band(twoRows, 0x10000), /maximum raster band height/);
 
   const caps = capability();
@@ -105,30 +166,153 @@ async function run(): Promise<void> {
   assert.equal(rasterWebUsbPathEnabled(caps, true, undefined), false);
   assert.equal(rasterWebUsbPathEnabled(caps, true, 'validated-profile'), true);
   assert.equal(rasterCapabilityEnabled(GENERIC_THERMAL_CAPABILITIES), false);
-  assert.equal(getSupportedPrinterProfiles().every((profile) => profile.capabilities.raster.enabled === true), true);
-  assert.equal(isPrintDocument({
-    version: 1,
-    direction: { base: 'ltr', document: 'ltr', block: 'ltr', value: 'ltr' },
-    languages: ['en'],
-    blocks: [],
-  }), false);
-  const printDocument = buildBillDocument({
-    isReprint: false,
-    order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', deliveryAddress: '', items: [] },
-    bill: { billNumber: '', subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
-    business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
-  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: 'USD', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  assert.equal(
+    getSupportedPrinterProfiles().every((profile) => profile.capabilities.raster.enabled === true),
+    true,
+  );
+  assert.equal(
+    isPrintDocument({
+      version: 1,
+      direction: { base: 'ltr', document: 'ltr', block: 'ltr', value: 'ltr' },
+      languages: ['en'],
+      blocks: [],
+    }),
+    false,
+  );
+  const printDocument = buildBillDocument(
+    {
+      isReprint: false,
+      order: {
+        orderNumber: '',
+        createdAt: '',
+        tableName: '',
+        onlinePlatform: '',
+        externalOrderId: '',
+        deliveryAddress: '',
+        items: [],
+      },
+      bill: {
+        billNumber: '',
+        subtotal: 0,
+        discountAmount: 0,
+        taxAmount: 0,
+        total: 0,
+        taxComponents: [],
+        payments: [],
+        pointsEarned: 0,
+        pointsRedeemed: 0,
+        pointsBalance: null,
+      },
+      business: {
+        name: '',
+        address: '',
+        phone: '',
+        taxRegistrationNumber: '',
+        taxIdLabel: '',
+        instagramHandle: '',
+        footerNote: '',
+        customerName: '',
+        customerPhone: '',
+        showName: true,
+        showAddress: false,
+        showPhone: false,
+        showTaxId: 'never',
+        showTaxBreakdown: false,
+        showTableNumber: false,
+        showCustomerName: false,
+        showCustomerPhone: false,
+      },
+    },
+    {
+      columns: 42,
+      languages: ['en'],
+      baseDirection: 'ltr',
+      locale: 'en-US',
+      currency: 'USD',
+      currencySymbol: '$',
+      trimDecimals: false,
+      resolveLabel: (conceptId) => conceptId,
+    },
+  );
   assert.equal(isPrintDocument(printDocument), true);
-  assert.equal(isPrintDocument({ ...printDocument, blocks: printDocument.blocks.slice(0, -1) }), false);
-  assert.equal(isPrintDocument({ ...printDocument, blocks: [...printDocument.blocks, printDocument.blocks[0]] }), false);
+  assert.equal(
+    isPrintDocument({ ...printDocument, blocks: printDocument.blocks.slice(0, -1) }),
+    false,
+  );
+  assert.equal(
+    isPrintDocument({
+      ...printDocument,
+      blocks: [...printDocument.blocks, printDocument.blocks[0]],
+    }),
+    false,
+  );
   const longAddon = 'ASCII addon content that must remain available to pixel wrapping';
-  const longInstruction = 'ASCII instruction content that must remain available to pixel wrapping 2';
-  const sourceDocument = buildBillDocument({
-    isReprint: false,
-    order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', deliveryAddress: '', items: [{ productName: 'فارسی محصول', quantity: 1, unitPrice: 1, total: 1, addons: [{ name: longAddon, price: 1, quantity: 1 }], specialInstructions: longInstruction }] },
-    bill: { billNumber: '', subtotal: 1, discountAmount: 0, taxAmount: 0, total: 1, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
-    business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
-  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: 'USD', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  const longInstruction =
+    'ASCII instruction content that must remain available to pixel wrapping 2';
+  const sourceDocument = buildBillDocument(
+    {
+      isReprint: false,
+      order: {
+        orderNumber: '',
+        createdAt: '',
+        tableName: '',
+        onlinePlatform: '',
+        externalOrderId: '',
+        deliveryAddress: '',
+        items: [
+          {
+            productName: 'فارسی محصول',
+            quantity: 1,
+            unitPrice: 1,
+            total: 1,
+            addons: [{ name: longAddon, price: 1, quantity: 1 }],
+            specialInstructions: longInstruction,
+          },
+        ],
+      },
+      bill: {
+        billNumber: '',
+        subtotal: 1,
+        discountAmount: 0,
+        taxAmount: 0,
+        total: 1,
+        taxComponents: [],
+        payments: [],
+        pointsEarned: 0,
+        pointsRedeemed: 0,
+        pointsBalance: null,
+      },
+      business: {
+        name: '',
+        address: '',
+        phone: '',
+        taxRegistrationNumber: '',
+        taxIdLabel: '',
+        instagramHandle: '',
+        footerNote: '',
+        customerName: '',
+        customerPhone: '',
+        showName: true,
+        showAddress: false,
+        showPhone: false,
+        showTaxId: 'never',
+        showTaxBreakdown: false,
+        showTableNumber: false,
+        showCustomerName: false,
+        showCustomerPhone: false,
+      },
+    },
+    {
+      columns: 42,
+      languages: ['en'],
+      baseDirection: 'ltr',
+      locale: 'en-US',
+      currency: 'USD',
+      currencySymbol: '$',
+      trimDecimals: false,
+      resolveLabel: (conceptId) => conceptId,
+    },
+  );
   const sourceGroups: any[] = [];
   const sourceLines = renderBillDocumentToClassicLines(sourceDocument, {
     columns: 42,
@@ -143,24 +327,98 @@ async function run(): Promise<void> {
     rasterGroups: sourceGroups,
   });
   const sourceRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      sourceRequests.push(rasterRequest);
-      return { version: 1, requestId: (rasterRequest as any).requestId, ok: true, unit: { unitId: (rasterRequest as any).requestId, financial: false, complete: true, bands: [twoRows] } };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        sourceRequests.push(rasterRequest);
+        return {
+          version: 1,
+          requestId: (rasterRequest as any).requestId,
+          ok: true,
+          unit: {
+            unitId: (rasterRequest as any).requestId,
+            financial: false,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  }, sourceLines, caps, 'source-siblings', sourceGroups);
-  assert.equal(sourceRequests.some((request) => request.text.includes(longAddon)), true);
-  assert.equal(sourceRequests.some((request) => request.text.includes(longInstruction)), true);
+    sourceLines,
+    caps,
+    'source-siblings',
+    sourceGroups,
+  );
+  assert.equal(
+    sourceRequests.some((request) => request.text.includes(longAddon)),
+    true,
+  );
+  assert.equal(
+    sourceRequests.some((request) => request.text.includes(longInstruction)),
+    true,
+  );
   const addonRequest = sourceRequests.find((request) => request.text.includes(longAddon));
   assert.equal(addonRequest?.layout?.kind, 'financial-summary');
   assert.equal(addonRequest?.layout?.columns.at(-1)?.align, 'right');
-  assert.equal(sourceRequests.find((request) => request.text.includes(longInstruction))?.layout, undefined);
-  const compactDocument = buildBillDocument({
-    isReprint: true,
-    order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: 'کافه', externalOrderId: 'K-7', deliveryAddress: '', items: [] },
-    bill: { billNumber: '', subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
-    business: { name: 'فروشگاه فارسی', address: 'آدرس فارسی', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: 'پیام فارسی', customerName: '', customerPhone: '', showName: true, showAddress: true, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
-  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: 'USD', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  assert.equal(
+    sourceRequests.find((request) => request.text.includes(longInstruction))?.layout,
+    undefined,
+  );
+  const compactDocument = buildBillDocument(
+    {
+      isReprint: true,
+      order: {
+        orderNumber: '',
+        createdAt: '',
+        tableName: '',
+        onlinePlatform: 'کافه',
+        externalOrderId: 'K-7',
+        deliveryAddress: '',
+        items: [],
+      },
+      bill: {
+        billNumber: '',
+        subtotal: 0,
+        discountAmount: 0,
+        taxAmount: 0,
+        total: 0,
+        taxComponents: [],
+        payments: [],
+        pointsEarned: 0,
+        pointsRedeemed: 0,
+        pointsBalance: null,
+      },
+      business: {
+        name: 'فروشگاه فارسی',
+        address: 'آدرس فارسی',
+        phone: '',
+        taxRegistrationNumber: '',
+        taxIdLabel: '',
+        instagramHandle: '',
+        footerNote: 'پیام فارسی',
+        customerName: '',
+        customerPhone: '',
+        showName: true,
+        showAddress: true,
+        showPhone: false,
+        showTaxId: 'never',
+        showTaxBreakdown: false,
+        showTableNumber: false,
+        showCustomerName: false,
+        showCustomerPhone: false,
+      },
+    },
+    {
+      columns: 42,
+      languages: ['en'],
+      baseDirection: 'ltr',
+      locale: 'en-US',
+      currency: 'USD',
+      currencySymbol: '$',
+      trimDecimals: false,
+      resolveLabel: (conceptId) => conceptId,
+    },
+  );
   const compactGroups: any[] = [];
   renderBillDocumentToCompactLines(compactDocument, {
     columns: 42,
@@ -174,7 +432,9 @@ async function run(): Promise<void> {
     capabilities: caps,
     rasterGroups: compactGroups,
   });
-  const compactBusinessGroups = compactGroups.filter((group) => group.groupId === 'business-header');
+  const compactBusinessGroups = compactGroups.filter(
+    (group) => group.groupId === 'business-header',
+  );
   const compactMessageGroups = compactGroups.filter((group) => group.groupId === 'message');
   assert.equal(compactBusinessGroups.length, 2);
   assert.equal(compactBusinessGroups[0].lineIndex < compactBusinessGroups[1].lineIndex, true);
@@ -194,25 +454,58 @@ async function run(): Promise<void> {
     rasterGroups: classicHeaderGroups,
   });
   const classicHeaderRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      classicHeaderRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { unitId: (rasterRequest as any).requestId, financial: false, complete: true, bands: [twoRows] } };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        classicHeaderRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: {
+            unitId: (rasterRequest as any).requestId,
+            financial: false,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  }, classicHeaderLines, caps, 'classic-header', classicHeaderGroups);
-  const addressRequest = classicHeaderRequests.find((request) => request.text.includes('آدرس فارسی'));
+    classicHeaderLines,
+    caps,
+    'classic-header',
+    classicHeaderGroups,
+  );
+  const addressRequest = classicHeaderRequests.find((request) =>
+    request.text.includes('آدرس فارسی'),
+  );
   assert.equal(addressRequest?.align, 'center');
-  assert.equal(classicHeaderRequests.some((request) => request.text.startsWith('** ') && request.text.endsWith(' **')), true);
+  assert.equal(
+    classicHeaderRequests.some(
+      (request) => request.text.startsWith('** ') && request.text.endsWith(' **'),
+    ),
+    true,
+  );
   const longFinancialLabel = 'برچسب مالی بسیار طولانی برای مبلغ نهایی';
   const longFinancialDocument = {
     ...compactDocument,
-    blocks: compactDocument.blocks.map((block) => block.kind === 'totals'
-      ? {
-        ...block,
-        subtotal: { ...block.subtotal, amount: 1.23, label: { ...block.subtotal.label, primary: longFinancialLabel } },
-        grandTotal: { ...block.grandTotal, amount: 2.34, label: { ...block.grandTotal.label, primary: 'جمع کل' } },
-      }
-      : block),
+    blocks: compactDocument.blocks.map((block) =>
+      block.kind === 'totals'
+        ? {
+            ...block,
+            subtotal: {
+              ...block.subtotal,
+              amount: 1.23,
+              label: { ...block.subtotal.label, primary: longFinancialLabel },
+            },
+            grandTotal: {
+              ...block.grandTotal,
+              amount: 2.34,
+              label: { ...block.grandTotal.label, primary: 'جمع کل' },
+            },
+          }
+        : block,
+    ),
   };
   const longFinancialGroups: any[] = [];
   const longFinancialLines = renderBillDocumentToClassicLines(longFinancialDocument, {
@@ -228,24 +521,55 @@ async function run(): Promise<void> {
     rasterGroups: longFinancialGroups,
   });
   const longFinancialRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      longFinancialRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { unitId: (rasterRequest as any).requestId, financial: true, complete: true, bands: [twoRows] } };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        longFinancialRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: {
+            unitId: (rasterRequest as any).requestId,
+            financial: true,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  }, longFinancialLines, caps, 'long-financial-source', longFinancialGroups);
-  assert.equal(longFinancialRequests.some((request) => request.text.includes(longFinancialLabel) && request.text.includes('$1.23')), true);
-  assert.equal(longFinancialRequests.some((request) => request.text === 'جمع کل $2.34' && request.style === 'bold'), true);
+    longFinancialLines,
+    caps,
+    'long-financial-source',
+    longFinancialGroups,
+  );
+  assert.equal(
+    longFinancialRequests.some(
+      (request) => request.text.includes(longFinancialLabel) && request.text.includes('$1.23'),
+    ),
+    true,
+  );
+  assert.equal(
+    longFinancialRequests.some(
+      (request) => request.text === 'جمع کل $2.34' && request.style === 'bold',
+    ),
+    true,
+  );
   const emptyClassicDocument = {
     ...compactDocument,
-    blocks: compactDocument.blocks.map((block) => block.kind === 'item-table'
-      ? { ...block, header: {
-        ...block.header,
-        item: { ...block.header.item, primary: 'مورد' },
-        quantity: { ...block.header.quantity, primary: 'تعداد' },
-        amount: { ...block.header.amount, primary: 'مبلغ' },
-      } }
-      : block),
+    blocks: compactDocument.blocks.map((block) =>
+      block.kind === 'item-table'
+        ? {
+            ...block,
+            header: {
+              ...block.header,
+              item: { ...block.header.item, primary: 'مورد' },
+              quantity: { ...block.header.quantity, primary: 'تعداد' },
+              amount: { ...block.header.amount, primary: 'مبلغ' },
+            },
+          }
+        : block,
+    ),
   };
   const emptyClassicGroups: any[] = [];
   const emptyClassicLines = renderBillDocumentToClassicLines(emptyClassicDocument, {
@@ -261,27 +585,56 @@ async function run(): Promise<void> {
     rasterGroups: emptyClassicGroups,
   });
   const emptyClassicRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      emptyClassicRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { unitId: (rasterRequest as any).requestId, financial: false, complete: true, bands: [twoRows] } };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        emptyClassicRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: {
+            unitId: (rasterRequest as any).requestId,
+            financial: false,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  }, emptyClassicLines, caps, 'empty-classic-header', emptyClassicGroups);
-  assert.equal(emptyClassicRequests.some((request) => request.text.includes('مورد')), true);
+    emptyClassicLines,
+    caps,
+    'empty-classic-header',
+    emptyClassicGroups,
+  );
+  assert.equal(
+    emptyClassicRequests.some((request) => request.text.includes('مورد')),
+    true,
+  );
   const cashTenderPaymentDocument = {
     ...compactDocument,
-    blocks: compactDocument.blocks.map((block) => block.kind === 'payments'
-      ? {
-        ...block,
-        lines: [{
-          method: 'cash',
-          label: { conceptId: 'pos.methodCash', primary: 'مدفوع' },
-          amount: 12.34,
-          tendered: { label: { conceptId: 'receipt.cashReceived', primary: 'دریافتی' }, amount: 20 },
-          change: { label: { conceptId: 'pos.changeReturned', primary: 'بازگشتی' }, amount: 7.66 },
-        }],
-      }
-      : block),
+    blocks: compactDocument.blocks.map((block) =>
+      block.kind === 'payments'
+        ? {
+            ...block,
+            lines: [
+              {
+                method: 'cash',
+                label: { conceptId: 'pos.methodCash', primary: 'مدفوع' },
+                amount: 12.34,
+                tendered: {
+                  label: { conceptId: 'receipt.cashReceived', primary: 'دریافتی' },
+                  amount: 20,
+                },
+                change: {
+                  label: { conceptId: 'pos.changeReturned', primary: 'بازگشتی' },
+                  amount: 7.66,
+                },
+              },
+            ],
+          }
+        : block,
+    ),
   };
   for (const [renderer, render] of [
     ['classic', renderBillDocumentToClassicLines],
@@ -303,34 +656,67 @@ async function run(): Promise<void> {
     } as any);
     const paymentGroup = paymentGroups.find((group) => group.groupId === 'payments');
     assert(paymentGroup, `${renderer} emits a payments raster group`);
-    assert.equal(paymentGroup.financial, true, `${renderer} marks the complete payment group financial`);
+    assert.equal(
+      paymentGroup.financial,
+      true,
+      `${renderer} marks the complete payment group financial`,
+    );
     const paymentRequests: any[] = [];
-    await renderUnsupportedRasterLines({
-      render: async (rasterRequest) => {
-        paymentRequests.push(rasterRequest);
-        return {
-          version: 1 as const,
-          requestId: (rasterRequest as any).requestId,
-          ok: true as const,
-          unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true },
-        };
+    await renderUnsupportedRasterLines(
+      {
+        render: async (rasterRequest) => {
+          paymentRequests.push(rasterRequest);
+          return {
+            version: 1 as const,
+            requestId: (rasterRequest as any).requestId,
+            ok: true as const,
+            unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true },
+          };
+        },
       },
-    }, paymentLines, caps, `${renderer}-payment-source`, [paymentGroup]);
+      paymentLines,
+      caps,
+      `${renderer}-payment-source`,
+      [paymentGroup],
+    );
     const paymentRequestText = JSON.stringify(paymentRequests.map((request) => request.text));
-    assert.equal(paymentRequests.some((request) => request.text === 'مدفوع $12.34'), true, paymentRequestText);
-    assert.equal(paymentRequests.some((request) => request.text === 'دریافتی $20.00'), true, paymentRequestText);
-    assert.equal(paymentRequests.some((request) => request.text === 'بازگشتی $7.66'), true, paymentRequestText);
-    assert.equal(paymentRequests.some((request) => request.text.includes(':')), false);
+    assert.equal(
+      paymentRequests.some((request) => request.text === 'مدفوع $12.34'),
+      true,
+      paymentRequestText,
+    );
+    assert.equal(
+      paymentRequests.some((request) => request.text === 'دریافتی $20.00'),
+      true,
+      paymentRequestText,
+    );
+    assert.equal(
+      paymentRequests.some((request) => request.text === 'بازگشتی $7.66'),
+      true,
+      paymentRequestText,
+    );
+    assert.equal(
+      paymentRequests.some((request) => request.text.includes(':')),
+      false,
+    );
   }
   const financialDocument = {
     ...compactDocument,
-    blocks: compactDocument.blocks.map((block) => block.kind === 'totals'
-      ? {
-        ...block,
-        pointsRedeemed: { label: { ...block.grandTotal.label, primary: 'نقاط مستردة' }, points: 5 },
-        grandTotal: { ...block.grandTotal, label: { ...block.grandTotal.label, primary: 'جمع کل' } },
-      }
-      : block),
+    blocks: compactDocument.blocks.map((block) =>
+      block.kind === 'totals'
+        ? {
+            ...block,
+            pointsRedeemed: {
+              label: { ...block.grandTotal.label, primary: 'نقاط مستردة' },
+              points: 5,
+            },
+            grandTotal: {
+              ...block.grandTotal,
+              label: { ...block.grandTotal.label, primary: 'جمع کل' },
+            },
+          }
+        : block,
+    ),
   };
   const financialGroups: any[] = [];
   const financialLines = renderBillDocumentToClassicLines(financialDocument, {
@@ -347,12 +733,23 @@ async function run(): Promise<void> {
     rasterGroups: financialGroups,
   });
   const financialRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      financialRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        financialRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: { ...unit, unitId: (rasterRequest as any).requestId },
+        };
+      },
     },
-  }, financialLines, caps, 'financial-source', [financialGroups.find((group) => group.groupId === 'totals')]);
+    financialLines,
+    caps,
+    'financial-source',
+    [financialGroups.find((group) => group.groupId === 'totals')],
+  );
   const grandTotalRequests = financialRequests.filter((request) => request.text === 'جمع کل $0.00');
   assert.equal(grandTotalRequests.length, 1);
   assert.equal(grandTotalRequests[0].style, 'bold');
@@ -361,48 +758,89 @@ async function run(): Promise<void> {
     { text: 'نقاط مستردة', align: 'left', widthRatio: 30 / 42 },
     { text: '-5 pts', align: 'right', widthRatio: 12 / 42 },
   ]);
-  assert.equal(financialRequests.some((request) => request.text.includes(':')), false);
-  const kotDocument = buildKotDocument({
-    stationName: 'ایستگاه',
-    order: { orderNumber: 'K-1', createdAt: '2026-01-01T12:00:00.000Z', tableName: '', orderType: '' },
-    items: [],
-  }, {
-    columns: 42,
-    languages: ['fa'],
-    baseDirection: 'rtl',
-    locale: 'fa-IR',
-    currency: '',
-    currencySymbol: '',
-    trimDecimals: false,
-    resolveLabel: (conceptId) => conceptId,
-  });
+  assert.equal(
+    financialRequests.some((request) => request.text.includes(':')),
+    false,
+  );
+  const kotDocument = buildKotDocument(
+    {
+      stationName: 'ایستگاه',
+      order: {
+        orderNumber: 'K-1',
+        createdAt: '2026-01-01T12:00:00.000Z',
+        tableName: '',
+        orderType: '',
+      },
+      items: [],
+    },
+    {
+      columns: 42,
+      languages: ['fa'],
+      baseDirection: 'rtl',
+      locale: 'fa-IR',
+      currency: '',
+      currencySymbol: '',
+      trimDecimals: false,
+      resolveLabel: (conceptId) => conceptId,
+    },
+  );
   assert.equal(isKotDocument(kotDocument), true);
-  assert.equal(isKotDocument({ ...kotDocument, blocks: [kotDocument.blocks[1], kotDocument.blocks[0]] }), false);
-  assert.equal(isKotDocument({ ...kotDocument, blocks: [...kotDocument.blocks, kotDocument.blocks[1]] }), false);
+  assert.equal(
+    isKotDocument({ ...kotDocument, blocks: [kotDocument.blocks[1], kotDocument.blocks[0]] }),
+    false,
+  );
+  assert.equal(
+    isKotDocument({ ...kotDocument, blocks: [...kotDocument.blocks, kotDocument.blocks[1]] }),
+    false,
+  );
   assert.equal(isKotDocument({ ...kotDocument, blocks: [kotDocument.blocks[0]] }), false);
-  const frontendKotDocument = loadFrontendPrintDocument().buildFrontendKotDocument({
-    order_number: 'K-2',
-    created_at: '2026-01-01T12:00:00.000Z',
-    items: [{ product_name: 'Tea', quantity: 1, status: 'pending', addons: '[{"name":"Extra sauce","quantity":2}]', special_instructions: null }],
-  } as any, {
-    stationName: 'Main Kitchen',
-    columns: 42,
-    language: 'en',
-  });
-  const frontendKotItems = frontendKotDocument.blocks.find((block) => block.kind === 'kot-items') as any;
-  assert.deepEqual(frontendKotItems.rows[0].addons.map((addon: any) => ({ text: addon.text, quantity: addon.quantity })), [{ text: 'Extra sauce', quantity: 2 }]);
-  const frontendKotHydratedFields = loadFrontendPrintDocument().buildFrontendKotDocument({
-    order_number: 'K-3',
-    created_at: '2026-01-01T12:00:00.000Z',
-    table_name: 'T-7',
-    customer_name: 'Asha',
-    items: [],
-  } as any, {
-    stationName: 'Main Kitchen',
-    columns: 42,
-    language: 'en',
-  });
-  const frontendKotHeader = frontendKotHydratedFields.blocks.find((block) => block.kind === 'kot-header') as any;
+  const frontendKotDocument = loadFrontendPrintDocument().buildFrontendKotDocument(
+    {
+      order_number: 'K-2',
+      created_at: '2026-01-01T12:00:00.000Z',
+      items: [
+        {
+          product_name: 'Tea',
+          quantity: 1,
+          status: 'pending',
+          addons: '[{"name":"Extra sauce","quantity":2}]',
+          special_instructions: null,
+        },
+      ],
+    } as any,
+    {
+      stationName: 'Main Kitchen',
+      columns: 42,
+      language: 'en',
+    },
+  );
+  const frontendKotItems = frontendKotDocument.blocks.find(
+    (block) => block.kind === 'kot-items',
+  ) as any;
+  assert.deepEqual(
+    frontendKotItems.rows[0].addons.map((addon: any) => ({
+      text: addon.text,
+      quantity: addon.quantity,
+    })),
+    [{ text: 'Extra sauce', quantity: 2 }],
+  );
+  const frontendKotHydratedFields = loadFrontendPrintDocument().buildFrontendKotDocument(
+    {
+      order_number: 'K-3',
+      created_at: '2026-01-01T12:00:00.000Z',
+      table_name: 'T-7',
+      customer_name: 'Asha',
+      items: [],
+    } as any,
+    {
+      stationName: 'Main Kitchen',
+      columns: 42,
+      language: 'en',
+    },
+  );
+  const frontendKotHeader = frontendKotHydratedFields.blocks.find(
+    (block) => block.kind === 'kot-header',
+  ) as any;
   assert.equal(frontendKotHeader.table.name.text, 'T-7');
   assert.equal(frontendKotHeader.customer.name.text, 'Asha');
   const kotLines = renderKotDocumentToLines(kotDocument, {
@@ -414,89 +852,216 @@ async function run(): Promise<void> {
     cutMode: 'full',
     capabilities: caps,
   });
-  assert.equal(kotLines.some((line) => line.includes('ایستگاه')), true);
+  assert.equal(
+    kotLines.some((line) => line.includes('ایستگاه')),
+    true,
+  );
   const longUnsupportedName = 'فارسی خیلی طولانی برای اندازه‌گیری';
   assert.equal(normalizeThermalText('Müsli فارسی', caps), 'Müsli فارسی');
-  assert.equal(itemRows({ product_name: longUnsupportedName, quantity: 1, total: 1 }, 4, 4, 12, '₹', 'en-US', false, 'fa', 2, caps)[0].includes('..'), false);
-  assert.equal(financialRows('برچسب مالی بسیار طولانی', '1', 12, 'fa', caps)[0].includes('..'), false);
-  const native = Uint8Array.from([0x1B, 0x40, 0x41, 0x0A]);
-  const mixed = encodeMixedPrintParts([{ kind: 'native', bytes: native }, { kind: 'raster', unit }], caps, 'partial');
+  assert.equal(
+    itemRows(
+      { product_name: longUnsupportedName, quantity: 1, total: 1 },
+      4,
+      4,
+      12,
+      '₹',
+      'en-US',
+      false,
+      'fa',
+      2,
+      caps,
+    )[0].includes('..'),
+    false,
+  );
+  assert.equal(
+    financialRows('برچسب مالی بسیار طولانی', '1', 12, 'fa', caps)[0].includes('..'),
+    false,
+  );
+  const native = Uint8Array.from([0x1b, 0x40, 0x41, 0x0a]);
+  const mixed = encodeMixedPrintParts(
+    [
+      { kind: 'native', bytes: native },
+      { kind: 'raster', unit },
+    ],
+    caps,
+    'partial',
+  );
   assert.deepEqual(Array.from(mixed.slice(0, native.length)), Array.from(native));
   assert.deepEqual(Array.from(mixed.slice(-7)), Array.from(encodeRasterFeedAndCut('partial')));
-  assert.deepEqual(Array.from(mixed), Array.from(buildBackendMixedRasterBytes([{ kind: 'native', bytes: native }, { kind: 'raster', unit }], caps, 'partial')));
-  assert.deepEqual(Array.from(mixed), Array.from(loadFrontendRasterEncoder().buildWebUsbMixedRasterBytes([{ kind: 'native', bytes: native }, { kind: 'raster', unit }], caps, 'partial')));
+  assert.deepEqual(
+    Array.from(mixed),
+    Array.from(
+      buildBackendMixedRasterBytes(
+        [
+          { kind: 'native', bytes: native },
+          { kind: 'raster', unit },
+        ],
+        caps,
+        'partial',
+      ),
+    ),
+  );
+  assert.deepEqual(
+    Array.from(mixed),
+    Array.from(
+      loadFrontendRasterEncoder().buildWebUsbMixedRasterBytes(
+        [
+          { kind: 'native', bytes: native },
+          { kind: 'raster', unit },
+        ],
+        caps,
+        'partial',
+      ),
+    ),
+  );
   assert.deepEqual(
     Array.from(encodeWholeReceiptRaster(unit, caps, 'partial')),
     Array.from(encodeMixedPrintParts([{ kind: 'raster', unit }], caps, 'partial')),
   );
-  assert.throws(() => encodeMixedPrintParts([{ kind: 'raster', unit: { ...unit, complete: false, financial: true } }], caps, 'full'), /incomplete/);
-  assert.throws(() => encodeMixedPrintParts([{ kind: 'raster', unit: { ...unit, bands: [{ ...twoRows, widthDots: 8 }] } }], caps, 'full'), /does not match/);
+  assert.throws(
+    () =>
+      encodeMixedPrintParts(
+        [{ kind: 'raster', unit: { ...unit, complete: false, financial: true } }],
+        caps,
+        'full',
+      ),
+    /incomplete/,
+  );
+  assert.throws(
+    () =>
+      encodeMixedPrintParts(
+        [{ kind: 'raster', unit: { ...unit, bands: [{ ...twoRows, widthDots: 8 }] } }],
+        caps,
+        'full',
+      ),
+    /does not match/,
+  );
   const mixedWarnings: any[] = [];
-  const mixedEscPos = buildEscPos(['A', 'raster'], false, {
-    capabilities: caps,
-    rasterUnits: [{ lineIndex: 1, unit }],
-  }, mixedWarnings);
+  const mixedEscPos = buildEscPos(
+    ['A', 'raster'],
+    false,
+    {
+      capabilities: caps,
+      rasterUnits: [{ lineIndex: 1, unit }],
+    },
+    mixedWarnings,
+  );
   assert.equal(mixedWarnings.length, 0);
   assert.equal(mixedEscPos.includes(0x41), true);
-  assert.equal(mixedEscPos.includes(0x1D) && mixedEscPos.includes(0x76), true);
+  assert.equal(mixedEscPos.includes(0x1d) && mixedEscPos.includes(0x76), true);
   const invalidRasterWarnings: any[] = [];
-  const invalidRasterEscPos = buildEscPos(['fallback'], false, {
-    capabilities: caps,
-    rasterUnits: [{ lineIndex: 0, unit: { ...unit, bands: [{ ...twoRows, widthDots: 8 }] } }],
-  }, invalidRasterWarnings);
+  const invalidRasterEscPos = buildEscPos(
+    ['fallback'],
+    false,
+    {
+      capabilities: caps,
+      rasterUnits: [{ lineIndex: 0, unit: { ...unit, bands: [{ ...twoRows, widthDots: 8 }] } }],
+    },
+    invalidRasterWarnings,
+  );
   assert.equal(invalidRasterEscPos.length, 0);
   assert.equal(invalidRasterWarnings[0]?.kind, 'line');
-  assert.throws(() => buildEscPos(['fallback'], false, {
-    capabilities: caps,
-    rasterUnits: [{ lineIndex: 0, unit: { ...unit, bands: [{ ...twoRows, widthDots: 8 }] } }],
-  }), /does not match/);
+  assert.throws(
+    () =>
+      buildEscPos(['fallback'], false, {
+        capabilities: caps,
+        rasterUnits: [{ lineIndex: 0, unit: { ...unit, bands: [{ ...twoRows, widthDots: 8 }] } }],
+      }),
+    /does not match/,
+  );
   const financialWarnings: any[] = [];
-  const refused = buildEscPos(['raster'], false, {
-    capabilities: caps,
-    rasterUnits: [{ lineIndex: 0, unit: { ...unit, financial: true, complete: false } }],
-  }, financialWarnings);
+  const refused = buildEscPos(
+    ['raster'],
+    false,
+    {
+      capabilities: caps,
+      rasterUnits: [{ lineIndex: 0, unit: { ...unit, financial: true, complete: false } }],
+    },
+    financialWarnings,
+  );
   assert.equal(refused.length, 0);
   assert.equal(financialWarnings[0]?.kind, 'financial');
-  assert.throws(() => buildEscPos(['raster'], false, {
-    capabilities: caps,
-    rasterUnits: [{ lineIndex: 0, unit: { ...unit, financial: true, complete: false } }],
-  }), /incomplete/);
+  assert.throws(
+    () =>
+      buildEscPos(['raster'], false, {
+        capabilities: caps,
+        rasterUnits: [{ lineIndex: 0, unit: { ...unit, financial: true, complete: false } }],
+      }),
+    /incomplete/,
+  );
   const metadataWarnings: any[] = [];
-  assert.equal(buildEscPos(['raster'], false, {
-    capabilities: caps,
-    rasterUnits: [{ lineIndex: 0, unit: { ...unit, complete: false } }],
-  }, metadataWarnings).length, 0);
+  assert.equal(
+    buildEscPos(
+      ['raster'],
+      false,
+      {
+        capabilities: caps,
+        rasterUnits: [{ lineIndex: 0, unit: { ...unit, complete: false } }],
+      },
+      metadataWarnings,
+    ).length,
+    0,
+  );
   assert.equal(metadataWarnings[0]?.kind, 'line');
   const nativeFinancialWarnings: any[] = [];
-  buildEscPos(['فارسی'], false, {
-    capabilities: caps,
-    financialLineRanges: [{ lineIndex: 0, lineCount: 1 }],
-  }, nativeFinancialWarnings);
+  buildEscPos(
+    ['فارسی'],
+    false,
+    {
+      capabilities: caps,
+      financialLineRanges: [{ lineIndex: 0, lineCount: 1 }],
+    },
+    nativeFinancialWarnings,
+  );
   assert.equal(nativeFinancialWarnings[0]?.kind, 'financial');
   const literalMarker = buildEscPos(['{FINANCIAL}raster'], false);
   assert.equal(escPosToText(literalMarker).includes('{FINANCIAL}'), false);
   assert.equal(escPosToText(literalMarker).includes('raster'), true);
   const legacyFinancialWarnings: any[] = [];
-  assert.equal(buildEscPos(['{FINANCIAL}فارسی'], false, { capabilities: caps }, legacyFinancialWarnings).length, 0);
+  assert.equal(
+    buildEscPos(['{FINANCIAL}فارسی'], false, { capabilities: caps }, legacyFinancialWarnings)
+      .length,
+    0,
+  );
   assert.equal(legacyFinancialWarnings[0]?.kind, 'financial');
-  assert.equal(buildEscPos(['raster'], false, {
-    capabilities: caps,
-    rasterUnits: [{ lineIndex: 9, unit: { ...unit, financial: true } }],
-  }).length, 0);
+  assert.equal(
+    buildEscPos(['raster'], false, {
+      capabilities: caps,
+      rasterUnits: [{ lineIndex: 9, unit: { ...unit, financial: true } }],
+    }).length,
+    0,
+  );
   const bindingWarnings: any[] = [];
-  buildEscPos(['raster'], false, {
-    capabilities: caps,
-    rasterUnits: [{ lineIndex: 0, unit }, { lineIndex: 0, unit: { ...unit, unitId: 'row-2' } }],
-  }, bindingWarnings);
+  buildEscPos(
+    ['raster'],
+    false,
+    {
+      capabilities: caps,
+      rasterUnits: [
+        { lineIndex: 0, unit },
+        { lineIndex: 0, unit: { ...unit, unitId: 'row-2' } },
+      ],
+    },
+    bindingWarnings,
+  );
   assert.equal(bindingWarnings.length, 2);
 
   const diagnostic = buildRasterDiagnosticBands(17, 32);
-  assert.deepEqual(diagnostic.map((band) => band.heightDots), [32, 16, 32, 16, 24]);
+  assert.deepEqual(
+    diagnostic.map((band) => band.heightDots),
+    [32, 16, 32, 16, 24],
+  );
   assert.equal(diagnostic[0].pixels[0], 0);
   assert.equal(diagnostic[0].pixels[8], 1);
-  const diagnosticPage = buildTestPage('80mm', 'partial', 'en-US', undefined, { ...caps, raster: { ...caps.raster, maxBandHeight: 32, widthDots: 17 } });
-  assert.equal(diagnosticPage.includes(0x1D) && diagnosticPage.includes(0x76), true);
-  assert.deepEqual(Array.from(diagnosticPage.slice(-7)), Array.from(encodeRasterFeedAndCut('partial')));
+  const diagnosticPage = buildTestPage('80mm', 'partial', 'en-US', undefined, {
+    ...caps,
+    raster: { ...caps.raster, maxBandHeight: 32, widthDots: 17 },
+  });
+  assert.equal(diagnosticPage.includes(0x1d) && diagnosticPage.includes(0x76), true);
+  assert.deepEqual(
+    Array.from(diagnosticPage.slice(-7)),
+    Array.from(encodeRasterFeedAndCut('partial')),
+  );
   const disabledShapingDiagnostic = buildTestPage('80mm', 'partial', 'fa', 'UTC', {
     ...caps,
     shaping: { arabic: false },
@@ -506,17 +1071,44 @@ async function run(): Promise<void> {
   const narrowRasterCapabilities = { ...caps, raster: { ...caps.raster, widthDots: 16 } };
   assert.equal(rasterCapabilityEnabled(narrowRasterCapabilities), true);
   assert.equal(buildRasterDiagnosticBands(16, 32)[0].widthDots, 16);
-  const failedRender = await renderRasterSemanticUnit({ render: async () => ({ version: 1, requestId: 'r1', ok: false, code: 'font-unavailable', detail: 'missing' }) }, {} as any, true);
+  const failedRender = await renderRasterSemanticUnit(
+    {
+      render: async () => ({
+        version: 1,
+        requestId: 'r1',
+        ok: false,
+        code: 'font-unavailable',
+        detail: 'missing',
+      }),
+    },
+    {} as any,
+    true,
+  );
   assert.equal(failedRender.ok, false);
   assert.equal(failedRender.financial, true);
   const renderRequests: any[] = [];
-  const renderedLines = await renderUnsupportedRasterLines({
-    render: async (request) => {
-      const typedRequest = request as any;
-      renderRequests.push(typedRequest);
-      return { version: 1, requestId: typedRequest.requestId, ok: true, unit: { unitId: typedRequest.requestId, financial: false, complete: true, bands: [twoRows] } };
+  const renderedLines = await renderUnsupportedRasterLines(
+    {
+      render: async (request) => {
+        const typedRequest = request as any;
+        renderRequests.push(typedRequest);
+        return {
+          version: 1,
+          requestId: typedRequest.requestId,
+          ok: true,
+          unit: {
+            unitId: typedRequest.requestId,
+            financial: false,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  }, ['{DOUBLE_HEIGHT}{BOLD}فارسی{/BOLD}{/DOUBLE_HEIGHT}', '  + native'], caps, 'receipt');
+    ['{DOUBLE_HEIGHT}{BOLD}فارسی{/BOLD}{/DOUBLE_HEIGHT}', '  + native'],
+    caps,
+    'receipt',
+  );
   assert.equal(renderedLines.units[0]?.lineIndex, 0);
   assert.equal(renderedLines.units[0]?.lineCount, 2);
   assert.equal(renderRequests[0].style, 'double-height');
@@ -525,216 +1117,410 @@ async function run(): Promise<void> {
   assert.equal(renderRequests[0].align, 'left');
   assert.equal(renderRequests.length, 2);
   const financialUnitRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      financialUnitRequests.push(rasterRequest);
-      return { version: 1, requestId: (rasterRequest as any).requestId, ok: true, unit: { unitId: (rasterRequest as any).requestId, financial: true, complete: true, bands: [twoRows] } };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        financialUnitRequests.push(rasterRequest);
+        return {
+          version: 1,
+          requestId: (rasterRequest as any).requestId,
+          ok: true,
+          unit: {
+            unitId: (rasterRequest as any).requestId,
+            financial: true,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  }, ['{FINANCIAL}فارسی {FINANCIAL}'], caps, 'financial', [
-    { groupId: 'financial', lineIndex: 0, lineCount: 1, sourceLines: ['فارسی {FINANCIAL}'], financial: true },
-  ]);
+    ['{FINANCIAL}فارسی {FINANCIAL}'],
+    caps,
+    'financial',
+    [
+      {
+        groupId: 'financial',
+        lineIndex: 0,
+        lineCount: 1,
+        sourceLines: ['فارسی {FINANCIAL}'],
+        financial: true,
+      },
+    ],
+  );
   assert.equal(financialUnitRequests[0].financial, true);
   const legacyFinancialRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      legacyFinancialRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true } };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        legacyFinancialRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true },
+        };
+      },
     },
-  }, ['{FINANCIAL}فارسی'], caps, 'legacy-financial', [
-    { groupId: 'legacy-financial', lineIndex: 0, lineCount: 1, financial: true },
-  ]);
+    ['{FINANCIAL}فارسی'],
+    caps,
+    'legacy-financial',
+    [{ groupId: 'legacy-financial', lineIndex: 0, lineCount: 1, financial: true }],
+  );
   assert.equal(legacyFinancialRequests[0].text, 'فارسی');
   assert.equal(legacyFinancialRequests[0].financial, true);
   const financialLayoutRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      financialLayoutRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true } };
-    },
-  }, ['{FINANCIAL}فارسی 1 ₹12.34'], caps, 'financial-layout', [
+  await renderUnsupportedRasterLines(
     {
-      groupId: 'item-table-row-0',
-      lineIndex: 0,
-      lineCount: 1,
-      sourceLines: ['فارسی 1 ₹12.34'],
-      sourceControlLines: ['{FINANCIAL}فارسی 1 ₹12.34'],
-      sourceLayouts: [{
-        kind: 'financial-item',
-        columns: [
-          { text: 'فارسی', align: 'left' },
-          { text: '1', align: 'left' },
-          { text: '₹12.34', align: 'right' },
-        ],
-      }],
-      financial: true,
+      render: async (rasterRequest) => {
+        financialLayoutRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true },
+        };
+      },
     },
-  ]);
+    ['{FINANCIAL}فارسی 1 ₹12.34'],
+    caps,
+    'financial-layout',
+    [
+      {
+        groupId: 'item-table-row-0',
+        lineIndex: 0,
+        lineCount: 1,
+        sourceLines: ['فارسی 1 ₹12.34'],
+        sourceControlLines: ['{FINANCIAL}فارسی 1 ₹12.34'],
+        sourceLayouts: [
+          {
+            kind: 'financial-item',
+            columns: [
+              { text: 'فارسی', align: 'left' },
+              { text: '1', align: 'left' },
+              { text: '₹12.34', align: 'right' },
+            ],
+          },
+        ],
+        financial: true,
+      },
+    ],
+  );
   assert.equal(financialLayoutRequests[0].layout.kind, 'financial-item');
-  assert.deepEqual(financialLayoutRequests[0].layout.columns.map((column: any) => [column.text, column.align]), [
-    ['فارسی', 'left'],
-    ['1', 'left'],
-    ['₹12.34', 'right'],
-  ]);
+  assert.deepEqual(
+    financialLayoutRequests[0].layout.columns.map((column: any) => [column.text, column.align]),
+    [
+      ['فارسی', 'left'],
+      ['1', 'left'],
+      ['₹12.34', 'right'],
+    ],
+  );
   const digitNamedFinancialRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      digitNamedFinancialRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true } };
-    },
-  }, ['{FINANCIAL}Meal 2 L فارسی 1 10.00'], caps, 'digit-named-financial', [
+  await renderUnsupportedRasterLines(
     {
-      groupId: 'item-table-row-0',
-      lineIndex: 0,
-      lineCount: 1,
-      sourceLines: ['Meal 2 L فارسی 1 10.00'],
-      sourceControlLines: ['{FINANCIAL}Meal 2 L فارسی 1 10.00'],
-      sourceLayouts: [{
-        kind: 'financial-item',
-        columns: [
-          { text: 'Meal 2 L فارسی', align: 'left' },
-          { text: '1', align: 'left' },
-          { text: '10.00', align: 'right' },
-        ],
-      }],
-      financial: true,
+      render: async (rasterRequest) => {
+        digitNamedFinancialRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true },
+        };
+      },
     },
-  ]);
-  assert.deepEqual(digitNamedFinancialRequests[0].layout.columns.map((column: any) => [column.text, column.align]), [
-    ['Meal 2 L فارسی', 'left'],
-    ['1', 'left'],
-    ['10.00', 'right'],
-  ]);
+    ['{FINANCIAL}Meal 2 L فارسی 1 10.00'],
+    caps,
+    'digit-named-financial',
+    [
+      {
+        groupId: 'item-table-row-0',
+        lineIndex: 0,
+        lineCount: 1,
+        sourceLines: ['Meal 2 L فارسی 1 10.00'],
+        sourceControlLines: ['{FINANCIAL}Meal 2 L فارسی 1 10.00'],
+        sourceLayouts: [
+          {
+            kind: 'financial-item',
+            columns: [
+              { text: 'Meal 2 L فارسی', align: 'left' },
+              { text: '1', align: 'left' },
+              { text: '10.00', align: 'right' },
+            ],
+          },
+        ],
+        financial: true,
+      },
+    ],
+  );
+  assert.deepEqual(
+    digitNamedFinancialRequests[0].layout.columns.map((column: any) => [column.text, column.align]),
+    [
+      ['Meal 2 L فارسی', 'left'],
+      ['1', 'left'],
+      ['10.00', 'right'],
+    ],
+  );
   const negativeFinancialLayoutRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      negativeFinancialLayoutRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true } };
-    },
-  }, ['{FINANCIAL}GST @5% ₹-10.00'], caps, 'negative-financial-layout', [
+  await renderUnsupportedRasterLines(
     {
-      groupId: 'totals',
-      lineIndex: 0,
-      lineCount: 1,
-      sourceLines: ['GST @5% ₹-10.00'],
-      sourceControlLines: ['{FINANCIAL}GST @5% ₹-10.00'],
-      sourceLayouts: [{
-        kind: 'financial-summary',
-        columns: [
-          { text: 'GST @5%', align: 'left' },
-          { text: '₹-10.00', align: 'right' },
+      render: async (rasterRequest) => {
+        negativeFinancialLayoutRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true },
+        };
+      },
+    },
+    ['{FINANCIAL}GST @5% ₹-10.00'],
+    caps,
+    'negative-financial-layout',
+    [
+      {
+        groupId: 'totals',
+        lineIndex: 0,
+        lineCount: 1,
+        sourceLines: ['GST @5% ₹-10.00'],
+        sourceControlLines: ['{FINANCIAL}GST @5% ₹-10.00'],
+        sourceLayouts: [
+          {
+            kind: 'financial-summary',
+            columns: [
+              { text: 'GST @5%', align: 'left' },
+              { text: '₹-10.00', align: 'right' },
+            ],
+          },
         ],
-      }],
-      financial: true,
-    },
-  ]);
-  assert.deepEqual(negativeFinancialLayoutRequests[0].layout.columns.map((column: any) => [column.text, column.align]), [
-    ['GST @5%', 'left'],
-    ['₹-10.00', 'right'],
-  ]);
+        financial: true,
+      },
+    ],
+  );
+  assert.deepEqual(
+    negativeFinancialLayoutRequests[0].layout.columns.map((column: any) => [
+      column.text,
+      column.align,
+    ]),
+    [
+      ['GST @5%', 'left'],
+      ['₹-10.00', 'right'],
+    ],
+  );
   const alignedStyleRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      alignedStyleRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
-    },
-  }, ['{FINANCIAL}فارسی row', '{FINANCIAL}wrapped continuation', '{FINANCIAL}{BOLD}فارسی total{/BOLD}'], caps, 'aligned-style', [
+  await renderUnsupportedRasterLines(
     {
-      groupId: 'totals',
-      lineIndex: 0,
-      lineCount: 3,
-      sourceLines: ['فارسی row', 'فارسی total'],
-      sourceControlLines: ['{FINANCIAL}فارسی row', '{FINANCIAL}{BOLD}فارسی total{/BOLD}'],
-      financial: true,
+      render: async (rasterRequest) => {
+        alignedStyleRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: { ...unit, unitId: (rasterRequest as any).requestId },
+        };
+      },
     },
-  ]);
+    [
+      '{FINANCIAL}فارسی row',
+      '{FINANCIAL}wrapped continuation',
+      '{FINANCIAL}{BOLD}فارسی total{/BOLD}',
+    ],
+    caps,
+    'aligned-style',
+    [
+      {
+        groupId: 'totals',
+        lineIndex: 0,
+        lineCount: 3,
+        sourceLines: ['فارسی row', 'فارسی total'],
+        sourceControlLines: ['{FINANCIAL}فارسی row', '{FINANCIAL}{BOLD}فارسی total{/BOLD}'],
+        financial: true,
+      },
+    ],
+  );
   assert.equal(alignedStyleRequests[1].style, 'bold');
-  const groupedCustomer = await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      const typedRequest = rasterRequest as any;
-      renderRequests.push(typedRequest);
-      return { version: 1, requestId: typedRequest.requestId, ok: true, unit: { unitId: typedRequest.requestId, financial: false, complete: true, bands: [twoRows] } };
+  const groupedCustomer = await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        const typedRequest = rasterRequest as any;
+        renderRequests.push(typedRequest);
+        return {
+          version: 1,
+          requestId: typedRequest.requestId,
+          ok: true,
+          unit: {
+            unitId: typedRequest.requestId,
+            financial: false,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  }, ['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], caps, 'customer', [{ groupId: 'customer', lineIndex: 0, lineCount: 2 }]);
+    ['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'],
+    caps,
+    'customer',
+    [{ groupId: 'customer', lineIndex: 0, lineCount: 2 }],
+  );
   assert.equal(groupedCustomer.units[0]?.unit.unitId, 'customer');
   assert.equal(groupedCustomer.units[0]?.lineCount, 2);
   assert.equal(renderRequests.at(-2)?.text, 'فارسی');
   assert.equal(renderRequests.at(-1)?.text, '555-0100');
   const controlCollisionRequests: any[] = [];
-  const controlCollision = await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      controlCollisionRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+  const controlCollision = await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        controlCollisionRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: { ...unit, unitId: (rasterRequest as any).requestId },
+        };
+      },
     },
-  }, ['{CENTER}فارسی {CUT}{/CENTER}', '{CENTER}ASCII{/CENTER}'], caps, 'control-collision', [
-    { groupId: 'item', lineIndex: 0, lineCount: 2, sourceLines: ['فارسی {CUT}', 'ASCII'] },
-  ]);
+    ['{CENTER}فارسی {CUT}{/CENTER}', '{CENTER}ASCII{/CENTER}'],
+    caps,
+    'control-collision',
+    [{ groupId: 'item', lineIndex: 0, lineCount: 2, sourceLines: ['فارسی {CUT}', 'ASCII'] }],
+  );
   assert.equal(controlCollision.failures.length, 0);
   assert.equal(controlCollisionRequests[0].text, 'فارسی {CUT}');
   assert.equal(controlCollision.units[0]?.lineCount, 2);
   const styleCollisionRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      styleCollisionRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        styleCollisionRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: { ...unit, unitId: (rasterRequest as any).requestId },
+        };
+      },
     },
-  }, ['{BOLD}BOLD{/BOLD}', 'فارسی'], caps, 'style-collision', [
-    { groupId: 'item', lineIndex: 0, lineCount: 2, sourceLines: ['BOLD', 'فارسی'] },
-  ]);
+    ['{BOLD}BOLD{/BOLD}', 'فارسی'],
+    caps,
+    'style-collision',
+    [{ groupId: 'item', lineIndex: 0, lineCount: 2, sourceLines: ['BOLD', 'فارسی'] }],
+  );
   assert.equal(styleCollisionRequests[0].style, 'bold');
   const splitHeaderRequests: any[] = [];
-  const splitHeader = await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      splitHeaderRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+  const splitHeader = await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        splitHeaderRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: { ...unit, unitId: (rasterRequest as any).requestId },
+        };
+      },
     },
-  }, ['فارسی', 'native body', 'Address'], caps, 'split-header', [
-    { groupId: 'business-header', lineIndex: 0, lineCount: 1 },
-    { groupId: 'business-header', lineIndex: 2, lineCount: 1 },
-  ]);
+    ['فارسی', 'native body', 'Address'],
+    caps,
+    'split-header',
+    [
+      { groupId: 'business-header', lineIndex: 0, lineCount: 1 },
+      { groupId: 'business-header', lineIndex: 2, lineCount: 1 },
+    ],
+  );
   assert.equal(splitHeaderRequests.length, 2);
   assert.equal(splitHeader.units.length, 2);
-  assert.equal(splitHeader.units.every((entry) => entry.unit.unitId.startsWith('business-header-')), true);
+  assert.equal(
+    splitHeader.units.every((entry) => entry.unit.unitId.startsWith('business-header-')),
+    true,
+  );
   const sourceTextRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      sourceTextRequests.push(rasterRequest);
-      return { version: 1, requestId: (rasterRequest as any).requestId, ok: true, unit: { unitId: (rasterRequest as any).requestId, financial: false, complete: true, bands: [twoRows] } };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        sourceTextRequests.push(rasterRequest);
+        return {
+          version: 1,
+          requestId: (rasterRequest as any).requestId,
+          ok: true,
+          unit: {
+            unitId: (rasterRequest as any).requestId,
+            financial: false,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  }, ['فارسی {L}'], caps, 'source-text');
+    ['فارسی {L}'],
+    caps,
+    'source-text',
+  );
   assert.equal(sourceTextRequests[0].text, 'فارسی {L}');
   const fontBRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      const typedRequest = rasterRequest as any;
-      fontBRequests.push(typedRequest);
-      return { version: 1, requestId: typedRequest.requestId, ok: true, unit: { unitId: typedRequest.requestId, financial: false, complete: true, bands: [twoRows] } };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        const typedRequest = rasterRequest as any;
+        fontBRequests.push(typedRequest);
+        return {
+          version: 1,
+          requestId: typedRequest.requestId,
+          ok: true,
+          unit: {
+            unitId: typedRequest.requestId,
+            financial: false,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  }, ['{CENTER}{FONT_B}فارسی{/FONT_B}{/CENTER}'], caps, 'font-b');
+    ['{CENTER}{FONT_B}فارسی{/FONT_B}{/CENTER}'],
+    caps,
+    'font-b',
+  );
   assert.deepEqual(fontBRequests[0].styles, ['font-b']);
   assert.equal(fontBRequests[0].style, 'font-b');
   const presentationFormRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      presentationFormRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit };
+  await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        presentationFormRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit,
+        };
+      },
     },
-  }, ['\uFB50'], caps, 'presentation-form');
+    ['\uFB50'],
+    caps,
+    'presentation-form',
+  );
   assert.equal(presentationFormRequests[0].direction, 'rtl');
   const kotHeaderGroups: any[] = [];
-  const longKotDocument = buildKotDocument({
-    stationName: 'ایستگاه',
-    order: { orderNumber: 'ORDER-123456789012345678901234567890', createdAt: '2026-01-01T12:00:00.000Z', tableName: '', orderType: '' },
-    items: [],
-  }, {
-    columns: 42,
-    languages: ['fa'],
-    baseDirection: 'rtl',
-    locale: 'fa-IR',
-    currency: '',
-    currencySymbol: '',
-    trimDecimals: false,
-    resolveLabel: (conceptId) => conceptId === 'pos.orderNumber' ? 'Order #: {number}' : conceptId,
-  });
+  const longKotDocument = buildKotDocument(
+    {
+      stationName: 'ایستگاه',
+      order: {
+        orderNumber: 'ORDER-123456789012345678901234567890',
+        createdAt: '2026-01-01T12:00:00.000Z',
+        tableName: '',
+        orderType: '',
+      },
+      items: [],
+    },
+    {
+      columns: 42,
+      languages: ['fa'],
+      baseDirection: 'rtl',
+      locale: 'fa-IR',
+      currency: '',
+      currencySymbol: '',
+      trimDecimals: false,
+      resolveLabel: (conceptId) =>
+        conceptId === 'pos.orderNumber' ? 'Order #: {number}' : conceptId,
+    },
+  );
   renderKotDocumentToLines(longKotDocument, {
     columns: 42,
     language: 'fa',
@@ -745,18 +1531,54 @@ async function run(): Promise<void> {
     capabilities: caps,
     rasterGroups: kotHeaderGroups,
   });
-  assert.equal(kotHeaderGroups[0].sourceLines.some((line: string) => line.includes('ایستگاه')), true);
-  assert.equal(kotHeaderGroups[0].sourceLines.some((line: string) => line.includes('ORDER-123456789012345678901234567890')), true);
+  assert.equal(
+    kotHeaderGroups[0].sourceLines.some((line: string) => line.includes('ایستگاه')),
+    true,
+  );
+  assert.equal(
+    kotHeaderGroups[0].sourceLines.some((line: string) =>
+      line.includes('ORDER-123456789012345678901234567890'),
+    ),
+    true,
+  );
   const jpyReceipt = renderCompactReceiptViaDocument(
     { items: [] },
-    { total: 12.34, subtotal: 12.34, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },
-    { country: 'JP', currency: 'JPY', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
-    { columns: 42, language: 'en', isReprint: false, useUnicode: true, arabicShaping: false, cutMode: 'full', capabilities: caps },
+    {
+      total: 12.34,
+      subtotal: 12.34,
+      discount_amount: 0,
+      tax_amount: 0,
+      delivery_charge: 0,
+      packaging_charge: 0,
+      payment_details: '[]',
+    },
+    {
+      country: 'JP',
+      currency: 'JPY',
+      currency_symbol: '¥',
+      name: 'Cafe',
+      customer_name: '',
+      customer_phone: '',
+    },
+    {
+      columns: 42,
+      language: 'en',
+      isReprint: false,
+      useUnicode: true,
+      arabicShaping: false,
+      cutMode: 'full',
+      capabilities: caps,
+    },
   );
-  assert.equal(jpyReceipt.lines.some((line) => line.includes('12.34')), false);
+  assert.equal(
+    jpyReceipt.lines.some((line) => line.includes('12.34')),
+    false,
+  );
   const nullThankYouDocument = {
     ...jpyReceipt.document,
-    blocks: jpyReceipt.document.blocks.map((block) => block.kind === 'message' ? { ...block, thankYou: null } : block),
+    blocks: jpyReceipt.document.blocks.map((block) =>
+      block.kind === 'message' ? { ...block, thankYou: null } : block,
+    ),
   };
   const nullThankYouLines = renderBillDocumentToCompactLines(nullThankYouDocument, {
     columns: 42,
@@ -769,30 +1591,96 @@ async function run(): Promise<void> {
     cutMode: 'full',
     capabilities: caps,
   });
-  assert.equal(nullThankYouLines.some((line) => line.includes('Thank you')), false);
+  assert.equal(
+    nullThankYouLines.some((line) => line.includes('Thank you')),
+    false,
+  );
   const jpyClassicReceipt = renderClassicReceiptViaDocument(
     { items: [] },
-    { total: 12.34, subtotal: 12.34, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },
-    { country: 'JP', currency: 'JPY', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
-    { columns: 42, language: 'en', isReprint: false, useUnicode: true, arabicShaping: false, cutMode: 'full', capabilities: caps },
+    {
+      total: 12.34,
+      subtotal: 12.34,
+      discount_amount: 0,
+      tax_amount: 0,
+      delivery_charge: 0,
+      packaging_charge: 0,
+      payment_details: '[]',
+    },
+    {
+      country: 'JP',
+      currency: 'JPY',
+      currency_symbol: '¥',
+      name: 'Cafe',
+      customer_name: '',
+      customer_phone: '',
+    },
+    {
+      columns: 42,
+      language: 'en',
+      isReprint: false,
+      useUnicode: true,
+      arabicShaping: false,
+      cutMode: 'full',
+      capabilities: caps,
+    },
   );
-  assert.equal(jpyClassicReceipt.lines.some((line) => line.includes('12.34')), false);
+  assert.equal(
+    jpyClassicReceipt.lines.some((line) => line.includes('12.34')),
+    false,
+  );
   assert.equal(resolveTenantCurrency(undefined, 'JP'), 'JPY');
   const unpricedAddonReceipt = renderCompactReceiptViaDocument(
     {
-      items: [{ product_name: 'Tea', quantity: 1, total: 10, addons: [{ name: 'فارسی', price: 0, quantity: 1 }], special_instructions: null }],
+      items: [
+        {
+          product_name: 'Tea',
+          quantity: 1,
+          total: 10,
+          addons: [{ name: 'فارسی', price: 0, quantity: 1 }],
+          special_instructions: null,
+        },
+      ],
     },
-    { total: 10, subtotal: 10, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },
+    {
+      total: 10,
+      subtotal: 10,
+      discount_amount: 0,
+      tax_amount: 0,
+      delivery_charge: 0,
+      packaging_charge: 0,
+      payment_details: '[]',
+    },
     { country: 'IN', currency_symbol: '₹', name: 'Cafe', customer_name: '', customer_phone: '' },
-    { columns: 42, language: 'en', isReprint: false, useUnicode: false, arabicShaping: false, cutMode: 'full', capabilities: GENERIC_THERMAL_CAPABILITIES },
+    {
+      columns: 42,
+      language: 'en',
+      isReprint: false,
+      useUnicode: false,
+      arabicShaping: false,
+      cutMode: 'full',
+      capabilities: GENERIC_THERMAL_CAPABILITIES,
+    },
   );
   assert.equal(unpricedAddonReceipt.data.length > 0, true);
-  assert.equal(unpricedAddonReceipt.warnings.some((warning) => warning.kind === 'financial'), false);
+  assert.equal(
+    unpricedAddonReceipt.warnings.some((warning) => warning.kind === 'financial'),
+    false,
+  );
   const frontendPrintDocument = loadFrontendPrintDocument();
   const parityOrder = {
     order_number: 'JP-1',
     created_at: '2026-01-01T12:00:00.000Z',
-    items: [{ product_name: 'Tea', quantity: 1, unit_price: 1000, total: 1000, addons: [], special_instructions: null, status: 'pending' }],
+    items: [
+      {
+        product_name: 'Tea',
+        quantity: 1,
+        unit_price: 1000,
+        total: 1000,
+        addons: [],
+        special_instructions: null,
+        status: 'pending',
+      },
+    ],
   };
   const parityBill = {
     bill_number: 'B-1',
@@ -809,92 +1697,129 @@ async function run(): Promise<void> {
     customer: { name: 'Alice', phone: '+81 90 1234 5678', country_code: '+81' },
   };
   const parityTenant = { country: 'JP', currency: 'JPY', timezone: 'Asia/Tokyo' };
-  const frontendParityDocument = frontendPrintDocument.buildFrontendBillDocument(parityBill as any, parityTenant, {
-    languages: ['en'],
-    businessName: 'Cafe',
-    address: 'Main Street',
-    phone: '000',
-    taxRegistrationNumber: 'JP-123',
-    includeTaxId: true,
-    taxIdLabel: 'Tax ID',
-    maskCustomerPhone: true,
-    useBillCustomer: true,
-    showTaxBreakdown: true,
-    showCustomerName: true,
-    showCustomerPhone: true,
-  });
-  const backendParity = renderClassicReceiptViaDocument(parityOrder, parityBill, {
-    name: 'Cafe',
-    address: 'Main Street',
-    phone: '000',
-    taxRegistrationNumber: 'JP-123',
-    currency: 'JPY',
-    currency_symbol: '¥',
-    country: 'JP',
-    customer_name: 'Alice',
-    customer_phone: '+81 90 1234 5678',
-    show_name: true,
-    show_address: true,
-    show_phone: true,
-    show_tax_id: true,
-    show_tax_breakdown: true,
-    show_customer_name: true,
-    show_customer_phone: true,
-    show_table_number: false,
-  }, {
-    columns: 42,
-    language: 'en',
-    isReprint: false,
-    useUnicode: false,
-    arabicShaping: false,
-    cutMode: 'full',
-    capabilities: caps,
-    maskCustomerPhone: true,
-  });
-  const frontendCustomer = frontendParityDocument.blocks.find((block) => block.kind === 'customer') as any;
-  const backendCustomer = backendParity.document.blocks.find((block) => block.kind === 'customer') as any;
+  const frontendParityDocument = frontendPrintDocument.buildFrontendBillDocument(
+    parityBill as any,
+    parityTenant,
+    {
+      languages: ['en'],
+      businessName: 'Cafe',
+      address: 'Main Street',
+      phone: '000',
+      taxRegistrationNumber: 'JP-123',
+      includeTaxId: true,
+      taxIdLabel: 'Tax ID',
+      maskCustomerPhone: true,
+      useBillCustomer: true,
+      showTaxBreakdown: true,
+      showCustomerName: true,
+      showCustomerPhone: true,
+    },
+  );
+  const backendParity = renderClassicReceiptViaDocument(
+    parityOrder,
+    parityBill,
+    {
+      name: 'Cafe',
+      address: 'Main Street',
+      phone: '000',
+      taxRegistrationNumber: 'JP-123',
+      currency: 'JPY',
+      currency_symbol: '¥',
+      country: 'JP',
+      customer_name: 'Alice',
+      customer_phone: '+81 90 1234 5678',
+      show_name: true,
+      show_address: true,
+      show_phone: true,
+      show_tax_id: true,
+      show_tax_breakdown: true,
+      show_customer_name: true,
+      show_customer_phone: true,
+      show_table_number: false,
+    },
+    {
+      columns: 42,
+      language: 'en',
+      isReprint: false,
+      useUnicode: false,
+      arabicShaping: false,
+      cutMode: 'full',
+      capabilities: caps,
+      maskCustomerPhone: true,
+    },
+  );
+  const frontendCustomer = frontendParityDocument.blocks.find(
+    (block) => block.kind === 'customer',
+  ) as any;
+  const backendCustomer = backendParity.document.blocks.find(
+    (block) => block.kind === 'customer',
+  ) as any;
   assert.equal(frontendCustomer.name.text, backendCustomer.name.text);
   assert.equal(frontendCustomer.phone.text, 'xxxxxxxxxxxx5678');
   assert.equal(backendCustomer.phone.text, frontendCustomer.phone.text);
-  assert.equal(backendParity.lines.some((line) => line.includes('xxxxxxxxxxxx5678')), true);
-  const nativeInstructionResult = renderClassicReceiptViaDocument({
-    ...parityOrder,
-    items: [{ ...parityOrder.items[0], product_name: 'Tea', special_instructions: 'فارسی توضیح' }],
-  }, parityBill, {
-    name: 'Cafe',
-    address: 'Main Street',
-    phone: '000',
-    taxRegistrationNumber: 'JP-123',
-    currency: 'JPY',
-    currency_symbol: '¥',
-    country: 'JP',
-    customer_name: 'Alice',
-    customer_phone: '+81 90 1234 5678',
-    show_name: true,
-    show_address: true,
-    show_phone: true,
-    show_tax_id: true,
-    show_tax_breakdown: true,
-    show_customer_name: true,
-    show_customer_phone: true,
-    show_table_number: false,
-  }, {
-    columns: 42,
-    language: 'en',
-    isReprint: false,
-    useUnicode: false,
-    arabicShaping: false,
-    cutMode: 'full',
-    capabilities: GENERIC_THERMAL_CAPABILITIES,
-  });
+  assert.equal(
+    backendParity.lines.some((line) => line.includes('xxxxxxxxxxxx5678')),
+    true,
+  );
+  const nativeInstructionResult = renderClassicReceiptViaDocument(
+    {
+      ...parityOrder,
+      items: [
+        { ...parityOrder.items[0], product_name: 'Tea', special_instructions: 'فارسی توضیح' },
+      ],
+    },
+    parityBill,
+    {
+      name: 'Cafe',
+      address: 'Main Street',
+      phone: '000',
+      taxRegistrationNumber: 'JP-123',
+      currency: 'JPY',
+      currency_symbol: '¥',
+      country: 'JP',
+      customer_name: 'Alice',
+      customer_phone: '+81 90 1234 5678',
+      show_name: true,
+      show_address: true,
+      show_phone: true,
+      show_tax_id: true,
+      show_tax_breakdown: true,
+      show_customer_name: true,
+      show_customer_phone: true,
+      show_table_number: false,
+    },
+    {
+      columns: 42,
+      language: 'en',
+      isReprint: false,
+      useUnicode: false,
+      arabicShaping: false,
+      cutMode: 'full',
+      capabilities: GENERIC_THERMAL_CAPABILITIES,
+    },
+  );
   assert.equal(nativeInstructionResult.data.length > 0, true);
-  assert.equal(nativeInstructionResult.warnings.some((warning) => warning.kind === 'financial'), false);
-  assert.equal(nativeInstructionResult.warnings.some((warning) => warning.kind === 'line'), true);
+  assert.equal(
+    nativeInstructionResult.warnings.some((warning) => warning.kind === 'financial'),
+    false,
+  );
+  assert.equal(
+    nativeInstructionResult.warnings.some((warning) => warning.kind === 'line'),
+    true,
+  );
   const unsupportedFinancialDocument = {
     ...backendParity.document,
-    blocks: backendParity.document.blocks.map((block: any) => block.kind === 'tax-breakdown'
-      ? { ...block, lines: block.lines.map((line: any) => ({ ...line, label: { ...line.label, primary: 'مالیات' } })) }
-      : block),
+    blocks: backendParity.document.blocks.map((block: any) =>
+      block.kind === 'tax-breakdown'
+        ? {
+            ...block,
+            lines: block.lines.map((line: any) => ({
+              ...line,
+              label: { ...line.label, primary: 'مالیات' },
+            })),
+          }
+        : block,
+    ),
   };
   const unsupportedFinancialRanges: Array<{ lineIndex: number; lineCount: number }> = [];
   const unsupportedFinancialLines = renderBillDocumentToClassicLines(unsupportedFinancialDocument, {
@@ -911,16 +1836,31 @@ async function run(): Promise<void> {
     financialLineRanges: unsupportedFinancialRanges,
   });
   const unsupportedFinancialWarnings: any[] = [];
-  const unsupportedFinancialData = buildEscPos(unsupportedFinancialLines, false, {
-    cutMode: 'full',
-    capabilities: GENERIC_THERMAL_CAPABILITIES,
-    financialLineRanges: unsupportedFinancialRanges,
-  }, unsupportedFinancialWarnings);
+  const unsupportedFinancialData = buildEscPos(
+    unsupportedFinancialLines,
+    false,
+    {
+      cutMode: 'full',
+      capabilities: GENERIC_THERMAL_CAPABILITIES,
+      financialLineRanges: unsupportedFinancialRanges,
+    },
+    unsupportedFinancialWarnings,
+  );
   assert.equal(unsupportedFinancialData.length, 0);
-  assert.equal(unsupportedFinancialWarnings.some((warning) => warning.kind === 'financial'), true);
-  const frontendTax = frontendParityDocument.blocks.find((block) => block.kind === 'tax-breakdown') as any;
-  const backendTax = backendParity.document.blocks.find((block) => block.kind === 'tax-breakdown') as any;
-  assert.deepEqual(frontendTax.lines.map((line: any) => ({ amount: line.amount, rate: line.rate })), backendTax.lines.map((line: any) => ({ amount: line.amount, rate: line.rate })));
+  assert.equal(
+    unsupportedFinancialWarnings.some((warning) => warning.kind === 'financial'),
+    true,
+  );
+  const frontendTax = frontendParityDocument.blocks.find(
+    (block) => block.kind === 'tax-breakdown',
+  ) as any;
+  const backendTax = backendParity.document.blocks.find(
+    (block) => block.kind === 'tax-breakdown',
+  ) as any;
+  assert.deepEqual(
+    frontendTax.lines.map((line: any) => ({ amount: line.amount, rate: line.rate })),
+    backendTax.lines.map((line: any) => ({ amount: line.amount, rate: line.rate })),
+  );
   const frontendParityLines = renderBillDocumentToClassicLines(frontendParityDocument, {
     columns: 42,
     language: 'en',
@@ -934,44 +1874,102 @@ async function run(): Promise<void> {
     capabilities: caps,
     maskCustomerPhone: true,
   });
-  assert.equal(frontendParityLines.some((line) => line.includes('1,100')), true);
-  assert.equal(backendParity.lines.some((line) => line.includes('1,100')), true);
-  assert.equal(frontendParityLines.filter((line) => line.includes('{FONT_B}')).length, backendParity.lines.filter((line) => line.includes('{FONT_B}')).length);
-  assert.equal(frontendParityLines.filter((line) => line.includes('{BOLD}')).length, backendParity.lines.filter((line) => line.includes('{BOLD}')).length);
+  assert.equal(
+    frontendParityLines.some((line) => line.includes('1,100')),
+    true,
+  );
+  assert.equal(
+    backendParity.lines.some((line) => line.includes('1,100')),
+    true,
+  );
+  assert.equal(
+    frontendParityLines.filter((line) => line.includes('{FONT_B}')).length,
+    backendParity.lines.filter((line) => line.includes('{FONT_B}')).length,
+  );
+  assert.equal(
+    frontendParityLines.filter((line) => line.includes('{BOLD}')).length,
+    backendParity.lines.filter((line) => line.includes('{BOLD}')).length,
+  );
   const backendKotData = buildKotPrintData(
     { order_number: 'K-2', created_at: '2026-01-01T12:00:00.000Z' },
-    [{ status: 'pending', product_name: 'Tea', quantity: 1, addons: '[{"name":"Extra sauce","quantity":2}]' }],
+    [
+      {
+        status: 'pending',
+        product_name: 'Tea',
+        quantity: 1,
+        addons: '[{"name":"Extra sauce","quantity":2}]',
+      },
+    ],
     'Kitchen',
   );
   assert.deepEqual(backendKotData.items[0]?.addons, [{ name: 'Extra sauce', quantity: 2 }]);
-  const styledBanner = await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => ({
-      version: 1 as const,
-      requestId: (rasterRequest as any).requestId,
-      ok: true as const,
-      unit: { unitId: (rasterRequest as any).requestId, financial: false, complete: true, bands: [twoRows] },
-    }),
-  }, ['{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}فارسی{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}'], caps, 'banner');
+  const styledBanner = await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => ({
+        version: 1 as const,
+        requestId: (rasterRequest as any).requestId,
+        ok: true as const,
+        unit: {
+          unitId: (rasterRequest as any).requestId,
+          financial: false,
+          complete: true,
+          bands: [twoRows],
+        },
+      }),
+    },
+    [
+      '{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}فارسی{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+    ],
+    caps,
+    'banner',
+  );
   assert.equal(styledBanner.failures.length, 0);
   assert.equal(styledBanner.units.length, 1);
   assert.equal(renderedLines.failures.length, 0);
 
   const blankLineRequests: any[] = [];
-  const groupedHeader = await renderUnsupportedRasterLines({
-    render: async (rasterRequest) => {
-      blankLineRequests.push(rasterRequest);
-      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+  const groupedHeader = await renderUnsupportedRasterLines(
+    {
+      render: async (rasterRequest) => {
+        blankLineRequests.push(rasterRequest);
+        return {
+          version: 1 as const,
+          requestId: (rasterRequest as any).requestId,
+          ok: true as const,
+          unit: { ...unit, unitId: (rasterRequest as any).requestId },
+        };
+      },
     },
-  }, ['فارسی', '', '555-0100'], caps, 'header', [{ groupId: 'header', lineIndex: 0, lineCount: 3 }]);
+    ['فارسی', '', '555-0100'],
+    caps,
+    'header',
+    [{ groupId: 'header', lineIndex: 0, lineCount: 3 }],
+  );
   assert.equal(blankLineRequests.length, 3);
   assert.equal(blankLineRequests[1].text, ' ');
   assert.equal(groupedHeader.units[0]?.lineCount, 3);
 
-  const failedGroup = await renderUnsupportedRasterLines({
-    render: async () => ({ version: 1 as const, requestId: 'failed', ok: false as const, code: 'font-unavailable' as const, detail: 'missing' }),
-  }, ['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], caps, 'failed', [{ groupId: 'customer', lineIndex: 0, lineCount: 2 }]);
+  const failedGroup = await renderUnsupportedRasterLines(
+    {
+      render: async () => ({
+        version: 1 as const,
+        requestId: 'failed',
+        ok: false as const,
+        code: 'font-unavailable' as const,
+        detail: 'missing',
+      }),
+    },
+    ['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'],
+    caps,
+    'failed',
+    [{ groupId: 'customer', lineIndex: 0, lineCount: 2 }],
+  );
   assert.equal(failedGroup.failures[0]?.lineCount, 2);
-  const nativeFallback = buildEscPos(['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], false, { capabilities: caps });
+  const nativeFallback = buildEscPos(
+    ['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'],
+    false,
+    { capabilities: caps },
+  );
   assert.equal(escPosToText(nativeFallback).includes('555-0100'), true);
   const refusedFailedGroup = buildEscPos(['{FINANCIAL}فارسی', '555-0100'], false, {
     capabilities: caps,
@@ -979,19 +1977,37 @@ async function run(): Promise<void> {
   });
   assert.equal(refusedFailedGroup.length, 0);
   const encodeFailureWarnings: any[] = [];
-  buildEscPos(['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], false, {
-    capabilities: caps,
-    rasterUnits: [{
-      lineIndex: 0,
-      lineCount: 2,
-      unit: { ...unit, financial: false, bands: [{ ...twoRows, pixels: new Uint8Array(1) }] },
-    }],
-  }, encodeFailureWarnings);
-  assert.equal(encodeFailureWarnings.some((warning) => warning.kind === 'line'), true);
+  buildEscPos(
+    ['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'],
+    false,
+    {
+      capabilities: caps,
+      rasterUnits: [
+        {
+          lineIndex: 0,
+          lineCount: 2,
+          unit: { ...unit, financial: false, bands: [{ ...twoRows, pixels: new Uint8Array(1) }] },
+        },
+      ],
+    },
+    encodeFailureWarnings,
+  );
+  assert.equal(
+    encodeFailureWarnings.some((warning) => warning.kind === 'line'),
+    true,
+  );
   const shapedFinancialWarnings: any[] = [];
-  const shapedFinancial = buildEscPos(['{FINANCIAL}税 10'], false, { capabilities: caps, arabicShaping: true }, shapedFinancialWarnings);
+  const shapedFinancial = buildEscPos(
+    ['{FINANCIAL}税 10'],
+    false,
+    { capabilities: caps, arabicShaping: true },
+    shapedFinancialWarnings,
+  );
   assert.equal(shapedFinancial.length, 0);
-  assert.equal(shapedFinancialWarnings.some((warning) => warning.kind === 'financial'), true);
+  assert.equal(
+    shapedFinancialWarnings.some((warning) => warning.kind === 'financial'),
+    true,
+  );
 
   const request = {
     version: 1 as const,
@@ -1012,7 +2028,9 @@ async function run(): Promise<void> {
     send?: (channel: string, message: unknown) => void;
   };
   webContents.loadURL = async () => undefined;
-  webContents.send = (_channel, message) => { webContents.sent = message; };
+  webContents.send = (_channel, message) => {
+    webContents.sent = message;
+  };
   const surface = new EventEmitter() as EventEmitter & {
     webContents: typeof webContents;
     isDestroyed: () => boolean;
@@ -1080,15 +2098,39 @@ async function run(): Promise<void> {
   const renderPromise = renderer.render(request);
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.deepEqual((webContents.sent as any).request, request);
-  ipc.emit('flo:raster-result', { sender: webContents }, { version: 1, result: { version: 1, requestId: request.requestId, ok: true, unit } });
-  assert.deepEqual(await renderPromise, { version: 1, requestId: request.requestId, ok: true, unit });
+  ipc.emit(
+    'flo:raster-result',
+    { sender: webContents },
+    { version: 1, result: { version: 1, requestId: request.requestId, ok: true, unit } },
+  );
+  assert.deepEqual(await renderPromise, {
+    version: 1,
+    requestId: request.requestId,
+    ok: true,
+    unit,
+  });
   renderer.destroy();
   assert.equal(isRasterRenderRequest(request), true);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: undefined }), true);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: null }), false);
-  assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: 'https://example.invalid/font.woff2' } }), false);
-  assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: null } }), false);
-  assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, family: 'bad;url(x)' } }), false);
+  assert.equal(
+    isRasterRenderRequest({
+      ...request,
+      bundledFont: { ...request.bundledFont, dataUrl: 'https://example.invalid/font.woff2' },
+    }),
+    false,
+  );
+  assert.equal(
+    isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: null } }),
+    false,
+  );
+  assert.equal(
+    isRasterRenderRequest({
+      ...request,
+      bundledFont: { ...request.bundledFont, family: 'bad;url(x)' },
+    }),
+    false,
+  );
 
   const baseLayout = {
     kind: 'financial-item' as const,
@@ -1098,38 +2140,86 @@ async function run(): Promise<void> {
     ],
   };
   assert.equal(isRasterRenderRequest({ ...request, layout: baseLayout }), true);
-  assert.equal(isRasterRenderRequest({
-    ...request,
-    layout: {
-      ...baseLayout,
-      columns: [
-        { text: 'Item', align: 'left' as const, widthRatio: 0.5 },
-        { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
-      ],
-    },
-  }), true);
-  assert.equal(isRasterRenderRequest({
-    ...request,
-    layout: {
-      ...baseLayout,
-      columns: [
-        { text: 'Item', align: 'left' as const, widthRatio: 0.6 },
-        { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
-      ],
-    },
-  }), true);
-  assert.equal(isRasterRenderRequest({
-    ...request,
-    layout: {
-      ...baseLayout,
-      columns: [
-        { text: 'Item', align: 'left' as const, widthRatio: 0.7 },
-        { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
-      ],
-    },
-  }), false);
+  assert.equal(
+    isRasterRenderRequest({
+      ...request,
+      layout: {
+        ...baseLayout,
+        columns: [
+          { text: 'Item', align: 'left' as const, widthRatio: 0.5 },
+          { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
+        ],
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    isRasterRenderRequest({
+      ...request,
+      layout: {
+        ...baseLayout,
+        columns: [
+          { text: 'Item', align: 'left' as const, widthRatio: 0.6 },
+          { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
+        ],
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    isRasterRenderRequest({
+      ...request,
+      layout: {
+        ...baseLayout,
+        columns: [
+          { text: 'Item', align: 'left' as const, widthRatio: 0.7 },
+          { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
+        ],
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    isRasterRenderRequest({
+      ...request,
+      layout: {
+        ...baseLayout,
+        columns: [
+          { text: 'Item', align: 'left' as const, widthRatio: 0.5 },
+          { text: '2', align: 'right' as const, widthRatio: 0.1 },
+          { text: '5.00', align: 'right' as const, widthRatio: 0.15 },
+          { text: '10.00', align: 'right' as const, widthRatio: 0.25 },
+        ],
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    isRasterRenderRequest({
+      ...request,
+      layout: {
+        ...baseLayout,
+        columns: [
+          { text: 'Item', align: 'left' as const },
+          { text: '2', align: 'right' as const },
+          { text: '5.00', align: 'right' as const },
+          { text: '10.00', align: 'right' as const },
+        ],
+      },
+    }),
+    false,
+  );
   assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: true }), false);
-  assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: false, code: 'render-failed', detail: 'failed' }), true);
+  assert.equal(
+    isRasterRenderResult({
+      version: 1,
+      requestId: 'r1',
+      ok: false,
+      code: 'render-failed',
+      detail: 'failed',
+    }),
+    true,
+  );
 
   // Verify raster HTML includes system Thai and CJK fallbacks
   const html = rasterRendererHtml();
@@ -1152,7 +2242,9 @@ async function run(): Promise<void> {
     idleTimeoutMs: 50,
     ipc: ipc as any,
     windowFactory: () => surface as any,
-    onActivity: () => { activityCount++; },
+    onActivity: () => {
+      activityCount++;
+    },
   });
   assert.equal(sharedRenderer1.isDestroyed(), false);
   const sharedRenderer2 = getSharedRasterRenderer();
@@ -1162,8 +2254,17 @@ async function run(): Promise<void> {
   ipc.emit('flo:raster-ready', { sender: webContents });
   const sharedRenderPromise = sharedRenderer1.render(request);
   await new Promise<void>((resolve) => setImmediate(resolve));
-  ipc.emit('flo:raster-result', { sender: webContents }, { version: 1, result: { version: 1, requestId: request.requestId, ok: true, unit } });
-  assert.deepEqual(await sharedRenderPromise, { version: 1, requestId: request.requestId, ok: true, unit });
+  ipc.emit(
+    'flo:raster-result',
+    { sender: webContents },
+    { version: 1, result: { version: 1, requestId: request.requestId, ok: true, unit } },
+  );
+  assert.deepEqual(await sharedRenderPromise, {
+    version: 1,
+    requestId: request.requestId,
+    ok: true,
+    unit,
+  });
   assert.equal(activityCount, 1);
 
   // Wait for idle teardown
@@ -1203,40 +2304,73 @@ async function run(): Promise<void> {
     },
   };
   const fontlessRequests: any[] = [];
-  const fontlessResult = await renderUnsupportedRasterLines({
-    render: async (req) => {
-      fontlessRequests.push(req);
-      return { version: 1, requestId: (req as any).requestId, ok: true, unit: { unitId: (req as any).requestId, financial: false, complete: true, bands: [twoRows] } };
+  const fontlessResult = await renderUnsupportedRasterLines(
+    {
+      render: async (req) => {
+        fontlessRequests.push(req);
+        return {
+          version: 1,
+          requestId: (req as any).requestId,
+          ok: true,
+          unit: {
+            unitId: (req as any).requestId,
+            financial: false,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  }, ['چای 1 $550', '煎饼 1 $550'], fontlessCapabilities, 'fontless');
+    ['چای 1 $550', '煎饼 1 $550'],
+    fontlessCapabilities,
+    'fontless',
+  );
   assert.equal(fontlessResult.failures.length, 0);
   assert.equal(fontlessRequests.length, 2);
   assert.equal(fontlessRequests[0].bundledFont, undefined);
   // Verify widthRatio on financial-item and financial-summary raster layouts
   const ratioRequests: any[] = [];
-  await renderUnsupportedRasterLines({
-    render: async (req) => {
-      ratioRequests.push(req);
-      return { version: 1, requestId: (req as any).requestId, ok: true, unit: { unitId: (req as any).requestId, financial: true, complete: true, bands: [twoRows] } };
-    },
-  }, ['{FINANCIAL}宫保鸡丁 2 $424.00'], caps, 'ratio-test', [
+  await renderUnsupportedRasterLines(
     {
-      groupId: 'item-table-row-0',
-      lineIndex: 0,
-      lineCount: 1,
-      sourceLines: ['宫保鸡丁 2 $424.00'],
-      sourceControlLines: ['{FINANCIAL}宫保鸡丁 2 $424.00'],
-      sourceLayouts: [{
-        kind: 'financial-item',
-        columns: [
-          { text: '宫保鸡丁', align: 'left', widthRatio: 18 / 32 },
-          { text: '2', align: 'left', widthRatio: 4 / 32 },
-          { text: '$424.00', align: 'right', widthRatio: 10 / 32 },
-        ],
-      }],
-      financial: true,
+      render: async (req) => {
+        ratioRequests.push(req);
+        return {
+          version: 1,
+          requestId: (req as any).requestId,
+          ok: true,
+          unit: {
+            unitId: (req as any).requestId,
+            financial: true,
+            complete: true,
+            bands: [twoRows],
+          },
+        };
+      },
     },
-  ]);
+    ['{FINANCIAL}宫保鸡丁 2 $424.00'],
+    caps,
+    'ratio-test',
+    [
+      {
+        groupId: 'item-table-row-0',
+        lineIndex: 0,
+        lineCount: 1,
+        sourceLines: ['宫保鸡丁 2 $424.00'],
+        sourceControlLines: ['{FINANCIAL}宫保鸡丁 2 $424.00'],
+        sourceLayouts: [
+          {
+            kind: 'financial-item',
+            columns: [
+              { text: '宫保鸡丁', align: 'left', widthRatio: 18 / 32 },
+              { text: '2', align: 'left', widthRatio: 4 / 32 },
+              { text: '$424.00', align: 'right', widthRatio: 10 / 32 },
+            ],
+          },
+        ],
+        financial: true,
+      },
+    ],
+  );
   assert.equal(ratioRequests.length, 1);
   assert.equal(ratioRequests[0].layout.columns[0].widthRatio, 18 / 32);
   assert.equal(ratioRequests[0].layout.columns[1].widthRatio, 4 / 32);
@@ -1256,7 +2390,10 @@ async function run(): Promise<void> {
     caps,
   );
   for (const line of narrow32Item) {
-    assert.ok(line.length <= 32, `Item row line "${line}" exceeds 32 characters (was ${line.length})`);
+    assert.ok(
+      line.length <= 32,
+      `Item row line "${line}" exceeds 32 characters (was ${line.length})`,
+    );
   }
 
   // dotsForPaperWidth: paper_width string → canonical raster dot width
@@ -1292,6 +2429,523 @@ async function run(): Promise<void> {
   const default80Context = resolvePrinterContext(default80Printer);
   assert.equal(default80Context.columns, 42);
   assert.equal(default80Context.capabilities.raster.widthDots, 576);
+
+  // #1350: paintRasterRequest shared canvas kernel tests
+  const createMockCanvas = (pixelBlack = true): RasterCanvas => {
+    const canvas: RasterCanvas = {
+      width: 1,
+      height: 1,
+      getContext: () => ({
+        font: '',
+        textBaseline: 'top',
+        direction: 'ltr',
+        textAlign: 'left',
+        fillStyle: '#000',
+        measureText: (text: string) => ({ width: text.length * 12 }),
+        setTransform: () => undefined,
+        fillRect: () => undefined,
+        fillText: () => undefined,
+        getImageData: (_x: number, _y: number, width: number, height: number) => {
+          const data = new Uint8ClampedArray(width * height * 4);
+          for (let i = 0; i < width * height; i++) {
+            const val = pixelBlack && i % 8 === 0 ? 0 : 255;
+            data[i * 4] = val;
+            data[i * 4 + 1] = val;
+            data[i * 4 + 2] = val;
+            data[i * 4 + 3] = 255;
+          }
+          return { data };
+        },
+      }),
+    };
+    return canvas;
+  };
+
+  const paintedUnit = paintRasterRequest(
+    {
+      version: 1,
+      requestId: 'paint-1',
+      text: 'Burrito de Camarón 1 $550.00',
+      widthDots: 384,
+      maxBandHeight: 200,
+      direction: 'ltr',
+      layout: {
+        kind: 'financial-item',
+        columns: [
+          { text: 'Burrito de Camarón', align: 'left', widthRatio: 0.55 },
+          { text: '1', align: 'right', widthRatio: 0.15 },
+          { text: '$550.00', align: 'right', widthRatio: 0.3 },
+        ],
+      },
+      style: 'normal',
+      financial: true,
+      maxLines: 8,
+    },
+    () => createMockCanvas(true),
+  );
+  assert.equal(paintedUnit.ok, true);
+  if (paintedUnit.ok) {
+    assert.equal(paintedUnit.unit.financial, true);
+    assert.equal(paintedUnit.unit.complete, true);
+    assert.equal(paintedUnit.unit.bands[0].widthDots, 384);
+    assert.ok(paintedUnit.unit.bands[0].pixels.some((p) => p === 1));
+  }
+
+  const nullContextPaint = paintRasterRequest(
+    {
+      version: 1,
+      requestId: 'paint-null',
+      text: 'Burrito de Camarón',
+      widthDots: 384,
+      maxBandHeight: 200,
+      direction: 'ltr',
+      style: 'normal',
+      financial: true,
+      maxLines: 4,
+    },
+    () => ({ width: 1, height: 1, getContext: () => null }),
+  );
+  assert.equal(nullContextPaint.ok, false);
+
+  // #1350: Merchant and compliance pack templates rasterize accented items on generic profile
+  const generic80 = resolvePrinterProfile({ profile_id: 'generic-escpos-80' });
+  const camaronOrder = {
+    order_number: 'ORD-1350',
+    created_at: '2026-08-21 18:42:00',
+    items: [
+      {
+        product_name: 'Burrito de Camarón',
+        quantity: 1,
+        unit_price: 550,
+        total: 550,
+        addons: [{ name: 'Jalapeño Extra', price: 50, quantity: 1 }],
+      },
+    ],
+  };
+  const camaronBill = {
+    bill_number: 'BILL-1350',
+    subtotal: 600,
+    discount_amount: 0,
+    tax_amount: 0,
+    total: 600,
+    payment_details: '[]',
+  };
+  const merchantDoc = receiptDocumentLines(
+    camaronOrder,
+    camaronBill,
+    { name: 'Taquería', country: 'US', currency: 'USD' },
+    JSON.stringify({ source: 'merchant', id: 'missing-template' }),
+    42,
+    false,
+    false,
+    false,
+    'en',
+    undefined,
+    'full',
+    generic80.capabilities,
+  );
+  assert.ok(merchantDoc !== null, 'merchant template returns rasterizable document lines');
+  const merchantRaster = await renderUnsupportedRasterLines(
+    {
+      render: async (req) => paintRasterRequest(req, () => createMockCanvas(true)),
+    },
+    merchantDoc.lines,
+    generic80.capabilities,
+    'merchant-1350',
+    merchantDoc.rasterGroups,
+  );
+  assert.equal(merchantRaster.failures.length, 0);
+  assert.ok(merchantRaster.units.some((u) => u.unit.financial));
+  const merchantRasterWarnings: any[] = [];
+  const merchantRasterBytes = buildEscPos(
+    merchantDoc.lines,
+    false,
+    {
+      cutMode: 'full',
+      columns: 42,
+      capabilities: generic80.capabilities,
+      rasterUnits: merchantRaster.units,
+      rasterFailures: merchantRaster.failures,
+    },
+    merchantRasterWarnings,
+  );
+  assert.equal(merchantRasterWarnings.length, 0);
+  assert.ok(merchantRasterBytes.includes(Buffer.from([0x1d, 0x76, 0x30])));
+
+  const packWarnings: any[] = [];
+  const packDoc = pluginReceiptLines(
+    {
+      template_id: 'pack-mx-test',
+      pack_id: 'mx',
+      pack_version_id: '1',
+      country: 'MX',
+      jurisdiction: 'MX',
+      display_name: 'MX Ticket',
+      paper_widths_json: '["80mm"]',
+      renderer_json: JSON.stringify({ id: 'flocafe-thermal-receipt-template', version: 1 }),
+      template_payload_json: JSON.stringify({
+        format: 'escpos-line-template-v1',
+        widthProfiles: [
+          {
+            columns: 42,
+            layout: {
+              lineItems: {
+                gap: 1,
+                columns: [
+                  { key: 'item', label: 'ITEM', width: 22, align: 'left', wrap: true, maxLines: 2 },
+                  { key: 'quantity', label: 'QTY', width: 4, align: 'right' },
+                  { key: 'amount', label: 'AMOUNT', width: 14, align: 'right' },
+                ],
+                detailLines: ['addons', 'specialInstructions'],
+              },
+              taxSummary: { labelWidth: 28, amountWidth: 12 },
+            },
+          },
+        ],
+        lineItems: { includeAddons: true, includeSpecialInstructions: true },
+        totals: { showSubtotal: true, grandTotalLabel: 'TOTAL' },
+      }),
+      status: 'active',
+      created_at: '2026-01-01T00:00:00Z',
+    },
+    camaronOrder,
+    camaronBill,
+    { name: 'Taquería', country: 'US', currency: 'USD' },
+    42,
+    false,
+    false,
+    packWarnings,
+    false,
+    'en',
+    generic80.capabilities,
+  );
+  const packRaster = await renderUnsupportedRasterLines(
+    {
+      render: async (req) =>
+        isRasterRenderRequest(req)
+          ? paintRasterRequest(req, () => createMockCanvas(true))
+          : {
+              version: 1,
+              requestId: req.requestId,
+              ok: false,
+              code: 'invalid-request',
+              detail: 'Raster request failed validation',
+            },
+    },
+    packDoc.lines,
+    generic80.capabilities,
+    'pack-1350',
+    packDoc.rasterGroups,
+  );
+  assert.equal(packRaster.failures.length, 0);
+  assert.ok(packRaster.units.some((u) => u.unit.financial));
+  const packEscPosWarnings: any[] = [];
+  const packEscPosBytes = buildEscPos(
+    packDoc.lines,
+    false,
+    {
+      cutMode: 'full',
+      columns: packDoc.columns,
+      capabilities: generic80.capabilities,
+      rasterUnits: packRaster.units,
+      rasterFailures: packRaster.failures,
+      financialLineRanges: packDoc.financialLineRanges,
+    },
+    packEscPosWarnings,
+  );
+  assert.equal(packEscPosWarnings.length, 0);
+  assert.ok(packEscPosBytes.includes(Buffer.from([0x1d, 0x76, 0x30])));
+
+  // 4-column pack (item/quantity/rate/amount) + truncated non-ASCII suffix must pass validation
+  const fourColPackDoc = pluginReceiptLines(
+    {
+      template_id: 'pack-in-4col-test',
+      pack_id: 'in',
+      pack_version_id: '1',
+      country: 'IN',
+      jurisdiction: '*',
+      display_name: 'IN GST Ticket',
+      paper_widths_json: '["80mm"]',
+      renderer_json: JSON.stringify({ id: 'flocafe-thermal-receipt-template', version: 1 }),
+      template_payload_json: JSON.stringify({
+        format: 'escpos-line-template-v1',
+        widthProfiles: [
+          {
+            columns: 42,
+            layout: {
+              lineItems: {
+                gap: 1,
+                columns: [
+                  { key: 'item', label: 'ITEM', width: 18, align: 'left', wrap: false },
+                  { key: 'quantity', label: 'QTY', width: 4, align: 'right' },
+                  { key: 'rate', label: 'RATE', width: 7, align: 'right' },
+                  { key: 'amount', label: 'AMOUNT', width: 10, align: 'right' },
+                ],
+                detailLines: ['addons', 'specialInstructions'],
+              },
+              taxSummary: { labelWidth: 28, amountWidth: 12 },
+            },
+          },
+        ],
+        lineItems: { includeAddons: true, includeSpecialInstructions: true },
+        totals: { showSubtotal: true, grandTotalLabel: 'TOTAL' },
+      }),
+      status: 'active',
+      created_at: '2026-01-01T00:00:00Z',
+    },
+    {
+      ...camaronOrder,
+      items: [
+        {
+          product_name: '12345678901234567890 Camarón',
+          quantity: 2,
+          unit_price: 275,
+          total: 550,
+          addons: [],
+          status: 'pending',
+        },
+      ],
+    },
+    camaronBill,
+    { name: 'Store', country: 'US', currency: 'USD' },
+    42,
+    false,
+    false,
+    [],
+    false,
+    'en',
+    generic80.capabilities,
+  );
+  const fourColRequests: any[] = [];
+  const fourColRaster = await renderUnsupportedRasterLines(
+    {
+      render: async (req) => {
+        fourColRequests.push(req);
+        return isRasterRenderRequest(req)
+          ? paintRasterRequest(req, () => createMockCanvas(true))
+          : {
+              version: 1,
+              requestId: req.requestId,
+              ok: false,
+              code: 'invalid-request',
+              detail: 'Raster request failed validation',
+            };
+      },
+    },
+    fourColPackDoc.lines,
+    generic80.capabilities,
+    'pack-4col-1350',
+    fourColPackDoc.rasterGroups,
+  );
+  assert.equal(fourColRaster.failures.length, 0);
+  assert.equal(fourColRequests.length, 1);
+  assert.equal(fourColRequests[0].layout?.columns.length, 4);
+  assert.equal(fourColRequests[0].layout?.columns[2].text, '$275.00');
+  assert.equal(fourColRequests[0].layout?.columns[3].text, '$550.00');
+
+  // #1350: whenRasterRendererReady waits for app.whenReady() when not yet ready
+  let readyResolved = false;
+  const fakeApp = {
+    isReady: () => readyResolved,
+    whenReady: async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      readyResolved = true;
+    },
+  };
+  await whenRasterRendererReady(fakeApp);
+  assert.equal(readyResolved, true);
+
+  // #1350: Browser/WebUSB canvas raster fallback on frontend encoders
+  const path = require('node:path') as typeof import('node:path');
+  const moduleApi = require('node:module') as { _resolveFilename: (...args: any[]) => string };
+  const originalResolve = moduleApi._resolveFilename;
+  moduleApi._resolveFilename = function (req: string, parent: any, isMain: boolean, opts?: any) {
+    let resolved = req;
+    if (req === '@countries') resolved = path.resolve(__dirname, '../main/countries.ts');
+    else if (req.startsWith('@/'))
+      resolved = path.resolve(__dirname, '../frontend/src', req.slice(2));
+    else if (req.startsWith('@print/'))
+      resolved = path.resolve(__dirname, '../shared/print', req.slice('@print/'.length));
+    return originalResolve.call(this, resolved, parent, isMain, opts);
+  };
+  try {
+    const feWarnings =
+      require('../frontend/src/lib/printer/warnings') as typeof import('../frontend/src/lib/printer/warnings');
+    const feReceipt =
+      require('../frontend/src/lib/printer/receipt-encoder') as typeof import('../frontend/src/lib/printer/receipt-encoder');
+    const feTaxBill =
+      require('../frontend/src/lib/printer/tax-bill-encoder') as typeof import('../frontend/src/lib/printer/tax-bill-encoder');
+    const feDeliverySlip =
+      require('../frontend/src/lib/printer/delivery-slip-encoder') as typeof import('../frontend/src/lib/printer/delivery-slip-encoder');
+    const webusbCaps: ThermalPrinterCapabilities = {
+      ...GENERIC_THERMAL_CAPABILITIES,
+      raster: {
+        enabled: true,
+        widthDots: 384,
+        maxBandHeight: 200,
+        modes: ['mixed', 'whole-receipt'],
+      },
+    };
+    const webusbBill = {
+      bill_number: 'WEBUSB-1350',
+      subtotal: 550,
+      discount_amount: 0,
+      tax_amount: 0,
+      total: 550,
+      payment_details: [{ method: 'cash', amount: 550 }],
+      order: {
+        order_number: 'ORD-WEBUSB-1350',
+        created_at: '2026-08-21T18:42:00Z',
+        items: [
+          {
+            product_name: 'Burrito de Camarón',
+            quantity: 1,
+            unit_price: 550,
+            total: 550,
+            addons: [],
+            status: 'pending',
+          },
+        ],
+      },
+    };
+    const webusbTenant = {
+      business_name: 'Taquería',
+      country: 'US',
+      currency: 'USD',
+      timezone: 'UTC',
+    };
+
+    feWarnings.setBrowserRasterCanvasFactory(() => createMockCanvas(true));
+    try {
+      const classicWarn: any[] = [];
+      const classicBytes = feReceipt.buildClassicReceiptBytes(
+        webusbBill as any,
+        webusbTenant as any,
+        { paperWidth: 58, capabilities: webusbCaps },
+        classicWarn,
+      );
+      assert.equal(feWarnings.hasFinancialPrintWarning(classicWarn), false);
+      assert.ok(Buffer.from(classicBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
+
+      const taxWarn: any[] = [];
+      const taxBytes = feTaxBill.buildTaxBillBytes(
+        webusbBill as any,
+        webusbTenant as any,
+        { paperWidth: 58, capabilities: webusbCaps },
+        taxWarn,
+      );
+      assert.equal(feWarnings.hasFinancialPrintWarning(taxWarn), false);
+      assert.ok(Buffer.from(taxBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
+
+      // Indented add-on rows in buildTaxBillBytes preserve space-grouped French currency amounts
+      const frenchPaintedCells: Array<{ text: string; align: string }> = [];
+      feWarnings.setBrowserRasterCanvasFactory(() => {
+        const base = createMockCanvas(true);
+        const origGetContext = base.getContext.bind(base);
+        return {
+          ...base,
+          getContext: (id: '2d', opts?: { alpha?: boolean }) => {
+            const ctx = origGetContext(id, opts);
+            if (!ctx) return null;
+            ctx.fillText = (text: string) => {
+              frenchPaintedCells.push({ text, align: ctx.textAlign });
+            };
+            return ctx;
+          },
+        };
+      });
+      const frenchTaxWarn: any[] = [];
+      const frenchTaxBytes = feTaxBill.buildTaxBillBytes(
+        {
+          ...webusbBill,
+          subtotal: 1234,
+          total: 1234,
+          payment_details: [{ method: 'cash', amount: 1234 }],
+          order: {
+            ...webusbBill.order,
+            items: [
+              {
+                product_name: 'Croissant',
+                quantity: 1,
+                unit_price: 0,
+                total: 1234,
+                addons: [{ name: 'Crème', price: 1234, quantity: 1 }],
+                status: 'pending',
+              },
+            ],
+          },
+        } as any,
+        {
+          business_name: 'Boulangerie',
+          country: 'FR',
+          currency: 'EUR',
+          timezone: 'UTC',
+        } as any,
+        { paperWidth: 58, capabilities: webusbCaps },
+        frenchTaxWarn,
+      );
+      assert.equal(feWarnings.hasFinancialPrintWarning(frenchTaxWarn), false);
+      assert.ok(Buffer.from(frenchTaxBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
+      assert.ok(
+        frenchPaintedCells.some(
+          (cell) => cell.text === '   + Crème' && cell.align === 'left',
+        ),
+      );
+      assert.ok(
+        frenchPaintedCells.some(
+          (cell) => cell.text.replace(/\s+/g, ' ') === 'EUR1 234,00' && cell.align === 'right',
+        ),
+      );
+      assert.equal(
+        frenchPaintedCells.some((cell) => cell.text === '234,00'),
+        false,
+      );
+
+      const slipWarn: any[] = [];
+      const slipBytes = feDeliverySlip.buildDeliverySlipBytes(
+        { order_number: 'SLIP-1350', created_at: '2026-08-21T18:42:00Z', type: 'delivery' },
+        [{ product_name: 'Burrito de Camarón', quantity: 1 }],
+        { name: 'José', phone: '+15550001234', address: 'Calle 1' },
+        {
+          paperWidth: 58,
+          capabilities: webusbCaps,
+          payment: {
+            status: 'unpaid',
+            amount: 550,
+            formattedAmount: '₡550',
+            expectedMethod: 'cash',
+          },
+        },
+        slipWarn,
+      );
+      assert.equal(feWarnings.hasFinancialPrintWarning(slipWarn), false);
+      assert.ok(Buffer.from(slipBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
+
+      // Fail-closed when browser canvas context is unavailable
+      feWarnings.setBrowserRasterCanvasFactory(() => ({
+        width: 1,
+        height: 1,
+        getContext: () => null,
+      }));
+      const failedTaxWarn: any[] = [];
+      feTaxBill.buildTaxBillBytes(
+        webusbBill as any,
+        webusbTenant as any,
+        { paperWidth: 58, capabilities: webusbCaps },
+        failedTaxWarn,
+      );
+      assert.equal(feWarnings.hasFinancialPrintWarning(failedTaxWarn), true);
+      assert.ok(
+        feWarnings
+          .makeFinancialPrintRefusalMessage(failedTaxWarn)
+          .includes('Canvas 2D context is unavailable'),
+      );
+    } finally {
+      feWarnings.setBrowserRasterCanvasFactory(undefined);
+    }
+  } finally {
+    moduleApi._resolveFilename = originalResolve;
+  }
 
   console.log('Raster encoder and mixed-mode contract checks passed.');
 }

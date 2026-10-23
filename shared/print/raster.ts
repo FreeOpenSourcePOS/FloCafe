@@ -264,7 +264,13 @@ export function isRasterRenderRequest(value: unknown): value is RasterRenderRequ
       && (request.layout.kind === 'financial-summary' || request.layout.kind === 'financial-item')
       && Array.isArray(request.layout.columns)
       && request.layout.columns.length >= 2
-      && request.layout.columns.length <= 3
+      && (
+        request.layout.columns.length <= 3
+        || (
+          request.layout.columns.length === 4
+          && request.layout.columns.every((column) => !!column && typeof column.widthRatio === 'number')
+        )
+      )
       && request.layout.columns.every((column) => !!column
         && typeof column.text === 'string'
         && column.text.length <= 16_000

@@ -52,7 +52,10 @@ import {
   validateMerchantTemplate,
   validateMerchantTemplateText,
 } from '../shared/print';
-import { renderClassicReceiptViaDocument, renderBillDocumentToClassicLines } from '../main/printers/document-classic';
+import {
+  renderClassicReceiptViaDocument,
+  renderBillDocumentToClassicLines,
+} from '../main/printers/document-classic';
 import { formatClassicReceiptLegacy } from './helpers/legacy-thermal-oracle';
 import { escPosToText, formatReceipt } from '../main/printers/thermal';
 import {
@@ -91,7 +94,10 @@ console.log('\n▶ Validation: golden fixtures');
   const labeled = validateMerchantTemplateText(
     JSON.stringify(loadFixture('golden-receipt-labeled-v1.json')),
   );
-  assert(labeled.ok, `golden-receipt-labeled-v1 validates (${labeled.ok ? '' : labeled.errors.join('; ')})`);
+  assert(
+    labeled.ok,
+    `golden-receipt-labeled-v1 validates (${labeled.ok ? '' : labeled.errors.join('; ')})`,
+  );
   ok('golden-receipt-labeled-v1.json validates');
 }
 
@@ -115,7 +121,11 @@ console.log('\n▶ Validation: negative fixtures');
     const result = validateMerchantTemplateText(raw);
     assert(!result.ok, `${fixture}: rejected`);
     assert(
-      result.errors.some((message) => message.includes(expectedFragment) || message.toLowerCase().includes(expectedFragment.toLowerCase())),
+      result.errors.some(
+        (message) =>
+          message.includes(expectedFragment) ||
+          message.toLowerCase().includes(expectedFragment.toLowerCase()),
+      ),
       `${fixture}: actionable error mentions "${expectedFragment}" — got: ${result.errors.join(' | ')}`,
     );
   }
@@ -138,7 +148,9 @@ console.log('\n▶ Validation: size cap and misc');
     format: MERCHANT_TEMPLATE_FORMAT,
     documentType: 'receipt',
     schemaVersion: 1,
-    blocks: [{ kind: 'totals', labels: { grandTotal: 'x'.repeat(MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES) } }],
+    blocks: [
+      { kind: 'totals', labels: { grandTotal: 'x'.repeat(MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES) } },
+    ],
   });
   const result = validateMerchantTemplateText(oversized);
   assert(!result.ok, 'oversized payload rejected');
@@ -169,26 +181,41 @@ console.log('\n▶ applyMerchantTemplate');
     trimDecimals: false,
     resolveLabel: (conceptId: string, language: string) => `${conceptId}[${language}]`,
   };
-  const document = buildBillDocument(require('../main/printers/document-classic').buildBillPrintData(order, bill, business, false), printContext);
+  const document = buildBillDocument(
+    require('../main/printers/document-classic').buildBillPrintData(order, bill, business, false),
+    printContext,
+  );
 
   const golden = validateMerchantTemplate(loadFixture('golden-receipt-v1.json'));
   assert(golden.ok);
   const applied = applyMerchantTemplate(document, golden.payload);
-  assert.deepEqual(applied.blocks.map((block) => block.kind), document.blocks.map((block) => block.kind));
-  assert.deepEqual(applied.blocks, document.blocks as any, 'identity template preserves blocks verbatim');
+  assert.deepEqual(
+    applied.blocks.map((block) => block.kind),
+    document.blocks.map((block) => block.kind),
+  );
+  assert.deepEqual(
+    applied.blocks,
+    document.blocks as any,
+    'identity template preserves blocks verbatim',
+  );
   ok('canonical all-blocks template is an identity transform');
 
   const labeled = validateMerchantTemplate(loadFixture('golden-receipt-labeled-v1.json'));
   assert(labeled.ok);
   const styled = applyMerchantTemplate(document, labeled.payload);
-  assert.deepEqual(styled.blocks.map((block) => block.kind),
+  assert.deepEqual(
+    styled.blocks.map((block) => block.kind),
     ['document-meta', 'item-table', 'totals', 'payments', 'message'],
-    'template order wins; hidden and omitted blocks dropped');
+    'template order wins; hidden and omitted blocks dropped',
+  );
   assert.equal(getBlock(styled, 'tax-breakdown'), undefined, 'visible:false drops tax breakdown');
   assert.equal(getBlock(styled, 'totals')!.grandTotal.label.primary, 'AMOUNT DUE');
   assert.equal(getBlock(styled, 'item-table')!.header.item.primary, 'Product');
-  assert.equal(getBlock(styled, 'document-meta')!.title.secondary, 'SALES RECEIPT',
-    'label variants replace every language variant with the merchant literal');
+  assert.equal(
+    getBlock(styled, 'document-meta')!.title.secondary,
+    'SALES RECEIPT',
+    'label variants replace every language variant with the merchant literal',
+  );
   ok('reordering, visibility, and label variants apply semantically');
 
   assert.equal(getBlock(document, 'totals')!.grandTotal.label.primary, 'print.grandTotal[en]');
@@ -229,21 +256,26 @@ console.log('\n▶ Ordered block composition in renderBillDocumentToClassicLines
       blocks: kinds.map((kind) => ({ kind, ...(labels ?? {}) })),
     });
     assert(payloadValidation.ok);
-    return escPosToText(require('../main/printers/thermal').buildEscPos(
-      renderBillDocumentToClassicLines(applyMerchantTemplate(baseDocument, payloadValidation.payload), {
-        columns: 42,
-        language: 'en',
-        locale: 'en-IN',
-        currencySymbol: '₹',
-        trimDecimals: false,
-        useUnicode: false,
-        arabicShaping: false,
-        cutMode: 'full' as const,
-      }),
-      false,
-      { cutMode: 'full' as const, arabicShaping: false, columns: 42 },
-      [],
-    ));
+    return escPosToText(
+      require('../main/printers/thermal').buildEscPos(
+        renderBillDocumentToClassicLines(
+          applyMerchantTemplate(baseDocument, payloadValidation.payload),
+          {
+            columns: 42,
+            language: 'en',
+            locale: 'en-IN',
+            currencySymbol: '₹',
+            trimDecimals: false,
+            useUnicode: false,
+            arabicShaping: false,
+            cutMode: 'full' as const,
+          },
+        ),
+        false,
+        { cutMode: 'full' as const, arabicShaping: false, columns: 42 },
+        [],
+      ),
+    );
   };
   const indexOf = (text: string, needle: RegExp) => {
     const lines = text.split('\n');
@@ -260,10 +292,14 @@ console.log('\n▶ Ordered block composition in renderBillDocumentToClassicLines
   const addressAt = indexOf(reordered, /12 Marina Boulevard/);
   assert(totalsAt < itemsAt, 'totals segment precedes items under reordered template');
   assert(bannerAt > itemsAt, 'reprint banner travels with the message block position');
-  assert(loyaltyAt > totalsAt && loyaltyAt < itemsAt,
-    'loyalty lines stay inside the totals segment, not appended at document end');
-  assert(addressAt > bannerAt,
-    'header contact footer travels with the business-header block position');
+  assert(
+    loyaltyAt > totalsAt && loyaltyAt < itemsAt,
+    'loyalty lines stay inside the totals segment, not appended at document end',
+  );
+  assert(
+    addressAt > bannerAt,
+    'header contact footer travels with the business-header block position',
+  );
   ok('reordered template renders every block segment at its template position');
 
   const canonicalSubset = renderOrdered(['business-header', 'totals', 'message']);
@@ -283,7 +319,10 @@ const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 try {
   initDatabase();
 } catch (error: any) {
-  if (error?.code === 'ERR_DLOPEN_FAILED' && String(error?.message || '').includes('NODE_MODULE_VERSION')) {
+  if (
+    error?.code === 'ERR_DLOPEN_FAILED' &&
+    String(error?.message || '').includes('NODE_MODULE_VERSION')
+  ) {
     console.log('  ⚠ Skipping: better-sqlite3 ABI mismatch (run via Electron)');
     process.exit(77);
   }
@@ -293,20 +332,37 @@ try {
 console.log('\n▶ Migration v72: fresh install');
 {
   const db = getDatabase();
-  const table = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='merchant_print_templates'`).get() as any;
+  const table = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='merchant_print_templates'`)
+    .get() as any;
   assert(table, 'merchant_print_templates created on a fresh install');
   for (const column of [
-    'id', 'business_id', 'name', 'origin', 'derived_from', 'document_type', 'schema_version',
-    'payload_json', 'status', 'previous_payload_json', 'checksum', 'created_by', 'updated_by',
-    'created_at', 'updated_at',
+    'id',
+    'business_id',
+    'name',
+    'origin',
+    'derived_from',
+    'document_type',
+    'schema_version',
+    'payload_json',
+    'status',
+    'previous_payload_json',
+    'checksum',
+    'created_by',
+    'updated_by',
+    'created_at',
+    'updated_at',
   ]) {
     assert(table.sql.includes(column), `column ${column} present`);
   }
   ok('table schema matches the ideal fresh-install shape (both paths share MIGRATIONS)');
 
   const stored = db.prepare(`SELECT value FROM settings WHERE key='bill_template'`).get() as any;
-  assert.deepEqual(JSON.parse(stored.value), { source: 'core', id: 'classic' },
-    'seeded legacy bill_template value upgraded to the structured selection');
+  assert.deepEqual(
+    JSON.parse(stored.value),
+    { source: 'core', id: 'classic' },
+    'seeded legacy bill_template value upgraded to the structured selection',
+  );
   ok('bill_template setting upgraded to structured JSON on fresh installs');
 }
 
@@ -330,7 +386,9 @@ console.log('\n▶ Migration v72: legacy value upgrade (idempotent rerun)');
 
   initDatabase();
   const upgradedDb = getDatabase();
-  const stored = upgradedDb.prepare(`SELECT value FROM settings WHERE key='bill_template'`).get() as any;
+  const stored = upgradedDb
+    .prepare(`SELECT value FROM settings WHERE key='bill_template'`)
+    .get() as any;
   assert.deepEqual(JSON.parse(stored.value), { source: 'core', id: 'compact' });
   ok('legacy bare core value upgraded transparently');
 
@@ -340,7 +398,9 @@ console.log('\n▶ Migration v72: legacy value upgrade (idempotent rerun)');
 
   initDatabase();
   const packDb = getDatabase();
-  const packStored = packDb.prepare(`SELECT value FROM settings WHERE key='bill_template'`).get() as any;
+  const packStored = packDb
+    .prepare(`SELECT value FROM settings WHERE key='bill_template'`)
+    .get() as any;
   assert.deepEqual(JSON.parse(packStored.value), { source: 'pack', id: 'in-pack-receipt' });
   ok('legacy bare pack template id upgraded to the structured pack selection');
 
@@ -349,7 +409,9 @@ console.log('\n▶ Migration v72: legacy value upgrade (idempotent rerun)');
   closeDatabase();
   initDatabase();
   const finalDb = getDatabase();
-  const finalStored = finalDb.prepare(`SELECT value FROM settings WHERE key='bill_template'`).get() as any;
+  const finalStored = finalDb
+    .prepare(`SELECT value FROM settings WHERE key='bill_template'`)
+    .get() as any;
   assert.deepEqual(JSON.parse(finalStored.value), { source: 'pack', id: 'in-pack-receipt' });
   ok('migration is idempotent for already-structured values');
 }
@@ -362,26 +424,34 @@ console.log('\n▶ Selection identity (structured, legacy-compatible)');
 {
   assert.deepEqual(parseBillTemplateSelection('classic'), { source: 'core', id: 'classic' });
   assert.deepEqual(parseBillTemplateSelection('COMPACT'), { source: 'core', id: 'compact' });
-  assert.deepEqual(parseBillTemplateSelection('in-pack-receipt'), { source: 'pack', id: 'in-pack-receipt' });
+  assert.deepEqual(parseBillTemplateSelection('in-pack-receipt'), {
+    source: 'pack',
+    id: 'in-pack-receipt',
+  });
   assert.deepEqual(
     parseBillTemplateSelection('{"source":"merchant","id":"abc"}'),
     { source: 'merchant', id: 'abc' },
-    'structured JSON strings parse');
+    'structured JSON strings parse',
+  );
   assert.deepEqual(
     parseBillTemplateSelection({ source: 'core', id: 'classic' }),
     { source: 'core', id: 'classic' },
-    'structured objects parse directly');
+    'structured objects parse directly',
+  );
   assert.equal(parseBillTemplateSelection('no-such-template'), null);
   assert.equal(parseBillTemplateSelection(''), null);
   assert.equal(parseBillTemplateSelection(undefined), null);
   assert.equal(parseBillTemplateSelection({ source: 'cloud', id: 'x' }), null);
   ok('legacy bare values, structured forms, and rejection cases behave');
 
-  assert.equal(serializeBillTemplateSelection({ source: 'core', id: 'classic' }),
-    '{"source":"core","id":"classic"}');
+  assert.equal(
+    serializeBillTemplateSelection({ source: 'core', id: 'classic' }),
+    '{"source":"core","id":"classic"}',
+  );
   assert.deepEqual(
     parseBillTemplateSelection(serializeBillTemplateSelection({ source: 'merchant', id: 'm-1' })),
-    { source: 'merchant', id: 'm-1' });
+    { source: 'merchant', id: 'm-1' },
+  );
   ok('serialize -> parse roundtrips');
 
   assert.equal(upgradeBillTemplateValue('classic'), '{"source":"core","id":"classic"}');
@@ -389,8 +459,11 @@ console.log('\n▶ Selection identity (structured, legacy-compatible)');
   assert.equal(upgradeBillTemplateValue('nope'), null);
   ok('writer-side upgrade produces canonical persistence form');
 
-  assert.equal(parseBillTemplateSelection('00000000-0000-0000-0000-000000000001'), null,
-    'unpersisted merchant ids resolve to nothing');
+  assert.equal(
+    parseBillTemplateSelection('00000000-0000-0000-0000-000000000001'),
+    null,
+    'unpersisted merchant ids resolve to nothing',
+  );
   ok('unknown merchant ids do not resolve');
 }
 
@@ -408,14 +481,20 @@ const { printTemplateRoutes } = require('../main/routes/print-templates');
 const app = express();
 app.use(express.json());
 // Keep the executable API harness bounded at the same boundary as production.
-app.use('/api', expressRateLimit({
-  windowMs: 60 * 1000,
-  limit: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-}));
+app.use(
+  '/api',
+  expressRateLimit({
+    windowMs: 60 * 1000,
+    limit: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+);
 app.use((req: any, res: any, next: any) => {
-  if (!req.path.startsWith('/api')) { next(); return; }
+  if (!req.path.startsWith('/api')) {
+    next();
+    return;
+  }
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Authentication required' });
@@ -437,10 +516,12 @@ function authHeaderFor(role: string): string {
 // requirePermission() resolves effective permissions from a real users row
 // keyed by the JWT's userId — the token alone is not authoritative.
 for (const role of ['owner', 'cashier']) {
-  getDatabase().prepare(
-    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, 'unused', ?, 1, ?, ?)`
-  ).run(`actor-${role}`, `actor-${role}`, `actor-${role}@test.local`, role, now(), now());
+  getDatabase()
+    .prepare(
+      `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, 'unused', ?, 1, ?, ?)`,
+    )
+    .run(`actor-${role}`, `actor-${role}`, `actor-${role}@test.local`, role, now(), now());
 }
 
 const OWNER = authHeaderFor('owner');
@@ -453,18 +534,26 @@ async function runLifecycle(): Promise<void> {
   console.log('\n▶ CRUD API: validation gate');
   let templateId = '';
   {
-    const bad = await request(app).post('/api/print-templates')
-      .set('Authorization', OWNER).send({ name: 'Bad', payload: { nope: true } });
+    const bad = await request(app)
+      .post('/api/print-templates')
+      .set('Authorization', OWNER)
+      .send({ name: 'Bad', payload: { nope: true } });
     assert.equal(bad.status, 400, `invalid payload rejected with 400 (got ${bad.status})`);
-    assert(Array.isArray(bad.body.details) && bad.body.details.length > 0, 'actionable error details returned');
+    assert(
+      Array.isArray(bad.body.details) && bad.body.details.length > 0,
+      'actionable error details returned',
+    );
     ok('write-time validation rejects unknown shapes with details');
 
-    const forbidden = await request(app).post('/api/print-templates')
-      .set('Authorization', CASHIER).send({ name: 'X', payload: PAYLOAD_V1 });
+    const forbidden = await request(app)
+      .post('/api/print-templates')
+      .set('Authorization', CASHIER)
+      .send({ name: 'X', payload: PAYLOAD_V1 });
     assert.equal(forbidden.status, 403, 'non-owner cannot create templates');
     ok('CRUD is owner-role only');
 
-    const created = await request(app).post('/api/print-templates')
+    const created = await request(app)
+      .post('/api/print-templates')
       .set('Authorization', OWNER)
       .send({
         name: 'Front Counter Receipt',
@@ -476,7 +565,8 @@ async function runLifecycle(): Promise<void> {
     assert.equal(created.body.template.status, 'draft');
     assert.equal(created.body.template.origin, 'cloned');
     assert.deepEqual(created.body.template.derivedFrom, {
-      type: 'compliance-pack-template', templateId: 'country-x-tax-invoice',
+      type: 'compliance-pack-template',
+      templateId: 'country-x-tax-invoice',
     });
     templateId = created.body.template.id;
     ok('draft creation records informational compliance provenance without trust claims');
@@ -484,44 +574,68 @@ async function runLifecycle(): Promise<void> {
 
   console.log('\n▶ CRUD API: draft → active → rollback → archive');
   {
-    const activated = await request(app).post(`/api/print-templates/${templateId}/activate`)
+    const activated = await request(app)
+      .post(`/api/print-templates/${templateId}/activate`)
       .set('Authorization', OWNER);
     assert.equal(activated.status, 200);
     assert.equal(activated.body.template.status, 'active');
     ok('activate promotes a draft');
 
-    const row = getDatabase().prepare('SELECT payload_json, checksum FROM merchant_print_templates WHERE id = ?').get(templateId) as any;
-    assert.equal(row.checksum, createHash('sha256').update(row.payload_json, 'utf8').digest('hex'),
-      'stored checksum equals sha256 of the persisted payload text');
+    const row = getDatabase()
+      .prepare('SELECT payload_json, checksum FROM merchant_print_templates WHERE id = ?')
+      .get(templateId) as any;
+    assert.equal(
+      row.checksum,
+      createHash('sha256').update(row.payload_json, 'utf8').digest('hex'),
+      'stored checksum equals sha256 of the persisted payload text',
+    );
     ok('checksum verification passes after activation');
 
     // Tamper detection: corrupt the payload behind the service's back.
-    getDatabase().prepare('UPDATE merchant_print_templates SET payload_json = ? WHERE id = ?')
+    getDatabase()
+      .prepare('UPDATE merchant_print_templates SET payload_json = ? WHERE id = ?')
       .run('{"tampered":true}', templateId);
-    const tamperedActivate = await request(app).post(`/api/print-templates/${templateId}/activate`)
+    const tamperedActivate = await request(app)
+      .post(`/api/print-templates/${templateId}/activate`)
       .set('Authorization', OWNER);
     assert.equal(tamperedActivate.status, 409, 'activation fails closed on checksum mismatch');
-    getDatabase().prepare('UPDATE merchant_print_templates SET payload_json = ? WHERE id = ?')
+    getDatabase()
+      .prepare('UPDATE merchant_print_templates SET payload_json = ? WHERE id = ?')
       .run(row.payload_json, templateId);
     ok('checksum mismatch is detected before any state change');
 
-    const updated = await request(app).put(`/api/print-templates/${templateId}`)
-      .set('Authorization', OWNER).send({ payload: PAYLOAD_LABELED });
+    const updated = await request(app)
+      .put(`/api/print-templates/${templateId}`)
+      .set('Authorization', OWNER)
+      .send({ payload: PAYLOAD_LABELED });
     assert.equal(updated.status, 200);
-    assert.equal(updated.body.template.hasPreviousPayload, true,
-      'editing an active template snapshots the previous payload');
+    assert.equal(
+      updated.body.template.hasPreviousPayload,
+      true,
+      'editing an active template snapshots the previous payload',
+    );
     ok('single-step rollback point captured on active edit');
 
-    const rolledBack = await request(app).post(`/api/print-templates/${templateId}/rollback`)
+    const rolledBack = await request(app)
+      .post(`/api/print-templates/${templateId}/rollback`)
       .set('Authorization', OWNER);
     assert.equal(rolledBack.status, 200);
     assert.equal(rolledBack.body.template.hasPreviousPayload, false);
-    const restored = getDatabase().prepare('SELECT payload_json, previous_payload_json FROM merchant_print_templates WHERE id = ?').get(templateId) as any;
-    assert.equal(restored.payload_json, row.payload_json, 'rollback restores the exact previous payload');
+    const restored = getDatabase()
+      .prepare(
+        'SELECT payload_json, previous_payload_json FROM merchant_print_templates WHERE id = ?',
+      )
+      .get(templateId) as any;
+    assert.equal(
+      restored.payload_json,
+      row.payload_json,
+      'rollback restores the exact previous payload',
+    );
     assert.equal(restored.previous_payload_json, null);
     ok('rollback restores the previous payload and clears the rollback point');
 
-    const noRollbackTwice = await request(app).post(`/api/print-templates/${templateId}/rollback`)
+    const noRollbackTwice = await request(app)
+      .post(`/api/print-templates/${templateId}/rollback`)
       .set('Authorization', OWNER);
     assert.equal(noRollbackTwice.status, 409, 'second rollback has nothing to restore');
     ok('rollback without a previous payload is rejected');
@@ -529,18 +643,24 @@ async function runLifecycle(): Promise<void> {
     // Capture a fresh rollback point while ACTIVE so the archived-rollback
     // refusal below can only come from the status guard, not from an empty
     // rollback point.
-    const reEdit = await request(app).put(`/api/print-templates/${templateId}`)
-      .set('Authorization', OWNER).send({ payload: PAYLOAD_LABELED });
+    const reEdit = await request(app)
+      .put(`/api/print-templates/${templateId}`)
+      .set('Authorization', OWNER)
+      .send({ payload: PAYLOAD_LABELED });
     assert.equal(reEdit.status, 200);
 
-    const archived = await request(app).post(`/api/print-templates/${templateId}/archive`)
+    const archived = await request(app)
+      .post(`/api/print-templates/${templateId}/archive`)
       .set('Authorization', OWNER);
     assert.equal(archived.status, 200);
     assert.equal(archived.body.template.status, 'archived');
-    const editArchived = await request(app).put(`/api/print-templates/${templateId}`)
-      .set('Authorization', OWNER).send({ name: 'Zombie' });
+    const editArchived = await request(app)
+      .put(`/api/print-templates/${templateId}`)
+      .set('Authorization', OWNER)
+      .send({ name: 'Zombie' });
     assert.equal(editArchived.status, 409, 'archived templates are immutable');
-    const rollbackArchived = await request(app).post(`/api/print-templates/${templateId}/rollback`)
+    const rollbackArchived = await request(app)
+      .post(`/api/print-templates/${templateId}/rollback`)
       .set('Authorization', OWNER);
     assert.equal(rollbackArchived.status, 409, 'rollback is refused on archived templates');
     assert.equal(rollbackArchived.body.error, 'Archived templates cannot be rolled back');
@@ -549,47 +669,136 @@ async function runLifecycle(): Promise<void> {
 
   console.log('\n▶ CRUD API: merchant availability in selection identity');
   {
-    const inactive = await request(app).post('/api/print-templates')
-      .set('Authorization', OWNER).send({ name: 'Draft Only', payload: PAYLOAD_V1 });
+    const inactive = await request(app)
+      .post('/api/print-templates')
+      .set('Authorization', OWNER)
+      .send({ name: 'Draft Only', payload: PAYLOAD_V1 });
     const draftId = inactive.body.template.id;
 
     const storedStructured = serializeBillTemplateSelection({ source: 'merchant', id: draftId });
     assert.equal(parseBillTemplateSelection(storedStructured)?.source, 'merchant');
     const { isAvailableBillTemplate } = require('../main/services/print-templates');
-    assert.equal(isAvailableBillTemplate(storedStructured), false,
-      'draft merchant template is not selectable');
+    assert.equal(
+      isAvailableBillTemplate(storedStructured),
+      false,
+      'draft merchant template is not selectable',
+    );
     await request(app).post(`/api/print-templates/${draftId}/activate`).set('Authorization', OWNER);
-    assert.equal(isAvailableBillTemplate(storedStructured), true,
-      'active merchant template becomes selectable');
+    assert.equal(
+      isAvailableBillTemplate(storedStructured),
+      true,
+      'active merchant template becomes selectable',
+    );
     await request(app).post(`/api/print-templates/${draftId}/archive`).set('Authorization', OWNER);
-    assert.equal(isAvailableBillTemplate(storedStructured), false,
-      'archived merchant template stops being selectable');
+    assert.equal(
+      isAvailableBillTemplate(storedStructured),
+      false,
+      'archived merchant template stops being selectable',
+    );
     ok('merchant availability follows the lifecycle (active only)');
   }
 
   console.log('\n▶ Render path: merchant templates through the document pipeline');
   {
-    const { order, bill, business } = buildParityFixtures();
-    const rendered = await request(app).post('/api/print-templates')
-      .set('Authorization', OWNER).send({ name: 'Render Test', payload: PAYLOAD_V1 });
+    const { order: fullOrder, bill, business } = buildParityFixtures();
+    const order = {
+      ...fullOrder,
+      items: fullOrder.items.map((item: any) =>
+        item.product_name === 'چای زعفرانی مخصوص' ? { ...item, product_name: 'Espresso' } : item,
+      ),
+    };
+    const rendered = await request(app)
+      .post('/api/print-templates')
+      .set('Authorization', OWNER)
+      .send({ name: 'Render Test', payload: PAYLOAD_V1 });
     const renderId = rendered.body.template.id;
-    await request(app).post(`/api/print-templates/${renderId}/activate`).set('Authorization', OWNER);
+    await request(app)
+      .post(`/api/print-templates/${renderId}/activate`)
+      .set('Authorization', OWNER);
+
+    const refusalWarnings: any[] = [];
+    const refusalBytes = formatReceipt(
+      fullOrder,
+      bill,
+      business,
+      serializeBillTemplateSelection({ source: 'merchant', id: renderId }),
+      42,
+      false,
+      false,
+      'full',
+      refusalWarnings,
+      false,
+      'en',
+    );
+    assert.equal(
+      refusalBytes.length,
+      0,
+      'merchant render refuses unsupported financial item rows on native fallback',
+    );
+    assert(
+      refusalWarnings.some((warning) => warning.kind === 'financial'),
+      'merchant refusal reports a financial warning',
+    );
 
     for (const cols of [32, 42, 48] as const) {
-      const merchantBytes = formatReceipt(order, bill, business,
-        serializeBillTemplateSelection({ source: 'merchant', id: renderId }), cols, false, false, 'full', [], false, 'en');
-      const nativeBytes = formatClassicReceiptLegacy(order, bill, business, cols, false, false, 'full', [], false, 'en');
-      assert(Buffer.compare(merchantBytes, nativeBytes) === 0,
-        `merchant render preserves native classic output at ${cols} columns`);
+      const merchantBytes = formatReceipt(
+        order,
+        bill,
+        business,
+        serializeBillTemplateSelection({ source: 'merchant', id: renderId }),
+        cols,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+      );
+      const nativeBytes = formatClassicReceiptLegacy(
+        order,
+        bill,
+        business,
+        cols,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+      );
+      assert(
+        Buffer.compare(merchantBytes, nativeBytes) === 0,
+        `merchant render preserves native classic output at ${cols} columns`,
+      );
     }
     ok('native merchant output remains byte-identical at 32/42/48 columns');
 
-    const styled = await request(app).post('/api/print-templates')
-      .set('Authorization', OWNER).send({ name: 'Styled', payload: PAYLOAD_LABELED });
+    const styled = await request(app)
+      .post('/api/print-templates')
+      .set('Authorization', OWNER)
+      .send({ name: 'Styled', payload: PAYLOAD_LABELED });
     const styledId = styled.body.template.id;
-    await request(app).post(`/api/print-templates/${styledId}/activate`).set('Authorization', OWNER);
-    const styledText = escPosToText(formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: 'Espresso' })) }, bill, business,
-      serializeBillTemplateSelection({ source: 'merchant', id: styledId }), 42, false, false, 'full', [], false, 'en'));
+    await request(app)
+      .post(`/api/print-templates/${styledId}/activate`)
+      .set('Authorization', OWNER);
+    const styledText = escPosToText(
+      formatReceipt(
+        {
+          ...order,
+          items: order.items.map((item: any) => ({ ...item, product_name: 'Espresso' })),
+        },
+        bill,
+        business,
+        serializeBillTemplateSelection({ source: 'merchant', id: styledId }),
+        42,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+      ),
+    );
     assert(styledText.includes('AMOUNT DUE'), 'label variant reaches the rendered output');
     assert(!styledText.includes('GST'), 'hidden tax breakdown block stays hidden');
     ok('semantic overrides change rendered output exactly where configured');
@@ -605,17 +814,52 @@ async function runLifecycle(): Promise<void> {
         { kind: 'message', labels: { thankYou: 'COME AGAIN' } },
       ],
     };
-    const reordered = await request(app).post('/api/print-templates')
-      .set('Authorization', OWNER).send({ name: 'Reordered', payload: reorderedPayload });
+    const reordered = await request(app)
+      .post('/api/print-templates')
+      .set('Authorization', OWNER)
+      .send({ name: 'Reordered', payload: reorderedPayload });
     const reorderedId = reordered.body.template.id;
-    await request(app).post(`/api/print-templates/${reorderedId}/activate`).set('Authorization', OWNER);
-    const reorderedText = escPosToText(formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name })) }, bill, business,
-      serializeBillTemplateSelection({ source: 'merchant', id: reorderedId }), 42, false, false, 'full', [], false, 'en'));
-    assert(reorderedText.indexOf('TOTAL') < reorderedText.indexOf('Espresso Doppio'),
-      'renderer preserves merchant totals-before-items order');
-    assert(reorderedText.includes('CUSTOM RECEIPT'), 'document-meta title override reaches rendered lines');
-    assert(reorderedText.includes('COME AGAIN'), 'message thankYou override reaches rendered lines');
-    assert(!reorderedText.includes('Flo Parity Cafe'), 'omitted business-header block is not rendered');
+    await request(app)
+      .post(`/api/print-templates/${reorderedId}/activate`)
+      .set('Authorization', OWNER);
+    const reorderedText = escPosToText(
+      formatReceipt(
+        {
+          ...order,
+          items: order.items.map((item: any) => ({
+            ...item,
+            product_name:
+              item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name,
+          })),
+        },
+        bill,
+        business,
+        serializeBillTemplateSelection({ source: 'merchant', id: reorderedId }),
+        42,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+      ),
+    );
+    assert(
+      reorderedText.indexOf('TOTAL') < reorderedText.indexOf('Espresso Doppio'),
+      'renderer preserves merchant totals-before-items order',
+    );
+    assert(
+      reorderedText.includes('CUSTOM RECEIPT'),
+      'document-meta title override reaches rendered lines',
+    );
+    assert(
+      reorderedText.includes('COME AGAIN'),
+      'message thankYou override reaches rendered lines',
+    );
+    assert(
+      !reorderedText.includes('Flo Parity Cafe'),
+      'omitted business-header block is not rendered',
+    );
     ok('reordered and omitted blocks render semantically through the document pipeline');
 
     const merchantInstructionWarnings: any[] = [];
@@ -632,13 +876,24 @@ async function runLifecycle(): Promise<void> {
       false,
       'en',
     );
-    assert(merchantInstructionReceipt.length > 0, 'unsupported merchant instructions do not refuse native output');
-    assert(!merchantInstructionWarnings.some((warning) => warning.kind === 'financial'), 'merchant instructions remain nonfinancial warnings');
-    assert(merchantInstructionWarnings.some((warning) => warning.kind === 'line'), 'merchant instructions still report a line warning');
+    assert(
+      merchantInstructionReceipt.length > 0,
+      'unsupported merchant instructions do not refuse native output',
+    );
+    assert(
+      !merchantInstructionWarnings.some((warning) => warning.kind === 'financial'),
+      'merchant instructions remain nonfinancial warnings',
+    );
+    assert(
+      merchantInstructionWarnings.some((warning) => warning.kind === 'line'),
+      'merchant instructions still report a line warning',
+    );
     ok('merchant financial refusal tracks amount-bearing lines only');
 
-    const taxOnly = await request(app).post('/api/print-templates')
-      .set('Authorization', OWNER).send({
+    const taxOnly = await request(app)
+      .post('/api/print-templates')
+      .set('Authorization', OWNER)
+      .send({
         name: 'Tax Only',
         payload: {
           format: MERCHANT_TEMPLATE_FORMAT,
@@ -648,28 +903,77 @@ async function runLifecycle(): Promise<void> {
         },
       });
     const taxOnlyId = taxOnly.body.template.id;
-    await request(app).post(`/api/print-templates/${taxOnlyId}/activate`).set('Authorization', OWNER);
-    const taxOnlyText = escPosToText(formatReceipt(
-      order,
-      { ...bill, tax_amount: 90, tax_breakdown: [{ title: 'GST', rate: 5, amount: 90 }] },
-      { ...business, show_tax_breakdown: true },
-      serializeBillTemplateSelection({ source: 'merchant', id: taxOnlyId }), 42, false, false, 'full', [], false, 'en',
-    ));
+    await request(app)
+      .post(`/api/print-templates/${taxOnlyId}/activate`)
+      .set('Authorization', OWNER);
+    const taxOnlyText = escPosToText(
+      formatReceipt(
+        order,
+        { ...bill, tax_amount: 90, tax_breakdown: [{ title: 'GST', rate: 5, amount: 90 }] },
+        { ...business, show_tax_breakdown: true },
+        serializeBillTemplateSelection({ source: 'merchant', id: taxOnlyId }),
+        42,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+      ),
+    );
     assert(taxOnlyText.includes('GST'), 'tax-breakdown renders without a totals block');
     assert(!taxOnlyText.includes('TOTAL'), 'tax-only composition does not synthesize totals');
     ok('standalone tax-breakdown blocks remain renderable');
 
     // Legacy bare value keeps resolving through the same entrypoint.
-    const legacyClassic = formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name })) }, bill, business, 'classic', 42, false, false, 'full', [], false, 'en');
+    const legacyClassic = formatReceipt(
+      {
+        ...order,
+        items: order.items.map((item: any) => ({
+          ...item,
+          product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name,
+        })),
+      },
+      bill,
+      business,
+      'classic',
+      42,
+      false,
+      false,
+      'full',
+      [],
+      false,
+      'en',
+    );
     assert(legacyClassic.length > 0, 'legacy bare classic still renders');
     ok('legacy bare-string selections keep rendering during transition');
 
     // Inactive/deleted merchant id falls back with an explicit warning.
     const warnings: any[] = [];
-    const fallback = formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name })) }, bill, business,
-      serializeBillTemplateSelection({ source: 'merchant', id: 'missing-id' }), 42, false, false, 'full', warnings, false, 'en');
+    const fallback = formatReceipt(
+      {
+        ...order,
+        items: order.items.map((item: any) => ({
+          ...item,
+          product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name,
+        })),
+      },
+      bill,
+      business,
+      serializeBillTemplateSelection({ source: 'merchant', id: 'missing-id' }),
+      42,
+      false,
+      false,
+      'full',
+      warnings,
+      false,
+      'en',
+    );
     assert(fallback.length > 0, 'missing merchant template falls back to classic');
-    assert(warnings.some((w) => String(w.message).includes('not active')), 'fallback warning recorded');
+    assert(
+      warnings.some((w) => String(w.message).includes('not active')),
+      'fallback warning recorded',
+    );
     ok('render fails closed with an explicit warning, never garbage');
   }
 }
@@ -682,7 +986,9 @@ async function runLifecycle(): Promise<void> {
     process.exit(0);
   } catch (error) {
     console.error(error);
-    try { closeDatabase(); } catch {}
+    try {
+      closeDatabase();
+    } catch {}
     process.exit(1);
   }
 })();

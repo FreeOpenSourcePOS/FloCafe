@@ -419,7 +419,9 @@
     "priceExceptionReason": "原因",
     "priceExceptionsAllShifts": "整个时段",
     "priceExceptionsShift": "班次",
-    "priceExceptionsShiftOpen": "进行中"
+    "priceExceptionsShiftOpen": "进行中",
+    "dayCloseOpenShiftBlocks": "请在日结此营业日之前先关闭未关班次 #{id}（{name}）。",
+    "dayCloseOpenShiftBlocksGeneric": "请在日结之前先关闭此营业日的未关班次。"
   },
   "expenses": {
     "addTitle": "添加支出",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "检查可用性",
     "viewMore": "查看更多",
     "viewLess": "收起",
-    "splitCheckSettingDenied": "该账号无法检查拆单可用性。"
+    "splitCheckSettingDenied": "该账号无法检查拆单可用性。",
+    "dayCloseBlockedByOpenShiftTitle": "必须先关闭当前开启的班次",
+    "dayCloseBlockedByOpenShiftHint": "请在日结此营业日之前先关闭未关班次 #{id}（{name}）。",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# 笔未结订单将结转至下一班次} other {# 笔未结订单将结转至下一班次}}",
+    "shiftCloseUnpaidWarningHint": "这些订单将保持开启并交接给下一班次。关闭本班次仅核对本班次期间已收取的现金付款。",
+    "shiftCloseUnpaidMoreCount": "另有 +{count} 笔未结订单"
   },
   "printTest": {
     "amt": "金额",

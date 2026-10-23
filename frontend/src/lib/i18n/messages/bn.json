@@ -419,7 +419,9 @@
     "priceExceptionReason": "কারণ",
     "priceExceptionsAllShifts": "সম্পূর্ণ সময়কাল",
     "priceExceptionsShift": "শিফট",
-    "priceExceptionsShiftOpen": "চালু"
+    "priceExceptionsShiftOpen": "চালু",
+    "dayCloseOpenShiftBlocks": "এই ব্যবসায়িক দিনটি বন্ধ করার আগে খোলা শিফট #{id} ({name}) বন্ধ করুন।",
+    "dayCloseOpenShiftBlocksGeneric": "দিন বন্ধ করার আগে এই ব্যবসায়িক দিনের খোলা শিফটটি বন্ধ করুন।"
   },
   "expenses": {
     "addTitle": "খরচ যোগ করুন",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "প্রাপ্যতা পরীক্ষা করুন",
     "viewMore": "আরও দেখুন",
     "viewLess": "কম দেখুন",
-    "splitCheckSettingDenied": "এই অ্যাকাউন্ট বিল ভাগ করার প্রাপ্যতা পরীক্ষা করতে পারে না।"
+    "splitCheckSettingDenied": "এই অ্যাকাউন্ট বিল ভাগ করার প্রাপ্যতা পরীক্ষা করতে পারে না।",
+    "dayCloseBlockedByOpenShiftTitle": "খোলা শিফটটি আগে বন্ধ করতে হবে",
+    "dayCloseBlockedByOpenShiftHint": "এই ব্যবসায়িক দিনটি বন্ধ করার আগে খোলা শিফট #{id} ({name}) বন্ধ করুন।",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {#টি খোলা অর্ডার পরবর্তী শিফটে যাবে} other {#টি খোলা অর্ডার পরবর্তী শিফটে যাবে}}",
+    "shiftCloseUnpaidWarningHint": "এই অর্ডারগুলো পরবর্তী শিফটের জন্য খোলা থাকবে। এই শিফট বন্ধ করলে শুধুমাত্র এই শিফটে ইতিমধ্যে সংগৃহীত নগদ পেমেন্টের হিসাব মেলানো হয়।",
+    "shiftCloseUnpaidMoreCount": "+আরও {count}টি খোলা অর্ডার"
   },
   "printTest": {
     "amt": "এএমটি",

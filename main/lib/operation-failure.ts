@@ -167,6 +167,7 @@ const CASH_DAY_CLOSE_DISPLAY_CODES = [
   'notes_too_long',
   'day_already_closed',
   'opening_float_mismatch',
+  'open_shift_blocks_day_close',
 ] as const;
 const KDS_ITEM_STATUS_DISPLAY_CODES = [
   'invalid_status',

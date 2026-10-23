@@ -419,7 +419,9 @@
     "priceExceptionReason": "Lý do",
     "priceExceptionsAllShifts": "Toàn bộ giai đoạn",
     "priceExceptionsShift": "Ca",
-    "priceExceptionsShiftOpen": "đang mở"
+    "priceExceptionsShiftOpen": "đang mở",
+    "dayCloseOpenShiftBlocks": "Hãy đóng ca đang mở #{id} ({name}) trước khi chốt ngày kinh doanh này.",
+    "dayCloseOpenShiftBlocksGeneric": "Hãy đóng ca đang mở của ngày kinh doanh này trước khi chốt ngày."
   },
   "expenses": {
     "addTitle": "Thêm chi phí",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Kiểm tra khả năng",
     "viewMore": "Xem thêm",
     "viewLess": "Thu gọn",
-    "splitCheckSettingDenied": "Tài khoản này không thể kiểm tra khả năng chia hóa đơn."
+    "splitCheckSettingDenied": "Tài khoản này không thể kiểm tra khả năng chia hóa đơn.",
+    "dayCloseBlockedByOpenShiftTitle": "Phải đóng ca đang mở trước",
+    "dayCloseBlockedByOpenShiftHint": "Hãy đóng ca đang mở #{id} ({name}) trước khi chốt ngày kinh doanh này.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# đơn đang mở sẽ chuyển sang ca tiếp theo} other {# đơn đang mở sẽ chuyển sang ca tiếp theo}}",
+    "shiftCloseUnpaidWarningHint": "Các đơn này vẫn mở cho ca tiếp theo. Việc đóng ca này chỉ đối soát các khoản tiền mặt đã thu trong ca này.",
+    "shiftCloseUnpaidMoreCount": "+{count} đơn đang mở khác"
   },
   "printTest": {
     "amt": "Số tiền",

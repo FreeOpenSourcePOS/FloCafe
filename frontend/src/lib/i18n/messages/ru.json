@@ -419,7 +419,9 @@
     "priceExceptionReason": "Причина",
     "priceExceptionsAllShifts": "Весь период",
     "priceExceptionsShift": "Смена",
-    "priceExceptionsShiftOpen": "открыта"
+    "priceExceptionsShiftOpen": "открыта",
+    "dayCloseOpenShiftBlocks": "Закройте открытую смену #{id} ({name}) перед закрытием этого операционного дня.",
+    "dayCloseOpenShiftBlocksGeneric": "Закройте открытую смену за этот операционный день перед закрытием дня."
   },
   "expenses": {
     "addTitle": "Добавить расход",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Проверить доступность",
     "viewMore": "Показать ещё",
     "viewLess": "Свернуть",
-    "splitCheckSettingDenied": "Эта учётная запись не может проверять доступность разделения счета."
+    "splitCheckSettingDenied": "Эта учётная запись не может проверять доступность разделения счета.",
+    "dayCloseBlockedByOpenShiftTitle": "Сначала необходимо закрыть открытую смену",
+    "dayCloseBlockedByOpenShiftHint": "Закройте открытую смену #{id} ({name}) перед закрытием этого операционного дня.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# открытый заказ перейдет в следующую смену} other {# открытых заказов перейдут в следующую смену}}",
+    "shiftCloseUnpaidWarningHint": "Эти заказы остаются открытыми для следующей смены. Закрытие этой смены сверяет только наличные платежи, уже принятые в течение этой смены.",
+    "shiftCloseUnpaidMoreCount": "+ещё {count} открытых заказов"
   },
   "printTest": {
     "amt": "Сумма",

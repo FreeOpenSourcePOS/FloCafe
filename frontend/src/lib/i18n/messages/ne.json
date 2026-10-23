@@ -419,7 +419,9 @@
     "priceExceptionReason": "कारण",
     "priceExceptionsAllShifts": "पूरा अवधि",
     "priceExceptionsShift": "शिफ्ट",
-    "priceExceptionsShiftOpen": "खुला"
+    "priceExceptionsShiftOpen": "खुला",
+    "dayCloseOpenShiftBlocks": "यो व्यावसायिक दिन बन्द गर्नुअघि खुला सिफ्ट #{id} ({name}) बन्द गर्नुहोस्।",
+    "dayCloseOpenShiftBlocksGeneric": "दिन बन्द गर्नुअघि यो व्यावसायिक दिनको खुला सिफ्ट बन्द गर्नुहोस्।"
   },
   "expenses": {
     "addTitle": "खर्च थप्नुहोस्",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "उपलब्धता जाँच गर्नुहोस्",
     "viewMore": "थप हेर्नुहोस्",
     "viewLess": "कम हेर्नुहोस्",
-    "splitCheckSettingDenied": "यो खाताले बिल विभाजनको उपलब्धता जाँच गर्न सक्दैन।"
+    "splitCheckSettingDenied": "यो खाताले बिल विभाजनको उपलब्धता जाँच गर्न सक्दैन।",
+    "dayCloseBlockedByOpenShiftTitle": "पहिले खुला सिफ्ट बन्द गर्नुपर्छ",
+    "dayCloseBlockedByOpenShiftHint": "यो व्यावसायिक दिन बन्द गर्नुअघि खुला सिफ्ट #{id} ({name}) बन्द गर्नुहोस्।",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# खुला अर्डर अर्को सिफ्टमा सर्नेछ} other {# खुला अर्डरहरू अर्को सिफ्टमा सर्नेछन्}}",
+    "shiftCloseUnpaidWarningHint": "यी अर्डरहरू अर्को सिफ्टका लागि खुला नै रहन्छन्। यो सिफ्ट बन्द गर्दा यस सिफ्टमा पहिले नै संकलन गरिएका नगद भुक्तानी मात्र मिलान गरिन्छ।",
+    "shiftCloseUnpaidMoreCount": "+थप {count} खुला अर्डरहरू"
   },
   "printTest": {
     "amt": "रकम",

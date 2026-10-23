@@ -419,7 +419,9 @@
     "priceExceptionReason": "Reason",
     "priceExceptionsAllShifts": "Whole period",
     "priceExceptionsShift": "Shift",
-    "priceExceptionsShiftOpen": "open"
+    "priceExceptionsShiftOpen": "open",
+    "dayCloseOpenShiftBlocks": "Close open shift #{id} ({name}) before closing this business day.",
+    "dayCloseOpenShiftBlocksGeneric": "Close the open shift for this business day before closing the day."
   },
   "expenses": {
     "addTitle": "Add expense",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Check availability",
     "viewMore": "View more",
     "viewLess": "View less",
-    "splitCheckSettingDenied": "This account cannot check split-check availability."
+    "splitCheckSettingDenied": "This account cannot check split-check availability.",
+    "dayCloseBlockedByOpenShiftTitle": "Open shift must be closed first",
+    "dayCloseBlockedByOpenShiftHint": "Close open shift #{id} ({name}) before closing this business day.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# open order will carry over} other {# open orders will carry over}}",
+    "shiftCloseUnpaidWarningHint": "These orders stay open for the next shift. Closing this shift only reconciles cash payments already collected during this shift.",
+    "shiftCloseUnpaidMoreCount": "+{count} more open orders"
   },
   "printTest": {
     "amt": "Amt",

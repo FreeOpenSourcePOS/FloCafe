@@ -419,7 +419,9 @@
     "priceExceptionReason": "Neden",
     "priceExceptionsAllShifts": "Tüm dönem",
     "priceExceptionsShift": "Vardiya",
-    "priceExceptionsShiftOpen": "açık"
+    "priceExceptionsShiftOpen": "açık",
+    "dayCloseOpenShiftBlocks": "Bu iş gününü kapatmadan önce açık vardiya #{id} ({name}) kaydını kapatın.",
+    "dayCloseOpenShiftBlocksGeneric": "Günü kapatmadan önce bu iş gününe ait açık vardiyayı kapatın."
   },
   "expenses": {
     "addTitle": "Gider ekle",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Uygunluğu kontrol et",
     "viewMore": "Daha fazla göster",
     "viewLess": "Daha az göster",
-    "splitCheckSettingDenied": "Bu hesap hesap bölme uygunluğunu kontrol edemez."
+    "splitCheckSettingDenied": "Bu hesap hesap bölme uygunluğunu kontrol edemez.",
+    "dayCloseBlockedByOpenShiftTitle": "Önce açık vardiya kapatılmalıdır",
+    "dayCloseBlockedByOpenShiftHint": "Bu iş gününü kapatmadan önce açık vardiya #{id} ({name}) kaydını kapatın.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# açık sipariş sonraki vardiyaya devredilecek} other {# açık sipariş sonraki vardiyaya devredilecek}}",
+    "shiftCloseUnpaidWarningHint": "Bu siparişler bir sonraki vardiya için açık kalır. Bu vardiyayı kapatmak yalnızca bu vardiya sırasında tahsil edilmiş nakit ödemeleri mutabakatlandırır.",
+    "shiftCloseUnpaidMoreCount": "+{count} açık sipariş daha"
   },
   "printTest": {
     "amt": "Tutar",

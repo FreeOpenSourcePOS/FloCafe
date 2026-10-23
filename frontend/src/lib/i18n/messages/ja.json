@@ -419,7 +419,9 @@
     "priceExceptionReason": "理由",
     "priceExceptionsAllShifts": "期間全体",
     "priceExceptionsShift": "シフト",
-    "priceExceptionsShiftOpen": "営業中"
+    "priceExceptionsShiftOpen": "営業中",
+    "dayCloseOpenShiftBlocks": "この営業日を締める前に、開始中のシフト #{id}（{name}）を閉じてください。",
+    "dayCloseOpenShiftBlocksGeneric": "営業日を締める前に、この営業日の開始中のシフトを閉じてください。"
   },
   "expenses": {
     "addTitle": "経費を追加",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "利用可否を確認",
     "viewMore": "さらに表示",
     "viewLess": "表示を減らす",
-    "splitCheckSettingDenied": "このアカウントでは伝票分割の利用可否を確認できません。"
+    "splitCheckSettingDenied": "このアカウントでは伝票分割の利用可否を確認できません。",
+    "dayCloseBlockedByOpenShiftTitle": "開始中のシフトを先に閉じる必要があります",
+    "dayCloseBlockedByOpenShiftHint": "この営業日を締める前に、開始中のシフト #{id}（{name}）を閉じてください。",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# 件の未会計注文が次のシフトに引き継がれます} other {# 件の未会計注文が次のシフトに引き継がれます}}",
+    "shiftCloseUnpaidWarningHint": "これらの注文は次のシフトに引き継がれます。このシフトの精算では、このシフト中に受け取った現金支払いのみを集計します。",
+    "shiftCloseUnpaidMoreCount": "他 +{count} 件の未会計注文"
   },
   "printTest": {
     "amt": "金額",

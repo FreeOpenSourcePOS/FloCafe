@@ -419,7 +419,9 @@
     "priceExceptionReason": "Dahilan",
     "priceExceptionsAllShifts": "Buong panahon",
     "priceExceptionsShift": "Shift sa trabaho",
-    "priceExceptionsShiftOpen": "bukas"
+    "priceExceptionsShiftOpen": "bukas",
+    "dayCloseOpenShiftBlocks": "Isara muna ang bukas na shift #{id} ({name}) bago isara ang araw ng negosyong ito.",
+    "dayCloseOpenShiftBlocksGeneric": "Isara muna ang bukas na shift para sa araw ng negosyong ito bago isara ang araw."
   },
   "expenses": {
     "addTitle": "Magdagdag ng gastos",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Tingnan ang availability",
     "viewMore": "Tingnan pa",
     "viewLess": "Tingnan nang kaunti",
-    "splitCheckSettingDenied": "Hindi puwedeng tingnan ng account na ito ang availability ng paghahati ng check."
+    "splitCheckSettingDenied": "Hindi puwedeng tingnan ng account na ito ang availability ng paghahati ng check.",
+    "dayCloseBlockedByOpenShiftTitle": "Kailangang isara muna ang bukas na shift",
+    "dayCloseBlockedByOpenShiftHint": "Isara muna ang bukas na shift #{id} ({name}) bago isara ang araw ng negosyong ito.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# bukas na order ang ililipat sa susunod na shift} other {# bukas na mga order ang ililipat sa susunod na shift}}",
+    "shiftCloseUnpaidWarningHint": "Mananatiling bukas ang mga order na ito para sa susunod na shift. Ang pagsasara ng shift na ito ay nagtutugma lamang sa mga bayad na cash na nakolekta na sa shift na ito.",
+    "shiftCloseUnpaidMoreCount": "+{count} pang bukas na order"
   },
   "printTest": {
     "amt": "Halaga",

@@ -419,7 +419,9 @@
     "priceExceptionReason": "Grund",
     "priceExceptionsAllShifts": "Gesamter Zeitraum",
     "priceExceptionsShift": "Schicht",
-    "priceExceptionsShiftOpen": "offen"
+    "priceExceptionsShiftOpen": "offen",
+    "dayCloseOpenShiftBlocks": "Schließen Sie die offene Schicht #{id} ({name}), bevor Sie diesen Geschäftstag abschließen.",
+    "dayCloseOpenShiftBlocksGeneric": "Schließen Sie die offene Schicht für diesen Geschäftstag, bevor Sie den Tag abschließen."
   },
   "expenses": {
     "addTitle": "Ausgabe hinzufügen",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Verfügbarkeit prüfen",
     "viewMore": "Mehr anzeigen",
     "viewLess": "Weniger anzeigen",
-    "splitCheckSettingDenied": "Dieses Konto kann die Verfügbarkeit des Rechnungssplittings nicht prüfen."
+    "splitCheckSettingDenied": "Dieses Konto kann die Verfügbarkeit des Rechnungssplittings nicht prüfen.",
+    "dayCloseBlockedByOpenShiftTitle": "Offene Schicht muss zuerst geschlossen werden",
+    "dayCloseBlockedByOpenShiftHint": "Schließen Sie die offene Schicht #{id} ({name}), bevor Sie diesen Geschäftstag abschließen.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# offene Bestellung wird übertragen} other {# offene Bestellungen werden übertragen}}",
+    "shiftCloseUnpaidWarningHint": "Diese Bestellungen bleiben für die nächste Schicht geöffnet. Beim Schließen dieser Schicht werden nur die in dieser Schicht bereits kassierten Barzahlungen abgestimmt.",
+    "shiftCloseUnpaidMoreCount": "+{count} weitere offene Bestellungen"
   },
   "printTest": {
     "amt": "Betrag",

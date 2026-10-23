@@ -31,6 +31,32 @@ export interface ShiftCloseResult {
   counted_cash_cents: number;
 }
 
+export interface CashSessionClosePreviewOrder {
+  order_id: number;
+  order_number: string;
+  bill_id: number;
+  bill_number: string;
+  status: string;
+  payment_status: string;
+  total: number;
+  balance: number;
+  balance_cents: number;
+  created_at: string;
+}
+
+export interface CashSessionClosePreview {
+  session_id?: number;
+  opened_by_name?: string;
+  opened_at?: string;
+  unpaid_in_shift: {
+    count?: number;
+    bill_count?: number;
+    pending_cents?: number;
+    sample?: CashSessionClosePreviewOrder[];
+  };
+  would_block_close: boolean;
+}
+
 /** Result of a shift refresh. Superseded calls carry no session and must not
  *  trigger routing because a newer refresh owns the current UI state. */
 export type CashSessionRefreshResult =
@@ -60,6 +86,7 @@ export function useCashSession() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [closedResult, setClosedResult] = useState<ShiftCloseResult | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [closePreview, setClosePreview] = useState<CashSessionClosePreview | null>(null);
 
   // Pure fetcher shared by the mount effect and refresh(): performs the
   // request, returns data-or-null, never touches state itself. (The mount
@@ -113,6 +140,22 @@ export function useCashSession() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!closeModalOpen || !session) return;
+    let cancelled = false;
+    api
+      .get('/cash-sessions/current/close-preview')
+      .then((res) => {
+        if (!cancelled) setClosePreview((res.data ?? null) as CashSessionClosePreview | null);
+      })
+      .catch(() => {
+        if (!cancelled) setClosePreview(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [closeModalOpen, session]);
 
   // Shared display→cents semantics with day close (lib/money.ts).
   const displayToCents = (raw: string): number | null =>
@@ -239,6 +282,8 @@ export function useCashSession() {
     closeShift,
     printClosure,
     shiftLoadFailedMessage,
+    closePreview,
+    setClosePreview,
   };
 }
 

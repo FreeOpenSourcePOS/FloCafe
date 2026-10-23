@@ -419,7 +419,9 @@
     "priceExceptionReason": "وجہ",
     "priceExceptionsAllShifts": "پورا عرصہ",
     "priceExceptionsShift": "شفٹ",
-    "priceExceptionsShiftOpen": "کھلی"
+    "priceExceptionsShiftOpen": "کھلی",
+    "dayCloseOpenShiftBlocks": "اس کاروباری دن کو بند کرنے سے پہلے کھلی شفٹ #{id} ({name}) کو بند کریں۔",
+    "dayCloseOpenShiftBlocksGeneric": "دن بند کرنے سے پہلے اس کاروباری دن کی کھلی شفٹ بند کریں۔"
   },
   "expenses": {
     "addTitle": "خرچ شامل کریں",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "دستیابی چیک کریں",
     "viewMore": "مزید دیکھیں",
     "viewLess": "کم دکھائیں",
-    "splitCheckSettingDenied": "یہ اکاؤنٹ بل کی تقسیم کی دستیابی چیک نہیں کر سکتا۔"
+    "splitCheckSettingDenied": "یہ اکاؤنٹ بل کی تقسیم کی دستیابی چیک نہیں کر سکتا۔",
+    "dayCloseBlockedByOpenShiftTitle": "پہلے کھلی شفٹ بند کرنا ضروری ہے",
+    "dayCloseBlockedByOpenShiftHint": "اس کاروباری دن کو بند کرنے سے پہلے کھلی شفٹ #{id} ({name}) کو بند کریں۔",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# کھلا آرڈر اگلی شفٹ میں منتقل ہوگا} other {# کھلے آرڈرز اگلی شفٹ میں منتقل ہوں گے}}",
+    "shiftCloseUnpaidWarningHint": "یہ آرڈرز اگلی شفٹ کے لیے کھلے رہیں گے۔ اس شفٹ کو بند کرنے سے صرف وہ نقد ادائیگیاں ملائی جاتی ہیں جو اس شفٹ کے دوران وصول ہو چکی ہیں۔",
+    "shiftCloseUnpaidMoreCount": "+{count} مزید کھلے آرڈرز"
   },
   "printTest": {
     "amt": "رقم",

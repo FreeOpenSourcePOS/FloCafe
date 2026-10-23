@@ -22,6 +22,15 @@ export function isOfflineMode(): boolean {
 }
 
 const enabledListeners = new Set<() => void>();
+let offlineAbortController = new AbortController();
+
+/** AbortSignal that aborts whenever the owner switches Offline mode on. */
+export function getOfflineModeAbortSignal(): AbortSignal {
+  if (isOfflineMode()) {
+    return AbortSignal.abort(new OfflineModeError('Network request'));
+  }
+  return offlineAbortController.signal;
+}
 
 /** Runs `listener` whenever the owner switches Offline mode on, so live connections can close. */
 export function onOfflineModeEnabled(listener: () => void): void {
@@ -29,6 +38,8 @@ export function onOfflineModeEnabled(listener: () => void): void {
 }
 
 export function notifyOfflineModeEnabled(): void {
+  offlineAbortController.abort(new OfflineModeError('Network request'));
+  offlineAbortController = new AbortController();
   for (const listener of enabledListeners) {
     try {
       listener();

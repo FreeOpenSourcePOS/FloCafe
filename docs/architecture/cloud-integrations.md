@@ -12,18 +12,25 @@ sits on a path between an order and a paid bill.
 
 The owner can switch every optional outbound connection off with the `offline_mode` setting
 (`PUT /api/settings/offline-mode`, permission `offline-mode.manage`, Settings → Privacy). It is off
-by default. `main/services/offline-mode.ts` exposes `isOfflineMode()`, which is also true when
-`FLO_MATRIX_OFFLINE` is `1`. While it is on:
+by default and is restore-protected across database restore and import.
+`main/services/offline-mode.ts` exposes `isOfflineMode()`, which is also true when
+`FLO_MATRIX_OFFLINE` is `1`, and `getOfflineModeAbortSignal()`, which aborts when Offline mode turns
+on. While it is on:
 
-- FloAdmin cloud sync starts no timers and `trackedFetch` refuses every request.
+- FloAdmin cloud sync starts no timers (including auto-registration retries) and `trackedFetch`
+  refuses or aborts every request; turning the mode off reloads sync and refreshes registration.
 - Google Drive scheduled backups do not run, and connecting, listing, backing up and restoring fail
   with the `offline` error code, and in-flight Drive work is cancelled. Disconnecting retains the
   local tokens and records the revoke as unconfirmed, which blocks further Drive access.
 - WhatsApp closes its socket without unpairing, refuses to connect and does not start; turning the
   mode off reconnects it.
-- Update checks report the `offline` update state, an in-flight update download is cancelled, and
-  the startup tax pack check and the tax pack catalog download are refused.
-- Telemetry, diagnostics and PostHog send nothing, and web image import returns `503`.
+- Update checks report the `offline` update state, an in-flight update check or download is
+  cancelled into the `offline` state, and the startup tax pack check and tax pack catalog and
+  artifact downloads (including in-flight requests) are refused or aborted.
+- Telemetry, diagnostics and PostHog send nothing (stopping the daily ping timer, aborting in-flight
+  telemetry, diagnostics and PostHog requests, and shutting down the PostHog client without flushing
+  queued events; turning the mode off resumes the daily telemetry timer without resending
+  `app_launch`), and web image import returns `503` (aborting in-flight fetches).
 
 The Express API, KDS and Server App stay bound to `0.0.0.0`, so devices on the local network keep
 working.
@@ -480,6 +487,7 @@ For support-ticket correlation, see
 ## Verification
 
 ```sh
+npm run test:offline-mode
 npm run test:google-drive
 npm run test:telemetry
 npm run test:support-ticket

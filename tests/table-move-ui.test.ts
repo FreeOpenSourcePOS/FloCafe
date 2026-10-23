@@ -268,11 +268,42 @@ function testMoveTableModalFilteringAndEdgeCases() {
   console.log('  ✓ MoveTableModal filtering and edge cases render correctly');
 }
 
+function testServerStandaloneMoveTableSafeguards() {
+  const source = mockTable('tbl-1', 'Table 1', 'occupied', 'Ground', 4, {
+    id: 101,
+    order_number: '001',
+    total: 128.4,
+  });
+  const candidates = [source, mockTable('tbl-2', 'Table 2', 'available', 'Ground', 2)];
+
+  const customMarkup = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(MoveTableModal, {
+      sourceTable: source,
+      tables: candidates,
+      apiClient: {
+        defaults: { baseURL: 'http://127.0.0.1:3003' },
+        get: async () => ({ data: { tables: candidates } }),
+        post: async () => ({ data: {} }),
+      } as any,
+      formatPrice: (amount: number) => `THB ${amount.toFixed(2)}`,
+      onClose: () => undefined,
+      onSuccess: () => undefined,
+    }),
+  );
+  assert.ok(
+    customMarkup.includes('THB 128.40'),
+    'MoveTableModal uses caller-supplied formatPrice when provided',
+  );
+
+  console.log('  ✓ MoveTableModal custom formatPrice and apiClient rendering verified');
+}
+
 async function main() {
   console.log('Table Move UI tests');
   try {
     testMoveTableModalRendering();
     testMoveTableModalFilteringAndEdgeCases();
+    testServerStandaloneMoveTableSafeguards();
   } finally {
     moduleApi._load = originalLoad;
     moduleApi._resolveFilename = originalResolveFilename;

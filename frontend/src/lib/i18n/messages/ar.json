@@ -326,8 +326,8 @@
     "exportSales": "مبيعات التصدير",
     "exportXlsx": "إكسل (.xlsx)",
     "exportCsv": "CSV (.csv)",
-    "exportCsvHint": "يتم تنزيل ملفين بتنسيق CSV: «الملخص» و«العناصر».",
-    "exportCsvStarted": "جاري تنزيل ملفات CSV الخاصة بالملخص والعناصر…",
+    "exportCsvHint": "يتم تنزيل ثلاثة ملفات بتنسيق CSV: «الملخص» و«العناصر» و«المدفوعات».",
+    "exportCsvStarted": "جاري تنزيل ملفات CSV الخاصة بالملخص والعناصر والمدفوعات…",
     "liveNow": "بث مباشر الآن",
     "kpiChangeVsSameDayLastWeek": "{percent}% مقارنةً بنفس اليوم من الأسبوع الماضي",
     "kpiNewVsSameDayLastWeek": "الأرقام الجديدة مقارنةً بنفس اليوم من الأسبوع الماضي",
@@ -419,7 +419,9 @@
     "priceExceptionReason": "السبب",
     "priceExceptionsAllShifts": "الفترة كاملة",
     "priceExceptionsShift": "الوردية",
-    "priceExceptionsShiftOpen": "مفتوحة"
+    "priceExceptionsShiftOpen": "مفتوحة",
+    "dayCloseOpenShiftBlocks": "أغلق الوردية المفتوحة #{id} ({name}) قبل إغلاق يوم العمل هذا.",
+    "dayCloseOpenShiftBlocksGeneric": "أغلق الوردية المفتوحة ليوم العمل هذا قبل إغلاق اليوم."
   },
   "expenses": {
     "addTitle": "إضافة مصروف",
@@ -714,6 +716,7 @@
     "printReceiptTitle": "طباعة الإيصال",
     "printed": "مطبوع",
     "printedCount": "{count, plural, zero {لم يُطبع بعد} one {طُبع مرة واحدة} two {طُبع مرتين} few {طُبع # مرات} many {طُبع # مرة} other {طُبع # مرة}}",
+    "transactionNumber": "رقم المعاملة",
     "printing": "جاري الطباعة...",
     "ready": "جاهز",
     "receiptPrintFailedHint": "فشل طباعة الإيصال — تحقق من توصيل الطابعة",
@@ -1121,6 +1124,8 @@
     "paymentIdempotencyConflict": "طلب الدفع هذا مرتبط بالفعل بدفعة أخرى. تحقق من الفاتورة قبل المحاولة مرة أخرى.",
     "paymentMethodUnavailable": "طريقة الدفع هذه غير متاحة الآن. اختر طريقة أخرى.",
     "paymentInputInvalid": "تفاصيل الدفع غير صالحة. تحقق من الطريقة والمبلغ ومرجع المعاملة.",
+    "cardTransactionIdLabel": "رقم المعاملة في الجهاز",
+    "cardTransactionIdMissing": "أدخل رقم المعاملة من جهاز الدفع بالبطاقة.",
     "paymentCompletionApplied": "تم تسجيل الدفعة، لكن FloCafe لم يتمكن من إكمال تحديث لاحق. تحقق من الفاتورة قبل تحصيل دفعة أخرى.",
     "paymentCorrectAndRetry": "صحح بيانات الدفع أو اختر طريقة أخرى، ثم حاول مجددًا.",
     "chargeRequired": "اختر رسمًا قبل التحديث.",
@@ -1166,7 +1171,12 @@
     "splitCheckCheckAvailability": "التحقق من التوفر",
     "viewMore": "عرض المزيد",
     "viewLess": "عرض أقل",
-    "splitCheckSettingDenied": "لا يمكن لهذا الحساب التحقق من توفر تقسيم طلبات الدفع."
+    "splitCheckSettingDenied": "لا يمكن لهذا الحساب التحقق من توفر تقسيم طلبات الدفع.",
+    "dayCloseBlockedByOpenShiftTitle": "يجب إغلاق الوردية المفتوحة أولاً",
+    "dayCloseBlockedByOpenShiftHint": "أغلق الوردية المفتوحة #{id} ({name}) قبل إغلاق يوم العمل هذا.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {سيتم ترحيل طلب مفتوح واحد (#)} other {سيتم ترحيل # طلبات مفتوحة}}",
+    "shiftCloseUnpaidWarningHint": "تظل هذه الطلبات مفتوحة للوردية التالية. إغلاق هذه الوردية يطابق فقط المدفوعات النقدية التي تم تحصيلها بالفعل خلال هذه الوردية.",
+    "shiftCloseUnpaidMoreCount": "+{count} طلبات مفتوحة أخرى"
   },
   "printTest": {
     "amt": "المبلغ",
@@ -2302,6 +2312,8 @@
     "softwareUpdatesHintStore": "يتم توزيع هذه النسخة عبر متجر التطبيقات. ويتولى المتجر إدارة التحديثات.",
     "splitChecks": "تقسيم الفواتير",
     "splitChecksHint": "السماح بتقسيم أصناف الطعام أو الكميات المخصصة لتناول الطعام في المطعم إلى فواتير منفصلة. هذه الميزة معطلة افتراضيًا.",
+    "cardTransactionIdRequired": "طلب رقم معاملة البطاقة",
+    "cardTransactionIdRequiredHint": "يجب أن تتضمن مدفوعات البطاقة رقم المعاملة الصادر من جهاز الدفع، لمطابقة التقارير مع الجهاز. معطّل افتراضيًا.",
     "stationAssignedCategories": "مخصص لمكان آخر — حدد هذا الخيار للنقل",
     "stationAvailableCategories": "الفئات المتاحة",
     "stationCategories": "الفئات التي يتم توجيهها إلى هنا",
@@ -3166,6 +3178,47 @@
       "phone_required": "رقم الهاتف مطلوب",
       "phone_required_pairing": "يلزم وجود هاتف للحصول على رمز الاقتران"
     },
+    "automation": {
+      "autoOptOutLabel": "إلغاء اشتراك تلقائي عند استلام STOP / UNSUBSCRIBE (إضافة لقائمة الحظر)",
+      "broadcastDescription": "إرسال قالب إلى شريحة عملاء مفلترة (يحترم قائمة الحظر وساعات الهدوء والحدود).",
+      "broadcastInactiveDays": "غير نشط >= أيام",
+      "broadcastMinPoints": "الحد الأدنى للنقاط",
+      "broadcastMinVisits": "الحد الأدنى للزيارات",
+      "broadcastSendCta": "إرسال للشريحة",
+      "broadcastSuccess": "اكتمل الإرسال: تم إرسال {sent}، وتخطي {skipped} ({matched} مطابق).",
+      "broadcastTitle": "إرسال لشريحة العملاء",
+      "feedbackLinkLabel": "رابط تقييم المتجر",
+      "instagramLabel": "حساب إنستغرام للمتجر",
+      "maxPerWeekLabel": "الحد الأقصى للرسائل التلقائية لكل عميل أسبوعياً",
+      "placeholdersLabel": "انقر لإدراج متغير",
+      "previewTitle": "معاينة مباشرة (بيانات تجريبية)",
+      "quietHoursEnd": "نهاية ساعات الهدوء",
+      "quietHoursLabel": "إيقاف الإرسال التلقائي خلال ساعات الهدوء",
+      "quietHoursStart": "بداية ساعات الهدوء",
+      "resetDefault": "إعادة للافتراضي",
+      "ruleAfterPaymentHint": "إرسال قالب الإيصال تلقائياً عند دفع فاتورة مرتبطة بهاتف العميل.",
+      "ruleFeedbackDelayHint": "إرسال طلب تقييم بعد طلب مدفوع (ساعات بعد الدفع).",
+      "ruleNthVisitHint": "إرسال رسالة مكافأة كل N زيارات مدفوعة.",
+      "rulePointsThresholdHint": "إرسال إشعار مكافأة عندما يتجاوز رصيد النقاط الحد المحدد.",
+      "rulesDescription": "تفعيل المشغلات التلقائية وضبط الحدود للإيصالات والمتابعات والمكافآت.",
+      "rulesTitle": "قواعد الإرسال التلقائي",
+      "ruleWinbackHint": "إرسال عرض عودة للعملاء غير النشطين لمدة N يوماً على الأقل.",
+      "runSweepCta": "تشغيل القواعد المجدولة الآن",
+      "safetyDescription": "احمِ رقمك المتصل عبر الإلغاء التلقائي وساعات الهدوء والحد الأسبوعي لكل عميل.",
+      "safetyTitle": "ضوابط الأمان ومكافحة الإزعاج",
+      "saveCta": "حفظ إعدادات الأتمتة",
+      "savedSuccess": "تم حفظ إعدادات الأتمتة.",
+      "sweepResult": "تم فحص القواعد المجدولة (أُرسل {sent}).",
+      "templateBodyLabel": "نص الرسالة",
+      "templateNameLabel": "اسم القالب",
+      "templatesDescription": "تخصيص رسائل واتساب التلقائية بمتغيرات العميل والفاتورة والولاء والمتجر.",
+      "templateSelectLabel": "القالب المحدد",
+      "templatesTitle": "قوالب الرسائل",
+      "thresholdDays": "أيام عدم النشاط",
+      "thresholdHours": "ساعات الانتظار",
+      "thresholdPoints": "حد النقاط",
+      "thresholdVisits": "كل N زيارات"
+    },
     "blocklist": {
       "addCta": "إضافة",
       "addedSuccess": "تمت إضافته إلى قائمة الحظر.",
@@ -3258,6 +3311,14 @@
       "rate_limited": "تم تقييد معدل الإرسال بواسطة WhatsApp ({code}). يتم التوقف المؤقت لمدة 5 دقائق.",
       "reconnecting": "تم إغلاق الاتصال ({code}). إعادة الاتصال خلال {seconds} ثانية…"
     },
+    "rule": {
+      "after_payment": "إيصال تلقائي بعد الدفع",
+      "broadcast": "إرسال لشريحة عملاء",
+      "feedback_delay": "متابعة تقييم الخدمة",
+      "nth_visit": "إنجاز عدد الزيارات",
+      "points_threshold": "إنجاز نقاط الولاء",
+      "winback": "استعادة العملاء غير النشطين"
+    },
     "send": {
       "customerPhoneRequired": "أضف رقم هاتف هذا العميل قبل الإرسال.",
       "error": {
@@ -3319,6 +3380,7 @@
       "typing": "الكتابة"
     },
     "tabs": {
+      "automation": "القوالب والقواعد",
       "connection": "الاتصال",
       "inbox": "صندوق الوارد",
       "sent": "تم الإرسال"

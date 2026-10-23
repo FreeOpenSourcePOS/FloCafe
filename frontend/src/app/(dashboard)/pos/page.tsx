@@ -42,7 +42,7 @@ import { useCashSession } from '@/hooks/useCashSession';
 import { tenantCan } from '@/lib/permissions';
 import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
 import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
-import { usePrinterStore } from '@/hooks/usePrinter';
+import { isPrintCancelledOnTenantChangeError, usePrinterStore } from '@/hooks/usePrinter';
 import { printerService } from '@/lib/printer/PrinterService';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatKotErrorToast, formatReceiptErrorToast } from '@/lib/printer/warnings';
@@ -117,7 +117,12 @@ interface PrepaidAttempt {
 }
 
 interface PrepaidPaymentRequest {
-  payments: Array<{ method: string; payment_method_id?: number; amount: number }>;
+  payments: Array<{
+    method: string;
+    payment_method_id?: number;
+    amount: number;
+    transaction_id?: string;
+  }>;
   customer_id: string | number | null;
 }
 
@@ -196,13 +201,20 @@ const parsePrepaidPaymentRequest = (serialized: string): PrepaidPaymentRequest |
       const payment = line as Record<string, unknown>;
       const keys = Object.keys(payment).sort().join(',');
       if (
-        (keys !== 'amount,method' && keys !== 'amount,method,payment_method_id') ||
+        ![
+          'amount,method',
+          'amount,method,payment_method_id',
+          'amount,method,transaction_id',
+          'amount,method,payment_method_id,transaction_id',
+        ].includes(keys) ||
         typeof payment.method !== 'string' ||
         payment.method.length === 0 ||
         typeof payment.amount !== 'number' ||
         !Number.isFinite(payment.amount) ||
         payment.amount <= 0 ||
-        (payment.payment_method_id !== undefined && typeof payment.payment_method_id !== 'number')
+        (payment.payment_method_id !== undefined &&
+          typeof payment.payment_method_id !== 'number') ||
+        (payment.transaction_id !== undefined && typeof payment.transaction_id !== 'string')
       )
         return null;
       payments.push({
@@ -211,6 +223,9 @@ const parsePrepaidPaymentRequest = (serialized: string): PrepaidPaymentRequest |
           ? { payment_method_id: payment.payment_method_id as number }
           : {}),
         amount: payment.amount,
+        ...(payment.transaction_id !== undefined
+          ? { transaction_id: payment.transaction_id as string }
+          : {}),
       });
     }
     return { payments, customer_id: record.customer_id as string | number | null };
@@ -269,7 +284,12 @@ export default function POSPage() {
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [checkoutOverridePin, setCheckoutOverridePin] = useState<string | undefined>();
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
+  const [topbarCustomerModalOpen, setTopbarCustomerModalOpen] = useState(false);
+  const [promptCustomerModalOpen, setPromptCustomerModalOpen] = useState(false);
+  const customerModalOpen = topbarCustomerModalOpen || promptCustomerModalOpen;
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
+  const [prepaidModalAttempt, setPrepaidModalAttempt] = useState<PrepaidAttempt | null>(null);
+  const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(false);
   const [showKeyboardShortcutsModal, setShowKeyboardShortcutsModal] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const [supportError, setSupportError] = useState<{
@@ -702,8 +722,12 @@ export default function POSPage() {
       payment_method_unavailable: t('paymentMethodUnavailable'),
       payment_input_invalid: t('paymentInputInvalid'),
       cash_session_required: tExpenses('cashSessionClosed'),
+      card_transaction_id_required: t('cardTransactionIdMissing'),
     };
     const confirmedNotApplied = failure.trusted && failure.outcome === 'not_applied';
+    if (confirmedNotApplied && failure.displayCode === 'card_transaction_id_required') {
+      setCardTransactionIdRequired(true);
+    }
     const expectedRejection =
       confirmedNotApplied && failure.classification === 'expected_rejection';
     const confirmedNotSaved =
@@ -878,7 +902,11 @@ export default function POSPage() {
   };
 
   const printBillForTenant = async (bill: Bill, force = false, reservedWindow?: Window | null) => {
-    if (!currentTenant || (!force && !autoPrintBill)) {
+    if (
+      !currentTenant ||
+      useAuthStore.getState().currentTenant?.id !== currentTenant.id ||
+      (!force && !autoPrintBill)
+    ) {
       if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
       return;
     }
@@ -887,6 +915,7 @@ export default function POSPage() {
       const printWarnings = await printBill(bill, currentTenant, undefined, reservedWindow);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
+      if (isPrintCancelledOnTenantChangeError(err)) return;
       // Non-fatal: print failure should not block the checkout flow.
       const code = 'print.receipt.failed';
       console.error('[POS] Receipt print failed:', err);
@@ -1109,6 +1138,7 @@ export default function POSPage() {
     !!checkoutTable ||
     !!paymentBill ||
     showCustomerPrompt ||
+    customerModalOpen ||
     showPrepaidCheckout ||
     cashDrawer.open ||
     shift.openModalOpen ||
@@ -1145,11 +1175,49 @@ export default function POSPage() {
     return true;
   };
 
+  const buildCurrentCartFingerprint = (orderItems = cart.items.map(cartItemToOrderItem)) =>
+    JSON.stringify({
+      table_id: cart.tableId,
+      customer_id: cart.customerId,
+      type: cart.orderType,
+      guest_count: cart.guestCount,
+      special_instructions: cart.orderNotes,
+      online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
+      external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
+      delivery_address:
+        cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
+      expected_payment_method:
+        cart.orderType === 'delivery' ? cart.expectedPaymentMethod || undefined : undefined,
+      expected_payment_method_id:
+        cart.orderType === 'delivery' ? (cart.expectedPaymentMethodId ?? undefined) : undefined,
+      delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
+      items: orderItems,
+      waived_charge_ids: Array.from(cart.waivedChargeIds),
+      opted_in_charge_ids: Array.from(cart.optedInChargeIds),
+    });
+
   const handlePlaceOrder = async () => {
     if (!validateOrderPreflight()) return;
 
     // Prepaid stores collect payment before finishing the order.
     if (shouldTakePaymentNow) {
+      let matchingAttempt: PrepaidAttempt | null = null;
+      try {
+        const storedAttempt = readPrepaidAttempt();
+        const cartFingerprint = buildCurrentCartFingerprint();
+        if (
+          storedAttempt &&
+          storedAttempt.userId === activeUserId &&
+          storedAttempt.cartFingerprint === cartFingerprint &&
+          storedAttempt.orderIdempotencyKey &&
+          storedAttempt.paymentIdempotencyKey
+        ) {
+          matchingAttempt = storedAttempt;
+        }
+      } catch {
+        // Storage failures are reported when checkout is confirmed.
+      }
+      setPrepaidModalAttempt(matchingAttempt);
       setShowPrepaidCheckout(true);
       return;
     }
@@ -1442,6 +1510,7 @@ export default function POSPage() {
         method: p.method,
         ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
         amount: p.amount,
+        ...(p.transaction_id !== undefined ? { transaction_id: p.transaction_id } : {}),
       }));
     if (walletAmount > 0) paymentLines.push({ method: 'wallet', amount: walletAmount });
     const paymentCustomerId: string | number | null = cart.customerId ?? null;
@@ -1449,25 +1518,7 @@ export default function POSPage() {
       payments: paymentLines,
       customer_id: paymentCustomerId,
     });
-    const cartFingerprint = JSON.stringify({
-      table_id: cart.tableId,
-      customer_id: cart.customerId,
-      type: cart.orderType,
-      guest_count: cart.guestCount,
-      special_instructions: cart.orderNotes,
-      online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
-      external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
-      delivery_address:
-        cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
-      expected_payment_method:
-        cart.orderType === 'delivery' ? cart.expectedPaymentMethod || undefined : undefined,
-      expected_payment_method_id:
-        cart.orderType === 'delivery' ? (cart.expectedPaymentMethodId ?? undefined) : undefined,
-      delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
-      items: orderItems,
-      waived_charge_ids: Array.from(cart.waivedChargeIds),
-      opted_in_charge_ids: Array.from(cart.optedInChargeIds),
-    });
+    const cartFingerprint = buildCurrentCartFingerprint(orderItems);
     let storedAttempt: PrepaidAttempt | null;
     try {
       storedAttempt = readPrepaidAttempt();
@@ -1949,7 +2000,24 @@ export default function POSPage() {
           failureOperation === 'payment.create' ? 'payment.create' : 'order.create',
           failureCorrelationId,
         );
-      else
+      else {
+        if (failureOperation === 'payment.create' && attempt.bill) {
+          const failure = classifyOrderRequestFailure(error, {
+            operation: 'payment.create',
+            correlationId: failureCorrelationId || '',
+          });
+          if (
+            failure.trusted &&
+            failure.outcome === 'not_applied' &&
+            failure.displayCode !== 'idempotency_conflict'
+          ) {
+            savePrepaidAttempt({
+              ...attempt,
+              paymentFingerprint: '',
+              paymentIdempotencyKey: newIdempotencyKey(),
+            });
+          }
+        }
         reportOrderRequestFailure(
           error,
           t('processOrderFailed'),
@@ -1957,6 +2025,7 @@ export default function POSPage() {
           failureStage,
           failureCorrelationId,
         );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -2230,9 +2299,17 @@ export default function POSPage() {
         cashDrawer.openModal();
       },
       onFocusCustomer: () => {
-        const input = document.getElementById('customer-phone-search') as HTMLInputElement | null;
-        input?.focus();
-        input?.select();
+        const input = document.querySelector<HTMLInputElement>(
+          '[data-testid="pos-customer-search-input"]',
+        );
+        if (input) {
+          input.focus();
+          input.select();
+          return;
+        }
+        document
+          .querySelector<HTMLButtonElement>('[data-testid="pos-customer-select-btn"]')
+          ?.click();
       },
       onHoldOrder: () => {
         if (
@@ -2269,6 +2346,9 @@ export default function POSPage() {
         if (showKeyboardShortcutsModal) {
           setShowKeyboardShortcutsModal(false);
           return true;
+        }
+        if (customerModalOpen) {
+          return false;
         }
         const activeEl = document.activeElement as HTMLElement | null;
         if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
@@ -2514,6 +2594,7 @@ export default function POSPage() {
         onShowPrintMenu={() => setShowPrintMenuModal(true)}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
+        onCustomerModalOpenChange={setTopbarCustomerModalOpen}
       />
 
       {/* Main content area */}
@@ -2701,7 +2782,10 @@ export default function POSPage() {
               </button>
             </div>
             <p className="text-sm text-muted-foreground mb-4">{t('customerRequiredBeforeOrder')}</p>
-            <CustomerSearch onSelected={() => setShowCustomerPrompt(false)} />
+            <CustomerSearch
+              onSelected={() => setShowCustomerPrompt(false)}
+              onModalOpenChange={setPromptCustomerModalOpen}
+            />
           </div>
         </div>
       )}
@@ -2714,6 +2798,9 @@ export default function POSPage() {
       {showPrepaidCheckout && (
         <PrepaidCheckoutModal
           currency={currency}
+          initialCardTransactionIdRequired={cardTransactionIdRequired}
+          initialDiscount={prepaidModalAttempt?.discount ?? null}
+          discountCommitted={Boolean(prepaidModalAttempt?.bill)}
           onClose={() => setShowPrepaidCheckout(false)}
           onConfirm={handlePrepaidCheckout}
         />

@@ -351,6 +351,47 @@ async function main() {
       'Unrevoked manager token with kitchen permission remains usable on KDS after memory reset',
     );
 
+    db.prepare(
+      `INSERT INTO tables (id, number, capacity, status, is_active, created_at, updated_at)
+       VALUES (?, ?, 4, ?, 1, ?, ?)`,
+    ).run('tbl-move-src', '10', 'occupied', now(), now());
+    db.prepare(
+      `INSERT INTO tables (id, number, capacity, status, is_active, created_at, updated_at)
+       VALUES (?, ?, 4, ?, 1, ?, ?)`,
+    ).run('tbl-move-dst', '11', 'available', now(), now());
+    const moveOrderResult = db
+      .prepare(
+        `INSERT INTO orders (order_number, table_id, user_id, type, status, subtotal, total, created_at, updated_at)
+         VALUES ('ORD-MOVE-1', 'tbl-move-src', 'server-app-server', 'dine_in', 'pending', 10, 10, ?, ?)`,
+      )
+      .run(now(), now());
+    const moveOrderId = Number(moveOrderResult.lastInsertRowid);
+
+    const unauthMove = await postJson(baseUrl, '/api/tables/tbl-move-src/move-order', {
+      target_table_id: 'tbl-move-dst',
+    });
+    assert.equal(
+      unauthMove.status,
+      401,
+      'Unauthenticated Server App move-order is rejected with 401',
+    );
+
+    const serverMove = await postJson(
+      baseUrl,
+      '/api/tables/tbl-move-src/move-order',
+      { target_table_id: 'tbl-move-dst', order_id: String(moveOrderId) },
+      liveServerLogin.body.access_token,
+    );
+    assert.equal(
+      serverMove.status,
+      200,
+      'Authenticated server role can move an active table order via Server App',
+    );
+    assert.equal(serverMove.body.order.id, moveOrderId);
+    assert.equal(serverMove.body.order.table_id, 'tbl-move-dst');
+    assert.equal(serverMove.body.sourceTable.status, 'available');
+    assert.equal(serverMove.body.targetTable.status, 'occupied');
+
     // Protected forwarded routes must rate-limit LAN clients before auth or downstream work.
     const customerResponses = await Promise.all(
       Array.from({ length: 151 }, () => postJson(baseUrl, '/api/customers', {})),

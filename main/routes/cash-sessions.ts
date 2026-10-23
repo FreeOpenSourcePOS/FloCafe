@@ -24,6 +24,7 @@ import {
 } from '../db';
 import { requirePermission } from '../services/authorization';
 import { closedDayExists } from '../services/cash-drawer-movements';
+import { findUnpaidInShiftOrders } from '../services/cash-day-close-guards';
 import { getOpenSession, type CashSessionRow } from '../services/shift-session-gate';
 import {
   computePeriodAggregates,
@@ -94,8 +95,8 @@ function daysAgoUtc(days: number): string {
  * Shared close transaction used by the close endpoint and by stale
  * auto-close on open. Computes window aggregates, writes the
  * scope='session' closure row, and marks the session closed.
- * Human closes are blocked by unpaid in-window bills; system auto-close
- * skips that guard (cleanup path — the bills stay for day close).
+ * Open/unpaid orders stay open and carry over to the next shift while
+ * expected cash reconciles only the cash lines collected during the shift.
  */
 function closeSessionTxn(
   db: ReturnType<typeof getDatabase>,
@@ -103,7 +104,6 @@ function closeSessionTxn(
   countedCashCents: number,
   closerId: string,
   notes: string | null,
-  skipUnpaidBlock = false,
 ): {
   closure_id: number;
   variance_cents: number;
@@ -111,28 +111,6 @@ function closeSessionTxn(
   counted_cash_cents: number;
 } {
   const closedAt = now();
-  if (!skipUnpaidBlock) {
-    // Partial counts: short tender leaves an outstanding balance.
-    // Upper bound is inclusive (<= closedAt) so same-second bills cannot slip through.
-    const unpaid = db
-      .prepare(`
-      SELECT COUNT(*) AS c
-      FROM bills b
-      JOIN orders o ON o.id = b.order_id
-      WHERE b.payment_status NOT IN ('paid', 'refunded', 'partially_refunded')
-        AND o.status != 'cancelled'
-        AND COALESCE(b.balance, b.total, 0) > 0
-        AND b.created_at >= ? AND b.created_at <= ?
-    `)
-      .get(session.opened_at, closedAt) as { c: number };
-    if (Number(unpaid.c) > 0) {
-      throw httpError(
-        `Cannot close: ${unpaid.c} unpaid bill(s) in this shift`,
-        409,
-        'unpaid_bills_remaining',
-      );
-    }
-  }
   const sessionMovements = listCashDrawerMovementsForSession(
     db,
     session.id,
@@ -274,7 +252,6 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
               0,
               openedBy,
               'System auto-close: stale session, flagged for manager review',
-              true,
             );
           }
         }
@@ -355,6 +332,39 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
     res.status(status).json(payload);
   }
 });
+
+router.get(
+  '/current/close-preview',
+  requirePermission('cash.shifts.close'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const session = getOpenSession(db);
+      if (!session) {
+        return res
+          .status(404)
+          .json({ error: 'No open shift', display_code: 'session_unavailable' });
+      }
+      const asOf = now();
+      const unpaid = findUnpaidInShiftOrders(db, session, asOf);
+      res.json({
+        session_id: session.id,
+        opened_by_name: session.opened_by_name,
+        opened_at: session.opened_at,
+        unpaid_in_shift: unpaid,
+        would_block_close: false,
+      });
+    } catch (error: unknown) {
+      const status = errorStatus(error);
+      res.status(status).json({
+        error:
+          status >= 500
+            ? 'Failed to load shift close preview'
+            : errorMessage(error, 'Failed to load shift close preview'),
+      });
+    }
+  },
+);
 
 router.get('/current', requirePermission('cash.shifts.view'), (req: Request, res: Response) => {
   try {

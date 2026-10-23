@@ -326,8 +326,8 @@
     "exportSales": "Satışları dışa aktar",
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
-    "exportCsvHint": "CSV iki dosya indirir: özet ve ürünler.",
-    "exportCsvStarted": "Özet ve ürün CSV dosyaları indiriliyor…",
+    "exportCsvHint": "CSV üç dosya indirir: özet, ürünler ve ödemeler.",
+    "exportCsvStarted": "Özet, ürün ve ödeme CSV dosyaları indiriliyor…",
     "liveNow": "Canlı",
     "kpiChangeVsSameDayLastWeek": "Geçen haftanın aynı gününe göre {percent}%",
     "kpiNewVsSameDayLastWeek": "Geçen haftanın aynı gününe göre yeni",
@@ -419,7 +419,9 @@
     "priceExceptionReason": "Neden",
     "priceExceptionsAllShifts": "Tüm dönem",
     "priceExceptionsShift": "Vardiya",
-    "priceExceptionsShiftOpen": "açık"
+    "priceExceptionsShiftOpen": "açık",
+    "dayCloseOpenShiftBlocks": "Bu iş gününü kapatmadan önce açık vardiya #{id} ({name}) kaydını kapatın.",
+    "dayCloseOpenShiftBlocksGeneric": "Günü kapatmadan önce bu iş gününe ait açık vardiyayı kapatın."
   },
   "expenses": {
     "addTitle": "Gider ekle",
@@ -714,6 +716,7 @@
     "printReceiptTitle": "Fiş Yazdır",
     "printed": "Yazdırıldı",
     "printedCount": "{count, plural, one {1 kez yazdırıldı} other {# kez yazdırıldı}}",
+    "transactionNumber": "İşlem no.",
     "printing": "Yazdırılıyor...",
     "ready": "Hazır",
     "receiptPrintFailedHint": "Fiş yazdırılamadı — yazıcı bağlantısını kontrol edin",
@@ -1121,6 +1124,8 @@
     "paymentIdempotencyConflict": "Bu ödeme isteği başka bir ödemeyle zaten ilişkilendirilmiş. Yeniden denemeden önce faturayı kontrol edin.",
     "paymentMethodUnavailable": "Bu ödeme yöntemi artık kullanılamıyor. Başka bir yöntem seçin.",
     "paymentInputInvalid": "Ödeme bilgileri geçersiz. Yöntemi, tutarı ve işlem referansını kontrol edin.",
+    "cardTransactionIdLabel": "Terminal işlem numarası",
+    "cardTransactionIdMissing": "Kart terminalindeki işlem numarasını girin.",
     "paymentCompletionApplied": "Ödeme kaydedildi ancak FloCafe sonraki bir güncellemeyi tamamlayamadı. Başka bir ödeme almadan önce faturayı kontrol edin.",
     "paymentCorrectAndRetry": "Ödeme bilgilerini düzeltin veya başka bir yöntem seçip yeniden deneyin.",
     "chargeRequired": "Güncellemeden önce bir ücret seçin.",
@@ -1166,7 +1171,12 @@
     "splitCheckCheckAvailability": "Uygunluğu kontrol et",
     "viewMore": "Daha fazla göster",
     "viewLess": "Daha az göster",
-    "splitCheckSettingDenied": "Bu hesap hesap bölme uygunluğunu kontrol edemez."
+    "splitCheckSettingDenied": "Bu hesap hesap bölme uygunluğunu kontrol edemez.",
+    "dayCloseBlockedByOpenShiftTitle": "Önce açık vardiya kapatılmalıdır",
+    "dayCloseBlockedByOpenShiftHint": "Bu iş gününü kapatmadan önce açık vardiya #{id} ({name}) kaydını kapatın.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# açık sipariş sonraki vardiyaya devredilecek} other {# açık sipariş sonraki vardiyaya devredilecek}}",
+    "shiftCloseUnpaidWarningHint": "Bu siparişler bir sonraki vardiya için açık kalır. Bu vardiyayı kapatmak yalnızca bu vardiya sırasında tahsil edilmiş nakit ödemeleri mutabakatlandırır.",
+    "shiftCloseUnpaidMoreCount": "+{count} açık sipariş daha"
   },
   "printTest": {
     "amt": "Tutar",
@@ -2313,6 +2323,8 @@
     "softwareUpdatesHintStore": "Uygulama mağazası tarafından otomatik güncellenir",
     "splitChecks": "Hesap Bölme Özelliği",
     "splitChecksHint": "Masada parçalı ve ayrı ödeme almayı etkinleştirir",
+    "cardTransactionIdRequired": "Kart işlem numarasını zorunlu kıl",
+    "cardTransactionIdRequiredHint": "Kartlı ödemeler, raporların terminal ile mutabakatı için kart terminalinin verdiği işlem numarasını içermelidir. Varsayılan olarak kapalıdır.",
     "stationAssignedCategories": "Başka yerde atanmış — taşımak için seçin",
     "stationAvailableCategories": "Kullanılabilir kategoriler",
     "stationCategories": "Atanan Kategoriler",
@@ -3166,6 +3178,47 @@
       "phone_required": "Telefon numarası gereklidir",
       "phone_required_pairing": "Eşleşme kodu için telefon numarası gereklidir"
     },
+    "automation": {
+      "autoOptOutLabel": "Gelen STOP / UNSUBSCRIBE mesajında otomatik çıkış (göndereni engelleme listesine ekler)",
+      "broadcastDescription": "Filtrelenmiş müşteri segmentine şablon gönderin (engelleme listesi, sessiz saatler ve limitlere uyar).",
+      "broadcastInactiveDays": "Pasif >= gün",
+      "broadcastMinPoints": "Min. puan",
+      "broadcastMinVisits": "Min. ziyaret",
+      "broadcastSendCta": "Toplu mesaj gönder",
+      "broadcastSuccess": "Gönderim tamamlandı: {sent} gönderildi, {skipped} atlandı ({matched} eşleşti).",
+      "broadcastTitle": "Müşteri segmenti gönderimi",
+      "feedbackLinkLabel": "Mağaza geri bildirim bağlantısı",
+      "instagramLabel": "Mağaza Instagram kullanıcı adı",
+      "maxPerWeekLabel": "Müşteri başına haftalık maks. otomatik mesaj",
+      "placeholdersLabel": "Değişken eklemek için tıklayın",
+      "previewTitle": "Canlı önizleme (örnek veriler)",
+      "quietHoursEnd": "Sessiz saatler bitişi",
+      "quietHoursLabel": "Sessiz saatlerde otomatik gönderimleri duraklat",
+      "quietHoursStart": "Sessiz saatler başlangıcı",
+      "resetDefault": "Varsayılana sıfırla",
+      "ruleAfterPaymentHint": "Müşteri telefonu olan bir adisyon ödendiğinde fiş şablonunu otomatik gönder.",
+      "ruleFeedbackDelayHint": "Ödenen siparişten belirli saat sonra geri bildirim isteği gönder.",
+      "ruleNthVisitHint": "Her N ücretli ziyarette bir teşekkür ödülü mesajı gönder.",
+      "rulePointsThresholdHint": "Puan bakiyesi eşiği geçtiğinde sadakat ödülü bildirimi gönder.",
+      "rulesDescription": "Ödeme sonrası fişler, takipler ve dönüm noktaları için otomatik tetikleyicileri ve eşikleri yapılandırın.",
+      "rulesTitle": "Otomatik gönderim kuralları",
+      "ruleWinbackHint": "En az N gündür gelmeyen müşterilere geri kazanım teklifi gönder.",
+      "runSweepCta": "Zamanlanmış kuralları şimdi çalıştır",
+      "safetyDescription": "Bağlı numaranızı otomatik çıkış, sessiz saatler ve haftalık müşteri limitleriyle koruyun.",
+      "safetyTitle": "Güvenlik ve spam koruması",
+      "saveCta": "Otomasyon ayarlarını kaydet",
+      "savedSuccess": "Otomasyon ayarları kaydedildi.",
+      "sweepResult": "Zamanlanmış kurallar kontrol edildi ({sent} gönderildi).",
+      "templateBodyLabel": "Mesaj metni",
+      "templateNameLabel": "Şablon adı",
+      "templatesDescription": "Müşteri, adisyon, sadakat ve mağaza değişkenleriyle otomatik WhatsApp mesajlarını özelleştirin.",
+      "templateSelectLabel": "Seçili şablon",
+      "templatesTitle": "Mesaj şablonları",
+      "thresholdDays": "Pasif gün sayısı",
+      "thresholdHours": "Gecikme saati",
+      "thresholdPoints": "Puan eşiği",
+      "thresholdVisits": "Her N ziyarette"
+    },
     "blocklist": {
       "addCta": "Ekle",
       "addedSuccess": "Engellenenler listesine eklendi.",
@@ -3258,6 +3311,14 @@
       "rate_limited": "Gönderim WhatsApp tarafından sınırlandırıldı ({code}). 5 dakika soğuma süresinde.",
       "reconnecting": "Bağlantı kapandı ({code}). {seconds} saniye içinde yeniden bağlanılıyor…"
     },
+    "rule": {
+      "after_payment": "Ödeme sonrası otomatik fiş",
+      "broadcast": "Segment gönderimi",
+      "feedback_delay": "Geri bildirim takibi",
+      "nth_visit": "Ziyaret dönüm noktası",
+      "points_threshold": "Sadakat puanı eşiği",
+      "winback": "Pasif müşteri kazanımı"
+    },
     "send": {
       "customerPhoneRequired": "Göndermeden önce müşterinin telefon numarasını ekleyin.",
       "error": {
@@ -3319,6 +3380,7 @@
       "typing": "Yazılıyor"
     },
     "tabs": {
+      "automation": "Şablonlar ve Kurallar",
       "connection": "Bağlantı & Cihaz",
       "inbox": "Gelen Yanıtlar",
       "sent": "Gönderilen Mesajlar"

@@ -224,6 +224,78 @@ async function main() {
       'the preview quotes the menu price without one',
     );
 
+    for (const [rawPrice, expectedUnitPrice, expectedTotal] of [
+      [10.005, 10.01, 30.03],
+      [3.333, 3.33, 9.99],
+      [0.015, 0.02, 0.06],
+    ] as const) {
+      const items = [
+        {
+          product_id: 'prod-po',
+          quantity: 3,
+          price_override: { price: rawPrice, reason: 'Precision check' },
+        },
+      ];
+      const quoteRes = await api(baseUrl, '/api/tax/preview', {
+        method: 'POST',
+        body: { items },
+        headers: ownerAuth,
+      });
+      assertEqualOrThrow(quoteRes.status, 200, `preview succeeds for ${rawPrice}`);
+      assertEqualOrThrow(
+        quoteRes.data.summary.subtotal,
+        expectedTotal,
+        `preview subtotal normalizes ${rawPrice} before qty 3`,
+      );
+      assertEqualOrThrow(
+        quoteRes.data.summary.total,
+        expectedTotal,
+        `preview total normalizes ${rawPrice} before qty 3`,
+      );
+      const orderRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: { type: 'takeaway', items },
+        headers: { ...ownerAuth, 'Idempotency-Key': `po-prec-${rawPrice}-${Math.random()}` },
+      });
+      assertEqualOrThrow(orderRes.status, 201, `order succeeds for ${rawPrice}`);
+      assertEqualOrThrow(
+        orderRes.data.order.items[0].unit_price,
+        expectedUnitPrice,
+        `order unit_price normalizes ${rawPrice} -> ${expectedUnitPrice}`,
+      );
+      assertEqualOrThrow(
+        orderRes.data.order.total,
+        expectedTotal,
+        `order total matches preview for ${rawPrice}`,
+      );
+      const billRes = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: orderRes.data.order.id },
+        headers: ownerAuth,
+      });
+      assertEqualOrThrow(billRes.status, 201, `bill generation succeeds for ${rawPrice}`);
+      assertEqualOrThrow(
+        billRes.data.bill.total,
+        expectedTotal,
+        `bill total matches preview for ${rawPrice}`,
+      );
+      const payRes = await api(baseUrl, `/api/bills/${billRes.data.bill.id}/payments`, {
+        method: 'POST',
+        body: { payments: [{ method: 'card', amount: quoteRes.data.summary.total }] },
+        headers: ownerAuth,
+      });
+      assertEqualOrThrow(
+        payRes.status,
+        200,
+        `card payment of preview quote succeeds for ${rawPrice}`,
+      );
+      assertEqualOrThrow(
+        payRes.data.bill.payment_status,
+        'paid',
+        `bill is fully paid for ${rawPrice}`,
+      );
+    }
+
     console.log('\n--- Blocked states ---');
     const paidOrder = await createOrder(ownerAuth);
     const paidOrderId = paidOrder.data.order.id;

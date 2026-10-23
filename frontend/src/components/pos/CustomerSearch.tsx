@@ -13,6 +13,7 @@ import { useTranslations } from 'use-intl';
 
 interface Props {
   onSelected?: () => void;
+  onModalOpenChange?: (open: boolean) => void;
   variant?: 'default' | 'topbar';
 }
 
@@ -45,7 +46,11 @@ function TagBadges({ counts }: { counts: Record<string, number> }) {
   );
 }
 
-export default function CustomerSearch({ onSelected, variant = 'default' }: Props = {}) {
+export default function CustomerSearch({
+  onSelected,
+  onModalOpenChange,
+  variant = 'default',
+}: Props = {}) {
   const cart = useCartStore();
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
@@ -72,6 +77,12 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const inputRef = useRef<HTMLInputElement>(null);
 
   const customer = cart.customer;
+  const customerModalOpen = Boolean(creatingModal) || Boolean(customer && editingCustomer);
+
+  useEffect(() => {
+    onModalOpenChange?.(customerModalOpen);
+    return () => onModalOpenChange?.(false);
+  }, [customerModalOpen, onModalOpenChange]);
 
   // Reset stale points synchronously during render when customer changes
   const [syncedCustomerId, setSyncedCustomerId] = useState(customer?.id ?? null);
@@ -245,6 +256,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
       initialSearch: trimmedQuery,
       initialField: field,
     });
+    onModalOpenChange?.(true);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -301,8 +313,12 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         <>
           <div className="min-h-10 flex items-center gap-2 px-3 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-lg min-w-0 w-full sm:w-auto">
             <button
-              onClick={() => setEditingCustomer(true)}
+              onClick={() => {
+                setEditingCustomer(true);
+                onModalOpenChange?.(true);
+              }}
               title={t('editCustomer')}
+              data-testid="pos-customer-select-btn"
               className="touch-target flex-1 min-w-0 justify-start gap-x-2 flex-wrap text-start cursor-pointer"
             >
               <span className="font-semibold text-brand dark:text-indigo-300 text-sm truncate">
@@ -331,7 +347,10 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           {editingCustomer && (
             <EditCustomerModal
               customer={customer}
-              onClose={() => setEditingCustomer(false)}
+              onClose={() => {
+                setEditingCustomer(false);
+                onModalOpenChange?.(false);
+              }}
               onSaved={(updated) => cart.setCustomer(updated)}
             />
           )}
@@ -343,7 +362,11 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
       <div className="space-y-1">
         <div className="flex items-center justify-between px-3 py-2 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-lg text-sm">
           <button
-            onClick={() => setEditingCustomer(true)}
+            onClick={() => {
+              setEditingCustomer(true);
+              onModalOpenChange?.(true);
+            }}
+            data-testid="pos-customer-select-btn"
             className="touch-target flex-1 min-w-0 justify-start gap-2 text-start cursor-pointer"
           >
             <span className="font-medium text-brand dark:text-indigo-300 truncate">
@@ -374,7 +397,10 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         {editingCustomer && (
           <EditCustomerModal
             customer={customer}
-            onClose={() => setEditingCustomer(false)}
+            onClose={() => {
+              setEditingCustomer(false);
+              onModalOpenChange?.(false);
+            }}
             onSaved={(updated) => cart.setCustomer(updated)}
           />
         )}
@@ -545,10 +571,14 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         <CreateCustomerModal
           initialSearch={creatingModal.initialSearch}
           initialField={creatingModal.initialField}
-          onClose={() => setCreatingModal(null)}
+          onClose={() => {
+            setCreatingModal(null);
+            onModalOpenChange?.(false);
+          }}
           onCreated={(created) => {
             cart.setCustomer(created);
             setCreatingModal(null);
+            onModalOpenChange?.(false);
             searchCustomers('');
             setQuery('');
             onSelected?.();

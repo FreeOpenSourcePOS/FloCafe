@@ -53,6 +53,7 @@ import { CancellationToken } from 'builder-util-runtime';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
 import {
   AUTO_UPDATE_CHECK_SETTING_KEY,
+  canAcceptUpdateCheckResult,
   canStartUpdateDownload,
   classifyUpdateError,
   initialUpdateState,
@@ -69,6 +70,8 @@ import {
 import {
   createAutoUpdaterErrorHandler,
   createRestartAndInstallHandler,
+  createSuspendUpdaterForOfflineMode,
+  createUpdateCheckTracker,
   type UpdateShutdownState,
 } from './updater-shutdown';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
@@ -146,6 +149,10 @@ console.log('[Log] Log files location:', logPath);
 let storedUpdateStatus: StoredUpdateStatus = initialUpdateState();
 let updaterPhase: UpdateErrorPhase = 'check';
 let stagedUpdateReady = false;
+const updateCheckTracker = createUpdateCheckTracker({
+  shouldRunDeferredCheck: () =>
+    !isOfflineMode() && !isInstallReady(storedUpdateStatus, stagedUpdateReady),
+});
 let startupFailure = false;
 let isInstallingUpdate = false;
 let betaChannelTransitionTail: Promise<void> = Promise.resolve();
@@ -240,12 +247,23 @@ function setupAutoUpdater(): void {
   autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('checking-for-update', () => {
+    if (isOfflineMode() || !updateCheckTracker.canAcceptCheckEvent()) return;
     console.log('[Update] Checking for updates...');
     updaterPhase = 'check';
     setUpdateStatus({ status: 'checking' });
   });
 
   autoUpdater.on('update-available', (info) => {
+    if (
+      !canAcceptUpdateCheckResult(
+        storedUpdateStatus,
+        updaterPhase,
+        isOfflineMode(),
+        updateCheckTracker.canAcceptCheckEvent(),
+      )
+    ) {
+      return;
+    }
     console.log('[Update] Update available, awaiting user approval to download:', info.version);
     updaterPhase = 'check';
     setUpdateStatus({
@@ -257,6 +275,16 @@ function setupAutoUpdater(): void {
   });
 
   autoUpdater.on('update-not-available', () => {
+    if (
+      !canAcceptUpdateCheckResult(
+        storedUpdateStatus,
+        updaterPhase,
+        isOfflineMode(),
+        updateCheckTracker.canAcceptCheckEvent(),
+      )
+    ) {
+      return;
+    }
     console.log('[Update] No updates available');
     setUpdateStatus({ status: 'up-to-date' });
   });
@@ -291,12 +319,15 @@ function setupAutoUpdater(): void {
       },
       isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
       isInstallingUpdate: () => isInstallingUpdate,
+      isOfflineSuppressed: () => isOfflineMode(),
+      isStaleCheckSuppressed: () =>
+        updaterPhase === 'check' && !updateCheckTracker.canAcceptCheckEvent(),
       setUpdateStatus,
       onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
       logInfo: (message, detail) => log.info(message, detail),
     }),
   );
-  onOfflineModeEnabled(cancelUpdateDownloadForOfflineMode);
+  onOfflineModeEnabled(suspendUpdaterForOfflineMode);
 }
 
 function checkForUpdates(): void {
@@ -380,21 +411,33 @@ function checkForUpdates(): void {
 
   updaterPhase = 'check';
   setUpdateStatus({ status: 'checking' });
-  autoUpdater.checkForUpdates().catch((err) => {
-    // Record error state; catch prevents unhandled rejection.
-    console.error('[Update] Check failed:', err);
+  updateCheckTracker.beginCheck(() => {
+    updaterPhase = 'check';
+    setUpdateStatus({ status: 'checking' });
+    return autoUpdater.checkForUpdates().catch((err) => {
+      // Record error state; catch prevents unhandled rejection.
+      console.error('[Update] Check failed:', err);
+    });
   });
 }
 
 let updateDownloadToken: CancellationToken | null = null;
 
-function cancelUpdateDownloadForOfflineMode(): void {
-  if (updaterPhase !== 'download' || storedUpdateStatus.status !== 'downloading') return;
-  updateDownloadToken?.cancel();
-  updateDownloadToken = null;
-  updaterPhase = 'check';
-  setUpdateStatus({ status: 'offline', reason: 'unknown', error: 'Offline mode is on' });
-}
+const suspendUpdaterForOfflineMode = createSuspendUpdaterForOfflineMode({
+  getPhase: () => updaterPhase,
+  setPhase: (phase) => {
+    updaterPhase = phase;
+  },
+  getStatus: () => storedUpdateStatus,
+  setUpdateStatus,
+  cancelDownload: () => {
+    updateDownloadToken?.cancel();
+    updateDownloadToken = null;
+  },
+  invalidateCheck: () => {
+    updateCheckTracker.invalidateActiveCheck();
+  },
+});
 
 function downloadUpdate(): { success: boolean; error?: string } {
   if (isOfflineMode()) return { success: false, error: 'Offline mode is on' };

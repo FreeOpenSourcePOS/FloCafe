@@ -7,11 +7,19 @@ import type { NextFunction, Request, Response } from 'express';
 import {
   getDatabase,
   getSettingValue,
+  getSettingsRevision,
   now,
   upsertSettings,
   isDiagnosticsTransmissionEnabled,
 } from '../db';
-import { postHogEnvironment, postHogNetworkSuppressed, readPostHogConfig } from './posthog-config';
+import {
+  postHogEnvironment,
+  postHogNetworkSuppressed,
+  readPostHogConfig,
+  type PostHogConfig,
+  type PostHogEnvironment,
+} from './posthog-config';
+import { getOfflineModeAbortSignal, onOfflineModeEnabled } from './offline-mode';
 import { readCountryProvenance } from './country-provenance';
 import { getInstallSource, getRunMode } from './telemetry';
 import {
@@ -21,6 +29,7 @@ import {
   readProductAnalyticsLevel,
   resolvePostHogIdentity,
   type PostHogIdentity,
+  type ProductAnalyticsLevel,
 } from './posthog-identity';
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 import {
@@ -81,6 +90,12 @@ export interface PostHogBootstrapReady {
 
 let client: PostHogClient | null = null;
 let clientKey: string | null = null;
+let clientAbort: AbortController | null = null;
+
+onOfflineModeEnabled(() => {
+  invalidatePostHogConsentCache();
+  if (client) void stopPostHog({ flush: false });
+});
 
 function appVersion(): string {
   try {
@@ -94,12 +109,65 @@ function appVersion(): string {
   return (require('../../package.json') as { version: string }).version;
 }
 
+const CONSENT_CACHE_TTL_MS = 30_000;
+
+interface CachedConsentState {
+  level: ProductAnalyticsLevel;
+  identity: PostHogIdentity;
+  config: PostHogConfig | null;
+  diagnosticsEnabled: boolean;
+  environment: PostHogEnvironment | null;
+  envKey: string;
+  revision: number;
+  expiresAt: number;
+}
+
+let cachedConsent: CachedConsentState | null = null;
+
+export function invalidatePostHogConsentCache(): void {
+  cachedConsent = null;
+}
+
+function getEnvCacheKey(): string {
+  return `${process.env.CI ?? ''}|${process.env.FLO_MATRIX_OFFLINE ?? ''}|${process.env.E2E_TASK_LOCAL_PORTS ?? ''}|${process.env.NODE_ENV ?? ''}|${process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK ?? ''}|${(process as NodeJS.Process & { type?: string }).type ?? ''}|${process.env.FLO_POSTHOG_DEV ?? ''}|${process.env.FLO_POSTHOG_DEV_TOKEN ?? ''}|${process.env.FLO_POSTHOG_DEV_HOST ?? ''}`;
+}
+
+function getConsentState(): CachedConsentState {
+  const nowMs = Date.now();
+  const revision = getSettingsRevision();
+  const envKey = getEnvCacheKey();
+  if (
+    cachedConsent &&
+    cachedConsent.expiresAt > nowMs &&
+    cachedConsent.revision === revision &&
+    cachedConsent.envKey === envKey
+  ) {
+    return cachedConsent;
+  }
+  const level = readProductAnalyticsLevel();
+  const resolvedIdentity = resolvePostHogIdentity(level);
+  const config = readPostHogConfig();
+  const diagnosticsEnabled = isDiagnosticsTransmissionEnabled();
+  const environment = postHogEnvironment();
+  cachedConsent = {
+    level,
+    identity: resolvedIdentity,
+    config,
+    diagnosticsEnabled,
+    environment,
+    envKey,
+    revision: getSettingsRevision(),
+    expiresAt: nowMs + CONSENT_CACHE_TTL_MS,
+  };
+  return cachedConsent;
+}
+
 function usageEnabled(): boolean {
-  return readProductAnalyticsLevel() !== 'off';
+  return getConsentState().level !== 'off';
 }
 
 function identity(): PostHogIdentity {
-  return resolvePostHogIdentity(readProductAnalyticsLevel());
+  return getConsentState().identity;
 }
 
 /** Release and channel, plus the device and, at the `full` level, the account (`store_ref`). */
@@ -109,7 +177,7 @@ export function readSuperProperties(current: PostHogIdentity = identity()): Supe
     platform: process.platform,
     run_mode: getRunMode(),
     install_source: getInstallSource(),
-    environment: postHogEnvironment() ?? 'development',
+    environment: getConsentState().environment ?? 'development',
     release_channel: /-beta\b/.test(appVersion()) ? 'beta' : 'stable',
     ...(current.installRef ? { install_ref: current.installRef } : {}),
     ...(current.accountRef ? { store_ref: current.accountRef } : {}),
@@ -212,7 +280,7 @@ export function readDailyUsageSummary(): Record<string, number | boolean | strin
   return { ...summary, ...readStoreProperties() };
 }
 
-function createClient(token: string, host: string): PostHogClient {
+function createClient(token: string, host: string, abortSignal: AbortSignal): PostHogClient {
   const { PostHog } = require('posthog-node') as {
     PostHog: new (projectToken: string, options: Record<string, unknown>) => PostHogClient;
   };
@@ -224,31 +292,54 @@ function createClient(token: string, host: string): PostHogClient {
     enableLocalEvaluation: false,
     flushAt: 1,
     flushInterval: 0,
-    before_send: (event: ScrubbableEvent | null) =>
-      scrubPostHogEvent(event, {
-        telemetryEnabled: readProductAnalyticsLevel() !== 'off',
-        accountLinked: readProductAnalyticsLevel() === 'full',
-        allowExceptions: isDiagnosticsTransmissionEnabled(),
-      }),
+    fetch: async (url: string, options?: RequestInit) => {
+      if (abortSignal.aborted || postHogNetworkSuppressed()) {
+        return new Response(null, { status: 204 });
+      }
+      const signals: AbortSignal[] = [abortSignal, getOfflineModeAbortSignal()];
+      if (options?.signal) signals.push(options.signal);
+      try {
+        return await globalThis.fetch(url, { ...options, signal: AbortSignal.any(signals) });
+      } catch (error) {
+        if (abortSignal.aborted || postHogNetworkSuppressed()) {
+          return new Response(null, { status: 204 });
+        }
+        throw error;
+      }
+    },
+    before_send: (event: ScrubbableEvent | null) => {
+      const { level, diagnosticsEnabled, environment } = getConsentState();
+      if (abortSignal.aborted || environment === null) return null;
+      return scrubPostHogEvent(event, {
+        telemetryEnabled: level !== 'off',
+        accountLinked: level === 'full',
+        allowExceptions: diagnosticsEnabled,
+      });
+    },
   });
 }
 
 function activeClient(): PostHogClient | null {
-  if (postHogNetworkSuppressed()) return null;
-  const config = readPostHogConfig();
+  const { config, level, diagnosticsEnabled, environment } = getConsentState();
+  if (environment === null) return null;
   if (!config) return null;
-  if (!usageEnabled() && !isDiagnosticsTransmissionEnabled()) return null;
+  if (level === 'off' && !diagnosticsEnabled) return null;
   const key = `${config.host}\n${config.token}`;
   if (client && clientKey === key) return client;
   const previous = client;
-  client = createClient(config.token, config.host);
+  const previousAbort = clientAbort;
+  const nextAbort = new AbortController();
+  client = createClient(config.token, config.host, nextAbort.signal);
   clientKey = key;
+  clientAbort = nextAbort;
+  previousAbort?.abort();
   if (previous) void previous.shutdown(POSTHOG_SHUTDOWN_TIMEOUT_MS).catch(() => {});
   return client;
 }
 
 /** The sharing level for Settings and the one-time question, asked only where PostHog can send. */
 export function readProductAnalyticsChoice() {
+  invalidatePostHogConsentCache();
   return {
     level: readProductAnalyticsLevel(),
     choice_pending:
@@ -261,6 +352,7 @@ export function readProductAnalyticsChoice() {
 }
 
 export function readPostHogBootstrap(): PostHogBootstrap | PostHogBootstrapReady {
+  invalidatePostHogConsentCache();
   if (postHogNetworkSuppressed()) return { enabled: false };
   const config = readPostHogConfig();
   if (!config) return { enabled: false };
@@ -289,12 +381,13 @@ export function readPostHogBootstrap(): PostHogBootstrap | PostHogBootstrapReady
  */
 export function syncPostHogIdentity(): void {
   try {
-    if (!readPostHogConfig()) {
-      if (client) void stopPostHog();
+    invalidatePostHogConsentCache();
+    if (postHogNetworkSuppressed() || !readPostHogConfig()) {
+      if (client) void stopPostHog({ flush: false });
       return;
     }
-    if (!usageEnabled() && !isDiagnosticsTransmissionEnabled()) {
-      void stopPostHog();
+    if (!usageEnabled() && !getConsentState().diagnosticsEnabled) {
+      void stopPostHog({ flush: false });
       return;
     }
     if (!usageEnabled()) return;
@@ -420,11 +513,21 @@ export function startPostHog(): void {
   syncPostHogIdentity();
 }
 
-export async function stopPostHog(): Promise<void> {
+export async function stopPostHog(options?: { flush?: boolean }): Promise<void> {
+  invalidatePostHogConsentCache();
   const current = client;
+  const currentAbort = clientAbort;
   client = null;
   clientKey = null;
+  clientAbort = null;
   if (!current) return;
+  const suppressFlush = options?.flush === false || postHogNetworkSuppressed();
+  if (suppressFlush) {
+    currentAbort?.abort();
+    const internal = current as unknown as { disabled?: boolean; queue?: unknown[] };
+    internal.disabled = true;
+    if (Array.isArray(internal.queue)) internal.queue.length = 0;
+  }
   try {
     await current.shutdown(POSTHOG_SHUTDOWN_TIMEOUT_MS);
   } catch {
@@ -456,7 +559,7 @@ export function capturePostHogException(
 ): void {
   try {
     if (!isPostHogCapturePoint(capturePoint)) return;
-    if (!isDiagnosticsTransmissionEnabled()) return;
+    if (!getConsentState().diagnosticsEnabled) return;
     const current = activeClient();
     if (!current) return;
     const who = identity();

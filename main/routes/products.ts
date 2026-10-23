@@ -1,4 +1,9 @@
-import { isOfflineMode } from '../services/offline-mode';
+import {
+  assertOnlineAllowed,
+  getOfflineModeAbortSignal,
+  isOfflineMode,
+  OfflineModeError,
+} from '../services/offline-mode';
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { isBlockedSsrfTarget } from '../middleware/security';
@@ -137,20 +142,56 @@ async function resolvePublicHostname(hostname: string, signal: AbortSignal): Pro
   return addresses[0].address;
 }
 
-function fetchPinnedHttps(
+export function fetchPinnedHttps(
   rawUrl: string,
   resolvedAddress: string,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<{ status: number; headers: Headers; body: Buffer }> {
+  try {
+    assertOnlineAllowed('Image import');
+  } catch (error) {
+    return Promise.reject(error);
+  }
   const parsedUrl = new URL(rawUrl);
+  const offlineSignal = getOfflineModeAbortSignal();
+  const effectiveSignal = signal ? AbortSignal.any([signal, offlineSignal]) : offlineSignal;
+  if (effectiveSignal.aborted) {
+    if (isOfflineMode() || offlineSignal.aborted) {
+      return Promise.reject(new OfflineModeError('Image import'));
+    }
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    return Promise.reject(abortError);
+  }
 
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (error?: Error, result?: { status: number; headers: Headers; body: Buffer }) => {
       if (settled) return;
       settled = true;
-      if (error) reject(error);
-      else resolve(result!);
+      effectiveSignal.removeEventListener('abort', onAbort);
+      if (error) {
+        if (isOfflineMode() || offlineSignal.aborted) {
+          reject(new OfflineModeError('Image import'));
+        } else {
+          reject(error);
+        }
+      } else if (isOfflineMode() || offlineSignal.aborted) {
+        reject(new OfflineModeError('Image import'));
+      } else {
+        resolve(result!);
+      }
+    };
+
+    const onAbort = () => {
+      request.destroy();
+      if (isOfflineMode() || offlineSignal.aborted) {
+        finish(new OfflineModeError('Image import'));
+        return;
+      }
+      const abortError = new Error('The operation was aborted');
+      abortError.name = 'AbortError';
+      finish(abortError);
     };
 
     const request = https.request(
@@ -161,7 +202,7 @@ function fetchPinnedHttps(
         method: 'GET',
         headers: { 'User-Agent': 'FloCafe-ImageProxy/1.0' },
         servername: parsedUrl.hostname,
-        signal,
+        signal: effectiveSignal,
         lookup: ((_hostname, options, callback) => {
           const family = net.isIP(resolvedAddress);
           // Restrict lookup strictly to the verified SSRF-safe address.
@@ -177,6 +218,12 @@ function fetchPinnedHttps(
         let totalBytes = 0;
 
         response.on('data', (chunk: Buffer) => {
+          if (isOfflineMode() || offlineSignal.aborted) {
+            response.destroy();
+            request.destroy();
+            finish(new OfflineModeError('Image import'));
+            return;
+          }
           totalBytes += chunk.length;
           if (totalBytes > MAX_FETCH_BYTES) {
             response.destroy();
@@ -198,6 +245,11 @@ function fetchPinnedHttps(
     );
 
     request.on('error', (error) => finish(error));
+    if (effectiveSignal.aborted) {
+      onAbort();
+      return;
+    }
+    effectiveSignal.addEventListener('abort', onAbort, { once: true });
     request.end();
   });
 }
@@ -1314,13 +1366,20 @@ router.post(
       let response: { status: number; headers: Headers; body: Buffer } | undefined;
       const controller = new AbortController();
       const requestSignal = getHttpRequestSignal(req);
+      const offlineSignal = getOfflineModeAbortSignal();
       const abortForShutdown = () => controller.abort();
-      if (requestSignal?.aborted) controller.abort();
-      else requestSignal?.addEventListener('abort', abortForShutdown, { once: true });
+      if (requestSignal?.aborted || offlineSignal.aborted) controller.abort();
+      else {
+        requestSignal?.addEventListener('abort', abortForShutdown, { once: true });
+        offlineSignal.addEventListener('abort', abortForShutdown, { once: true });
+      }
       const timeout = setTimeout(() => controller.abort(), 15_000); // 15s timeout
 
       try {
         for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+          if (isOfflineMode() || offlineSignal.aborted) {
+            return res.status(503).json({ error: 'offline_mode' });
+          }
           let parsedUrl: URL;
           try {
             parsedUrl = new URL(currentUrl);
@@ -1341,6 +1400,9 @@ router.post(
           try {
             resolvedAddress = await resolvePublicHostname(parsedUrl.hostname, controller.signal);
           } catch (error: any) {
+            if (error?.code === 'offline_mode' || isOfflineMode() || offlineSignal.aborted) {
+              return res.status(503).json({ error: 'offline_mode' });
+            }
             if (error?.name === 'AbortError') {
               return res.status(504).json({ error: 'Request timed out' });
             }
@@ -1350,10 +1412,17 @@ router.post(
             return res.status(400).json({ error: 'URL is not allowed' });
           }
 
+          if (isOfflineMode() || offlineSignal.aborted) {
+            return res.status(503).json({ error: 'offline_mode' });
+          }
+
           let hopResponse: { status: number; headers: Headers; body: Buffer };
           try {
             hopResponse = await fetchPinnedHttps(currentUrl, resolvedAddress, controller.signal);
           } catch (fetchError: any) {
+            if (fetchError?.code === 'offline_mode' || isOfflineMode() || offlineSignal.aborted) {
+              return res.status(503).json({ error: 'offline_mode' });
+            }
             if (fetchError.name === 'AbortError') {
               return res.status(504).json({ error: 'Request timed out' });
             }
@@ -1379,6 +1448,10 @@ router.post(
 
           response = hopResponse;
           break;
+        }
+
+        if (isOfflineMode() || offlineSignal.aborted) {
+          return res.status(503).json({ error: 'offline_mode' });
         }
 
         if (!response) {
@@ -1414,6 +1487,7 @@ router.post(
       } finally {
         clearTimeout(timeout);
         requestSignal?.removeEventListener('abort', abortForShutdown);
+        offlineSignal.removeEventListener('abort', abortForShutdown);
       }
     } catch (error: any) {
       console.error('[API] Internal error:', error);

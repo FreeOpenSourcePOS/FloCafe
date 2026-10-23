@@ -5,7 +5,7 @@ import type { WASocket as BaileysSocket, WAMessageKey } from '@whiskeysockets/ba
 import { parsePhoneNumber } from 'libphonenumber-js';
 import { getDatabase, getSettingValue, now } from '../db';
 import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
-import { isOfflineMode } from './offline-mode';
+import { getOfflineModeAbortSignal, isOfflineMode } from './offline-mode';
 import { resolveRegionalSnapshot, type RegionalSnapshot } from '../countries';
 import { parsePhoneE164 } from '../lib/phone';
 import {
@@ -530,6 +530,7 @@ export function saveAutomationConfig(raw: unknown): WhatsAppAutomationConfig {
   const normalized = normalizeWhatsAppAutomationConfig(merged);
   writeSetting(WHATSAPP_AUTOMATION_SETTING_KEY, JSON.stringify(normalized));
   sweepRecipientCooldownUntil.clear();
+  inFlightNthVisitKeys.clear();
   return normalized;
 }
 
@@ -1013,24 +1014,36 @@ function attachSocketHandlers(socket: BaileysSocket): void {
 }
 
 async function resolveWaWebVersion(
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<[number, number, number] | undefined> {
+  const effectiveSignal = signal
+    ? AbortSignal.any([signal, whatsappAbortController.signal, getOfflineModeAbortSignal()])
+    : AbortSignal.any([whatsappAbortController.signal, getOfflineModeAbortSignal()]);
+  if (effectiveSignal.aborted || isOfflineMode()) return undefined;
   // Fetch latest WhatsApp Web version to prevent connection rejection from stale build hashes.
   try {
     const res = await fetch('https://wppconnect.io/whatsapp-versions/', {
-      signal: AbortSignal.any([signal, AbortSignal.timeout(VERSION_FETCH_TIMEOUT_MS)]),
+      signal: AbortSignal.any([effectiveSignal, AbortSignal.timeout(VERSION_FETCH_TIMEOUT_MS)]),
     });
+    if (effectiveSignal.aborted || isOfflineMode()) return undefined;
     if (res.ok) {
       const html = await res.text();
+      if (effectiveSignal.aborted || isOfflineMode()) return undefined;
       const match = html.match(/2\.3000\.(\d+)/);
       if (match) return [2, 3000, Number(match[1])];
     }
   } catch {
     // fall through
   }
+  if (effectiveSignal.aborted || isOfflineMode()) return undefined;
   try {
-    const { fetchLatestWaWebVersion } = await abortable(() => loadBaileys(), signal);
-    const { version } = await abortable(() => fetchLatestWaWebVersion({}), signal);
+    const { fetchLatestWaWebVersion } = await abortable(() => loadBaileys(), effectiveSignal);
+    if (effectiveSignal.aborted || isOfflineMode()) return undefined;
+    const { version } = await abortable(
+      () => fetchLatestWaWebVersion({ signal: effectiveSignal } as any),
+      effectiveSignal,
+    );
+    if (effectiveSignal.aborted || isOfflineMode()) return undefined;
     return version as [number, number, number];
   } catch {
     // fall through
@@ -1039,8 +1052,10 @@ async function resolveWaWebVersion(
   return undefined;
 }
 
-async function startSocketImpl(attemptId: number): Promise<void> {
-  const signal = whatsappAbortController.signal;
+async function startSocketImpl(
+  attemptId: number,
+  signal: AbortSignal = whatsappAbortController.signal,
+): Promise<void> {
   if (!state.enabled || isWhatsAppTerminal() || signal.aborted) return;
   if (isOfflineMode()) {
     logWhatsApp('info', 'socket_start_skipped', { attemptId, reason: 'offline_mode' });
@@ -1061,7 +1076,13 @@ async function startSocketImpl(attemptId: number): Promise<void> {
   const version = await runSocketPhase(attemptId, 'version_lookup', () =>
     resolveWaWebVersion(signal),
   );
-  if (isWhatsAppTerminal() || signal.aborted || isOfflineMode()) return;
+  if (
+    attemptId !== whatsappStartAttempt ||
+    isWhatsAppTerminal() ||
+    signal.aborted ||
+    isOfflineMode()
+  )
+    return;
   const { useMultiFileAuthState, makeWASocket, Browsers, proto } = await runSocketPhase(
     attemptId,
     'baileys_load',
@@ -1164,7 +1185,7 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
   state.state = 'connecting';
   let sharedPromise: Promise<void>;
   const startup = (previousStart ? previousStart.catch(() => {}) : Promise.resolve())
-    .then(() => startSocketImpl(attemptId))
+    .then(() => startSocketImpl(attemptId, startController.signal))
     .then(() => {
       logWhatsApp('info', 'socket_start_result', {
         attemptId,
@@ -1176,12 +1197,19 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
       if (
         !isWhatsAppTerminal() &&
         !startController.signal.aborted &&
+        !isOfflineMode() &&
         attemptId === whatsappStartAttempt
       ) {
         state.socket = null;
         state.state = 'disconnected';
         state.lastError = 'WhatsApp connection could not be started.';
         state.lastErrorReason = 'startup_failed';
+      } else if (
+        (startController.signal.aborted || isOfflineMode()) &&
+        attemptId === whatsappStartAttempt
+      ) {
+        state.socket = null;
+        state.state = 'disconnected';
       }
       logWhatsApp('error', 'socket_start_result', {
         attemptId,
@@ -1265,6 +1293,7 @@ export function disable(): void {
     state.automationTimer = null;
   }
   sweepRecipientCooldownUntil.clear();
+  inFlightNthVisitKeys.clear();
   state.state = 'disconnected';
   state.connectedPhone = null;
   state.lastQr = null;
@@ -1295,7 +1324,20 @@ export async function connectWithQr(
   state.lastQr = null;
   state.lastPairingCode = null;
   ensureAutomationTimer();
-  await abortable(() => startSocket(signal), signal);
+  try {
+    await abortable(() => startSocket(signal), signal);
+  } catch (err) {
+    if (!requestSignal?.aborted && !isWhatsAppTerminal() && (isOfflineMode() || signal.aborted)) {
+      await (whatsappStartPromise?.catch(() => {}) ?? Promise.resolve());
+      return {
+        ok: false,
+        error: isOfflineMode() ? 'Offline mode is on.' : 'WhatsApp request cancelled.',
+      };
+    }
+    throw err;
+  }
+  if (isOfflineMode()) return { ok: false, error: 'Offline mode is on.' };
+  if (signal.aborted) return { ok: false, error: 'WhatsApp request cancelled.' };
   // QR arrives asynchronously via connection.update
   return { ok: true };
 }
@@ -1335,6 +1377,8 @@ export async function connectWithPairingCode(
 
 /** Closes the live socket without unpairing so Offline mode can be switched off again. */
 export function suspendForOfflineMode(): void {
+  whatsappAbortController.abort();
+  whatsappAbortController = new AbortController();
   if (state.reconnectTimer) {
     clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
@@ -1347,6 +1391,8 @@ export function suspendForOfflineMode(): void {
     }
     state.socket = null;
   }
+  state.lastQr = null;
+  state.lastPairingCode = null;
   state.state = 'disconnected';
 }
 
@@ -1376,6 +1422,7 @@ export function disconnect(): void {
     state.automationTimer = null;
   }
   sweepRecipientCooldownUntil.clear();
+  inFlightNthVisitKeys.clear();
   state.state = 'disconnected';
   state.connectedPhone = null;
   state.lastQr = null;
@@ -1567,6 +1614,18 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     ) {
       resolvedKind = 'bill_receipt';
     }
+  }
+  if (
+    req.userId === 'rule:nth_visit' &&
+    req.billId != null &&
+    resolvedCustomerId &&
+    hasNthVisitMessageForOrder(req.billId, bill?.order_id, String(resolvedCustomerId))
+  ) {
+    return {
+      ok: false,
+      error: 'Visit milestone message already sent for this order.',
+      reason: 'content_blocked',
+    };
   }
 
   let messageId: number;
@@ -1786,10 +1845,15 @@ export function removeFromBlocklist(phoneE164: string): boolean {
   return result.changes > 0;
 }
 
-function roundLoyaltyAmount(value: unknown): number {
+export function roundLoyaltyAmount(value: unknown, fractionDigits?: number): number {
   const num = Number(value);
   if (!Number.isFinite(num)) return 0;
-  return Math.round((num + Number.EPSILON) * 100) / 100;
+  const rawDigits =
+    typeof fractionDigits === 'number' && Number.isFinite(fractionDigits)
+      ? Math.max(0, Math.min(6, Math.trunc(fractionDigits)))
+      : tenantRegionalSnapshot().currencyFractionDigits;
+  const factor = Math.pow(10, rawDigits);
+  return Math.round((num + Number.EPSILON) * factor) / factor;
 }
 
 function formatCurrencyForTemplate(
@@ -1858,7 +1922,10 @@ export function buildWhatsAppTemplateContext(opts: {
     order_items: '',
     total: formatCurrencyForTemplate(0, regional),
     payment_method: '',
-    points_earned: opts.pointsEarned !== undefined ? roundLoyaltyAmount(opts.pointsEarned) : 0,
+    points_earned:
+      opts.pointsEarned !== undefined
+        ? roundLoyaltyAmount(opts.pointsEarned, regional.currencyFractionDigits)
+        : 0,
     points_balance: 0,
     points_value: formatCurrencyForTemplate(0, regional),
     store_name: storeName,
@@ -1980,7 +2047,10 @@ export function buildWhatsAppTemplateContext(opts: {
             WHERE bill_id = ? AND type = 'credit'
           `)
           .get(bill.id) as { total: number } | undefined;
-        context.points_earned = roundLoyaltyAmount(earnedRow?.total);
+        context.points_earned = roundLoyaltyAmount(
+          earnedRow?.total,
+          regional.currencyFractionDigits,
+        );
       }
     }
   }
@@ -2034,7 +2104,10 @@ export function buildWhatsAppTemplateContext(opts: {
           WHERE customer_id = ?
         `)
         .get(resolvedCustomerId) as { balance: number } | undefined;
-      const balance = Math.max(0, roundLoyaltyAmount(ledgerRow?.balance));
+      const balance = Math.max(
+        0,
+        roundLoyaltyAmount(ledgerRow?.balance, regional.currencyFractionDigits),
+      );
       context.points_balance = balance;
       context.points_value = formatCurrencyForTemplate(balance, regional);
     }
@@ -2080,6 +2153,19 @@ const inFlightBillAutomations = new Map<
   number,
   Promise<{ triggered: WhatsAppTriggerType[]; results: Record<string, SendResult> }>
 >();
+const inFlightNthVisitKeys = new Set<string>();
+
+function getNthVisitDedupeKey(
+  billId: number,
+  orderId: string | number | null | undefined,
+  customerId: string,
+): string {
+  const scope =
+    orderId !== null && orderId !== undefined && String(orderId) !== ''
+      ? `order:${orderId}`
+      : `bill:${billId}`;
+  return `${scope}:customer:${customerId}`;
+}
 let activeAutomationSweepPromise: Promise<{ feedbackSent: number; winbackSent: number }> | null =
   null;
 const sweepRecipientCooldownUntil = new Map<string, number>();
@@ -2239,8 +2325,10 @@ async function triggerBillPaidAutomationImpl(
 
     // 3. Nth visit milestone
     const nthVisitRule = findRule('nth_visit');
+    const nthVisitKey = getNthVisitDedupeKey(billId, bill.order_id, String(customerId));
     if (
       nthVisitRule?.enabled &&
+      !inFlightNthVisitKeys.has(nthVisitKey) &&
       !hasNthVisitMessageForOrder(billId, bill.order_id, String(customerId))
     ) {
       const nth = nthVisitRule.nthVisit ?? 5;
@@ -2254,16 +2342,21 @@ async function triggerBillPaidAutomationImpl(
         if (tpl) {
           const body = renderWhatsAppTemplate(tpl.body, context);
           if (body) {
-            const res = await sendMessage({
-              phoneE164: parsedPhone.e164,
-              body,
-              billId,
-              customerId: String(customerId),
-              kind: 'auto_followup',
-              userId: 'rule:nth_visit',
-            });
-            results.nth_visit = res;
-            if (res.ok) triggered.push('nth_visit');
+            inFlightNthVisitKeys.add(nthVisitKey);
+            try {
+              const res = await sendMessage({
+                phoneE164: parsedPhone.e164,
+                body,
+                billId,
+                customerId: String(customerId),
+                kind: 'auto_followup',
+                userId: 'rule:nth_visit',
+              });
+              results.nth_visit = res;
+              if (res.ok) triggered.push('nth_visit');
+            } finally {
+              inFlightNthVisitKeys.delete(nthVisitKey);
+            }
           }
         }
       }

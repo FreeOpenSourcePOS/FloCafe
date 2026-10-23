@@ -62,7 +62,6 @@ interface ExpenseWorkflowProps {
   initialView?: 'main' | 'payment' | 'replace';
   categories: ExpenseCategory[];
   context: ExpenseContext;
-  minorFactor?: number;
   onClose: () => void;
   /** Re-read the filtered list and summary after a committed mutation. */
   onChanged: () => void;
@@ -940,7 +939,7 @@ export default function ExpenseWorkflow({
                 data-testid="expense-payment-summary"
               >
                 <span>
-                  <span className="text-muted-foreground">{tCommon('amount')}:</span>{' '}
+                  <span className="text-muted-foreground">{tCommon('total')}:</span>{' '}
                   <span className="font-semibold text-foreground">
                     {fmtMinor(record.amount_minor)}
                   </span>
@@ -954,7 +953,7 @@ export default function ExpenseWorkflow({
                 <span>
                   <span className="text-muted-foreground">{t('due')}:</span>{' '}
                   <span className="font-semibold text-foreground">
-                    {fmtMinor(record.due_minor ?? 0)}
+                    {fmtMinor(record.due_minor)}
                   </span>
                 </span>
               </div>
@@ -993,7 +992,7 @@ export default function ExpenseWorkflow({
               </div>
               <div ref={amountFieldRef}>
                 <label className="mb-1 block text-sm font-medium" htmlFor="expense-payment-amount">
-                  {tCommon('amount')}
+                  {tCommon('amount')} ({currencyCode})
                 </label>
                 <CurrencyAmountInput
                   id="expense-payment-amount"

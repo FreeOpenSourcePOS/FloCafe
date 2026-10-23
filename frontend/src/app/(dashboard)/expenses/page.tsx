@@ -46,10 +46,9 @@ export default function ExpensesPage() {
       ? tCommon('notAvailable')
       : fmt(amountMinor / getCurrencyMinorUnitFactor(currencyCode));
 
-  const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
-
   const [context, setContext] = useState<ExpenseContext | null>(null);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [knownCurrencies, setKnownCurrencies] = useState<string[]>([]);
   const [filters, setFilters] = useState<Filters | null>(null);
   // Rows carry the filter identity they were fetched for, so a filter change
   // renders as loading instead of showing rows that no longer match.
@@ -75,6 +74,16 @@ export default function ExpensesPage() {
   const requestSeq = useRef(0);
 
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
+
+  const recordCurrencies = useCallback((codes: Iterable<string | null | undefined>) => {
+    setKnownCurrencies((previous) => {
+      const next = new Set(previous);
+      for (const code of codes) {
+        if (code) next.add(code);
+      }
+      return next.size === previous.length ? previous : Array.from(next);
+    });
+  }, []);
 
   const filterKey = filters ? JSON.stringify([filters, refreshKey]) : '';
   const requestKey = filters ? JSON.stringify([filters, refreshKey]) : '';
@@ -161,7 +170,9 @@ export default function ExpensesPage() {
       .get('/expenses', { params: { ...params, limit: LIST_PAGE_SIZE }, signal: controller.signal })
       .then(({ data }) => {
         if (seq !== requestSeq.current) return;
-        setPage({ key: pageKey, rows: data.expenses ?? [], cursor: data.nextCursor ?? null });
+        const rows = (data.expenses ?? []) as ExpenseRecord[];
+        recordCurrencies(rows.map((row) => row.currency_code));
+        setPage({ key: pageKey, rows, cursor: data.nextCursor ?? null });
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -182,14 +193,16 @@ export default function ExpensesPage() {
       .get('/expenses/summary', { params: summaryParams, signal: controller.signal })
       .then(({ data }) => {
         if (seq !== requestSeq.current) return;
-        setSummary({ key: pageKey, data: data as ExpenseSummary });
+        const nextSummary = data as ExpenseSummary;
+        recordCurrencies(nextSummary.totals.map((total) => total.currency_code));
+        setSummary({ key: pageKey, data: nextSummary });
       })
       .catch(() => {
         /* the list surfaces the failure; the summary is supplementary */
       });
 
     return () => controller.abort();
-  }, [filters, refreshAuthContext, refreshKey, t]);
+  }, [filters, recordCurrencies, refreshAuthContext, refreshKey, t]);
 
   const loadMore = async () => {
     if (!filters || !nextCursor) return;
@@ -209,9 +222,11 @@ export default function ExpensesPage() {
         },
       });
       if (seq !== requestSeq.current) return;
+      const rows = (data.expenses ?? []) as ExpenseRecord[];
+      recordCurrencies(rows.map((row) => row.currency_code));
       setPage((previous) => ({
         key,
-        rows: [...(previous.key === key ? previous.rows : []), ...(data.expenses ?? [])],
+        rows: [...(previous.key === key ? previous.rows : []), ...rows],
         cursor: data.nextCursor ?? null,
       }));
     } catch {
@@ -224,9 +239,12 @@ export default function ExpensesPage() {
   const currencyOptions = useMemo(() => {
     const codes = new Set<string>();
     if (context?.currency_code) codes.add(context.currency_code);
-    currentSummary?.totals.forEach((total) => codes.add(total.currency_code));
+    for (const code of knownCurrencies) codes.add(code);
+    if (filters?.currency) codes.add(filters.currency);
+    summary?.data.totals.forEach((total) => codes.add(total.currency_code));
+    page.rows.forEach((row) => codes.add(row.currency_code));
     return Array.from(codes);
-  }, [context, currentSummary]);
+  }, [context, filters?.currency, knownCurrencies, page.rows, summary]);
 
   const updateFilter = (patch: Partial<Filters>) => {
     setFilters((current) => (current ? { ...current, ...patch } : current));
@@ -483,7 +501,7 @@ export default function ExpensesPage() {
                 </td>
                 <td className="whitespace-nowrap p-3 text-sm">
                   {expense.status === 'active' ? (
-                    (expense.due_minor ?? 0) === 0 ? (
+                    expense.due_minor === 0 ? (
                       <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                         {tOrders('paid')}
                       </span>
@@ -594,7 +612,6 @@ export default function ExpensesPage() {
           initialView={workflow.initialView}
           categories={categories}
           context={context}
-          minorFactor={minorFactor}
           onClose={() => setWorkflow(null)}
           onChanged={refresh}
           onCategoryCreated={(category) => setCategories((previous) => [...previous, category])}

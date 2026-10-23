@@ -2804,6 +2804,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
         window.localStorage.getItem('flo.customerDisplayToken'),
       );
       expect(storedTokenAfter401).toBeNull();
+      await displayPage.close();
 
       // Signed-in staff fallback mode also drains multiple /api/orders cursor pages via before_id and deduplicates
       await page.setViewportSize({ width: 1920, height: 1080 });
@@ -2912,8 +2913,9 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       // when each individual page responds within 10000ms, and 5-page polling at refresh_seconds: 2 stays within 120 req/min
       const budgetPage = await displayContext.newPage();
       await budgetPage.setViewportSize({ width: 1920, height: 1080 });
-      await budgetPage.clock.install();
-      await budgetPage.clock.pauseAt(new Date(Date.now() + 1000));
+      const initialClockMs = Date.now();
+      await budgetPage.clock.install({ time: initialClockMs - 60_000 });
+      await budgetPage.clock.pauseAt(initialClockMs);
       let slowMode = true;
       let rateWindowRequests = 0;
       let hit429 = false;
@@ -2993,6 +2995,12 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
 
       const slowPage1Arrived = waitForNextSlowPage();
       await budgetPage.goto(`${BASE}/customer-display/#token=${displayToken}`);
+      await expect
+        .poll(async () => {
+          await budgetPage.clock.runFor(1);
+          return budgetPage.locator('header').count();
+        })
+        .toBe(1);
       await budgetPage.clock.runFor(1);
       await expect(budgetPage.locator('header')).toBeVisible();
       await budgetPage.clock.runFor(1);

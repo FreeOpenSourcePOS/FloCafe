@@ -419,7 +419,9 @@
     "priceExceptionReason": "Dahilan",
     "priceExceptionsAllShifts": "Buong panahon",
     "priceExceptionsShift": "Shift sa trabaho",
-    "priceExceptionsShiftOpen": "bukas"
+    "priceExceptionsShiftOpen": "bukas",
+    "dayCloseOpenShiftBlocks": "Isara muna ang bukas na shift #{id} ({name}) bago isara ang araw ng negosyong ito.",
+    "dayCloseOpenShiftBlocksGeneric": "Isara muna ang bukas na shift para sa araw ng negosyong ito bago isara ang araw."
   },
   "expenses": {
     "addTitle": "Magdagdag ng gastos",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Tingnan ang availability",
     "viewMore": "Tingnan pa",
     "viewLess": "Tingnan nang kaunti",
-    "splitCheckSettingDenied": "Hindi puwedeng tingnan ng account na ito ang availability ng paghahati ng check."
+    "splitCheckSettingDenied": "Hindi puwedeng tingnan ng account na ito ang availability ng paghahati ng check.",
+    "dayCloseBlockedByOpenShiftTitle": "Kailangang isara muna ang bukas na shift",
+    "dayCloseBlockedByOpenShiftHint": "Isara muna ang bukas na shift #{id} ({name}) bago isara ang araw ng negosyong ito.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# bukas na order ang ililipat sa susunod na shift} other {# bukas na mga order ang ililipat sa susunod na shift}}",
+    "shiftCloseUnpaidWarningHint": "Mananatiling bukas ang mga order na ito para sa susunod na shift. Ang pagsasara ng shift na ito ay nagtutugma lamang sa mga bayad na cash na nakolekta na sa shift na ito.",
+    "shiftCloseUnpaidMoreCount": "+{count} pang bukas na order"
   },
   "printTest": {
     "amt": "Halaga",
@@ -3174,6 +3181,47 @@
       "phone_required": "Kailangan ang numero ng telepono",
       "phone_required_pairing": "Kailangan ang telepono para sa pairing code"
     },
+    "automation": {
+      "autoOptOutLabel": "Kusang opt-out kapag nag-reply ng STOP / UNSUBSCRIBE (idinadagdag sa blocklist)",
+      "broadcastDescription": "Magpadala ng mensahe sa napiling grupo ng customer (sumusunod sa blocklist, quiet hours, at limitasyon).",
+      "broadcastInactiveDays": "Hindi aktibo >= araw",
+      "broadcastMinPoints": "Min. na puntos",
+      "broadcastMinVisits": "Min. na bisita",
+      "broadcastSendCta": "Ipadala sa grupo",
+      "broadcastSuccess": "Tapos na ang pagpapadala: {sent} naipadala, {skipped} nilaktawan ({matched} tumugma).",
+      "broadcastTitle": "Pagpapadala sa grupo ng customer",
+      "feedbackLinkLabel": "Link ng feedback ng tindahan",
+      "instagramLabel": "Instagram account ng tindahan",
+      "maxPerWeekLabel": "Pinakamaraming auto-mensahe bawat customer kada linggo",
+      "placeholdersLabel": "I-click upang maglagay ng variable",
+      "previewTitle": "Live na silip (halimbawang datos)",
+      "quietHoursEnd": "Pagtatapos ng tahimik na oras",
+      "quietHoursLabel": "Ipagpaliban ang auto-padala sa tahimik na oras",
+      "quietHoursStart": "Simula ng tahimik na oras",
+      "resetDefault": "Ibalik sa dati",
+      "ruleAfterPaymentHint": "Kusang ipadala ang resibo kapag nabayaran ang bill na may telepono ng customer.",
+      "ruleFeedbackDelayHint": "Magpadala ng hiling sa feedback ilang oras matapos mabayaran ang order.",
+      "ruleNthVisitHint": "Magpadala ng pasasalamat sa bawat ika-N na bayad na bisita.",
+      "rulePointsThresholdHint": "Magpadala ng abiso sa gantimpala kapag lumampas sa limitasyon ang puntos.",
+      "rulesDescription": "I-toggle ang mga trigger at itakda ang limitasyon para sa resibo, follow-up, at milestone.",
+      "rulesTitle": "Mga patakaran sa kusang pagpapadala",
+      "ruleWinbackHint": "Magpadala ng alok sa mga customer na hindi bumisita nang hindi bababa sa N araw.",
+      "runSweepCta": "Patakbuhin ang naka-iskedyul na patakaran ngayon",
+      "safetyDescription": "Protektahan ang nakakonektang numero gamit ang auto opt-out, tahimik na oras, at lingguhang limitasyon.",
+      "safetyTitle": "Kaligtasan at kontrol laban sa spam",
+      "saveCta": "I-save ang setting ng automation",
+      "savedSuccess": "Na-save na ang setting ng automation.",
+      "sweepResult": "Nasuri ang mga naka-iskedyul na patakaran ({sent} naipadala).",
+      "templateBodyLabel": "Nilalaman ng mensahe",
+      "templateNameLabel": "Pangalan ng template",
+      "templatesDescription": "I-customize ang mga kusang mensahe sa WhatsApp gamit ang datos ng customer, bill, puntos, at tindahan.",
+      "templateSelectLabel": "Napiling template",
+      "templatesTitle": "Mga template ng mensahe",
+      "thresholdDays": "Mga araw na hindi aktibo",
+      "thresholdHours": "Oras ng paghihintay",
+      "thresholdPoints": "Limitasyon ng puntos",
+      "thresholdVisits": "Bawat N bisita"
+    },
     "blocklist": {
       "addCta": "Magdagdag",
       "addedSuccess": "Naidagdag sa blocklist.",
@@ -3266,6 +3314,14 @@
       "rate_limited": "Nalimitahan ang bilis ng pagpapadala ng WhatsApp ({code}). Nagpapahinga nang 5 minuto.",
       "reconnecting": "Nagsara ang koneksyon ({code}). Muling kumokonekta sa loob ng {seconds}s…"
     },
+    "rule": {
+      "after_payment": "Auto-resibo pagkatapos magbayad",
+      "broadcast": "Padala sa grupo ng customer",
+      "feedback_delay": "Paalala sa feedback",
+      "nth_visit": "Milestone sa bilang ng bisita",
+      "points_threshold": "Milestone sa puntos ng katapatan",
+      "winback": "Pagbabalik ng hindi aktibong customer"
+    },
     "send": {
       "customerPhoneRequired": "Magdagdag this customer’s phone number before sending.",
       "error": {
@@ -3327,6 +3383,7 @@
       "typing": "Nagta-type"
     },
     "tabs": {
+      "automation": "Mga Template at Patakaran",
       "connection": "Koneksyon",
       "inbox": "Inbox",
       "sent": "Naipadala"

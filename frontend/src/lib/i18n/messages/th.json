@@ -419,7 +419,9 @@
     "priceExceptionReason": "เหตุผล",
     "priceExceptionsAllShifts": "ทั้งช่วงเวลา",
     "priceExceptionsShift": "กะ",
-    "priceExceptionsShiftOpen": "เปิดอยู่"
+    "priceExceptionsShiftOpen": "เปิดอยู่",
+    "dayCloseOpenShiftBlocks": "ปิดกะที่เปิดอยู่ #{id} ({name}) ก่อนปิดวันทำการนี้",
+    "dayCloseOpenShiftBlocksGeneric": "ปิดกะที่เปิดอยู่ของวันทำการนี้ก่อนปิดวัน"
   },
   "expenses": {
     "addTitle": "เพิ่มค่าใช้จ่าย",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "ตรวจสอบความพร้อม",
     "viewMore": "ดูเพิ่มเติม",
     "viewLess": "ดูน้อยลง",
-    "splitCheckSettingDenied": "บัญชีนี้ไม่สามารถตรวจสอบความพร้อมในการแบ่งบิลได้"
+    "splitCheckSettingDenied": "บัญชีนี้ไม่สามารถตรวจสอบความพร้อมในการแบ่งบิลได้",
+    "dayCloseBlockedByOpenShiftTitle": "ต้องปิดกะที่เปิดอยู่ก่อน",
+    "dayCloseBlockedByOpenShiftHint": "ปิดกะที่เปิดอยู่ #{id} ({name}) ก่อนปิดวันทำการนี้",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {ออเดอร์ที่เปิดอยู่ # รายการจะส่งต่อไปกะถัดไป} other {ออเดอร์ที่เปิดอยู่ # รายการจะส่งต่อไปกะถัดไป}}",
+    "shiftCloseUnpaidWarningHint": "ออเดอร์เหล่านี้จะยังคงเปิดอยู่สำหรับกะถัดไป การปิดกะนี้จะกระทบยอดเฉพาะเงินสดที่รับชำระแล้วในระหว่างกะนี้เท่านั้น",
+    "shiftCloseUnpaidMoreCount": "+อีก {count} ออเดอร์ที่เปิดอยู่"
   },
   "printTest": {
     "amt": "จำนวนเงิน",
@@ -3174,6 +3181,47 @@
       "phone_required": "ต้องระบุหมายเลขโทรศัพท์",
       "phone_required_pairing": "ต้องระบุหมายเลขโทรศัพท์สำหรับรหัสการจับคู่"
     },
+    "automation": {
+      "autoOptOutLabel": "ยกเลิกรับข้อความอัตโนมัติเมื่อตอบกลับ STOP / UNSUBSCRIBE (เพิ่มในรายการบล็อก)",
+      "broadcastDescription": "ส่งเทมเพลตไปยังกลุ่มลูกค้าที่กรองไว้ (เคารพรายการบล็อก ช่วงเวลางดรบกวน และขีดจำกัด)",
+      "broadcastInactiveDays": "ไม่ได้มา >= วัน",
+      "broadcastMinPoints": "คะแนนขั้นต่ำ",
+      "broadcastMinVisits": "จำนวนครั้งขั้นต่ำ",
+      "broadcastSendCta": "ส่งบรอดแคสต์",
+      "broadcastSuccess": "ส่งบรอดแคสต์เสร็จสิ้น: ส่งแล้ว {sent} ข้าม {skipped} (ตรงเงื่อนไข {matched})",
+      "broadcastTitle": "บรอดแคสต์กลุ่มลูกค้า",
+      "feedbackLinkLabel": "ลิงก์แบบสอบถามของร้าน",
+      "instagramLabel": "บัญชี Instagram ของร้าน",
+      "maxPerWeekLabel": "จำนวนข้อความอัตโนมัติสูงสุดต่อลูกค้าต่อสัปดาห์",
+      "placeholdersLabel": "คลิกเพื่อแทรกตัวแปร",
+      "previewTitle": "ตัวอย่างข้อความจริง (ข้อมูลตัวอย่าง)",
+      "quietHoursEnd": "สิ้นสุดเวลางดรบกวน",
+      "quietHoursLabel": "ระงับการส่งอัตโนมัติในช่วงเวลางดรบกวน",
+      "quietHoursStart": "เริ่มเวลางดรบกวน",
+      "resetDefault": "รีเซ็ตเป็นค่าเริ่มต้น",
+      "ruleAfterPaymentHint": "ส่งเทมเพลตใบเสร็จอัตโนมัติเมื่อบิลที่มีเบอร์โทรลูกค้าชำระเงินสำเร็จ",
+      "ruleFeedbackDelayHint": "ส่งข้อความขอความคิดเห็นหลังจากชำระเงินแล้วตามจำนวนชั่วโมงที่กำหนด",
+      "ruleNthVisitHint": "ส่งข้อความขอบคุณทุกๆ การชำระเงินครบ N ครั้ง",
+      "rulePointsThresholdHint": "ส่งแจ้งเตือนรางวัลเมื่อคะแนนสะสมถึงเกณฑ์ที่ตั้งไว้",
+      "rulesDescription": "เปิด/ปิดทริกเกอร์อัตโนมัติและตั้งค่าเงื่อนไขสำหรับใบเสร็จ การติดตามผล และรางวัลสะสม",
+      "rulesTitle": "กฎการส่งข้อความอัตโนมัติ",
+      "ruleWinbackHint": "ส่งข้อเสนอพิเศษให้ลูกค้าที่ไม่ได้มาใช้บริการอย่างน้อย N วัน",
+      "runSweepCta": "รันกฎตามกำหนดเวลาทันที",
+      "safetyDescription": "ปกป้องเบอร์ที่เชื่อมต่อด้วยการบล็อกอัตโนมัติ เวลางดรบกวน และโควต้ารายสัปดาห์",
+      "safetyTitle": "การควบคุมความปลอดภัยและป้องกันสแปม",
+      "saveCta": "บันทึกการตั้งค่าอัตโนมัติ",
+      "savedSuccess": "บันทึกการตั้งค่าอัตโนมัติแล้ว",
+      "sweepResult": "ตรวจสอบกฎตามกำหนดเวลาแล้ว (ส่ง {sent} ข้อความ)",
+      "templateBodyLabel": "เนื้อหาข้อความ",
+      "templateNameLabel": "ชื่อเทมเพลต",
+      "templatesDescription": "ปรับแต่งข้อความ WhatsApp อัตโนมัติด้วยตัวแปรลูกค้า บิล คะแนนสะสม และข้อมูลร้าน",
+      "templateSelectLabel": "เทมเพลตที่เลือก",
+      "templatesTitle": "เทมเพลตข้อความ",
+      "thresholdDays": "จำนวนวันที่ไม่มา",
+      "thresholdHours": "ชั่วโมงที่รอส่ง",
+      "thresholdPoints": "เกณฑ์คะแนน",
+      "thresholdVisits": "ทุกๆ N ครั้ง"
+    },
     "blocklist": {
       "addCta": "เพิ่ม",
       "addedSuccess": "เพิ่มเข้ารายชื่อบล็อกแล้ว",
@@ -3266,6 +3314,14 @@
       "rate_limited": "WhatsApp จำกัดอัตราการส่ง ({code}) หยุดชั่วคราว 5 นาที",
       "reconnecting": "การเชื่อมต่อถูกปิด ({code}) กำลังเชื่อมต่อใหม่ในอีก {seconds} วินาที…"
     },
+    "rule": {
+      "after_payment": "ส่งใบเสร็จอัตโนมัติหลังชำระเงิน",
+      "broadcast": "บรอดแคสต์ตามกลุ่มลูกค้า",
+      "feedback_delay": "ติดตามขอรีวิวหลังใช้บริการ",
+      "nth_visit": "ครบกำหนดจำนวนครั้งที่มาใช้บริการ",
+      "points_threshold": "คะแนนสะสมถึงเกณฑ์",
+      "winback": "ดึงลูกค้าที่ไม่ได้มานานกลับมา"
+    },
     "send": {
       "customerPhoneRequired": "เพิ่มหมายเลขโทรศัพท์ของลูกค้ารายนี้ก่อนส่ง",
       "error": {
@@ -3327,6 +3383,7 @@
       "typing": "กำลังพิมพ์"
     },
     "tabs": {
+      "automation": "เทมเพลตและกฎอัตโนมัติ",
       "connection": "การเชื่อมต่อ",
       "inbox": "กล่องข้อความ",
       "sent": "ข้อความที่ส่ง"

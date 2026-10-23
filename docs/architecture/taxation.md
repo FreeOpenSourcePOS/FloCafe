@@ -153,12 +153,25 @@ stored on `orders`, `order_items`, and `bills`, holding the item-level line amou
 During active order mutations (such as item edits, cancellations, discounts, or charge updates),
 `recomputeOrderTotals()` preserves existing items' saved `tax_snapshot` rules without re-evaluating
 them against the active catalog, evaluates configured charge taxes against the active pack via
-`calculateConfiguredChargeTaxes()`, and reallocates document tax rounding across the combined active
-item and charge snapshots before persisting updated line snapshots to `order_items`.
-Once bills are settled or paid, transactions preserve the recorded snapshots.
-`aggregateTaxSnapshots()` in `main/services/tax.ts` folds the item snapshots into an order or bill
-level array, and `invertTaxSnapshot()` negates the line amounts for a void or refund adjustment
-row, so an adjustment reverses the recorded numbers rather than recomputing them.
+`calculateConfiguredChargeTaxes()`, and calls `allocateDocumentTaxRounding()` to reallocate
+undiscounted document tax rounding across active item and charge snapshots before persisting those
+un-order-discounted line allocations to `order_items`, so subsequent discount edits never compound
+on a prior order discount. For the order, bill, and tax-preview (`calculateTaxPreview()`) rollup,
+`rollupOrderTaxes()` in `main/services/tax.ts` applies any order-discount ratio
+(`computeDiscountTaxRatio(discountedSubtotal, subtotal)`) before combining item and charge taxes:
+on `document`-scoped lines, `allocateDocumentTaxRounding()` scales raw unrounded item tax
+components (`amount + roundingRemainder`) by the 40-digit `Decimal` ratio before performing
+document-scope `largest_remainder` allocation across the combined discounted-item and
+unchanged-charge components, while non-document lines scale via `scaleTaxBreakdowns()` and
+`scaleTaxSnapshots()` before `combineItemAndChargeTaxes()` folds the item and charge snapshots into
+an order or bill level array with `aggregateTaxSnapshots()`. Bill item projection
+(`projectOrderItems()` in `main/routes/bills.ts`) reads each item's saved discounted document
+allocation from `order.tax_snapshot` (falling back to `allocateDocumentTaxRounding()` when no
+saved order-level item snapshots are present) so projected line taxes and component reports match
+both new and historical bill rollups.
+Once bills are settled or paid, transactions preserve the recorded snapshots, and
+`invertTaxSnapshot()` negates the line amounts for a void or refund adjustment row, so an adjustment
+reverses the recorded numbers rather than recomputing them.
 
 A split bill produces child snapshots carrying `splitAllocation: 'minor-unit-v1'`, recorded by
 `SPLIT_TAX_SNAPSHOT_VERSION` in `main/routes/bills.ts` and read back in
@@ -314,6 +327,7 @@ author cannot rely on any of them.
 npm run test:tax-engine
 npm run test:tax-components
 npm run test:integration-tax
+npm run test:order-totals-recompute
 npm run test:tax-pack-catalog
 npm run test:tax-pack-management
 npm run test:manual-tax-config

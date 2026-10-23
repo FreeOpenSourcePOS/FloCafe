@@ -419,7 +419,9 @@
     "priceExceptionReason": "Grund",
     "priceExceptionsAllShifts": "Gesamter Zeitraum",
     "priceExceptionsShift": "Schicht",
-    "priceExceptionsShiftOpen": "offen"
+    "priceExceptionsShiftOpen": "offen",
+    "dayCloseOpenShiftBlocks": "Schließen Sie die offene Schicht #{id} ({name}), bevor Sie diesen Geschäftstag abschließen.",
+    "dayCloseOpenShiftBlocksGeneric": "Schließen Sie die offene Schicht für diesen Geschäftstag, bevor Sie den Tag abschließen."
   },
   "expenses": {
     "addTitle": "Ausgabe hinzufügen",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Verfügbarkeit prüfen",
     "viewMore": "Mehr anzeigen",
     "viewLess": "Weniger anzeigen",
-    "splitCheckSettingDenied": "Dieses Konto kann die Verfügbarkeit des Rechnungssplittings nicht prüfen."
+    "splitCheckSettingDenied": "Dieses Konto kann die Verfügbarkeit des Rechnungssplittings nicht prüfen.",
+    "dayCloseBlockedByOpenShiftTitle": "Offene Schicht muss zuerst geschlossen werden",
+    "dayCloseBlockedByOpenShiftHint": "Schließen Sie die offene Schicht #{id} ({name}), bevor Sie diesen Geschäftstag abschließen.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# offene Bestellung wird übertragen} other {# offene Bestellungen werden übertragen}}",
+    "shiftCloseUnpaidWarningHint": "Diese Bestellungen bleiben für die nächste Schicht geöffnet. Beim Schließen dieser Schicht werden nur die in dieser Schicht bereits kassierten Barzahlungen abgestimmt.",
+    "shiftCloseUnpaidMoreCount": "+{count} weitere offene Bestellungen"
   },
   "printTest": {
     "amt": "Betrag",
@@ -3174,6 +3181,47 @@
       "phone_required": "Telefonnummer erforderlich",
       "phone_required_pairing": "Telefonnummer für Kopplungscode erforderlich"
     },
+    "automation": {
+      "autoOptOutLabel": "Automatische Abmeldung bei STOP / UNSUBSCRIBE (fügt Absender zur Sperrliste hinzu)",
+      "broadcastDescription": "Vorlage an ein gefiltertes Kundensegment senden (beachtet Sperrliste, Ruhezeiten und Limits).",
+      "broadcastInactiveDays": "Inaktiv >= Tage",
+      "broadcastMinPoints": "Min. Punkte",
+      "broadcastMinVisits": "Min. Besuche",
+      "broadcastSendCta": "Rundsendung starten",
+      "broadcastSuccess": "Rundsendung abgeschlossen: {sent} gesendet, {skipped} übersprungen ({matched} Treffer).",
+      "broadcastTitle": "Kundensegment-Rundsendung",
+      "feedbackLinkLabel": "Feedback-Link des Geschäfts",
+      "instagramLabel": "Instagram-Handle des Geschäfts",
+      "maxPerWeekLabel": "Max. automatische Nachrichten pro Kunde und Woche",
+      "placeholdersLabel": "Klicken, um Platzhalter einzufügen",
+      "previewTitle": "Live-Vorschau (Beispieldaten)",
+      "quietHoursEnd": "Ende der Ruhezeit",
+      "quietHoursLabel": "Automatische Sendungen während der Ruhezeiten unterdrücken",
+      "quietHoursStart": "Beginn der Ruhezeit",
+      "resetDefault": "Auf Standard zurücksetzen",
+      "ruleAfterPaymentHint": "Belegvorlage automatisch senden, sobald eine Rechnung mit Kundentelefon bezahlt wird.",
+      "ruleFeedbackDelayHint": "Feedback-Anfrage nach bezahlter Bestellung senden (Stunden nach Zahlung).",
+      "ruleNthVisitHint": "Dankeschön-Nachricht alle N bezahlten Besuche senden.",
+      "rulePointsThresholdHint": "Prämienhinweis senden, wenn der Punktestand den Schwellenwert erreicht.",
+      "rulesDescription": "Automatische Auslöser umschalten und Schwellenwerte für Belege, Follow-ups und Meilensteine festlegen.",
+      "rulesTitle": "Automatische Senderegeln",
+      "ruleWinbackHint": "Rückholangebot an Kunden senden, die seit mindestens N Tagen inaktiv sind.",
+      "runSweepCta": "Geplante Regeln jetzt ausführen",
+      "safetyDescription": "Schützen Sie Ihre verbundene Telefonnummer durch Auto-Opt-out, Ruhezeiten und Wochenlimits.",
+      "safetyTitle": "Sicherheits- & Anti-Spam-Schutz",
+      "saveCta": "Automatisierung speichern",
+      "savedSuccess": "Automatisierungseinstellungen gespeichert.",
+      "sweepResult": "Geplante Regeln geprüft ({sent} gesendet).",
+      "templateBodyLabel": "Nachrichtentext",
+      "templateNameLabel": "Vorlagenname",
+      "templatesDescription": "Automatische WhatsApp-Nachrichten mit dynamischen Kunden-, Rechnungs-, Treue- und Geschäfts-Platzhaltern anpassen.",
+      "templateSelectLabel": "Ausgewählte Vorlage",
+      "templatesTitle": "Nachrichtenvorlagen",
+      "thresholdDays": "Inaktive Tage",
+      "thresholdHours": "Verzögerung (Stunden)",
+      "thresholdPoints": "Punkteschwelle",
+      "thresholdVisits": "Alle N Besuche"
+    },
     "blocklist": {
       "addCta": "Hinzufügen",
       "addedSuccess": "Zur Sperrliste hinzugefügt.",
@@ -3266,6 +3314,14 @@
       "rate_limited": "Versand durch WhatsApp begrenzt ({code}). 5 Minuten Pause.",
       "reconnecting": "Verbindung geschlossen ({code}). Wiederherstellung in {seconds} Sek.…"
     },
+    "rule": {
+      "after_payment": "Auto-Beleg nach Zahlung",
+      "broadcast": "Segment-Rundsendung",
+      "feedback_delay": "Feedback-Nachfrage",
+      "nth_visit": "Besuchs-Meilenstein",
+      "points_threshold": "Treuepunkte-Meilenstein",
+      "winback": "Inaktive Kunden zurückgewinnen"
+    },
     "send": {
       "customerPhoneRequired": "Vor dem Senden Telefonnummer des Kunden hinterlegen.",
       "error": {
@@ -3327,6 +3383,7 @@
       "typing": "Schreibt…"
     },
     "tabs": {
+      "automation": "Vorlagen & Regeln",
       "connection": "Verbindung",
       "inbox": "Posteingang",
       "sent": "Gesendet"

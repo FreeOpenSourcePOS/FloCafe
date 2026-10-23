@@ -402,6 +402,7 @@ export default function ProductGrid({
               const rawMatch = resolveScannedProduct(trimmed, products);
               const parsedQty = rawMatch ? null : parseQuantitySearch(trimmed);
               const targetCode = parsedQty ? parsedQty.query : trimmed;
+              if (!targetCode) return;
               const quantityToAdd = parsedQty ? parsedQty.quantity : 1;
               const match = rawMatch ?? resolveScannedProduct(targetCode, products);
               if (match) {

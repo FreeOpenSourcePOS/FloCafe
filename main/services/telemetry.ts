@@ -1,6 +1,6 @@
 /** Anonymous usage telemetry using a randomized local UUID, independent of cloud sync. */
 
-import { app } from 'electron';
+import type { app } from 'electron';
 import * as fs from 'fs';
 import { readCountryProvenance } from './country-provenance';
 import log from 'electron-log';
@@ -16,7 +16,7 @@ import {
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { getBuildIdentity } from './build-identity';
-import { isOfflineMode } from './offline-mode';
+import { getOfflineModeAbortSignal, isOfflineMode, onOfflineModeEnabled } from './offline-mode';
 import { postHogNetworkSuppressed } from './posthog-config';
 
 export const TELEMETRY_URL = 'https://telemetry.flopos.com/collect';
@@ -51,6 +51,13 @@ let dailyPingTimer: ReturnType<typeof setInterval> | null = null;
 let telemetryStopping = false;
 let telemetryStopPromise: Promise<void> | null = null;
 const inFlightTelemetry = new Set<Promise<unknown>>();
+
+onOfflineModeEnabled(() => {
+  if (dailyPingTimer) {
+    clearInterval(dailyPingTimer);
+    dailyPingTimer = null;
+  }
+});
 
 /**
  * Resolves Electron's `app` without assuming an Electron runtime. This module is
@@ -143,7 +150,7 @@ export function isTelemetrySuppressed(): boolean {
   if (process.env.NODE_ENV === 'test' || Boolean(process.env.CI)) {
     return true;
   }
-  const version = typeof app?.getVersion === 'function' ? app.getVersion() : '';
+  const version = electronApp()?.getVersion?.() ?? '0.0.0';
   if (
     version === '1.0.0-test' ||
     version === 'test' ||
@@ -152,7 +159,7 @@ export function isTelemetrySuppressed(): boolean {
   ) {
     return true;
   }
-  const isDev = !app?.isPackaged || getBuildIdentity() === 'dev';
+  const isDev = !electronApp()?.isPackaged || getBuildIdentity() === 'dev';
   if (isDev) return true;
   return false;
 }
@@ -174,6 +181,7 @@ async function sendEventImpl(
   if (matrixOffline() || !isTelemetryEnabled()) return false;
 
   try {
+    const offlineSignal = getOfflineModeAbortSignal();
     const anonId = ensureTelemetryAnonId();
     // Report only user-confirmed country so FloAdmin IP geolocation fallback can operate.
     const provenance = readCountryProvenance();
@@ -185,7 +193,7 @@ async function sendEventImpl(
       body: JSON.stringify({
         anon_id: anonId,
         app: 'flocafe',
-        app_version: app.getVersion(),
+        app_version: electronApp()?.getVersion?.() ?? '0.0.0',
         event_type: eventType,
         platform: process.platform,
         run_mode: getRunMode(),
@@ -194,8 +202,12 @@ async function sendEventImpl(
         ...(currency ? { currency } : {}),
         ...(payload ? { payload } : {}),
       }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.any([offlineSignal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
     });
+    if (matrixOffline() || offlineSignal.aborted) {
+      await response.body?.cancel().catch(() => {});
+      return false;
+    }
     const ok = response.ok;
     if (!ok) {
       log.debug(`[Flo] telemetry rejected with HTTP ${response.status}`);
@@ -358,6 +370,7 @@ export async function sendAnonymousDiagnosticReport(
   if (!safeReport) return { disposition: 'invalid_ack' };
 
   try {
+    const offlineSignal = getOfflineModeAbortSignal();
     const anonId = ensureTelemetryAnonId();
     const build = getBuildIdentity();
     const response = await fetch(TELEMETRY_URL, {
@@ -366,7 +379,7 @@ export async function sendAnonymousDiagnosticReport(
       body: JSON.stringify({
         anon_id: anonId,
         app: 'flocafe',
-        app_version: app.getVersion(),
+        app_version: electronApp()?.getVersion?.() ?? '0.0.0',
         app_build: build,
         event_type: 'diagnostic_counts',
         platform: process.platform,
@@ -374,10 +387,17 @@ export async function sendAnonymousDiagnosticReport(
         install_source: getInstallSource(),
         payload: { schema_version: 2, report: safeReport },
       }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.any([offlineSignal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
     });
+    if (matrixOffline() || offlineSignal.aborted) {
+      await response.body?.cancel().catch(() => {});
+      return { disposition: 'network_error' };
+    }
     const ack = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     await response.body?.cancel().catch(() => {});
+    if (matrixOffline() || offlineSignal.aborted) {
+      return { disposition: 'network_error' };
+    }
     if (response.status === 408 || response.status === 429 || response.status >= 500) {
       return {
         disposition: 'network_error',
@@ -415,33 +435,61 @@ function maybeSendDailyPing(): void {
   if (elapsed < DAILY_PING_MIN_GAP_MS) return;
 
   const operation = sendEvent('daily_ping').then((sent) => {
-    if (sent) upsertTelemetryLastPing();
+    if (sent && !matrixOffline()) upsertTelemetryLastPing();
   });
   trackTelemetry(operation);
+}
+
+export function isTelemetryDailyTimerActive(): boolean {
+  return dailyPingTimer !== null;
+}
+
+function armDailyChecks(): void {
+  if (telemetryStopping) return;
+  if (dailyPingTimer) {
+    clearInterval(dailyPingTimer);
+    dailyPingTimer = null;
+  }
+  if (matrixOffline() && postHogNetworkSuppressed()) return;
+  if (!matrixOffline()) maybeSendDailyPing();
+  runPostHogDailyChecks();
+  if (!matrixOffline() || !postHogNetworkSuppressed()) {
+    dailyPingTimer = setInterval(() => {
+      if (!matrixOffline()) maybeSendDailyPing();
+      runPostHogDailyChecks();
+    }, DAILY_PING_INTERVAL_MS);
+  }
 }
 
 export const telemetry = {
   start(): void {
     telemetryStopping = false;
     telemetryStopPromise = null;
+    try {
+      (require('./posthog') as typeof import('./posthog')).invalidatePostHogConsentCache();
+    } catch {}
     if (dailyPingTimer) {
       clearInterval(dailyPingTimer);
       dailyPingTimer = null;
     }
     if (matrixOffline() && postHogNetworkSuppressed()) return;
     void sendEvent('app_launch');
-    if (!matrixOffline()) maybeSendDailyPing();
-    runPostHogDailyChecks();
-    if (!matrixOffline() || !postHogNetworkSuppressed()) {
-      dailyPingTimer = setInterval(() => {
-        if (!matrixOffline()) maybeSendDailyPing();
-        runPostHogDailyChecks();
-      }, DAILY_PING_INTERVAL_MS);
-    }
+    armDailyChecks();
+  },
+  resumeDailyChecks(): void {
+    telemetryStopping = false;
+    telemetryStopPromise = null;
+    try {
+      (require('./posthog') as typeof import('./posthog')).invalidatePostHogConsentCache();
+    } catch {}
+    armDailyChecks();
   },
   stop(): Promise<void> {
     if (telemetryStopPromise) return telemetryStopPromise;
     telemetryStopping = true;
+    try {
+      (require('./posthog') as typeof import('./posthog')).invalidatePostHogConsentCache();
+    } catch {}
     if (dailyPingTimer) {
       clearInterval(dailyPingTimer);
       dailyPingTimer = null;

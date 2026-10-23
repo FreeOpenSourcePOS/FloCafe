@@ -419,7 +419,9 @@
     "priceExceptionReason": "कारण",
     "priceExceptionsAllShifts": "पूरा अवधि",
     "priceExceptionsShift": "शिफ्ट",
-    "priceExceptionsShiftOpen": "खुला"
+    "priceExceptionsShiftOpen": "खुला",
+    "dayCloseOpenShiftBlocks": "यो व्यावसायिक दिन बन्द गर्नुअघि खुला सिफ्ट #{id} ({name}) बन्द गर्नुहोस्।",
+    "dayCloseOpenShiftBlocksGeneric": "दिन बन्द गर्नुअघि यो व्यावसायिक दिनको खुला सिफ्ट बन्द गर्नुहोस्।"
   },
   "expenses": {
     "addTitle": "खर्च थप्नुहोस्",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "उपलब्धता जाँच गर्नुहोस्",
     "viewMore": "थप हेर्नुहोस्",
     "viewLess": "कम हेर्नुहोस्",
-    "splitCheckSettingDenied": "यो खाताले बिल विभाजनको उपलब्धता जाँच गर्न सक्दैन।"
+    "splitCheckSettingDenied": "यो खाताले बिल विभाजनको उपलब्धता जाँच गर्न सक्दैन।",
+    "dayCloseBlockedByOpenShiftTitle": "पहिले खुला सिफ्ट बन्द गर्नुपर्छ",
+    "dayCloseBlockedByOpenShiftHint": "यो व्यावसायिक दिन बन्द गर्नुअघि खुला सिफ्ट #{id} ({name}) बन्द गर्नुहोस्।",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# खुला अर्डर अर्को सिफ्टमा सर्नेछ} other {# खुला अर्डरहरू अर्को सिफ्टमा सर्नेछन्}}",
+    "shiftCloseUnpaidWarningHint": "यी अर्डरहरू अर्को सिफ्टका लागि खुला नै रहन्छन्। यो सिफ्ट बन्द गर्दा यस सिफ्टमा पहिले नै संकलन गरिएका नगद भुक्तानी मात्र मिलान गरिन्छ।",
+    "shiftCloseUnpaidMoreCount": "+थप {count} खुला अर्डरहरू"
   },
   "printTest": {
     "amt": "रकम",
@@ -3161,6 +3168,47 @@
       "phone_required": "फोन नम्बर आवश्यक छ",
       "phone_required_pairing": "जोडा कोडको लागि फोन आवश्यक छ"
     },
+    "automation": {
+      "autoOptOutLabel": "STOP / UNSUBSCRIBE आउँदा स्वतः अप्ट-आउट (ब्लकलिस्टमा थप्छ)",
+      "broadcastDescription": "छानिएको ग्राहक समूहमा टेम्प्लेट पठाउनुहोस् (ब्लकलिस्ट, शान्त समय र सीमाको पालना गर्छ)।",
+      "broadcastInactiveDays": "निष्क्रिय >= दिन",
+      "broadcastMinPoints": "न्यूनतम पोइन्ट",
+      "broadcastMinVisits": "न्यूनतम भ्रमण",
+      "broadcastSendCta": "प्रसारण पठाउनुहोस्",
+      "broadcastSuccess": "प्रसारण पूरा भयो: {sent} पठाइयो, {skipped} छोडियो ({matched} मिल्यो)।",
+      "broadcastTitle": "ग्राहक समूह प्रसारण",
+      "feedbackLinkLabel": "पसल प्रतिक्रिया लिङ्क",
+      "instagramLabel": "पसल इन्स्टाग्राम ह्यान्डल",
+      "maxPerWeekLabel": "प्रति ग्राहक प्रति हप्ता अधिकतम स्वचालित सन्देश",
+      "placeholdersLabel": "प्लेसहोल्डर राख्न क्लिक गर्नुहोस्",
+      "previewTitle": "प्रत्यक्ष पूर्वावलोकन (नमुना डेटा)",
+      "quietHoursEnd": "शान्त समय अन्त्य",
+      "quietHoursLabel": "शान्त समयमा स्वचालित सन्देश रोक्नुहोस्",
+      "quietHoursStart": "शान्त समय सुरु",
+      "resetDefault": "पूर्वनिर्धारितमा फर्काउनुहोस्",
+      "ruleAfterPaymentHint": "ग्राहकको फोन भएको बिल भुक्तानी हुँदा रसिद टेम्प्लेट स्वतः पठाउनुहोस्।",
+      "ruleFeedbackDelayHint": "भुक्तानी भएको निश्चित घण्टापछि प्रतिक्रिया अनुरोध पठाउनुहोस्।",
+      "ruleNthVisitHint": "हरेक N भुक्तानी गरिएको भ्रमणमा धन्यवाद सन्देश पठाउनुहोस्।",
+      "rulePointsThresholdHint": "पोइन्ट मौज्दातले सीमा पार गर्दा पुरस्कार सूचना पठाउनुहोस्।",
+      "rulesDescription": "भुक्तानीपछिको रसिद, फलो-अप र उपलब्धिहरूका लागि स्वचालित नियम र सीमा मिलाउनुहोस्।",
+      "rulesTitle": "स्वचालित पठाउने नियमहरू",
+      "ruleWinbackHint": "कम्तीमा N दिनदेखि नआएका ग्राहकलाई विशेष अफर पठाउनुहोस्।",
+      "runSweepCta": "तालिकाबद्ध नियम अहिले चलाउनुहोस्",
+      "safetyDescription": "स्वतः अप्ट-आउट, शान्त समय र साप्ताहिक सीमाले जोडिएको नम्बर सुरक्षित राख्नुहोस्।",
+      "safetyTitle": "सुरक्षा र एन्टी-स्पाम नियन्त्रण",
+      "saveCta": "अटोमेसन सेटिङ सुरक्षित गर्नुहोस्",
+      "savedSuccess": "अटोमेसन सेटिङ सुरक्षित भयो।",
+      "sweepResult": "तालिकाबद्ध नियम जाँच गरियो ({sent} पठाइयो)।",
+      "templateBodyLabel": "सन्देशको मुख्य भाग",
+      "templateNameLabel": "टेम्प्लेटको नाम",
+      "templatesDescription": "ग्राहक, बिल, लोयल्टी र पसलका प्लेसहोल्डर प्रयोग गरी स्वचालित WhatsApp सन्देश अनुकूलन गर्नुहोस्।",
+      "templateSelectLabel": "छानिएको टेम्प्लेट",
+      "templatesTitle": "सन्देश टेम्प्लेटहरू",
+      "thresholdDays": "निष्क्रिय दिनहरू",
+      "thresholdHours": "ढिलाइ घण्टा",
+      "thresholdPoints": "पोइन्ट सीमा",
+      "thresholdVisits": "हरेक N भ्रमण"
+    },
     "blocklist": {
       "addCta": "थप्नुहोस्",
       "addedSuccess": "ब्लकलिस्टमा थपियो।",
@@ -3253,6 +3301,14 @@
       "rate_limited": "व्हाट्सएप द्वारा दर सीमित पठाउनुहोस् ({code})। 5 मिनेटको लागि चिसो।",
       "reconnecting": "जडान बन्द ({code})। मा पुनः जडान गर्दै {seconds}s…"
     },
+    "rule": {
+      "after_payment": "भुक्तानीपछि स्वतः रसिद",
+      "broadcast": "ग्राहक समूह प्रसारण",
+      "feedback_delay": "प्रतिक्रिया फलो-अप",
+      "nth_visit": "भ्रमण उपलब्धि",
+      "points_threshold": "लोयल्टी पोइन्ट सीमा",
+      "winback": "निष्क्रिय ग्राहक पुनरागमन"
+    },
     "send": {
       "customerPhoneRequired": "पठाउनु अघि यो ग्राहकको फोन नम्बर थप्नुहोस्।",
       "error": {
@@ -3314,6 +3370,7 @@
       "typing": "टाइप गर्दै"
     },
     "tabs": {
+      "automation": "टेम्प्लेट र नियमहरू",
       "connection": "जडान",
       "inbox": "इनबक्स",
       "sent": "पठाइयो"

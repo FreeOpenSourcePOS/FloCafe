@@ -419,7 +419,9 @@
     "priceExceptionReason": "Reason",
     "priceExceptionsAllShifts": "Whole period",
     "priceExceptionsShift": "Shift",
-    "priceExceptionsShiftOpen": "open"
+    "priceExceptionsShiftOpen": "open",
+    "dayCloseOpenShiftBlocks": "Close open shift #{id} ({name}) before closing this business day.",
+    "dayCloseOpenShiftBlocksGeneric": "Close the open shift for this business day before closing the day."
   },
   "expenses": {
     "addTitle": "Add expense",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Check availability",
     "viewMore": "View more",
     "viewLess": "View less",
-    "splitCheckSettingDenied": "This account cannot check split-check availability."
+    "splitCheckSettingDenied": "This account cannot check split-check availability.",
+    "dayCloseBlockedByOpenShiftTitle": "Open shift must be closed first",
+    "dayCloseBlockedByOpenShiftHint": "Close open shift #{id} ({name}) before closing this business day.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# open order will carry over} other {# open orders will carry over}}",
+    "shiftCloseUnpaidWarningHint": "These orders stay open for the next shift. Closing this shift only reconciles cash payments already collected during this shift.",
+    "shiftCloseUnpaidMoreCount": "+{count} more open orders"
   },
   "printTest": {
     "amt": "Amt",
@@ -3174,6 +3181,47 @@
       "phone_required": "Phone number required",
       "phone_required_pairing": "Phone required for pairing code"
     },
+    "automation": {
+      "autoOptOutLabel": "Auto opt-out on inbound STOP / UNSUBSCRIBE (adds sender to blocklist)",
+      "broadcastDescription": "Send a template to a filtered customer segment (respects blocklist, quiet hours, and rate limits).",
+      "broadcastInactiveDays": "Inactive >= days",
+      "broadcastMinPoints": "Min points",
+      "broadcastMinVisits": "Min visits",
+      "broadcastSendCta": "Send broadcast",
+      "broadcastSuccess": "Broadcast complete: {sent} sent, {skipped} skipped ({matched} matched).",
+      "broadcastTitle": "Customer segment broadcast",
+      "feedbackLinkLabel": "Store feedback link",
+      "instagramLabel": "Store Instagram handle",
+      "maxPerWeekLabel": "Max automated messages per customer per week",
+      "placeholdersLabel": "Click to insert placeholder",
+      "previewTitle": "Live preview (sample data)",
+      "quietHoursEnd": "Quiet hours end",
+      "quietHoursLabel": "Suppress automated sends during quiet hours",
+      "quietHoursStart": "Quiet hours start",
+      "resetDefault": "Reset to default",
+      "ruleAfterPaymentHint": "Send the receipt template automatically when a bill with a customer phone is paid.",
+      "ruleFeedbackDelayHint": "Send a follow-up request after a paid order (hours after payment).",
+      "ruleNthVisitHint": "Send a thank-you reward every N paid visits.",
+      "rulePointsThresholdHint": "Send a loyalty reward notice when points balance crosses threshold.",
+      "rulesDescription": "Toggle automated triggers and configure thresholds for post-payment receipts, follow-ups, and milestones.",
+      "rulesTitle": "Automated sending rules",
+      "ruleWinbackHint": "Send a win-back offer to customers inactive for at least N days.",
+      "runSweepCta": "Run scheduled rules now",
+      "safetyDescription": "Protect your connected phone number with automatic opt-outs, quiet hours, and weekly per-customer caps.",
+      "safetyTitle": "Safety & anti-spam controls",
+      "saveCta": "Save automation settings",
+      "savedSuccess": "Automation settings saved.",
+      "sweepResult": "Scheduled rules checked ({sent} sent).",
+      "templateBodyLabel": "Message body",
+      "templateNameLabel": "Template name",
+      "templatesDescription": "Customize automated WhatsApp messages with dynamic customer, bill, loyalty, and store placeholders.",
+      "templateSelectLabel": "Selected template",
+      "templatesTitle": "Message templates",
+      "thresholdDays": "Inactive days",
+      "thresholdHours": "Delay hours",
+      "thresholdPoints": "Points threshold",
+      "thresholdVisits": "Every N visits"
+    },
     "blocklist": {
       "addCta": "Add",
       "addedSuccess": "Added to blocklist.",
@@ -3266,6 +3314,14 @@
       "rate_limited": "Send rate-limited by WhatsApp ({code}). Cooling down for 5 minutes.",
       "reconnecting": "Connection closed ({code}). Reconnecting in {seconds}s…"
     },
+    "rule": {
+      "after_payment": "Auto receipt after payment",
+      "broadcast": "Segment broadcast",
+      "feedback_delay": "Feedback follow-up",
+      "nth_visit": "Nth visit milestone",
+      "points_threshold": "Loyalty points milestone",
+      "winback": "Inactive customer win-back"
+    },
     "send": {
       "customerPhoneRequired": "Add this customer’s phone number before sending.",
       "error": {
@@ -3327,6 +3383,7 @@
       "typing": "Typing"
     },
     "tabs": {
+      "automation": "Templates & Rules",
       "connection": "Connection",
       "inbox": "Inbox",
       "sent": "Sent"

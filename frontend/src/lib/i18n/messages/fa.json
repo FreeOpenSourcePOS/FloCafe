@@ -419,7 +419,9 @@
     "priceExceptionReason": "دلیل",
     "priceExceptionsAllShifts": "کل بازه",
     "priceExceptionsShift": "شیفت",
-    "priceExceptionsShiftOpen": "باز"
+    "priceExceptionsShiftOpen": "باز",
+    "dayCloseOpenShiftBlocks": "پیش از بستن این روز کاری، شیفت باز #{id} ({name}) را ببندید.",
+    "dayCloseOpenShiftBlocksGeneric": "پیش از بستن روز، شیفت باز این روز کاری را ببندید."
   },
   "expenses": {
     "addTitle": "افزودن هزینه",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "بررسی دسترس‌پذیری",
     "viewMore": "نمایش بیشتر",
     "viewLess": "نمایش کمتر",
-    "splitCheckSettingDenied": "این حساب نمی‌تواند دسترس‌پذیری تقسیم صورتحساب را بررسی کند."
+    "splitCheckSettingDenied": "این حساب نمی‌تواند دسترس‌پذیری تقسیم صورتحساب را بررسی کند.",
+    "dayCloseBlockedByOpenShiftTitle": "ابتدا باید شیفت باز بسته شود",
+    "dayCloseBlockedByOpenShiftHint": "پیش از بستن این روز کاری، شیفت باز #{id} ({name}) را ببندید.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# سفارش باز به شیفت بعد منتقل می‌شود} other {# سفارش باز به شیفت بعد منتقل می‌شوند}}",
+    "shiftCloseUnpaidWarningHint": "این سفارش‌ها برای شیفت بعدی باز می‌مانند. بستن این شیفت فقط پرداخت‌های نقدی دریافت‌شده در همین شیفت را تسویه می‌کند.",
+    "shiftCloseUnpaidMoreCount": "+{count} سفارش باز دیگر"
   },
   "printTest": {
     "amt": "مبلغ",
@@ -3174,6 +3181,47 @@
       "phone_required": "شماره تلفن لازم است",
       "phone_required_pairing": "برای کد جفت‌سازی، تلفن لازم است"
     },
+    "automation": {
+      "autoOptOutLabel": "لغو عضویت خودکار با دریافت STOP / UNSUBSCRIBE (افزودن به لیست مسدود)",
+      "broadcastDescription": "ارسال قالب به بخش فیلترشده مشتریان (با رعایت لیست مسدود، ساعات سکوت و محدودیت‌ها).",
+      "broadcastInactiveDays": "غیرفعال >= روز",
+      "broadcastMinPoints": "حداقل امتیاز",
+      "broadcastMinVisits": "حداقل مراجعه",
+      "broadcastSendCta": "ارسال پیام گروهی",
+      "broadcastSuccess": "ارسال گروهی انجام شد: {sent} ارسال شد، {skipped} رد شد ({matched} منطبق).",
+      "broadcastTitle": "ارسال به بخش مشتریان",
+      "feedbackLinkLabel": "لینک نظرسنجی فروشگاه",
+      "instagramLabel": "نام کاربری اینستاگرام فروشگاه",
+      "maxPerWeekLabel": "حداکثر پیام خودکار برای هر مشتری در هفته",
+      "placeholdersLabel": "برای درج متغیر کلیک کنید",
+      "previewTitle": "پیش‌نمایش زنده (داده‌های نمونه)",
+      "quietHoursEnd": "پایان ساعات سکوت",
+      "quietHoursLabel": "توقف ارسال خودکار در ساعات سکوت",
+      "quietHoursStart": "شروع ساعات سکوت",
+      "resetDefault": "بازنشانی به پیش‌فرض",
+      "ruleAfterPaymentHint": "هنگام تسویه صورتحساب دارای شماره تلفن مشتری، قالب رسید به صورت خودکار ارسال شود.",
+      "ruleFeedbackDelayHint": "ارسال درخواست نظر پس از سفارش پرداخت‌شده (ساعت پس از پرداخت).",
+      "ruleNthVisitHint": "ارسال پیام تشکر به ازای هر N مراجعه موفق.",
+      "rulePointsThresholdHint": "ارسال اعلان پاداش هنگام عبور موجودی امتیاز از حد نصاب.",
+      "rulesDescription": "قوانین خودکار و حد نصاب‌ها را برای رسید پس از پرداخت، پیگیری و امتیازات تنظیم کنید.",
+      "rulesTitle": "قوانین ارسال خودکار",
+      "ruleWinbackHint": "ارسال پیشنهاد بازگشت به مشتریانی که حداقل N روز مراجعه نکرده‌اند.",
+      "runSweepCta": "اجرای قوانین زمان‌بندی‌شده اکنون",
+      "safetyDescription": "با لغو خودکار، ساعات سکوت و سقف هفتگی از شماره متصل خود محافظت کنید.",
+      "safetyTitle": "کنترل‌های ایمنی و ضد اسپم",
+      "saveCta": "ذخیره تنظیمات خودکارسازی",
+      "savedSuccess": "تنظیمات خودکارسازی ذخیره شد.",
+      "sweepResult": "قوانین زمان‌بندی‌شده بررسی شد ({sent} ارسال شد).",
+      "templateBodyLabel": "متن پیام",
+      "templateNameLabel": "نام قالب",
+      "templatesDescription": "پیام‌های خودکار واتساپ را با متغیرهای مشتری، صورتحساب، وفاداری و فروشگاه سفارشی کنید.",
+      "templateSelectLabel": "قالب انتخاب‌شده",
+      "templatesTitle": "قالب‌های پیام",
+      "thresholdDays": "روزهای عدم مراجعه",
+      "thresholdHours": "ساعت تاخیر",
+      "thresholdPoints": "حد نصاب امتیاز",
+      "thresholdVisits": "هر N مراجعه"
+    },
     "blocklist": {
       "addCta": "افزودن",
       "addedSuccess": "به فهرست مسدود افزوده شد.",
@@ -3266,6 +3314,14 @@
       "rate_limited": "ارسال توسط واتساپ محدود شد ({code}). به‌مدت ۵ دقیقه در توقف موقت.",
       "reconnecting": "اتصال بسته شد ({code}). اتصال دوباره در {seconds} ثانیه…"
     },
+    "rule": {
+      "after_payment": "رسید خودکار پس از پرداخت",
+      "broadcast": "ارسال گروهی به بخش مشتریان",
+      "feedback_delay": "پیگیری نظرسنجی",
+      "nth_visit": "حد نصاب تعداد مراجعه",
+      "points_threshold": "حد نصاب امتیاز وفاداری",
+      "winback": "بازگشت مشتری غیرفعال"
+    },
     "send": {
       "customerPhoneRequired": "پیش از ارسال، شماره تلفن این مشتری را بیفزایید.",
       "error": {
@@ -3327,6 +3383,7 @@
       "typing": "در حال تایپ"
     },
     "tabs": {
+      "automation": "قالب‌ها و قوانین",
       "connection": "اتصال",
       "inbox": "صندوق ورودی",
       "sent": "ارسال‌شده"

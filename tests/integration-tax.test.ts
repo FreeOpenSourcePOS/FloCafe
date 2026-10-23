@@ -1933,6 +1933,626 @@ async function main() {
       origPackRow.pack_json,
       s16ActiveVersionId,
     );
+
+    // ── Step 17: Order discounts apply before document-scope rounding allocation ────
+    console.log('\n17. Order discounts apply before document-scope tax rounding allocation');
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('discount_requires_approval', 'false', ?)",
+    ).run(now());
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('discount_mode', 'both', ?)",
+    ).run(now());
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('discount_max_percentage', '100', ?)",
+    ).run(now());
+
+    const sumSnapshotTax = (rawSnap: unknown): number => {
+      const parsed = typeof rawSnap === 'string' ? JSON.parse(rawSnap) : rawSnap;
+      if (!Array.isArray(parsed)) return 0;
+      return Number(
+        parsed
+          .flatMap((entry: any) => entry.lines || [])
+          .reduce((acc: number, l: any) => acc + Number(l.taxAmount || 0), 0)
+          .toFixed(2),
+      );
+    };
+
+    // Counterexample 1: Two 100.10 items with a 50% order discount -> 5.01 tax, 105.11 total
+    seedProduct(db, 'prod-disc-10010-a', 'cat-tax', 'Disc 100.10 A', 100.1, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    seedProduct(db, 'prod-disc-10010-b', 'cat-tax', 'Disc 100.10 B', 100.1, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    const ce1Items = [
+      { product_id: 'prod-disc-10010-a', quantity: 1 },
+      { product_id: 'prod-disc-10010-b', quantity: 1 },
+    ];
+    const ce1Preview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      headers: authHeader,
+      body: { items: ce1Items, discount_type: 'percentage', discount_value: 50 },
+    });
+    assertEqual(ce1Preview.status, 200, 'CE1 preview succeeds');
+    assertEqual(ce1Preview.data.summary.tax_amount, 5.01, 'CE1 preview tax = 5.01');
+    assertEqual(ce1Preview.data.summary.total, 105.11, 'CE1 preview total = 105.11');
+    assertEqual(
+      ce1Preview.data.items.map((r: any) => r.tax_amount).join(','),
+      '5.01,5',
+      'CE1 preview items match un-order-discounted document tax allocation',
+    );
+
+    const ce1Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: ce1Items },
+    });
+    assertEqual(ce1Order.status, 201, 'CE1 order created');
+    assertEqual(ce1Order.data.order.tax_amount, 10.01, 'CE1 undiscounted order tax = 10.01');
+
+    const ce1Discount = await api(baseUrl, `/api/orders/${ce1Order.data.order.id}/discount`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { discount_type: 'percentage', discount_value: 50 },
+    });
+    assertEqual(ce1Discount.status, 200, 'CE1 50% order discount applied');
+    assertEqual(ce1Discount.data.order.tax_amount, 5.01, 'CE1 discounted order tax = 5.01');
+    assertEqual(ce1Discount.data.order.total, 105.11, 'CE1 discounted order total = 105.11');
+    assertEqual(
+      sumSnapshotTax(ce1Discount.data.order.tax_snapshot),
+      5.01,
+      'CE1 order snapshot tax = 5.01',
+    );
+    const ce1StoredItems = db
+      .prepare('SELECT tax_amount FROM order_items WHERE order_id = ? ORDER BY id ASC')
+      .all(ce1Order.data.order.id) as Array<{ tax_amount: number }>;
+    assertEqual(
+      ce1StoredItems.map((r) => r.tax_amount).join(','),
+      '5.01,5',
+      'CE1 order_items retain un-order-discounted document tax allocation',
+    );
+
+    const ce1Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      headers: authHeader,
+      body: { order_id: ce1Order.data.order.id },
+    });
+    assertEqual(ce1Bill.status, 201, 'CE1 bill generated');
+    assertEqual(ce1Bill.data.bill.tax_amount, 5.01, 'CE1 generated bill tax = 5.01');
+    assertEqual(ce1Bill.data.bill.total, 105.11, 'CE1 generated bill total = 105.11');
+
+    const ce1BillDisc = await api(baseUrl, `/api/bills/${ce1Bill.data.bill.id}/applyDiscount`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'percentage', value: 50 },
+    });
+    assertEqual(ce1BillDisc.status, 200, 'CE1 bill applyDiscount succeeds');
+    assertEqual(ce1BillDisc.data.bill.tax_amount, 5.01, 'CE1 bill applyDiscount tax = 5.01');
+    assertEqual(ce1BillDisc.data.bill.total, 105.11, 'CE1 bill applyDiscount total = 105.11');
+    assertEqual(
+      sumSnapshotTax(ce1BillDisc.data.bill.tax_snapshot),
+      5.01,
+      'CE1 bill snapshot tax = 5.01',
+    );
+
+    // Counterexample 2: Two 100.05 items with a 50% order discount -> 5.00 tax, 105.05 total
+    seedProduct(db, 'prod-disc-10005-a', 'cat-tax', 'Disc 100.05 A', 100.05, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    seedProduct(db, 'prod-disc-10005-b', 'cat-tax', 'Disc 100.05 B', 100.05, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    const ce2Items = [
+      { product_id: 'prod-disc-10005-a', quantity: 1 },
+      { product_id: 'prod-disc-10005-b', quantity: 1 },
+    ];
+    const ce2Preview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      headers: authHeader,
+      body: { items: ce2Items, discount_type: 'percentage', discount_value: 50 },
+    });
+    assertEqual(ce2Preview.status, 200, 'CE2 preview succeeds');
+    assertEqual(ce2Preview.data.summary.tax_amount, 5.0, 'CE2 preview tax = 5.00');
+    assertEqual(ce2Preview.data.summary.total, 105.05, 'CE2 preview total = 105.05');
+
+    const ce2Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: ce2Items },
+    });
+    assertEqual(ce2Order.status, 201, 'CE2 order created');
+    assertEqual(ce2Order.data.order.tax_amount, 10.01, 'CE2 undiscounted order tax = 10.01');
+
+    const ce2Discount = await api(baseUrl, `/api/orders/${ce2Order.data.order.id}/discount`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { discount_type: 'percentage', discount_value: 50 },
+    });
+    assertEqual(ce2Discount.status, 200, 'CE2 50% order discount applied');
+    assertEqual(ce2Discount.data.order.tax_amount, 5.0, 'CE2 discounted order tax = 5.00');
+    assertEqual(ce2Discount.data.order.total, 105.05, 'CE2 discounted order total = 105.05');
+    assertEqual(
+      sumSnapshotTax(ce2Discount.data.order.tax_snapshot),
+      5.0,
+      'CE2 order snapshot tax = 5.00',
+    );
+
+    const ce2Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      headers: authHeader,
+      body: { order_id: ce2Order.data.order.id },
+    });
+    assertEqual(ce2Bill.status, 201, 'CE2 bill generated');
+    const ce2BillDisc = await api(baseUrl, `/api/bills/${ce2Bill.data.bill.id}/applyDiscount`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'percentage', value: 50 },
+    });
+    assertEqual(ce2BillDisc.status, 200, 'CE2 bill applyDiscount succeeds');
+    assertEqual(ce2BillDisc.data.bill.tax_amount, 5.0, 'CE2 bill applyDiscount tax = 5.00');
+    assertEqual(ce2BillDisc.data.bill.total, 105.05, 'CE2 bill applyDiscount total = 105.05');
+    assertEqual(
+      sumSnapshotTax(ce2BillDisc.data.bill.tax_snapshot),
+      5.0,
+      'CE2 bill snapshot tax = 5.00',
+    );
+
+    // Counterexample 3: One 100.20 item + 100.10 taxable packaging charge with 100% discount -> 5.01 tax, 105.11 total
+    seedProduct(db, 'prod-disc-10020', 'cat-tax', 'Disc 100.20', 100.2, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    const ce3Items = [{ product_id: 'prod-disc-10020', quantity: 1 }];
+    const ce3Preview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        items: ce3Items,
+        packaging_charge: 100.1,
+        discount_type: 'percentage',
+        discount_value: 100,
+      },
+    });
+    assertEqual(ce3Preview.status, 200, 'CE3 preview succeeds');
+    assertEqual(ce3Preview.data.summary.tax_amount, 5.01, 'CE3 preview tax = 5.01');
+    assertEqual(ce3Preview.data.summary.total, 105.11, 'CE3 preview total = 105.11');
+
+    const ce3Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: ce3Items, packaging_charge: 100.1 },
+    });
+    assertEqual(ce3Order.status, 201, 'CE3 order created');
+    assertEqual(ce3Order.data.order.tax_amount, 10.02, 'CE3 undiscounted order tax = 10.02');
+
+    const ce3Discount = await api(baseUrl, `/api/orders/${ce3Order.data.order.id}/discount`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { discount_type: 'percentage', discount_value: 100 },
+    });
+    assertEqual(ce3Discount.status, 200, 'CE3 100% order discount applied');
+    assertEqual(ce3Discount.data.order.tax_amount, 5.01, 'CE3 discounted order tax = 5.01');
+    assertEqual(ce3Discount.data.order.total, 105.11, 'CE3 discounted order total = 105.11');
+    assertEqual(
+      sumSnapshotTax(ce3Discount.data.order.tax_snapshot),
+      5.01,
+      'CE3 order snapshot tax = 5.01',
+    );
+
+    const ce3Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      headers: authHeader,
+      body: { order_id: ce3Order.data.order.id },
+    });
+    assertEqual(ce3Bill.status, 201, 'CE3 bill generated');
+    assertEqual(ce3Bill.data.bill.tax_amount, 5.01, 'CE3 bill tax = 5.01');
+    assertEqual(ce3Bill.data.bill.total, 105.11, 'CE3 bill total = 105.11');
+    assertEqual(
+      sumSnapshotTax(ce3Bill.data.bill.tax_snapshot),
+      5.01,
+      'CE3 bill snapshot tax = 5.01',
+    );
+
+    // Removing the 100% discount recovers the original 10.02 tax because order_items kept un-order-discounted snapshots
+    const ce3Restored = await api(baseUrl, `/api/bills/${ce3Bill.data.bill.id}/applyDiscount`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'percentage', value: 0 },
+    });
+    assertEqual(ce3Restored.status, 200, 'CE3 discount cleared back to 0%');
+    assertEqual(
+      ce3Restored.data.bill.tax_amount,
+      10.02,
+      'CE3 clearing discount restores full 10.02 document tax without compounding',
+    );
+    assertEqual(ce3Restored.data.bill.total, 210.32, 'CE3 restored bill total = 210.32');
+
+    // Counterexample 4: 100.10 item with flat 20.20 discount -> Decimal 79.90 base -> 4.00 tax, 83.90 total
+    const ce4Items = [{ product_id: 'prod-disc-10010-a', quantity: 1 }];
+    const ce4Preview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      headers: authHeader,
+      body: { items: ce4Items, discount_type: 'amount', discount_value: 20.2 },
+    });
+    assertEqual(ce4Preview.status, 200, 'CE4 flat discount preview succeeds');
+    assertEqual(ce4Preview.data.summary.tax_amount, 4.0, 'CE4 preview tax = 4.00');
+    assertEqual(ce4Preview.data.summary.total, 83.9, 'CE4 preview total = 83.90');
+
+    const ce4Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: ce4Items },
+    });
+    assertEqual(ce4Order.status, 201, 'CE4 order created');
+    const ce4Discount = await api(baseUrl, `/api/orders/${ce4Order.data.order.id}/discount`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { discount_type: 'amount', discount_value: 20.2 },
+    });
+    assertEqual(ce4Discount.status, 200, 'CE4 flat 20.20 order discount applied');
+    assertEqual(ce4Discount.data.order.tax_amount, 4.0, 'CE4 discounted order tax = 4.00');
+    assertEqual(ce4Discount.data.order.total, 83.9, 'CE4 discounted order total = 83.90');
+
+    const ce4Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      headers: authHeader,
+      body: { order_id: ce4Order.data.order.id },
+    });
+    assertEqual(ce4Bill.status, 201, 'CE4 bill generated');
+    assertEqual(ce4Bill.data.bill.tax_amount, 4.0, 'CE4 bill tax = 4.00');
+    assertEqual(ce4Bill.data.bill.total, 83.9, 'CE4 bill total = 83.90');
+
+    // Counterexample 5: 100.22 item + taxable 100.10 packaging charge with 50% discount -> 7.51 tax, report components sum to 7.51
+    seedProduct(db, 'prod-disc-10022', 'cat-tax', 'Disc 100.22', 100.22, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    const ce5Items = [{ product_id: 'prod-disc-10022', quantity: 1 }];
+    const ce5Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: ce5Items, packaging_charge: 100.1 },
+    });
+    assertEqual(ce5Order.status, 201, 'CE5 order created');
+    const ce5Discount = await api(baseUrl, `/api/orders/${ce5Order.data.order.id}/discount`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { discount_type: 'percentage', discount_value: 50 },
+    });
+    assertEqual(ce5Discount.status, 200, 'CE5 50% order discount applied');
+    assertEqual(ce5Discount.data.order.tax_amount, 7.51, 'CE5 discounted order tax = 7.51');
+    assertEqual(ce5Discount.data.order.total, 157.72, 'CE5 discounted order total = 157.72');
+
+    const ce5Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      headers: authHeader,
+      body: { order_id: ce5Order.data.order.id },
+    });
+    assertEqual(ce5Bill.status, 201, 'CE5 bill generated');
+    assertEqual(ce5Bill.data.bill.tax_amount, 7.51, 'CE5 bill tax = 7.51');
+    const ce5FetchedBill = await api(baseUrl, `/api/bills/${ce5Bill.data.bill.id}`, {
+      headers: authHeader,
+    });
+    assertEqual(ce5FetchedBill.status, 200, 'CE5 bill fetched with projected items');
+    const ce5ResolvedComponents = resolveTaxComponents({
+      tax_amount: ce5FetchedBill.data.bill.tax_amount,
+      tax_snapshot: ce5FetchedBill.data.bill.tax_snapshot,
+      tax_breakdown: ce5FetchedBill.data.bill.tax_breakdown,
+      items: ce5FetchedBill.data.bill.order?.items || [],
+    });
+    const ce5ResolvedSum = Number(
+      ce5ResolvedComponents
+        .reduce((acc: number, c: any) => acc + Number(c.amount || 0), 0)
+        .toFixed(2),
+    );
+    assertEqual(
+      ce5ResolvedSum,
+      7.51,
+      'CE5 projected items + charge resolveTaxComponents sum = 7.51 (no extra cent)',
+    );
+
+    // 6. Unequal-price items (100.05 + 100.10 = 200.15) with flat 100.05 discount: preview matches order (5.01 tax, 105.11 total)
+    const ce6Preview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [
+          { product_id: 'prod-disc-10005-a', quantity: 1 },
+          { product_id: 'prod-disc-10010-a', quantity: 1 },
+        ],
+        discount_type: 'amount',
+        discount_value: 100.05,
+        order_type: 'takeaway',
+      },
+      headers: authHeader,
+    });
+    assertEqual(ce6Preview.status, 200, 'CE6 preview status 200');
+    assertEqual(ce6Preview.data.summary.subtotal, 200.15, 'CE6 preview subtotal = 200.15');
+    assertEqual(ce6Preview.data.summary.tax_amount, 5.01, 'CE6 preview tax = 5.01');
+    assertEqual(ce6Preview.data.summary.total, 105.11, 'CE6 preview total = 105.11');
+
+    // 7. Historical bill saved before discounted-raw allocation (100.00 + 100.20 items, 0.10 packaging, 50% discount) preserves 5.01 in resolveTaxComponents
+    const ce7Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        packaging_charge: 0.1,
+        items: [
+          { product_id: 'prod-disc-10020', quantity: 1 },
+          { product_id: 'prod-disc-10010-a', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(ce7Order.status, 201, 'CE7 base order created');
+    const ce7Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: ce7Order.data.order.id },
+      headers: authHeader,
+    });
+    assertEqual(ce7Bill.status, 201, 'CE7 bill generated');
+    const historicalSnap = JSON.stringify([
+      {
+        packId: 'test-in-pack',
+        packVersion: '1.0.0',
+        currency: 'INR',
+        taxRounding: {
+          scope: 'document',
+          method: 'half_up',
+          decimalPlaces: 2,
+          remainderAllocation: 'largest_remainder',
+        },
+        lines: [
+          {
+            lineId: 'line-0001',
+            grossAmount: '50.00',
+            taxableBase: '50.00',
+            taxAmount: '2.50',
+            components: [
+              {
+                ruleId: 'tax-a',
+                label: 'Tax A',
+                rate: '2.5',
+                amount: '1.25',
+                roundingRemainder: '0',
+              },
+              {
+                ruleId: 'tax-b',
+                label: 'Tax B',
+                rate: '2.5',
+                amount: '1.25',
+                roundingRemainder: '0',
+              },
+            ],
+          },
+        ],
+      },
+      {
+        packId: 'test-in-pack',
+        packVersion: '1.0.0',
+        currency: 'INR',
+        taxRounding: {
+          scope: 'document',
+          method: 'half_up',
+          decimalPlaces: 2,
+          remainderAllocation: 'largest_remainder',
+        },
+        lines: [
+          {
+            lineId: 'line-0002',
+            grossAmount: '50.10',
+            taxableBase: '50.10',
+            taxAmount: '2.51',
+            components: [
+              {
+                ruleId: 'tax-a',
+                label: 'Tax A',
+                rate: '2.5',
+                amount: '1.26',
+                roundingRemainder: '-0.0075',
+              },
+              {
+                ruleId: 'tax-b',
+                label: 'Tax B',
+                rate: '2.5',
+                amount: '1.25',
+                roundingRemainder: '0.0025',
+              },
+            ],
+          },
+        ],
+      },
+      {
+        packId: 'test-in-pack',
+        packVersion: '1.0.0',
+        currency: 'INR',
+        chargeKind: 'packaging',
+        taxRounding: {
+          scope: 'document',
+          method: 'half_up',
+          decimalPlaces: 2,
+          remainderAllocation: 'largest_remainder',
+        },
+        lines: [
+          {
+            lineId: 'charge:packaging',
+            grossAmount: '0.10',
+            taxableBase: '0.10',
+            taxAmount: '0.00',
+            components: [
+              {
+                ruleId: 'tax-a',
+                label: 'Tax A',
+                rate: '2.5',
+                amount: '0.00',
+                roundingRemainder: '0.0025',
+              },
+              {
+                ruleId: 'tax-b',
+                label: 'Tax B',
+                rate: '2.5',
+                amount: '0.00',
+                roundingRemainder: '0.0025',
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    const historicalBreakdown = JSON.stringify([
+      { title: 'Tax A', rate: 2.5, amount: 2.51 },
+      { title: 'Tax B', rate: 2.5, amount: 2.5 },
+    ]);
+    db.prepare(
+      'UPDATE orders SET subtotal = 200.2, discount_amount = 100.1, tax_amount = 5.01, tax_breakdown = ?, tax_snapshot = ? WHERE id = ?',
+    ).run(historicalBreakdown, historicalSnap, ce7Order.data.order.id);
+    db.prepare(
+      'UPDATE bills SET subtotal = 200.2, discount_amount = 100.1, tax_amount = 5.01, tax_breakdown = ?, tax_snapshot = ? WHERE id = ?',
+    ).run(historicalBreakdown, historicalSnap, ce7Bill.data.bill.id);
+    const ce7Fetched = await api(baseUrl, `/api/bills/${ce7Bill.data.bill.id}`, {
+      headers: authHeader,
+    });
+    assertEqual(ce7Fetched.status, 200, 'CE7 historical bill fetched');
+    const ce7Resolved = resolveTaxComponents({
+      tax_amount: ce7Fetched.data.bill.tax_amount,
+      tax_snapshot: ce7Fetched.data.bill.tax_snapshot,
+      tax_breakdown: ce7Fetched.data.bill.tax_breakdown,
+      items: ce7Fetched.data.bill.order?.items || [],
+    });
+    const ce7Sum = Number(
+      ce7Resolved.reduce((acc: number, c: any) => acc + Number(c.amount || 0), 0).toFixed(2),
+    );
+    assertEqual(ce7Sum, 5.01, 'CE7 historical bill resolveTaxComponents sum = 5.01 (not 5.02)');
+
+    // 8. Nullable discount_amount on order does not break bill reads or tax-components report
+    db.prepare('UPDATE orders SET discount_amount = NULL WHERE id = ?').run(ce1Order.data.order.id);
+    const ce1WithNullDiscount = await api(baseUrl, `/api/bills/${ce1Bill.data.bill.id}`, {
+      headers: authHeader,
+    });
+    assertEqual(
+      ce1WithNullDiscount.status,
+      200,
+      'bill fetch succeeds when order.discount_amount is NULL',
+    );
+    db.prepare('UPDATE orders SET discount_amount = 100.1 WHERE id = ?').run(
+      ce1Order.data.order.id,
+    );
+
+    // 9. Quantity > 1 (qty 3 at 100.10) preview and saved order totals match
+    const ce9Preview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-disc-10010-a', quantity: 3 }],
+        order_type: 'takeaway',
+      },
+      headers: authHeader,
+    });
+    const ce9Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-disc-10010-a', quantity: 3 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(ce9Preview.status, 200, 'CE9 preview status 200');
+    assertEqual(ce9Order.status, 201, 'CE9 order status 201');
+    assertEqual(
+      ce9Preview.data.summary.tax_amount,
+      ce9Order.data.order.tax_amount,
+      'CE9 qty 3 preview tax matches saved order tax',
+    );
+    assertEqual(
+      ce9Preview.data.summary.total,
+      ce9Order.data.order.total,
+      'CE9 qty 3 preview total matches saved order total',
+    );
+
+    // 10. Line-scoped 104.00 item + two 2.5% taxes + 87.90 flat discount + taxable 0.10 packaging charge
+    const linePackVersionId = (
+      db
+        .prepare("SELECT active_version_id FROM country_packs WHERE id = 'official-india'")
+        .get() as { active_version_id: number }
+    )?.active_version_id;
+    const savedPackRow = db
+      .prepare('SELECT pack_json FROM country_pack_versions WHERE id = ?')
+      .get(linePackVersionId) as { pack_json: string };
+    const lineScopePack = JSON.parse(savedPackRow.pack_json);
+    lineScopePack.taxRounding = { ...lineScopePack.taxRounding, scope: 'line' };
+    db.prepare('UPDATE country_pack_versions SET pack_json = ? WHERE id = ?').run(
+      JSON.stringify(lineScopePack),
+      linePackVersionId,
+    );
+    db.prepare('UPDATE products SET price = ? WHERE id = ?').run(104.0, 'prod-doc-1');
+    const ce10Order = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-doc-1', quantity: 1 }],
+        packaging_charge: 0.1,
+      },
+      headers: authHeader,
+    });
+    assertEqual(ce10Order.status, 201, 'CE10 line-scoped order created');
+    const ce10Disc = await api(baseUrl, `/api/orders/${ce10Order.data.order.id}/discount`, {
+      method: 'PATCH',
+      body: { discount_type: 'amount', discount_value: 87.9 },
+      headers: authHeader,
+    });
+    assertEqual(ce10Disc.status, 200, 'CE10 flat 87.90 discount applied');
+    assertEqual(ce10Disc.data.order.tax_amount, 0.81, 'CE10 order tax_amount = 0.81');
+    assertEqual(
+      sumSnapshotTax(ce10Disc.data.order.tax_snapshot),
+      0.81,
+      'CE10 order snapshot tax sum = 0.81',
+    );
+    const ce10Bill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: ce10Order.data.order.id },
+      headers: authHeader,
+    });
+    assertEqual(ce10Bill.status, 201, 'CE10 bill generated');
+    assertEqual(ce10Bill.data.bill.tax_amount, 0.81, 'CE10 bill tax_amount = 0.81');
+    assertEqual(
+      sumSnapshotTax(ce10Bill.data.bill.tax_snapshot),
+      0.81,
+      'CE10 bill snapshot tax sum = 0.81',
+    );
+    const ce10FetchedBill = await api(baseUrl, `/api/bills/${ce10Bill.data.bill.id}`, {
+      headers: authHeader,
+    });
+    assertEqual(ce10FetchedBill.status, 200, 'CE10 bill fetched');
+    const ce10Resolved = resolveTaxComponents({
+      ...ce10FetchedBill.data.bill,
+      items: ce10FetchedBill.data.bill.order?.items || [],
+    });
+    const ce10ResolvedSum = Number(
+      ce10Resolved.reduce((s: number, c: { amount: number }) => s + c.amount, 0).toFixed(2),
+    );
+    assertEqual(ce10ResolvedSum, 0.81, 'CE10 resolveTaxComponents sum = 0.81 (no extra cent)');
+    db.prepare('UPDATE country_pack_versions SET pack_json = ? WHERE id = ?').run(
+      savedPackRow.pack_json,
+      linePackVersionId,
+    );
+    db.prepare('UPDATE products SET price = ? WHERE id = ?').run(100.1, 'prod-doc-1');
+
+    const s17Report = await api(baseUrl, '/api/reports/tax-components', {
+      headers: authHeader,
+    });
+    assertEqual(s17Report.status, 200, 'tax-components report succeeds after discounted bills');
+    const s17CompSum = Number(
+      (s17Report.data.taxComponents?.components || [])
+        .reduce((acc: number, c: any) => acc + Number(c.amount || 0), 0)
+        .toFixed(2),
+    );
+    assertEqual(
+      s17CompSum,
+      Number(Number(s17Report.data.taxComponents?.taxAmount || 0).toFixed(2)),
+      'report components sum reconciles to report taxAmount',
+    );
   } finally {
     server.close();
     closeDatabase();

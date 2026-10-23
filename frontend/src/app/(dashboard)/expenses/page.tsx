@@ -36,6 +36,7 @@ function defaultRange(businessDate: string): { from: string; to: string } {
 export default function ExpensesPage() {
   const t = useTranslations('expenses');
   const tCommon = useTranslations('common');
+  const tInventory = useTranslations('inventory');
   const tNav = useTranslations('nav');
   const tOrders = useTranslations('orders');
   const { currentTenant, refreshAuthContext } = useAuthStore();
@@ -45,10 +46,9 @@ export default function ExpensesPage() {
       ? tCommon('notAvailable')
       : fmt(amountMinor / getCurrencyMinorUnitFactor(currencyCode));
 
-  const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
-
   const [context, setContext] = useState<ExpenseContext | null>(null);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [knownCurrencies, setKnownCurrencies] = useState<string[]>([]);
   const [filters, setFilters] = useState<Filters | null>(null);
   // Rows carry the filter identity they were fetched for, so a filter change
   // renders as loading instead of showing rows that no longer match.
@@ -66,6 +66,7 @@ export default function ExpensesPage() {
   const [workflow, setWorkflow] = useState<{
     mode: 'create' | 'detail';
     expense: ExpenseRecord | null;
+    initialView?: 'main' | 'payment' | 'replace';
   } | null>(null);
 
   // Every filter change starts a new request identity, so a slower earlier
@@ -73,6 +74,16 @@ export default function ExpensesPage() {
   const requestSeq = useRef(0);
 
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
+
+  const recordCurrencies = useCallback((codes: Iterable<string | null | undefined>) => {
+    setKnownCurrencies((previous) => {
+      const next = new Set(previous);
+      for (const code of codes) {
+        if (code) next.add(code);
+      }
+      return next.size === previous.length ? previous : Array.from(next);
+    });
+  }, []);
 
   const filterKey = filters ? JSON.stringify([filters, refreshKey]) : '';
   const requestKey = filters ? JSON.stringify([filters, refreshKey]) : '';
@@ -159,7 +170,9 @@ export default function ExpensesPage() {
       .get('/expenses', { params: { ...params, limit: LIST_PAGE_SIZE }, signal: controller.signal })
       .then(({ data }) => {
         if (seq !== requestSeq.current) return;
-        setPage({ key: pageKey, rows: data.expenses ?? [], cursor: data.nextCursor ?? null });
+        const rows = (data.expenses ?? []) as ExpenseRecord[];
+        recordCurrencies(rows.map((row) => row.currency_code));
+        setPage({ key: pageKey, rows, cursor: data.nextCursor ?? null });
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -180,14 +193,16 @@ export default function ExpensesPage() {
       .get('/expenses/summary', { params: summaryParams, signal: controller.signal })
       .then(({ data }) => {
         if (seq !== requestSeq.current) return;
-        setSummary({ key: pageKey, data: data as ExpenseSummary });
+        const nextSummary = data as ExpenseSummary;
+        recordCurrencies(nextSummary.totals.map((total) => total.currency_code));
+        setSummary({ key: pageKey, data: nextSummary });
       })
       .catch(() => {
         /* the list surfaces the failure; the summary is supplementary */
       });
 
     return () => controller.abort();
-  }, [filters, refreshAuthContext, refreshKey, t]);
+  }, [filters, recordCurrencies, refreshAuthContext, refreshKey, t]);
 
   const loadMore = async () => {
     if (!filters || !nextCursor) return;
@@ -207,9 +222,11 @@ export default function ExpensesPage() {
         },
       });
       if (seq !== requestSeq.current) return;
+      const rows = (data.expenses ?? []) as ExpenseRecord[];
+      recordCurrencies(rows.map((row) => row.currency_code));
       setPage((previous) => ({
         key,
-        rows: [...(previous.key === key ? previous.rows : []), ...(data.expenses ?? [])],
+        rows: [...(previous.key === key ? previous.rows : []), ...rows],
         cursor: data.nextCursor ?? null,
       }));
     } catch {
@@ -222,9 +239,12 @@ export default function ExpensesPage() {
   const currencyOptions = useMemo(() => {
     const codes = new Set<string>();
     if (context?.currency_code) codes.add(context.currency_code);
-    currentSummary?.totals.forEach((total) => codes.add(total.currency_code));
+    for (const code of knownCurrencies) codes.add(code);
+    if (filters?.currency) codes.add(filters.currency);
+    summary?.data.totals.forEach((total) => codes.add(total.currency_code));
+    page.rows.forEach((row) => codes.add(row.currency_code));
     return Array.from(codes);
-  }, [context, currentSummary]);
+  }, [context, filters, knownCurrencies, page.rows, summary]);
 
   const updateFilter = (patch: Partial<Filters>) => {
     setFilters((current) => (current ? { ...current, ...patch } : current));
@@ -341,28 +361,30 @@ export default function ExpensesPage() {
             <option value="all">{tOrders('allStatuses')}</option>
           </select>
         </div>
-        <div>
-          <label
-            className="mb-1 block text-xs font-medium text-muted-foreground"
-            htmlFor="expense-filter-currency"
-          >
-            {t('currency')}
-          </label>
-          <select
-            id="expense-filter-currency"
-            data-testid="expense-filter-currency"
-            value={filters?.currency ?? ''}
-            onChange={(event) => updateFilter({ currency: event.target.value })}
-            className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
-          >
-            <option value="">{t('allCurrencies')}</option>
-            {currencyOptions.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
-        </div>
+        {currencyOptions.length > 1 && (
+          <div>
+            <label
+              className="mb-1 block text-xs font-medium text-muted-foreground"
+              htmlFor="expense-filter-currency"
+            >
+              {t('currency')}
+            </label>
+            <select
+              id="expense-filter-currency"
+              data-testid="expense-filter-currency"
+              value={filters?.currency ?? ''}
+              onChange={(event) => updateFilter({ currency: event.target.value })}
+              className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+            >
+              <option value="">{t('allCurrencies')}</option>
+              {currencyOptions.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="mb-3 shrink-0 space-y-2" data-testid="expense-summary">
@@ -407,8 +429,10 @@ export default function ExpensesPage() {
           >
             {currentSummary?.groups.map((group) => (
               <li key={`${group.currency_code}-${group.category_id}`}>
-                {group.category_name} · {fmtMinor(group.due_minor, group.currency_code)}{' '}
-                {group.currency_code}
+                {group.category_name} · {fmtMinor(group.incurred_minor, group.currency_code)}
+                {(group.due_minor ?? 0) > 0
+                  ? ` (${t('due')}: ${fmtMinor(group.due_minor, group.currency_code)})`
+                  : ''}
               </li>
             ))}
           </ul>
@@ -443,8 +467,8 @@ export default function ExpensesPage() {
               <th className="p-3 text-start text-xs font-medium uppercase text-muted-foreground">
                 {t('status')}
               </th>
-              <th className="p-3 text-center text-xs font-medium uppercase text-muted-foreground">
-                {t('openDetail')}
+              <th className="p-3 text-end text-xs font-medium uppercase text-muted-foreground">
+                {tInventory('actions')}
               </th>
             </tr>
           </thead>
@@ -452,7 +476,11 @@ export default function ExpensesPage() {
             {expenses.map((expense) => (
               <tr
                 key={expense.id}
-                className="hover:bg-muted"
+                className="cursor-pointer hover:bg-muted"
+                onClick={() => {
+                  void refreshContext();
+                  setWorkflow({ mode: 'detail', expense, initialView: 'main' });
+                }}
                 data-testid="expense-row"
                 data-expense-id={expense.id}
               >
@@ -461,7 +489,7 @@ export default function ExpensesPage() {
                   <p className="font-medium text-foreground">{expense.description}</p>
                   <p className="text-xs text-muted-foreground">{expense.category_name}</p>
                 </td>
-                <td className="p-3 text-sm text-muted-foreground">{expense.payee || '—'}</td>
+                <td className="p-3 text-sm text-muted-foreground">{expense.payee || '-'}</td>
                 <td className="whitespace-nowrap p-3 text-end text-sm">
                   {fmtMinor(expense.amount_minor, expense.currency_code)}
                 </td>
@@ -471,25 +499,73 @@ export default function ExpensesPage() {
                 <td className="whitespace-nowrap p-3 text-end text-sm font-medium">
                   {fmtMinor(expense.due_minor, expense.currency_code)}
                 </td>
-                <td className="p-3 text-sm">
-                  {expense.status === 'active'
-                    ? tCommon('active')
-                    : expense.status === 'voided'
-                      ? t('statusVoided')
-                      : t('statusReplaced')}
+                <td className="whitespace-nowrap p-3 text-sm">
+                  {expense.status === 'active' ? (
+                    expense.due_minor === 0 ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                        {tOrders('paid')}
+                      </span>
+                    ) : expense.paid_minor > 0 ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                        {tOrders('partiallyPaid')}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+                        {tOrders('unpaidBadge')}
+                      </span>
+                    )
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                      {expense.status === 'voided' ? t('statusVoided') : t('statusReplaced')}
+                    </span>
+                  )}
                 </td>
-                <td className="p-3 text-center">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      void refreshContext();
-                      setWorkflow({ mode: 'detail', expense });
-                    }}
-                    data-testid="expense-open-detail"
-                  >
-                    {t('openDetail')}
-                  </Button>
+                <td className="whitespace-nowrap p-3 text-end">
+                  <div className="inline-flex items-center justify-end gap-1.5">
+                    {expense.status === 'active' &&
+                      (expense.due_minor ?? 0) > 0 &&
+                      tenantCan(currentTenant, 'expenses.pay') && (
+                        <Button
+                          size="sm"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void refreshContext();
+                            setWorkflow({ mode: 'detail', expense, initialView: 'payment' });
+                          }}
+                          data-testid="expense-row-pay"
+                        >
+                          {t('paymentTitle')}
+                        </Button>
+                      )}
+                    {expense.status === 'active' &&
+                      expense.paid_minor === 0 &&
+                      tenantCan(currentTenant, 'expenses.manage') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void refreshContext();
+                            setWorkflow({ mode: 'detail', expense, initialView: 'replace' });
+                          }}
+                          data-testid="expense-row-replace"
+                        >
+                          {tCommon('edit')}
+                        </Button>
+                      )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void refreshContext();
+                        setWorkflow({ mode: 'detail', expense, initialView: 'main' });
+                      }}
+                      data-testid="expense-open-detail"
+                    >
+                      {t('openDetail')}
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -530,18 +606,18 @@ export default function ExpensesPage() {
 
       {workflow && context && (
         <ExpenseWorkflow
-          key={`${workflow.mode}:${workflow.expense?.id ?? 'new'}`}
+          key={`${workflow.mode}:${workflow.expense?.id ?? 'new'}:${workflow.initialView ?? 'main'}`}
           mode={workflow.mode}
           expense={workflow.expense}
+          initialView={workflow.initialView}
           categories={categories}
           context={context}
-          minorFactor={minorFactor}
           onClose={() => setWorkflow(null)}
           onChanged={refresh}
           onCategoryCreated={(category) => setCategories((previous) => [...previous, category])}
           onSaved={(saved) => {
             refresh();
-            setWorkflow({ mode: 'detail', expense: saved });
+            setWorkflow({ mode: 'detail', expense: saved, initialView: 'main' });
           }}
         />
       )}

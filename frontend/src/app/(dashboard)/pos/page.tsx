@@ -43,7 +43,7 @@ import { usePosSortPreference } from '@/hooks/usePosSort';
 import { tenantCan } from '@/lib/permissions';
 import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
 import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
-import { usePrinterStore } from '@/hooks/usePrinter';
+import { isPrintCancelledOnTenantChangeError, usePrinterStore } from '@/hooks/usePrinter';
 import { printerService } from '@/lib/printer/PrinterService';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatKotErrorToast, formatReceiptErrorToast } from '@/lib/printer/warnings';
@@ -286,6 +286,9 @@ export default function POSPage() {
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [checkoutOverridePin, setCheckoutOverridePin] = useState<string | undefined>();
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
+  const [topbarCustomerModalOpen, setTopbarCustomerModalOpen] = useState(false);
+  const [promptCustomerModalOpen, setPromptCustomerModalOpen] = useState(false);
+  const customerModalOpen = topbarCustomerModalOpen || promptCustomerModalOpen;
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [prepaidModalAttempt, setPrepaidModalAttempt] = useState<PrepaidAttempt | null>(null);
   const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(false);
@@ -901,7 +904,11 @@ export default function POSPage() {
   };
 
   const printBillForTenant = async (bill: Bill, force = false, reservedWindow?: Window | null) => {
-    if (!currentTenant || (!force && !autoPrintBill)) {
+    if (
+      !currentTenant ||
+      useAuthStore.getState().currentTenant?.id !== currentTenant.id ||
+      (!force && !autoPrintBill)
+    ) {
       if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
       return;
     }
@@ -910,6 +917,7 @@ export default function POSPage() {
       const printWarnings = await printBill(bill, currentTenant, undefined, reservedWindow);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
+      if (isPrintCancelledOnTenantChangeError(err)) return;
       // Non-fatal: print failure should not block the checkout flow.
       const code = 'print.receipt.failed';
       console.error('[POS] Receipt print failed:', err);
@@ -1132,6 +1140,7 @@ export default function POSPage() {
     !!checkoutTable ||
     !!paymentBill ||
     showCustomerPrompt ||
+    customerModalOpen ||
     showPrepaidCheckout ||
     cashDrawer.open ||
     shift.openModalOpen ||
@@ -2292,9 +2301,17 @@ export default function POSPage() {
         cashDrawer.openModal();
       },
       onFocusCustomer: () => {
-        const input = document.getElementById('customer-phone-search') as HTMLInputElement | null;
-        input?.focus();
-        input?.select();
+        const input = document.querySelector<HTMLInputElement>(
+          '[data-testid="pos-customer-search-input"]',
+        );
+        if (input) {
+          input.focus();
+          input.select();
+          return;
+        }
+        document
+          .querySelector<HTMLButtonElement>('[data-testid="pos-customer-select-btn"]')
+          ?.click();
       },
       onHoldOrder: () => {
         if (
@@ -2331,6 +2348,9 @@ export default function POSPage() {
         if (showKeyboardShortcutsModal) {
           setShowKeyboardShortcutsModal(false);
           return true;
+        }
+        if (customerModalOpen) {
+          return false;
         }
         const activeEl = document.activeElement as HTMLElement | null;
         if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
@@ -2576,6 +2596,7 @@ export default function POSPage() {
         onShowPrintMenu={() => setShowPrintMenuModal(true)}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
+        onCustomerModalOpenChange={setTopbarCustomerModalOpen}
       />
 
       {/* Main content area */}
@@ -2765,7 +2786,10 @@ export default function POSPage() {
               </button>
             </div>
             <p className="text-sm text-muted-foreground mb-4">{t('customerRequiredBeforeOrder')}</p>
-            <CustomerSearch onSelected={() => setShowCustomerPrompt(false)} />
+            <CustomerSearch
+              onSelected={() => setShowCustomerPrompt(false)}
+              onModalOpenChange={setPromptCustomerModalOpen}
+            />
           </div>
         </div>
       )}

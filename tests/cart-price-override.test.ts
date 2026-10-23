@@ -142,4 +142,36 @@ assert.equal(
 assert.equal(cart().items[0].quantity, 2, 'merged quantity is preserved');
 cart().clearCart();
 
+// Fractional override unit prices normalize half-up to currency precision before multiplying by quantity.
+for (const [rawPrice, expectedUnitPrice, expectedSubtotal] of [
+  [10.005, 10.01, 30.03],
+  [3.333, 3.33, 9.99],
+  [0.015, 0.02, 0.06],
+] as const) {
+  cart().clearCart();
+  cart().addItem(steak, 3);
+  cart().setItemPriceOverride(cart().items[0].id, { price: rawPrice, reason: 'Precision check' });
+  assert.equal(
+    cartLineUnitPrice(cart().items[0], false),
+    expectedUnitPrice,
+    `cartLineUnitPrice normalizes ${rawPrice} -> ${expectedUnitPrice}`,
+  );
+  assert.equal(
+    cart().items[0].price_override?.price,
+    expectedUnitPrice,
+    `stored override price normalizes ${rawPrice} -> ${expectedUnitPrice}`,
+  );
+  assert.equal(
+    cart().subtotal(),
+    expectedSubtotal,
+    `cart subtotal at qty 3 uses normalized unit price for ${rawPrice}`,
+  );
+  assert.equal(
+    cartItemToOrderItem(cart().items[0]).price_override?.price,
+    expectedUnitPrice,
+    `order payload carries normalized override price for ${rawPrice}`,
+  );
+}
+cart().clearCart();
+
 console.log('✓ cart price override checks passed');

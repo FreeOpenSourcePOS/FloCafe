@@ -90,9 +90,13 @@ Common rules, enforced in the handlers:
   `user_id`) on an order, item, or bill discount, PIN verification is restricted to that active user
   without falling back to scanning other managers.
 - A percentage discount applies to the fresh item subtotal, and a flat discount is capped at that
-  subtotal. Re-applying a discount never compounds on the previous one.
-- The discount rescales each line's tax by the discounted share of the subtotal and rounds to the
-  currency, so tax is charged on the discounted amount.
+  subtotal. Re-applying a discount never compounds on the previous one. When a later item addition,
+  edit, discount, price override, cancellation, or restoration, or a customer update changes the
+  order subtotal, an existing percentage order discount scales to the new subtotal while a flat
+  order discount stays at its fixed amount, capped at the new subtotal.
+- Order and bill discounts scale item taxes by the discounted share of the subtotal while keeping
+  stored `order_items` taxes un-order-discounted; see
+  [Taxation](taxation.md#where-the-amount-came-from).
 - Applying a discount to an order that has an unpaid bill re-syncs the bill's totals and balance.
   A zero `discount_value` clears an order discount, and a zero `value` clears a bill discount,
   subject to the bill endpoint's discount-mode checks. The item endpoint requires a positive
@@ -113,20 +117,20 @@ complimentary item. The permission `orders.item.price_override` is owner-only an
 - `PATCH /api/orders/:id/items/:itemId/price` takes `price` and a required `reason`. The same
   `price_override: { price, reason }` object is accepted on a line when an order is created or items
   are added, and a request from any other role is a `403`.
-- The line's `unit_price` becomes the override. The first menu price stays in `original_unit_price`
-  across repeated overrides, and `price_overridden`, `price_override_reason`, `price_overridden_by`,
-  and `price_overridden_at` record the change. Receipts and bills read `unit_price`, so they show the
-  selling price.
+- The line's `unit_price` becomes the override, rounded half-up to the currency's decimal places. The
+  first menu price stays in `original_unit_price` across repeated overrides, and `price_overridden`,
+  `price_override_reason`, `price_overridden_by`, and `price_overridden_at` record the change.
+  Receipts and bills read `unit_price`, so they show the selling price.
 - The backend recomputes item tax, order totals, and an open bill. An existing item discount stays,
   capped at the new line total.
 - Overrides are allowed once a line has been sent to the kitchen, because only the price changes.
   They are refused (`409`) once a bill has payments, a split, or a refund, and (`400`) on completed or
   cancelled orders and cancelled or voided lines.
 - In the POS the owner sees a price control on each cart line (also when adding items to an open
-  order). The override is part of the line's cart identity, so it never merges into a menu-price
-  line, survives holding and resuming, and is quoted by `POST /api/tax/preview` through an optional
-  per-item `price_override: { price }`. The placed order re-checks the owner permission, so a held
-  cart with an override placed by another role is refused with `403`.
+  order). The normalized override is part of the line's cart identity, so it never merges into a
+  menu-price line, survives holding and resuming, and is quoted by `POST /api/tax/preview` through an
+  optional per-item `price_override: { price }`. The placed order re-checks the owner permission, so a
+  held cart with an override placed by another role is refused with `403`.
 - A quantity edit keeps the override flag and menu price on the replacement line; replacing the line
   with a different product or variant starts at that product's menu price.
 - Each override records an `item_price_overridden` action in `order_audit_log`.
@@ -136,11 +140,29 @@ complimentary item. The permission `orders.item.price_override` is owner-only an
 
 ## Bills
 
-`POST /api/bills/generate` creates the order's bill, or, when a bill already exists and is not paid,
-re-syncs its totals, discount, and charges from the order and recomputes `balance` against
-`paid_amount`. A paid bill is never rewritten. Bills snapshot subtotal, discount, tax, charges,
-`total`, `paid_amount`, `balance`, and `payment_status`; payable rounding may add a `round_off`
-adjustment for packs that define one.
+`POST /api/bills/generate` creates the order's bill, or, when a bill already exists in `unpaid`,
+`partial`, or `partially_paid` status, re-syncs its totals, discount, tax, and charges from the
+order and recomputes `balance` against `paid_amount`. A `paid`, `partially_refunded`, or `refunded`
+bill (including a zero-total `paid` bill) is never rewritten by bill generation or order-to-bill
+synchronization (`syncUnpaidBillsForOrder`), except for a zero-total `paid` split sibling during
+split-bill reallocation. Bills snapshot subtotal, discount, tax, charges, `total`, `paid_amount`,
+`balance`, and `payment_status`; payable rounding may add a `round_off` adjustment for packs that
+define one.
+
+Order mutations that change the customer (`PATCH /api/orders/:id/customer`) or convert a dine-in
+order to takeaway (`PATCH /api/orders/:id/convert-to-takeaway`) re-sync open bills under the same
+rules:
+
+- `PATCH /api/orders/:id/customer` requires an active order (`400` on `completed` or `cancelled`),
+  refuses changes once any bill has payments, a split, or a refund (`409`), re-evaluates
+  non-terminal item taxes for the new customer from each item's saved `tax_snapshot` category and
+  behavior rules when taxes are enabled, recomputes order and open-bill totals, and records
+  `customer_updated` in `order_audit_log`.
+- `PATCH /api/orders/:id/convert-to-takeaway` requires an active `dine_in` order (`400`), refuses
+  split, paid, or refunded bills (`409`), re-resolves charges for `takeaway`, rejects conversions
+  whose payable total would fall below already-collected payments (`409` with
+  `below_collected_funds`), re-syncs open bills, releases the table to `available`, and records
+  `converted_to_takeaway` in `order_audit_log`.
 
 A split order can have multiple bills, each with its own payments and balance. An order completes
 only once every bill of the order is settled; the API reference documents split eligibility and
@@ -216,10 +238,11 @@ When a payment settles the last unpaid bill of an order, the order becomes `comp
 already completed or cancelled) and its dine-in table is released to `available`. A payment never
 resurrects a terminal order.
 
-When an order, item, or bill discount reduces the remaining balance of a partially paid bill to exactly
-zero (where collected funds equal the discounted total), auto-settlement to `paid` is gated by kitchen
-delivery status. When `require_kitchen_delivered_before_settlement` is enabled, `kds_enabled` is not
-`false`, and `billing_type` is not `prepaid`:
+When a discount, an order mutation (`syncUnpaidBillsForOrder`), or a `POST /api/bills/generate`
+re-sync reduces the remaining balance of a partially paid bill to exactly zero (where collected funds
+equal the updated payable total), auto-settlement to `paid` is gated by kitchen delivery status. When
+`require_kitchen_delivered_before_settlement` is enabled, `kds_enabled` is not `false`, and
+`billing_type` is not `prepaid`:
 
 - If kitchen items remain undelivered (`pending`, `preparing`, or `ready`), auto-settlement is held:
   the discount applies and reduces the balance to zero, but the bill remains in `partial` status
@@ -271,6 +294,7 @@ movements, and refunds have their own end-of-business-day cutoff described above
 ```sh
 npm run test:integration-order-hold-payment   # hold, discount, tax, installments, gates, replay
 npm run test:financial-safety-remediation     # payment replay idempotency, PIN decoupling, discount revalidation
+npm run test:issue-terminal-state-guards      # terminal bill/order guards, takeaway/customer sync, flat discount caps
 npm run test:issue-exact-balance-settlement    # auto-settle bill and complete order on exact-balance discount
 npm run test:integration-happy                # order to payment, discount recalculated
 npm run test:integration-payments             # payment methods and split lines

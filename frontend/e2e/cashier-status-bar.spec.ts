@@ -265,7 +265,7 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     await expect(drawerToggleBtn).toBeFocused();
   });
 
-  test('shift-close modal surfaces 409 unpaid-bills error banner and keeps shift open', async ({
+  test('shift-close modal shows unpaid carry-over warning and closes shift while carrying over unpaid bill', async ({
     page,
   }) => {
     await injectElectronFixture(page, { api: true, platform: 'darwin' });
@@ -313,10 +313,7 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
       data: { order_id: orderId },
     });
     expect(billRes.ok()).toBeTruthy();
-    const billJson = await billRes.json();
-    const billId = billJson.bill.id;
 
-    let billSettledOrCancelled = false;
     try {
       // Reload POS page to ensure state is fresh
       await page.reload();
@@ -327,44 +324,24 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
       await expect(shiftButton).toBeVisible();
       await shiftButton.click();
 
-      // Verify ShiftCloseModal is visible
+      // Verify ShiftCloseModal is visible and shows the unpaid carry-over warning banner
       const modalTitle = page.getByRole('heading', { name: /close shift/i });
       await expect(modalTitle).toBeVisible();
+      const carryOverBanner = page.getByTestId('shift-close-unpaid-warning');
+      await expect(carryOverBanner).toBeVisible({ timeout: 10000 });
 
       // Fill in counted cash (0)
       const countedInput = page.locator('#shift-counted-cash');
       await expect(countedInput).toBeVisible();
       await countedInput.fill('0');
 
-      // Attempt to close shift while unpaid bill exists
+      // Close shift while unpaid bill exists (carries over to next shift without blocking)
       const submitCloseBtn = page
         .locator('button')
         .filter({ hasText: /close shift/i })
         .last();
-      await submitCloseBtn.click();
+      await expect(submitCloseBtn).toBeEnabled();
 
-      // Verify 409 error banner appears inside modal
-      const errorBanner = page.locator('text=/unpaid bill/i');
-      await expect(errorBanner).toBeVisible({ timeout: 10000 });
-
-      // Verify shift is still open in backend
-      const checkShiftRes = await page.request.get(`${BASE}/api/cash-sessions/current`, {
-        headers: authHeaders,
-      });
-      const checkShiftJson = await checkShiftRes.json();
-      expect(checkShiftJson?.status).toBe('open');
-
-      await page.screenshot({ path: 'test-results/r4-shift-close-unpaid-guard.png' });
-
-      // Now settle the bill so shift close can succeed
-      const payRes = await page.request.post(`${BASE}/api/bills/${billId}/payment`, {
-        headers: authHeaders,
-        data: { method: 'cash', amount: billJson.bill.total },
-      });
-      expect(payRes.ok()).toBeTruthy();
-      billSettledOrCancelled = true;
-
-      // Retry shift close in modal, waiting for successful close response
       const closeResponsePromise = page.waitForResponse(
         (res) =>
           res.url().includes('/api/cash-sessions/') &&
@@ -374,11 +351,11 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
       await submitCloseBtn.click();
       await closeResponsePromise;
 
-      // Verify close succeeds: error banner disappears and closed-summary-only control is visible
-      await expect(errorBanner).not.toBeVisible();
+      // Verify close succeeds: carry-over banner disappears and closed-summary print control is visible
+      await expect(carryOverBanner).not.toBeVisible();
       await expect(page.getByRole('button', { name: /print/i })).toBeVisible();
     } finally {
-      if (!billSettledOrCancelled && orderId) {
+      if (orderId) {
         await page.request
           .patch(`${BASE}/api/orders/${orderId}/status`, {
             headers: authHeaders,

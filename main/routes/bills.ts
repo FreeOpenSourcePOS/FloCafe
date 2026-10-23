@@ -19,8 +19,10 @@ import { asyncHandler } from '../middleware/async-handler';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { cloudSync } from '../services/cloud-sync';
+import * as whatsapp from '../services/whatsapp';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import {
   getOpenSession,
   isCashTender,
@@ -47,7 +49,15 @@ export {
   PIN_MAX_ATTEMPTS,
   PIN_WINDOW_MS,
 };
-import { getActiveCountryPack, scaleTaxSnapshots, type Customer } from '../services/tax';
+import Decimal from 'decimal.js';
+import {
+  allocateDocumentTaxRounding,
+  computeDiscountTaxRatio,
+  getActiveCountryPack,
+  scaleTaxSnapshots,
+  type Customer,
+  type DocumentTaxAllocationItemOutput,
+} from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
 import {
@@ -398,7 +408,7 @@ export function addBillLoyaltyFields(
 
 function scaleTaxBreakdown(
   raw: unknown,
-  ratio: number,
+  ratio: Decimal.Value,
   ownerWeights?: number[],
   childIndex = 0,
   sourceTaxMinor?: number,
@@ -407,7 +417,8 @@ function scaleTaxBreakdown(
   if (ownerWeights && ownerWeights.length > 0) {
     return allocateTaxBreakdownForChild(raw, ownerWeights, childIndex, sourceTaxMinor, minorFactor);
   }
-  if (raw === null || raw === undefined || ratio === 1) return raw;
+  const ratioDec = Decimal.isDecimal(ratio) ? ratio : new Decimal(ratio);
+  if (raw === null || raw === undefined || ratioDec.eq(1)) return raw;
   const wasString = typeof raw === 'string';
   let parsed = raw;
   if (wasString) {
@@ -417,6 +428,7 @@ function scaleTaxBreakdown(
       return raw;
     }
   }
+  const decimals = Math.log10(minorFactor);
 
   const scale = (value: any): any => {
     if (Array.isArray(value)) return value.map(scale);
@@ -425,9 +437,12 @@ function scaleTaxBreakdown(
     if (Object.prototype.hasOwnProperty.call(result, 'amount')) {
       const amount = Number(result.amount);
       if (Number.isFinite(amount)) {
-        const scaled = Number((amount * ratio).toFixed(Math.log10(minorFactor)));
-        result.amount =
-          typeof value.amount === 'string' ? scaled.toFixed(Math.log10(minorFactor)) : scaled;
+        const scaled = new Decimal(amount)
+          .mul(ratioDec)
+          .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
+          .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
+          .toNumber();
+        result.amount = typeof value.amount === 'string' ? scaled.toFixed(decimals) : scaled;
       }
     }
     return result;
@@ -439,11 +454,23 @@ function scaleTaxBreakdown(
 
 type ChildItemAllocation = { weights: number[]; index: number };
 
-function getTaxDiscountRatio(subtotal: unknown, discountAmount: unknown): number {
+function getTaxDiscountRatioDecimal(subtotal: unknown, discountAmount: unknown): Decimal {
   const base = Number(subtotal || 0);
-  if (!Number.isFinite(base) || base <= 0) return 1;
-  const discount = Math.max(0, Number(discountAmount || 0));
-  return Math.max(0, Math.min(1, (base - discount) / base));
+  if (!Number.isFinite(base) || base <= 0) return new Decimal(1);
+  const baseDec = new Decimal((subtotal || 0) as number | string);
+  const rawDiscount = Number(discountAmount || 0);
+  const discountDec = Decimal.max(
+    0,
+    Decimal.min(
+      new Decimal(Number.isFinite(rawDiscount) ? ((discountAmount || 0) as number | string) : 0),
+      baseDec,
+    ),
+  );
+  return computeDiscountTaxRatio(baseDec.minus(discountDec), baseDec);
+}
+
+function getTaxDiscountRatio(subtotal: unknown, discountAmount: unknown): number {
+  return getTaxDiscountRatioDecimal(subtotal, discountAmount).toNumber();
 }
 
 export function projectOrderItems(
@@ -456,8 +483,104 @@ export function projectOrderItems(
   const allocated = new Map(
     allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]),
   );
-  const taxDiscountRatio = getTaxDiscountRatio(order.subtotal, order.discount_amount);
+  const taxDiscountRatioDec = getTaxDiscountRatioDecimal(order?.subtotal, order?.discount_amount);
   const decimals = Math.log10(minorFactor);
+  const docOutputByItem = new Map<unknown, DocumentTaxAllocationItemOutput>();
+  if (!taxDiscountRatioDec.eq(1)) {
+    const parsedOrderSnap = parseTaxSnapshot(order?.tax_snapshot);
+    const orderSnapEntries = Array.isArray(parsedOrderSnap)
+      ? parsedOrderSnap
+      : parsedOrderSnap
+        ? [parsedOrderSnap]
+        : [];
+    const nonChargeSnapEntries = orderSnapEntries.filter(
+      (entry): entry is Record<string, unknown> =>
+        Boolean(entry) &&
+        typeof entry === 'object' &&
+        typeof (entry as Record<string, unknown>).chargeKind !== 'string' &&
+        Array.isArray((entry as Record<string, unknown>).lines) &&
+        ((entry as Record<string, unknown>).lines as unknown[]).length > 0,
+    );
+    const toSavedDocOutput = (
+      snap: Record<string, unknown>,
+    ): DocumentTaxAllocationItemOutput | null => {
+      const lines = snap.lines as Record<string, unknown>[] | undefined;
+      if (!Array.isArray(lines) || lines.length === 0) {
+        return null;
+      }
+      const line = lines[0];
+      const components = line?.components as Record<string, unknown>[] | undefined;
+      if (!line || !Array.isArray(components)) return null;
+      const lineTax = components.reduce(
+        (sum: Decimal, c) => sum.plus(new Decimal((c.amount as string | number) || 0)),
+        new Decimal(0),
+      );
+      return {
+        handled: true,
+        taxAmount: lineTax.toNumber(),
+        breakdown: components.map((c) => ({
+          title: String(c.label ?? c.title ?? c.name ?? ''),
+          rate: Number(c.rate ?? c.amountPer ?? 0),
+          amount: Number(c.amount || 0),
+        })),
+        snapshotJson: JSON.stringify(snap),
+      };
+    };
+    const itemById = new Map(
+      rawItemRows
+        .filter((item) => item?.id !== undefined && item?.id !== null)
+        .map((item) => [String(item.id), item]),
+    );
+    for (const snap of nonChargeSnapEntries) {
+      const lines = snap.lines as Record<string, unknown>[] | undefined;
+      const lineId = String(lines?.[0]?.lineId || '');
+      const idMatch = /^line-\d+:(.+)$/.exec(lineId);
+      if (idMatch) {
+        const matchedItem = itemById.get(idMatch[1]);
+        const out = matchedItem ? toSavedDocOutput(snap) : null;
+        if (matchedItem && out) docOutputByItem.set(matchedItem, out);
+      }
+    }
+    const billSnapshotItems = rawItemRows.filter(
+      (item) => !isExcludedFromBillReceipt(item?.status) && hasSnapshotLines(item?.tax_snapshot),
+    );
+    if (docOutputByItem.size === 0 && nonChargeSnapEntries.length === billSnapshotItems.length) {
+      billSnapshotItems.forEach((item, idx) => {
+        const out = toSavedDocOutput(nonChargeSnapEntries[idx]);
+        if (out) docOutputByItem.set(item, out);
+      });
+    }
+    if (docOutputByItem.size === 0 && nonChargeSnapEntries.length === 0) {
+      const chargeSnapJson = orderSnapEntries
+        .filter(
+          (entry) =>
+            entry &&
+            typeof entry === 'object' &&
+            typeof (entry as Record<string, unknown>).chargeKind === 'string',
+        )
+        .map((entry) => JSON.stringify(entry));
+      const activeItems = rawItemRows.filter((item) => !isExcludedFromBillReceipt(item?.status));
+      const docAllocated = allocateDocumentTaxRounding({
+        items: activeItems.map((item, idx) => ({
+          snapshot: item.tax_snapshot,
+          lineIdOverride: `line-${String(idx + 1).padStart(4, '0')}:${item.id}`,
+        })),
+        chargeTaxes: {
+          taxAmount: 0,
+          exclusiveTaxAmount: 0,
+          breakdowns: chargeSnapJson.map(() => []),
+          snapshotJson: chargeSnapJson,
+        },
+        currency: '',
+        minorFactor,
+        itemTaxRatio: taxDiscountRatioDec,
+      });
+      activeItems.forEach((item, idx) => {
+        const out = docAllocated.itemOutputs[idx];
+        if (out?.handled) docOutputByItem.set(item, out);
+      });
+    }
+  }
   return rawItemRows
     .filter((item) => allocations.length === 0 || allocated.has(Number(item.id)))
     .map((item) => {
@@ -466,23 +589,33 @@ export function projectOrderItems(
       const quantityRatio =
         quantity === undefined || originalQuantity <= 0 ? 1 : quantity / originalQuantity;
       const ownerAllocation = childItemAllocations.get(Number(item.id));
-      const sourceTaxMinor = Math.round(
-        Number(item.tax_amount || 0) * taxDiscountRatio * minorFactor,
-      );
+      const docOut = docOutputByItem.get(item);
+      const sourceTaxMinor = docOut
+        ? Math.round(docOut.taxAmount * minorFactor)
+        : new Decimal(item.tax_amount || 0)
+            .mul(taxDiscountRatioDec)
+            .toSignificantDigits(20, Decimal.ROUND_HALF_UP)
+            .mul(minorFactor)
+            .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+            .toNumber();
       const taxMinor = ownerAllocation
         ? allocateSignedMinorUnits(sourceTaxMinor, ownerAllocation.weights)[ownerAllocation.index]
         : Math.round(sourceTaxMinor * quantityRatio);
       const hasSnapshot = hasSnapshotLines(item.tax_snapshot);
-      const scaledBreakdown = hasSnapshot
-        ? item.tax_breakdown
-        : scaleTaxBreakdown(
-            item.tax_breakdown,
-            taxDiscountRatio,
-            undefined,
-            0,
-            undefined,
-            minorFactor,
-          );
+      const scaledBreakdown = docOut
+        ? typeof item.tax_breakdown === 'string'
+          ? JSON.stringify(docOut.breakdown)
+          : docOut.breakdown
+        : hasSnapshot
+          ? item.tax_breakdown
+          : scaleTaxBreakdown(
+              item.tax_breakdown,
+              taxDiscountRatioDec,
+              undefined,
+              0,
+              undefined,
+              minorFactor,
+            );
       const taxBreakdown = ownerAllocation
         ? scaleTaxBreakdown(
             scaledBreakdown,
@@ -493,15 +626,30 @@ export function projectOrderItems(
             minorFactor,
           )
         : scaleTaxBreakdown(scaledBreakdown, quantityRatio, undefined, 0, undefined, minorFactor);
+      const discountedSnapshot = docOut
+        ? typeof item.tax_snapshot === 'string'
+          ? docOut.snapshotJson
+          : docOut.snapshotJson
+            ? JSON.parse(docOut.snapshotJson)
+            : null
+        : item.tax_snapshot;
       const taxSnapshot =
-        ownerAllocation || !hasSnapshot || (taxDiscountRatio === 1 && quantityRatio === 1)
+        ownerAllocation || !hasSnapshot || (taxDiscountRatioDec.eq(1) && quantityRatio === 1)
           ? item.tax_snapshot
-          : scaleTaxSnapshots(
-              [item.tax_snapshot],
-              taxDiscountRatio * quantityRatio,
-              minorFactor,
-            )[0] || null;
-      if (quantity === undefined && taxDiscountRatio === 1 && !ownerAllocation) return item;
+          : docOut
+            ? quantityRatio === 1
+              ? discountedSnapshot
+              : scaleTaxSnapshots([docOut.snapshotJson], quantityRatio, minorFactor)[0] || null
+            : scaleTaxSnapshots(
+                [
+                  typeof item.tax_snapshot === 'string'
+                    ? item.tax_snapshot
+                    : JSON.stringify(item.tax_snapshot),
+                ],
+                taxDiscountRatioDec.mul(quantityRatio),
+                minorFactor,
+              )[0] || null;
+      if (quantity === undefined && taxDiscountRatioDec.eq(1) && !ownerAllocation) return item;
       return {
         ...item,
         ...(quantity === undefined ? {} : { quantity }),
@@ -945,16 +1093,23 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
           currency,
         );
 
+        const isSyncableStatus = ['unpaid', 'partial', 'partially_paid'].includes(
+          existingBill.payment_status,
+        );
         const totalsChanged =
-          existingBill.payment_status !== 'paid' &&
+          isSyncableStatus &&
           (existingBill.discount_amount !== orderDiscountAmt ||
             existingBill.subtotal !== orderSubtotal ||
+            existingBill.tax_amount !== orderTaxAmount ||
+            existingBill.delivery_charge !== orderDelivery ||
+            existingBill.packaging_charge !== orderPackaging ||
             existingBill.service_charge !== orderService ||
             existingBill.charges_breakdown !== (order.charges_breakdown ?? null) ||
             existingBill.total !== roundedOrderTotal);
 
+        const paidAmount = Number(existingBill.paid_amount || 0);
         if (totalsChanged) {
-          const newBalance = Math.max(0, roundedOrderTotal - (existingBill.paid_amount || 0));
+          const newBalance = Math.max(0, roundedOrderTotal - paidAmount);
           db.prepare(`
             UPDATE bills
             SET subtotal       = ?,
@@ -994,10 +1149,37 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
             existingBill.id,
           );
 
+          if (newBalance === 0 && paidAmount > 0 && roundedOrderTotal === paidAmount) {
+            const settled = completeExactBalanceSettlement(
+              db,
+              existingBill.id,
+              roundedOrderTotal,
+              currency,
+              now(),
+            );
+            if (settled) return { bill: settled, isNew: false };
+          }
+
           const updated = parseRowJson(
             db.prepare('SELECT * FROM bills WHERE id = ?').get(existingBill.id),
           );
           return { bill: updated, isNew: false };
+        }
+
+        if (
+          isSyncableStatus &&
+          existingBill.payment_status !== 'unpaid' &&
+          paidAmount > 0 &&
+          roundedOrderTotal === paidAmount
+        ) {
+          const settled = completeExactBalanceSettlement(
+            db,
+            existingBill.id,
+            roundedOrderTotal,
+            currency,
+            now(),
+          );
+          if (settled) return { bill: settled, isNew: false };
         }
 
         return { bill: parseRowJson(existingBill), isNew: false };
@@ -2072,10 +2254,11 @@ export function syncUnpaidBillsForOrder(
       statusCode: 409,
     });
   }
-  const unpaidBills = bills.filter(
-    (bill) => bill.payment_status !== 'paid' || Number(bill.paid_amount || 0) === 0,
+  const unpaidBills = bills.filter((bill) =>
+    ['unpaid', 'partial', 'partially_paid'].includes(bill.payment_status),
   );
-  if (unpaidBills.length === 0) return;
+  if (!splitBills && unpaidBills.length === 0) return;
+  if (splitBills && bills.length === 0) return;
 
   const tenantCurrency = getTenantCurrency();
   const pack = getActiveCountryPack(country);
@@ -2093,10 +2276,12 @@ export function syncUnpaidBillsForOrder(
       WHERE id = ?
     `);
     for (const bill of unpaidBills) {
+      const paidAmount = Number(bill.paid_amount || 0);
+      const newBalance = Math.max(0, billTotal - paidAmount);
       update.run(
         source.subtotal,
         billTotal,
-        Math.max(0, billTotal - Number(bill.paid_amount || 0)),
+        newBalance,
         source.taxAmount,
         source.taxBreakdown,
         source.taxSnapshot,
@@ -2109,6 +2294,14 @@ export function syncUnpaidBillsForOrder(
         now(),
         bill.id,
       );
+      if (
+        newBalance === 0 &&
+        paidAmount > 0 &&
+        billTotal === paidAmount &&
+        bill.payment_status !== 'paid'
+      ) {
+        completeExactBalanceSettlement(db, bill.id, billTotal, tenantCurrency, now());
+      }
     }
     return;
   }
@@ -2227,7 +2420,8 @@ export function syncUnpaidBillsForOrder(
     const total = allocations.total[index];
     const balance = Math.max(0, total - Number(bill.paid_amount || 0));
     const zeroClosed = bill.payment_status === 'paid' && Number(bill.paid_amount || 0) === 0;
-    if (bill.payment_status === 'paid' && !zeroClosed) return;
+    if (!['unpaid', 'partial', 'partially_paid'].includes(bill.payment_status) && !zeroClosed)
+      return;
     update.run(
       allocations.subtotal[index],
       allocations.taxAmount[index],
@@ -3867,8 +4061,18 @@ router.post(
       resolveAttempt?.(result);
 
       const billStatus = (result.bill as { payment_status?: string } | undefined)?.payment_status;
-      if (billStatus === 'paid') notifyKdsUpdate();
-      else notifyOrderUpdated();
+      if (billStatus === 'paid') {
+        notifyKdsUpdate();
+        if (billRow?.payment_status !== 'paid') {
+          void whatsapp
+            .triggerBillPaidAutomation(Number(billId), {
+              pointsEarned: result.loyaltyPointsEarned,
+            })
+            .catch(() => {});
+        }
+      } else {
+        notifyOrderUpdated();
+      }
 
       res.json(result);
     } catch (error: any) {
@@ -4118,8 +4322,18 @@ router.post(
       resolveAttempt?.(result);
 
       const billStatus = (result.bill as { payment_status?: string } | undefined)?.payment_status;
-      if (billStatus === 'paid') notifyKdsUpdate();
-      else notifyOrderUpdated();
+      if (billStatus === 'paid') {
+        notifyKdsUpdate();
+        if (billRow?.payment_status !== 'paid') {
+          void whatsapp
+            .triggerBillPaidAutomation(Number(billId), {
+              pointsEarned: result.loyaltyPointsEarned,
+            })
+            .catch(() => {});
+        }
+      } else {
+        notifyOrderUpdated();
+      }
 
       res.json(result);
     } catch (error: any) {

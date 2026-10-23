@@ -419,7 +419,9 @@
     "priceExceptionReason": "Lý do",
     "priceExceptionsAllShifts": "Toàn bộ giai đoạn",
     "priceExceptionsShift": "Ca",
-    "priceExceptionsShiftOpen": "đang mở"
+    "priceExceptionsShiftOpen": "đang mở",
+    "dayCloseOpenShiftBlocks": "Hãy đóng ca đang mở #{id} ({name}) trước khi chốt ngày kinh doanh này.",
+    "dayCloseOpenShiftBlocksGeneric": "Hãy đóng ca đang mở của ngày kinh doanh này trước khi chốt ngày."
   },
   "expenses": {
     "addTitle": "Thêm chi phí",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Kiểm tra khả năng",
     "viewMore": "Xem thêm",
     "viewLess": "Thu gọn",
-    "splitCheckSettingDenied": "Tài khoản này không thể kiểm tra khả năng chia hóa đơn."
+    "splitCheckSettingDenied": "Tài khoản này không thể kiểm tra khả năng chia hóa đơn.",
+    "dayCloseBlockedByOpenShiftTitle": "Phải đóng ca đang mở trước",
+    "dayCloseBlockedByOpenShiftHint": "Hãy đóng ca đang mở #{id} ({name}) trước khi chốt ngày kinh doanh này.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# đơn đang mở sẽ chuyển sang ca tiếp theo} other {# đơn đang mở sẽ chuyển sang ca tiếp theo}}",
+    "shiftCloseUnpaidWarningHint": "Các đơn này vẫn mở cho ca tiếp theo. Việc đóng ca này chỉ đối soát các khoản tiền mặt đã thu trong ca này.",
+    "shiftCloseUnpaidMoreCount": "+{count} đơn đang mở khác"
   },
   "printTest": {
     "amt": "Số tiền",
@@ -3174,6 +3181,47 @@
       "phone_required": "Cần có số điện thoại",
       "phone_required_pairing": "Cần có số điện thoại để dùng mã ghép nối"
     },
+    "automation": {
+      "autoOptOutLabel": "Tự động hủy nhận tin khi khách nhắn STOP / UNSUBSCRIBE (thêm vào danh sách chặn)",
+      "broadcastDescription": "Gửi mẫu tin đến nhóm khách hàng đã lọc (tuân thủ danh sách chặn, giờ yên tĩnh và giới hạn gửi).",
+      "broadcastInactiveDays": "Vắng mặt >= ngày",
+      "broadcastMinPoints": "Điểm tối thiểu",
+      "broadcastMinVisits": "Lượt ghé tối thiểu",
+      "broadcastSendCta": "Gửi chiến dịch",
+      "broadcastSuccess": "Đã gửi xong: {sent} thành công, {skipped} bỏ qua ({matched} phù hợp).",
+      "broadcastTitle": "Gửi tin theo phân khúc khách hàng",
+      "feedbackLinkLabel": "Liên kết đánh giá cửa hàng",
+      "instagramLabel": "Tài khoản Instagram cửa hàng",
+      "maxPerWeekLabel": "Số tin tự động tối đa mỗi khách mỗi tuần",
+      "placeholdersLabel": "Nhấn để chèn biến dữ liệu",
+      "previewTitle": "Xem trước trực tiếp (dữ liệu mẫu)",
+      "quietHoursEnd": "Kết thúc giờ yên tĩnh",
+      "quietHoursLabel": "Tạm dừng gửi tự động trong giờ yên tĩnh",
+      "quietHoursStart": "Bắt đầu giờ yên tĩnh",
+      "resetDefault": "Khôi phục mặc định",
+      "ruleAfterPaymentHint": "Tự động gửi mẫu hóa đơn khi hóa đơn có số điện thoại khách được thanh toán.",
+      "ruleFeedbackDelayHint": "Gửi lời mời đánh giá sau khi đơn hàng thanh toán (số giờ sau thanh toán).",
+      "ruleNthVisitHint": "Gửi tin nhắn tri ân sau mỗi N lần ghé quán có thanh toán.",
+      "rulePointsThresholdHint": "Gửi thông báo ưu đãi khi số dư điểm vượt mốc cài đặt.",
+      "rulesDescription": "Bật/tắt quy tắc tự động và đặt ngưỡng cho hóa đơn, hỏi thăm và cột mốc khách hàng.",
+      "rulesTitle": "Quy tắc gửi tự động",
+      "ruleWinbackHint": "Gửi ưu đãi mời quay lại cho khách chưa ghé ít nhất N ngày.",
+      "runSweepCta": "Chạy quy tắc định kỳ ngay",
+      "safetyDescription": "Bảo vệ số điện thoại kết nối bằng tự động hủy nhận tin, giờ yên tĩnh và giới hạn tuần.",
+      "safetyTitle": "Kiểm soát an toàn & chống thư rác",
+      "saveCta": "Lưu cài đặt tự động hóa",
+      "savedSuccess": "Đã lưu cài đặt tự động hóa.",
+      "sweepResult": "Đã kiểm tra quy tắc định kỳ (đã gửi {sent}).",
+      "templateBodyLabel": "Nội dung tin nhắn",
+      "templateNameLabel": "Tên mẫu tin",
+      "templatesDescription": "Tùy chỉnh tin nhắn WhatsApp tự động với các biến khách hàng, hóa đơn, điểm thưởng và cửa hàng.",
+      "templateSelectLabel": "Mẫu tin được chọn",
+      "templatesTitle": "Mẫu tin nhắn",
+      "thresholdDays": "Số ngày vắng mặt",
+      "thresholdHours": "Số giờ chờ",
+      "thresholdPoints": "Ngưỡng điểm",
+      "thresholdVisits": "Mỗi N lần ghé"
+    },
     "blocklist": {
       "addCta": "Thêm",
       "addedSuccess": "Đã thêm vào danh sách chặn.",
@@ -3266,6 +3314,14 @@
       "rate_limited": "WhatsApp giới hạn tần suất gửi ({code}). Tạm dừng trong 5 phút.",
       "reconnecting": "Kết nối đã đóng ({code}). Đang kết nối lại sau {seconds} giây…"
     },
+    "rule": {
+      "after_payment": "Hóa đơn tự động sau thanh toán",
+      "broadcast": "Gửi theo phân khúc khách",
+      "feedback_delay": "Hỏi thăm đánh giá",
+      "nth_visit": "Cột mốc số lần ghé quán",
+      "points_threshold": "Cột mốc điểm tích lũy",
+      "winback": "Mời khách cũ quay lại"
+    },
     "send": {
       "customerPhoneRequired": "Hãy thêm số điện thoại của khách hàng trước khi gửi.",
       "error": {
@@ -3327,6 +3383,7 @@
       "typing": "Đang nhập"
     },
     "tabs": {
+      "automation": "Mẫu tin & Quy tắc",
       "connection": "Kết nối",
       "inbox": "Hộp thư đến",
       "sent": "Đã gửi"

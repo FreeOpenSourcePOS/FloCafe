@@ -1093,16 +1093,23 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
           currency,
         );
 
+        const isSyncableStatus = ['unpaid', 'partial', 'partially_paid'].includes(
+          existingBill.payment_status,
+        );
         const totalsChanged =
-          existingBill.payment_status !== 'paid' &&
+          isSyncableStatus &&
           (existingBill.discount_amount !== orderDiscountAmt ||
             existingBill.subtotal !== orderSubtotal ||
+            existingBill.tax_amount !== orderTaxAmount ||
+            existingBill.delivery_charge !== orderDelivery ||
+            existingBill.packaging_charge !== orderPackaging ||
             existingBill.service_charge !== orderService ||
             existingBill.charges_breakdown !== (order.charges_breakdown ?? null) ||
             existingBill.total !== roundedOrderTotal);
 
+        const paidAmount = Number(existingBill.paid_amount || 0);
         if (totalsChanged) {
-          const newBalance = Math.max(0, roundedOrderTotal - (existingBill.paid_amount || 0));
+          const newBalance = Math.max(0, roundedOrderTotal - paidAmount);
           db.prepare(`
             UPDATE bills
             SET subtotal       = ?,
@@ -1142,10 +1149,37 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
             existingBill.id,
           );
 
+          if (newBalance === 0 && paidAmount > 0 && roundedOrderTotal === paidAmount) {
+            const settled = completeExactBalanceSettlement(
+              db,
+              existingBill.id,
+              roundedOrderTotal,
+              currency,
+              now(),
+            );
+            if (settled) return { bill: settled, isNew: false };
+          }
+
           const updated = parseRowJson(
             db.prepare('SELECT * FROM bills WHERE id = ?').get(existingBill.id),
           );
           return { bill: updated, isNew: false };
+        }
+
+        if (
+          isSyncableStatus &&
+          existingBill.payment_status !== 'unpaid' &&
+          paidAmount > 0 &&
+          roundedOrderTotal === paidAmount
+        ) {
+          const settled = completeExactBalanceSettlement(
+            db,
+            existingBill.id,
+            roundedOrderTotal,
+            currency,
+            now(),
+          );
+          if (settled) return { bill: settled, isNew: false };
         }
 
         return { bill: parseRowJson(existingBill), isNew: false };
@@ -2220,10 +2254,11 @@ export function syncUnpaidBillsForOrder(
       statusCode: 409,
     });
   }
-  const unpaidBills = bills.filter(
-    (bill) => bill.payment_status !== 'paid' || Number(bill.paid_amount || 0) === 0,
+  const unpaidBills = bills.filter((bill) =>
+    ['unpaid', 'partial', 'partially_paid'].includes(bill.payment_status),
   );
-  if (unpaidBills.length === 0) return;
+  if (!splitBills && unpaidBills.length === 0) return;
+  if (splitBills && bills.length === 0) return;
 
   const tenantCurrency = getTenantCurrency();
   const pack = getActiveCountryPack(country);
@@ -2241,10 +2276,12 @@ export function syncUnpaidBillsForOrder(
       WHERE id = ?
     `);
     for (const bill of unpaidBills) {
+      const paidAmount = Number(bill.paid_amount || 0);
+      const newBalance = Math.max(0, billTotal - paidAmount);
       update.run(
         source.subtotal,
         billTotal,
-        Math.max(0, billTotal - Number(bill.paid_amount || 0)),
+        newBalance,
         source.taxAmount,
         source.taxBreakdown,
         source.taxSnapshot,
@@ -2257,6 +2294,14 @@ export function syncUnpaidBillsForOrder(
         now(),
         bill.id,
       );
+      if (
+        newBalance === 0 &&
+        paidAmount > 0 &&
+        billTotal === paidAmount &&
+        bill.payment_status !== 'paid'
+      ) {
+        completeExactBalanceSettlement(db, bill.id, billTotal, tenantCurrency, now());
+      }
     }
     return;
   }
@@ -2375,7 +2420,8 @@ export function syncUnpaidBillsForOrder(
     const total = allocations.total[index];
     const balance = Math.max(0, total - Number(bill.paid_amount || 0));
     const zeroClosed = bill.payment_status === 'paid' && Number(bill.paid_amount || 0) === 0;
-    if (bill.payment_status === 'paid' && !zeroClosed) return;
+    if (!['unpaid', 'partial', 'partially_paid'].includes(bill.payment_status) && !zeroClosed)
+      return;
     update.run(
       allocations.subtotal[index],
       allocations.taxAmount[index],

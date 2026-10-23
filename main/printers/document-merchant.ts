@@ -2,10 +2,7 @@
 
 import { loadActiveMerchantPrintTemplate } from '../services/merchant-print-templates';
 import { validateMerchantTemplate } from '../../shared/print';
-import {
-  applyMerchantTemplate,
-  buildBillDocument,
-} from '../../shared/print';
+import { applyMerchantTemplate, buildBillDocument } from '../../shared/print';
 import {
   buildBillPrintContext,
   buildBillPrintData,
@@ -49,7 +46,9 @@ export function renderMerchantReceiptViaDocument(
   const printContext = buildBillPrintContext({
     columns: opts.columns,
     language: opts.language,
-    ...(opts.additionalLanguage !== undefined ? { additionalLanguage: opts.additionalLanguage } : {}),
+    ...(opts.additionalLanguage !== undefined
+      ? { additionalLanguage: opts.additionalLanguage }
+      : {}),
     business,
   });
   const baseOptions = {
@@ -68,19 +67,36 @@ export function renderMerchantReceiptViaDocument(
 
   const renderDocument = (document: Parameters<typeof renderBillDocumentToClassicLines>[0]) => {
     const rasterGroups: RasterSemanticLineGroup[] = [];
-    const lines = renderBillDocumentToClassicLines(document, { ...baseOptions, rasterGroups });
-    return { lines, rasterGroups };
+    const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
+    const lines = renderBillDocumentToClassicLines(document, {
+      ...baseOptions,
+      rasterGroups,
+      financialLineRanges,
+    });
+    return { lines, rasterGroups, financialLineRanges };
   };
 
-  const finish = (rendered: { lines: string[]; rasterGroups: RasterSemanticLineGroup[] }, fellBackToClassic: boolean) => {
-    const data = buildEscPos(rendered.lines, opts.useUnicode, {
-      cutMode: opts.cutMode,
-      arabicShaping: opts.arabicShaping,
-      columns: opts.columns,
-      language: opts.language,
-      capabilities: opts.capabilities,
-    }, warnings);
-    return { data, lines: rendered.lines, warnings, fellBackToClassic, rasterGroups: rendered.rasterGroups };
+  const finish = (rendered: ReturnType<typeof renderDocument>, fellBackToClassic: boolean) => {
+    const data = buildEscPos(
+      rendered.lines,
+      opts.useUnicode,
+      {
+        cutMode: opts.cutMode,
+        arabicShaping: opts.arabicShaping,
+        columns: opts.columns,
+        language: opts.language,
+        capabilities: opts.capabilities,
+        financialLineRanges: rendered.financialLineRanges,
+      },
+      warnings,
+    );
+    return {
+      data,
+      lines: rendered.lines,
+      warnings,
+      fellBackToClassic,
+      rasterGroups: rendered.rasterGroups,
+    };
   };
 
   const row = loadActiveMerchantPrintTemplate(templateId);
@@ -91,7 +107,9 @@ export function renderMerchantReceiptViaDocument(
       message: `Merchant template ${templateId} is not active; rendered with the classic layout.`,
     });
     return finish(
-      renderDocument(buildBillDocument(buildBillPrintData(order, bill, business, opts.isReprint), printContext)),
+      renderDocument(
+        buildBillDocument(buildBillPrintData(order, bill, business, opts.isReprint), printContext),
+      ),
       true,
     );
   }
@@ -116,6 +134,9 @@ export function renderMerchantReceiptViaDocument(
     return finish(renderDocument(buildBillDocument(printData, printContext)), true);
   }
 
-  const document = applyMerchantTemplate(buildBillDocument(printData, printContext), validation.payload);
+  const document = applyMerchantTemplate(
+    buildBillDocument(printData, printContext),
+    validation.payload,
+  );
   return finish(renderDocument(document), false);
 }

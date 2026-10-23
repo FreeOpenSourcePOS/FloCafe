@@ -1,6 +1,7 @@
 /** A courier slip has no mask option; see product-invariants. */
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
+import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { columnsForReceiptPaperSize } from '@print/width';
 import { formatTime } from './format-date';
 import {
@@ -31,6 +32,8 @@ export interface DeliverySlipWebUsbOptions {
   timezone?: string;
   /** Printer firmware performs Arabic/Persian contextual shaping. Default: false. */
   arabicShaping?: boolean;
+  /** Selected thermal text capabilities; defaults to generic ESC/POS safety. */
+  capabilities?: ThermalPrinterCapabilities;
   payment?: DeliverySlipPayment;
 }
 
@@ -93,7 +96,30 @@ export function buildDeliverySlipBytes(
 ): Uint8Array {
   const { paperWidth = 58, language = 'en', timezone, arabicShaping = false } = opts;
   const cols = opts.columns ?? CHARS[paperWidth];
-  const safePrinterText = writeSafePrinterText;
+  const safePrinterText = <T extends { text(value: string): T }>(
+    target: T,
+    value: string,
+    targetWarnings: PrintWarning[] | undefined,
+    isStoreName = false,
+    shaping = false,
+    centerCols?: number,
+    maxCols?: number,
+    lang?: string,
+    financial = false,
+  ): T =>
+    writeSafePrinterText(
+      target,
+      value,
+      targetWarnings,
+      isStoreName,
+      shaping,
+      centerCols,
+      maxCols,
+      lang,
+      financial,
+      true,
+      opts.capabilities,
+    );
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   const label = (concept: string): string => printLabelResolver(concept as never, language);

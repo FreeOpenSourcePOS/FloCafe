@@ -64,16 +64,13 @@ to the Xprinter profile. A name containing `epson tm`, `tm-t88`, `tm-t82`, `tm-t
 resolves to the Epson TM series profile. Only a name that matches nothing falls through to the
 generic profile chosen by paper width.
 
-The generic profiles are the conservative ones. They are ASCII-only, with no text shaping, and
-they skip unsupported non-financial text with a warning but **refuse** a receipt whose financial
-rows contain unsupported text, reporting `Receipt not printed: a financial row contains unsupported
-printer text`. The Xprinter and Epson profiles add the Latin code pages and Latin script
-representability on top of that. All four shipped profiles enable the capability-gated raster
-path; what differs is encoding and script coverage.
-
-If a receipt is refused because of unsupported text in a financial row, check the resolved profile
-before changing anything else. A printer set to the generic profile when it should be an Xprinter
-or Epson is the usual cause.
+The generic profiles are the conservative ones for native text encoding (ASCII-only, with no text
+shaping), while the Xprinter and Epson profiles add the Latin code pages and Latin script
+representability. All four shipped profiles enable the capability-gated raster path across core,
+merchant, and compliance pack templates (and via canvas rasterization on browser/WebUSB paths), so
+lines containing characters outside the printer's native code pages are rendered as raster bands.
+If raster rendering is unavailable or fails on a financial row, FloCafe refuses the print rather
+than omitting an amount, reporting `Receipt not printed: ...` with the affected row and next steps.
 
 ## Arabic-script text
 

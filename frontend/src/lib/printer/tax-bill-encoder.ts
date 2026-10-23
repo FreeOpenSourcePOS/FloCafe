@@ -35,6 +35,7 @@ import {
   selectThermalCodePage,
   type ThermalPrinterCapabilities,
 } from '@print/thermal-capabilities';
+import { rasterCapabilityEnabled } from '@print/raster';
 import { isExcludedFromBillReceipt } from '../../../../shared/order-item-status';
 
 export interface TaxBillOptions {
@@ -254,7 +255,11 @@ export function buildTaxBillBytes(
         : normalizeCurrencyToAscii(normalizedFinancialRow);
     return hasUnsupportedPrinterChars(printerFinancialRow) &&
       !(arabicShaping && isArabicShapingSafeLine(printerFinancialRow))
-      ? [rawFinancialRow]
+      ? [
+          rasterCapabilityEnabled(opts.capabilities, 'mixed')
+            ? `${left}  ${right}`
+            : rawFinancialRow,
+        ]
       : padRowsForLanguage(left, right, cols, opts.capabilities);
   };
   const writeSafeFinancialRow = (left: string, right: string): void => {

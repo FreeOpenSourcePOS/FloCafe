@@ -75,8 +75,12 @@ import {
   encodeRasterUnits,
   rasterCapabilityEnabled,
 } from '../../shared/print/raster';
-import type { RasterSemanticLineGroup } from '../../shared/print/raster';
+import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
+import {
+  hasFinancialPrintWarning,
+  makeFinancialPrintRefusalMessage,
+} from '../../shared/print/warnings';
 import {
   columnsForPaperWidth as columnsForConfiguredPaperWidth,
   displayCellWidth,
@@ -144,14 +148,7 @@ export {
   buildEscPos,
 };
 
-export function hasFinancialPrintWarning(warnings: readonly PrintWarning[]): boolean {
-  return warnings.some((warning) => warning.kind === 'financial');
-}
-
-export function makeFinancialPrintRefusalMessage(warnings: readonly PrintWarning[]): string {
-  const row = warnings.find((warning) => warning.kind === 'financial');
-  return `Receipt not printed: a financial row contains unsupported printer text${row?.text ? `: ${row.text}` : '.'} Use a supported printer profile or system/browser printing.`;
-}
+export { hasFinancialPrintWarning, makeFinancialPrintRefusalMessage };
 
 export type PrintResult = {
   ok: boolean;
@@ -1650,6 +1647,8 @@ type RasterDocumentLines = {
   lines: string[];
   warnings: PrintWarning[];
   rasterGroups?: readonly RasterSemanticLineGroup[];
+  /** Width the lines were laid out for when it differs from the printer's. */
+  columns?: number;
 };
 type RasterBusinessInput = Record<string, unknown> | null | undefined;
 
@@ -1678,16 +1677,61 @@ export function receiptDocumentLines(
   };
   const rasterBiz = { ...biz };
   const selection = parseBillTemplateSelection(template);
-  if (selection?.source === 'pack' || selection?.source === 'merchant') return null;
-  const normalizedTemplate = normalizeReceiptTemplate(
-    selection?.source === 'core' ? selection.id : template,
-  );
+  if (selection?.source === 'merchant') {
+    const result = renderMerchantReceiptViaDocument(
+      order as Record<string, unknown>,
+      bill as Record<string, unknown>,
+      rasterBiz,
+      selection.id,
+      {
+        columns,
+        language,
+        ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+        isReprint,
+        useUnicode,
+        arabicShaping,
+        cutMode,
+        capabilities,
+      },
+    );
+    return { lines: result.lines, warnings: result.warnings, rasterGroups: result.rasterGroups };
+  }
+  const installedPack =
+    selection?.source === 'pack' ? loadInstalledPrintTemplate(selection.id) : null;
+  if (installedPack) {
+    const warnings: PrintWarning[] = [];
+    const result = pluginReceiptLines(
+      installedPack,
+      order,
+      bill,
+      rasterBiz,
+      columns,
+      useUnicode,
+      isReprint,
+      warnings,
+      arabicShaping,
+      language,
+      capabilities,
+    );
+    return {
+      lines: result.lines,
+      warnings,
+      rasterGroups: result.rasterGroups,
+      columns: result.columns,
+    };
+  }
+  // A missing pack template prints the classic layout without the second language, as natively.
+  const normalizedTemplate =
+    selection?.source === 'pack'
+      ? 'classic'
+      : normalizeReceiptTemplate(selection?.source === 'core' ? selection.id : template);
+  const rasterLanguage = selection?.source === 'pack' ? undefined : additionalLanguage;
   const result =
     normalizedTemplate === 'compact'
       ? renderCompactReceiptViaDocument(order, bill, rasterBiz, {
           columns,
           language,
-          ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+          ...(rasterLanguage !== undefined ? { additionalLanguage: rasterLanguage } : {}),
           isReprint,
           useUnicode,
           arabicShaping,
@@ -1699,7 +1743,7 @@ export function receiptDocumentLines(
       : renderClassicReceiptViaDocument(order, bill, rasterBiz, {
           columns,
           language,
-          ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+          ...(rasterLanguage !== undefined ? { additionalLanguage: rasterLanguage } : {}),
           isReprint,
           useUnicode,
           arabicShaping,
@@ -1730,14 +1774,16 @@ async function rasterizeDocumentLines(
   rasterSelected: boolean;
   rasterFailed: boolean;
 }> {
+  let financialRasterText = '';
   const financialRasterContent = (rasterGroups ?? []).some((group) => {
     const sourceLines =
       group.sourceLines ?? lines.slice(group.lineIndex, group.lineIndex + group.lineCount);
     return sourceLines.some((line, index) => {
       const financial = group.financialSourceLines?.[index] ?? group.financial === true;
-      return (
-        financial && line.length > 0 && !isThermalTextRepresentable(line, options.capabilities)
-      );
+      const unsupported =
+        financial && line.length > 0 && !isThermalTextRepresentable(line, options.capabilities);
+      if (unsupported) financialRasterText = line;
+      return unsupported;
     });
   });
   let selectedFinancial = financialRasterContent;
@@ -1749,7 +1795,7 @@ async function rasterizeDocumentLines(
     );
     warnings.push({
       field: financial ? 'financial row' : 'raster renderer',
-      text: '',
+      text: financial ? financialRasterText : '',
       message: `Raster rendering failed: ${message}`,
       kind: financial ? 'financial' : 'line',
     });
@@ -1758,8 +1804,9 @@ async function rasterizeDocumentLines(
   let renderer: Pick<import('./raster-renderer').ChromiumRasterRenderer, 'render'> | undefined;
   let result = failureResult(new Error('Raster renderer was not initialized'));
   try {
-    const { getSharedRasterRenderer, renderUnsupportedRasterLines } =
+    const { getSharedRasterRenderer, renderUnsupportedRasterLines, whenRasterRendererReady } =
       await import('./raster-renderer');
+    await whenRasterRendererReady();
     renderer = getSharedRasterRenderer();
     const raster = await renderUnsupportedRasterLines(
       renderer,
@@ -1980,7 +2027,7 @@ async function rasterizeReceiptIfEnabled(
       useUnicode,
       cutMode: profile.cutMode,
       arabicShaping: capabilities.shaping.arabic,
-      columns: prepared.columns,
+      columns: document.columns ?? prepared.columns,
       language: normalizePrintLanguage(language),
       capabilities,
       requestPrefix: 'receipt',
@@ -2029,10 +2076,6 @@ export function formatReceipt(
   };
   // Merchant templates resolve through document pipeline; pack templates use compliance renderer.
   const selection = parseBillTemplateSelection(template);
-  const templateCapabilities =
-    selection?.source === 'pack' || selection?.source === 'merchant'
-      ? capabilities && { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
-      : capabilities;
   if (selection?.source === 'pack') {
     return renderPluginReceipt(
       loadInstalledPrintTemplate(selection.id),
@@ -2046,7 +2089,7 @@ export function formatReceipt(
       warnings,
       arabicShaping,
       lang,
-      templateCapabilities,
+      capabilities,
     );
   }
   if (selection?.source === 'merchant') {
@@ -2060,7 +2103,7 @@ export function formatReceipt(
       useUnicode,
       arabicShaping,
       cutMode,
-      capabilities: templateCapabilities,
+      capabilities,
     });
     if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
     return result.data;
@@ -2143,6 +2186,54 @@ function renderPluginReceipt(
       undefined,
       capabilities,
     );
+  const rendered = pluginReceiptLines(
+    template,
+    order,
+    bill,
+    biz,
+    cols,
+    useUnicode,
+    isReprint,
+    warnings,
+    arabicShaping,
+    lang,
+    capabilities,
+  );
+  return buildEscPos(
+    rendered.lines,
+    useUnicode,
+    {
+      cutMode,
+      arabicShaping,
+      columns: rendered.columns,
+      language: lang,
+      capabilities,
+      financialLineRanges: rendered.financialLineRanges,
+    },
+    warnings,
+  );
+}
+
+type PluginReceiptLines = {
+  lines: string[];
+  columns: number;
+  financialLineRanges: Array<{ lineIndex: number; lineCount: number }>;
+  rasterGroups: RasterSemanticLineGroup[];
+};
+
+export function pluginReceiptLines(
+  template: NonNullable<ReturnType<typeof loadInstalledPrintTemplate>>,
+  order: unknown,
+  bill: unknown,
+  biz: unknown,
+  cols: number,
+  useUnicode: boolean,
+  isReprint: boolean,
+  warnings?: PrintWarning[],
+  arabicShaping: boolean = false,
+  lang: string = 'en',
+  capabilities?: ThermalPrinterCapabilities,
+): PluginReceiptLines {
   const renderer = parseJson(template.renderer_json, {}) as { id?: string; version?: number };
   const payload = parseJson(template.template_payload_json, {}) as any;
   if (
@@ -2153,7 +2244,7 @@ function renderPluginReceipt(
     throw new Error(`Unsupported receipt plugin renderer for template ${template.template_id}`);
   }
   const profile = selectTemplateWidthProfile(payload, cols, warnings);
-  return renderEscposLineTemplateV1(
+  return escposLineTemplateV1Lines(
     payload,
     profile,
     order,
@@ -2161,8 +2252,6 @@ function renderPluginReceipt(
     biz,
     useUnicode,
     isReprint,
-    cutMode,
-    warnings,
     arabicShaping,
     lang,
     capabilities,
@@ -2218,7 +2307,7 @@ const TEMPLATE_ROW_TO_CHARGE_ID: Partial<Record<TemplateChargeRowId, string>> = 
   packagingCharge: 'packaging_charge',
 };
 
-function renderEscposLineTemplateV1(
+function escposLineTemplateV1Lines(
   payload: any,
   profile: { columns: number; layout: any },
   order: any,
@@ -2226,18 +2315,47 @@ function renderEscposLineTemplateV1(
   biz: any,
   useUnicode: boolean,
   isReprint: boolean,
-  cutMode: PrinterCutMode,
-  warnings?: PrintWarning[],
   arabicShaping: boolean = false,
   lang: string = 'en',
   capabilities?: ThermalPrinterCapabilities,
-): Buffer {
+): PluginReceiptLines {
   const lines: string[] = [];
   const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
-  const pushFinancialLines = (financialLines: string[]): void => {
+  const rasterGroups: RasterSemanticLineGroup[] = [];
+  // The layout lets a raster fallback render the full row with its amount right-aligned.
+  const pushFinancialLines = (financialLines: string[], layout?: RasterTextLayout): void => {
     if (financialLines.length === 0) return;
-    financialLineRanges.push({ lineIndex: lines.length, lineCount: financialLines.length });
+    const lineIndex = lines.length;
+    financialLineRanges.push({ lineIndex, lineCount: financialLines.length });
+    rasterGroups.push({
+      groupId: `pack-financial-${lineIndex}`,
+      lineIndex,
+      lineCount: financialLines.length,
+      financial: true,
+      ...(layout
+        ? {
+            sourceLines: [layout.columns.map((column) => column.text).join(' ')],
+            sourceControlLines: [financialLines[0]],
+            sourceLayouts: [layout],
+            financialSourceLines: [true],
+          }
+        : {}),
+    });
     lines.push(...financialLines);
+  };
+  const summaryLayout = (label: string, value: string): RasterTextLayout => ({
+    kind: 'financial-summary',
+    columns: [
+      { text: label, align: 'left' },
+      { text: value.trimStart(), align: 'right' },
+    ],
+  });
+  const pushFinancialRow = (label: string, value: string, bold = false): void => {
+    const rows = financialRows(label, value, cols, lang, capabilities);
+    pushFinancialLines(
+      bold ? rows.map((line) => `{BOLD}${line}{/BOLD}`) : rows,
+      summaryLayout(label, value),
+    );
   };
   const cols = profile.columns;
   const layout = profile.layout || {};
@@ -2369,22 +2487,33 @@ function renderEscposLineTemplateV1(
           lang,
           capabilities,
         ),
+        pluginItemLayout(
+          item,
+          layout,
+          cols,
+          prefix,
+          locale,
+          trimDecimals,
+          fractionDigits,
+          lang,
+          capabilities,
+        ),
       );
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
           const addonLines: string[] = [];
+          const addonLabel = '  + ' + addon.name;
+          const addonAmount = addon.price
+            ? formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits)
+            : '';
           pushWrapped(
             addonLines,
-            '  + ' +
-              addon.name +
-              (addon.price
-                ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits)
-                : ''),
+            addonLabel + (addon.price ? ' ' + addonAmount : ''),
             cols,
             lang,
             capabilities,
           );
-          if (addon.price) pushFinancialLines(addonLines);
+          if (addon.price) pushFinancialLines(addonLines, summaryLayout(addonLabel, addonAmount));
           else lines.push(...addonLines);
         }
       }
@@ -2408,14 +2537,9 @@ function renderEscposLineTemplateV1(
       normalize(resolveTemplateLabel(payload?.labels, 'subtotal', lang)),
       rowLabelWidth,
     );
-    pushFinancialLines(
-      financialRows(
-        label,
-        formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits),
-        cols,
-        lang,
-        capabilities,
-      ),
+    pushFinancialRow(
+      label,
+      formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits),
     );
   }
   if (Number(bill.discount_amount) > 0 && payload?.totals?.showDiscount !== false) {
@@ -2423,44 +2547,29 @@ function renderEscposLineTemplateV1(
       normalize(resolveTemplateLabel(payload?.labels, 'discount', lang)),
       rowLabelWidth,
     );
-    pushFinancialLines(
-      financialRows(
-        label,
-        '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits),
-        cols,
-        lang,
-        capabilities,
-      ),
+    pushFinancialRow(
+      label,
+      '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits),
     );
   }
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
       const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
-      pushFinancialLines([
-        pluginSummaryRow(
-          rawLabel,
-          formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits),
-          layout,
-          cols,
-          lang,
-          capabilities,
-        ),
-      ]);
+      const taxAmount = formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits);
+      pushFinancialLines(
+        [pluginSummaryRow(rawLabel, taxAmount, layout, cols, lang, capabilities)],
+        summaryLayout(normalize(rawLabel), taxAmount),
+      );
     }
   } else if (Number(bill.tax_amount) !== 0) {
     const label = fitTemplateLabel(
       normalize(resolveTemplateLabel(payload?.labels, 'tax', lang)),
       rowLabelWidth,
     );
-    pushFinancialLines(
-      financialRows(
-        label,
-        formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits),
-        cols,
-        lang,
-        capabilities,
-      ),
+    pushFinancialRow(
+      label,
+      formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits),
     );
   }
   // chargeRows capability declaration preserves stable country/legal row order.
@@ -2482,27 +2591,14 @@ function renderEscposLineTemplateV1(
       normalize(resolveTemplateLabel(payload?.labels, row, lang)),
       rowLabelWidth,
     );
-    pushFinancialLines(
-      financialRows(
-        label,
-        formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits),
-        cols,
-        lang,
-        capabilities,
-      ),
-    );
+    pushFinancialRow(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits));
   }
   // Merchant-named surcharges have no catalog label; the configured name is the
   // label, so only the amount needs formatting.
   for (const charge of itemisedCharges) {
-    pushFinancialLines(
-      financialRows(
-        charge.name,
-        formatCurrency(charge.amount, prefix, locale, trimDecimals, fractionDigits),
-        cols,
-        lang,
-        capabilities,
-      ),
+    pushFinancialRow(
+      charge.name,
+      formatCurrency(charge.amount, prefix, locale, trimDecimals, fractionDigits),
     );
   }
   lines.push(bar);
@@ -2513,14 +2609,10 @@ function renderEscposLineTemplateV1(
       normalize(resolveTemplateLabel(payload?.labels, 'total', lang)),
       rowLabelWidth,
     );
-  pushFinancialLines(
-    financialRows(
-      totalLabel,
-      formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits),
-      cols,
-      lang,
-      capabilities,
-    ).map((line) => `{BOLD}${line}{/BOLD}`),
+  pushFinancialRow(
+    totalLabel,
+    formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits),
+    true,
   );
 
   if (bill.payment_details) {
@@ -2540,14 +2632,9 @@ function renderEscposLineTemplateV1(
               lang,
               capabilities,
             );
-            pushFinancialLines(
-              financialRows(
-                methodLabel,
-                formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits),
-                cols,
-                lang,
-                capabilities,
-              ),
+            pushFinancialRow(
+              methodLabel,
+              formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits),
             );
             const tender = projectCashTender({
               method: String(payment.method),
@@ -2562,14 +2649,9 @@ function renderEscposLineTemplateV1(
                 lang,
                 capabilities,
               );
-              pushFinancialLines(
-                financialRows(
-                  tenderedLabel,
-                  formatCurrency(tender.tendered, prefix, locale, trimDecimals, fractionDigits),
-                  cols,
-                  lang,
-                  capabilities,
-                ),
+              pushFinancialRow(
+                tenderedLabel,
+                formatCurrency(tender.tendered, prefix, locale, trimDecimals, fractionDigits),
               );
               if (tender.change > 0) {
                 const changeLabel = truncate(
@@ -2578,14 +2660,9 @@ function renderEscposLineTemplateV1(
                   lang,
                   capabilities,
                 );
-                pushFinancialLines(
-                  financialRows(
-                    changeLabel,
-                    formatCurrency(tender.change, prefix, locale, trimDecimals, fractionDigits),
-                    cols,
-                    lang,
-                    capabilities,
-                  ),
+                pushFinancialRow(
+                  changeLabel,
+                  formatCurrency(tender.change, prefix, locale, trimDecimals, fractionDigits),
                 );
               }
             }
@@ -2641,12 +2718,7 @@ function renderEscposLineTemplateV1(
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines, cols);
   lines.push('{CUT}');
 
-  return buildEscPos(
-    lines,
-    useUnicode,
-    { cutMode, arabicShaping, columns: cols, language: lang, capabilities, financialLineRanges },
-    warnings,
-  );
+  return { lines, columns: cols, financialLineRanges, rasterGroups };
 }
 
 /** Compact thermal receipt: builds PrintDocument and renders via document-compact pipeline. */
@@ -2848,6 +2920,30 @@ function pluginItemRows(
     );
   }
   return rows;
+}
+
+function pluginItemLayout(
+  item: unknown,
+  layout: unknown,
+  cols: number,
+  prefix: string,
+  locale: string,
+  trimDecimals: boolean,
+  fractionDigits: number,
+  lang: string = 'en',
+  capabilities?: ThermalPrinterCapabilities,
+): RasterTextLayout {
+  return {
+    kind: 'financial-item',
+    columns: pluginLineItemColumns(layout, cols, lang, capabilities).map((column) => ({
+      text: normalizeThermalText(
+        pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits),
+        capabilities,
+      ).trim(),
+      align: column.align === 'right' ? 'right' : 'left',
+      widthRatio: Number(column.width) / cols,
+    })),
+  };
 }
 
 function pluginItemColumnValue(

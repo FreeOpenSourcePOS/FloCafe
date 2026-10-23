@@ -135,8 +135,7 @@ function stagingPath(dir: string): string {
 /** Links a staged file in under the first free backup name; never replaces an existing file. */
 function publishBackup(stagedPath: string, dir: string): string {
   const wallMs = Date.now();
-  const startStamp =
-    wallMs >= lastPublish.wallMs ? Math.max(wallMs, lastPublish.stampMs) : wallMs;
+  const startStamp = wallMs >= lastPublish.wallMs ? Math.max(wallMs, lastPublish.stampMs) : wallMs;
   for (let stamp = startStamp; ; stamp++) {
     const name = localBackupFileName(new Date(stamp));
     try {

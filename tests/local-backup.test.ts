@@ -199,7 +199,10 @@ async function main(): Promise<void> {
   );
   const firstCopy = retainBackupLocally(source);
   const secondCopy = retainBackupLocally(source);
-  assert.ok(firstCopy && secondCopy && firstCopy !== secondCopy, 'back-to-back copies never share a name');
+  assert.ok(
+    firstCopy && secondCopy && firstCopy !== secondCopy,
+    'back-to-back copies never share a name',
+  );
   assert.ok(fs.existsSync(firstCopy as string) && fs.existsSync(secondCopy as string));
 
   for (const name of listLocalBackups(backupDir)) fs.unlinkSync(path.join(backupDir, name));
@@ -263,7 +266,11 @@ async function main(): Promise<void> {
   for (const name of futureNames) fs.writeFileSync(path.join(backupDir, name), 'future');
   await localBackup.runIfDue();
   const afterClockFix = listLocalBackups(backupDir);
-  assert.equal(afterClockFix.length, LOCAL_BACKUP_RETENTION, 'retention still applies after a clock fix');
+  assert.equal(
+    afterClockFix.length,
+    LOCAL_BACKUP_RETENTION,
+    'retention still applies after a clock fix',
+  );
   const written = afterClockFix.filter((name) => !futureNames.includes(name));
   assert.equal(written.length, 1, 'the snapshot written after a clock fix is kept');
   assert.ok((parseLocalBackupTime(written[0]) as number) <= Date.now());

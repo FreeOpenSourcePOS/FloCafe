@@ -11,21 +11,41 @@ const userDataDir = path.join(testDir, 'userData');
 fs.mkdirSync(documentsDir, { recursive: true });
 fs.mkdirSync(userDataDir, { recursive: true });
 
+let documentsThrows = false;
+
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return {
       app: {
         isPackaged: true,
-        getPath: (name: string) => (name === 'documents' ? documentsDir : userDataDir),
+        getPath: (name: string) => {
+          if (name === 'documents') {
+            if (documentsThrows) throw new Error('Failed to get documents path');
+            return documentsDir;
+          }
+          return userDataDir;
+        },
         getVersion: () => 'test',
       },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (value: string) => Buffer.from(value, 'utf8'),
+        decryptString: (value: Buffer) => value.toString('utf8'),
+      },
+      ipcMain: { on: () => {}, handle: () => {}, removeHandler: () => {} },
+      dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) },
+      shell: { openExternal: () => Promise.resolve() },
     };
   }
   return originalLoad.apply(this, arguments as any);
 };
 
+const express = require('express');
+const request = require('supertest');
 import Database from 'better-sqlite3';
 import { closeDatabase, getDatabase, initDatabase } from '../main/db';
+import { databaseToolsRoutes } from '../main/routes/database-tools';
+import { resetMasterPin } from '../main/services/master-pin';
 import {
   LOCAL_BACKUP_RETENTION,
   getLastLocalBackupAt,
@@ -46,6 +66,16 @@ const HOUR = 60 * 60_000;
 async function main(): Promise<void> {
   const backupDir = getLocalBackupDir();
   assert.equal(backupDir, path.join(documentsDir, 'FloCafe', 'Backups'));
+  documentsThrows = true;
+  try {
+    assert.equal(
+      getLocalBackupDir(),
+      path.join(userDataDir, 'FloCafe', 'Backups'),
+      'falls back to userData when documents path is unavailable',
+    );
+  } finally {
+    documentsThrows = false;
+  }
 
   const stamp = new Date('2026-10-22T13:05:09.456Z');
   assert.equal(localBackupFileName(stamp), 'flo-backup-2026-10-22T13-05-09Z.db');
@@ -60,6 +90,11 @@ async function main(): Promise<void> {
     isLocalBackupDue(localBackupFileName(new Date(Date.now() - 25 * HOUR))),
     true,
     'a backup over 24h old is due',
+  );
+  assert.equal(
+    isLocalBackupDue(localBackupFileName(new Date(Date.now() + 2 * HOUR))),
+    true,
+    'a future-dated backup from clock skew is due',
   );
 
   initDatabase();
@@ -150,6 +185,40 @@ async function main(): Promise<void> {
   );
   setLocalBackupEnabled(false);
   assert.equal(retainBackupLocally(source), null, 'respects the off switch');
+
+  for (const name of listLocalBackups(backupDir)) {
+    fs.unlinkSync(path.join(backupDir, name));
+  }
+  getDatabase()
+    .prepare(
+      "INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('owner-1', 'Owner', 'hash', 'owner', 1)",
+    )
+    .run();
+  resetMasterPin('1234');
+  setLocalBackupEnabled(false);
+
+  const api = express();
+  api.use(express.json());
+  api.use((req: any, _res: any, next: any) => {
+    req.user = { userId: 'owner-1', email: 'owner@flo.local', role: 'owner' };
+    next();
+  });
+  api.use('/api/db-tools', databaseToolsRoutes);
+
+  const initRes = await request(api)
+    .post('/api/db-tools/initialize')
+    .send({ master_pin: '1234', confirmation_phrase: 'INITIALIZE' });
+  assert.equal(initRes.status, 200, 'initialize succeeds when local backup is disabled');
+  assert.deepEqual(
+    listLocalBackups(backupDir),
+    [],
+    'initialize does not copy backup to local backup dir when disabled',
+  );
+  assert.equal(
+    isLocalBackupEnabled(),
+    false,
+    'local_backup_enabled remains false after database initialize',
+  );
 
   await localBackup.stop();
   closeDatabase();

@@ -14,7 +14,11 @@ const STARTUP_DELAY_MS = 2 * 60_000;
 const BACKUP_FILE_PATTERN = /^flo-backup-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})Z\.db$/;
 
 export function getLocalBackupDir(): string {
-  return path.join(app.getPath('documents'), 'FloCafe', 'Backups');
+  try {
+    return path.join(app.getPath('documents'), 'FloCafe', 'Backups');
+  } catch {
+    return path.join(app.getPath('userData'), 'FloCafe', 'Backups');
+  }
 }
 
 export function isLocalBackupEnabled(): boolean {
@@ -61,7 +65,7 @@ export function getLastLocalBackupAt(dir?: string): string | null {
 export function isLocalBackupDue(newestFileName: string | undefined, nowMs = Date.now()): boolean {
   if (!newestFileName) return true;
   const last = parseLocalBackupTime(newestFileName);
-  return last === null || nowMs - last >= DAY_MS;
+  return last === null || last > nowMs || nowMs - last >= DAY_MS;
 }
 
 export function pruneLocalBackups(dir: string, keep: number = LOCAL_BACKUP_RETENTION): string[] {
@@ -80,14 +84,25 @@ export function pruneLocalBackups(dir: string, keep: number = LOCAL_BACKUP_RETEN
 /** Copies a finished backup into the local backup folder and applies retention. Best effort. */
 export function retainBackupLocally(sourcePath: string): string | null {
   if (!isLocalBackupEnabled()) return null;
+  let tempTarget: string | null = null;
   try {
     const dir = getLocalBackupDir();
     fs.mkdirSync(dir, { recursive: true });
     const target = path.join(dir, localBackupFileName(new Date()));
-    fs.copyFileSync(sourcePath, target);
+    tempTarget = `${target}.tmp-${process.pid}-${Date.now()}`;
+    fs.copyFileSync(sourcePath, tempTarget);
+    fs.renameSync(tempTarget, target);
+    tempTarget = null;
     pruneLocalBackups(dir);
     return target;
   } catch (error) {
+    if (tempTarget) {
+      try {
+        fs.unlinkSync(tempTarget);
+      } catch {
+        // Ignore cleanup failure
+      }
+    }
     console.warn('[LocalBackup] Could not keep a copy of the backup:', error);
     return null;
   }

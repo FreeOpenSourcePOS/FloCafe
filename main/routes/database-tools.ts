@@ -276,8 +276,13 @@ router.post(
       // never resolve on its own; the reset invalidates Drive state either way.
       await googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true });
       restorePrepared = true;
+      const keepLocalBackup = isLocalBackupEnabled();
       const { backupPath } = await resetDatabaseWithBackup(getHttpRequestSignal(req));
-      retainBackupLocally(backupPath);
+      if (keepLocalBackup) {
+        retainBackupLocally(backupPath);
+      } else {
+        setLocalBackupEnabled(false);
+      }
       const cleanup = googleDrive.completeDatabaseRestore();
       clearUserAuthCache();
       clearInMemoryRevokedTokens();

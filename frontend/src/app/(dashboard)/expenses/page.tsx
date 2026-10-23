@@ -244,7 +244,7 @@ export default function ExpensesPage() {
     summary?.data.totals.forEach((total) => codes.add(total.currency_code));
     page.rows.forEach((row) => codes.add(row.currency_code));
     return Array.from(codes);
-  }, [context, filters?.currency, knownCurrencies, page.rows, summary]);
+  }, [context, filters, knownCurrencies, page.rows, summary]);
 
   const updateFilter = (patch: Partial<Filters>) => {
     setFilters((current) => (current ? { ...current, ...patch } : current));

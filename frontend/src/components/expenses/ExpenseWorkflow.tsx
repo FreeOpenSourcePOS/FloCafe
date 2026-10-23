@@ -167,8 +167,9 @@ export default function ExpenseWorkflow({
   );
   const [reason, setReason] = useState('');
 
-  const [selectedPaymentMethod, setSelectedPaymentMethod] =
-    useState<ExpensePaymentMethod | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<ExpensePaymentMethod | null>(
+    null,
+  );
   const paymentMethod: ExpensePaymentMethod =
     selectedPaymentMethod ?? (canMoveDrawer && context.cash_session_open ? 'cash' : 'card');
   const [paymentAmount, setPaymentAmount] = useState<number | ''>(() => {
@@ -553,8 +554,7 @@ export default function ExpenseWorkflow({
       const apiError = (error as { response?: { data?: { error?: unknown } } })?.response?.data
         ?.error;
       setErrors({
-        form:
-          typeof apiError === 'string' && apiError.trim() ? apiError : t('addCategoryFailed'),
+        form: typeof apiError === 'string' && apiError.trim() ? apiError : t('addCategoryFailed'),
       });
     } finally {
       setBusy(false);

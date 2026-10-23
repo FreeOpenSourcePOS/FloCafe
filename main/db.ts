@@ -2034,9 +2034,9 @@ async function resetDatabaseWithBackupUnlocked(
   const currentDb = getDatabase();
   const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
   const localBackupEnabled = (
-    currentDb
-      .prepare("SELECT value FROM settings WHERE key = 'local_backup_enabled'")
-      .get() as { value?: string } | undefined
+    currentDb.prepare("SELECT value FROM settings WHERE key = 'local_backup_enabled'").get() as
+      | { value?: string }
+      | undefined
   )?.value;
   const recoveryPath = path.join(
     getBackupDir(),
@@ -2303,12 +2303,7 @@ export async function resetDatabaseForCurrencyChange(
 ): Promise<{ backupPath: string; committed?: boolean; cleanupPending?: boolean }> {
   return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
     const currentDb = getDatabase();
-    const PRESERVED_SETTINGS = [
-      'country',
-      'currency',
-      'timezone',
-      'local_backup_enabled',
-    ] as const;
+    const PRESERVED_SETTINGS = ['country', 'currency', 'timezone', 'local_backup_enabled'] as const;
     const settingsRows = currentDb
       .prepare(
         `SELECT key, value FROM settings WHERE key IN (${PRESERVED_SETTINGS.map(() => '?').join(', ')})`,

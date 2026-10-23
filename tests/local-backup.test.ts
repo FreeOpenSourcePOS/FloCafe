@@ -474,9 +474,7 @@ async function main(): Promise<void> {
   const trustedIpcEvent = { sender: mainWin.webContents, senderFrame: mainFrame };
 
   setLocalBackupEnabled(false);
-  getDatabase()
-    .prepare('INSERT INTO categories (id, name) VALUES (?, ?)')
-    .run('c-ipc', 'Bakery');
+  getDatabase().prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run('c-ipc', 'Bakery');
   getDatabase()
     .prepare('INSERT INTO products (id, category_id, name, price) VALUES (?, ?, ?, ?)')
     .run('p-ipc', 'c-ipc', 'Croissant', 4);
@@ -560,7 +558,11 @@ async function main(): Promise<void> {
     noRowDb.close();
   }
   const noRowRestoreRes = restoreBackup(snapshotWithoutRowPath, true);
-  assert.equal(noRowRestoreRes.success, true, 'restore of backup without local_backup_enabled row succeeds');
+  assert.equal(
+    noRowRestoreRes.success,
+    true,
+    'restore of backup without local_backup_enabled row succeeds',
+  );
   assert.equal(
     isLocalBackupEnabled(),
     false,

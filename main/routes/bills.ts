@@ -19,6 +19,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { cloudSync } from '../services/cloud-sync';
+import * as whatsapp from '../services/whatsapp';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
@@ -4060,8 +4061,18 @@ router.post(
       resolveAttempt?.(result);
 
       const billStatus = (result.bill as { payment_status?: string } | undefined)?.payment_status;
-      if (billStatus === 'paid') notifyKdsUpdate();
-      else notifyOrderUpdated();
+      if (billStatus === 'paid') {
+        notifyKdsUpdate();
+        if (billRow?.payment_status !== 'paid') {
+          void whatsapp
+            .triggerBillPaidAutomation(Number(billId), {
+              pointsEarned: result.loyaltyPointsEarned,
+            })
+            .catch(() => {});
+        }
+      } else {
+        notifyOrderUpdated();
+      }
 
       res.json(result);
     } catch (error: any) {
@@ -4311,8 +4322,18 @@ router.post(
       resolveAttempt?.(result);
 
       const billStatus = (result.bill as { payment_status?: string } | undefined)?.payment_status;
-      if (billStatus === 'paid') notifyKdsUpdate();
-      else notifyOrderUpdated();
+      if (billStatus === 'paid') {
+        notifyKdsUpdate();
+        if (billRow?.payment_status !== 'paid') {
+          void whatsapp
+            .triggerBillPaidAutomation(Number(billId), {
+              pointsEarned: result.loyaltyPointsEarned,
+            })
+            .catch(() => {});
+        }
+      } else {
+        notifyOrderUpdated();
+      }
 
       res.json(result);
     } catch (error: any) {

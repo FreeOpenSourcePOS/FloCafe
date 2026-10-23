@@ -419,7 +419,9 @@
     "priceExceptionReason": "เหตุผล",
     "priceExceptionsAllShifts": "ทั้งช่วงเวลา",
     "priceExceptionsShift": "กะ",
-    "priceExceptionsShiftOpen": "เปิดอยู่"
+    "priceExceptionsShiftOpen": "เปิดอยู่",
+    "dayCloseOpenShiftBlocks": "ปิดกะที่เปิดอยู่ #{id} ({name}) ก่อนปิดวันทำการนี้",
+    "dayCloseOpenShiftBlocksGeneric": "ปิดกะที่เปิดอยู่ของวันทำการนี้ก่อนปิดวัน"
   },
   "expenses": {
     "addTitle": "เพิ่มค่าใช้จ่าย",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "ตรวจสอบความพร้อม",
     "viewMore": "ดูเพิ่มเติม",
     "viewLess": "ดูน้อยลง",
-    "splitCheckSettingDenied": "บัญชีนี้ไม่สามารถตรวจสอบความพร้อมในการแบ่งบิลได้"
+    "splitCheckSettingDenied": "บัญชีนี้ไม่สามารถตรวจสอบความพร้อมในการแบ่งบิลได้",
+    "dayCloseBlockedByOpenShiftTitle": "ต้องปิดกะที่เปิดอยู่ก่อน",
+    "dayCloseBlockedByOpenShiftHint": "ปิดกะที่เปิดอยู่ #{id} ({name}) ก่อนปิดวันทำการนี้",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {ออเดอร์ที่เปิดอยู่ # รายการจะส่งต่อไปกะถัดไป} other {ออเดอร์ที่เปิดอยู่ # รายการจะส่งต่อไปกะถัดไป}}",
+    "shiftCloseUnpaidWarningHint": "ออเดอร์เหล่านี้จะยังคงเปิดอยู่สำหรับกะถัดไป การปิดกะนี้จะกระทบยอดเฉพาะเงินสดที่รับชำระแล้วในระหว่างกะนี้เท่านั้น",
+    "shiftCloseUnpaidMoreCount": "+อีก {count} ออเดอร์ที่เปิดอยู่"
   },
   "printTest": {
     "amt": "จำนวนเงิน",

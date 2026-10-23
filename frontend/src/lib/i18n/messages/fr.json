@@ -419,7 +419,9 @@
     "priceExceptionReason": "Motif",
     "priceExceptionsAllShifts": "Toute la période",
     "priceExceptionsShift": "Service",
-    "priceExceptionsShiftOpen": "ouvert"
+    "priceExceptionsShiftOpen": "ouvert",
+    "dayCloseOpenShiftBlocks": "Fermez le service ouvert #{id} ({name}) avant de clôturer cette journée commerciale.",
+    "dayCloseOpenShiftBlocksGeneric": "Fermez le service ouvert de cette journée commerciale avant de clôturer la journée."
   },
   "expenses": {
     "addTitle": "Ajouter une dépense",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Vérifier la disponibilité",
     "viewMore": "Voir plus",
     "viewLess": "Voir moins",
-    "splitCheckSettingDenied": "Ce compte ne peut pas vérifier la disponibilité de la répartition."
+    "splitCheckSettingDenied": "Ce compte ne peut pas vérifier la disponibilité de la répartition.",
+    "dayCloseBlockedByOpenShiftTitle": "Le service ouvert doit d’abord être fermé",
+    "dayCloseBlockedByOpenShiftHint": "Fermez le service ouvert #{id} ({name}) avant de clôturer cette journée commerciale.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# commande ouverte sera reportée} other {# commandes ouvertes seront reportées}}",
+    "shiftCloseUnpaidWarningHint": "Ces commandes restent ouvertes pour le service suivant. La clôture de ce service ne rapproche que les paiements en espèces déjà encaissés pendant ce service.",
+    "shiftCloseUnpaidMoreCount": "+{count} autres commandes ouvertes"
   },
   "printTest": {
     "amt": "Montant",

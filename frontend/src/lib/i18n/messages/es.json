@@ -419,7 +419,9 @@
     "priceExceptionReason": "Motivo",
     "priceExceptionsAllShifts": "Todo el periodo",
     "priceExceptionsShift": "Turno",
-    "priceExceptionsShiftOpen": "abierto"
+    "priceExceptionsShiftOpen": "abierto",
+    "dayCloseOpenShiftBlocks": "Cierra el turno abierto #{id} ({name}) antes de cerrar este día comercial.",
+    "dayCloseOpenShiftBlocksGeneric": "Cierra el turno abierto de este día comercial antes de cerrar el día."
   },
   "expenses": {
     "addTitle": "Añadir gasto",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Verificar disponibilidad",
     "viewMore": "Ver más",
     "viewLess": "Ver menos",
-    "splitCheckSettingDenied": "Esta cuenta no puede verificar la disponibilidad de división de cuenta."
+    "splitCheckSettingDenied": "Esta cuenta no puede verificar la disponibilidad de división de cuenta.",
+    "dayCloseBlockedByOpenShiftTitle": "Primero debes cerrar el turno abierto",
+    "dayCloseBlockedByOpenShiftHint": "Cierra el turno abierto #{id} ({name}) antes de cerrar este día comercial.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# pedido abierto pasará al siguiente turno} other {# pedidos abiertos pasarán al siguiente turno}}",
+    "shiftCloseUnpaidWarningHint": "Estos pedidos permanecen abiertos para el siguiente turno. Al cerrar este turno solo se concilian los pagos en efectivo ya cobrados durante este turno.",
+    "shiftCloseUnpaidMoreCount": "+{count} pedidos abiertos más"
   },
   "printTest": {
     "amt": "Total",

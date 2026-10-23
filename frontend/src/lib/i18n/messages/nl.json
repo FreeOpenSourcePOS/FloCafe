@@ -419,7 +419,9 @@
     "priceExceptionReason": "Reden",
     "priceExceptionsAllShifts": "Hele periode",
     "priceExceptionsShift": "Dienst",
-    "priceExceptionsShiftOpen": "geopend"
+    "priceExceptionsShiftOpen": "geopend",
+    "dayCloseOpenShiftBlocks": "Sluit eerst de geopende dienst #{id} ({name}) voordat u deze werkdag afsluit.",
+    "dayCloseOpenShiftBlocksGeneric": "Sluit de geopende dienst voor deze werkdag voordat u de dag afsluit."
   },
   "expenses": {
     "addTitle": "Onkost toevoegen",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Beschikbaarheid controleren",
     "viewMore": "Meer weergeven",
     "viewLess": "Minder weergeven",
-    "splitCheckSettingDenied": "Dit account kan de beschikbaarheid van rekeningverdeling niet controleren."
+    "splitCheckSettingDenied": "Dit account kan de beschikbaarheid van rekeningverdeling niet controleren.",
+    "dayCloseBlockedByOpenShiftTitle": "Geopende dienst moet eerst worden gesloten",
+    "dayCloseBlockedByOpenShiftHint": "Sluit eerst de geopende dienst #{id} ({name}) voordat u deze werkdag afsluit.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# open bestelling wordt meegenomen} other {# open bestellingen worden meegenomen}}",
+    "shiftCloseUnpaidWarningHint": "Deze bestellingen blijven open voor de volgende dienst. Bij het sluiten van deze dienst worden alleen de contante betalingen verrekend die tijdens deze dienst al zijn ontvangen.",
+    "shiftCloseUnpaidMoreCount": "+{count} extra open bestellingen"
   },
   "printTest": {
     "amt": "Bedrag",

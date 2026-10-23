@@ -419,7 +419,9 @@
     "priceExceptionReason": "دلیل",
     "priceExceptionsAllShifts": "کل بازه",
     "priceExceptionsShift": "شیفت",
-    "priceExceptionsShiftOpen": "باز"
+    "priceExceptionsShiftOpen": "باز",
+    "dayCloseOpenShiftBlocks": "پیش از بستن این روز کاری، شیفت باز #{id} ({name}) را ببندید.",
+    "dayCloseOpenShiftBlocksGeneric": "پیش از بستن روز، شیفت باز این روز کاری را ببندید."
   },
   "expenses": {
     "addTitle": "افزودن هزینه",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "بررسی دسترس‌پذیری",
     "viewMore": "نمایش بیشتر",
     "viewLess": "نمایش کمتر",
-    "splitCheckSettingDenied": "این حساب نمی‌تواند دسترس‌پذیری تقسیم صورتحساب را بررسی کند."
+    "splitCheckSettingDenied": "این حساب نمی‌تواند دسترس‌پذیری تقسیم صورتحساب را بررسی کند.",
+    "dayCloseBlockedByOpenShiftTitle": "ابتدا باید شیفت باز بسته شود",
+    "dayCloseBlockedByOpenShiftHint": "پیش از بستن این روز کاری، شیفت باز #{id} ({name}) را ببندید.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# سفارش باز به شیفت بعد منتقل می‌شود} other {# سفارش باز به شیفت بعد منتقل می‌شوند}}",
+    "shiftCloseUnpaidWarningHint": "این سفارش‌ها برای شیفت بعدی باز می‌مانند. بستن این شیفت فقط پرداخت‌های نقدی دریافت‌شده در همین شیفت را تسویه می‌کند.",
+    "shiftCloseUnpaidMoreCount": "+{count} سفارش باز دیگر"
   },
   "printTest": {
     "amt": "مبلغ",

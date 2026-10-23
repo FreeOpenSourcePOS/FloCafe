@@ -419,7 +419,9 @@
     "priceExceptionReason": "Alasan",
     "priceExceptionsAllShifts": "Seluruh periode",
     "priceExceptionsShift": "Giliran kerja",
-    "priceExceptionsShiftOpen": "terbuka"
+    "priceExceptionsShiftOpen": "terbuka",
+    "dayCloseOpenShiftBlocks": "Tutup shift terbuka #{id} ({name}) sebelum menutup hari kerja ini.",
+    "dayCloseOpenShiftBlocksGeneric": "Tutup shift terbuka untuk hari kerja ini sebelum menutup hari."
   },
   "expenses": {
     "addTitle": "Tambah pengeluaran",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Periksa ketersediaan",
     "viewMore": "Lihat selengkapnya",
     "viewLess": "Tampilkan lebih sedikit",
-    "splitCheckSettingDenied": "Akun ini tidak dapat memeriksa ketersediaan pembagian tagihan."
+    "splitCheckSettingDenied": "Akun ini tidak dapat memeriksa ketersediaan pembagian tagihan.",
+    "dayCloseBlockedByOpenShiftTitle": "Shift yang terbuka harus ditutup terlebih dahulu",
+    "dayCloseBlockedByOpenShiftHint": "Tutup shift terbuka #{id} ({name}) sebelum menutup hari kerja ini.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# pesanan terbuka akan dilanjutkan ke shift berikutnya} other {# pesanan terbuka akan dilanjutkan ke shift berikutnya}}",
+    "shiftCloseUnpaidWarningHint": "Pesanan ini tetap terbuka untuk shift berikutnya. Menutup shift ini hanya mencocokkan pembayaran tunai yang sudah diterima selama shift ini.",
+    "shiftCloseUnpaidMoreCount": "+{count} pesanan terbuka lainnya"
   },
   "printTest": {
     "amt": "Jml",

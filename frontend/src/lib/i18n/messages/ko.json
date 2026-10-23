@@ -419,7 +419,9 @@
     "priceExceptionReason": "사유",
     "priceExceptionsAllShifts": "전체 기간",
     "priceExceptionsShift": "근무조",
-    "priceExceptionsShiftOpen": "진행 중"
+    "priceExceptionsShiftOpen": "진행 중",
+    "dayCloseOpenShiftBlocks": "이 영업일을 마감하기 전에 열려 있는 교대근무 #{id}({name})를 마감하세요.",
+    "dayCloseOpenShiftBlocksGeneric": "영업일을 마감하기 전에 이 영업일의 열려 있는 교대근무를 마감하세요."
   },
   "expenses": {
     "addTitle": "경비 추가",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "가능 여부 확인",
     "viewMore": "더 보기",
     "viewLess": "접기",
-    "splitCheckSettingDenied": "이 계정은 계산서 분할 가능 여부를 확인할 수 없습니다."
+    "splitCheckSettingDenied": "이 계정은 계산서 분할 가능 여부를 확인할 수 없습니다.",
+    "dayCloseBlockedByOpenShiftTitle": "열려 있는 교대근무를 먼저 마감해야 합니다",
+    "dayCloseBlockedByOpenShiftHint": "이 영업일을 마감하기 전에 열려 있는 교대근무 #{id}({name})를 마감하세요.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {미결제 주문 #건이 다음 교대근무로 이월됩니다} other {미결제 주문 #건이 다음 교대근무로 이월됩니다}}",
+    "shiftCloseUnpaidWarningHint": "이 주문들은 다음 교대근무를 위해 열린 상태로 유지됩니다. 이번 교대근무 마감은 이번 교대근무 중에 이미 수납된 현금 결제만 정산합니다.",
+    "shiftCloseUnpaidMoreCount": "+{count}건의 미결제 주문 더보기"
   },
   "printTest": {
     "amt": "금액",

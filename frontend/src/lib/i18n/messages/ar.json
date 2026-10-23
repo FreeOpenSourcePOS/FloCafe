@@ -419,7 +419,9 @@
     "priceExceptionReason": "السبب",
     "priceExceptionsAllShifts": "الفترة كاملة",
     "priceExceptionsShift": "الوردية",
-    "priceExceptionsShiftOpen": "مفتوحة"
+    "priceExceptionsShiftOpen": "مفتوحة",
+    "dayCloseOpenShiftBlocks": "أغلق الوردية المفتوحة #{id} ({name}) قبل إغلاق يوم العمل هذا.",
+    "dayCloseOpenShiftBlocksGeneric": "أغلق الوردية المفتوحة ليوم العمل هذا قبل إغلاق اليوم."
   },
   "expenses": {
     "addTitle": "إضافة مصروف",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "التحقق من التوفر",
     "viewMore": "عرض المزيد",
     "viewLess": "عرض أقل",
-    "splitCheckSettingDenied": "لا يمكن لهذا الحساب التحقق من توفر تقسيم طلبات الدفع."
+    "splitCheckSettingDenied": "لا يمكن لهذا الحساب التحقق من توفر تقسيم طلبات الدفع.",
+    "dayCloseBlockedByOpenShiftTitle": "يجب إغلاق الوردية المفتوحة أولاً",
+    "dayCloseBlockedByOpenShiftHint": "أغلق الوردية المفتوحة #{id} ({name}) قبل إغلاق يوم العمل هذا.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {سيتم ترحيل طلب مفتوح واحد (#)} other {سيتم ترحيل # طلبات مفتوحة}}",
+    "shiftCloseUnpaidWarningHint": "تظل هذه الطلبات مفتوحة للوردية التالية. إغلاق هذه الوردية يطابق فقط المدفوعات النقدية التي تم تحصيلها بالفعل خلال هذه الوردية.",
+    "shiftCloseUnpaidMoreCount": "+{count} طلبات مفتوحة أخرى"
   },
   "printTest": {
     "amt": "المبلغ",

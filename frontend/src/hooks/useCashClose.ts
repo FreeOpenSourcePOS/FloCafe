@@ -62,6 +62,11 @@ interface XReport {
   priorClosedCashCents: number | null;
   priorBusinessDate: string | null;
   alreadyClosed: boolean;
+  blockingOpenShift?: {
+    id: number;
+    opened_by_name: string;
+    opened_at: string;
+  } | null;
 }
 
 /** Immutable close-of-day snapshot returned by POST /api/cash-closures and
@@ -547,13 +552,30 @@ export function useCashClose() {
       setCloseStep(3);
     } catch (err: unknown) {
       if (axios.isAxiosError(err) && err.response?.status === 409) {
-        // The backend's 409 carries alreadyClosed; surface the message and
-        // keep the form so the operator can retry once they have the prior Z.
-        setSubmitError(t('alreadyClosed'));
-        // F4: the X report still says alreadyClosed:false until it re-fetches.
-        // Set the local override so the Submit button disables immediately and
-        // the alreadyClosed banner shows without waiting for a re-fetch.
-        setAlreadyClosedOverride(true);
+        const data = err.response.data as {
+          display_code?: string;
+          error?: string;
+          blocking_shift?: { id: number; opened_by_name: string };
+        };
+        if (data?.display_code === 'open_shift_blocks_day_close') {
+          const shift = data.blocking_shift;
+          setSubmitError(
+            shift
+              ? t('dayCloseOpenShiftBlocks', {
+                  id: shift.id,
+                  name: shift.opened_by_name,
+                })
+              : data.error || t('dayCloseOpenShiftBlocksGeneric'),
+          );
+        } else {
+          // The backend's 409 carries alreadyClosed; surface the message and
+          // keep the form so the operator can retry once they have the prior Z.
+          setSubmitError(t('alreadyClosed'));
+          // F4: the X report still says alreadyClosed:false until it re-fetches.
+          // Set the local override so the Submit button disables immediately and
+          // the alreadyClosed banner shows without waiting for a re-fetch.
+          setAlreadyClosedOverride(true);
+        }
       } else {
         const msg = axios.isAxiosError(err)
           ? err.response?.data?.error || err.message

@@ -419,7 +419,9 @@
     "priceExceptionReason": "कारण",
     "priceExceptionsAllShifts": "पूरी अवधि",
     "priceExceptionsShift": "शिफ्ट",
-    "priceExceptionsShiftOpen": "खुली"
+    "priceExceptionsShiftOpen": "खुली",
+    "dayCloseOpenShiftBlocks": "इस व्यावसायिक दिन को बंद करने से पहले खुली शिफ्ट #{id} ({name}) को बंद करें।",
+    "dayCloseOpenShiftBlocksGeneric": "दिन बंद करने से पहले इस व्यावसायिक दिन की खुली शिफ्ट को बंद करें।"
   },
   "expenses": {
     "addTitle": "व्यय जोड़ें",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "उपलब्धता जाँचें",
     "viewMore": "और देखें",
     "viewLess": "कम देखें",
-    "splitCheckSettingDenied": "यह खाता बिल विभाजन की उपलब्धता जाँच नहीं सकता।"
+    "splitCheckSettingDenied": "यह खाता बिल विभाजन की उपलब्धता जाँच नहीं सकता।",
+    "dayCloseBlockedByOpenShiftTitle": "खुली शिफ्ट को पहले बंद करना होगा",
+    "dayCloseBlockedByOpenShiftHint": "इस व्यावसायिक दिन को बंद करने से पहले खुली शिफ्ट #{id} ({name}) को बंद करें।",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# खुला ऑर्डर अगली शिफ्ट में आगे जाएगा} other {# खुले ऑर्डर अगली शिफ्ट में आगे जाएंगे}}",
+    "shiftCloseUnpaidWarningHint": "ये ऑर्डर अगली शिफ्ट के लिए खुले रहते हैं। इस शिफ्ट को बंद करने पर केवल इस शिफ्ट के दौरान पहले से प्राप्त नकद भुगतानों का मिलान होता है।",
+    "shiftCloseUnpaidMoreCount": "+{count} और खुले ऑर्डर"
   },
   "printTest": {
     "amt": "राशि",

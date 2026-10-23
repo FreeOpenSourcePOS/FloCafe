@@ -419,7 +419,9 @@
     "priceExceptionReason": "原因",
     "priceExceptionsAllShifts": "整段期間",
     "priceExceptionsShift": "班次",
-    "priceExceptionsShiftOpen": "進行中"
+    "priceExceptionsShiftOpen": "進行中",
+    "dayCloseOpenShiftBlocks": "請在日結此營業日之前先關閉未關班次 #{id}（{name}）。",
+    "dayCloseOpenShiftBlocksGeneric": "請在日結之前先關閉此營業日的未關班次。"
   },
   "expenses": {
     "addTitle": "新增支出",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "檢查可用性",
     "viewMore": "查看更多",
     "viewLess": "收起",
-    "splitCheckSettingDenied": "此帳號無法檢查拆單可用性。"
+    "splitCheckSettingDenied": "此帳號無法檢查拆單可用性。",
+    "dayCloseBlockedByOpenShiftTitle": "必須先關閉目前開啟的班次",
+    "dayCloseBlockedByOpenShiftHint": "請在日結此營業日之前先關閉未關班次 #{id}（{name}）。",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# 筆未結訂單將結轉至下一班次} other {# 筆未結訂單將結轉至下一班次}}",
+    "shiftCloseUnpaidWarningHint": "這些訂單將保持開啟並交接給下一班次。關閉本班次僅核對本班次期間已收取的現金付款。",
+    "shiftCloseUnpaidMoreCount": "另有 +{count} 筆未結訂單"
   },
   "printTest": {
     "amt": "金額",

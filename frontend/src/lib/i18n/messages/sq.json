@@ -419,7 +419,9 @@
     "priceExceptionReason": "Arsyeja",
     "priceExceptionsAllShifts": "E gjithë periudha",
     "priceExceptionsShift": "Turni",
-    "priceExceptionsShiftOpen": "hapur"
+    "priceExceptionsShiftOpen": "hapur",
+    "dayCloseOpenShiftBlocks": "Mbyllni turnin e hapur #{id} ({name}) përpara se të mbyllni këtë ditë pune.",
+    "dayCloseOpenShiftBlocksGeneric": "Mbyllni turnin e hapur për këtë ditë pune përpara se të mbyllni ditën."
   },
   "expenses": {
     "addTitle": "Shto shpenzim",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Kontrollo disponueshmërinë",
     "viewMore": "Shfaq më shumë",
     "viewLess": "Shfaq më pak",
-    "splitCheckSettingDenied": "Kjo llogari nuk mund të verifikojë disponueshmërinë e ndarjes së faturës."
+    "splitCheckSettingDenied": "Kjo llogari nuk mund të verifikojë disponueshmërinë e ndarjes së faturës.",
+    "dayCloseBlockedByOpenShiftTitle": "Turni i hapur duhet të mbyllet fillimisht",
+    "dayCloseBlockedByOpenShiftHint": "Mbyllni turnin e hapur #{id} ({name}) përpara se të mbyllni këtë ditë pune.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# porosi e hapur do të bartet} other {# porosi të hapura do të barten}}",
+    "shiftCloseUnpaidWarningHint": "Këto porosi mbeten të hapura për turnin tjetër. Mbyllja e këtij turni rakordon vetëm pagesat me para në dorë të arkëtuara tashmë gjatë këtij turni.",
+    "shiftCloseUnpaidMoreCount": "+{count} porosi të tjera të hapura"
   },
   "printTest": {
     "amt": "Shuma",

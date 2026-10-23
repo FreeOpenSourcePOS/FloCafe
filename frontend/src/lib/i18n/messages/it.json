@@ -419,7 +419,9 @@
     "priceExceptionReason": "Motivo",
     "priceExceptionsAllShifts": "Intero periodo",
     "priceExceptionsShift": "Turno",
-    "priceExceptionsShiftOpen": "aperto"
+    "priceExceptionsShiftOpen": "aperto",
+    "dayCloseOpenShiftBlocks": "Chiudi il turno aperto #{id} ({name}) prima di chiudere questa giornata lavorativa.",
+    "dayCloseOpenShiftBlocksGeneric": "Chiudi il turno aperto di questa giornata lavorativa prima di chiudere la giornata."
   },
   "expenses": {
     "addTitle": "Aggiungi spesa",
@@ -1169,7 +1171,12 @@
     "splitCheckCheckAvailability": "Verifica disponibilità",
     "viewMore": "Vedi altro",
     "viewLess": "Mostra meno",
-    "splitCheckSettingDenied": "Questo account non può verificare la disponibilità della suddivisione del conto."
+    "splitCheckSettingDenied": "Questo account non può verificare la disponibilità della suddivisione del conto.",
+    "dayCloseBlockedByOpenShiftTitle": "Il turno aperto deve essere chiuso prima",
+    "dayCloseBlockedByOpenShiftHint": "Chiudi il turno aperto #{id} ({name}) prima di chiudere questa giornata lavorativa.",
+    "shiftCloseUnpaidWarningTitle": "{count, plural, one {# ordine aperto verrà trasferito} other {# ordini aperti verranno trasferiti}}",
+    "shiftCloseUnpaidWarningHint": "Questi ordini restano aperti per il turno successivo. La chiusura di questo turno riconcilia solo i pagamenti in contanti già incassati durante questo turno.",
+    "shiftCloseUnpaidMoreCount": "+{count} altri ordini aperti"
   },
   "printTest": {
     "amt": "Importo",

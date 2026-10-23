@@ -23,6 +23,7 @@ import {
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
+import { openSessionBlockingDayClose } from '../services/cash-day-close-guards';
 import {
   computeDayAggregates,
   expectedCashFromAggregates,
@@ -951,6 +952,8 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
       )
       .get(date) as { business_date: string; counted_cash_cents: number } | undefined;
 
+    const blockingSession = openSessionBlockingDayClose(db, date);
+
     res.json({
       xReport: {
         businessDate: date,
@@ -994,6 +997,13 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
         priorBusinessDate: priorRow?.business_date ?? null,
         alreadyClosed: !!closedRow,
         zNumber: closedRow?.z_number,
+        blockingOpenShift: blockingSession
+          ? {
+              id: blockingSession.id,
+              opened_by_name: blockingSession.opened_by_name,
+              opened_at: blockingSession.opened_at,
+            }
+          : null,
       },
     });
   } catch (error: any) {

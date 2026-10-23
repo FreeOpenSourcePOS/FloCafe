@@ -4,7 +4,7 @@
  * Verifies the count-against-day-math endpoint:
  *  - Owner-only authorization (manager forbidden; cashier forbidden).
  *  - Validation: date shape, not-in-future, integer cents >= 0.
- *  - Snapshot math: `expected_cash_cents = opening_float + cashSales − cashRefunds(created_at)`;
+ *  - Snapshot math: `expected_cash_cents = opening_float + cashSales(line timestamps) − cashRefunds(created_at)`;
  *    `variance = counted − expected`; `z_number` from `nextZNumber()`; bill/refund counts and totals.
  *  - Duplicate close (same `business_date`, scope='day') → 409 via the partial index.
  *  - Drawer-reality: a same-day cash refund against a yesterday-paid bill still
@@ -251,6 +251,7 @@ async function main() {
     paidAt,
     refundAmount,
     refundCreatedAt,
+    paymentLines,
   }: {
     billNumber: string;
     method: string;
@@ -260,6 +261,12 @@ async function main() {
     paidAt?: string;
     refundAmount?: number;
     refundCreatedAt?: string;
+    paymentLines?: {
+      method: string;
+      amount: number;
+      payment_method_id?: number;
+      timestamp?: string;
+    }[];
   }) {
     const created = createdAt || dbTimestamp(new Date(`${businessDate}T12:00:00Z`));
     const paid = paidAt || created;
@@ -279,7 +286,12 @@ async function main() {
       amount,
       amount,
       amount,
-      JSON.stringify([{ method, amount, timestamp: paid }]),
+      JSON.stringify(
+        paymentLines?.map((line) => ({
+          ...line,
+          timestamp: line.timestamp ?? paid,
+        })) ?? [{ method, amount, timestamp: paid }],
+      ),
       paid,
       created,
       paid,
@@ -287,7 +299,20 @@ async function main() {
     const bill = db
       .prepare('SELECT id, paid_at FROM bills WHERE bill_number = ?')
       .get(billNumber) as { id: number; paid_at: string };
-    if (refundAmount && method === 'cash') {
+    const drawerCashSale =
+      method === 'cash' ||
+      paymentLines?.some(
+        (line) =>
+          line.method === 'cash' ||
+          (line.method === 'custom' &&
+            line.payment_method_id != null &&
+            (
+              db
+                .prepare('SELECT lower(name) AS n FROM payment_methods WHERE id = ?')
+                .get(line.payment_method_id) as { n?: string } | undefined
+            )?.n === 'cash'),
+      );
+    if (refundAmount && drawerCashSale) {
       const refundedAt = refundCreatedAt || dbTimestamp(new Date());
       db.prepare(`
         INSERT INTO refunds (bill_id, order_item_id, amount_cents, method, reason, shift_id, approved_by, created_by, created_at)
@@ -1294,13 +1319,13 @@ async function main() {
         .send({
           business_date: dayA,
           opening_float_cents: 0,
-          counted_cash_cents: 0,
+          counted_cash_cents: 40000,
         });
       assertEqual(closeA.status, 201, `installment day A close returns 201 (got ${closeA.status})`);
       const zA = closeA.body?.zReport;
       assertEqual(zA.bill_count, 0, 'day A: unpaid-at-close bill not counted');
       assertEqual(zA.gross_collected_cents, 0, 'day A: gross = 0');
-      assertEqual(zA.expected_cash_cents, 0, 'day A: expected = 0');
+      assertEqual(zA.expected_cash_cents, 40000, 'day A: expected = partial cash line in drawer');
       // The regression pin: day A's 400 line must NOT appear in day A's
       // payment_methods (nothing else is seeded on these dates, so the
       // array must be empty — not just missing cash).
@@ -1316,7 +1341,7 @@ async function main() {
         .send({
           business_date: dayB,
           opening_float_cents: 0,
-          counted_cash_cents: 100000,
+          counted_cash_cents: 60000,
         });
       assertEqual(
         closeB.status,
@@ -1326,7 +1351,7 @@ async function main() {
       const zB = closeB.body?.zReport;
       assertEqual(zB.bill_count, 1, 'day B: settled bill counted exactly once');
       assertEqual(zB.gross_collected_cents, 100000, 'day B: gross = 1000 INR in cents');
-      assertEqual(zB.expected_cash_cents, 100000, 'day B: expected = 0 + 400 + 600 cash');
+      assertEqual(zB.expected_cash_cents, 60000, 'day B: expected = settlement-day cash line only');
       const cashB = (zB.payment_methods as any[]).find((m) => m.method === 'cash');
       assertEqual(
         cashB?.total_cents,
@@ -1976,6 +2001,184 @@ async function main() {
         assertEqual(missing.status, 404, `print: missing Z → 404 (got ${missing.status})`);
       } finally {
         thermalModule.printZReport = origPrintZReport;
+      }
+    }
+
+    console.log(
+      '\n15b. Day expected_cash: custom Cash tender + partial line time; card custom excluded; stale open shift blocks day close',
+    );
+    {
+      // Day-28: after section 3 (day-30) and still after the section-8 day-100
+      // no-prior-close probe so we do not seed an early business_date close.
+      const businessDate = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      const lineTs = dbTimestamp(new Date(`${businessDate}T08:00:00Z`));
+      const paidAt = dbTimestamp(new Date(`${businessDate}T20:00:00Z`));
+      db.prepare(
+        `INSERT INTO payment_methods (name, is_active, sort_order, created_at, updated_at) VALUES ('Cash', 1, 90, ?, ?)`,
+      ).run(now(), now());
+      const customCashId = Number(
+        (
+          db
+            .prepare(`SELECT id FROM payment_methods WHERE name = 'Cash' ORDER BY id DESC LIMIT 1`)
+            .get() as {
+            id: number;
+          }
+        ).id,
+      );
+      db.prepare(
+        `INSERT INTO payment_methods (name, is_active, sort_order, created_at, updated_at) VALUES ('Store Card', 1, 91, ?, ?)`,
+      ).run(now(), now());
+      const storeCardId = Number(
+        (
+          db
+            .prepare(
+              `SELECT id FROM payment_methods WHERE name = 'Store Card' ORDER BY id DESC LIMIT 1`,
+            )
+            .get() as { id: number }
+        ).id,
+      );
+      seedPaidBill({
+        billNumber: 'B-CUSTOM-CASH',
+        method: 'custom',
+        amount: 100,
+        businessDate,
+        paidAt,
+        paymentLines: [
+          { method: 'custom', payment_method_id: customCashId, amount: 100, timestamp: lineTs },
+        ],
+        refundAmount: 2000,
+        refundCreatedAt: paidAt,
+      });
+      seedPaidBill({
+        billNumber: 'B-CUSTOM-CARD',
+        method: 'custom',
+        amount: 200,
+        businessDate,
+        paymentLines: [
+          { method: 'custom', payment_method_id: storeCardId, amount: 200, timestamp: paidAt },
+        ],
+      });
+      seedPaidBill({
+        billNumber: 'B-PARTIAL-CASH',
+        method: 'cash',
+        amount: 50,
+        businessDate,
+        paidAt,
+        paymentLines: [{ method: 'cash', amount: 50, timestamp: lineTs }],
+      });
+
+      const res = await request(app)
+        .post('/api/cash-closures')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({
+          business_date: businessDate,
+          opening_float_cents: 0,
+          counted_cash_cents: 0,
+        });
+      assertEqual(
+        res.status,
+        201,
+        `custom Cash day close → 201 (got ${res.status}, body=${JSON.stringify(res.body)})`,
+      );
+      const z = res.body?.zReport;
+      // Drawer: custom Cash 10000 + partial builtin cash 5000 − refund 2000 = 13000
+      assertEqual(
+        z.expected_cash_cents,
+        13000,
+        'expected_cash includes custom Cash tender and partial cash line; excludes Store Card',
+      );
+      const pmByMethod = Object.fromEntries((z.payment_methods as any[]).map((m) => [m.method, m]));
+      assertEqual(
+        pmByMethod['Store Card']?.total_cents ?? 0,
+        20000,
+        'display payment_methods still show Store Card separately from drawer cash',
+      );
+      assertEqual(z.refunded_cents, 2000, 'cash refund on custom-cash bill counts in drawer math');
+
+      // Multi-day stale open shift guard: an open shift from a prior business
+      // date (2026-06-14) blocks closing both 2026-06-14 and 2026-06-15 with
+      // 409 open_shift_blocks_day_close, while not blocking an earlier day (2026-06-13).
+      const RealDate = global.Date;
+      const fixedMs = RealDate.parse('2026-06-15T18:00:00.000Z');
+      class FixedDate extends RealDate {
+        constructor(...args: any[]) {
+          if (args.length === 0) {
+            super(fixedMs);
+          } else {
+            super(...(args as [any]));
+          }
+        }
+        static now(): number {
+          return fixedMs;
+        }
+      }
+      global.Date = FixedDate as DateConstructor;
+      try {
+        const staleShiftInsert = db
+          .prepare(
+            `INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
+             VALUES (?, 'Cashier', '2026-06-14 09:00:00', 5000, 'open')`,
+          )
+          .run(cashierId);
+        const staleShiftId = Number(staleShiftInsert.lastInsertRowid);
+
+        const blockedSameDay = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${ownerToken}`)
+          .send({
+            business_date: '2026-06-14',
+            opening_float_cents: 0,
+            counted_cash_cents: 0,
+          });
+        assertEqual(
+          blockedSameDay.status,
+          409,
+          `open shift on 2026-06-14 blocks closing 2026-06-14 (got ${blockedSameDay.status})`,
+        );
+        assertEqual(
+          blockedSameDay.body?.display_code,
+          'open_shift_blocks_day_close',
+          'same-day open shift returns open_shift_blocks_day_close',
+        );
+
+        const blockedNextDay = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${ownerToken}`)
+          .send({
+            business_date: '2026-06-15',
+            opening_float_cents: 0,
+            counted_cash_cents: 0,
+          });
+        assertEqual(
+          blockedNextDay.status,
+          409,
+          `stale open shift from 2026-06-14 also blocks closing 2026-06-15 (got ${blockedNextDay.status})`,
+        );
+        assertEqual(
+          blockedNextDay.body?.display_code,
+          'open_shift_blocks_day_close',
+          'multi-day stale open shift returns open_shift_blocks_day_close',
+        );
+        assertEqual(
+          Number(blockedNextDay.body?.blocking_shift?.id),
+          staleShiftId,
+          'multi-day stale open shift response includes blocking_shift.id',
+        );
+
+        const xNextDay = await request(app)
+          .get('/api/reports/x-report?date=2026-06-15')
+          .set('Authorization', `Bearer ${ownerToken}`);
+        assertEqual(xNextDay.status, 200, 'x-report for 2026-06-15 returns 200');
+        assertEqual(
+          Number(xNextDay.body?.xReport?.blockingOpenShift?.id),
+          staleShiftId,
+          'x-report surfaces multi-day stale blockingOpenShift on 2026-06-15',
+        );
+      } finally {
+        global.Date = RealDate;
+        db.prepare(`DELETE FROM cash_sessions`).run();
       }
     }
 

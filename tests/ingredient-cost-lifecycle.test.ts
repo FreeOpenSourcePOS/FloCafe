@@ -885,6 +885,189 @@ async function main() {
         exportItemsCsv.includes('prod-croissant,Croissant,,1,11,0,11,1,2.5,7.5,75,known'),
         'known-cost tax-inclusive item exports ex-tax profit/margin and cost_status=known',
       );
+
+      // Daily Sales Export XLSX includes profitability metrics on Summary and columns on Items
+      const ExcelJS = require('exceljs');
+      const exportXlsxRes = await fetch(
+        `${baseUrl}/api/reports/daily-sales/export?date=${reportDateStr}&format=xlsx`,
+        { headers: authHeader },
+      );
+      assertEqualOrThrow(exportXlsxRes.status, 200, 'daily-sales XLSX returns 200');
+      const xlsxBuf = Buffer.from(await exportXlsxRes.arrayBuffer());
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(xlsxBuf);
+      const summarySheet = workbook.getWorksheet('Summary');
+      const itemsSheet = workbook.getWorksheet('Items');
+      assertOrThrow(Boolean(summarySheet && itemsSheet), 'XLSX contains Summary and Items sheets');
+      const summaryRows: Record<string, any> = {};
+      summarySheet.eachRow((row: any, rowNumber: number) => {
+        if (rowNumber > 1) {
+          summaryRows[String(row.getCell(1).value)] = row.getCell(2).value;
+        }
+      });
+      assertEqualOrThrow(
+        summaryRows.known_cost_net_item_sales,
+        23,
+        'XLSX Summary known_cost_net_item_sales=23',
+      );
+      assertEqualOrThrow(
+        summaryRows.ingredient_cost_total,
+        4.48,
+        'XLSX Summary ingredient_cost_total=4.48',
+      );
+      assertEqualOrThrow(
+        summaryRows.gross_profit_total,
+        18.52,
+        'XLSX Summary gross_profit_total=18.52',
+      );
+      assertEqualOrThrow(
+        summaryRows.gross_margin_percent,
+        80.52,
+        'XLSX Summary gross_margin_percent=80.52',
+      );
+      assertEqualOrThrow(
+        summaryRows.cost_coverage_status,
+        'partial',
+        'XLSX Summary cost_coverage_status=partial',
+      );
+      const itemHeaderValues = itemsSheet.getRow(1).values as any[];
+      assertOrThrow(
+        itemHeaderValues.includes('ingredient_cost') &&
+          itemHeaderValues.includes('profit') &&
+          itemHeaderValues.includes('margin_percent') &&
+          itemHeaderValues.includes('cost_status'),
+        'XLSX Items sheet header includes ingredient_cost, profit, margin_percent, cost_status',
+      );
+
+      // -----------------------------------------------------------------
+      // 6. Supply routes snake_case contract, database import validation, and item refund reversal
+      // -----------------------------------------------------------------
+      console.log(
+        '\n--- 6. Snake_case contract, DB import validation, and item refund reversal ---',
+      );
+      const camelCreateRes = await api(baseUrl, '/api/supplies', {
+        method: 'POST',
+        headers: authHeader,
+        body: {
+          name: 'CamelCase Ignored Supply',
+          base_unit: 'each',
+          stock_quantity: 10,
+          unitCost: 5.5,
+          unitCostUnit: 'each',
+        },
+      });
+      assertEqualOrThrow(camelCreateRes.status, 201, 'supply created when camelCase fields sent');
+      assertEqualOrThrow(
+        camelCreateRes.data.supply.unit_cost,
+        null,
+        'POST /api/supplies ignores camelCase unitCost without snake_case unit_cost',
+      );
+
+      const badImportRes = await api(baseUrl, '/api/db/import', {
+        method: 'POST',
+        headers: authHeader,
+        body: {
+          data: {
+            schema_version: String(getCurrentSchemaVersion()),
+            data: {
+              settings: [],
+              categories: [],
+              products: [],
+              users: [],
+              supplies: [
+                {
+                  id: 'sup-bad-import',
+                  name: 'Bad Cost Supply',
+                  base_unit: 'g',
+                  stock_quantity: 100,
+                  unit_cost: -2.5,
+                },
+              ],
+            },
+          },
+        },
+      });
+      assertEqualOrThrow(
+        badImportRes.status,
+        400,
+        'POST /api/db/import rejects negative supplies[0].unit_cost with 400',
+      );
+      assertOrThrow(
+        String(badImportRes.data?.error || '').includes(
+          'supplies[0].unit_cost must be a non-negative finite number or null',
+        ),
+        'POST /api/db/import returns specific supplies[0].unit_cost error message',
+      );
+
+      // Item-level refund inserts void_adjustment with negated ingredient_cost
+      const { createRefund } = require('../main/services/refund');
+      const bcrypt = require('bcryptjs');
+      db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+        bcrypt.hashSync('4321', 10),
+        userId,
+      );
+      const nowOrderTs = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      db.prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+         VALUES ('ORD-REF-COST', ?, 'takeaway', 'completed', 11, 11, ?, ?, ?)`,
+      ).run(userId, nowOrderTs, nowOrderTs, nowOrderTs);
+      const refOrderId = Number(
+        db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-REF-COST'").get().id,
+      );
+      const refItemInsert = db
+        .prepare(
+          `INSERT INTO order_items (
+             order_id, product_id, product_name, quantity, unit_price, subtotal,
+             tax_amount, tax_type, total, status, ingredient_cost, ingredient_cost_known, created_at, updated_at
+           ) VALUES (?, 'prod-croissant', 'Croissant', 1, 11, 11, 1, 'inclusive', 11, 'completed', 2.5, 1, ?, ?)`,
+        )
+        .run(refOrderId, nowOrderTs, nowOrderTs);
+      const refItemId = Number(refItemInsert.lastInsertRowid);
+      const refBillInsert = db
+        .prepare(
+          `INSERT INTO bills (
+             bill_number, order_id, subtotal, total, paid_amount, balance, payment_status,
+             payment_details, paid_at, created_at, updated_at
+           ) VALUES ('BILL-REF-COST', ?, 11, 11, 11, 0, 'paid', ?, ?, ?, ?)`,
+        )
+        .run(
+          refOrderId,
+          JSON.stringify([{ method: 'cash', amount: 11, timestamp: nowOrderTs }]),
+          nowOrderTs,
+          nowOrderTs,
+          nowOrderTs,
+        );
+      const refBillId = Number(refBillInsert.lastInsertRowid);
+
+      createRefund(db, {
+        billId: refBillId,
+        orderItemId: refItemId,
+        method: 'cash',
+        reason: 'Damaged pastry',
+        approverId: userId,
+        overridePin: '4321',
+        createdByUserId: userId,
+        clientIp: '127.0.0.1',
+        isPinRateLimited: () => false,
+        checkPinRateLimit: () => true,
+        clearPinRateLimit: () => {},
+      });
+
+      const voidAdjRow = db
+        .prepare(
+          "SELECT ingredient_cost, ingredient_cost_known FROM order_items WHERE order_id = ? AND status = 'void_adjustment'",
+        )
+        .get(refOrderId);
+      assertEqualOrThrow(
+        voidAdjRow.ingredient_cost,
+        -2.5,
+        'item refund void_adjustment negates ingredient_cost (-2.5)',
+      );
+      assertEqualOrThrow(
+        voidAdjRow.ingredient_cost_known,
+        1,
+        'item refund void_adjustment preserves ingredient_cost_known = 1',
+      );
     } finally {
       server.close();
     }

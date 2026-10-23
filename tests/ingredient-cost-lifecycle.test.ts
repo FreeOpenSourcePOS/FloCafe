@@ -597,6 +597,275 @@ async function main() {
         1,
         'started quantity reduction preserves ingredient_cost_known = 1',
       );
+
+      // -----------------------------------------------------------------
+      // 5. Sales profitability reports & Daily Sales Export
+      // -----------------------------------------------------------------
+      console.log('\n--- 5. Sales profitability reports & Daily Sales Export ---');
+      const reportDateStr = '2026-10-15';
+      const reportTs = '2026-10-15 12:00:00';
+      const manager = seedManagerUser(db);
+
+      // Seed 3 orders on 2026-10-15 with paid bills:
+      // - Order A: 1x Latte (unknown cost, $5.00 exclusive) + 1x Bottled Water (unknown cost, $3.00 exclusive)
+      // - Order B: 2x Latte (known cost $1.98, $13.00 exclusive)
+      // - Order C: 1x Tax-Inclusive Croissant ($11.00 inclusive with $1.00 tax -> $10.00 ex-tax net revenue, known cost $2.50 -> profit $7.50, margin 75%)
+      seedProduct(db, 'prod-croissant', 'cat-cost', 'Croissant', 11.0, {
+        track_inventory: false,
+      });
+
+      function seedReportOrderAndBill(
+        suffix: string,
+        total: number,
+        lines: Array<{
+          productId: string;
+          productName: string;
+          qty: number;
+          unitPrice: number;
+          subtotal: number;
+          taxAmount: number;
+          taxType: 'exclusive' | 'inclusive';
+          ingredientCost: number | null;
+          ingredientCostKnown: 0 | 1;
+        }>,
+      ) {
+        db.prepare(
+          `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+           VALUES (?, ?, 'takeaway', 'completed', ?, ?, ?, ?, ?)`,
+        ).run(`ORD-REP-${suffix}`, userId, total, total, reportTs, reportTs, reportTs);
+        const orderId = Number(
+          db.prepare('SELECT id FROM orders WHERE order_number = ?').get(`ORD-REP-${suffix}`).id,
+        );
+        for (const line of lines) {
+          db.prepare(
+            `INSERT INTO order_items (
+               order_id, product_id, product_name, quantity, unit_price, subtotal,
+               tax_amount, tax_type, total, status, ingredient_cost, ingredient_cost_known, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)`,
+          ).run(
+            orderId,
+            line.productId,
+            line.productName,
+            line.qty,
+            line.unitPrice,
+            line.subtotal,
+            line.taxAmount,
+            line.taxType,
+            line.taxType === 'inclusive' ? line.subtotal : line.subtotal + line.taxAmount,
+            line.ingredientCost,
+            line.ingredientCostKnown,
+            reportTs,
+            reportTs,
+          );
+        }
+        db.prepare(
+          `INSERT INTO bills (
+             bill_number, order_id, subtotal, total, paid_amount, balance, payment_status,
+             payment_details, paid_at, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, 0, 'paid', ?, ?, ?, ?)`,
+        ).run(
+          `BILL-REP-${suffix}`,
+          orderId,
+          total,
+          total,
+          total,
+          JSON.stringify([{ method: 'cash', amount: total, timestamp: reportTs }]),
+          reportTs,
+          reportTs,
+          reportTs,
+        );
+      }
+
+      seedReportOrderAndBill('A', 8, [
+        {
+          productId: 'prod-latte',
+          productName: 'Latte',
+          qty: 1,
+          unitPrice: 5,
+          subtotal: 5,
+          taxAmount: 0,
+          taxType: 'exclusive',
+          ingredientCost: null,
+          ingredientCostKnown: 0,
+        },
+        {
+          productId: 'prod-water',
+          productName: 'Bottled Water',
+          qty: 1,
+          unitPrice: 3,
+          subtotal: 3,
+          taxAmount: 0,
+          taxType: 'exclusive',
+          ingredientCost: null,
+          ingredientCostKnown: 0,
+        },
+      ]);
+      seedReportOrderAndBill('B', 13, [
+        {
+          productId: 'prod-latte',
+          productName: 'Latte',
+          qty: 2,
+          unitPrice: 6.5,
+          subtotal: 13,
+          taxAmount: 0,
+          taxType: 'exclusive',
+          ingredientCost: 1.98,
+          ingredientCostKnown: 1,
+        },
+      ]);
+      seedReportOrderAndBill('C', 11, [
+        {
+          productId: 'prod-croissant',
+          productName: 'Croissant',
+          qty: 1,
+          unitPrice: 11,
+          subtotal: 11,
+          taxAmount: 1,
+          taxType: 'inclusive',
+          ingredientCost: 2.5,
+          ingredientCostKnown: 1,
+        },
+      ]);
+
+      const topOwnerRes = await api(
+        baseUrl,
+        `/api/reports/topProducts?start_date=${reportDateStr}&end_date=${reportDateStr}&limit=10`,
+        { headers: authHeader },
+      );
+      assertEqualOrThrow(topOwnerRes.status, 200, 'owner topProducts returns 200');
+      const rows = topOwnerRes.data.topProducts as any[];
+      const latteRow = rows.find((r) => r.product_id === 'prod-latte');
+      const waterRow = rows.find((r) => r.product_id === 'prod-water');
+      const croissantRow = rows.find((r) => r.product_id === 'prod-croissant');
+
+      // Water: 100% unknown cost -> never 100% margin
+      assertEqualOrThrow(waterRow.cost_status, 'unknown', 'water cost_status is unknown');
+      assertEqualOrThrow(waterRow.ingredient_cost, null, 'water ingredient_cost is null');
+      assertEqualOrThrow(waterRow.profit, null, 'water profit is null');
+      assertEqualOrThrow(waterRow.margin_percent, null, 'water margin_percent is null');
+
+      // Latte: 1 unknown ($5) + 2 known ($13, cost $1.98) -> partial cost, profit over $13 known_cost_revenue
+      assertEqualOrThrow(latteRow.cost_status, 'partial', 'latte cost_status is partial');
+      assertEqualOrThrow(latteRow.known_cost_quantity, 2, 'latte known_cost_quantity is 2');
+      assertEqualOrThrow(latteRow.unknown_cost_quantity, 1, 'latte unknown_cost_quantity is 1');
+      assertEqualOrThrow(latteRow.net_revenue, 18, 'latte total ex-tax net_revenue is 18');
+      assertEqualOrThrow(latteRow.known_cost_revenue, 13, 'latte known_cost_revenue is 13');
+      assertEqualOrThrow(latteRow.ingredient_cost, 1.98, 'latte ingredient_cost is 1.98');
+      assertEqualOrThrow(latteRow.profit, 11.02, 'latte profit is 13 - 1.98 = 11.02');
+      assertEqualOrThrow(
+        latteRow.margin_percent,
+        84.77,
+        'latte margin_percent is 11.02 / 13 = 84.77%',
+      );
+
+      // Croissant: inclusive tax ($11 subtotal - $1 inclusive tax = $10 ex-tax revenue), cost $2.50 -> profit $7.50, margin 75%
+      assertEqualOrThrow(croissantRow.cost_status, 'known', 'croissant cost_status is known');
+      assertEqualOrThrow(
+        croissantRow.net_revenue,
+        10,
+        'croissant ex-tax net_revenue subtracts inclusive tax ($11 - $1 = $10)',
+      );
+      assertEqualOrThrow(croissantRow.ingredient_cost, 2.5, 'croissant ingredient_cost is 2.5');
+      assertEqualOrThrow(croissantRow.profit, 7.5, 'croissant profit is 7.5');
+      assertEqualOrThrow(croissantRow.margin_percent, 75, 'croissant margin_percent is 75%');
+
+      // Period summary in topProducts and financial-summary:
+      // Total net_revenue = 18 + 3 + 10 = 31; known_cost_revenue = 13 + 10 = 23; ingredient_cost = 1.98 + 2.50 = 4.48; profit = 18.52; margin = 80.52%
+      const periodProf = topOwnerRes.data.profitability;
+      assertEqualOrThrow(periodProf.cost_status, 'partial', 'period cost_status is partial');
+      assertEqualOrThrow(periodProf.net_revenue, 31, 'period ex-tax net_revenue is 31');
+      assertEqualOrThrow(periodProf.known_cost_revenue, 23, 'period known_cost_revenue is 23');
+      assertEqualOrThrow(periodProf.ingredient_cost, 4.48, 'period ingredient_cost is 4.48');
+      assertEqualOrThrow(periodProf.profit, 18.52, 'period profit is 18.52');
+      assertEqualOrThrow(periodProf.margin_percent, 80.52, 'period margin_percent is 80.52%');
+
+      const finSumRes = await api(
+        baseUrl,
+        `/api/reports/financial-summary?start_date=${reportDateStr}&end_date=${reportDateStr}`,
+        { headers: authHeader },
+      );
+      assertEqualOrThrow(finSumRes.status, 200, 'financial-summary returns 200');
+      assertEqualOrThrow(
+        finSumRes.data.financialSummary.profitability.profit,
+        18.52,
+        'financial-summary includes matching period profitability',
+      );
+
+      // Manager without reports.financial.view can view topProducts quantities/revenue, but NOT cost/profit/margin
+      const topManagerRes = await api(
+        baseUrl,
+        `/api/reports/topProducts?start_date=${reportDateStr}&end_date=${reportDateStr}&limit=10`,
+        { headers: manager.authHeader },
+      );
+      assertEqualOrThrow(topManagerRes.status, 200, 'manager topProducts returns 200');
+      assertEqualOrThrow(
+        topManagerRes.data.profitability,
+        undefined,
+        'manager topProducts omits period profitability without reports.financial.view',
+      );
+      assertEqualOrThrow(
+        topManagerRes.data.topProducts[0].ingredient_cost,
+        undefined,
+        'manager topProducts omits item ingredient_cost without reports.financial.view',
+      );
+      assertEqualOrThrow(
+        topManagerRes.data.topProducts[0].profit,
+        undefined,
+        'manager topProducts omits item profit without reports.financial.view',
+      );
+
+      // Daily Sales Export CSV (summary + items) includes profitability columns and metrics
+      const exportSummaryRes = await fetch(
+        `${baseUrl}/api/reports/daily-sales/export?date=${reportDateStr}&format=csv&part=summary`,
+        { headers: authHeader },
+      );
+      assertEqualOrThrow(exportSummaryRes.status, 200, 'daily-sales summary CSV returns 200');
+      const exportSummaryCsv = await exportSummaryRes.text();
+      assertOrThrow(
+        exportSummaryCsv.includes('known_cost_net_item_sales,23'),
+        'summary CSV includes known_cost_net_item_sales=23',
+      );
+      assertOrThrow(
+        exportSummaryCsv.includes('ingredient_cost_total,4.48'),
+        'summary CSV includes ingredient_cost_total=4.48',
+      );
+      assertOrThrow(
+        exportSummaryCsv.includes('gross_profit_total,18.52'),
+        'summary CSV includes gross_profit_total=18.52',
+      );
+      assertOrThrow(
+        exportSummaryCsv.includes('gross_margin_percent,80.52'),
+        'summary CSV includes gross_margin_percent=80.52',
+      );
+      assertOrThrow(
+        exportSummaryCsv.includes('cost_coverage_status,partial'),
+        'summary CSV includes cost_coverage_status=partial',
+      );
+
+      const exportItemsRes = await fetch(
+        `${baseUrl}/api/reports/daily-sales/export?date=${reportDateStr}&format=csv&part=items`,
+        { headers: authHeader },
+      );
+      assertEqualOrThrow(exportItemsRes.status, 200, 'daily-sales items CSV returns 200');
+      const exportItemsCsv = await exportItemsRes.text();
+      assertOrThrow(
+        exportItemsCsv.includes(
+          'product_id,product_name,product_sku,quantity,gross_item_sales,item_discounts,net_item_sales,tax_amount,ingredient_cost,profit,margin_percent,cost_status',
+        ),
+        'items CSV header includes ingredient_cost,profit,margin_percent,cost_status',
+      );
+      assertOrThrow(
+        exportItemsCsv.includes('prod-water,Bottled Water,,1,3,0,3,0,,,,unknown'),
+        'unknown-cost item exports empty cells for cost/profit/margin and cost_status=unknown',
+      );
+      assertOrThrow(
+        exportItemsCsv.includes('prod-latte,Latte,,3,18,0,18,0,1.98,11.02,84.77,partial'),
+        'partial-cost item exports known cost/profit/margin and cost_status=partial',
+      );
+      assertOrThrow(
+        exportItemsCsv.includes('prod-croissant,Croissant,,1,11,0,11,1,2.5,7.5,75,known'),
+        'known-cost tax-inclusive item exports ex-tax profit/margin and cost_status=known',
+      );
     } finally {
       server.close();
     }

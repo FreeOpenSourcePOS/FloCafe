@@ -65,7 +65,19 @@ Backend owns all logic; the frontend never computes totals.
 
 See [API.md § GET `/api/reports/daily-sales/export`](api.md#get-apireportsdaily-salesexport).
 
+## Customer sales export
+
+`GET /api/reports/customer-sales/export` is a separate owner-only export (`reports.customer-sales.export`, default role owner) of one row per item sold on bills paid in a business-date range, with the bill's customer repeated on every row. It carries customer PII, which is why it has its own permission and is not part of the daily sales workbook.
+
+- **Range:** `start_date` (defaults to the current business date) to `end_date` (defaults to `start_date`), inclusive, at most 366 days. A reversed or oversized range returns `400`.
+- **Formats:** `xlsx` (one `Customer sales` sheet) or `csv` (one file). Filename `customer-sales-<date>.<ext>` or `customer-sales-<start>_to_<end>.<ext>`.
+- **Item rules:** the same inclusion and split-bill apportioning as the Items query; cancelled, voided and void-adjustment lines are excluded.
+- **Columns:** `business_date`, `paid_at`, `bill_number`, `order_number`, `order_type`, `customer_name`, `customer_country_code`, `customer_phone`, `customer_email`, `product_name`, `product_sku`, `quantity`, `gross_item_sales`, `item_discounts`, `net_item_sales`, `tax_amount`, `payment_methods`, `bill_total`.
+- **`bill_total`** is set on the first item row of each bill only, so summing the column equals the sum of bill totals. Walk-in bills have blank customer columns. Refunds are not reflected.
+- **Code:** `main/services/customer-sales-export.ts` builds and serializes; `main/routes/reports.ts` validates and sets headers.
+
 ## Tests
 
 - `tests/daily-sales-export.test.ts` (`npm run test:daily-sales-export`) - role gating, validation, XLSX sheet/metric assertions, Payments rows (store-local time, verbatim transaction id), CSV headers and filenames, formula neutralization, empty-day header-only Items and Payments.
 - Script coverage gate: `test:daily-sales-export` is chained from `npm test`; `npm run test:script-coverage` fails if it is removed from the chain without adding it to `TEST_EXCLUSIONS`.
+- `tests/customer-sales-export.test.ts` (`npm run test:customer-sales-export`) - customer sales export: role gating, range validation, repeated customer columns, first-row `bill_total`, split bills, CSV neutralization, XLSX.

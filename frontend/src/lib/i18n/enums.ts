@@ -129,6 +129,7 @@ export const PERMISSION_LABEL_KEYS = {
   'reports.view': 'reports',
   'reports.financial.view': 'reports',
   'reports.daily-sales.export': 'reportsDailySalesExport',
+  'reports.customer-sales.export': 'reportsCustomerSalesExport',
 
   'staff.view': 'staffViewManage',
   'staff.operational.manage': 'operationalStaff',

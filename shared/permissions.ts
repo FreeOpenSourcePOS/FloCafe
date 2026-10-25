@@ -417,6 +417,13 @@ export const PERMISSION_DEFINITIONS = [
     configurable: true,
     risk: 'sensitive',
   },
+  {
+    id: 'reports.customer-sales.export',
+    area: 'reports',
+    defaultRoles: OWNER,
+    configurable: true,
+    risk: 'sensitive',
+  },
 
   {
     id: 'staff.view',

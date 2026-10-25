@@ -78,7 +78,7 @@ export type DailySalesExportDataset = {
   payments: DailySalesExportPaymentLineRow[];
 };
 
-function resolveExportTimezone(): string {
+export function resolveExportTimezone(): string {
   return resolveRegionalSnapshot({
     country: getSettingValue('country') ?? undefined,
     currency: getSettingValue('currency') ?? undefined,

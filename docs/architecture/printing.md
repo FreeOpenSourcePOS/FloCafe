@@ -244,6 +244,27 @@ Use a supported printer profile or system/browser printing.
 `arabicShaping` on a profile is a deprecated compatibility input. Read `capabilities.shaping.arabic`
 instead; `getPrinterCapabilities()` merges the override into the capability set.
 
+### Text size
+
+`printers.text_size` (`normal`, `large`, `extra_large`; default `normal`) enlarges text per printer.
+`resolvePrinterContext()` reads it and returns two things: `columns`, the layout width every
+document renderer targets, and `capabilities.textSize`, which `buildEscPos()` and the raster path
+read. `shared/print/text-size.ts` owns the rules:
+
+- `normal` changes nothing; the capability field is left unset so output is byte-identical to a
+  printer with no setting.
+- `large` wraps each text line in `{DOUBLE_HEIGHT}`. The column count is unchanged.
+- `extra_large` also wraps lines in `{DOUBLE_WIDTH}` and halves the layout columns, so renderers
+  wrap at half the paper's characters. `buildEscPos()` fits against the physical column count
+  (layout columns doubled).
+- `{FONT_B}` is dropped at both enlarged sizes, and blank, control, and raw-byte lines pass through.
+  A layout line wider than the halved columns loses its width doubling instead of overflowing.
+
+The enlargement is idempotent. The raster path applies it to the lines and to each group's
+`sourceControlLines` before `renderUnsupportedRasterLines()`, so rasterized rows render with the
+same `double-height` and `double-width` styles as native rows. `tests/printer-text-size.test.ts`
+covers both paths; the column math is also pinned by the receipt column oracle.
+
 ## Cash drawer
 
 The drawer pulse is the ESC/POS sequence `ESC p 0 0x19 0xFA`. It is emitted only when the global

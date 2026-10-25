@@ -22,6 +22,12 @@ becomes the default; choose a different default in Settings when another printer
 ordinary receipts. If no hardware printer is configured, FloCafe falls back to system print when
 printing bills.
 
+Set **Text size** per printer to Normal, Large, or Extra large when printed text is hard to read.
+It applies to the kitchen tickets and bills sent to that printer. Large doubles the character
+height and keeps the same number of characters per line. Extra large doubles height and width, so
+lines hold half as many characters and wrap sooner. Existing printers stay on Normal, which prints
+exactly as before. Browser (system) printing and WebUSB printers do not use this setting.
+
 Enable **Open cash drawer on checkout** on a receipt printer only when a till is connected to that
 printer's drawer-kick port. When enabled, FloCafe appends the standard ESC/POS drawer pulse to
 printed receipt jobs for that printer, and only for payment methods on the drawer's allowlist.

@@ -116,9 +116,15 @@ export function printMenuInBrowser(html: string, targetWindow?: Window | null): 
   const printWindow = targetWindow !== undefined ? targetWindow : window.open('', '_blank');
   if (!printWindow || printWindow.closed)
     throw new MenuPopupBlockedError('Allow pop-ups to use browser printing');
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
+  const documentUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  printWindow.addEventListener(
+    'load',
+    () => {
+      URL.revokeObjectURL(documentUrl);
+      printWindow.focus();
+      printWindow.print();
+    },
+    { once: true },
+  );
+  printWindow.location.replace(documentUrl);
 }

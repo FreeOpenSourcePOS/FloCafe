@@ -1011,6 +1011,7 @@
     "selectCustomer": "顧客を選択",
     "selectName": "{name}を選択",
     "selectTable": "テーブルを選択",
+    "moreActions": "その他の操作",
     "selectTableFirst": "先にテーブルを選択してください",
     "selectionComplete": "選択完了",
     "sendViaWhatsApp": "WhatsAppでレシートを送信",

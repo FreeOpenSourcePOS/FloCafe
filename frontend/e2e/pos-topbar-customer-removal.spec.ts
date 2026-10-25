@@ -60,7 +60,7 @@ test('POS table picker stays clickable after removing a customer at 1280px', asy
     await page.goto(`${BASE}/pos`);
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
 
-    await page.getByRole('button', { name: /Select Table/ }).click();
+    await page.getByRole('button', { name: /Select Table|Table: / }).click();
     const tablePicker = page
       .locator('div.fixed.inset-0')
       .filter({

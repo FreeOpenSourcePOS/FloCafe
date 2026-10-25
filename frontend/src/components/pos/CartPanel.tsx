@@ -44,7 +44,6 @@ interface Props {
   currency: string;
   submitting: boolean;
   onPlaceOrder: () => void;
-  onShowTablePicker: () => void;
   onEditItem?: (item: CartItem) => void;
   onModalOpenChange?: (open: boolean) => void;
   variant?: 'sidebar' | 'drawer';
@@ -161,7 +160,6 @@ export default function CartPanel({
   tables,
   submitting,
   onPlaceOrder,
-  onShowTablePicker,
   onEditItem,
   onModalOpenChange,
   variant = 'sidebar',
@@ -181,7 +179,6 @@ export default function CartPanel({
     return () => onModalOpenChange?.(false);
   }, [priceOverrideOpen, onModalOpenChange]);
   const billingType = usePosSettingsStore((s) => s.billingType);
-  const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
@@ -305,34 +302,6 @@ export default function CartPanel({
 
         {cart.orderType === 'dine_in' && (
           <div className="flex flex-wrap items-stretch gap-2">
-            {isRestaurant &&
-              cart.orderType === 'dine_in' &&
-              tablesRequired &&
-              onShowTablePicker && (
-                <button
-                  type="button"
-                  onClick={onShowTablePicker}
-                  data-testid="cart-table-button"
-                  className={`flex items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors whitespace-nowrap min-h-[38px] ${
-                    cart.tableId
-                      ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600'
-                      : 'bg-amber-50 border-amber-400 text-amber-700 hover:bg-amber-100'
-                  }`}
-                >
-                  <UtensilsCrossed size={14} />
-                  {cart.tableId
-                    ? t('tableLabel', {
-                        name: tables.find((t) => t.id === cart.tableId)?.name || cart.tableId,
-                      })
-                    : t('selectTable')}
-                  <span
-                    aria-hidden="true"
-                    className="hidden sm:inline-flex ms-1 px-1 py-0.2 rounded border border-current text-[10px] font-mono opacity-80"
-                  >
-                    F2
-                  </span>
-                </button>
-              )}
             <div className="flex flex-1 min-w-[160px] items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Users size={15} />

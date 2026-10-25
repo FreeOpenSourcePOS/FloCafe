@@ -723,7 +723,7 @@ test.describe('a held cart resumed from another order type keeps its charge sele
       .first()
       .click();
     await page
-      .getByRole('button', { name: /Select Table/i })
+      .getByRole('button', { name: /Select Table|Table: /i })
       .first()
       .click();
     const picker = page.locator('.fixed.inset-0').last();
@@ -1349,7 +1349,7 @@ test.describe('owner live order item edit and superseded cancellation handling',
             .filter({ hasText: `#${order.order_number}` })
             .click();
         } else {
-          await page.getByRole('button', { name: 'Select Table', exact: true }).click();
+          await page.getByRole('button', { name: /Select Table|Table: / }).click();
           await page.getByRole('button').filter({ hasText: tableName }).click();
           await expect(
             page.getByText('Previous Items (already ordered)', { exact: true }),

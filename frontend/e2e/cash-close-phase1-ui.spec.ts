@@ -129,7 +129,8 @@ test.describe('Cash close phase-1 UI', () => {
     });
 
     await page.goto(`${BASE}/pos`);
-    await page.getByRole('button', { name: /Cerrar turno|Close shift/i }).click({ timeout: 15000 });
+    await page.getByRole('button', { name: /More actions|Más acciones/ }).click({ timeout: 15000 });
+    await page.getByRole('menuitem', { name: /Cerrar turno|Close shift/i }).click();
     const dialog = page.getByRole('dialog').first();
     await expect(dialog).toBeVisible({ timeout: 10000 });
     const warning = dialog.getByTestId('shift-close-unpaid-warning');

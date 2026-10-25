@@ -128,7 +128,7 @@ test('reserved customer is searchable, shown after reload, and linked to the din
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
     // E2E Coffee is a simple product, so the card tap lands it on the cart.
     await page.getByTestId('pos-product-card').filter({ hasText: 'E2E Coffee' }).first().click();
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    await page.getByRole('button', { name: /Select Table|Table: / }).click();
     await expect(page.getByRole('heading', { name: 'Select Table' })).toBeVisible();
     await page.getByRole('button', { name: new RegExp(tableName) }).click();
 
@@ -289,7 +289,7 @@ test('table selection preserves explicit customers and replaces or clears inheri
       if (currentTableName) {
         await page.getByRole('button', { name: `Table: ${currentTableName}`, exact: true }).click();
       } else {
-        await page.getByRole('button', { name: 'Select Table' }).click();
+        await page.getByRole('button', { name: /Select Table|Table: / }).click();
       }
       const picker = page
         .locator('div.fixed.inset-0')

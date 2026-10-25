@@ -277,6 +277,7 @@ export default function POSPage() {
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [addonInitialQuantity, setAddonInitialQuantity] = useState(1);
   // The variant a scanned barcode named, preselected in the customizer.
@@ -1149,6 +1150,7 @@ export default function POSPage() {
     shift.closeModalOpen ||
     showPrintMenuModal ||
     showKeyboardShortcutsModal ||
+    actionsMenuOpen ||
     isConfirmOpen;
   const anyModalOpen = showTablePicker || anyOtherModalOpen;
 
@@ -1162,6 +1164,37 @@ export default function POSPage() {
       toast.error(t('barcodeNotFound', { code }));
     }
   }, !anyModalOpen);
+
+  const tablesLoaded = tables.length > 0;
+  useEffect(() => {
+    if (cart.orderType !== 'dine_in') {
+      if (cart.tableId && !pendingOrder) cart.setTableId(null);
+      return;
+    }
+    if (!isRestaurant || !tablesRequired || !tablesLoaded) return;
+    const selected = tables.find((tbl) => tbl.id === cart.tableId);
+    const staleSelection =
+      !!selected &&
+      selected.status === 'occupied' &&
+      cart.items.length === 0 &&
+      !pendingOrder &&
+      !checkoutTable;
+    if (cart.tableId && !staleSelection) return;
+    const next = tables.find(
+      (tbl) => tbl.status === 'available' && !heldOrders.hasHeldOrder(tbl.id),
+    );
+    if (next) cart.setTableId(next.id);
+    else if (staleSelection) cart.setTableId(null);
+  }, [
+    isRestaurant,
+    tablesRequired,
+    tablesLoaded,
+    tables,
+    cart,
+    heldOrders,
+    pendingOrder,
+    checkoutTable,
+  ]);
 
   const validateOrderPreflight = () => {
     if (cart.items.length === 0) {
@@ -2258,7 +2291,6 @@ export default function POSPage() {
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
-    onShowTablePicker: () => setShowTablePicker(true),
     onEditItem: setEditingCartItem,
     onModalOpenChange: setCartPanelModalOpen,
     existingOrder: pendingOrder,
@@ -2578,6 +2610,10 @@ export default function POSPage() {
       <PosTopbar
         products={products}
         onTopItemSelect={handleProductClick}
+        showTableButton={isRestaurant && cart.orderType === 'dine_in' && tablesRequired}
+        tableName={tables.find((tbl) => tbl.id === cart.tableId)?.name ?? null}
+        onShowTablePicker={() => setShowTablePicker(true)}
+        onActionsMenuOpenChange={setActionsMenuOpen}
         onShowCashMovement={cashDrawer.openModal}
         // Re-fetch on entry: the mount snapshot can be hours stale on a
         // multi-terminal POS (backend still guards stale operations). On a

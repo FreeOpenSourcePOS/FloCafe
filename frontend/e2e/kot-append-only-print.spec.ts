@@ -144,7 +144,7 @@ test('adding an item to an occupied table only prints the newly appended item on
     // Add a second item to the cart, then send it to the already-occupied table.
     // A simple catalog item needs no choices, so the tap is the whole add.
     await page.getByTestId('pos-product-card').click();
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    await page.getByRole('button', { name: /Select Table|Table: / }).click();
 
     await expect(page.getByRole('heading', { name: 'Select Table' })).toBeVisible();
     await page.getByText(tableNumber, { exact: true }).click();
@@ -181,7 +181,7 @@ async function loginToPos(page: import('@playwright/test').Page, email = 'manage
 }
 
 async function openOccupiedTable(page: import('@playwright/test').Page, tableNumber: string) {
-  await page.getByRole('button', { name: 'Select Table' }).click();
+  await page.getByRole('button', { name: /Select Table|Table: / }).click();
   await expect(page.getByRole('heading', { name: 'Select Table' })).toBeVisible();
   const tableCard = page.getByRole('button').filter({ hasText: tableNumber });
   await expect(tableCard).toHaveCount(1);

@@ -58,7 +58,8 @@ test('menu modal suspends barcode scans and browser fallback includes selected d
   await expect(
     page.getByRole('heading', { name: 'E2E Coffee', exact: true, level: 2 }),
   ).toHaveCount(0);
-  await page.getByRole('button', { name: 'Print Menu', exact: true }).click();
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Print Menu', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).focus();
@@ -115,7 +116,8 @@ test('print menu offers receipt, paper, PDF, and QR destinations', async ({
   await expect.poll(() => page.evaluate(() => localStorage.getItem('token'))).not.toBeNull();
   await page.goto(`${BASE}/pos`);
   await expect(page.getByRole('button', { name: /E2E Coffee/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Print Menu', exact: true }).click();
+  await page.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Print Menu', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
 

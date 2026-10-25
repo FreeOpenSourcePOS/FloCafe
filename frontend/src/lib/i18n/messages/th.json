@@ -1010,6 +1010,7 @@
     "selectCustomer": "เลือกลูกค้า",
     "selectName": "เลือก {name}",
     "selectTable": "เลือกโต๊ะ",
+    "moreActions": "การดำเนินการเพิ่มเติม",
     "selectTableFirst": "เลือกโต๊ะก่อน",
     "selectionComplete": "เลือกเรียบร้อยแล้ว",
     "sendViaWhatsApp": "ส่งใบเสร็จผ่าน WhatsApp",

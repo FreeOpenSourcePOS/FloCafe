@@ -1010,6 +1010,7 @@
     "selectCustomer": "Sélectionner un client",
     "selectName": "Sélectionner {name}",
     "selectTable": "Sélectionner une table",
+    "moreActions": "Plus d’actions",
     "selectTableFirst": "Sélectionnez d’abord une table",
     "selectionComplete": "Sélection terminée",
     "sendViaWhatsApp": "Envoyer le reçu via WhatsApp",

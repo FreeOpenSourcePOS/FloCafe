@@ -91,7 +91,7 @@ test('menu modal suspends barcode scans and browser fallback includes selected d
   await popup.close();
 });
 
-test('print menu offers receipt, paper, and PDF destinations', async ({
+test('print menu offers receipt, paper, PDF, and QR destinations', async ({
   page,
   context,
   request,
@@ -124,11 +124,12 @@ test('print menu offers receipt, paper, and PDF destinations', async ({
   // Every destination the operator can reach is offered up front; A4/Letter is
   // a detail of the paper choice rather than the only way to print.
   const destinations = dialog.getByRole('radiogroup', { name: 'Print destination' });
-  await expect(destinations.getByRole('radio')).toHaveCount(3);
+  await expect(destinations.getByRole('radio')).toHaveCount(4);
   await expect(destinations.getByRole('radio', { name: 'Receipt printer' })).toBeVisible();
   const paperDestination = destinations.getByRole('radio', { name: 'Paper (A4 / Letter)' });
   await expect(paperDestination).toHaveAttribute('aria-checked', 'false');
   await expect(destinations.getByRole('radio', { name: 'Save as PDF' })).toBeVisible();
+  await expect(destinations.getByRole('radio', { name: 'Publish to QR Menu' })).toBeVisible();
   const destinationBox = await destinations.boundingBox();
   const filterBox = await dialog.getByRole('checkbox').first().boundingBox();
   expect(destinationBox).not.toBeNull();

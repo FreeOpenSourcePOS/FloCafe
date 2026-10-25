@@ -6,7 +6,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { formatKOT, formatReceipt, resolvePrinterContext } from '../main/printers/thermal';
+import {
+  formatKOT,
+  formatReceipt,
+  resolvePrinterContext,
+  selectTemplateRenderProfile,
+} from '../main/printers/thermal';
 import {
   applyTextSizeToRasterInput,
   renderUnsupportedRasterLines,
@@ -266,5 +271,23 @@ test('raster requests carry the enlarged styles and keep groups aligned', async 
       requests.every((request) => request.styles?.includes('double-width')),
       size === 'extra_large',
     );
+  }
+});
+
+test('pack width profiles are chosen by physical width at every text size', () => {
+  const layout48 = { lineItems: { gap: 1 } };
+  const payload = {
+    widthProfiles: [
+      { columns: 32, layout: {} },
+      { columns: 48, layout: layout48 },
+    ],
+  };
+  for (const size of SIZES) {
+    const { columns } = resolvePrinterContext(printer(size));
+    const warnings: any[] = [];
+    const profile = selectTemplateRenderProfile(payload, columns, size, warnings);
+    assert.equal(profile.layout, layout48, `${size} keeps the 48-column pack layout`);
+    assert.equal(profile.columns, layoutColumnsForTextSize(48, size));
+    assert.equal(warnings.length, 0, `${size} raises no width warning`);
   }
 });

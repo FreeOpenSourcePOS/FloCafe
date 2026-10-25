@@ -77,7 +77,12 @@ import {
 } from '../../shared/print/raster';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
-import { layoutColumnsForTextSize, normalizePrinterTextSize } from '../../shared/print/text-size';
+import {
+  layoutColumnsForTextSize,
+  normalizePrinterTextSize,
+  physicalColumnsForTextSize,
+  type PrinterTextSize,
+} from '../../shared/print/text-size';
 import {
   columnsForPaperWidth as columnsForConfiguredPaperWidth,
   displayCellWidth,
@@ -2163,7 +2168,12 @@ function renderPluginReceipt(
   ) {
     throw new Error(`Unsupported receipt plugin renderer for template ${template.template_id}`);
   }
-  const profile = selectTemplateWidthProfile(payload, cols, warnings);
+  const profile = selectTemplateRenderProfile(
+    payload,
+    cols,
+    capabilities?.textSize ?? 'normal',
+    warnings,
+  );
   return renderEscposLineTemplateV1(
     payload,
     profile,
@@ -2186,6 +2196,24 @@ function parseJson(raw: string, fallback: unknown): unknown {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Picks the pack width profile by physical paper width, then lays out at the text-size-adjusted
+ * column count so enlarged text keeps the pack's layout.
+ */
+export function selectTemplateRenderProfile(
+  payload: any,
+  layoutColumns: number,
+  textSize: PrinterTextSize,
+  warnings?: PrintWarning[],
+): { columns: number; layout: any } {
+  const selected = selectTemplateWidthProfile(
+    payload,
+    physicalColumnsForTextSize(layoutColumns, textSize),
+    warnings,
+  );
+  return { ...selected, columns: layoutColumnsForTextSize(selected.columns, textSize) };
 }
 
 function selectTemplateWidthProfile(

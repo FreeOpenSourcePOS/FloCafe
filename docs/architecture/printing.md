@@ -258,7 +258,11 @@ read. `shared/print/text-size.ts` owns the rules:
   wrap at half the paper's characters. `buildEscPos()` fits against the physical column count
   (layout columns doubled).
 - `{FONT_B}` is dropped at both enlarged sizes, and blank, control, and raw-byte lines pass through.
-  A layout line wider than the halved columns loses its width doubling instead of overflowing.
+  `{DOUBLE_WIDTH}` is removed only from a line whose text is wider than the halved layout width and
+  still fits the physical width; that line prints at double height and single width. Text wider
+  than the physical width keeps double width and is truncated.
+- Tax-pack width profiles are selected against the physical column count, then laid out at the
+  text-size-adjusted columns, so a pack keeps its layout at extra large.
 
 The enlargement is idempotent. The raster path applies it to the lines and to each group's
 `sourceControlLines` before `renderUnsupportedRasterLines()`, so rasterized rows render with the

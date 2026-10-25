@@ -46,6 +46,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
@@ -447,6 +449,26 @@ export default function DashboardPage() {
     }
   };
 
+  const exportCustomerSales = async (format: 'xlsx' | 'csv') => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const res = await api.get('/reports/customer-sales/export', {
+        params: { start_date: range.startDate, end_date: range.endDate, format },
+        responseType: 'blob',
+      });
+      const span =
+        range.startDate === range.endDate
+          ? range.startDate
+          : `${range.startDate}_to_${range.endDate}`;
+      downloadBlob(res.data as Blob, `customer-sales-${span}.${format}`);
+    } catch {
+      toast.error(tCommon('downloadFailed'));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (!isOwner) return null;
 
   const paymentMethods = financialSummary?.paymentMethods ?? [];
@@ -731,33 +753,45 @@ export default function DashboardPage() {
             <Lock size={14} />
             {t('closeShift')}
           </Button>
-          {periodMode === 'day' && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isExporting}
-                  className="h-10 rounded-xl bg-card px-4 shadow-sm"
-                  title={t('exportSales')}
-                >
-                  <Download size={14} />
-                  {t('exportSales')}
-                  <ChevronDown size={14} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onSelect={() => exportDailySales('xlsx')}>
-                  <FileSpreadsheet size={14} />
-                  {t('exportXlsx')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => exportDailySales('csv')}>
-                  <FileText size={14} />
-                  {t('exportCsv')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isExporting}
+                className="h-10 rounded-xl bg-card px-4 shadow-sm"
+                title={t('exportSales')}
+              >
+                <Download size={14} />
+                {t('exportSales')}
+                <ChevronDown size={14} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {periodMode === 'day' && (
+                <>
+                  <DropdownMenuItem onSelect={() => exportDailySales('xlsx')}>
+                    <FileSpreadsheet size={14} />
+                    {t('exportXlsx')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => exportDailySales('csv')}>
+                    <FileText size={14} />
+                    {t('exportCsv')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuLabel>{t('exportCustomerSales')}</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => exportCustomerSales('xlsx')}>
+                <FileSpreadsheet size={14} />
+                {t('exportXlsx')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportCustomerSales('csv')}>
+                <FileText size={14} />
+                {t('exportCsv')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

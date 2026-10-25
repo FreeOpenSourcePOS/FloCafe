@@ -41,6 +41,13 @@ import {
   serializeDailySalesExportXlsx,
 } from '../services/daily-sales-export-files';
 import {
+  buildCustomerSalesDataset,
+  customerSalesExportFilename,
+  CustomerSalesRangeError,
+  serializeCustomerSalesCsv,
+  serializeCustomerSalesXlsx,
+} from '../services/customer-sales-export';
+import {
   serializeXReportCsv,
   serializeXReportXlsx,
   serializeZReportCsv,
@@ -1457,6 +1464,44 @@ router.get(
       }
       console.error('[API] Daily sales export error:', error);
       res.status(statusCode || 500).json({ error: statusCode ? message : 'Internal server error' });
+    }
+  },
+);
+
+// Owner-only: one row per item sold with the bill's customer details (PII).
+router.get(
+  '/customer-sales/export',
+  requirePermission('reports.customer-sales.export'),
+  async (req: Request, res: Response) => {
+    try {
+      const format =
+        req.query.format === 'csv' ? 'csv' : req.query.format === 'xlsx' ? 'xlsx' : null;
+      if (!format) {
+        return res.status(400).json({ error: 'format must be xlsx or csv' });
+      }
+      const today = reportToday();
+      const startDate = reportDate(req.query.start_date, today);
+      const endDate = reportDate(req.query.end_date, startDate);
+
+      const dataset = buildCustomerSalesDataset(startDate, endDate);
+      const filename = customerSalesExportFilename(startDate, endDate, format);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+      if (format === 'xlsx') {
+        res.setHeader(
+          'Content-Type',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+        return res.send(await serializeCustomerSalesXlsx(dataset));
+      }
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      return res.send(serializeCustomerSalesCsv(dataset));
+    } catch (error: unknown) {
+      if (error instanceof CustomerSalesRangeError) {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error('[API] Customer sales export error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   },
 );

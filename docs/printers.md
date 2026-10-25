@@ -43,8 +43,13 @@ From **Products** or **POS**, open **Print Menu** and choose a destination befor
 - **Paper** opens the system print dialog for A4 or Letter paper.
 - **PDF** saves a structured PDF through the desktop save dialog. In a browser, use **Save as PDF**
   in the system print dialog instead.
+- **Publish to QR Menu** generates a customer-facing PDF and replaces the store's existing public
+  Google Drive menu without changing its QR link.
 
-The dialog also lets you filter which products and details appear. See the
+Paper, PDF, and QR output support Mobile-First Cafe, Classic Bistro, and Standard templates plus an
+optional product-photo toggle. The dialog also lets you filter which products and details appear.
+The QR Menu tab in Settings can instead upload a custom PDF, pause or resume public sharing,
+download a 1024 px QR PNG, and print an A5 tabletop card. See the
 [printing architecture](architecture/printing.md#menu-catalog-printing) for how each destination is
 rendered.
 

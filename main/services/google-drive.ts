@@ -5,8 +5,10 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import { Readable } from 'node:stream';
 import { once } from 'node:events';
 import { auth as googleAuth, drive } from '@googleapis/drive';
+import QRCode from 'qrcode';
 import { isSafeExternalUrl } from '../security/url-allowlist';
 import {
   abortDatabaseReplacementJournal,
@@ -33,6 +35,14 @@ import { clearJWTSecretCache } from '../security/jwt-secret';
 
 type OAuth2Client = InstanceType<typeof googleAuth.OAuth2>;
 type DriveClient = ReturnType<typeof drive>;
+let qrMenuDriveClientFactory: (auth: OAuth2Client) => DriveClient = (auth) =>
+  drive({ version: 'v3', auth });
+
+export function setQrMenuDriveClientFactoryForTests(
+  factory: ((auth: OAuth2Client) => DriveClient) | null,
+): void {
+  qrMenuDriveClientFactory = factory || ((auth) => drive({ version: 'v3', auth }));
+}
 
 export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 export const DRIVE_BACKUP_FOLDER_NAME = 'FloCafe Backups';
@@ -56,6 +66,7 @@ const RETENTION_RETRY_BASE_MS = 5 * 60_000;
 const RETENTION_RETRY_MAX_MS = 60 * 60_000;
 const TOKEN_ENVELOPE_VERSION = 2;
 const MARKER_VERSION = '1';
+export const MAX_QR_MENU_PDF_BYTES = 15 * 1024 * 1024;
 
 function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
@@ -197,6 +208,10 @@ export type DriveErrorCode =
   | 'retention_pending'
   | 'conflict'
   | 'cancelled'
+  | 'menu_pdf_invalid'
+  | 'menu_pdf_too_large'
+  | 'menu_not_published'
+  | 'menu_file_invalid'
   | 'unknown';
 
 export type GoogleDriveJob = {
@@ -256,6 +271,32 @@ export type GoogleDriveRemoteBackup = {
   app_version: string;
   destination_folder_id: string;
   compatible: boolean;
+};
+
+export type QrMenuGeneratorPrefs = {
+  template: 'mobile-cafe' | 'classic-bistro' | 'standard';
+  pageSize: 'A4' | 'Letter';
+  includeDescriptions: boolean;
+  includeModifiers: boolean;
+  includePhotos: boolean;
+  includeOutOfStock: boolean;
+  includeInactive: boolean;
+  includeHidden: boolean;
+};
+
+export type GoogleDriveQrMenuStatus = {
+  configured: boolean;
+  connected: boolean;
+  published: boolean;
+  file_id: string | null;
+  file_name: string | null;
+  web_view_link: string | null;
+  sharing_enabled: boolean;
+  source: 'generated' | 'uploaded' | null;
+  updated_at: string | null;
+  qr_data_url: string | null;
+  qr_download_data_url: string | null;
+  generator_prefs: QrMenuGeneratorPrefs;
 };
 
 interface StoredTokens {
@@ -326,6 +367,10 @@ const SAFE_ERROR_MESSAGES: Record<DriveErrorCode, string> = {
   retention_pending: 'retention_pending',
   conflict: 'conflict',
   cancelled: 'cancelled',
+  menu_pdf_invalid: 'menu_pdf_invalid',
+  menu_pdf_too_large: 'menu_pdf_too_large',
+  menu_not_published: 'menu_not_published',
+  menu_file_invalid: 'menu_file_invalid',
   unknown: 'unknown',
 };
 
@@ -1583,6 +1628,372 @@ class GoogleDriveService {
     return this.getStatus();
   }
 
+  private qrMenuGeneratorPrefs(settings = this.readSettings()): QrMenuGeneratorPrefs {
+    const defaults: QrMenuGeneratorPrefs = {
+      template: 'mobile-cafe',
+      pageSize: 'A4',
+      includeDescriptions: true,
+      includeModifiers: true,
+      includePhotos: false,
+      includeOutOfStock: false,
+      includeInactive: false,
+      includeHidden: false,
+    };
+    const parsed = parseJson<Partial<QrMenuGeneratorPrefs>>(
+      settings.google_drive_menu_generator_prefs,
+    );
+    if (!parsed) return defaults;
+    return {
+      template: ['mobile-cafe', 'classic-bistro', 'standard'].includes(String(parsed.template))
+        ? (parsed.template as QrMenuGeneratorPrefs['template'])
+        : defaults.template,
+      pageSize: parsed.pageSize === 'Letter' ? 'Letter' : 'A4',
+      includeDescriptions: parsed.includeDescriptions !== false,
+      includeModifiers: parsed.includeModifiers !== false,
+      includePhotos: parsed.includePhotos === true,
+      includeOutOfStock: parsed.includeOutOfStock === true,
+      includeInactive: parsed.includeInactive === true,
+      includeHidden: parsed.includeHidden === true,
+    };
+  }
+
+  private normalizeQrMenuGeneratorPrefs(value: unknown): QrMenuGeneratorPrefs {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw createDriveError('preferences_invalid');
+    const candidate = value as Record<string, unknown>;
+    if (
+      !['mobile-cafe', 'classic-bistro', 'standard'].includes(String(candidate.template)) ||
+      !['A4', 'Letter'].includes(String(candidate.pageSize)) ||
+      ![
+        'includeDescriptions',
+        'includeModifiers',
+        'includePhotos',
+        'includeOutOfStock',
+        'includeInactive',
+        'includeHidden',
+      ].every((key) => typeof candidate[key] === 'boolean')
+    )
+      throw createDriveError('preferences_invalid');
+    return candidate as QrMenuGeneratorPrefs;
+  }
+
+  async getQrMenuStatus(): Promise<GoogleDriveQrMenuStatus> {
+    const settings = this.readSettings();
+    const driveStatus = this.getStatus();
+    const fileId = safeId(settings.google_drive_menu_file_id)
+      ? settings.google_drive_menu_file_id
+      : null;
+    const webViewLink = fileId
+      ? `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view`
+      : null;
+    const source =
+      settings.google_drive_menu_source === 'generated' ||
+      settings.google_drive_menu_source === 'uploaded'
+        ? settings.google_drive_menu_source
+        : null;
+    return {
+      configured: driveStatus.configured,
+      connected: driveStatus.connected,
+      published: Boolean(fileId),
+      file_id: fileId,
+      file_name: settings.google_drive_menu_file_name || null,
+      web_view_link: webViewLink,
+      sharing_enabled: settings.google_drive_menu_sharing_enabled === 'true',
+      source,
+      updated_at: settings.google_drive_menu_updated_at || null,
+      qr_data_url: webViewLink
+        ? await QRCode.toDataURL(webViewLink, { width: 512, margin: 2 })
+        : null,
+      qr_download_data_url: webViewLink
+        ? await QRCode.toDataURL(webViewLink, { width: 1024, margin: 3 })
+        : null,
+      generator_prefs: this.qrMenuGeneratorPrefs(settings),
+    };
+  }
+
+  async saveQrMenuGeneratorPrefs(value: unknown): Promise<GoogleDriveQrMenuStatus> {
+    const prefs = this.normalizeQrMenuGeneratorPrefs(value);
+    upsertSettings({ google_drive_menu_generator_prefs: JSON.stringify(prefs) });
+    return this.getQrMenuStatus();
+  }
+
+  async publishQrMenuPdf(input: {
+    pdfBuffer: Buffer;
+    source: 'generated' | 'uploaded';
+    generatorPrefs?: unknown;
+  }): Promise<GoogleDriveQrMenuStatus> {
+    if (
+      !Buffer.isBuffer(input.pdfBuffer) ||
+      input.pdfBuffer.length < 5 ||
+      !input.pdfBuffer.subarray(0, 5).equals(Buffer.from('%PDF-'))
+    )
+      throw createDriveError('menu_pdf_invalid');
+    if (input.pdfBuffer.length > MAX_QR_MENU_PDF_BYTES)
+      throw createDriveError('menu_pdf_too_large');
+    if (input.source !== 'generated' && input.source !== 'uploaded')
+      throw createDriveError('menu_pdf_invalid');
+    const prefs =
+      input.generatorPrefs === undefined
+        ? null
+        : this.normalizeQrMenuGeneratorPrefs(input.generatorPrefs);
+
+    return this.queueOperation(async (signal) => {
+      const client = await this.getAuthorizedClient(signal);
+      const driveClient = qrMenuDriveClientFactory(client);
+      const marker = this.ensureInstallationMarker();
+      const folderId = await this.resolveQrMenuFolder(driveClient, marker, signal);
+      const settings = this.readSettings();
+      const shortId = /^[a-z0-9]{6}$/.test(settings.google_drive_menu_short_id || '')
+        ? settings.google_drive_menu_short_id
+        : crypto.randomBytes(4).toString('hex').slice(0, 6);
+      const businessName =
+        (settings.business_name || 'Store')
+          .replace(/[\\/\u0000-\u001f]+/g, ' ')
+          .trim()
+          .slice(0, 100) || 'Store';
+      const fileName = `${businessName} - Menu (${shortId}).pdf`;
+      const appProperties = {
+        flo_marker_version: MARKER_VERSION,
+        flo_installation_id: marker,
+        flo_file_kind: 'public_menu_pdf',
+      };
+      let fileId = settings.google_drive_menu_file_id;
+      if (fileId) {
+        await this.validateQrMenuFile(driveClient, fileId, marker, signal);
+        await driveClient.files.update(
+          {
+            fileId,
+            requestBody: { name: fileName, mimeType: 'application/pdf', appProperties },
+            media: { mimeType: 'application/pdf', body: Readable.from(input.pdfBuffer) },
+            fields: 'id,name,mimeType,parents,trashed,appProperties',
+          },
+          {
+            signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS),
+            timeout: DRIVE_REQUEST_TIMEOUT_MS,
+          } as never,
+        );
+      } else {
+        const response = await driveClient.files.create(
+          {
+            requestBody: {
+              name: fileName,
+              parents: [folderId],
+              mimeType: 'application/pdf',
+              appProperties,
+            },
+            media: { mimeType: 'application/pdf', body: Readable.from(input.pdfBuffer) },
+            fields: 'id,name,mimeType,parents,trashed,appProperties',
+          },
+          {
+            signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS),
+            timeout: DRIVE_REQUEST_TIMEOUT_MS,
+          } as never,
+        );
+        fileId = String((response.data as { id?: string }).id || '');
+        if (!safeId(fileId)) throw createDriveError('upload_failed');
+      }
+      const webViewLink = `https://drive.google.com/file/d/${fileId}/view`;
+      upsertSettings({
+        google_drive_menu_folder_id: folderId,
+        google_drive_menu_file_id: fileId,
+        google_drive_menu_short_id: shortId,
+        google_drive_menu_sharing_enabled: 'false',
+        google_drive_menu_file_name: fileName,
+        google_drive_menu_web_view_link: webViewLink,
+      });
+      await this.ensureQrMenuPublicPermission(driveClient, fileId, marker, signal);
+      upsertSettings({
+        google_drive_menu_sharing_enabled: 'true',
+        google_drive_menu_source: input.source,
+        google_drive_menu_updated_at: now(),
+        ...(prefs ? { google_drive_menu_generator_prefs: JSON.stringify(prefs) } : {}),
+      });
+      return this.getQrMenuStatus();
+    });
+  }
+
+  async setQrMenuSharing(enabled: boolean): Promise<GoogleDriveQrMenuStatus> {
+    return this.queueOperation(async (signal) => {
+      const settings = this.readSettings();
+      const fileId = settings.google_drive_menu_file_id;
+      if (!safeId(fileId)) throw createDriveError('menu_not_published');
+      const client = await this.getAuthorizedClient(signal);
+      const driveClient = qrMenuDriveClientFactory(client);
+      const marker = this.ensureInstallationMarker();
+      await this.validateQrMenuFile(driveClient, fileId, marker, signal);
+      if (enabled) {
+        await this.ensureQrMenuPublicPermission(driveClient, fileId, marker, signal);
+      } else {
+        const response = await driveClient.permissions.list(
+          { fileId, fields: 'permissions(id,type,role)' },
+          {
+            signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS),
+            timeout: DRIVE_REQUEST_TIMEOUT_MS,
+          },
+        );
+        for (const permission of response.data.permissions || []) {
+          if (permission.type === 'anyone' && permission.id) {
+            await driveClient.permissions.delete(
+              { fileId, permissionId: permission.id },
+              {
+                signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS),
+                timeout: DRIVE_REQUEST_TIMEOUT_MS,
+              },
+            );
+          }
+        }
+      }
+      upsertSettings({ google_drive_menu_sharing_enabled: enabled ? 'true' : 'false' });
+      return this.getQrMenuStatus();
+    });
+  }
+
+  private async resolveQrMenuFolder(
+    driveClient: DriveClient,
+    marker: string,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const settings = this.readSettings();
+    const storedId = settings.google_drive_menu_folder_id;
+    if (safeId(storedId)) {
+      try {
+        const response = await driveClient.files.get(
+          { fileId: storedId, fields: 'id,mimeType,trashed,appProperties,capabilities' },
+          {
+            signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS),
+            timeout: DRIVE_REQUEST_TIMEOUT_MS,
+          },
+        );
+        const file = response.data;
+        if (
+          !file.trashed &&
+          file.mimeType === 'application/vnd.google-apps.folder' &&
+          file.appProperties?.flo_installation_id === marker &&
+          file.appProperties?.flo_destination_kind === 'flocafe_menu' &&
+          file.capabilities?.canAddChildren !== false
+        )
+          return storedId;
+      } catch {}
+    }
+    const escapedMarker = marker.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const found = await driveClient.files.list(
+      {
+        q: `mimeType = 'application/vnd.google-apps.folder' and trashed = false and appProperties has { key='flo_installation_id' and value='${escapedMarker}' }`,
+        fields: 'files(id,appProperties,capabilities)',
+        pageSize: 20,
+      },
+      {
+        signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS),
+        timeout: DRIVE_REQUEST_TIMEOUT_MS,
+      },
+    );
+    const existing = (found.data.files || []).find(
+      (file) =>
+        file.id &&
+        file.appProperties?.flo_destination_kind === 'flocafe_menu' &&
+        file.capabilities?.canAddChildren !== false,
+    );
+    if (existing?.id && safeId(existing.id)) {
+      upsertSettings({ google_drive_menu_folder_id: existing.id });
+      return existing.id;
+    }
+    const sanitized = (settings.business_name || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    const folderName = sanitized ? `${sanitized}_flocafe_menu` : 'flocafe_menu';
+    const response = await driveClient.files.create(
+      {
+        requestBody: {
+          name: folderName,
+          mimeType: 'application/vnd.google-apps.folder',
+          appProperties: {
+            flo_marker_version: MARKER_VERSION,
+            flo_installation_id: marker,
+            flo_destination_kind: 'flocafe_menu',
+          },
+        },
+        fields: 'id',
+      },
+      {
+        signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS),
+        timeout: DRIVE_REQUEST_TIMEOUT_MS,
+      },
+    );
+    const folderId = String((response.data as { id?: string }).id || '');
+    if (!safeId(folderId)) throw createDriveError('destination_required');
+    upsertSettings({ google_drive_menu_folder_id: folderId });
+    return folderId;
+  }
+
+  private async validateQrMenuFile(
+    driveClient: DriveClient,
+    fileId: string,
+    marker: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!safeId(fileId)) throw createDriveError('menu_file_invalid');
+    try {
+      const response = await driveClient.files.get(
+        { fileId, fields: 'id,mimeType,parents,trashed,appProperties' },
+        {
+          signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS),
+          timeout: DRIVE_REQUEST_TIMEOUT_MS,
+        },
+      );
+      const file = response.data;
+      const settings = this.readSettings();
+      const forbiddenParents = new Set(
+        [
+          ...this.readOwnedDestinations(),
+          settings.google_drive_destination_folder_id,
+          settings.google_drive_folder_id,
+        ].filter((value): value is string => Boolean(value)),
+      );
+      if (
+        file.trashed ||
+        file.mimeType !== 'application/pdf' ||
+        file.appProperties?.flo_file_kind !== 'public_menu_pdf' ||
+        file.appProperties?.flo_installation_id !== marker ||
+        (file.parents || []).some((parent) => forbiddenParents.has(parent))
+      )
+        throw createDriveError('menu_file_invalid');
+    } catch (error) {
+      if ((error as { code?: unknown })?.code === 'menu_file_invalid') throw error;
+      throw createDriveError('menu_file_invalid');
+    }
+  }
+
+  private async ensureQrMenuPublicPermission(
+    driveClient: DriveClient,
+    fileId: string,
+    marker: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    await this.validateQrMenuFile(driveClient, fileId, marker, signal);
+    const response = await driveClient.permissions.list(
+      { fileId, fields: 'permissions(id,type,role)' },
+      {
+        signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS),
+        timeout: DRIVE_REQUEST_TIMEOUT_MS,
+      },
+    );
+    if (
+      (response.data.permissions || []).some(
+        (permission) => permission.type === 'anyone' && permission.role === 'reader',
+      )
+    )
+      return;
+    await driveClient.permissions.create(
+      { fileId, requestBody: { type: 'anyone', role: 'reader' }, fields: 'id,type,role' },
+      {
+        signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS),
+        timeout: DRIVE_REQUEST_TIMEOUT_MS,
+      },
+    );
+  }
+
   async disconnect(): Promise<GoogleDriveStatus> {
     return this.queueOperation(async (signal) => {
       const settings = this.readSettings();
@@ -1639,6 +2050,13 @@ class GoogleDriveService {
         google_drive_job: '',
         google_drive_revoke_status: revokeStatus,
         google_drive_revoke_cleanup_pending: '',
+        google_drive_menu_folder_id: '',
+        google_drive_menu_file_id: '',
+        google_drive_menu_sharing_enabled: '',
+        google_drive_menu_source: '',
+        google_drive_menu_updated_at: '',
+        google_drive_menu_file_name: '',
+        google_drive_menu_web_view_link: '',
       });
       return this.getStatus();
     }, true);
@@ -2954,7 +3372,12 @@ class GoogleDriveService {
       );
       const files = response.data.files || [];
       for (const file of files) {
-        if (file.id && safeId(file.id) && file.capabilities?.canAddChildren !== false) {
+        if (
+          file.id &&
+          safeId(file.id) &&
+          file.capabilities?.canAddChildren !== false &&
+          file.appProperties?.flo_destination_kind !== 'flocafe_menu'
+        ) {
           return { id: file.id, name: file.name || this.resolveBackupFolderName(), owned: true };
         }
       }

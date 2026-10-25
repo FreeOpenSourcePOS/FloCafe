@@ -62,6 +62,28 @@ local token.
 **Offline behaviour.** Every operation fails with a `driveError` code rather than hanging. The last
 error code is persisted so the settings screen can explain the failure after a restart.
 
+## Google Drive QR menu
+
+Settings → QR Menu publishes a customer-facing PDF from the catalog or replaces it with a merchant
+PDF up to 15 MB. It uses the existing `drive.file` grant. The generated menu defaults to the
+phone-oriented Mobile-First Cafe template; Classic Bistro and Standard layouts are also available.
+
+The menu lives in a dedicated `<store>_flocafe_menu` folder marked with
+`flo_destination_kind=flocafe_menu`. The folder remains private. Only the PDF marked
+`flo_file_kind=public_menu_pdf` receives an `anyone`/`reader` permission. Backup discovery excludes
+the menu folder, and every overwrite or permission change revalidates the PDF marker, MIME type,
+installation marker, trash state, and parents before touching the stored file ID.
+
+The first publish creates a six-character menu ID and one Drive file. Later generated or uploaded
+publishes update that same file ID, including after a store-name change, so the public URL and
+printed QR codes remain stable. Pausing sharing removes the public permission without deleting the
+file; resuming restores it on the same file. Disconnect and database-restore cleanup remove the
+Drive-bound menu IDs while preserving the local generator preferences and short ID.
+
+Publishing and sharing require `catalog.manage` or `google-drive.manage`; connecting and
+disconnecting the account still require `google-drive.manage`. Offline mode fails these operations
+with `offline` and serializes them with backup and restore work.
+
 ## Anonymous telemetry
 
 Posts anonymous usage and error events to `https://telemetry.flopos.com/collect`.

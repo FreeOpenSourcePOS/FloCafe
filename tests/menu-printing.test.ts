@@ -12,17 +12,67 @@ const categories = [
 ];
 
 const products = [
-  { categoryId: 'drinks', name: 'Cold Coffee', price: 5, isActive: true, trackInventory: true, stockQuantity: 4, sortOrder: 2 },
-  { categoryId: 'food', name: 'Veg Sandwich', price: 8, isActive: true, trackInventory: false, stockQuantity: 0, sortOrder: 1 },
-  { categoryId: 'food', name: 'Sold Out Wrap', price: 7, isActive: true, trackInventory: true, stockQuantity: 0, sortOrder: 2 },
-  { categoryId: 'food', name: 'Inactive Salad', price: 6, isActive: false, trackInventory: false, stockQuantity: 0, sortOrder: 3 },
-  { categoryId: 'hidden', name: 'Hidden Tea', price: 3, isActive: true, trackInventory: false, stockQuantity: 0, sortOrder: 1 },
+  {
+    categoryId: 'drinks',
+    name: 'Cold Coffee',
+    price: 5,
+    isActive: true,
+    trackInventory: true,
+    stockQuantity: 4,
+    sortOrder: 2,
+  },
+  {
+    categoryId: 'food',
+    name: 'Veg Sandwich',
+    price: 8,
+    isActive: true,
+    trackInventory: false,
+    stockQuantity: 0,
+    sortOrder: 1,
+  },
+  {
+    categoryId: 'food',
+    name: 'Sold Out Wrap',
+    price: 7,
+    isActive: true,
+    trackInventory: true,
+    stockQuantity: 0,
+    sortOrder: 2,
+  },
+  {
+    categoryId: 'food',
+    name: 'Inactive Salad',
+    price: 6,
+    isActive: false,
+    trackInventory: false,
+    stockQuantity: 0,
+    sortOrder: 3,
+  },
+  {
+    categoryId: 'hidden',
+    name: 'Hidden Tea',
+    price: 3,
+    isActive: true,
+    trackInventory: false,
+    stockQuantity: 0,
+    sortOrder: 1,
+  },
 ];
 
 function menuDocument(name = 'Seasonal beverage with a longer printed name') {
   return buildMenuDocument(
     [{ id: 'drinks', name: 'Drinks', isActive: true, sortOrder: 1 }],
-    [{ categoryId: 'drinks', name, price: 12.5, isActive: true, trackInventory: false, stockQuantity: 0, sortOrder: 1 }],
+    [
+      {
+        categoryId: 'drinks',
+        name,
+        price: 12.5,
+        isActive: true,
+        trackInventory: false,
+        stockQuantity: 0,
+        sortOrder: 1,
+      },
+    ],
     {
       businessName: 'Flo Cafe',
       printedAt: 'Sep 30, 2026, 10:00 AM',
@@ -40,8 +90,14 @@ test('menu document sorts categories and excludes inactive, unavailable, and hid
     formatPrice: (price) => `$${price.toFixed(2)}`,
   });
 
-  assert.deepEqual(menu.sections.map((section) => section.name?.text), ['Food', 'Drinks']);
-  assert.deepEqual(menu.sections.flatMap((section) => section.products.map((product) => product.name.text)), ['Veg Sandwich', 'Cold Coffee']);
+  assert.deepEqual(
+    menu.sections.map((section) => section.name?.text),
+    ['Food', 'Drinks'],
+  );
+  assert.deepEqual(
+    menu.sections.flatMap((section) => section.products.map((product) => product.name.text)),
+    ['Veg Sandwich', 'Cold Coffee'],
+  );
   assert.equal(menu.itemCount, 2);
 
   const allItems = buildMenuDocument(categories, products, {
@@ -67,9 +123,17 @@ test('menu thermal rows and wrapped names stay within 32- and 42-column printer 
       cutMode: profile.cutMode,
       capabilities,
     });
-    const lines = escPosToText(rendered.data).split(/\r?\n/).filter((line) => line.length > 0);
-    assert.ok(lines.some((line) => line.includes('$12.50')), `${columns}-column output includes the price`);
-    assert.ok(lines.every((line) => displayCellWidth(line) <= columns), `${columns}-column output stays within width`);
+    const lines = escPosToText(rendered.data)
+      .split(/\r?\n/)
+      .filter((line) => line.length > 0);
+    assert.ok(
+      lines.some((line) => line.includes('$12.50')),
+      `${columns}-column output includes the price`,
+    );
+    assert.ok(
+      lines.every((line) => displayCellWidth(line) <= columns),
+      `${columns}-column output stays within width`,
+    );
   }
 });
 
@@ -84,8 +148,10 @@ test('menu text cannot inject ESC/POS commands through control bytes or token-sh
     capabilities,
   });
   const text = escPosToText(rendered.data);
-  const cutCommands = rendered.data.reduce((count, byte, index, bytes) =>
-    count + (byte === 0x1d && bytes[index + 1] === 0x56 ? 1 : 0), 0);
+  const cutCommands = rendered.data.reduce(
+    (count, byte, index, bytes) => count + (byte === 0x1d && bytes[index + 1] === 0x56 ? 1 : 0),
+    0,
+  );
 
   assert.equal(cutCommands, 1, 'only the renderer emits its final cut command');
   assert.equal(rendered.data.includes(Buffer.from([0x1b, 0x70, 0x00, 0x19])), false);
@@ -109,19 +175,39 @@ test('menu text cannot inject ESC/POS commands through control bytes or token-sh
 });
 
 test('menu includes optional descriptions and effective modifier prices only when requested', () => {
-  const product = { ...products[0], description: 'Fresh {CUT} coffee', modifiers: [{ name: 'Milk', options: [{ name: 'Oat', price: 2 }] }] };
-  const options = { businessName: 'Cafe', printedAt: '', baseDirection: 'ltr' as const, formatPrice: (value: number) => `$${value.toFixed(2)}` };
+  const product = {
+    ...products[0],
+    description: 'Fresh {CUT} coffee',
+    modifiers: [{ name: 'Milk', options: [{ name: 'Oat', price: 2 }] }],
+  };
+  const options = {
+    businessName: 'Cafe',
+    printedAt: '',
+    baseDirection: 'ltr' as const,
+    formatPrice: (value: number) => `$${value.toFixed(2)}`,
+  };
   const omitted = buildMenuDocument(categories, [product], options);
   assert.deepEqual(omitted.sections[0].products[0].details, []);
-  const included = buildMenuDocument(categories, [product], { ...options, includeDescriptions: true, includeModifiers: true });
-  assert.deepEqual(included.sections[0].products[0].details.map((detail) => detail.text), ['Fresh { CUT } coffee', 'Milk: Oat ($2.00)']);
+  const included = buildMenuDocument(categories, [product], {
+    ...options,
+    includeDescriptions: true,
+    includeModifiers: true,
+  });
+  assert.deepEqual(
+    included.sections[0].products[0].details.map((detail) => detail.text),
+    ['Fresh { CUT } coffee', 'Milk: Oat ($2.00)'],
+  );
   const rendered = renderMenuViaDocument(included, { columns: 42, language: 'en' });
   assert.match(escPosToText(rendered.data), /Milk: Oat \(\$2.00\)/);
 });
 
 test('menu thermal labels use the requested print language', () => {
   const profile = resolvePrinterProfile({ profile_id: 'epson-tm-series' });
-  const rendered = renderMenuViaDocument(menuDocument(), { columns: 42, language: 'es', capabilities: capabilitiesForPrinter(profile, 'cols-42', false) });
+  const rendered = renderMenuViaDocument(menuDocument(), {
+    columns: 42,
+    language: 'es',
+    capabilities: capabilitiesForPrinter(profile, 'cols-42', false),
+  });
   assert.match(escPosToText(rendered.data), /Total de artículos: 1/);
   assert.doesNotMatch(escPosToText(rendered.data), /Total items/);
 });
@@ -129,8 +215,25 @@ test('menu thermal labels use the requested print language', () => {
 test('browser menu supports A4 and Letter and escapes descriptions, modifiers, and labels', () => {
   const { buildMenuWebPrintHtml } = require('../frontend/src/lib/printer/menu-web-print');
   for (const pageSize of ['A4', 'Letter']) {
-    const html = buildMenuWebPrintHtml({ businessName: 'Cafe', printedAt: '', pageSize, menuTitle: 'Menú', totalItemsLabel: 'Total de artículos', itemCount: 1,
-      sections: [{ name: 'Tea', products: [{ name: 'Tea', price: '$1', details: ['Fresh <script>alert(1)</script>', 'Milk: Oat ($2)'] }] }],
+    const html = buildMenuWebPrintHtml({
+      businessName: 'Cafe',
+      printedAt: '',
+      pageSize,
+      menuTitle: 'Menú',
+      totalItemsLabel: 'Total de artículos',
+      itemCount: 1,
+      sections: [
+        {
+          name: 'Tea',
+          products: [
+            {
+              name: 'Tea',
+              price: '$1',
+              details: ['Fresh <script>alert(1)</script>', 'Milk: Oat ($2)'],
+            },
+          ],
+        },
+      ],
     });
     assert.ok(html.includes(`size: ${pageSize} portrait`));
     assert.match(html, /Milk: Oat \(\$2\)/);
@@ -138,11 +241,76 @@ test('browser menu supports A4 and Letter and escapes descriptions, modifiers, a
     assert.doesNotMatch(html, /<script\b/i);
     assert.match(html, /Total de artículos: 1/);
   }
-  const invalidPage = buildMenuWebPrintHtml({ businessName: 'Cafe', printedAt: '',
-    pageSize: 'A4}</style><SCRIPT>alert(1)</SCRIPT>', menuTitle: 'Menu', totalItemsLabel: 'Total items', itemCount: 0, sections: [],
+  const invalidPage = buildMenuWebPrintHtml({
+    businessName: 'Cafe',
+    printedAt: '',
+    pageSize: 'A4}</style><SCRIPT>alert(1)</SCRIPT>',
+    menuTitle: 'Menu',
+    totalItemsLabel: 'Total items',
+    itemCount: 0,
+    sections: [],
   });
   assert.ok(invalidPage.includes('size: A4 portrait'));
   assert.doesNotMatch(invalidPage, /<script\b/i);
+});
+
+test('customer-facing menu templates support mobile, editorial, photos, and QR table cards', () => {
+  const {
+    buildMenuWebPrintHtml,
+    buildQrTableCardHtml,
+  } = require('../frontend/src/lib/printer/menu-web-print');
+  const input = {
+    businessName: 'Cafe <script>',
+    printedAt: 'internal timestamp',
+    pageSize: 'A4',
+    menuTitle: 'Menu',
+    totalItemsLabel: 'Total items',
+    itemCount: 1,
+    customerFacing: true,
+    logoDataUrl: 'javascript:alert(1)',
+    sections: [
+      {
+        name: 'Coffee',
+        products: [
+          {
+            name: 'Flat <White>',
+            price: '$4.50',
+            details: ['Oat & dairy'],
+            imageUrl: 'data:image/png;base64,aGVsbG8=',
+          },
+        ],
+      },
+    ],
+  };
+  const mobile = buildMenuWebPrintHtml({ ...input, template: 'mobile-cafe' });
+  assert.match(mobile, /data-menu-template="mobile-cafe"/);
+  assert.match(mobile, /size: 105mm auto/);
+  assert.match(mobile, /class="product-photo"/);
+  assert.doesNotMatch(mobile, /internal timestamp|Total items/);
+  assert.doesNotMatch(mobile, /javascript:/);
+  assert.match(mobile, /Flat &lt;White&gt;/);
+
+  const classic = buildMenuWebPrintHtml({ ...input, template: 'classic-bistro' });
+  assert.match(classic, /data-menu-template="classic-bistro"/);
+  assert.match(classic, /column-count: 2/);
+  assert.match(classic, /border-bottom: 1px dotted/);
+
+  const card = buildQrTableCardHtml({
+    businessName: 'Cafe <One>',
+    qrDataUrl: 'data:image/png;base64,aGVsbG8=',
+    scanPrompt: 'Scan & View',
+  });
+  assert.match(card, /Scan &amp; View/);
+  assert.match(card, /Cafe &lt;One&gt;/);
+  assert.throws(
+    () =>
+      buildQrTableCardHtml({
+        businessName: 'Cafe',
+        qrDataUrl: 'https://evil.test/qr.png',
+        scanPrompt: 'Scan',
+      }),
+    /Invalid QR image/,
+  );
 });
 
 test('the print gesture is reserved only where a popup blocker could take it', () => {
@@ -153,27 +321,60 @@ test('the print gesture is reserved only where a popup blocker could take it', (
   const opened: string[][] = [];
   const browserWindow = {};
   const browserHost = {
-    open: (...args: string[]) => { opened.push(args); return browserWindow; },
+    open: (...args: string[]) => {
+      opened.push(args);
+      return browserWindow;
+    },
   };
-  assert.equal(reservePrintGesture(browserHost as never), browserWindow, 'a browser keeps the reservation it needs');
-  assert.deepEqual(opened, [['', '_blank']], 'the reservation is a blank window opened while the click gesture is live');
+  assert.equal(
+    reservePrintGesture(browserHost as never),
+    browserWindow,
+    'a browser keeps the reservation it needs',
+  );
+  assert.deepEqual(
+    opened,
+    [['', '_blank']],
+    'the reservation is a blank window opened while the click gesture is live',
+  );
 
   // The desktop runtime decides every popup itself and has no blocker to
   // defeat, so a reservation there was an empty window flashing at the till.
   const desktopOpens: string[][] = [];
   const desktopHost = {
     electronAPI: { getStatus: () => Promise.resolve({}) },
-    open: (...args: string[]) => { desktopOpens.push(args); return { openedOnATill: true }; },
+    open: (...args: string[]) => {
+      desktopOpens.push(args);
+      return { openedOnATill: true };
+    },
   };
-  assert.equal(reservePrintGesture(desktopHost as never), null, 'the desktop runtime reserves nothing, so nothing flashes');
-  assert.deepEqual(desktopOpens, [], 'not one window is opened at a till; the flash is the whole point');
+  assert.equal(
+    reservePrintGesture(desktopHost as never),
+    null,
+    'the desktop runtime reserves nothing, so nothing flashes',
+  );
+  assert.deepEqual(
+    desktopOpens,
+    [],
+    'not one window is opened at a till; the flash is the whole point',
+  );
 
   // A host that cannot open at all is not a crash and not a flash.
-  assert.equal(reservePrintGesture({ open: () => { throw new Error('blocked'); } } as never), null, 'a refused reservation is reported, not thrown');
+  assert.equal(
+    reservePrintGesture({
+      open: () => {
+        throw new Error('blocked');
+      },
+    } as never),
+    null,
+    'a refused reservation is reported, not thrown',
+  );
 });
 
 test('browser printing reports popup blocking without a reservation', () => {
-  const { MenuPopupBlockedError, printMenuInBrowser } = require('../frontend/src/lib/printer/menu-web-print');
+  const {
+    MenuPopupBlockedError,
+    printMenuInBrowser,
+  } = require('../frontend/src/lib/printer/menu-web-print');
 
   // What the reservation prevents: with nothing held back from the click, the
   // post-await window.open is refused and the merchant gets told why.
@@ -188,19 +389,52 @@ test('Unicode menu printing uses raster-capable WebUSB output and refuses raster
   const raster = require('../main/printers/raster-renderer');
   const originalRenderer = raster.getSharedRasterRenderer;
   const requests: Array<{ text: string }> = [];
-  const printer = { connection_type: 'webusb', profile_id: 'epson-tm-series', paper_width: 'cols-48' };
+  const printer = {
+    connection_type: 'webusb',
+    profile_id: 'epson-tm-series',
+    paper_width: 'cols-48',
+  };
   const { printMenuDocument } = require('../main/printers/thermal');
-  raster.getSharedRasterRenderer = () => ({ render: async (request: { requestId: string; text: string; widthDots: number }) => {
-    requests.push(request);
-    return { version: 1, requestId: request.requestId, ok: true, unit: { unitId: request.requestId, complete: true, financial: false,
-      bands: [{ widthDots: request.widthDots, heightDots: 1, pixels: new Uint8Array(request.widthDots).fill(1) }] } };
-  } });
+  raster.getSharedRasterRenderer = () => ({
+    render: async (request: { requestId: string; text: string; widthDots: number }) => {
+      requests.push(request);
+      return {
+        version: 1,
+        requestId: request.requestId,
+        ok: true,
+        unit: {
+          unitId: request.requestId,
+          complete: true,
+          financial: false,
+          bands: [
+            {
+              widthDots: request.widthDots,
+              heightDots: 1,
+              pixels: new Uint8Array(request.widthDots).fill(1),
+            },
+          ],
+        },
+      };
+    },
+  });
   try {
     const result = await printMenuDocument(menuDocument('抹茶'), undefined, printer);
-    assert.equal(result.ok, true, JSON.stringify({detail: result.detail, warnings: result.warnings}));
+    assert.equal(
+      result.ok,
+      true,
+      JSON.stringify({ detail: result.detail, warnings: result.warnings }),
+    );
     assert.ok(requests.some((request) => request.text.includes('抹茶')));
     assert.ok(result.bytes?.includes(Buffer.from([0x1d, 0x76, 0x30])));
-    raster.getSharedRasterRenderer = () => ({ render: async (request: { requestId: string }) => ({ version: 1, requestId: request.requestId, ok: false, code: 'render-failed', detail: 'Unavailable' }) });
+    raster.getSharedRasterRenderer = () => ({
+      render: async (request: { requestId: string }) => ({
+        version: 1,
+        requestId: request.requestId,
+        ok: false,
+        code: 'render-failed',
+        detail: 'Unavailable',
+      }),
+    });
     const failed = await printMenuDocument(menuDocument('抹茶'), undefined, printer);
     assert.equal(failed.ok, false);
     assert.equal(failed.bytes, undefined);
@@ -216,42 +450,132 @@ test('menu route preserves regional conflicts, validates filters, and honors the
   const database = require('../main/db');
   const authorization = require('../main/services/authorization');
   const thermal = require('../main/printers/thermal');
-  const originals = { getDatabase: database.getDatabase, requirePermission: authorization.requirePermission, printMenuDocument: thermal.printMenuDocument };
+  const originals = {
+    getDatabase: database.getDatabase,
+    requirePermission: authorization.requirePermission,
+    printMenuDocument: thermal.printMenuDocument,
+  };
   let configured = false;
   let printed: any;
   const variantRows = [
-    { id: 'v-small', product_id: 'coffee', name: 'Small', price: 5, is_active: 1, sort_order: 0, track_inventory: 0, stock_quantity: 0, inventory_product_id: null },
-    { id: 'v-large', product_id: 'coffee', name: 'Large', price: 8, is_active: 1, sort_order: 1, track_inventory: 0, stock_quantity: 0, inventory_product_id: null },
-    { id: 'v-retired', product_id: 'coffee', name: 'Retired', price: 3, is_active: 0, sort_order: 2, track_inventory: 0, stock_quantity: 0, inventory_product_id: null },
-    { id: 'v-sold-out', product_id: 'coffee', name: 'Sold Out', price: 6, is_active: 1, sort_order: 3, track_inventory: 1, stock_quantity: 0, inventory_product_id: null },
-    { id: 'v-linked', product_id: 'coffee', name: 'Linked', price: 7, is_active: 1, sort_order: 4, track_inventory: 1, stock_quantity: 0, inventory_product_id: 'product-beans' },
+    {
+      id: 'v-small',
+      product_id: 'coffee',
+      name: 'Small',
+      price: 5,
+      is_active: 1,
+      sort_order: 0,
+      track_inventory: 0,
+      stock_quantity: 0,
+      inventory_product_id: null,
+    },
+    {
+      id: 'v-large',
+      product_id: 'coffee',
+      name: 'Large',
+      price: 8,
+      is_active: 1,
+      sort_order: 1,
+      track_inventory: 0,
+      stock_quantity: 0,
+      inventory_product_id: null,
+    },
+    {
+      id: 'v-retired',
+      product_id: 'coffee',
+      name: 'Retired',
+      price: 3,
+      is_active: 0,
+      sort_order: 2,
+      track_inventory: 0,
+      stock_quantity: 0,
+      inventory_product_id: null,
+    },
+    {
+      id: 'v-sold-out',
+      product_id: 'coffee',
+      name: 'Sold Out',
+      price: 6,
+      is_active: 1,
+      sort_order: 3,
+      track_inventory: 1,
+      stock_quantity: 0,
+      inventory_product_id: null,
+    },
+    {
+      id: 'v-linked',
+      product_id: 'coffee',
+      name: 'Linked',
+      price: 7,
+      is_active: 1,
+      sort_order: 4,
+      track_inventory: 1,
+      stock_quantity: 0,
+      inventory_product_id: 'product-beans',
+    },
   ];
-  database.getDatabase = () => ({ prepare: (sql: string) => ({
-    all: () => {
-      if (sql.includes('FROM settings')) return configured ? [{ key: 'country', value: 'US' }, { key: 'currency', value: 'USD' }] : [];
-      if (sql.includes('FROM categories')) return [{ id: 'drinks', name: 'Drinks', is_active: 1, sort_order: 0 }];
-      if (sql.includes('FROM products p')) return [
-        { id: 'tea', category_id: 'drinks', name: 'Tea', description: 'Fresh tea', price: 5, is_active: 1, track_inventory: 0, stock_quantity: 0, sort_order: 0 },
-        // A parent whose own price is unsellable: only its variants are sold.
-        { id: 'coffee', category_id: 'drinks', name: 'Coffee', description: null, price: 0, is_active: 1, track_inventory: 0, stock_quantity: 0, sort_order: 1 },
-      ];
-      if (sql.includes('FROM addon_group_product')) return [{ product_id: 'tea', addon_group_id: 'milk' }];
-      if (sql.includes('FROM category_addon_groups')) return [];
-      if (sql.includes('FROM addon_groups')) return [{ id: 'milk', name: 'Milk', is_active: 1, sort_order: 0 }];
-      if (sql.includes('FROM addons')) return [{ id: 'oat', addon_group_id: 'milk', name: 'Oat', price: 2, is_active: 1 }];
-      // The menu route reuses the catalog's shared relation loader, which
-      // returns only active variants unless the caller asks for all of them.
-      if (sql.includes('FROM product_variants')) return variantRows.filter(
-        (variant) => sql.includes('is_active = 1') ? variant.is_active === 1 : true,
-      );
-      throw new Error(`Unexpected query: ${sql}`);
-    },
-    get: () => {
-      if (sql.includes('WHERE is_default = 1')) return { name: 'Default WebUSB', connection_type: 'webusb', paper_width: '80mm' };
-      throw new Error(`Unexpected query: ${sql}`);
-    },
-  }) });
-  authorization.requirePermission = () => (_req: unknown, _res: unknown, next: () => void) => next();
+  database.getDatabase = () => ({
+    prepare: (sql: string) => ({
+      all: () => {
+        if (sql.includes('FROM settings'))
+          return configured
+            ? [
+                { key: 'country', value: 'US' },
+                { key: 'currency', value: 'USD' },
+              ]
+            : [];
+        if (sql.includes('FROM categories'))
+          return [{ id: 'drinks', name: 'Drinks', is_active: 1, sort_order: 0 }];
+        if (sql.includes('FROM products p'))
+          return [
+            {
+              id: 'tea',
+              category_id: 'drinks',
+              name: 'Tea',
+              description: 'Fresh tea',
+              price: 5,
+              is_active: 1,
+              track_inventory: 0,
+              stock_quantity: 0,
+              sort_order: 0,
+            },
+            // A parent whose own price is unsellable: only its variants are sold.
+            {
+              id: 'coffee',
+              category_id: 'drinks',
+              name: 'Coffee',
+              description: null,
+              price: 0,
+              is_active: 1,
+              track_inventory: 0,
+              stock_quantity: 0,
+              sort_order: 1,
+            },
+          ];
+        if (sql.includes('FROM addon_group_product'))
+          return [{ product_id: 'tea', addon_group_id: 'milk' }];
+        if (sql.includes('FROM category_addon_groups')) return [];
+        if (sql.includes('FROM addon_groups'))
+          return [{ id: 'milk', name: 'Milk', is_active: 1, sort_order: 0 }];
+        if (sql.includes('FROM addons'))
+          return [{ id: 'oat', addon_group_id: 'milk', name: 'Oat', price: 2, is_active: 1 }];
+        // The menu route reuses the catalog's shared relation loader, which
+        // returns only active variants unless the caller asks for all of them.
+        if (sql.includes('FROM product_variants'))
+          return variantRows.filter((variant) =>
+            sql.includes('is_active = 1') ? variant.is_active === 1 : true,
+          );
+        throw new Error(`Unexpected query: ${sql}`);
+      },
+      get: () => {
+        if (sql.includes('WHERE is_default = 1'))
+          return { name: 'Default WebUSB', connection_type: 'webusb', paper_width: '80mm' };
+        throw new Error(`Unexpected query: ${sql}`);
+      },
+    }),
+  });
+  authorization.requirePermission = () => (_req: unknown, _res: unknown, next: () => void) =>
+    next();
   thermal.printMenuDocument = async (document: unknown, _signal: unknown, printer: unknown) => {
     printed = { document, printer };
     return { ok: true, connection_type: 'webusb', bytes: Buffer.from([1, 2]) };
@@ -263,18 +587,30 @@ test('menu route preserves regional conflicts, validates filters, and honors the
     const missing = await request(app).post('/api/printers/print-menu').send({});
     assert.equal(missing.status, 409);
     configured = true;
-    const malformed = await request(app).post('/api/printers/print-menu').send({ includeModifiers: 'true' });
+    const malformed = await request(app)
+      .post('/api/printers/print-menu')
+      .send({ includeModifiers: 'true' });
     assert.equal(malformed.status, 400);
-    const success = await request(app).post('/api/printers/print-menu').send({ includeDescriptions: true, includeModifiers: true });
+    const success = await request(app)
+      .post('/api/printers/print-menu')
+      .send({ includeDescriptions: true, includeModifiers: true });
     assert.equal(success.status, 200, JSON.stringify(success.body));
     assert.equal(success.body.webusb, true);
     assert.equal(printed.printer.name, 'Default WebUSB');
-    assert.deepEqual(printed.document.sections[0].products[0].details.map((detail: { text: string }) => detail.text), ['Fresh tea', 'Milk: Oat ($2.00)']);
+    assert.deepEqual(
+      printed.document.sections[0].products[0].details.map(
+        (detail: { text: string }) => detail.text,
+      ),
+      ['Fresh tea', 'Milk: Oat ($2.00)'],
+    );
 
     // A product with active variants prints one sellable row per variant at the
     // variant's own price; the parent's unsellable price is never advertised,
     // and an inactive variant is not a menu row.
-    const rows = printed.document.sections[0].products as Array<{ name: { text: string }; price: string }>;
+    const rows = printed.document.sections[0].products as Array<{
+      name: { text: string };
+      price: string;
+    }>;
     const rowNames = rows.map((row) => row.name.text);
     assert.deepEqual(
       rowNames.filter((name) => name.startsWith('Coffee')),
@@ -282,21 +618,56 @@ test('menu route preserves regional conflicts, validates filters, and honors the
       'only active variants of a parent print as rows',
     );
     const coffeePrices = Object.fromEntries(rows.map((row) => [row.name.text, row.price]));
-    assert.equal(coffeePrices['Coffee (Small)'], '$5.00', 'a variant row shows the variant price, not the parent price');
+    assert.equal(
+      coffeePrices['Coffee (Small)'],
+      '$5.00',
+      'a variant row shows the variant price, not the parent price',
+    );
     assert.equal(coffeePrices['Coffee (Large)'], '$8.00', 'each variant carries its own price');
-    assert.equal(rowNames.includes('Coffee'), false, 'an unsellable parent 0 price is never a phantom row');
-    assert.equal(rowNames.includes('Coffee (Retired)'), false, 'an inactive variant is not printed');
-    assert.equal(rowNames.includes('Coffee (Sold Out)'), false, 'a sold-out tracked variant is withheld by default');
-    assert.equal(coffeePrices['Coffee (Linked)'], '$7.00', 'a recipe-linked variant sells from its recipe, not its own empty pool');
-    assert.equal(rowNames.includes('Tea'), true, 'a product without variants still prints its parent row');
-    assert.equal(printed.document.itemCount, rows.length, 'the printed item count counts emitted variant rows');
+    assert.equal(
+      rowNames.includes('Coffee'),
+      false,
+      'an unsellable parent 0 price is never a phantom row',
+    );
+    assert.equal(
+      rowNames.includes('Coffee (Retired)'),
+      false,
+      'an inactive variant is not printed',
+    );
+    assert.equal(
+      rowNames.includes('Coffee (Sold Out)'),
+      false,
+      'a sold-out tracked variant is withheld by default',
+    );
+    assert.equal(
+      coffeePrices['Coffee (Linked)'],
+      '$7.00',
+      'a recipe-linked variant sells from its recipe, not its own empty pool',
+    );
+    assert.equal(
+      rowNames.includes('Tea'),
+      true,
+      'a product without variants still prints its parent row',
+    );
+    assert.equal(
+      printed.document.itemCount,
+      rows.length,
+      'the printed item count counts emitted variant rows',
+    );
 
     // includeOutOfStock applies to emitted sale rows too.
-    const withOutOfStock = await request(app).post('/api/printers/print-menu').send({ includeOutOfStock: true });
+    const withOutOfStock = await request(app)
+      .post('/api/printers/print-menu')
+      .send({ includeOutOfStock: true });
     assert.equal(withOutOfStock.status, 200);
-    const outOfStockNames = (printed.document.sections[0].products as Array<{ name: { text: string } }>)
-      .map((row) => row.name.text);
-    assert.equal(outOfStockNames.includes('Coffee (Sold Out)'), true, 'includeOutOfStock surfaces a sold-out variant row');
+    const outOfStockNames = (
+      printed.document.sections[0].products as Array<{ name: { text: string } }>
+    ).map((row) => row.name.text);
+    assert.equal(
+      outOfStockNames.includes('Coffee (Sold Out)'),
+      true,
+      'includeOutOfStock surfaces a sold-out variant row',
+    );
   } finally {
     Object.assign(database, { getDatabase: originals.getDatabase });
     Object.assign(authorization, { requirePermission: originals.requirePermission });

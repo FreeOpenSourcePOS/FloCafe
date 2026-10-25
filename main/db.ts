@@ -560,6 +560,13 @@ export const GOOGLE_DRIVE_PRIVATE_SETTING_KEYS = [
   'google_drive_job',
   'google_drive_revoke_status',
   'google_drive_revoke_cleanup_pending',
+  'google_drive_menu_folder_id',
+  'google_drive_menu_file_id',
+  'google_drive_menu_sharing_enabled',
+  'google_drive_menu_source',
+  'google_drive_menu_updated_at',
+  'google_drive_menu_file_name',
+  'google_drive_menu_web_view_link',
 ];
 
 export function clearGoogleDriveRestoreBinding(dbInstance: Database.Database = db): void {

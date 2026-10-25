@@ -98,6 +98,7 @@ import {
 } from '@/components/settings/DatabaseSettingsTab';
 import { Toggle } from '@/components/settings/Toggle';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
+import { QrMenuSettingsTab } from '@/components/settings/QrMenuSettingsTab';
 import type { HealthCheckReport } from '@/types/electron';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -373,6 +374,8 @@ export default function SettingsPage() {
   const canManageTaxPacks = tenantCan(currentTenant, 'tax-packs.manage');
   const canViewTaxConfiguration = tenantCan(currentTenant, 'tax-packs.view-test');
   const canManageMobileAccess = tenantCan(currentTenant, 'mobile-access.manage');
+  const canManageGoogleDrive = tenantCan(currentTenant, 'google-drive.manage');
+  const canManageQrMenu = tenantCan(currentTenant, 'catalog.manage') || canManageGoogleDrive;
   const { confirm, ConfirmDialog } = useConfirm();
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -3892,6 +3895,14 @@ export default function SettingsPage() {
               active={activeTab}
               onClick={handleSettingsTabChange}
             />
+            {canManageQrMenu && (
+              <SettingsNavItem
+                label={t('tabQrMenu')}
+                value="qr-menu"
+                active={activeTab}
+                onClick={handleSettingsTabChange}
+              />
+            )}
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
@@ -4741,6 +4752,16 @@ export default function SettingsPage() {
           </TabsContent>
 
           {/* Kitchen Display — own tab under Operations */}
+          <TabsContent value="qr-menu">
+            <QrMenuSettingsTab
+              canConnectDrive={canManageGoogleDrive}
+              connectingDrive={connectingGoogleDrive}
+              onConnectDrive={() => {
+                void connectGoogleDrive();
+              }}
+            />
+          </TabsContent>
+
           <TabsContent value="kds">
             <SettingsTabShell>
               {/* Kitchen Display System enable toggle */}

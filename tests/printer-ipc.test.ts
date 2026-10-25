@@ -21,12 +21,16 @@ class RecordingWindow {
   options: any;
   destroyed = false;
   loadedUrl: string | null = null;
+  loadedHtml: string | null = null;
   pdfOptions: any = null;
   webContents: any;
 
   constructor(options: any = {}) {
     this.options = options;
     this.webContents = {
+      session: { webRequest: { onBeforeRequest: () => {} } },
+      setWindowOpenHandler: () => {},
+      on: () => {},
       printToPDF: async (printOptions: any) => {
         this.pdfOptions = printOptions;
         if (printToPdfFailure) throw printToPdfFailure;
@@ -38,6 +42,10 @@ class RecordingWindow {
 
   async loadURL(url: string): Promise<void> {
     this.loadedUrl = url;
+  }
+  async loadFile(filePath: string): Promise<void> {
+    this.loadedUrl = filePath;
+    this.loadedHtml = fs.readFileSync(filePath, 'utf8');
   }
   isDestroyed(): boolean {
     return this.destroyed;
@@ -261,7 +269,7 @@ async function run(): Promise<void> {
     }
 
     assert.deepEqual(
-      await saveHtmlAsPdf!(trustedSender, { html: `<p>${'x'.repeat(2_000_001)}</p>` }),
+      await saveHtmlAsPdf!(trustedSender, { html: `<p>${'x'.repeat(15 * 1024 * 1024)}</p>` }),
       { success: false, error: 'Document too large to export' },
       'PDF export refuses a document over the size cap',
     );
@@ -295,12 +303,28 @@ async function run(): Promise<void> {
     assert.equal(pdfWindow.options.show, false, 'the PDF window is never shown');
     assert.deepEqual(
       pdfWindow.options.webPreferences,
-      { contextIsolation: true, nodeIntegration: false, sandbox: true, javascript: false },
+      {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        javascript: false,
+        partition: pdfWindow.options.webPreferences.partition,
+      },
       'the PDF window is isolated and runs no scripts',
     );
+    assert.equal(
+      pdfWindow.loadedHtml,
+      '<html><body>Menu</body></html>',
+      'the secure temporary HTML file contains the requested document',
+    );
     assert.ok(
-      String(pdfWindow.loadedUrl).startsWith('data:text/html'),
-      'the document is loaded as inline HTML rather than a file path',
+      String(pdfWindow.loadedUrl).endsWith('.html'),
+      'the document is loaded from a temporary HTML file',
+    );
+    assert.equal(
+      fs.existsSync(pdfWindow.loadedUrl),
+      false,
+      'the temporary HTML file is removed after rendering',
     );
     assert.deepEqual(
       pdfWindow.pdfOptions,

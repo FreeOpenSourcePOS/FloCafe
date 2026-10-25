@@ -51,11 +51,10 @@ import {
   setLocalBackupEnabled,
 } from './services/local-backup';
 import { readPostHogBootstrap } from './services/posthog';
+import { MAX_PDF_HTML_BYTES, renderHtmlToPdfBuffer } from './services/html-to-pdf';
 
 // Cap on the log content attached to a support ticket (most recent bytes only).
 const LOG_TAIL_MAX_BYTES = 200_000;
-// Cap on renderer-built print HTML accepted for PDF export.
-const MAX_PDF_HTML_BYTES = 2_000_000;
 // Prefer excluding log lines older than this from a support-ticket attachment.
 const LOG_TAIL_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 // Matches electron-log's default line prefix, e.g. "[2026-09-13 10:15:30.123] [info] ...".
@@ -780,27 +779,12 @@ export function registerIpcHandlers(
     });
     if (saveResult.canceled || !saveResult.filePath) return { success: false, canceled: true };
 
-    const pdfWindow = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        javascript: false,
-      },
-    });
     try {
-      await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-      const pdfData = await pdfWindow.webContents.printToPDF({
-        printBackground: true,
-        pageSize: resolvedPageSize,
-      });
+      const pdfData = await renderHtmlToPdfBuffer({ html, pageSize: resolvedPageSize });
       await fs.promises.writeFile(saveResult.filePath, pdfData);
       return { success: true, path: saveResult.filePath };
     } catch (error) {
       return { success: false, error: getErrorMessage(error) };
-    } finally {
-      if (!pdfWindow.isDestroyed()) pdfWindow.destroy();
     }
   });
 

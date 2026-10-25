@@ -22,6 +22,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Printer,
+  QrCode,
   ChevronUp,
   ChevronDown,
   Search,
@@ -143,6 +144,7 @@ function taxCategoryOptionLabel(tc: { label: string; rate_percent?: number | nul
 export default function ProductsPage() {
   const t = useTranslations('products');
   const tCommon = useTranslations('common');
+  const tQr = useTranslations('qrMenu');
   const tPos = useTranslations('pos');
 
   // Translate a raw tag string: known tags go through the `pos` namespace;
@@ -1040,9 +1042,16 @@ export default function ProductsPage() {
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
             {activeTab === 'products' && (
-              <Button variant="outline" onClick={() => setShowPrintMenuModal(true)}>
-                <Printer size={16} className="me-1" /> {t('printMenu')}
-              </Button>
+              <>
+                {isOwnerOrManager && (
+                  <Button variant="outline" onClick={() => router.push('/settings?tab=qr-menu')}>
+                    <QrCode size={16} className="me-1" /> {tQr('title')}
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setShowPrintMenuModal(true)}>
+                  <Printer size={16} className="me-1" /> {t('printMenu')}
+                </Button>
+              </>
             )}
           </div>
         </div>

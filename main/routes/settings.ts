@@ -58,6 +58,7 @@ import { countryConfirmationPatch } from '../services/country-provenance';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
+import { MAX_PDF_HTML_BYTES, renderHtmlToPdfBuffer } from '../services/html-to-pdf';
 import { isPosCategorySort, isPosItemSort, readPosSortSettings } from '../lib/pos-sort';
 import {
   CORE_BILL_TEMPLATES,
@@ -1340,35 +1341,122 @@ router.post(
   }),
 );
 
-// Google Drive backups - every Drive route is owner-only and returns only the
-// service's redacted status or an allowlisted error code.
+// Google Drive endpoints return only redacted status or an allowlisted error code.
 function googleDriveErrorResponse(res: Response, error: unknown): Response {
   const code = getGoogleDriveErrorCode(error);
-  const status =
-    code === 'permission_denied'
-      ? 403
-      : code === 'conflict'
-        ? 409
-        : [
-              'warning_acknowledgement_required',
-              'restore_validation_failed',
-              'preferences_invalid',
-            ].includes(code)
-          ? 400
-          : ['offline', 'rate_limited'].includes(code)
-            ? 503
-            : [
-                  'configuration_unavailable',
-                  'secure_storage_unavailable',
-                  'not_connected',
-                  'reauth_required',
-                  'destination_required',
-                  'destination_invalid',
-                ].includes(code)
-              ? 409
-              : 502;
+  let status = 502;
+  if (code === 'menu_pdf_too_large') status = 413;
+  else if (code === 'menu_not_published') status = 404;
+  else if (code === 'permission_denied') status = 403;
+  else if (code === 'conflict') status = 409;
+  else if (
+    [
+      'warning_acknowledgement_required',
+      'restore_validation_failed',
+      'preferences_invalid',
+      'menu_pdf_invalid',
+    ].includes(code)
+  )
+    status = 400;
+  else if (['offline', 'rate_limited'].includes(code)) status = 503;
+  else if (
+    [
+      'configuration_unavailable',
+      'secure_storage_unavailable',
+      'not_connected',
+      'reauth_required',
+      'destination_required',
+      'destination_invalid',
+      'menu_file_invalid',
+    ].includes(code)
+  )
+    status = 409;
   return res.status(status).json({ error: code });
 }
+
+const requireQrMenuPermission = requireAnyPermission('catalog.manage', 'google-drive.manage');
+
+router.get(
+  '/google-drive/qr-menu',
+  requireQrMenuPermission,
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      return res.json(await googleDrive.getQrMenuStatus());
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
+
+router.put(
+  '/google-drive/qr-menu/preferences',
+  requireQrMenuPermission,
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      return res.json(await googleDrive.saveQrMenuGeneratorPrefs(req.body));
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
+
+router.post(
+  '/google-drive/qr-menu/generate',
+  requireQrMenuPermission,
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const html = req.body?.html;
+      if (typeof html !== 'string' || html.length === 0)
+        return res.status(400).json({ error: 'menu_pdf_invalid' });
+      if (Buffer.byteLength(html, 'utf8') > MAX_PDF_HTML_BYTES)
+        return res.status(413).json({ error: 'menu_pdf_too_large' });
+      const pdfBuffer = await renderHtmlToPdfBuffer({ html, pageSize: req.body?.pageSize });
+      return res.json(
+        await googleDrive.publishQrMenuPdf({
+          pdfBuffer,
+          source: 'generated',
+          generatorPrefs: req.body?.preferences,
+        }),
+      );
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
+
+router.post(
+  '/google-drive/qr-menu/upload',
+  requireQrMenuPermission,
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      if (
+        req.body?.mimeType !== 'application/pdf' ||
+        typeof req.body?.fileName !== 'string' ||
+        !req.body.fileName.toLowerCase().endsWith('.pdf') ||
+        typeof req.body?.data !== 'string'
+      )
+        return res.status(400).json({ error: 'menu_pdf_invalid' });
+      const pdfBuffer = Buffer.from(req.body.data, 'base64');
+      return res.json(await googleDrive.publishQrMenuPdf({ pdfBuffer, source: 'uploaded' }));
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
+
+router.put(
+  '/google-drive/qr-menu/sharing',
+  requireQrMenuPermission,
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      if (typeof req.body?.enabled !== 'boolean')
+        return res.status(400).json({ error: 'preferences_invalid' });
+      return res.json(await googleDrive.setQrMenuSharing(req.body.enabled));
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
 
 router.get(
   '/google-drive',

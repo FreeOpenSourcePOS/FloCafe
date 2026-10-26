@@ -24,7 +24,7 @@ import {
 } from '../db';
 import { requirePermission } from '../services/authorization';
 import { closedDayExists } from '../services/cash-drawer-movements';
-import { findUnpaidInShiftOrders } from '../services/cash-day-close-guards';
+import { findUnpaidInShiftOrders, sessionBusinessDate } from '../services/cash-day-close-guards';
 import { getOpenSession, type CashSessionRow } from '../services/shift-session-gate';
 import {
   computePeriodAggregates,
@@ -137,11 +137,7 @@ function closeSessionTxn(
   } catch (err: unknown) {
     throw httpError(`Could not allocate Z number: ${errorMessage(err, 'sequence failure')}`, 500);
   }
-  const businessDate = localDateInTimezone(
-    new Date(),
-    tenantTimezone(),
-    tenantBusinessDayStartTime(db),
-  );
+  const businessDate = sessionBusinessDate(db, session);
   const insert = db
     .prepare(`
     INSERT INTO cash_closures (

@@ -913,6 +913,71 @@ async function main() {
           'Day 2 financial-summary cost_status matches daily-sales export (known)',
         );
 
+        // /topProducts keeps creation-date (orders.created_at) aggregate so product rows and profitability agree
+        const day1TopRes = await api(
+          baseUrl,
+          `/api/reports/topProducts?start_date=${day1Str}&end_date=${day1Str}&limit=10`,
+          { headers: authHeader },
+        );
+        assertEqualOrThrow(day1TopRes.status, 200, 'Day 1 topProducts returns 200');
+        assertEqualOrThrow(
+          day1TopRes.data.topProducts.length,
+          1,
+          'Day 1 topProducts includes cross-midnight order created on Day 1',
+        );
+        assertEqualOrThrow(
+          day1TopRes.data.topProducts[0].total_quantity,
+          2,
+          'Day 1 topProducts row has total_quantity=2',
+        );
+        assertEqualOrThrow(
+          day1TopRes.data.topProducts[0].profit,
+          11.02,
+          'Day 1 topProducts row has profit=11.02',
+        );
+        assertEqualOrThrow(
+          day1TopRes.data.profitability.total_quantity,
+          2,
+          'Day 1 topProducts profitability has total_quantity=2 matching product rows',
+        );
+        assertEqualOrThrow(
+          day1TopRes.data.profitability.known_cost_revenue,
+          13,
+          'Day 1 topProducts profitability has known_cost_revenue=13',
+        );
+        assertEqualOrThrow(
+          day1TopRes.data.profitability.ingredient_cost,
+          1.98,
+          'Day 1 topProducts profitability has ingredient_cost=1.98',
+        );
+        assertEqualOrThrow(
+          day1TopRes.data.profitability.profit,
+          11.02,
+          'Day 1 topProducts profitability has profit=11.02 matching product rows',
+        );
+
+        const day2TopRes = await api(
+          baseUrl,
+          `/api/reports/topProducts?start_date=${day2Str}&end_date=${day2Str}&limit=10`,
+          { headers: authHeader },
+        );
+        assertEqualOrThrow(day2TopRes.status, 200, 'Day 2 topProducts returns 200');
+        assertEqualOrThrow(
+          day2TopRes.data.topProducts.length,
+          0,
+          'Day 2 topProducts has no orders created on Day 2',
+        );
+        assertEqualOrThrow(
+          day2TopRes.data.profitability.total_quantity,
+          0,
+          'Day 2 topProducts profitability has total_quantity=0 matching empty product rows',
+        );
+        assertEqualOrThrow(
+          day2TopRes.data.profitability.profit,
+          null,
+          'Day 2 topProducts profitability has profit=null matching empty product rows',
+        );
+
         // Split bills paid in separate windows
         const splitDay1Str = '2026-10-20';
         const splitDay2Str = '2026-10-21';

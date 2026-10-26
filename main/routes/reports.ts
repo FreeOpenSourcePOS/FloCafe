@@ -393,7 +393,7 @@ router.get(
       const grossCollected = Number(collections.gross_collected || 0);
       const refunded = Number(refundTotals.refunded || 0);
       const fractionDigits = getCurrencyFractionDigits(getTenantCurrency(db));
-      const profitability = computePeriodProfitabilitySummary(db, start, end, fractionDigits);
+      const profitability = computeSettledProfitabilitySummary(db, start, end, fractionDigits);
 
       res.json({
         financialSummary: {
@@ -675,6 +675,39 @@ function deriveProfitabilityMetrics(
 }
 
 function computePeriodProfitabilitySummary(
+  db: ReturnType<typeof getDatabase>,
+  windowStart: string,
+  windowEnd: string,
+  fractionDigits: number,
+) {
+  const row = db
+    .prepare(
+      `
+      SELECT
+        COALESCE(SUM(oi.quantity), 0) as total_quantity,
+        COALESCE(SUM(oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END), 0) as ex_tax_revenue,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN oi.quantity ELSE 0 END), 0) as known_cost_quantity,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN 0 ELSE oi.quantity END), 0) as unknown_cost_quantity,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+                          THEN (oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END)
+                          ELSE 0 END), 0) as known_cost_revenue,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN oi.ingredient_cost ELSE 0 END), 0) as known_ingredient_cost
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      WHERE o.created_at >= ? AND o.created_at < ?
+        AND o.status != 'cancelled'
+        AND COALESCE(oi.status, 'active') NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
+    `,
+    )
+    .get(windowStart, windowEnd) as RawProfitabilityAggregate;
+
+  return {
+    total_quantity: Number(row.total_quantity || 0),
+    ...deriveProfitabilityMetrics(row, fractionDigits),
+  };
+}
+
+function computeSettledProfitabilitySummary(
   db: ReturnType<typeof getDatabase>,
   windowStart: string,
   windowEnd: string,

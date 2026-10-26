@@ -65,6 +65,7 @@ interface WhatsAppStatus {
   lastError: string | null;
   lastErrorReason: string | null;
   cooldownUntil: string | null;
+  offlineMode?: boolean;
 }
 
 type WhatsAppApiErrorKey = keyof AppConfig['Messages']['whatsapp']['apiError'];
@@ -264,6 +265,9 @@ export default function WhatsAppPage() {
   const tAutomation = useTranslations('whatsapp.automation');
   const tLastError = useTranslations('whatsapp.lastError');
   const tApiError = useTranslations('whatsapp.apiError');
+  const tSend = useTranslations('whatsapp.send');
+  const tStatus = useTranslations('whatsapp.status');
+  const tSettings = useTranslations('settings');
   const { confirm, ConfirmDialog } = useConfirm();
   const setWhatsappEnabled = usePosSettingsStore((s) => s.setWhatsappEnabled);
   const { currentTenant } = useAuthStore();
@@ -288,6 +292,7 @@ export default function WhatsAppPage() {
   const [pairingPhone, setPairingPhone] = useState(dialCode);
 
   const [sentMessages, setSentMessages] = useState<SentMessage[]>([]);
+  const [retryingIds, setRetryingIds] = useState<Set<number>>(() => new Set());
   const [inbox, setInbox] = useState<InboxMessage[]>([]);
   const [blocklist, setBlocklist] = useState<BlocklistRow[]>([]);
   const [blockPhone, setBlockPhone] = useState('');
@@ -409,9 +414,10 @@ export default function WhatsAppPage() {
   useEffect(() => {
     const id = setInterval(() => {
       void refreshStatus();
+      void refreshSent();
     }, 5000);
     return () => clearInterval(id);
-  }, [refreshStatus]);
+  }, [refreshStatus, refreshSent]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -486,6 +492,46 @@ export default function WhatsAppPage() {
       toast.error(tCommon('saveFailed'));
     } finally {
       setRunningSweep(false);
+    }
+  };
+
+  const retrySentMessage = async (messageId: number) => {
+    if (retryingIds.has(messageId)) return;
+    if (status?.offlineMode) {
+      toast.error(tSettings('offlineModeTitle'));
+      return;
+    }
+    setRetryingIds((prev) => {
+      const next = new Set(prev);
+      next.add(messageId);
+      return next;
+    });
+    try {
+      await api.post(`/whatsapp/messages/${messageId}/retry`);
+      toast.success(tStatus('queued'));
+      await refreshSent();
+    } catch (err) {
+      const reason = (err as { response?: { data?: { reason?: string } } })?.response?.data?.reason;
+      if (reason === 'offline_mode') {
+        toast.error(tSettings('offlineModeTitle'));
+      } else if (reason === 'not_connected' || reason === 'cooldown') {
+        toast.error(tSend('error.notConnected'));
+      } else if (reason === 'blocked') {
+        toast.error(tSend('error.blocked'));
+      } else if (reason === 'not_on_whatsapp') {
+        toast.error(tSend('error.notOnWhatsapp'));
+      } else if (reason === 'rate_limited' || reason === 'weekly_cap') {
+        toast.error(tSend('error.rateLimited'));
+      } else {
+        toastApiError(err, tSend('failed'), tApiError);
+      }
+      await refreshSent();
+    } finally {
+      setRetryingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(messageId);
+        return next;
+      });
     }
   };
 
@@ -1048,9 +1094,30 @@ export default function WhatsAppPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col items-start gap-1">
                               <StatusStepper status={m.status} />
                               {m.error && <div className="text-xs text-destructive">{m.error}</div>}
+                              {m.status === 'failed' && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={
+                                    retryingIds.has(m.id) ||
+                                    Boolean(status?.offlineMode) ||
+                                    status?.state !== 'connected'
+                                  }
+                                  onClick={() => void retrySentMessage(m.id)}
+                                >
+                                  {retryingIds.has(m.id) ? (
+                                    <Loader2 className="h-3 w-3 me-1 animate-spin" />
+                                  ) : (
+                                    <RotateCcw className="h-3 w-3 me-1" />
+                                  )}
+                                  {tSettings('retry')}
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell className="text-sm max-w-md">

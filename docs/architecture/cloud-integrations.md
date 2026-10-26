@@ -368,6 +368,20 @@ never re-parsed as tokens. All five automated rules ship disabled (`enabled: fal
 enforce the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`), a 10-minute duplicate-body
 filter, simulated typing delay, and a content filter that rejects non-HTTPS URLs and URL shorteners.
 
+**ACK timeout, late ACKs, and retry.** Outbound messages remain in `typing` (refreshing `typing_at` when
+`socket.sendMessage` completes) until a Baileys `messages.update` server ACK (`status = 2/3/4`) arrives.
+`sweepAckTimeouts()` runs every 60 seconds (`ACK_SWEEP_INTERVAL_MS`) while connected, on socket open,
+during scheduled automation sweeps, and on startup (`initFromDb()`) to mark non-in-flight outbound rows
+still in `queued`, `seen`, or `typing` past `ACK_TIMEOUT_MS` (5 minutes, or any unfinished pre-restart or
+unsubmitted rows on startup) as `failed` with `error = 'ack_timeout'`. If a late ACK arrives after a row
+was marked `failed`, `advanceStatus()` promotes the row to `sent`, `delivered`, or `read` by
+`external_message_id` (including prior retry-attempt IDs), clears `error` and `failed_at`, backfills
+earlier timestamps via `COALESCE`, and ignores out-of-order lower-rank updates.
+`POST /api/whatsapp/messages/:messageId/retry` (`retryMessage()`) coalesces concurrent retry requests and
+atomically re-queues a `failed` row in place without creating duplicate rows, enforcing Offline mode
+(`offline_mode`) and all safety controls while excluding the retried row from self-blocking in rate,
+weekly-cap, and duplicate-body checks.
+
 **Offline behaviour.** No work is started when the module is disabled, when Offline mode is on, when
 it is in a terminal shutdown state, or when the request signal is aborted. Work already in flight is
 cancelled when Offline mode turns on or during shutdown rather than left to fail late.

@@ -14,7 +14,7 @@ FloCafe prints receipts and kitchen order tickets from the desktop app. Configur
 | Type | Use it for | What you need |
 | --- | --- | --- |
 | Network | Receipt or kitchen printers on the local network | Printer IP address and port; most ESC/POS printers use port `9100` |
-| USB / OS Queue | Direct USB printers and OS-managed print queues | A direct USB connection or a configured OS print queue (Windows Spooler or CUPS) |
+| USB / OS Queue | Direct USB printers and OS-managed print queues | A configured OS print queue (Windows Spooler, or CUPS via **System Settings > Printers & Scanners** on macOS including Mac App Store builds) |
 | WebUSB | A browser-connected printer | A compatible browser and a user-selected device; the browser sends the print bytes |
 
 Set the paper width to match the printer, either 58 mm or 80 mm. The first configured printer
@@ -189,6 +189,14 @@ processors or reject raw byte streams. If prints fail or come out garbled:
 
 ### macOS and Linux CUPS printers
 
+- On macOS (including the Mac App Store build), USB receipt printers must first be added in
+  **System Settings > Printers & Scanners** before FloCafe can detect or print to them. Connect the
+  USB printer, click **Add Printer, Scanner, or Fax...**, and select the manufacturer's driver or a
+  generic queue (**Generic PostScript Printer** or **Generic PCL Printer**). FloCafe sends raw
+  ESC/POS bytes (`application/vnd.cups-raw`) through the local CUPS service (`/private/var/run/cupsd`
+  in Mac App Store builds, `lp -o raw` in direct downloads), bypassing macOS page filters. Once the
+  queue is added in macOS, click **Detect** in **Settings > Printers** and select the detected queue
+  so the printer name in FloCafe matches the CUPS queue name.
 - If a printer was unplugged, the CUPS print queue may be in a disabled or paused state. Re-enable
   the queue in your operating system printer settings; FloCafe resumes sending print jobs once the
   queue is active.

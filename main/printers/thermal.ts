@@ -256,6 +256,7 @@ export function classifyPrintFailure(detail?: string): PrintFailureClass {
   if (
     value.includes('lp: no such file or directory') ||
     value.includes('printer or class does not exist') ||
+    value.includes('not found in macos printers') ||
     value.includes('no default destination')
   )
     return 'not_configured';
@@ -306,8 +307,11 @@ function extractPlatformErrorCode(detail?: string): number | undefined {
   return Number.isSafeInteger(code) ? code : undefined;
 }
 
-const isMasBuild =
-  process.env.MAS_BUILD === '1' || (process as NodeJS.Process & { mas?: boolean }).mas === true;
+export function isMasRuntime(): boolean {
+  return (
+    process.env.MAS_BUILD === '1' || (process as NodeJS.Process & { mas?: boolean }).mas === true
+  );
+}
 const PRINTER_DETECTION_TIMEOUT_MS = 10_000;
 
 export type PrinterColumnWidth = 36 | 42 | 48;
@@ -358,8 +362,8 @@ export async function detectConnectedPrinters(signal?: AbortSignal): Promise<Pri
     return printers;
   }
 
-  if (isMasBuild) {
-    // In sandboxed MAS build, access local CUPS daemon via loopback IPP
+  if (isMasRuntime()) {
+    // In sandboxed MAS build, access local CUPS daemon via IPP
     // instead of shelling out to lpstat/lpoptions.
     return process.platform === 'darwin' ? await detectPrintersViaIpp(signal) : printers;
   }
@@ -1509,14 +1513,11 @@ async function dispatchPrint(
     case 'network':
       return await printViaNetwork(printer.ip_address, printer.port || 9100, data, signal);
     case 'usb':
-      if (isMasBuild) {
-        if (process.platform === 'darwin') {
-          return await printViaLocalIpp(data, printer.name, signal);
-        }
+      if (isMasRuntime() && process.platform !== 'darwin') {
         const detail =
           'USB printers are not supported in the App Store build. Use a network printer.';
         console.log(`[Printer] ${detail}`);
-        return { ok: false, detail };
+        return { ok: false, detail, failureClass: classifyPrintFailure(detail) };
       }
       return await printViaUSB(data, printer.name, signal);
     case 'webusb':
@@ -4174,6 +4175,10 @@ export async function printViaUSB(
 ): Promise<DispatchResult> {
   console.log('[Printer] printViaUSB called, platform:', process.platform, 'printer:', printerName);
 
+  if (process.platform === 'darwin' && isMasRuntime()) {
+    return await printViaLocalIpp(data, printerName, signal);
+  }
+
   if (process.platform === 'darwin' || process.platform === 'linux') {
     return await printViaCups(data, printerName, signal);
   }
@@ -4183,7 +4188,8 @@ export async function printViaUSB(
   }
 
   console.warn('[Printer] Unsupported platform:', process.platform);
-  return { ok: false, detail: `Unsupported platform: ${process.platform}` };
+  const detail = `Unsupported platform: ${process.platform}`;
+  return { ok: false, detail, failureClass: classifyPrintFailure(detail) };
 }
 
 // MAS-build counterpart to printViaCups: submits raw bytes to CUPS via local IPP.
@@ -4193,19 +4199,32 @@ async function printViaLocalIpp(
   signal?: AbortSignal,
 ): Promise<DispatchResult> {
   if (!printerName) {
-    return { ok: false, detail: 'No printer configured' };
+    const detail = 'No printer configured';
+    return { ok: false, detail, failureClass: classifyPrintFailure(detail) };
   }
 
   try {
     const attrs = await ippGetPrinterAttributes(printerName, signal);
+    if (!attrs.exists && attrs.detail) {
+      return {
+        ok: false,
+        detail: attrs.detail,
+        failureClass: classifyPrintFailure(attrs.detail),
+      };
+    }
     if (attrs.state === 5) {
-      return { ok: false, detail: 'print queue is disabled' };
+      const detail = 'print queue is disabled';
+      return { ok: false, detail, failureClass: classifyPrintFailure(detail) };
     }
     if (attrs.isAcceptingJobs === false) {
-      return { ok: false, detail: 'print queue is not accepting jobs' };
+      const detail = 'print queue is not accepting jobs';
+      return { ok: false, detail, failureClass: classifyPrintFailure(detail) };
     }
   } catch (err) {
-    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
+    if (signal?.aborted) {
+      const detail = 'Print cancelled during shutdown';
+      return { ok: false, detail, failureClass: classifyPrintFailure(detail) };
+    }
     // Mirrors describeCupsQueueProblem: unreachable queue check does not block print.
     console.log(`[Printer] IPP pre-flight check failed for "${printerName}":`, err);
   }
@@ -4213,17 +4232,19 @@ async function printViaLocalIpp(
   try {
     const result = await ippPrintRaw(printerName, data, signal);
     if (!result.ok) {
-      console.error(`[Printer] IPP print failed for "${printerName}": ${result.detail}`);
-      return { ok: false, detail: result.detail || `IPP print failed for "${printerName}"` };
+      const detail = result.detail || `IPP print failed for "${printerName}"`;
+      console.error(`[Printer] IPP print failed for "${printerName}": ${detail}`);
+      return { ok: false, detail, failureClass: classifyPrintFailure(detail) };
     }
     console.log(
       `[Printer] IPP print queued for "${printerName}" (job ${result.jobId ?? 'unknown'})`,
     );
     return { ok: true, jobId: result.jobId };
   } catch (err: any) {
-    const detail = String(err?.message || err || '').trim();
+    const detail =
+      String(err?.message || err || '').trim() || `IPP print failed for "${printerName}"`;
     console.error(`[Printer] IPP print failed for "${printerName}": ${detail}`);
-    return { ok: false, detail: detail || `IPP print failed for "${printerName}"` };
+    return { ok: false, detail, failureClass: classifyPrintFailure(detail) };
   }
 }
 

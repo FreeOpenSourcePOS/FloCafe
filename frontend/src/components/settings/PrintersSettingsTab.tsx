@@ -618,7 +618,8 @@ export function PrintersSettingsTab({
                   </datalist>
                   {printerForm.connection_type !== 'webusb' &&
                     printerForm.name.trim() &&
-                    detectedPrinters.length > 0 &&
+                    !detectingPrinters &&
+                    (printerForm.connection_type === 'usb' || detectedPrinters.length > 0) &&
                     !detectedPrinters.some((dp) => dp.name === printerForm.name) && (
                       <p className="mt-1 text-xs text-amber-600">
                         {t('printerNameMismatchWarning')}

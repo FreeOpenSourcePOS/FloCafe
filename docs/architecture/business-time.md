@@ -110,8 +110,16 @@ attributed to the business date on which it happened in the store, not the one i
 
 `main/routes/cash-closures.ts` computes `todayLocal` the same way, and derives the start of the first
 day and the end of the last day from `dayBoundsInTimezone` at both ends. Cash movements, X-reports,
-and the Z-report all key off the resulting `businessDate`, which is why a closure total and a sales
-report for the same day agree.
+and the day-close Z-report all key off the resulting `businessDate`, which is why a day-close total
+and a sales report for the same day agree.
+
+Shift session closures (`scope = 'session'` in `main/routes/cash-sessions.ts`) record their actual
+UTC `[period_start, period_end]` window (`opened_at` to `closed_at`), but file `business_date` under
+the shift's opening business date via `sessionBusinessDate(db, session)` (`opened_at` evaluated in
+the store timezone and `business_day_start_time` cutoff). A shift that crosses midnight or the
+business-day cutoff therefore stays filed under the business date on which it opened, while daily
+reporting and day-close aggregates continue to bound sales by each business day's `[start, end)`
+window.
 
 ### Refunds
 

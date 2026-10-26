@@ -200,6 +200,13 @@ test('persisted theme_mode survives a full app relaunch (SQLite round-trip)', as
     return status?.effectiveTheme;
   }), { timeout: 10_000 }).toBe('dark');
 
+  // Clear the persisted auth session before relaunching so the relaunched app
+  // stays on /auth/login and authenticateDashboard() performs a full login.
+  await harness.page.evaluate(() => {
+    window.localStorage.removeItem('token');
+    window.localStorage.removeItem('tenant');
+  });
+
   // Only the first harness carries relaunch(); the relaunched one omits it.
   const newHarness = await harness.relaunch!();
   // The new app is parked on /auth/login (no owner session yet). On this
@@ -215,6 +222,24 @@ test('persisted theme_mode survives a full app relaunch (SQLite round-trip)', as
   });
   expect(persisted.htmlHasDark).toBe(true);
   expect(persisted.effectiveTheme).toBe('dark');
+
+  const loginResponsePromise = newHarness.page.waitForResponse(
+    (res) => res.url().includes('/api/auth/login') && res.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
+  await newHarness.authenticateDashboard();
+  const loginResponse = await loginResponsePromise;
+  expect(loginResponse.status()).toBe(200);
+
+  const postLogin = await newHarness.page.evaluate(async () => {
+    const status = await window.electronAPI?.getStatus();
+    return {
+      htmlHasDark: document.documentElement.classList.contains('dark'),
+      effectiveTheme: status?.effectiveTheme,
+    };
+  });
+  expect(postLogin.htmlHasDark).toBe(true);
+  expect(postLogin.effectiveTheme).toBe('dark');
 
   if (process.env.FLO_E2E_EVIDENCE_DIR) {
     await newHarness.page.screenshot({

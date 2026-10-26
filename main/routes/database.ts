@@ -287,20 +287,12 @@ router.post(
                 });
               }
             }
-            const hasAddonMovements =
-              Array.isArray(importData.inventory_movements) &&
-              importData.inventory_movements.some(
-                (m) =>
-                  m && typeof m === 'object' && m.addon_id != null && String(m.addon_id) !== '',
-              );
             const importAddons = Array.isArray(importData.addons)
-              ? importSchemaVersion === null || importSchemaVersion < 104 || !hasAddonMovements
-                ? importData.addons.map((a) =>
-                    a && typeof a === 'object' && !('stock_quantity' in a)
-                      ? { ...a, stock_quantity: 0 }
-                      : a,
-                  )
-                : importData.addons
+              ? importData.addons.map((a) =>
+                  a && typeof a === 'object' && a.stock_quantity === undefined
+                    ? { ...a, stock_quantity: 0 }
+                    : a,
+                )
               : [];
             if (
               Array.isArray(importData.inventory_movements) &&

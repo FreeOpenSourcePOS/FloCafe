@@ -920,6 +920,35 @@ async function legacyJsonImportAssertions(): Promise<void> {
       null,
       'the ledger remains valid after importing an unversioned JSON payload',
     );
+
+    db.exec('DELETE FROM inventory_movements');
+    const currentSchemaRes = await api(baseUrl, '/api/database/import', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        master_pin: '1234',
+        overwrite: true,
+        data: buildLegacyPayload({ schema_version: String(getCurrentSchemaVersion()) }),
+      },
+    });
+    assertEqualOrThrow(
+      currentSchemaRes.status,
+      200,
+      'current-schema JSON import with mixed tracked add-on movement and omitted add-on stock_quantity succeeds',
+    );
+    const oatCurrent = db
+      .prepare('SELECT stock_quantity FROM addons WHERE id = ?')
+      .get('oat-legacy') as any;
+    assertEqualOrThrow(
+      Number(oatCurrent.stock_quantity),
+      0,
+      'omitted stock_quantity defaults to 0 on current-schema mixed add-on import',
+    );
+    assertEqualOrThrow(
+      validateInventoryLedgerDatabase(db),
+      null,
+      'the ledger remains valid after importing a current-schema mixed add-on payload',
+    );
   } finally {
     server.close();
   }

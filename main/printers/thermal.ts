@@ -4240,9 +4240,9 @@ async function printViaLocalIpp(
       `[Printer] IPP print queued for "${printerName}" (job ${result.jobId ?? 'unknown'})`,
     );
     return { ok: true, jobId: result.jobId };
-  } catch (err: any) {
-    const detail =
-      String(err?.message || err || '').trim() || `IPP print failed for "${printerName}"`;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : err;
+    const detail = String(message || '').trim() || `IPP print failed for "${printerName}"`;
     console.error(`[Printer] IPP print failed for "${printerName}": ${detail}`);
     return { ok: false, detail, failureClass: classifyPrintFailure(detail) };
   }

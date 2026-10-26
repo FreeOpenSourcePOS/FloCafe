@@ -810,6 +810,242 @@ async function main() {
         'financial-summary includes matching period profitability',
       );
 
+      // Cross-midnight creation vs settlement + split-bill bill_items allocation
+      const { buildDailySalesExportDataset } = require('../main/services/daily-sales-export');
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('timezone', 'UTC')").run();
+      try {
+        const day1Str = '2026-10-18';
+        const day2Str = '2026-10-19';
+        const day1CreatedTs = '2026-10-18 23:45:00';
+        const day2PaidTs = '2026-10-19 00:15:00';
+
+        db.prepare(
+          `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+           VALUES ('ORD-CROSS-MIDNIGHT', ?, 'dine_in', 'completed', 13, 13, ?, ?, ?)`,
+        ).run(userId, day1CreatedTs, day2PaidTs, day2PaidTs);
+        const crossOrderId = Number(
+          db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-CROSS-MIDNIGHT'").get().id,
+        );
+        db.prepare(
+          `INSERT INTO order_items (
+             order_id, product_id, product_name, quantity, unit_price, subtotal,
+             tax_amount, tax_type, total, status, ingredient_cost, ingredient_cost_known, created_at, updated_at
+           ) VALUES (?, 'prod-latte', 'Latte', 2, 6.5, 13, 0, 'exclusive', 13, 'completed', 1.98, 1, ?, ?)`,
+        ).run(crossOrderId, day1CreatedTs, day1CreatedTs);
+        db.prepare(
+          `INSERT INTO bills (
+             bill_number, order_id, subtotal, total, paid_amount, balance, payment_status,
+             payment_details, paid_at, created_at, updated_at
+           ) VALUES ('BILL-CROSS-MIDNIGHT', ?, 13, 13, 13, 0, 'paid', ?, ?, ?, ?)`,
+        ).run(
+          crossOrderId,
+          JSON.stringify([{ method: 'cash', amount: 13, timestamp: day2PaidTs }]),
+          day2PaidTs,
+          day1CreatedTs,
+          day2PaidTs,
+        );
+
+        const day1FinRes = await api(
+          baseUrl,
+          `/api/reports/financial-summary?start_date=${day1Str}&end_date=${day1Str}`,
+          { headers: authHeader },
+        );
+        assertEqualOrThrow(day1FinRes.status, 200, 'Day 1 financial-summary returns 200');
+        const day1Prof = day1FinRes.data.financialSummary.profitability;
+        assertEqualOrThrow(
+          day1Prof.total_quantity,
+          0,
+          'Day 1 creation-only order has 0 settled profitability quantity',
+        );
+        assertEqualOrThrow(
+          day1Prof.known_cost_revenue,
+          0,
+          'Day 1 creation-only order has 0 known_cost_revenue',
+        );
+        assertEqualOrThrow(
+          day1Prof.ingredient_cost,
+          null,
+          'Day 1 creation-only order has null ingredient_cost',
+        );
+        assertEqualOrThrow(day1Prof.profit, null, 'Day 1 creation-only order has null profit');
+        assertEqualOrThrow(
+          day1Prof.cost_status,
+          'unknown',
+          'Day 1 creation-only order has cost_status=unknown',
+        );
+
+        const day2FinRes = await api(
+          baseUrl,
+          `/api/reports/financial-summary?start_date=${day2Str}&end_date=${day2Str}`,
+          { headers: authHeader },
+        );
+        assertEqualOrThrow(day2FinRes.status, 200, 'Day 2 financial-summary returns 200');
+        const day2Prof = day2FinRes.data.financialSummary.profitability;
+        const day2Export = buildDailySalesExportDataset(day2Str, db).summary;
+        assertEqualOrThrow(
+          day2Prof.total_quantity,
+          2,
+          'Day 2 settlement day attributes cross-midnight quantity=2',
+        );
+        assertEqualOrThrow(
+          day2Prof.known_cost_quantity,
+          2,
+          'Day 2 settlement day attributes known_cost_quantity=2',
+        );
+        assertEqualOrThrow(
+          day2Prof.known_cost_revenue,
+          day2Export.known_cost_net_item_sales,
+          'Day 2 financial-summary known_cost_revenue matches daily-sales export (13)',
+        );
+        assertEqualOrThrow(
+          day2Prof.ingredient_cost,
+          day2Export.ingredient_cost_total,
+          'Day 2 financial-summary ingredient_cost matches daily-sales export (1.98)',
+        );
+        assertEqualOrThrow(
+          day2Prof.profit,
+          day2Export.gross_profit_total,
+          'Day 2 financial-summary profit matches daily-sales export (11.02)',
+        );
+        assertEqualOrThrow(
+          day2Prof.cost_status,
+          day2Export.cost_coverage_status,
+          'Day 2 financial-summary cost_status matches daily-sales export (known)',
+        );
+
+        // Split bills paid in separate windows
+        const splitDay1Str = '2026-10-20';
+        const splitDay2Str = '2026-10-21';
+        const splitCreatedTs = '2026-10-20 12:00:00';
+        const splitPaid1Ts = '2026-10-20 12:30:00';
+        const splitPaid2Ts = '2026-10-21 10:00:00';
+
+        db.prepare(
+          `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+           VALUES ('ORD-SPLIT-PROF', ?, 'dine_in', 'completed', 19.5, 19.5, ?, ?, ?)`,
+        ).run(userId, splitCreatedTs, splitPaid2Ts, splitPaid2Ts);
+        const splitOrderId = Number(
+          db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-SPLIT-PROF'").get().id,
+        );
+        const splitItemRes = db
+          .prepare(
+            `INSERT INTO order_items (
+               order_id, product_id, product_name, quantity, unit_price, subtotal,
+               tax_amount, tax_type, total, status, ingredient_cost, ingredient_cost_known, created_at, updated_at
+             ) VALUES (?, 'prod-latte', 'Latte', 3, 6.5, 19.5, 0, 'exclusive', 19.5, 'completed', 2.97, 1, ?, ?)`,
+          )
+          .run(splitOrderId, splitCreatedTs, splitCreatedTs);
+        const splitOrderItemId = Number(splitItemRes.lastInsertRowid);
+
+        const splitBill1Res = db
+          .prepare(
+            `INSERT INTO bills (
+               bill_number, order_id, subtotal, total, paid_amount, balance, payment_status,
+               payment_details, paid_at, split_group_id, created_at, updated_at
+             ) VALUES ('BILL-SPLIT-PROF-1', ?, 6.5, 6.5, 6.5, 0, 'paid', ?, ?, 'split-prof-grp', ?, ?)`,
+          )
+          .run(
+            splitOrderId,
+            JSON.stringify([{ method: 'cash', amount: 6.5, timestamp: splitPaid1Ts }]),
+            splitPaid1Ts,
+            splitCreatedTs,
+            splitPaid1Ts,
+          );
+        const splitBill1Id = Number(splitBill1Res.lastInsertRowid);
+        db.prepare(
+          'INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, 1)',
+        ).run(splitBill1Id, splitOrderItemId);
+
+        const splitBill2Res = db
+          .prepare(
+            `INSERT INTO bills (
+               bill_number, order_id, subtotal, total, paid_amount, balance, payment_status,
+               payment_details, paid_at, split_group_id, created_at, updated_at
+             ) VALUES ('BILL-SPLIT-PROF-2', ?, 13, 13, 13, 0, 'paid', ?, ?, 'split-prof-grp', ?, ?)`,
+          )
+          .run(
+            splitOrderId,
+            JSON.stringify([{ method: 'card', amount: 13, timestamp: splitPaid2Ts }]),
+            splitPaid2Ts,
+            splitCreatedTs,
+            splitPaid2Ts,
+          );
+        const splitBill2Id = Number(splitBill2Res.lastInsertRowid);
+        db.prepare(
+          'INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, 2)',
+        ).run(splitBill2Id, splitOrderItemId);
+
+        const splitWin1Res = await api(
+          baseUrl,
+          `/api/reports/financial-summary?start_date=${splitDay1Str}&end_date=${splitDay1Str}`,
+          { headers: authHeader },
+        );
+        assertEqualOrThrow(
+          splitWin1Res.status,
+          200,
+          'split window 1 financial-summary returns 200',
+        );
+        const splitWin1Prof = splitWin1Res.data.financialSummary.profitability;
+        assertEqualOrThrow(
+          splitWin1Prof.total_quantity,
+          1,
+          'split window 1 attributes bill_items quantity=1',
+        );
+        assertEqualOrThrow(
+          splitWin1Prof.known_cost_quantity,
+          1,
+          'split window 1 attributes known_cost_quantity=1',
+        );
+        assertEqualOrThrow(
+          splitWin1Prof.known_cost_revenue,
+          6.5,
+          'split window 1 attributes 1/3 subtotal share (6.5)',
+        );
+        assertEqualOrThrow(
+          splitWin1Prof.ingredient_cost,
+          0.99,
+          'split window 1 attributes 1/3 ingredient_cost share (0.99)',
+        );
+        assertEqualOrThrow(splitWin1Prof.profit, 5.51, 'split window 1 attributes profit=5.51');
+
+        const splitWin2Res = await api(
+          baseUrl,
+          `/api/reports/financial-summary?start_date=${splitDay2Str}&end_date=${splitDay2Str}`,
+          { headers: authHeader },
+        );
+        assertEqualOrThrow(
+          splitWin2Res.status,
+          200,
+          'split window 2 financial-summary returns 200',
+        );
+        const splitWin2Prof = splitWin2Res.data.financialSummary.profitability;
+        assertEqualOrThrow(
+          splitWin2Prof.total_quantity,
+          2,
+          'split window 2 attributes bill_items quantity=2',
+        );
+        assertEqualOrThrow(
+          splitWin2Prof.known_cost_quantity,
+          2,
+          'split window 2 attributes known_cost_quantity=2',
+        );
+        assertEqualOrThrow(
+          splitWin2Prof.known_cost_revenue,
+          13,
+          'split window 2 attributes 2/3 subtotal share (13)',
+        );
+        assertEqualOrThrow(
+          splitWin2Prof.ingredient_cost,
+          1.98,
+          'split window 2 attributes 2/3 ingredient_cost share (1.98)',
+        );
+        assertEqualOrThrow(splitWin2Prof.profit, 11.02, 'split window 2 attributes profit=11.02');
+      } finally {
+        db.prepare(
+          "INSERT OR REPLACE INTO settings (key, value) VALUES ('timezone', 'Asia/Kolkata')",
+        ).run();
+      }
+
       // Manager without reports.financial.view can view topProducts quantities/revenue, but NOT cost/profit/margin
       const topManagerRes = await api(
         baseUrl,

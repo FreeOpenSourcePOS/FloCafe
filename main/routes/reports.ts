@@ -684,19 +684,41 @@ function computePeriodProfitabilitySummary(
     .prepare(
       `
       SELECT
-        COALESCE(SUM(oi.quantity), 0) as total_quantity,
-        COALESCE(SUM(oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END), 0) as ex_tax_revenue,
-        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN oi.quantity ELSE 0 END), 0) as known_cost_quantity,
-        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN 0 ELSE oi.quantity END), 0) as unknown_cost_quantity,
-        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+        COALESCE(SUM(CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
+                          THEN oi.quantity ELSE bi.quantity END), 0) as total_quantity,
+        COALESCE(SUM(CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
                           THEN (oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END)
-                          ELSE 0 END), 0) as known_cost_revenue,
-        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN oi.ingredient_cost ELSE 0 END), 0) as known_ingredient_cost
-      FROM order_items oi
-      JOIN orders o ON oi.order_id = o.id
-      WHERE o.created_at >= ? AND o.created_at < ?
-        AND o.status != 'cancelled'
-        AND COALESCE(oi.status, 'active') NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
+                          ELSE (oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END) * bi.quantity / NULLIF(oi.quantity, 0)
+                     END), 0) as ex_tax_revenue,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+                          THEN (CASE WHEN b.split_group_id IS NULL OR b.split_group_id = '' THEN oi.quantity ELSE bi.quantity END)
+                          ELSE 0
+                     END), 0) as known_cost_quantity,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+                          THEN 0
+                          ELSE (CASE WHEN b.split_group_id IS NULL OR b.split_group_id = '' THEN oi.quantity ELSE bi.quantity END)
+                     END), 0) as unknown_cost_quantity,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+                          THEN (CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
+                                     THEN (oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END)
+                                     ELSE (oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END) * bi.quantity / NULLIF(oi.quantity, 0)
+                                END)
+                          ELSE 0
+                     END), 0) as known_cost_revenue,
+        COALESCE(SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL
+                          THEN (CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
+                                     THEN oi.ingredient_cost
+                                     ELSE oi.ingredient_cost * bi.quantity / NULLIF(oi.quantity, 0)
+                                END)
+                          ELSE 0
+                     END), 0) as known_ingredient_cost
+      FROM bills b
+      JOIN orders o ON o.id = b.order_id
+      JOIN order_items oi ON oi.order_id = o.id
+      LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
+      WHERE b.paid_at >= ? AND b.paid_at < ?
+        AND (oi.status IS NULL OR oi.status NOT IN ('cancelled', 'voided', 'void_adjustment'))
+        AND (b.split_group_id IS NULL OR b.split_group_id = '' OR bi.bill_id IS NOT NULL)
     `,
     )
     .get(windowStart, windowEnd) as RawProfitabilityAggregate;

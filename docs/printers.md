@@ -150,8 +150,9 @@ print requests are sent.
 
 ### Adding a printer manually by name
 
-FloCafe dispatches USB and OS-queue print jobs by sending the printer's exact name to the OS
-(`lp -d <name>` on macOS and Linux, `OpenPrinterW` on Windows). There is no fuzzy matching. If a
+FloCafe dispatches USB and OS-queue print jobs by sending the printer's exact queue name to the OS
+(CUPS on macOS and Linux, or the Windows Print Spooler; see
+[Transports](architecture/printing.md#transports)). There is no fuzzy matching. If a
 printer is not found by **Settings > Printers > Detect**, use **Add Manually**, but the name must
 match the OS print queue identifier exactly, not just the printer's name on your desktop.
 
@@ -192,11 +193,11 @@ processors or reject raw byte streams. If prints fail or come out garbled:
 - On macOS (including the Mac App Store build), USB receipt printers must first be added in
   **System Settings > Printers & Scanners** before FloCafe can detect or print to them. Connect the
   USB printer, click **Add Printer, Scanner, or Fax...**, and select the manufacturer's driver or a
-  generic queue (**Generic PostScript Printer** or **Generic PCL Printer**). FloCafe sends raw
-  ESC/POS bytes (`application/vnd.cups-raw`) through the local CUPS service (`/private/var/run/cupsd`
-  in Mac App Store builds, `lp -o raw` in direct downloads), bypassing macOS page filters. Once the
-  queue is added in macOS, click **Detect** in **Settings > Printers** and select the detected queue
-  so the printer name in FloCafe matches the CUPS queue name.
+  generic queue (**Generic PostScript Printer** or **Generic PCL Printer**); FloCafe sends raw
+  ESC/POS bytes through CUPS and bypasses macOS page filters (see
+  [Transports](architecture/printing.md#transports)). Once the queue is added in macOS, click
+  **Detect** in **Settings > Printers** and select the detected queue so the printer name in FloCafe
+  matches the CUPS queue name.
 - If a printer was unplugged, the CUPS print queue may be in a disabled or paused state. Re-enable
   the queue in your operating system printer settings; FloCafe resumes sending print jobs once the
   queue is active.

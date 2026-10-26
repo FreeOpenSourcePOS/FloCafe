@@ -390,7 +390,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "@googleapis/drive": "^26.0.2",
+    "@googleapis/drive": "^27.0.0",
     "@point-of-sale/codepage-encoder": "3.0.2",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "bcryptjs": "^3.0.3",

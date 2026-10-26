@@ -15,6 +15,7 @@ export * from './document';
 export * from './merchant-template';
 export * from './width';
 export * from './raster';
+export * from './raster-canvas';
 export * from './warnings';
 export * from './layout';
 export * from './z-report';

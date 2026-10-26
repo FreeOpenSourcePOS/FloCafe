@@ -1,7 +1,7 @@
 # Compliance print templates (`escpos-line-template-v1`)
 
 A signed country tax pack can ship a declarative receipt template that renders through FloCafe's
-built-in ESC/POS line renderer, `renderEscposLineTemplateV1` in `main/printers/thermal.ts`, under
+built-in ESC/POS line renderer, `escposLineTemplateV1Lines` in `main/printers/thermal.ts`, under
 the renderer id `flocafe-thermal-receipt-template`. The template is data: FloCafe validates it,
 selects a width profile, and renders it with its own code. Nothing in a pack is executed. See
 [data-only tax packs](../decisions/0004-data-only-tax-packs.md) for why that boundary exists.

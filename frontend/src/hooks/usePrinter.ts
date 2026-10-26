@@ -40,8 +40,11 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
 import { type Language } from '@/lib/i18n/languages';
-import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
-import { rasterWebUsbPathEnabled } from '@print/raster';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  type ThermalPrinterCapabilities,
+} from '@print/thermal-capabilities';
+import { DEFAULT_RASTER_MAX_BAND_HEIGHT, rasterWebUsbPathEnabled } from '@print/raster';
 import { columnsForConfiguredPrinter } from '@print/width';
 import {
   ensureReceiptSettingsLoaded,
@@ -60,6 +63,32 @@ function nativeFallbackCapabilities(
   return capabilities?.raster.enabled === true
     ? { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
     : capabilities;
+}
+
+function defaultWebUsbCapabilities(
+  paperWidth: PaperWidth,
+  configuredPaperWidth?: string | null,
+): ThermalPrinterCapabilities {
+  const cols = columnsForConfiguredPrinter(configuredPaperWidth, paperWidth);
+  const widthDots = cols <= 32 ? 384 : cols <= 36 ? 432 : cols <= 40 ? 480 : 576;
+  return {
+    ...GENERIC_THERMAL_CAPABILITIES,
+    raster: {
+      enabled: true,
+      widthDots,
+      maxBandHeight: DEFAULT_RASTER_MAX_BAND_HEIGHT,
+      modes: ['mixed', 'whole-receipt'],
+    },
+  };
+}
+
+function resolveWebUsbCapabilities(
+  webusbPrinter: HardwarePrinter | null,
+  paperWidth: PaperWidth,
+): ThermalPrinterCapabilities {
+  return (
+    webusbPrinter?.capabilities ?? defaultWebUsbCapabilities(paperWidth, webusbPrinter?.paper_width)
+  );
 }
 
 function makeRasterFallbackWarning(detail: unknown): PrintWarning {
@@ -191,7 +220,13 @@ export const usePrinterStore = create<PrinterState>()(
             list.find((p) => p.connection_type !== 'webusb') ||
             null;
           const webusbPrinters = list.filter((p) => p.connection_type === 'webusb');
-          const webusbPrinter = webusbPrinters.length === 1 ? webusbPrinters[0] : null;
+          const connectedProductName = printerService.deviceInfo?.productName?.trim().toLowerCase();
+          const webusbPrinter =
+            (connectedProductName
+              ? webusbPrinters.find((p) => p.name.trim().toLowerCase() === connectedProductName)
+              : undefined) ||
+            webusbPrinters.find((p) => p.is_default === 1) ||
+            (webusbPrinters.length === 1 ? webusbPrinters[0] : null);
           const configuredDefault = list.find((p) => p.is_default === 1) || null;
           set({
             hardwarePrinter: defaultPrinter,
@@ -385,6 +420,17 @@ export const usePrinterStore = create<PrinterState>()(
             kind: 'locale' as const,
           }));
           if (billTemplateWarning) warnings.push(billTemplateWarning);
+          const webusbPrinter = get().webusbPrinter;
+          const webusbCapabilities =
+            opts?.capabilities ??
+            resolveWebUsbCapabilities(webusbPrinter, opts?.paperWidth ?? configuredPaperWidth);
+          const rasterizePrintDocument = window.electronAPI?.rasterizePrintDocument;
+          const useElectronRaster = Boolean(
+            rasterBillTemplate &&
+            webusbPrinter &&
+            rasterizePrintDocument &&
+            rasterWebUsbPathEnabled(webusbPrinter.capabilities, true, webusbPrinter.profile_id),
+          );
           const builderOpts: ReceiptOptions = {
             ...opts,
             paperWidth: opts?.paperWidth ?? configuredPaperWidth,
@@ -408,7 +454,9 @@ export const usePrinterStore = create<PrinterState>()(
             isReprint,
             trimDecimals: printerTrimDecimals,
             languages,
-            capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities),
+            capabilities: useElectronRaster
+              ? nativeFallbackCapabilities(webusbCapabilities)
+              : webusbCapabilities,
           };
 
           let bytes: Uint8Array;
@@ -425,15 +473,7 @@ export const usePrinterStore = create<PrinterState>()(
             bytes = buildClassicReceiptBytes(bill, tenant, builderOpts, encoderWarnings);
           }
 
-          const webusbPrinter = get().webusbPrinter;
-          const webusbCapabilities = webusbPrinter?.capabilities;
-          const rasterizePrintDocument = window.electronAPI?.rasterizePrintDocument;
-          if (
-            rasterBillTemplate &&
-            webusbPrinter &&
-            rasterizePrintDocument &&
-            rasterWebUsbPathEnabled(webusbCapabilities, true, webusbPrinter.profile_id)
-          ) {
+          if (useElectronRaster && rasterBillTemplate && webusbPrinter && rasterizePrintDocument) {
             try {
               const currency = resolveTenantCurrency(tenant.currency, tenant.country);
               const rasterResult = await rasterizePrintDocument({
@@ -629,7 +669,12 @@ export const usePrinterStore = create<PrinterState>()(
               trimDecimals: printerTrimDecimals,
               rawEscPos: true,
               language: languages[0],
-              capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities),
+              capabilities:
+                opts?.capabilities ??
+                resolveWebUsbCapabilities(
+                  get().webusbPrinter,
+                  opts?.paperWidth ?? configuredPaperWidth,
+                ),
             },
             warnings,
           );
@@ -705,12 +750,13 @@ export const usePrinterStore = create<PrinterState>()(
             const encoderWarnings: PrintWarning[] = [];
             const webusbPrinter = get().webusbPrinter;
             const kotColumns = columnsForConfiguredPrinter(webusbPrinter?.paper_width, paperWidth);
-            const webusbCapabilities = webusbPrinter?.capabilities;
+            const webusbCapabilities =
+              opts?.capabilities ?? resolveWebUsbCapabilities(webusbPrinter, paperWidth);
             const rasterizeKotDocument = window.electronAPI?.rasterizeKotDocument;
             const useRaster = Boolean(
               webusbPrinter &&
               rasterizeKotDocument &&
-              rasterWebUsbPathEnabled(webusbCapabilities, true, webusbPrinter.profile_id),
+              rasterWebUsbPathEnabled(webusbPrinter.capabilities, true, webusbPrinter.profile_id),
             );
             let rasterOrder = orderForPrint;
             let rasterHydrationError: unknown = null;
@@ -734,7 +780,9 @@ export const usePrinterStore = create<PrinterState>()(
                 arabicShaping: printerArabicShaping,
                 language: kotLanguage,
                 timezone: tenantTimezone ?? opts?.timezone,
-                capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities),
+                capabilities: useRaster
+                  ? nativeFallbackCapabilities(webusbCapabilities)
+                  : webusbCapabilities,
               },
               encoderWarnings,
             );
@@ -943,6 +991,8 @@ export const usePrinterStore = create<PrinterState>()(
                 columns,
                 arabicShaping: printerArabicShaping,
                 language: slipLanguages[0] as Language,
+                capabilities:
+                  opts?.capabilities ?? resolveWebUsbCapabilities(get().webusbPrinter, paperWidth),
                 ...(slipPayment ? { payment: slipPayment } : {}),
                 ...(tenantTimezone ? { timezone: tenantTimezone } : {}),
               },

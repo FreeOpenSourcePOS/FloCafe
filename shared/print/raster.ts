@@ -70,8 +70,19 @@ export interface RasterRenderRequest {
 }
 
 export type RasterRenderResult =
-  | { readonly version: 1; readonly requestId: string; readonly ok: true; readonly unit: RasterSemanticUnit }
-  | { readonly version: 1; readonly requestId: string; readonly ok: false; readonly code: 'invalid-request' | 'font-unavailable' | 'render-failed'; readonly detail: string };
+  | {
+      readonly version: 1;
+      readonly requestId: string;
+      readonly ok: true;
+      readonly unit: RasterSemanticUnit;
+    }
+  | {
+      readonly version: 1;
+      readonly requestId: string;
+      readonly ok: false;
+      readonly code: 'invalid-request' | 'font-unavailable' | 'render-failed';
+      readonly detail: string;
+    };
 
 export interface RasterIpcRequestMessage {
   readonly version: 1;
@@ -87,12 +98,16 @@ export function rasterCapabilityEnabled(
   capabilities: ThermalPrinterCapabilities | undefined,
   mode: 'mixed' | 'whole-receipt' = 'mixed',
 ): boolean {
-  return capabilities?.raster.enabled === true
-    && Number.isSafeInteger(capabilities.raster.widthDots)
-    && capabilities.raster.widthDots > 0 && capabilities.raster.widthDots <= MAX_RASTER_WIDTH_DOTS
-    && Number.isSafeInteger(capabilities.raster.maxBandHeight)
-    && capabilities.raster.maxBandHeight > 0 && capabilities.raster.maxBandHeight <= DEFAULT_RASTER_MAX_BAND_HEIGHT
-    && capabilities.raster.modes.includes(mode);
+  return (
+    capabilities?.raster.enabled === true &&
+    Number.isSafeInteger(capabilities.raster.widthDots) &&
+    capabilities.raster.widthDots > 0 &&
+    capabilities.raster.widthDots <= MAX_RASTER_WIDTH_DOTS &&
+    Number.isSafeInteger(capabilities.raster.maxBandHeight) &&
+    capabilities.raster.maxBandHeight > 0 &&
+    capabilities.raster.maxBandHeight <= DEFAULT_RASTER_MAX_BAND_HEIGHT &&
+    capabilities.raster.modes.includes(mode)
+  );
 }
 
 export function rasterWebUsbPathEnabled(
@@ -100,20 +115,29 @@ export function rasterWebUsbPathEnabled(
   rendererAvailable: boolean,
   profileId: unknown,
 ): boolean {
-  return rasterCapabilityEnabled(capabilities, 'mixed')
-    && rendererAvailable
-    && typeof profileId === 'string'
-    && profileId.length > 0;
+  return (
+    rasterCapabilityEnabled(capabilities, 'mixed') &&
+    rendererAvailable &&
+    typeof profileId === 'string' &&
+    profileId.length > 0
+  );
 }
 
-export function validateRasterBand(band: RasterBand, maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT): void {
-  if (!Number.isSafeInteger(maxBandHeight) || maxBandHeight <= 0 || maxBandHeight > 0xFFFF) throw new Error('Invalid maximum raster band height');
-  if (!Number.isSafeInteger(band.widthDots) || band.widthDots <= 0) throw new Error('Raster width must be a positive integer');
-  if (!Number.isSafeInteger(band.heightDots) || band.heightDots <= 0) throw new Error('Raster height must be a positive integer');
-  if (band.heightDots > 0xFFFF) throw new Error('Raster height exceeds GS v 0 limit');
-  if (band.heightDots > maxBandHeight) throw new Error(`Raster band exceeds maximum height of ${maxBandHeight}`);
+export function validateRasterBand(
+  band: RasterBand,
+  maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT,
+): void {
+  if (!Number.isSafeInteger(maxBandHeight) || maxBandHeight <= 0 || maxBandHeight > 0xffff)
+    throw new Error('Invalid maximum raster band height');
+  if (!Number.isSafeInteger(band.widthDots) || band.widthDots <= 0)
+    throw new Error('Raster width must be a positive integer');
+  if (!Number.isSafeInteger(band.heightDots) || band.heightDots <= 0)
+    throw new Error('Raster height must be a positive integer');
+  if (band.heightDots > 0xffff) throw new Error('Raster height exceeds GS v 0 limit');
+  if (band.heightDots > maxBandHeight)
+    throw new Error(`Raster band exceeds maximum height of ${maxBandHeight}`);
   const widthBytes = Math.ceil(band.widthDots / 8);
-  if (widthBytes > 0xFFFF) throw new Error('Raster width exceeds GS v 0 limit');
+  if (widthBytes > 0xffff) throw new Error('Raster width exceeds GS v 0 limit');
   const expectedLength = widthBytes * band.heightDots;
   if (band.pixels.length !== band.widthDots * band.heightDots) {
     throw new Error('Raster pixels must contain one value per pixel');
@@ -122,7 +146,10 @@ export function validateRasterBand(band: RasterBand, maxBandHeight = DEFAULT_RAS
 }
 
 /** Encode exactly one validated band using GS v 0, m=0 (normal density). */
-export function encodeGsV0Band(band: RasterBand, maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT): Uint8Array {
+export function encodeGsV0Band(
+  band: RasterBand,
+  maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT,
+): Uint8Array {
   validateRasterBand(band, maxBandHeight);
   const widthBytes = Math.ceil(band.widthDots / 8);
   const payload = new Uint8Array(widthBytes * band.heightDots);
@@ -136,7 +163,16 @@ export function encodeGsV0Band(band: RasterBand, maxBandHeight = DEFAULT_RASTER_
   }
 
   const command = new Uint8Array(8 + payload.length);
-  command.set([0x1D, 0x76, 0x30, GS_V_0_MODE, widthBytes & 0xFF, (widthBytes >> 8) & 0xFF, band.heightDots & 0xFF, (band.heightDots >> 8) & 0xFF]);
+  command.set([
+    0x1d,
+    0x76,
+    0x30,
+    GS_V_0_MODE,
+    widthBytes & 0xff,
+    (widthBytes >> 8) & 0xff,
+    band.heightDots & 0xff,
+    (band.heightDots >> 8) & 0xff,
+  ]);
   command.set(payload, 8);
   return command;
 }
@@ -161,15 +197,22 @@ export function encodeRasterUnits(
   capabilities: ThermalPrinterCapabilities,
   mode: 'mixed' | 'whole-receipt' = 'mixed',
 ): Uint8Array {
-  if (!rasterCapabilityEnabled(capabilities, mode)) throw new Error(`Raster ${mode} output is not enabled for this printer profile`);
+  if (!rasterCapabilityEnabled(capabilities, mode))
+    throw new Error(`Raster ${mode} output is not enabled for this printer profile`);
   const parts: Uint8Array[] = [];
   for (const unit of units) {
     if (!unit.complete || unit.bands.length === 0) {
-      throw new Error(unit.financial ? 'Financial raster unit is incomplete' : `Raster unit ${unit.unitId} is incomplete`);
+      throw new Error(
+        unit.financial
+          ? 'Financial raster unit is incomplete'
+          : `Raster unit ${unit.unitId} is incomplete`,
+      );
     }
     for (const band of unit.bands) {
       if (band.widthDots !== capabilities.raster.widthDots) {
-        throw new Error(`Raster width ${band.widthDots} does not match profile width ${capabilities.raster.widthDots}`);
+        throw new Error(
+          `Raster width ${band.widthDots} does not match profile width ${capabilities.raster.widthDots}`,
+        );
       }
       parts.push(encodeGsV0Band(band, capabilities.raster.maxBandHeight));
     }
@@ -178,12 +221,24 @@ export function encodeRasterUnits(
 }
 
 /** Diagnostic bands used by the capability-gated printer test page. */
-export function buildRasterDiagnosticBands(widthDots: number, maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT): RasterBand[] {
-  if (!Number.isSafeInteger(widthDots) || widthDots <= 0 || widthDots > MAX_RASTER_WIDTH_DOTS) throw new Error('Invalid diagnostic raster width');
-  if (!Number.isSafeInteger(maxBandHeight) || maxBandHeight <= 0 || maxBandHeight > DEFAULT_RASTER_MAX_BAND_HEIGHT) {
+export function buildRasterDiagnosticBands(
+  widthDots: number,
+  maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT,
+): RasterBand[] {
+  if (!Number.isSafeInteger(widthDots) || widthDots <= 0 || widthDots > MAX_RASTER_WIDTH_DOTS)
+    throw new Error('Invalid diagnostic raster width');
+  if (
+    !Number.isSafeInteger(maxBandHeight) ||
+    maxBandHeight <= 0 ||
+    maxBandHeight > DEFAULT_RASTER_MAX_BAND_HEIGHT
+  ) {
     throw new Error('Invalid diagnostic raster band height');
   }
-  const makeBand = (heightDots: number, yOffset: number, pixel: (x: number, y: number) => boolean): RasterBand => ({
+  const makeBand = (
+    heightDots: number,
+    yOffset: number,
+    pixel: (x: number, y: number) => boolean,
+  ): RasterBand => ({
     widthDots,
     heightDots,
     pixels: Uint8Array.from({ length: widthDots * heightDots }, (_, index) => {
@@ -211,7 +266,10 @@ export function encodeWholeReceiptRaster(
   capabilities: ThermalPrinterCapabilities,
   cutMode: 'full' | 'partial',
 ): Uint8Array {
-  return concatBytes([encodeRasterUnits([unit], capabilities, 'whole-receipt'), encodeRasterFeedAndCut(cutMode)]);
+  return concatBytes([
+    encodeRasterUnits([unit], capabilities, 'whole-receipt'),
+    encodeRasterFeedAndCut(cutMode),
+  ]);
 }
 
 export type MixedPrintPart =
@@ -229,7 +287,11 @@ export function encodeMixedPrintParts(
 ): Uint8Array {
   const encoded: Uint8Array[] = [];
   for (const part of parts) {
-    encoded.push(part.kind === 'native' ? new Uint8Array(part.bytes) : encodeRasterUnits([part.unit], capabilities));
+    encoded.push(
+      part.kind === 'native'
+        ? new Uint8Array(part.bytes)
+        : encodeRasterUnits([part.unit], capabilities),
+    );
   }
   encoded.push(encodeRasterFeedAndCut(cutMode));
   return concatBytes(encoded);
@@ -237,72 +299,114 @@ export function encodeMixedPrintParts(
 
 /** Standard trailing feed and profile-selected cut used by all raw paths. */
 export function encodeRasterFeedAndCut(cutMode: 'full' | 'partial', feedLines = 5): Uint8Array {
-  if (!Number.isSafeInteger(feedLines) || feedLines < 0 || feedLines > 255) throw new Error('Invalid raster feed count');
+  if (!Number.isSafeInteger(feedLines) || feedLines < 0 || feedLines > 255)
+    throw new Error('Invalid raster feed count');
   return new Uint8Array([
-    0x1B, 0x64, feedLines,
-    ...(cutMode === 'partial' ? [0x1D, 0x56, 0x42, 0x00] : [0x1D, 0x56, 0x00]),
+    0x1b,
+    0x64,
+    feedLines,
+    ...(cutMode === 'partial' ? [0x1d, 0x56, 0x42, 0x00] : [0x1d, 0x56, 0x00]),
   ]);
 }
 
 export function isBundledFontDataUrl(dataUrl: unknown): boolean {
-  return typeof dataUrl === 'string' && dataUrl.length <= 4_000_000
-    && /^data:font\/(?:woff2?|truetype|opentype);base64,[A-Za-z0-9+/]+={0,2}$/.test(dataUrl);
+  return (
+    typeof dataUrl === 'string' &&
+    dataUrl.length <= 4_000_000 &&
+    /^data:font\/(?:woff2?|truetype|opentype);base64,[A-Za-z0-9+/]+={0,2}$/.test(dataUrl)
+  );
 }
 
 export function isRasterRenderRequest(value: unknown): value is RasterRenderRequest {
   if (!value || typeof value !== 'object') return false;
   const request = value as Partial<RasterRenderRequest>;
-  return request.version === 1
-    && typeof request.requestId === 'string' && request.requestId.length > 0 && request.requestId.length <= 128
-    && typeof request.text === 'string' && request.text.length <= 16_000
-    && Number.isSafeInteger(request.widthDots) && (request.widthDots as number) > 0 && (request.widthDots as number) <= MAX_RASTER_WIDTH_DOTS
-    && Number.isSafeInteger(request.maxBandHeight) && (request.maxBandHeight as number) > 0 && (request.maxBandHeight as number) <= DEFAULT_RASTER_MAX_BAND_HEIGHT
-    && (request.direction === 'ltr' || request.direction === 'rtl')
-    && (request.align === undefined || request.align === 'left' || request.align === 'center')
-    && (request.layout === undefined || (
-      !!request.layout
-      && (request.layout.kind === 'financial-summary' || request.layout.kind === 'financial-item')
-      && Array.isArray(request.layout.columns)
-      && request.layout.columns.length >= 2
-      && request.layout.columns.length <= 3
-      && request.layout.columns.every((column) => !!column
-        && typeof column.text === 'string'
-        && column.text.length <= 16_000
-        && (column.align === 'left' || column.align === 'right')
-        && (column.widthRatio === undefined || (typeof column.widthRatio === 'number' && Number.isFinite(column.widthRatio) && column.widthRatio > 0 && column.widthRatio <= 1)))
-      && request.layout.columns.reduce((sum, col) => sum + (typeof col?.widthRatio === 'number' ? col.widthRatio : 0), 0) <= 1.000001
-    ))
-    && ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(request.style as string)
-    && (request.styles === undefined || (Array.isArray(request.styles) && request.styles.length > 0 && request.styles.length <= 4
-      && request.styles.every((style) => ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(style))))
-    && typeof request.financial === 'boolean'
-    && Number.isSafeInteger(request.maxLines) && (request.maxLines as number) > 0 && (request.maxLines as number) <= 256
-    && (request.bundledFont === undefined || (
-      !!request.bundledFont
-      && typeof request.bundledFont === 'object'
-      && typeof request.bundledFont.family === 'string'
-      && /^[A-Za-z0-9 _-]{1,64}$/.test(request.bundledFont.family)
-      && isBundledFontDataUrl(request.bundledFont.dataUrl)
-    ));
+  return (
+    request.version === 1 &&
+    typeof request.requestId === 'string' &&
+    request.requestId.length > 0 &&
+    request.requestId.length <= 128 &&
+    typeof request.text === 'string' &&
+    request.text.length <= 16_000 &&
+    Number.isSafeInteger(request.widthDots) &&
+    (request.widthDots as number) > 0 &&
+    (request.widthDots as number) <= MAX_RASTER_WIDTH_DOTS &&
+    Number.isSafeInteger(request.maxBandHeight) &&
+    (request.maxBandHeight as number) > 0 &&
+    (request.maxBandHeight as number) <= DEFAULT_RASTER_MAX_BAND_HEIGHT &&
+    (request.direction === 'ltr' || request.direction === 'rtl') &&
+    (request.align === undefined || request.align === 'left' || request.align === 'center') &&
+    (request.layout === undefined ||
+      (!!request.layout &&
+        (request.layout.kind === 'financial-summary' || request.layout.kind === 'financial-item') &&
+        Array.isArray(request.layout.columns) &&
+        request.layout.columns.length >= 2 &&
+        (request.layout.columns.length <= 3 ||
+          (request.layout.columns.length === 4 &&
+            request.layout.columns.every(
+              (column) => !!column && typeof column.widthRatio === 'number',
+            ))) &&
+        request.layout.columns.every(
+          (column) =>
+            !!column &&
+            typeof column.text === 'string' &&
+            column.text.length <= 16_000 &&
+            (column.align === 'left' || column.align === 'right') &&
+            (column.widthRatio === undefined ||
+              (typeof column.widthRatio === 'number' &&
+                Number.isFinite(column.widthRatio) &&
+                column.widthRatio > 0 &&
+                column.widthRatio <= 1)),
+        ) &&
+        request.layout.columns.reduce(
+          (sum, col) => sum + (typeof col?.widthRatio === 'number' ? col.widthRatio : 0),
+          0,
+        ) <= 1.000001)) &&
+    ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(
+      request.style as string,
+    ) &&
+    (request.styles === undefined ||
+      (Array.isArray(request.styles) &&
+        request.styles.length > 0 &&
+        request.styles.length <= 4 &&
+        request.styles.every((style) =>
+          ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(style),
+        ))) &&
+    typeof request.financial === 'boolean' &&
+    Number.isSafeInteger(request.maxLines) &&
+    (request.maxLines as number) > 0 &&
+    (request.maxLines as number) <= 256 &&
+    (request.bundledFont === undefined ||
+      (!!request.bundledFont &&
+        typeof request.bundledFont === 'object' &&
+        typeof request.bundledFont.family === 'string' &&
+        /^[A-Za-z0-9 _-]{1,64}$/.test(request.bundledFont.family) &&
+        isBundledFontDataUrl(request.bundledFont.dataUrl)))
+  );
 }
 
 function isRasterBand(value: unknown): value is RasterBand {
   if (!value || typeof value !== 'object') return false;
   const band = value as Partial<RasterBand>;
-  return Number.isSafeInteger(band.widthDots) && (band.widthDots as number) > 0
-    && Number.isSafeInteger(band.heightDots) && (band.heightDots as number) > 0
-    && band.pixels instanceof Uint8Array
-    && band.pixels.length === (band.widthDots as number) * (band.heightDots as number);
+  return (
+    Number.isSafeInteger(band.widthDots) &&
+    (band.widthDots as number) > 0 &&
+    Number.isSafeInteger(band.heightDots) &&
+    (band.heightDots as number) > 0 &&
+    band.pixels instanceof Uint8Array &&
+    band.pixels.length === (band.widthDots as number) * (band.heightDots as number)
+  );
 }
 
 function isRasterSemanticUnit(value: unknown): value is RasterSemanticUnit {
   if (!value || typeof value !== 'object') return false;
   const unit = value as Partial<RasterSemanticUnit>;
-  return typeof unit.unitId === 'string'
-    && typeof unit.financial === 'boolean'
-    && typeof unit.complete === 'boolean'
-    && Array.isArray(unit.bands)
-    && unit.bands.every(isRasterBand);
+  return (
+    typeof unit.unitId === 'string' &&
+    typeof unit.financial === 'boolean' &&
+    typeof unit.complete === 'boolean' &&
+    Array.isArray(unit.bands) &&
+    unit.bands.every(isRasterBand)
+  );
 }
 
 export function isRasterRenderResult(value: unknown): value is RasterRenderResult {
@@ -310,7 +414,11 @@ export function isRasterRenderResult(value: unknown): value is RasterRenderResul
   const result = value as Partial<RasterRenderResult>;
   if (result.version !== 1 || typeof result.requestId !== 'string') return false;
   if (result.ok === true) return isRasterSemanticUnit(result.unit);
-  return result.ok === false
-    && (result.code === 'invalid-request' || result.code === 'font-unavailable' || result.code === 'render-failed')
-    && typeof result.detail === 'string';
+  return (
+    result.ok === false &&
+    (result.code === 'invalid-request' ||
+      result.code === 'font-unavailable' ||
+      result.code === 'render-failed') &&
+    typeof result.detail === 'string'
+  );
 }

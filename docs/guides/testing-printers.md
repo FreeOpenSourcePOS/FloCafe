@@ -94,26 +94,28 @@ stderr.
 
 ## Test 3: financial-row refusal
 
-A receipt whose financial row contains text the printer cannot represent must be refused in full,
-not printed with a substituted value. The refusal message is fixed.
+A receipt whose financial row contains text the printer cannot represent natively and cannot
+rasterize must be refused in full, not printed with a substituted value; see
+[capabilities and refusal](../architecture/printing.md#capabilities-and-refusal) for the refusal
+message contract.
 
 ### Procedure
 
-1. Give the store a bill that renders an unrepresentable character on a financial row. The simplest
-   case is an order or customer name in a script the profile cannot represent that reaches a total
-   line, on a profile whose capabilities are ASCII only.
+1. With raster fallback disabled or unavailable, give the store a bill that renders an
+   unrepresentable character on a financial row, on a profile whose native capabilities are ASCII
+   only.
 2. Attempt to print the receipt on the thermal printer.
 3. Attempt the same receipt through system or browser printing.
 
 ### Pass criteria
 
 - The thermal attempt fails and shows: `Receipt not printed: a financial row contains unsupported
-  printer text:` followed by the offending text.
+  printer text:` followed by the offending text and the fallback hint.
 - No partial receipt reaches the paper. A total that does not match the real total is worse than no
   receipt.
 - The non-financial variant of the same content, such as a note or an address line, prints with the
   unrepresentable text skipped, because the capability policy skips non-financial rows and refuses
-  financial ones.
+  financial ones when raster is unavailable.
 - System or browser printing still produces a receipt, so the merchant has a fallback.
 
 ## Test 4: kitchen ticket routing

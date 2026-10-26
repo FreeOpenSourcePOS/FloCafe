@@ -75,16 +75,13 @@ to the Xprinter profile. A name containing `epson tm`, `tm-t88`, `tm-t82`, `tm-t
 resolves to the Epson TM series profile. Only a name that matches nothing falls through to the
 generic profile chosen by paper width.
 
-The generic profiles are the conservative ones. They are ASCII-only, with no text shaping, and
-they skip unsupported non-financial text with a warning but **refuse** a receipt whose financial
-rows contain unsupported text, reporting `Receipt not printed: a financial row contains unsupported
-printer text`. The Xprinter and Epson profiles add the Latin code pages and Latin script
-representability on top of that. All four shipped profiles enable the capability-gated raster
-path; what differs is encoding and script coverage.
-
-If a receipt is refused because of unsupported text in a financial row, check the resolved profile
-before changing anything else. A printer set to the generic profile when it should be an Xprinter
-or Epson is the usual cause.
+The generic profiles are the conservative ones for native text encoding (ASCII-only, with no text
+shaping), while the Xprinter and Epson profiles add the Latin code pages and Latin script
+representability. All four shipped profiles enable the capability-gated raster path across core,
+merchant, and compliance pack templates (and via canvas rasterization on browser/WebUSB paths), so
+lines containing characters outside the printer's native code pages are rendered as raster bands.
+If raster rendering is unavailable or fails on a financial row, FloCafe refuses the print rather
+than omitting an amount, reporting `Receipt not printed: ...` with the affected row and next steps.
 
 ## Arabic-script text
 
@@ -98,10 +95,9 @@ A validated printer profile may also enable the capability-gated raster path, wh
 isolated Chromium renderer and bundled local fonts for content the printer cannot shape itself.
 Profile capability is what enables it; a locale never does.
 
-On the document-driven thermal and browser paths, unsupported non-financial text is skipped with a
-warning, while an unsupported item row or financial row refuses the receipt before transport with
-an explicit operator warning. The exact warning contract and the direct-write exceptions are in
-[the printing architecture](architecture/printing.md).
+When neither firmware shaping nor raster rendering is available, unsupported non-financial text is
+skipped with a warning and an unsupported financial row refuses the receipt before transport; see
+[capabilities and refusal](architecture/printing.md#capabilities-and-refusal).
 
 ## Receipt and kitchen-ticket languages
 

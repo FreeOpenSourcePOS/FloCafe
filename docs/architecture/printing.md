@@ -46,7 +46,7 @@ checks the consumer boundary from outside the kernel; it does not close this gap
 | `width.ts` | Grapheme- and display-cell-aware measurement and truncation. |
 | `thermal-capabilities.ts` | Capability shape, code pages, representability, and warning policy. |
 | `merchant-template.ts` | Merchant template payload validation and canonical serialization. |
-| `raster.ts` | Raster band construction and ESC/POS raster encoding. |
+| `raster.ts`, `raster-canvas.ts` | Raster band construction, shared canvas painter (`paintRasterRequest`), and ESC/POS raster encoding. |
 | `z-report.ts`, `layout.ts`, `currency.ts`, `warnings.ts` | Z-report assembly, column layout, currency tokens, and warning shapes. |
 
 ## Document models
@@ -154,7 +154,7 @@ four whitespace-separated tokens read as a sentence.
 | Kitchen ticket | `main/printers/document-kot.ts` | `KotDocument` |
 | Delivery slip | `main/printers/document-delivery-slip.ts` | `DeliverySlipDocument` |
 | Merchant | `main/printers/document-merchant.ts` | Wraps the classic renderer and applies a merchant template's block selection and order. |
-| Compliance line template | `renderEscposLineTemplateV1` in `main/printers/thermal.ts` | A pack-signed `escpos-line-template-v1` payload, as a plugin inside the thermal pipeline. |
+| Compliance line template | `escposLineTemplateV1Lines` in `main/printers/thermal.ts` | A pack-signed `escpos-line-template-v1` payload, as a plugin inside the thermal pipeline. |
 | Browser HTML | `frontend/src/lib/printer/web-print.ts` and `kot-web-print.ts` | A `PrintDocument` or `KotDocument`, rendered as HTML. |
 | WebUSB | `frontend/src/lib/printer/PrinterService.ts` | Encoder output, sent over the browser's WebUSB API. |
 | Delivery slip | `frontend/src/lib/printer/delivery-slip-encoder.ts` and `delivery-slip-web-print.ts` | A `DeliverySlipDocument`'s contact facts, rendered as bytes or HTML. |
@@ -232,14 +232,15 @@ does not raster at full width.
 scripts limited to `ascii`, transliteration enabled, unsupported text on a non-financial row is
 skipped, and unsupported text on a financial row refuses the print.
 
-When a financial row contains text the printer cannot represent, FloCafe refuses the whole receipt
-rather than printing a total that is not the real total. The refusal message is:
+When a financial row contains text the printer cannot represent natively and raster rendering is
+disabled or fails, FloCafe refuses the whole receipt rather than printing a total that is not the
+real total. The refusal message names the affected row, explains whether raster rendering failed or
+is unavailable, confirms that nothing was sent to the printer, and suggests retrying or using
+system/browser printing:
 
 ```text
-Receipt not printed: a financial row contains unsupported printer text: <text>
+Receipt not printed: a financial row contains unsupported printer text: <text>. The printer cannot print these characters as text, and no image fallback is available on this print path. Nothing was printed, so no amount is missing. Try again, or use system/browser printing.
 ```
-
-Use a supported printer profile or system/browser printing.
 
 `arabicShaping` on a profile is a deprecated compatibility input. Read `capabilities.shaping.arabic`
 instead; `getPrinterCapabilities()` merges the override into the capability set.
@@ -329,7 +330,9 @@ steps are in the [printer setup guide](../printers.md#menu-printing).
 Raster is an additive, profile-owned capability, not a rendering mode a document selects. A
 profile that declares `raster.enabled` may render text it cannot represent as bitmaps; a profile
 that does not never takes that path. The two declared modes are `mixed`, which rasterizes only the
-rows that need it, and `whole-receipt`, which rasterizes the entire receipt and must be opted into
+rows that need it (across core classic/compact, merchant, and `escpos-line-template-v1` compliance
+pack templates on the backend, and via `paintRasterRequest` canvas fallback on browser/WebUSB
+encoders), and `whole-receipt`, which rasterizes the entire receipt and must be opted into
 explicitly by the caller.
 
 ### The diagnostic probe is not reachable from the UI

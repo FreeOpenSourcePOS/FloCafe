@@ -10,10 +10,10 @@
  *      main-process nativeTheme.themeSource, which propagates to the
  *      renderer's prefers-color-scheme media query (the real path that
  *      ThemeSync subscribes to; page.emulateMedia is the wrong layer here).
- *   3. The persisted theme_mode survives a full app relaunch: before the
- *      user logs in, the FOUC script and main-side initial-isDark read
- *      already paint dark - the SQLite row is the source of truth - and a
- *      subsequent full login lands on /pos in dark mode.
+ *   3. The persisted theme_mode survives a full app relaunch: with the auth
+ *      session and flo-theme-resolved mirror cleared before relaunch,
+ *      ThemeSync rehydrates the dark theme from the SQLite row on /auth/login,
+ *      and a subsequent full login lands on /pos in dark mode.
  */
 
 import { expect, test } from '@playwright/test';
@@ -215,28 +215,38 @@ test('persisted theme_mode survives a full app relaunch (SQLite round-trip)', as
     )
     .toBe('dark');
 
-  // Clear the persisted auth session before relaunching so the relaunched app
-  // stays on /auth/login and authenticateDashboard() performs a full login.
+  // Clear the persisted auth session and the flo-theme-resolved FOUC mirror
+  // before relaunching so the relaunched app stays on /auth/login and must
+  // rehydrate the dark theme from the persisted SQLite row via ThemeSync.
   await harness.page.evaluate(() => {
     window.localStorage.removeItem('token');
     window.localStorage.removeItem('tenant');
+    window.localStorage.removeItem('flo-theme-resolved');
   });
 
   // Only the first harness carries relaunch(); the relaunched one omits it.
   const newHarness = await harness.relaunch!();
-  // The new app is parked on /auth/login (no owner session yet). On this
-  // boot the SQLite row + ThemeSync hydration + FOUC script are the only
-  // reasons the .dark class can be true — there's no user interaction in
-  // between.
-  const persisted = await newHarness.page.evaluate(async () => {
-    const status = await window.electronAPI?.getStatus();
-    return {
-      htmlHasDark: document.documentElement.classList.contains('dark'),
-      effectiveTheme: status?.effectiveTheme,
-    };
-  });
-  expect(persisted.htmlHasDark).toBe(true);
-  expect(persisted.effectiveTheme).toBe('dark');
+  // The new app is parked on /auth/login (no owner session or localStorage
+  // theme mirror yet). Wait for ThemeSync to read the SQLite row and hydrate
+  // the .dark class, the flo-theme-resolved mirror, and effectiveTheme.
+  await expect
+    .poll(
+      async () =>
+        newHarness.page.evaluate(async () => {
+          const status = await window.electronAPI?.getStatus();
+          return {
+            htmlHasDark: document.documentElement.classList.contains('dark'),
+            mirror: window.localStorage.getItem('flo-theme-resolved'),
+            effectiveTheme: status?.effectiveTheme,
+          };
+        }),
+      { timeout: 10_000 },
+    )
+    .toEqual({
+      htmlHasDark: true,
+      mirror: 'dark',
+      effectiveTheme: 'dark',
+    });
 
   const loginResponsePromise = newHarness.page.waitForResponse(
     (res) => res.url().includes('/api/auth/login') && res.request().method() === 'POST',
@@ -246,15 +256,24 @@ test('persisted theme_mode survives a full app relaunch (SQLite round-trip)', as
   const loginResponse = await loginResponsePromise;
   expect(loginResponse.status()).toBe(200);
 
-  const postLogin = await newHarness.page.evaluate(async () => {
-    const status = await window.electronAPI?.getStatus();
-    return {
-      htmlHasDark: document.documentElement.classList.contains('dark'),
-      effectiveTheme: status?.effectiveTheme,
-    };
-  });
-  expect(postLogin.htmlHasDark).toBe(true);
-  expect(postLogin.effectiveTheme).toBe('dark');
+  await expect
+    .poll(
+      async () =>
+        newHarness.page.evaluate(async () => {
+          const status = await window.electronAPI?.getStatus();
+          return {
+            htmlHasDark: document.documentElement.classList.contains('dark'),
+            mirror: window.localStorage.getItem('flo-theme-resolved'),
+            effectiveTheme: status?.effectiveTheme,
+          };
+        }),
+      { timeout: 10_000 },
+    )
+    .toEqual({
+      htmlHasDark: true,
+      mirror: 'dark',
+      effectiveTheme: 'dark',
+    });
 
   if (process.env.FLO_E2E_EVIDENCE_DIR) {
     await newHarness.page.screenshot({

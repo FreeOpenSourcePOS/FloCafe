@@ -14,7 +14,7 @@ FloCafe prints receipts and kitchen order tickets from the desktop app. Configur
 | Type | Use it for | What you need |
 | --- | --- | --- |
 | Network | Receipt or kitchen printers on the local network | Printer IP address and port; most ESC/POS printers use port `9100` |
-| USB / OS Queue | Direct USB printers and OS-managed print queues | A direct USB connection or a configured OS print queue (Windows Spooler or CUPS) |
+| USB / OS Queue | Direct USB printers and OS-managed print queues | A configured OS print queue (Windows Spooler, or CUPS via **System Settings > Printers & Scanners** on macOS including Mac App Store builds) |
 | WebUSB | A browser-connected printer | A compatible browser and a user-selected device; the browser sends the print bytes |
 
 Set the paper width to match the printer, either 58 mm or 80 mm. The first configured printer
@@ -150,8 +150,9 @@ print requests are sent.
 
 ### Adding a printer manually by name
 
-FloCafe dispatches USB and OS-queue print jobs by sending the printer's exact name to the OS
-(`lp -d <name>` on macOS and Linux, `OpenPrinterW` on Windows). There is no fuzzy matching. If a
+FloCafe dispatches USB and OS-queue print jobs by sending the printer's exact queue name to the OS
+(CUPS on macOS and Linux, or the Windows Print Spooler; see
+[Transports](architecture/printing.md#transports)). There is no fuzzy matching. If a
 printer is not found by **Settings > Printers > Detect**, use **Add Manually**, but the name must
 match the OS print queue identifier exactly, not just the printer's name on your desktop.
 
@@ -189,6 +190,18 @@ processors or reject raw byte streams. If prints fail or come out garbled:
 
 ### macOS and Linux CUPS printers
 
+- On macOS (including the Mac App Store build), USB receipt printers must first be added in
+  **System Settings > Printers & Scanners** before FloCafe can detect or print to them. Connect the
+  USB printer, click **Add Printer, Scanner, or Fax...**, and select the manufacturer's driver or a
+  generic queue (**Generic PostScript Printer** or **Generic PCL Printer**); FloCafe sends raw
+  ESC/POS bytes through CUPS and bypasses macOS page filters (see
+  [Transports](architecture/printing.md#transports)). Once the queue is added in macOS, click
+  **Detect** in **Settings > Printers** and select the detected queue so the printer name in FloCafe
+  matches the CUPS queue name.
+- When no matching CUPS queue exists (for example, before the USB printer is added in **System
+  Settings > Printers & Scanners** or when a manual name does not match the CUPS queue identifier),
+  CUPS returns `client-error-not-found` (`0x0406`) and FloCafe reports `Printer queue "<name>" was
+  not found in macOS Printers & Scanners` (`failureClass: not_configured`).
 - If a printer was unplugged, the CUPS print queue may be in a disabled or paused state. Re-enable
   the queue in your operating system printer settings; FloCafe resumes sending print jobs once the
   queue is active.
@@ -218,7 +231,9 @@ If printing still fails:
 
 1. Open **Help > Open Logs Folder**, or check `main.log`.
 2. Search for lines starting with `[Printer]` around the time of the failure to find the exact error
-   code or stage.
+   code or stage (for example, `[Printer] IPP print queued for "<name>" (job <id>)` or
+   `[Printer] IPP print failed for "<name>"`). On macOS and Linux, also check `/var/log/cups/error_log`
+   and `/var/log/cups/access_log` for CUPS daemon diagnostics.
 3. If you are opening an issue, include the `[Printer]` log snippet, your OS, printer make and model,
    connection type, and paper width.
 

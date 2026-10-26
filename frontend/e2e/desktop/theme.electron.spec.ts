@@ -12,7 +12,8 @@
  *      ThemeSync subscribes to; page.emulateMedia is the wrong layer here).
  *   3. The persisted theme_mode survives a full app relaunch: before the
  *      user logs in, the FOUC script and main-side initial-isDark read
- *      already paint dark — the SQLite row is the source of truth.
+ *      already paint dark - the SQLite row is the source of truth - and a
+ *      subsequent full login lands on /pos in dark mode.
  */
 
 import { expect, test } from '@playwright/test';
@@ -39,9 +40,7 @@ async function navigateToAppearance(): Promise<void> {
   await harness.page.goto(`http://localhost:${harness.ports.main}/settings`, {
     waitUntil: 'domcontentloaded',
   });
-  await harness.page
-    .getByRole('button', { name: 'Appearance', exact: true })
-    .click();
+  await harness.page.getByRole('button', { name: 'Appearance', exact: true }).click();
   await harness.page
     .getByRole('radiogroup', { name: 'Theme' })
     .waitFor({ state: 'visible', timeout: 10_000 });
@@ -118,15 +117,25 @@ test('real Electron flips the renderer palette when the owner toggles Dark in Se
 
   // html.dark and localStorage are settled by the waitForFunction; only the
   // main-side push (set-theme-effective IPC, fire-and-forget) needs polling.
-  await expect.poll(async () => harness.page.evaluate(async () => {
-    const status = await window.electronAPI?.getStatus();
-    return status?.effectiveTheme;
-  }), { timeout: 10_000 }).toBe('dark');
+  await expect
+    .poll(
+      async () =>
+        harness.page.evaluate(async () => {
+          const status = await window.electronAPI?.getStatus();
+          return status?.effectiveTheme;
+        }),
+      { timeout: 10_000 },
+    )
+    .toBe('dark');
 
   const runtime = await harness.page.evaluate(() => ({
     htmlHasDark: document.documentElement.classList.contains('dark'),
     mirror: (() => {
-      try { return localStorage.getItem('flo-theme-resolved'); } catch { return null; }
+      try {
+        return localStorage.getItem('flo-theme-resolved');
+      } catch {
+        return null;
+      }
     })(),
   }));
   expect(runtime.htmlHasDark).toBe(true);
@@ -195,10 +204,16 @@ test('persisted theme_mode survives a full app relaunch (SQLite round-trip)', as
     undefined,
     { timeout: 10_000 },
   );
-  await expect.poll(async () => harness.page.evaluate(async () => {
-    const status = await window.electronAPI?.getStatus();
-    return status?.effectiveTheme;
-  }), { timeout: 10_000 }).toBe('dark');
+  await expect
+    .poll(
+      async () =>
+        harness.page.evaluate(async () => {
+          const status = await window.electronAPI?.getStatus();
+          return status?.effectiveTheme;
+        }),
+      { timeout: 10_000 },
+    )
+    .toBe('dark');
 
   // Clear the persisted auth session before relaunching so the relaunched app
   // stays on /auth/login and authenticateDashboard() performs a full login.

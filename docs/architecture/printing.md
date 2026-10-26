@@ -262,7 +262,9 @@ read. `shared/print/text-size.ts` owns the rules:
   still fits the physical width; that line prints at double height and single width. Text wider
   than the physical width keeps double width and is truncated.
 - Tax-pack width profiles are selected against the physical column count, then laid out at the
-  text-size-adjusted columns, so a pack keeps its layout at extra large.
+  text-size-adjusted columns; when `extra_large` narrows the column count,
+  `selectTemplateRenderProfile()` reflows the profile's `lineItems` and `taxSummary` column widths
+  to fit the halved width.
 
 The enlargement is idempotent. The raster path applies it to the lines and to each group's
 `sourceControlLines` before `renderUnsupportedRasterLines()`, so rasterized rows render with the

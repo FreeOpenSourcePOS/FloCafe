@@ -2199,8 +2199,8 @@ function parseJson(raw: string, fallback: unknown): unknown {
 }
 
 /**
- * Picks the pack width profile by physical paper width, then lays out at the text-size-adjusted
- * column count so enlarged text keeps the pack's layout.
+ * Picks the pack width profile by physical paper width, then reflows its layout when enlarged text
+ * narrows the target column count.
  */
 export function selectTemplateRenderProfile(
   payload: any,

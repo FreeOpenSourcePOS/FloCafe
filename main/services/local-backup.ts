@@ -211,10 +211,6 @@ class LocalBackupService {
     this.abortController?.abort();
   }
 
-  abort(): void {
-    this.cancel();
-  }
-
   runIfDue(): Promise<void> {
     if (this.running || this.stopping) return this.running ?? Promise.resolve();
     this.running = this.backupIfDue()

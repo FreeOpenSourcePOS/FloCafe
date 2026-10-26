@@ -36,8 +36,9 @@ export const VALUE_TAG = {
 
 export const IPP_STATUS_OK_MAX = 0x00ff;
 export const IPP_STATUS_CLIENT_ERROR_NOT_FOUND = 0x0406;
+export const IPP_STATUS_SERVER_ERROR_NOT_ACCEPTING_JOBS = 0x0506;
 export const IPP_STATUS_SERVER_ERROR_BUSY = 0x0507;
-export const IPP_STATUS_SERVER_ERROR_NOT_ACCEPTING_JOBS = 0x0508;
+export const IPP_STATUS_SERVER_ERROR_JOB_CANCELED = 0x0508;
 
 export interface IppEndpointConfig {
   socketPath?: string | null;
@@ -232,6 +233,9 @@ export function formatIppStatusError(
   if (statusCode === IPP_STATUS_SERVER_ERROR_BUSY) {
     return `Printer "${printerName}" is busy`;
   }
+  if (statusCode === IPP_STATUS_SERVER_ERROR_JOB_CANCELED) {
+    return `Print job for "${printerName}" was canceled at the printer`;
+  }
   const cleanMessage = typeof statusMessage === 'string' ? statusMessage.trim() : '';
   if (cleanMessage) {
     return `${cleanMessage} (IPP status 0x${statusCode.toString(16)})`;
@@ -294,14 +298,8 @@ async function ippRequest(
       const code = (err as NodeJS.ErrnoException | undefined)?.code;
       if (code === 'ENOENT' && !useTcpFallback && canFallbackToTcp() && !signal?.aborted) {
         useTcpFallback = true;
-        return await ippRequestOnce(
-          path,
-          operationId,
-          operationAttributes,
-          body,
-          signal,
-          resolveEndpoint(true),
-        );
+        attempt -= 1;
+        continue;
       }
       if (code !== 'ECONNREFUSED' || attempt === maxAttempts || signal?.aborted) throw err;
       await delay(250 * attempt);

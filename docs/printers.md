@@ -198,6 +198,10 @@ processors or reject raw byte streams. If prints fail or come out garbled:
   [Transports](architecture/printing.md#transports)). Once the queue is added in macOS, click
   **Detect** in **Settings > Printers** and select the detected queue so the printer name in FloCafe
   matches the CUPS queue name.
+- When no matching CUPS queue exists (for example, before the USB printer is added in **System
+  Settings > Printers & Scanners** or when a manual name does not match the CUPS queue identifier),
+  CUPS returns `client-error-not-found` (`0x0406`) and FloCafe reports `Printer queue "<name>" was
+  not found in macOS Printers & Scanners` (`failureClass: not_configured`).
 - If a printer was unplugged, the CUPS print queue may be in a disabled or paused state. Re-enable
   the queue in your operating system printer settings; FloCafe resumes sending print jobs once the
   queue is active.
@@ -227,7 +231,9 @@ If printing still fails:
 
 1. Open **Help > Open Logs Folder**, or check `main.log`.
 2. Search for lines starting with `[Printer]` around the time of the failure to find the exact error
-   code or stage.
+   code or stage (for example, `[Printer] IPP print queued for "<name>" (job <id>)` or
+   `[Printer] IPP print failed for "<name>"`). On macOS and Linux, also check `/var/log/cups/error_log`
+   and `/var/log/cups/access_log` for CUPS daemon diagnostics.
 3. If you are opening an issue, include the `[Printer]` log snippet, your OS, printer make and model,
    connection type, and paper width.
 

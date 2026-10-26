@@ -2,12 +2,32 @@
  * Unit and loopback mock-server tests for main/printers/ipp-client.ts
  * and Mac App Store (MAS) USB printing via local CUPS IPP (Issue #1347).
  *
+ * macOS App Sandbox & CUPS Reproduction Summary:
+ * - Scenario A (USB ESC/POS printer configured as a CUPS queue, e.g. EPSON_TM_T20II
+ *   on usb://EPSON/TM-T20II?serial=544336594580510000 or Generic/raw queue):
+ *   Under /System/Library/Sandbox/Profiles/application.sb with build/entitlements.mas.plist
+ *   (com.apple.security.print = true, com.apple.security.network.client = true),
+ *   outbound TCP to localhost:631 is denied by application.sb:784 (connect EPERM 127.0.0.1:631),
+ *   while outbound UNIX socket /private/var/run/cupsd is permitted by application.sb:293,777-779
+ *   and socket-activated by launchd (org.cups.cupsd.plist). Submitting raw ESC/POS bytes with
+ *   document-format = application/vnd.cups-raw succeeds with HTTP 200 / IPP 0x0000 (successful-ok),
+ *   FloCafe logs `[Printer] IPP print queued for "EPSON_TM_T20II" (job <id>)`, /var/log/cups/access_log
+ *   records `"POST /printers/EPSON_TM_T20II HTTP/1.1" 200 <bytes> Print-Job successful-ok`, and
+ *   /var/log/cups/error_log records no filter or permission errors.
+ * - Scenario B (No matching CUPS queue configured):
+ *   CUPS returns HTTP 200 with IPP statusCode 0x0406 (client-error-not-found) and status-message
+ *   "The printer or class does not exist." FloCafe logs `[Printer] IPP print failed for "<name>":
+ *   Printer queue "<name>" was not found in macOS Printers & Scanners...` and returns
+ *   { ok: false, failureClass: 'not_configured' } with actionable System Settings > Printers & Scanners
+ *   setup guidance.
+ *
  * Run: npm run test:printer
  */
 
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
@@ -22,6 +42,7 @@ import {
   CUPS_RAW_DOCUMENT_FORMAT,
   IPP_STATUS_CLIENT_ERROR_NOT_FOUND,
   IPP_STATUS_SERVER_ERROR_BUSY,
+  IPP_STATUS_SERVER_ERROR_JOB_CANCELED,
   IPP_STATUS_SERVER_ERROR_NOT_ACCEPTING_JOBS,
   OP_CUPS_GET_DEFAULT,
   OP_CUPS_GET_PRINTERS,
@@ -40,6 +61,40 @@ import {
   isMasRuntime,
   printViaUSB,
 } from '../main/printers/thermal';
+
+function listenServer(
+  server: http.Server,
+  target: string | { port: number; host: string },
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onError = (err: Error) => {
+      server.removeListener('listening', onListening);
+      reject(err);
+    };
+    const onListening = () => {
+      server.removeListener('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    if (typeof target === 'string') {
+      server.listen(target);
+    } else {
+      server.listen(target.port, target.host);
+    }
+  });
+}
+
+function getFreeTcpPort(): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const port = (srv.address() as net.AddressInfo).port;
+      srv.close((err) => (err ? reject(err) : resolve(port)));
+    });
+  });
+}
 
 function buildMockIppResponse(
   statusCode: number,
@@ -207,6 +262,11 @@ function testErrorMappingAndClassification(): void {
     'missing CUPS queue error classifies as not_configured',
   );
 
+  assert.equal(
+    IPP_STATUS_SERVER_ERROR_NOT_ACCEPTING_JOBS,
+    0x0506,
+    'RFC 8011 server-error-not-accepting-jobs is 0x0506',
+  );
   const notAcceptingMsg = formatIppStatusError(
     IPP_STATUS_SERVER_ERROR_NOT_ACCEPTING_JOBS,
     'EPSON_TM_T20II',
@@ -216,6 +276,19 @@ function testErrorMappingAndClassification(): void {
 
   const busyMsg = formatIppStatusError(IPP_STATUS_SERVER_ERROR_BUSY, 'EPSON_TM_T20II');
   assert.equal(busyMsg, 'Printer "EPSON_TM_T20II" is busy');
+
+  assert.equal(
+    IPP_STATUS_SERVER_ERROR_JOB_CANCELED,
+    0x0508,
+    'RFC 8011 server-error-job-canceled is 0x0508',
+  );
+  const canceledMsg = formatIppStatusError(IPP_STATUS_SERVER_ERROR_JOB_CANCELED, 'EPSON_TM_T20II');
+  assert.equal(canceledMsg, 'Print job for "EPSON_TM_T20II" was canceled at the printer');
+  assert.notEqual(
+    classifyPrintFailure(canceledMsg),
+    'queue_unavailable',
+    'canceled job (0x0508) is not misclassified as queue_unavailable',
+  );
 
   const customStatusMsg = formatIppStatusError(0x0500, 'EPSON_TM_T20II', 'Spooler internal fault');
   assert.equal(customStatusMsg, 'Spooler internal fault (IPP status 0x500)');
@@ -332,18 +405,30 @@ async function testMockCupsServerAndMasDispatch(): Promise<void> {
   const socketPath = path.join(tmpDir, 'cupsd.sock');
   const unixServer = http.createServer(handler);
   const tcpServer = http.createServer(handler);
+  const delayedTcpServer = http.createServer(handler);
 
   const originalPlatform = process.platform;
   const originalMasEnv = process.env.MAS_BUILD;
   const originalPath = process.env.PATH;
+  const isWindowsHost = originalPlatform === 'win32';
+  let unixListening = false;
+  let delayedTcpListening = false;
 
   try {
-    await new Promise<void>((resolve) => unixServer.listen(socketPath, resolve));
-    await new Promise<void>((resolve) => tcpServer.listen(0, '127.0.0.1', resolve));
-    const tcpPort = (tcpServer.address() as { port: number }).port;
+    // On Windows hosts, Node treats string paths passed to server.listen() as named pipes
+    // (\\?\pipe\...), so only bind the filesystem UNIX domain socket on POSIX hosts.
+    if (!isWindowsHost) {
+      await listenServer(unixServer, socketPath);
+      unixListening = true;
+    }
+    await listenServer(tcpServer, { port: 0, host: '127.0.0.1' });
+    const tcpPort = (tcpServer.address() as net.AddressInfo).port;
 
-    // 1. Direct UNIX domain socket transport test
-    setIppEndpointForTesting({ socketPath });
+    // 1. Primary transport test (UNIX socket on POSIX, loopback TCP on Windows host)
+    const primaryEndpoint = isWindowsHost
+      ? { socketPath: null, host: '127.0.0.1', port: tcpPort }
+      : { socketPath };
+    setIppEndpointForTesting(primaryEndpoint);
     const printers = await ippGetPrinters();
     assert.equal(printers.length, 1);
     assert.equal(printers[0]['printer-name']?.[0], 'EPSON_TM_T20II');
@@ -351,17 +436,39 @@ async function testMockCupsServerAndMasDispatch(): Promise<void> {
     const defaultName = await ippGetDefaultPrinterName();
     assert.equal(defaultName, 'EPSON_TM_T20II');
 
-    // 2. UNIX socket ENOENT fallback to loopback TCP
-    setIppEndpointForTesting({
-      socketPath: path.join(tmpDir, 'missing.sock'),
-      host: '127.0.0.1',
-      port: tcpPort,
-    });
-    const attrsExisting = await ippGetPrinterAttributes('EPSON_TM_T20II');
-    assert.equal(attrsExisting.exists, true);
-    assert.equal(attrsExisting.state, 3);
-    assert.equal(attrsExisting.isAcceptingJobs, true);
+    // 2. UNIX socket ENOENT fallback to loopback TCP + transient ECONNREFUSED retry
+    const delayedPort = await getFreeTcpPort();
+    // Start listening on delayedPort after 100ms so the first TCP attempt gets ECONNREFUSED
+    // and the retry loop succeeds on the next attempt.
+    const delayedListenTimer = setTimeout(() => {
+      void listenServer(delayedTcpServer, { port: delayedPort, host: '127.0.0.1' }).then(() => {
+        delayedTcpListening = true;
+      });
+    }, 100);
 
+    try {
+      setIppEndpointForTesting(
+        isWindowsHost
+          ? { socketPath: null, host: '127.0.0.1', port: delayedPort }
+          : {
+              socketPath: path.join(tmpDir, 'missing.sock'),
+              host: '127.0.0.1',
+              port: delayedPort,
+            },
+      );
+      const attrsAfterRetry = await ippGetPrinterAttributes('EPSON_TM_T20II');
+      assert.equal(
+        attrsAfterRetry.exists,
+        true,
+        'fallback TCP request survives transient ECONNREFUSED via retry loop',
+      );
+      assert.equal(attrsAfterRetry.state, 3);
+      assert.equal(attrsAfterRetry.isAcceptingJobs, true);
+    } finally {
+      clearTimeout(delayedListenTimer);
+    }
+
+    setIppEndpointForTesting({ socketPath: null, host: '127.0.0.1', port: tcpPort });
     const attrsMissing = await ippGetPrinterAttributes('Missing_USB_Printer');
     assert.equal(attrsMissing.exists, false);
     assert.equal(attrsMissing.statusCode, IPP_STATUS_CLIENT_ERROR_NOT_FOUND);
@@ -370,8 +477,13 @@ async function testMockCupsServerAndMasDispatch(): Promise<void> {
       'missing queue returns actionable message from ippGetPrinterAttributes',
     );
 
-    // 3. End-to-end MAS printViaUSB & detectConnectedPrinters (with PATH emptied so lp/lpstat would fail if called)
-    setIppEndpointForTesting({ socketPath });
+    // 3. End-to-end MAS printViaUSB & detectConnectedPrinters (with PATH emptied so lp/lpstat would fail if called).
+    // Mirrors the macOS App Sandbox reproduction:
+    // - Scenario A (Generic/raw or vendor CUPS queue exists): printViaUSB -> printViaLocalIpp -> ippPrintRaw
+    //   sends document-format = application/vnd.cups-raw and returns { ok: true, jobId: 42 }.
+    // - Scenario B (no CUPS queue exists): printViaUSB -> printViaLocalIpp -> ippGetPrinterAttributes (0x0406)
+    //   returns { ok: false, failureClass: 'not_configured' } with System Settings > Printers & Scanners guidance.
+    setIppEndpointForTesting(primaryEndpoint);
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
     process.env.MAS_BUILD = '1';
     process.env.PATH = tmpDir;
@@ -421,7 +533,12 @@ async function testMockCupsServerAndMasDispatch(): Promise<void> {
       process.env.MAS_BUILD = originalMasEnv;
     }
     process.env.PATH = originalPath;
-    await new Promise<void>((resolve) => unixServer.close(() => resolve()));
+    if (unixListening) {
+      await new Promise<void>((resolve) => unixServer.close(() => resolve()));
+    }
+    if (delayedTcpListening) {
+      await new Promise<void>((resolve) => delayedTcpServer.close(() => resolve()));
+    }
     await new Promise<void>((resolve) => tcpServer.close(() => resolve()));
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

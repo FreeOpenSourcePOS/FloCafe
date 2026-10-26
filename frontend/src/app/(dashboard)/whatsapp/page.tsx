@@ -630,7 +630,7 @@ export default function WhatsAppPage() {
 
   const cancelPairing = async () => {
     try {
-      await api.post('/whatsapp/disconnect');
+      await api.post('/whatsapp/cancel-pairing');
       setQrDataUrl(null);
       setPairingCode(null);
       void refreshStatus();

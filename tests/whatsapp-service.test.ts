@@ -66,7 +66,19 @@ let holdPresence = false;
 let sentMsgSeq = 0;
 let saveCredsCalls = 0;
 let rejectLogout = false;
-const fakeSocket = {
+let logoutCalls = 0;
+let rejectPairingCode = false;
+let holdPairingCode = false;
+let pairingCodeStarted!: () => void;
+const pairingCodeStartedPromise = new Promise<void>((resolve) => {
+  pairingCodeStarted = resolve;
+});
+let releasePairingCode!: () => void;
+const pairingCodeGate = new Promise<void>((resolve) => {
+  releasePairingCode = resolve;
+});
+let rejectSendPresenceUpdate = false;
+const fakeSocket: any = {
   ev: {
     on: (event: string, handler: (value: any) => void) => {
       eventHandlers.set(event, handler);
@@ -79,10 +91,24 @@ const fakeSocket = {
       return pendingPresence;
     }
   },
-  sendPresenceUpdate: async () => {},
+  sendPresenceUpdate: async () => {
+    if (rejectSendPresenceUpdate) {
+      throw new Error('WebSocket closed after sleep');
+    }
+  },
   sendMessage: async () => ({ key: { id: `shutdown-test-message-${++sentMsgSeq}` } }),
-  requestPairingCode: async () => '12345678',
+  requestPairingCode: async () => {
+    if (holdPairingCode) {
+      pairingCodeStarted();
+      await pairingCodeGate;
+    }
+    if (rejectPairingCode) {
+      throw new Error('Pairing code rate limited');
+    }
+    return '12345678';
+  },
   logout: async () => {
+    logoutCalls++;
     if (rejectLogout) {
       throw new Error('Connection Closed');
     }
@@ -167,6 +193,7 @@ async function main(): Promise<void> {
   assert(typeof whatsapp.disable === 'function', 'exports disable()');
   assert(typeof whatsapp.connectWithQr === 'function', 'exports connectWithQr()');
   assert(typeof whatsapp.connectWithPairingCode === 'function', 'exports connectWithPairingCode()');
+  assert(typeof whatsapp.cancelPairing === 'function', 'exports cancelPairing()');
   assert(typeof whatsapp.disconnect === 'function', 'exports disconnect()');
   assert(typeof whatsapp.shutdown === 'function', 'exports shutdown()');
   assert(typeof whatsapp.initFromDb === 'function', 'exports initFromDb()');
@@ -1746,6 +1773,34 @@ async function main(): Promise<void> {
       `runBroadcast returns ok=false and reason=not_connected when disconnected (got ${JSON.stringify(disconnectedBroadcast)})`,
     );
 
+    /*
+     * Issue #1346 macOS v3.13.0+ verification summary (DMG and Mac App Store builds):
+     * - Scenario 1 (Pair -> Quit -> Reopen without QR):
+     *   queueCredentialWrite() evaluates isActiveSocket(socket) synchronously when creds.update
+     *   fires and serializes saveCreds() through credentialWriteTail so a same-tick 515
+     *   restartRequired close or requestShutdown() does not drop the final credential flush.
+     *   On reopen, initFromDb() reads creds.json from path.join(app.getPath('userData'), 'whatsapp-auth')
+     *   and reconnects to 'connected' without generating a QR code.
+     * - Scenario 2 (Pair -> Sleep/Wake or transient drop -> Reconnect):
+     *   Non-401 disconnects on paired sessions transition to state='connecting' with
+     *   lastErrorReason='reconnecting' and retry after RECONNECT_DELAY_MS (5000ms). On macOS
+     *   powerMonitor 'resume', handleSystemResume() immediately reconnects when state.socket is
+     *   null or stale/non-connected, and runs a bounded presence probe on open sockets to replace
+     *   half-open connections left behind by macOS sleep.
+     * - Scenario 3 (Pair -> Unlink device from phone, 401 loggedOut -> Re-pair QR & UI clarity):
+     *   Status 401 clears timers, sets state='disconnected' and lastErrorReason='logged_out',
+     *   clears whatsapp_connected_phone, and wipes whatsapp-auth/ via scheduleAuthWipe(). The UI
+     *   renders a rose alert banner and "Session expired - Re-pair required" badge, distinct from
+     *   the amber "Reconnecting..." badge during transient drops.
+     * - Scenario 4 (macOS DMG & Mac App Store auth persistence and pairing edge cases):
+     *   Both macOS DMG (~/Library/Application Support/Flo Cafe/whatsapp-auth) and MAS sandbox
+     *   (~/Library/Containers/com.flo.desktop/Data/Library/Application Support/Flo Cafe/whatsapp-auth)
+     *   persist multi-file Baileys credentials across restarts under 0o700 permissions. Unpaired
+     *   408 QR timeouts return cleanly to 'disconnected' instead of looping; connectWithPairingCode()
+     *   validates socket identity/cancellation before publishing a code and restores QR mode on
+     *   failure; cancelPairing() closes an in-progress pairing socket without calling logout() or
+     *   wiping existing registered credentials.
+     */
     // Issue #1346 regression 1: creds.update followed in the same tick by 515 restartRequired
     // must persist credentials and reconnect seamlessly without a false error banner.
     await whatsapp.connectWithQr();
@@ -1814,7 +1869,25 @@ async function main(): Promise<void> {
       `connectWithQr clears stale logged_out error on fresh QR (got ${JSON.stringify(statusAfterRepairQr)})`,
     );
 
-    // Issue #1346 regression 4: connectWithPairingCode clears stale QR and ignores background QR timer events.
+    // Issue #1346 regression 4: connectWithPairingCode failure restores QR mode so subsequent
+    // QR events are not suppressed and existing QR state remains usable.
+    rejectPairingCode = true;
+    const failedPairingRes = await whatsapp.connectWithPairingCode('+15555550100');
+    rejectPairingCode = false;
+    assert(
+      failedPairingRes.ok === false,
+      `connectWithPairingCode returns ok=false when requestPairingCode fails (got ${JSON.stringify(failedPairingRes)})`,
+    );
+    eventHandlers.get('connection.update')?.({ qr: 'qr-after-failed-pairing' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const statusAfterFailedPairing = whatsapp.getStatus();
+    assert(
+      statusAfterFailedPairing.state === 'waiting_qr' &&
+        statusAfterFailedPairing.qr === 'qr-after-failed-pairing',
+      `failed connectWithPairingCode does not suppress subsequent QR events (got ${JSON.stringify(statusAfterFailedPairing)})`,
+    );
+
+    // Issue #1346 regression 5: connectWithPairingCode clears stale QR and ignores background QR timer events.
     const pairingRes = await whatsapp.connectWithPairingCode('+15555550100');
     assert(
       pairingRes.ok === true && pairingRes.code === '12345678',
@@ -1830,7 +1903,71 @@ async function main(): Promise<void> {
       `QR rotation event does not clobber waiting_pairing state (got ${JSON.stringify(statusDuringPairing)})`,
     );
 
-    // Issue #1346 regression 5: disconnect() catches asynchronous socket.logout() rejection.
+    // Issue #1346 regression 6: superseded or cancelled connectWithPairingCode does not publish
+    // a stale pairing code after cancelPairing() or connectWithQr().
+    holdPairingCode = true;
+    const pendingPairingPromise = whatsapp.connectWithPairingCode('+15555550100');
+    await pairingCodeStartedPromise;
+    whatsapp.cancelPairing();
+    releasePairingCode();
+    const supersededPairingRes = await pendingPairingPromise;
+    holdPairingCode = false;
+    assert(
+      supersededPairingRes.ok === false &&
+        whatsapp.getStatus().state === 'disconnected' &&
+        whatsapp.getStatus().pairingCode === undefined,
+      `superseded connectWithPairingCode does not publish stale pairing code (got ${JSON.stringify(supersededPairingRes)}, status=${JSON.stringify(whatsapp.getStatus())})`,
+    );
+
+    // Issue #1346 regression 7: cancelPairing() closes an in-progress pairing socket without
+    // calling socket.logout() or wiping existing registered credentials.
+    const authDirPath = path.join(testDir, 'whatsapp-auth');
+    fs.mkdirSync(authDirPath, { recursive: true, mode: 0o700 });
+    const credsFilePath = path.join(authDirPath, 'creds.json');
+    fs.writeFileSync(
+      credsFilePath,
+      JSON.stringify({ me: { id: '15555550199:1@s.whatsapp.net' }, registered: true }),
+    );
+    await whatsapp.connectWithQr();
+    eventHandlers.get('connection.update')?.({ qr: 'cancel-test-qr' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const logoutCallsBeforeCancel = logoutCalls;
+    whatsapp.cancelPairing();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const statusAfterCancel = whatsapp.getStatus();
+    assert(
+      logoutCalls === logoutCallsBeforeCancel &&
+        fs.existsSync(credsFilePath) &&
+        statusAfterCancel.state === 'disconnected' &&
+        statusAfterCancel.connectedPhone === '+15555550199',
+      `cancelPairing preserves existing registered credentials without calling logout() (logoutDelta=${logoutCalls - logoutCallsBeforeCancel}, credsExists=${fs.existsSync(credsFilePath)}, status=${JSON.stringify(statusAfterCancel)})`,
+    );
+
+    // Issue #1346 regression 8: handleSystemResume() replaces a stale non-connected socket and
+    // reconnects when aconnected socket fails its resume presence health probe.
+    await whatsapp.connectWithQr();
+    fakeSocket.ws = { isClosed: true, readyState: 3 };
+    const socketCallsBeforeStaleResume = makeSocketCalls;
+    whatsapp.handleSystemResume();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    delete fakeSocket.ws;
+    assert(
+      makeSocketCalls === socketCallsBeforeStaleResume + 1,
+      `handleSystemResume replaces stale closed socket and reconnects (socketDelta=${makeSocketCalls - socketCallsBeforeStaleResume})`,
+    );
+    eventHandlers.get('connection.update')?.({ connection: 'open' });
+    await new Promise((resolve) => setImmediate(resolve));
+    rejectSendPresenceUpdate = true;
+    const socketCallsBeforeProbeResume = makeSocketCalls;
+    whatsapp.handleSystemResume();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    rejectSendPresenceUpdate = false;
+    assert(
+      makeSocketCalls === socketCallsBeforeProbeResume + 1,
+      `handleSystemResume reconnects when post-sleep presence probe fails (socketDelta=${makeSocketCalls - socketCallsBeforeProbeResume})`,
+    );
+
+    // Issue #1346 regression 9: disconnect() catches asynchronous socket.logout() rejection.
     let unhandledLogoutRejection: unknown = null;
     const onUnhandledRejection = (reason: unknown) => {
       unhandledLogoutRejection = reason;

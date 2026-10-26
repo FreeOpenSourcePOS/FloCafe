@@ -386,9 +386,33 @@ weekly-cap, and duplicate-body checks.
 it is in a terminal shutdown state, or when the request signal is aborted. Work already in flight is
 cancelled when Offline mode turns on or during shutdown rather than left to fail late.
 
-**Credential handling.** The session directory is created with mode `0o700`. The session credential
-is not encrypted at rest, which is a deliberate consequence of the library FloCafe uses for the
-WhatsApp protocol and is a reason the containing filesystem matters.
+**Credential handling and session lifecycle.** Session files live under
+`path.join(app.getPath('userData'), 'whatsapp-auth')`, created with mode `0o700`. On macOS DMG and ZIP
+builds this resolves to `~/Library/Application Support/Flo Cafe/whatsapp-auth`; on Mac App Store
+sandbox builds (`com.flo.desktop`) it resolves inside the app container at
+`~/Library/Containers/com.flo.desktop/Data/Library/Application Support/Flo Cafe/whatsapp-auth`. The
+session credential is not encrypted at rest, which is a consequence of the protocol library FloCafe
+uses and a reason the containing filesystem matters:
+
+- **Pairing and restart sequence (`515`).** Credential writes from `creds.update` are serialized
+  through `credentialWriteTail` while the socket remains active, and `startSocket()` awaits both
+  `authCleanupPromise` and `credentialWriteTail` before calling `useMultiFileAuthState()`. When
+  WhatsApp completes pairing with status `515` (`restartRequired`), the service reconnects immediately
+  without surfacing a disconnect error banner.
+- **Unpaired timeout (`408`) vs paired reconnect.** If an unpaired QR or pairing-code attempt closes
+  with `408` (`timedOut`), the service returns to `disconnected` so the merchant can request a fresh
+  code on demand. Cancelling an in-progress pairing attempt via `cancelPairing()` (`POST
+  /api/whatsapp/cancel-pairing`) closes the pairing socket without calling `logout()` or wiping
+  `whatsapp-auth/`.
+- **Transient disconnect and sleep/wake recovery.** When a paired session drops for a non-`401`
+  reason, the service enters `connecting` with `lastErrorReason: 'reconnecting'` and retries after
+  `RECONNECT_DELAY_MS`. On system resume (`powerMonitor.on('resume')` -> `handleSystemResume()`), the
+  service reconnects immediately if the socket is absent or stale, and runs a bounded presence probe
+  on an open socket to replace half-open connections left behind by macOS sleep.
+- **Remote device unlink (`401`).** When WhatsApp closes the session with `401` (`loggedOut`), the
+  service clears timers, sets `state: 'disconnected'` and `lastErrorReason: 'logged_out'`, clears
+  `whatsapp_connected_phone`, and wipes `whatsapp-auth/` via `scheduleAuthWipe()` so the next
+  connection attempt starts a clean pairing flow.
 
 ## FloAdmin cloud sync
 

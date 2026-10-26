@@ -836,6 +836,11 @@ async function legacyJsonImportAssertions(): Promise<void> {
       200,
       'legacy JSON import with schemaVersion: 103 and omitted add-on stock fields succeeds',
     );
+    assertEqualOrThrow(
+      v103Res.data.importedSchemaVersion,
+      103,
+      'the schemaVersion alias is parsed as the imported schema version',
+    );
     const oatV103 = db
       .prepare(
         'SELECT track_inventory, stock_quantity, low_stock_threshold FROM addons WHERE id = ?',

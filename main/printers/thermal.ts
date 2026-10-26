@@ -2130,7 +2130,7 @@ export function normalizeReceiptTemplate(template?: string): 'classic' | 'compac
   return 'classic';
 }
 
-function renderPluginReceipt(
+export function renderPluginReceipt(
   template: ReturnType<typeof loadInstalledPrintTemplate>,
   order: any,
   bill: any,
@@ -2213,7 +2213,195 @@ export function selectTemplateRenderProfile(
     physicalColumnsForTextSize(layoutColumns, textSize),
     warnings,
   );
-  return { ...selected, columns: layoutColumnsForTextSize(selected.columns, textSize) };
+  const columns = layoutColumnsForTextSize(selected.columns, textSize);
+  if (columns >= selected.columns) {
+    return { ...selected, columns };
+  }
+  return {
+    ...selected,
+    columns,
+    layout: reflowTemplateLayout(selected.layout, columns),
+  };
+}
+
+function compactPluginColumnFloor(key: string | undefined, width: number): number {
+  switch (key) {
+    case 'quantity':
+      return Math.min(width, 3);
+    case 'taxRate':
+      return Math.min(width, 4);
+    case 'rate':
+    case 'amount':
+      return Math.min(width, 6);
+    default:
+      return Math.min(width, 6);
+  }
+}
+
+function reflowPluginLineItems(
+  lineItems: Record<string, unknown>,
+  targetColumns: number,
+): Record<string, unknown> {
+  const configured = lineItems?.columns as PluginLineColumn[] | undefined;
+  if (!Array.isArray(configured) || configured.length === 0) return lineItems;
+  const validIndices: number[] = [];
+  for (let i = 0; i < configured.length; i += 1) {
+    const col = configured[i];
+    if (col?.key && Number.isInteger(Number(col?.width)) && Number(col?.width) > 0) {
+      validIndices.push(i);
+    }
+  }
+  if (validIndices.length === 0) return lineItems;
+
+  const rawGap = Number(lineItems?.gap);
+  const configuredGap = Number.isInteger(rawGap) && rawGap >= 0 && rawGap <= 4 ? rawGap : 0;
+  const origWidths = validIndices.map((index) => Number(configured[index].width));
+  const currentTotal =
+    origWidths.reduce((sum, width) => sum + width, 0) +
+    configuredGap * Math.max(0, validIndices.length - 1);
+  if (currentTotal <= targetColumns) return lineItems;
+
+  const gap =
+    validIndices.length <= 1 || configuredGap === 0 || targetColumns < validIndices.length * 2
+      ? 0
+      : 1;
+  const available = Math.max(
+    validIndices.length,
+    targetColumns - gap * Math.max(0, validIndices.length - 1),
+  );
+  const widths = validIndices.map((index, pos) =>
+    compactPluginColumnFloor(configured[index]?.key, origWidths[pos]),
+  );
+  const sum = widths.reduce((acc, width) => acc + width, 0);
+
+  if (sum < available) {
+    let extra = available - sum;
+    const itemPos = validIndices.findIndex(
+      (index) => configured[index]?.key === 'item' || configured[index]?.wrap === true,
+    );
+    const minItemShare =
+      itemPos >= 0 ? Math.min(origWidths[itemPos], Math.ceil(available * 0.45)) : 0;
+    if (itemPos >= 0 && widths[itemPos] < minItemShare) {
+      const add = Math.min(extra, minItemShare - widths[itemPos]);
+      widths[itemPos] += add;
+      extra -= add;
+    }
+    for (const key of ['amount', 'rate', 'quantity', 'taxRate']) {
+      if (extra <= 0) break;
+      const pos = validIndices.findIndex((index) => configured[index]?.key === key);
+      if (pos < 0) continue;
+      const cap =
+        key === 'amount'
+          ? Math.min(origWidths[pos], 9)
+          : key === 'rate'
+            ? Math.min(origWidths[pos], 7)
+            : Math.min(origWidths[pos], 4);
+      if (widths[pos] < cap) {
+        const add = Math.min(extra, cap - widths[pos]);
+        widths[pos] += add;
+        extra -= add;
+      }
+    }
+    if (extra > 0) {
+      const targetPos = itemPos >= 0 ? itemPos : 0;
+      widths[targetPos] += extra;
+    }
+  } else if (sum > available) {
+    let deficit = sum - available;
+    const shrinkOrder: Array<{ match: (col: PluginLineColumn) => boolean; minWidth: number }> = [
+      { match: (col) => col?.key === 'item' || col?.wrap === true, minWidth: 4 },
+      { match: (col) => col?.key === 'quantity', minWidth: 2 },
+      { match: (col) => col?.key === 'rate' || col?.key === 'taxRate', minWidth: 4 },
+      { match: (col) => col?.key !== 'amount', minWidth: 1 },
+      { match: () => true, minWidth: 1 },
+    ];
+    for (const rule of shrinkOrder) {
+      for (let pos = 0; pos < validIndices.length && deficit > 0; pos += 1) {
+        const col = configured[validIndices[pos]];
+        if (!rule.match(col)) continue;
+        const reducible = Math.max(0, widths[pos] - rule.minWidth);
+        if (reducible > 0) {
+          const take = Math.min(deficit, reducible);
+          widths[pos] -= take;
+          deficit -= take;
+        }
+      }
+    }
+  }
+
+  const nextColumns = configured.map((col) => ({ ...col }));
+  validIndices.forEach((colIndex, pos) => {
+    const col = nextColumns[colIndex];
+    const origWidth = origWidths[pos];
+    const nextWidth = widths[pos];
+    col.width = nextWidth;
+    if (
+      col.wrap === true &&
+      nextWidth < origWidth &&
+      typeof col.maxLines === 'number' &&
+      Number.isInteger(col.maxLines) &&
+      col.maxLines > 0
+    ) {
+      col.maxLines = Math.ceil((col.maxLines * origWidth) / nextWidth);
+    }
+  });
+
+  return {
+    ...lineItems,
+    ...(Number.isInteger(rawGap) ? { gap } : {}),
+    columns: nextColumns,
+  };
+}
+
+function reflowTemplateLayout(layout: unknown, targetColumns: number): unknown {
+  if (!layout || typeof layout !== 'object' || targetColumns <= 0) return layout;
+  const layoutRecord = layout as Record<string, unknown>;
+  const rawLineItems =
+    layoutRecord.lineItems && typeof layoutRecord.lineItems === 'object'
+      ? (layoutRecord.lineItems as Record<string, unknown>)
+      : undefined;
+  const nextLineItems = rawLineItems
+    ? reflowPluginLineItems(rawLineItems, targetColumns)
+    : layoutRecord.lineItems;
+
+  const rawTaxSummary =
+    layoutRecord.taxSummary && typeof layoutRecord.taxSummary === 'object'
+      ? (layoutRecord.taxSummary as Record<string, unknown>)
+      : undefined;
+  let nextTaxSummary: unknown = layoutRecord.taxSummary;
+  const labelWidth = Number(rawTaxSummary?.labelWidth);
+  const amountWidth = Number(rawTaxSummary?.amountWidth);
+  if (
+    rawTaxSummary &&
+    Number.isInteger(labelWidth) &&
+    Number.isInteger(amountWidth) &&
+    labelWidth > 0 &&
+    amountWidth > 0
+  ) {
+    const gap = targetColumns >= 3 ? 1 : 0;
+    if (labelWidth + amountWidth + gap > targetColumns) {
+      const minLabel = Math.min(
+        labelWidth,
+        Math.min(8, Math.max(1, Math.floor(targetColumns / 2))),
+      );
+      const nextAmountWidth = Math.max(1, Math.min(amountWidth, targetColumns - gap - minLabel));
+      const nextLabelWidth = Math.max(1, targetColumns - gap - nextAmountWidth);
+      nextTaxSummary = {
+        ...rawTaxSummary,
+        labelWidth: nextLabelWidth,
+        amountWidth: nextAmountWidth,
+      };
+    }
+  }
+
+  if (nextLineItems === layoutRecord.lineItems && nextTaxSummary === layoutRecord.taxSummary) {
+    return layout;
+  }
+  return {
+    ...layoutRecord,
+    ...(nextLineItems !== layoutRecord.lineItems ? { lineItems: nextLineItems } : {}),
+    ...(nextTaxSummary !== layoutRecord.taxSummary ? { taxSummary: nextTaxSummary } : {}),
+  };
 }
 
 function selectTemplateWidthProfile(
@@ -2785,11 +2973,12 @@ function pluginLineItemColumns(
       );
     if (columns.length > 0) return columns;
   }
+  const gap = pluginLineGap(layout);
   return [
     {
       key: 'item',
       label: normalizeThermalText(printLabel(lang, 'receipt.item'), capabilities),
-      width: itemNameWidth(cols, 10),
+      width: Math.max(1, itemNameWidth(cols, 10) - gap * 2),
       align: 'left',
       wrap: true,
       maxLines: 2,
@@ -2837,6 +3026,40 @@ function pluginItemHeader(
   );
 }
 
+function fitPluginRowColumns<T extends PluginLineColumn & { value: string }>(columns: T[]): T[] {
+  const widths = columns.map((column) => Number(column.width));
+  for (let i = columns.length - 1; i >= 0; i -= 1) {
+    if (columns[i].wrap) continue;
+    const needed = displayCellWidth(columns[i].value);
+    if (needed <= widths[i]) continue;
+    let deficit = needed - widths[i];
+    for (let j = 0; j < columns.length && deficit > 0; j += 1) {
+      if (j === i || columns[j].wrap) continue;
+      const spare = Math.max(0, widths[j] - Math.max(1, displayCellWidth(columns[j].value)));
+      if (spare > 0) {
+        const take = Math.min(deficit, spare);
+        widths[j] -= take;
+        widths[i] += take;
+        deficit -= take;
+      }
+    }
+    for (let j = 0; j < columns.length && deficit > 0; j += 1) {
+      if (j === i || !columns[j].wrap) continue;
+      const minWrapWidth = Math.min(widths[j], 4);
+      const spare = Math.max(0, widths[j] - minWrapWidth);
+      if (spare > 0) {
+        const take = Math.min(deficit, spare);
+        widths[j] -= take;
+        widths[i] += take;
+        deficit -= take;
+      }
+    }
+  }
+  return columns.map((column, index) =>
+    widths[index] === column.width ? column : { ...column, width: widths[index] },
+  );
+}
+
 function pluginItemRows(
   item: any,
   layout: any,
@@ -2850,13 +3073,18 @@ function pluginItemRows(
 ): string[] {
   const columns = pluginLineItemColumns(layout, cols, lang, capabilities);
   const gap = pluginLineGap(layout);
-  const values = columns.map((column) => ({
-    ...column,
-    value: normalizeThermalText(
-      pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits),
-      capabilities,
-    ),
-  }));
+  const values = fitPluginRowColumns(
+    columns.map((column) => {
+      const rawValue = normalizeThermalText(
+        pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits),
+        capabilities,
+      );
+      return {
+        ...column,
+        value: column.align === 'right' ? rawValue.trimStart() : rawValue,
+      };
+    }),
+  );
   const wrappedValues = values.map((column) => {
     if (!column.wrap)
       return [truncateCell(column.value, Number(column.width), column.ellipsis !== false)];
@@ -2945,12 +3173,22 @@ function pluginSummaryRow(
     labelWidth > 0 &&
     amountWidth > 0
   ) {
+    const trimmedAmount = amount.trimStart();
+    const gap = cols >= 3 ? 1 : 0;
+    const effectiveAmountWidth = Math.min(
+      Math.max(1, cols - gap - 1),
+      Math.max(amountWidth, displayCellWidth(trimmedAmount)),
+    );
+    const effectiveLabelWidth =
+      labelWidth + effectiveAmountWidth <= cols
+        ? labelWidth
+        : Math.max(1, cols - gap - effectiveAmountWidth);
     return composePluginColumns(
       [
-        { value: normalizedLabel, width: labelWidth, align: 'left', ellipsis: true },
-        { value: amount, width: amountWidth, align: 'right', ellipsis: true },
+        { value: normalizedLabel, width: effectiveLabelWidth, align: 'left', ellipsis: true },
+        { value: trimmedAmount, width: effectiveAmountWidth, align: 'right', ellipsis: true },
       ],
-      Math.max(0, cols - labelWidth - amountWidth),
+      Math.max(0, cols - effectiveLabelWidth - effectiveAmountWidth),
       cols,
     );
   }

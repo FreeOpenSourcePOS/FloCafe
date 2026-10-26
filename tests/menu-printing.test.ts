@@ -385,6 +385,409 @@ test('browser printing reports popup blocking without a reservation', () => {
   );
 });
 
+function createNavigatingPopupWindow() {
+  let listeners = new Map<string, Array<() => void>>();
+  const actions: string[] = [];
+  const popup = {
+    closed: false,
+    document: { readyState: 'complete' },
+    location: {
+      href: 'about:blank',
+      replace(url: string) {
+        actions.push(`replace:${url}`);
+        this.href = url;
+        // Navigating from about:blank to the blob URL replaces the document and
+        // any load listeners that were attached to the pre-navigation window.
+        listeners = new Map<string, Array<() => void>>();
+        popup.document = { readyState: 'loading' };
+      },
+    },
+    addEventListener(type: string, callback: () => void) {
+      const list = listeners.get(type) || [];
+      list.push(callback);
+      listeners.set(type, list);
+    },
+    focus() {
+      actions.push('focus');
+    },
+    print() {
+      actions.push('print');
+    },
+    close() {
+      actions.push('close');
+      popup.closed = true;
+    },
+    dispatchLoad() {
+      popup.document.readyState = 'complete';
+      for (const callback of [...(listeners.get('load') || [])]) {
+        callback();
+      }
+    },
+    dispatchAfterPrint() {
+      for (const callback of [...(listeners.get('afterprint') || [])]) {
+        callback();
+      }
+    },
+    actions,
+  };
+  return popup;
+}
+
+test('printMenuInBrowser waits for the navigated menu document to load before focusing and printing, and keeps the popup open until printing finishes', () => {
+  const { printMenuInBrowser } = require('../frontend/src/lib/printer/menu-web-print');
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  const createdUrls: string[] = [];
+  const revokedUrls: string[] = [];
+  URL.createObjectURL = () => {
+    const url = `blob:menu-${createdUrls.length + 1}`;
+    createdUrls.push(url);
+    return url;
+  };
+  URL.revokeObjectURL = (url: string) => {
+    revokedUrls.push(url);
+  };
+
+  try {
+    const popup = createNavigatingPopupWindow();
+    const started = printMenuInBrowser(
+      '<!doctype html><html><body>Menu</body></html>',
+      popup as never,
+    );
+    assert.deepEqual(popup.actions, ['replace:blob:menu-1']);
+    assert.equal(popup.closed, false, 'popup remains open while the menu document loads');
+    assert.deepEqual(revokedUrls, [], 'blob URL is not revoked before the menu document loads');
+
+    popup.dispatchLoad();
+    assert.deepEqual(
+      popup.actions,
+      ['replace:blob:menu-1', 'focus', 'print'],
+      'focus() and print() run after the navigated menu document finishes loading',
+    );
+    assert.equal(started, true, 'printMenuInBrowser reports that it took ownership of the popup');
+    assert.equal(popup.closed, false, 'popup remains open while the print dialog is active');
+    assert.deepEqual(revokedUrls, [], 'blob URL remains valid while the print dialog is active');
+
+    popup.dispatchAfterPrint();
+    assert.equal(popup.closed, true, 'popup closes once afterprint fires');
+    assert.deepEqual(revokedUrls, ['blob:menu-1'], 'blob URL is revoked after printing completes');
+  } finally {
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
+test('PrintMenuModal preserves the reserved popup when browser printing starts and closes it only when unused', async () => {
+  const path = require('node:path');
+  const Module = require('node:module') as {
+    _resolveFilename: (...args: any[]) => string;
+    _load: (...args: any[]) => any;
+  };
+  const root = path.join(__dirname, '..');
+  const originalResolveFilename = Module._resolveFilename;
+  const originalLoad = Module._load;
+  const originalWindow = (globalThis as any).window;
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+
+  URL.createObjectURL = () => 'blob:modal-menu';
+  URL.revokeObjectURL = () => undefined;
+
+  const states: unknown[] = [];
+  let stateCursor = 0;
+  const createElement = (
+    type: unknown,
+    props: Record<string, unknown> | null,
+    ...children: unknown[]
+  ) => ({
+    type,
+    props: {
+      ...(props || {}),
+      children:
+        children.length === 0 ? props?.children : children.length === 1 ? children[0] : children,
+    },
+  });
+  const jsx = (type: unknown, props: Record<string, unknown> | null) => ({
+    type,
+    props: props || {},
+  });
+  const useState = (initial: unknown) => {
+    const idx = stateCursor++;
+    if (!(idx in states)) {
+      states[idx] = typeof initial === 'function' ? (initial as () => unknown)() : initial;
+    }
+    const setState = (next: unknown) => {
+      states[idx] =
+        typeof next === 'function' ? (next as (prev: unknown) => unknown)(states[idx]) : next;
+    };
+    return [states[idx], setState];
+  };
+  const useEffect = () => undefined;
+  const Icon = () => createElement('span', null);
+
+  let productsPayload: unknown[] = [
+    {
+      id: 'prod-1',
+      category_id: 'cat-1',
+      name: 'Espresso',
+      price: 4,
+      is_active: true,
+      track_inventory: false,
+      stock_quantity: 0,
+    },
+  ];
+  let productsError: Error | null = null;
+  let receiptError: unknown = null;
+
+  const reactMock = {
+    __esModule: true,
+    default: { createElement, Fragment: 'Fragment', useState, useEffect },
+    createElement,
+    Fragment: 'Fragment',
+    useState,
+    useEffect,
+  };
+
+  const mocks: Record<string, unknown> = {
+    react: reactMock,
+    'react/jsx-runtime': { Fragment: 'Fragment', jsx, jsxs: jsx },
+    'lucide-react': {
+      Check: Icon,
+      FileDown: Icon,
+      FileText: Icon,
+      LoaderCircle: Icon,
+      Printer: Icon,
+      QrCode: Icon,
+      Receipt: Icon,
+    },
+    'use-intl': {
+      useTranslations: () => (key: string) => key,
+    },
+    'react-hot-toast': {
+      __esModule: true,
+      default: { success: () => undefined, error: () => undefined },
+    },
+    '@/lib/api': {
+      __esModule: true,
+      default: {
+        get: async (url: string) => {
+          if (url === '/products') {
+            if (productsError) throw productsError;
+            return { data: { products: productsPayload } };
+          }
+          if (url === '/categories') {
+            return {
+              data: {
+                categories: [{ id: 'cat-1', name: 'Coffee', is_active: true, sort_order: 1 }],
+              },
+            };
+          }
+          return { data: { printers: [] } };
+        },
+        post: async (url: string) => {
+          if (url === '/printers/print-menu' && receiptError) {
+            throw receiptError;
+          }
+          return { data: { ok: true } };
+        },
+      },
+    },
+    '@/components/ui/button': {
+      Button: ({ children, ...props }: any) => createElement('button', props, children),
+    },
+    '@/components/ui/dialog': {
+      Dialog: ({ children }: any) => createElement('div', null, children),
+      DialogContent: ({ children }: any) => createElement('div', null, children),
+      DialogHeader: ({ children }: any) => createElement('div', null, children),
+      DialogTitle: ({ children }: any) => createElement('h2', null, children),
+      DialogDescription: ({ children }: any) => createElement('p', null, children),
+      DialogFooter: ({ children }: any) => createElement('footer', null, children),
+    },
+    '@/store/auth': {
+      useAuthStore: (selector: (s: any) => unknown) =>
+        selector({ currentTenant: { business_name: 'Flo Cafe', country: 'US', timezone: 'UTC' } }),
+    },
+    '@/hooks/usePrinter': {
+      usePrinterStore: (selector: (s: any) => unknown) =>
+        selector({ refreshHardwarePrinter: () => Promise.resolve() }),
+    },
+    '@/lib/printer/PrinterService': {
+      printerService: {
+        isConnected: true,
+        tryReconnect: async () => true,
+        print: async () => undefined,
+      },
+    },
+    '@/hooks/useFormatCurrency': {
+      useFormatCurrency: () => (value: number) => `$${Number(value).toFixed(2)}`,
+    },
+    '@/lib/countries': {
+      formatDateForTenant: () => 'Oct 26, 2026, 12:00 PM',
+    },
+  };
+
+  Module._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
+    const resolved =
+      request === '@countries'
+        ? path.resolve(root, 'main/countries.ts')
+        : request.startsWith('@/')
+          ? path.resolve(root, 'frontend/src', request.slice(2))
+          : request;
+    return originalResolveFilename.call(this, resolved, parent, isMain, options);
+  };
+  Module._load = function (request: string, parent: any, isMain: boolean) {
+    if (request in mocks) return mocks[request];
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  const collectElements = (
+    node: any,
+    predicate: (el: { type: unknown; props: Record<string, any> }) => boolean,
+    acc: Array<{ type: unknown; props: Record<string, any> }> = [],
+  ) => {
+    if (!node || typeof node !== 'object') return acc;
+    if (Array.isArray(node)) {
+      for (const child of node) collectElements(child, predicate, acc);
+      return acc;
+    }
+    const resolved = typeof node.type === 'function' ? node.type(node.props || {}) : node;
+    if (resolved !== node) return collectElements(resolved, predicate, acc);
+    if (predicate(node)) acc.push(node);
+    if (node.props?.children !== undefined) {
+      collectElements(node.props.children, predicate, acc);
+    }
+    return acc;
+  };
+
+  try {
+    const modalPath = path.resolve(root, 'frontend/src/components/products/PrintMenuModal.tsx');
+    delete require.cache[modalPath];
+    const PrintMenuModal = require(modalPath).default;
+
+    const renderModal = () => {
+      stateCursor = 0;
+      return PrintMenuModal({ open: true, onOpenChange: () => undefined });
+    };
+
+    const runDestination = async (destinationLabel: string) => {
+      states.length = 0;
+      const popup = createNavigatingPopupWindow();
+      (globalThis as any).window = {
+        open: () => popup,
+      };
+      let tree = renderModal();
+      const radio = collectElements(
+        tree,
+        (el) =>
+          el.type === 'button' &&
+          el.props?.role === 'radio' &&
+          Array.isArray(el.props?.children) &&
+          el.props.children.includes(destinationLabel),
+      )[0];
+      assert.ok(radio, `found destination radio for ${destinationLabel}`);
+      radio.props.onClick();
+      tree = renderModal();
+      const footer = collectElements(tree, (el) => el.type === 'footer')[0];
+      const buttons = collectElements(footer, (el) => el.type === 'button');
+      const confirmButton = buttons[buttons.length - 1];
+      await confirmButton.props.onClick();
+      return popup;
+    };
+
+    // 1. Paper print: popup must stay open when printOnPaper returns so the navigated document can load and print.
+    const paperPopup = await runDestination('printToPaper');
+    assert.equal(
+      paperPopup.closed,
+      false,
+      'PrintMenuModal does not close reservedWindow before the paper print document loads',
+    );
+    paperPopup.dispatchLoad();
+    assert.deepEqual(
+      paperPopup.actions,
+      ['replace:blob:modal-menu', 'focus', 'print'],
+      'paper popup loads, focuses, and prints',
+    );
+    paperPopup.dispatchAfterPrint();
+    assert.equal(paperPopup.closed, true, 'paper popup closes after printing completes');
+
+    // 2. PDF browser fallback: popup must stay open until printing completes.
+    const pdfPopup = await runDestination('printToPdf');
+    assert.equal(
+      pdfPopup.closed,
+      false,
+      'PrintMenuModal does not close reservedWindow before the PDF fallback document loads',
+    );
+    pdfPopup.dispatchLoad();
+    assert.deepEqual(pdfPopup.actions, ['replace:blob:modal-menu', 'focus', 'print']);
+    pdfPopup.dispatchAfterPrint();
+    assert.equal(pdfPopup.closed, true);
+
+    // 3. Receipt thermal fallback to browser printing: popup must stay open when fallback printMenuInBrowser takes ownership.
+    receiptError = { response: { status: 502, data: { error: 'offline' } } };
+    const fallbackPopup = await runDestination('printToReceipt');
+    receiptError = null;
+    assert.equal(
+      fallbackPopup.closed,
+      false,
+      'PrintMenuModal does not close reservedWindow when thermal fallback hands off to browser printing',
+    );
+    fallbackPopup.dispatchLoad();
+    assert.deepEqual(fallbackPopup.actions, ['replace:blob:modal-menu', 'focus', 'print']);
+    fallbackPopup.dispatchAfterPrint();
+    assert.equal(fallbackPopup.closed, true);
+
+    // 4. When printing does NOT start (e.g. empty catalog -> printed === false), PrintMenuModal closes reservedWindow.
+    productsPayload = [];
+    const unusedEmptyPopup = await runDestination('printToPaper');
+    assert.equal(
+      unusedEmptyPopup.closed,
+      true,
+      'PrintMenuModal closes reservedWindow when no products are available to print',
+    );
+
+    // 5. When an error occurs before printMenuInBrowser takes ownership, PrintMenuModal closes reservedWindow.
+    productsPayload = [
+      {
+        id: 'prod-1',
+        category_id: 'cat-1',
+        name: 'Espresso',
+        price: 4,
+        is_active: true,
+        track_inventory: false,
+        stock_quantity: 0,
+      },
+    ];
+    productsError = new Error('network failure');
+    const unusedErrorPopup = await runDestination('printToPaper');
+    productsError = null;
+    assert.equal(
+      unusedErrorPopup.closed,
+      true,
+      'PrintMenuModal closes reservedWindow when catalog fetch fails before printing starts',
+    );
+
+    // 6. When thermal receipt printing succeeds without browser fallback, PrintMenuModal closes reservedWindow.
+    const unusedThermalPopup = await runDestination('printToReceipt');
+    assert.equal(
+      unusedThermalPopup.closed,
+      true,
+      'PrintMenuModal closes reservedWindow when thermal receipt printing succeeds without browser fallback',
+    );
+  } finally {
+    Module._resolveFilename = originalResolveFilename;
+    Module._load = originalLoad;
+    if (originalWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = originalWindow;
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
 test('Unicode menu printing uses raster-capable WebUSB output and refuses raster failure', async () => {
   const raster = require('../main/printers/raster-renderer');
   const originalRenderer = raster.getSharedRasterRenderer;

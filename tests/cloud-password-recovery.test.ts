@@ -597,6 +597,301 @@ async function main() {
     'cashier',
     'cashier-1 is not promoted to owner on a stranded store via stale cloud email',
   );
+
+  // ── F3: Superseded password-reset polling response race guard ───────────────
+  const originalResolveFilename = Module._resolveFilename;
+  const prevLoad = Module._load;
+  const rootDir = process.cwd();
+
+  let currentStateIdx = 0;
+  let currentRefIdx = 0;
+  let currentEffectIdx = 0;
+  const states: unknown[] = [];
+  const refs: Array<{ current: unknown }> = [];
+  const effectSlots: Array<{ deps?: unknown[]; cleanup?: unknown }> = [];
+  const pendingEffects: Array<() => void> = [];
+
+  const reactHooks = {
+    useState: (initial: unknown) => {
+      const idx = currentStateIdx++;
+      if (idx >= states.length) {
+        states.push(typeof initial === 'function' ? (initial as () => unknown)() : initial);
+      }
+      const setState = (next: unknown) => {
+        states[idx] =
+          typeof next === 'function' ? (next as (prev: unknown) => unknown)(states[idx]) : next;
+      };
+      return [states[idx], setState];
+    },
+    useRef: (initial: unknown) => {
+      const idx = currentRefIdx++;
+      if (idx >= refs.length) {
+        refs.push({ current: initial });
+      }
+      return refs[idx];
+    },
+    useEffect: (effect: () => unknown, deps?: unknown[]) => {
+      const idx = currentEffectIdx++;
+      const prev = effectSlots[idx];
+      const depsChanged =
+        !prev ||
+        !deps ||
+        !prev.deps ||
+        deps.length !== prev.deps.length ||
+        deps.some((d, i) => !Object.is(d, prev.deps![i]));
+      if (depsChanged) {
+        pendingEffects.push(() => {
+          if (prev && typeof prev.cleanup === 'function') {
+            prev.cleanup();
+          }
+          const cleanup = effect();
+          effectSlots[idx] = { deps, cleanup };
+        });
+      }
+    },
+  };
+
+  let currentRecoverApi: {
+    get: (url: string, config?: any) => Promise<any>;
+    post: (url: string, data?: any, config?: any) => Promise<any>;
+  } = {
+    get: async () => ({ data: {} }),
+    post: async () => ({ data: {} }),
+  };
+
+  Module._resolveFilename = function (
+    request: string,
+    parent: unknown,
+    isMain: boolean,
+    options?: unknown,
+  ) {
+    if (request.startsWith('@/')) {
+      return originalResolveFilename.call(
+        this,
+        path.resolve(rootDir, 'frontend/src', request.slice(2)),
+        parent,
+        isMain,
+        options,
+      );
+    }
+    if (request.startsWith('@shared/')) {
+      return originalResolveFilename.call(
+        this,
+        path.resolve(rootDir, 'shared', request.slice('@shared/'.length)),
+        parent,
+        isMain,
+        options,
+      );
+    }
+    return originalResolveFilename.call(this, request, parent, isMain, options);
+  };
+
+  Module._load = function (request: string, parent: unknown, isMain: boolean) {
+    if (request === 'react') return reactHooks;
+    if (request === 'react/jsx-runtime') {
+      return {
+        jsx: (type: any, props: any) => ({ type, props }),
+        jsxs: (type: any, props: any) => ({ type, props }),
+        Fragment: 'Fragment',
+      };
+    }
+    if (request === 'next/navigation') {
+      return { useRouter: () => ({ push: () => {} }) };
+    }
+    if (request === 'use-intl') {
+      return { useTranslations: () => (k: string) => k };
+    }
+    if (request === 'react-hot-toast') {
+      return {
+        default: { success: () => {}, error: () => {} },
+        success: () => {},
+        error: () => {},
+      };
+    }
+    if (request === 'lucide-react') {
+      return new Proxy({}, { get: () => () => null });
+    }
+    if (request.includes('/components/ui/')) {
+      return new Proxy({}, { get: () => (props: any) => ({ type: 'UI', props }) });
+    }
+    if (request === '@/lib/api' || request.endsWith('/lib/api')) {
+      return {
+        __esModule: true,
+        default: {
+          get: (url: string, config?: any) => currentRecoverApi.get(url, config),
+          post: (url: string, data?: any, config?: any) =>
+            currentRecoverApi.post(url, data, config),
+        },
+      };
+    }
+    return prevLoad.call(this, request, parent, isMain);
+  };
+
+  let activeIntervalCallback: (() => Promise<void>) | null = null;
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+
+  globalThis.setInterval = function (fn: any) {
+    activeIntervalCallback = fn;
+    return 9999 as any;
+  } as any;
+
+  globalThis.clearInterval = function () {
+    activeIntervalCallback = null;
+  } as any;
+
+  try {
+    const RecoverPage = require(path.join(rootDir, 'frontend/src/app/auth/recover/page')).default;
+
+    const renderPage = () => {
+      currentStateIdx = 0;
+      currentRefIdx = 0;
+      currentEffectIdx = 0;
+      const tree = RecoverPage();
+      while (pendingEffects.length > 0) {
+        const effect = pendingEffects.shift()!;
+        effect();
+      }
+      return tree;
+    };
+
+    const findAllButtons = (node: any, acc: any[] = []): any[] => {
+      if (!node) return acc;
+      if (Array.isArray(node)) {
+        for (const c of node) findAllButtons(c, acc);
+        return acc;
+      }
+      if (typeof node === 'object') {
+        if (typeof node.props?.onClick === 'function') acc.push(node);
+        findAllButtons(node.props?.children, acc);
+      }
+      return acc;
+    };
+
+    // Initial mount and setup
+    currentRecoverApi = {
+      get: async (url: string) => {
+        if (url === '/auth/setup/status') {
+          return { data: { masterPinAvailable: false, cloudRecoveryAvailable: true } };
+        }
+        return { data: {} };
+      },
+      post: async () => ({ data: {} }),
+    };
+
+    renderPage();
+    await new Promise((r) => setTimeout(r, 10));
+    renderPage();
+
+    assertEqualOrThrow(states[10], 'email', 'recovery method initializes to email');
+    assertEqualOrThrow(states[11], 'idle', 'emailStep initializes to idle');
+
+    let resolvePollA: (val: any) => void;
+    const pollAPromise = new Promise((resolve) => {
+      resolvePollA = resolve;
+    });
+
+    let pollCount = 0;
+    currentRecoverApi = {
+      get: async (url: string) => {
+        if (url === '/auth/recover-password/cloud/status') {
+          pollCount++;
+          if (pollCount === 1) {
+            return pollAPromise;
+          }
+          return { data: { status: 'approved' } };
+        }
+        return { data: {} };
+      },
+      post: async (url: string) => {
+        if (url === '/auth/recover-password/cloud/request') {
+          if (states[12] === '') {
+            return {
+              data: { step: 'reset', reset_id: 'reset-A', email_hint: 'o***@example.com' },
+            };
+          }
+          return {
+            data: { step: 'reset', reset_id: 'reset-B', email_hint: 'o***@example.com' },
+          };
+        }
+        return { data: {} };
+      },
+    };
+
+    // 1. Initial send for reset A
+    const tree1 = renderPage();
+    const sendBtn = findAllButtons(tree1).find((b) => b.props?.children === 'recoverEmailSend');
+    assertOrThrow(Boolean(sendBtn), 'send button found for email recovery');
+
+    await sendBtn.props.onClick();
+    renderPage();
+
+    assertEqualOrThrow(states[11], 'waiting', 'requestEmailReset transitions emailStep to waiting');
+    assertEqualOrThrow(states[12], 'reset-A', 'requestEmailReset sets resetId to reset-A');
+    assertOrThrow(Boolean(activeIntervalCallback), 'status polling timer registered for reset-A');
+
+    // 2. Interval fires for reset-A status poll, setting pollInFlight
+    const pollTickPromiseA = activeIntervalCallback!();
+    const pollInFlightRef = refs[1] as { current: boolean };
+    const pollGenerationRef = refs[3] as { current: number } | undefined;
+    assertEqualOrThrow(
+      pollInFlightRef.current,
+      true,
+      'pollInFlight is true while status poll A is pending',
+    );
+    const generationBeforeResend = pollGenerationRef?.current ?? 0;
+
+    // 3. User resends while status poll A is in-flight, creating reset-B
+    const tree2 = renderPage();
+    const resendBtn = findAllButtons(tree2).find((b) => b.props?.children === 'recoverEmailResend');
+    assertOrThrow(Boolean(resendBtn), 'resend button found while waiting');
+
+    await resendBtn.props.onClick();
+    renderPage();
+
+    assertEqualOrThrow(states[11], 'waiting', 'emailStep remains waiting for reset-B');
+    assertEqualOrThrow(states[12], 'reset-B', 'resend updates resetId to reset-B');
+    assertOrThrow(
+      typeof pollGenerationRef?.current === 'number' &&
+        pollGenerationRef.current > generationBeforeResend,
+      'stopPolling increments pollGeneration on resend',
+    );
+    assertEqualOrThrow(pollInFlightRef.current, false, 'stopPolling resets pollInFlight on resend');
+
+    // 4. Stale poll A resolves with approved for old reset-A
+    resolvePollA!({ data: { status: 'approved' } });
+    await pollTickPromiseA;
+    renderPage();
+
+    assertEqualOrThrow(
+      states[11],
+      'waiting',
+      'superseded poll A does not transition emailStep to approved for reset-B',
+    );
+    assertEqualOrThrow(
+      states[12],
+      'reset-B',
+      'resetId remains reset-B after superseded poll A resolves',
+    );
+    assertEqualOrThrow(
+      pollInFlightRef.current,
+      false,
+      'superseded poll A does not clobber pollInFlight',
+    );
+
+    // 5. Subsequent poll for reset-B proceeds and transitions cleanly
+    assertOrThrow(Boolean(activeIntervalCallback), 'interval timer active for reset-B');
+    await activeIntervalCallback!();
+    renderPage();
+
+    assertEqualOrThrow(states[11], 'approved', 'reset B poll transitions emailStep to approved');
+    assertEqualOrThrow(states[12], 'reset-B', 'resetId matches approved reset B');
+  } finally {
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
+    Module._resolveFilename = originalResolveFilename;
+    Module._load = prevLoad;
+  }
 }
 
 main()

@@ -44,6 +44,7 @@ import { destroySharedRasterRenderer } from './printers/raster-renderer';
 import { registerIpcHandlers } from './ipc';
 import { authorizeMasterPin } from './services/master-pin';
 import {
+  handleSystemResume as handleWhatsAppSystemResume,
   requestShutdown as requestWhatsAppShutdown,
   shutdown as shutdownWhatsApp,
 } from './services/whatsapp';
@@ -1070,6 +1071,7 @@ async function handleMainWindowActivation(): Promise<void> {
 function registerPowerMonitorRecovery(): void {
   powerMonitor.on('resume', () => {
     console.log('[Window] System resumed from sleep, forcing repaint');
+    handleWhatsAppSystemResume();
     // Allow display pipeline to wake before nudging.
     setTimeout(() => {
       if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;

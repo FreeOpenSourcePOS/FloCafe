@@ -3395,7 +3395,8 @@
       "cooldown": "발송이 일시 중단되었습니다.",
       "logged_out": "로그아웃되었습니다. 계속하려면 다시 연결하세요.",
       "rate_limited": "WhatsApp으로 인한 발송 속도 제한({code}). 5분간 대기합니다.",
-      "reconnecting": "연결이 종료되었습니다({code}). {seconds}초 후 재연결…"
+      "reconnecting": "연결이 종료되었습니다({code}). {seconds}초 후 재연결…",
+      "startup_failed": "WhatsApp 연결을 시작할 수 없습니다. 다시 시도하세요."
     },
     "rule": {
       "after_payment": "결제 후 자동 영수증",
@@ -3444,6 +3445,8 @@
       "connecting": "연결 중",
       "cooldown": "대기 시간",
       "disconnected": "연결 안 됨",
+      "reconnecting": "다시 연결하는 중…",
+      "repair_needed": "다시 페어링 필요",
       "waiting_pairing": "페어링 코드 대기 중",
       "waiting_qr": "QR 스캔 대기 중"
     },

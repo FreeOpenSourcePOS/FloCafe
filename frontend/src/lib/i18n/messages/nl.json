@@ -3395,7 +3395,8 @@
       "cooldown": "Het verzenden is tijdelijk onderbroken.",
       "logged_out": "Uitgelogd. Maak opnieuw verbinding om door te gaan.",
       "rate_limited": "WhatsApp heeft de verzendfrequentie beperkt ({code}). Wacht 5 minuten.",
-      "reconnecting": "Verbinding gesloten ({code}). Opnieuw verbinding maken over {seconds}s…"
+      "reconnecting": "Verbinding gesloten ({code}). Opnieuw verbinding maken over {seconds}s…",
+      "startup_failed": "Kon de WhatsApp-verbinding niet starten. Probeer het opnieuw."
     },
     "rule": {
       "after_payment": "Automatische bon na betaling",
@@ -3444,6 +3445,8 @@
       "connecting": "Verbinden…",
       "cooldown": "In afkoelperiode",
       "disconnected": "Niet verbonden",
+      "reconnecting": "Opnieuw verbinden…",
+      "repair_needed": "Opnieuw koppelen vereist",
       "waiting_pairing": "Wachten op koppelingscode",
       "waiting_qr": "Wachten op QR-scan"
     },

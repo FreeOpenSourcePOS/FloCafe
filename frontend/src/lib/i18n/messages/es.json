@@ -3395,7 +3395,8 @@
       "cooldown": "Los envíos están en pausa.",
       "logged_out": "Cerraste sesión en WhatsApp. Volvé a emparejar.",
       "rate_limited": "WhatsApp limitó el envío ({code}). Pausa de 5 minutos.",
-      "reconnecting": "Conexión cerrada ({code}). Reconectando en {seconds} s…"
+      "reconnecting": "Conexión cerrada ({code}). Reconectando en {seconds} s…",
+      "startup_failed": "No se pudo iniciar la conexión de WhatsApp. Intentá de nuevo."
     },
     "rule": {
       "after_payment": "Recibo automático tras el pago",
@@ -3444,6 +3445,8 @@
       "connecting": "Conectando",
       "cooldown": "En pausa",
       "disconnected": "Desconectado",
+      "reconnecting": "Reconectando…",
+      "repair_needed": "Reemparejamiento necesario",
       "waiting_pairing": "Esperando código de emparejamiento",
       "waiting_qr": "Esperando escaneo de QR"
     },

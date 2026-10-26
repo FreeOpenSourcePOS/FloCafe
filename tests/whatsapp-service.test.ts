@@ -64,7 +64,21 @@ const credentialWriteGate = new Promise<void>((resolve) => {
 });
 let holdPresence = false;
 let sentMsgSeq = 0;
-const fakeSocket = {
+let saveCredsCalls = 0;
+let rejectLogout = false;
+let logoutCalls = 0;
+let rejectPairingCode = false;
+let holdPairingCode = false;
+let pairingCodeStarted!: () => void;
+const pairingCodeStartedPromise = new Promise<void>((resolve) => {
+  pairingCodeStarted = resolve;
+});
+let releasePairingCode!: () => void;
+const pairingCodeGate = new Promise<void>((resolve) => {
+  releasePairingCode = resolve;
+});
+let rejectSendPresenceUpdate = false;
+const fakeSocket: any = {
   ev: {
     on: (event: string, handler: (value: any) => void) => {
       eventHandlers.set(event, handler);
@@ -77,8 +91,28 @@ const fakeSocket = {
       return pendingPresence;
     }
   },
-  sendPresenceUpdate: async () => {},
+  sendPresenceUpdate: async () => {
+    if (rejectSendPresenceUpdate) {
+      throw new Error('WebSocket closed after sleep');
+    }
+  },
   sendMessage: async () => ({ key: { id: `shutdown-test-message-${++sentMsgSeq}` } }),
+  requestPairingCode: async () => {
+    if (holdPairingCode) {
+      pairingCodeStarted();
+      await pairingCodeGate;
+    }
+    if (rejectPairingCode) {
+      throw new Error('Pairing code rate limited');
+    }
+    return '12345678';
+  },
+  logout: async () => {
+    logoutCalls++;
+    if (rejectLogout) {
+      throw new Error('Connection Closed');
+    }
+  },
   end: () => {},
 };
 const fakeBaileys = {
@@ -100,6 +134,7 @@ const fakeBaileys = {
     return {
       state: {},
       saveCreds: async () => {
+        saveCredsCalls++;
         if (holdCredentialWrite) {
           credentialWriteStarted();
           await credentialWriteGate;
@@ -158,6 +193,7 @@ async function main(): Promise<void> {
   assert(typeof whatsapp.disable === 'function', 'exports disable()');
   assert(typeof whatsapp.connectWithQr === 'function', 'exports connectWithQr()');
   assert(typeof whatsapp.connectWithPairingCode === 'function', 'exports connectWithPairingCode()');
+  assert(typeof whatsapp.cancelPairing === 'function', 'exports cancelPairing()');
   assert(typeof whatsapp.disconnect === 'function', 'exports disconnect()');
   assert(typeof whatsapp.shutdown === 'function', 'exports shutdown()');
   assert(typeof whatsapp.initFromDb === 'function', 'exports initFromDb()');
@@ -1736,6 +1772,201 @@ async function main(): Promise<void> {
       disconnectedBroadcast.ok === false && disconnectedBroadcast.reason === 'not_connected',
       `runBroadcast returns ok=false and reason=not_connected when disconnected (got ${JSON.stringify(disconnectedBroadcast)})`,
     );
+
+    /*
+     * macOS DMG and Mac App Store verification scenarios (see
+     * docs/architecture/cloud-integrations.md#whatsapp-receipt-delivery for the authoritative
+     * session-lifecycle contract):
+     * 1. Pair -> Quit -> Reopen without QR (same-tick 515 restartRequired / shutdown credential flush).
+     * 2. Pair -> Sleep/Wake or transient drop -> Reconnect (reconnecting state + handleSystemResume probe).
+     * 3. Pair -> Unlink device from phone (401 loggedOut -> destructive logged_out alert + repair_needed badge,
+     *    cleared when re-pairing).
+     * 4. Unpaired 408 timeout -> disconnected, connectWithPairingCode fallback/cancellation guards, and
+     *    non-destructive cancelPairing() preserving registered whatsapp-auth/ credentials.
+     */
+    // Issue #1346 regression 1: creds.update followed in the same tick by 515 restartRequired
+    // must persist credentials and reconnect seamlessly without a false error banner.
+    await whatsapp.connectWithQr();
+    const saveCredsBefore515 = saveCredsCalls;
+    eventHandlers.get('creds.update')?.({ me: { id: '15555550100:1@s.whatsapp.net' } });
+    eventHandlers.get('connection.update')?.({
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: 515 } } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const statusAfter515 = whatsapp.getStatus();
+    assert(
+      saveCredsCalls === saveCredsBefore515 + 1,
+      `creds.update persists across same-tick 515 restartRequired close (got ${saveCredsCalls - saveCredsBefore515} writes)`,
+    );
+    assert(
+      statusAfter515.state === 'connecting' &&
+        statusAfter515.lastError === null &&
+        statusAfter515.lastErrorReason === null,
+      `515 restartRequired reconnects seamlessly without error banner (got ${JSON.stringify(statusAfter515)})`,
+    );
+
+    // Issue #1346 regression 2: 408 timedOut on an unpaired waiting_qr session returns to
+    // disconnected instead of entering an auto-reconnect loop.
+    whatsapp.disconnect();
+    await whatsapp.enable('qr-timeout-test-user');
+    await whatsapp.connectWithQr();
+    eventHandlers.get('connection.update')?.({ qr: 'unpaired-qr-1' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(
+      whatsapp.getStatus().state === 'waiting_qr',
+      'QR update transitions unpaired socket to waiting_qr',
+    );
+    eventHandlers.get('connection.update')?.({
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: 408 } } },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const statusAfter408 = whatsapp.getStatus();
+    assert(
+      statusAfter408.state === 'disconnected' && statusAfter408.lastErrorReason === null,
+      `unpaired QR timeout (408) returns to disconnected without reconnect loop (got ${JSON.stringify(statusAfter408)})`,
+    );
+
+    // Issue #1346 regression 3: 401 loggedOut followed by connectWithQr clears stale lastError.
+    await whatsapp.connectWithQr();
+    eventHandlers.get('connection.update')?.({
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: 401 } } },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(
+      whatsapp.getStatus().state === 'disconnected' &&
+        whatsapp.getStatus().lastErrorReason === 'logged_out',
+      '401 loggedOut transitions to disconnected with logged_out reason',
+    );
+    await whatsapp.connectWithQr();
+    eventHandlers.get('connection.update')?.({ qr: 'fresh-repair-qr' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const statusAfterRepairQr = whatsapp.getStatus();
+    assert(
+      statusAfterRepairQr.state === 'waiting_qr' &&
+        statusAfterRepairQr.qr === 'fresh-repair-qr' &&
+        statusAfterRepairQr.lastError === null &&
+        statusAfterRepairQr.lastErrorReason === null,
+      `connectWithQr clears stale logged_out error on fresh QR (got ${JSON.stringify(statusAfterRepairQr)})`,
+    );
+
+    // Issue #1346 regression 4: connectWithPairingCode failure restores QR mode so subsequent
+    // QR events are not suppressed and existing QR state remains usable.
+    rejectPairingCode = true;
+    const failedPairingRes = await whatsapp.connectWithPairingCode('+15555550100');
+    rejectPairingCode = false;
+    assert(
+      failedPairingRes.ok === false,
+      `connectWithPairingCode returns ok=false when requestPairingCode fails (got ${JSON.stringify(failedPairingRes)})`,
+    );
+    eventHandlers.get('connection.update')?.({ qr: 'qr-after-failed-pairing' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const statusAfterFailedPairing = whatsapp.getStatus();
+    assert(
+      statusAfterFailedPairing.state === 'waiting_qr' &&
+        statusAfterFailedPairing.qr === 'qr-after-failed-pairing',
+      `failed connectWithPairingCode does not suppress subsequent QR events (got ${JSON.stringify(statusAfterFailedPairing)})`,
+    );
+
+    // Issue #1346 regression 5: connectWithPairingCode clears stale QR and ignores background QR timer events.
+    const pairingRes = await whatsapp.connectWithPairingCode('+15555550100');
+    assert(
+      pairingRes.ok === true && pairingRes.code === '12345678',
+      `connectWithPairingCode returns 8-digit code (got ${JSON.stringify(pairingRes)})`,
+    );
+    eventHandlers.get('connection.update')?.({ qr: 'rotated-qr-from-baileys-timer' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const statusDuringPairing = whatsapp.getStatus();
+    assert(
+      statusDuringPairing.state === 'waiting_pairing' &&
+        statusDuringPairing.pairingCode === '12345678' &&
+        statusDuringPairing.qr === undefined,
+      `QR rotation event does not clobber waiting_pairing state (got ${JSON.stringify(statusDuringPairing)})`,
+    );
+
+    // Issue #1346 regression 6: superseded or cancelled connectWithPairingCode does not publish
+    // a stale pairing code after cancelPairing() or connectWithQr().
+    holdPairingCode = true;
+    const pendingPairingPromise = whatsapp.connectWithPairingCode('+15555550100');
+    await pairingCodeStartedPromise;
+    whatsapp.cancelPairing();
+    releasePairingCode();
+    const supersededPairingRes = await pendingPairingPromise;
+    holdPairingCode = false;
+    assert(
+      supersededPairingRes.ok === false &&
+        whatsapp.getStatus().state === 'disconnected' &&
+        whatsapp.getStatus().pairingCode === undefined,
+      `superseded connectWithPairingCode does not publish stale pairing code (got ${JSON.stringify(supersededPairingRes)}, status=${JSON.stringify(whatsapp.getStatus())})`,
+    );
+
+    // Issue #1346 regression 7: cancelPairing() closes an in-progress pairing socket without
+    // calling socket.logout() or wiping existing registered credentials.
+    const authDirPath = path.join(testDir, 'whatsapp-auth');
+    fs.mkdirSync(authDirPath, { recursive: true, mode: 0o700 });
+    const credsFilePath = path.join(authDirPath, 'creds.json');
+    fs.writeFileSync(
+      credsFilePath,
+      JSON.stringify({ me: { id: '15555550199:1@s.whatsapp.net' }, registered: true }),
+    );
+    await whatsapp.connectWithQr();
+    eventHandlers.get('connection.update')?.({ qr: 'cancel-test-qr' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const logoutCallsBeforeCancel = logoutCalls;
+    whatsapp.cancelPairing();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const statusAfterCancel = whatsapp.getStatus();
+    assert(
+      logoutCalls === logoutCallsBeforeCancel &&
+        fs.existsSync(credsFilePath) &&
+        statusAfterCancel.state === 'disconnected' &&
+        statusAfterCancel.connectedPhone === '+15555550199',
+      `cancelPairing preserves existing registered credentials without calling logout() (logoutDelta=${logoutCalls - logoutCallsBeforeCancel}, credsExists=${fs.existsSync(credsFilePath)}, status=${JSON.stringify(statusAfterCancel)})`,
+    );
+
+    // Issue #1346 regression 8: handleSystemResume() replaces a stale non-connected socket and
+    // reconnects when a connected socket fails its resume presence health probe.
+    await whatsapp.connectWithQr();
+    fakeSocket.ws = { isClosed: true, readyState: 3 };
+    const socketCallsBeforeStaleResume = makeSocketCalls;
+    whatsapp.handleSystemResume();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    delete fakeSocket.ws;
+    assert(
+      makeSocketCalls === socketCallsBeforeStaleResume + 1,
+      `handleSystemResume replaces stale closed socket and reconnects (socketDelta=${makeSocketCalls - socketCallsBeforeStaleResume})`,
+    );
+    eventHandlers.get('connection.update')?.({ connection: 'open' });
+    await new Promise((resolve) => setImmediate(resolve));
+    rejectSendPresenceUpdate = true;
+    const socketCallsBeforeProbeResume = makeSocketCalls;
+    whatsapp.handleSystemResume();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    rejectSendPresenceUpdate = false;
+    assert(
+      makeSocketCalls === socketCallsBeforeProbeResume + 1,
+      `handleSystemResume reconnects when post-sleep presence probe fails (socketDelta=${makeSocketCalls - socketCallsBeforeProbeResume})`,
+    );
+
+    // Issue #1346 regression 9: disconnect() catches asynchronous socket.logout() rejection.
+    let unhandledLogoutRejection: unknown = null;
+    const onUnhandledRejection = (reason: unknown) => {
+      unhandledLogoutRejection = reason;
+    };
+    process.on('unhandledRejection', onUnhandledRejection);
+    rejectLogout = true;
+    whatsapp.disconnect();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    process.off('unhandledRejection', onUnhandledRejection);
+    rejectLogout = false;
+    assert(
+      unhandledLogoutRejection === null,
+      `disconnect() suppresses async socket.logout() rejection (got ${String(unhandledLogoutRejection)})`,
+    );
+
+    await whatsapp.enable('shutdown-send-test-user');
     await whatsapp.connectWithQr();
     eventHandlers.get('connection.update')?.({ connection: 'open' });
     await new Promise((resolve) => setImmediate(resolve));

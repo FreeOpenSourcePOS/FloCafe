@@ -118,6 +118,15 @@ router.post(
   }),
 );
 
+router.post(
+  '/cancel-pairing',
+  requirePermission('whatsapp.manage'),
+  (_req: Request, res: Response) => {
+    whatsapp.cancelPairing();
+    res.json({ ok: true });
+  },
+);
+
 router.post('/disconnect', requirePermission('whatsapp.manage'), (_req: Request, res: Response) => {
   whatsapp.disconnect();
   res.json({ ok: true });

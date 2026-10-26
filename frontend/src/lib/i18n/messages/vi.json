@@ -3395,7 +3395,8 @@
       "cooldown": "Đang tạm dừng gửi.",
       "logged_out": "Đã đăng xuất. Hãy kết nối lại để tiếp tục.",
       "rate_limited": "WhatsApp giới hạn tần suất gửi ({code}). Tạm dừng trong 5 phút.",
-      "reconnecting": "Kết nối đã đóng ({code}). Đang kết nối lại sau {seconds} giây…"
+      "reconnecting": "Kết nối đã đóng ({code}). Đang kết nối lại sau {seconds} giây…",
+      "startup_failed": "Không thể khởi động kết nối WhatsApp. Hãy thử lại."
     },
     "rule": {
       "after_payment": "Hóa đơn tự động sau thanh toán",
@@ -3444,6 +3445,8 @@
       "connecting": "Đang kết nối",
       "cooldown": "Đang tạm dừng",
       "disconnected": "Đã ngắt kết nối",
+      "reconnecting": "Đang kết nối lại…",
+      "repair_needed": "Cần ghép nối lại",
       "waiting_pairing": "Đang chờ mã ghép nối",
       "waiting_qr": "Đang chờ quét QR"
     },

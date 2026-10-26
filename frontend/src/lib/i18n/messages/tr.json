@@ -3395,7 +3395,8 @@
       "cooldown": "Gönderim geçici olarak duraklatıldı.",
       "logged_out": "Oturum kapatıldı. Devam etmek için yeniden bağlanın.",
       "rate_limited": "Gönderim WhatsApp tarafından sınırlandırıldı ({code}). 5 dakika soğuma süresinde.",
-      "reconnecting": "Bağlantı kapandı ({code}). {seconds} saniye içinde yeniden bağlanılıyor…"
+      "reconnecting": "Bağlantı kapandı ({code}). {seconds} saniye içinde yeniden bağlanılıyor…",
+      "startup_failed": "WhatsApp bağlantısı başlatılamadı. Tekrar deneyin."
     },
     "rule": {
       "after_payment": "Ödeme sonrası otomatik fiş",
@@ -3444,6 +3445,8 @@
       "connecting": "Bağlanıyor...",
       "cooldown": "Bekleme Süresinde (Soğuma)",
       "disconnected": "Bağlantı Kesildi",
+      "reconnecting": "Yeniden bağlanıyor…",
+      "repair_needed": "Yeniden eşleştirme gerekli",
       "waiting_pairing": "Eşleşme Kodu Bekleniyor",
       "waiting_qr": "QR Kod Taraması Bekleniyor"
     },

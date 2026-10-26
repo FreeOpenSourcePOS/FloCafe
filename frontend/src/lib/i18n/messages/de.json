@@ -3395,7 +3395,8 @@
       "cooldown": "Versand vorübergehend pausiert.",
       "logged_out": "Abgemeldet. Bitte neu verbinden, um fortzufahren.",
       "rate_limited": "Versand durch WhatsApp begrenzt ({code}). 5 Minuten Pause.",
-      "reconnecting": "Verbindung geschlossen ({code}). Wiederherstellung in {seconds} Sek.…"
+      "reconnecting": "Verbindung geschlossen ({code}). Wiederherstellung in {seconds} Sek.…",
+      "startup_failed": "WhatsApp-Verbindung konnte nicht gestartet werden. Bitte erneut versuchen."
     },
     "rule": {
       "after_payment": "Auto-Beleg nach Zahlung",
@@ -3444,6 +3445,8 @@
       "connecting": "Verbindung wird hergestellt",
       "cooldown": "In Abkühlphase",
       "disconnected": "Getrennt",
+      "reconnecting": "Verbindung wird wiederhergestellt…",
+      "repair_needed": "Erneute Kopplung erforderlich",
       "waiting_pairing": "Warten auf Kopplungscode",
       "waiting_qr": "Warten auf QR-Scan"
     },

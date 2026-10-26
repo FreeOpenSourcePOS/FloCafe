@@ -3395,7 +3395,8 @@
       "cooldown": "Dërgimi është ndërprerë përkohësisht.",
       "logged_out": "Doli jashtë. Rilidhu për të vazhduar.",
       "rate_limited": "Shkalla e dërgimit të kufizuar nga WhatsApp ({code}). Duke u ftohur për 5 minuta.",
-      "reconnecting": "Lidhja u mbyll ({code}). Duke u rilidhur {seconds} s…"
+      "reconnecting": "Lidhja u mbyll ({code}). Duke u rilidhur {seconds} s…",
+      "startup_failed": "Lidhja me WhatsApp nuk mund të niste. Provo përsëri."
     },
     "rule": {
       "after_payment": "Faturë automatike pas pagesës",
@@ -3444,6 +3445,8 @@
       "connecting": "Duke u lidhur",
       "cooldown": "Në ftohje",
       "disconnected": "I shkëputur",
+      "reconnecting": "Po rilidhet…",
+      "repair_needed": "Kërkohet riçiftim",
       "waiting_pairing": "Në pritje të kodit të çiftimit",
       "waiting_qr": "Në pritje të skanimit QR"
     },

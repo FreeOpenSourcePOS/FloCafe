@@ -7744,6 +7744,17 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       addOrderItemCol('ingredient_cost_known', 'INTEGER NOT NULL DEFAULT 0');
     },
   },
+  {
+    version: 118,
+    name: 'add_printer_text_size',
+    up: () => {
+      if (!getColumns(db, 'printers').includes('text_size')) {
+        db.exec(
+          `ALTER TABLE printers ADD COLUMN text_size TEXT NOT NULL DEFAULT 'normal' CHECK (text_size IN ('normal', 'large', 'extra_large'))`,
+        );
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -8186,6 +8197,7 @@ function createSchema(): void {
       is_default INTEGER DEFAULT 0,
       cash_drawer_pulse_enabled INTEGER NOT NULL DEFAULT 0,
       paper_width TEXT DEFAULT '80mm',
+      text_size TEXT NOT NULL DEFAULT 'normal' CHECK (text_size IN ('normal', 'large', 'extra_large')),
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );

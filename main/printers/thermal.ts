@@ -78,6 +78,12 @@ import {
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
 import {
+  layoutColumnsForTextSize,
+  normalizePrinterTextSize,
+  physicalColumnsForTextSize,
+  type PrinterTextSize,
+} from '../../shared/print/text-size';
+import {
   columnsForPaperWidth as columnsForConfiguredPaperWidth,
   displayCellWidth,
   padToDisplayCells,
@@ -1477,18 +1483,23 @@ export interface PrinterContext {
   capabilities: ThermalPrinterCapabilities;
 }
 
-/** Resolves profile, column count, and capabilities aligned with printer paper_width. */
+/**
+ * Resolves profile, layout column count, and capabilities aligned with printer paper_width and
+ * text_size. `columns` is the width document layout must target; extra large text halves it.
+ */
 export function resolvePrinterContext(
   printer: any,
   arabicShapingOverride?: boolean,
 ): PrinterContext {
   const profile = resolvePrinterProfile(printer);
-  const columns = getColumnsForPrinter(printer, profile);
-  const capabilities = capabilitiesForPrinter(
+  const textSize = normalizePrinterTextSize(printer?.text_size);
+  const columns = layoutColumnsForTextSize(getColumnsForPrinter(printer, profile), textSize);
+  const baseCapabilities = capabilitiesForPrinter(
     profile,
     printer?.paper_width || profile.defaultPaperWidth,
     arabicShapingOverride,
   );
+  const capabilities = textSize === 'normal' ? baseCapabilities : { ...baseCapabilities, textSize };
   return { profile, columns, capabilities };
 }
 
@@ -1758,15 +1769,20 @@ async function rasterizeDocumentLines(
   let renderer: Pick<import('./raster-renderer').ChromiumRasterRenderer, 'render'> | undefined;
   let result = failureResult(new Error('Raster renderer was not initialized'));
   try {
-    const { getSharedRasterRenderer, renderUnsupportedRasterLines } =
+    const { getSharedRasterRenderer, renderUnsupportedRasterLines, applyTextSizeToRasterInput } =
       await import('./raster-renderer');
     renderer = getSharedRasterRenderer();
+    const enlarged = applyTextSizeToRasterInput(
+      lines,
+      rasterGroups,
+      options.capabilities.textSize ?? 'normal',
+    );
     const raster = await renderUnsupportedRasterLines(
       renderer,
-      lines,
+      enlarged.lines,
       options.capabilities,
       options.requestPrefix,
-      rasterGroups,
+      enlarged.groups,
     );
     selectedFinancial =
       raster.units.some((unit) => unit.unit.financial) ||
@@ -2152,7 +2168,12 @@ function renderPluginReceipt(
   ) {
     throw new Error(`Unsupported receipt plugin renderer for template ${template.template_id}`);
   }
-  const profile = selectTemplateWidthProfile(payload, cols, warnings);
+  const profile = selectTemplateRenderProfile(
+    payload,
+    cols,
+    capabilities?.textSize ?? 'normal',
+    warnings,
+  );
   return renderEscposLineTemplateV1(
     payload,
     profile,
@@ -2175,6 +2196,24 @@ function parseJson(raw: string, fallback: unknown): unknown {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Picks the pack width profile by physical paper width, then lays out at the text-size-adjusted
+ * column count so enlarged text keeps the pack's layout.
+ */
+export function selectTemplateRenderProfile(
+  payload: any,
+  layoutColumns: number,
+  textSize: PrinterTextSize,
+  warnings?: PrintWarning[],
+): { columns: number; layout: any } {
+  const selected = selectTemplateWidthProfile(
+    payload,
+    physicalColumnsForTextSize(layoutColumns, textSize),
+    warnings,
+  );
+  return { ...selected, columns: layoutColumnsForTextSize(selected.columns, textSize) };
 }
 
 function selectTemplateWidthProfile(

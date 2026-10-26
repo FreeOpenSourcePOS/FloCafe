@@ -19,6 +19,7 @@ import {
   type ThermalPrinterCapabilities,
 } from '../../shared/print/thermal-capabilities';
 import { thermalDisplayWidth, type PrintWarning } from '../../shared/print';
+import { applyTextSizeToLines, physicalColumnsForTextSize } from '../../shared/print/text-size';
 import {
   encodeRasterUnits,
   rasterCapabilityEnabled,
@@ -429,6 +430,12 @@ export function buildEscPos(
   warnings?: PrintWarning[],
 ): Buffer<ArrayBuffer> {
   const buf: number[] = [];
+  const textSize = options.capabilities?.textSize ?? 'normal';
+  const fitColumns =
+    Number.isInteger(options.columns) && (options.columns as number) > 0
+      ? physicalColumnsForTextSize(options.columns as number, textSize)
+      : undefined;
+  if (textSize !== 'normal') lines = applyTextSizeToLines(lines, textSize);
   const useLegacyUnicode = options.capabilities === undefined && _useUnicode;
   const capabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
   const hasNativeCodePage = capabilities.encoding.codePages.some(
@@ -588,9 +595,9 @@ export function buildEscPos(
     let lineDW = line.includes('{DOUBLE_WIDTH}');
     const lineFontB = line.includes('{FONT_B}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
-    if (lineDW && Number.isInteger(options.columns) && (options.columns as number) > 0) {
+    if (lineDW && fitColumns !== undefined) {
       const styleText = printableLine.replace(CURRENCY_TOKEN_RE, '');
-      const columns = options.columns as number;
+      const columns = fitColumns;
       if (
         thermalDisplayWidth(styleText) > Math.floor(columns / 2) &&
         thermalDisplayWidth(styleText) <= columns
@@ -629,17 +636,15 @@ export function buildEscPos(
         continue;
       }
       printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
-      if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
-        const maxCols = lineDW
-          ? Math.floor((options.columns as number) / 2)
-          : (options.columns as number);
+      if (fitColumns !== undefined) {
+        const maxCols = lineDW ? Math.floor(fitColumns / 2) : fitColumns;
         line = truncate(printableLine, Math.max(1, maxCols), options.language, capabilities);
       }
     }
 
     line = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
-    if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
-      line = fitThermalLine(line, options.columns as number, lineDW);
+    if (fitColumns !== undefined) {
+      line = fitThermalLine(line, fitColumns, lineDW);
     }
 
     buf.push(0x1b, 0x61, center ? 0x01 : 0x00);

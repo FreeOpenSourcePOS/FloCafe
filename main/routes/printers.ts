@@ -29,6 +29,7 @@ import {
 import { buildMenuDocument } from '../printers/document-menu';
 import { detectPrintLanguageDirection } from '../printers/document-classic';
 import type { DeliverySlipPaymentBill } from '../../shared/print';
+import { PRINTER_TEXT_SIZES, normalizePrinterTextSize } from '../../shared/print/text-size';
 import {
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
@@ -104,6 +105,9 @@ function validatePrinterFields(body: any, existing?: any): string | null {
   if (body.paper_width !== undefined && !PRINTER_COLUMN_WIDTHS.includes(body.paper_width)) {
     return 'paper_width must be cols-32, cols-36, cols-40, cols-42, cols-44, or cols-48';
   }
+  if (body.text_size !== undefined && !PRINTER_TEXT_SIZES.includes(body.text_size)) {
+    return 'text_size must be normal, large, or extra_large';
+  }
 
   const connectionType =
     body.connection_type !== undefined ? body.connection_type : existing?.connection_type;
@@ -162,6 +166,7 @@ function printerShape(printer: any) {
     is_default: printer.is_default,
     cash_drawer_pulse_enabled: printer.cash_drawer_pulse_enabled,
     paper_width: printer.paper_width,
+    text_size: normalizePrinterTextSize(printer.text_size),
     created_at: printer.created_at,
     updated_at: printer.updated_at,
     profile_id: profile.id,
@@ -278,6 +283,7 @@ router.post('/', requirePermission('printers.manage'), (req: Request, res: Respo
       ip_address,
       port,
       paper_width,
+      text_size,
       is_default,
       cash_drawer_pulse_enabled,
     } = req.body;
@@ -312,8 +318,8 @@ router.post('/', requirePermission('printers.manage'), (req: Request, res: Respo
       const shouldBeDefault = Boolean(is_default) || isFirstPrinter;
       if (shouldBeDefault) db.prepare('UPDATE printers SET is_default = 0').run();
       db.prepare(`
-        INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, text_size, is_default, cash_drawer_pulse_enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         name,
@@ -321,6 +327,7 @@ router.post('/', requirePermission('printers.manage'), (req: Request, res: Respo
         ip_address ?? null,
         port ?? 9100,
         paper_width ?? 'cols-42',
+        text_size ?? 'normal',
         shouldBeDefault ? 1 : 0,
         cash_drawer_pulse_enabled === true ? 1 : 0,
         now(),
@@ -349,6 +356,7 @@ router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Res
       ip_address,
       port,
       paper_width,
+      text_size,
       is_default,
       cash_drawer_pulse_enabled,
     } = req.body;
@@ -365,7 +373,7 @@ router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Res
       db.prepare(`
         UPDATE printers SET
           name = ?, connection_type = ?, ip_address = ?, port = ?,
-          paper_width = ?, is_default = ?, cash_drawer_pulse_enabled = ?, updated_at = ?
+          paper_width = ?, text_size = ?, is_default = ?, cash_drawer_pulse_enabled = ?, updated_at = ?
         WHERE id = ?
       `).run(
         name !== undefined ? name : existing.name,
@@ -373,6 +381,7 @@ router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Res
         updatedIpAddress === undefined ? null : updatedIpAddress,
         port !== undefined ? port : existing.port,
         paper_width !== undefined ? paper_width : existing.paper_width,
+        text_size !== undefined ? text_size : existing.text_size,
         becameDefault ? 1 : is_default === false ? 0 : existing.is_default,
         cash_drawer_pulse_enabled !== undefined
           ? cash_drawer_pulse_enabled

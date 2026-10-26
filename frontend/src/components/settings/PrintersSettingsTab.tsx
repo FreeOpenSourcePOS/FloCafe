@@ -183,6 +183,7 @@ export function PrintersSettingsTab({
   const [testingPrinterId, setTestingPrinterId] = useState<string | null>(null);
   const [detectedPrinters, setDetectedPrinters] = useState<DetectedPrinter[]>([]);
   const [detectingPrinters, setDetectingPrinters] = useState(false);
+  const [detectionSucceeded, setDetectionSucceeded] = useState(false);
   const [addingDetectedName, setAddingDetectedName] = useState<string | null>(null);
   const [installedPrintersOpen, setInstalledPrintersOpen] = useState(false);
   const [cashDrawerMethodsOpen, setCashDrawerMethodsOpen] = useState(false);
@@ -221,9 +222,15 @@ export function PrintersSettingsTab({
     setDetectingPrinters(true);
     try {
       const res = await api.get('/printers/detect', signal ? { signal } : undefined);
-      if (!signal?.aborted) setDetectedPrinters(res.data.printers || []);
+      if (!signal?.aborted) {
+        setDetectedPrinters(res.data.printers || []);
+        setDetectionSucceeded(true);
+      }
     } catch {
-      if (!signal?.aborted) setDetectedPrinters([]);
+      if (!signal?.aborted) {
+        setDetectedPrinters([]);
+        setDetectionSucceeded(false);
+      }
     } finally {
       if (!signal?.aborted) setDetectingPrinters(false);
     }
@@ -618,7 +625,9 @@ export function PrintersSettingsTab({
                   </datalist>
                   {printerForm.connection_type !== 'webusb' &&
                     printerForm.name.trim() &&
-                    detectedPrinters.length > 0 &&
+                    !detectingPrinters &&
+                    detectionSucceeded &&
+                    (printerForm.connection_type === 'usb' || detectedPrinters.length > 0) &&
                     !detectedPrinters.some((dp) => dp.name === printerForm.name) && (
                       <p className="mt-1 text-xs text-amber-600">
                         {t('printerNameMismatchWarning')}

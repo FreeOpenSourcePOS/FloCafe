@@ -624,11 +624,7 @@ async function main(): Promise<void> {
     notifyDelayedBackupStarted = resolve;
   });
 
-  dbModule.createBackup = async (
-    targetPath?: string,
-    signal?: AbortSignal,
-    _options?: any,
-  ) => {
+  dbModule.createBackup = async (targetPath?: string, signal?: AbortSignal, _options?: any) => {
     stagedPathSeen = targetPath ?? null;
     abortSignalSeen = signal ?? null;
     notifyDelayedBackupStarted();
@@ -645,9 +641,7 @@ async function main(): Promise<void> {
     assert.ok(stagedPathSeen, 'delayed createBackup received staged path');
 
     // While createBackup is still awaiting completion, disable local backups via settings update (opt-out)
-    const optOutRes = await request(api)
-      .put('/api/db-tools/local-backup')
-      .send({ enabled: false });
+    const optOutRes = await request(api).put('/api/db-tools/local-backup').send({ enabled: false });
     assert.equal(optOutRes.status, 200);
     assert.equal(optOutRes.body.enabled, false);
     assert.equal(isLocalBackupEnabled(), false, 'local backup disabled during in-flight backup');
@@ -673,10 +667,96 @@ async function main(): Promise<void> {
       existingBackupsBefore,
       'no backup file is published and pruneLocalBackups does not delete existing backups',
     );
-    const leftoverTempFiles = fs
-      .readdirSync(backupDir)
-      .filter((name) => name.startsWith('.'));
+    const leftoverTempFiles = fs.readdirSync(backupDir).filter((name) => name.startsWith('.'));
     assert.deepEqual(leftoverTempFiles, [], 'no temporary files left behind in backup dir');
+
+    // Recheck !isLocalBackupEnabled() independently of abortSignal.aborted:
+    // if local_backup_enabled becomes 'false' in the database while createBackup is in flight
+    // without triggering abortController.abort(), the post-createBackup recheck still discards
+    // the staged snapshot without publishing or pruning.
+    setLocalBackupEnabled(true);
+    stagedPathSeen = null;
+    abortSignalSeen = null;
+    const backupReleaseOptOutOnly = new Promise<void>((resolve) => {
+      releaseDelayedBackup = resolve;
+    });
+    const backupStartedOptOutOnly = new Promise<void>((resolve) => {
+      notifyDelayedBackupStarted = resolve;
+    });
+    dbModule.createBackup = async (targetPath?: string, signal?: AbortSignal, _options?: any) => {
+      stagedPathSeen = targetPath ?? null;
+      abortSignalSeen = signal ?? null;
+      notifyDelayedBackupStarted();
+      await backupReleaseOptOutOnly;
+      if (targetPath) {
+        fs.writeFileSync(targetPath, 'delayed-staged-optout-only');
+      }
+      return { path: targetPath ?? '', schemaVersion: 118 };
+    };
+
+    const inFlightOptOutOnly = localBackup.runIfDue();
+    await backupStartedOptOutOnly;
+    getDatabase()
+      .prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('local_backup_enabled', 'false', ?)",
+      )
+      .run(now());
+    assert.equal(isLocalBackupEnabled(), false);
+    assert.equal(abortSignalSeen!.aborted, false, 'signal was not aborted for direct DB opt-out');
+    releaseDelayedBackup();
+    await inFlightOptOutOnly;
+    assert.equal(
+      fs.existsSync(stagedPathSeen!),
+      false,
+      'staged file removed on post-flight opt-out recheck',
+    );
+    assert.deepEqual(
+      listLocalBackups(backupDir),
+      existingBackupsBefore,
+      'post-flight !isLocalBackupEnabled() recheck prevents publishing and pruning',
+    );
+
+    // Recheck abortSignal.aborted independently of !isLocalBackupEnabled():
+    // if local backup is disabled (aborting the signal) and then re-enabled while the aborted
+    // createBackup is still unwinding, the aborted snapshot is still discarded.
+    setLocalBackupEnabled(true);
+    stagedPathSeen = null;
+    abortSignalSeen = null;
+    const backupReleaseAbortOnly = new Promise<void>((resolve) => {
+      releaseDelayedBackup = resolve;
+    });
+    const backupStartedAbortOnly = new Promise<void>((resolve) => {
+      notifyDelayedBackupStarted = resolve;
+    });
+    dbModule.createBackup = async (targetPath?: string, signal?: AbortSignal, _options?: any) => {
+      stagedPathSeen = targetPath ?? null;
+      abortSignalSeen = signal ?? null;
+      notifyDelayedBackupStarted();
+      await backupReleaseAbortOnly;
+      if (targetPath) {
+        fs.writeFileSync(targetPath, 'delayed-staged-abort-only');
+      }
+      return { path: targetPath ?? '', schemaVersion: 118 };
+    };
+
+    const inFlightAbortOnly = localBackup.runIfDue();
+    await backupStartedAbortOnly;
+    setLocalBackupEnabled(false);
+    assert.equal(abortSignalSeen!.aborted, true, 'disabling aborts in-flight signal');
+    setLocalBackupEnabled(true);
+    assert.equal(isLocalBackupEnabled(), true, 're-enabled before in-flight backup finishes');
+    releaseDelayedBackup();
+    await inFlightAbortOnly;
+    assert.equal(
+      fs.existsSync(stagedPathSeen!),
+      false,
+      'staged file removed on post-flight abort recheck',
+    );
+    assert.deepEqual(
+      listLocalBackups(backupDir),
+      existingBackupsBefore,
+      'post-flight abortSignal.aborted recheck prevents publishing and pruning',
+    );
   } finally {
     dbModule.createBackup = originalCreateBackup;
   }
@@ -706,11 +786,7 @@ async function main(): Promise<void> {
     notifyDelayedBackupStartedStop = resolve;
   });
 
-  dbModule.createBackup = async (
-    targetPath?: string,
-    signal?: AbortSignal,
-    _options?: any,
-  ) => {
+  dbModule.createBackup = async (targetPath?: string, signal?: AbortSignal, _options?: any) => {
     stagedPathSeenStop = targetPath ?? null;
     abortSignalSeenStop = signal ?? null;
     notifyDelayedBackupStartedStop();

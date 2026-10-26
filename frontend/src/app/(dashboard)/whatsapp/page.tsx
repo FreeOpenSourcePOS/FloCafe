@@ -266,6 +266,7 @@ export default function WhatsAppPage() {
   const tLastError = useTranslations('whatsapp.lastError');
   const tApiError = useTranslations('whatsapp.apiError');
   const tSend = useTranslations('whatsapp.send');
+  const tStatus = useTranslations('whatsapp.status');
   const tSettings = useTranslations('settings');
   const { confirm, ConfirmDialog } = useConfirm();
   const setWhatsappEnabled = usePosSettingsStore((s) => s.setWhatsappEnabled);
@@ -507,7 +508,7 @@ export default function WhatsAppPage() {
     });
     try {
       await api.post(`/whatsapp/messages/${messageId}/retry`);
-      toast.success(tSend('success'));
+      toast.success(tStatus('queued'));
       await refreshSent();
     } catch (err) {
       const reason = (err as { response?: { data?: { reason?: string } } })?.response?.data?.reason;

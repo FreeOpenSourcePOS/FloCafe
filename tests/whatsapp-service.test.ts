@@ -1542,6 +1542,185 @@ async function main(): Promise<void> {
           secondSequentialRetry.ok === false && secondSequentialRetry.reason === 'not_failed',
           `retrying a message that is no longer failed returns reason=not_failed (got ${JSON.stringify(secondSequentialRetry)})`,
         );
+
+        // 4e. Prior attempt external_message_id still matches late ACK after retry overwrites external_message_id
+        const priorAttemptSend = await whatsapp.sendMessage({
+          phoneE164: '+14155550191',
+          body: 'Prior attempt ACK test',
+          billId: null,
+          customerId: null,
+          kind: 'manual_reply',
+          userId: null,
+        });
+        assert(
+          priorAttemptSend.ok === true && typeof priorAttemptSend.messageId === 'number',
+          'prior attempt send succeeds',
+        );
+        const priorMsgId = priorAttemptSend.messageId!;
+        const firstAttemptExtId = (
+          db
+            .prepare('SELECT external_message_id FROM whatsapp_messages WHERE id = ?')
+            .get(priorMsgId) as {
+            external_message_id: string;
+          }
+        ).external_message_id;
+        whatsapp.sweepAckTimeouts(Date.now() + whatsapp.ACK_TIMEOUT_MS + 5_000);
+        // Non-retry duplicate send immediately after ACK timeout is still blocked by recentBodies
+        const nonRetryDupAfterTimeout = await whatsapp.sendMessage({
+          phoneE164: '+14155550191',
+          body: 'Prior attempt ACK test',
+          billId: null,
+          customerId: null,
+          kind: 'manual_reply',
+          userId: null,
+        });
+        assert(
+          nonRetryDupAfterTimeout.ok === false &&
+            nonRetryDupAfterTimeout.reason === 'content_blocked',
+          `non-retry duplicate send after ACK timeout remains blocked by recentBodies (got ${JSON.stringify(nonRetryDupAfterTimeout)})`,
+        );
+        // Self-retry is allowed even though body is in recentBodies for the same messageId
+        const secondAttemptRetry = await whatsapp.retryMessage(priorMsgId);
+        assert(
+          secondAttemptRetry.ok === true,
+          `self-retry succeeds (got ${JSON.stringify(secondAttemptRetry)})`,
+        );
+        const secondAttemptExtId = (
+          db
+            .prepare('SELECT external_message_id FROM whatsapp_messages WHERE id = ?')
+            .get(priorMsgId) as {
+            external_message_id: string;
+          }
+        ).external_message_id;
+        assert(
+          firstAttemptExtId !== secondAttemptExtId,
+          `retry produces a new external_message_id (${firstAttemptExtId} vs ${secondAttemptExtId})`,
+        );
+        // Emit late ACK (status=3 delivered) referencing the FIRST attempt's external_message_id
+        const updateListener = eventHandlers.get('messages.update');
+        updateListener?.([{ key: { id: firstAttemptExtId }, update: { status: 3 } }]);
+        const promotedFromFirstAttempt = db
+          .prepare(
+            'SELECT status, error, failed_at, sent_at, delivered_at FROM whatsapp_messages WHERE id = ?',
+          )
+          .get(priorMsgId) as {
+          status: string;
+          error: string | null;
+          failed_at: string | null;
+          sent_at: string | null;
+          delivered_at: string | null;
+        };
+        assert(
+          promotedFromFirstAttempt.status === 'delivered' &&
+            promotedFromFirstAttempt.error === null &&
+            promotedFromFirstAttempt.sent_at !== null &&
+            promotedFromFirstAttempt.delivered_at !== null,
+          `late ACK for prior attempt external_message_id promotes retried row to delivered (got ${JSON.stringify(promotedFromFirstAttempt)})`,
+        );
+
+        // 4f. Retry duplicate-body check blocks when a DIFFERENT message with the same body was recently sent
+        const otherFailedInsert = db
+          .prepare(`
+            INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, error, body, queued_at, failed_at)
+            VALUES ('+14155550191', 'outbound', 'manual_reply', 'failed', 'ack_timeout', 'Prior attempt ACK test', datetime('now', '-20 minutes'), datetime('now', '-15 minutes'))
+          `)
+          .run();
+        const otherFailedId = Number(otherFailedInsert.lastInsertRowid);
+        const dupBlockedRetry = await whatsapp.retryMessage(otherFailedId);
+        assert(
+          dupBlockedRetry.ok === false && dupBlockedRetry.reason === 'content_blocked',
+          `retry is blocked with content_blocked when a different message with the same body was recently sent (got ${JSON.stringify(dupBlockedRetry)})`,
+        );
+
+        // 4g. Rejected retry (unpaid bill) does not poison recentBodies for a subsequent valid send
+        const unpaidOrderInsert = db
+          .prepare(
+            "INSERT INTO orders (order_number, type, status, subtotal, tax_amount, discount_amount, total, created_at, updated_at) VALUES ('ORD-RETRY-UNPAID', 'dine_in', 'pending', 100, 0, 0, 100, datetime('now'), datetime('now'))",
+          )
+          .run();
+        const unpaidBillInsert = db
+          .prepare(
+            "INSERT INTO bills (order_id, bill_number, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, created_at, updated_at) VALUES (?, 'BILL-RETRY-UNPAID', 100, 0, 0, 100, 0, 100, 'unpaid', datetime('now'), datetime('now'))",
+          )
+          .run(unpaidOrderInsert.lastInsertRowid);
+        const unpaidBillId = Number(unpaidBillInsert.lastInsertRowid);
+        const unpaidFailedInsert = db
+          .prepare(`
+            INSERT INTO whatsapp_messages (bill_id, phone_e164, direction, kind, status, error, body, queued_at, failed_at)
+            VALUES (?, '+14155550192', 'outbound', 'bill_receipt', 'failed', 'ack_timeout', 'Unpaid bill receipt body', datetime('now', '-10 minutes'), datetime('now', '-5 minutes'))
+          `)
+          .run(unpaidBillId);
+        const unpaidFailedMsgId = Number(unpaidFailedInsert.lastInsertRowid);
+        const rejectedUnpaidRetry = await whatsapp.retryMessage(unpaidFailedMsgId);
+        assert(
+          rejectedUnpaidRetry.ok === false && rejectedUnpaidRetry.reason === 'send_failed',
+          `retry for unpaid bill is rejected with send_failed (got ${JSON.stringify(rejectedUnpaidRetry)})`,
+        );
+        const validSendAfterRejectedRetry = await whatsapp.sendMessage({
+          phoneE164: '+14155550192',
+          body: 'Unpaid bill receipt body',
+          billId: null,
+          customerId: null,
+          kind: 'manual_reply',
+          userId: null,
+        });
+        assert(
+          validSendAfterRejectedRetry.ok === true,
+          `rejected retry does not poison recentBodies for subsequent valid send (got ${JSON.stringify(validSendAfterRejectedRetry)})`,
+        );
+
+        // 4h. Active in-flight send is excluded from sweepAckTimeouts while socket.sendMessage is pending
+        let releaseSlowSend!: () => void;
+        const slowSendGate = new Promise<void>((resolve) => {
+          releaseSlowSend = resolve;
+        });
+        let slowSendEntered!: () => void;
+        const slowSendEnteredPromise = new Promise<void>((resolve) => {
+          slowSendEntered = resolve;
+        });
+        fakeSocket.sendMessage = async () => {
+          slowSendEntered();
+          await slowSendGate;
+          extSeq += 1;
+          return { key: { id: `ack-timeout-ext-${extSeq}` }, message: { conversation: 'slow' } };
+        };
+        const inFlightSendPromise = whatsapp.sendMessage({
+          phoneE164: '+14155550193',
+          body: 'Slow in-flight send test',
+          billId: null,
+          customerId: null,
+          kind: 'manual_reply',
+          userId: null,
+        });
+        await slowSendEnteredPromise;
+        const inFlightRowBeforeSweep = db
+          .prepare(
+            "SELECT id, status FROM whatsapp_messages WHERE phone_e164 = '+14155550193' ORDER BY id DESC LIMIT 1",
+          )
+          .get() as { id: number; status: string };
+        // Sweep far in the future while socket.sendMessage is still in flight
+        whatsapp.sweepAckTimeouts(Date.now() + whatsapp.ACK_TIMEOUT_MS + 60_000);
+        const inFlightRowDuringSend = db
+          .prepare('SELECT status, error FROM whatsapp_messages WHERE id = ?')
+          .get(inFlightRowBeforeSweep.id) as { status: string; error: string | null };
+        assert(
+          inFlightRowDuringSend.status === 'typing' && inFlightRowDuringSend.error === null,
+          `active in-flight send is excluded from sweepAckTimeouts (got ${JSON.stringify(inFlightRowDuringSend)})`,
+        );
+        releaseSlowSend();
+        const finishedSlowSend = await inFlightSendPromise;
+        assert(finishedSlowSend.ok === true, 'slow in-flight send resolves ok=true');
+
+        // 4i. Runtime initFromDb() after suspendForOfflineMode() does not sweep a recently submitted typing row
+        whatsapp.suspendForOfflineMode();
+        whatsapp.initFromDb();
+        const afterRuntimeInit = db
+          .prepare('SELECT status, error FROM whatsapp_messages WHERE id = ?')
+          .get(inFlightRowBeforeSweep.id) as { status: string; error: string | null };
+        assert(
+          afterRuntimeInit.status === 'typing' && afterRuntimeInit.error === null,
+          `runtime initFromDb after suspendForOfflineMode preserves recently submitted typing row (got ${JSON.stringify(afterRuntimeInit)})`,
+        );
       } finally {
         fakeSocket.sendMessage = prevSendMessage;
       }

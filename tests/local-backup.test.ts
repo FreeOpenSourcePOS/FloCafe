@@ -592,6 +592,168 @@ async function main(): Promise<void> {
   await localBackup.runIfDue();
   assert.deepEqual(listLocalBackups(backupDir), []);
 
+  // Controlled delayed createBackup: disabling local backups while createBackup is in flight
+  // cancels active work, cleans up the staged file, does not publish to the backup directory,
+  // and does not prune existing backups.
+  ensureOwner();
+  for (const name of listLocalBackups(backupDir)) {
+    fs.unlinkSync(path.join(backupDir, name));
+  }
+  const existingRetentionBackups: string[] = [];
+  for (let day = 1; day <= LOCAL_BACKUP_RETENTION; day++) {
+    const name = localBackupFileName(new Date(Date.UTC(2026, 0, day, 3, 0, 0)));
+    fs.writeFileSync(path.join(backupDir, name), `retention-${day}`);
+    existingRetentionBackups.push(name);
+  }
+  const existingBackupsBefore = listLocalBackups(backupDir);
+  assert.equal(existingBackupsBefore.length, LOCAL_BACKUP_RETENTION);
+
+  setLocalBackupEnabled(true);
+  assert.equal(isLocalBackupEnabled(), true);
+
+  const dbModule = require('../main/db');
+  const originalCreateBackup = dbModule.createBackup;
+  let stagedPathSeen: string | null = null;
+  let abortSignalSeen: AbortSignal | null = null;
+  let releaseDelayedBackup!: () => void;
+  const backupReleasePromise = new Promise<void>((resolve) => {
+    releaseDelayedBackup = resolve;
+  });
+  let notifyDelayedBackupStarted!: () => void;
+  const backupStartedPromise = new Promise<void>((resolve) => {
+    notifyDelayedBackupStarted = resolve;
+  });
+
+  dbModule.createBackup = async (
+    targetPath?: string,
+    signal?: AbortSignal,
+    _options?: any,
+  ) => {
+    stagedPathSeen = targetPath ?? null;
+    abortSignalSeen = signal ?? null;
+    notifyDelayedBackupStarted();
+    await backupReleasePromise;
+    if (targetPath) {
+      fs.writeFileSync(targetPath, 'delayed-staged-content');
+    }
+    return { path: targetPath ?? '', schemaVersion: 118 };
+  };
+
+  try {
+    const inFlightRun = localBackup.runIfDue();
+    await backupStartedPromise;
+    assert.ok(stagedPathSeen, 'delayed createBackup received staged path');
+
+    // While createBackup is still awaiting completion, disable local backups via settings update (opt-out)
+    const optOutRes = await request(api)
+      .put('/api/db-tools/local-backup')
+      .send({ enabled: false });
+    assert.equal(optOutRes.status, 200);
+    assert.equal(optOutRes.body.enabled, false);
+    assert.equal(isLocalBackupEnabled(), false, 'local backup disabled during in-flight backup');
+    assert.equal(
+      abortSignalSeen?.aborted,
+      true,
+      'in-flight backup is signalled to abort when local backup is disabled',
+    );
+
+    // Allow createBackup to finish
+    releaseDelayedBackup();
+    await inFlightRun;
+
+    // Assert that the staged file is cleaned up, NO backup is published, and existing backups are not pruned
+    assert.equal(
+      fs.existsSync(stagedPathSeen!),
+      false,
+      'staged backup file is cleaned up after opt-out',
+    );
+    const backupsAfterFlight = listLocalBackups(backupDir);
+    assert.deepEqual(
+      backupsAfterFlight,
+      existingBackupsBefore,
+      'no backup file is published and pruneLocalBackups does not delete existing backups',
+    );
+    const leftoverTempFiles = fs
+      .readdirSync(backupDir)
+      .filter((name) => name.startsWith('.'));
+    assert.deepEqual(leftoverTempFiles, [], 'no temporary files left behind in backup dir');
+  } finally {
+    dbModule.createBackup = originalCreateBackup;
+  }
+
+  // Controlled delayed createBackup: stopping the service while createBackup is in flight
+  // aborts active work, cleans up the staged file, and does not publish.
+  ensureOwner();
+  for (const name of listLocalBackups(backupDir)) {
+    fs.unlinkSync(path.join(backupDir, name));
+  }
+  for (let day = 1; day <= LOCAL_BACKUP_RETENTION; day++) {
+    const name = localBackupFileName(new Date(Date.UTC(2026, 0, day, 3, 0, 0)));
+    fs.writeFileSync(path.join(backupDir, name), `retention-${day}`);
+  }
+  const existingBeforeStop = listLocalBackups(backupDir);
+  assert.equal(existingBeforeStop.length, LOCAL_BACKUP_RETENTION);
+  setLocalBackupEnabled(true);
+
+  let stagedPathSeenStop: string | null = null;
+  let abortSignalSeenStop: AbortSignal | null = null;
+  let releaseDelayedBackupStop!: () => void;
+  const backupReleasePromiseStop = new Promise<void>((resolve) => {
+    releaseDelayedBackupStop = resolve;
+  });
+  let notifyDelayedBackupStartedStop!: () => void;
+  const backupStartedPromiseStop = new Promise<void>((resolve) => {
+    notifyDelayedBackupStartedStop = resolve;
+  });
+
+  dbModule.createBackup = async (
+    targetPath?: string,
+    signal?: AbortSignal,
+    _options?: any,
+  ) => {
+    stagedPathSeenStop = targetPath ?? null;
+    abortSignalSeenStop = signal ?? null;
+    notifyDelayedBackupStartedStop();
+    await backupReleasePromiseStop;
+    if (targetPath) {
+      fs.writeFileSync(targetPath, 'delayed-staged-content-stop');
+    }
+    return { path: targetPath ?? '', schemaVersion: 118 };
+  };
+
+  try {
+    const inFlightRunStop = localBackup.runIfDue();
+    await backupStartedPromiseStop;
+    assert.ok(stagedPathSeenStop, 'delayed createBackup received staged path before stop');
+
+    const stopPromise = localBackup.stop();
+    assert.equal(abortSignalSeenStop?.aborted, true, 'stop aborts in-flight backup signal');
+
+    // Allow createBackup to finish while stop() is awaiting running
+    releaseDelayedBackupStop();
+    await stopPromise;
+    await inFlightRunStop;
+
+    assert.equal(
+      fs.existsSync(stagedPathSeenStop!),
+      false,
+      'staged backup file is cleaned up after stop()',
+    );
+    const backupsAfterStop = listLocalBackups(backupDir);
+    assert.deepEqual(
+      backupsAfterStop,
+      existingBeforeStop,
+      'no backup file is published when stopped during createBackup',
+    );
+    assert.deepEqual(
+      fs.readdirSync(backupDir).filter((name) => name.startsWith('.')),
+      [],
+      'no temporary files left behind in backup dir after stop',
+    );
+  } finally {
+    dbModule.createBackup = originalCreateBackup;
+  }
+
   await localBackup.stop();
   closeDatabase();
   fs.rmSync(testDir, { recursive: true, force: true });

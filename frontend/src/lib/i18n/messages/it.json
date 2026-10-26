@@ -3395,7 +3395,8 @@
       "cooldown": "L'invio è temporaneamente in pausa.",
       "logged_out": "Disconnesso. Riconnettiti per continuare.",
       "rate_limited": "Invio limitato da WhatsApp ({code}). Pausa di 5 minuti.",
-      "reconnecting": "Connessione chiusa ({code}). Riconnessione tra {seconds}s…"
+      "reconnecting": "Connessione chiusa ({code}). Riconnessione tra {seconds}s…",
+      "startup_failed": "Impossibile avviare la connessione WhatsApp. Riprova."
     },
     "rule": {
       "after_payment": "Ricevuta auto dopo il pagamento",
@@ -3444,6 +3445,8 @@
       "connecting": "Connessione",
       "cooldown": "In pausa",
       "disconnected": "Disconnesso",
+      "reconnecting": "Riconnessione…",
+      "repair_needed": "Nuovo abbinamento richiesto",
       "waiting_pairing": "In attesa del codice di abbinamento",
       "waiting_qr": "In attesa scansione QR"
     },

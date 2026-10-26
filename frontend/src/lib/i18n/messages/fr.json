@@ -3395,7 +3395,8 @@
       "cooldown": "L’envoi est temporairement suspendu.",
       "logged_out": "Déconnecté. Reconnectez-vous pour continuer.",
       "rate_limited": "Débit d’envoi limité par WhatsApp ({code}). Pause de 5 minutes.",
-      "reconnecting": "Connexion fermée ({code}). Reconnexion dans {seconds} s…"
+      "reconnecting": "Connexion fermée ({code}). Reconnexion dans {seconds} s…",
+      "startup_failed": "Impossible de démarrer la connexion WhatsApp. Réessayez."
     },
     "rule": {
       "after_payment": "Reçu auto après paiement",
@@ -3444,6 +3445,8 @@
       "connecting": "Connexion",
       "cooldown": "En pause temporaire",
       "disconnected": "Déconnecté",
+      "reconnecting": "Reconnexion…",
+      "repair_needed": "Réassociation requise",
       "waiting_pairing": "En attente du code d’association",
       "waiting_qr": "En attente du balayage du code QR"
     },

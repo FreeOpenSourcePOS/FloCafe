@@ -3395,7 +3395,8 @@
       "cooldown": "Send is temporarily paused.",
       "logged_out": "Logged out. Reconnect to continue.",
       "rate_limited": "Send rate-limited by WhatsApp ({code}). Cooling down for 5 minutes.",
-      "reconnecting": "Connection closed ({code}). Reconnecting in {seconds}s…"
+      "reconnecting": "Connection closed ({code}). Reconnecting in {seconds}s…",
+      "startup_failed": "Could not start the WhatsApp connection. Try again."
     },
     "rule": {
       "after_payment": "Auto receipt after payment",
@@ -3444,6 +3445,8 @@
       "connecting": "Connecting",
       "cooldown": "In cooldown",
       "disconnected": "Disconnected",
+      "reconnecting": "Reconnecting…",
+      "repair_needed": "Re-pair needed",
       "waiting_pairing": "Waiting for pairing code",
       "waiting_qr": "Waiting for QR scan"
     },

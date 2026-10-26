@@ -3395,7 +3395,8 @@
       "cooldown": "Pansamantalang naka-pause ang pagpapadala.",
       "logged_out": "Naka-log out. Muling kumonekta upang magpatuloy.",
       "rate_limited": "Nalimitahan ang bilis ng pagpapadala ng WhatsApp ({code}). Nagpapahinga nang 5 minuto.",
-      "reconnecting": "Nagsara ang koneksyon ({code}). Muling kumokonekta sa loob ng {seconds}s…"
+      "reconnecting": "Nagsara ang koneksyon ({code}). Muling kumokonekta sa loob ng {seconds}s…",
+      "startup_failed": "Hindi masimulan ang koneksyon sa WhatsApp. Subukan muli."
     },
     "rule": {
       "after_payment": "Auto-resibo pagkatapos magbayad",
@@ -3444,6 +3445,8 @@
       "connecting": "Kumokonekta",
       "cooldown": "Nasa cooldown",
       "disconnected": "Nadiskonekta",
+      "reconnecting": "Muling kumokonekta…",
+      "repair_needed": "Kailangang i-pair muli",
       "waiting_pairing": "Naghihintay ng pairing code",
       "waiting_qr": "Naghihintay ng pag-scan sa QR"
     },

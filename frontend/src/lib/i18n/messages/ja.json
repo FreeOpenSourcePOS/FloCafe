@@ -3395,7 +3395,8 @@
       "cooldown": "送信は一時停止中です。",
       "logged_out": "ログアウトしました。続行するには再接続してください。",
       "rate_limited": "WhatsAppによって送信が制限されました（{code}）。5分間停止します。",
-      "reconnecting": "接続が閉じられました（{code}）。{seconds}秒後に再接続します…"
+      "reconnecting": "接続が閉じられました（{code}）。{seconds}秒後に再接続します…",
+      "startup_failed": "WhatsApp接続を開始できませんでした。もう一度お試しください。"
     },
     "rule": {
       "after_payment": "会計後の自動レシート送信",
@@ -3444,6 +3445,8 @@
       "connecting": "接続中",
       "cooldown": "一時停止中",
       "disconnected": "切断済み",
+      "reconnecting": "再接続中…",
+      "repair_needed": "再ペアリングが必要",
       "waiting_pairing": "ペアリングコードを待機中",
       "waiting_qr": "QRスキャンを待機中"
     },

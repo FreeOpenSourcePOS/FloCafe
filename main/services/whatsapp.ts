@@ -226,6 +226,7 @@ const state: {
   shuttingDown: boolean;
   socket: BaileysSocket | null;
   state: WhatsAppConnectionState;
+  pairingMode: 'qr' | 'pairing_code' | null;
   lastQr: string | null;
   lastPairingCode: string | null;
   connectedPhone: string | null;
@@ -245,6 +246,7 @@ const state: {
   shuttingDown: false,
   socket: null,
   state: 'disconnected',
+  pairingMode: null,
   lastQr: null,
   lastPairingCode: null,
   connectedPhone: null,
@@ -270,6 +272,7 @@ let whatsappStartController: AbortController | null = null;
 let whatsappStartAttempt = 0;
 let credentialWriteTail: Promise<void> = Promise.resolve();
 let authCleanupPromise: Promise<void> = Promise.resolve();
+let authWipeEpoch = 0;
 let shutdownSocket: BaileysSocket | null = null;
 let whatsappTerminalCleanup = false;
 let whatsappShutdownRequested = false;
@@ -1038,12 +1041,22 @@ function isActiveSocket(socket: BaileysSocket): boolean {
 }
 
 function attachSocketHandlers(socket: BaileysSocket): void {
+  let socketSawNewLogin = false;
   socket.ev.on('connection.update', (update: any) => {
     void trackWhatsAppWork(
       (async () => {
         if (!isActiveSocket(socket)) return;
-        const { connection, lastDisconnect, qr } = update;
-        if (qr) {
+        const { connection, lastDisconnect, qr, isNewLogin } = update;
+        if (isNewLogin) {
+          socketSawNewLogin = true;
+          state.pairingMode = null;
+          state.lastQr = null;
+          state.lastPairingCode = null;
+          state.lastError = null;
+          state.lastErrorReason = null;
+          state.state = 'connecting';
+        }
+        if (qr && state.pairingMode !== 'pairing_code' && state.state !== 'waiting_pairing') {
           state.lastQr = qr;
           state.lastPairingCode = null;
           state.state = 'waiting_qr';
@@ -1051,10 +1064,15 @@ function attachSocketHandlers(socket: BaileysSocket): void {
         }
         if (connection === 'open') {
           state.state = 'connected';
+          state.pairingMode = null;
           state.lastQr = null;
           state.lastPairingCode = null;
           state.lastError = null;
           state.lastErrorReason = null;
+          if (state.reconnectTimer) {
+            clearTimeout(state.reconnectTimer);
+            state.reconnectTimer = null;
+          }
           sweepAckTimeouts();
           ensureAutomationTimer();
           ensureAckSweepTimer();
@@ -1071,6 +1089,14 @@ function attachSocketHandlers(socket: BaileysSocket): void {
         } else if (connection === 'close') {
           const disconnectError = lastDisconnect?.error;
           const status = (disconnectError as any)?.output?.statusCode as number | undefined;
+          const previousState = state.state;
+          const previousPairingMode = state.pairingMode;
+          const wasUnpairedPairingAttempt =
+            !state.connectedPhone &&
+            !socketSawNewLogin &&
+            (previousState === 'waiting_qr' ||
+              previousState === 'waiting_pairing' ||
+              previousPairingMode !== null);
           state.socket = null;
           state.lastQr = null;
           state.lastPairingCode = null;
@@ -1084,12 +1110,52 @@ function attachSocketHandlers(socket: BaileysSocket): void {
           if (status === 401) {
             // Server-side logout — stale creds will 401 again. Wipe and force
             // a fresh QR pairing on next start.
+            if (state.reconnectTimer) {
+              clearTimeout(state.reconnectTimer);
+              state.reconnectTimer = null;
+            }
+            if (state.automationTimer) {
+              clearInterval(state.automationTimer);
+              state.automationTimer = null;
+            }
+            state.pairingMode = null;
             state.state = 'disconnected';
             state.connectedPhone = null;
             writeSetting('whatsapp_connected_phone', '');
             state.lastError = 'Logged out. Reconnect to continue.';
             state.lastErrorReason = 'logged_out';
             scheduleAuthWipe();
+          } else if (status === 515 && !isWhatsAppTerminal() && state.enabled) {
+            state.pairingMode = null;
+            state.state = 'connecting';
+            state.lastError = null;
+            state.lastErrorReason = null;
+            if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+            logWhatsApp('info', 'reconnect_scheduled', {
+              delayMs: 0,
+              statusCode: status,
+            });
+            state.reconnectTimer = setTimeout(() => {
+              state.reconnectTimer = null;
+              if (state.enabled && !isWhatsAppTerminal()) {
+                logWhatsApp('info', 'reconnect_attempt');
+                void startSocket()
+                  .then(() => logWhatsApp('info', 'reconnect_started'))
+                  .catch((err) =>
+                    logWhatsApp('error', 'reconnect_failed', { error: sanitizeLogText(err) }),
+                  );
+              }
+            }, 0);
+            state.reconnectTimer.unref?.();
+          } else if (wasUnpairedPairingAttempt && status === 408) {
+            if (state.reconnectTimer) {
+              clearTimeout(state.reconnectTimer);
+              state.reconnectTimer = null;
+            }
+            state.pairingMode = null;
+            state.state = 'disconnected';
+            state.lastError = null;
+            state.lastErrorReason = null;
           } else if (!isWhatsAppTerminal() && state.enabled) {
             // Auto-reconnect on transient disconnections; cooldown only applies to explicit 429 errors.
             state.state = 'connecting';
@@ -1111,7 +1177,9 @@ function attachSocketHandlers(socket: BaileysSocket): void {
                   );
               }
             }, RECONNECT_DELAY_MS);
+            state.reconnectTimer.unref?.();
           } else {
+            state.pairingMode = null;
             state.state = 'disconnected';
           }
         }
@@ -1250,8 +1318,8 @@ async function startSocketImpl(
     abortable(() => useMultiFileAuthState(authDir), signal),
   );
   if (isWhatsAppTerminal() || signal.aborted || isOfflineMode()) return;
-  const socket = await runSocketPhase(attemptId, 'socket_create', () =>
-    makeWASocket({
+  const socket = await runSocketPhase(attemptId, 'socket_create', () => {
+    const createdSocket = makeWASocket({
       version,
       auth: authState,
       printQRInTerminal: false,
@@ -1265,20 +1333,24 @@ async function startSocketImpl(
         // Return empty message to avoid hanging on re-encryption requests.
         return proto.Message.create({});
       },
-    }),
-  );
+    });
+    if (!isWhatsAppTerminal() && !signal.aborted && !isOfflineMode()) {
+      state.socket = createdSocket;
+      state.state = 'connecting';
+      attachSocketHandlers(createdSocket);
+      createdSocket.ev.on('creds.update', (...args: unknown[]) => {
+        queueCredentialWrite(createdSocket, saveCreds as (...values: unknown[]) => unknown, args);
+      });
+    }
+    return createdSocket;
+  });
   if (isWhatsAppTerminal() || signal.aborted || isOfflineMode()) {
+    if (state.socket === socket) state.socket = null;
     try {
       socket.end(undefined);
     } catch {}
     return;
   }
-  state.socket = socket;
-  state.state = 'connecting';
-  attachSocketHandlers(socket);
-  socket.ev.on('creds.update', (...args: unknown[]) => {
-    queueCredentialWrite(socket, saveCreds as (...values: unknown[]) => unknown, args);
-  });
   logWhatsApp('info', 'socket_created', { attemptId, state: state.state });
 }
 
@@ -1291,6 +1363,7 @@ function wipeAuthDir(): void {
 }
 
 function scheduleAuthWipe(): void {
+  authWipeEpoch += 1;
   const pendingWrites = credentialWriteTail;
   authCleanupPromise = authCleanupPromise.then(() => pendingWrites).then(() => wipeAuthDir());
 }
@@ -1301,8 +1374,9 @@ function queueCredentialWrite(
   args: unknown[],
 ): void {
   if (!isActiveSocket(socket)) return;
+  const wipeEpoch = authWipeEpoch;
   const write = credentialWriteTail.then(async () => {
-    if (!isActiveSocket(socket)) return;
+    if (!state.enabled || wipeEpoch !== authWipeEpoch) return;
     await saveCreds(...args);
   });
   credentialWriteTail = write.catch((error) => {
@@ -1361,6 +1435,21 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
         state.state = 'disconnected';
         state.lastError = 'WhatsApp connection could not be started.';
         state.lastErrorReason = 'startup_failed';
+        if (state.enabled && state.connectedPhone) {
+          if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+          state.reconnectTimer = setTimeout(() => {
+            state.reconnectTimer = null;
+            if (state.enabled && !isWhatsAppTerminal() && !isOfflineMode()) {
+              logWhatsApp('info', 'reconnect_attempt');
+              void startSocket()
+                .then(() => logWhatsApp('info', 'reconnect_started'))
+                .catch((err) =>
+                  logWhatsApp('error', 'reconnect_failed', { error: sanitizeLogText(err) }),
+                );
+            }
+          }, RECONNECT_DELAY_MS);
+          state.reconnectTimer.unref?.();
+        }
       } else if (
         (startController.signal.aborted || isOfflineMode()) &&
         attemptId === whatsappStartAttempt
@@ -1476,6 +1565,7 @@ export function disable(): void {
   externalIdToMessageId.clear();
   sweepRecipientCooldownUntil.clear();
   inFlightNthVisitKeys.clear();
+  state.pairingMode = null;
   state.state = 'disconnected';
   state.connectedPhone = null;
   state.lastQr = null;
@@ -1503,8 +1593,15 @@ export async function connectWithQr(
     ? AbortSignal.any([requestSignal, whatsappAbortController.signal])
     : whatsappAbortController.signal;
   if (signal.aborted) return { ok: false, error: 'WhatsApp request cancelled.' };
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
+  }
+  state.pairingMode = 'qr';
   state.lastQr = null;
   state.lastPairingCode = null;
+  state.lastError = null;
+  state.lastErrorReason = null;
   ensureAutomationTimer();
   ensureAckSweepTimer();
   try {
@@ -1539,6 +1636,15 @@ export async function connectWithPairingCode(
     ? AbortSignal.any([requestSignal, whatsappAbortController.signal])
     : whatsappAbortController.signal;
   if (signal.aborted) return { ok: false, error: 'WhatsApp request cancelled.' };
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
+  }
+  state.pairingMode = 'pairing_code';
+  state.lastQr = null;
+  state.lastPairingCode = null;
+  state.lastError = null;
+  state.lastErrorReason = null;
   ensureAutomationTimer();
   ensureAckSweepTimer();
   try {
@@ -1551,6 +1657,8 @@ export async function connectWithPairingCode(
       () => state.socket!.requestPairingCode(phone.replace(/\D/g, '')),
       signal,
     );
+    state.pairingMode = 'pairing_code';
+    state.lastQr = null;
     state.lastPairingCode = code;
     state.state = 'waiting_pairing';
     return { ok: true, code };
@@ -1576,6 +1684,7 @@ export function suspendForOfflineMode(): void {
     }
     state.socket = null;
   }
+  state.pairingMode = null;
   state.lastQr = null;
   state.lastPairingCode = null;
   state.state = 'disconnected';
@@ -1587,7 +1696,7 @@ export function disconnect(): void {
   whatsappAbortController.abort();
   if (state.socket) {
     try {
-      state.socket.logout();
+      void Promise.resolve(state.socket.logout()).catch(() => {});
     } catch {
       /* ignore */
     }
@@ -1613,6 +1722,7 @@ export function disconnect(): void {
   externalIdToMessageId.clear();
   sweepRecipientCooldownUntil.clear();
   inFlightNthVisitKeys.clear();
+  state.pairingMode = null;
   state.state = 'disconnected';
   state.connectedPhone = null;
   state.lastQr = null;
@@ -3280,6 +3390,24 @@ export function initFromDb(): void {
   if (state.enabled) {
     void startSocket().catch(() => {});
   }
+}
+
+export function handleSystemResume(): void {
+  if (
+    !state.enabled ||
+    isWhatsAppTerminal() ||
+    isOfflineMode() ||
+    !state.connectedPhone ||
+    state.socket ||
+    state.reconnectTimer ||
+    whatsappStartPromise
+  ) {
+    return;
+  }
+  logWhatsApp('info', 'system_resume_reconnect');
+  void startSocket().catch((err) => {
+    logWhatsApp('error', 'system_resume_reconnect_failed', { error: sanitizeLogText(err) });
+  });
 }
 
 export function shutdown(): Promise<void> {

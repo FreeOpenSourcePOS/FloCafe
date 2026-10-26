@@ -185,7 +185,12 @@ const STATE_KEYS = {
   cooldown: 'cooldown',
 } as const satisfies Record<WhatsAppState, WhatsAppStateKey>;
 
-type WhatsAppLastErrorReason = 'reconnecting' | 'rate_limited' | 'logged_out' | 'cooldown';
+type WhatsAppLastErrorReason =
+  | 'reconnecting'
+  | 'rate_limited'
+  | 'logged_out'
+  | 'cooldown'
+  | 'startup_failed';
 type WhatsAppLastErrorKey = keyof AppConfig['Messages']['whatsapp']['lastError'];
 
 const WHATSAPP_LAST_ERROR_KEYS = {
@@ -193,6 +198,7 @@ const WHATSAPP_LAST_ERROR_KEYS = {
   rate_limited: 'rate_limited',
   logged_out: 'logged_out',
   cooldown: 'cooldown',
+  startup_failed: 'startup_failed',
 } as const satisfies Record<WhatsAppLastErrorReason, WhatsAppLastErrorKey>;
 
 const STATUS_STEPS = ['queued', 'typing', 'sent', 'delivered', 'read'] as const;
@@ -622,6 +628,17 @@ export default function WhatsAppPage() {
     }
   };
 
+  const cancelPairing = async () => {
+    try {
+      await api.post('/whatsapp/disconnect');
+      setQrDataUrl(null);
+      setPairingCode(null);
+      void refreshStatus();
+    } catch (err) {
+      toastApiError(err, tConnect('disconnectFailed'), tApiError);
+    }
+  };
+
   const addBlock = async () => {
     const tenantCountry = currentTenant?.country ?? '';
     const parsed = parsePhone(blockPhone.trim(), tenantCountry);
@@ -674,9 +691,15 @@ export default function WhatsAppPage() {
     }
   };
 
-  const stateLabel = (state: string) => {
-    const key = (STATE_KEYS as Record<string, WhatsAppStateKey | undefined>)[state];
-    return key ? tState(key) : state;
+  const stateLabel = (currentStatus: WhatsAppStatus) => {
+    if (currentStatus.state === 'disconnected' && currentStatus.lastErrorReason === 'logged_out') {
+      return tState('repair_needed');
+    }
+    if (currentStatus.state === 'connecting' && currentStatus.lastErrorReason === 'reconnecting') {
+      return tState('reconnecting');
+    }
+    const key = (STATE_KEYS as Record<string, WhatsAppStateKey | undefined>)[currentStatus.state];
+    return key ? tState(key) : currentStatus.state;
   };
 
   return (
@@ -690,12 +713,18 @@ export default function WhatsAppPage() {
               variant={
                 status.state === 'connected'
                   ? 'default'
-                  : status.state === 'cooldown'
+                  : status.state === 'cooldown' ||
+                      (status.state === 'disconnected' && status.lastErrorReason === 'logged_out')
                     ? 'destructive'
                     : 'secondary'
               }
+              className={
+                status.state === 'connecting' && status.lastErrorReason === 'reconnecting'
+                  ? 'border-amber-500/40 bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                  : undefined
+              }
             >
-              {stateLabel(status.state)}
+              {stateLabel(status)}
               {status.connectedPhone ? (
                 <>
                   {' '}
@@ -705,6 +734,33 @@ export default function WhatsAppPage() {
             </Badge>
           )}
         </div>
+
+        {status?.lastError && status.state !== 'cooldown' && (
+          <div
+            role="alert"
+            className={`rounded-md border px-3 py-2 text-sm flex items-center justify-between gap-2 ${
+              status.lastErrorReason === 'logged_out'
+                ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                : 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {status.lastErrorReason === 'logged_out' ? (
+                <XCircle className="size-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="size-4 shrink-0" />
+              )}
+              <span>
+                {translateLastError(status.lastErrorReason, status.lastError, tLastError)}
+              </span>
+            </div>
+            {effectiveTab !== 'connection' && (
+              <Button variant="outline" size="sm" onClick={() => onTabChange('connection')}>
+                {tTabs('connection')}
+              </Button>
+            )}
+          </div>
+        )}
 
         <Tabs value={effectiveTab} onValueChange={onTabChange}>
           <TabsList>
@@ -748,63 +804,80 @@ export default function WhatsAppPage() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       {status.state === 'disconnected' && (
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
-                            <div className="flex items-center gap-2">
-                              <div className="flex items-center justify-center size-9 rounded-md bg-brand-light dark:bg-[var(--color-brand-light)] text-brand dark:text-indigo-300">
-                                <QrCode className="size-5" />
-                              </div>
-                              <h3 className="font-semibold text-sm">{tConnect('qrMethodTitle')}</h3>
+                        <div className="space-y-4">
+                          {status.lastErrorReason === 'logged_out' && (
+                            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-center gap-2">
+                              <AlertTriangle className="size-4 shrink-0" />
+                              <span className="font-medium">{tState('repair_needed')}:</span>
+                              <span>
+                                {translateLastError(
+                                  status.lastErrorReason,
+                                  status.lastError,
+                                  tLastError,
+                                )}
+                              </span>
                             </div>
-                            <p className="text-sm text-muted-foreground">
-                              {tConnect('qrMethodDescription')}
-                            </p>
-                            <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                              <div className="flex items-start gap-1.5">
-                                <Info className="size-3.5 mt-0.5 shrink-0" />
-                                <span>{tConnect('qrMethodWhere')}</span>
+                          )}
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center justify-center size-9 rounded-md bg-brand-light dark:bg-[var(--color-brand-light)] text-brand dark:text-indigo-300">
+                                  <QrCode className="size-5" />
+                                </div>
+                                <h3 className="font-semibold text-sm">
+                                  {tConnect('qrMethodTitle')}
+                                </h3>
                               </div>
+                              <p className="text-sm text-muted-foreground">
+                                {tConnect('qrMethodDescription')}
+                              </p>
+                              <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                                <div className="flex items-start gap-1.5">
+                                  <Info className="size-3.5 mt-0.5 shrink-0" />
+                                  <span>{tConnect('qrMethodWhere')}</span>
+                                </div>
+                              </div>
+                              <Button onClick={connectQr} className="mt-auto w-full">
+                                <QrCode className="size-4" /> {tConnect('startQr')}
+                              </Button>
                             </div>
-                            <Button onClick={connectQr} className="mt-auto w-full">
-                              <QrCode className="size-4" /> {tConnect('startQr')}
-                            </Button>
-                          </div>
 
-                          <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
-                            <div className="flex items-center gap-2">
-                              <div className="flex items-center justify-center size-9 rounded-md bg-brand-light dark:bg-[var(--color-brand-light)] text-brand dark:text-indigo-300">
-                                <KeyRound className="size-5" />
+                            <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center justify-center size-9 rounded-md bg-brand-light dark:bg-[var(--color-brand-light)] text-brand dark:text-indigo-300">
+                                  <KeyRound className="size-5" />
+                                </div>
+                                <h3 className="font-semibold text-sm">
+                                  {tConnect('pairingMethodTitle')}
+                                </h3>
                               </div>
-                              <h3 className="font-semibold text-sm">
-                                {tConnect('pairingMethodTitle')}
-                              </h3>
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                              {tConnect('pairingMethodDescription')}
-                            </p>
-                            <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                              <div className="flex items-start gap-1.5">
-                                <Info className="size-3.5 mt-0.5 shrink-0" />
-                                <span>{tConnect('pairingMethodWhere')}</span>
+                              <p className="text-sm text-muted-foreground">
+                                {tConnect('pairingMethodDescription')}
+                              </p>
+                              <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                                <div className="flex items-start gap-1.5">
+                                  <Info className="size-3.5 mt-0.5 shrink-0" />
+                                  <span>{tConnect('pairingMethodWhere')}</span>
+                                </div>
                               </div>
+                              <div className="space-y-1.5">
+                                <label className="text-xs text-muted-foreground">
+                                  {tConnect('pairingPhoneLabel')}
+                                </label>
+                                <Input
+                                  value={pairingPhone}
+                                  onChange={(e) => setPairingPhone(e.target.value)}
+                                  placeholder={tConnect('pairingPhonePlaceholder', {
+                                    dialCode: dialCode || '+CC',
+                                  })}
+                                  inputMode="tel"
+                                  dir="ltr"
+                                />
+                              </div>
+                              <Button onClick={connectPairing} variant="outline" className="w-full">
+                                <KeyRound className="size-4" /> {tConnect('usePairing')}
+                              </Button>
                             </div>
-                            <div className="space-y-1.5">
-                              <label className="text-xs text-muted-foreground">
-                                {tConnect('pairingPhoneLabel')}
-                              </label>
-                              <Input
-                                value={pairingPhone}
-                                onChange={(e) => setPairingPhone(e.target.value)}
-                                placeholder={tConnect('pairingPhonePlaceholder', {
-                                  dialCode: dialCode || '+CC',
-                                })}
-                                inputMode="tel"
-                                dir="ltr"
-                              />
-                            </div>
-                            <Button onClick={connectPairing} variant="outline" className="w-full">
-                              <KeyRound className="size-4" /> {tConnect('usePairing')}
-                            </Button>
                           </div>
                         </div>
                       )}
@@ -830,6 +903,11 @@ export default function WhatsAppPage() {
                           <p className="text-xs text-muted-foreground">
                             {tConnect('qrRefreshHint')}
                           </p>
+                          <div className="pt-1">
+                            <Button variant="outline" size="sm" onClick={cancelPairing}>
+                              {tCommon('cancel')}
+                            </Button>
+                          </div>
                         </div>
                       )}
 
@@ -851,6 +929,11 @@ export default function WhatsAppPage() {
                               {tConnect('pairingWaiting')}
                             </div>
                           )}
+                          <div className="pt-1">
+                            <Button variant="outline" size="sm" onClick={cancelPairing}>
+                              {tCommon('cancel')}
+                            </Button>
+                          </div>
                         </div>
                       )}
 
@@ -925,8 +1008,28 @@ export default function WhatsAppPage() {
                       )}
 
                       {status.state === 'connecting' && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Loader2 className="size-4 animate-spin" /> {tConnect('connecting')}
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Loader2 className="size-4 animate-spin" />
+                            <span>
+                              {status.lastErrorReason === 'reconnecting'
+                                ? tState('reconnecting')
+                                : tConnect('connecting')}
+                            </span>
+                            {status.connectedPhone ? (
+                              <>
+                                {' '}
+                                · <Ltr>{status.connectedPhone}</Ltr>
+                              </>
+                            ) : null}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={status.connectedPhone ? disconnect : cancelPairing}
+                          >
+                            {status.connectedPhone ? tConnect('disconnectCta') : tCommon('cancel')}
+                          </Button>
                         </div>
                       )}
 
@@ -1797,13 +1900,6 @@ export default function WhatsAppPage() {
             </TabsContent>
           )}
         </Tabs>
-
-        {status?.lastError && status.state !== 'cooldown' && (
-          <div className="text-sm text-red-600 flex items-center gap-1">
-            <XCircle className="size-4" />{' '}
-            {translateLastError(status.lastErrorReason, status.lastError, tLastError)}
-          </div>
-        )}
       </div>
     </>
   );

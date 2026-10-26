@@ -3395,7 +3395,8 @@
       "cooldown": "发送已暂停。",
       "logged_out": "已登出。请重新连接以继续。",
       "rate_limited": "发送被 WhatsApp 限流 ({code})。冷却 5 分钟。",
-      "reconnecting": "连接已关闭 ({code})。{seconds} 秒后重连…"
+      "reconnecting": "连接已关闭 ({code})。{seconds} 秒后重连…",
+      "startup_failed": "无法启动 WhatsApp 连接，请重试。"
     },
     "rule": {
       "after_payment": "付款后自动发送小票",
@@ -3444,6 +3445,8 @@
       "connecting": "连接中",
       "cooldown": "冷却中",
       "disconnected": "已断开",
+      "reconnecting": "正在重新连接…",
+      "repair_needed": "需要重新配对",
       "waiting_pairing": "等待配对码",
       "waiting_qr": "等待扫描二维码"
     },

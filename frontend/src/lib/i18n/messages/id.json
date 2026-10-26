@@ -3395,7 +3395,8 @@
       "cooldown": "Pengiriman dihentikan sementara.",
       "logged_out": "Keluar dari akun. Sambungkan kembali untuk melanjutkan.",
       "rate_limited": "Pengiriman dibatasi oleh WhatsApp ({code}). Menunggu jeda 5 menit.",
-      "reconnecting": "Koneksi ditutup ({code}). Menyambungkan kembali dalam {seconds} dtk…"
+      "reconnecting": "Koneksi ditutup ({code}). Menyambungkan kembali dalam {seconds} dtk…",
+      "startup_failed": "Tidak dapat memulai koneksi WhatsApp. Coba lagi."
     },
     "rule": {
       "after_payment": "Struk otomatis setelah bayar",
@@ -3444,6 +3445,8 @@
       "connecting": "Menghubungkan",
       "cooldown": "Dalam masa jeda",
       "disconnected": "Terputus",
+      "reconnecting": "Menyambungkan kembali…",
+      "repair_needed": "Perlu dipasangkan ulang",
       "waiting_pairing": "Menunggu kode pemasangan",
       "waiting_qr": "Menunggu pemindaian QR"
     },

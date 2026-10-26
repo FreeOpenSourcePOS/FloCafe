@@ -64,6 +64,8 @@ const credentialWriteGate = new Promise<void>((resolve) => {
 });
 let holdPresence = false;
 let sentMsgSeq = 0;
+let saveCredsCalls = 0;
+let rejectLogout = false;
 const fakeSocket = {
   ev: {
     on: (event: string, handler: (value: any) => void) => {
@@ -79,6 +81,12 @@ const fakeSocket = {
   },
   sendPresenceUpdate: async () => {},
   sendMessage: async () => ({ key: { id: `shutdown-test-message-${++sentMsgSeq}` } }),
+  requestPairingCode: async () => '12345678',
+  logout: async () => {
+    if (rejectLogout) {
+      throw new Error('Connection Closed');
+    }
+  },
   end: () => {},
 };
 const fakeBaileys = {
@@ -100,6 +108,7 @@ const fakeBaileys = {
     return {
       state: {},
       saveCreds: async () => {
+        saveCredsCalls++;
         if (holdCredentialWrite) {
           credentialWriteStarted();
           await credentialWriteGate;
@@ -1736,6 +1745,108 @@ async function main(): Promise<void> {
       disconnectedBroadcast.ok === false && disconnectedBroadcast.reason === 'not_connected',
       `runBroadcast returns ok=false and reason=not_connected when disconnected (got ${JSON.stringify(disconnectedBroadcast)})`,
     );
+
+    // Issue #1346 regression 1: creds.update followed in the same tick by 515 restartRequired
+    // must persist credentials and reconnect seamlessly without a false error banner.
+    await whatsapp.connectWithQr();
+    const saveCredsBefore515 = saveCredsCalls;
+    eventHandlers.get('creds.update')?.({ me: { id: '15555550100:1@s.whatsapp.net' } });
+    eventHandlers.get('connection.update')?.({
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: 515 } } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const statusAfter515 = whatsapp.getStatus();
+    assert(
+      saveCredsCalls === saveCredsBefore515 + 1,
+      `creds.update persists across same-tick 515 restartRequired close (got ${saveCredsCalls - saveCredsBefore515} writes)`,
+    );
+    assert(
+      statusAfter515.state === 'connecting' &&
+        statusAfter515.lastError === null &&
+        statusAfter515.lastErrorReason === null,
+      `515 restartRequired reconnects seamlessly without error banner (got ${JSON.stringify(statusAfter515)})`,
+    );
+
+    // Issue #1346 regression 2: 408 timedOut on an unpaired waiting_qr session returns to
+    // disconnected instead of entering an auto-reconnect loop.
+    whatsapp.disconnect();
+    await whatsapp.enable('qr-timeout-test-user');
+    await whatsapp.connectWithQr();
+    eventHandlers.get('connection.update')?.({ qr: 'unpaired-qr-1' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(
+      whatsapp.getStatus().state === 'waiting_qr',
+      'QR update transitions unpaired socket to waiting_qr',
+    );
+    eventHandlers.get('connection.update')?.({
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: 408 } } },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const statusAfter408 = whatsapp.getStatus();
+    assert(
+      statusAfter408.state === 'disconnected' && statusAfter408.lastErrorReason === null,
+      `unpaired QR timeout (408) returns to disconnected without reconnect loop (got ${JSON.stringify(statusAfter408)})`,
+    );
+
+    // Issue #1346 regression 3: 401 loggedOut followed by connectWithQr clears stale lastError.
+    await whatsapp.connectWithQr();
+    eventHandlers.get('connection.update')?.({
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: 401 } } },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(
+      whatsapp.getStatus().state === 'disconnected' &&
+        whatsapp.getStatus().lastErrorReason === 'logged_out',
+      '401 loggedOut transitions to disconnected with logged_out reason',
+    );
+    await whatsapp.connectWithQr();
+    eventHandlers.get('connection.update')?.({ qr: 'fresh-repair-qr' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const statusAfterRepairQr = whatsapp.getStatus();
+    assert(
+      statusAfterRepairQr.state === 'waiting_qr' &&
+        statusAfterRepairQr.qr === 'fresh-repair-qr' &&
+        statusAfterRepairQr.lastError === null &&
+        statusAfterRepairQr.lastErrorReason === null,
+      `connectWithQr clears stale logged_out error on fresh QR (got ${JSON.stringify(statusAfterRepairQr)})`,
+    );
+
+    // Issue #1346 regression 4: connectWithPairingCode clears stale QR and ignores background QR timer events.
+    const pairingRes = await whatsapp.connectWithPairingCode('+15555550100');
+    assert(
+      pairingRes.ok === true && pairingRes.code === '12345678',
+      `connectWithPairingCode returns 8-digit code (got ${JSON.stringify(pairingRes)})`,
+    );
+    eventHandlers.get('connection.update')?.({ qr: 'rotated-qr-from-baileys-timer' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const statusDuringPairing = whatsapp.getStatus();
+    assert(
+      statusDuringPairing.state === 'waiting_pairing' &&
+        statusDuringPairing.pairingCode === '12345678' &&
+        statusDuringPairing.qr === undefined,
+      `QR rotation event does not clobber waiting_pairing state (got ${JSON.stringify(statusDuringPairing)})`,
+    );
+
+    // Issue #1346 regression 5: disconnect() catches asynchronous socket.logout() rejection.
+    let unhandledLogoutRejection: unknown = null;
+    const onUnhandledRejection = (reason: unknown) => {
+      unhandledLogoutRejection = reason;
+    };
+    process.on('unhandledRejection', onUnhandledRejection);
+    rejectLogout = true;
+    whatsapp.disconnect();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    process.off('unhandledRejection', onUnhandledRejection);
+    rejectLogout = false;
+    assert(
+      unhandledLogoutRejection === null,
+      `disconnect() suppresses async socket.logout() rejection (got ${String(unhandledLogoutRejection)})`,
+    );
+
+    await whatsapp.enable('shutdown-send-test-user');
     await whatsapp.connectWithQr();
     eventHandlers.get('connection.update')?.({ connection: 'open' });
     await new Promise((resolve) => setImmediate(resolve));

@@ -7,8 +7,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  escPosToText,
   formatKOT,
   formatReceipt,
+  renderPluginReceipt,
   resolvePrinterContext,
   selectTemplateRenderProfile,
 } from '../main/printers/thermal';
@@ -274,20 +276,122 @@ test('raster requests carry the enlarged styles and keep groups aligned', async 
   }
 });
 
-test('pack width profiles are chosen by physical width at every text size', () => {
-  const layout48 = { lineItems: { gap: 1 } };
+test('pack width profiles are chosen by physical width and reflowed for extra large text', () => {
+  const layout48 = {
+    lineItems: {
+      gap: 1,
+      columns: [
+        { key: 'item', label: 'ITEM', width: 24, align: 'left', wrap: true, maxLines: 2 },
+        { key: 'quantity', label: 'QTY', width: 4, align: 'right' },
+        { key: 'rate', label: 'RATE', width: 7, align: 'right' },
+        { key: 'amount', label: 'AMOUNT', width: 10, align: 'right' },
+      ],
+    },
+    taxSummary: {
+      labelWidth: 38,
+      amountWidth: 9,
+    },
+  };
   const payload = {
+    format: 'escpos-line-template-v1',
     widthProfiles: [
       { columns: 32, layout: {} },
       { columns: 48, layout: layout48 },
     ],
   };
+  const template = {
+    template_id: 'pack-48-test',
+    pack_id: 'pack-test',
+    pack_version_id: 'pack-test-v1',
+    country: 'US',
+    jurisdiction: '*',
+    display_name: 'Pack 48 Test',
+    paper_widths_json: '[32,48]',
+    renderer_json: JSON.stringify({ id: 'flocafe-thermal-receipt-template', version: 1 }),
+    template_payload_json: JSON.stringify(payload),
+    status: 'active',
+    created_at: '2026-04-21T10:30:00Z',
+  };
+  const packOrder = {
+    order_number: 'ORD-20260421-0002',
+    type: 'dine_in',
+    created_at: new Date('2026-04-21T10:30:00Z').toISOString(),
+    items: [
+      {
+        product_name: 'Coffee',
+        quantity: 2,
+        unit_price: 12.34,
+        total: 24.68,
+        tax_breakdown: [{ title: 'VAT', rate: 5, amount: 1.23 }],
+      },
+    ],
+  };
+  const packBill = {
+    bill_number: 'INV-20260421-0002',
+    subtotal: 30,
+    tax_amount: 1.23,
+    discount_amount: 0,
+    total: 31.23,
+    payment_details: JSON.stringify([{ method: 'Cash', amount: 31.23 }]),
+  };
+  const packBusiness = {
+    name: 'Flo Test Cafe',
+    country: 'US',
+    currency: 'USD',
+    show_tax_breakdown: true,
+  };
+
   for (const size of SIZES) {
-    const { columns } = resolvePrinterContext(printer(size));
+    const { columns, capabilities } = resolvePrinterContext(printer(size));
     const warnings: any[] = [];
     const profile = selectTemplateRenderProfile(payload, columns, size, warnings);
-    assert.equal(profile.layout, layout48, `${size} keeps the 48-column pack layout`);
     assert.equal(profile.columns, layoutColumnsForTextSize(48, size));
     assert.equal(warnings.length, 0, `${size} raises no width warning`);
+    if (size === 'extra_large') {
+      const gap = profile.layout.lineItems.gap ?? 0;
+      const lineCols = profile.layout.lineItems.columns;
+      const totalWidth =
+        lineCols.reduce((sum: number, col: any) => sum + col.width, 0) +
+        gap * Math.max(0, lineCols.length - 1);
+      assert.equal(totalWidth, profile.columns, 'extra_large line-item columns fit halved width');
+      assert.ok(
+        profile.layout.taxSummary.labelWidth + profile.layout.taxSummary.amountWidth <=
+          profile.columns,
+        'extra_large taxSummary fits halved width',
+      );
+    } else {
+      assert.equal(profile.layout, layout48, `${size} keeps the 48-column pack layout`);
+    }
+
+    const renderWarnings: any[] = [];
+    const data = renderPluginReceipt(
+      template,
+      packOrder,
+      packBill,
+      packBusiness,
+      columns,
+      false,
+      false,
+      'full',
+      renderWarnings,
+      false,
+      'en',
+      capabilities,
+    );
+    assert.equal(renderWarnings.length, 0, `${size} renders pack receipt with no warnings`);
+    const measured = measureEscPos(data);
+    assert.ok(measured.maxCells <= 48, `${size} pack receipt stays within 48 cells`);
+    const text = escPosToText(data);
+    const lines = text.split(/\r?\n/);
+    const itemLine = lines.find((line) => line.includes('Coffee'));
+    assert.ok(itemLine, `${size} renders item row`);
+    assert.match(itemLine, /\b2\b/, `${size} renders quantity 2 on item row`);
+    assert.ok(itemLine.includes('$12.34'), `${size} renders rate $12.34 on item row`);
+    assert.ok(itemLine.includes('$24.68'), `${size} renders item amount $24.68 on item row`);
+    assert.ok(!itemLine.includes('..'), `${size} does not truncate item row columns`);
+    const vatLine = lines.find((line) => line.includes('VAT'));
+    assert.ok(vatLine, `${size} renders VAT row`);
+    assert.ok(vatLine.includes('$1.23'), `${size} renders VAT $1.23 on tax summary row`);
+    assert.ok(!vatLine.includes('..'), `${size} does not truncate tax summary row`);
   }
 });

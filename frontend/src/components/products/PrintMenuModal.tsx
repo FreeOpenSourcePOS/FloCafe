@@ -265,10 +265,12 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
   const printOnPaper = async (
     selectedFilters: PrintFilters,
     targetWindow?: Window | null,
+    onPopupHandedOff?: () => void,
   ): Promise<boolean> => {
     const html = await buildMenuHtml(selectedFilters);
     if (html === null) return false;
-    printMenuInBrowser(html, targetWindow);
+    if (!printMenuInBrowser(html, targetWindow)) return false;
+    onPopupHandedOff?.();
     toast.success(t('menuPrintedSuccess'));
     return true;
   };
@@ -278,12 +280,14 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
   const savePdf = async (
     selectedFilters: PrintFilters,
     targetWindow?: Window | null,
+    onPopupHandedOff?: () => void,
   ): Promise<boolean> => {
     const html = await buildMenuHtml(selectedFilters);
     if (html === null) return false;
     const saveHtmlAsPdf = window.electronAPI?.saveHtmlAsPdf;
     if (!saveHtmlAsPdf) {
-      printMenuInBrowser(html, targetWindow);
+      if (!printMenuInBrowser(html, targetWindow)) return false;
+      onPopupHandedOff?.();
       toast.success(tCommon('done'));
       return true;
     }
@@ -352,24 +356,27 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
     }
 
     if (destination === 'paper' || destination === 'pdf') {
-      const reservedWindow = window.electronAPI ? undefined : reservePrintGesture();
+      const reservedWindow = reservePrintGesture() ?? (window.electronAPI ? undefined : null);
+      let handedOffToBrowser = false;
+      const markHandedOff = () => {
+        handedOffToBrowser = true;
+      };
       try {
         const printed =
           destination === 'paper'
-            ? await printOnPaper(filters, reservedWindow)
-            : await savePdf(filters, reservedWindow);
+            ? await printOnPaper(filters, reservedWindow, markHandedOff)
+            : await savePdf(filters, reservedWindow, markHandedOff);
         if (printed) {
-          if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
           setDialogOpen(false);
-        } else if (reservedWindow && !reservedWindow.closed) {
-          reservedWindow.close();
         }
       } catch (error) {
-        if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
         toast.error(
           error instanceof MenuPopupBlockedError ? t('menuPopupBlocked') : t('menuPrintFailed'),
         );
       } finally {
+        if (!handedOffToBrowser && reservedWindow && !reservedWindow.closed) {
+          reservedWindow.close();
+        }
         setPrinting(false);
       }
       return;
@@ -377,7 +384,11 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
 
     // Preserve the user gesture for browsers that block asynchronous popups:
     // a failed thermal print falls back to the system print dialog.
-    const reservedWindow = window.electronAPI ? undefined : reservePrintGesture();
+    const reservedWindow = reservePrintGesture() ?? (window.electronAPI ? undefined : null);
+    let handedOffToBrowser = false;
+    const markHandedOff = () => {
+      handedOffToBrowser = true;
+    };
     try {
       await printToReceipt(filters, reservedWindow);
       setDialogOpen(false);
@@ -388,10 +399,8 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
       const status = failure.response?.status;
       const code = failure.response?.data?.code;
       if (code === 'no_products_to_print') {
-        if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
         toast.error(t('noProductsToPrint'));
       } else if (status === 401 || status === 403) {
-        if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
         toast.error(t('menuPrintFailed'));
       } else if (
         code === 'printer_not_configured' ||
@@ -400,14 +409,10 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
         status === undefined
       ) {
         try {
-          if (await printOnPaper(filters, reservedWindow)) {
-            if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+          if (await printOnPaper(filters, reservedWindow, markHandedOff)) {
             setDialogOpen(false);
-          } else if (reservedWindow && !reservedWindow.closed) {
-            reservedWindow.close();
           }
         } catch (popupError) {
-          if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
           toast.error(
             popupError instanceof MenuPopupBlockedError
               ? t('menuPopupBlocked')
@@ -415,10 +420,12 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
           );
         }
       } else {
-        if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
         toast.error(t('menuPrintFailed'));
       }
     } finally {
+      if (!handedOffToBrowser && reservedWindow && !reservedWindow.closed) {
+        reservedWindow.close();
+      }
       setPrinting(false);
     }
   };

@@ -112,19 +112,95 @@ export function reservePrintGesture(host: Window = window): Window | null {
   }
 }
 
-export function printMenuInBrowser(html: string, targetWindow?: Window | null): void {
+export function printMenuInBrowser(html: string, targetWindow?: Window | null): boolean {
   const printWindow = targetWindow !== undefined ? targetWindow : window.open('', '_blank');
   if (!printWindow || printWindow.closed)
     throw new MenuPopupBlockedError('Allow pop-ups to use browser printing');
   const documentUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-  printWindow.addEventListener(
-    'load',
-    () => {
-      URL.revokeObjectURL(documentUrl);
+  const initialDocument = printWindow.document;
+  let printed = false;
+  let cleanedUp = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  const clearPoll = () => {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  };
+
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    clearPoll();
+    URL.revokeObjectURL(documentUrl);
+    if (!printWindow.closed) {
+      printWindow.close();
+    }
+  };
+
+  const triggerPrint = () => {
+    if (printed) return;
+    if (printWindow.closed) {
+      cleanup();
+      return;
+    }
+    printed = true;
+    clearPoll();
+    printWindow.addEventListener?.('afterprint', cleanup, { once: true });
+    try {
       printWindow.focus();
       printWindow.print();
-    },
-    { once: true },
-  );
-  printWindow.location.replace(documentUrl);
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
+  };
+
+  const onLoad = () => {
+    if (printWindow.location?.href === 'about:blank') return;
+    triggerPrint();
+  };
+
+  try {
+    printWindow.location.replace(documentUrl);
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
+
+  printWindow.addEventListener('load', onLoad, { once: true });
+
+  let observedDocument = initialDocument;
+  if (typeof setInterval === 'function') {
+    pollTimer = setInterval(() => {
+      if (printed || cleanedUp) {
+        clearPoll();
+        return;
+      }
+      if (printWindow.closed) {
+        cleanup();
+        return;
+      }
+      const currentDocument = printWindow.document;
+      if (currentDocument && currentDocument !== observedDocument) {
+        observedDocument = currentDocument;
+        if (currentDocument.readyState === 'complete') {
+          triggerPrint();
+          return;
+        }
+        printWindow.addEventListener('load', onLoad, { once: true });
+      } else if (
+        initialDocument &&
+        currentDocument &&
+        currentDocument !== initialDocument &&
+        currentDocument.readyState === 'complete'
+      ) {
+        triggerPrint();
+      }
+    }, 10);
+    (pollTimer as { unref?: () => void }).unref?.();
+  }
+
+  return true;
 }

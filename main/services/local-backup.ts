@@ -29,6 +29,9 @@ export function isLocalBackupEnabled(): boolean {
 
 export function setLocalBackupEnabled(enabled: boolean): void {
   upsertSettings({ [LOCAL_BACKUP_SETTING_KEY]: enabled ? 'true' : 'false' });
+  if (!enabled) {
+    localBackup.cancel();
+  }
 }
 
 export function localBackupFileName(at: Date): string {
@@ -204,6 +207,10 @@ class LocalBackupService {
     await this.running?.catch(() => {});
   }
 
+  cancel(): void {
+    this.abortController?.abort();
+  }
+
   runIfDue(): Promise<void> {
     if (this.running || this.stopping) return this.running ?? Promise.resolve();
     this.running = this.backupIfDue()
@@ -227,6 +234,10 @@ class LocalBackupService {
     let name: string;
     try {
       await createBackup(staged, this.abortController.signal);
+      if (this.stopping || this.abortController?.signal.aborted || !isLocalBackupEnabled()) {
+        removeQuietly(staged);
+        return;
+      }
       name = publishBackup(staged, dir);
     } catch (error) {
       removeQuietly(staged);

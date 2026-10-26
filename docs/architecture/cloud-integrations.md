@@ -394,16 +394,19 @@ sandbox builds (`com.flo.desktop`) it resolves inside the app container at
 session credential is not encrypted at rest, which is a consequence of the protocol library FloCafe
 uses and a reason the containing filesystem matters:
 
-- **Pairing and restart sequence (`515`).** Credential writes from `creds.update` are serialized
-  through `credentialWriteTail` while the socket remains active, and `startSocket()` awaits both
-  `authCleanupPromise` and `credentialWriteTail` before calling `useMultiFileAuthState()`. When
+- **Pairing and restart sequence (`515`).** Credential writes queued from an active socket's
+  `creds.update` are serialized through `credentialWriteTail` (surviving a same-tick `515` socket
+  replacement or shutdown unless disabled or invalidated by an auth wipe), and `startSocket()` awaits
+  both `authCleanupPromise` and `credentialWriteTail` before calling `useMultiFileAuthState()`. When
   WhatsApp completes pairing with status `515` (`restartRequired`), the service reconnects immediately
   without surfacing a disconnect error banner.
-- **Unpaired timeout (`408`) vs paired reconnect.** If an unpaired QR or pairing-code attempt closes
-  with `408` (`timedOut`), the service returns to `disconnected` so the merchant can request a fresh
-  code on demand. Cancelling an in-progress pairing attempt via `cancelPairing()` (`POST
-  /api/whatsapp/cancel-pairing`) closes the pairing socket without calling `logout()` or wiping
-  `whatsapp-auth/`.
+- **Unpaired timeout (`408`), pairing-code fallback, and non-destructive cancel.** If an unpaired QR
+  or pairing-code attempt closes with `408` (`timedOut`), the service returns to `disconnected` so
+  the merchant can request a fresh code on demand. `connectWithPairingCode()` validates socket
+  identity and cancellation before publishing a pairing code and restores QR mode if code generation
+  fails while the socket remains open. Cancelling an in-progress pairing attempt via
+  `cancelPairing()` (`POST /api/whatsapp/cancel-pairing`) closes the pairing socket without calling
+  `logout()` or wiping `whatsapp-auth/`.
 - **Transient disconnect and sleep/wake recovery.** When a paired session drops for a non-`401`
   reason, the service enters `connecting` with `lastErrorReason: 'reconnecting'` and retries after
   `RECONNECT_DELAY_MS`. On system resume (`powerMonitor.on('resume')` -> `handleSystemResume()`), the

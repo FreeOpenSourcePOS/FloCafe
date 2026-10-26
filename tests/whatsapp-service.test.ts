@@ -1774,32 +1774,15 @@ async function main(): Promise<void> {
     );
 
     /*
-     * Issue #1346 macOS v3.13.0+ verification summary (DMG and Mac App Store builds):
-     * - Scenario 1 (Pair -> Quit -> Reopen without QR):
-     *   queueCredentialWrite() evaluates isActiveSocket(socket) synchronously when creds.update
-     *   fires and serializes saveCreds() through credentialWriteTail so a same-tick 515
-     *   restartRequired close or requestShutdown() does not drop the final credential flush.
-     *   On reopen, initFromDb() reads creds.json from path.join(app.getPath('userData'), 'whatsapp-auth')
-     *   and reconnects to 'connected' without generating a QR code.
-     * - Scenario 2 (Pair -> Sleep/Wake or transient drop -> Reconnect):
-     *   Non-401 disconnects on paired sessions transition to state='connecting' with
-     *   lastErrorReason='reconnecting' and retry after RECONNECT_DELAY_MS (5000ms). On macOS
-     *   powerMonitor 'resume', handleSystemResume() immediately reconnects when state.socket is
-     *   null or stale/non-connected, and runs a bounded presence probe on open sockets to replace
-     *   half-open connections left behind by macOS sleep.
-     * - Scenario 3 (Pair -> Unlink device from phone, 401 loggedOut -> Re-pair QR & UI clarity):
-     *   Status 401 clears timers, sets state='disconnected' and lastErrorReason='logged_out',
-     *   clears whatsapp_connected_phone, and wipes whatsapp-auth/ via scheduleAuthWipe(). The UI
-     *   renders a rose alert banner and "Session expired - Re-pair required" badge, distinct from
-     *   the amber "Reconnecting..." badge during transient drops.
-     * - Scenario 4 (macOS DMG & Mac App Store auth persistence and pairing edge cases):
-     *   Both macOS DMG (~/Library/Application Support/Flo Cafe/whatsapp-auth) and MAS sandbox
-     *   (~/Library/Containers/com.flo.desktop/Data/Library/Application Support/Flo Cafe/whatsapp-auth)
-     *   persist multi-file Baileys credentials across restarts under 0o700 permissions. Unpaired
-     *   408 QR timeouts return cleanly to 'disconnected' instead of looping; connectWithPairingCode()
-     *   validates socket identity/cancellation before publishing a code and restores QR mode on
-     *   failure; cancelPairing() closes an in-progress pairing socket without calling logout() or
-     *   wiping existing registered credentials.
+     * macOS DMG and Mac App Store verification scenarios (see
+     * docs/architecture/cloud-integrations.md#whatsapp-receipt-delivery for the authoritative
+     * session-lifecycle contract):
+     * 1. Pair -> Quit -> Reopen without QR (same-tick 515 restartRequired / shutdown credential flush).
+     * 2. Pair -> Sleep/Wake or transient drop -> Reconnect (reconnecting state + handleSystemResume probe).
+     * 3. Pair -> Unlink device from phone (401 loggedOut -> destructive logged_out alert + repair_needed badge,
+     *    cleared when re-pairing).
+     * 4. Unpaired 408 timeout -> disconnected, connectWithPairingCode fallback/cancellation guards, and
+     *    non-destructive cancelPairing() preserving registered whatsapp-auth/ credentials.
      */
     // Issue #1346 regression 1: creds.update followed in the same tick by 515 restartRequired
     // must persist credentials and reconnect seamlessly without a false error banner.
@@ -1944,7 +1927,7 @@ async function main(): Promise<void> {
     );
 
     // Issue #1346 regression 8: handleSystemResume() replaces a stale non-connected socket and
-    // reconnects when aconnected socket fails its resume presence health probe.
+    // reconnects when a connected socket fails its resume presence health probe.
     await whatsapp.connectWithQr();
     fakeSocket.ws = { isClosed: true, readyState: 3 };
     const socketCallsBeforeStaleResume = makeSocketCalls;

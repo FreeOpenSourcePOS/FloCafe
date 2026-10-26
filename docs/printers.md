@@ -95,10 +95,9 @@ A validated printer profile may also enable the capability-gated raster path, wh
 isolated Chromium renderer and bundled local fonts for content the printer cannot shape itself.
 Profile capability is what enables it; a locale never does.
 
-On the document-driven thermal and browser paths, unsupported non-financial text is skipped with a
-warning, while an unsupported item row or financial row refuses the receipt before transport with
-an explicit operator warning. The exact warning contract and the direct-write exceptions are in
-[the printing architecture](architecture/printing.md).
+When neither firmware shaping nor raster rendering is available, unsupported non-financial text is
+skipped with a warning and an unsupported financial row refuses the receipt before transport; see
+[capabilities and refusal](architecture/printing.md#capabilities-and-refusal).
 
 ## Receipt and kitchen-ticket languages
 

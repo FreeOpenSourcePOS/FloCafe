@@ -154,7 +154,7 @@ four whitespace-separated tokens read as a sentence.
 | Kitchen ticket | `main/printers/document-kot.ts` | `KotDocument` |
 | Delivery slip | `main/printers/document-delivery-slip.ts` | `DeliverySlipDocument` |
 | Merchant | `main/printers/document-merchant.ts` | Wraps the classic renderer and applies a merchant template's block selection and order. |
-| Compliance line template | `renderEscposLineTemplateV1` in `main/printers/thermal.ts` | A pack-signed `escpos-line-template-v1` payload, as a plugin inside the thermal pipeline. |
+| Compliance line template | `escposLineTemplateV1Lines` in `main/printers/thermal.ts` | A pack-signed `escpos-line-template-v1` payload, as a plugin inside the thermal pipeline. |
 | Browser HTML | `frontend/src/lib/printer/web-print.ts` and `kot-web-print.ts` | A `PrintDocument` or `KotDocument`, rendered as HTML. |
 | WebUSB | `frontend/src/lib/printer/PrinterService.ts` | Encoder output, sent over the browser's WebUSB API. |
 | Delivery slip | `frontend/src/lib/printer/delivery-slip-encoder.ts` and `delivery-slip-web-print.ts` | A `DeliverySlipDocument`'s contact facts, rendered as bytes or HTML. |

@@ -479,7 +479,8 @@ For a bill or a kitchen ticket, in the order the store tries them:
 
 ### The courier slip takes a shorter path
 
-`printDeliverySlip` is the fourth print action, and it has no raster path. A delivery slip carries
+`printDeliverySlip` is the fourth print action, and it skips step 2's main-process raster IPC. A
+delivery slip carries
 the address, the full contact block, payment/collection status, and order lines, and it resolves
 through three routes:
 

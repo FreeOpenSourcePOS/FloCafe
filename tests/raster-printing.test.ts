@@ -2887,9 +2887,7 @@ async function run(): Promise<void> {
       assert.equal(feWarnings.hasFinancialPrintWarning(frenchTaxWarn), false);
       assert.ok(Buffer.from(frenchTaxBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
       assert.ok(
-        frenchPaintedCells.some(
-          (cell) => cell.text === '   + Crème' && cell.align === 'left',
-        ),
+        frenchPaintedCells.some((cell) => cell.text === '   + Crème' && cell.align === 'left'),
       );
       assert.ok(
         frenchPaintedCells.some(

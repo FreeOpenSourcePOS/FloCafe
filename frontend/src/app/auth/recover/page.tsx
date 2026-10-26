@@ -71,10 +71,10 @@ export default function RecoverAccessPage() {
   }, []);
 
   const requestEmailReset = async () => {
-    setFormError(null);
-    setLoading(true);
     stopPolling();
     const generation = pollGeneration.current;
+    setFormError(null);
+    setLoading(true);
     try {
       const { data } = await api.post('/auth/recover-password/cloud/request');
       if (unmounted.current || pollGeneration.current !== generation) return;
@@ -298,6 +298,7 @@ export default function RecoverAccessPage() {
                         variant={method === m ? 'default' : 'outline'}
                         onClick={() => {
                           stopPolling();
+                          setLoading(false);
                           setEmailStep('idle');
                           setFormError(null);
                           setMethod(m);

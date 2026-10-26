@@ -772,7 +772,7 @@ async function main() {
     currentRecoverApi = {
       get: async (url: string) => {
         if (url === '/auth/setup/status') {
-          return { data: { masterPinAvailable: false, cloudRecoveryAvailable: true } };
+          return { data: { masterPinAvailable: true, cloudRecoveryAvailable: true } };
         }
         return { data: {} };
       },
@@ -785,6 +785,74 @@ async function main() {
 
     assertEqualOrThrow(states[10], 'email', 'recovery method initializes to email');
     assertEqualOrThrow(states[11], 'idle', 'emailStep initializes to idle');
+
+    // Method switch while requestEmailReset is in-flight resets loading and ignores stale response
+    let resolveInFlightRequest: (val: any) => void;
+    const inFlightRequestPromise = new Promise((resolve) => {
+      resolveInFlightRequest = resolve;
+    });
+    currentRecoverApi = {
+      get: async () => ({ data: {} }),
+      post: async (url: string) => {
+        if (url === '/auth/recover-password/cloud/request') {
+          return inFlightRequestPromise;
+        }
+        return { data: {} };
+      },
+    };
+
+    const treeSwitch1 = renderPage();
+    const initialSendBtn = findAllButtons(treeSwitch1).find(
+      (b) => b.props?.children === 'recoverEmailSend',
+    );
+    assertOrThrow(Boolean(initialSendBtn), 'send button found before method-switch race');
+
+    const pendingRequestPromise = initialSendBtn.props.onClick();
+    renderPage();
+    assertEqualOrThrow(states[6], true, 'loading is true while requestEmailReset is in-flight');
+
+    const treeSwitch2 = renderPage();
+    const pinToggleBtn = findAllButtons(treeSwitch2).find(
+      (b) => b.props?.children === 'recoverMethodPin',
+    );
+    assertOrThrow(Boolean(pinToggleBtn), 'PIN method toggle button found');
+    pinToggleBtn.props.onClick();
+    renderPage();
+
+    assertEqualOrThrow(states[10], 'pin', 'method switches to pin');
+    assertEqualOrThrow(states[6], false, 'method switch resets loading while request is in-flight');
+
+    resolveInFlightRequest!({
+      data: { step: 'reset', reset_id: 'reset-stale', email_hint: 'o***@example.com' },
+    });
+    await pendingRequestPromise;
+    renderPage();
+
+    assertEqualOrThrow(
+      states[6],
+      false,
+      'loading remains false after superseded requestEmailReset settles',
+    );
+    assertEqualOrThrow(
+      states[11],
+      'idle',
+      'superseded requestEmailReset does not transition emailStep',
+    );
+    assertEqualOrThrow(states[12], '', 'superseded requestEmailReset does not set resetId');
+    assertEqualOrThrow(
+      activeIntervalCallback,
+      null,
+      'superseded requestEmailReset does not start polling',
+    );
+
+    const treeSwitch3 = renderPage();
+    const emailToggleBtn = findAllButtons(treeSwitch3).find(
+      (b) => b.props?.children === 'recoverMethodEmail',
+    );
+    assertOrThrow(Boolean(emailToggleBtn), 'Email method toggle button found');
+    emailToggleBtn.props.onClick();
+    renderPage();
+    assertEqualOrThrow(states[10], 'email', 'method switches back to email');
 
     let resolvePollA: (val: any) => void;
     const pollAPromise = new Promise((resolve) => {

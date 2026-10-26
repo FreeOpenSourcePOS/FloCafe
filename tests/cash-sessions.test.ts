@@ -1811,6 +1811,463 @@ async function main() {
     ).run(now());
   }
 
+  // ── Section 10: cross-midnight shift closure business date (#1360) ───
+  console.log('Section 10: shift closure uses opening business date across midnight and cutoffs');
+  {
+    const { escPosToText } = require('../main/printers/thermal');
+    const { computeDayAggregates } = require('../main/routes/cash-closures');
+    const longLivedCashierToken = jwt.sign(
+      { userId: 'cashier-sess', email: 'cashier-sess@test.local', role: 'cashier' },
+      getJWTSecret(),
+    );
+
+    const setTenantTimeConfig = (tz: string, cutoff: string) => {
+      db.prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES ('timezone', ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+      ).run(tz, now());
+      db.prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES ('business_day_start_time', ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+      ).run(cutoff, now());
+    };
+
+    const seedAndPayShiftBill = async (
+      tag: string,
+      method: 'cash' | 'card',
+      amount: number,
+      atIsoUtc: string,
+    ) => {
+      await withFixedClock(atIsoUtc, async () => {
+        const moment = now();
+        db.prepare(
+          `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+           VALUES (?, 'cashier-sess', 'takeaway', 'pending', ?, ?, ?, ?, NULL)`,
+        ).run(`ORD-1360-${tag}`, amount, amount, moment, moment);
+        const oid = Number(
+          (db.prepare(`SELECT id FROM orders WHERE order_number = ?`).get(`ORD-1360-${tag}`) as any)
+            .id,
+        );
+        db.prepare(
+          `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 0, ?, 'unpaid', '[]', NULL, ?, ?)`,
+        ).run(`BILL-1360-${tag}`, oid, amount, amount, amount, moment, moment);
+        const bid = Number(
+          (db.prepare(`SELECT id FROM bills WHERE bill_number = ?`).get(`BILL-1360-${tag}`) as any)
+            .id,
+        );
+        const payRes = await request(app)
+          .post(`/api/bills/${bid}/payment`)
+          .set('Authorization', `Bearer ${longLivedCashierToken}`)
+          .send({ method, amount });
+        assert(
+          payRes.status === 200,
+          `#1360 (${tag}): ${method} payment of ${amount} succeeds (200)`,
+        );
+      });
+    };
+
+    try {
+      // Configure a default WebUSB printer so POST /api/cash-closures/:id/print returns ESC/POS bytes.
+      db.prepare(`DELETE FROM printers`).run();
+      db.prepare(
+        `INSERT INTO printers (id, name, connection_type, is_default, paper_width, created_at, updated_at)
+         VALUES ('webusb-1360', 'WebUSB 1360 Printer', 'webusb', 1, '80mm', ?, ?)`,
+      ).run(now(), now());
+
+      // 1) Cross-midnight shift with $200 float, $31.64 cash, $9.32 card across UTC, Montevideo, and Sydney
+      const crossMidnightZones = [
+        {
+          label: 'UTC',
+          tz: 'UTC',
+          openIso: '2026-10-25T22:00:00.000Z',
+          preMidnightSaleIso: '2026-10-25T23:15:00.000Z',
+          postMidnightSaleIso: '2026-10-26T00:15:00.000Z',
+          closeIso: '2026-10-26T00:30:00.000Z',
+          expectedOpenTs: '2026-10-25 22:00:00',
+          expectedCloseTs: '2026-10-26 00:30:00',
+        },
+        {
+          label: 'Montevideo',
+          tz: 'America/Montevideo',
+          openIso: '2026-10-26T01:00:00.000Z', // 2026-10-25 22:00:00 local (UTC-3)
+          preMidnightSaleIso: '2026-10-26T02:15:00.000Z', // 2026-10-25 23:15:00 local
+          postMidnightSaleIso: '2026-10-26T03:15:00.000Z', // 2026-10-26 00:15:00 local
+          closeIso: '2026-10-26T03:30:00.000Z', // 2026-10-26 00:30:00 local
+          expectedOpenTs: '2026-10-26 01:00:00',
+          expectedCloseTs: '2026-10-26 03:30:00',
+        },
+        {
+          label: 'Sydney',
+          tz: 'Australia/Sydney',
+          openIso: '2026-10-25T11:00:00.000Z', // 2026-10-25 22:00:00 local (AEDT, UTC+11)
+          preMidnightSaleIso: '2026-10-25T12:15:00.000Z', // 2026-10-25 23:15:00 local
+          postMidnightSaleIso: '2026-10-25T13:15:00.000Z', // 2026-10-26 00:15:00 local
+          closeIso: '2026-10-25T13:30:00.000Z', // 2026-10-26 00:30:00 local
+          expectedOpenTs: '2026-10-25 11:00:00',
+          expectedCloseTs: '2026-10-25 13:30:00',
+        },
+      ];
+
+      for (const zone of crossMidnightZones) {
+        db.prepare(`DELETE FROM cash_drawer_movements WHERE movement_type = 'opening_float'`).run();
+        setTenantTimeConfig(zone.tz, '00:00');
+        const oct25GrossBefore = computeDayAggregates(db, '2026-10-25').grossCollectedCents;
+        const oct26GrossBefore = computeDayAggregates(db, '2026-10-26').grossCollectedCents;
+
+        let sessionId = 0;
+        await withFixedClock(zone.openIso, async () => {
+          const openRes = await request(app)
+            .post('/api/cash-sessions/open')
+            .set('Authorization', `Bearer ${longLivedCashierToken}`)
+            .send({ opening_float_cents: 20000 });
+          assert(openRes.status === 200, `#1360 (${zone.label}): shift opens on Oct 25 (200)`);
+          sessionId = Number(openRes.body?.id);
+        });
+
+        const floatMovement = db
+          .prepare(
+            `SELECT business_date, amount_cents FROM cash_drawer_movements WHERE cash_session_id = ? AND movement_type = 'opening_float'`,
+          )
+          .get(sessionId) as { business_date: string; amount_cents: number } | undefined;
+        assert(
+          floatMovement?.business_date === '2026-10-25' && floatMovement?.amount_cents === 20000,
+          `#1360 (${zone.label}): opening float movement is recorded on 2026-10-25 (20000 cents)`,
+        );
+
+        await seedAndPayShiftBill(`${zone.label}-card`, 'card', 9.32, zone.preMidnightSaleIso);
+        await seedAndPayShiftBill(`${zone.label}-cash`, 'cash', 31.64, zone.postMidnightSaleIso);
+
+        let closureId = 0;
+        await withFixedClock(zone.closeIso, async () => {
+          const closeRes = await request(app)
+            .post(`/api/cash-sessions/${sessionId}/close`)
+            .set('Authorization', `Bearer ${longLivedCashierToken}`)
+            .send({ counted_cash_cents: 23164 });
+          assert(closeRes.status === 200, `#1360 (${zone.label}): shift closes at 00:30 Oct 26`);
+          assert(
+            closeRes.body?.expected_cash_cents === 23164 && closeRes.body?.variance_cents === 0,
+            `#1360 (${zone.label}): expected cash reconciles at 23164 cents ($231.64) with zero variance`,
+          );
+          closureId = Number(closeRes.body?.closure_id);
+        });
+
+        const sessionRow = db
+          .prepare(`SELECT opened_at, closed_at, status FROM cash_sessions WHERE id = ?`)
+          .get(sessionId) as { opened_at: string; closed_at: string; status: string };
+        const closureRow = db
+          .prepare(
+            `SELECT scope, business_date, period_start, period_end, opening_float_cents, expected_cash_cents, counted_cash_cents, variance_cents, gross_collected_cents, net_collected_cents, bill_count, z_number FROM cash_closures WHERE id = ?`,
+          )
+          .get(closureId) as any;
+
+        assert(
+          closureRow?.scope === 'session' && closureRow?.business_date === '2026-10-25',
+          `#1360 (${zone.label}): cross-midnight session closure retains opening business_date 2026-10-25 (got ${closureRow?.business_date})`,
+        );
+        assert(
+          sessionRow?.opened_at === zone.expectedOpenTs &&
+            sessionRow?.closed_at === zone.expectedCloseTs &&
+            closureRow?.period_start === zone.expectedOpenTs &&
+            closureRow?.period_end === zone.expectedCloseTs,
+          `#1360 (${zone.label}): actual opened_at, closed_at, period_start, and period_end timestamps remain accurate`,
+        );
+        assert(
+          closureRow?.opening_float_cents === 20000 &&
+            closureRow?.expected_cash_cents === 23164 &&
+            closureRow?.counted_cash_cents === 23164 &&
+            closureRow?.variance_cents === 0 &&
+            closureRow?.gross_collected_cents === 4096 &&
+            closureRow?.net_collected_cents === 4096 &&
+            closureRow?.bill_count === 2,
+          `#1360 (${zone.label}): closure financial totals ($200 float, $31.64 post-midnight cash, $9.32 card) reconcile`,
+        );
+
+        if (zone.label === 'UTC') {
+          // Daily sales attribution remains anchored to each business day's [start, end) window.
+          const oct25Day = computeDayAggregates(db, '2026-10-25');
+          const oct26Day = computeDayAggregates(db, '2026-10-26');
+          assert(
+            oct25Day.grossCollectedCents - oct25GrossBefore === 932 &&
+              oct26Day.grossCollectedCents - oct26GrossBefore === 3164,
+            '#1360 (UTC): daily reporting boundaries remain unchanged (pre-midnight sale on Oct 25, post-midnight sale on Oct 26)',
+          );
+
+          // Print at close time and reprint days later via WebUSB.
+          await withFixedClock(zone.closeIso, async () => {
+            const printRes = await request(app)
+              .post(`/api/cash-closures/${closureId}/print`)
+              .set('Authorization', `Bearer ${longLivedCashierToken}`)
+              .send({ isReprint: false });
+            assert(
+              printRes.status === 200 &&
+                printRes.body?.webusb === true &&
+                printRes.body?.isReprint === false &&
+                Array.isArray(printRes.body?.bytes),
+              '#1360 (UTC): POST /api/cash-closures/:id/print returns WebUSB bytes (200)',
+            );
+            const printedText = escPosToText(Buffer.from(printRes.body?.bytes || []));
+            assert(
+              printedText.includes('2026-10-25') &&
+                printedText.includes(`Z#${closureRow.z_number} - 2026-10-25`) &&
+                !printedText.includes(`Z#${closureRow.z_number} - 2026-10-26`),
+              '#1360 (UTC): printed Z bytes carry opening business date 2026-10-25',
+            );
+          });
+
+          await withFixedClock('2026-10-28T14:00:00.000Z', async () => {
+            const reprintRes = await request(app)
+              .post(`/api/cash-closures/${closureId}/print`)
+              .set('Authorization', `Bearer ${longLivedCashierToken}`)
+              .send({ isReprint: true });
+            assert(
+              reprintRes.status === 200 &&
+                reprintRes.body?.webusb === true &&
+                reprintRes.body?.isReprint === true &&
+                Array.isArray(reprintRes.body?.bytes),
+              '#1360 (UTC): later reprint returns WebUSB bytes (200)',
+            );
+            const reprintedText = escPosToText(Buffer.from(reprintRes.body?.bytes || []));
+            assert(
+              reprintedText.includes('REPRINT') &&
+                reprintedText.includes(`Z#${closureRow.z_number} - 2026-10-25`),
+              '#1360 (UTC): later reprint preserves stored opening business date 2026-10-25',
+            );
+            const afterReprintRow = db
+              .prepare(`SELECT business_date FROM cash_closures WHERE id = ?`)
+              .get(closureId) as { business_date: string };
+            assert(
+              afterReprintRow?.business_date === '2026-10-25',
+              '#1360 (UTC): stored closure business_date is untouched after reprint',
+            );
+          });
+        }
+
+        db.prepare(`DELETE FROM bills WHERE bill_number LIKE ?`).run(`BILL-1360-${zone.label}-%`);
+        db.prepare(`DELETE FROM orders WHERE order_number LIKE ?`).run(`ORD-1360-${zone.label}-%`);
+      }
+
+      // 2) 04:00 business_day_start_time cutoff: open Oct 26 at 02:00, close at 05:00 -> 2026-10-25
+      setTenantTimeConfig('UTC', '04:00');
+      let cutoffSessionId = 0;
+      await withFixedClock('2026-10-26T02:00:00.000Z', async () => {
+        const openRes = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${longLivedCashierToken}`)
+          .send({ opening_float_cents: 5000 });
+        assert(openRes.status === 200, '#1360 (04:00 cutoff): shift opens at 02:00 (200)');
+        cutoffSessionId = Number(openRes.body?.id);
+      });
+      let cutoffClosureId = 0;
+      await withFixedClock('2026-10-26T05:00:00.000Z', async () => {
+        const closeRes = await request(app)
+          .post(`/api/cash-sessions/${cutoffSessionId}/close`)
+          .set('Authorization', `Bearer ${longLivedCashierToken}`)
+          .send({ counted_cash_cents: 5000 });
+        assert(closeRes.status === 200, '#1360 (04:00 cutoff): shift closes at 05:00 (200)');
+        cutoffClosureId = Number(closeRes.body?.closure_id);
+      });
+      const cutoffClosure = db
+        .prepare(`SELECT business_date, period_start, period_end FROM cash_closures WHERE id = ?`)
+        .get(cutoffClosureId) as {
+        business_date: string;
+        period_start: string;
+        period_end: string;
+      };
+      assert(
+        cutoffClosure?.business_date === '2026-10-25' &&
+          cutoffClosure?.period_start === '2026-10-26 02:00:00' &&
+          cutoffClosure?.period_end === '2026-10-26 05:00:00',
+        `#1360 (04:00 cutoff): shift opened 02:00 Oct 26 and closed 05:00 Oct 26 retains business_date 2026-10-25 (got ${cutoffClosure?.business_date})`,
+      );
+
+      // 3) Same-business-day close -> opening business date
+      setTenantTimeConfig('UTC', '00:00');
+      let sameDaySessionId = 0;
+      await withFixedClock('2026-10-25T10:00:00.000Z', async () => {
+        const openRes = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${longLivedCashierToken}`)
+          .send({ opening_float_cents: 3000 });
+        assert(openRes.status === 200, '#1360 (same-day): shift opens at 10:00 Oct 25 (200)');
+        sameDaySessionId = Number(openRes.body?.id);
+      });
+      let sameDayClosureId = 0;
+      await withFixedClock('2026-10-25T18:00:00.000Z', async () => {
+        const closeRes = await request(app)
+          .post(`/api/cash-sessions/${sameDaySessionId}/close`)
+          .set('Authorization', `Bearer ${longLivedCashierToken}`)
+          .send({ counted_cash_cents: 3000 });
+        assert(closeRes.status === 200, '#1360 (same-day): shift closes at 18:00 Oct 25 (200)');
+        sameDayClosureId = Number(closeRes.body?.closure_id);
+      });
+      const sameDayClosure = db
+        .prepare(`SELECT business_date, period_start, period_end FROM cash_closures WHERE id = ?`)
+        .get(sameDayClosureId) as {
+        business_date: string;
+        period_start: string;
+        period_end: string;
+      };
+      assert(
+        sameDayClosure?.business_date === '2026-10-25' &&
+          sameDayClosure?.period_start === '2026-10-25 10:00:00' &&
+          sameDayClosure?.period_end === '2026-10-25 18:00:00',
+        `#1360 (same-day): same-business-day close records opening business_date 2026-10-25 (got ${sameDayClosure?.business_date})`,
+      );
+
+      // 4) Daylight-saving transition: Australia/Sydney springs forward 2026-10-04 02:00 AEST -> 03:00 AEDT
+      setTenantTimeConfig('Australia/Sydney', '00:00');
+      let dstSessionId = 0;
+      await withFixedClock('2026-10-03T12:00:00.000Z', async () => {
+        // 2026-10-03 22:00:00 AEST (UTC+10)
+        const openRes = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${longLivedCashierToken}`)
+          .send({ opening_float_cents: 4000 });
+        assert(openRes.status === 200, '#1360 (DST Sydney): shift opens before DST transition');
+        dstSessionId = Number(openRes.body?.id);
+      });
+      let dstClosureId = 0;
+      await withFixedClock('2026-10-03T16:30:00.000Z', async () => {
+        // 2026-10-04 03:30:00 AEDT (UTC+11)
+        const closeRes = await request(app)
+          .post(`/api/cash-sessions/${dstSessionId}/close`)
+          .set('Authorization', `Bearer ${longLivedCashierToken}`)
+          .send({ counted_cash_cents: 4000 });
+        assert(closeRes.status === 200, '#1360 (DST Sydney): shift closes after DST transition');
+        dstClosureId = Number(closeRes.body?.closure_id);
+      });
+      const dstClosure = db
+        .prepare(`SELECT business_date, period_start, period_end FROM cash_closures WHERE id = ?`)
+        .get(dstClosureId) as {
+        business_date: string;
+        period_start: string;
+        period_end: string;
+      };
+      assert(
+        dstClosure?.business_date === '2026-10-03' &&
+          dstClosure?.period_start === '2026-10-03 12:00:00' &&
+          dstClosure?.period_end === '2026-10-03 16:30:00',
+        `#1360 (DST Sydney): cross-DST shift retains opening business_date 2026-10-03 (got ${dstClosure?.business_date})`,
+      );
+
+      // 5) Stale automatic close several days later -> opening business date
+      setTenantTimeConfig('America/Montevideo', '04:00');
+      let staleSession1360Id = 0;
+      await withFixedClock('2026-10-15T05:30:00.000Z', async () => {
+        // 2026-10-15 02:30:00 Montevideo (before 04:00 cutoff -> business date 2026-10-14)
+        const openRes = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${longLivedCashierToken}`)
+          .send({ opening_float_cents: 1500 });
+        assert(openRes.status === 200, '#1360 (stale auto-close): stale candidate opens (200)');
+        staleSession1360Id = Number(openRes.body?.id);
+      });
+      // Ensure store-wide activity is older than the 7-day stale cutoff relative to 2026-10-25.
+      const staleBackdate = '2026-10-10 00:00:00';
+      db.prepare('UPDATE bills SET paid_at = ? WHERE paid_at IS NOT NULL').run(staleBackdate);
+      db.prepare('UPDATE cash_drawer_movements SET created_at = ?').run(staleBackdate);
+      db.prepare('UPDATE refunds SET created_at = ?').run(staleBackdate);
+      for (const row of db
+        .prepare('SELECT id, payment_details FROM bills WHERE payment_details IS NOT NULL')
+        .all() as { id: number; payment_details: string }[]) {
+        const parsed = JSON.parse(row.payment_details);
+        const lines = Array.isArray(parsed) ? parsed : [parsed];
+        for (const line of lines)
+          if (line && typeof line === 'object') line.timestamp = staleBackdate;
+        db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?').run(
+          JSON.stringify(Array.isArray(parsed) ? lines : lines[0]),
+          row.id,
+        );
+      }
+
+      await withFixedClock('2026-10-25T15:00:00.000Z', async () => {
+        const freshOpenRes = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${longLivedCashierToken}`)
+          .send({ opening_float_cents: 1000 });
+        assert(
+          freshOpenRes.status === 200,
+          '#1360 (stale auto-close): opening a new shift 10 days later auto-closes stale session (200)',
+        );
+        const closeFreshRes = await request(app)
+          .post(`/api/cash-sessions/${freshOpenRes.body?.id}/close`)
+          .set('Authorization', `Bearer ${longLivedCashierToken}`)
+          .send({ counted_cash_cents: 1000 });
+        assert(closeFreshRes.status === 200, '#1360 (stale auto-close): fresh shift closes (200)');
+      });
+
+      const autoClosedSession = db
+        .prepare(`SELECT status, opened_at, closed_at, closure_id FROM cash_sessions WHERE id = ?`)
+        .get(staleSession1360Id) as {
+        status: string;
+        opened_at: string;
+        closed_at: string;
+        closure_id: number;
+      };
+      const autoClosedClosure = db
+        .prepare(`SELECT business_date, period_start, period_end FROM cash_closures WHERE id = ?`)
+        .get(autoClosedSession?.closure_id) as {
+        business_date: string;
+        period_start: string;
+        period_end: string;
+      };
+      assert(
+        autoClosedSession?.status === 'closed' &&
+          autoClosedClosure?.business_date === '2026-10-14' &&
+          autoClosedClosure?.period_start === '2026-10-15 05:30:00' &&
+          autoClosedClosure?.period_end === '2026-10-25 15:00:00' &&
+          autoClosedSession?.closed_at === '2026-10-25 15:00:00',
+        `#1360 (stale auto-close): stale session auto-closed 10 days later retains opening business_date 2026-10-14 (got ${autoClosedClosure?.business_date})`,
+      );
+
+      // 6) Existing historical closures remain unchanged
+      const historicalZNumber = 991360;
+      const historicalInsert = db
+        .prepare(
+          `INSERT INTO cash_closures (
+            scope, business_date, period_start, period_end,
+            opening_float_cents, expected_cash_cents, counted_cash_cents, variance_cents,
+            gross_collected_cents, refunded_cents, net_collected_cents,
+            bill_count, refund_count,
+            payment_methods_json, staff_sales_json, tax_components_json,
+            pay_in_cents, pay_out_cents, safe_drop_cents, cash_movements_json,
+            z_number, closed_by, notes, created_at
+          ) VALUES (
+            'session', '2026-10-20', '2026-10-19 22:00:00', '2026-10-20 00:30:00',
+            10000, 10000, 10000, 0,
+            0, 0, 0,
+            0, 0,
+            '[]', '[]', '[]',
+            0, 0, 0, '[]',
+            ?, 'cashier-sess', 'historical closure', '2026-10-20 00:30:00'
+          )`,
+        )
+        .run(historicalZNumber);
+      const historicalId = Number(historicalInsert.lastInsertRowid);
+      const historicalPrint = await request(app)
+        .post(`/api/cash-closures/${historicalId}/print`)
+        .set('Authorization', `Bearer ${longLivedCashierToken}`)
+        .send({ isReprint: true });
+      const historicalText = escPosToText(Buffer.from(historicalPrint.body?.bytes || []));
+      const historicalRow = db
+        .prepare(`SELECT business_date, period_start, period_end FROM cash_closures WHERE id = ?`)
+        .get(historicalId) as {
+        business_date: string;
+        period_start: string;
+        period_end: string;
+      };
+      assert(
+        historicalPrint.status === 200 &&
+          historicalRow?.business_date === '2026-10-20' &&
+          historicalText.includes(`Z#${historicalZNumber} - 2026-10-20`),
+        '#1360 (historical): existing stored closures and their reprints remain unchanged',
+      );
+      db.prepare(`DELETE FROM cash_closures WHERE id = ?`).run(historicalId);
+    } finally {
+      setTenantTimeConfig('UTC', '00:00');
+      db.prepare(`DELETE FROM printers WHERE id = 'webusb-1360'`).run();
+    }
+  }
+
   console.log('='.repeat(50));
   console.log(`Passed ${passed}/${total}, failed ${failed}`);
   process.exit(failed > 0 ? 1 : 0);

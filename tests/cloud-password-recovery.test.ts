@@ -854,6 +854,91 @@ async function main() {
     renderPage();
     assertEqualOrThrow(states[10], 'email', 'method switches back to email');
 
+    // Verification poll superseded by resend does not auto-trigger a duplicate requestEmailReset
+    let resolveVerifyPoll: (val: any) => void;
+    const verifyPollPromise = new Promise((resolve) => {
+      resolveVerifyPoll = resolve;
+    });
+    let verifyRequestCalls = 0;
+    currentRecoverApi = {
+      get: async (url: string) => {
+        if (url === '/auth/recover-password/cloud/verification') {
+          return verifyPollPromise;
+        }
+        return { data: {} };
+      },
+      post: async (url: string) => {
+        if (url === '/auth/recover-password/cloud/request') {
+          verifyRequestCalls++;
+          return {
+            data: { step: 'verify_email', email_hint: 'o***@example.com' },
+          };
+        }
+        return { data: {} };
+      },
+    };
+
+    const treeVerify1 = renderPage();
+    const sendVerifyBtn = findAllButtons(treeVerify1).find(
+      (b) => b.props?.children === 'recoverEmailSend',
+    );
+    assertOrThrow(Boolean(sendVerifyBtn), 'send button found for verify_email step');
+    await sendVerifyBtn.props.onClick();
+    renderPage();
+    assertEqualOrThrow(
+      states[11],
+      'verifying',
+      'requestEmailReset transitions emailStep to verifying',
+    );
+    assertOrThrow(Boolean(activeIntervalCallback), 'verification polling timer registered');
+
+    const verifyTickPromise = activeIntervalCallback!();
+    assertEqualOrThrow(
+      (refs[1] as { current: boolean }).current,
+      true,
+      'pollInFlight is true while verification poll is pending',
+    );
+
+    const treeVerify2 = renderPage();
+    const resendVerifyBtn = findAllButtons(treeVerify2).find(
+      (b) => b.props?.children === 'recoverEmailResend',
+    );
+    assertOrThrow(Boolean(resendVerifyBtn), 'resend button found while verifying');
+    await resendVerifyBtn.props.onClick();
+    renderPage();
+    assertEqualOrThrow(verifyRequestCalls, 2, 'manual resend calls requestEmailReset once');
+    assertEqualOrThrow(
+      (refs[1] as { current: boolean }).current,
+      false,
+      'stopPolling resets pollInFlight on verification resend',
+    );
+
+    resolveVerifyPoll!({ data: { verified: true } });
+    await verifyTickPromise;
+    renderPage();
+    assertEqualOrThrow(
+      verifyRequestCalls,
+      2,
+      'superseded verification poll does not auto-trigger requestEmailReset',
+    );
+    assertEqualOrThrow(
+      (refs[1] as { current: boolean }).current,
+      false,
+      'superseded verification poll does not clobber pollInFlight',
+    );
+
+    // Reset back to idle before status poll supersede scenario
+    const treeResetToPin = renderPage();
+    findAllButtons(treeResetToPin)
+      .find((b) => b.props?.children === 'recoverMethodPin')
+      ?.props.onClick();
+    renderPage();
+    const treeResetToEmail = renderPage();
+    findAllButtons(treeResetToEmail)
+      .find((b) => b.props?.children === 'recoverMethodEmail')
+      ?.props.onClick();
+    renderPage();
+
     let resolvePollA: (val: any) => void;
     const pollAPromise = new Promise((resolve) => {
       resolvePollA = resolve;

@@ -8,7 +8,14 @@ const path = require('path');
 let activeTestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-addon-inventory-db-'));
 Module._load = function (request: string) {
   if (request === 'electron')
-    return { app: { isPackaged: true, getPath: () => activeTestDir, getVersion: () => 'test' } };
+    return {
+      app: { isPackaged: true, getPath: () => activeTestDir, getVersion: () => 'test' },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (s: string) => Buffer.from(s, 'utf8'),
+        decryptString: (b: Buffer) => b.toString('utf8'),
+      },
+    };
   return originalLoad.apply(this, arguments as any);
 };
 
@@ -28,7 +35,13 @@ const {
   restoreBackup,
 } = require('../main/db');
 const { adjustProductStock, listInventoryMovements } = require('../main/services/inventory');
+const { databaseRoutes } = require('../main/routes/database');
+const { resetMasterPin } = require('../main/services/master-pin');
 const {
+  createApp,
+  startServer,
+  seedOwnerUser,
+  api,
   assertOrThrow,
   assertEqualOrThrow,
   getResults,
@@ -671,6 +684,247 @@ async function currencyResetAssertions(): Promise<void> {
   );
 }
 
+async function legacyJsonImportAssertions(): Promise<void> {
+  await closeStore();
+  initDatabase();
+  const db = getDatabase();
+  resetMasterPin('1234');
+  const app = createApp({
+    '/api/db': databaseRoutes,
+    '/api/database': databaseRoutes,
+  });
+  const owner = seedOwnerUser(db);
+  const { baseUrl, server } = await startServer(app);
+  const stamp = now();
+
+  const buildLegacyPayload = (envelope: Record<string, unknown>) => ({
+    ...envelope,
+    data: {
+      settings: [],
+      users: [{ id: owner.userId, name: 'Owner', role: 'owner', is_active: 1 }],
+      categories: [
+        { id: 'cat-legacy', name: 'Coffee', is_active: 1, created_at: stamp, updated_at: stamp },
+      ],
+      products: [
+        {
+          id: 'latte-legacy',
+          category_id: 'cat-legacy',
+          name: 'Latte',
+          price: 250,
+          stock_quantity: 12,
+          is_active: 1,
+          created_at: stamp,
+          updated_at: stamp,
+        },
+      ],
+      addon_groups: [
+        { id: 'milk-legacy', name: 'Milk', is_active: 1, created_at: stamp, updated_at: stamp },
+      ],
+      addons: [
+        {
+          id: 'oat-legacy',
+          addon_group_id: 'milk-legacy',
+          name: 'Oat Milk',
+          price: 40,
+          is_active: 1,
+          created_at: stamp,
+          updated_at: stamp,
+        },
+        {
+          id: 'almond-tracked',
+          addon_group_id: 'milk-legacy',
+          name: 'Almond Milk',
+          price: 50,
+          track_inventory: 1,
+          stock_quantity: 5,
+          low_stock_threshold: 2,
+          is_active: 1,
+          created_at: stamp,
+          updated_at: stamp,
+        },
+      ],
+      orders: [
+        {
+          id: 1,
+          order_number: 'ORD-LEGACY-1',
+          user_id: owner.userId,
+          status: 'completed',
+          subtotal: 290,
+          total: 290,
+          created_at: stamp,
+          updated_at: stamp,
+        },
+      ],
+      order_items: [
+        {
+          id: 1,
+          order_id: 1,
+          product_id: 'latte-legacy',
+          product_name: 'Latte',
+          unit_price: 250,
+          quantity: 1,
+          subtotal: 290,
+          total: 290,
+          status: 'completed',
+          created_at: stamp,
+          updated_at: stamp,
+        },
+      ],
+      order_item_addons: [
+        {
+          id: 1,
+          order_item_id: 1,
+          addon_id: 'oat-legacy',
+          addon_name: 'Oat Milk',
+          price: 40,
+          quantity: 1,
+          created_at: stamp,
+        },
+        {
+          id: 2,
+          order_item_id: 1,
+          addon_id: 'almond-tracked',
+          addon_name: 'Almond Milk',
+          price: 50,
+          quantity: 1,
+          inventory_deducted_quantity: 1,
+          created_at: stamp,
+        },
+      ],
+      inventory_movements: [
+        {
+          id: 1,
+          product_id: 'latte-legacy',
+          quantity_delta: 12,
+          movement_type: 'adjustment',
+          reference_type: 'opening_balance',
+          reference_id: 'latte-legacy',
+          reason: 'Opening count',
+          actor_user_id: owner.userId,
+          stock_after: 12,
+          created_at: stamp,
+        },
+        {
+          id: 2,
+          product_id: null,
+          addon_id: 'almond-tracked',
+          quantity_delta: 5,
+          movement_type: 'adjustment',
+          reference_type: 'opening_balance',
+          reference_id: 'almond-tracked',
+          reason: 'Opening count',
+          actor_user_id: owner.userId,
+          stock_after: 5,
+          created_at: stamp,
+        },
+      ],
+    },
+  });
+
+  try {
+    const v103Res = await api(baseUrl, '/api/database/import', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        master_pin: '1234',
+        overwrite: true,
+        data: buildLegacyPayload({ schemaVersion: 103 }),
+      },
+    });
+    assertEqualOrThrow(
+      v103Res.status,
+      200,
+      'legacy JSON import with schemaVersion: 103 and omitted add-on stock fields succeeds',
+    );
+    const oatV103 = db
+      .prepare(
+        'SELECT track_inventory, stock_quantity, low_stock_threshold FROM addons WHERE id = ?',
+      )
+      .get('oat-legacy') as any;
+    assertEqualOrThrow(
+      Number(oatV103.track_inventory),
+      0,
+      'omitted track_inventory defaults to 0 on v103 import',
+    );
+    assertEqualOrThrow(
+      Number(oatV103.stock_quantity),
+      0,
+      'omitted stock_quantity defaults to 0 on v103 import',
+    );
+    assertEqualOrThrow(
+      Number(oatV103.low_stock_threshold),
+      0,
+      'omitted low_stock_threshold defaults to 0 on v103 import',
+    );
+    const almondV103 = db
+      .prepare(
+        'SELECT track_inventory, stock_quantity, low_stock_threshold FROM addons WHERE id = ?',
+      )
+      .get('almond-tracked') as any;
+    assertEqualOrThrow(
+      Number(almondV103.stock_quantity),
+      5,
+      'mixed-column add-on keeps its stock_quantity',
+    );
+    const lineAddonV103 = db
+      .prepare('SELECT inventory_deducted_quantity FROM order_item_addons WHERE id = 1')
+      .get() as any;
+    assertEqualOrThrow(
+      Number(lineAddonV103.inventory_deducted_quantity),
+      0,
+      'omitted order_item_addons.inventory_deducted_quantity defaults to 0 on v103 import',
+    );
+    assertEqualOrThrow(
+      validateInventoryLedgerDatabase(db),
+      null,
+      'the ledger remains valid after importing a v103 JSON payload',
+    );
+
+    db.exec('DELETE FROM inventory_movements');
+    const unversionedRes = await api(baseUrl, '/api/database/import', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        master_pin: '1234',
+        overwrite: true,
+        data: buildLegacyPayload({}),
+      },
+    });
+    assertEqualOrThrow(
+      unversionedRes.status,
+      200,
+      'legacy JSON import with no schemaVersion field and omitted add-on stock fields succeeds',
+    );
+    const oatUnversioned = db
+      .prepare(
+        'SELECT track_inventory, stock_quantity, low_stock_threshold FROM addons WHERE id = ?',
+      )
+      .get('oat-legacy') as any;
+    assertEqualOrThrow(
+      Number(oatUnversioned.track_inventory),
+      0,
+      'omitted track_inventory defaults to 0 on unversioned import',
+    );
+    assertEqualOrThrow(
+      Number(oatUnversioned.stock_quantity),
+      0,
+      'omitted stock_quantity defaults to 0 on unversioned import',
+    );
+    assertEqualOrThrow(
+      Number(oatUnversioned.low_stock_threshold),
+      0,
+      'omitted low_stock_threshold defaults to 0 on unversioned import',
+    );
+    assertEqualOrThrow(
+      validateInventoryLedgerDatabase(db),
+      null,
+      'the ledger remains valid after importing an unversioned JSON payload',
+    );
+  } finally {
+    server.close();
+  }
+}
+
 const FULL_REGISTRY = MIGRATIONS.map((entry: any) => entry);
 
 function initAtVersion(version: number): any {
@@ -718,6 +972,10 @@ async function main() {
   console.log('─── Currency reset ───');
   await currencyResetAssertions();
   console.log('  ✓ a reset store with add-ons validates and restores');
+
+  console.log('─── Legacy JSON import ───');
+  await legacyJsonImportAssertions();
+  console.log('  ✓ legacy JSON imports with omitted add-on stock fields succeed and validate');
 
   const results = getResults();
   console.log(`\nAdd-on inventory: ${results.passed}/${results.total} checks passed`);

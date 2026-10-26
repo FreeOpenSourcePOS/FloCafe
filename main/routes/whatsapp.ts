@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { asyncHandler } from '../middleware/async-handler';
 import { getDatabase, getSettingValue, upsertSettings } from '../db';
+import { isOfflineMode } from '../services/offline-mode';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import * as whatsapp from '../services/whatsapp';
 import * as QRCode from 'qrcode';
@@ -155,8 +156,71 @@ router.post(
       }),
     );
     if (!result.ok) {
-      const status = result.reason === 'not_connected' || result.reason === 'cooldown' ? 503 : 400;
+      const status =
+        result.reason === 'not_connected' ||
+        result.reason === 'cooldown' ||
+        result.reason === 'offline_mode'
+          ? 503
+          : 400;
       res.status(status).json({ error: result.error, reason: result.reason });
+      return;
+    }
+    res.json({ ok: true, messageId: result.messageId });
+  }),
+);
+
+router.post(
+  '/messages/:messageId/retry',
+  requirePermission('whatsapp.use'),
+  asyncHandler(async (req, res) => {
+    if (isOfflineMode()) {
+      res.status(503).json({
+        error: 'Offline mode is on. Turn it off in Settings to use WhatsApp.',
+        reason: 'offline_mode',
+      });
+      return;
+    }
+    const rawId = Number(req.params.messageId);
+    if (!Number.isInteger(rawId) || rawId <= 0) {
+      res.status(400).json({ error: 'messageId must be a positive integer', reason: 'not_found' });
+      return;
+    }
+    const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    const db = getDatabase();
+    const row = db
+      .prepare('SELECT kind FROM whatsapp_messages WHERE id = ? AND direction = ?')
+      .get(rawId, 'outbound') as { kind: string } | undefined;
+    if (!row) {
+      res.status(404).json({ error: 'Message not found.', reason: 'not_found' });
+      return;
+    }
+    if (row.kind === 'z_report' && !hasPermission(userId, 'reports.view')) {
+      res.status(403).json({
+        error: 'Insufficient permissions',
+        required: 'reports.view',
+        code: 'PERMISSION_DENIED',
+      });
+      return;
+    }
+    const result = await trackHttpRequestWork(
+      req,
+      whatsapp.retryMessage(rawId, {
+        userId: userId || null,
+        signal: getHttpRequestSignal(req),
+      }),
+    );
+    if (!result.ok) {
+      const status =
+        result.reason === 'not_found'
+          ? 404
+          : result.reason === 'not_connected' ||
+              result.reason === 'cooldown' ||
+              result.reason === 'offline_mode'
+            ? 503
+            : 400;
+      res
+        .status(status)
+        .json({ error: result.error, reason: result.reason, messageId: result.messageId });
       return;
     }
     res.json({ ok: true, messageId: result.messageId });
@@ -289,7 +353,12 @@ router.post(
       }),
     );
     if (!result.ok) {
-      const status = result.reason === 'not_connected' || result.reason === 'cooldown' ? 503 : 400;
+      const status =
+        result.reason === 'not_connected' ||
+        result.reason === 'cooldown' ||
+        result.reason === 'offline_mode'
+          ? 503
+          : 400;
       res.status(status).json({ error: result.error, reason: result.reason });
       return;
     }

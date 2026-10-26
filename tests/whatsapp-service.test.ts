@@ -1245,6 +1245,308 @@ async function main(): Promise<void> {
       }
     }
 
+    // 5i. Issue #1344: ACK timeout sweep, startup sweep, late ACK promotion from failed, and idempotent retry
+    {
+      whatsapp.disconnect();
+      await whatsapp.enable('ack-timeout-test');
+      await whatsapp.connectWithQr();
+      eventHandlers.get('connection.update')?.({ connection: 'open' });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      assert(
+        whatsapp.ACK_TIMEOUT_MS === 5 * 60 * 1000,
+        `ACK_TIMEOUT_MS is 5 minutes (got ${whatsapp.ACK_TIMEOUT_MS})`,
+      );
+
+      let extSeq = 0;
+      const prevSendMessage = fakeSocket.sendMessage;
+      fakeSocket.sendMessage = async () => ({
+        key: { id: `ack-timeout-ext-${++extSeq}` },
+        message: { conversation: 'test' },
+      });
+
+      try {
+        // 1. Send a message that receives no server ACK -> stays 'typing' until ACK_TIMEOUT_MS
+        const sentNoAck = await whatsapp.sendMessage({
+          phoneE164: '+12133734253',
+          body: 'Receipt #1344 awaiting ACK',
+          billId: null,
+          customerId: null,
+          kind: 'bill_receipt',
+          userId: 'user-1344',
+        });
+        assert(
+          sentNoAck.ok === true && typeof sentNoAck.messageId === 'number',
+          `sendMessage succeeds before ACK (got ${JSON.stringify(sentNoAck)})`,
+        );
+        const msgId1 = sentNoAck.messageId!;
+        const beforeSweep = db
+          .prepare(
+            'SELECT status, error, external_message_id, typing_at, failed_at FROM whatsapp_messages WHERE id = ?',
+          )
+          .get(msgId1) as {
+          status: string;
+          error: string | null;
+          external_message_id: string | null;
+          typing_at: string | null;
+          failed_at: string | null;
+        };
+        assert(
+          beforeSweep.status === 'typing' &&
+            beforeSweep.external_message_id === 'ack-timeout-ext-1' &&
+            beforeSweep.error === null,
+          `message starts in typing waiting for ACK (got ${JSON.stringify(beforeSweep)})`,
+        );
+
+        // Sweep before timeout does not mark fresh typing row failed
+        const earlySwept = whatsapp.sweepAckTimeouts(Date.now() + 60 * 1000);
+        const afterEarlySweep = db
+          .prepare('SELECT status, error FROM whatsapp_messages WHERE id = ?')
+          .get(msgId1) as { status: string; error: string | null };
+        assert(
+          earlySwept === 0 && afterEarlySweep.status === 'typing',
+          `fresh typing message is not swept before ACK_TIMEOUT_MS (got swept=${earlySwept}, status=${afterEarlySweep.status})`,
+        );
+
+        // Sweep after ACK_TIMEOUT_MS marks the row failed with error='ack_timeout'
+        const sweptCount = whatsapp.sweepAckTimeouts(Date.now() + whatsapp.ACK_TIMEOUT_MS + 5_000);
+        const afterTimeoutSweep = db
+          .prepare(
+            'SELECT status, error, failed_at, external_message_id FROM whatsapp_messages WHERE id = ?',
+          )
+          .get(msgId1) as {
+          status: string;
+          error: string | null;
+          failed_at: string | null;
+          external_message_id: string | null;
+        };
+        assert(
+          sweptCount >= 1 &&
+            afterTimeoutSweep.status === 'failed' &&
+            afterTimeoutSweep.error === 'ack_timeout' &&
+            afterTimeoutSweep.failed_at !== null &&
+            afterTimeoutSweep.external_message_id === 'ack-timeout-ext-1',
+          `stale typing message becomes failed (ack_timeout) after timeout while preserving external_message_id (got ${JSON.stringify(afterTimeoutSweep)})`,
+        );
+
+        // 2. Late ACK for a message already marked failed (ack_timeout) promotes it to sent/delivered and clears error/failed_at
+        eventHandlers.get('messages.update')?.([
+          { key: { id: 'ack-timeout-ext-1' }, update: { status: 2 } },
+        ]);
+        await new Promise((resolve) => setImmediate(resolve));
+        const afterLateSent = db
+          .prepare(
+            'SELECT status, error, failed_at, sent_at, delivered_at FROM whatsapp_messages WHERE id = ?',
+          )
+          .get(msgId1) as {
+          status: string;
+          error: string | null;
+          failed_at: string | null;
+          sent_at: string | null;
+          delivered_at: string | null;
+        };
+        assert(
+          afterLateSent.status === 'sent' &&
+            afterLateSent.error === null &&
+            afterLateSent.failed_at === null &&
+            afterLateSent.sent_at !== null,
+          `late SERVER_ACK (status=2) promotes failed (ack_timeout) message to sent and clears error/failed_at (got ${JSON.stringify(afterLateSent)})`,
+        );
+
+        // Mark failed again to test direct promotion from failed -> delivered (status=3) and out-of-order status=2 non-regression
+        db.prepare(
+          "UPDATE whatsapp_messages SET status = 'failed', error = 'ack_timeout', failed_at = datetime('now'), sent_at = NULL, delivered_at = NULL WHERE id = ?",
+        ).run(msgId1);
+        eventHandlers.get('messages.update')?.([
+          { key: { id: 'ack-timeout-ext-1' }, update: { status: 3 } },
+        ]);
+        await new Promise((resolve) => setImmediate(resolve));
+        const afterLateDelivered = db
+          .prepare(
+            'SELECT status, error, failed_at, sent_at, delivered_at FROM whatsapp_messages WHERE id = ?',
+          )
+          .get(msgId1) as {
+          status: string;
+          error: string | null;
+          failed_at: string | null;
+          sent_at: string | null;
+          delivered_at: string | null;
+        };
+        assert(
+          afterLateDelivered.status === 'delivered' &&
+            afterLateDelivered.error === null &&
+            afterLateDelivered.failed_at === null &&
+            afterLateDelivered.sent_at !== null &&
+            afterLateDelivered.delivered_at !== null,
+          `late delivered ACK (status=3) promotes failed message to delivered and backfills sent_at (got ${JSON.stringify(afterLateDelivered)})`,
+        );
+
+        eventHandlers.get('messages.update')?.([
+          { key: { id: 'ack-timeout-ext-1' }, update: { status: 2 } },
+        ]);
+        await new Promise((resolve) => setImmediate(resolve));
+        const afterOutOfOrderSent = db
+          .prepare('SELECT status FROM whatsapp_messages WHERE id = ?')
+          .get(msgId1) as { status: string };
+        assert(
+          afterOutOfOrderSent.status === 'delivered',
+          `out-of-order status=2 does not regress delivered back to sent (got ${afterOutOfOrderSent.status})`,
+        );
+
+        // 3. Startup sweep: rows stuck in queued/typing from before a restart are swept on initFromDb()
+        whatsapp.disconnect();
+        const staleQueuedInsert = db
+          .prepare(`
+            INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, queued_at)
+            VALUES ('+12133734253', 'outbound', 'bill_receipt', 'queued', 'Stuck queued before restart', datetime('now', '-10 minutes'))
+          `)
+          .run();
+        const staleTypingInsert = db
+          .prepare(`
+            INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, queued_at, typing_at)
+            VALUES ('+12133734253', 'outbound', 'manual_reply', 'typing', 'Stuck typing before restart', datetime('now', '-1 minutes'), datetime('now', '-1 minutes'))
+          `)
+          .run();
+        const staleQueuedId = Number(staleQueuedInsert.lastInsertRowid);
+        const staleTypingId = Number(staleTypingInsert.lastInsertRowid);
+
+        whatsapp.initFromDb();
+        const sweptQueued = db
+          .prepare('SELECT status, error, failed_at FROM whatsapp_messages WHERE id = ?')
+          .get(staleQueuedId) as { status: string; error: string | null; failed_at: string | null };
+        const sweptTyping = db
+          .prepare('SELECT status, error, failed_at FROM whatsapp_messages WHERE id = ?')
+          .get(staleTypingId) as { status: string; error: string | null; failed_at: string | null };
+        assert(
+          sweptQueued.status === 'failed' &&
+            sweptQueued.error === 'ack_timeout' &&
+            sweptQueued.failed_at !== null,
+          `startup initFromDb sweeps pre-restart queued row to failed/ack_timeout (got ${JSON.stringify(sweptQueued)})`,
+        );
+        assert(
+          sweptTyping.status === 'failed' &&
+            sweptTyping.error === 'ack_timeout' &&
+            sweptTyping.failed_at !== null,
+          `startup initFromDb sweeps pre-restart typing row to failed/ack_timeout (got ${JSON.stringify(sweptTyping)})`,
+        );
+
+        // 4. Retry: blocked in Offline mode, honours #1315 safety controls, and sends once in-place without duplicates
+        await whatsapp.enable('retry-test');
+        await whatsapp.connectWithQr();
+        eventHandlers.get('connection.update')?.({ connection: 'open' });
+        await new Promise((resolve) => setImmediate(resolve));
+
+        // 4a. Retry is blocked in Offline mode
+        db.prepare(
+          "INSERT OR REPLACE INTO settings (key, value) VALUES ('offline_mode', 'true')",
+        ).run();
+        const offlineRetry = await whatsapp.retryMessage(staleQueuedId);
+        const offlineSend = await whatsapp.sendMessage({
+          phoneE164: '+12133734253',
+          body: 'Should not send in offline mode',
+          billId: null,
+          customerId: null,
+          kind: 'manual_reply',
+          userId: null,
+        });
+        db.prepare(
+          "INSERT OR REPLACE INTO settings (key, value) VALUES ('offline_mode', 'false')",
+        ).run();
+        assert(
+          offlineRetry.ok === false && offlineRetry.reason === 'offline_mode',
+          `retryMessage is blocked in Offline mode with reason=offline_mode (got ${JSON.stringify(offlineRetry)})`,
+        );
+        assert(
+          offlineSend.ok === false && offlineSend.reason === 'offline_mode',
+          `sendMessage is blocked in Offline mode with reason=offline_mode (got ${JSON.stringify(offlineSend)})`,
+        );
+        const rowStillFailedAfterOffline = db
+          .prepare('SELECT status, error FROM whatsapp_messages WHERE id = ?')
+          .get(staleQueuedId) as { status: string; error: string | null };
+        assert(
+          rowStillFailedAfterOffline.status === 'failed' &&
+            rowStillFailedAfterOffline.error === 'ack_timeout',
+          `blocked offline retry leaves failed row untouched (got ${JSON.stringify(rowStillFailedAfterOffline)})`,
+        );
+
+        // 4b. Retry honours #1315 safety controls (quiet hours for automated messages)
+        const autoFailedInsert = db
+          .prepare(`
+            INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, error, body, created_by_user_id, queued_at, failed_at)
+            VALUES ('+12133734253', 'outbound', 'auto_followup', 'failed', 'ack_timeout', 'Automated follow-up retry', 'rule:winback', datetime('now', '-10 minutes'), datetime('now', '-5 minutes'))
+          `)
+          .run();
+        const autoFailedId = Number(autoFailedInsert.lastInsertRowid);
+        const prevConfig = whatsapp.getAutomationConfig();
+        whatsapp.saveAutomationConfig({
+          ...prevConfig,
+          safety: {
+            ...prevConfig.safety,
+            quietHoursEnabled: true,
+            quietHoursStart: '00:00',
+            quietHoursEnd: '23:59',
+          },
+        });
+        const quietHoursRetry = await whatsapp.retryMessage(autoFailedId);
+        whatsapp.saveAutomationConfig(prevConfig);
+        assert(
+          quietHoursRetry.ok === false && quietHoursRetry.reason === 'quiet_hours',
+          `retryMessage honours #1315 quiet hours for automated messages (got ${JSON.stringify(quietHoursRetry)})`,
+        );
+
+        // 4c. Concurrent retry calls send once in place (no duplicate rows, single socket.sendMessage call)
+        const countBeforeRetry = (
+          db.prepare('SELECT COUNT(*) AS c FROM whatsapp_messages').get() as { c: number }
+        ).c;
+        const extSeqBeforeRetry = extSeq;
+        const [retryRes1, retryRes2] = await Promise.all([
+          whatsapp.retryMessage(staleQueuedId, { userId: 'staff-retry' }),
+          whatsapp.retryMessage(staleQueuedId, { userId: 'staff-retry' }),
+        ]);
+        const countAfterRetry = (
+          db.prepare('SELECT COUNT(*) AS c FROM whatsapp_messages').get() as { c: number }
+        ).c;
+        const retriedRow = db
+          .prepare(
+            'SELECT id, status, error, failed_at, external_message_id FROM whatsapp_messages WHERE id = ?',
+          )
+          .get(staleQueuedId) as {
+          id: number;
+          status: string;
+          error: string | null;
+          failed_at: string | null;
+          external_message_id: string | null;
+        };
+        assert(
+          retryRes1.ok === true &&
+            retryRes2.ok === true &&
+            retryRes1.messageId === staleQueuedId &&
+            retryRes2.messageId === staleQueuedId,
+          `concurrent retryMessage calls resolve to the same existing messageId (got ${JSON.stringify([retryRes1, retryRes2])})`,
+        );
+        assert(
+          countAfterRetry === countBeforeRetry && extSeq - extSeqBeforeRetry === 1,
+          `retryMessage updates row in-place without inserting duplicates and calls socket.sendMessage once (rows delta=${countAfterRetry - countBeforeRetry}, send calls=${extSeq - extSeqBeforeRetry})`,
+        );
+        assert(
+          retriedRow.status === 'typing' &&
+            retriedRow.error === null &&
+            retriedRow.failed_at === null &&
+            retriedRow.external_message_id === `ack-timeout-ext-${extSeq}`,
+          `retried row transitions to typing with cleared error/failed_at and new external_message_id (got ${JSON.stringify(retriedRow)})`,
+        );
+
+        // 4d. Sequential retry after row is already in typing/sent is rejected with not_failed
+        const secondSequentialRetry = await whatsapp.retryMessage(staleQueuedId);
+        assert(
+          secondSequentialRetry.ok === false && secondSequentialRetry.reason === 'not_failed',
+          `retrying a message that is no longer failed returns reason=not_failed (got ${JSON.stringify(secondSequentialRetry)})`,
+        );
+      } finally {
+        fakeSocket.sendMessage = prevSendMessage;
+      }
+    }
+
     whatsapp.disconnect();
     await whatsapp.enable('broadcast-disconnected-check');
     const disconnectedBroadcast = await whatsapp.runBroadcast({

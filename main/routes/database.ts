@@ -177,7 +177,8 @@ router.post(
     const overwrite = Boolean(body?.overwrite);
     const schemaVersionMismatch =
       body?.data && typeof body.data === 'object'
-        ? parseImportSchemaVersion(body.data.schema_version) !== getCurrentSchemaVersion()
+        ? parseImportSchemaVersion(body.data.schema_version ?? body.data.schemaVersion) !==
+          getCurrentSchemaVersion()
         : false;
     return overwrite || schemaVersionMismatch ? requireMasterPin(req, res, next) : next();
   },
@@ -210,7 +211,9 @@ router.post(
           );
           const importBatchId = randomUUID();
           const importTimestamp = now();
-          const importSchemaVersion = parseImportSchemaVersion(data.schema_version);
+          const importSchemaVersion = parseImportSchemaVersion(
+            data.schema_version ?? data.schemaVersion,
+          );
           const hasVersionMismatch = importSchemaVersion !== getCurrentSchemaVersion();
 
           if (hasVersionMismatch) {
@@ -285,13 +288,11 @@ router.post(
               }
             }
             const importAddons = Array.isArray(importData.addons)
-              ? importSchemaVersion !== null && importSchemaVersion < 104
-                ? importData.addons.map((a) =>
-                    a && typeof a === 'object' && !('stock_quantity' in a)
-                      ? { ...a, stock_quantity: 0 }
-                      : a,
-                  )
-                : importData.addons
+              ? importData.addons.map((a) =>
+                  a && typeof a === 'object' && a.stock_quantity === undefined
+                    ? { ...a, stock_quantity: 0 }
+                    : a,
+                )
               : [];
             if (
               Array.isArray(importData.inventory_movements) &&
@@ -451,7 +452,9 @@ router.post(
                 const currentCols = getTableColumns(db, tableName);
                 // Validate and filter column names to prevent SQL injection
                 const importCols =
-                  tableName === 'product_variants'
+                  tableName === 'product_variants' ||
+                  tableName === 'addons' ||
+                  tableName === 'order_item_addons'
                     ? Array.from(
                         new Set(rows.flatMap((row) => Object.keys(row).filter(isSafeIdentifier))),
                       )
@@ -568,9 +571,13 @@ router.post(
                   }
 
                   const rowCols =
-                    tableName === 'product_variants'
-                      ? commonCols.filter((column) =>
-                          Object.prototype.hasOwnProperty.call(row, column),
+                    tableName === 'product_variants' ||
+                    tableName === 'addons' ||
+                    tableName === 'order_item_addons'
+                      ? commonCols.filter(
+                          (column) =>
+                            Object.prototype.hasOwnProperty.call(row, column) &&
+                            row[column] !== undefined,
                         )
                       : commonCols;
                   const rowColumnKey = rowCols.join(', ');

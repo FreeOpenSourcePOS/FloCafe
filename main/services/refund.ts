@@ -11,6 +11,7 @@ import {
   recordOrderAudit,
 } from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
+import { adjustProductStock } from './inventory';
 import {
   getOpenSession,
   NO_CASH_SESSION_ID,
@@ -442,6 +443,37 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     db.prepare(
       "UPDATE order_items SET status = 'refunded', voided_at = ?, updated_at = ? WHERE id = ?",
     ).run(timestamp, timestamp, item.id);
+    const addonDeductions = db
+      .prepare(`
+        SELECT addon_id, addon_name, inventory_deducted_quantity
+        FROM order_item_addons
+        WHERE order_item_id = ? AND inventory_deducted_quantity > 0
+      `)
+      .all(item.id) as {
+      addon_id: string | null;
+      addon_name: string;
+      inventory_deducted_quantity: number;
+    }[];
+    for (const addon of addonDeductions) {
+      const quantity = Number(addon.inventory_deducted_quantity) || 0;
+      const addonId = addon.addon_id ? String(addon.addon_id) : null;
+      if (quantity <= 0 || !addonId) continue;
+      const catalogAddon = db.prepare('SELECT id FROM addons WHERE id = ?').get(addonId) as
+        | { id: string }
+        | undefined;
+      if (!catalogAddon) continue;
+      adjustProductStock(db, {
+        productId: null,
+        addonId: catalogAddon.id,
+        quantityDelta: quantity,
+        movementType: 'cancel_restore',
+        referenceType: 'order_item',
+        referenceId: `${item.id}:${timestamp}`,
+        reason: req.reason || 'Item refunded',
+        actorUserId: req.createdByUserId,
+        createdAt: timestamp,
+      });
+    }
   }
 
   const cashSessionId = getOpenSession(db)?.id ?? NO_CASH_SESSION_ID;

@@ -149,7 +149,7 @@ explicit product decision.
 **Rule:** The initial owner creates and confirms a separate 4 to 6 digit Staff Approval PIN during
 first-run setup. It is stored as a bcrypt hash on the owner user record, independent of the device
 Master PIN. Owners, and within the in-progress window also managers, can refund a bill that has
-already been paid: in full, partially, or for a single item, without restocking inventory. The
+already been paid: in full, partially, or for a single item. The
 refund can be paid back in a different method than the customer used, or issued as store credit.
 
 1. **Selected approver.** Every refund identifies one approver through `approver_id`. `manager_id`
@@ -187,8 +187,12 @@ refund can be paid back in a different method than the customer used, or issued 
    see [role templates and user permissions](#role-templates-and-user-permissions-are-owner-configurable).
    The selected approver must still independently satisfy the owner/manager and time-tier rules
    above — those are fixed context policy, not a permission, regardless of the initiator's grant.
-9. **Inventory is never restored by a refund**, item-level or whole-bill, matching how item voids
-   and cancellations behave.
+9. **Product and supply inventory are never restored by a refund; single-item refunds restore
+   tracked add-on stock.** Whole-bill and partial-amount refunds never restore stock. A single-item
+   refund (`order_item_id`) leaves product stock and recipe supplies untouched, matching how
+   in-progress item voids behave, while restoring the item's recorded add-on stock deductions
+   (`order_item_addons.inventory_deducted_quantity > 0`) to `addons.stock_quantity` via a
+   `cancel_restore` movement in `inventory_movements` when the catalog add-on still exists.
 
 **Amount storage.** `refunds.amount_cents` stores integer minor units for every currency, using
 the factor returned by `getCurrencyMinorUnitFactor()` in `main/countries.ts`, which is ten to the
@@ -206,15 +210,16 @@ surface, while keeping the two things most exposed to misuse deliberately tight:
 refund reaches, and who can approve one.
 
 **Enforced by:** `main/services/refund.ts` (`createRefund`, `resolveRefundApprover`,
-`getRefundableBalance`, `REFUND_ITEM_ELIGIBLE_STATUSES`), `main/routes/refunds.ts`, and the
-first-run setup path in `main/routes/auth.ts`. Every refund also writes a `refund_issued` row to
-`order_audit_log`.
+`getRefundableBalance`, `REFUND_ITEM_ELIGIBLE_STATUSES`), `main/services/inventory.ts`
+(`adjustProductStock`), `main/routes/refunds.ts`, and the first-run setup path in
+`main/routes/auth.ts`. Every refund also writes a `refund_issued` row to `order_audit_log`.
 
 **How to verify:**
 
 ```sh
-npm run test:refunds               # in-progress refund behaviour
+npm run test:refunds                   # in-progress refund behaviour and product-stock non-restoration
 npm run test:refund-completed-orders   # business-day tiers, item eligibility, store credit, audit row
+npm run test:addon-inventory-orders    # post-settlement single-item refund add-on stock restoration
 ```
 
 **Change policy:** the tier boundaries, the approver model, and the accepted cashback limitation are

@@ -270,6 +270,25 @@ async function main() {
       'Missing counter row skips numbers already issued today',
     );
 
+    // An imported number with an oversized suffix is ignored when lifting the counter.
+    setSetting('invoice_number_prefix', 'INV');
+    setSetting('invoice_number_include_period', 'true');
+    setSetting('invoice_number_reset_period', 'daily');
+    db.prepare('DELETE FROM bills').run();
+    issueBill(`INV-${orderToday}-0001`);
+    issueBill(`INV-${orderToday}-99999999999999999999`);
+    db.prepare("DELETE FROM sequences WHERE name = 'bills'").run();
+    assertEqual(
+      generateBillNumber(),
+      `INV-${orderToday}-0002`,
+      'Oversized imported suffix does not lift the counter',
+    );
+    assertEqual(
+      generateBillNumber(),
+      `INV-${orderToday}-0003`,
+      'Counter keeps advancing after an oversized imported suffix',
+    );
+
     // Order numbers: daily series switched to a lifetime counter on the same day.
     setSetting('order_number_prefix', 'ORD');
     setSetting('order_number_include_date', 'true');

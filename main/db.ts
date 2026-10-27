@@ -8762,6 +8762,9 @@ export function invoiceNumberIncludesPeriod(includePeriod: boolean, resetPeriod:
   return includePeriod || resetPeriod !== 'never';
 }
 
+// Longer suffixes are foreign numbers; lifting the counter to them could exhaust its integer range.
+const MAX_COUNTER_DIGITS = 9;
+
 /**
  * Draws the next counter value for `bucket` and formats it as `<head>NNNN`. A candidate that is
  * already issued (settings changed mid-day, a reused prefix, restored or imported rows) lifts the
@@ -8780,6 +8783,7 @@ function allocateUniqueNumber(
     SELECT MAX(CAST(substr(${column}, ?) AS INTEGER)) AS highest
     FROM ${table}
     WHERE ${column} GLOB ? AND substr(${column}, ?) NOT GLOB '*[^0-9]*'
+      AND length(${column}) - ? <= ${MAX_COUNTER_DIGITS}
   `);
   const liftCounter = db.prepare(
     'UPDATE sequences SET current_value = MAX(current_value, ?) WHERE name = ? AND date = ?',
@@ -8788,9 +8792,12 @@ function allocateUniqueNumber(
   for (let attempt = 0; attempt < 3; attempt++) {
     const candidate = head + String(getNextSequence(sequence, bucket)).padStart(4, '0');
     if (!isIssued.get(candidate)) return candidate;
-    const row = highestIssued.get(head.length + 1, `${head}[0-9]*`, head.length + 1) as
-      | { highest: number | null }
-      | undefined;
+    const row = highestIssued.get(
+      head.length + 1,
+      `${head}[0-9]*`,
+      head.length + 1,
+      head.length,
+    ) as { highest: number | null } | undefined;
     liftCounter.run(row?.highest ?? 0, sequence, bucket);
   }
   throw new Error(`Could not allocate a unique ${column}`);

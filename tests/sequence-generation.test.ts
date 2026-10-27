@@ -17,13 +17,17 @@ const os = require('os');
 const path = require('path');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-seq-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
-  if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+  if (request === 'electron')
+    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
   return originalLoad.apply(this, arguments as any);
 };
 
 const {
-  initTestDb, getResults, closeDatabase,
-  assert, assertEqual,
+  initTestDb,
+  getResults,
+  closeDatabase,
+  assert,
+  assertEqual,
 } = require('./helpers/test-setup');
 
 const { generateOrderNumber, generateBillNumber, dateStampInTimezone } = require('../main/db');
@@ -37,7 +41,9 @@ async function main() {
   try {
     // ── Test 1: sequences table has composite primary key ──────────────
     console.log('\n1. Sequences table has composite primary key (name, date)');
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='sequences'").get();
+    const tableInfo = db
+      .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='sequences'")
+      .get();
     const ddl = tableInfo?.sql?.replace(/\s+/g, ' ').trim() || '';
     assert(ddl.includes('PRIMARY KEY (name, date)'), 'Table has PRIMARY KEY (name, date)');
 
@@ -99,18 +105,30 @@ async function main() {
 
     // ── Test 10: Invoice numbers can reset monthly ────────────────────
     console.log('\n10. Bill numbers can reset monthly');
-    db.prepare("UPDATE settings SET value = 'monthly' WHERE key = 'invoice_number_reset_period'").run();
+    db.prepare(
+      "UPDATE settings SET value = 'monthly' WHERE key = 'invoice_number_reset_period'",
+    ).run();
     db.prepare('DELETE FROM sequences WHERE name = ?').run('bills');
     const monthly = generateBillNumber();
-    assertEqual(monthly, `INV-${orderToday.slice(0, 6)}-0001`, 'Monthly bill number uses YYYYMM bucket');
+    assertEqual(
+      monthly,
+      `INV-${orderToday.slice(0, 6)}-0001`,
+      'Monthly bill number uses YYYYMM bucket',
+    );
     const monthlyRow = db.prepare("SELECT date FROM sequences WHERE name = 'bills'").get() as any;
     assertEqual(monthlyRow?.date, orderToday.slice(0, 6), 'Monthly sequence bucket is YYYYMM');
 
     // ── Test 11: Invoice numbers can reset by financial year ───────────
     console.log('\n11. Bill numbers can reset by financial year');
-    db.prepare("UPDATE settings SET value = 'financial_year' WHERE key = 'invoice_number_reset_period'").run();
-    db.prepare("UPDATE settings SET value = '4' WHERE key = 'invoice_financial_year_start_month'").run();
-    db.prepare("UPDATE settings SET value = '1' WHERE key = 'invoice_financial_year_start_day'").run();
+    db.prepare(
+      "UPDATE settings SET value = 'financial_year' WHERE key = 'invoice_number_reset_period'",
+    ).run();
+    db.prepare(
+      "UPDATE settings SET value = '4' WHERE key = 'invoice_financial_year_start_month'",
+    ).run();
+    db.prepare(
+      "UPDATE settings SET value = '1' WHERE key = 'invoice_financial_year_start_day'",
+    ).run();
     db.prepare('DELETE FROM sequences WHERE name = ?').run('bills');
     const parts = orderToday.match(/^(\d{4})(\d{2})(\d{2})$/);
     const year = Number(parts?.[1]);
@@ -119,12 +137,20 @@ async function main() {
     const fyStart = month > 4 || (month === 4 && day >= 1) ? year : year - 1;
     const fySegment = `FY${fyStart}-${String((fyStart + 1) % 100).padStart(2, '0')}`;
     const financialYear = generateBillNumber();
-    assertEqual(financialYear, `INV-${fySegment}-0001`, 'Financial-year bill number uses FY segment');
+    assertEqual(
+      financialYear,
+      `INV-${fySegment}-0001`,
+      'Financial-year bill number uses FY segment',
+    );
 
     // ── Test 12: Invoice numbers can run without resets or period text ─
     console.log('\n12. Bill numbers can run without resets or period text');
-    db.prepare("UPDATE settings SET value = 'never' WHERE key = 'invoice_number_reset_period'").run();
-    db.prepare("UPDATE settings SET value = 'false' WHERE key = 'invoice_number_include_period'").run();
+    db.prepare(
+      "UPDATE settings SET value = 'never' WHERE key = 'invoice_number_reset_period'",
+    ).run();
+    db.prepare(
+      "UPDATE settings SET value = 'false' WHERE key = 'invoice_number_include_period'",
+    ).run();
     db.prepare('DELETE FROM sequences WHERE name = ?').run('bills');
     const noReset = generateBillNumber();
     assertEqual(noReset, 'INV-0001', 'No-reset bill number omits period text when configured');
@@ -134,12 +160,149 @@ async function main() {
     // ── Test 13: A pre-existing prefix saved with a trailing dash is ──
     // ── sanitized so it doesn't double up with the auto separator ─────
     console.log('\n13. Bill number sanitizes a pre-existing "FAC-" prefix (no double dash)');
-    db.prepare("UPDATE settings SET value = 'daily' WHERE key = 'invoice_number_reset_period'").run();
-    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'invoice_number_include_period'").run();
+    db.prepare(
+      "UPDATE settings SET value = 'daily' WHERE key = 'invoice_number_reset_period'",
+    ).run();
+    db.prepare(
+      "UPDATE settings SET value = 'true' WHERE key = 'invoice_number_include_period'",
+    ).run();
     db.prepare("UPDATE settings SET value = 'FAC-' WHERE key = 'invoice_number_prefix'").run();
     db.prepare('DELETE FROM sequences WHERE name = ?').run('bills');
     const facDash = generateBillNumber();
-    assertEqual(facDash, `FAC-${orderToday}-0001`, 'Trailing dash in stored prefix is stripped, not doubled');
+    assertEqual(
+      facDash,
+      `FAC-${orderToday}-0001`,
+      'Trailing dash in stored prefix is stripped, not doubled',
+    );
+
+    // ── Test 14: Daily reset keeps the date even when it is toggled off ─
+    console.log(
+      '\n14. Daily-reset numbers stay unique across a day rollover without prefix or date',
+    );
+    const setSetting = (key: string, value: string) =>
+      db
+        .prepare(
+          'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+        )
+        .run(key, value);
+    setSetting('invoice_number_prefix', '');
+    setSetting('invoice_number_include_period', 'false');
+    setSetting('invoice_number_reset_period', 'daily');
+    setSetting('order_number_prefix', '');
+    setSetting('order_number_include_date', 'false');
+    setSetting('order_number_reset_daily', 'true');
+    db.prepare("DELETE FROM sequences WHERE name IN ('bills', 'orders')").run();
+
+    const RealDate = Date;
+    const dayOne = generateBillNumber();
+    const orderDayOne = generateOrderNumber();
+    const shifted = RealDate.now() + 24 * 60 * 60 * 1000;
+    (globalThis as any).Date = class extends RealDate {
+      constructor(...args: any[]) {
+        super(...(args.length ? (args as [any]) : [shifted]));
+      }
+      static now() {
+        return shifted;
+      }
+    };
+    let dayTwo: string;
+    let orderDayTwo: string;
+    try {
+      dayTwo = generateBillNumber();
+      orderDayTwo = generateOrderNumber();
+    } finally {
+      (globalThis as any).Date = RealDate;
+    }
+    assertEqual(dayOne, `${orderToday}-0001`, 'Day one bill number carries the date');
+    assert(dayTwo !== dayOne, 'Day two bill number differs from day one');
+    assert(/^\d{8}-0001$/.test(dayTwo), 'Day two bill number restarts at 0001 under its own date');
+    assert(orderDayTwo !== orderDayOne, 'Day two order number differs from day one');
+    assert(
+      /^\d{8}-0001$/.test(orderDayTwo),
+      'Day two order number restarts at 0001 under its own date',
+    );
+
+    // ── Test 15: Mid-day setting switches and reused numbers never collide ─
+    console.log('\n15. Already-issued numbers lift the counter instead of failing the sale');
+    const insertOrder = db.prepare('INSERT INTO orders (order_number) VALUES (?)');
+    const anchorOrderId = Number(insertOrder.run('ANCHOR').lastInsertRowid);
+    const insertBill = db.prepare(
+      'INSERT INTO bills (bill_number, order_id, subtotal, total) VALUES (?, ?, 0, 0)',
+    );
+    const issueBill = (n: string) => insertBill.run(n, anchorOrderId);
+
+    // Daily series switched to a lifetime counter on the same day.
+    setSetting('invoice_number_prefix', 'INV');
+    setSetting('invoice_number_include_period', 'true');
+    setSetting('invoice_number_reset_period', 'daily');
+    db.prepare("DELETE FROM sequences WHERE name = 'bills'").run();
+    db.prepare('DELETE FROM bills').run();
+    const issuedToday = [generateBillNumber(), generateBillNumber(), generateBillNumber()];
+    for (const n of issuedToday) issueBill(n);
+    setSetting('invoice_number_reset_period', 'never');
+    const afterSwitch = generateBillNumber();
+    assertEqual(
+      afterSwitch,
+      `INV-${orderToday}-0004`,
+      'Same-day switch to a lifetime counter continues after issued numbers',
+    );
+    issueBill(afterSwitch);
+
+    // Empty prefix and no period (legacy daily numbers 0001..0012) moved to a lifetime counter.
+    setSetting('invoice_number_prefix', '');
+    setSetting('invoice_number_include_period', 'false');
+    db.prepare('DELETE FROM bills').run();
+    for (let i = 1; i <= 12; i++) issueBill(String(i).padStart(4, '0'));
+    db.prepare("DELETE FROM sequences WHERE name = 'bills'").run();
+    assertEqual(generateBillNumber(), '0013', 'Lifetime counter resumes after legacy bare numbers');
+
+    // A stale or missing counter on the same day never reissues a number.
+    setSetting('invoice_number_prefix', 'INV');
+    setSetting('invoice_number_include_period', 'true');
+    setSetting('invoice_number_reset_period', 'daily');
+    db.prepare('DELETE FROM bills').run();
+    issueBill(`INV-${orderToday}-0001`);
+    issueBill(`INV-${orderToday}-0002`);
+    db.prepare("DELETE FROM sequences WHERE name = 'bills'").run();
+    assertEqual(
+      generateBillNumber(),
+      `INV-${orderToday}-0003`,
+      'Missing counter row skips numbers already issued today',
+    );
+
+    // An imported number with an oversized suffix is ignored when lifting the counter.
+    setSetting('invoice_number_prefix', 'INV');
+    setSetting('invoice_number_include_period', 'true');
+    setSetting('invoice_number_reset_period', 'daily');
+    db.prepare('DELETE FROM bills').run();
+    issueBill(`INV-${orderToday}-0001`);
+    issueBill(`INV-${orderToday}-99999999999999999999`);
+    db.prepare("DELETE FROM sequences WHERE name = 'bills'").run();
+    assertEqual(
+      generateBillNumber(),
+      `INV-${orderToday}-0002`,
+      'Oversized imported suffix does not lift the counter',
+    );
+    assertEqual(
+      generateBillNumber(),
+      `INV-${orderToday}-0003`,
+      'Counter keeps advancing after an oversized imported suffix',
+    );
+
+    // Order numbers: daily series switched to a lifetime counter on the same day.
+    setSetting('order_number_prefix', 'ORD');
+    setSetting('order_number_include_date', 'true');
+    setSetting('order_number_reset_daily', 'true');
+    db.prepare("DELETE FROM sequences WHERE name = 'orders'").run();
+    db.prepare('DELETE FROM bills').run();
+    db.prepare('DELETE FROM orders').run();
+    for (let i = 0; i < 3; i++) insertOrder.run(generateOrderNumber());
+    setSetting('order_number_reset_daily', 'false');
+    assertEqual(
+      generateOrderNumber(),
+      `ORD-${orderToday}-0004`,
+      'Order counter continues after issued numbers',
+    );
 
     // ── Summary ───────────────────────────────────────────────────────
     console.log('\n' + '='.repeat(50));

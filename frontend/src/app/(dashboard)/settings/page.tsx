@@ -3649,7 +3649,14 @@ export default function SettingsPage() {
         invoice_financial_year_start_month: orderNumberForm.invoiceFinancialYearStartMonth,
         invoice_financial_year_start_day: orderNumberForm.invoiceFinancialYearStartDay,
       });
-      const saved = { ...orderNumberForm, prefix, invoicePrefix };
+      const saved = {
+        ...orderNumberForm,
+        prefix,
+        invoicePrefix,
+        includeDate: orderNumberForm.includeDate || orderNumberForm.resetDaily,
+        invoiceIncludePeriod:
+          orderNumberForm.invoiceIncludePeriod || orderNumberForm.invoiceResetPeriod !== 'never',
+      };
       setOrderNumberForm(saved);
       setSavedOrderNumberForm(saved);
       if (!silent) toast.success(t('orderNumberingSaved'));

@@ -8752,29 +8752,83 @@ function requireTenantTimezone(): string {
   }).timezone;
 }
 
+/** A series that restarts every day repeats its counter, so the date is what keeps each number unique. */
+export function orderNumberIncludesDate(includeDate: boolean, resetDaily: boolean): boolean {
+  return includeDate || resetDaily;
+}
+
+/** A series that restarts every period repeats its counter, so the period is what keeps each number unique. */
+export function invoiceNumberIncludesPeriod(includePeriod: boolean, resetPeriod: string): boolean {
+  return includePeriod || resetPeriod !== 'never';
+}
+
+/**
+ * Draws the next counter value for `bucket` and formats it as `<head>NNNN`. A candidate that is
+ * already issued (settings changed mid-day, a reused prefix, restored or imported rows) lifts the
+ * counter past the highest number issued under the same head instead of failing the sale.
+ */
+function allocateUniqueNumber(
+  sequence: string,
+  bucket: string,
+  table: 'orders' | 'bills',
+  column: 'order_number' | 'bill_number',
+  headParts: string[],
+): string {
+  const head = headParts.length ? `${headParts.join('-')}-` : '';
+  const isIssued = db.prepare(`SELECT 1 FROM ${table} WHERE ${column} = ?`);
+  const highestIssued = db.prepare(`
+    SELECT MAX(CAST(substr(${column}, ?) AS INTEGER)) AS highest
+    FROM ${table}
+    WHERE ${column} GLOB ? AND substr(${column}, ?) NOT GLOB '*[^0-9]*'
+  `);
+  const liftCounter = db.prepare(
+    'UPDATE sequences SET current_value = MAX(current_value, ?) WHERE name = ? AND date = ?',
+  );
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const candidate = head + String(getNextSequence(sequence, bucket)).padStart(4, '0');
+    if (!isIssued.get(candidate)) return candidate;
+    const row = highestIssued.get(head.length + 1, `${head}[0-9]*`, head.length + 1) as
+      | { highest: number | null }
+      | undefined;
+    liftCounter.run(row?.highest ?? 0, sequence, bucket);
+  }
+  throw new Error(`Could not allocate a unique ${column}`);
+}
+
 export function generateOrderNumber(): string {
   const prefix = sanitizedNumberPrefix(getSettingValue('order_number_prefix'), 'ORD');
-  const includeDate = getSettingValue('order_number_include_date') !== 'false';
   const resetDaily = getSettingValue('order_number_reset_daily') !== 'false';
+  const includeDate = orderNumberIncludesDate(
+    getSettingValue('order_number_include_date') !== 'false',
+    resetDaily,
+  );
   const timezone = requireTenantTimezone();
 
   // Per-day bucket when reset daily, otherwise a single bucket.
-  const bucket = resetDaily ? dateStampInTimezone(timezone) : 'ALL';
-  const next = getNextSequence('orders', bucket);
-
-  const dateSegment = includeDate ? dateStampInTimezone(timezone) : '';
-  return [prefix, dateSegment, String(next).padStart(4, '0')].filter(Boolean).join('-');
+  const dateStamp = dateStampInTimezone(timezone);
+  const bucket = resetDaily ? dateStamp : 'ALL';
+  return allocateUniqueNumber(
+    'orders',
+    bucket,
+    'orders',
+    'order_number',
+    [prefix, includeDate ? dateStamp : ''].filter(Boolean),
+  );
 }
 
 export function generateBillNumber(): string {
   const prefix = sanitizedNumberPrefix(getSettingValue('invoice_number_prefix'), 'INV');
-  const includePeriod = getSettingValue('invoice_number_include_period') !== 'false';
   const configuredPeriod = getSettingValue('invoice_number_reset_period') || 'daily';
   const resetPeriod: InvoiceResetPeriod = ['never', 'daily', 'monthly', 'financial_year'].includes(
     configuredPeriod,
   )
     ? (configuredPeriod as InvoiceResetPeriod)
     : 'daily';
+  const includePeriod = invoiceNumberIncludesPeriod(
+    getSettingValue('invoice_number_include_period') !== 'false',
+    resetPeriod,
+  );
   const timezone = requireTenantTimezone();
   const fyStart = clampFinancialYearStart(
     getSettingValue('invoice_financial_year_start_month'),
@@ -8787,10 +8841,13 @@ export function generateBillNumber(): string {
     fyStart.day,
   );
   const bucket = resetPeriod === 'never' ? 'ALL' : periodSegment;
-  const next = getNextSequence('bills', bucket);
-  return [prefix, includePeriod ? periodSegment : '', String(next).padStart(4, '0')]
-    .filter(Boolean)
-    .join('-');
+  return allocateUniqueNumber(
+    'bills',
+    bucket,
+    'bills',
+    'bill_number',
+    [prefix, includePeriod ? periodSegment : ''].filter(Boolean),
+  );
 }
 
 export function now(): string {

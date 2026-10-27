@@ -112,6 +112,20 @@ After migrations and with `foreign_keys` re-enabled, startup runs:
   non-daily reset periods are tracked dynamically.
 - `autoRepairPaymentDetails` and `autoRepairDefaultPrinter` - the two targeted data repairs.
 
+## Order and bill numbers
+
+`generateOrderNumber` and `generateBillNumber` in `main/db.ts` draw from the `sequences` table
+(`name`, `date` bucket) and format `[prefix-][date-or-period-]NNNN`. `orders.order_number` and
+`bills.bill_number` are `UNIQUE`, so two rules keep every number issuable:
+
+- A series that resets (daily orders; daily, monthly, or financial-year bills) always carries its
+  date or period, whatever the include toggle says; only a non-resetting series may omit it. The
+  `PUT /api/settings/order-numbering` route stores the effective flag, and `GET` reports it, so the
+  settings screen shows the include toggle only for a non-resetting series.
+- A candidate that is already issued (a mid-day setting change, a reused prefix, restored or
+  imported rows) lifts the counter past the highest number issued under the same head instead of
+  failing the sale. The allocation throws only if three attempts cannot find a free number.
+
 ## Backup and restore
 
 | Operation | Entry point | Notes |

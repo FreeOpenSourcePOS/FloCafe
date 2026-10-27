@@ -637,7 +637,7 @@ export function GeneralSettingsTab({
               <Ltr>
                 {[
                   orderNumberForm.prefix,
-                  orderNumberForm.includeDate ? sampleOrderDate : '',
+                  orderNumberForm.includeDate || orderNumberForm.resetDaily ? sampleOrderDate : '',
                   '0001',
                 ]
                   .filter(Boolean)
@@ -648,24 +648,26 @@ export function GeneralSettingsTab({
         </div>
 
         <div className="mt-5 pt-5 border-t border-border space-y-3">
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <span className="text-sm text-foreground">{t('orderNumberIncludeDate')}</span>
-              <p className="text-xs text-muted-foreground">{t('orderNumberIncludeDateHint')}</p>
+          {!orderNumberForm.resetDaily && (
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <span className="text-sm text-foreground">{t('orderNumberIncludeDate')}</span>
+                <p className="text-xs text-muted-foreground">{t('orderNumberIncludeDateHint')}</p>
+              </div>
+              <Toggle
+                value={orderNumberForm.includeDate}
+                label={t('orderNumberIncludeDate')}
+                onChange={
+                  isAdmin
+                    ? (v) => {
+                        markHydrationTouched('includeDate');
+                        setOrderNumberForm((p) => ({ ...p, includeDate: v }));
+                      }
+                    : () => {}
+                }
+              />
             </div>
-            <Toggle
-              value={orderNumberForm.includeDate}
-              label={t('orderNumberIncludeDate')}
-              onChange={
-                isAdmin
-                  ? (v) => {
-                      markHydrationTouched('includeDate');
-                      setOrderNumberForm((p) => ({ ...p, includeDate: v }));
-                    }
-                  : () => {}
-              }
-            />
-          </div>
+          )}
           <div className="flex items-center justify-between py-2">
             <div>
               <span className="text-sm text-foreground">{t('orderNumberResetDaily')}</span>
@@ -722,7 +724,8 @@ export function GeneralSettingsTab({
                 <Ltr>
                   {[
                     orderNumberForm.invoicePrefix,
-                    orderNumberForm.invoiceIncludePeriod
+                    orderNumberForm.invoiceIncludePeriod ||
+                    orderNumberForm.invoiceResetPeriod !== 'never'
                       ? invoicePreviewSegment(
                           orderNumberForm.invoiceResetPeriod,
                           orderNumberForm.invoiceFinancialYearStartMonth,
@@ -809,28 +812,30 @@ export function GeneralSettingsTab({
             )}
           </div>
 
-          <div className="mt-5 pt-5 border-t border-border">
-            <div className="flex items-center justify-between py-2">
-              <div>
-                <span className="text-sm text-foreground">{t('invoiceNumberIncludePeriod')}</span>
-                <p className="text-xs text-muted-foreground">
-                  {t('invoiceNumberIncludePeriodHint')}
-                </p>
+          {orderNumberForm.invoiceResetPeriod === 'never' && (
+            <div className="mt-5 pt-5 border-t border-border">
+              <div className="flex items-center justify-between py-2">
+                <div>
+                  <span className="text-sm text-foreground">{t('invoiceNumberIncludePeriod')}</span>
+                  <p className="text-xs text-muted-foreground">
+                    {t('invoiceNumberIncludePeriodHint')}
+                  </p>
+                </div>
+                <Toggle
+                  value={orderNumberForm.invoiceIncludePeriod}
+                  label={t('invoiceNumberIncludePeriod')}
+                  onChange={
+                    isAdmin
+                      ? (v) => {
+                          markHydrationTouched('invoiceIncludePeriod');
+                          setOrderNumberForm((p) => ({ ...p, invoiceIncludePeriod: v }));
+                        }
+                      : () => {}
+                  }
+                />
               </div>
-              <Toggle
-                value={orderNumberForm.invoiceIncludePeriod}
-                label={t('invoiceNumberIncludePeriod')}
-                onChange={
-                  isAdmin
-                    ? (v) => {
-                        markHydrationTouched('invoiceIncludePeriod');
-                        setOrderNumberForm((p) => ({ ...p, invoiceIncludePeriod: v }));
-                      }
-                    : () => {}
-                }
-              />
             </div>
-          </div>
+          )}
         </div>
       </div>
 

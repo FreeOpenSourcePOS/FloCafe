@@ -1,7 +1,14 @@
 import { Router, Request, Response, RequestHandler } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
-import { getDatabase, getSettingValue, now, parseBackupPaginationQuery } from '../db';
+import {
+  getDatabase,
+  getSettingValue,
+  invoiceNumberIncludesPeriod,
+  now,
+  orderNumberIncludesDate,
+  parseBackupPaginationQuery,
+} from '../db';
 import {
   CloudRequestError,
   cloudSync,
@@ -874,18 +881,26 @@ router.delete(
 
 // ─── Order numbering settings (must come BEFORE /:key wildcard) ─────────────
 
+const INVOICE_RESET_PERIODS = new Set(['never', 'daily', 'monthly', 'financial_year']);
+
 function orderNumberingShape(s: Record<string, string>) {
+  const resetPeriod = INVOICE_RESET_PERIODS.has(s.invoice_number_reset_period)
+    ? s.invoice_number_reset_period
+    : 'daily';
+  const orderResetDaily = s.order_number_reset_daily !== 'false';
   return {
     order_number_prefix: s.order_number_prefix ?? 'ORD',
-    order_number_include_date: s.order_number_include_date !== 'false',
-    order_number_reset_daily: s.order_number_reset_daily !== 'false',
+    order_number_include_date: orderNumberIncludesDate(
+      s.order_number_include_date !== 'false',
+      orderResetDaily,
+    ),
+    order_number_reset_daily: orderResetDaily,
     invoice_number_prefix: s.invoice_number_prefix ?? 'INV',
-    invoice_number_include_period: s.invoice_number_include_period !== 'false',
-    invoice_number_reset_period: ['never', 'daily', 'monthly', 'financial_year'].includes(
-      s.invoice_number_reset_period,
-    )
-      ? s.invoice_number_reset_period
-      : 'daily',
+    invoice_number_include_period: invoiceNumberIncludesPeriod(
+      s.invoice_number_include_period !== 'false',
+      resetPeriod,
+    ),
+    invoice_number_reset_period: resetPeriod,
     invoice_financial_year_start_month: parseBoundedInt(
       s.invoice_financial_year_start_month,
       1,
@@ -898,7 +913,6 @@ function orderNumberingShape(s: Record<string, string>) {
 
 // Alphanumeric only to avoid collisions with automatic hyphen separators.
 const ORDER_NUMBER_PREFIX_PATTERN = /^[A-Za-z0-9]{0,12}$/;
-const INVOICE_RESET_PERIODS = new Set(['never', 'daily', 'monthly', 'financial_year']);
 
 function parseBoundedInt(value: unknown, min: number, max: number, fallback: number): number {
   const parsed = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
@@ -979,16 +993,25 @@ router.put(
       }
 
       const db = getDatabase();
-      upsertSettings(db, {
-        order_number_prefix,
-        order_number_include_date: boolFlag(order_number_include_date),
-        order_number_reset_daily: boolFlag(order_number_reset_daily),
-        invoice_number_prefix,
-        invoice_number_include_period: boolFlag(invoice_number_include_period),
-        invoice_number_reset_period,
-        invoice_financial_year_start_month,
-        invoice_financial_year_start_day,
-      });
+      db.transaction(() => {
+        upsertSettings(db, {
+          order_number_prefix,
+          order_number_include_date: boolFlag(order_number_include_date),
+          order_number_reset_daily: boolFlag(order_number_reset_daily),
+          invoice_number_prefix,
+          invoice_number_include_period: boolFlag(invoice_number_include_period),
+          invoice_number_reset_period,
+          invoice_financial_year_start_month,
+          invoice_financial_year_start_day,
+        });
+        // Persist the effective flags so a series that must carry its date or period never
+        // stores a contradictory "off" that would resurface when the reset option changes.
+        const effective = orderNumberingShape(getAllSettings(db));
+        upsertSettings(db, {
+          order_number_include_date: String(effective.order_number_include_date),
+          invoice_number_include_period: String(effective.invoice_number_include_period),
+        });
+      })();
       res.json(orderNumberingShape(getAllSettings(db)));
     } catch (error: any) {
       console.error('[API] Internal error:', error);

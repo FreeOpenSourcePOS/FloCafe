@@ -33,12 +33,15 @@ import { getCurrencyFractionDigits } from '../countries';
 import { roundCurrencyCost } from '../services/supplies';
 import {
   buildDailySalesExportDataset,
+  DailySalesExportValidationError,
+  resolveDailySalesExportRange,
   type DailySalesCostStatus,
 } from '../services/daily-sales-export';
 import {
   dailySalesExportFilename,
   serializeDailySalesExportCsv,
   serializeDailySalesExportXlsx,
+  type DailySalesExportCsvPart,
 } from '../services/daily-sales-export-files';
 import {
   buildCustomerSalesDataset,
@@ -1466,31 +1469,51 @@ router.post(
   },
 );
 
-// Owner-only daily sales export (xlsx workbook or summary/items CSV pair).
+// Owner-only daily sales export (xlsx workbook or CSV parts across 1..93 business days).
 // Accounting lives in buildDailySalesExportDataset; serializers only encode.
 router.get(
   '/daily-sales/export',
   requirePermission('reports.daily-sales.export'),
   async (req: Request, res: Response) => {
     try {
-      const date = reportDate(req.query.date, reportToday());
+      const range = resolveDailySalesExportRange(
+        {
+          date: req.query.date,
+          from: req.query.from,
+          to: req.query.to,
+          defaultDate: reportToday(),
+        },
+        reportToday(),
+      );
       const format =
         req.query.format === 'csv' ? 'csv' : req.query.format === 'xlsx' ? 'xlsx' : null;
       if (!format) {
         return res.status(400).json({ error: 'format must be xlsx or csv' });
       }
-      const part =
-        req.query.part === 'summary' || req.query.part === 'items' || req.query.part === 'payments'
+      const part: DailySalesExportCsvPart | undefined =
+        req.query.part === 'summary' ||
+        req.query.part === 'daily' ||
+        req.query.part === 'taxes' ||
+        req.query.part === 'items' ||
+        req.query.part === 'payments'
           ? req.query.part
           : undefined;
       if (format === 'csv' && !part) {
-        return res
-          .status(400)
-          .json({ error: 'CSV export requires part=summary, part=items or part=payments' });
+        return res.status(400).json({
+          error:
+            'CSV export requires part=summary, part=daily, part=taxes, part=items or part=payments',
+        });
       }
 
-      const dataset = buildDailySalesExportDataset(date);
-      const filename = dailySalesExportFilename(date, format, part);
+      const dataset = buildDailySalesExportDataset({
+        from: range.fromDate,
+        to: range.toDate,
+      });
+      const filename = dailySalesExportFilename(
+        { fromDate: range.fromDate, toDate: range.toDate },
+        format,
+        part,
+      );
 
       if (format === 'xlsx') {
         const buffer = await serializeDailySalesExportXlsx(dataset, {
@@ -1509,11 +1532,17 @@ router.get(
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       return res.send(csv);
     } catch (error: unknown) {
+      if (error instanceof DailySalesExportValidationError) {
+        return res.status(400).json({ error: error.message });
+      }
       const statusCode =
         typeof error === 'object' && error !== null
           ? (error as { statusCode?: number }).statusCode
           : undefined;
       const message = error instanceof Error ? error.message : 'Internal server error';
+      if (statusCode === 400) {
+        return res.status(400).json({ error: message });
+      }
       if (statusCode === 409) {
         return res.status(409).json({ error: message });
       }

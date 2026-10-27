@@ -287,6 +287,7 @@
     "idlestHour": "Heure la plus calme",
     "minutesValue": "{minutes} min",
     "month": "Mois",
+    "range": "Période",
     "monthOrders": "Commandes du mois",
     "netCollections": "Encaissements nets",
     "newCustomers": "Nouveaux clients",

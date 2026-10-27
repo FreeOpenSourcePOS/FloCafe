@@ -287,6 +287,7 @@
     "idlestHour": "최소 매출 시간",
     "minutesValue": "{minutes}분",
     "month": "월",
+    "range": "기간",
     "monthOrders": "월 주문",
     "netCollections": "순 수금액",
     "newCustomers": "신규 고객",

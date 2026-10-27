@@ -861,30 +861,31 @@ day-boundary rules.
 | `GET`  | `/x-report/export`          | `reports.view` (`ROLE_ACCESS.ownerManager` by default) | query: `?date`, `?format` (required: `csv` or `xlsx`)              | Exports a live X-report snapshot for one business date. Returns `400` with `{ error: "format must be xlsx or csv" }` when `format` is missing or invalid. Sets `Content-Disposition` to `attachment; filename="x-report-<date>.<format>"`.                                                                                                                                                                                                                                                                                  |
 | `GET`  | `/z-report/export`          | `reports.view` (`ROLE_ACCESS.ownerManager` by default) | query: `?date`, `?format` (required: `csv` or `xlsx`)              | Exports the stored Z-report snapshot for a closed business date. Returns `400` with `{ error: "format must be xlsx or csv" }` when `format` is missing or invalid, and `404` with `{ error: "Day not closed" }` when the day has not been closed. Sets `Content-Disposition` to `attachment; filename="z-report-Z<z_number>-<date>.<format>"`.                                                                                                                                                                              |
 | `POST` | `/cash-closes/:id/whatsapp` | `reports.view` + `whatsapp.use`                        | path: `id`; body: `phone_e164`, `body` (non-empty, max 4096 chars) | Sends the submitted report body and returns `{ success: true, messageId }`; when WhatsApp is disconnected, returns `{ fallback: true, reason: "not_connected" }` so the client can open WhatsApp for sharing. Invalid input returns `400`; an unknown day close returns `404`.                                                                                                                                                                                                                                              |
-| `GET`  | `/daily-sales/export`       | `ROLE_ACCESS.owner`                                    | query: `?date`, `?format`, `?part`                                 | See [GET `/api/reports/daily-sales/export`](#get-apireportsdaily-salesexport).                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `GET`  | `/daily-sales/export`       | `ROLE_ACCESS.owner`                                    | query: `?date`, `?from`, `?to`, `?format`, `?part`                 | See [GET `/api/reports/daily-sales/export`](#get-apireportsdaily-salesexport).                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `GET`  | `/customer-sales/export`    | `reports.customer-sales.export` (owner by default)     | query: `?start_date`, `?end_date`, `?format`                       | One row per item sold with customer details, for a business-date range of at most 366 days. `format` is `xlsx` or `csv`; invalid format, reversed range, or oversized range returns `400`. See [customer sales export](daily-sales-export.md#customer-sales-export). |
 
 ### GET `/api/reports/daily-sales/export`
 
-Owner-only daily sales export for one tenant business date. Returns either a single XLSX workbook
-(`Summary`, `Items`, and `Payments` sheets) or one part of a three-file CSV set. Accounting and row
-grouping live entirely in `buildDailySalesExportDataset`; the endpoint only serializes and sets
-headers. See [daily sales export](daily-sales-export.md) for the full reconciliation contract, the
-summary metric field order, and the Items and Payments columns.
+Owner-only daily sales export for one tenant business date (`?date=YYYY-MM-DD`, defaults to the
+current business date) or an inclusive business-date range (`?from=YYYY-MM-DD&to=YYYY-MM-DD`, up to
+93 calendar days). Returns either a single XLSX workbook (`Summary`, `Daily`, `Taxes`, `Items`, and
+`Payments` sheets) or one part of a five-file CSV set (`summary`, `daily`, `taxes`, `items`,
+`payments`). Accounting and row grouping live entirely in `buildDailySalesExportDataset`; the
+endpoint only validates, serializes, and sets headers. See [daily sales export](daily-sales-export.md)
+for the full reconciliation contract, the summary metric field order, and the worksheet/CSV columns.
 
-| Param    | Values                            | Notes                                                                         |
-| -------- | --------------------------------- | ----------------------------------------------------------------------------- |
-| `date`   | `YYYY-MM-DD`                      | Tenant business date; defaults to the current business date.                  |
-| `format` | `xlsx` or `csv`                   | Required. Any other value returns `400`.                                      |
-| `part`   | `summary`, `items`, or `payments` | Required when `format=csv`; ignored for `xlsx`. Missing on CSV returns `400`. |
+| Param    | Values                                                | Notes                                                                                                             |
+| -------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `date`   | `YYYY-MM-DD`                                          | Single tenant business date; defaults to the current business date when `from`/`to` are omitted.                  |
+| `from`   | `YYYY-MM-DD`                                          | Inclusive start business date (must be paired with `to`, cannot be combined with `date`).                         |
+| `to`     | `YYYY-MM-DD`                                          | Inclusive end business date (`from <= to`, at most 93 calendar days inclusive).                                   |
+| `format` | `xlsx` or `csv`                                       | Required. Any other value returns `400`.                                                                          |
+| `part`   | `summary`, `daily`, `taxes`, `items`, or `payments`   | Required when `format=csv`; ignored for `xlsx`. Missing or invalid on CSV returns `400`.                          |
 
-- `format=xlsx` returns `200` with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` and `Content-Disposition: attachment; filename="daily-sales-YYYY-MM-DD.xlsx"`. Money cells are numeric with a currency-fraction-digit number format; the workbook holds no formulas.
-- `format=csv` returns `text/csv` for the requested `part` (`summary` has header `metric,value`; `items` and `payments` use the column headers in [daily sales export](daily-sales-export.md#file-formats)).
+- `format=xlsx` returns `200` with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` and `Content-Disposition: attachment; filename="daily-sales-YYYY-MM-DD.xlsx"` (or `daily-sales-YYYY-MM-DD_to_YYYY-MM-DD.xlsx` for multi-day ranges). Money cells are numeric with a currency-fraction-digit number format; the workbook holds no formulas.
+- `format=csv` returns `text/csv` for the requested `part` (`summary` has header `metric,value`; `daily`, `taxes`, `items`, and `payments` use the column headers in [daily sales export](daily-sales-export.md#file-formats)).
 
-Errors: `400` for an invalid `format` or a CSV without `part`; `401` unauthenticated; `403` non-owner;
-`409` for a concurrent-write conflict; `500` otherwise. CSV cells that would start with `=`, `+`,
-`-`, or `@` and are not numeric are neutralized with a leading quote. The CSV decimal separator is
-always ASCII `.`.
+Errors: `400` for an invalid `format`, a CSV without `part`, mixed `date` and `from`/`to` arguments, an incomplete range, an invalid calendar date, `to < from`, or a range exceeding 93 days; `401` unauthenticated; `403` non-owner; `409` for a concurrent-write conflict; `500` otherwise. CSV cells that would start with `=`, `+`, `-`, or `@` and are not numeric are neutralized with a leading quote. The CSV decimal separator is always ASCII `.`.
 
 ### Inline endpoints (registered outside a router)
 

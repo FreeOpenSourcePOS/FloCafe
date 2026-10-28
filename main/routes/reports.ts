@@ -1211,39 +1211,8 @@ router.get('/insights', requirePermission('reports.view'), (req: Request, res: R
 //   float.
 router.get('/x-report', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
-    const today = reportToday();
-    const date = reportDate(req.query.date, today);
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-    const [periodStart, periodEnd] = reportDayBounds(date);
-
-    const aggregates = computeDayAggregates(db, date);
-
-    const closedRow = db
-      .prepare(
-        `SELECT z_number FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`,
-      )
-      .get(date) as { z_number: number } | undefined;
-
-    // F3: most recent prior closed day for this business date, used by the
-    // modal to prefill the opening float (server-side one-shot query; the
-    // frontend no longer walks back day-by-day).
-    const priorRow = db
-      .prepare(
-        `SELECT business_date, counted_cash_cents FROM cash_closures
-         WHERE business_date < ? AND scope = 'day'
-         ORDER BY business_date DESC LIMIT 1`,
-      )
-      .get(date) as { business_date: string; counted_cash_cents: number } | undefined;
-
-    const blockingSessions = openSessionsBlockingDayClose(db, date);
-    const blockingSession = blockingSessions[0];
-    const openShifts = blockingSessions.map((s) => ({
-      id: s.id,
-      opened_by: s.opened_by,
-      opened_by_name: s.opened_by_name,
-      opened_at: s.opened_at,
-    }));
 
     if (req.query.session_id !== undefined && String(req.query.session_id).trim() !== '') {
       const sessionId = Number(req.query.session_id);
@@ -1270,11 +1239,14 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
         });
       }
       const shiftDate = sessionBusinessDate(db, session);
-      const sessionClosedRow = db
-        .prepare(
-          `SELECT z_number FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`,
-        )
-        .get(shiftDate) as { z_number: number } | undefined;
+      const sessionClosedRow =
+        session.closure_id != null
+          ? (db
+              .prepare(
+                `SELECT z_number FROM cash_closures WHERE id = ? AND scope = 'session' LIMIT 1`,
+              )
+              .get(session.closure_id) as { z_number: number } | undefined)
+          : undefined;
       const sessionPriorRow = db
         .prepare(
           `SELECT business_date, counted_cash_cents FROM cash_closures
@@ -1282,6 +1254,14 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
            ORDER BY business_date DESC LIMIT 1`,
         )
         .get(shiftDate) as { business_date: string; counted_cash_cents: number } | undefined;
+      const sessionBlockingSessions = openSessionsBlockingDayClose(db, shiftDate);
+      const sessionBlocking = sessionBlockingSessions[0];
+      const sessionOpenShifts = sessionBlockingSessions.map((s) => ({
+        id: s.id,
+        opened_by: s.opened_by,
+        opened_by_name: s.opened_by_name,
+        opened_at: s.opened_at,
+      }));
       const sessionEnd = session.closed_at || now();
       const sessionMovements = listCashDrawerMovementsForSession(
         db,
@@ -1334,7 +1314,7 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
           expectedCashCents: totalExpectedCashCents - openingFloatCents,
           priorClosedCashCents: sessionPriorRow?.counted_cash_cents ?? null,
           priorBusinessDate: sessionPriorRow?.business_date ?? null,
-          alreadyClosed: !!sessionClosedRow,
+          alreadyClosed: session.status === 'closed' || !!sessionClosedRow,
           zNumber: sessionClosedRow?.z_number,
           session: {
             id: session.id,
@@ -1343,20 +1323,53 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
             opened_at: session.opened_at,
             closed_at: session.closed_at,
             status: session.status,
+            closure_id: session.closure_id,
             opening_float_cents: openingFloatCents,
             expected_cash_cents: totalExpectedCashCents,
           },
-          openShifts,
-          blockingOpenShift: blockingSession
+          openShifts: sessionOpenShifts,
+          blockingOpenShift: sessionBlocking
             ? {
-                id: blockingSession.id,
-                opened_by_name: blockingSession.opened_by_name,
-                opened_at: blockingSession.opened_at,
+                id: sessionBlocking.id,
+                opened_by_name: sessionBlocking.opened_by_name,
+                opened_at: sessionBlocking.opened_at,
               }
             : null,
         },
       });
     }
+
+    const today = reportToday();
+    const date = reportDate(req.query.date, today);
+    const [periodStart, periodEnd] = reportDayBounds(date);
+
+    const aggregates = computeDayAggregates(db, date);
+
+    const closedRow = db
+      .prepare(
+        `SELECT z_number FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`,
+      )
+      .get(date) as { z_number: number } | undefined;
+
+    // F3: most recent prior closed day for this business date, used by the
+    // modal to prefill the opening float (server-side one-shot query; the
+    // frontend no longer walks back day-by-day).
+    const priorRow = db
+      .prepare(
+        `SELECT business_date, counted_cash_cents FROM cash_closures
+         WHERE business_date < ? AND scope = 'day'
+         ORDER BY business_date DESC LIMIT 1`,
+      )
+      .get(date) as { business_date: string; counted_cash_cents: number } | undefined;
+
+    const blockingSessions = openSessionsBlockingDayClose(db, date);
+    const blockingSession = blockingSessions[0];
+    const openShifts = blockingSessions.map((s) => ({
+      id: s.id,
+      opened_by: s.opened_by,
+      opened_by_name: s.opened_by_name,
+      opened_at: s.opened_at,
+    }));
 
     res.json({
       xReport: {

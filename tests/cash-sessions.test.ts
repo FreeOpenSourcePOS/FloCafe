@@ -2901,6 +2901,26 @@ async function main() {
             closeA.body?.variance_cents === 0,
           '#1339: Cashier A closes Shift A with 9000c (200)',
         );
+        const shiftAClosureRow = db
+          .prepare('SELECT z_number FROM cash_closures WHERE id = ?')
+          .get(closeA.body?.closure_id) as { z_number: number } | undefined;
+        const xShiftAClosed = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-09&session_id=${shiftAId}`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        const xShiftAClosedRep = xShiftAClosed.body?.xReport;
+        assert(
+          xShiftAClosed.status === 200 &&
+            xShiftAClosedRep?.businessDate === '2026-11-10' &&
+            xShiftAClosedRep?.alreadyClosed === true &&
+            xShiftAClosedRep?.zNumber === shiftAClosureRow?.z_number &&
+            xShiftAClosedRep?.session?.status === 'closed' &&
+            Number(xShiftAClosedRep?.session?.closure_id) === Number(closeA.body?.closure_id) &&
+            Array.isArray(xShiftAClosedRep?.openShifts) &&
+            xShiftAClosedRep.openShifts.length === 1 &&
+            Number(xShiftAClosedRep.openShifts[0]?.id) === shiftBId &&
+            Number(xShiftAClosedRep?.blockingOpenShift?.id) === shiftBId,
+          `#1339: closed Shift A X report reports shift-scoped alreadyClosed=true, zNumber=${shiftAClosureRow?.z_number}, and shiftDate openShifts even when day is still open`,
+        );
 
         // Day close is STILL blocked while Shift B remains open
         const dayBlockedOneLeft = await request(app)
@@ -2965,6 +2985,17 @@ async function main() {
             dayZ?.bill_count === 2 &&
             dayZ?.refund_count === 1,
           `#1339: day Z report totals equal Shift A + Shift B (expected_cash=${dayZ?.expected_cash_cents}, net=${dayZ?.net_collected_cents})`,
+        );
+        const xShiftAAfterDayClose = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-10&session_id=${shiftAId}`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        const xShiftAAfterDayCloseRep = xShiftAAfterDayClose.body?.xReport;
+        assert(
+          xShiftAAfterDayClose.status === 200 &&
+            xShiftAAfterDayCloseRep?.alreadyClosed === true &&
+            xShiftAAfterDayCloseRep?.zNumber === shiftAClosureRow?.z_number &&
+            xShiftAAfterDayCloseRep?.zNumber !== dayZ?.z_number,
+          `#1339: after day close, Shift A X report retains Shift A zNumber (${shiftAClosureRow?.z_number}) instead of day zNumber (${dayZ?.z_number})`,
         );
 
         // Turning one_shift_per_staff off now succeeds since <= 1 shift is open

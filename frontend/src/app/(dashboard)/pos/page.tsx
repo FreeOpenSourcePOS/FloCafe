@@ -318,6 +318,19 @@ export default function POSPage() {
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
   const delivery = useSupportTicketStatus(sentTicketId);
   const activeUserId = user?.id == null ? null : String(user.id);
+  const lastActiveUserIdRef = useRef<string | null>(activeUserId);
+  useEffect(() => {
+    if (lastActiveUserIdRef.current === activeUserId) return;
+    lastActiveUserIdRef.current = activeUserId;
+    setCheckoutOverridePin(undefined);
+    setPaymentBill(null);
+    setCheckoutTable(null);
+    setShowPrepaidCheckout(false);
+    setPrepaidModalAttempt(null);
+    cashDrawer.setOpen(false);
+    shift.setOpenModalOpen(false);
+    shift.setCloseModalOpen(false);
+  }, [activeUserId, cashDrawer, shift]);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const prepaidAttemptKeyRef = useRef<string | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);

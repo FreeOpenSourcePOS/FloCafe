@@ -4,7 +4,11 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
-import { usePosSettingsStore, type BillTemplate } from '@/store/pos-settings';
+import {
+  usePosSettingsStore,
+  normalizeAutoLockMinutesValue,
+  type BillTemplate,
+} from '@/store/pos-settings';
 import { useThemeMode, type ThemeMode } from '@/store/theme';
 import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 import { usePosSortPreference } from '@/hooks/usePosSort';
@@ -4271,6 +4275,37 @@ export default function SettingsPage() {
                         );
                       }}
                     />
+                  </div>
+                  <div className="flex items-center justify-between gap-4 pt-2 border-t border-border">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground">{t('autoLockLabel')}</p>
+                      <p className="text-sm text-muted-foreground">{t('autoLockHint')}</p>
+                    </div>
+                    <select
+                      data-testid="setting-auto-lock-minutes"
+                      aria-label={t('autoLockLabel')}
+                      value={String(posSettings.autoLockMinutes)}
+                      disabled={!isAdmin}
+                      onChange={(e) => {
+                        const prev = posSettings.autoLockMinutes;
+                        const next = normalizeAutoLockMinutesValue(e.target.value);
+                        posSettings.setAutoLockMinutes(next);
+                        void api
+                          .put('/settings/auto_lock_minutes', { value: String(next) })
+                          .catch(() => {
+                            posSettings.setAutoLockMinutes(prev);
+                            toast.error(t('saveFailed'));
+                          });
+                      }}
+                      className="w-40 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand bg-card"
+                    >
+                      <option value="0">{t('autoLockOff')}</option>
+                      {([1, 5, 15, 30] as const).map((mins) => (
+                        <option key={mins} value={String(mins)}>
+                          {t('autoLockMinutesOption', { count: mins })}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>

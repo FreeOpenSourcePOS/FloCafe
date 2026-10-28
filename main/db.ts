@@ -7755,6 +7755,25 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 119,
+    name: 'add_auth_audit_log',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS auth_audit_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT,
+          event_type TEXT NOT NULL,
+          outcome TEXT NOT NULL CHECK (outcome IN ('success', 'failure', 'rate_limited')),
+          ip_address TEXT,
+          details_json TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_auth_audit_log_user_created
+          ON auth_audit_log(user_id, created_at, id);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -8884,6 +8903,32 @@ export function recordOrderAudit(
     params.details ? JSON.stringify(params.details) : null,
     now(),
   );
+}
+
+/** Records an authentication event (e.g. PIN sign-in success, failure, or rate-limit lockout). */
+export function recordAuthAudit(
+  dbInstance: ReturnType<typeof getDatabase>,
+  params: {
+    userId: string | null;
+    eventType: string;
+    outcome: 'success' | 'failure' | 'rate_limited';
+    ipAddress?: string | null;
+    details?: Record<string, unknown>;
+  },
+): void {
+  dbInstance
+    .prepare(`
+      INSERT INTO auth_audit_log (user_id, event_type, outcome, ip_address, details_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `)
+    .run(
+      params.userId ?? null,
+      params.eventType,
+      params.outcome,
+      params.ipAddress ?? null,
+      params.details ? JSON.stringify(params.details) : null,
+      now(),
+    );
 }
 
 /** Parse DB timestamp into Date, ensuring space-delimited timestamps parse as UTC. */

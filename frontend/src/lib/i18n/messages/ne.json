@@ -87,7 +87,10 @@
     "signInTitle": "आफ्नो व्यवसाय व्यवस्थापन गर्न साइन इन गर्नुहोस्",
     "signingIn": "साइन इन गर्दै...",
     "storageUnavailable": "तपाईंको सत्र बचत गर्न सकेन। तपाईंको ब्राउजरले भण्डारण (निजी मोड वा असक्षम कुकीहरू) अवरुद्ध गरिरहेको हुन सक्छ।",
-    "yourName": "तपाईंको नाम"
+    "yourName": "तपाईंको नाम",
+    "quickSwitchTitle": "छिटो प्रयोगकर्ता परिवर्तन",
+    "quickSwitchSubtitle": "पिनमार्फत साइन इन गर्न आफ्नो प्रोफाइल छान्नुहोस्",
+    "enterPinFor": "{name} को पिन राख्नुहोस्"
   },
   "backup": {
     "creating": "ब्याकअप सिर्जना गर्दै...",
@@ -1087,7 +1090,7 @@
     "numericKeypad": "संख्यात्मक कीप्याड",
     "tax": "कर",
     "kitchenItemsPendingWarning": "{count, plural, one {भान्सामा अझै # परिकार तयार हुँदैछन्} other {भान्सामा अझै # परिकार तयार हुँदैछन्}}",
-    "kitchenDeliveryOverridePrompt": "भान्साका परिकार अझै पुगेका छैनन्। बिल स्वीकृत गर्न म्यानेजरको PIN हाल्नुहोस्।",
+    "kitchenDeliveryOverridePrompt": "भान्साका परिकार अझै पुगेका छैनन्। बिल स्वीकृत गर्न कर्मचारी स्वीकृति पिन हाल्नुहोस्।",
     "kitchenDeliveryOverrideSuccess": "नपुगेका परिकारका लागि म्यानेजरको स्वीकृति स्वीकार गरियो।",
     "kitchenDeliveryOverrideInvalid": "म्यानेजरको PIN मिलेन। फेरि प्रयास गर्नुहोस्।",
     "waiveCharge": "माफ",
@@ -1200,7 +1203,8 @@
     "dayCloseBlockedByOpenShiftHint": "यो व्यावसायिक दिन बन्द गर्नुअघि खुला सिफ्ट #{id} ({name}) बन्द गर्नुहोस्।",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# खुला अर्डर अर्को सिफ्टमा सर्नेछ} other {# खुला अर्डरहरू अर्को सिफ्टमा सर्नेछन्}}",
     "shiftCloseUnpaidWarningHint": "यी अर्डरहरू अर्को सिफ्टका लागि खुला नै रहन्छन्। यो सिफ्ट बन्द गर्दा यस सिफ्टमा पहिले नै संकलन गरिएका नगद भुक्तानी मात्र मिलान गरिन्छ।",
-    "shiftCloseUnpaidMoreCount": "+थप {count} खुला अर्डरहरू"
+    "shiftCloseUnpaidMoreCount": "+थप {count} खुला अर्डरहरू",
+    "lockTerminal": "टर्मिनल लक गर्नुहोस्"
   },
   "printTest": {
     "amt": "रकम",
@@ -2556,7 +2560,11 @@
     "offlineModeDescription": "इन्टरनेटका सबै वैकल्पिक जडान बन्द गर्छ: क्लाउड सिंक, Google Drive ब्याकअप, WhatsApp, अपडेट जाँच, प्रयोग विश्लेषण र वेबबाट तस्विर आयात। अर्डर, बिलिङ, प्रिन्टिङ र तपाईंको स्थानीय नेटवर्कका उपकरण चलिरहन्छन्।",
     "offlineModeFailed": "अफलाइन मोड परिवर्तन गर्न सकिएन",
     "offlineModeReadFailed": "हालको अफलाइन मोड सेटिङ पढ्न सकिएन।",
-    "offlineModeRetry": "फेरि प्रयास गर्नुहोस्"
+    "offlineModeRetry": "फेरि प्रयास गर्नुहोस्",
+    "autoLockLabel": "निष्क्रिय अटो-लक",
+    "autoLockHint": "निष्क्रिय रहँदा पीओएस टर्मिनल स्वतः लक गर्नुहोस्",
+    "autoLockOff": "बन्द",
+    "autoLockMinutesOption": "{count} मिनेट"
   },
   "setup": {
     "alreadyCompleted": "यस स्थापनामा सेटअप पहिले नै पूरा भइसकेको छ। लगइन गर्न रिडिरेक्ट गर्दै...",
@@ -2673,7 +2681,7 @@
     "newPasswordPlaceholder": "नयाँ पासवर्ड (राख्न खाली छोड्नुहोस्)",
     "noKitchenStations": "कुनै भान्सा स्टेशनहरू उपलब्ध छैनन्",
     "passwordPlaceholder": "पासवर्ड",
-    "pinHint": "प्रबन्धक अनुमोदनका लागि प्रयोग गरिन्छ (अर्डर रद्द गर्ने, आदि)",
+    "pinHint": "छिटो साइन-इन र मालिक/प्रबन्धक स्वीकृतिका लागि प्रयोग गरिन्छ",
     "pinPlaceholderAdd": "PIN (४-६ अंक)",
     "pinPlaceholderEdit": "नयाँ पिन (राख्न खाली छोड्नुहोस्)",
     "pinSet": "✓ PIN सेट",

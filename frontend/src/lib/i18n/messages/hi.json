@@ -87,7 +87,10 @@
     "signInTitle": "अपना व्यवसाय प्रबंधित करने के लिए साइन इन करें",
     "signingIn": "साइन इन किया जा रहा है...",
     "storageUnavailable": "आपका सत्र सहेजा नहीं जा सका। हो सकता है ब्राउज़र स्टोरेज को ब्लॉक कर रहा हो (निजी मोड या कुकीज़ बंद)।",
-    "yourName": "आपका नाम"
+    "yourName": "आपका नाम",
+    "quickSwitchTitle": "त्वरित उपयोगकर्ता बदलें",
+    "quickSwitchSubtitle": "अपने पिन से साइन इन करने के लिए प्रोफ़ाइल चुनें",
+    "enterPinFor": "{name} के लिए पिन दर्ज करें"
   },
   "backup": {
     "creating": "बैकअप बनाया जा रहा है...",
@@ -1087,7 +1090,7 @@
     "numericKeypad": "संख्यात्मक कीपैड",
     "tax": "कर",
     "kitchenItemsPendingWarning": "{count, plural, one {रसोई में अभी # आइटम तैयार हो रहे हैं} other {रसोई में अभी # आइटम तैयार हो रहे हैं}}",
-    "kitchenDeliveryOverridePrompt": "रसोई के आइटम अभी परोसे नहीं गए हैं। बिल की अनुमति देने के लिए मैनेजर PIN दर्ज करें।",
+    "kitchenDeliveryOverridePrompt": "रसोई के आइटम अभी परोसे नहीं गए हैं। बिल की अनुमति देने के लिए कर्मचारी अनुमोदन पिन दर्ज करें।",
     "kitchenDeliveryOverrideSuccess": "अभी तक न परोसे गए आइटम के लिए मैनेजर की अनुमति स्वीकार की गई।",
     "kitchenDeliveryOverrideInvalid": "मैनेजर PIN गलत है। फिर से कोशिश करें।",
     "waiveCharge": "माफ़ करें",
@@ -1200,7 +1203,8 @@
     "dayCloseBlockedByOpenShiftHint": "इस व्यावसायिक दिन को बंद करने से पहले खुली शिफ्ट #{id} ({name}) को बंद करें।",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# खुला ऑर्डर अगली शिफ्ट में आगे जाएगा} other {# खुले ऑर्डर अगली शिफ्ट में आगे जाएंगे}}",
     "shiftCloseUnpaidWarningHint": "ये ऑर्डर अगली शिफ्ट के लिए खुले रहते हैं। इस शिफ्ट को बंद करने पर केवल इस शिफ्ट के दौरान पहले से प्राप्त नकद भुगतानों का मिलान होता है।",
-    "shiftCloseUnpaidMoreCount": "+{count} और खुले ऑर्डर"
+    "shiftCloseUnpaidMoreCount": "+{count} और खुले ऑर्डर",
+    "lockTerminal": "टर्मिनल लॉक करें"
   },
   "printTest": {
     "amt": "राशि",
@@ -2556,7 +2560,11 @@
     "offlineModeDescription": "इंटरनेट के सभी वैकल्पिक कनेक्शन बंद कर देता है: क्लाउड सिंक, Google Drive बैकअप, WhatsApp, अपडेट जाँच, उपयोग विश्लेषण और वेब से छवि आयात। ऑर्डर, बिलिंग, प्रिंटिंग और आपके लोकल नेटवर्क के डिवाइस चलते रहते हैं।",
     "offlineModeFailed": "ऑफ़लाइन मोड बदला नहीं जा सका",
     "offlineModeReadFailed": "वर्तमान ऑफ़लाइन मोड सेटिंग पढ़ी नहीं जा सकी।",
-    "offlineModeRetry": "फिर कोशिश करें"
+    "offlineModeRetry": "फिर कोशिश करें",
+    "autoLockLabel": "निष्क्रिय ऑटो-लॉक",
+    "autoLockHint": "निष्क्रिय रहने पर पीओएस टर्मिनल को स्वतः लॉक करें",
+    "autoLockOff": "बंद",
+    "autoLockMinutesOption": "{count} मिनट"
   },
   "setup": {
     "alreadyCompleted": "इस इंस्टाल पर सेटअप पहले ही पूरा हो चुका है. लॉगिन करने के लिए पुनः निर्देशित किया जा रहा है...",
@@ -2673,7 +2681,7 @@
     "newPasswordPlaceholder": "नया पासवर्ड (रखने के लिए खाली छोड़ें)",
     "noKitchenStations": "कोई रसोई स्टेशन उपलब्ध नहीं है",
     "passwordPlaceholder": "पासवर्ड",
-    "pinHint": "प्रबंधक अनुमोदन (आदेश रद्द करना, आदि) के लिए उपयोग किया जाता है",
+    "pinHint": "त्वरित साइन-इन और मालिक/प्रबंधक अनुमोदन के लिए उपयोग किया जाता है",
     "pinPlaceholderAdd": "पिन (4-6 अंक)",
     "pinPlaceholderEdit": "नया पिन (रखने के लिए खाली छोड़ें)",
     "pinSet": "✓ पिन सेट",

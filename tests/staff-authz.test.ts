@@ -181,7 +181,8 @@ async function main() {
   result = await request(app).post('/api/staff').set(managerAuth).send({
     name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '1234',
   });
-  assertEqual(result.status, 400, 'operational roles reject a non-empty PIN');
+  assertEqual(result.status, 201, 'operational roles accept a valid 4-6 digit PIN');
+  assertEqual(result.body.staff.has_pin, 1, 'operational staff created with PIN report has_pin = 1');
 
   console.log('\n── PIN policy ─────────────────────────────────────────────────');
   for (const pin of ['abcd', '123', '1234567']) {
@@ -193,9 +194,15 @@ async function main() {
 
   result = await request(app).put('/api/staff/manager-target-145').set(ownerAuth).send({ role: 'server' });
   assertEqual(result.status, 200, 'owner can demote a manager to server');
-  assertEqual(result.body.staff.has_pin, 0, 'demoting to an operational role clears has_pin');
+  assertEqual(result.body.staff.has_pin, 1, 'demoting to an operational role preserves sign-in PIN');
   const demoted = db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-target-145') as any;
-  assertEqual(demoted.pin_hash, null, 'demoting to an operational role clears pin_hash');
+  assert(Boolean(demoted.pin_hash), 'demoting to an operational role preserves pin_hash for quick switch');
+  const approversAfterDemotion = await request(app).get('/api/staff/approvers').set(ownerAuth);
+  assertEqual(
+    approversAfterDemotion.body.approvers.some((a: any) => a.id === 'manager-target-145' || a.email === 'pinned-cashier@test.local'),
+    false,
+    'operational roles with a PIN are excluded from /api/staff/approvers',
+  );
 
   const originalPinHash = (db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-145') as any).pin_hash;
   result = await request(app).put('/api/staff/manager-145').set(ownerAuth).send({ name: 'Manager PIN preserved' });

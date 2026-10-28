@@ -167,12 +167,22 @@ export default function CartPanel({
 }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
-  const { currentTenant } = useAuthStore();
+  const { user, currentTenant } = useAuthStore();
   const canOverridePrice = tenantCan(currentTenant, 'orders.item.price_override');
-  const [priceOverrideItemId, setPriceOverrideItemId] = useState<string | null>(null);
-  const priceOverrideTarget = priceOverrideItemId
-    ? cart.items.find((i) => i.id === priceOverrideItemId)
-    : undefined;
+  const [priceOverrideState, setPriceOverrideState] = useState<{
+    userId: string | number | undefined;
+    itemId: string;
+  } | null>(null);
+  const priceOverrideItemId =
+    canOverridePrice && priceOverrideState && priceOverrideState.userId === user?.id
+      ? priceOverrideState.itemId
+      : null;
+  const setPriceOverrideItemId = (itemId: string | null) =>
+    setPriceOverrideState(itemId ? { userId: user?.id, itemId } : null);
+  const priceOverrideTarget =
+    canOverridePrice && priceOverrideItemId
+      ? cart.items.find((i) => i.id === priceOverrideItemId)
+      : undefined;
   const priceOverrideOpen = Boolean(priceOverrideTarget);
   useEffect(() => {
     onModalOpenChange?.(priceOverrideOpen);

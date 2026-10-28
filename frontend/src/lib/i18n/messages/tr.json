@@ -87,7 +87,10 @@
     "signInTitle": "Giriş Yap",
     "signingIn": "Giriş yapılıyor...",
     "storageUnavailable": "Yerel depolama alanı kullanılamıyor.",
-    "yourName": "Adınız"
+    "yourName": "Adınız",
+    "quickSwitchTitle": "Hızlı Kullanıcı Değiştir",
+    "quickSwitchSubtitle": "PIN ile giriş yapmak için profilinizi seçin",
+    "enterPinFor": "{name} için PIN girin"
   },
   "backup": {
     "creating": "Yedekleme oluşturuluyor...",
@@ -1087,7 +1090,7 @@
     "numericKeypad": "Sayısal Tuş Takımı",
     "tax": "Vergi",
     "kitchenItemsPendingWarning": "{count, plural, one {Mutfakta hâlâ hazırlanan # ürün var} other {Mutfakta hâlâ hazırlanan # ürün var}}",
-    "kitchenDeliveryOverridePrompt": "Mutfak ürünleri henüz teslim edilmedi. Ödemeye izin vermek için yönetici PIN kodunu girin.",
+    "kitchenDeliveryOverridePrompt": "Mutfak ürünleri henüz teslim edilmedi. Ödemeye izin vermek için Personel Onay PIN'i girin.",
     "kitchenDeliveryOverrideSuccess": "Teslim edilmemiş ürünler için yönetici onayı kabul edildi.",
     "kitchenDeliveryOverrideInvalid": "Yönetici PIN kodu geçersiz. Tekrar deneyin.",
     "waiveCharge": "Muaf tut",
@@ -1200,7 +1203,8 @@
     "dayCloseBlockedByOpenShiftHint": "Bu iş gününü kapatmadan önce açık vardiya #{id} ({name}) kaydını kapatın.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# açık sipariş sonraki vardiyaya devredilecek} other {# açık sipariş sonraki vardiyaya devredilecek}}",
     "shiftCloseUnpaidWarningHint": "Bu siparişler bir sonraki vardiya için açık kalır. Bu vardiyayı kapatmak yalnızca bu vardiya sırasında tahsil edilmiş nakit ödemeleri mutabakatlandırır.",
-    "shiftCloseUnpaidMoreCount": "+{count} açık sipariş daha"
+    "shiftCloseUnpaidMoreCount": "+{count} açık sipariş daha",
+    "lockTerminal": "Terminali Kilitle"
   },
   "printTest": {
     "amt": "Tutar",
@@ -2556,7 +2560,11 @@
     "offlineModeDescription": "Tüm isteğe bağlı internet bağlantılarını kapatır: bulut eşitleme, Google Drive yedekleri, WhatsApp, güncelleme denetimi, kullanım analizi ve web'den görsel içe aktarma. Siparişler, faturalama, yazdırma ve yerel ağınızdaki cihazlar çalışmaya devam eder.",
     "offlineModeFailed": "Çevrimdışı mod değiştirilemedi",
     "offlineModeReadFailed": "Geçerli çevrimdışı mod ayarı okunamadı.",
-    "offlineModeRetry": "Yeniden dene"
+    "offlineModeRetry": "Yeniden dene",
+    "autoLockLabel": "Boşta Otomatik Kilitleme",
+    "autoLockHint": "Hareketsizlik sonrasında POS terminalini otomatik kilitle",
+    "autoLockOff": "Kapalı",
+    "autoLockMinutesOption": "{count} dk."
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",
@@ -2673,7 +2681,7 @@
     "newPasswordPlaceholder": "Yeni Şifre (değiştirmemek için boş bırakın)",
     "noKitchenStations": "Kullanılabilir mutfak istasyonu yok",
     "passwordPlaceholder": "Şifre",
-    "pinHint": "Hızlı POS ve KDS girişi için 4 haneli PIN kodu",
+    "pinHint": "Hızlı giriş ve işletme sahibi/müdür onayları için kullanılır",
     "pinPlaceholderAdd": "PIN (4-6 basamak)",
     "pinPlaceholderEdit": "Yeni PIN (değiştirmemek için boş bırakın)",
     "pinSet": "✓ PIN ayarlandı",

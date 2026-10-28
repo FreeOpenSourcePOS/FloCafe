@@ -3,6 +3,7 @@ import api from '@/lib/api';
 import type { User, Tenant } from '@/lib/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { THEME_REHYDRATION_EVENT } from './theme';
+import { notifySessionBoundary } from './session-events';
 // Keep registry import relative for auth tests running without alias resolver.
 import { isLanguage, type Language } from '../lib/i18n/languages';
 import { syncPrintPoliciesAtBootstrap } from '../lib/print-policy-bootstrap';
@@ -26,10 +27,13 @@ interface AuthState {
   tenants: Tenant[];
   currentTenant: Tenant | null;
   loading: boolean;
+  isLocked: boolean;
   /** Locale bundles that could not be warmed during auth/bootstrap. */
   printLanguageLoadErrors: Language[];
 
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  pinLogin: (userId: string, pin: string, rememberMe?: boolean) => Promise<void>;
+  lock: () => Promise<void>;
   selectTenant: (tenantId: number) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => Promise<void>;
@@ -69,6 +73,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   tenants: [],
   currentTenant: null,
   loading: true,
+  isLocked: false,
   printLanguageLoadErrors: [],
 
   login: async (email: string, password: string, rememberMe = false) => {
@@ -84,13 +89,61 @@ export const useAuthStore = create<AuthState>((set) => ({
       ? await syncPrintPoliciesAtBootstrap(currentTenant, usePosSettingsStore, () => operation === authOperation)
       : [];
     if (operation !== authOperation) return;
+    notifySessionBoundary('login');
     set({
       user: data.user,
       token: data.access_token,
       tenants,
       currentTenant,
+      isLocked: false,
       printLanguageLoadErrors: failedLanguages,
     });
+  },
+
+  pinLogin: async (userId: string, pin: string, rememberMe = false) => {
+    const operation = ++authOperation;
+    clearBillTemplateProvenance();
+    const { data } = await api.post('/auth/pin-login', { user_id: userId, pin, rememberMe });
+    if (operation !== authOperation) return;
+    const tenants: Tenant[] = data.tenants;
+    const currentTenant = tenants.length === 1 ? tenants[0] : null;
+    persistSession(data.access_token, currentTenant);
+    syncTenantLanguage(currentTenant);
+    const failedLanguages = currentTenant
+      ? await syncPrintPoliciesAtBootstrap(currentTenant, usePosSettingsStore, () => operation === authOperation)
+      : [];
+    if (operation !== authOperation) return;
+    notifySessionBoundary('pin-login');
+    set({
+      user: data.user,
+      token: data.access_token,
+      tenants,
+      currentTenant,
+      isLocked: false,
+      printLanguageLoadErrors: failedLanguages,
+    });
+  },
+
+  lock: async () => {
+    ++authOperation;
+    clearBillTemplateProvenance();
+    notifySessionBoundary('lock');
+    const logoutPromise = api.post('/auth/logout').catch(() => {});
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('tenant');
+    } catch {
+      // Ignore storage removal errors during lock.
+    }
+    set({
+      user: null,
+      token: null,
+      tenants: [],
+      currentTenant: null,
+      isLocked: true,
+      printLanguageLoadErrors: [],
+    });
+    await logoutPromise;
   },
 
   selectTenant: async (tenantId: number) => {
@@ -112,10 +165,18 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     ++authOperation;
     clearBillTemplateProvenance();
+    notifySessionBoundary('logout');
     api.post('/auth/logout').catch(() => {});
     localStorage.removeItem('token');
     localStorage.removeItem('tenant');
-    set({ user: null, token: null, tenants: [], currentTenant: null, printLanguageLoadErrors: [] });
+    set({
+      user: null,
+      token: null,
+      tenants: [],
+      currentTenant: null,
+      isLocked: false,
+      printLanguageLoadErrors: [],
+    });
   },
 
   updateCurrentTenant: (updates) => {
@@ -129,11 +190,15 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   refreshAuthContext: async () => {
     const state = useAuthStore.getState();
-    if (!state.token) return;
+    const tokenAtStart = state.token;
+    if (!tokenAtStart) return;
+    const operation = authOperation;
     const { data } = await api.get('/auth/me');
+    if (operation !== authOperation || useAuthStore.getState().token !== tokenAtStart) return;
+    const latestState = useAuthStore.getState();
     const tenants: Tenant[] = data.tenants || [];
-    const currentTenant = state.currentTenant
-      ? tenants.find((tenant) => tenant.id === state.currentTenant?.id) ?? null
+    const currentTenant = latestState.currentTenant
+      ? tenants.find((tenant) => tenant.id === latestState.currentTenant?.id) ?? null
       : (tenants.length === 1 ? tenants[0] : null);
     if (currentTenant) localStorage.setItem('tenant', JSON.stringify(currentTenant));
     set({ user: data.user, tenants, currentTenant });

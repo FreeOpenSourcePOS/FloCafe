@@ -392,7 +392,6 @@ export default function StaffPage() {
                   setForm({
                     ...form,
                     role,
-                    pin: hasRole(role, ROLE_ACCESS.ownerManager) ? form.pin : '',
                     station_ids: role === 'chef' ? form.station_ids : [],
                   });
                 }}
@@ -447,34 +446,32 @@ export default function StaffPage() {
                   </p>
                 </div>
               )}
-              {hasRole(form.role, ROLE_ACCESS.ownerManager) && (
-                <div>
-                  <div className="relative">
-                    <input
-                      type={showPin ? 'text' : 'password'}
-                      placeholder={editingStaff ? t('pinPlaceholderEdit') : t('pinPlaceholderAdd')}
-                      value={form.pin}
-                      onChange={(e) =>
-                        setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })
-                      }
-                      className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                      maxLength={6}
-                      pattern="[0-9]*"
-                      inputMode="numeric"
-                    />
-                    <button
-                      type="button"
-                      aria-label="Toggle PIN visibility"
-                      title="Toggle PIN visibility"
-                      onClick={() => setShowPin(!showPin)}
-                      className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">{t('pinHint')}</p>
+              <div>
+                <div className="relative">
+                  <input
+                    type={showPin ? 'text' : 'password'}
+                    placeholder={editingStaff ? t('pinPlaceholderEdit') : t('pinPlaceholderAdd')}
+                    value={form.pin}
+                    onChange={(e) =>
+                      setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })
+                    }
+                    className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                    maxLength={6}
+                    pattern="[0-9]*"
+                    inputMode="numeric"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Toggle PIN visibility"
+                    title="Toggle PIN visibility"
+                    onClick={() => setShowPin(!showPin)}
+                    className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
-              )}
+                <p className="text-xs text-muted-foreground mt-1">{t('pinHint')}</p>
+              </div>
               <Button type="submit" className="w-full">
                 {editingStaff ? t('updateButton') : t('addButton')}
               </Button>

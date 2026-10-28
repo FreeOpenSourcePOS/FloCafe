@@ -87,7 +87,10 @@
     "signInTitle": "سجّل الدخول لإدارة أعمالك",
     "signingIn": "جاري تسجيل الدخول...",
     "storageUnavailable": "تعذر حفظ جلستك. ربما يقوم متصفحك بحظر التخزين (في الوضع الخاص أو بسبب تعطيل ملفات تعريف الارتباط).",
-    "yourName": "اسمك"
+    "yourName": "اسمك",
+    "quickSwitchTitle": "تبديل سريع للمستخدم",
+    "quickSwitchSubtitle": "اختر ملفك الشخصي لتسجيل الدخول برمز PIN",
+    "enterPinFor": "أدخل رمز PIN لـ {name}"
   },
   "backup": {
     "creating": "جاري إنشاء نسخة احتياطية...",
@@ -1087,7 +1090,7 @@
     "numericKeypad": "لوحة الأرقام",
     "tax": "الضرائب",
     "kitchenItemsPendingWarning": "{count, plural, one {# صنفًا ما زال قيد التحضير في المطبخ} other {# صنفًا ما زال قيد التحضير في المطبخ}}",
-    "kitchenDeliveryOverridePrompt": "لم تُسلَّم أصناف المطبخ بعد. أدخل الرقم السري للمدير للسماح بالفوترة.",
+    "kitchenDeliveryOverridePrompt": "لم تُسلَّم أصناف المطبخ بعد. أدخل رقم التعريف الشخصي (PIN) الخاص بالموظفين للسماح بالفوترة.",
     "kitchenDeliveryOverrideSuccess": "تم قبول تجاوز المدير للأصناف غير المسلّمة.",
     "kitchenDeliveryOverrideInvalid": "الرقم السري للمدير غير صحيح. حاول مرة أخرى.",
     "waiveCharge": "إعفاء",
@@ -1200,7 +1203,8 @@
     "dayCloseBlockedByOpenShiftHint": "أغلق الوردية المفتوحة #{id} ({name}) قبل إغلاق يوم العمل هذا.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {سيتم ترحيل طلب مفتوح واحد (#)} other {سيتم ترحيل # طلبات مفتوحة}}",
     "shiftCloseUnpaidWarningHint": "تظل هذه الطلبات مفتوحة للوردية التالية. إغلاق هذه الوردية يطابق فقط المدفوعات النقدية التي تم تحصيلها بالفعل خلال هذه الوردية.",
-    "shiftCloseUnpaidMoreCount": "+{count} طلبات مفتوحة أخرى"
+    "shiftCloseUnpaidMoreCount": "+{count} طلبات مفتوحة أخرى",
+    "lockTerminal": "قفل نقطة البيع"
   },
   "printTest": {
     "amt": "المبلغ",
@@ -2556,7 +2560,11 @@
     "offlineModeDescription": "يوقف كل اتصال اختياري بالإنترنت: المزامنة السحابية، النسخ الاحتياطي على Google Drive، واتساب، التحقق من التحديثات، تحليلات الاستخدام واستيراد الصور من الويب. تستمر الطلبات والفواتير والطباعة والأجهزة على شبكتك المحلية في العمل.",
     "offlineModeFailed": "تعذر تغيير وضع عدم الاتصال",
     "offlineModeReadFailed": "تعذرت قراءة إعداد وضع عدم الاتصال الحالي.",
-    "offlineModeRetry": "إعادة المحاولة"
+    "offlineModeRetry": "إعادة المحاولة",
+    "autoLockLabel": "القفل التلقائي عند الخمول",
+    "autoLockHint": "قفل شاشة نقطة البيع تلقائياً بعد فترة من عدم النشاط",
+    "autoLockOff": "إيقاف",
+    "autoLockMinutesOption": "{count} دقائق"
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",
@@ -2673,7 +2681,7 @@
     "newPasswordPlaceholder": "كلمة مرور جديدة (اترك الحقل فارغًا للاحتفاظ بالكلمة الحالية)",
     "noKitchenStations": "لا توجد محطات مطبخ متاحة",
     "passwordPlaceholder": "كلمة المرور",
-    "pinHint": "يُستخدم للموافقات الإدارية (إلغاء الطلبات، وما إلى ذلك)",
+    "pinHint": "يُستخدم لتسجيل الدخول السريع وموافقات المالك أو المدير",
     "pinPlaceholderAdd": "رقم التعريف الشخصي (4-6 أرقام)",
     "pinPlaceholderEdit": "رقم التعريف الشخصي الجديد (اترك الحقل فارغًا للاحتفاظ بالرقم الحالي)",
     "pinSet": "✓ تم تعيين رقم التعريف الشخصي (PIN)",

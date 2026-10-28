@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem, ProductVariant } from '@/lib/types';
 import { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 import { cartLineUnitPrice, normalizeOverridePrice } from '@/lib/cart-price';
+import { onSessionBoundary } from './session-events';
 
 export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 
@@ -46,6 +47,7 @@ interface CartState {
     cartItemId: string,
     override: { price: number; reason: string } | null,
   ) => void;
+  clearPriceOverrides: () => void;
   updateQuantity: (cartItemId: string, quantity: number) => void;
   clearCart: () => void;
   loadItems: (
@@ -234,6 +236,33 @@ export const useCartStore = create<CartState>((set, get) => ({
     });
   },
 
+  clearPriceOverrides: () => {
+    const items = get().items;
+    const hasOverrides = items.some((i) => Boolean(i.price_override));
+    const hasWaivers = get().waivedChargeIds.size > 0;
+    if (!hasOverrides && !hasWaivers) return;
+    const merged: CartItem[] = [];
+    for (const item of items) {
+      const cleanId = generateCartItemId(
+        item.product.id,
+        item.variant?.id ?? null,
+        item.addons,
+        item.special_instructions,
+        null,
+      );
+      const existing = merged.find((m) => m.id === cleanId);
+      if (existing) {
+        existing.quantity += item.quantity;
+      } else {
+        merged.push({ ...item, id: cleanId, price_override: null });
+      }
+    }
+    set({
+      items: merged,
+      waivedChargeIds: new Set<string>(),
+    });
+  },
+
   updateQuantity: (cartItemId, quantity) => {
     if (quantity <= 0) {
       get().removeItem(cartItemId);
@@ -347,3 +376,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     return get().items.reduce((sum, item) => sum + item.quantity, 0);
   },
 }));
+
+onSessionBoundary(() => {
+  useCartStore.getState().clearPriceOverrides();
+});

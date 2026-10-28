@@ -87,7 +87,10 @@
     "signInTitle": "Entre para gerenciar sua empresa",
     "signingIn": "Entrando...",
     "storageUnavailable": "Não foi possível salvar sua sessão. Seu navegador pode estar bloqueando o armazenamento (modo anônimo ou cookies desativados).",
-    "yourName": "Seu Nome"
+    "yourName": "Seu Nome",
+    "quickSwitchTitle": "Troca rápida",
+    "quickSwitchSubtitle": "Selecione seu perfil para entrar com seu PIN",
+    "enterPinFor": "Insira o PIN de {name}"
   },
   "backup": {
     "creating": "Criando backup...",
@@ -1089,9 +1092,9 @@
     "backspaceAmount": "Apagar último dígito",
     "numericKeypad": "Teclado numérico",
     "kitchenItemsPendingWarning": "{count, plural, one {Ainda há # item(ns) sendo preparado(s) na cozinha} other {Ainda há # item(ns) sendo preparado(s) na cozinha}}",
-    "kitchenDeliveryOverridePrompt": "Os itens da cozinha ainda não foram entregues. Insira o PIN do gerente para autorizar a cobrança.",
+    "kitchenDeliveryOverridePrompt": "Os itens da cozinha ainda não foram entregues. Insira o PIN de aprovação da equipe para autorizar a cobrança.",
     "kitchenDeliveryOverrideSuccess": "Autorização do gerente aceita para os itens não entregues.",
-    "kitchenDeliveryOverrideInvalid": "PIN do gerente inválido. Tente novamente.",
+    "kitchenDeliveryOverrideInvalid": "PIN de aprovação da equipe inválido. Tente novamente.",
     "waiveCharge": "Isentar",
     "applyCharge": "Aplicar",
     "addCharge": "Adicionar",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "Feche o turno aberto #{id} ({name}) antes de fechar este dia comercial.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# pedido aberto será transferido} other {# pedidos abertos serão transferidos}}",
     "shiftCloseUnpaidWarningHint": "Estes pedidos permanecem abertos para o próximo turno. Fechar este turno concilia apenas os pagamentos em dinheiro já recebidos durante este turno.",
-    "shiftCloseUnpaidMoreCount": "+{count} outros pedidos abertos"
+    "shiftCloseUnpaidMoreCount": "+{count} outros pedidos abertos",
+    "lockTerminal": "Bloquear terminal"
   },
   "printTest": {
     "amt": "Total",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "Desativa toda conexão opcional com a internet: sincronização na nuvem, backups no Google Drive, WhatsApp, verificação de atualizações, análises de uso e importação de imagens da web. Pedidos, faturação, impressão e dispositivos da sua rede local continuam a funcionar.",
     "offlineModeFailed": "Não foi possível alterar o modo offline",
     "offlineModeReadFailed": "Não foi possível ler a definição atual do modo offline.",
-    "offlineModeRetry": "Tentar novamente"
+    "offlineModeRetry": "Tentar novamente",
+    "autoLockLabel": "Bloqueio automático por inatividade",
+    "autoLockHint": "Bloquear automaticamente o terminal PDV após inatividade",
+    "autoLockOff": "Desativado",
+    "autoLockMinutesOption": "{count} min."
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "Nova Senha (deixe em branco para manter)",
     "noKitchenStations": "Nenhuma estação de cozinha disponível",
     "passwordPlaceholder": "Senha",
-    "pinHint": "Usado para aprovações do gerente (cancelar pedidos, etc.)",
+    "pinHint": "Usado para acesso rápido e aprovações de proprietário ou gerente",
     "pinPlaceholderAdd": "PIN (4-6 dígitos)",
     "pinPlaceholderEdit": "Novo PIN (deixe em branco para manter)",
     "pinSet": "✓ PIN definido",

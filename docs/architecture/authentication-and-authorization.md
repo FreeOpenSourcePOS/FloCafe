@@ -35,7 +35,7 @@ list. `requireRole` (in `main/middleware/security.ts`) still exists, but a stati
 (`tests/authorization-static-audit.test.ts`) fails the build if a new call site under
 `main/routes/` uses it; the few remaining direct role checks are reviewed context policy, covered
 in their own sections below (KDS station/category scope, refund approver identity, the
-override-PIN holder for order-status, kitchen-delivery, and item cancel/void overrides, and the
+Staff Approval PIN holder for order-status, kitchen-delivery, charge-waiver, discount, and item cancel/void overrides, and the
 last-active-owner/staff-target rule).
 
 **Resolution.** For every permission id, `resolveEffectivePermissions(userId)` evaluates, in
@@ -137,12 +137,15 @@ permission check inside the `withTxn` callback, after the transaction opens, usi
 `hasPermission(actorId, id)` against state read in the same transaction.
 `PATCH /api/orders/:id/status`, `PATCH /api/orders/:orderId/items/:itemId/cancel`, the matching
 `.../restore` endpoint in `main/routes/orders.ts`, and the bill payment kitchen-delivery override
-in `main/routes/bills.ts` do this, and their override-PIN paths additionally require the presenting
+and charge waiver override in `main/routes/bills.ts` do this, and their override-PIN paths additionally require the presenting
 user to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)` - a deliberate context-policy role check,
-not a permission, because the override PIN belongs to a
+not a permission, because the Staff Approval PIN belongs to a
 person acting in an owner/manager capacity regardless of what their individual permission grants
-say. To prevent event loop starvation and transaction lock contention during CPU-intensive bcrypt
-evaluations, manager PINs are verified asynchronously via `verifyPinAsync` outside the transaction,
+say. Even though any staff role (`owner`, `manager`, `cashier`, `server`, `chef`) may hold a 4-6
+digit `pin_hash` for quick user switching, candidate queries and in-transaction re-validations filter
+for active `owner` and `manager` accounts so a `cashier`, `server`, or `chef` PIN can never satisfy
+an approval check. To prevent event loop starvation and transaction lock contention during CPU-intensive bcrypt
+evaluations, Staff Approval PINs are verified asynchronously via `verifyPinAsync` outside the transaction,
 serialized per client IP and action key with `withPinVerificationLock` from
 [`main/middleware/security.ts`](../../main/middleware/security.ts) (re-checking client-IP rate limits
 inside the lock before executing bcrypt). Candidate filtering during pre-verification enforces the
@@ -188,6 +191,36 @@ All three HTTP listeners (`:3001` Main API, `:3002` Standalone KDS, and `:3003` 
 3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP once role and permission checks pass.
 4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures and do not clear previously accumulated failed-login attempts.
 
+### PIN quick user switch and terminal lock
+
+Any staff role (`owner`, `manager`, `cashier`, `server`, `chef`) may configure a 4-6 digit PIN
+(`users.pin_hash`) in Staff management. That PIN serves as the user's sign-in PIN on shared
+terminals, while approval authority stays restricted to active `owner` and `manager` accounts:
+
+1. **Quick-switch tile directory (`GET /api/auth/pin-users`):** Returns active users who have a
+   `pin_hash` set, exposing only `{ id, name, role }`. Users without a PIN are omitted from the
+   picker and sign in with email and password.
+2. **Selected-user PIN sign-in (`POST /api/auth/pin-login`):** Accepts `{ user_id, pin, rememberMe }`
+   and verifies the PIN strictly against the selected `user_id` via `verifyPinAsync` without
+   scanning other users, so two staff members may share the same PIN. Verification and rate-limit
+   checks are serialized per target account (`pin-user:${userId}`) with `withPinVerificationLock`,
+   failed attempts are tracked by the install-wide login rate limiter both per client IP + user
+   (`${normalizedIp}:pin:${userId}`) and per target account across source IPs (`pin-user:${userId}`),
+   and every attempt is recorded in `auth_audit_log` (`event_type = 'pin_login'`, `outcome` in
+   `'success'`, `'failure'`, or `'rate_limited'`).
+3. **Terminal lock and session boundary:** Only one user is signed in on a device at a time. The
+   manual **Lock** action in the POS topbar/sidebar (and the optional `auto_lock_minutes` idle
+   setting in **Settings > POS**, off by default with choices `1`, `5`, `15`, or `30` minutes)
+   revokes the active token without closing the open cash shift. Unfinished POS cart items remain on
+   the terminal across lock and user switch, while privileged cart adjustments (line price overrides
+   and charge waivers), cached override PINs, and open privileged modals are cleared and stale
+   asynchronous responses from the previous session are ignored.
+4. **Approval boundary:** `GET /api/staff/approvers` and every Staff Approval PIN check (refunds,
+   item voids, order/item/bill discounts, order-status overrides, kitchen-delivery overrides, and
+   charge waivers) enforce active `owner` or `manager` role eligibility both outside and inside
+   write transactions. A valid `cashier`, `server`, or `chef` PIN is rejected with `403` on every
+   approval path.
+
 ## Password policy
 
 A password must be at least 4 characters long. There are no uppercase, lowercase, digit, or symbol
@@ -197,7 +230,7 @@ re-exported from `main/middleware/security.ts`) and every frontend form that set
 (first-run setup, staff create and edit, staff password reset, recovery) import it, and the
 `password-policy` test fails if a source file re-implements a password rule. Every route that
 writes a password enforces it: setup, staff create and update, password change, and both recovery
-paths. The 4-digit Master PIN and approval PINs are separate secrets with their own rules.
+paths. The 4-digit Master PIN and 4-6 digit staff PINs are separate secrets with their own rules.
 
 ## Owner password recovery
 

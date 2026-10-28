@@ -87,7 +87,7 @@ An owner can flip any configurable cell for a role, or for one user, from the in
 | Orders       | Update order status                                        |   ✓   |    ✓    |    ✓    |   ✓    |  ✓   |
 | Orders       | Change order customers and discounts                       |   ✓   |    ✓    |    —    |   —    |  —   |
 | Orders       | Cancel pending order items                                 |   ✓   |    ✓    |    —    |   —    |  —   |
-| Orders       | Void in-progress order items (manager PIN may be required) |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Void in-progress order items (Staff Approval PIN may be required) |   ✓   |    ✓    |    —    |   —    |  —   |
 | Orders       | Restore cancelled order items                              |   ✓   |    ✓    |    —    |   —    |  —   |
 | Orders       | Edit quantity or replace order items                       |   ✓   |    —    |    —    |   —    |  —   |
 | Orders       | Override order item prices                                 |   ✓   |    —    |    —    |   —    |  —   |
@@ -210,6 +210,11 @@ existing account. Demoting or deactivating an account is refused when no other a
 would still hold all four of `authorization.manage`, `staff.privileged.manage`,
 `staff.operational.manage`, and `settings.manage`, so the last administrator is protected even
 while other active owners remain who have been denied one of those capabilities.
+
+**Staff PINs and Staff Approval PINs.** Any staff role can configure a 4-6 digit sign-in PIN in
+Staff management for quick user switching on shared terminals, while only active `owner` and
+`manager` PINs qualify as a Staff Approval PIN. See
+[PIN quick user switch and terminal lock](../architecture/authentication-and-authorization.md#pin-quick-user-switch-and-terminal-lock).
 
 **Conditional surfaces.** Business type, feature settings such as KDS or WhatsApp, and account
 state can hide or disable a surface independently of whether the permission is granted.

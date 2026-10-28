@@ -87,7 +87,10 @@
     "signInTitle": "Hyni për të menaxhuar biznesin tuaj",
     "signingIn": "Duke hyrë...",
     "storageUnavailable": "Sesioni nuk mund të ruhej. Shfletuesi juaj mund ta bllokojë ruajtjen (modalitet privat ose cookies të çaktivizuara).",
-    "yourName": "Emri juaj"
+    "yourName": "Emri juaj",
+    "quickSwitchTitle": "Ndërrim i shpejtë",
+    "quickSwitchSubtitle": "Zgjidh profilin tënd për të hyrë me PIN",
+    "enterPinFor": "Fut PIN-in për {name}"
   },
   "backup": {
     "creating": "Po krijohet kopje rezerve...",
@@ -1089,9 +1092,9 @@
     "backspaceAmount": "Shuma e hapësirës së pasme",
     "numericKeypad": "Tastiera numerike",
     "kitchenItemsPendingWarning": "{count, plural, one {# artikuj po përgatiten ende në kuzhinë} other {# artikuj po përgatiten ende në kuzhinë}}",
-    "kitchenDeliveryOverridePrompt": "Artikujt e kuzhinës nuk janë dorëzuar ende. Fut PIN-in e menaxherit për të autorizuar faturimin.",
+    "kitchenDeliveryOverridePrompt": "Artikujt e kuzhinës nuk janë dorëzuar ende. Fut PIN-i i miratimit të stafit për të autorizuar faturimin.",
     "kitchenDeliveryOverrideSuccess": "U pranua miratimi i menaxherit për artikujt e padërguar.",
-    "kitchenDeliveryOverrideInvalid": "PIN-i i menaxherit është i pasaktë. Provo sërish.",
+    "kitchenDeliveryOverrideInvalid": "PIN-i i miratimit të stafit është i pasaktë. Provo sërish.",
     "waiveCharge": "Përjashto",
     "applyCharge": "Apliko",
     "addCharge": "Shto",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "Mbyllni turnin e hapur #{id} ({name}) përpara se të mbyllni këtë ditë pune.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# porosi e hapur do të bartet} other {# porosi të hapura do të barten}}",
     "shiftCloseUnpaidWarningHint": "Këto porosi mbeten të hapura për turnin tjetër. Mbyllja e këtij turni rakordon vetëm pagesat me para në dorë të arkëtuara tashmë gjatë këtij turni.",
-    "shiftCloseUnpaidMoreCount": "+{count} porosi të tjera të hapura"
+    "shiftCloseUnpaidMoreCount": "+{count} porosi të tjera të hapura",
+    "lockTerminal": "Kyç terminalin"
   },
   "printTest": {
     "amt": "Shuma",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "Çaktivizon çdo lidhje opsionale me internetin: sinkronizimin në re, kopjet rezervë në Google Drive, WhatsApp, kontrollin e përditësimeve, analizat e përdorimit dhe importimin e imazheve nga uebi. Porositë, faturimi, printimi dhe pajisjet në rrjetin tuaj lokal vazhdojnë të punojnë.",
     "offlineModeFailed": "Modaliteti pa internet nuk u ndryshua dot",
     "offlineModeReadFailed": "Cilësimi aktual i modalitetit pa internet nuk u lexua dot.",
-    "offlineModeRetry": "Provo përsëri"
+    "offlineModeRetry": "Provo përsëri",
+    "autoLockLabel": "Kyçje automatike në pasivitet",
+    "autoLockHint": "Kyç automatikisht terminalin POS pas mosaktivitetit",
+    "autoLockOff": "Joaktiv",
+    "autoLockMinutesOption": "{count} min."
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "Fjalëkalim i ri (lëre bosh për ta mbajtur)",
     "noKitchenStations": "Nuk ka stacione kuzhine në dispozicion",
     "passwordPlaceholder": "Fjalëkalimi",
-    "pinHint": "Përdoret për miratimet e menaxherit (anulimi i porosive, etj.)",
+    "pinHint": "Përdoret për hyrje të shpejtë dhe miratime nga pronari ose menaxheri",
     "pinPlaceholderAdd": "PIN (4-6 shifra)",
     "pinPlaceholderEdit": "PIN i ri (lër bosh për ta mbajtur)",
     "pinSet": "✓ PIN u caktua",

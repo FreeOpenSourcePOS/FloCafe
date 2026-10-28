@@ -23,6 +23,7 @@ import {
   Monitor,
   Boxes,
   Receipt,
+  Lock,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -151,11 +152,12 @@ const ALL_NAV_ITEMS: NavItem[] = [
 
 export default function AppSidebar() {
   const pathname = usePathname();
-  const { user, currentTenant, logout } = useAuthStore();
+  const { user, currentTenant, logout, lock } = useAuthStore();
   const { tablesRequired, kdsEnabled, whatsappEnabled, setKdsEnabled, setWhatsappEnabled } =
     usePosSettingsStore();
   const { isMobile, setOpenMobile } = useSidebar();
   const t = useTranslations('nav');
+  const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
   const { confirm, ConfirmDialog } = useConfirm();
   const [emailNeedsAttention, setEmailNeedsAttention] = useState(false);
@@ -354,6 +356,17 @@ export default function AppSidebar() {
                     <LifeBuoy className="size-4 shrink-0" />
                     <span>{t('support')}</span>
                   </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-testid="sidebar-lock-button"
+                  onClick={() => {
+                    closeMobile();
+                    void lock();
+                  }}
+                  className="cursor-pointer flex items-center gap-2"
+                >
+                  <Lock className="size-4 shrink-0" />
+                  <span>{tPos('lockTerminal')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

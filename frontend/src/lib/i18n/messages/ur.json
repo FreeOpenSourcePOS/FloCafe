@@ -87,7 +87,10 @@
     "signInTitle": "اپنا کاروبار منظم کرنے کے لیے سائن ان کریں",
     "signingIn": "سائن ان ہو رہا ہے...",
     "storageUnavailable": "آپ کا سیشن محفوظ نہیں ہو سکا۔ آپ کا براؤزر اسٹوریج روک رہا ہو سکتا ہے (پرائیویٹ موڈ یا کوکیز بند)۔",
-    "yourName": "آپ کا نام"
+    "yourName": "آپ کا نام",
+    "quickSwitchTitle": "فوری صارف تبدیلی",
+    "quickSwitchSubtitle": "اپنے PIN سے سائن ان کرنے کے لیے پروفائل منتخب کریں",
+    "enterPinFor": "{name} کا PIN درج کریں"
   },
   "backup": {
     "creating": "بیک اپ بن رہا ہے...",
@@ -1089,9 +1092,9 @@
     "numericKeypad": "عددی کی پیڈ",
     "tax": "ٹیکس",
     "kitchenItemsPendingWarning": "{count, plural, one {باورچی خانے میں ابھی # آئٹمز تیار ہو رہی ہیں} other {باورچی خانے میں ابھی # آئٹمز تیار ہو رہی ہیں}}",
-    "kitchenDeliveryOverridePrompt": "باورچی خانے کے آئٹمز ابھی پیش نہیں کیے گئے۔ بل کی اجازت دینے کے لیے مینیجر کا PIN درج کریں۔",
+    "kitchenDeliveryOverridePrompt": "باورچی خانے کے آئٹمز ابھی پیش نہیں کیے گئے۔ بل کی اجازت دینے کے لیے اسٹاف اپروول PIN درج کریں۔",
     "kitchenDeliveryOverrideSuccess": "نہ پہنچائے گئے آئٹمز کے لیے مینیجر کی اجازت قبول کر لی گئی۔",
-    "kitchenDeliveryOverrideInvalid": "مینیجر کا PIN درست نہیں۔ دوبارہ کوشش کریں۔",
+    "kitchenDeliveryOverrideInvalid": "اسٹاف اپروول PIN درست نہیں۔ دوبارہ کوشش کریں۔",
     "waiveCharge": "معاف",
     "applyCharge": "لاگو کریں",
     "addCharge": "شامل کریں",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "اس کاروباری دن کو بند کرنے سے پہلے کھلی شفٹ #{id} ({name}) کو بند کریں۔",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# کھلا آرڈر اگلی شفٹ میں منتقل ہوگا} other {# کھلے آرڈرز اگلی شفٹ میں منتقل ہوں گے}}",
     "shiftCloseUnpaidWarningHint": "یہ آرڈرز اگلی شفٹ کے لیے کھلے رہیں گے۔ اس شفٹ کو بند کرنے سے صرف وہ نقد ادائیگیاں ملائی جاتی ہیں جو اس شفٹ کے دوران وصول ہو چکی ہیں۔",
-    "shiftCloseUnpaidMoreCount": "+{count} مزید کھلے آرڈرز"
+    "shiftCloseUnpaidMoreCount": "+{count} مزید کھلے آرڈرز",
+    "lockTerminal": "ٹرمینل لاک کریں"
   },
   "printTest": {
     "amt": "رقم",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "انٹرنیٹ کے تمام اختیاری کنکشن بند کر دیتا ہے: کلاؤڈ سنک، Google Drive بیک اپ، واٹس ایپ، اپ ڈیٹ کی جانچ، استعمال کا تجزیہ اور ویب سے تصاویر درآمد کرنا۔ آرڈرز، بلنگ، پرنٹنگ اور آپ کے مقامی نیٹ ورک کے آلات کام کرتے رہتے ہیں۔",
     "offlineModeFailed": "آف لائن موڈ تبدیل نہیں ہو سکا",
     "offlineModeReadFailed": "آف لائن موڈ کی موجودہ ترتیب نہیں پڑھی جا سکی۔",
-    "offlineModeRetry": "دوبارہ کوشش کریں"
+    "offlineModeRetry": "دوبارہ کوشش کریں",
+    "autoLockLabel": "غیر فعالیت پر آٹو لاک",
+    "autoLockHint": "غیر فعال رہنے پر پی او ایس ٹرمینل خودکار طور پر لاک کریں",
+    "autoLockOff": "بند",
+    "autoLockMinutesOption": "{count} منٹ"
   },
   "setup": {
     "alreadyCompleted": "اس انسٹال کا سیٹ اپ پہلے ہی مکمل ہو چکا ہے۔ سائن ان پر بھیج رہا ہے…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "نیا پاس ورڈ (وہی رکھنے کے لیے خالی چھوڑیں)",
     "noKitchenStations": "کوئی کچن اسٹیشن دستیاب نہیں",
     "passwordPlaceholder": "پاس ورڈ",
-    "pinHint": "منیجر کی منظوریوں کے لیے استعمال ہوتا ہے (آرڈر منسوخ کرنا وغیرہ)",
+    "pinHint": "فوری سائن ان اور مالک یا منیجر کی منظوری کے لیے استعمال ہوتا ہے",
     "pinPlaceholderAdd": "PIN (4-6 اعداد)",
     "pinPlaceholderEdit": "نیا PIN (وہی رکھنے کے لیے خالی چھوڑیں)",
     "pinSet": "✓ PIN مقرر ہے",

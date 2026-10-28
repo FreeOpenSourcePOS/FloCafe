@@ -87,7 +87,10 @@
     "signInTitle": "ログインして店舗を管理",
     "signingIn": "ログイン中…",
     "storageUnavailable": "セッションを保存できませんでした。ブラウザがストレージをブロックしている可能性があります（プライベートモードまたはCookie無効）。",
-    "yourName": "氏名"
+    "yourName": "氏名",
+    "quickSwitchTitle": "クイック切り替え",
+    "quickSwitchSubtitle": "プロフィールを選択してPINでサインイン",
+    "enterPinFor": "{name} のPINを入力"
   },
   "backup": {
     "creating": "バックアップを作成中…",
@@ -1089,9 +1092,9 @@
     "numericKeypad": "数字キーパッド",
     "tax": "税",
     "kitchenItemsPendingWarning": "{count, plural, one {キッチンで準備中の商品が # 件あります} other {キッチンで準備中の商品が # 件あります}}",
-    "kitchenDeliveryOverridePrompt": "キッチンの商品はまだ提供されていません。会計を承認するにはマネージャー PIN を入力してください。",
+    "kitchenDeliveryOverridePrompt": "キッチンの商品はまだ提供されていません。会計を承認するにはスタッフ承認PINを入力してください。",
     "kitchenDeliveryOverrideSuccess": "未提供の商品に対するマネージャーの承認を受け付けました。",
-    "kitchenDeliveryOverrideInvalid": "マネージャー PIN が正しくありません。もう一度お試しください。",
+    "kitchenDeliveryOverrideInvalid": "スタッフ承認PINが正しくありません。もう一度お試しください。",
     "waiveCharge": "免除",
     "applyCharge": "適用",
     "addCharge": "追加",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "この営業日を締める前に、開始中のシフト #{id}（{name}）を閉じてください。",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# 件の未会計注文が次のシフトに引き継がれます} other {# 件の未会計注文が次のシフトに引き継がれます}}",
     "shiftCloseUnpaidWarningHint": "これらの注文は次のシフトに引き継がれます。このシフトの精算では、このシフト中に受け取った現金支払いのみを集計します。",
-    "shiftCloseUnpaidMoreCount": "他 +{count} 件の未会計注文"
+    "shiftCloseUnpaidMoreCount": "他 +{count} 件の未会計注文",
+    "lockTerminal": "端末をロック"
   },
   "printTest": {
     "amt": "金額",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "クラウド同期、Google Drive バックアップ、WhatsApp、アップデート確認、利用状況の分析、Web からの画像取り込みなど、任意のインターネット接続をすべて停止します。注文、会計、印刷、ローカルネットワーク上のデバイスは引き続き動作します。",
     "offlineModeFailed": "オフラインモードを変更できませんでした",
     "offlineModeReadFailed": "現在のオフラインモード設定を読み込めませんでした。",
-    "offlineModeRetry": "再試行"
+    "offlineModeRetry": "再試行",
+    "autoLockLabel": "アイドル自動ロック",
+    "autoLockHint": "一定時間操作がない場合にPOS端末を自動ロックします",
+    "autoLockOff": "オフ",
+    "autoLockMinutesOption": "{count} 分"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "新しいパスワード（変更しない場合は空欄）",
     "noKitchenStations": "利用可能なキッチンステーションはありません",
     "passwordPlaceholder": "パスワード",
-    "pinHint": "マネージャー承認（注文キャンセルなど）に使用します",
+    "pinHint": "クイックサインインおよびオーナー・マネージャー承認に使用します",
     "pinPlaceholderAdd": "PIN（4～6桁）",
     "pinPlaceholderEdit": "新しいPIN（変更しない場合は空欄）",
     "pinSet": "✓ PIN設定済み",

@@ -2664,12 +2664,12 @@ router.patch(
         const candidateUsers = explicitApproverId
           ? (db
               .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+                "SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
               )
               .all(explicitApproverId) as PinApproverCandidate[])
           : (db
               .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+                "SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
               )
               .all() as PinApproverCandidate[]);
 
@@ -2875,7 +2875,9 @@ router.patch(
           let user: PinApproverCandidate | undefined;
           if (preVerifiedStatusApprover) {
             const candidate = db
-              .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+              .prepare(
+                "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
+              )
               .get(preVerifiedStatusApprover.id) as
               | { id: string; role: string; pin_hash: string | null; is_active: number }
               | undefined;
@@ -3690,12 +3692,12 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
         const candidateUsers = explicitApproverId
           ? (db
               .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+                "SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
               )
               .all(explicitApproverId) as PinApproverCandidate[])
           : (db
               .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+                "SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
               )
               .all() as PinApproverCandidate[]);
 
@@ -3849,7 +3851,9 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
     const result = withTxn(() => {
       if (approvedByUserId && preVerifiedOrderDiscountPinHash) {
         const approver = db
-          .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+          .prepare(
+            "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
+          )
           .get(approvedByUserId) as
           | { id: string; role: string; pin_hash: string | null; is_active: number }
           | undefined;
@@ -4203,12 +4207,12 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
       const candidateUsers = explicitApproverId
         ? (db
             .prepare(
-              'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+              "SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
             )
             .all(explicitApproverId) as PinApproverCandidate[])
         : (db
             .prepare(
-              'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+              "SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
             )
             .all() as PinApproverCandidate[]);
 
@@ -4307,7 +4311,9 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     const updatedItem = withTxn(() => {
       if (approvedByUserId && preVerifiedItemDiscountPinHash) {
         const approver = db
-          .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+          .prepare(
+            "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
+          )
           .get(approvedByUserId) as
           | { id: string; role: string; pin_hash: string | null; is_active: number }
           | undefined;
@@ -5055,6 +5061,10 @@ router.patch(
       }
 
       const isItemVoidInProgress = ['preparing', 'ready'].includes(item.status);
+      const suppliedApproverIds = [req.body.approver_id, req.body.manager_id, req.body.user_id]
+        .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+        .map((val) => String(val).trim());
+      const managerId = suppliedApproverIds[0];
       let preVerifiedVoidApprover: { id: string; verifiedPinHash: string } | null = null;
       if (isItemVoidInProgress && override_pin && typeof override_pin === 'string') {
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
@@ -5067,11 +5077,13 @@ router.patch(
           checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
-        const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
+        if (new Set(suppliedApproverIds).size > 1) {
+          return res.status(400).json({ error: 'Conflicting approver identifiers' });
+        }
         const candidateUsers = managerId
           ? (db
               .prepare(
-                'SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
+                "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL AND is_active = 1",
               )
               .all(managerId) as {
               id: string;
@@ -5081,7 +5093,7 @@ router.patch(
             }[])
           : (db
               .prepare(
-                'SELECT id, role, pin_hash, is_active FROM users WHERE pin_hash IS NOT NULL AND is_active = 1',
+                "SELECT id, role, pin_hash, is_active FROM users WHERE role IN ('owner', 'manager') AND pin_hash IS NOT NULL AND is_active = 1",
               )
               .all() as { id: string; role: string; pin_hash: string; is_active: number }[]);
 
@@ -5209,11 +5221,12 @@ router.patch(
             });
           }
 
-          const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
           let pinUser: any = null;
           if (preVerifiedVoidApprover) {
             const candidate = db
-              .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+              .prepare(
+                "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
+              )
               .get(preVerifiedVoidApprover.id) as any;
             if (
               candidate &&

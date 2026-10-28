@@ -196,7 +196,9 @@ export async function preVerifyKitchenDeliveryPin(
 
     if (explicitApproverId) {
       const candidate = db
-        .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+        .prepare(
+          "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
+        )
         .get(explicitApproverId) as
         | { id: string; role: string; pin_hash: string | null; is_active: number }
         | undefined;
@@ -215,7 +217,9 @@ export async function preVerifyKitchenDeliveryPin(
     }
 
     const managers = db
-      .prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
+      .prepare(
+        "SELECT id, role, pin_hash FROM users WHERE role IN ('owner', 'manager') AND pin_hash IS NOT NULL AND is_active = 1",
+      )
       .all() as { id: string; role: string; pin_hash: string }[];
     for (const user of managers) {
       if (hasRole(user.role, ROLE_ACCESS.ownerManager)) {
@@ -308,7 +312,9 @@ export function checkKitchenDeliveryStatus(
   if (preVerifiedManager) {
     if (!explicitApproverId || String(preVerifiedManager.id) === explicitApproverId) {
       const candidate = db
-        .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+        .prepare(
+          "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
+        )
         .get(preVerifiedManager.id) as
         | { id: string; role: string; pin_hash: string | null; is_active: number }
         | undefined;
@@ -323,7 +329,9 @@ export function checkKitchenDeliveryStatus(
     }
   } else if (explicitApproverId) {
     const candidate = db
-      .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+      .prepare(
+        "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
+      )
       .get(explicitApproverId) as
       | { id: string; role: string; pin_hash: string | null; is_active: number }
       | undefined;
@@ -337,7 +345,9 @@ export function checkKitchenDeliveryStatus(
     }
   } else {
     const managers = db
-      .prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
+      .prepare(
+        "SELECT id, role, pin_hash FROM users WHERE role IN ('owner', 'manager') AND pin_hash IS NOT NULL AND is_active = 1",
+      )
       .all() as { id: string; role: string; pin_hash: string }[];
     manager = managers.find(
       (user) =>
@@ -4568,7 +4578,7 @@ router.post(
           if (managerId) {
             const candidate = db
               .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
+                "SELECT id, role, pin_hash FROM users WHERE id = ? AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL AND is_active = 1",
               )
               .get(managerId) as ManagerCandidate | undefined;
             if (
@@ -4583,7 +4593,7 @@ router.post(
           } else {
             const managers = db
               .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1',
+                "SELECT id, role, pin_hash FROM users WHERE role IN ('owner', 'manager') AND pin_hash IS NOT NULL AND is_active = 1",
               )
               .all() as ManagerCandidate[];
             for (const u of managers) {
@@ -4721,7 +4731,9 @@ router.post(
       const updatedBill = withTxn(() => {
         if (approvedByUserId && preVerifiedPinHash) {
           const approver = db
-            .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+            .prepare(
+              "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
+            )
             .get(approvedByUserId) as
             | { id: string; role: string; pin_hash: string | null; is_active: number }
             | undefined;
@@ -4993,7 +5005,7 @@ router.post(
 router.patch(
   '/:id/charges',
   requirePermission('bills.discount.apply'),
-  (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     let operationCommitted = false;
     let transactionBodyCompleted = false;
     try {
@@ -5185,43 +5197,202 @@ router.patch(
           );
       }
 
-      const existingBreakdown = bill.charges_breakdown ?? order.charges_breakdown;
-      const toggleIds = chargeIdsAfterToggle({
-        existingBreakdown,
-        definitions,
-        toggle: {
-          chargeId,
-          waived: waivedRequested as boolean | undefined,
-          applied: appliedRequested as boolean | undefined,
-        },
-      });
-      const resolved = resolveOrderCharges({
-        definitions,
-        orderType: order.type,
-        subtotal: order.subtotal || 0,
-        discountAmount: order.discount_amount || 0,
-        currency: getTenantCurrency(),
-        existingBreakdown,
-        waivedIds: toggleIds.waivedIds,
-        optedInIds: toggleIds.optedInIds,
-      });
-      const nextCharges = resolved.charges;
-      const decimals = getCurrencyFractionDigits(getTenantCurrency());
-      const rawColumns = toStandardChargeColumns(nextCharges, decimals);
-      const serviceCharge = resolved.ownsServiceChargeColumn
-        ? rawColumns.service_charge
-        : Number(order.service_charge || 0);
-      const packagingCharge = resolved.ownsPackagingChargeColumn
-        ? rawColumns.packaging_charge
-        : Number(order.packaging_charge || 0);
-      const chargesJson = serializeAppliedCharges(nextCharges);
+      const { override_pin, approver_id, manager_id, user_id } = req.body || {};
+      const suppliedApproverIds = [approver_id, manager_id, user_id]
+        .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+        .map((val) => String(val).trim());
+      if (new Set(suppliedApproverIds).size > 1) {
+        return res.status(400).json({ error: 'Conflicting approver identifiers' });
+      }
+      const explicitApproverId = suppliedApproverIds[0];
+      const callerRole = String((req as Request & { user?: { role?: string } }).user?.role || '');
+      const requiresChargeApproval =
+        override_pin !== undefined ||
+        (waivedRequested === true && !hasRole(callerRole, ROLE_ACCESS.ownerManager));
+      let approvedByUserId: string | undefined;
+      let preVerifiedChargePinHash: string | undefined;
+      if (requiresChargeApproval) {
+        if (!override_pin) {
+          return res
+            .status(403)
+            .json({ error: 'Manager PIN required to waive charges', requiresApproval: true });
+        }
+        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const canonicalIp = normalizeIpForRateLimit(clientIp);
+        const rateLimitKey = `pin:${canonicalIp}:bill-charge-waiver`;
+        if (isPinRateLimited(rateLimitKey)) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (typeof override_pin !== 'string' || !/^\d{4,6}$/.test(override_pin)) {
+          checkPinRateLimit(rateLimitKey);
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        type ManagerCandidate = { id: string; role: string; pin_hash: string | null };
+        const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
+          if (isPinRateLimited(rateLimitKey)) {
+            return { rateLimited: true };
+          }
+          let user: ManagerCandidate | null = null;
+          if (explicitApproverId) {
+            const candidate = db
+              .prepare(
+                "SELECT id, role, pin_hash FROM users WHERE id = ? AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL AND is_active = 1",
+              )
+              .get(explicitApproverId) as ManagerCandidate | undefined;
+            if (
+              candidate &&
+              hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+              hasPermission(candidate.id, 'bills.discount.apply') &&
+              candidate.pin_hash &&
+              (await verifyPinAsync(candidate.pin_hash, override_pin))
+            ) {
+              user = candidate;
+            }
+          } else {
+            const managers = db
+              .prepare(
+                "SELECT id, role, pin_hash FROM users WHERE role IN ('owner', 'manager') AND pin_hash IS NOT NULL AND is_active = 1",
+              )
+              .all() as ManagerCandidate[];
+            for (const u of managers) {
+              if (
+                hasRole(u.role, ROLE_ACCESS.ownerManager) &&
+                hasPermission(u.id, 'bills.discount.apply') &&
+                u.pin_hash &&
+                (await verifyPinAsync(u.pin_hash, override_pin))
+              ) {
+                user = u;
+                break;
+              }
+            }
+          }
+          if (!user) {
+            checkPinRateLimit(rateLimitKey);
+            return { user: null };
+          }
+          clearPinRateLimit(rateLimitKey);
+          return { user };
+        });
+
+        if (verifiedResult.rateLimited) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (!verifiedResult.user) {
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        approvedByUserId = verifiedResult.user.id;
+        preVerifiedChargePinHash = verifiedResult.user.pin_hash ?? undefined;
+      }
 
       const updated = withTxn(() => {
-        const totals = calculateOrderTotals(db, order.id);
-        const customer = order.customer_id
+        if (approvedByUserId && preVerifiedChargePinHash) {
+          const approver = db
+            .prepare(
+              "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
+            )
+            .get(approvedByUserId) as
+            | { id: string; role: string; pin_hash: string | null; is_active: number }
+            | undefined;
+          if (
+            !approver ||
+            approver.is_active !== 1 ||
+            !hasRole(approver.role, ROLE_ACCESS.ownerManager) ||
+            !hasPermission(approver.id, 'bills.discount.apply') ||
+            approver.pin_hash !== preVerifiedChargePinHash
+          ) {
+            throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+          }
+        }
+
+        const currentBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(bill.id) as
+          | ChargeBillRow
+          | undefined;
+        if (!currentBill) {
+          throw Object.assign(new Error('Bill not found'), {
+            statusCode: 404,
+            diagnosticCode: 'bill_not_found',
+          });
+        }
+        if (currentBill.split_group_id) {
+          throw Object.assign(new Error('Charges on a split check cannot be changed'), {
+            statusCode: 409,
+            diagnosticCode: 'split_check',
+          });
+        }
+        if (currentBill.payment_status === 'paid' || Number(currentBill.paid_amount || 0) > 0) {
+          throw Object.assign(new Error('Charges cannot be changed on a paid bill'), {
+            statusCode: 409,
+            diagnosticCode: 'bill_paid',
+          });
+        }
+        if (
+          currentBill.payment_status === 'refunded' ||
+          currentBill.payment_status === 'partially_refunded'
+        ) {
+          throw Object.assign(new Error('Charges cannot be changed on a refunded bill'), {
+            statusCode: 409,
+            diagnosticCode: 'bill_refunded',
+          });
+        }
+
+        const currentOrder = db
+          .prepare('SELECT * FROM orders WHERE id = ?')
+          .get(currentBill.order_id) as ChargeOrderRow | undefined;
+        if (!currentOrder) {
+          throw Object.assign(new Error('Order not found'), {
+            statusCode: 404,
+            diagnosticCode: 'order_not_found',
+          });
+        }
+        if (currentOrder.status === 'cancelled') {
+          throw Object.assign(new Error('Charges cannot be changed on a cancelled order'), {
+            statusCode: 409,
+            diagnosticCode: 'order_cancelled',
+          });
+        }
+        if (!definition.order_types.includes(currentOrder.type)) {
+          throw Object.assign(new Error('Charge does not apply to this order type'), {
+            statusCode: 409,
+            diagnosticCode: 'order_type_unsupported',
+          });
+        }
+
+        const totals = calculateOrderTotals(db, currentOrder.id);
+        const existingBreakdown = currentBill.charges_breakdown ?? currentOrder.charges_breakdown;
+        const toggleIds = chargeIdsAfterToggle({
+          existingBreakdown,
+          definitions,
+          toggle: {
+            chargeId,
+            waived: waivedRequested as boolean | undefined,
+            applied: appliedRequested as boolean | undefined,
+          },
+        });
+        const resolved = resolveOrderCharges({
+          definitions,
+          orderType: currentOrder.type,
+          subtotal: totals.subtotal,
+          discountAmount: currentOrder.discount_amount || 0,
+          currency: getTenantCurrency(),
+          existingBreakdown,
+          waivedIds: toggleIds.waivedIds,
+          optedInIds: toggleIds.optedInIds,
+        });
+        const nextCharges = resolved.charges;
+        const decimals = getCurrencyFractionDigits(getTenantCurrency());
+        const rawColumns = toStandardChargeColumns(nextCharges, decimals);
+        const serviceCharge = resolved.ownsServiceChargeColumn
+          ? rawColumns.service_charge
+          : Number(currentOrder.service_charge || 0);
+        const packagingCharge = resolved.ownsPackagingChargeColumn
+          ? rawColumns.packaging_charge
+          : Number(currentOrder.packaging_charge || 0);
+        const chargesJson = serializeAppliedCharges(nextCharges);
+
+        const customer = currentOrder.customer_id
           ? (db
               .prepare('SELECT * FROM customers WHERE id = ?')
-              .get(order.customer_id) as Customer | null)
+              .get(currentOrder.customer_id) as Customer | null)
           : null;
         const { taxRollup, total } = recomputeOrderTotals({
           tenantInfo: {
@@ -5232,13 +5403,13 @@ router.patch(
             taxes_enabled: getSettingValue('taxes_enabled') === 'true',
           },
           chargeContext: {
-            ...order,
+            ...currentOrder,
             service_charge: serviceCharge,
             packaging_charge: packagingCharge,
           },
           customer,
           totals,
-          discountAmount: order.discount_amount || 0,
+          discountAmount: currentOrder.discount_amount || 0,
           taxScaling: 'when-discounted',
           appliedCharges: nextCharges,
         });
@@ -5253,32 +5424,37 @@ router.patch(
           taxRollup.taxAmount,
           JSON.stringify(taxRollup.breakdowns),
           taxRollup.snapshotJson,
-          order.discount_amount || 0,
+          currentOrder.discount_amount || 0,
           serviceCharge,
           packagingCharge,
           chargesJson,
           total,
           now(),
-          order.id,
+          currentOrder.id,
         );
 
         recordOrderAudit(db, {
-          orderId: String(order.id),
+          orderId: String(currentOrder.id),
           actorUserId: String((req as Request & { user?: { userId?: string } }).user?.userId || ''),
           action: 'order_charge_updated',
-          details: { charge_id: chargeId, waived: waivedRequested, applied: appliedRequested },
+          details: {
+            charge_id: chargeId,
+            waived: waivedRequested,
+            applied: appliedRequested,
+            ...(approvedByUserId ? { approved_by_user_id: approvedByUserId } : {}),
+          },
         });
 
         syncUnpaidBillsForOrder(
           db,
-          order.id,
+          currentOrder.id,
           {
             subtotal: totals.subtotal,
             taxAmount: taxRollup.taxAmount,
             taxBreakdown: JSON.stringify(taxRollup.breakdowns),
             taxSnapshot: taxRollup.snapshotJson,
-            discountAmount: order.discount_amount || 0,
-            deliveryCharge: order.delivery_charge || 0,
+            discountAmount: currentOrder.discount_amount || 0,
+            deliveryCharge: currentOrder.delivery_charge || 0,
             packagingCharge,
             serviceCharge,
             chargesBreakdown: chargesJson,
@@ -5288,7 +5464,7 @@ router.patch(
         );
 
         const updatedBill = parseRowJson(
-          db.prepare('SELECT * FROM bills WHERE id = ?').get(bill.id),
+          db.prepare('SELECT * FROM bills WHERE id = ?').get(currentBill.id),
         );
         transactionBodyCompleted = true;
         return updatedBill;
@@ -5300,15 +5476,21 @@ router.patch(
       res.json({ bill: updated });
     } catch (error) {
       const statusCode = (error as { statusCode?: number }).statusCode || 500;
+      const diagnosticCode = (error as { diagnosticCode?: string }).diagnosticCode;
+      if (statusCode === 403 && !diagnosticCode) {
+        return res.status(403).json({ error: (error as Error).message });
+      }
       console.error('[API] Bill charge update failed:', error);
       const outcome = operationCommitted
         ? 'applied'
         : transactionBodyCompleted
           ? 'unknown'
           : 'not_applied';
-      const capturePoint = operationCommitted
-        ? 'fc.backend.bill.charge.completion'
-        : 'fc.backend.bill.charge.persistence';
+      const capturePoint = diagnosticCode
+        ? 'fc.backend.bill.charge.validation'
+        : operationCommitted
+          ? 'fc.backend.bill.charge.completion'
+          : 'fc.backend.bill.charge.persistence';
       res
         .status(statusCode)
         .json(
@@ -5316,12 +5498,12 @@ router.patch(
             req,
             capturePoint,
             statusCode >= 500 ? 'Internal server error' : (error as Error).message,
-            undefined,
+            diagnosticCode,
             outcome,
           ),
         );
     }
-  },
+  }),
 );
 
 router.post('/:id/markPrinted', requirePermission('bills.print'), (req: Request, res: Response) => {

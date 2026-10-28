@@ -87,7 +87,10 @@
     "signInTitle": "برای مدیریت کسب‌وکار خود وارد شوید",
     "signingIn": "در حال ورود",
     "storageUnavailable": "نشست شما ذخیره نشد. ممکن است مرورگر ذخیره‌سازی را مسدود کرده باشد (حالت خصوصی یا کوکی‌های غیرفعال).",
-    "yourName": "نام شما"
+    "yourName": "نام شما",
+    "quickSwitchTitle": "تغییر سریع کاربر",
+    "quickSwitchSubtitle": "برای ورود با پین، نمایه خود را انتخاب کنید",
+    "enterPinFor": "پین {name} را وارد کنید"
   },
   "backup": {
     "creating": "در حال ساخت پشتیبان",
@@ -1089,9 +1092,9 @@
     "numericKeypad": "صفحه‌کلید عددی",
     "tax": "مالیات",
     "kitchenItemsPendingWarning": "{count, plural, one {# مورد هنوز در آشپزخانه در حال آماده‌سازی است} other {# مورد هنوز در آشپزخانه در حال آماده‌سازی است}}",
-    "kitchenDeliveryOverridePrompt": "اقلام آشپزخانه هنوز تحویل نشده‌اند. برای تأیید صورتحساب، رمز مدیر را وارد کنید.",
+    "kitchenDeliveryOverridePrompt": "اقلام آشپزخانه هنوز تحویل نشده‌اند. برای تأیید صورتحساب، پین تأیید کارکنان را وارد کنید.",
     "kitchenDeliveryOverrideSuccess": "تأیید مدیر برای اقلام تحویل‌نشده پذیرفته شد.",
-    "kitchenDeliveryOverrideInvalid": "رمز مدیر نامعتبر است. دوباره تلاش کنید.",
+    "kitchenDeliveryOverrideInvalid": "پین تأیید کارکنان نامعتبر است. دوباره تلاش کنید.",
     "waiveCharge": "بخشش",
     "applyCharge": "اعمال",
     "addCharge": "افزودن",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "پیش از بستن این روز کاری، شیفت باز #{id} ({name}) را ببندید.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# سفارش باز به شیفت بعد منتقل می‌شود} other {# سفارش باز به شیفت بعد منتقل می‌شوند}}",
     "shiftCloseUnpaidWarningHint": "این سفارش‌ها برای شیفت بعدی باز می‌مانند. بستن این شیفت فقط پرداخت‌های نقدی دریافت‌شده در همین شیفت را تسویه می‌کند.",
-    "shiftCloseUnpaidMoreCount": "+{count} سفارش باز دیگر"
+    "shiftCloseUnpaidMoreCount": "+{count} سفارش باز دیگر",
+    "lockTerminal": "قفل پایانه"
   },
   "printTest": {
     "amt": "مبلغ",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "هر اتصال اختیاری به اینترنت را خاموش می‌کند: همگام‌سازی ابری، پشتیبان‌گیری Google Drive، واتس‌اپ، بررسی به‌روزرسانی، تحلیل استفاده و وارد کردن تصویر از وب. سفارش‌ها، صورتحساب، چاپ و دستگاه‌های شبکه محلی شما به کار ادامه می‌دهند.",
     "offlineModeFailed": "تغییر حالت آفلاین ممکن نشد",
     "offlineModeReadFailed": "خواندن تنظیم فعلی حالت آفلاین ممکن نشد.",
-    "offlineModeRetry": "تلاش دوباره"
+    "offlineModeRetry": "تلاش دوباره",
+    "autoLockLabel": "قفل خودکار در زمان عدم فعالیت",
+    "autoLockHint": "قفل خودکار پایانه فروش پس از مدتی عدم فعالیت",
+    "autoLockOff": "خاموش",
+    "autoLockMinutesOption": "{count} دقیقه"
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "گذرواژه تازه (برای نگه‌داشتن، خالی بگذارید)",
     "noKitchenStations": "ایستگاه آشپزخانه‌ای در دسترس نیست",
     "passwordPlaceholder": "گذرواژه",
-    "pinHint": "برای تأییدهای مدیر به کار می‌رود (لغو سفارش‌ها و...)",
+    "pinHint": "برای ورود سریع و تأییدهای مالک یا مدیر استفاده می‌شود",
     "pinPlaceholderAdd": "رمز (۴-۶ رقم)",
     "pinPlaceholderEdit": "رمز تازه (برای نگه‌داشتن، خالی بگذارید)",
     "pinSet": "✓ رمز تنظیم شد",

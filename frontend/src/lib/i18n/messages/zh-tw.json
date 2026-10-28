@@ -87,7 +87,10 @@
     "signInTitle": "登入以管理您的商家",
     "signingIn": "正在登入…",
     "storageUnavailable": "無法儲存您的會話。瀏覽器可能阻止了儲存（隱私模式或禁用了 Cookie）。",
-    "yourName": "您的姓名"
+    "yourName": "您的姓名",
+    "quickSwitchTitle": "快速切換使用者",
+    "quickSwitchSubtitle": "選擇您的個人檔案以使用 PIN 登入",
+    "enterPinFor": "輸入 {name} 的 PIN"
   },
   "backup": {
     "creating": "正在建立備份…",
@@ -1089,9 +1092,9 @@
     "backspaceAmount": "退格金額",
     "numericKeypad": "數字鍵盤",
     "kitchenItemsPendingWarning": "{count, plural, one {廚房仍有 # 道餐點正在準備} other {廚房仍有 # 道餐點正在準備}}",
-    "kitchenDeliveryOverridePrompt": "廚房餐點尚未送達。請輸入經理 PIN 以授權結帳。",
+    "kitchenDeliveryOverridePrompt": "廚房餐點尚未送達。請輸入員工批准 PIN 以授權結帳。",
     "kitchenDeliveryOverrideSuccess": "已接受經理對未送達餐點的授權。",
-    "kitchenDeliveryOverrideInvalid": "經理 PIN 無效，請再試一次。",
+    "kitchenDeliveryOverrideInvalid": "員工批准 PIN 無效，請再試一次。",
     "waiveCharge": "免除",
     "applyCharge": "套用",
     "addCharge": "新增",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "請在日結此營業日之前先關閉未關班次 #{id}（{name}）。",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# 筆未結訂單將結轉至下一班次} other {# 筆未結訂單將結轉至下一班次}}",
     "shiftCloseUnpaidWarningHint": "這些訂單將保持開啟並交接給下一班次。關閉本班次僅核對本班次期間已收取的現金付款。",
-    "shiftCloseUnpaidMoreCount": "另有 +{count} 筆未結訂單"
+    "shiftCloseUnpaidMoreCount": "另有 +{count} 筆未結訂單",
+    "lockTerminal": "鎖定終端機"
   },
   "printTest": {
     "amt": "金額",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "關閉所有選用的網際網路連線：雲端同步、Google Drive 備份、WhatsApp、更新檢查、使用分析與從網路匯入圖片。訂單、結帳、列印與區域網路中的裝置仍可正常運作。",
     "offlineModeFailed": "無法變更離線模式",
     "offlineModeReadFailed": "無法讀取目前的離線模式設定。",
-    "offlineModeRetry": "重試"
+    "offlineModeRetry": "重試",
+    "autoLockLabel": "閒置自動鎖定",
+    "autoLockHint": "閒置一段時間後自動鎖定 POS 終端機",
+    "autoLockOff": "關閉",
+    "autoLockMinutesOption": "{count} 分鐘"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "新密碼（留空則保持不變）",
     "noKitchenStations": "沒有可用的廚房工作站",
     "passwordPlaceholder": "密碼",
-    "pinHint": "用於經理批准（取消訂單等）",
+    "pinHint": "用於快速登入及店主／經理核准",
     "pinPlaceholderAdd": "PIN（4-6 位）",
     "pinPlaceholderEdit": "新 PIN（留空則保持不變）",
     "pinSet": "✓ PIN 已設定",

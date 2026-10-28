@@ -328,7 +328,7 @@ async function run(): Promise<void> {
     );
     assert.deepEqual(
       pdfWindow.pdfOptions,
-      { printBackground: true, pageSize: 'Letter' },
+      { printBackground: true, pageSize: 'Letter', preferCSSPageSize: true },
       'the requested page size reaches the print call',
     );
     assert.equal(pdfWindow.destroyed, true, 'the offscreen window is destroyed after export');

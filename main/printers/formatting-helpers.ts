@@ -105,6 +105,30 @@ export function itemAmountWidth(
   return Math.min(width, Math.max(1, cols - 5));
 }
 
+function normalizeFinancialValue(raw: string): string {
+  return String(raw ?? '')
+    .trim()
+    .replace(/^-\s+/, '-');
+}
+
+export function assertFinancialValueFitsColumns(
+  value: string,
+  cols: number,
+  field: string = 'financial value',
+): void {
+  const normalized = normalizeFinancialValue(value);
+  if (!normalized) return;
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (
+    displayCellWidth(normalized) > cols ||
+    tokens.some((token) => displayCellWidth(token) > cols)
+  ) {
+    throw new Error(
+      `Receipt ${field} "${normalized}" (${displayCellWidth(normalized)} cells) overflows available line width (${cols} columns)`,
+    );
+  }
+}
+
 export function itemRows(
   item: any,
   nameLen: number,
@@ -120,24 +144,63 @@ export function itemRows(
   const qtyW = 4;
   const productName = normalizeThermalText(String(item.product_name ?? ''), capabilities);
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
-  const qty = padToDisplayCells(String(item.quantity), qtyW);
+  const trimmedAmount = normalizeFinancialValue(amount);
+  const rawQty = String(item.quantity ?? '').trim();
+  assertFinancialValueFitsColumns(rawQty, cols, 'item quantity');
+  assertFinancialValueFitsColumns(trimmedAmount, cols, 'item amount');
+
+  const qty = padToDisplayCells(rawQty, qtyW);
   const maxLine1Name = Math.max(1, nameLen - 1);
+  const inlineFits =
+    nameLen >= 2 &&
+    displayCellWidth(rawQty) <= qtyW &&
+    nameLen + displayCellWidth(qty) + 1 + displayCellWidth(trimmedAmount) <= cols;
 
-  if (displayCellWidth(productName) <= maxLine1Name) {
-    const label = padToDisplayCells(productName, nameLen) + qty;
-    return [label + rightAlign(amount, cols - displayCellWidth(label))];
+  if (inlineFits) {
+    const inlineAmount =
+      nameLen + displayCellWidth(qty) + 1 + displayCellWidth(amount) <= cols
+        ? amount
+        : trimmedAmount;
+    if (displayCellWidth(productName) <= maxLine1Name) {
+      const label = padToDisplayCells(productName, nameLen) + qty;
+      return [label + rightAlign(inlineAmount, cols - displayCellWidth(label))];
+    }
+
+    const nameLines = wrapText(productName, maxLine1Name);
+    const firstLineName = padToDisplayCells(nameLines[0] || '', nameLen);
+    const firstRowLabel = firstLineName + qty;
+    const firstRow =
+      firstRowLabel + rightAlign(inlineAmount, cols - displayCellWidth(firstRowLabel));
+
+    const result = [firstRow];
+    for (let i = 1; i < nameLines.length; i++) {
+      result.push(nameLines[i]);
+    }
+    return result;
   }
 
-  const nameLines = wrapText(productName, maxLine1Name);
-  const firstLineName = padToDisplayCells(nameLines[0] || '', nameLen);
-  const firstRowLabel = firstLineName + qty;
-  const firstRow = firstRowLabel + rightAlign(amount, cols - displayCellWidth(firstRowLabel));
-
-  const result = [firstRow];
-  for (let i = 1; i < nameLines.length; i++) {
-    result.push(nameLines[i]);
+  const qtyColWidth = Math.max(qtyW, displayCellWidth(rawQty) + 1);
+  if (cols - qtyColWidth >= 2) {
+    const stackedNameLen = cols - qtyColWidth;
+    const stackedMaxLine1Name = Math.max(1, stackedNameLen - 1);
+    const nameLines =
+      displayCellWidth(productName) <= stackedMaxLine1Name
+        ? [productName]
+        : wrapText(productName, stackedMaxLine1Name);
+    const firstLineName = padToDisplayCells(nameLines[0] || '', stackedNameLen);
+    const firstRow = firstLineName + padToDisplayCells(rawQty, qtyColWidth);
+    return [firstRow, ...nameLines.slice(1), padToDisplayCells(trimmedAmount, cols, 'right')];
   }
-  return result;
+
+  const nameLines = wrapText(productName, cols);
+  if (displayCellWidth(rawQty) + 1 + displayCellWidth(trimmedAmount) <= cols) {
+    return [...nameLines, rawQty + rightAlign(trimmedAmount, cols - displayCellWidth(rawQty))];
+  }
+  return [
+    ...nameLines,
+    padToDisplayCells(rawQty, cols, 'right'),
+    padToDisplayCells(trimmedAmount, cols, 'right'),
+  ];
 }
 
 export function addonRows(
@@ -163,21 +226,37 @@ export function addonRows(
   }
 
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits);
+  const trimmedPrice = normalizeFinancialValue(price);
+  assertFinancialValueFitsColumns(trimmedPrice, cols, 'addon price');
 
-  if (displayCellWidth(fullName) <= nameLen) {
-    const label = padToDisplayCells(fullName, nameLen);
-    return [label + rightAlign(price, cols - displayCellWidth(label))];
+  if (nameLen >= 1 && nameLen + 1 + displayCellWidth(trimmedPrice) <= cols) {
+    const inlinePrice = nameLen + 1 + displayCellWidth(price) <= cols ? price : trimmedPrice;
+    if (displayCellWidth(fullName) <= nameLen) {
+      const label = padToDisplayCells(fullName, nameLen);
+      return [label + rightAlign(inlinePrice, cols - displayCellWidth(label))];
+    }
+
+    if (nameLen >= 6 && nameLen <= cols - 4) {
+      const nameLines = wrapText(fullName, nameLen);
+      const firstLine = padToDisplayCells(nameLines[0] || '', nameLen);
+      const firstRow = firstLine + rightAlign(inlinePrice, cols - displayCellWidth(firstLine));
+
+      const result = [firstRow];
+      for (let i = 1; i < nameLines.length; i++) {
+        result.push('    ' + nameLines[i]);
+      }
+      return result;
+    }
   }
 
-  const nameLines = wrapText(fullName, nameLen);
-  const firstLine = padToDisplayCells(nameLines[0] || '', nameLen);
-  const firstRow = firstLine + rightAlign(price, cols - displayCellWidth(firstLine));
-
-  const result = [firstRow];
-  for (let i = 1; i < nameLines.length; i++) {
-    result.push('    ' + nameLines[i]);
+  if (displayCellWidth(fullName) + 1 + displayCellWidth(trimmedPrice) <= cols) {
+    const inlinePrice =
+      displayCellWidth(fullName) + 1 + displayCellWidth(price) <= cols ? price : trimmedPrice;
+    return [fullName + rightAlign(inlinePrice, cols - displayCellWidth(fullName))];
   }
-  return result;
+
+  const nameLines = wrapText(fullName, cols);
+  return [...nameLines, padToDisplayCells(trimmedPrice, cols, 'right')];
 }
 
 export function financialRows(
@@ -187,22 +266,73 @@ export function financialRows(
   _language: string = 'en',
   capabilities?: ThermalPrinterCapabilities,
 ): string[] {
+  const trimmedStartValue = String(value ?? '').trimStart();
+  const compactValue = normalizeFinancialValue(value);
+  assertFinancialValueFitsColumns(compactValue, cols, 'financial amount');
   const normalizedLabel = normalizeThermalText(label, capabilities);
   const safeLabel =
     capabilities?.raster.enabled === true &&
     !isThermalTextRepresentable(normalizedLabel, capabilities)
       ? normalizedLabel
-      : truncateToDisplayCells(normalizedLabel, Math.max(1, cols - 1));
+      : truncateToDisplayCells(normalizedLabel, Math.max(1, cols));
   const labelWidth = displayCellWidth(safeLabel);
-  const inlineWidth = Math.max(1, cols - labelWidth - 1);
-  if (displayCellWidth(value) <= inlineWidth) {
+  const inlineWidth = Math.max(0, cols - labelWidth - 1);
+  if (inlineWidth > 0 && displayCellWidth(value) <= inlineWidth) {
     return [safeLabel + rightAlign(value, cols - labelWidth)];
   }
-  return [safeLabel, ...wrapValue(value, cols)];
+  if (inlineWidth > 0 && displayCellWidth(trimmedStartValue) <= inlineWidth) {
+    return [safeLabel + rightAlign(trimmedStartValue, cols - labelWidth)];
+  }
+  if (inlineWidth > 0 && displayCellWidth(compactValue) <= inlineWidth) {
+    return [safeLabel + rightAlign(compactValue, cols - labelWidth)];
+  }
+  const stackedValue =
+    displayCellWidth(trimmedStartValue) <= cols ? trimmedStartValue : compactValue;
+  return [safeLabel, padToDisplayCells(stackedValue, cols, 'right')];
 }
 
-function wrapValue(value: string, cols: number): string[] {
-  return wrapToDisplayCells(value, cols);
+export function taxBreakdownRows(
+  title: string,
+  rate: number | string | null | undefined,
+  value: string,
+  cols: number,
+  language: string = 'en',
+  capabilities?: ThermalPrinterCapabilities,
+): string[] {
+  const hasRate = rate !== null && rate !== undefined && String(rate).trim() !== '';
+  const rateToken = hasRate ? `@${String(rate).trim()}%` : '';
+  const rateSuffix = hasRate ? ` ${rateToken}` : '';
+  if (hasRate) {
+    assertFinancialValueFitsColumns(rateToken, cols, 'tax rate');
+  }
+  const rawLabel = title + rateSuffix;
+  const normalizedRawLabel = normalizeThermalText(rawLabel, capabilities);
+  const trimmedValueWidth = displayCellWidth(String(value ?? '').trimStart());
+  if (displayCellWidth(normalizedRawLabel) + 1 + trimmedValueWidth <= cols) {
+    return financialRows(rawLabel, value, cols, language, capabilities);
+  }
+  if (hasRate) {
+    const normalizedTitle = normalizeThermalText(title, capabilities);
+    const titleWidth = displayCellWidth(normalizedTitle);
+    const rateSuffixWidth = displayCellWidth(rateSuffix);
+    const inlineTitleBudget = cols - 1 - trimmedValueWidth - rateSuffixWidth;
+    if (inlineTitleBudget >= Math.min(titleWidth, 6)) {
+      const label = truncate(title, inlineTitleBudget, language, capabilities) + rateSuffix;
+      return financialRows(label, value, cols, language, capabilities);
+    }
+    const stackedTitleBudget = cols - 1 - rateSuffixWidth;
+    if (stackedTitleBudget >= Math.min(titleWidth, 6)) {
+      const label = truncate(title, stackedTitleBudget, language, capabilities) + rateSuffix;
+      return financialRows(label, value, cols, language, capabilities);
+    }
+    const titleLine = truncate(title, Math.max(1, cols - 1), language, capabilities);
+    return [titleLine, ...financialRows(rateToken, value, cols, language, capabilities)];
+  }
+  const inlineBudget = cols - 1 - trimmedValueWidth;
+  const budget =
+    inlineBudget >= 1 ? Math.min(Math.max(1, cols - 12), inlineBudget) : Math.max(1, cols - 1);
+  const label = truncate(rawLabel, budget, language, capabilities);
+  return financialRows(label, value, cols, language, capabilities);
 }
 
 export function parseAddons(addons: any): any[] {
@@ -289,9 +419,10 @@ export function truncate(
     !isThermalTextRepresentable(normalizedText, capabilities)
   )
     return normalizedText;
-  return displayCellWidth(normalizedText) > length
-    ? truncateToDisplayCells(normalizedText, Math.max(1, length - 2)) + '..'
-    : normalizedText;
+  if (length <= 0) return '';
+  if (displayCellWidth(normalizedText) <= length) return normalizedText;
+  if (length <= 2) return truncateToDisplayCells(normalizedText, length);
+  return truncateToDisplayCells(normalizedText, length - 2) + '..';
 }
 
 export function truncateShapedLine(

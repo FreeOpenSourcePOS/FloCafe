@@ -25,7 +25,6 @@ import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
 import {
-  openSessionBlockingDayClose,
   openSessionsBlockingDayClose,
   sessionBusinessDate,
 } from '../services/cash-day-close-guards';

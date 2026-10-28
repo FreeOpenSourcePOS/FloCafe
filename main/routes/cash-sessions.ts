@@ -133,7 +133,6 @@ function closeSessionTxn(
       Number(session.opening_float_cents || 0),
       session,
     ),
-    // Drawer and tender totals follow ownership; staff/tax remain settlement-based.
     ...sessionFinancialTotals(db, session, closedAt),
   };
   const expectedCashCents = sessionExpectedCash(db, session, closedAt, sessionMovements);

@@ -44,10 +44,7 @@ import {
 import { requirePermission } from '../services/authorization';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
-import {
-  openSessionBlockingDayClose,
-  openSessionsBlockingDayClose,
-} from '../services/cash-day-close-guards';
+import { openSessionsBlockingDayClose } from '../services/cash-day-close-guards';
 import {
   getOpenSession,
   NO_CASH_SESSION_ID,
@@ -921,6 +918,13 @@ export function computePeriodAggregates(
   // rest of the Z. Bills are hydrated with their order items and then
   // aggregated via the existing `aggregateTaxComponents` pipeline, unchanged.
   // Unpaid bills drop out by the same logic as the staff query above.
+  type TaxBillRow = {
+    id: number;
+    order_id: number;
+    tax_amount: number | null;
+    tax_snapshot: string | null;
+    tax_breakdown: string | null;
+  };
   const bills = session
     ? (db
         .prepare(
@@ -955,7 +959,7 @@ export function computePeriodAggregates(
     ORDER BY b.paid_at, b.id
   `,
         )
-        .all(session.id, session.opened_at, end) as any[])
+        .all(session.id, session.opened_at, end) as TaxBillRow[])
     : (db
         .prepare(
           `
@@ -965,7 +969,7 @@ export function computePeriodAggregates(
     ORDER BY b.paid_at, b.id
   `,
         )
-        .all(start, end) as any[]);
+        .all(start, end) as TaxBillRow[]);
   const orders = getOrdersWithItemsForBills(db, bills);
   const taxDocuments = bills.map((bill) => ({
     tax_amount: bill.tax_amount,

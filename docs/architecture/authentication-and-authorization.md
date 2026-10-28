@@ -203,9 +203,10 @@ terminals, while approval authority stays restricted to active `owner` and `mana
 2. **Selected-user PIN sign-in (`POST /api/auth/pin-login`):** Accepts `{ user_id, pin, rememberMe }`
    and verifies the PIN strictly against the selected `user_id` via `verifyPinAsync` without
    scanning other users, so two staff members may share the same PIN. Verification and rate-limit
-   checks are serialized per user key (`${normalizedIp}:pin:${userId}`) with
-   `withPinVerificationLock`, failed attempts are tracked by the install-wide login rate limiter per
-   user, and every attempt is recorded in `auth_audit_log` (`event_type = 'pin_login'`, `outcome` in
+   checks are serialized per target account (`pin-user:${userId}`) with `withPinVerificationLock`,
+   failed attempts are tracked by the install-wide login rate limiter both per client IP + user
+   (`${normalizedIp}:pin:${userId}`) and per target account across source IPs (`pin-user:${userId}`),
+   and every attempt is recorded in `auth_audit_log` (`event_type = 'pin_login'`, `outcome` in
    `'success'`, `'failure'`, or `'rate_limited'`).
 3. **Terminal lock and session boundary:** Only one user is signed in on a device at a time. The
    manual **Lock** action in the POS topbar/sidebar (and the optional `auto_lock_minutes` idle

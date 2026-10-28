@@ -3155,7 +3155,10 @@ function fitPluginRowColumns<T extends PluginLineColumn & { value: string }>(
     let deficit = needed - widths[i];
     for (let j = 0; j < columns.length && deficit > 0; j += 1) {
       if (j === i || isPluginItemColumn(columns[j])) continue;
-      const minFloor = Math.max(1, displayCellWidth(columns[j].value) + (gap === 0 && j > 0 ? 1 : 0));
+      const minFloor = Math.max(
+        1,
+        displayCellWidth(columns[j].value) + (gap === 0 && j > 0 ? 1 : 0),
+      );
       const spare = Math.max(0, widths[j] - minFloor);
       if (spare > 0) {
         const take = Math.min(deficit, spare);

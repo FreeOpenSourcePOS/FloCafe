@@ -521,11 +521,7 @@ test('pack and standard receipts never truncate financial values across 32 and 4
         'en',
         capabilities,
       );
-      assert.equal(
-        packWarnings.length,
-        0,
-        `pack ${physicalCols} cols ${size} emits no warnings`,
-      );
+      assert.equal(packWarnings.length, 0, `pack ${physicalCols} cols ${size} emits no warnings`);
       const measuredPack = measureEscPos(packData);
       assert.equal(measuredPack.unconsumedControlBytes, 0);
       assert.ok(
@@ -832,7 +828,10 @@ test('raster 4-column pack rows rebalance spare pixel width so large financial n
   );
   assert.equal(rendered.failures.length, 0);
   assert.ok(drawnTexts.includes('$617.28'), 'raster draws full rate $617.28 without splitting');
-  assert.ok(drawnTexts.includes('$1,234.56'), 'raster draws full amount $1,234.56 without splitting');
+  assert.ok(
+    drawnTexts.includes('$1,234.56'),
+    'raster draws full amount $1,234.56 without splitting',
+  );
 
   const drawnExtraLarge: string[] = [];
   const createExtraLargeCanvas = (): RasterCanvas => ({
@@ -867,7 +866,10 @@ test('raster 4-column pack rows rebalance spare pixel width so large financial n
   );
   assert.equal(renderedXL.failures.length, 0);
   assert.ok(drawnExtraLarge.includes('$617.28'), 'extra_large raster stacks full rate $617.28');
-  assert.ok(drawnExtraLarge.includes('$1,234.56'), 'extra_large raster stacks full amount $1,234.56');
+  assert.ok(
+    drawnExtraLarge.includes('$1,234.56'),
+    'extra_large raster stacks full amount $1,234.56',
+  );
 
   const summaryRes = paintRasterRequest(
     {
@@ -892,7 +894,10 @@ test('raster 4-column pack rows rebalance spare pixel width so large financial n
     createExtraLargeCanvas,
   );
   assert.equal(summaryRes.ok, true);
-  assert.ok(drawnExtraLarge.includes('$27,252.61'), 'summary without widthRatio preserves $27,252.61');
+  assert.ok(
+    drawnExtraLarge.includes('$27,252.61'),
+    'summary without widthRatio preserves $27,252.61',
+  );
 
   const overflowRaster = paintRasterRequest(
     {
@@ -969,7 +974,17 @@ test('tax breakdown rates, space-grouped addon prices, and zero-gap/wrapped fina
         quantity: 1250,
         unit_price: 19.99,
         total: 24987.5,
-        tax_breakdown: [{ title: 'State Goods and Services Tax', rate: 12.3456789, amount: 312.34 }],
+        tax_breakdown: [
+          { title: 'State Goods and Services Tax', rate: 12.3456789, amount: 312.34 },
+        ],
+        addons: [],
+      },
+      {
+        product_name: 'Espresso',
+        quantity: 1,
+        unit_price: 5,
+        total: 5,
+        tax_breakdown: [],
         addons: [{ name: 'Artisan Syrup Extra', price: 1234.56, quantity: 1 }],
       },
     ],
@@ -1011,10 +1026,22 @@ test('tax breakdown rates, space-grouped addon prices, and zero-gap/wrapped fina
       const measured = measureEscPos(data);
       assert.ok(measured.maxCells <= 32, `${tmpl.template_id} ${size} fits 32 cells`);
       const text = escPosToText(data);
-      assert.ok(text.includes('@12.3456789%'), `${tmpl.template_id} ${size} preserves @12.3456789%`);
-      assert.ok(text.includes('EUR1 234,56'), `${tmpl.template_id} ${size} preserves addon EUR1 234,56 on one line`);
-      assert.ok(text.includes('EUR24 987,50'), `${tmpl.template_id} ${size} preserves item EUR24 987,50`);
-      assert.ok(!text.includes('1250EUR'), `${tmpl.template_id} ${size} separates quantity and amount`);
+      assert.ok(
+        text.includes('@12.3456789%'),
+        `${tmpl.template_id} ${size} preserves @12.3456789%`,
+      );
+      assert.ok(
+        text.includes('EUR1 234,56'),
+        `${tmpl.template_id} ${size} preserves addon EUR1 234,56 on one line`,
+      );
+      assert.ok(
+        text.includes('EUR24 987,50'),
+        `${tmpl.template_id} ${size} preserves item EUR24 987,50`,
+      );
+      assert.ok(
+        !text.includes('1250EUR'),
+        `${tmpl.template_id} ${size} separates quantity and amount`,
+      );
     }
     for (const stdKind of ['classic', 'compact'] as const) {
       const stdData = formatReceipt(

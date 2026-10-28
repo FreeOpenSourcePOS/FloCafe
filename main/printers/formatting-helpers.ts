@@ -106,7 +106,9 @@ export function itemAmountWidth(
 }
 
 function normalizeFinancialValue(raw: string): string {
-  return String(raw ?? '').trim().replace(/^-\s+/, '-');
+  return String(raw ?? '')
+    .trim()
+    .replace(/^-\s+/, '-');
 }
 
 export function assertFinancialValueFitsColumns(
@@ -192,10 +194,7 @@ export function itemRows(
 
   const nameLines = wrapText(productName, cols);
   if (displayCellWidth(rawQty) + 1 + displayCellWidth(trimmedAmount) <= cols) {
-    return [
-      ...nameLines,
-      rawQty + rightAlign(trimmedAmount, cols - displayCellWidth(rawQty)),
-    ];
+    return [...nameLines, rawQty + rightAlign(trimmedAmount, cols - displayCellWidth(rawQty))];
   }
   return [
     ...nameLines,
@@ -313,14 +312,16 @@ export function taxBreakdownRows(
     return financialRows(rawLabel, value, cols, language, capabilities);
   }
   if (hasRate) {
+    const normalizedTitle = normalizeThermalText(title, capabilities);
+    const titleWidth = displayCellWidth(normalizedTitle);
     const rateSuffixWidth = displayCellWidth(rateSuffix);
     const inlineTitleBudget = cols - 1 - trimmedValueWidth - rateSuffixWidth;
-    if (inlineTitleBudget >= 1) {
+    if (inlineTitleBudget >= Math.min(titleWidth, 6)) {
       const label = truncate(title, inlineTitleBudget, language, capabilities) + rateSuffix;
       return financialRows(label, value, cols, language, capabilities);
     }
     const stackedTitleBudget = cols - 1 - rateSuffixWidth;
-    if (stackedTitleBudget >= 1) {
+    if (stackedTitleBudget >= Math.min(titleWidth, 6)) {
       const label = truncate(title, stackedTitleBudget, language, capabilities) + rateSuffix;
       return financialRows(label, value, cols, language, capabilities);
     }

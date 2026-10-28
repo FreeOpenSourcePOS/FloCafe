@@ -165,15 +165,13 @@ export function paintRasterRequest(
             (_, index) => index === 0 || Math.ceil(measured[index]) <= widths[index],
           );
           if (!financialFitsSingleRow) {
-            const stackedLines: Cell[][] = wrap(columns[0].text, request.widthDots).map(
-              (text) => [
-                {
-                  text,
-                  align: columns[0].align,
-                  width: request.widthDots,
-                },
-              ],
-            );
+            const stackedLines: Cell[][] = wrap(columns[0].text, request.widthDots).map((text) => [
+              {
+                text,
+                align: columns[0].align,
+                width: request.widthDots,
+              },
+            ]);
             type GroupItem = { text: string; width: number };
             let currentGroup: GroupItem[] = [];
             let currentWidth = 0;

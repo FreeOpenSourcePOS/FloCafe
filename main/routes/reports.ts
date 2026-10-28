@@ -34,6 +34,7 @@ import { roundCurrencyCost } from '../services/supplies';
 import {
   buildDailySalesExportDataset,
   DailySalesExportValidationError,
+  parseValidBusinessDate,
   resolveDailySalesExportRange,
   type DailySalesCostStatus,
 } from '../services/daily-sales-export';
@@ -129,7 +130,11 @@ function reportDayBounds(date: string): [string, string] {
 }
 
 function reportDate(value: unknown, fallback: string): string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
+  return typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    parseValidBusinessDate(value) !== null
+    ? value
+    : fallback;
 }
 
 /**
@@ -1028,6 +1033,12 @@ router.get('/insights', requirePermission('reports.view'), (req: Request, res: R
             86_400_000,
         ) + 1,
       );
+      if (days > 365) {
+        captureReportsDateRangeRejection('invalid_format');
+        return res
+          .status(400)
+          .json({ error: 'start_date and end_date range must not exceed 365 days' });
+      }
     } else {
       days = Math.min(Math.max(parseInt(req.query.days as string) || 30, 1), 365);
       // #208: "N days back" in the tenant's local calendar, with a UTC range

@@ -908,9 +908,10 @@ async function main() {
         const day2 = '2026-10-02';
         const day3 = '2026-10-03';
         const day1At = dbTimestamp(new Date('2026-10-01T10:00:00Z')); // 15:30 IST on 2026-10-01
-        // 2026-10-03 01:30 IST = 2026-10-02 20:00 UTC -> with 04:00 cutoff, belongs to business day 2026-10-02!
-        const day2CutoffAt = dbTimestamp(new Date('2026-10-02T20:00:00Z'));
-        const day3At = dbTimestamp(new Date('2026-10-03T10:00:00Z')); // 15:30 IST on 2026-10-03
+        // 2026-10-03 03:59:59 IST = 2026-10-02 22:29:59 UTC -> 1s before 04:00 cutoff, belongs to business day 2026-10-02!
+        const day2CutoffAt = dbTimestamp(new Date('2026-10-02T22:29:59Z'));
+        // 2026-10-03 04:00:00 IST = 2026-10-02 22:30:00 UTC -> exactly at 04:00 cutoff, belongs to business day 2026-10-03!
+        const day3At = dbTimestamp(new Date('2026-10-02T22:30:00Z'));
 
         // Day 1 Bill A: Single-component tax (VAT 10% on 100 -> tax 10, total 110), known cost 40 (margin 60%)
         db.prepare(`
@@ -1400,6 +1401,87 @@ async function main() {
           rangeWb.getWorksheet('Items')!.rowCount,
           rangeItems.length + 1,
           'XLSX Items row count matches CSV items part',
+        );
+
+        // Exact 04:00 store-local boundary test (03:59:59 vs 04:00:00 vs 04:00:01 IST)
+        const cutoffDayA = '2026-10-04';
+        const cutoffDayB = '2026-10-05';
+        const beforeCutoffAt = dbTimestamp(new Date('2026-10-05T03:59:59+05:30'));
+        const exactCutoffAt = dbTimestamp(new Date('2026-10-05T04:00:00+05:30'));
+        const afterCutoffAt = dbTimestamp(new Date('2026-10-05T04:00:01+05:30'));
+        const insertCutoffBill = (num: string, amount: number, ts: string): number => {
+          db.prepare(`
+            INSERT INTO orders (order_number, user_id, type, status, subtotal, tax_amount, total, created_at, updated_at, completed_at)
+            VALUES (?, 'owner-test-001', 'takeaway', 'completed', ?, 0, ?, ?, ?, ?)
+          `).run(`ORD-${num}`, amount, amount, ts, ts, ts);
+          const oId = Number(
+            db.prepare('SELECT id FROM orders WHERE order_number = ?').get(`ORD-${num}`).id,
+          );
+          db.prepare(`
+            INSERT INTO bills (
+              bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance,
+              payment_status, payment_details, paid_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 0, ?, ?, 0, 'paid', ?, ?, ?, ?)
+          `).run(
+            `B-${num}`,
+            oId,
+            amount,
+            amount,
+            amount,
+            JSON.stringify([{ method: 'cash', amount, timestamp: ts }]),
+            ts,
+            ts,
+            ts,
+          );
+          return Number(
+            db.prepare('SELECT id FROM bills WHERE bill_number = ?').get(`B-${num}`).id,
+          );
+        };
+        const billBeforeId = insertCutoffBill('CUT-035959', 30, beforeCutoffAt);
+        insertCutoffBill('CUT-040000', 40, exactCutoffAt);
+        insertCutoffBill('CUT-040001', 60, afterCutoffAt);
+        db.prepare(`
+          INSERT INTO refunds (bill_id, order_item_id, amount_cents, method, reason, shift_id, approved_by, created_by, created_at)
+          VALUES (?, NULL, 500, 'cash', 'cutoff-at-040000', NULL, 'owner-test-001', 'owner-test-001', ?)
+        `).run(billBeforeId, exactCutoffAt);
+
+        const cutoffSummaryA = await fetchSummary(cutoffDayA);
+        const cutoffSummaryB = await fetchSummary(cutoffDayB);
+        assertEqual(
+          Number(cutoffSummaryA.get('gross_collected')),
+          30,
+          '03:59:59 IST transaction belongs to previous business day (2026-10-04)',
+        );
+        assertEqual(
+          Number(cutoffSummaryA.get('refunds_issued')),
+          0,
+          '04:00:00 IST refund is excluded from previous business day (2026-10-04)',
+        );
+        assertEqual(
+          Number(cutoffSummaryB.get('gross_collected')),
+          100,
+          '04:00:00 and 04:00:01 IST transactions belong to current business day (2026-10-05)',
+        );
+        assertEqual(
+          Number(cutoffSummaryB.get('refunds_issued')),
+          5,
+          '04:00:00 IST refund belongs to current business day (2026-10-05)',
+        );
+        const cutoffRangeDailyRes = await fetch(
+          `${baseUrl}/api/reports/daily-sales/export?from=${cutoffDayA}&to=${cutoffDayB}&format=csv&part=daily`,
+          { headers: authHeader },
+        );
+        const cutoffRangeDailyLines = (await cutoffRangeDailyRes.text()).trim().split('\n');
+        assertIncludes(
+          cutoffRangeDailyLines[1],
+          `${cutoffDayA},1,1,30,0,30`,
+          'range daily row for 2026-10-04 includes only 03:59:59 IST bill',
+        );
+        assertIncludes(
+          cutoffRangeDailyLines[2],
+          `${cutoffDayB},2,2,100,5,95`,
+          'range daily row for 2026-10-05 includes 04:00:00 and 04:00:01 IST bills and refund',
         );
       } finally {
         db.prepare(
@@ -2115,6 +2197,20 @@ async function main() {
           { headers: authHeader },
         );
         assertEqual(badInsightsRes.status, 400, 'reversed range insights → 400');
+        const impossibleDateInsightsRes = await fetch(
+          `${baseUrl}/api/reports/insights?start_date=2026-02-30&end_date=2026-03-05`,
+          { headers: authHeader },
+        );
+        assertEqual(
+          impossibleDateInsightsRes.status,
+          400,
+          'impossible calendar date in insights → 400',
+        );
+        const oversizedInsightsRes = await fetch(
+          `${baseUrl}/api/reports/insights?start_date=2025-01-01&end_date=2026-01-05`,
+          { headers: authHeader },
+        );
+        assertEqual(oversizedInsightsRes.status, 400, 'insights range > 365 days → 400');
       }
     }
   } finally {

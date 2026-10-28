@@ -1269,8 +1269,10 @@ export function buildDailySalesExportDataset(
     WHERE paid_at >= ? AND paid_at < ?
   `);
 
-  const refundAggStmt = db.prepare(`
-    SELECT COALESCE(SUM(CAST(amount_cents AS REAL)) / ?, 0) AS refunds_issued
+  const rangeRefundsStmt = db.prepare(`
+    SELECT
+      created_at,
+      CAST(amount_cents AS REAL) AS amount_cents
     FROM refunds
     WHERE created_at >= ? AND created_at < ?
   `);
@@ -1390,7 +1392,6 @@ export function buildDailySalesExportDataset(
       known_ingredient_cost: Decimal;
     }
   >();
-  const paymentMethodTotals = new Map<string, Decimal>();
 
   let totalOrderCount = 0;
   let totalPaidBillCount = 0;
@@ -1413,9 +1414,18 @@ export function buildDailySalesExportDataset(
     tax_breakdown?: unknown;
   };
 
-  for (const businessDate of range.dates) {
+  const dayWindows = range.dates.map((businessDate) => {
     const [start, end] = dayBoundsInTimezone(businessDate, timezone, businessDayStart);
+    return { businessDate, start, end };
+  });
+  const rangeStart = dayWindows[0].start;
+  const rangeEnd = dayWindows[dayWindows.length - 1].end;
+  const rangeRefundRows = rangeRefundsStmt.all(rangeStart, rangeEnd) as Array<{
+    created_at: string;
+    amount_cents: number;
+  }>;
 
+  for (const { businessDate, start, end } of dayWindows) {
     const billRow = billAggStmt.get(start, end) as {
       paid_bill_count: number;
       order_count: number;
@@ -1426,7 +1436,12 @@ export function buildDailySalesExportDataset(
       delivery_charge_total: number;
     };
 
-    const refundRow = refundAggStmt.get(minorFactor, start, end) as { refunds_issued: number };
+    let dayRefundCents = 0;
+    for (const refund of rangeRefundRows) {
+      if (refund.created_at >= start && refund.created_at < end) {
+        dayRefundCents += Number(refund.amount_cents || 0);
+      }
+    }
 
     const bills = billsStmt.all(start, end) as PaidBillTaxRow[];
     const dayTaxEntries: HistoricalTaxEntry[] = [];
@@ -1507,7 +1522,7 @@ export function buildDailySalesExportDataset(
       new Decimal(0),
     );
     const dayGrossDec = new Decimal(Number(billRow.gross_collected || 0));
-    const dayRefundsDec = new Decimal(Number(refundRow.refunds_issued || 0));
+    const dayRefundsDec = new Decimal(dayRefundCents / minorFactor);
     const dayNetDec = dayGrossDec.minus(dayRefundsDec);
     const dayDiscountDec = new Decimal(Number(billRow.order_discount_total || 0)).plus(
       dayItemDiscountsDec,
@@ -1552,21 +1567,6 @@ export function buildDailySalesExportDataset(
     totalServiceCharge = totalServiceCharge.plus(dayServiceChargeDec);
     totalPackagingCharge = totalPackagingCharge.plus(dayPackagingChargeDec);
     totalDeliveryCharge = totalDeliveryCharge.plus(dayDeliveryChargeDec);
-
-    const dayPaymentMethods = paymentMethodBreakdown(db, {
-      startDate: businessDate,
-      endDate: businessDate,
-      paidOnly: true,
-      attributeRefundsToBillDate: false,
-      keyByPaidAt: true,
-    });
-    for (const row of dayPaymentMethods) {
-      const method = String(row.method || 'unknown');
-      paymentMethodTotals.set(
-        method,
-        (paymentMethodTotals.get(method) || new Decimal(0)).plus(Number(row.total || 0)),
-      );
-    }
 
     const paymentLineRows = paymentLinesStmt.all(start, end) as Array<{
       bill_number: string | null;
@@ -1619,10 +1619,17 @@ export function buildDailySalesExportDataset(
 
   const items = finalizeItemRows(periodRawItems, fractionDigits);
   const periodProfitability = computeProfitabilityMetrics(periodRawItems, fractionDigits);
-  const paymentMethods: DailySalesExportPaymentRow[] = Array.from(paymentMethodTotals.entries())
-    .map(([method, totalDec]) => ({
-      method,
-      total: totalDec.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber(),
+  const paymentMethods: DailySalesExportPaymentRow[] = paymentMethodBreakdown(db, {
+    explicitWindow: [rangeStart, rangeEnd],
+    paidOnly: true,
+    attributeRefundsToBillDate: false,
+    keyByPaidAt: true,
+  })
+    .map((row) => ({
+      method: String(row.method || 'unknown'),
+      total: new Decimal(Number(row.total || 0))
+        .toDecimalPlaces(6, Decimal.ROUND_HALF_UP)
+        .toNumber(),
     }))
     .sort((a, b) => b.total - a.total);
 

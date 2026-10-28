@@ -94,6 +94,17 @@ export function useCashSession() {
   const [closedResult, setClosedResult] = useState<ShiftCloseResult | null>(null);
   const [printing, setPrinting] = useState(false);
   const [closePreview, setClosePreview] = useState<CashSessionClosePreview | null>(null);
+  const activeUserId = user?.id ?? null;
+  const [syncedUserId, setSyncedUserId] = useState<string | null>(activeUserId);
+  if (syncedUserId !== activeUserId) {
+    setSyncedUserId(activeUserId);
+    setSelectedSessionId(null);
+    setClosePreview(null);
+    setSubmitError(null);
+    setClosedResult(null);
+    setCountedInput('');
+    setFloatInput('');
+  }
 
   // Pure fetcher shared by the mount effect and refresh(): performs the
   // request, returns data-or-null, never touches state itself. (The mount
@@ -155,6 +166,8 @@ export function useCashSession() {
       if (cancelled || seq !== refreshSeq.current) return;
       setSession(data);
       setOpenSessions(allOpen);
+      setSelectedSessionId(null);
+      setClosePreview(null);
       setError(loadError);
       setLoading(false);
     });
@@ -237,6 +250,8 @@ export function useCashSession() {
       });
       setClosedResult(res.data);
       setCountedInput('');
+      setSelectedSessionId(null);
+      setClosePreview(null);
       toast.success(t('shiftClosed'));
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flo-shift-changed'));
       await refresh();

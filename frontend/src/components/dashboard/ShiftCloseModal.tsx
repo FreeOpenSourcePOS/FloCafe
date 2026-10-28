@@ -42,6 +42,7 @@ export function ShiftCloseModal({ model }: { model: CashSessionModel }) {
     printClosure,
     setSubmitError,
     closePreview,
+    setClosePreview,
   } = model;
   const targetSession = activeSession ?? session;
   const tPos = useTranslations('pos');
@@ -59,6 +60,8 @@ export function ShiftCloseModal({ model }: { model: CashSessionModel }) {
       setClosedResult(null);
       setSubmitError(null);
       setCountedInput('');
+      setSelectedSessionId(null);
+      setClosePreview(null);
       setHasPrinted(false);
     }
     setCloseModalOpen(next);
@@ -100,6 +103,8 @@ export function ShiftCloseModal({ model }: { model: CashSessionModel }) {
                       const nextId = Number(e.target.value);
                       if (Number.isInteger(nextId) && nextId > 0) {
                         setSelectedSessionId(nextId);
+                        setSubmitError(null);
+                        setClosePreview(null);
                       }
                     }}
                     className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"

@@ -87,7 +87,10 @@
     "signInTitle": "登录以管理您的商家",
     "signingIn": "正在登录…",
     "storageUnavailable": "无法保存您的会话。浏览器可能阻止了存储（隐私模式或禁用了 Cookie）。",
-    "yourName": "您的姓名"
+    "yourName": "您的姓名",
+    "quickSwitchTitle": "快速切换用户",
+    "quickSwitchSubtitle": "选择您的个人资料以使用 PIN 登录",
+    "enterPinFor": "输入 {name} 的 PIN"
   },
   "backup": {
     "creating": "正在创建备份…",
@@ -1089,7 +1092,7 @@
     "backspaceAmount": "退格金额",
     "numericKeypad": "数字键盘",
     "kitchenItemsPendingWarning": "{count, plural, one {厨房仍有 # 道菜正在准备} other {厨房仍有 # 道菜正在准备}}",
-    "kitchenDeliveryOverridePrompt": "厨房菜品尚未送达。请输入经理 PIN 以授权结账。",
+    "kitchenDeliveryOverridePrompt": "厨房菜品尚未送达。请输入员工批准 PIN 以授权结账。",
     "kitchenDeliveryOverrideSuccess": "已接受经理对未送达菜品的授权。",
     "kitchenDeliveryOverrideInvalid": "经理 PIN 无效，请重试。",
     "waiveCharge": "免除",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "请在日结此营业日之前先关闭未关班次 #{id}（{name}）。",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# 笔未结订单将结转至下一班次} other {# 笔未结订单将结转至下一班次}}",
     "shiftCloseUnpaidWarningHint": "这些订单将保持开启并交接给下一班次。关闭本班次仅核对本班次期间已收取的现金付款。",
-    "shiftCloseUnpaidMoreCount": "另有 +{count} 笔未结订单"
+    "shiftCloseUnpaidMoreCount": "另有 +{count} 笔未结订单",
+    "lockTerminal": "锁定终端"
   },
   "printTest": {
     "amt": "金额",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "关闭所有可选的互联网连接：云同步、Google Drive 备份、WhatsApp、更新检查、使用分析以及从网络导入图片。订单、结账、打印和本地网络中的设备仍可正常使用。",
     "offlineModeFailed": "无法更改离线模式",
     "offlineModeReadFailed": "无法读取当前的离线模式设置。",
-    "offlineModeRetry": "重试"
+    "offlineModeRetry": "重试",
+    "autoLockLabel": "空闲自动锁定",
+    "autoLockHint": "闲置一段时间后自动锁定 POS 终端",
+    "autoLockOff": "关闭",
+    "autoLockMinutesOption": "{count} 分钟"
   },
   "setup": {
     "alreadyCompleted": "此安装已完成设置。正在跳转到登录…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "新密码（留空则保持不变）",
     "noKitchenStations": "没有可用的厨房工作站",
     "passwordPlaceholder": "密码",
-    "pinHint": "用于经理批准（取消订单等）",
+    "pinHint": "用于快速登录及店主/经理审批",
     "pinPlaceholderAdd": "PIN（4-6 位）",
     "pinPlaceholderEdit": "新 PIN（留空则保持不变）",
     "pinSet": "✓ PIN 已设置",

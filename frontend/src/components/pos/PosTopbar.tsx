@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { Product } from '@/lib/types';
 import { useTranslations } from 'use-intl';
+import { useAuthStore } from '@/store/auth';
 
 interface Props {
   products: Product[];
@@ -62,6 +63,7 @@ export default function PosTopbar({
   const t = useTranslations('pos');
   const tDashboard = useTranslations('dashboard');
   const tProducts = useTranslations('products');
+  const lock = useAuthStore((s) => s.lock);
 
   return (
     // Identity/search first, the action buttons end-aligned next to it, and the
@@ -130,6 +132,18 @@ export default function PosTopbar({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <button
+            type="button"
+            data-testid="pos-lock-button"
+            onClick={() => {
+              void lock();
+            }}
+            className="touch-target shrink-0 rounded-lg border border-border bg-card px-3 text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
+            title={t('lockTerminal')}
+            aria-label={t('lockTerminal')}
+          >
+            <Lock size={16} />
+          </button>
           <button
             type="button"
             onClick={onToggleFullscreen}

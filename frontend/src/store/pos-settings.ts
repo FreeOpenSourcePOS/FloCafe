@@ -8,6 +8,13 @@ export type PaperSize = 'thermal58' | 'thermal80';
 export type PrinterPrintMode = 'escpos' | 'browser';
 export type CoreBillTemplate = 'classic' | 'compact';
 export type BillTemplate = CoreBillTemplate | (string & {});
+export type AutoLockMinutes = 0 | 1 | 5 | 15 | 30;
+
+export function normalizeAutoLockMinutesValue(value: unknown): AutoLockMinutes {
+  const num = typeof value === 'number' ? value : Number(String(value ?? '0').trim());
+  if (num === 1 || num === 5 || num === 15 || num === 30) return num;
+  return 0;
+}
 
 export interface PosSettingsState {
   showProductImages: boolean;
@@ -60,10 +67,13 @@ export interface PosSettingsState {
   // Print language policies synced from backend settings.
   billLanguagePolicy: ReceiptLanguagePolicy;
   kotLanguagePolicy: KotLanguagePolicy;
+  // Idle auto-lock timeout in minutes (0 = off).
+  autoLockMinutes: AutoLockMinutes;
   // Actions
   setShowProductImages: (show: boolean) => void;
   setCustomerMandatory: (mandatory: boolean) => void;
   setEnforcePhoneLength: (enabled: boolean) => void;
+  setAutoLockMinutes: (minutes: AutoLockMinutes) => void;
   setLanguage: (lang: Language) => void;
   setPrinterPaperSize: (size: PaperSize) => void;
   setPrinterEnabled: (enabled: boolean) => void;
@@ -139,6 +149,8 @@ export interface ReceiptSettingsHydrationData {
   billingType?: string | null;
   tables_required?: boolean | string | null;
   tablesRequired?: boolean | string | null;
+  auto_lock_minutes?: number | string | null;
+  autoLockMinutes?: number | string | null;
 }
 
 export const usePosSettingsStore = create<PosSettingsState>()(
@@ -190,10 +202,13 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       // the backend settings API (#441).
       billLanguagePolicy: defaultPrintLanguagePolicy(),
       kotLanguagePolicy: defaultPrintLanguagePolicy(),
+      autoLockMinutes: 0,
       // Actions
       setShowProductImages: (show) => set({ showProductImages: show }),
       setCustomerMandatory: (mandatory) => set({ customerMandatory: mandatory }),
       setEnforcePhoneLength: (enabled) => set({ enforcePhoneLength: enabled }),
+      setAutoLockMinutes: (autoLockMinutes) =>
+        set({ autoLockMinutes: normalizeAutoLockMinutesValue(autoLockMinutes) }),
       setLanguage: (language) => set({ language }),
       setPrinterPaperSize: (size) => set({ printerPaperSize: size }),
       setPrinterEnabled: (enabled) => set({ printerEnabled: enabled }),
@@ -329,6 +344,10 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           if (tablesReq !== undefined && tablesReq !== null) {
             updates.tablesRequired =
               typeof tablesReq === 'boolean' ? tablesReq : tablesReq !== 'false';
+          }
+          const autoLock = d.auto_lock_minutes ?? d.autoLockMinutes;
+          if (autoLock !== undefined && autoLock !== null) {
+            updates.autoLockMinutes = normalizeAutoLockMinutesValue(autoLock);
           }
           return updates;
         }),

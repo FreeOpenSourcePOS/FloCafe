@@ -119,6 +119,13 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
+      const authHeader = String(error.config?.headers?.Authorization || '');
+      const requestToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      const currentToken = localStorage.getItem('token') || '';
+      // Ignore stale 401 responses from a prior user session after a quick switch.
+      if (requestToken && currentToken && requestToken !== currentToken) {
+        return Promise.reject(error);
+      }
       // KDS routes render inline login; avoid redirecting away to /auth/login.
       const isKdsPath = window.location.pathname.startsWith('/kds');
       localStorage.removeItem('token');

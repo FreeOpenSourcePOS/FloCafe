@@ -2,7 +2,14 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
-import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../db';
+import {
+  getCurrentSchemaVersion,
+  getDatabase,
+  getSettingValue,
+  now,
+  recordAuthAudit,
+  verifyPinAsync,
+} from '../db';
 import { getJWTSecret } from '../security/jwt-secret';
 import { seedSetupProfile } from '../setup/seed-data';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
@@ -302,6 +309,168 @@ router.post(
       });
     } catch (error: any) {
       console.error('[Auth] Login error:', error);
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }),
+);
+
+// ── GET /api/auth/pin-users ───────────────────────────────────────────────────
+// Public quick-switch user picker directory: active users with a PIN configured.
+
+router.get('/pin-users', authRateLimit({ max: 600 }), (_req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const rows = db
+      .prepare(
+        `SELECT id, name, role
+         FROM users
+         WHERE is_active = 1 AND pin_hash IS NOT NULL
+         ORDER BY CASE role
+           WHEN 'owner' THEN 1
+           WHEN 'manager' THEN 2
+           WHEN 'cashier' THEN 3
+           WHEN 'server' THEN 4
+           WHEN 'chef' THEN 5
+           ELSE 6
+         END, name COLLATE NOCASE ASC`,
+      )
+      .all() as Array<{ id: string; name: string; role: string }>;
+
+    res.json({
+      users: rows.map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        role: String(row.role),
+      })),
+    });
+  } catch (error: any) {
+    console.error('[Auth] PIN users error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /api/auth/pin-login ──────────────────────────────────────────────────
+// Quick user switch via PIN for a specifically selected user_id.
+
+router.post(
+  '/pin-login',
+  loginAuthRateLimit(),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const { user_id, pin, rememberMe } = req.body || {};
+      const userId = typeof user_id === 'string' ? user_id.trim() : '';
+      const rawPin = typeof pin === 'string' || typeof pin === 'number' ? String(pin) : '';
+
+      if (!userId || !rawPin) {
+        return res.status(400).json({ error: 'user_id and pin are required' });
+      }
+
+      const db = getDatabase();
+      const rateLimitKey = `${ip}:pin:${userId}`;
+      const rateLimit = checkLoginRateLimit(rateLimitKey);
+      if (!rateLimit.allowed) {
+        recordAuthAudit(db, {
+          userId,
+          eventType: 'pin_login',
+          outcome: 'rate_limited',
+          ipAddress: ip,
+          details: { wait_minutes: rateLimit.waitMinutes },
+        });
+        return res.status(429).json({
+          error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.`,
+        });
+      }
+
+      if (!/^\d{4,6}$/.test(rawPin)) {
+        const attemptsRemaining = incrementFailedLogin(rateLimitKey);
+        recordAuthAudit(db, {
+          userId,
+          eventType: 'pin_login',
+          outcome: 'failure',
+          ipAddress: ip,
+          details: {
+            reason: 'invalid_pin_format',
+            attempts_remaining: attemptsRemaining,
+          },
+        });
+        return res.status(401).json({
+          error: 'Invalid credentials',
+          attempts_remaining: attemptsRemaining,
+          lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
+        });
+      }
+
+      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+      let pinMatches = false;
+      if (user && user.is_active === 1 && user.pin_hash) {
+        try {
+          pinMatches = await verifyPinAsync(user.pin_hash, rawPin);
+        } catch {
+          pinMatches = false;
+        }
+      }
+
+      if (!user || user.is_active !== 1 || !user.pin_hash || !pinMatches) {
+        const attemptsRemaining = incrementFailedLogin(rateLimitKey);
+        recordAuthAudit(db, {
+          userId,
+          eventType: 'pin_login',
+          outcome: 'failure',
+          ipAddress: ip,
+          details: {
+            reason: !user
+              ? 'user_not_found'
+              : user.is_active !== 1
+                ? 'user_inactive'
+                : !user.pin_hash
+                  ? 'pin_not_set'
+                  : 'invalid_pin',
+            attempts_remaining: attemptsRemaining,
+          },
+        });
+        return res.status(401).json({
+          error: 'Invalid credentials',
+          attempts_remaining: attemptsRemaining,
+          lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
+        });
+      }
+
+      resetSuccessfulLogin(rateLimitKey);
+      recordAuthAudit(db, {
+        userId: user.id,
+        eventType: 'pin_login',
+        outcome: 'success',
+        ipAddress: ip,
+        details: { role: user.role },
+      });
+
+      const remember = !!rememberMe;
+      const token = jwt.sign(
+        { userId: user.id, email: user.email, role: user.role, remember, jti: randomUUID() },
+        getJWTSecret(),
+        { expiresIn: expiresInFor(remember) },
+      );
+
+      const tenant = buildLocalTenant(db, user.id, user.role);
+
+      res.json({
+        access_token: token,
+        token_type: 'bearer',
+        expires_in: remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : 86400,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          category_ids: parseCategoryIds(user.category_ids),
+        },
+        tenant,
+        tenants: [tenant],
+      });
+    } catch (error: any) {
+      console.error('[Auth] PIN login error:', error);
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }

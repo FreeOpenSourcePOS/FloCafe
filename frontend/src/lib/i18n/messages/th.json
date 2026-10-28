@@ -87,7 +87,10 @@
     "signInTitle": "เข้าสู่ระบบเพื่อจัดการกิจการของคุณ",
     "signingIn": "กำลังเข้าสู่ระบบ...",
     "storageUnavailable": "ไม่สามารถบันทึกเซสชันได้ เบราว์เซอร์ของคุณอาจบล็อกพื้นที่จัดเก็บ (โหมดส่วนตัวหรือปิดใช้คุกกี้)",
-    "yourName": "ชื่อของคุณ"
+    "yourName": "ชื่อของคุณ",
+    "quickSwitchTitle": "สลับผู้ใช้ด่วน",
+    "quickSwitchSubtitle": "เลือกโปรไฟล์ของคุณเพื่อเข้าสู่ระบบด้วย PIN",
+    "enterPinFor": "ใส่ PIN สำหรับ {name}"
   },
   "backup": {
     "creating": "กำลังสร้างข้อมูลสำรอง...",
@@ -1089,7 +1092,7 @@
     "numericKeypad": "แป้นตัวเลข",
     "tax": "ภาษี",
     "kitchenItemsPendingWarning": "{count, plural, one {ยังมี # รายการที่กำลังเตรียมอยู่ในครัว} other {ยังมี # รายการที่กำลังเตรียมอยู่ในครัว}}",
-    "kitchenDeliveryOverridePrompt": "รายการจากครัวยังไม่ได้ส่งมอบ โปรดใส่ PIN ผู้จัดการเพื่ออนุมัติการชำระเงิน",
+    "kitchenDeliveryOverridePrompt": "รายการจากครัวยังไม่ได้ส่งมอบ โปรดใส่ PIN อนุมัติพนักงานเพื่ออนุมัติการชำระเงิน",
     "kitchenDeliveryOverrideSuccess": "ยอมรับการอนุมัติจากผู้จัดการสำหรับรายการที่ยังไม่ส่งมอบแล้ว",
     "kitchenDeliveryOverrideInvalid": "PIN ผู้จัดการไม่ถูกต้อง โปรดลองอีกครั้ง",
     "waiveCharge": "ยกเว้น",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "ปิดกะที่เปิดอยู่ #{id} ({name}) ก่อนปิดวันทำการนี้",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {ออเดอร์ที่เปิดอยู่ # รายการจะส่งต่อไปกะถัดไป} other {ออเดอร์ที่เปิดอยู่ # รายการจะส่งต่อไปกะถัดไป}}",
     "shiftCloseUnpaidWarningHint": "ออเดอร์เหล่านี้จะยังคงเปิดอยู่สำหรับกะถัดไป การปิดกะนี้จะกระทบยอดเฉพาะเงินสดที่รับชำระแล้วในระหว่างกะนี้เท่านั้น",
-    "shiftCloseUnpaidMoreCount": "+อีก {count} ออเดอร์ที่เปิดอยู่"
+    "shiftCloseUnpaidMoreCount": "+อีก {count} ออเดอร์ที่เปิดอยู่",
+    "lockTerminal": "ล็อกเครื่อง POS"
   },
   "printTest": {
     "amt": "จำนวนเงิน",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "ปิดการเชื่อมต่ออินเทอร์เน็ตที่เป็นตัวเลือกทั้งหมด ได้แก่ การซิงก์คลาวด์ การสำรองข้อมูล Google Drive, WhatsApp, การตรวจสอบอัปเดต การวิเคราะห์การใช้งาน และการนำเข้ารูปภาพจากเว็บ ออเดอร์ การเรียกเก็บเงิน การพิมพ์ และอุปกรณ์ในเครือข่ายภายในของคุณยังทำงานต่อได้",
     "offlineModeFailed": "ไม่สามารถเปลี่ยนโหมดออฟไลน์ได้",
     "offlineModeReadFailed": "ไม่สามารถอ่านการตั้งค่าโหมดออฟไลน์ปัจจุบันได้",
-    "offlineModeRetry": "ลองอีกครั้ง"
+    "offlineModeRetry": "ลองอีกครั้ง",
+    "autoLockLabel": "ล็อกอัตโนมัติเมื่อไม่มีการใช้งาน",
+    "autoLockHint": "ล็อกหน้าจอ POS อัตโนมัติเมื่อไม่มีการใช้งาน",
+    "autoLockOff": "ปิด",
+    "autoLockMinutesOption": "{count} นาที"
   },
   "setup": {
     "alreadyCompleted": "ตั้งค่าการติดตั้งนี้เสร็จสมบูรณ์แล้ว กำลังกลับไปหน้าเข้าสู่ระบบ…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "รหัสผ่านใหม่ (เว้นว่างหากไม่เปลี่ยน)",
     "noKitchenStations": "ไม่มีสถานีครัวที่ใช้ได้",
     "passwordPlaceholder": "รหัสผ่าน",
-    "pinHint": "ใช้สำหรับการอนุมัติของผู้จัดการ เช่น การยกเลิกคำสั่งซื้อ",
+    "pinHint": "ใช้สำหรับเข้าสู่ระบบด่วนและการอนุมัติของเจ้าของหรือผู้จัดการ",
     "pinPlaceholderAdd": "PIN (4-6 หลัก)",
     "pinPlaceholderEdit": "PIN ใหม่ (เว้นว่างหากไม่เปลี่ยน)",
     "pinSet": "✓ ตั้ง PIN แล้ว",

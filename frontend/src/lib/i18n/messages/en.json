@@ -87,7 +87,10 @@
     "signInTitle": "Sign in to manage your business",
     "signingIn": "Signing in...",
     "storageUnavailable": "Could not save your session. Your browser may be blocking storage (private mode or disabled cookies).",
-    "yourName": "Your Name"
+    "yourName": "Your Name",
+    "quickSwitchTitle": "Quick Switch",
+    "quickSwitchSubtitle": "Select your profile to sign in with your PIN",
+    "enterPinFor": "Enter PIN for {name}"
   },
   "backup": {
     "creating": "Creating backup...",
@@ -1126,7 +1129,7 @@
     "numericKeypad": "Numeric keypad",
     "tax": "Tax",
     "kitchenItemsPendingWarning": "{count, plural, one {# item still being prepared in the kitchen} other {# items still being prepared in the kitchen}}",
-    "kitchenDeliveryOverridePrompt": "Kitchen items are not yet delivered. Enter Manager PIN to authorize billing.",
+    "kitchenDeliveryOverridePrompt": "Kitchen items are not yet delivered. Enter Staff Approval PIN to authorize billing.",
     "kitchenDeliveryOverrideSuccess": "Manager override accepted for undelivered items.",
     "kitchenDeliveryOverrideInvalid": "Invalid Manager PIN. Please try again.",
     "waiveCharge": "Waive",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "Close open shift #{id} ({name}) before closing this business day.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# open order will carry over} other {# open orders will carry over}}",
     "shiftCloseUnpaidWarningHint": "These orders stay open for the next shift. Closing this shift only reconciles cash payments already collected during this shift.",
-    "shiftCloseUnpaidMoreCount": "+{count} more open orders"
+    "shiftCloseUnpaidMoreCount": "+{count} more open orders",
+    "lockTerminal": "Lock Terminal"
   },
   "printTest": {
     "amt": "Amt",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "Turns off every optional internet connection: cloud sync, Google Drive backups, WhatsApp, update checks, usage analytics and image import from the web. Orders, billing, printing and devices on your local network keep working.",
     "offlineModeFailed": "Could not change Offline mode",
     "offlineModeReadFailed": "Could not read the current Offline mode setting.",
-    "offlineModeRetry": "Retry"
+    "offlineModeRetry": "Retry",
+    "autoLockLabel": "Idle Auto-Lock",
+    "autoLockHint": "Automatically lock the POS terminal after inactivity",
+    "autoLockOff": "Off",
+    "autoLockMinutesOption": "{count} min"
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "New Password (leave empty to keep)",
     "noKitchenStations": "No kitchen stations available",
     "passwordPlaceholder": "Password",
-    "pinHint": "Used for manager approvals (cancelling orders, etc.)",
+    "pinHint": "Used for quick sign-in and owner/manager approvals",
     "pinPlaceholderAdd": "PIN (4-6 digits)",
     "pinPlaceholderEdit": "New PIN (leave empty to keep)",
     "pinSet": "✓ PIN set",

@@ -87,7 +87,10 @@
     "signInTitle": "Meld u aan om uw bedrijf te beheren",
     "signingIn": "Aanmelden...",
     "storageUnavailable": "Kan uw sessie niet opslaan. Uw browser blokkeert mogelijk opslag (privémodus of uitgeschakelde cookies).",
-    "yourName": "Uw naam"
+    "yourName": "Uw naam",
+    "quickSwitchTitle": "Snel wisselen",
+    "quickSwitchSubtitle": "Kies uw profiel om met uw pincode aan te melden",
+    "enterPinFor": "Voer pincode in voor {name}"
   },
   "backup": {
     "creating": "Back-up maken...",
@@ -1089,7 +1092,7 @@
     "backspaceAmount": "Laatste cijfer wissen",
     "numericKeypad": "Numeriek toetsenbord",
     "kitchenItemsPendingWarning": "{count, plural, one {Er worden nog # items in de keuken bereid} other {Er worden nog # items in de keuken bereid}}",
-    "kitchenDeliveryOverridePrompt": "Keukenitems zijn nog niet bezorgd. Voer de manager-pincode in om afrekenen toe te staan.",
+    "kitchenDeliveryOverridePrompt": "Keukenitems zijn nog niet bezorgd. Voer de Goedkeurings-PIN van medewerker in om afrekenen toe te staan.",
     "kitchenDeliveryOverrideSuccess": "Managergoedkeuring voor niet-bezorgde items is geaccepteerd.",
     "kitchenDeliveryOverrideInvalid": "Ongeldige manager-pincode. Probeer het opnieuw.",
     "waiveCharge": "Vrijstellen",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "Sluit eerst de geopende dienst #{id} ({name}) voordat u deze werkdag afsluit.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# open bestelling wordt meegenomen} other {# open bestellingen worden meegenomen}}",
     "shiftCloseUnpaidWarningHint": "Deze bestellingen blijven open voor de volgende dienst. Bij het sluiten van deze dienst worden alleen de contante betalingen verrekend die tijdens deze dienst al zijn ontvangen.",
-    "shiftCloseUnpaidMoreCount": "+{count} extra open bestellingen"
+    "shiftCloseUnpaidMoreCount": "+{count} extra open bestellingen",
+    "lockTerminal": "Terminal vergrendelen"
   },
   "printTest": {
     "amt": "Bedrag",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "Schakelt elke optionele internetverbinding uit: cloudsynchronisatie, Google Drive-back-ups, WhatsApp, updatecontroles, gebruiksanalyse en afbeeldingen importeren van het web. Bestellingen, facturatie, afdrukken en apparaten op je lokale netwerk blijven werken.",
     "offlineModeFailed": "De offlinemodus kon niet worden gewijzigd",
     "offlineModeReadFailed": "De huidige instelling voor de offlinemodus kon niet worden gelezen.",
-    "offlineModeRetry": "Opnieuw proberen"
+    "offlineModeRetry": "Opnieuw proberen",
+    "autoLockLabel": "Automatisch vergrendelen bij inactiviteit",
+    "autoLockHint": "Vergrendel de kassa automatisch na inactiviteit",
+    "autoLockOff": "Uit",
+    "autoLockMinutesOption": "{count} min."
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "Nieuw wachtwoord (leeg laten om te behouden)",
     "noKitchenStations": "Er zijn geen keukenstations beschikbaar",
     "passwordPlaceholder": "Wachtwoord",
-    "pinHint": "Wordt gebruikt voor goedkeuringen van managers (het annuleren van bestellingen, enz.)",
+    "pinHint": "Gebruikt voor snel aanmelden en goedkeuringen door eigenaar of manager",
     "pinPlaceholderAdd": "PIN (4-6 cijfers)",
     "pinPlaceholderEdit": "Nieuw PIN (leeg laten om te behouden)",
     "pinSet": "✓ PIN ingesteld",

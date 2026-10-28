@@ -87,7 +87,10 @@
     "signInTitle": "Mag-sign In",
     "signingIn": "Nag-sign in...",
     "storageUnavailable": "Hindi available ang lokal na storage.",
-    "yourName": "Ang Iyong Pangalan"
+    "yourName": "Ang Iyong Pangalan",
+    "quickSwitchTitle": "Mabilisang Paglipat",
+    "quickSwitchSubtitle": "Piliin ang iyong profile para mag-sign in gamit ang PIN",
+    "enterPinFor": "Ilagay ang PIN para kay {name}"
   },
   "backup": {
     "creating": "Gumagawa ng backup...",
@@ -1089,7 +1092,7 @@
     "numericKeypad": "Numeric keypad",
     "tax": "Buwis",
     "kitchenItemsPendingWarning": "{count, plural, one {# item pa ang inihahanda sa kusina} other {# item pa ang inihahanda sa kusina}}",
-    "kitchenDeliveryOverridePrompt": "Hindi pa naihahatid ang mga item mula sa kusina. Ilagay ang PIN ng manager para pahintulutan ang paniningil.",
+    "kitchenDeliveryOverridePrompt": "Hindi pa naihahatid ang mga item mula sa kusina. Ilagay ang PIN ng pag-apruba ng staff para pahintulutan ang paniningil.",
     "kitchenDeliveryOverrideSuccess": "Tinanggap ang pahintulot ng manager para sa mga hindi pa naihahatid na item.",
     "kitchenDeliveryOverrideInvalid": "Mali ang PIN ng manager. Subukan muli.",
     "waiveCharge": "I-exempt",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "Isara muna ang bukas na shift #{id} ({name}) bago isara ang araw ng negosyong ito.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# bukas na order ang ililipat sa susunod na shift} other {# bukas na mga order ang ililipat sa susunod na shift}}",
     "shiftCloseUnpaidWarningHint": "Mananatiling bukas ang mga order na ito para sa susunod na shift. Ang pagsasara ng shift na ito ay nagtutugma lamang sa mga bayad na cash na nakolekta na sa shift na ito.",
-    "shiftCloseUnpaidMoreCount": "+{count} pang bukas na order"
+    "shiftCloseUnpaidMoreCount": "+{count} pang bukas na order",
+    "lockTerminal": "I-lock ang Terminal"
   },
   "printTest": {
     "amt": "Halaga",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "Pinapatay nito ang bawat opsyonal na koneksyon sa internet: cloud sync, backup sa Google Drive, WhatsApp, pag-check ng update, usage analytics at pag-import ng larawan mula sa web. Patuloy na gumagana ang mga order, billing, pag-print at mga device sa iyong local network.",
     "offlineModeFailed": "Hindi mabago ang Offline mode",
     "offlineModeReadFailed": "Hindi mabasa ang kasalukuyang setting ng Offline mode.",
-    "offlineModeRetry": "Subukan muli"
+    "offlineModeRetry": "Subukan muli",
+    "autoLockLabel": "Auto-Lock kapag Idle",
+    "autoLockHint": "Awtomatikong i-lock ang POS terminal kapag walang aktibidad",
+    "autoLockOff": "Naka-off",
+    "autoLockMinutesOption": "{count} minuto"
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "Bagong Password (iwanang blangko upang mapanatili)",
     "noKitchenStations": "Walang available na kitchen station",
     "passwordPlaceholder": "Password",
-    "pinHint": "Ginagamit para sa pag-apruba ng manager (pagkansela ng mga order, atbp.)",
+    "pinHint": "Ginagamit sa mabilisang pag-sign in at pag-apruba ng may-ari o manager",
     "pinPlaceholderAdd": "PIN (4-6 na digit)",
     "pinPlaceholderEdit": "Bagong PIN (iwanang blangko upang mapanatili)",
     "pinSet": "✓ Naitakda ang PIN",

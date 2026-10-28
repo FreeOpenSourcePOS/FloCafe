@@ -87,7 +87,10 @@
     "signInTitle": "Melden Sie sich an, um Ihr Geschäft zu verwalten",
     "signingIn": "Anmeldung läuft…",
     "storageUnavailable": "Sitzung konnte nicht gespeichert werden. Ihr Browser blockiert möglicherweise Cookies oder den Webspeicher.",
-    "yourName": "Ihr Name"
+    "yourName": "Ihr Name",
+    "quickSwitchTitle": "Schneller Benutzerwechsel",
+    "quickSwitchSubtitle": "Profil auswählen, um sich per PIN anzumelden",
+    "enterPinFor": "PIN für {name} eingeben"
   },
   "backup": {
     "creating": "Sicherung wird erstellt…",
@@ -1089,7 +1092,7 @@
     "backspaceAmount": "Ziffer löschen",
     "numericKeypad": "Ziffernblock",
     "kitchenItemsPendingWarning": "{count, plural, one {# Artikel werden noch in der Küche zubereitet} other {# Artikel werden noch in der Küche zubereitet}}",
-    "kitchenDeliveryOverridePrompt": "Küchenartikel wurden noch nicht serviert. PIN der Leitung eingeben, um die Abrechnung freizugeben.",
+    "kitchenDeliveryOverridePrompt": "Küchenartikel wurden noch nicht serviert. Freigabe-PIN des Personals eingeben, um die Abrechnung freizugeben.",
     "kitchenDeliveryOverrideSuccess": "Freigabe durch die Leitung für noch nicht servierte Artikel akzeptiert.",
     "kitchenDeliveryOverrideInvalid": "Ungültige Manager-PIN. Bitte erneut versuchen.",
     "waiveCharge": "Erlassen",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "Schließen Sie die offene Schicht #{id} ({name}), bevor Sie diesen Geschäftstag abschließen.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# offene Bestellung wird übertragen} other {# offene Bestellungen werden übertragen}}",
     "shiftCloseUnpaidWarningHint": "Diese Bestellungen bleiben für die nächste Schicht geöffnet. Beim Schließen dieser Schicht werden nur die in dieser Schicht bereits kassierten Barzahlungen abgestimmt.",
-    "shiftCloseUnpaidMoreCount": "+{count} weitere offene Bestellungen"
+    "shiftCloseUnpaidMoreCount": "+{count} weitere offene Bestellungen",
+    "lockTerminal": "Kasse sperren"
   },
   "printTest": {
     "amt": "Betrag",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "Schaltet jede optionale Internetverbindung ab: Cloud-Sync, Google-Drive-Sicherungen, WhatsApp, Update-Prüfungen, Nutzungsanalysen und den Bildimport aus dem Web. Bestellungen, Abrechnung, Drucken und Geräte im lokalen Netzwerk funktionieren weiter.",
     "offlineModeFailed": "Der Offline-Modus konnte nicht geändert werden",
     "offlineModeReadFailed": "Die aktuelle Offline-Modus-Einstellung konnte nicht gelesen werden.",
-    "offlineModeRetry": "Erneut versuchen"
+    "offlineModeRetry": "Erneut versuchen",
+    "autoLockLabel": "Automatische Sperre bei Inaktivität",
+    "autoLockHint": "Kassenterminal nach Inaktivität automatisch sperren",
+    "autoLockOff": "Aus",
+    "autoLockMinutesOption": "{count} Min."
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "Neues Passwort (leer lassen zum Beibehalten)",
     "noKitchenStations": "Keine Küchenstationen verfügbar",
     "passwordPlaceholder": "Passwort eingeben",
-    "pinHint": "Wird für Managerfreigaben verwendet (z. B. beim Stornieren von Bestellungen).",
+    "pinHint": "Für die Schnellanmeldung sowie Freigaben durch Inhaber oder Leitung",
     "pinPlaceholderAdd": "PIN (4-6 Ziffern)",
     "pinPlaceholderEdit": "Neue PIN (leer lassen zum Beibehalten)",
     "pinSet": "✓ PIN festgelegt",

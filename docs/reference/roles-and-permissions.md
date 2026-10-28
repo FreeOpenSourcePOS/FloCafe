@@ -86,9 +86,9 @@ An owner can flip any configurable cell for a role, or for one user, from the in
 | Orders       | View and create orders                                     |   ✓   |    ✓    |    ✓    |   ✓    |  —   |
 | Orders       | Update order status                                        |   ✓   |    ✓    |    ✓    |   ✓    |  ✓   |
 | Orders       | Change order customers and discounts                       |   ✓   |    ✓    |    —    |   —    |  —   |
-| Orders       | Cancel pending order items                                 |   ✓   |    ✓    |    —    |   —    |  —   |
-| Orders       | Void in-progress order items (manager PIN may be required) |   ✓   |    ✓    |    —    |   —    |  —   |
-| Orders       | Restore cancelled order items                              |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Cancel pending order items                                        |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Void in-progress order items (Staff Approval PIN may be required) |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Restore cancelled order items                                     |   ✓   |    ✓    |    —    |   —    |  —   |
 | Orders       | Edit quantity or replace order items                       |   ✓   |    —    |    —    |   —    |  —   |
 | Orders       | Override order item prices                                 |   ✓   |    —    |    —    |   —    |  —   |
 | Orders       | Create and manage held orders                              |   ✓   |    ✓    |    ✓    |   ✓    |  —   |
@@ -210,6 +210,14 @@ existing account. Demoting or deactivating an account is refused when no other a
 would still hold all four of `authorization.manage`, `staff.privileged.manage`,
 `staff.operational.manage`, and `settings.manage`, so the last administrator is protected even
 while other active owners remain who have been denied one of those capabilities.
+
+**Staff PINs and Staff Approval PINs.** Any staff role (`owner`, `manager`, `cashier`, `server`,
+`chef`) can configure a 4-6 digit PIN in Staff management to appear as a quick-switch tile on the
+login/lock screen (`GET /api/auth/pin-users`, `POST /api/auth/pin-login`). However, **only active
+`owner` and `manager` PINs qualify as a Staff Approval PIN**: `GET /api/staff/approvers` and all
+approval checks (refunds, item voids, discounts, order-status overrides, kitchen-delivery overrides,
+and charge waivers) reject `cashier`, `server`, and `chef` PINs even when those users have a valid
+sign-in PIN.
 
 **Conditional surfaces.** Business type, feature settings such as KDS or WhatsApp, and account
 state can hide or disable a surface independently of whether the permission is granted.

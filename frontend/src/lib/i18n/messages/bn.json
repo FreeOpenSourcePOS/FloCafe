@@ -87,7 +87,10 @@
     "signInTitle": "আপনার ব্যবসা পরিচালনা করতে সাইন ইন করুন",
     "signingIn": "সাইন ইন করা হচ্ছে...",
     "storageUnavailable": "আপনার সেশন সংরক্ষণ করা যায়নি. আপনার ব্রাউজার স্টোরেজ ব্লক করতে পারে (ব্যক্তিগত মোড বা অক্ষম কুকিজ)।",
-    "yourName": "আপনার নাম"
+    "yourName": "আপনার নাম",
+    "quickSwitchTitle": "দ্রুত ইউজার পরিবর্তন",
+    "quickSwitchSubtitle": "পিন দিয়ে সাইন ইন করতে আপনার প্রোফাইল বেছে নিন",
+    "enterPinFor": "{name}-এর পিন লিখুন"
   },
   "backup": {
     "creating": "ব্যাকআপ তৈরি করা হচ্ছে...",
@@ -1089,7 +1092,7 @@
     "numericKeypad": "সংখ্যাসূচক কীপ্যাড",
     "tax": "কর",
     "kitchenItemsPendingWarning": "{count, plural, one {রান্নাঘরে এখনও #টি আইটেম প্রস্তুত হচ্ছে} other {রান্নাঘরে এখনও #টি আইটেম প্রস্তুত হচ্ছে}}",
-    "kitchenDeliveryOverridePrompt": "রান্নাঘরের আইটেম এখনও পরিবেশন করা হয়নি। বিল অনুমোদন করতে ম্যানেজারের PIN দিন।",
+    "kitchenDeliveryOverridePrompt": "রান্নাঘরের আইটেম এখনও পরিবেশন করা হয়নি। বিল অনুমোদন করতে স্টাফ অনুমোদন পিন দিন।",
     "kitchenDeliveryOverrideSuccess": "পরিবেশন না হওয়া আইটেমের জন্য ম্যানেজারের অনুমোদন গ্রহণ করা হয়েছে।",
     "kitchenDeliveryOverrideInvalid": "ম্যানেজারের PIN সঠিক নয়। আবার চেষ্টা করুন।",
     "waiveCharge": "মওকুফ",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "এই ব্যবসায়িক দিনটি বন্ধ করার আগে খোলা শিফট #{id} ({name}) বন্ধ করুন।",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {#টি খোলা অর্ডার পরবর্তী শিফটে যাবে} other {#টি খোলা অর্ডার পরবর্তী শিফটে যাবে}}",
     "shiftCloseUnpaidWarningHint": "এই অর্ডারগুলো পরবর্তী শিফটের জন্য খোলা থাকবে। এই শিফট বন্ধ করলে শুধুমাত্র এই শিফটে ইতিমধ্যে সংগৃহীত নগদ পেমেন্টের হিসাব মেলানো হয়।",
-    "shiftCloseUnpaidMoreCount": "+আরও {count}টি খোলা অর্ডার"
+    "shiftCloseUnpaidMoreCount": "+আরও {count}টি খোলা অর্ডার",
+    "lockTerminal": "টার্মিনাল লক করুন"
   },
   "printTest": {
     "amt": "এএমটি",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "ইন্টারনেটের সব ঐচ্ছিক সংযোগ বন্ধ করে: ক্লাউড সিঙ্ক, Google Drive ব্যাকআপ, হোয়াটসঅ্যাপ, আপডেট পরীক্ষা, ব্যবহার বিশ্লেষণ ও ওয়েব থেকে ছবি আমদানি। অর্ডার, বিলিং, প্রিন্টিং এবং আপনার লোকাল নেটওয়ার্কের ডিভাইস কাজ করতে থাকে।",
     "offlineModeFailed": "অফলাইন মোড পরিবর্তন করা যায়নি",
     "offlineModeReadFailed": "বর্তমান অফলাইন মোড সেটিং পড়া যায়নি।",
-    "offlineModeRetry": "আবার চেষ্টা করুন"
+    "offlineModeRetry": "আবার চেষ্টা করুন",
+    "autoLockLabel": "নিষ্ক্রিয় অটো-লক",
+    "autoLockHint": "নিষ্ক্রিয়তার পর স্বয়ংক্রিয়ভাবে পিওএস টার্মিনাল লক করুন",
+    "autoLockOff": "বন্ধ",
+    "autoLockMinutesOption": "{count} মিনিট"
   },
   "setup": {
     "alreadyCompleted": "এই ইনস্টলে সেটআপ ইতিমধ্যেই সম্পন্ন হয়েছে। লগইন করার জন্য পুনঃনির্দেশ করা হচ্ছে...",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "নতুন পাসওয়ার্ড (রাখার জন্য খালি রাখুন)",
     "noKitchenStations": "কোন রান্নাঘর স্টেশন উপলব্ধ",
     "passwordPlaceholder": "পাসওয়ার্ড",
-    "pinHint": "ম্যানেজারের অনুমোদনের জন্য ব্যবহৃত হয় (অর্ডার বাতিল করা ইত্যাদি)",
+    "pinHint": "দ্রুত সাইন-ইন এবং মালিক বা ম্যানেজারের অনুমোদনের জন্য ব্যবহৃত হয়",
     "pinPlaceholderAdd": "পিন (৪-৬ সংখ্যা)",
     "pinPlaceholderEdit": "নতুন পিন (রাখতে খালি ছেড়ে দিন)",
     "pinSet": "✓ পিন সেট",

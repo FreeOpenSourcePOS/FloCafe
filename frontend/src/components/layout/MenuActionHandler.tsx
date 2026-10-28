@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { dispatchQuickSearchRequest } from '@/lib/quick-search';
+import { useAuthStore } from '@/store/auth';
 
 type PendingPinAction = 'backup' | 'restore' | null;
 
@@ -153,6 +154,10 @@ export default function MenuActionHandler() {
           break;
         case 'menu-master-pin':
           router.push('/settings?tab=data&action=master-pin');
+          break;
+        case 'lock':
+        case 'lock-terminal':
+          void useAuthStore.getState().lock();
           break;
         default:
           console.log('[Menu] Unknown action:', action);

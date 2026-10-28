@@ -87,7 +87,10 @@
     "signInTitle": "Accedi per gestire la tua attività",
     "signingIn": "Accesso in corso...",
     "storageUnavailable": "Impossibile salvare la sessione. Il browser potrebbe bloccare la memorizzazione (modalità privata o cookie disabilitati).",
-    "yourName": "Il tuo nome"
+    "yourName": "Il tuo nome",
+    "quickSwitchTitle": "Cambio utente rapido",
+    "quickSwitchSubtitle": "Seleziona il tuo profilo per accedere con il PIN",
+    "enterPinFor": "Inserisci il PIN per {name}"
   },
   "backup": {
     "creating": "Creazione del backup in corso...",
@@ -1089,7 +1092,7 @@
     "backspaceAmount": "Cancella importo",
     "numericKeypad": "Tastierino numerico",
     "kitchenItemsPendingWarning": "{count, plural, one {Ci sono ancora # articoli in preparazione in cucina} other {Ci sono ancora # articoli in preparazione in cucina}}",
-    "kitchenDeliveryOverridePrompt": "Gli articoli della cucina non sono ancora stati consegnati. Inserisci il PIN del responsabile per autorizzare il pagamento.",
+    "kitchenDeliveryOverridePrompt": "Gli articoli della cucina non sono ancora stati consegnati. Inserisci il PIN di approvazione del personale per autorizzare il pagamento.",
     "kitchenDeliveryOverrideSuccess": "Autorizzazione del responsabile accettata per gli articoli non consegnati.",
     "kitchenDeliveryOverrideInvalid": "PIN del responsabile non valido. Riprova.",
     "waiveCharge": "Esentare",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "Chiudi il turno aperto #{id} ({name}) prima di chiudere questa giornata lavorativa.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# ordine aperto verrà trasferito} other {# ordini aperti verranno trasferiti}}",
     "shiftCloseUnpaidWarningHint": "Questi ordini restano aperti per il turno successivo. La chiusura di questo turno riconcilia solo i pagamenti in contanti già incassati durante questo turno.",
-    "shiftCloseUnpaidMoreCount": "+{count} altri ordini aperti"
+    "shiftCloseUnpaidMoreCount": "+{count} altri ordini aperti",
+    "lockTerminal": "Blocca terminale"
   },
   "printTest": {
     "amt": "Importo",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "Disattiva ogni connessione a internet facoltativa: sincronizzazione cloud, backup su Google Drive, WhatsApp, controllo aggiornamenti, analisi d'uso e importazione di immagini dal web. Ordini, fatturazione, stampa e dispositivi della rete locale continuano a funzionare.",
     "offlineModeFailed": "Impossibile cambiare la modalità offline",
     "offlineModeReadFailed": "Impossibile leggere l'impostazione attuale della modalità offline.",
-    "offlineModeRetry": "Riprova"
+    "offlineModeRetry": "Riprova",
+    "autoLockLabel": "Blocco automatico per inattività",
+    "autoLockHint": "Blocca automaticamente il terminale POS dopo inattività",
+    "autoLockOff": "Disattivato",
+    "autoLockMinutesOption": "{count} min."
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "Nuova password (lascia vuoto per mantenere)",
     "noKitchenStations": "Nessuna postazione di cucina disponibile",
     "passwordPlaceholder": "Password",
-    "pinHint": "Usato per le approvazioni del gestore (annullamento ordini, ecc.)",
+    "pinHint": "Usato per l’accesso rapido e le approvazioni di titolare o responsabile",
     "pinPlaceholderAdd": "PIN (4-6 cifre)",
     "pinPlaceholderEdit": "Nuovo PIN (lascia vuoto per mantenere)",
     "pinSet": "✓ PIN impostato",

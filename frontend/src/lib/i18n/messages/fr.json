@@ -87,7 +87,10 @@
     "signInTitle": "Connectez-vous pour gérer votre établissement",
     "signingIn": "Connexion...",
     "storageUnavailable": "Impossible d’enregistrer votre session. Votre navigateur bloque peut-être le stockage (navigation privée ou cookies désactivés).",
-    "yourName": "Votre nom"
+    "yourName": "Votre nom",
+    "quickSwitchTitle": "Changement rapide",
+    "quickSwitchSubtitle": "Sélectionnez votre profil pour vous connecter avec votre code PIN",
+    "enterPinFor": "Saisissez le code PIN de {name}"
   },
   "backup": {
     "creating": "Création de la sauvegarde...",
@@ -1089,7 +1092,7 @@
     "backspaceAmount": "Effacer le dernier chiffre",
     "numericKeypad": "Pavé numérique",
     "kitchenItemsPendingWarning": "{count, plural, one {# article(s) sont encore en préparation en cuisine} other {# article(s) sont encore en préparation en cuisine}}",
-    "kitchenDeliveryOverridePrompt": "Les articles de cuisine ne sont pas encore servis. Saisissez le code PIN du responsable pour autoriser le règlement.",
+    "kitchenDeliveryOverridePrompt": "Les articles de cuisine ne sont pas encore servis. Saisissez le code PIN d’approbation du personnel pour autoriser le règlement.",
     "kitchenDeliveryOverrideSuccess": "Dérogation du responsable acceptée pour les articles non servis.",
     "kitchenDeliveryOverrideInvalid": "Code PIN du responsable incorrect. Réessayez.",
     "waiveCharge": "Exonérer",
@@ -1202,7 +1205,8 @@
     "dayCloseBlockedByOpenShiftHint": "Fermez le service ouvert #{id} ({name}) avant de clôturer cette journée commerciale.",
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# commande ouverte sera reportée} other {# commandes ouvertes seront reportées}}",
     "shiftCloseUnpaidWarningHint": "Ces commandes restent ouvertes pour le service suivant. La clôture de ce service ne rapproche que les paiements en espèces déjà encaissés pendant ce service.",
-    "shiftCloseUnpaidMoreCount": "+{count} autres commandes ouvertes"
+    "shiftCloseUnpaidMoreCount": "+{count} autres commandes ouvertes",
+    "lockTerminal": "Verrouiller le terminal"
   },
   "printTest": {
     "amt": "Montant",
@@ -2558,7 +2562,11 @@
     "offlineModeDescription": "Coupe toute connexion facultative à internet : synchronisation cloud, sauvegardes Google Drive, WhatsApp, recherche de mises à jour, statistiques d'usage et import d'images depuis le web. Les commandes, la facturation, l'impression et les appareils de votre réseau local continuent de fonctionner.",
     "offlineModeFailed": "Impossible de modifier le mode hors ligne",
     "offlineModeReadFailed": "Impossible de lire le réglage actuel du mode hors ligne.",
-    "offlineModeRetry": "Réessayer"
+    "offlineModeRetry": "Réessayer",
+    "autoLockLabel": "Verrouillage automatique",
+    "autoLockHint": "Verrouiller automatiquement le terminal de caisse après inactivité",
+    "autoLockOff": "Désactivé",
+    "autoLockMinutesOption": "{count} min."
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",
@@ -2675,7 +2683,7 @@
     "newPasswordPlaceholder": "Nouveau mot de passe (laisser vide pour conserver l’actuel)",
     "noKitchenStations": "Aucun poste de cuisine disponible",
     "passwordPlaceholder": "Mot de passe",
-    "pinHint": "Utilisé pour les approbations du responsable (annulation de commandes, etc.)",
+    "pinHint": "Utilisé pour la connexion rapide et les approbations propriétaire/responsable",
     "pinPlaceholderAdd": "Code PIN (4 à 6 chiffres)",
     "pinPlaceholderEdit": "Nouveau code PIN (laisser vide pour conserver l’actuel)",
     "pinSet": "✓ Code PIN défini",

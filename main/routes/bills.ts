@@ -5605,6 +5605,30 @@ router.patch(
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const db = getDatabase();
+      const callerUser = (
+        req as Request & { user?: { userId?: string; id?: string; role?: string } }
+      ).user;
+      const rawActorUserId = String(callerUser?.userId || callerUser?.id || '').trim();
+      const callerRow = rawActorUserId
+        ? (db
+            .prepare(
+              "SELECT id, role, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1",
+            )
+            .get(rawActorUserId) as { id: string; role: string; is_active: number } | undefined)
+        : undefined;
+      if (
+        !callerRow ||
+        callerRow.is_active !== 1 ||
+        !hasRole(callerRow.role, ROLE_ACCESS.ownerManager) ||
+        (callerUser?.role !== undefined && !hasRole(callerUser.role, ROLE_ACCESS.ownerManager))
+      ) {
+        return res.status(403).json({
+          error: 'Only owners and managers can correct payment methods',
+          reason: 'insufficient_role_permissions',
+          code: 'insufficient_role_permissions',
+        });
+      }
+
       const billId = String(req.params.id);
       const indexRaw = String(req.params.index ?? '').trim();
       if (!/^\d+$/.test(indexRaw)) {
@@ -5691,9 +5715,6 @@ router.patch(
         });
       }
 
-      const callerUser = (req as Request & { user?: { userId?: string; id?: string } }).user;
-      const rawActorUserId = String(callerUser?.userId || callerUser?.id || '');
-
       type ApproverRow = { id: string; role: string; pin_hash: string | null; is_active: number };
       const preVerifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
         if (isPinRateLimited(rateLimitKey)) {
@@ -5747,6 +5768,23 @@ router.patch(
       const preVerifiedApprover = preVerifiedResult.approver;
 
       const result = withTxn(() => {
+        const liveCaller = db
+          .prepare(
+            "SELECT id, role, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1",
+          )
+          .get(rawActorUserId) as { id: string; role: string; is_active: number } | undefined;
+        if (
+          !liveCaller ||
+          liveCaller.is_active !== 1 ||
+          !hasRole(liveCaller.role, ROLE_ACCESS.ownerManager)
+        ) {
+          throw paymentValidationError(
+            'Only owners and managers can correct payment methods',
+            'insufficient_role_permissions',
+            403,
+          );
+        }
+
         const verifiedApprover = db
           .prepare(
             "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
@@ -5789,11 +5827,8 @@ router.patch(
           throw paymentValidationError('Bill not found', 'bill_not_found', 404);
         }
 
-        const effectiveActorUserId =
-          rawActorUserId && db.prepare('SELECT 1 FROM users WHERE id = ?').get(rawActorUserId)
-            ? rawActorUserId
-            : verifiedApprover.id;
-        const idempotencyUserId = rawActorUserId || verifiedApprover.id;
+        const effectiveActorUserId = liveCaller.id;
+        const idempotencyUserId = liveCaller.id;
         const normalizedReqMethod = typeof method === 'string' ? method.trim().toLowerCase() : '';
         const normalizedReqPaymentMethodId =
           payment_method_id !== undefined &&
@@ -5925,42 +5960,38 @@ router.patch(
           );
         }
 
-        let effectiveSessionId: number;
-        const lineSessionId =
-          targetLine.cash_session_id !== undefined && targetLine.cash_session_id !== null
-            ? Number(targetLine.cash_session_id)
-            : 0;
-        if (Number.isInteger(lineSessionId) && lineSessionId > 0) {
-          const session = db
-            .prepare('SELECT id, status FROM cash_sessions WHERE id = ?')
-            .get(lineSessionId) as { id: number; status: string } | undefined;
-          if (!session || session.status !== 'open') {
-            throw paymentValidationError(
-              'Cannot correct payment method: the shift for this payment is closed',
-              'shift_closed',
-              409,
-            );
-          }
-          effectiveSessionId = session.id;
-        } else {
-          const openSession = getOpenSession(db);
-          if (!openSession) {
-            throw paymentValidationError(
-              'Cannot correct payment method: no open cash shift',
-              'shift_closed',
-              409,
-            );
-          }
-          const lineTime = String(targetLine.timestamp || bill.paid_at || bill.created_at || '');
-          if (lineTime && openSession.opened_at && lineTime < String(openSession.opened_at)) {
-            throw paymentValidationError(
-              'Cannot correct payment method: the shift for this payment is closed',
-              'shift_closed',
-              409,
-            );
-          }
-          effectiveSessionId = openSession.id;
+        if (targetLine.cash_session_id === undefined || targetLine.cash_session_id === null) {
+          throw paymentValidationError(
+            'Cannot verify original cash shift for this payment',
+            'shift_closed',
+            409,
+          );
         }
+        const rawTargetSessionId = Number(targetLine.cash_session_id);
+        if (!Number.isInteger(rawTargetSessionId) || rawTargetSessionId <= 0) {
+          throw paymentValidationError(
+            'Cannot correct payment method for a payment recorded without an open cash shift',
+            'shift_closed',
+            409,
+          );
+        }
+        const session = db
+          .prepare('SELECT id, status FROM cash_sessions WHERE id = ?')
+          .get(rawTargetSessionId) as { id: number; status: string } | undefined;
+        const openSession = getOpenSession(db);
+        if (
+          !session ||
+          session.status !== 'open' ||
+          !openSession ||
+          session.id !== openSession.id
+        ) {
+          throw paymentValidationError(
+            'Cannot correct payment method: the shift for this payment is closed',
+            'shift_closed',
+            409,
+          );
+        }
+        const effectiveSessionId = session.id;
 
         if (bill.split_group_id) {
           const siblings = db
@@ -6000,40 +6031,34 @@ router.patch(
                   409,
                 );
               }
-              const sibSessionId =
-                sibLine.cash_session_id !== undefined && sibLine.cash_session_id !== null
-                  ? Number(sibLine.cash_session_id)
-                  : 0;
-              if (Number.isInteger(sibSessionId) && sibSessionId > 0) {
-                const sibSession = db
-                  .prepare('SELECT id, status FROM cash_sessions WHERE id = ?')
-                  .get(sibSessionId) as { id: number; status: string } | undefined;
-                if (
-                  !sibSession ||
-                  sibSession.status !== 'open' ||
-                  sibSession.id !== effectiveSessionId
-                ) {
-                  throw paymentValidationError(
-                    'Cannot correct payment method: a split sibling check was settled in a closed or different shift',
-                    'split_sibling_shift_closed',
-                    409,
-                  );
-                }
-              } else {
-                const openSession = getOpenSession(db);
-                const sibTime = String(
-                  sibLine.timestamp || sibling.paid_at || sibling.created_at || '',
+              if (sibLine.cash_session_id === undefined || sibLine.cash_session_id === null) {
+                throw paymentValidationError(
+                  'Cannot correct payment method: a split sibling check has an unverifiable cash shift',
+                  'split_sibling_shift_closed',
+                  409,
                 );
-                if (
-                  !openSession ||
-                  (sibTime && openSession.opened_at && sibTime < String(openSession.opened_at))
-                ) {
-                  throw paymentValidationError(
-                    'Cannot correct payment method: a split sibling check was settled in a closed shift',
-                    'split_sibling_shift_closed',
-                    409,
-                  );
-                }
+              }
+              const sibSessionId = Number(sibLine.cash_session_id);
+              if (!Number.isInteger(sibSessionId) || sibSessionId <= 0) {
+                throw paymentValidationError(
+                  'Cannot correct payment method: a split sibling check was settled outside an open shift',
+                  'split_sibling_shift_closed',
+                  409,
+                );
+              }
+              const sibSession = db
+                .prepare('SELECT id, status FROM cash_sessions WHERE id = ?')
+                .get(sibSessionId) as { id: number; status: string } | undefined;
+              if (
+                !sibSession ||
+                sibSession.status !== 'open' ||
+                sibSession.id !== effectiveSessionId
+              ) {
+                throw paymentValidationError(
+                  'Cannot correct payment method: a split sibling check was settled in a closed or different shift',
+                  'split_sibling_shift_closed',
+                  409,
+                );
               }
             }
           }

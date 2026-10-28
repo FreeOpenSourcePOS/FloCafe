@@ -1882,6 +1882,7 @@ export default function OrdersPage() {
               onAddItems={openAddItemsModal}
               onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
               onCorrectPaymentMethod={
+                (currentTenant?.role === 'owner' || currentTenant?.role === 'manager') &&
                 tenantCan(currentTenant, 'payments.take')
                   ? (ord, bills) => setCorrectPaymentModal({ order: ord, bills })
                   : undefined

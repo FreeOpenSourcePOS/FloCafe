@@ -47,8 +47,10 @@ import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { parseDbTimestamp } from '@/lib/utils';
+import { useAuthStore } from '@/store/auth';
 import { formatItemHeading } from '@/lib/printer/item-heading';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+import { ROLE_ACCESS, hasRole } from '../../../../shared/role-permissions';
 import PendingOrderItemEdits from './PendingOrderItemEdits';
 import {
   orderStatusBadge,
@@ -213,6 +215,13 @@ function OrderDetailContent({
   const paidBills = orderBills.filter(
     (b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded',
   );
+  const storeRole = useAuthStore(
+    (s) => s.currentTenant?.role ?? (s.user as { role?: string } | null)?.role,
+  );
+  const authRole =
+    storeRole ??
+    useAuthStore.getState?.()?.currentTenant?.role ??
+    (useAuthStore.getState?.()?.user as { role?: string } | null)?.role;
   const correctablePaidBills = orderBills.filter(
     (b) =>
       b.payment_status === 'paid' &&
@@ -220,6 +229,10 @@ function OrderDetailContent({
         (line) => String(line.method || '').toLowerCase() !== 'wallet',
       ),
   );
+  const canCorrectPaymentMethod =
+    Boolean(onCorrectPaymentMethod) &&
+    hasRole(authRole, ROLE_ACCESS.ownerManager) &&
+    correctablePaidBills.length > 0;
   const hasEligibleRefund = paidBills.length > 0;
   const hasCollectedFunds = orderBills.some((candidate) => {
     const status = String(candidate.payment_status || '');
@@ -381,7 +394,7 @@ function OrderDetailContent({
                     {tOrders('downloadPrintPreview')}
                   </DropdownMenuItem>
                 )}
-                {onCorrectPaymentMethod && correctablePaidBills.length > 0 && (
+                {canCorrectPaymentMethod && onCorrectPaymentMethod && (
                   <DropdownMenuItem
                     data-testid="correct-payment-method-menu-item"
                     onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
@@ -949,7 +962,7 @@ function OrderDetailContent({
                 {tOrders('sendReceipt')}
               </Button>
             )}
-            {onCorrectPaymentMethod && correctablePaidBills.length > 0 && (
+            {canCorrectPaymentMethod && onCorrectPaymentMethod && (
               <Button
                 variant="outline"
                 data-testid="correct-payment-method-button"

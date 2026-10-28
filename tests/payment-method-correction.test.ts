@@ -139,6 +139,23 @@ async function main() {
     )}`,
   };
 
+  const serverId = 'server-1337';
+  db.prepare(
+    `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES (?, 'Server User', 'server@test.local', ?, 'server', 1, ?, ?)`,
+  ).run(serverId, bcrypt.hashSync('password123', 10), now(), now());
+  db.prepare(
+    `INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, updated_at)
+     VALUES (?, 'payments.take', 'allow', ?, ?)`,
+  ).run(serverId, ownerId, now());
+  const serverAuth = {
+    Authorization: `Bearer ${jwt.sign(
+      { userId: serverId, email: 'server@test.local', role: 'server' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    )}`,
+  };
+
   seedCategory(db, 'cat-1337', 'Menu');
   seedProduct(db, 'prod-100', 'cat-1337', 'Steak Dinner', 100);
   seedProduct(db, 'prod-80', 'cat-1337', 'Pasta Plate', 80);
@@ -182,6 +199,18 @@ async function main() {
   }
 
   try {
+    // ── 0. Sessionless payment before any shift opens (cash_session_id = 0) ─
+    const { bill: sessionlessBill } = await createPaidBill('prod-80', 'card', {
+      transaction_id: 'TX-SESSIONLESS-001',
+    });
+    assertEqualOrThrow(
+      sessionlessBill.payment_details[0].cash_session_id,
+      0,
+      'payment recorded without an open shift has cash_session_id = 0',
+    );
+    // Delete the pre-shift bill's order/bill after testing it inside Shift 1 so Shift 1 X-report starts clean
+    // (we'll verify rejection once Shift 1 is open)
+
     // ── 1. Open a cash shift (opening float $50 = 5000 cents) ─────────────
     const openSessionRes = await api(baseUrl, '/api/cash-sessions/open', {
       method: 'POST',
@@ -190,6 +219,99 @@ async function main() {
     });
     assertEqualOrThrow(openSessionRes.status, 200, 'open cash session succeeds');
     const session1Id = openSessionRes.data.id;
+
+    // F6a: Payment recorded with cash_session_id = 0 (no open shift at payment time) is rejected with 409 even after a shift opens
+    const correctSessionlessRes = await api(
+      baseUrl,
+      `/api/bills/${sessionlessBill.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: {
+          method: 'cash',
+          reason: 'Attempt to move sessionless payment into open shift',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      correctSessionlessRes.status,
+      409,
+      'payment recorded with cash_session_id = 0 is rejected with 409 even after a shift opens',
+    );
+    assertEqualOrThrow(
+      correctSessionlessRes.data.reason,
+      'shift_closed',
+      'sessionless payment rejection includes reason = shift_closed',
+    );
+    const unchangedSessionless = await api(baseUrl, `/api/bills/${sessionlessBill.id}`, {
+      headers: managerAuth,
+    });
+    assertEqualOrThrow(
+      unchangedSessionless.data.bill.payment_details[0].cash_session_id,
+      0,
+      'sessionless payment cash_session_id remains 0',
+    );
+    assertEqualOrThrow(
+      unchangedSessionless.data.bill.payment_details[0].method,
+      'card',
+      'sessionless payment method remains card',
+    );
+
+    // F6b: Legacy/untagged card payment with no cash_session_id and no cash_transactions row is rejected with 409
+    db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?').run(
+      JSON.stringify([
+        {
+          method: 'card',
+          amount: 80,
+          requested_amount: 80,
+          amount_omitted: true,
+          transaction_id: 'TX-SESSIONLESS-001',
+          timestamp: now(),
+        },
+      ]),
+      sessionlessBill.id,
+    );
+    const correctUntaggedRes = await api(
+      baseUrl,
+      `/api/bills/${sessionlessBill.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: {
+          method: 'cash',
+          reason: 'Attempt to attach untagged payment to current open shift',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      correctUntaggedRes.status,
+      409,
+      'legacy/untagged payment with no cash_session_id is rejected with 409 rather than attached to current shift',
+    );
+    assertEqualOrThrow(
+      correctUntaggedRes.data.reason,
+      'shift_closed',
+      'untagged payment rejection includes reason = shift_closed',
+    );
+    const unchangedUntagged = await api(baseUrl, `/api/bills/${sessionlessBill.id}`, {
+      headers: managerAuth,
+    });
+    assertEqualOrThrow(
+      unchangedUntagged.data.bill.payment_details[0].cash_session_id,
+      undefined,
+      'untagged payment is not silently assigned cash_session_id',
+    );
+    // Clean up the F6 fixture bill so X-report totals below reflect only Shift 1 bills
+    db.prepare('DELETE FROM payment_transaction_refs WHERE bill_id = ?').run(
+      String(sessionlessBill.id),
+    );
+    db.prepare('DELETE FROM bills WHERE id = ?').run(sessionlessBill.id);
+    db.prepare('DELETE FROM order_items WHERE order_id = ?').run(sessionlessBill.order_id);
+    db.prepare('DELETE FROM orders WHERE id = ?').run(sessionlessBill.order_id);
 
     // ── 2. Cash -> Card on open shift updates shift expected cash & X-report ─
     const { order: order1, bill: bill1 } = await createPaidBill('prod-100', 'cash');
@@ -214,7 +336,7 @@ async function main() {
       'X-report Cash total is 100 before correction',
     );
 
-    // ── 3. PIN & Role Authorization Checks ────────────────────────────────
+    // ── 3. Actor Role & PIN Authorization Checks (F5) ────────────────────
     const chefAttempt = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
       method: 'PATCH',
       body: {
@@ -230,33 +352,134 @@ async function main() {
       'chef without payments.take cannot correct payment method',
     );
 
-    const cashierOwnPinWithId = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
+    const serverWithManagerPinAttempt = await api(
+      baseUrl,
+      `/api/bills/${bill1.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: { ...serverAuth, 'Idempotency-Key': 'idem-server-blocked-1337' },
+        body: {
+          method: 'card',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      serverWithManagerPinAttempt.status,
+      403,
+      'server actor is rejected with 403 even with payments.take and valid manager PIN',
+    );
+
+    const cashierOwnPinAttempt = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
       method: 'PATCH',
+      headers: { ...cashierAuth, 'Idempotency-Key': 'idem-cashier-own-pin-1337' },
       body: {
         method: 'card',
         approver_id: cashierId,
         override_pin: '5555',
       },
-      headers: cashierAuth,
     });
     assertEqualOrThrow(
-      cashierOwnPinWithId.status,
+      cashierOwnPinAttempt.status,
       403,
-      'cashier own PIN with cashier approver_id is rejected with 403',
+      'cashier actor with cashier PIN is rejected with 403',
     );
 
-    const cashierOwnPinWithoutId = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
-      method: 'PATCH',
-      body: {
-        method: 'card',
-        override_pin: '5555',
+    const cashierWithValidManagerPinAttempt = await api(
+      baseUrl,
+      `/api/bills/${bill1.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: { ...cashierAuth, 'Idempotency-Key': 'idem-cashier-mgr-pin-1337' },
+        body: {
+          method: 'card',
+          transaction_id: 'TX-CASHIER-BLOCKED',
+          reason: 'Cashier attempting correction with manager PIN',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
       },
-      headers: cashierAuth,
+    );
+    assertEqualOrThrow(
+      cashierWithValidManagerPinAttempt.status,
+      403,
+      'cashier actor is rejected with 403 even when supplying valid manager override_pin and approver_id',
+    );
+    assertEqualOrThrow(
+      cashierWithValidManagerPinAttempt.data.reason,
+      'insufficient_role_permissions',
+      'cashier actor rejection returns reason = insufficient_role_permissions',
+    );
+
+    // Verify zero payment updates, zero audit_log writes, and zero payment_idempotency writes from non-owner/manager actors
+    const billAfterForbiddenActors = await api(baseUrl, `/api/bills/${bill1.id}`, {
+      headers: managerAuth,
     });
     assertEqualOrThrow(
-      cashierOwnPinWithoutId.status,
+      billAfterForbiddenActors.data.bill.payment_details[0].method,
+      'cash',
+      'rejected cashier/server/chef attempts perform zero payment updates',
+    );
+    const auditCountAfterForbiddenActors = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS c FROM order_audit_log WHERE order_id = ? AND action = 'bill.payment_method.corrected'`,
+        )
+        .get(order1.id) as { c: number }
+    ).c;
+    assertEqualOrThrow(
+      auditCountAfterForbiddenActors,
+      0,
+      'rejected cashier/server/chef attempts perform zero order_audit_log writes',
+    );
+    const idemCountAfterForbiddenActors = (
+      db
+        .prepare(`SELECT COUNT(*) AS c FROM payment_idempotency WHERE bill_id = ?`)
+        .get(String(bill1.id)) as { c: number }
+    ).c;
+    assertEqualOrThrow(
+      idemCountAfterForbiddenActors,
+      0,
+      'rejected cashier/server/chef attempts perform zero payment_idempotency writes',
+    );
+
+    // Now test PIN validation when called by an authorized manager actor
+    const managerWithCashierPinAndId = await api(
+      baseUrl,
+      `/api/bills/${bill1.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        body: {
+          method: 'card',
+          approver_id: cashierId,
+          override_pin: '5555',
+        },
+        headers: managerAuth,
+      },
+    );
+    assertEqualOrThrow(
+      managerWithCashierPinAndId.status,
       403,
-      'cashier own PIN without approver_id is rejected with 403',
+      'cashier PIN with cashier approver_id is rejected with 403 even when caller is manager',
+    );
+
+    const managerWithCashierPinWithoutId = await api(
+      baseUrl,
+      `/api/bills/${bill1.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        body: {
+          method: 'card',
+          override_pin: '5555',
+        },
+        headers: managerAuth,
+      },
+    );
+    assertEqualOrThrow(
+      managerWithCashierPinWithoutId.status,
+      403,
+      'cashier PIN without approver_id is rejected with 403 even when caller is manager',
     );
 
     const inactiveManagerAttempt = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
@@ -266,7 +489,7 @@ async function main() {
         approver_id: inactiveManagerId,
         override_pin: '7777',
       },
-      headers: cashierAuth,
+      headers: managerAuth,
     });
     assertEqualOrThrow(
       inactiveManagerAttempt.status,
@@ -281,7 +504,7 @@ async function main() {
         approver_id: managerId,
         override_pin: '0000',
       },
-      headers: cashierAuth,
+      headers: managerAuth,
     });
     assertEqualOrThrow(
       wrongManagerPinAttempt.status,
@@ -295,7 +518,7 @@ async function main() {
         method: 'card',
         override_pin: '5555',
       },
-      headers: cashierAuth,
+      headers: managerAuth,
     });
     assertEqualOrThrow(
       fifthFailedPinAttempt.status,
@@ -310,7 +533,7 @@ async function main() {
         approver_id: managerId,
         override_pin: '1234',
       },
-      headers: cashierAuth,
+      headers: managerAuth,
     });
     assertEqualOrThrow(
       rateLimitedPinAttempt.status,
@@ -332,7 +555,7 @@ async function main() {
         approver_id: managerId,
         override_pin: '1234',
       },
-      headers: cashierAuth,
+      headers: managerAuth,
     });
     assertEqualOrThrow(
       immutableAmountAttempt.status,
@@ -340,11 +563,11 @@ async function main() {
       'attempting to change the payment amount is rejected with 400',
     );
 
-    // ── 4. Valid Cash -> Card correction by cashier with manager PIN ──────
+    // ── 4. Valid Cash -> Card correction by manager with manager PIN ──────
     const idemKey1 = 'idem-correct-1337-1';
     const correctToCard = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: { ...cashierAuth, 'Idempotency-Key': idemKey1 },
+      headers: { ...managerAuth, 'Idempotency-Key': idemKey1 },
       body: {
         method: 'card',
         transaction_id: 'TX-CARD-101',
@@ -356,7 +579,7 @@ async function main() {
     assertEqualOrThrow(
       correctToCard.status,
       200,
-      'cashier with valid manager PIN corrects cash -> card (200)',
+      'manager actor with valid manager PIN corrects cash -> card (200)',
     );
     assertEqualOrThrow(
       correctToCard.data.bill.payment_details[0].method,
@@ -414,16 +637,16 @@ async function main() {
     assertEqualOrThrow(auditRows1.length, 1, 'exactly 1 audit row written for cash -> card');
     assertEqualOrThrow(
       auditRows1[0].actor_user_id,
-      cashierId,
-      'audit row records cashier as actor_user_id',
+      managerId,
+      'audit row records manager as actor_user_id',
     );
     const auditDetails1 = JSON.parse(auditRows1[0].details_json);
     assertEqualOrThrow(auditDetails1.old_method, 'cash', 'audit details record old_method = cash');
     assertEqualOrThrow(auditDetails1.new_method, 'card', 'audit details record new_method = card');
     assertEqualOrThrow(
       auditDetails1.actor_id,
-      cashierId,
-      'audit details record actor_id = cashierId',
+      managerId,
+      'audit details record actor_id = managerId',
     );
     assertEqualOrThrow(
       auditDetails1.approver_id,
@@ -440,7 +663,7 @@ async function main() {
     // Replay with same Idempotency-Key
     const idemReplay = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: { ...cashierAuth, 'Idempotency-Key': idemKey1 },
+      headers: { ...managerAuth, 'Idempotency-Key': idemKey1 },
       body: {
         method: 'card',
         transaction_id: 'TX-CARD-101',
@@ -459,7 +682,7 @@ async function main() {
     // Natural replay without Idempotency-Key
     const naturalReplay = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'card',
         transaction_id: 'TX-CARD-101',
@@ -490,7 +713,7 @@ async function main() {
     // Conflicting payload with same Idempotency-Key returns 409
     const idemConflict = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: { ...cashierAuth, 'Idempotency-Key': idemKey1 },
+      headers: { ...managerAuth, 'Idempotency-Key': idemKey1 },
       body: {
         method: 'cash',
         approver_id: managerId,
@@ -505,7 +728,7 @@ async function main() {
 
     const idemReasonConflict = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: { ...cashierAuth, 'Idempotency-Key': idemKey1 },
+      headers: { ...managerAuth, 'Idempotency-Key': idemKey1 },
       body: {
         method: 'card',
         transaction_id: 'TX-CARD-101',
@@ -542,7 +765,7 @@ async function main() {
     });
     const correctToCash = await api(baseUrl, `/api/bills/${bill2.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: ownerAuth,
       body: {
         method: 'cash',
         reason: 'Paid in cash at counter',
@@ -553,7 +776,7 @@ async function main() {
     assertEqualOrThrow(
       correctToCash.status,
       200,
-      'owner PIN authorizes card -> cash correction (200)',
+      'owner actor with owner PIN authorizes card -> cash correction (200)',
     );
     assertEqualOrThrow(
       correctToCash.data.bill.payment_details[0].method,
@@ -599,7 +822,7 @@ async function main() {
     // ── 8. Unknown, inactive, and active custom payment methods ───────────
     const unknownMethodRes = await api(baseUrl, `/api/bills/${bill2.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'unknown-tender-xyz',
         approver_id: managerId,
@@ -610,7 +833,7 @@ async function main() {
 
     const walletSwapRes = await api(baseUrl, `/api/bills/${bill2.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'wallet',
         approver_id: managerId,
@@ -635,7 +858,7 @@ async function main() {
     });
     const inactiveCustomRes = await api(baseUrl, `/api/bills/${bill2.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'custom',
         payment_method_id: upiId,
@@ -657,7 +880,7 @@ async function main() {
     });
     const activeCustomRes = await api(baseUrl, `/api/bills/${bill2.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'custom',
         payment_method_id: upiId,
@@ -688,7 +911,7 @@ async function main() {
     );
     const sharedPinNoApproverRes = await api(baseUrl, `/api/bills/${bill2.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'cash',
         override_pin: '1234',
@@ -729,7 +952,7 @@ async function main() {
       `/api/bills/${refundBill.id}/payments/0/method`,
       {
         method: 'PATCH',
-        headers: cashierAuth,
+        headers: managerAuth,
         body: {
           method: 'card',
           approver_id: managerId,
@@ -792,7 +1015,7 @@ async function main() {
 
     const closedShiftAttempt = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'cash',
         approver_id: managerId,
@@ -822,7 +1045,7 @@ async function main() {
       `/api/bills/${bill1.id}/payments/0/method`,
       {
         method: 'PATCH',
-        headers: { ...cashierAuth, 'Idempotency-Key': idemKey1 },
+        headers: { ...managerAuth, 'Idempotency-Key': idemKey1 },
         body: {
           method: 'card',
           transaction_id: 'TX-CARD-101',
@@ -883,7 +1106,7 @@ async function main() {
 
     const correctLine0Res = await api(baseUrl, `/api/bills/${multiLineBillId}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'card',
         transaction_id: 'TX-MULTI-LINE-0',
@@ -896,7 +1119,7 @@ async function main() {
 
     const replayLine1Res = await api(baseUrl, `/api/bills/${multiLineBillId}/payments/1/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'card',
         transaction_id: 'TX-MULTI-LINE-1',
@@ -918,7 +1141,7 @@ async function main() {
 
     const replayLine0Res = await api(baseUrl, `/api/bills/${multiLineBillId}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'card',
         transaction_id: 'TX-MULTI-LINE-0',
@@ -946,7 +1169,7 @@ async function main() {
       `/api/bills/${splitBillB.id}/payments/0/method`,
       {
         method: 'PATCH',
-        headers: cashierAuth,
+        headers: managerAuth,
         body: {
           method: 'card',
           approver_id: managerId,
@@ -978,7 +1201,7 @@ async function main() {
 
     const closedDayAttempt = await api(baseUrl, `/api/bills/${bill3.id}/payments/0/method`, {
       method: 'PATCH',
-      headers: cashierAuth,
+      headers: managerAuth,
       body: {
         method: 'card',
         approver_id: managerId,
@@ -995,6 +1218,153 @@ async function main() {
       'day_closed',
       'closed day refusal includes reason = day_closed',
     );
+
+    // ── 14. Frontend OrderDetailPanel restricts button visibility to owner/manager ─
+    {
+      const rootDir = path.resolve(__dirname, '..');
+      const frontendRequire = Module.createRequire(path.join(rootDir, 'frontend/package.json'));
+      const zustandPath = frontendRequire.resolve('zustand');
+      const resolveFrontendPackage = (reqName: string): string | null => {
+        if (reqName.startsWith('.') || path.isAbsolute(reqName) || reqName.startsWith('node:'))
+          return null;
+        try {
+          return frontendRequire.resolve(reqName);
+        } catch {
+          return null;
+        }
+      };
+      const origResolveFilename = Module._resolveFilename;
+      Module._resolveFilename = function (
+        reqName: string,
+        parent: unknown,
+        isMain: boolean,
+        options?: unknown,
+      ) {
+        const resolvedRequest =
+          reqName === 'zustand'
+            ? zustandPath
+            : reqName === '@countries'
+              ? path.resolve(rootDir, 'main/countries.ts')
+              : reqName.startsWith('@/')
+                ? path.resolve(rootDir, 'frontend/src', reqName.slice(2))
+                : reqName.startsWith('@print/')
+                  ? path.resolve(rootDir, 'shared/print', reqName.slice('@print/'.length))
+                  : reqName.startsWith('@shared/')
+                    ? path.resolve(rootDir, 'shared', reqName.slice('@shared/'.length))
+                    : (resolveFrontendPackage(reqName) ?? reqName);
+        return origResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+      };
+      try {
+        const React = frontendRequire('react');
+        const ReactDOMServer = frontendRequire('react-dom/server');
+        const { IntlProvider } = frontendRequire('use-intl');
+        const messages = require('../frontend/src/lib/i18n/messages/en.json');
+        const { useAuthStore } = require('../frontend/src/store/auth');
+        const { OrderDetailPanel } = require('../frontend/src/components/orders/OrderDetailPanel');
+
+        const renderPanel = (role: string) => {
+          useAuthStore.setState({
+            currentTenant: {
+              id: 1,
+              business_name: 'Flo Test',
+              slug: 'flo-test',
+              database_name: 'flo',
+              business_type: 'restaurant',
+              country: 'US',
+              currency: 'USD',
+              timezone: 'UTC',
+              plan: 'free',
+              status: 'active',
+              role,
+            },
+          });
+          const paidBillFixture = {
+            id: 501,
+            bill_number: 'BILL-501',
+            order_id: 701,
+            subtotal: 100,
+            discount_amount: 0,
+            tax_amount: 0,
+            total: 100,
+            paid_amount: 100,
+            balance: 0,
+            payment_status: 'paid',
+            payment_details: [{ method: 'cash', amount: 100, cash_session_id: 1 }],
+          };
+          const orderFixture = {
+            id: 701,
+            order_number: 'ORD-701',
+            type: 'takeaway',
+            status: 'completed',
+            created_at: '2026-10-28 12:00:00',
+            items: [],
+            subtotal: 100,
+            discount_amount: 0,
+            tax_amount: 0,
+            total: 100,
+            delivery_charge: 0,
+            service_charge: 0,
+            packaging_charge: 0,
+            charges_breakdown: null,
+            bill: paidBillFixture,
+            bills: [paidBillFixture],
+          };
+          return ReactDOMServer.renderToStaticMarkup(
+            React.createElement(
+              IntlProvider,
+              { locale: 'en', messages, onError: () => {} },
+              React.createElement(OrderDetailPanel, {
+                order: orderFixture,
+                now: Date.now(),
+                canCancelItems: false,
+                canRestoreItems: false,
+                canRefund: false,
+                isWhatsAppReady: false,
+                printHistory: {},
+                generatingBillId: null,
+                printingBillId: null,
+                sendingWaOrderId: null,
+                cancellingOrderId: null,
+                convertingOrderId: null,
+                onCheckout: () => {},
+                onAddItems: () => {},
+                onRefund: () => {},
+                onCorrectPaymentMethod: () => {},
+                onConvertToTakeaway: () => {},
+                onCancelOrder: () => {},
+                onPrint: () => {},
+                onSendWhatsApp: () => {},
+                onLinkCustomer: () => {},
+                onCreateNewOrderForCustomer: () => {},
+              }),
+            ),
+          );
+        };
+
+        assertOrThrow(
+          renderPanel('owner').includes('data-testid="correct-payment-method-button"'),
+          'OrderDetailPanel shows Correct Payment Method button for owner role',
+        );
+        assertOrThrow(
+          renderPanel('manager').includes('data-testid="correct-payment-method-button"'),
+          'OrderDetailPanel shows Correct Payment Method button for manager role',
+        );
+        assertOrThrow(
+          !renderPanel('cashier').includes('data-testid="correct-payment-method-button"'),
+          'OrderDetailPanel hides Correct Payment Method button for cashier role',
+        );
+        assertOrThrow(
+          !renderPanel('server').includes('data-testid="correct-payment-method-button"'),
+          'OrderDetailPanel hides Correct Payment Method button for server role',
+        );
+        assertOrThrow(
+          !renderPanel('chef').includes('data-testid="correct-payment-method-button"'),
+          'OrderDetailPanel hides Correct Payment Method button for chef role',
+        );
+      } finally {
+        Module._resolveFilename = origResolveFilename;
+      }
+    }
   } finally {
     server.close();
     closeDatabase();

@@ -464,17 +464,34 @@ async function main() {
       2,
       'Appending Bar + unmapped Dessert items dispatches only to Bar and fallback Kitchen printers (skipping Grill)',
     );
+    const appendedGrillDispatches = recordedDispatches.filter(
+      (d) => d.ip === GRILL_STATION_PRINTER.ip && d.port === GRILL_STATION_PRINTER.port,
+    );
     assert.equal(
-      recordedDispatches.filter((d) => d.ip === GRILL_STATION_PRINTER.ip).length,
+      appendedGrillDispatches.length,
       0,
       'Grill printer receives no KOT when no Grill items were appended',
     );
-    const appendedBar = recordedDispatches.find((d) => d.ip === BAR_STATION_PRINTER.ip);
-    assert.ok(appendedBar, 'Bar printer receives KOT for appended Mojito');
+    const appendedBarDispatches = recordedDispatches.filter(
+      (d) => d.ip === BAR_STATION_PRINTER.ip && d.port === BAR_STATION_PRINTER.port,
+    );
+    assert.equal(
+      appendedBarDispatches.length,
+      1,
+      'Bar station printer receives exactly 1 KOT dispatch for appended Mojito',
+    );
+    const appendedBar = appendedBarDispatches[0];
     assert.match(appendedBar.text, /Classic Mojito/);
     assert.doesNotMatch(appendedBar.text, /Basque Cheesecake/);
-    const appendedKitchen = recordedDispatches.find((d) => d.ip === DEFAULT_KITCHEN_PRINTER.ip);
-    assert.ok(appendedKitchen, 'Default Kitchen printer receives KOT for appended Cheesecake');
+    const appendedKitchenDispatches = recordedDispatches.filter(
+      (d) => d.ip === DEFAULT_KITCHEN_PRINTER.ip && d.port === DEFAULT_KITCHEN_PRINTER.port,
+    );
+    assert.equal(
+      appendedKitchenDispatches.length,
+      1,
+      'Default Kitchen printer receives exactly 1 KOT dispatch for appended Cheesecake',
+    );
+    const appendedKitchen = appendedKitchenDispatches[0];
     assert.match(appendedKitchen.text, /Basque Cheesecake/);
     assert.doesNotMatch(appendedKitchen.text, /Classic Mojito/);
     console.log(

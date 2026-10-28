@@ -1209,7 +1209,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {سيتم ترحيل طلب مفتوح واحد (#)} other {سيتم ترحيل # طلبات مفتوحة}}",
     "shiftCloseUnpaidWarningHint": "تظل هذه الطلبات مفتوحة للوردية التالية. إغلاق هذه الوردية يطابق فقط المدفوعات النقدية التي تم تحصيلها بالفعل خلال هذه الوردية.",
     "shiftCloseUnpaidMoreCount": "+{count} طلبات مفتوحة أخرى",
-    "lockTerminal": "قفل نقطة البيع"
+    "lockTerminal": "قفل نقطة البيع",
+    "selectOpenShift": "الوردية المراد إغلاقها",
+    "xReportShiftFilterLabel": "نطاق الوردية",
+    "xReportAllShifts": "جميع الورديات (اليوم بالكامل)"
   },
   "printTest": {
     "amt": "المبلغ",
@@ -2569,7 +2572,13 @@
     "autoLockLabel": "القفل التلقائي عند الخمول",
     "autoLockHint": "قفل شاشة نقطة البيع تلقائياً بعد فترة من عدم النشاط",
     "autoLockOff": "إيقاف",
-    "autoLockMinutesOption": "{count} دقائق"
+    "autoLockMinutesOption": "{count} دقائق",
+    "requireOpenShift": "اشترط فتح وردية للمدفوعات النقدية",
+    "requireOpenShiftHint": "حظر المدفوعات النقدية والاسترداد النقدي وحركات الدرج ما لم تكن هناك وردية نشطة مفتوحة.",
+    "oneShiftPerStaff": "وردية واحدة لكل موظف",
+    "oneShiftPerStaffHint": "السماح لكل موظف بفتح وإغلاق وردية الصندوق الخاصة به بشكل مستقل.",
+    "oneShiftPerStaffSharedDrawerWarning": "ملاحظة: إذا اشتركت ورديتان متزامنتان في درج نقدي فعلي واحد، فلن تكون عمليات جرد النقد الفردية معزولة فعلياً.",
+    "oneShiftPerStaffDisableBlocked": "لا يمكن تعطيل خيار وردية واحدة لكل موظف بينما توجد عدة ورديات مفتوحة. أغلق الورديات الإضافية أولاً."
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",

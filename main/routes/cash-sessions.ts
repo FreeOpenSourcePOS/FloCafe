@@ -25,7 +25,12 @@ import {
 import { requirePermission } from '../services/authorization';
 import { closedDayExists } from '../services/cash-drawer-movements';
 import { findUnpaidInShiftOrders, sessionBusinessDate } from '../services/cash-day-close-guards';
-import { getOpenSession, type CashSessionRow } from '../services/shift-session-gate';
+import {
+  getOpenSession,
+  isPerStaffShiftsEnabled,
+  listOpenSessions,
+  type CashSessionRow,
+} from '../services/shift-session-gate';
 import {
   computePeriodAggregates,
   sessionExpectedCash,
@@ -252,8 +257,14 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
           }
         }
       }
-      if (getOpenSession(db))
+      const perStaffShifts = isPerStaffShiftsEnabled(db);
+      if (perStaffShifts) {
+        if (getOpenSession(db, openedBy)) {
+          throw httpError('You already have an open shift', 409, 'session_already_open');
+        }
+      } else if (listOpenSessions(db).length > 0) {
         throw httpError('A shift is already open', 409, 'session_already_open');
+      }
       const openBusinessDate = localDateInTimezone(
         new Date(),
         tenantTimezone(),
@@ -272,20 +283,25 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
       // Keep day close reconciling the same physical drawer: mirror the
       // float as the day's opening_float movement. Session math ignores
       // in-window float movements (openingFloatOverride), so this cannot
-      // double-count there. One movement per day (schema constraint): a
-      // second shift reuses the first float for day-close purposes.
+      // double-count there. When per-staff shifts are enabled, concurrent
+      // shifts on the same business date sum their opening floats into the
+      // day's opening_float row so day close equals the sum of all shifts.
       if (openingFloatCents > 0) {
         const existingFloat = db
           .prepare(
             `SELECT id FROM cash_drawer_movements WHERE business_date = ? AND movement_type = 'opening_float' AND voided_at IS NULL LIMIT 1`,
           )
-          .get(openBusinessDate);
+          .get(openBusinessDate) as { id: number } | undefined;
         if (!existingFloat) {
           db.prepare(`
             INSERT INTO cash_drawer_movements (
               business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id
             ) VALUES (?, 'opening_float', ?, 'Shift opening float', ?, ?, ?)
           `).run(openBusinessDate, openingFloatCents, openedBy, openedAt, sessionId);
+        } else if (perStaffShifts) {
+          db.prepare(
+            `UPDATE cash_drawer_movements SET amount_cents = amount_cents + ? WHERE id = ?`,
+          ).run(openingFloatCents, existingFloat.id);
         }
       }
       const openedSession = db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId);
@@ -329,17 +345,66 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
   }
 });
 
+router.get('/open', requirePermission('cash.shifts.view'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const asOf = now();
+    const role = actorRole(req);
+    const callerId = actorId(req);
+    const allOpen = listOpenSessions(db);
+    const visible =
+      role === 'owner' || role === 'manager'
+        ? allOpen
+        : allOpen.filter((s) => s.opened_by === callerId);
+    res.json({
+      sessions: visible.map((session) => ({
+        ...session,
+        expected_cash_cents: sessionExpectedCash(db, session, asOf),
+      })),
+      one_shift_per_staff: isPerStaffShiftsEnabled(db),
+    });
+  } catch (error: unknown) {
+    const status = errorStatus(error);
+    res.status(status).json({
+      error:
+        status >= 500
+          ? 'Failed to list open shifts'
+          : errorMessage(error, 'Failed to list open shifts'),
+    });
+  }
+});
+
 router.get(
   '/current/close-preview',
   requirePermission('cash.shifts.close'),
   (req: Request, res: Response) => {
     try {
       const db = getDatabase();
-      const session = getOpenSession(db);
+      const callerId = actorId(req);
+      const role = actorRole(req);
+      let session: CashSessionRow | undefined;
+      if (req.query.session_id !== undefined && String(req.query.session_id).trim() !== '') {
+        const requestedId = Number(req.query.session_id);
+        if (!Number.isInteger(requestedId) || requestedId <= 0) {
+          throw httpError('Invalid session id', 400, 'session_id_invalid');
+        }
+        session = db
+          .prepare(`SELECT * FROM cash_sessions WHERE id = ? AND status = 'open'`)
+          .get(requestedId) as CashSessionRow | undefined;
+      } else {
+        session = getOpenSession(db, callerId);
+      }
       if (!session) {
         return res
           .status(404)
           .json({ error: 'No open shift', display_code: 'session_unavailable' });
+      }
+      if (role !== 'owner' && role !== 'manager' && session.opened_by !== callerId) {
+        return res.status(403).json({
+          error: 'Cashiers can only close their own shift',
+          code: 'session_owner_required',
+          display_code: 'session_owner_required',
+        });
       }
       const asOf = now();
       const unpaid = findUnpaidInShiftOrders(db, session, asOf);
@@ -365,7 +430,35 @@ router.get(
 router.get('/current', requirePermission('cash.shifts.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const session = getOpenSession(db);
+    const callerId = actorId(req);
+    const role = actorRole(req);
+    let session: CashSessionRow | undefined;
+    if (req.query.session_id !== undefined && String(req.query.session_id).trim() !== '') {
+      const requestedId = Number(req.query.session_id);
+      if (!Number.isInteger(requestedId) || requestedId <= 0) {
+        throw httpError('Invalid session id', 400, 'session_id_invalid');
+      }
+      session = db
+        .prepare(`SELECT * FROM cash_sessions WHERE id = ? AND status = 'open'`)
+        .get(requestedId) as CashSessionRow | undefined;
+      if (session && role !== 'owner' && role !== 'manager' && session.opened_by !== callerId) {
+        return res.status(403).json({
+          error: 'Cashiers can only view their own shift',
+          code: 'session_owner_required',
+        });
+      }
+    } else if (typeof req.query.user_id === 'string' && req.query.user_id.trim() !== '') {
+      const requestedUserId = req.query.user_id.trim();
+      if (role !== 'owner' && role !== 'manager' && requestedUserId !== callerId) {
+        return res.status(403).json({
+          error: 'Cashiers can only view their own shift',
+          code: 'session_owner_required',
+        });
+      }
+      session = getOpenSession(db, requestedUserId);
+    } else {
+      session = getOpenSession(db, callerId);
+    }
     // Documented contract (docs/reference/api.md): 200 with `null` when no
     // shift is open. A 404 here logged a failed request on every POS mount.
     if (!session) return res.json(null);
@@ -411,9 +504,9 @@ router.post('/:id/close', requirePermission('cash.shifts.close'), (req: Request,
       if (!session) throw httpError('Shift not found', 404, 'session_unavailable');
       if (session.status !== 'open')
         throw httpError('Shift is already closed', 409, 'session_already_closed');
-      // Own-session rule: cashiers close only the shift they opened;
-      // manager/owner may force-close anyone's (recorded via closed_by).
-      if (role === 'cashier' && session.opened_by !== closer) {
+      // Own-session rule: non-owner/manager roles close only the shift they opened;
+      // manager/owner may close anyone's (recorded via closed_by).
+      if (role !== 'owner' && role !== 'manager' && session.opened_by !== closer) {
         throw httpError('Cashiers can only close their own shift', 403, 'session_owner_required');
       }
       const closedSession = closeSessionTxn(db, session, countedCashCents, closer, notes);

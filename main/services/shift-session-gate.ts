@@ -29,10 +29,40 @@ export interface CashSessionRow {
 // through the legacy timestamp fallback.
 export const NO_CASH_SESSION_ID = 0;
 
-export function getOpenSession(db: ReturnType<typeof getDatabase>): CashSessionRow | undefined {
-  return db.prepare(`SELECT * FROM cash_sessions WHERE status = 'open' LIMIT 1`).get() as
-    | CashSessionRow
-    | undefined;
+export function isPerStaffShiftsEnabled(db?: ReturnType<typeof getDatabase>): boolean {
+  if (db) {
+    const row = db.prepare(`SELECT value FROM settings WHERE key = 'one_shift_per_staff'`).get() as
+      | { value?: string }
+      | undefined;
+    return row?.value === 'true';
+  }
+  return getSettingValue('one_shift_per_staff') === 'true';
+}
+
+export function listOpenSessions(db: ReturnType<typeof getDatabase>): CashSessionRow[] {
+  return db
+    .prepare(`SELECT * FROM cash_sessions WHERE status = 'open' ORDER BY opened_at ASC, id ASC`)
+    .all() as CashSessionRow[];
+}
+
+export function getOpenSession(
+  db: ReturnType<typeof getDatabase>,
+  userId?: string | null,
+): CashSessionRow | undefined {
+  if (!isPerStaffShiftsEnabled(db)) {
+    return db
+      .prepare(`SELECT * FROM cash_sessions WHERE status = 'open' ORDER BY id ASC LIMIT 1`)
+      .get() as CashSessionRow | undefined;
+  }
+  const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
+  if (normalizedUserId) {
+    return db
+      .prepare(`SELECT * FROM cash_sessions WHERE status = 'open' AND opened_by = ? LIMIT 1`)
+      .get(normalizedUserId) as CashSessionRow | undefined;
+  }
+  return db
+    .prepare(`SELECT * FROM cash_sessions WHERE status = 'open' ORDER BY id ASC LIMIT 1`)
+    .get() as CashSessionRow | undefined;
 }
 
 const BUILT_IN_PAYMENT_METHODS = new Set(['cash', 'card', 'wallet']);
@@ -67,9 +97,12 @@ export function isCashTender(db: ReturnType<typeof getDatabase>, payment: unknow
  * needs an open session. Non-cash tenders are never gated. Missing setting
  * rows (pre-v90 upgrades) read as off.
  */
-export function requireOpenSessionForCash(db: ReturnType<typeof getDatabase>): void {
+export function requireOpenSessionForCash(
+  db: ReturnType<typeof getDatabase>,
+  userId?: string | null,
+): void {
   if (getSettingValue('require_open_shift') !== 'true') return;
-  if (!getOpenSession(db)) {
+  if (!getOpenSession(db, userId)) {
     throw httpError('No open shift: open a shift before taking cash', 409, 'cash_session_required');
   }
 }
@@ -81,9 +114,10 @@ export function requireOpenSessionForCash(db: ReturnType<typeof getDatabase>): v
 export function requireOpenSessionForCashTender(
   db: ReturnType<typeof getDatabase>,
   payments: unknown[],
+  userId?: string | null,
 ): void {
   if (getSettingValue('require_open_shift') !== 'true') return;
-  if (payments.some((line) => isCashTender(db, line)) && !getOpenSession(db)) {
+  if (payments.some((line) => isCashTender(db, line)) && !getOpenSession(db, userId)) {
     throw httpError('No open shift: open a shift before taking cash', 409, 'cash_session_required');
   }
 }

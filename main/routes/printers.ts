@@ -49,7 +49,7 @@ import {
   capabilitiesForPrinter,
 } from '../printers/profiles';
 import { hasPermission, requirePermission, requireAnyPermission } from '../services/authorization';
-import { getOpenSession } from '../services/shift-session-gate';
+import { getOpenSession, listOpenSessions } from '../services/shift-session-gate';
 import {
   formatCurrencyForTenant,
   formatDateForTenant,
@@ -550,7 +550,12 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const db = getDatabase();
-      if (!getOpenSession(db)) {
+      const actorUserId = String((req as any).user?.userId || '');
+      const actorRole = String((req as any).user?.role || '');
+      const hasOpenShift =
+        Boolean(getOpenSession(db, actorUserId)) ||
+        ((actorRole === 'owner' || actorRole === 'manager') && listOpenSessions(db).length > 0);
+      if (!hasOpenShift) {
         return res.status(409).json({ error: 'open_cash_shift_required' });
       }
       const printer = getDefaultPrinter(db);

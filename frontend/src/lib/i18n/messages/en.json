@@ -1209,7 +1209,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# open order will carry over} other {# open orders will carry over}}",
     "shiftCloseUnpaidWarningHint": "These orders stay open for the next shift. Closing this shift only reconciles cash payments already collected during this shift.",
     "shiftCloseUnpaidMoreCount": "+{count} more open orders",
-    "lockTerminal": "Lock Terminal"
+    "lockTerminal": "Lock Terminal",
+    "selectOpenShift": "Shift to close",
+    "xReportShiftFilterLabel": "Shift scope",
+    "xReportAllShifts": "All shifts (full day)"
   },
   "printTest": {
     "amt": "Amt",
@@ -2569,7 +2572,13 @@
     "autoLockLabel": "Idle Auto-Lock",
     "autoLockHint": "Automatically lock the POS terminal after inactivity",
     "autoLockOff": "Off",
-    "autoLockMinutesOption": "{count} min"
+    "autoLockMinutesOption": "{count} min",
+    "requireOpenShift": "Require Open Shift for Cash",
+    "requireOpenShiftHint": "Block cash payments, cash refunds, and drawer movements unless an active shift is open.",
+    "oneShiftPerStaff": "One shift per staff member",
+    "oneShiftPerStaffHint": "Allow each staff member to open and close their own cash shift independently.",
+    "oneShiftPerStaffSharedDrawerWarning": "Note: If two concurrent shifts share a single physical cash drawer, individual drawer cash counts will not be physically isolated.",
+    "oneShiftPerStaffDisableBlocked": "Cannot disable one shift per staff member while multiple shifts are open. Close extra shifts first."
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

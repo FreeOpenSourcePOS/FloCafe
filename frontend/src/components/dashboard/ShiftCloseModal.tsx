@@ -22,6 +22,10 @@ export function ShiftCloseModal({ model }: { model: CashSessionModel }) {
     closeModalOpen,
     setCloseModalOpen,
     session,
+    activeSession,
+    openSessions = [],
+    selectedSessionId,
+    setSelectedSessionId,
     countedInput,
     setCountedInput,
     submitting,
@@ -39,6 +43,7 @@ export function ShiftCloseModal({ model }: { model: CashSessionModel }) {
     setSubmitError,
     closePreview,
   } = model;
+  const targetSession = activeSession ?? session;
   const tPos = useTranslations('pos');
   const unpaidInShiftCount =
     closePreview?.unpaid_in_shift.count ?? closePreview?.unpaid_in_shift.bill_count ?? 0;
@@ -78,8 +83,35 @@ export function ShiftCloseModal({ model }: { model: CashSessionModel }) {
               <span>{submitError}</span>
             </div>
           )}
-          {!closedResult && session && (
+          {!closedResult && targetSession && (
             <>
+              {openSessions.length > 1 && (
+                <div>
+                  <label
+                    htmlFor="shift-close-target-session"
+                    className="block text-sm text-muted-foreground mb-1"
+                  >
+                    {tPos('selectOpenShift')}
+                  </label>
+                  <select
+                    id="shift-close-target-session"
+                    value={selectedSessionId ?? targetSession.id}
+                    onChange={(e) => {
+                      const nextId = Number(e.target.value);
+                      if (Number.isInteger(nextId) && nextId > 0) {
+                        setSelectedSessionId(nextId);
+                      }
+                    }}
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
+                  >
+                    {openSessions.map((openShift) => (
+                      <option key={openShift.id} value={openShift.id}>
+                        #{openShift.id} - {openShift.opened_by_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {unpaidInShiftCount > 0 && (
                 <div
                   role="status"
@@ -124,7 +156,7 @@ export function ShiftCloseModal({ model }: { model: CashSessionModel }) {
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">{t('expectedCash')}</span>
                 <span className="font-semibold text-foreground">
-                  <Ltr>{fmt(session.expected_cash_cents / minorFactor)}</Ltr>
+                  <Ltr>{fmt(targetSession.expected_cash_cents / minorFactor)}</Ltr>
                 </span>
               </div>
               <div>
@@ -201,7 +233,7 @@ export function ShiftCloseModal({ model }: { model: CashSessionModel }) {
               <Button variant="outline" onClick={() => closeModal(false)} disabled={submitting}>
                 {tCommon('cancel')}
               </Button>
-              <Button onClick={closeShift} disabled={submitting || !session}>
+              <Button onClick={closeShift} disabled={submitting || !targetSession}>
                 {submitting && <Loader2 size={16} className="animate-spin" />}
                 {t('closeShiftSession')}
               </Button>

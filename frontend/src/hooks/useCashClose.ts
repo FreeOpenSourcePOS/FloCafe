@@ -62,6 +62,22 @@ interface XReport {
   priorClosedCashCents: number | null;
   priorBusinessDate: string | null;
   alreadyClosed: boolean;
+  session?: {
+    id: number;
+    opened_by: string;
+    opened_by_name: string;
+    opened_at: string;
+    closed_at: string | null;
+    status: string;
+    opening_float_cents: number;
+    expected_cash_cents: number;
+  } | null;
+  openShifts?: {
+    id: number;
+    opened_by: string;
+    opened_by_name: string;
+    opened_at: string;
+  }[];
   blockingOpenShift?: {
     id: number;
     opened_by_name: string;
@@ -158,6 +174,7 @@ export function useCashClose() {
   // already-closed day) the effect below jumps straight to 3 once the
   // x-report says `alreadyClosed: true`.
   const [closeStep, setCloseStep] = useState<1 | 2 | 3>(1);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   // F3: derive a token from `openToken + businessDate`. The render-time
   // `if (closeOpen && xToken !== refXToken)` block wipes stale X-report
   // state when the token changes (modal open OR operator picks a different
@@ -165,7 +182,7 @@ export function useCashClose() {
   // counter so the wipe is automatic — same pattern as the `syncKey`
   // block above (recommended by React for "adjusting state when a prop
   // changes" and avoids the cascading-renders lint rule).
-  const xToken = `${openToken}:${businessDate}`;
+  const xToken = `${openToken}:${businessDate}:${selectedSessionId ?? 'all'}`;
   const [refXToken, setRefXToken] = useState(xToken);
   const [openingFloatInput, setOpeningFloatInput] = useState('');
   const [countedInput, setCountedInput] = useState('');
@@ -218,7 +235,13 @@ export function useCashClose() {
     const isActive = () => !controller.signal.aborted;
     // Use the operator-selected date so past-day closes work.
     api
-      .get('/reports/x-report', { params: { date: businessDate }, signal: controller.signal })
+      .get('/reports/x-report', {
+        params: {
+          date: businessDate,
+          ...(selectedSessionId ? { session_id: selectedSessionId } : {}),
+        },
+        signal: controller.signal,
+      })
       .then((res) => {
         if (!isActive()) return;
         setXReport(res.data.xReport);
@@ -311,7 +334,7 @@ export function useCashClose() {
       });
     return () => controller.abort();
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [closeOpen, openToken, businessDate]);
+  }, [closeOpen, openToken, businessDate, selectedSessionId]);
 
   // Reset modal state at the start of each new open (React-recommended
   // pattern for "adjusting state when a prop changes" — the equivalent of
@@ -328,6 +351,7 @@ export function useCashClose() {
     setAlreadyClosedOverride(false);
     setBusinessDate(dateOverride ?? todayLocal);
     setDateOverride(null);
+    setSelectedSessionId(null);
     setOpeningFloatInput('');
     setCountedInput('');
     setSubmitError(null);
@@ -631,6 +655,8 @@ export function useCashClose() {
     closeAnotherDay,
     businessDate,
     setBusinessDate,
+    selectedSessionId,
+    setSelectedSessionId,
     xReport,
     xLoading,
     xError,

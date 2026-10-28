@@ -44,7 +44,10 @@ import {
 import { requirePermission } from '../services/authorization';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
-import { openSessionBlockingDayClose } from '../services/cash-day-close-guards';
+import {
+  openSessionBlockingDayClose,
+  openSessionsBlockingDayClose,
+} from '../services/cash-day-close-guards';
 import {
   getOpenSession,
   NO_CASH_SESSION_ID,
@@ -943,10 +946,34 @@ router.post(
       );
       const reason = validateMovementReason(body.reason, movementType !== 'opening_float');
       const createdBy = String((req as any).user?.userId || '');
+      const role = String((req as any).user?.role || '');
       if (!createdBy) throw httpError('Authentication required', 401);
       const db = getDatabase();
-      // Shift enforcement (#279): every movement touches the drawer.
-      requireOpenSessionForCash(db);
+      let targetSessionId: number;
+      if (body.cash_session_id !== undefined && body.cash_session_id !== null) {
+        const requestedSessionId = Number(body.cash_session_id);
+        if (!Number.isInteger(requestedSessionId) || requestedSessionId <= 0) {
+          throw httpError('cash_session_id must be a positive integer', 400);
+        }
+        const targetSession = db
+          .prepare(`SELECT id, opened_by FROM cash_sessions WHERE id = ? AND status = 'open'`)
+          .get(requestedSessionId) as { id: number; opened_by: string } | undefined;
+        if (!targetSession) {
+          throw httpError('Open shift not found', 404, 'cash_session_not_found');
+        }
+        if (role !== 'owner' && role !== 'manager' && targetSession.opened_by !== createdBy) {
+          throw httpError(
+            'Only an owner or manager can record movements for another staff shift',
+            403,
+            'session_owner_required',
+          );
+        }
+        targetSessionId = targetSession.id;
+      } else {
+        // Shift enforcement (#279): every movement touches the drawer.
+        requireOpenSessionForCash(db, createdBy);
+        targetSessionId = getOpenSession(db, createdBy)?.id ?? NO_CASH_SESSION_ID;
+      }
       const id = withTxn(() => {
         let movementId: number;
         try {
@@ -956,7 +983,7 @@ router.post(
             amountCents,
             reason,
             createdBy,
-            cashSessionId: getOpenSession(db)?.id ?? NO_CASH_SESSION_ID,
+            cashSessionId: targetSessionId,
           });
         } catch (error: any) {
           if (error.code === 'day_closed') {
@@ -1125,7 +1152,8 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
     if (!closedBy) throw httpError('Authentication required', 401);
 
     const db = getDatabase();
-    const blockingSession = openSessionBlockingDayClose(db, businessDate);
+    const blockingSessions = openSessionsBlockingDayClose(db, businessDate);
+    const blockingSession = blockingSessions[0];
     if (blockingSession) {
       throw Object.assign(
         httpError(
@@ -1139,6 +1167,12 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
             opened_by_name: blockingSession.opened_by_name,
             opened_at: blockingSession.opened_at,
           },
+          blockingShifts: blockingSessions.map((s) => ({
+            id: s.id,
+            opened_by: s.opened_by,
+            opened_by_name: s.opened_by_name,
+            opened_at: s.opened_at,
+          })),
         },
       );
     }
@@ -1318,6 +1352,9 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
           : { error: safeMessage };
     if (error?.blockingShift) {
       (payload as { blocking_shift?: unknown }).blocking_shift = error.blockingShift;
+    }
+    if (error?.blockingShifts) {
+      (payload as { blocking_shifts?: unknown }).blocking_shifts = error.blockingShifts;
     }
     res.status(status).json(payload);
   }

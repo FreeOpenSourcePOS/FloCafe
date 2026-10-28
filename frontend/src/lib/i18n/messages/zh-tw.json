@@ -1209,7 +1209,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# 筆未結訂單將結轉至下一班次} other {# 筆未結訂單將結轉至下一班次}}",
     "shiftCloseUnpaidWarningHint": "這些訂單將保持開啟並交接給下一班次。關閉本班次僅核對本班次期間已收取的現金付款。",
     "shiftCloseUnpaidMoreCount": "另有 +{count} 筆未結訂單",
-    "lockTerminal": "鎖定終端機"
+    "lockTerminal": "鎖定終端機",
+    "selectOpenShift": "要關閉的班次",
+    "xReportShiftFilterLabel": "班次範圍",
+    "xReportAllShifts": "所有班次（全天）"
   },
   "printTest": {
     "amt": "金額",
@@ -2569,7 +2572,13 @@
     "autoLockLabel": "閒置自動鎖定",
     "autoLockHint": "閒置一段時間後自動鎖定 POS 終端機",
     "autoLockOff": "關閉",
-    "autoLockMinutesOption": "{count} 分鐘"
+    "autoLockMinutesOption": "{count} 分鐘",
+    "requireOpenShift": "現金交易需開啟班次",
+    "requireOpenShiftHint": "未開啟活動班次時，禁止現金收款、現金退款和錢箱存取操作。",
+    "oneShiftPerStaff": "每位員工獨立班次",
+    "oneShiftPerStaffHint": "允許每位員工獨立開啟與關閉自己的收銀班次。",
+    "oneShiftPerStaffSharedDrawerWarning": "注意：若兩個並行班次共用同一個實體錢箱，各自的現金清點將無法在物理上分開。",
+    "oneShiftPerStaffDisableBlocked": "有多個班次處於開啟狀態時，無法停用「每位員工獨立班次」。請先關閉多餘的班次。"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",

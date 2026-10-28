@@ -206,6 +206,15 @@ matching grant is present, and it never opens a shift or grants a permission on 
 behalf. The [Expenses API reference](api.md#expenses) lists the expense operations exposed over
 HTTP.
 
+**Cash shifts.** Opening, viewing, and closing shifts are gated by `cash.shifts.open`,
+`cash.shifts.view`, and `cash.shifts.close`. When the store setting `one_shift_per_staff` is
+enabled, each staff member opens and closes their own shift and cash activity follows the
+authenticated actor's open shift. A `cashier` (or any non-`owner`/`manager` role) may only view and
+close their own shift (`403 session_owner_required` when targeting another user's shift), whereas an
+`owner` or `manager` can inspect and close any staff member's open shift. Two concurrent shifts
+sharing one physical drawer are allowed, but individual drawer counts are not physically isolated
+when a single cash drawer is shared.
+
 **Server App.** The standalone Server App is gated by `server-app.use`, shipped by default to
 `server`, `manager`, and `owner`. When the feature is disabled its routes return 404 rather than
 403, so the surface is not discoverable. It is separate from the dashboard navigation.

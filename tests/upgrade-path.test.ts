@@ -44,41 +44,61 @@ const FixtureDatabase = require('better-sqlite3');
 const fixtureDb = new FixtureDatabase(upgradeDbPath);
 const legacyTaxBreakdown = JSON.stringify([{ title: 'Legacy Tax', rate: 5, amount: 5 }]);
 const legacyHeldItems = JSON.stringify([
-  { id: 'line-legacy-1', product: { id: 'p-latte', name: 'Latte', price: 150 }, quantity: 2, addons: [], special_instructions: 'oat' },
+  {
+    id: 'line-legacy-1',
+    product: { id: 'p-latte', name: 'Latte', price: 150 },
+    quantity: 2,
+    addons: [],
+    special_instructions: 'oat',
+  },
 ]);
-const legacyOrder = fixtureDb.prepare(`
+const legacyOrder = fixtureDb
+  .prepare(`
   INSERT INTO orders (order_number, subtotal, tax_amount, tax_breakdown, total)
   VALUES ('ORD-LEGACY-TAX', 100, 5, ?, 105)
-`).run(legacyTaxBreakdown);
-const legacyBill = fixtureDb.prepare(`
+`)
+  .run(legacyTaxBreakdown);
+const legacyBill = fixtureDb
+  .prepare(`
   INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, tax_breakdown, total)
   VALUES ('INV-LEGACY-TAX', ?, 100, 5, ?, 105)
-`).run(legacyOrder.lastInsertRowid, legacyTaxBreakdown);
-fixtureDb.prepare(`UPDATE bills SET payment_details = ? WHERE id = ?`).run(
-  JSON.stringify({ method: 'upi', amount: 105, timestamp: '2026-07-01T11:30:00.000Z' }),
-  legacyBill.lastInsertRowid,
-);
-fixtureDb.prepare(`
+`)
+  .run(legacyOrder.lastInsertRowid, legacyTaxBreakdown);
+fixtureDb
+  .prepare(`UPDATE bills SET payment_details = ? WHERE id = ?`)
+  .run(
+    JSON.stringify({ method: 'upi', amount: 105, timestamp: '2026-07-01T11:30:00.000Z' }),
+    legacyBill.lastInsertRowid,
+  );
+fixtureDb
+  .prepare(`
   INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES
     ('cloud_sync_enabled', '0', '2026-08-01 12:00:00'),
     ('cloud_pending_store_id', 'old-pending-id', '2026-08-01 12:00:00'),
     ('cloud_server_url', 'https://example.test/', '2026-08-01 12:00:00')
-`).run();
-fixtureDb.prepare(`
+`)
+  .run();
+fixtureDb
+  .prepare(`
   INSERT OR REPLACE INTO settings (key, value, updated_at)
   VALUES ('cloud_orders_enabled', '0', '2026-08-01T12:00:00.000Z')
-`).run();
+`)
+  .run();
 // Pre-v45 era rows written by the old `now()` (ISO-8601 with T/Z/ms). Migration
 // v45 must normalize these to the space form so range/order/compare operations
 // see one consistent format.
-const isoOrder = fixtureDb.prepare(`
+const isoOrder = fixtureDb
+  .prepare(`
   INSERT INTO orders (order_number, subtotal, tax_amount, total, created_at, updated_at, cooking_started_at, ready_at)
   VALUES ('ORD-ISO-TS', 10, 0, 10, '2026-07-01T10:00:00.123Z', '2026-07-01T10:00:00.123Z', '2026-07-01T10:05:00.000Z', '2026-07-01T10:12:00.000Z')
-`).run();
-fixtureDb.prepare(`
+`)
+  .run();
+fixtureDb
+  .prepare(`
   INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_at, created_at, updated_at)
   VALUES ('INV-ISO-TS', ?, 10, 0, 10, '2026-07-01T11:30:00.000Z', '2026-07-01T11:00:00.000Z', '2026-07-01T11:30:00.000Z')
-`).run(isoOrder.lastInsertRowid);
+`)
+  .run(isoOrder.lastInsertRowid);
 fixtureDb.close();
 
 const mockApp = {
@@ -93,8 +113,10 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 function isNativeAbiMismatch(error: any): boolean {
-  return error?.code === 'ERR_DLOPEN_FAILED'
-    && String(error?.message || '').includes('NODE_MODULE_VERSION');
+  return (
+    error?.code === 'ERR_DLOPEN_FAILED' &&
+    String(error?.message || '').includes('NODE_MODULE_VERSION')
+  );
 }
 
 function main() {
@@ -102,7 +124,12 @@ function main() {
   console.log('='.repeat(60));
 
   const {
-    initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, buildIdealSchemaDb, MIGRATIONS,
+    initDatabase,
+    getDatabase,
+    closeDatabase,
+    getCurrentSchemaVersion,
+    buildIdealSchemaDb,
+    MIGRATIONS,
   } = require('../main/db');
   const { runHealthCheck } = require('../main/services/schema-health');
 
@@ -114,7 +141,11 @@ function main() {
     (migration: any) => migration.name === 'add_charges_breakdown_and_custom_charges_setting',
   );
   assert.ok(chargeMigrationIndex > 0, 'the charge snapshot migration is registered');
-  assert.equal(MIGRATIONS[chargeMigrationIndex].version, 99, 'the charge snapshot migration is v99');
+  assert.equal(
+    MIGRATIONS[chargeMigrationIndex].version,
+    99,
+    'the charge snapshot migration is v99',
+  );
   const migrationsFromCharges = MIGRATIONS.splice(chargeMigrationIndex);
   try {
     try {
@@ -126,155 +157,296 @@ function main() {
       }
       throw new Error(`migrating a real old install (v1.5.0 era) crashed: ${error.message}`);
     }
-    assert.equal(getCurrentSchemaVersion(), 98, 'the old install reaches v98 before the charge snapshot migration');
+    assert.equal(
+      getCurrentSchemaVersion(),
+      98,
+      'the old install reaches v98 before the charge snapshot migration',
+    );
     const beforeChargeSnapshot = getDatabase();
-    const orderColumns = beforeChargeSnapshot.prepare('PRAGMA table_info(orders)').all().map((column: any) => column.name);
-    const billColumns = beforeChargeSnapshot.prepare('PRAGMA table_info(bills)').all().map((column: any) => column.name);
-    assert.equal(orderColumns.includes('charges_breakdown'), false, 'v98 orders do not yet have charge snapshots');
-    assert.equal(billColumns.includes('charges_breakdown'), false, 'v98 bills do not yet have charge snapshots');
+    const orderColumns = beforeChargeSnapshot
+      .prepare('PRAGMA table_info(orders)')
+      .all()
+      .map((column: any) => column.name);
+    const billColumns = beforeChargeSnapshot
+      .prepare('PRAGMA table_info(bills)')
+      .all()
+      .map((column: any) => column.name);
+    assert.equal(
+      orderColumns.includes('charges_breakdown'),
+      false,
+      'v98 orders do not yet have charge snapshots',
+    );
+    assert.equal(
+      billColumns.includes('charges_breakdown'),
+      false,
+      'v98 bills do not yet have charge snapshots',
+    );
 
     const legacyTotal = 120;
-    beforeChargeSnapshot.prepare(`
+    beforeChargeSnapshot
+      .prepare(`
       UPDATE orders SET service_charge = 12, packaging_charge = 3, total = ? WHERE id = ?
-    `).run(legacyTotal, legacyOrder.lastInsertRowid);
-    const paymentDetails = JSON.parse((beforeChargeSnapshot.prepare(
-      `SELECT payment_details FROM bills WHERE id = ?`,
-    ).get(legacyBill.lastInsertRowid) as { payment_details: string }).payment_details);
+    `)
+      .run(legacyTotal, legacyOrder.lastInsertRowid);
+    const paymentDetails = JSON.parse(
+      (
+        beforeChargeSnapshot
+          .prepare(`SELECT payment_details FROM bills WHERE id = ?`)
+          .get(legacyBill.lastInsertRowid) as { payment_details: string }
+      ).payment_details,
+    );
     paymentDetails.amount = legacyTotal;
-    beforeChargeSnapshot.prepare(`
+    beforeChargeSnapshot
+      .prepare(`
       UPDATE bills
       SET service_charge = 12, packaging_charge = 3, total = ?, payment_details = ?
       WHERE id = ?
-    `).run(legacyTotal, JSON.stringify(paymentDetails), legacyBill.lastInsertRowid);
+    `)
+      .run(legacyTotal, JSON.stringify(paymentDetails), legacyBill.lastInsertRowid);
 
-    const existingChargeSetting = JSON.stringify([{
-      id: 'upgrade-fee',
-      name: 'Upgrade fee',
-      type: 'fixed',
-      value: 4,
-      calculation_basis: 'gross',
-      order_types: ['dine_in'],
-      is_optional: false,
-      is_default_active: true,
-      is_active: true,
-    }]);
-    beforeChargeSnapshot.prepare(`
+    const existingChargeSetting = JSON.stringify([
+      {
+        id: 'upgrade-fee',
+        name: 'Upgrade fee',
+        type: 'fixed',
+        value: 4,
+        calculation_basis: 'gross',
+        order_types: ['dine_in'],
+        is_optional: false,
+        is_default_active: true,
+        is_active: true,
+      },
+    ]);
+    beforeChargeSnapshot
+      .prepare(`
       INSERT INTO settings (key, value, updated_at) VALUES ('custom_charges', ?, '2026-08-01 12:00:00')
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-    `).run(existingChargeSetting);
+    `)
+      .run(existingChargeSetting);
 
     // A cart held before charge selections were persisted: it must keep its
     // customer, notes, items, and identity across the column-add migration.
-    beforeChargeSnapshot.prepare(`
+    beforeChargeSnapshot
+      .prepare(`
       INSERT OR IGNORE INTO customers (id, name, phone, created_at, updated_at)
       VALUES ('cust-legacy-hold', 'Legacy Hold Customer', '+10000000001', '2026-07-01 09:00:00', '2026-07-01 09:00:00')
-    `).run();
-    beforeChargeSnapshot.prepare(`
+    `)
+      .run();
+    beforeChargeSnapshot
+      .prepare(`
       INSERT INTO held_orders (id, table_id, items, customer_id, guest_count, order_notes, created_at, updated_at)
       VALUES ('hold-legacy-1', 'tbl-legacy-4', ?, 'cust-legacy-hold', 4, 'Extra napkins', '2026-07-01 09:05:00', '2026-07-01 09:05:00')
-    `).run(legacyHeldItems);
+    `)
+      .run(legacyHeldItems);
   } finally {
     closeDatabase();
     MIGRATIONS.push(...migrationsFromCharges);
   }
   initDatabase();
-  console.log('   ✓ an old (pre-migration-array) install migrates through to the latest schema without crashing');
+  console.log(
+    '   ✓ an old (pre-migration-array) install migrates through to the latest schema without crashing',
+  );
 
   const db = getDatabase();
-  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'cloud_sync_enabled'").get().value, '1',
-    'seed-written cloud sync defaults are flipped on during upgrade');
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM settings WHERE key = 'cloud_pending_store_id'").get().count, 0,
-    'pending registration state is removed during upgrade');
-  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'cloud_orders_enabled'").get().value, '0',
-    'explicitly edited settings remain unchanged during upgrade');
-  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'taxes_enabled'").get().value, 'false',
-    'taxes remain off until the merchant enables them');
-  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'support_ticket_outbox'").get(),
-    'support ticket outbox exists after upgrade');
-  console.log('   ✓ v40/v41 preserves deliberate settings, flips untouched cloud sync, and creates the support outbox');
+  assert.equal(
+    db.prepare("SELECT value FROM settings WHERE key = 'cloud_sync_enabled'").get().value,
+    '1',
+    'seed-written cloud sync defaults are flipped on during upgrade',
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM settings WHERE key = 'cloud_pending_store_id'").get()
+      .count,
+    0,
+    'pending registration state is removed during upgrade',
+  );
+  assert.equal(
+    db.prepare("SELECT value FROM settings WHERE key = 'cloud_orders_enabled'").get().value,
+    '0',
+    'explicitly edited settings remain unchanged during upgrade',
+  );
+  assert.equal(
+    db.prepare("SELECT value FROM settings WHERE key = 'taxes_enabled'").get().value,
+    'false',
+    'taxes remain off until the merchant enables them',
+  );
+  assert.ok(
+    db
+      .prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'support_ticket_outbox'",
+      )
+      .get(),
+    'support ticket outbox exists after upgrade',
+  );
+  console.log(
+    '   ✓ v40/v41 preserves deliberate settings, flips untouched cloud sync, and creates the support outbox',
+  );
   const ideal = buildIdealSchemaDb();
   const latestSchemaVersion = ideal.pragma('user_version', { simple: true }) as number;
-  assert.equal(getCurrentSchemaVersion(), latestSchemaVersion,
-    'migrated old install reaches the same schema version as a fresh install');
-  const tableColumns = db.prepare('PRAGMA table_info(tables)').all().map((column: any) => column.name);
-  assert.ok(tableColumns.includes('reservation_customer_id'), 'reservation customer association exists after upgrading an old install');
-  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'clear_table_reservation_customer_on_status_change'").get(),
-    'reservation customer cleanup trigger exists after upgrading an old install');
-  const idealHeldColumns = ideal.prepare('PRAGMA table_info(held_orders)').all() as { name: string; notnull: number; dflt_value: string }[];
+  assert.equal(
+    getCurrentSchemaVersion(),
+    latestSchemaVersion,
+    'migrated old install reaches the same schema version as a fresh install',
+  );
+  const tableColumns = db
+    .prepare('PRAGMA table_info(tables)')
+    .all()
+    .map((column: any) => column.name);
+  assert.ok(
+    tableColumns.includes('reservation_customer_id'),
+    'reservation customer association exists after upgrading an old install',
+  );
+  assert.ok(
+    db
+      .prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'clear_table_reservation_customer_on_status_change'",
+      )
+      .get(),
+    'reservation customer cleanup trigger exists after upgrading an old install',
+  );
+  const idealHeldColumns = ideal.prepare('PRAGMA table_info(held_orders)').all() as {
+    name: string;
+    notnull: number;
+    dflt_value: string;
+  }[];
   for (const column of ['waived_charge_ids', 'opted_in_charge_ids'] as const) {
     const definition = idealHeldColumns.find((candidate) => candidate.name === column);
     assert.ok(definition, `a fresh install declares held_orders.${column}`);
     assert.equal(definition!.notnull, 1, `fresh held_orders.${column} is NOT NULL`);
-    assert.equal(definition!.dflt_value, "'[]'", `fresh held_orders.${column} defaults to an empty selection list`);
+    assert.equal(
+      definition!.dflt_value,
+      "'[]'",
+      `fresh held_orders.${column} defaults to an empty selection list`,
+    );
   }
   ideal.close();
   assert.equal(
-    (db.prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as { value: string }).value,
+    (
+      db.prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as {
+        value: string;
+      }
+    ).value,
     'false',
     'existing stores receive the opt-in split-check default during upgrade',
   );
   console.log('   ✓ existing stores receive split checks disabled by default');
   assert.equal(
-    (db.prepare("SELECT value FROM settings WHERE key = 'require_kitchen_delivered_before_settlement'").get() as { value: string }).value,
+    (
+      db
+        .prepare(
+          "SELECT value FROM settings WHERE key = 'require_kitchen_delivered_before_settlement'",
+        )
+        .get() as { value: string }
+    ).value,
     'false',
     'existing stores receive kitchen delivery enforcement disabled by default during upgrade',
   );
   // #447: migration v72 upgrades the persisted value to the structured
   // selection identity; the bare string keeps resolving during transition.
   assert.deepEqual(
-    JSON.parse((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as { value: string }).value),
+    JSON.parse(
+      (
+        db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as {
+          value: string;
+        }
+      ).value,
+    ),
     { source: 'core', id: 'classic' },
     'existing stores receive the classic bill template during upgrade, upgraded to the structured selection identity',
   );
   assert.equal(
-    (db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as { value: string }).value,
+    (
+      db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as {
+        value: string;
+      }
+    ).value,
     '',
     'existing stores receive an empty bill footer during upgrade',
   );
   console.log('   ✓ existing stores receive bill template defaults without requiring a first save');
 
-  const migratedUpi = db.prepare(`
+  const migratedUpi = db
+    .prepare(`
     SELECT pm.id, pm.name, b.payment_details
     FROM bills b
     JOIN payment_methods pm ON pm.id = json_extract(b.payment_details, '$.payment_method_id')
     WHERE b.bill_number = 'INV-LEGACY-TAX'
-  `).get() as { id: number; name: string; payment_details: string };
-  assert.equal(migratedUpi.name, 'UPI', 'historical UPI is preserved as a custom method on upgrade');
-  assert.equal(JSON.parse(migratedUpi.payment_details).method, 'UPI', 'historical UPI payment is linked to the preserved method');
+  `)
+    .get() as { id: number; name: string; payment_details: string };
+  assert.equal(
+    migratedUpi.name,
+    'UPI',
+    'historical UPI is preserved as a custom method on upgrade',
+  );
+  assert.equal(
+    JSON.parse(migratedUpi.payment_details).method,
+    'UPI',
+    'historical UPI payment is linked to the preserved method',
+  );
   console.log('   ✓ legacy UPI payments are preserved without seeding UPI on fresh installs');
 
   // ── Migration v45: legacy ISO timestamps are normalized to the space form ─
-  const isoOrderRow = db.prepare(
-    `SELECT created_at, updated_at, cooking_started_at, ready_at FROM orders WHERE order_number = 'ORD-ISO-TS'`
-  ).get() as { created_at: string; updated_at: string; cooking_started_at: string; ready_at: string };
+  const isoOrderRow = db
+    .prepare(
+      `SELECT created_at, updated_at, cooking_started_at, ready_at FROM orders WHERE order_number = 'ORD-ISO-TS'`,
+    )
+    .get() as {
+    created_at: string;
+    updated_at: string;
+    cooking_started_at: string;
+    ready_at: string;
+  };
   assert.deepEqual(
-    [isoOrderRow.created_at, isoOrderRow.updated_at, isoOrderRow.cooking_started_at, isoOrderRow.ready_at],
+    [
+      isoOrderRow.created_at,
+      isoOrderRow.updated_at,
+      isoOrderRow.cooking_started_at,
+      isoOrderRow.ready_at,
+    ],
     ['2026-07-01 10:00:00', '2026-07-01 10:00:00', '2026-07-01 10:05:00', '2026-07-01 10:12:00'],
     'v45 normalizes legacy ISO order timestamps to the space form (second precision)',
   );
   assert.deepEqual(
-    { ...db.prepare(`SELECT expected_payment_method, delivery_note FROM orders WHERE order_number = 'ORD-ISO-TS'`).get() as object },
+    {
+      ...(db
+        .prepare(
+          `SELECT expected_payment_method, delivery_note FROM orders WHERE order_number = 'ORD-ISO-TS'`,
+        )
+        .get() as object),
+    },
     { expected_payment_method: null, delivery_note: null },
     'v103 keeps existing orders, reading as an unknown expected method with no courier note',
   );
-  const isoBillRow = db.prepare(
-    `SELECT created_at, updated_at, paid_at FROM bills WHERE bill_number = 'INV-ISO-TS'`
-  ).get() as { created_at: string; updated_at: string; paid_at: string };
+  const isoBillRow = db
+    .prepare(`SELECT created_at, updated_at, paid_at FROM bills WHERE bill_number = 'INV-ISO-TS'`)
+    .get() as { created_at: string; updated_at: string; paid_at: string };
   assert.deepEqual(
     [isoBillRow.created_at, isoBillRow.updated_at, isoBillRow.paid_at],
     ['2026-07-01 11:00:00', '2026-07-01 11:30:00', '2026-07-01 11:30:00'],
     'v45 normalizes legacy ISO bill timestamps to the space form',
   );
   assert.ok(
-    db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_bills_paid_at'`).get(),
+    db
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_bills_paid_at'`)
+      .get(),
     'v45 creates idx_bills_paid_at for the payment-method breakdown scan',
   );
   console.log('   ✓ legacy ISO timestamps are normalized to the space form (v45)');
 
-  const customerColumns = db.prepare(`PRAGMA table_info(customers)`).all().map((c: any) => c.name);
-  assert.ok(customerColumns.includes('country_code'), 'customers.country_code exists after migrating an old install');
-  assert.ok(customerColumns.includes('tag_counts'), 'customers.tag_counts exists after migrating an old install');
-  console.log('   ✓ customers.country_code and customers.tag_counts are present (the 9c92409 regression)');
+  const customerColumns = db
+    .prepare(`PRAGMA table_info(customers)`)
+    .all()
+    .map((c: any) => c.name);
+  assert.ok(
+    customerColumns.includes('country_code'),
+    'customers.country_code exists after migrating an old install',
+  );
+  assert.ok(
+    customerColumns.includes('tag_counts'),
+    'customers.tag_counts exists after migrating an old install',
+  );
+  console.log(
+    '   ✓ customers.country_code and customers.tag_counts are present (the 9c92409 regression)',
+  );
 
   const requiredTaxTables = [
     'country_packs',
@@ -303,9 +475,15 @@ function main() {
     bills: ['tax_snapshot'],
   };
   for (const [table, expected] of Object.entries(expectedTaxColumns)) {
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
+    const columns = db
+      .prepare(`PRAGMA table_info(${table})`)
+      .all()
+      .map((column: any) => column.name);
     for (const column of expected) {
-      assert.ok(columns.includes(column), `${table}.${column} exists after upgrading an old install`);
+      assert.ok(
+        columns.includes(column),
+        `${table}.${column} exists after upgrading an old install`,
+      );
     }
   }
   console.log('   ✓ old installs receive every Phase 1 tax table and guarded additive column');
@@ -315,7 +493,8 @@ function main() {
     'old installs register only the generic tax pack during upgrade',
   );
   assert.equal(
-    (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number }).count,
+    (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number })
+      .count,
     1,
     'old installs register only the generic tax pack version during upgrade',
   );
@@ -328,8 +507,9 @@ function main() {
   // resolved category only. An upgraded install must not silently start
   // charging tax again based on stale legacy columns.
   const legacyProduct = db.prepare('SELECT * FROM products LIMIT 1').get() as any;
-  db.prepare(`UPDATE products SET tax_category_id = NULL, tax_type = 'exclusive', tax_rate = 18 WHERE id = ?`)
-    .run(legacyProduct.id);
+  db.prepare(
+    `UPDATE products SET tax_category_id = NULL, tax_type = 'exclusive', tax_rate = 18 WHERE id = ?`,
+  ).run(legacyProduct.id);
   const { calculateItemTax } = require('../main/services/tax');
   const legacyTax = calculateItemTax(
     // taxes_enabled: true here, deliberately, even though this install's
@@ -341,17 +521,27 @@ function main() {
     100,
     null,
   );
-  assert.equal(legacyTax.tax_amount, 0, 'an upgraded product with no resolved tax category charges no tax');
+  assert.equal(
+    legacyTax.tax_amount,
+    0,
+    'an upgraded product with no resolved tax category charges no tax',
+  );
   assert.deepEqual(legacyTax.tax_breakdown, []);
-  console.log('   ✓ an upgraded product with stale legacy tax_type/tax_rate charges no tax until categorized');
-  const preservedOrder = db.prepare(`
+  console.log(
+    '   ✓ an upgraded product with stale legacy tax_type/tax_rate charges no tax until categorized',
+  );
+  const preservedOrder = db
+    .prepare(`
     SELECT tax_amount, tax_breakdown, tax_snapshot, service_charge, packaging_charge, total, charges_breakdown
     FROM orders WHERE order_number = 'ORD-LEGACY-TAX'
-  `).get() as any;
-  const preservedBill = db.prepare(`
+  `)
+    .get() as any;
+  const preservedBill = db
+    .prepare(`
     SELECT tax_amount, tax_breakdown, tax_snapshot, service_charge, packaging_charge, total, charges_breakdown
     FROM bills WHERE bill_number = 'INV-LEGACY-TAX'
-  `).get() as any;
+  `)
+    .get() as any;
   assert.deepEqual(
     { tax_amount: preservedOrder.tax_amount, tax_breakdown: preservedOrder.tax_breakdown },
     { tax_amount: 5, tax_breakdown: legacyTaxBreakdown },
@@ -362,7 +552,10 @@ function main() {
   );
   assert.equal(preservedOrder.tax_snapshot, null);
   assert.equal(preservedBill.tax_snapshot, null);
-  for (const [row, name] of [[preservedOrder, 'order'], [preservedBill, 'bill']] as const) {
+  for (const [row, name] of [
+    [preservedOrder, 'order'],
+    [preservedBill, 'bill'],
+  ] as const) {
     assert.deepEqual(
       {
         service_charge: row.service_charge,
@@ -374,68 +567,124 @@ function main() {
       `v99 preserves the legacy ${name} total and manual charge columns`,
     );
   }
-  const preservedChargeSetting = db.prepare(
-    `SELECT value FROM settings WHERE key = 'custom_charges'`,
-  ).get() as { value: string };
+  const preservedChargeSetting = db
+    .prepare(`SELECT value FROM settings WHERE key = 'custom_charges'`)
+    .get() as { value: string };
   assert.deepEqual(
     JSON.parse(preservedChargeSetting.value),
-    [{
-      id: 'upgrade-fee',
-      name: 'Upgrade fee',
-      type: 'fixed',
-      value: 4,
-      calculation_basis: 'gross',
-      order_types: ['dine_in'],
-      is_optional: false,
-      is_default_active: true,
-      is_active: true,
-    }],
+    [
+      {
+        id: 'upgrade-fee',
+        name: 'Upgrade fee',
+        type: 'fixed',
+        value: 4,
+        calculation_basis: 'gross',
+        order_types: ['dine_in'],
+        is_optional: false,
+        is_default_active: true,
+        is_active: true,
+      },
+    ],
     'v99 preserves an existing configured charge',
   );
-  console.log('   ✓ v99 preserves legacy order/bill totals, manual charge columns, and configured charge settings');
+  console.log(
+    '   ✓ v99 preserves legacy order/bill totals, manual charge columns, and configured charge settings',
+  );
   console.log('   ✓ existing products, orders, bills, and legacy tax breakdowns are preserved');
 
   // ── The migrated old install must match the ideal (fresh) schema exactly ─
   const report = runHealthCheck();
-  assert.equal(report.findings.length, 0,
-    `a migrated old install should match a fresh install's schema exactly, found: ${JSON.stringify(report.findings)}`);
-  console.log('   ✓ runHealthCheck() reports zero drift between the migrated old install and a fresh install');
+  assert.equal(
+    report.findings.length,
+    0,
+    `a migrated old install should match a fresh install's schema exactly, found: ${JSON.stringify(report.findings)}`,
+  );
+  console.log(
+    '   ✓ runHealthCheck() reports zero drift between the migrated old install and a fresh install',
+  );
   for (const table of ['cash_drawer_movements', 'refunds'] as const) {
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
-    assert.ok(columns.includes('cash_session_id'), `${table}.cash_session_id exists after upgrading an old install`);
+    const columns = db
+      .prepare(`PRAGMA table_info(${table})`)
+      .all()
+      .map((column: any) => column.name);
+    assert.ok(
+      columns.includes('cash_session_id'),
+      `${table}.cash_session_id exists after upgrading an old install`,
+    );
   }
   console.log('   ✓ cash ownership columns exist after upgrading an old install');
 
   // ── Held carts survive the charge-selection columns ─────────────────────
-  const heldOrderColumns = db.prepare('PRAGMA table_info(held_orders)').all()
+  const heldOrderColumns = db
+    .prepare('PRAGMA table_info(held_orders)')
+    .all()
     .map((column: any) => column.name);
   for (const column of ['waived_charge_ids', 'opted_in_charge_ids'] as const) {
-    assert.ok(heldOrderColumns.includes(column), `held_orders.${column} exists after upgrading an old install`);
+    assert.ok(
+      heldOrderColumns.includes(column),
+      `held_orders.${column} exists after upgrading an old install`,
+    );
   }
-  const preservedHold = db.prepare(`
+  const preservedHold = db
+    .prepare(`
     SELECT id, table_id, items, customer_id, guest_count, order_notes,
            waived_charge_ids, opted_in_charge_ids, created_at, updated_at
     FROM held_orders WHERE id = 'hold-legacy-1'
-  `).get() as any;
+  `)
+    .get() as any;
   assert.ok(preservedHold, 'the held cart saved before the migration still exists');
   assert.equal(preservedHold.table_id, 'tbl-legacy-4', 'the held cart keeps its table');
-  assert.equal(JSON.parse(preservedHold.items)[0].id, 'line-legacy-1', 'the held cart keeps its items');
-  assert.equal(JSON.parse(preservedHold.items)[0].special_instructions, 'oat', 'held item notes survive');
+  assert.equal(
+    JSON.parse(preservedHold.items)[0].id,
+    'line-legacy-1',
+    'the held cart keeps its items',
+  );
+  assert.equal(
+    JSON.parse(preservedHold.items)[0].special_instructions,
+    'oat',
+    'held item notes survive',
+  );
   assert.equal(preservedHold.customer_id, 'cust-legacy-hold', 'the held cart keeps its customer');
   assert.equal(preservedHold.guest_count, 4, 'the held cart keeps its guest count');
   assert.equal(preservedHold.order_notes, 'Extra napkins', 'the held cart keeps its notes');
-  assert.equal(preservedHold.created_at, '2026-07-01 09:05:00', 'the held cart keeps its created timestamp');
-  assert.equal(preservedHold.updated_at, '2026-07-01 09:05:00', 'the held cart keeps its updated timestamp');
-  assert.equal(preservedHold.waived_charge_ids, '[]', 'a legacy hold defaults to no waived charges');
-  assert.equal(preservedHold.opted_in_charge_ids, '[]', 'a legacy hold defaults to no opted-in charges');
-  assert.deepEqual(db.pragma('integrity_check'), [{ integrity_check: 'ok' }], 'integrity_check passes after the held-cart migration');
+  assert.equal(
+    preservedHold.created_at,
+    '2026-07-01 09:05:00',
+    'the held cart keeps its created timestamp',
+  );
+  assert.equal(
+    preservedHold.updated_at,
+    '2026-07-01 09:05:00',
+    'the held cart keeps its updated timestamp',
+  );
+  assert.equal(
+    preservedHold.waived_charge_ids,
+    '[]',
+    'a legacy hold defaults to no waived charges',
+  );
+  assert.equal(
+    preservedHold.opted_in_charge_ids,
+    '[]',
+    'a legacy hold defaults to no opted-in charges',
+  );
+  assert.deepEqual(
+    db.pragma('integrity_check'),
+    [{ integrity_check: 'ok' }],
+    'integrity_check passes after the held-cart migration',
+  );
   console.log('   ✓ v105 preserves a held cart while adding defaulted charge-selection columns');
 
   // ── The columns must actually be usable, not just present ───────────────
-  const customerId = db.prepare(`SELECT id FROM customers LIMIT 1`).get() as { id: string } | undefined;
+  const customerId = db.prepare(`SELECT id FROM customers LIMIT 1`).get() as
+    | { id: string }
+    | undefined;
   if (customerId) {
-    db.prepare(`UPDATE customers SET country_code = '+1', tag_counts = '{}' WHERE id = ?`).run(customerId.id);
-    const row = db.prepare(`SELECT country_code, tag_counts FROM customers WHERE id = ?`).get(customerId.id) as any;
+    db.prepare(`UPDATE customers SET country_code = '+1', tag_counts = '{}' WHERE id = ?`).run(
+      customerId.id,
+    );
+    const row = db
+      .prepare(`SELECT country_code, tag_counts FROM customers WHERE id = ?`)
+      .get(customerId.id) as any;
     assert.equal(row.country_code, '+1');
     assert.equal(row.tag_counts, '{}');
     console.log('   ✓ the backfilled columns are readable and writable');
@@ -480,35 +729,47 @@ function main() {
   initDatabase();
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
   assert.equal(runHealthCheck().findings.length, 0);
-  const preservedPack = getDatabase().prepare(`
+  const preservedPack = getDatabase()
+    .prepare(`
     SELECT active_version_id, status FROM country_packs WHERE id = ?
-  `).get(existingCountryPack.id) as { active_version_id: string; status: string };
+  `)
+    .get(existingCountryPack.id) as { active_version_id: string; status: string };
   assert.deepEqual(
     preservedPack,
     { active_version_id: preservedVersionId, status: 'active' },
     'an already-active country pack survives the changed bundle migration untouched',
   );
   assert.ok(
-    getDatabase().prepare('SELECT 1 FROM country_pack_versions WHERE id = ?').get(preservedVersionId),
+    getDatabase()
+      .prepare('SELECT 1 FROM country_pack_versions WHERE id = ?')
+      .get(preservedVersionId),
     'the previously installed active pack version is preserved',
   );
   assert.equal(
-    (getDatabase().prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as { value: string }).value,
+    (
+      getDatabase()
+        .prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'")
+        .get() as { value: string }
+    ).value,
     'true',
     'v60 preserves an existing split-check choice',
   );
-  getDatabase().prepare(`UPDATE settings SET value = 'false' WHERE key = 'diagnostics_consent'`).run();
+  getDatabase()
+    .prepare(`UPDATE settings SET value = 'false' WHERE key = 'diagnostics_consent'`)
+    .run();
   getDatabase().pragma('user_version = 46');
   closeDatabase();
   initDatabase();
-  const diagnosticsSetting = getDatabase().prepare(
-    `SELECT value FROM settings WHERE key = 'diagnostics_consent'`,
-  ).get() as { value: string };
+  const diagnosticsSetting = getDatabase()
+    .prepare(`SELECT value FROM settings WHERE key = 'diagnostics_consent'`)
+    .get() as { value: string };
   assert.equal(diagnosticsSetting.value, 'false', 'v47 preserves an existing diagnostics opt-out');
   console.log('   ✓ reopening is idempotent and preserves an already-active country pack');
-  const reopenedHeld = getDatabase().prepare(
-    `SELECT waived_charge_ids, opted_in_charge_ids FROM held_orders WHERE id = 'hold-legacy-1'`,
-  ).get() as { waived_charge_ids: string; opted_in_charge_ids: string };
+  const reopenedHeld = getDatabase()
+    .prepare(
+      `SELECT waived_charge_ids, opted_in_charge_ids FROM held_orders WHERE id = 'hold-legacy-1'`,
+    )
+    .get() as { waived_charge_ids: string; opted_in_charge_ids: string };
   assert.deepEqual(
     reopenedHeld,
     { waived_charge_ids: '[]', opted_in_charge_ids: '[]' },
@@ -535,65 +796,201 @@ function main() {
     MIGRATIONS[MIGRATIONS.length - 1].version,
     'the store is fully migrated before rewinding the identity column',
   );
-  preIdentity.prepare('UPDATE orders SET expected_payment_method = ? WHERE id = ?')
+  preIdentity
+    .prepare('UPDATE orders SET expected_payment_method = ? WHERE id = ?')
     .run('pending', legacyOrder.lastInsertRowid);
-  preIdentity.prepare('UPDATE orders SET expected_payment_method = ? WHERE id = ?')
+  preIdentity
+    .prepare('UPDATE orders SET expected_payment_method = ? WHERE id = ?')
     .run('Store Credit', isoOrder.lastInsertRowid);
   preIdentity.exec('ALTER TABLE orders DROP COLUMN expected_payment_method_id');
   preIdentity.pragma('user_version = 105');
   assert.ok(
-    !(preIdentity.prepare('PRAGMA table_info(orders)').all() as { name: string }[])
-      .some((column) => column.name === 'expected_payment_method_id'),
+    !(preIdentity.prepare('PRAGMA table_info(orders)').all() as { name: string }[]).some(
+      (column) => column.name === 'expected_payment_method_id',
+    ),
     'the rewind reproduces a store that predates the identity column',
   );
   closeDatabase();
   const migrationsFromIdentity = MIGRATIONS.splice(identityMigrationIndex);
   try {
     initDatabase();
-    assert.equal(getCurrentSchemaVersion(), 105, 'the store stops at v105 without the identity column');
+    assert.equal(
+      getCurrentSchemaVersion(),
+      105,
+      'the store stops at v105 without the identity column',
+    );
   } finally {
     MIGRATIONS.push(...migrationsFromIdentity);
   }
   closeDatabase();
   initDatabase();
   const identityDb = getDatabase();
-  const preIdentitySnapshot = identityDb.prepare(
-    'SELECT expected_payment_method FROM orders WHERE id = ?',
-  ).get(legacyOrder.lastInsertRowid) as { expected_payment_method: string | null };
-  assert.equal(preIdentitySnapshot.expected_payment_method, 'pending',
-    'the pre-migration sentinel name is still on disk before the identity column exists');
-  const identityOrders = identityDb.prepare(
-    'SELECT order_number, expected_payment_method, expected_payment_method_id FROM orders ORDER BY id',
-  ).all() as Array<{ order_number: string; expected_payment_method: string | null; expected_payment_method_id: number | null }>;
+  const preIdentitySnapshot = identityDb
+    .prepare('SELECT expected_payment_method FROM orders WHERE id = ?')
+    .get(legacyOrder.lastInsertRowid) as { expected_payment_method: string | null };
+  assert.equal(
+    preIdentitySnapshot.expected_payment_method,
+    'pending',
+    'the pre-migration sentinel name is still on disk before the identity column exists',
+  );
+  const identityOrders = identityDb
+    .prepare(
+      'SELECT order_number, expected_payment_method, expected_payment_method_id FROM orders ORDER BY id',
+    )
+    .all() as Array<{
+    order_number: string;
+    expected_payment_method: string | null;
+    expected_payment_method_id: number | null;
+  }>;
   const sentinelOrder = identityOrders.find((row) => row.order_number === 'ORD-LEGACY-TAX');
-  assert.equal(sentinelOrder?.expected_payment_method, 'pending',
-    'a legacy sentinel name snapshot survives the identity migration unchanged');
-  assert.equal(sentinelOrder?.expected_payment_method_id, null,
-    'the legacy `pending` string is never guessed into a custom method identity');
+  assert.equal(
+    sentinelOrder?.expected_payment_method,
+    'pending',
+    'a legacy sentinel name snapshot survives the identity migration unchanged',
+  );
+  assert.equal(
+    sentinelOrder?.expected_payment_method_id,
+    null,
+    'the legacy `pending` string is never guessed into a custom method identity',
+  );
   const customNameOrder = identityOrders.find((row) => row.order_number === 'ORD-ISO-TS');
-  assert.equal(customNameOrder?.expected_payment_method, 'Store Credit',
-    'a legacy custom name snapshot survives the identity migration unchanged');
-  assert.equal(customNameOrder?.expected_payment_method_id, null,
-    'a legacy custom name is not retroactively linked to a configured method row');
-  const orderColumnsAfterIdentity = identityDb.prepare('PRAGMA table_info(orders)').all() as
-    { name: string; notnull: number; dflt_value: string | null }[];
-  const identityColumn = orderColumnsAfterIdentity.find((column) => column.name === 'expected_payment_method_id');
-  assert.ok(identityColumn, 'orders.expected_payment_method_id exists after upgrading an old install');
-  assert.equal(identityColumn!.notnull, 0, 'the identity column is nullable so legacy rows stay unambiguous');
+  assert.equal(
+    customNameOrder?.expected_payment_method,
+    'Store Credit',
+    'a legacy custom name snapshot survives the identity migration unchanged',
+  );
+  assert.equal(
+    customNameOrder?.expected_payment_method_id,
+    null,
+    'a legacy custom name is not retroactively linked to a configured method row',
+  );
+  const orderColumnsAfterIdentity = identityDb.prepare('PRAGMA table_info(orders)').all() as {
+    name: string;
+    notnull: number;
+    dflt_value: string | null;
+  }[];
+  const identityColumn = orderColumnsAfterIdentity.find(
+    (column) => column.name === 'expected_payment_method_id',
+  );
   assert.ok(
-    identityColumn!.dflt_value === null || String(identityColumn!.dflt_value).toUpperCase() === 'NULL',
+    identityColumn,
+    'orders.expected_payment_method_id exists after upgrading an old install',
+  );
+  assert.equal(
+    identityColumn!.notnull,
+    0,
+    'the identity column is nullable so legacy rows stay unambiguous',
+  );
+  assert.ok(
+    identityColumn!.dflt_value === null ||
+      String(identityColumn!.dflt_value).toUpperCase() === 'NULL',
     `the identity column has no default identity, found ${String(identityColumn!.dflt_value)}`,
   );
-  assert.deepEqual(identityDb.pragma('integrity_check'), [{ integrity_check: 'ok' }],
-    'integrity_check passes after the identity migration');
+  assert.deepEqual(
+    identityDb.pragma('integrity_check'),
+    [{ integrity_check: 'ok' }],
+    'integrity_check passes after the identity migration',
+  );
   const freshIdentityDb = buildIdealSchemaDb();
   assert.ok(
-    (freshIdentityDb.prepare('PRAGMA table_info(orders)').all() as { name: string }[])
-      .some((column) => column.name === 'expected_payment_method_id'),
+    (freshIdentityDb.prepare('PRAGMA table_info(orders)').all() as { name: string }[]).some(
+      (column) => column.name === 'expected_payment_method_id',
+    ),
     'a fresh install declares orders.expected_payment_method_id',
   );
   freshIdentityDb.close();
-  console.log('   ✓ v106 adds a nullable expected-method identity without reinterpreting old snapshots');
+  console.log(
+    '   ✓ v106 adds a nullable expected-method identity without reinterpreting old snapshots',
+  );
+  closeDatabase();
+
+  // ── v120: per-staff cash sessions index migration preserves open shifts ──
+  const perStaffMigrationIndex = MIGRATIONS.findIndex(
+    (migration: any) => migration.name === 'add_per_staff_cash_sessions',
+  );
+  assert.ok(perStaffMigrationIndex > 0, 'the per-staff cash sessions migration is registered');
+  assert.equal(
+    MIGRATIONS[perStaffMigrationIndex].version,
+    120,
+    'the per-staff cash sessions migration is v120',
+  );
+  initDatabase();
+  const prePerStaffDb = getDatabase();
+  prePerStaffDb.exec(`
+    DROP INDEX IF EXISTS cash_sessions_one_open_per_user;
+    CREATE UNIQUE INDEX IF NOT EXISTS cash_sessions_one_open
+      ON cash_sessions(status) WHERE status = 'open';
+  `);
+  prePerStaffDb.prepare(`DELETE FROM settings WHERE key = 'one_shift_per_staff'`).run();
+  prePerStaffDb.prepare(`DELETE FROM cash_sessions WHERE status = 'open'`).run();
+  prePerStaffDb
+    .prepare(`
+    INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    VALUES ('cashier-upgrade', 'Upgrade Cashier', 'cashier-upgrade@test.local', 'hash', 'cashier', 1, '2026-10-28 08:00:00', '2026-10-28 08:00:00')
+  `)
+    .run();
+  const preUpgradeOpenShift = prePerStaffDb
+    .prepare(`
+    INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
+    VALUES ('cashier-upgrade', 'Upgrade Cashier', '2026-10-28 08:00:00', 7500, 'open')
+  `)
+    .run();
+  const preUpgradeShiftId = Number(preUpgradeOpenShift.lastInsertRowid);
+  prePerStaffDb.pragma('user_version = 119');
+  closeDatabase();
+
+  initDatabase();
+  const postPerStaffDb = getDatabase();
+  assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
+  assert.equal(
+    postPerStaffDb
+      .prepare(`SELECT 1 FROM sqlite_master WHERE name = 'cash_sessions_one_open'`)
+      .get(),
+    undefined,
+    'v120 drops the legacy global cash_sessions_one_open index',
+  );
+  const perUserIdx = postPerStaffDb
+    .prepare(`SELECT sql FROM sqlite_master WHERE name = 'cash_sessions_one_open_per_user'`)
+    .get() as { sql: string } | undefined;
+  assert.ok(
+    perUserIdx && perUserIdx.sql.includes('opened_by') && perUserIdx.sql.includes('WHERE'),
+    'v120 creates the per-user partial unique index cash_sessions_one_open_per_user',
+  );
+  const upgradedOpenShift = postPerStaffDb
+    .prepare(
+      `SELECT id, opened_by, opened_by_name, opening_float_cents, status FROM cash_sessions WHERE id = ?`,
+    )
+    .get(preUpgradeShiftId) as {
+    id: number;
+    opened_by: string;
+    opened_by_name: string;
+    opening_float_cents: number;
+    status: string;
+  };
+  assert.deepEqual(
+    upgradedOpenShift,
+    {
+      id: preUpgradeShiftId,
+      opened_by: 'cashier-upgrade',
+      opened_by_name: 'Upgrade Cashier',
+      opening_float_cents: 7500,
+      status: 'open',
+    },
+    'upgrading a database with an open shift keeps it open and valid',
+  );
+  const perStaffSetting = postPerStaffDb
+    .prepare(`SELECT value FROM settings WHERE key = 'one_shift_per_staff'`)
+    .get() as { value: string } | undefined;
+  assert.equal(perStaffSetting?.value, 'false', 'v120 seeds one_shift_per_staff to false');
+  assert.equal(
+    runHealthCheck().findings.length,
+    0,
+    'runHealthCheck() reports zero drift after v120',
+  );
+  postPerStaffDb.prepare(`DELETE FROM cash_sessions WHERE id = ?`).run(preUpgradeShiftId);
+  console.log(
+    '   ✓ v120 replaces cash_sessions_one_open with cash_sessions_one_open_per_user and preserves an open shift',
+  );
   closeDatabase();
 
   console.log('='.repeat(60));

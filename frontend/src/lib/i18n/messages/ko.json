@@ -1209,7 +1209,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {미결제 주문 #건이 다음 교대근무로 이월됩니다} other {미결제 주문 #건이 다음 교대근무로 이월됩니다}}",
     "shiftCloseUnpaidWarningHint": "이 주문들은 다음 교대근무를 위해 열린 상태로 유지됩니다. 이번 교대근무 마감은 이번 교대근무 중에 이미 수납된 현금 결제만 정산합니다.",
     "shiftCloseUnpaidMoreCount": "+{count}건의 미결제 주문 더보기",
-    "lockTerminal": "단말기 잠금"
+    "lockTerminal": "단말기 잠금",
+    "selectOpenShift": "닫을 교대조",
+    "xReportShiftFilterLabel": "교대조 범위",
+    "xReportAllShifts": "모든 교대조 (종일)"
   },
   "printTest": {
     "amt": "금액",
@@ -2569,7 +2572,13 @@
     "autoLockLabel": "자리 비움 자동 잠금",
     "autoLockHint": "일정 시간 사용하지 않으면 POS 단말기를 자동으로 잠급니다",
     "autoLockOff": "끔",
-    "autoLockMinutesOption": "{count}분"
+    "autoLockMinutesOption": "{count}분",
+    "requireOpenShift": "현금 거래 시 열린 교대조 필요",
+    "requireOpenShiftHint": "활성 교대조가 열려 있지 않으면 현금 결제, 현금 환불 및 금전함 입출금을 차단합니다.",
+    "oneShiftPerStaff": "직원당 하나의 교대조",
+    "oneShiftPerStaffHint": "각 직원이 자신의 현금 교대조를 독립적으로 열고 닫을 수 있도록 허용합니다.",
+    "oneShiftPerStaffSharedDrawerWarning": "참고: 두 개의 동시 교대조가 하나의 물리적 현금 서랍을 공유하는 경우 개별 현금 집계가 물리적으로 분리되지 않습니다.",
+    "oneShiftPerStaffDisableBlocked": "여러 교대조가 열려 있는 동안에는 직원당 하나의 교대조 설정을 끌 수 없습니다. 먼저 추가 교대조를 닫으세요."
   },
   "setup": {
     "alreadyCompleted": "이 설치에서는 초기 설정이 이미 완료되었습니다. 로그인으로 이동합니다…",

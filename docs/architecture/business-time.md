@@ -124,6 +124,16 @@ business-day cutoff therefore stays filed under the business date on which it op
 reporting and day-close aggregates continue to bound sales by each business day's `[start, end)`
 window.
 
+When the opt-in setting `one_shift_per_staff` is `'false'` (the default), at most one shift may be
+open across the store at a time. When `one_shift_per_staff` is `'true'`, each staff member can open
+and close at most one shift of their own (`cash_sessions_one_open_per_user` on `(opened_by) WHERE status = 'open'`).
+Cash payments, cash refunds, drawer movements, and cash expense entries attach to the authenticated
+actor's open shift (`getOpenSession(db, userId)`). Day close (`POST /api/cash-closures`) is blocked
+(`409 open_shift_blocks_day_close`) until all shifts opened on or before that business date are
+closed, and reconciles the combined day totals across all shifts. Two concurrent shifts sharing a
+single physical cash drawer are permitted, though individual shift drawer counts cannot be
+physically isolated in a shared drawer.
+
 ### Refunds
 
 `main/services/refund.ts` allows a refund freely within `REFUND_WINDOW_MS` of order creation, which

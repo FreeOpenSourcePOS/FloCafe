@@ -2641,6 +2641,19 @@ export default function POSPage() {
           if (result.session) shift.setCloseModalOpen(true);
           else shift.setOpenModalOpen(true);
         }}
+        onShowCloseStaffShift={
+          !shift.session && shift.openSessions.length > 0
+            ? async () => {
+                const result = await shift.refresh();
+                if (result.status !== 'ok') return;
+                if (result.error) {
+                  toast.error(result.error || shift.shiftLoadFailedMessage);
+                  return;
+                }
+                if (result.openSessions.length > 0) shift.setCloseModalOpen(true);
+              }
+            : undefined
+        }
         shiftHasOpenSession={!!shift.session}
         shiftLoading={shift.loading}
         shiftError={shift.error}

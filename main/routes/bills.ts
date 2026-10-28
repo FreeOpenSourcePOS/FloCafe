@@ -3782,8 +3782,9 @@ function applyPaymentBatch(
   requireOpenSessionForCashTender(
     db,
     prepared.map((line) => line.payment),
+    idempotencyUserId,
   );
-  const activeSessionId = getOpenSession(db)?.id ?? NO_CASH_SESSION_ID;
+  const activeSessionId = getOpenSession(db, idempotencyUserId)?.id ?? NO_CASH_SESSION_ID;
   const currency = getTenantCurrency();
   const minorFactor = getCurrencyMinorUnitFactor(currency);
   const totalAppliedCents = prepared.reduce((sum, line) => sum + line.amountCents, 0);
@@ -5943,7 +5944,7 @@ router.patch(
           }
           effectiveSessionId = session.id;
         } else {
-          const openSession = getOpenSession(db);
+          const openSession = getOpenSession(db, effectiveActorUserId);
           if (!openSession) {
             throw paymentValidationError(
               'Cannot correct payment method: no open cash shift',
@@ -6020,7 +6021,7 @@ router.patch(
                   );
                 }
               } else {
-                const openSession = getOpenSession(db);
+                const openSession = getOpenSession(db, effectiveActorUserId);
                 const sibTime = String(
                   sibLine.timestamp || sibling.paid_at || sibling.created_at || '',
                 );

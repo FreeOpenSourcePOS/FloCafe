@@ -1209,7 +1209,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {ออเดอร์ที่เปิดอยู่ # รายการจะส่งต่อไปกะถัดไป} other {ออเดอร์ที่เปิดอยู่ # รายการจะส่งต่อไปกะถัดไป}}",
     "shiftCloseUnpaidWarningHint": "ออเดอร์เหล่านี้จะยังคงเปิดอยู่สำหรับกะถัดไป การปิดกะนี้จะกระทบยอดเฉพาะเงินสดที่รับชำระแล้วในระหว่างกะนี้เท่านั้น",
     "shiftCloseUnpaidMoreCount": "+อีก {count} ออเดอร์ที่เปิดอยู่",
-    "lockTerminal": "ล็อกเครื่อง POS"
+    "lockTerminal": "ล็อกเครื่อง POS",
+    "selectOpenShift": "กะที่จะปิด",
+    "xReportShiftFilterLabel": "ขอบเขตกะ",
+    "xReportAllShifts": "ทุกกะ (ทั้งวัน)"
   },
   "printTest": {
     "amt": "จำนวนเงิน",
@@ -2569,7 +2572,13 @@
     "autoLockLabel": "ล็อกอัตโนมัติเมื่อไม่มีการใช้งาน",
     "autoLockHint": "ล็อกหน้าจอ POS อัตโนมัติเมื่อไม่มีการใช้งาน",
     "autoLockOff": "ปิด",
-    "autoLockMinutesOption": "{count} นาที"
+    "autoLockMinutesOption": "{count} นาที",
+    "requireOpenShift": "ต้องเปิดกะก่อนรับเงินสด",
+    "requireOpenShiftHint": "บล็อกการรับชำระด้วยเงินสด การคืนเงินสด และความเคลื่อนไหวของลิ้นชักเว้นแต่จะเปิดกะอยู่",
+    "oneShiftPerStaff": "หนึ่งกะต่อพนักงานหนึ่งคน",
+    "oneShiftPerStaffHint": "อนุญาตให้พนักงานแต่ละคนเปิดและปิดกะเงินสดของตนเองได้อย่างอิสระ",
+    "oneShiftPerStaffSharedDrawerWarning": "หมายเหตุ: หากสองกะที่เปิดพร้อมกันใช้ลิ้นชักเก็บเงินจริงร่วมกัน ยอดนับเงินสดของแต่ละกะจะไม่แยกจากกันทางกายภาพ",
+    "oneShiftPerStaffDisableBlocked": "ไม่สามารถปิดใช้งานหนึ่งกะต่อพนักงานในขณะที่มีหลายกะเปิดอยู่ กรุณาปิดกะอื่นก่อน"
   },
   "setup": {
     "alreadyCompleted": "ตั้งค่าการติดตั้งนี้เสร็จสมบูรณ์แล้ว กำลังกลับไปหน้าเข้าสู่ระบบ…",

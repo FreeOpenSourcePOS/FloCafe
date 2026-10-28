@@ -281,6 +281,7 @@ router.post('/', requirePermission('refunds.initiate'), async (req: Request, res
       method: body.method,
       amountCents,
       orderItemId,
+      createdByUserId: userId,
     });
 
     const overridePin = body.override_pin;

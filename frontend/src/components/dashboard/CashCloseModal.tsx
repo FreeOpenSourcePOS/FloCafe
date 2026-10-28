@@ -48,6 +48,8 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
     closeAnotherDay,
     businessDate,
     setBusinessDate,
+    selectedSessionId,
+    setSelectedSessionId,
     xReport,
     xLoading,
     xError,
@@ -231,6 +233,7 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
                       const next = e.target.value;
                       if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) return;
                       if (next > todayLocal) return;
+                      setSelectedSessionId(null);
                       setBusinessDate(next);
                     }}
                     className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-brand/30"
@@ -243,6 +246,32 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
                 </div>
                 {xReport && (
                   <>
+                    {(xReport.openShifts?.length ?? 0) > 0 && (
+                      <div>
+                        <label
+                          htmlFor="x-report-shift-filter"
+                          className="block text-sm text-muted-foreground mb-1"
+                        >
+                          {tPos('xReportShiftFilterLabel')}
+                        </label>
+                        <select
+                          id="x-report-shift-filter"
+                          value={selectedSessionId ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSelectedSessionId(val ? Number(val) : null);
+                          }}
+                          className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground"
+                        >
+                          <option value="">{tPos('xReportAllShifts')}</option>
+                          {xReport.openShifts?.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              #{s.id} - {s.opened_by_name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <div className="flex justify-end">{exportMenu('x')}</div>
                     {(xReport.alreadyClosed || alreadyClosedOverride) && (
                       <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
@@ -265,6 +294,15 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
                               name: blockingOpenShift.opened_by_name,
                             })}
                           </p>
+                          {(xReport.openShifts?.length ?? 0) > 1 && (
+                            <ul className="list-disc ps-4 pt-1 text-xs text-amber-800">
+                              {xReport.openShifts?.map((s) => (
+                                <li key={s.id}>
+                                  #{s.id} - {s.opened_by_name}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                         </div>
                       </div>
                     )}

@@ -1209,7 +1209,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# đơn đang mở sẽ chuyển sang ca tiếp theo} other {# đơn đang mở sẽ chuyển sang ca tiếp theo}}",
     "shiftCloseUnpaidWarningHint": "Các đơn này vẫn mở cho ca tiếp theo. Việc đóng ca này chỉ đối soát các khoản tiền mặt đã thu trong ca này.",
     "shiftCloseUnpaidMoreCount": "+{count} đơn đang mở khác",
-    "lockTerminal": "Khóa máy POS"
+    "lockTerminal": "Khóa máy POS",
+    "selectOpenShift": "Ca cần đóng",
+    "xReportShiftFilterLabel": "Phạm vi ca",
+    "xReportAllShifts": "Tất cả các ca (cả ngày)"
   },
   "printTest": {
     "amt": "Số tiền",
@@ -2569,7 +2572,13 @@
     "autoLockLabel": "Tự động khóa khi nghỉ",
     "autoLockHint": "Tự động khóa máy POS sau thời gian không hoạt động",
     "autoLockOff": "Tắt",
-    "autoLockMinutesOption": "{count} phút"
+    "autoLockMinutesOption": "{count} phút",
+    "requireOpenShift": "Yêu cầu mở ca cho giao dịch tiền mặt",
+    "requireOpenShiftHint": "Chặn thanh toán tiền mặt, hoàn tiền mặt và thu chi két tiền trừ khi có ca đang mở.",
+    "oneShiftPerStaff": "Mỗi nhân viên một ca",
+    "oneShiftPerStaffHint": "Cho phép mỗi nhân viên tự mở và đóng ca thu ngân của riêng mình một cách độc lập.",
+    "oneShiftPerStaffSharedDrawerWarning": "Lưu ý: Nếu hai ca song song dùng chung một ngăn kéo tiền vật lý, số tiền đếm riêng của từng ca sẽ không tách biệt về mặt vật lý.",
+    "oneShiftPerStaffDisableBlocked": "Không thể tắt chế độ mỗi nhân viên một ca khi đang có nhiều ca mở. Vui lòng đóng các ca phụ trước."
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

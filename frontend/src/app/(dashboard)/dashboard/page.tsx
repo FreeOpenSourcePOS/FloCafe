@@ -56,6 +56,7 @@ import { splitHoursMinutes } from '@/lib/table-timing';
 import { tenantCan } from '@/lib/permissions';
 import { businessDateForInstant } from '@shared/business-date';
 import { downloadBlob } from '@/lib/download';
+import { exportReportAsPdf, MenuPopupBlockedError } from '@/lib/export-pdf';
 
 interface PaymentMethodBreakdown {
   method: string | null;
@@ -255,6 +256,7 @@ export default function DashboardPage() {
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
   const tOrders = useTranslations('orders');
+  const tProducts = useTranslations('products');
   const router = useRouter();
   const [stats, setStats] = useState<DailyStats | null>(null);
   const [daySummary, setDaySummary] = useState<DaySummary | null>(null);
@@ -468,7 +470,7 @@ export default function DashboardPage() {
     router.replace('/dashboard', { scroll: false });
   }, [cashCloseAction, cashCloseView, openCloseModal, router]);
 
-  const exportDailySales = async (format: 'xlsx' | 'csv') => {
+  const exportDailySales = async (format: 'xlsx' | 'csv' | 'pdf') => {
     if (isExporting) return;
     setIsExporting(true);
     try {
@@ -480,6 +482,15 @@ export default function DashboardPage() {
         periodMode === 'day' || range.startDate === range.endDate
           ? range.startDate
           : `${range.startDate}_to_${range.endDate}`;
+
+      if (format === 'pdf') {
+        await exportReportAsPdf({
+          endpoint: '/reports/daily-sales/export',
+          params: dateParams,
+          filename: `daily-sales-${span}.pdf`,
+        });
+        return;
+      }
 
       if (format === 'xlsx') {
         const res = await api.get('/reports/daily-sales/export', {
@@ -497,8 +508,12 @@ export default function DashboardPage() {
         });
         downloadBlob(res.data as Blob, `daily-sales-${span}-${part}.csv`);
       }
-    } catch {
-      toast.error(tCommon('downloadFailed'));
+    } catch (error) {
+      toast.error(
+        error instanceof MenuPopupBlockedError
+          ? tProducts('menuPopupBlocked')
+          : tCommon('downloadFailed'),
+      );
     } finally {
       setIsExporting(false);
     }
@@ -880,6 +895,10 @@ export default function DashboardPage() {
               <DropdownMenuItem onSelect={() => exportDailySales('csv')}>
                 <FileText size={14} />
                 {t('exportCsv')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportDailySales('pdf')}>
+                <FileText size={14} />
+                {t('exportPdf')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel>{t('exportCustomerSales')}</DropdownMenuLabel>

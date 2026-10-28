@@ -8,9 +8,12 @@ import {
   tenantBusinessDayStartTime,
 } from '../db';
 import {
+  formatMoney,
+  formatNumber,
   getCurrencyFractionDigits,
   getCurrencyMinorUnitFactor,
   resolveRegionalSnapshot,
+  type LocalePreferences,
 } from '../countries';
 import { isExcludedFromBillReceipt, isTerminalItemStatus } from '../../shared/order-item-status';
 import { getTenantCurrency } from './refund';
@@ -1790,3 +1793,475 @@ export const DAILY_SALES_PAYMENT_COLUMNS = [
   'amount',
   'transaction_id',
 ] as const;
+
+export interface DailySalesHtmlOptions {
+  businessName?: string;
+  locale?: string;
+  preferences?: LocalePreferences;
+}
+
+export const MAX_DAILY_SALES_HTML_BYTES = 15 * 1024 * 1024;
+
+const SUMMARY_METRIC_LABELS: Record<string, string> = {
+  business_date: 'Business Date',
+  from_date: 'From Date',
+  to_date: 'To Date',
+  day_count: 'Day Count',
+  timezone: 'Timezone',
+  business_day_start: 'Business Day Start',
+  currency: 'Currency',
+  order_count: 'Order Count',
+  paid_bill_count: 'Paid Bill Count',
+  gross_collected: 'Gross Collected',
+  refunds_issued: 'Refunds Issued',
+  net_collected: 'Net Collected',
+  tax_total: 'Tax Total',
+  discount_total: 'Discount Total',
+  service_charge_total: 'Service Charge Total',
+  packaging_charge_total: 'Packaging Charge Total',
+  delivery_charge_total: 'Delivery Charge Total',
+  known_cost_net_item_sales: 'Known-Cost Net Item Sales',
+  ingredient_cost_total: 'Ingredient Cost Total',
+  gross_profit_total: 'Gross Profit Total',
+  gross_margin_percent: 'Gross Margin %',
+  cost_coverage_status: 'Cost Coverage Status',
+  tax_detail_complete: 'Tax Detail Complete',
+  tax_detail_warning: 'Tax Detail Warning',
+};
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function serializeDailySalesExportHtml(
+  dataset: DailySalesExportDataset,
+  options?: DailySalesHtmlOptions,
+): string {
+  let locale = options?.locale || '';
+  let preferences = options?.preferences;
+
+  if (!locale || !preferences) {
+    try {
+      const snapshot = resolveRegionalSnapshot({
+        country: getSettingValue('country') ?? undefined,
+        currency: dataset.summary.currency || (getSettingValue('currency') ?? undefined),
+        timezone: dataset.summary.timezone || (getSettingValue('timezone') ?? undefined),
+        currency_display: getSettingValue('currency_display') ?? undefined,
+        number_digits: getSettingValue('number_digits') ?? undefined,
+        calendar: getSettingValue('calendar') ?? undefined,
+      });
+      if (!locale) locale = snapshot.locale;
+      if (!preferences) preferences = snapshot.preferences;
+    } catch {
+      if (!locale) locale = 'en-US';
+    }
+  }
+
+  const resolvedLocale = locale || 'en-US';
+  const resolvedPrefs: LocalePreferences = preferences ?? {
+    currencyDisplay: 'rial',
+    digits: 'locale',
+    calendar: 'locale',
+  };
+  const currency = dataset.summary.currency || 'USD';
+  const businessName =
+    (options?.businessName !== undefined
+      ? options.businessName
+      : (getSettingValue('business_name') ?? '')) || 'FloCafe';
+  const numberingSystem = resolvedPrefs.digits === 'latin' ? 'latn' : undefined;
+
+  const fmtMoney = (amount: number | null | undefined): string => {
+    if (amount === null || amount === undefined) return '—';
+    return escapeHtml(formatMoney(amount, currency, resolvedLocale, resolvedPrefs));
+  };
+
+  const fmtMoneyWithExact = (amount: number | null | undefined): string => {
+    if (amount === null || amount === undefined) return '—';
+    const formatted = formatMoney(amount, currency, resolvedLocale, resolvedPrefs);
+    const exact = String(amount);
+    if (formatted.includes(exact)) return escapeHtml(formatted);
+    return `${escapeHtml(formatted)} <span class="exact-num">(${escapeHtml(exact)})</span>`;
+  };
+
+  const fmtNum = (val: number | null | undefined): string => {
+    if (val === null || val === undefined) return '—';
+    return escapeHtml(formatNumber(val, resolvedLocale, numberingSystem));
+  };
+
+  const fmtPercent = (val: number | null | undefined): string => {
+    if (val === null || val === undefined) return '—';
+    return `${escapeHtml(val.toFixed(2))}%`;
+  };
+
+  const periodLabel =
+    dataset.summary.from_date === dataset.summary.to_date
+      ? dataset.summary.from_date
+      : `${dataset.summary.from_date} to ${dataset.summary.to_date}`;
+  const reportTitle = `Daily Sales Report — ${periodLabel}`;
+
+  const summaryRows = dailySalesSummaryMetricRows(dataset.summary);
+  const summaryRowsHtml = summaryRows
+    .map((row) => {
+      const label = SUMMARY_METRIC_LABELS[row.metric] || row.metric;
+      const rawStr = String(row.value ?? '');
+      let displayHtml: string;
+      let isNum = false;
+      if (typeof row.value === 'number') {
+        isNum = true;
+        if (row.metric.endsWith('_count')) {
+          displayHtml = fmtNum(row.value);
+        } else if (row.metric.endsWith('_percent')) {
+          displayHtml = fmtPercent(row.value);
+        } else {
+          displayHtml = fmtMoneyWithExact(row.value);
+        }
+      } else if (rawStr === '') {
+        displayHtml = '—';
+      } else {
+        displayHtml = `<span dir="auto" class="bidi-text">${escapeHtml(rawStr)}</span>`;
+      }
+      return `<tr data-section="summary" data-metric="${escapeHtml(row.metric)}" data-value="${escapeHtml(rawStr)}">
+          <th scope="row">${escapeHtml(label)} <span class="metric-key">(${escapeHtml(row.metric)})</span></th>
+          <td class="${isNum ? 'num' : ''}" data-value="${escapeHtml(rawStr)}">${displayHtml}</td>
+        </tr>`;
+    })
+    .join('\n');
+
+  const paymentMethodsHtml =
+    dataset.summary.payment_methods.length > 0
+      ? dataset.summary.payment_methods
+          .map(
+            (
+              pm,
+            ) => `<tr data-section="payment-method" data-method="${escapeHtml(pm.method)}" data-total="${escapeHtml(String(pm.total))}">
+          <td data-col="method" data-value="${escapeHtml(pm.method)}"><span dir="auto" class="bidi-text">${escapeHtml(pm.method)}</span></td>
+          <td class="num" data-col="total" data-value="${escapeHtml(String(pm.total))}">${fmtMoneyWithExact(pm.total)}</td>
+        </tr>`,
+          )
+          .join('\n')
+      : `<tr class="empty-row"><td colspan="2">No payments recorded</td></tr>`;
+
+  const dailyRowsHtml =
+    dataset.daily.length > 0
+      ? dataset.daily
+          .map(
+            (
+              day,
+            ) => `<tr data-section="daily" data-business-date="${escapeHtml(day.business_date)}">
+          <td data-col="business_date" data-value="${escapeHtml(day.business_date)}">${escapeHtml(day.business_date)}</td>
+          <td class="num" data-col="order_count" data-value="${escapeHtml(String(day.order_count))}">${fmtNum(day.order_count)}</td>
+          <td class="num" data-col="paid_bill_count" data-value="${escapeHtml(String(day.paid_bill_count))}">${fmtNum(day.paid_bill_count)}</td>
+          <td class="num" data-col="gross_collected" data-value="${escapeHtml(String(day.gross_collected))}">${fmtMoney(day.gross_collected)}</td>
+          <td class="num" data-col="refunds_issued" data-value="${escapeHtml(String(day.refunds_issued))}">${fmtMoney(day.refunds_issued)}</td>
+          <td class="num" data-col="net_collected" data-value="${escapeHtml(String(day.net_collected))}">${fmtMoney(day.net_collected)}</td>
+          <td class="num" data-col="tax_total" data-value="${escapeHtml(String(day.tax_total))}">${fmtMoney(day.tax_total)}</td>
+          <td class="num" data-col="discount_total" data-value="${escapeHtml(String(day.discount_total))}">${fmtMoney(day.discount_total)}</td>
+          <td class="num" data-col="service_charge_total" data-value="${escapeHtml(String(day.service_charge_total))}">${fmtMoney(day.service_charge_total)}</td>
+          <td class="num" data-col="packaging_charge_total" data-value="${escapeHtml(String(day.packaging_charge_total))}">${fmtMoney(day.packaging_charge_total)}</td>
+          <td class="num" data-col="delivery_charge_total" data-value="${escapeHtml(String(day.delivery_charge_total))}">${fmtMoney(day.delivery_charge_total)}</td>
+          <td class="num" data-col="known_cost_net_item_sales" data-value="${escapeHtml(String(day.known_cost_net_item_sales))}">${fmtMoney(day.known_cost_net_item_sales)}</td>
+          <td class="num" data-col="ingredient_cost_total" data-value="${escapeHtml(day.ingredient_cost_total === null ? '' : String(day.ingredient_cost_total))}">${fmtMoney(day.ingredient_cost_total)}</td>
+          <td class="num" data-col="gross_profit_total" data-value="${escapeHtml(day.gross_profit_total === null ? '' : String(day.gross_profit_total))}">${fmtMoney(day.gross_profit_total)}</td>
+          <td class="num" data-col="gross_margin_percent" data-value="${escapeHtml(day.gross_margin_percent === null ? '' : String(day.gross_margin_percent))}">${fmtPercent(day.gross_margin_percent)}</td>
+          <td data-col="cost_coverage_status" data-value="${escapeHtml(day.cost_coverage_status)}">${escapeHtml(day.cost_coverage_status)}</td>
+        </tr>`,
+          )
+          .join('\n')
+      : `<tr class="empty-row"><td colspan="16">No daily rows</td></tr>`;
+
+  const taxRowsHtml =
+    dataset.taxes.length > 0
+      ? dataset.taxes
+          .map(
+            (
+              tax,
+            ) => `<tr data-section="tax" data-business-date="${escapeHtml(tax.business_date)}" data-tax-name="${escapeHtml(tax.tax_name)}">
+          <td data-col="business_date" data-value="${escapeHtml(tax.business_date)}">${escapeHtml(tax.business_date)}</td>
+          <td data-col="tax_name" data-value="${escapeHtml(tax.tax_name)}"><span dir="auto" class="bidi-text">${escapeHtml(tax.tax_name)}</span></td>
+          <td class="num" data-col="tax_rate" data-value="${escapeHtml(tax.tax_rate === null ? '' : String(tax.tax_rate))}">${tax.tax_rate === null ? '—' : `${escapeHtml(String(tax.tax_rate))}%`}</td>
+          <td class="num" data-col="taxable_base" data-value="${escapeHtml(tax.taxable_base === null ? '' : String(tax.taxable_base))}">${fmtMoney(tax.taxable_base)}</td>
+          <td class="num" data-col="tax_amount" data-value="${escapeHtml(String(tax.tax_amount))}">${fmtMoney(tax.tax_amount)}</td>
+          <td class="num" data-col="gross_amount" data-value="${escapeHtml(tax.gross_amount === null ? '' : String(tax.gross_amount))}">${fmtMoney(tax.gross_amount)}</td>
+          <td data-col="shared_base" data-value="${escapeHtml(String(tax.shared_base))}">${escapeHtml(String(tax.shared_base))}</td>
+          <td data-col="base_additive" data-value="${escapeHtml(String(tax.base_additive))}">${escapeHtml(String(tax.base_additive))}</td>
+          <td data-col="incomplete_detail" data-value="${escapeHtml(String(tax.incomplete_detail))}">${escapeHtml(String(tax.incomplete_detail))}</td>
+          <td data-col="warning" data-value="${escapeHtml(tax.warning)}"><span dir="auto" class="bidi-text">${escapeHtml(tax.warning)}</span></td>
+        </tr>`,
+          )
+          .join('\n')
+      : `<tr class="empty-row"><td colspan="10">No tax rows</td></tr>`;
+
+  const itemRowsHtml =
+    dataset.items.length > 0
+      ? dataset.items
+          .map(
+            (item) => `<tr data-section="item" data-product-id="${escapeHtml(item.product_id)}">
+          <td data-col="product_id" data-value="${escapeHtml(item.product_id)}">${escapeHtml(item.product_id)}</td>
+          <td data-col="product_name" data-value="${escapeHtml(item.product_name)}"><span dir="auto" class="bidi-text">${escapeHtml(item.product_name)}</span></td>
+          <td data-col="product_sku" data-value="${escapeHtml(item.product_sku ?? '')}"><span dir="auto" class="bidi-text">${escapeHtml(item.product_sku ?? '')}</span></td>
+          <td class="num" data-col="quantity" data-value="${escapeHtml(String(item.quantity))}">${fmtNum(item.quantity)}</td>
+          <td class="num" data-col="gross_item_sales" data-value="${escapeHtml(String(item.gross_item_sales))}">${fmtMoney(item.gross_item_sales)}</td>
+          <td class="num" data-col="item_discounts" data-value="${escapeHtml(String(item.item_discounts))}">${fmtMoney(item.item_discounts)}</td>
+          <td class="num" data-col="net_item_sales" data-value="${escapeHtml(String(item.net_item_sales))}">${fmtMoney(item.net_item_sales)}</td>
+          <td class="num" data-col="tax_amount" data-value="${escapeHtml(String(item.tax_amount))}">${fmtMoney(item.tax_amount)}</td>
+          <td class="num" data-col="ingredient_cost" data-value="${escapeHtml(item.ingredient_cost === null ? '' : String(item.ingredient_cost))}">${fmtMoney(item.ingredient_cost)}</td>
+          <td class="num" data-col="profit" data-value="${escapeHtml(item.profit === null ? '' : String(item.profit))}">${fmtMoney(item.profit)}</td>
+          <td class="num" data-col="margin_percent" data-value="${escapeHtml(item.margin_percent === null ? '' : String(item.margin_percent))}">${fmtPercent(item.margin_percent)}</td>
+          <td data-col="cost_status" data-value="${escapeHtml(item.cost_status)}">${escapeHtml(item.cost_status)}</td>
+        </tr>`,
+          )
+          .join('\n')
+      : `<tr class="empty-row"><td colspan="12">No item sales recorded</td></tr>`;
+
+  const warningBannerHtml = dataset.summary.tax_detail_warning
+    ? `<div class="tax-warning" data-tax-warning="true" role="alert">${escapeHtml(dataset.summary.tax_detail_warning)}</div>`
+    : '';
+
+  const html = `<!doctype html>
+<html lang="${escapeHtml(resolvedLocale)}">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(businessName)} — ${escapeHtml(reportTitle)}</title>
+  <style>
+    @page { size: A4 landscape; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Naskh Arabic", "Noto Sans Arabic", "Noto Sans Bengali", "Vrinda", "Bangla Sangam MN", "Noto Sans Devanagari", "Nirmala UI", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Thai", "Leelawadee UI", "Thonburi", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Hiragino Sans", "Yu Gothic", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP", "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+      font-size: 10px;
+      line-height: 1.4;
+      color: #111827;
+      background: #ffffff;
+    }
+    .report-header {
+      border-bottom: 2px solid #111827;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+      break-inside: avoid;
+    }
+    .business-name {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0 0 2px 0;
+      unicode-bidi: plaintext;
+    }
+    .report-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin: 0 0 4px 0;
+      color: #1f2937;
+    }
+    .report-meta {
+      font-size: 10px;
+      color: #4b5563;
+      margin: 0;
+    }
+    .tax-warning {
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      color: #92400e;
+      padding: 6px 10px;
+      margin-bottom: 12px;
+      border-radius: 4px;
+      font-size: 10px;
+      break-inside: avoid;
+    }
+    .report-section {
+      margin-bottom: 16px;
+    }
+    .report-section h2 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #374151;
+      margin: 0 0 6px 0;
+      break-after: avoid;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: auto;
+      font-size: 9.5px;
+    }
+    thead {
+      display: table-header-group;
+    }
+    tr {
+      break-inside: avoid;
+    }
+    th, td {
+      border: 1px solid #d1d5db;
+      padding: 4px 6px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: break-word;
+    }
+    thead th {
+      background: #f3f4f6;
+      font-weight: 600;
+      color: #111827;
+    }
+    tbody th {
+      background: #f9fafb;
+      font-weight: 500;
+      width: 44%;
+    }
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .bidi-text {
+      unicode-bidi: plaintext;
+    }
+    .exact-num, .metric-key {
+      color: #6b7280;
+      font-size: 9px;
+      font-weight: 400;
+    }
+    .empty-row td {
+      text-align: center;
+      color: #6b7280;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <header class="report-header">
+    <h1 class="business-name" dir="auto">${escapeHtml(businessName)}</h1>
+    <div class="report-title">${escapeHtml(reportTitle)}</div>
+    <p class="report-meta">
+      Period: <strong>${escapeHtml(dataset.summary.business_date)}</strong>
+      (${escapeHtml(dataset.summary.from_date)} to ${escapeHtml(dataset.summary.to_date)}, ${escapeHtml(String(dataset.summary.day_count))} day${dataset.summary.day_count === 1 ? '' : 's'})
+      &middot; Timezone: <strong>${escapeHtml(dataset.summary.timezone)}</strong>
+      &middot; Business Day Start: <strong>${escapeHtml(dataset.summary.business_day_start)}</strong>
+      &middot; Currency: <strong>${escapeHtml(currency)}</strong>
+    </p>
+  </header>
+
+  ${warningBannerHtml}
+
+  <section class="report-section" data-section="summary">
+    <h2>Summary</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th class="num">Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${summaryRowsHtml}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="report-section" data-section="payment-methods">
+    <h2>Payment Methods</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th class="num">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${paymentMethodsHtml}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="report-section" data-section="daily">
+    <h2>Daily Breakdown</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th class="num">Orders</th>
+          <th class="num">Paid Bills</th>
+          <th class="num">Gross</th>
+          <th class="num">Refunds</th>
+          <th class="num">Net</th>
+          <th class="num">Tax</th>
+          <th class="num">Discount</th>
+          <th class="num">Service</th>
+          <th class="num">Packaging</th>
+          <th class="num">Delivery</th>
+          <th class="num">Known-Cost Sales</th>
+          <th class="num">Cost</th>
+          <th class="num">Profit</th>
+          <th class="num">Margin %</th>
+          <th>Cost Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${dailyRowsHtml}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="report-section" data-section="taxes">
+    <h2>Tax Summary</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Tax Name</th>
+          <th class="num">Rate (%)</th>
+          <th class="num">Taxable Base</th>
+          <th class="num">Tax Amount</th>
+          <th class="num">Gross Amount</th>
+          <th>Shared Base</th>
+          <th>Base Additive</th>
+          <th>Incomplete</th>
+          <th>Warning</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${taxRowsHtml}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="report-section" data-section="items">
+    <h2>Item Sales</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Product ID</th>
+          <th>Product Name</th>
+          <th>SKU</th>
+          <th class="num">Qty</th>
+          <th class="num">Gross Sales</th>
+          <th class="num">Discounts</th>
+          <th class="num">Net Sales</th>
+          <th class="num">Tax</th>
+          <th class="num">Cost</th>
+          <th class="num">Profit</th>
+          <th class="num">Margin %</th>
+          <th>Cost Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemRowsHtml}
+      </tbody>
+    </table>
+  </section>
+</body>
+</html>
+`;
+
+  if (Buffer.byteLength(html, 'utf8') > MAX_DAILY_SALES_HTML_BYTES) {
+    throw new DailySalesExportValidationError(
+      'Date range is too large to export as PDF; narrow the date range or export as XLSX/CSV.',
+    );
+  }
+  return html;
+}

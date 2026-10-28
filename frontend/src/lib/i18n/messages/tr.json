@@ -338,6 +338,7 @@
     "exportSales": "Satışları dışa aktar",
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
+    "exportPdf": "PDF (.pdf)",
     "exportCsvHint": "CSV beş dosya indirir: özet, günlük, vergiler, ürünler ve ödemeler.",
     "exportCsvStarted": "Özet, günlük, vergi, ürün ve ödeme CSV dosyaları indiriliyor…",
     "exportCustomerSales": "Müşteri satışları",

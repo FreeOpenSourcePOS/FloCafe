@@ -1,4 +1,4 @@
-# Daily sales export (XLSX / CSV)
+# Daily sales export (XLSX / CSV / PDF-HTML)
 
 Accounting, reconciliation, and file-format contract for
 [`GET /api/reports/daily-sales/export`](api.md#get-apireportsdaily-salesexport).
@@ -6,18 +6,18 @@ Accounting, reconciliation, and file-format contract for
 ## Scope
 
 - Single tenant business day (`?date=YYYY-MM-DD`, defaults to the current business date) or inclusive business-date range (`?from=YYYY-MM-DD&to=YYYY-MM-DD`, up to 93 calendar days per request).
-- Formats: `xlsx` (`Summary` + `Daily` + `Taxes` + `Items` + `Payments` sheets in one workbook) and `csv` (separate `summary`, `daily`, `taxes`, `items`, and `payments` files; each request returns one part).
+- Formats: `xlsx` (`Summary` + `Daily` + `Taxes` + `Items` + `Payments` sheets in one workbook), `csv` (separate `summary`, `daily`, `taxes`, `items`, and `payments` files; each request returns one part), and `html` (print-styled HTML document used for desktop `save-html-as-pdf` and browser print; see [File formats](#file-formats)).
 - Gated by `reports.daily-sales.export` (owner by default). No PII, no staff/Addons sheets.
 
 ## Architecture
 
-| Layer             | File                                              | Responsibility                                                                                                                                                                                                                                              |
-| ----------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Layer             | File                                              | Responsibility                                                                                                                                                                                                                                               |
+| ----------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Dataset builder   | `main/services/daily-sales-export.ts`             | Single source of truth for all accounting: `buildDailySalesExportDataset`, `resolveDailySalesExportRange`, `dailySalesSummaryMetricRows`, `DAILY_SALES_DAILY_COLUMNS`, `DAILY_SALES_TAX_COLUMNS`, `DAILY_SALES_ITEM_COLUMNS`, `DAILY_SALES_PAYMENT_COLUMNS`. |
-| Serializers       | `main/services/daily-sales-export-files.ts`       | Encode only - no accounting math. `serializeDailySalesExportXlsx`, `serializeDailySalesExportCsv`, `dailySalesExportFilename`.                                                                                                                              |
-| Shared CSV helper | `main/lib/csv.ts`                                 | `toCsvRow` with CWE-1236 formula neutralization (leading quote on `= + - @` non-numerics); `main/routes/menu-csv.ts` wraps it via `toQuoteV1CsvRow` (see [product invariants](product-invariants.md#catalog-csv-encoding-and-legacy-apostrophe-ambiguity)). |
-| Endpoint          | `main/routes/reports.ts`                          | Validation, serialization, headers, error mapping (400 / 401 / 403 / 409 / 500).                                                                                                                                                                            |
-| Frontend          | `frontend/src/app/(dashboard)/dashboard/page.tsx` | Blob download only; single-day (`date`) or range (`from`/`to`) export buttons in the reports dashboard (CSV downloads all five parts).                                                                                                                      |
+| Serializers       | `main/services/daily-sales-export-files.ts`       | Encode only - no accounting math. `serializeDailySalesExportXlsx`, `serializeDailySalesExportCsv`, `serializeDailySalesExportHtml`, `dailySalesExportFilename`.                                                                                              |
+| Shared CSV helper | `main/lib/csv.ts`                                 | `toCsvRow` with CWE-1236 formula neutralization (leading quote on `= + - @` non-numerics); `main/routes/menu-csv.ts` wraps it via `toQuoteV1CsvRow` (see [product invariants](product-invariants.md#catalog-csv-encoding-and-legacy-apostrophe-ambiguity)).  |
+| Endpoint          | `main/routes/reports.ts`                          | Validation, serialization, headers, error mapping (400 / 401 / 403 / 409 / 500).                                                                                                                                                                             |
+| Frontend          | `frontend/src/app/(dashboard)/dashboard/page.tsx` | Blob download (`xlsx`/`csv`) and PDF/print export (`frontend/src/lib/export-pdf.ts`); single-day (`date`) or range (`from`/`to`) export buttons in the reports dashboard (CSV downloads all five parts).                                                     |
 
 Backend owns all logic; the frontend never computes totals.
 
@@ -54,7 +54,8 @@ Backend owns all logic; the frontend never computes totals.
 
 - **XLSX:** sheets `Summary`, `Daily`, `Taxes`, `Items`, then `Payments`. Money cells are numeric with `moneyNumFmt(fractionDigits)`, percentage cells (`*_percent`) use `'0.00'`, and `tax_rate` cells use `'0.##'`; `null` rate, base, gross, cost, profit, and margin values are empty string `""`; no formulas. Frozen header row.
 - **CSV:** stable English snake_case headers; ASCII `.` decimals; formula-neutralized via shared `toCsvRow`.
-- **Filenames:** `daily-sales-YYYY-MM-DD.xlsx` (single day) or `daily-sales-YYYY-MM-DD_to_YYYY-MM-DD.xlsx` (multi-day range), and `-summary.csv`, `-daily.csv`, `-taxes.csv`, `-items.csv`, `-payments.csv` (from `dailySalesExportFilename`).
+- **HTML (PDF / Print):** self-contained A4 landscape HTML5 document (`serializeDailySalesExportHtml`) containing the store header, optional `tax_detail_warning` alert banner, Summary metrics, Payment Methods summary, Daily Breakdown, Tax Summary, and Item Sales tables from the same dataset (returning `400` if the rendered HTML exceeds the 15 MB PDF export limit).
+- **Filenames:** `daily-sales-YYYY-MM-DD.xlsx` / `.html` (single day) or `daily-sales-YYYY-MM-DD_to_YYYY-MM-DD.xlsx` / `.html` (multi-day range), and `-summary.csv`, `-daily.csv`, `-taxes.csv`, `-items.csv`, `-payments.csv` (from `dailySalesExportFilename`).
 
 ### Summary metric field order
 
@@ -93,6 +94,7 @@ See [API.md § GET `/api/reports/daily-sales/export`](api.md#get-apireportsdaily
 
 ## Tests
 
-- `tests/daily-sales-export.test.ts` (`npm run test:daily-sales-export`) - role gating, single-day and date-range validation (93-day cap, reversed/mixed/incomplete/invalid dates), range equivalence (`N`-day range equals sum of `N` single-day exports), business-day cutoff across multi-day ranges, XLSX sheet/metric assertions (`Summary`, `Daily`, `Taxes`, `Items`, `Payments`), per-tax-rate summary reconciliation, shared-base multi-component taxes, historical snapshot immunity to product tax changes, incomplete historical detail warnings, Payments rows (store-local time, verbatim transaction id), CSV headers and filenames, formula neutralization, and empty-day header-only sheets.
+- `tests/daily-sales-export.test.ts` (`npm run test:daily-sales-export`) - role gating, single-day and date-range validation (93-day cap, reversed/mixed/incomplete/invalid dates), range equivalence (`N`-day range equals sum of `N` single-day exports), business-day cutoff across multi-day ranges, XLSX sheet/metric assertions (`Summary`, `Daily`, `Taxes`, `Items`, `Payments`), per-tax-rate summary reconciliation, shared-base multi-component taxes, historical snapshot immunity to product tax changes, incomplete historical detail warnings, Payments rows (store-local time, verbatim transaction id), CSV headers and filenames, `format=html` parity with XLSX (single-day and range, non-Latin store names, HTML escaping, and large-dataset rendering without row truncation), formula neutralization, and empty-day header-only sheets.
+- `tests/reports-export.test.ts` (`npm run test:reports-export`) - X and Z report `csv`, `xlsx`, and `html`/PDF export parity, locale currency formatting, non-Latin store names, HTML escaping, and native Electron `printToPDF` rendering and staging cleanup.
 - Script coverage gate: `test:daily-sales-export` is chained from `npm test`; `npm run test:script-coverage` fails if it is removed from the chain without adding it to `TEST_EXCLUSIONS`.
 - `tests/customer-sales-export.test.ts` (`npm run test:customer-sales-export`) - customer sales export: role gating, range validation, repeated customer columns, first-row `bill_total`, split bills, CSV neutralization, XLSX.

@@ -338,6 +338,7 @@
     "exportSales": "ส่งออกยอดขาย",
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
+    "exportPdf": "PDF (.pdf)",
     "exportCsvHint": "CSV จะดาวน์โหลด 5 ไฟล์: สรุป รายวัน ภาษี รายการสินค้า และการชำระเงิน",
     "exportCsvStarted": "กำลังดาวน์โหลดไฟล์ CSV สรุป รายวัน ภาษี รายการสินค้า และการชำระเงิน…",
     "exportCustomerSales": "ยอดขายตามลูกค้า",

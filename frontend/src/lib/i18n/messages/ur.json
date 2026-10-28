@@ -338,6 +338,7 @@
     "exportSales": "فروخت برآمد کریں",
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
+    "exportPdf": "PDF (.pdf)",
     "exportCsvHint": "CSV پانچ فائلیں ڈاؤن لوڈ کرتا ہے: خلاصہ، روزانہ، ٹیکس، آئٹمز اور ادائیگیاں۔",
     "exportCsvStarted": "خلاصہ، روزانہ، ٹیکس، آئٹمز اور ادائیگیوں کی CSV فائلیں ڈاؤن لوڈ ہو رہی ہیں…",
     "exportCustomerSales": "کسٹمر سیلز",

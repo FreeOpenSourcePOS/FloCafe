@@ -1,11 +1,12 @@
 /**
- * Owner-only daily sales export — GET /api/reports/daily-sales/export.
+ * Owner-only daily sales export - GET /api/reports/daily-sales/export.
  *
  * Covers:
  *  - Role gating: owner OK, manager/cashier 403.
- *  - Validation: bad format → 400; csv without part → 400.
- *  - XLSX: Summary + Items + Payments sheets, Content-Disposition filename.
- *  - CSV: separate summary/items/payments files; formula-neutralized cells.
+ *  - Validation: bad format -> 400; csv without part -> 400; date-range bounds.
+ *  - XLSX: Summary + Daily + Taxes + Items + Payments sheets, Content-Disposition filename.
+ *  - CSV: separate summary/daily/taxes/items/payments files; formula-neutralized cells.
+ *  - HTML: print-styled document parity with XLSX for PDF/browser print export.
  *  - Reconciliation identities from the approved contract.
  *
  * Usage: node tests/run-electron-node-test.cjs tests/daily-sales-export.test.ts
@@ -42,6 +43,10 @@ const {
   now,
 } = require('./helpers/test-setup');
 const { reportRoutes } = require('../main/routes/reports');
+const {
+  buildDailySalesExportDataset,
+  serializeDailySalesExportHtml,
+} = require('../main/services/daily-sales-export');
 const ExcelJS = require('exceljs');
 
 function dbTimestamp(date: Date): string {
@@ -1402,6 +1407,177 @@ async function main() {
           rangeItems.length + 1,
           'XLSX Items row count matches CSV items part',
         );
+
+        // Verify HTML export (format=html) for both single-day and multi-day range,
+        // role gating, non-Latin store name & HTML escaping, and exact parity with XLSX.
+        const forbiddenHtml = await fetch(
+          `${baseUrl}/api/reports/daily-sales/export?from=${day1}&to=${day3}&format=html`,
+          { headers: { ...manager.authHeader } },
+        );
+        assertEqual(
+          forbiddenHtml.status,
+          403,
+          'manager forbidden on daily-sales format=html (403)',
+        );
+
+        db.prepare(
+          "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_name', ?, CURRENT_TIMESTAMP)",
+        ).run('قهوة فلو · फ्लो कैफे & <style>body{display:none}</style>');
+        try {
+          const singleHtmlRes = await fetch(
+            `${baseUrl}/api/reports/daily-sales/export?date=${day1}&format=html`,
+            { headers: authHeader },
+          );
+          assertEqual(singleHtmlRes.status, 200, 'single-day daily-sales format=html → 200');
+          assertIncludes(
+            singleHtmlRes.headers.get('content-type') || '',
+            'text/html',
+            'single-day daily-sales HTML Content-Type is text/html',
+          );
+          assertIncludes(
+            singleHtmlRes.headers.get('content-disposition') || '',
+            `daily-sales-${day1}.html`,
+            'single-day daily-sales HTML filename',
+          );
+          const singleHtml = await singleHtmlRes.text();
+          assertIncludes(singleHtml, '<!doctype html>', 'single-day HTML has doctype');
+          assertIncludes(
+            singleHtml,
+            'قهوة فلو · फ्लो कैफे &amp; &lt;style&gt;body{display:none}&lt;/style&gt;',
+            'single-day HTML renders non-Latin store name and escapes HTML tags',
+          );
+          assert(
+            !singleHtml.includes('<style>body{display:none}</style>'),
+            'raw unescaped style injection not present in single-day HTML',
+          );
+
+          const rangeHtmlRes = await fetch(
+            `${baseUrl}/api/reports/daily-sales/export?from=${day1}&to=${day3}&format=html`,
+            { headers: authHeader },
+          );
+          assertEqual(rangeHtmlRes.status, 200, 'range daily-sales format=html → 200');
+          assertIncludes(
+            rangeHtmlRes.headers.get('content-disposition') || '',
+            `daily-sales-${day1}_to_${day3}.html`,
+            'range daily-sales HTML filename uses from_to',
+          );
+          const rangeHtml = await rangeHtmlRes.text();
+
+          const htmlEntities: Record<string, string> = {
+            '&lt;': '<',
+            '&gt;': '>',
+            '&quot;': '"',
+            '&#39;': "'",
+            '&amp;': '&',
+          };
+          const extractHtmlSummaryMap = (doc: string): Map<string, string> => {
+            const map = new Map<string, string>();
+            const re = /<tr data-section="summary" data-metric="([^"]+)" data-value="([^"]*)">/g;
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(doc)) !== null) {
+              map.set(
+                m[1],
+                m[2].replace(
+                  /&(?:lt|gt|quot|#39|amp);/g,
+                  (entity) => htmlEntities[entity] ?? entity,
+                ),
+              );
+            }
+            return map;
+          };
+
+          const htmlSummary = extractHtmlSummaryMap(rangeHtml);
+          const rangeSummarySheet = rangeWb.getWorksheet('Summary')!;
+          rangeSummarySheet.eachRow((row, rowNumber) => {
+            if (rowNumber === 1) return;
+            const metric = String(row.getCell(1).value);
+            const xlsxVal = String(row.getCell(2).value ?? '');
+            assertEqual(
+              htmlSummary.get(metric),
+              xlsxVal,
+              `range HTML summary metric ${metric} matches XLSX (${xlsxVal})`,
+            );
+          });
+
+          const dailyRowMatches = rangeHtml.match(/<tr data-section="daily"/g) || [];
+          assertEqual(
+            dailyRowMatches.length,
+            dailySheet.rowCount - 1,
+            'range HTML Daily row count matches XLSX Daily sheet',
+          );
+          const taxRowMatches = rangeHtml.match(/<tr data-section="tax"/g) || [];
+          assertEqual(
+            taxRowMatches.length,
+            taxesSheet.rowCount - 1,
+            'range HTML Taxes row count matches XLSX Taxes sheet',
+          );
+          const itemRowMatches = rangeHtml.match(/<tr data-section="item"/g) || [];
+          assertEqual(
+            itemRowMatches.length,
+            rangeWb.getWorksheet('Items')!.rowCount - 1,
+            'range HTML Items row count matches XLSX Items sheet',
+          );
+
+          // Verify large datasets never silently truncate rows in serializeDailySalesExportHtml
+          const baseDataset = buildDailySalesExportDataset({ from: day1, to: day3 }, db);
+          const manyTaxes = Array.from({ length: 650 }, (_, idx) => ({
+            business_date: day1,
+            tax_name: `TaxRow-${idx + 1}`,
+            tax_rate: 5,
+            taxable_base: 100,
+            tax_amount: 5,
+            gross_amount: 105,
+            shared_base: false,
+            base_additive: true,
+            incomplete_detail: false,
+            warning: '',
+          }));
+          const manyItems = Array.from({ length: 650 }, (_, idx) => ({
+            product_id: `prod-large-${idx + 1}`,
+            product_name: `ItemRow-${idx + 1}`,
+            product_sku: `SKU-${idx + 1}`,
+            quantity: 1,
+            gross_item_sales: 10,
+            item_discounts: 0,
+            net_item_sales: 10,
+            tax_amount: 0.5,
+            ingredient_cost: 4,
+            profit: 6,
+            margin_percent: 60,
+            cost_status: 'known' as const,
+          }));
+          const largeHtml = serializeDailySalesExportHtml({
+            ...baseDataset,
+            taxes: manyTaxes,
+            items: manyItems,
+          });
+          assertEqual(
+            (largeHtml.match(/<tr data-section="tax"/g) || []).length,
+            650,
+            'serializeDailySalesExportHtml renders all 650 tax rows without truncation',
+          );
+          assertEqual(
+            (largeHtml.match(/<tr data-section="item"/g) || []).length,
+            650,
+            'serializeDailySalesExportHtml renders all 650 item rows without truncation',
+          );
+          assertIncludes(
+            largeHtml,
+            'TaxRow-650',
+            'serializeDailySalesExportHtml includes final tax row TaxRow-650',
+          );
+          assertIncludes(
+            largeHtml,
+            'ItemRow-650',
+            'serializeDailySalesExportHtml includes final item row ItemRow-650',
+          );
+          assert(
+            !largeHtml.includes('omitted for print size'),
+            'serializeDailySalesExportHtml emits no row truncation note',
+          );
+        } finally {
+          db.prepare("DELETE FROM settings WHERE key = 'business_name'").run();
+        }
 
         // Exact 04:00 store-local boundary test (03:59:59 vs 04:00:00 vs 04:00:01 IST)
         const cutoffDayA = '2026-10-04';

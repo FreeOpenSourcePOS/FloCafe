@@ -41,6 +41,7 @@ import {
 import {
   dailySalesExportFilename,
   serializeDailySalesExportCsv,
+  serializeDailySalesExportHtml,
   serializeDailySalesExportXlsx,
   type DailySalesExportCsvPart,
 } from '../services/daily-sales-export-files';
@@ -53,9 +54,12 @@ import {
 } from '../services/customer-sales-export';
 import {
   serializeXReportCsv,
+  serializeXReportHtml,
   serializeXReportXlsx,
   serializeZReportCsv,
+  serializeZReportHtml,
   serializeZReportXlsx,
+  type CashCloseHtmlOptions,
   type XReportExport,
   type ZReportExport,
 } from '../services/cash-close-export';
@@ -1394,6 +1398,33 @@ router.get('/z-report', requirePermission('reports.view'), (req: Request, res: R
   }
 });
 
+function resolveCashCloseHtmlOptions(db: ReturnType<typeof getDatabase>): CashCloseHtmlOptions {
+  const currency = getTenantCurrency(db);
+  const businessName = getSettingValue('business_name') ?? undefined;
+  try {
+    const snapshot = resolveRegionalSnapshot({
+      country: getSettingValue('country') ?? undefined,
+      currency,
+      timezone: getSettingValue('timezone') ?? undefined,
+      currency_display: getSettingValue('currency_display') ?? undefined,
+      number_digits: getSettingValue('number_digits') ?? undefined,
+      calendar: getSettingValue('calendar') ?? undefined,
+    });
+    return {
+      businessName,
+      currency: snapshot.currency,
+      locale: snapshot.locale,
+      timezone: snapshot.timezone,
+      preferences: snapshot.preferences,
+    };
+  } catch {
+    return {
+      businessName,
+      currency,
+    };
+  }
+}
+
 router.get(
   '/x-report/export',
   requirePermission('reports.view'),
@@ -1401,8 +1432,14 @@ router.get(
     try {
       const date = reportDate(req.query.date, reportToday());
       const format =
-        req.query.format === 'csv' ? 'csv' : req.query.format === 'xlsx' ? 'xlsx' : null;
-      if (!format) return res.status(400).json({ error: 'format must be xlsx or csv' });
+        req.query.format === 'csv'
+          ? 'csv'
+          : req.query.format === 'xlsx'
+            ? 'xlsx'
+            : req.query.format === 'html'
+              ? 'html'
+              : null;
+      if (!format) return res.status(400).json({ error: 'format must be xlsx, csv, or html' });
 
       const db = getDatabase();
       const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
@@ -1432,6 +1469,11 @@ router.get(
           orderCount: row.orderCount,
           revenue: row.revenue_cents / minorFactor,
         })),
+        taxComponents: aggregates.taxComponents.map((comp) => ({
+          title: comp.title,
+          rate: comp.rate,
+          amount: comp.amount,
+        })),
       };
       const filename = `x-report-${date}.${format}`;
       if (format === 'xlsx') {
@@ -1441,6 +1483,11 @@ router.get(
         );
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         return res.send(await serializeXReportXlsx(report));
+      }
+      if (format === 'html') {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(serializeXReportHtml(report, resolveCashCloseHtmlOptions(db)));
       }
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -1459,8 +1506,14 @@ router.get(
     try {
       const date = reportDate(req.query.date, reportToday());
       const format =
-        req.query.format === 'csv' ? 'csv' : req.query.format === 'xlsx' ? 'xlsx' : null;
-      if (!format) return res.status(400).json({ error: 'format must be xlsx or csv' });
+        req.query.format === 'csv'
+          ? 'csv'
+          : req.query.format === 'xlsx'
+            ? 'xlsx'
+            : req.query.format === 'html'
+              ? 'html'
+              : null;
+      if (!format) return res.status(400).json({ error: 'format must be xlsx, csv, or html' });
 
       const db = getDatabase();
       const row = db
@@ -1496,6 +1549,13 @@ router.get(
           orderCount: staff.orderCount,
           revenue: staff.revenue_cents / minorFactor,
         })),
+        taxComponents: JSON.parse(row.tax_components_json || '[]').map(
+          (comp: { title?: unknown; rate?: unknown; amount?: unknown }) => ({
+            title: String(comp.title ?? 'Tax'),
+            rate: typeof comp.rate === 'number' ? comp.rate : null,
+            amount: Number(comp.amount ?? 0),
+          }),
+        ),
         zNumber: row.z_number,
         closedAt: row.created_at,
         closedBy: userRow?.name ?? row.closed_by,
@@ -1511,6 +1571,11 @@ router.get(
         );
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         return res.send(await serializeZReportXlsx(report));
+      }
+      if (format === 'html') {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(serializeZReportHtml(report, resolveCashCloseHtmlOptions(db)));
       }
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -1575,7 +1640,7 @@ router.post(
   },
 );
 
-// Owner-only daily sales export (xlsx workbook or CSV parts across 1..93 business days).
+// Owner-only daily sales export (xlsx workbook, CSV parts, or print-styled HTML across 1..93 business days).
 // Accounting lives in buildDailySalesExportDataset; serializers only encode.
 router.get(
   '/daily-sales/export',
@@ -1592,9 +1657,15 @@ router.get(
         reportToday(),
       );
       const format =
-        req.query.format === 'csv' ? 'csv' : req.query.format === 'xlsx' ? 'xlsx' : null;
+        req.query.format === 'csv'
+          ? 'csv'
+          : req.query.format === 'xlsx'
+            ? 'xlsx'
+            : req.query.format === 'html'
+              ? 'html'
+              : null;
       if (!format) {
-        return res.status(400).json({ error: 'format must be xlsx or csv' });
+        return res.status(400).json({ error: 'format must be xlsx, csv, or html' });
       }
       const part: DailySalesExportCsvPart | undefined =
         req.query.part === 'summary' ||
@@ -1631,6 +1702,15 @@ router.get(
         );
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         return res.send(buffer);
+      }
+
+      if (format === 'html') {
+        const html = serializeDailySalesExportHtml(dataset, {
+          businessName: getSettingValue('business_name') ?? undefined,
+        });
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(html);
       }
 
       const csv = serializeDailySalesExportCsv(dataset, part!);

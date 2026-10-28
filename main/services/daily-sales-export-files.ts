@@ -6,11 +6,15 @@ import {
   DAILY_SALES_PAYMENT_COLUMNS,
   DAILY_SALES_TAX_COLUMNS,
   dailySalesSummaryMetricRows,
+  serializeDailySalesExportHtml,
   type DailySalesExportDataset,
   type DailySalesExportItemRow,
+  type DailySalesHtmlOptions,
 } from './daily-sales-export';
 
-export type DailySalesExportFormat = 'xlsx' | 'csv';
+export { serializeDailySalesExportHtml, type DailySalesHtmlOptions };
+
+export type DailySalesExportFormat = 'xlsx' | 'csv' | 'html';
 export type DailySalesExportCsvPart = 'summary' | 'daily' | 'taxes' | 'items' | 'payments';
 
 export const DAILY_SALES_CSV_PARTS: readonly DailySalesExportCsvPart[] = [
@@ -33,6 +37,7 @@ export function dailySalesExportFilename(
         ? period.fromDate
         : `${period.fromDate}_to_${period.toDate}`;
   if (format === 'xlsx') return `daily-sales-${slug}.xlsx`;
+  if (format === 'html') return `daily-sales-${slug}.html`;
   if (part && DAILY_SALES_CSV_PARTS.includes(part)) {
     return `daily-sales-${slug}-${part}.csv`;
   }
@@ -47,7 +52,7 @@ function moneyNumFmt(fractionDigits: number): string {
 }
 
 /**
- * Serializers only - no accounting math. Both formats read the same dataset.
+ * Serializers only - no accounting math. All formats read the same dataset.
  * Values stay numeric in XLSX; CSV uses ASCII '.' decimals for stable Sheets import.
  */
 export async function serializeDailySalesExportXlsx(

@@ -139,4 +139,121 @@ test.describe('Cash close phase-1 UI', () => {
     await expect(warning).toContainText('#ORD-101');
     await expect(dialog.getByRole('button', { name: /Cerrar turno|Close shift/i })).toBeEnabled();
   });
+
+  test('PDF export works for Daily Sales (browser fallback) and X/Z reports (desktop IPC)', async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(() => {
+      window.print = () => {};
+      window.close = () => {};
+    });
+
+    await page.goto(`${BASE}/dashboard`);
+    const exportBtn = page.getByRole('button', { name: 'Export sales', exact: true });
+    await expect(exportBtn).toBeVisible({ timeout: 15000 });
+    await exportBtn.click();
+    await expect(page.getByRole('menuitem', { name: 'Excel (.xlsx)' }).first()).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'CSV (.csv)' }).first()).toBeVisible();
+    const pdfMenuItem = page.getByRole('menuitem', { name: 'PDF (.pdf)' });
+    await expect(pdfMenuItem).toBeVisible();
+
+    const popupPromise = page.waitForEvent('popup');
+    await pdfMenuItem.click();
+    const popup = await popupPromise;
+    await expect(popup.getByText(/Daily Sales Report/)).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(
+      popup.getByRole('heading', { name: 'Summary', level: 2, exact: true }),
+    ).toBeVisible();
+    await expect.poll(() => popup.locator('style').textContent()).toContain('size: A4 landscape');
+    await popup.close();
+
+    // Now test X Report and Z Report PDF export via desktop saveHtmlAsPdf IPC bridge
+    await page.evaluate(() => {
+      (window as unknown as { __pdfCalls: Array<Record<string, unknown>> }).__pdfCalls = [];
+      (window as unknown as { electronAPI: Record<string, unknown> }).electronAPI = {
+        saveHtmlAsPdf: async (payload: Record<string, unknown>) => {
+          (window as unknown as { __pdfCalls: Array<Record<string, unknown>> }).__pdfCalls.push(
+            payload,
+          );
+          return { success: true, filePath: `/tmp/${payload.defaultFileName}` };
+        },
+      };
+    });
+
+    await page.getByRole('button', { name: 'Close day', exact: true }).click();
+    const dialog = page.getByRole('dialog').first();
+    await expect(dialog).toBeVisible({ timeout: 15000 });
+    await dialog.getByRole('button', { name: 'Export sales', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'PDF (.pdf)' }).click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (
+              window as unknown as {
+                __pdfCalls: Array<{ defaultFileName: string; pageSize: string; html: string }>;
+              }
+            ).__pdfCalls.length,
+        ),
+      )
+      .toBe(1);
+    const xPdfCall = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __pdfCalls: Array<{ defaultFileName: string; pageSize: string; html: string }>;
+          }
+        ).__pdfCalls[0],
+    );
+    expect(xPdfCall.defaultFileName).toMatch(/^x-report-\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(xPdfCall.pageSize).toBe('A4');
+    expect(xPdfCall.html).toContain('X Report');
+
+    // Now close a past business date (so today's state stays untouched) and export the Z Report as PDF
+    const xDate = xPdfCall.defaultFileName.slice('x-report-'.length, -'.pdf'.length);
+    const pastDateObj = new Date(`${xDate}T00:00:00Z`);
+    pastDateObj.setUTCDate(pastDateObj.getUTCDate() - 30);
+    const pastDate = pastDateObj.toISOString().slice(0, 10);
+
+    await dialog.locator('#business-date').fill(pastDate);
+    const continueBtn = dialog.getByRole('button', { name: 'Continue', exact: true });
+    if (await continueBtn.isVisible()) {
+      await expect(continueBtn).toBeEnabled({ timeout: 10000 });
+      await continueBtn.click();
+      await dialog.locator('#opening-float').fill('0');
+      await dialog.locator('#counted-cash').fill('0');
+      await dialog.getByRole('button', { name: 'Close day', exact: true }).click();
+    }
+    await expect(dialog.getByText(/^Z report$/i)).toBeVisible({ timeout: 15000 });
+    await dialog.getByRole('button', { name: 'Export sales', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'PDF (.pdf)' }).click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (
+              window as unknown as {
+                __pdfCalls: Array<{ defaultFileName: string; pageSize: string; html: string }>;
+              }
+            ).__pdfCalls.length,
+        ),
+      )
+      .toBe(2);
+    const zPdfCall = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __pdfCalls: Array<{ defaultFileName: string; pageSize: string; html: string }>;
+          }
+        ).__pdfCalls[1],
+    );
+    expect(zPdfCall.defaultFileName).toMatch(new RegExp(`^z-report-Z\\d+-${pastDate}\\.pdf$`));
+    expect(zPdfCall.pageSize).toBe('A4');
+    expect(zPdfCall.html).toContain('Z Report');
+  });
 });

@@ -52,7 +52,7 @@ function moneyNumFmt(fractionDigits: number): string {
 }
 
 /**
- * Serializers only - no accounting math. Both formats read the same dataset.
+ * Serializers only - no accounting math. All formats read the same dataset.
  * Values stay numeric in XLSX; CSV uses ASCII '.' decimals for stable Sheets import.
  */
 export async function serializeDailySalesExportXlsx(

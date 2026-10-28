@@ -883,11 +883,11 @@ reconciliation contract, the summary metric field order, and the worksheet/CSV c
 | `format` | `xlsx`, `csv`, or `html`                              | Required. Any other value returns `400`.                                                                          |
 | `part`   | `summary`, `daily`, `taxes`, `items`, or `payments`   | Required when `format=csv`; ignored for `xlsx` and `html`. Missing or invalid on CSV returns `400`.               |
 
-- `format=xlsx` returns `200` with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` and `Content-Disposition: attachment; filename="daily-sales-YYYY-MM-DD.xlsx"` (or `daily-sales-YYYY-MM-DD_to_YYYY-MM-DD.xlsx` for multi-day ranges). Money cells are numeric with a currency-fraction-digit number format; the workbook holds no formulas.
+- `format=xlsx` returns `200` with `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` and `Content-Disposition: attachment; filename="daily-sales-YYYY-MM-DD.xlsx"` (or `daily-sales-YYYY-MM-DD_to_YYYY-MM-DD.xlsx` for multi-day ranges).
 - `format=csv` returns `200` with `Content-Type: text/csv; charset=utf-8` and `Content-Disposition: attachment; filename="daily-sales-<slug>-<part>.csv"` for the requested `part` (`summary` has header `metric,value`; `daily`, `taxes`, `items`, and `payments` use the column headers and encoding rules in [daily sales export](daily-sales-export.md#file-formats)).
-- `format=html` returns `200` with `Content-Type: text/html; charset=utf-8` and `Content-Disposition: attachment; filename="daily-sales-YYYY-MM-DD.html"` (or `daily-sales-YYYY-MM-DD_to_YYYY-MM-DD.html`), rendering a self-contained A4 print-styled HTML document from the same dataset.
+- `format=html` returns `200` with `Content-Type: text/html; charset=utf-8` and `Content-Disposition: attachment; filename="daily-sales-YYYY-MM-DD.html"` (or `daily-sales-YYYY-MM-DD_to_YYYY-MM-DD.html`), rendering a self-contained A4 landscape print-styled HTML document from the same dataset.
 
-Errors: `400` for an invalid `format`, a CSV without `part`, mixed `date` and `from`/`to` arguments, an incomplete range, an invalid calendar date, `to < from`, or a range exceeding 93 days; `401` unauthenticated; `403` non-owner; `409` for a concurrent-write conflict; `500` otherwise.
+Errors: `400` for an invalid `format`, a CSV without `part`, mixed `date` and `from`/`to` arguments, an incomplete range, an invalid calendar date, `to < from`, a range exceeding 93 days, or an `html` export exceeding the 15 MB PDF size limit; `401` unauthenticated; `403` non-owner; `409` for a concurrent-write conflict; `500` otherwise.
 
 ### Inline endpoints (registered outside a router)
 

@@ -58,7 +58,7 @@ Backend owns all logic; the frontend never computes totals.
 
 ### Summary metric field order
 
-`business_date` (starts with `YYYY-MM-DD` for single-day exports or `YYYY-MM-DD..YYYY-MM-DD` for multi-day ranges), `from_date`, `to_date`, `day_count`, `timezone`, `business_day_start`, `currency`, `order_count`, `paid_bill_count`, `gross_collected`, `refunds_issued`, `net_collected`, `tax_total`, `discount_total`, `service_charge_total`, `packaging_charge_total`, `delivery_charge_total`, `known_cost_net_item_sales`, `ingredient_cost_total`, `gross_profit_total`, `gross_margin_percent`, `cost_coverage_status`, `tax_detail_complete`, `tax_detail_warning`, then one `payment_<method>` total per method (snake_case key via `dailySalesPaymentMetricKey`).
+`business_date` (`YYYY-MM-DD` for single-day exports or `YYYY-MM-DD..YYYY-MM-DD` for multi-day ranges), `from_date`, `to_date`, `day_count`, `timezone`, `business_day_start`, `currency`, `order_count`, `paid_bill_count`, `gross_collected`, `refunds_issued`, `net_collected`, `tax_total`, `discount_total`, `service_charge_total`, `packaging_charge_total`, `delivery_charge_total`, `known_cost_net_item_sales`, `ingredient_cost_total`, `gross_profit_total`, `gross_margin_percent`, `cost_coverage_status`, `tax_detail_complete`, `tax_detail_warning`, then one `payment_<method>` total per method (snake_case key via `dailySalesPaymentMetricKey`).
 
 ### Daily columns
 

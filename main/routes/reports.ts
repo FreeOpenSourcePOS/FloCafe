@@ -993,10 +993,10 @@ router.get('/tables', requirePermission('reports.view'), (req: Request, res: Res
   }
 });
 
-// ── GET /insights — dashboard metrics beyond today's snapshot ──────────────
+// ── GET /insights - dashboard metrics beyond today's snapshot ──────────────
 // AOV, top staff, top categories, busiest/idlest hour & day-of-week, and
-// average kitchen prep time, aggregated over a trailing window (default 30
-// days) so hour/day patterns reflect a consistent trend rather than one day.
+// average kitchen prep time, aggregated over an explicit `[start_date, end_date]`
+// business-date range (up to 365 days) or a trailing `days` window (default 30).
 router.get('/insights', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();

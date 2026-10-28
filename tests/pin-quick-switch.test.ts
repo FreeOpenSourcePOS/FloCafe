@@ -474,6 +474,36 @@ async function run() {
     'In-progress item void rejects cashier PIN (targeted approver_id) with 403',
   );
 
+  db.prepare(`
+    INSERT INTO orders (order_number, type, status, subtotal, tax_amount, total, created_at, updated_at)
+    VALUES ('ORD-PIN-VOID-002', 'dine_in', 'preparing', 100, 0, 100, ?, ?)
+  `).run(ts, ts);
+  const voidOrder2Id = (
+    db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-PIN-VOID-002'").get() as any
+  ).id;
+  db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total, status, created_at, updated_at)
+    VALUES (?, ?, 'Espresso', 1, 100, 100, 0, 100, 'preparing', ?, ?)
+  `).run(voidOrder2Id, prodId, ts, ts);
+  const voidOrder2ItemId = (
+    db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(voidOrder2Id) as any
+  ).id;
+
+  const itemVoidTrimmedManager = await request(app)
+    .patch(`/api/orders/${voidOrder2Id}/items/${voidOrder2ItemId}/cancel`)
+    .set(cashierAuth)
+    .send({
+      reason: 'Customer changed mind',
+      manager_id: '',
+      approver_id: '  mgr-1  ',
+      override_pin: '1357',
+    });
+  assertEqualOrThrow(
+    itemVoidTrimmedManager.status,
+    200,
+    'In-progress item void succeeds with whitespace-trimmed manager approver_id and empty alias',
+  );
+
   // (e) Order-status override (cancel preparing order, complete unpaid order) with cashier PIN -> 403
   resetOrderPinRateLimit();
   const orderCancelCashier = await request(app)

@@ -27,17 +27,24 @@ test.describe('PIN Quick User Switch and Lock Flow (#1338)', () => {
     });
     expect(ownerPinRes.ok()).toBeTruthy();
 
-    const staffRes = await request.get(`${BASE}/api/staff?active=true`, { headers: ownerHeaders });
+    const staffRes = await request.get(`${BASE}/api/staff`, { headers: ownerHeaders });
     expect(staffRes.ok()).toBeTruthy();
     const { staff } = await staffRes.json();
     const existingCashier = staff.find(
-      (member: { email?: string; id?: string }) => member.email === 'pin-cashier@flo.local',
+      (member: { email?: string; id?: string; is_active?: number | boolean }) =>
+        member.email === 'pin-cashier@flo.local',
     );
     if (existingCashier) {
       cashierId = existingCashier.id;
+      if (!existingCashier.is_active) {
+        const reactivateRes = await request.post(`${BASE}/api/staff/${cashierId}/reactivate`, {
+          headers: ownerHeaders,
+        });
+        expect(reactivateRes.ok()).toBeTruthy();
+      }
       const updateRes = await request.put(`${BASE}/api/staff/${cashierId}`, {
         headers: ownerHeaders,
-        data: { pin: '4321', is_active: 1 },
+        data: { role: 'cashier', pin: '4321' },
       });
       expect(updateRes.ok()).toBeTruthy();
     } else {

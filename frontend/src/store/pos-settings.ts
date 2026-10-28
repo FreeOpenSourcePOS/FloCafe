@@ -354,12 +354,15 @@ export const usePosSettingsStore = create<PosSettingsState>()(
     }),
     {
       name: 'pos-settings',
-      // Exclude backend-synced fields (WhatsApp, print policies) from persistence.
+      // Exclude backend-synced fields (WhatsApp, print policies, auto-lock) from persistence.
       partialize: (s) =>
         Object.fromEntries(
           Object.entries(s).filter(
             ([k]) =>
-              k !== 'whatsappEnabled' && k !== 'billLanguagePolicy' && k !== 'kotLanguagePolicy',
+              k !== 'whatsappEnabled' &&
+              k !== 'billLanguagePolicy' &&
+              k !== 'kotLanguagePolicy' &&
+              k !== 'autoLockMinutes',
           ),
         ) as PosSettingsState,
       // Migrates legacy store keys (GSTIN rename, removed A4/A5 paper sizes).

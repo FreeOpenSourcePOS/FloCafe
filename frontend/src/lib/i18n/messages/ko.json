@@ -1094,7 +1094,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {주방에서 아직 준비 중인 항목이 #개 있습니다} other {주방에서 아직 준비 중인 항목이 #개 있습니다}}",
     "kitchenDeliveryOverridePrompt": "주방 음식이 아직 제공되지 않았습니다. 결제를 승인하려면 직원 승인 PIN을 입력하세요.",
     "kitchenDeliveryOverrideSuccess": "미제공 항목에 대한 관리자 승인이 처리되었습니다.",
-    "kitchenDeliveryOverrideInvalid": "관리자 PIN이 올바르지 않습니다. 다시 시도하세요.",
+    "kitchenDeliveryOverrideInvalid": "직원 승인 PIN이 올바르지 않습니다. 다시 시도하세요.",
     "waiveCharge": "면제",
     "applyCharge": "적용",
     "addCharge": "추가",

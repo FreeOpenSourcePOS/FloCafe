@@ -1094,7 +1094,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {厨房仍有 # 道菜正在准备} other {厨房仍有 # 道菜正在准备}}",
     "kitchenDeliveryOverridePrompt": "厨房菜品尚未送达。请输入员工批准 PIN 以授权结账。",
     "kitchenDeliveryOverrideSuccess": "已接受经理对未送达菜品的授权。",
-    "kitchenDeliveryOverrideInvalid": "经理 PIN 无效，请重试。",
+    "kitchenDeliveryOverrideInvalid": "员工批准 PIN 无效，请重试。",
     "waiveCharge": "免除",
     "applyCharge": "应用",
     "addCharge": "添加",

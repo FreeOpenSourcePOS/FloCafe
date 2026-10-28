@@ -20,6 +20,8 @@ import {
   incrementFailedLogin,
   resetSuccessfulLogin,
   FAILED_LOGIN_LOCKOUT_MINUTES,
+  normalizeIpForRateLimit,
+  withPinVerificationLock,
   validatePassword,
   revokeToken,
   isTokenRevoked,
@@ -355,7 +357,7 @@ router.get('/pin-users', authRateLimit({ max: 600 }), (_req: Request, res: Respo
 
 router.post(
   '/pin-login',
-  loginAuthRateLimit(),
+  authRateLimit({ max: 600, skipSuccessfulRequests: true }),
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';
@@ -363,99 +365,140 @@ router.post(
       const userId = typeof user_id === 'string' ? user_id.trim() : '';
       const rawPin = typeof pin === 'string' || typeof pin === 'number' ? String(pin) : '';
 
+      const db = getDatabase();
       if (!userId || !rawPin) {
+        recordAuthAudit(db, {
+          userId: userId || null,
+          eventType: 'pin_login',
+          outcome: 'failure',
+          ipAddress: ip,
+          details: {
+            reason:
+              !userId && !rawPin
+                ? 'missing_credentials'
+                : !userId
+                  ? 'missing_user_id'
+                  : 'missing_pin',
+          },
+        });
         return res.status(400).json({ error: 'user_id and pin are required' });
       }
 
-      const db = getDatabase();
-      const rateLimitKey = `${ip}:pin:${userId}`;
-      const rateLimit = checkLoginRateLimit(rateLimitKey);
-      if (!rateLimit.allowed) {
-        recordAuthAudit(db, {
-          userId,
-          eventType: 'pin_login',
-          outcome: 'rate_limited',
-          ipAddress: ip,
-          details: { wait_minutes: rateLimit.waitMinutes },
-        });
-        return res.status(429).json({
-          error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.`,
-        });
-      }
+      const canonicalIp = normalizeIpForRateLimit(ip);
+      const rateLimitKey = `${canonicalIp}:pin:${userId}`;
+      type VerifiedUser = {
+        id: string;
+        name: string;
+        email: string;
+        role: string;
+        is_active: number;
+        pin_hash: string | null;
+        category_ids: string | null;
+      };
+      type PinLoginOutcome =
+        | { status: 429; body: Record<string, unknown> }
+        | { status: 401; body: Record<string, unknown> }
+        | { status: 200; user: VerifiedUser };
 
-      if (!/^\d{4,6}$/.test(rawPin)) {
-        const attemptsRemaining = incrementFailedLogin(rateLimitKey);
-        recordAuthAudit(db, {
-          userId,
-          eventType: 'pin_login',
-          outcome: 'failure',
-          ipAddress: ip,
-          details: {
-            reason: 'invalid_pin_format',
-            attempts_remaining: attemptsRemaining,
-          },
-        });
-        return res.status(401).json({
-          error: 'Invalid credentials',
-          attempts_remaining: attemptsRemaining,
-          lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
-        });
-      }
-
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as
-        | {
-            id: string;
-            name: string;
-            email: string;
-            role: string;
-            is_active: number;
-            pin_hash: string | null;
-            category_ids: string | null;
+      const verificationResult = await withPinVerificationLock<PinLoginOutcome>(
+        rateLimitKey,
+        async () => {
+          const rateLimit = checkLoginRateLimit(rateLimitKey);
+          if (!rateLimit.allowed) {
+            recordAuthAudit(db, {
+              userId,
+              eventType: 'pin_login',
+              outcome: 'rate_limited',
+              ipAddress: ip,
+              details: { wait_minutes: rateLimit.waitMinutes },
+            });
+            return {
+              status: 429,
+              body: {
+                error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.`,
+              },
+            };
           }
-        | undefined;
-      let pinMatches = false;
-      if (user && user.is_active === 1 && user.pin_hash) {
-        try {
-          pinMatches = await verifyPinAsync(user.pin_hash, rawPin);
-        } catch {
-          pinMatches = false;
-        }
+
+          if (!/^\d{4,6}$/.test(rawPin)) {
+            const attemptsRemaining = incrementFailedLogin(rateLimitKey);
+            recordAuthAudit(db, {
+              userId,
+              eventType: 'pin_login',
+              outcome: 'failure',
+              ipAddress: ip,
+              details: {
+                reason: 'invalid_pin_format',
+                attempts_remaining: attemptsRemaining,
+              },
+            });
+            return {
+              status: 401,
+              body: {
+                error: 'Invalid credentials',
+                attempts_remaining: attemptsRemaining,
+                lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
+              },
+            };
+          }
+
+          const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as
+            | VerifiedUser
+            | undefined;
+          let pinMatches = false;
+          if (user && user.is_active === 1 && user.pin_hash) {
+            try {
+              pinMatches = await verifyPinAsync(user.pin_hash, rawPin);
+            } catch {
+              pinMatches = false;
+            }
+          }
+
+          if (!user || user.is_active !== 1 || !user.pin_hash || !pinMatches) {
+            const attemptsRemaining = incrementFailedLogin(rateLimitKey);
+            recordAuthAudit(db, {
+              userId,
+              eventType: 'pin_login',
+              outcome: 'failure',
+              ipAddress: ip,
+              details: {
+                reason: !user
+                  ? 'user_not_found'
+                  : user.is_active !== 1
+                    ? 'user_inactive'
+                    : !user.pin_hash
+                      ? 'pin_not_set'
+                      : 'invalid_pin',
+                attempts_remaining: attemptsRemaining,
+              },
+            });
+            return {
+              status: 401,
+              body: {
+                error: 'Invalid credentials',
+                attempts_remaining: attemptsRemaining,
+                lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
+              },
+            };
+          }
+
+          resetSuccessfulLogin(rateLimitKey);
+          recordAuthAudit(db, {
+            userId: user.id,
+            eventType: 'pin_login',
+            outcome: 'success',
+            ipAddress: ip,
+            details: { role: user.role },
+          });
+          return { status: 200, user };
+        },
+      );
+
+      if (verificationResult.status !== 200) {
+        return res.status(verificationResult.status).json(verificationResult.body);
       }
 
-      if (!user || user.is_active !== 1 || !user.pin_hash || !pinMatches) {
-        const attemptsRemaining = incrementFailedLogin(rateLimitKey);
-        recordAuthAudit(db, {
-          userId,
-          eventType: 'pin_login',
-          outcome: 'failure',
-          ipAddress: ip,
-          details: {
-            reason: !user
-              ? 'user_not_found'
-              : user.is_active !== 1
-                ? 'user_inactive'
-                : !user.pin_hash
-                  ? 'pin_not_set'
-                  : 'invalid_pin',
-            attempts_remaining: attemptsRemaining,
-          },
-        });
-        return res.status(401).json({
-          error: 'Invalid credentials',
-          attempts_remaining: attemptsRemaining,
-          lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
-        });
-      }
-
-      resetSuccessfulLogin(rateLimitKey);
-      recordAuthAudit(db, {
-        userId: user.id,
-        eventType: 'pin_login',
-        outcome: 'success',
-        ipAddress: ip,
-        details: { role: user.role },
-      });
-
+      const { user } = verificationResult;
       const remember = !!rememberMe;
       const token = jwt.sign(
         { userId: user.id, email: user.email, role: user.role, remember, jti: randomUUID() },

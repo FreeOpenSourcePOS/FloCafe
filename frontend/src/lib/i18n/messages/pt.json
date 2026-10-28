@@ -1094,7 +1094,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {Ainda há # item(ns) sendo preparado(s) na cozinha} other {Ainda há # item(ns) sendo preparado(s) na cozinha}}",
     "kitchenDeliveryOverridePrompt": "Os itens da cozinha ainda não foram entregues. Insira o PIN de aprovação da equipe para autorizar a cobrança.",
     "kitchenDeliveryOverrideSuccess": "Autorização do gerente aceita para os itens não entregues.",
-    "kitchenDeliveryOverrideInvalid": "PIN do gerente inválido. Tente novamente.",
+    "kitchenDeliveryOverrideInvalid": "PIN de aprovação da equipe inválido. Tente novamente.",
     "waiveCharge": "Isentar",
     "applyCharge": "Aplicar",
     "addCharge": "Adicionar",

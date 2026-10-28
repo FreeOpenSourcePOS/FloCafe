@@ -1094,7 +1094,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# صنفًا ما زال قيد التحضير في المطبخ} other {# صنفًا ما زال قيد التحضير في المطبخ}}",
     "kitchenDeliveryOverridePrompt": "لم تُسلَّم أصناف المطبخ بعد. أدخل رقم التعريف الشخصي (PIN) الخاص بالموظفين للسماح بالفوترة.",
     "kitchenDeliveryOverrideSuccess": "تم قبول تجاوز المدير للأصناف غير المسلّمة.",
-    "kitchenDeliveryOverrideInvalid": "الرقم السري للمدير غير صحيح. حاول مرة أخرى.",
+    "kitchenDeliveryOverrideInvalid": "رقم التعريف الشخصي (PIN) الخاص بالموظفين غير صحيح. حاول مرة أخرى.",
     "waiveCharge": "إعفاء",
     "applyCharge": "تطبيق",
     "addCharge": "إضافة",

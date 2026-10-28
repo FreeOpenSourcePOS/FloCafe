@@ -1094,7 +1094,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# artikuj po përgatiten ende në kuzhinë} other {# artikuj po përgatiten ende në kuzhinë}}",
     "kitchenDeliveryOverridePrompt": "Artikujt e kuzhinës nuk janë dorëzuar ende. Fut PIN-i i miratimit të stafit për të autorizuar faturimin.",
     "kitchenDeliveryOverrideSuccess": "U pranua miratimi i menaxherit për artikujt e padërguar.",
-    "kitchenDeliveryOverrideInvalid": "PIN-i i menaxherit është i pasaktë. Provo sërish.",
+    "kitchenDeliveryOverrideInvalid": "PIN-i i miratimit të stafit është i pasaktë. Provo sërish.",
     "waiveCharge": "Përjashto",
     "applyCharge": "Apliko",
     "addCharge": "Shto",

@@ -1094,7 +1094,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {На кухне ещё готовятся блюда: #} other {На кухне ещё готовятся блюда: #}}",
     "kitchenDeliveryOverridePrompt": "Блюда с кухни ещё не поданы. Введите ПИН-код утверждения сотрудниками, чтобы разрешить оплату.",
     "kitchenDeliveryOverrideSuccess": "Разрешение менеджера на оплату неподанных блюд принято.",
-    "kitchenDeliveryOverrideInvalid": "Неверный PIN-код менеджера. Попробуйте ещё раз.",
+    "kitchenDeliveryOverrideInvalid": "Неверный ПИН-код утверждения сотрудниками. Попробуйте ещё раз.",
     "waiveCharge": "Списать",
     "applyCharge": "Применить",
     "addCharge": "Добавить",

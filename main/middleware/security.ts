@@ -118,13 +118,14 @@ export function resetSharedLoginAuthRateLimiter(): void {
 }
 
 /** Stricter rate limiter for authentication endpoints; private/LAN IPs are not exempt. */
-export function authRateLimit(options: { max?: number } = {}) {
+export function authRateLimit(options: { max?: number; skipSuccessfulRequests?: boolean } = {}) {
   const envMax = process.env.FLO_AUTH_RATE_LIMIT_MAX
     ? parseInt(process.env.FLO_AUTH_RATE_LIMIT_MAX, 10)
     : undefined;
   return expressRateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     limit: options.max ?? (Number.isFinite(envMax) ? envMax : 10),
+    skipSuccessfulRequests: options.skipSuccessfulRequests ?? false,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many authentication attempts. Please try again later.' },

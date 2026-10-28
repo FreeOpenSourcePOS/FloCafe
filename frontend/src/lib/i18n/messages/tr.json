@@ -1094,7 +1094,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {Mutfakta hâlâ hazırlanan # ürün var} other {Mutfakta hâlâ hazırlanan # ürün var}}",
     "kitchenDeliveryOverridePrompt": "Mutfak ürünleri henüz teslim edilmedi. Ödemeye izin vermek için Personel Onay PIN'i girin.",
     "kitchenDeliveryOverrideSuccess": "Teslim edilmemiş ürünler için yönetici onayı kabul edildi.",
-    "kitchenDeliveryOverrideInvalid": "Yönetici PIN kodu geçersiz. Tekrar deneyin.",
+    "kitchenDeliveryOverrideInvalid": "Personel Onay PIN'i geçersiz. Tekrar deneyin.",
     "waiveCharge": "Muaf tut",
     "applyCharge": "Uygula",
     "addCharge": "Ekle",

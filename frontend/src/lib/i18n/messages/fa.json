@@ -1094,7 +1094,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# مورد هنوز در آشپزخانه در حال آماده‌سازی است} other {# مورد هنوز در آشپزخانه در حال آماده‌سازی است}}",
     "kitchenDeliveryOverridePrompt": "اقلام آشپزخانه هنوز تحویل نشده‌اند. برای تأیید صورتحساب، پین تأیید کارکنان را وارد کنید.",
     "kitchenDeliveryOverrideSuccess": "تأیید مدیر برای اقلام تحویل‌نشده پذیرفته شد.",
-    "kitchenDeliveryOverrideInvalid": "رمز مدیر نامعتبر است. دوباره تلاش کنید.",
+    "kitchenDeliveryOverrideInvalid": "پین تأیید کارکنان نامعتبر است. دوباره تلاش کنید.",
     "waiveCharge": "بخشش",
     "applyCharge": "اعمال",
     "addCharge": "افزودن",

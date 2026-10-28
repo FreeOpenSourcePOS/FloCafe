@@ -1094,7 +1094,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {باورچی خانے میں ابھی # آئٹمز تیار ہو رہی ہیں} other {باورچی خانے میں ابھی # آئٹمز تیار ہو رہی ہیں}}",
     "kitchenDeliveryOverridePrompt": "باورچی خانے کے آئٹمز ابھی پیش نہیں کیے گئے۔ بل کی اجازت دینے کے لیے اسٹاف اپروول PIN درج کریں۔",
     "kitchenDeliveryOverrideSuccess": "نہ پہنچائے گئے آئٹمز کے لیے مینیجر کی اجازت قبول کر لی گئی۔",
-    "kitchenDeliveryOverrideInvalid": "مینیجر کا PIN درست نہیں۔ دوبارہ کوشش کریں۔",
+    "kitchenDeliveryOverrideInvalid": "اسٹاف اپروول PIN درست نہیں۔ دوبارہ کوشش کریں۔",
     "waiveCharge": "معاف",
     "applyCharge": "لاگو کریں",
     "addCharge": "شامل کریں",

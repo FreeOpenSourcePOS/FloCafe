@@ -491,6 +491,7 @@ export default function SettingsPage() {
   const [savingAllSettings, setSavingAllSettings] = useState(false);
   const [saveAllHydrationRun, setSaveAllHydrationRun] = useState(0);
   const savingAllSettingsInFlight = useRef(false);
+  const autoLockSaveGenRef = useRef(0);
 
   const themeMode = useThemeMode((s) => s.mode);
   const { layout: ordersLayout, save: saveOrdersLayout } = useOrdersLayoutPreference();
@@ -4289,11 +4290,14 @@ export default function SettingsPage() {
                       onChange={(e) => {
                         const prev = posSettings.autoLockMinutes;
                         const next = normalizeAutoLockMinutesValue(e.target.value);
+                        const saveGen = ++autoLockSaveGenRef.current;
                         posSettings.setAutoLockMinutes(next);
                         void api
                           .put('/settings/auto_lock_minutes', { value: String(next) })
                           .catch(() => {
-                            posSettings.setAutoLockMinutes(prev);
+                            if (autoLockSaveGenRef.current === saveGen) {
+                              posSettings.setAutoLockMinutes(prev);
+                            }
                             toast.error(t('saveFailed'));
                           });
                       }}

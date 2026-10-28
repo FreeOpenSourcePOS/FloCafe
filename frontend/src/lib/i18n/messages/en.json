@@ -1131,7 +1131,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# item still being prepared in the kitchen} other {# items still being prepared in the kitchen}}",
     "kitchenDeliveryOverridePrompt": "Kitchen items are not yet delivered. Enter Staff Approval PIN to authorize billing.",
     "kitchenDeliveryOverrideSuccess": "Manager override accepted for undelivered items.",
-    "kitchenDeliveryOverrideInvalid": "Invalid Manager PIN. Please try again.",
+    "kitchenDeliveryOverrideInvalid": "Invalid Staff Approval PIN. Please try again.",
     "waiveCharge": "Waive",
     "applyCharge": "Apply",
     "addCharge": "Add",

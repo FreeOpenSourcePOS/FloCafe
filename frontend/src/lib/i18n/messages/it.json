@@ -1094,7 +1094,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {Ci sono ancora # articoli in preparazione in cucina} other {Ci sono ancora # articoli in preparazione in cucina}}",
     "kitchenDeliveryOverridePrompt": "Gli articoli della cucina non sono ancora stati consegnati. Inserisci il PIN di approvazione del personale per autorizzare il pagamento.",
     "kitchenDeliveryOverrideSuccess": "Autorizzazione del responsabile accettata per gli articoli non consegnati.",
-    "kitchenDeliveryOverrideInvalid": "PIN del responsabile non valido. Riprova.",
+    "kitchenDeliveryOverrideInvalid": "PIN di approvazione del personale non valido. Riprova.",
     "waiveCharge": "Esentare",
     "applyCharge": "Applica",
     "addCharge": "Aggiungi",

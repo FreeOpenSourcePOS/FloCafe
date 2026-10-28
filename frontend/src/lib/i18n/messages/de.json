@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# Artikel werden noch in der Küche zubereitet} other {# Artikel werden noch in der Küche zubereitet}}",
     "kitchenDeliveryOverridePrompt": "Küchenartikel wurden noch nicht serviert. Freigabe-PIN des Personals eingeben, um die Abrechnung freizugeben.",
     "kitchenDeliveryOverrideSuccess": "Freigabe durch die Leitung für noch nicht servierte Artikel akzeptiert.",
-    "kitchenDeliveryOverrideInvalid": "Ungültige Manager-PIN. Bitte erneut versuchen.",
+    "kitchenDeliveryOverrideInvalid": "Ungültige Freigabe-PIN des Personals. Bitte erneut versuchen.",
     "waiveCharge": "Erlassen",
     "applyCharge": "Anwenden",
     "addCharge": "Hinzufügen",

@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# article(s) sont encore en préparation en cuisine} other {# article(s) sont encore en préparation en cuisine}}",
     "kitchenDeliveryOverridePrompt": "Les articles de cuisine ne sont pas encore servis. Saisissez le code PIN d’approbation du personnel pour autoriser le règlement.",
     "kitchenDeliveryOverrideSuccess": "Dérogation du responsable acceptée pour les articles non servis.",
-    "kitchenDeliveryOverrideInvalid": "Code PIN du responsable incorrect. Réessayez.",
+    "kitchenDeliveryOverrideInvalid": "Code PIN d’approbation du personnel incorrect. Réessayez.",
     "waiveCharge": "Exonérer",
     "applyCharge": "Appliquer",
     "addCharge": "Ajouter",

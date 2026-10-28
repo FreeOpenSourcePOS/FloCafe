@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {Còn # món đang được chuẩn bị trong bếp} other {Còn # món đang được chuẩn bị trong bếp}}",
     "kitchenDeliveryOverridePrompt": "Món ăn từ bếp chưa được giao. Nhập Mã PIN phê duyệt để cho phép thanh toán.",
     "kitchenDeliveryOverrideSuccess": "Đã chấp nhận quyền duyệt của quản lý cho các món chưa giao.",
-    "kitchenDeliveryOverrideInvalid": "Mã PIN quản lý không hợp lệ. Vui lòng thử lại.",
+    "kitchenDeliveryOverrideInvalid": "Mã PIN phê duyệt không hợp lệ. Vui lòng thử lại.",
     "waiveCharge": "Miễn",
     "applyCharge": "Áp dụng",
     "addCharge": "Thêm",

@@ -11,7 +11,7 @@ import TitleBar from '@/components/layout/TitleBar';
 import UpdateAvailableDialog from '@/components/updates/UpdateAvailableDialog';
 import ProductAnalyticsDialog from '@/components/analytics/ProductAnalyticsDialog';
 import { usePrinterStatusSync } from '@/hooks/usePrinter';
-import { canSyncReceiptSettings, useReceiptSettingsSync } from '@/hooks/useReceiptSettingsSync';
+import { useReceiptSettingsSync } from '@/hooks/useReceiptSettingsSync';
 import { normalizePathname } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -19,12 +19,13 @@ import api from '@/lib/api';
 
 function useIdleAutoLock(): void {
   const token = useAuthStore((s) => s.token);
-  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const tenantId = useAuthStore((s) => s.currentTenant?.id ?? null);
   const autoLockMinutes = usePosSettingsStore((s) => s.autoLockMinutes);
   const setAutoLockMinutes = usePosSettingsStore((s) => s.setAutoLockMinutes);
 
   useEffect(() => {
-    if (!token || !currentTenant || canSyncReceiptSettings(currentTenant)) return;
+    setAutoLockMinutes(0);
+    if (!token || tenantId === null) return;
     let active = true;
     api
       .get('/settings/auto_lock_minutes')
@@ -37,7 +38,7 @@ function useIdleAutoLock(): void {
     return () => {
       active = false;
     };
-  }, [token, currentTenant, setAutoLockMinutes]);
+  }, [token, tenantId, setAutoLockMinutes]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !token || autoLockMinutes <= 0) return;

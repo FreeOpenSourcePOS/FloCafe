@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {Er worden nog # items in de keuken bereid} other {Er worden nog # items in de keuken bereid}}",
     "kitchenDeliveryOverridePrompt": "Keukenitems zijn nog niet bezorgd. Voer de Goedkeurings-PIN van medewerker in om afrekenen toe te staan.",
     "kitchenDeliveryOverrideSuccess": "Managergoedkeuring voor niet-bezorgde items is geaccepteerd.",
-    "kitchenDeliveryOverrideInvalid": "Ongeldige manager-pincode. Probeer het opnieuw.",
+    "kitchenDeliveryOverrideInvalid": "Ongeldige Goedkeurings-PIN van medewerker. Probeer het opnieuw.",
     "waiveCharge": "Vrijstellen",
     "applyCharge": "Toepassen",
     "addCharge": "Toevoegen",

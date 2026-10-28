@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {廚房仍有 # 道餐點正在準備} other {廚房仍有 # 道餐點正在準備}}",
     "kitchenDeliveryOverridePrompt": "廚房餐點尚未送達。請輸入員工批准 PIN 以授權結帳。",
     "kitchenDeliveryOverrideSuccess": "已接受經理對未送達餐點的授權。",
-    "kitchenDeliveryOverrideInvalid": "經理 PIN 無效，請再試一次。",
+    "kitchenDeliveryOverrideInvalid": "員工批准 PIN 無效，請再試一次。",
     "waiveCharge": "免除",
     "applyCharge": "套用",
     "addCharge": "新增",

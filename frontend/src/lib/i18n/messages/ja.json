@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {キッチンで準備中の商品が # 件あります} other {キッチンで準備中の商品が # 件あります}}",
     "kitchenDeliveryOverridePrompt": "キッチンの商品はまだ提供されていません。会計を承認するにはスタッフ承認PINを入力してください。",
     "kitchenDeliveryOverrideSuccess": "未提供の商品に対するマネージャーの承認を受け付けました。",
-    "kitchenDeliveryOverrideInvalid": "マネージャー PIN が正しくありません。もう一度お試しください。",
+    "kitchenDeliveryOverrideInvalid": "スタッフ承認PINが正しくありません。もう一度お試しください。",
     "waiveCharge": "免除",
     "applyCharge": "適用",
     "addCharge": "追加",

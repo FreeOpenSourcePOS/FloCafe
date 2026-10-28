@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {Hay # artículo(s) aún en preparación en la cocina} other {Hay # artículo(s) aún en preparación en la cocina}}",
     "kitchenDeliveryOverridePrompt": "Los artículos de cocina aún no se han entregado. Introduce el PIN de aprobación del personal para autorizar el cobro.",
     "kitchenDeliveryOverrideSuccess": "Se aceptó la autorización del gerente para los artículos sin entregar.",
-    "kitchenDeliveryOverrideInvalid": "El PIN de gerente no es válido. Inténtalo de nuevo.",
+    "kitchenDeliveryOverrideInvalid": "El PIN de aprobación del personal no es válido. Inténtalo de nuevo.",
     "waiveCharge": "Eximir",
     "applyCharge": "Aplicar",
     "addCharge": "Añadir",

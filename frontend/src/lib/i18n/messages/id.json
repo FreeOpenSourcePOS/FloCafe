@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {Masih ada # item yang disiapkan di dapur} other {Masih ada # item yang disiapkan di dapur}}",
     "kitchenDeliveryOverridePrompt": "Item dapur belum diantar. Masukkan PIN Persetujuan Staf untuk mengizinkan penagihan.",
     "kitchenDeliveryOverrideSuccess": "Persetujuan manajer untuk item yang belum diantar diterima.",
-    "kitchenDeliveryOverrideInvalid": "PIN manajer tidak valid. Silakan coba lagi.",
+    "kitchenDeliveryOverrideInvalid": "PIN Persetujuan Staf tidak valid. Silakan coba lagi.",
     "waiveCharge": "Bebaskan",
     "applyCharge": "Terapkan",
     "addCharge": "Tambah",

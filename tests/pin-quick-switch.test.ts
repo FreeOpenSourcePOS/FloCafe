@@ -6,8 +6,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-process.env.FLO_AUTH_RATE_LIMIT_MAX = '100';
-
 const Module = require('module');
 const frontendRequire = Module.createRequire(path.join(process.cwd(), 'frontend/package.json'));
 const originalLoad = Module._load;
@@ -15,7 +13,7 @@ const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-pin-quick-switch-'));
 
 let mockApiHandler: {
   get?: (url: string) => Promise<any>;
-  post?: (url: string, body?: any) => Promise<any>;
+  post?: (url: string, body?: any, config?: any) => Promise<any>;
 } = {};
 
 const mockPosSettingsStore = {
@@ -59,7 +57,7 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   if (reqName === '@/lib/api') {
     return {
       get: (...args: [string]) => mockApiHandler.get?.(...args),
-      post: (...args: [string, any]) => mockApiHandler.post?.(...args),
+      post: (...args: [string, any, any]) => mockApiHandler.post?.(...args),
     };
   }
   if (reqName === '@/store/pos-settings') {
@@ -255,6 +253,37 @@ async function run() {
     .send({ user_id: 'server-no-pin', pin: '2468' });
   assertEqualOrThrow(noPinLogin.status, 401, 'User without PIN is rejected on pin-login');
 
+  // Missing user_id or pin returns 400 and records failure in auth_audit_log
+  const missingUserRes = await request(app).post('/api/auth/pin-login').send({ pin: '2468' });
+  assertEqualOrThrow(missingUserRes.status, 400, 'Missing user_id returns 400');
+  const missingPinRes = await request(app).post('/api/auth/pin-login').send({ user_id: 'owner-1' });
+  assertEqualOrThrow(missingPinRes.status, 400, 'Missing pin returns 400');
+  const missingAuditRows = db
+    .prepare(
+      "SELECT user_id, outcome, details_json FROM auth_audit_log WHERE event_type = 'pin_login' AND outcome = 'failure' ORDER BY id ASC",
+    )
+    .all() as Array<{ user_id: string | null; outcome: string; details_json: string | null }>;
+  assertOrThrow(
+    missingAuditRows.some(
+      (r) => r.user_id === null && String(r.details_json).includes('missing_user_id'),
+    ),
+    'Missing user_id is recorded in auth_audit_log',
+  );
+  assertOrThrow(
+    missingAuditRows.some(
+      (r) => r.user_id === 'owner-1' && String(r.details_json).includes('missing_pin'),
+    ),
+    'Missing pin is recorded in auth_audit_log',
+  );
+
+  // Repeated successful quick switches from one IP (>10 times) succeed without 429
+  for (let i = 0; i < 12; i++) {
+    const switchRes = await request(app)
+      .post('/api/auth/pin-login')
+      .send({ user_id: i % 2 === 0 ? 'owner-1' : cashierId, pin: '2468' });
+    assertEqualOrThrow(switchRes.status, 200, `Quick switch #${i + 1} from shared IP returns 200`);
+  }
+
   // ── 4. Per-user rate limiting and audit logging on POST /api/auth/pin-login ──
   console.log('\n4. Wrong PIN rate limiting per user and auth_audit_log rows');
   resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
@@ -311,6 +340,24 @@ async function run() {
     'Audit log records rate_limited outcome on 6th attempt',
   );
 
+  resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
+
+  // Concurrent wrong-PIN burst is serialized per user and cannot bypass the 5-attempt lockout
+  const concurrentWrongResponses = await Promise.all(
+    Array.from({ length: 8 }, () =>
+      request(app).post('/api/auth/pin-login').send({ user_id: cashierId, pin: '0000' }),
+    ),
+  );
+  assertEqualOrThrow(
+    concurrentWrongResponses.filter((r) => r.status === 401).length,
+    5,
+    'Concurrent wrong-PIN burst allows exactly 5 attempts (401) before lockout',
+  );
+  assertEqualOrThrow(
+    concurrentWrongResponses.filter((r) => r.status === 429).length,
+    3,
+    'Remaining 3 concurrent wrong-PIN requests receive 429 rate-limited',
+  );
   resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
 
   // ── 5. Cashier PIN rejected on EVERY approval endpoint ──
@@ -659,6 +706,13 @@ async function run() {
 
   // ── 6. Auto-lock setting validation ──
   console.log('\n6. Idle auto-lock store setting (off by default; 1, 5, 15, or 30 minutes)');
+  const unauthAutoLock = await request(app).get('/api/settings/auto_lock_minutes');
+  assertEqualOrThrow(
+    unauthAutoLock.status,
+    401,
+    'Unauthenticated GET /api/settings/auto_lock_minutes returns 401',
+  );
+
   const defaultAutoLock = await request(app)
     .get('/api/settings/auto_lock_minutes')
     .set(cashierAuth);
@@ -723,10 +777,14 @@ async function run() {
   const staleMePromise = new Promise((res) => {
     staleMeResolver = res;
   });
+  const capturedLogoutHeaders: Array<string | undefined> = [];
 
   mockApiHandler = {
-    post: async (url: string, body?: any) => {
-      if (url === '/auth/logout') return { data: { message: 'Logged out' } };
+    post: async (url: string, body?: any, config?: any) => {
+      if (url === '/auth/logout') {
+        capturedLogoutHeaders.push(config?.headers?.Authorization);
+        return { data: { message: 'Logged out' } };
+      }
       if (url === '/auth/pin-login') {
         return {
           data: {
@@ -794,12 +852,23 @@ async function run() {
 
   // Start an in-flight refreshAuthContext() for owner-1 before locking/switching
   const inFlightRefresh = useAuthStore.getState().refreshAuthContext();
+  mockPosSettingsStore.state.setAutoLockMinutes(15);
 
   // Lock terminal
   await useAuthStore.getState().lock();
   assertEqualOrThrow(useAuthStore.getState().user, null, 'lock() clears active user');
   assertEqualOrThrow(useAuthStore.getState().token, null, 'lock() clears active token');
   assertEqualOrThrow(useAuthStore.getState().isLocked, true, 'lock() sets isLocked = true');
+  assertEqualOrThrow(
+    capturedLogoutHeaders[capturedLogoutHeaders.length - 1],
+    'Bearer token-for-owner-1',
+    'lock() passes Authorization Bearer header to POST /auth/logout before clearing storage',
+  );
+  assertEqualOrThrow(
+    mockPosSettingsStore.state.autoLockMinutes,
+    0,
+    'lock() resets autoLockMinutes to 0',
+  );
   assertEqualOrThrow(
     useCartStore.getState().items.length,
     1,

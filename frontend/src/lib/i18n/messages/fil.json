@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# item pa ang inihahanda sa kusina} other {# item pa ang inihahanda sa kusina}}",
     "kitchenDeliveryOverridePrompt": "Hindi pa naihahatid ang mga item mula sa kusina. Ilagay ang PIN ng pag-apruba ng staff para pahintulutan ang paniningil.",
     "kitchenDeliveryOverrideSuccess": "Tinanggap ang pahintulot ng manager para sa mga hindi pa naihahatid na item.",
-    "kitchenDeliveryOverrideInvalid": "Mali ang PIN ng manager. Subukan muli.",
+    "kitchenDeliveryOverrideInvalid": "Mali ang PIN ng pag-apruba ng staff. Subukan muli.",
     "waiveCharge": "I-exempt",
     "applyCharge": "Ilapat",
     "addCharge": "Idagdag",

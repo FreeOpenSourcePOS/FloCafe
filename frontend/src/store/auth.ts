@@ -18,7 +18,17 @@ function syncTenantLanguage(t: Tenant | null | undefined) {
 }
 
 function clearBillTemplateProvenance(): void {
-  usePosSettingsStore.getState().setBillTemplateSource?.(null);
+  const settings = usePosSettingsStore.getState();
+  settings.setBillTemplateSource?.(null);
+  settings.setAutoLockMinutes?.(0);
+}
+
+function readStoredToken(): string | null {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+  } catch {
+    return null;
+  }
 }
 
 interface AuthState {
@@ -67,7 +77,7 @@ function persistSession(token: string, tenant: Tenant | null): void {
   }
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
   tenants: [],
@@ -136,7 +146,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     ++authOperation;
     clearBillTemplateProvenance();
     notifySessionBoundary('lock');
-    const logoutPromise = api.post('/auth/logout').catch(() => {});
+    const tokenToRevoke = get().token ?? readStoredToken();
+    const logoutPromise = api
+      .post(
+        '/auth/logout',
+        null,
+        tokenToRevoke ? { headers: { Authorization: `Bearer ${tokenToRevoke}` } } : undefined,
+      )
+      .catch(() => {});
     try {
       localStorage.removeItem('token');
       localStorage.removeItem('tenant');
@@ -178,7 +195,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     ++authOperation;
     clearBillTemplateProvenance();
     notifySessionBoundary('logout');
-    api.post('/auth/logout').catch(() => {});
+    const tokenToRevoke = get().token ?? readStoredToken();
+    api
+      .post(
+        '/auth/logout',
+        null,
+        tokenToRevoke ? { headers: { Authorization: `Bearer ${tokenToRevoke}` } } : undefined,
+      )
+      .catch(() => {});
     localStorage.removeItem('token');
     localStorage.removeItem('tenant');
     set({

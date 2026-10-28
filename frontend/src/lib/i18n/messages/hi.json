@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {रसोई में अभी # आइटम तैयार हो रहे हैं} other {रसोई में अभी # आइटम तैयार हो रहे हैं}}",
     "kitchenDeliveryOverridePrompt": "रसोई के आइटम अभी परोसे नहीं गए हैं। बिल की अनुमति देने के लिए कर्मचारी अनुमोदन पिन दर्ज करें।",
     "kitchenDeliveryOverrideSuccess": "अभी तक न परोसे गए आइटम के लिए मैनेजर की अनुमति स्वीकार की गई।",
-    "kitchenDeliveryOverrideInvalid": "मैनेजर PIN गलत है। फिर से कोशिश करें।",
+    "kitchenDeliveryOverrideInvalid": "कर्मचारी अनुमोदन पिन गलत है। फिर से कोशिश करें।",
     "waiveCharge": "माफ़ करें",
     "applyCharge": "लागू करें",
     "addCharge": "जोड़ें",

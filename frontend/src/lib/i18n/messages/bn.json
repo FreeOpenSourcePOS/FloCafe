@@ -1092,7 +1092,7 @@
     "kitchenItemsPendingWarning": "{count, plural, one {রান্নাঘরে এখনও #টি আইটেম প্রস্তুত হচ্ছে} other {রান্নাঘরে এখনও #টি আইটেম প্রস্তুত হচ্ছে}}",
     "kitchenDeliveryOverridePrompt": "রান্নাঘরের আইটেম এখনও পরিবেশন করা হয়নি। বিল অনুমোদন করতে স্টাফ অনুমোদন পিন দিন।",
     "kitchenDeliveryOverrideSuccess": "পরিবেশন না হওয়া আইটেমের জন্য ম্যানেজারের অনুমোদন গ্রহণ করা হয়েছে।",
-    "kitchenDeliveryOverrideInvalid": "ম্যানেজারের PIN সঠিক নয়। আবার চেষ্টা করুন।",
+    "kitchenDeliveryOverrideInvalid": "স্টাফ অনুমোদন পিন সঠিক নয়। আবার চেষ্টা করুন।",
     "waiveCharge": "মওকুফ",
     "applyCharge": "প্রয়োগ",
     "addCharge": "যোগ করুন",

@@ -50,19 +50,15 @@ export function getOpenSession(
   userId?: string | null,
 ): CashSessionRow | undefined {
   if (!isPerStaffShiftsEnabled(db)) {
-    return db
-      .prepare(`SELECT * FROM cash_sessions WHERE status = 'open' ORDER BY id ASC LIMIT 1`)
-      .get() as CashSessionRow | undefined;
+    return db.prepare(`SELECT * FROM cash_sessions WHERE status = 'open' LIMIT 1`).get() as
+      | CashSessionRow
+      | undefined;
   }
   const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
-  if (normalizedUserId) {
-    return db
-      .prepare(`SELECT * FROM cash_sessions WHERE status = 'open' AND opened_by = ? LIMIT 1`)
-      .get(normalizedUserId) as CashSessionRow | undefined;
-  }
+  if (!normalizedUserId) return undefined;
   return db
-    .prepare(`SELECT * FROM cash_sessions WHERE status = 'open' ORDER BY id ASC LIMIT 1`)
-    .get() as CashSessionRow | undefined;
+    .prepare(`SELECT * FROM cash_sessions WHERE status = 'open' AND opened_by = ? LIMIT 1`)
+    .get(normalizedUserId) as CashSessionRow | undefined;
 }
 
 const BUILT_IN_PAYMENT_METHODS = new Set(['cash', 'card', 'wallet']);

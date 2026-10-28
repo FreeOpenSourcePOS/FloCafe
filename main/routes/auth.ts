@@ -139,7 +139,11 @@ function getUserCount(db: ReturnType<typeof getDatabase>): number {
   return (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number }).count;
 }
 
-type PendingCurrencyReset = { country: string; currency: string; timezone: string };
+type PendingCurrencyReset = {
+  country: string;
+  currency: string;
+  timezone: string;
+};
 
 function getPendingCurrencyReset(db: ReturnType<typeof getDatabase>): PendingCurrencyReset | null {
   try {
@@ -154,7 +158,11 @@ function getPendingCurrencyReset(db: ReturnType<typeof getDatabase>): PendingCur
       typeof parsed.timezone !== 'string'
     )
       return null;
-    return { country: parsed.country, currency: parsed.currency, timezone: parsed.timezone };
+    return {
+      country: parsed.country,
+      currency: parsed.currency,
+      timezone: parsed.timezone,
+    };
   } catch {
     return null;
   }
@@ -213,11 +221,17 @@ const passwordChangeAttempts = new Map<string, { count: number; lockedUntil: num
 const PASSWORD_CHANGE_MAX_ATTEMPTS = 5;
 const PASSWORD_CHANGE_LOCKOUT_MINUTES = 5;
 
-function checkPasswordChangeRateLimit(userId: string): { allowed: boolean; waitMinutes?: number } {
+function checkPasswordChangeRateLimit(userId: string): {
+  allowed: boolean;
+  waitMinutes?: number;
+} {
   const nowMs = Date.now();
   const record = passwordChangeAttempts.get(userId);
   if (record?.lockedUntil && record.lockedUntil > nowMs) {
-    return { allowed: false, waitMinutes: Math.ceil((record.lockedUntil - nowMs) / 60000) };
+    return {
+      allowed: false,
+      waitMinutes: Math.ceil((record.lockedUntil - nowMs) / 60000),
+    };
   }
   if (record?.lockedUntil && record.lockedUntil <= nowMs) {
     passwordChangeAttempts.delete(userId);
@@ -226,7 +240,10 @@ function checkPasswordChangeRateLimit(userId: string): { allowed: boolean; waitM
 }
 
 function incrementFailedPasswordChange(userId: string): number {
-  const record = passwordChangeAttempts.get(userId) || { count: 0, lockedUntil: 0 };
+  const record = passwordChangeAttempts.get(userId) || {
+    count: 0,
+    lockedUntil: 0,
+  };
   record.count += 1;
   if (record.count >= PASSWORD_CHANGE_MAX_ATTEMPTS) {
     record.lockedUntil = Date.now() + PASSWORD_CHANGE_LOCKOUT_MINUTES * 60000;
@@ -288,7 +305,13 @@ router.post(
 
       const remember = !!rememberMe;
       const token = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role, remember, jti: randomUUID() },
+        {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          remember,
+          jti: randomUUID(),
+        },
         getJWTSecret(),
         { expiresIn: expiresInFor(remember) },
       );
@@ -400,7 +423,8 @@ router.post(
       }
 
       const canonicalIp = normalizeIpForRateLimit(ip);
-      const rateLimitKey = `${canonicalIp}:pin:${userId}`;
+      const pinRateKey = `${canonicalIp}:pin:${userId}`;
+      const accountRateKey = `pin-user:${userId}`;
       type VerifiedUser = {
         id: string;
         name: string;
@@ -416,27 +440,34 @@ router.post(
         | { status: 200; user: VerifiedUser };
 
       const verificationResult = await withPinVerificationLock<PinLoginOutcome>(
-        rateLimitKey,
+        accountRateKey,
         async () => {
-          const rateLimit = checkLoginRateLimit(rateLimitKey);
-          if (!rateLimit.allowed) {
+          const ipRateLimit = checkLoginRateLimit(pinRateKey);
+          const accountRateLimit = checkLoginRateLimit(accountRateKey);
+          if (!ipRateLimit.allowed || !accountRateLimit.allowed) {
+            const waitMinutes = Math.max(
+              ipRateLimit.allowed ? 0 : ipRateLimit.waitMinutes || 0,
+              accountRateLimit.allowed ? 0 : accountRateLimit.waitMinutes || 0,
+            );
             recordAuthAudit(db, {
               userId,
               eventType: 'pin_login',
               outcome: 'rate_limited',
               ipAddress: ip,
-              details: { wait_minutes: rateLimit.waitMinutes },
+              details: { wait_minutes: waitMinutes },
             });
             return {
               status: 429,
               body: {
-                error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.`,
+                error: `Too many failed attempts. Try again in ${waitMinutes} minutes.`,
               },
             };
           }
 
           if (!/^\d{4,6}$/.test(rawPin)) {
-            const attemptsRemaining = incrementFailedLogin(rateLimitKey);
+            const ipAttemptsRemaining = incrementFailedLogin(pinRateKey);
+            const accountAttemptsRemaining = incrementFailedLogin(accountRateKey);
+            const attemptsRemaining = Math.min(ipAttemptsRemaining, accountAttemptsRemaining);
             recordAuthAudit(db, {
               userId,
               eventType: 'pin_login',
@@ -470,7 +501,9 @@ router.post(
           }
 
           if (!user || user.is_active !== 1 || !user.pin_hash || !pinMatches) {
-            const attemptsRemaining = incrementFailedLogin(rateLimitKey);
+            const ipAttemptsRemaining = incrementFailedLogin(pinRateKey);
+            const accountAttemptsRemaining = incrementFailedLogin(accountRateKey);
+            const attemptsRemaining = Math.min(ipAttemptsRemaining, accountAttemptsRemaining);
             recordAuthAudit(db, {
               userId,
               eventType: 'pin_login',
@@ -497,7 +530,8 @@ router.post(
             };
           }
 
-          resetSuccessfulLogin(rateLimitKey);
+          resetSuccessfulLogin(pinRateKey);
+          resetSuccessfulLogin(accountRateKey);
           recordAuthAudit(db, {
             userId: user.id,
             eventType: 'pin_login',
@@ -516,7 +550,13 @@ router.post(
       const { user } = verificationResult;
       const remember = !!rememberMe;
       const token = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role, remember, jti: randomUUID() },
+        {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          remember,
+          jti: randomUUID(),
+        },
         getJWTSecret(),
         { expiresIn: expiresInFor(remember) },
       );
@@ -694,7 +734,12 @@ router.get('/me', (req: Request, res: Response) => {
     const tenant = buildLocalTenant(db, user.id, user.role);
 
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
       tenants: [tenant],
     });
   } catch {
@@ -791,10 +836,12 @@ function applyOwnerRecovery(
 
     restoredOwnerAccess = true;
     return db
-      .prepare(`
+      .prepare(
+        `
         UPDATE users SET password = ?, role = ?, tokens_valid_after = ?, updated_at = ?
         WHERE id = ? AND is_active = 1
-      `)
+      `,
+      )
       .run(hashedPassword, INITIAL_ADMIN_ROLE, changedAt, changedAt, user.id);
   })();
   if (updated.changes === 0) {
@@ -978,7 +1025,9 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     if (!cloudRecoveryPrecheck(req, res)) return;
     try {
-      res.json({ verified: await cloudSync.isOwnerEmailVerified(getHttpRequestSignal(req)) });
+      res.json({
+        verified: await cloudSync.isOwnerEmailVerified(getHttpRequestSignal(req)),
+      });
     } catch (error) {
       sendCloudRecoveryFailure(res, error);
     }
@@ -1026,9 +1075,9 @@ router.post(
       .prepare('SELECT * FROM users WHERE lower(email) = ? AND role = ? AND is_active = 1')
       .get(email, INITIAL_ADMIN_ROLE) as any;
     if (!user) {
-      return res
-        .status(404)
-        .json({ error: 'No active owner account matches the registered email.' });
+      return res.status(404).json({
+        error: 'No active owner account matches the registered email.',
+      });
     }
 
     try {
@@ -1197,9 +1246,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 
     const ownerApprovalPin = String(owner_approval_pin || '');
     if (!/^\d{4,6}$/.test(ownerApprovalPin)) {
-      return res
-        .status(400)
-        .json({ error: 'A 4-6 digit owner Approval PIN is required to complete setup' });
+      return res.status(400).json({
+        error: 'A 4-6 digit owner Approval PIN is required to complete setup',
+      });
     }
     if (ownerApprovalPin !== String(owner_approval_pin_confirmation || '')) {
       return res.status(400).json({ error: 'Owner Approval PINs do not match' });
@@ -1251,10 +1300,12 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       }
 
       userId = randomUUID();
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO users (id, name, email, password, role, pin_hash, is_active, terms_accepted_at, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `,
+      ).run(
         userId,
         displayName,
         email,
@@ -1377,9 +1428,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 // Legacy endpoint retained to direct callers to /api/auth/setup/initialize.
 
 router.post('/setup/seed', (req: Request, res: Response) => {
-  res
-    .status(410)
-    .json({ error: 'Use /api/auth/setup/initialize with setup_profile and owner details.' });
+  res.status(410).json({
+    error: 'Use /api/auth/setup/initialize with setup_profile and owner details.',
+  });
 });
 
 export const authRoutes = router;

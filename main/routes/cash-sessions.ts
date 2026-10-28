@@ -131,6 +131,7 @@ function closeSessionTxn(
       closedAt,
       sessionMovements,
       Number(session.opening_float_cents || 0),
+      session,
     ),
     // Drawer and tender totals follow ownership; staff/tax remain settlement-based.
     ...sessionFinancialTotals(db, session, closedAt),
@@ -145,7 +146,8 @@ function closeSessionTxn(
   }
   const businessDate = sessionBusinessDate(db, session);
   const insert = db
-    .prepare(`
+    .prepare(
+      `
     INSERT INTO cash_closures (
       scope, business_date, period_start, period_end,
       opening_float_cents, expected_cash_cents, counted_cash_cents, variance_cents,
@@ -163,7 +165,8 @@ function closeSessionTxn(
       ?, ?, ?, ?,
       ?, ?, ?, ?
     )
-  `)
+  `,
+    )
     .run(
       businessDate,
       session.opened_at,
@@ -229,7 +232,8 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
         .all(cutoff) as CashSessionRow[];
       if (stale.length > 0) {
         const activity = db
-          .prepare(`
+          .prepare(
+            `
           SELECT
             EXISTS(SELECT 1 FROM bills WHERE paid_at >= ?)
             OR EXISTS(
@@ -244,7 +248,8 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
             )
             OR EXISTS(SELECT 1 FROM cash_drawer_movements WHERE created_at >= ?)
             OR EXISTS(SELECT 1 FROM refunds WHERE created_at >= ?) AS active
-        `)
+        `,
+          )
           .get(cutoff, cutoff, cutoff, cutoff) as { active: number };
         if (!activity.active) {
           for (const s of stale) {
@@ -275,10 +280,12 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
         throw httpError('This day is already closed', 409, 'day_already_closed');
       const openedAt = now();
       const insert = db
-        .prepare(`
+        .prepare(
+          `
         INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
         VALUES (?, ?, ?, ?, 'open')
-      `)
+      `,
+        )
         .run(openedBy, openedByRow?.name ?? openedBy, openedAt, openingFloatCents);
       const sessionId = Number(insert.lastInsertRowid);
       // Keep day close reconciling the same physical drawer: mirror the
@@ -294,11 +301,13 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
           )
           .get(openBusinessDate) as { id: number } | undefined;
         if (!existingFloat) {
-          db.prepare(`
+          db.prepare(
+            `
             INSERT INTO cash_drawer_movements (
               business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id
             ) VALUES (?, 'opening_float', ?, 'Shift opening float', ?, ?, ?)
-          `).run(openBusinessDate, openingFloatCents, openedBy, openedAt, sessionId);
+          `,
+          ).run(openBusinessDate, openingFloatCents, openedBy, openedAt, sessionId);
         } else if (perStaffShifts) {
           db.prepare(
             `UPDATE cash_drawer_movements SET amount_cents = amount_cents + ? WHERE id = ?`,
@@ -396,9 +405,10 @@ router.get(
         session = getOpenSession(db, callerId);
       }
       if (!session) {
-        return res
-          .status(404)
-          .json({ error: 'No open shift', display_code: 'session_unavailable' });
+        return res.status(404).json({
+          error: 'No open shift',
+          display_code: 'session_unavailable',
+        });
       }
       if (role !== 'owner' && role !== 'manager' && session.opened_by !== callerId) {
         return res.status(403).json({

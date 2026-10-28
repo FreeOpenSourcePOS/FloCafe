@@ -97,7 +97,9 @@ export function loginAuthRateLimit(options: { max?: number } = {}) {
         limit: Number.isFinite(parsedEnvMax) ? parsedEnvMax! : 10,
         standardHeaders: true,
         legacyHeaders: false,
-        message: { error: 'Too many authentication attempts. Please try again later.' },
+        message: {
+          error: 'Too many authentication attempts. Please try again later.',
+        },
       });
     }
     return sharedLoginAuthRateLimiter;
@@ -108,7 +110,9 @@ export function loginAuthRateLimit(options: { max?: number } = {}) {
     limit: options.max ?? (Number.isFinite(parsedEnvMax) ? parsedEnvMax : 10),
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'Too many authentication attempts. Please try again later.' },
+    message: {
+      error: 'Too many authentication attempts. Please try again later.',
+    },
   });
 }
 
@@ -134,7 +138,9 @@ export function authRateLimit(
     skipSuccessfulRequests: options.skipSuccessfulRequests ?? false,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'Too many authentication attempts. Please try again later.' },
+    message: {
+      error: 'Too many authentication attempts. Please try again later.',
+    },
     ...(options.onRateLimited
       ? {
           handler: (req: Request, res: Response, _next: NextFunction, rateLimitOptions) => {
@@ -155,7 +161,10 @@ const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
 export const FAILED_LOGIN_MAX_ATTEMPTS = 5;
 export const FAILED_LOGIN_LOCKOUT_MINUTES = 15;
 
-export function checkLoginRateLimit(ip: string): { allowed: boolean; waitMinutes?: number } {
+export function checkLoginRateLimit(ip: string): {
+  allowed: boolean;
+  waitMinutes?: number;
+} {
   const canonicalIp = normalizeIpForRateLimit(ip);
   const nowMs = Date.now();
   let record = loginAttempts.get(canonicalIp);
@@ -188,6 +197,10 @@ export function incrementFailedLogin(ip: string): number {
 export function resetSuccessfulLogin(ip: string): void {
   const canonicalIp = normalizeIpForRateLimit(ip);
   loginAttempts.delete(canonicalIp);
+  const pinIdx = canonicalIp.indexOf(':pin:');
+  if (pinIdx >= 0) {
+    loginAttempts.delete(`pin-user:${canonicalIp.slice(pinIdx + 5)}`);
+  }
 }
 
 export function clearLoginRateLimits(): void {
@@ -330,7 +343,11 @@ export function getUserAuthStatus(
     expiresAt: now + USER_AUTH_CACHE_TTL_MS,
   };
   userAuthCache.set(userId, entry);
-  return { isActive: entry.isActive, role: entry.role, tokensValidAfter: entry.tokensValidAfter };
+  return {
+    isActive: entry.isActive,
+    role: entry.role,
+    tokensValidAfter: entry.tokensValidAfter,
+  };
 }
 
 /** Forces next requireAuth check for user to re-read DB instead of cache. */
@@ -391,13 +408,15 @@ export function revokeToken(token: string, verifiedExpiresAtMs?: number): void {
     const db = getDatabase();
     const nowMs = Date.now();
     cleanupExpiredRevocations(db, nowMs);
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO revoked_tokens (token_hash, expires_at, revoked_at)
       VALUES (?, ?, ?)
       ON CONFLICT(token_hash) DO UPDATE SET
         expires_at = excluded.expires_at,
         revoked_at = excluded.revoked_at
-    `).run(hashRevokedToken(token), expiresAt, now());
+    `,
+    ).run(hashRevokedToken(token), expiresAt, now());
   } catch (error) {
     // The in-memory fallback still blocks the token in this process. Normal
     // authenticated requests already fail when the database is unavailable.

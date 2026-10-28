@@ -15,7 +15,13 @@ const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-cash-sessions-'));
 
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
-    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+    return {
+      app: {
+        isPackaged: true,
+        getPath: () => testDir,
+        getVersion: () => 'test',
+      },
+    };
   }
   return originalLoad.apply(this, arguments as any);
 };
@@ -146,7 +152,9 @@ async function main() {
   assert(getSettingValue('one_shift_per_staff') === 'false', 'per-staff shifts default to off');
   assert(getSettingValue('stale_session_days') === '7', 'stale threshold defaults to 7 days');
   const movementOwnershipCols = (
-    db.prepare(`PRAGMA table_info(cash_drawer_movements)`).all() as { name: string }[]
+    db.prepare(`PRAGMA table_info(cash_drawer_movements)`).all() as {
+      name: string;
+    }[]
   ).map((c) => c.name);
   assert(movementOwnershipCols.includes('cash_session_id'), 'movements carry cash_session_id');
   const refundOwnershipCols = (
@@ -293,17 +301,17 @@ async function main() {
       sessionId,
     );
     const moment = past(1800_000);
-    db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-      VALUES ('ORD-SESS-1', 'cashier-sess', 'takeaway', 'completed', 100, 100, ?, ?, ?)`).run(
-      moment,
-      moment,
-      moment,
-    );
+    db.prepare(
+      `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+      VALUES ('ORD-SESS-1', 'cashier-sess', 'takeaway', 'completed', 100, 100, ?, ?, ?)`,
+    ).run(moment, moment, moment);
     const orderId = Number(
       (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-SESS-1'`).get() as any).id,
     );
-    db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-      VALUES ('SESS-1', ?, 100, 100, 100, 0, 'paid', ?, ?, ?, ?)`).run(
+    db.prepare(
+      `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+      VALUES ('SESS-1', ?, 100, 100, 100, 0, 'paid', ?, ?, ?, ?)`,
+    ).run(
       orderId,
       JSON.stringify([{ method: 'cash', amount: 100, timestamp: moment }]),
       moment,
@@ -411,17 +419,17 @@ async function main() {
 
   function seedUnpaidBill(tag: string): number {
     const m = past(600_000);
-    db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-      VALUES (?, 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?, NULL)`).run(
-      `ORD-ENF-${tag}`,
-      m,
-      m,
-    );
+    db.prepare(
+      `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+      VALUES (?, 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?, NULL)`,
+    ).run(`ORD-ENF-${tag}`, m, m);
     const oid = Number(
       (db.prepare(`SELECT id FROM orders WHERE order_number = ?`).get(`ORD-ENF-${tag}`) as any).id,
     );
-    db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-      VALUES (?, ?, 50, 50, 0, 50, 'unpaid', '[]', NULL, ?, ?)`).run(`ENF-${tag}`, oid, m, m);
+    db.prepare(
+      `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+      VALUES (?, ?, 50, 50, 0, 50, 'unpaid', '[]', NULL, ?, ?)`,
+    ).run(`ENF-${tag}`, oid, m, m);
     return Number(
       (db.prepare(`SELECT id FROM bills WHERE bill_number = ?`).get(`ENF-${tag}`) as any).id,
     );
@@ -814,38 +822,48 @@ async function main() {
   assert(typeof sessionExpectedCash === 'function', 'session expected-cash helper exists');
   const boundaryMoment = '2020-01-01 12:00:00';
   const firstBoundary = db
-    .prepare(`INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by)
-    VALUES ('cashier-sess', 'Cashier', ?, 0, 'closed', ?, 'cashier-sess')`)
+    .prepare(
+      `INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by)
+    VALUES ('cashier-sess', 'Cashier', ?, 0, 'closed', ?, 'cashier-sess')`,
+    )
     .run(boundaryMoment, boundaryMoment);
   const secondBoundary = db
-    .prepare(`INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by)
-    VALUES ('cashier-sess', 'Cashier', ?, 0, 'closed', ?, 'cashier-sess')`)
+    .prepare(
+      `INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by)
+    VALUES ('cashier-sess', 'Cashier', ?, 0, 'closed', ?, 'cashier-sess')`,
+    )
     .run(boundaryMoment, boundaryMoment);
   const firstBoundaryId = Number(firstBoundary.lastInsertRowid);
   const secondBoundaryId = Number(secondBoundary.lastInsertRowid);
-  db.prepare(`INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id)
-    VALUES ('2020-01-01', 'pay_in', 1000, 'boundary', 'cashier-sess', ?, ?)`).run(
-    boundaryMoment,
-    firstBoundaryId,
-  );
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-    VALUES ('ORD-BOUND-1', 'cashier-sess', 'takeaway', 'pending', 50, 50, '2019-12-31 12:00:00', '2019-12-31 12:00:00', NULL)`).run();
+  db.prepare(
+    `INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id)
+    VALUES ('2020-01-01', 'pay_in', 1000, 'boundary', 'cashier-sess', ?, ?)`,
+  ).run(boundaryMoment, firstBoundaryId);
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-BOUND-1', 'cashier-sess', 'takeaway', 'pending', 50, 50, '2019-12-31 12:00:00', '2019-12-31 12:00:00', NULL)`,
+  ).run();
   const boundaryOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-BOUND-1'`).get() as any).id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-    VALUES ('BOUND-1', ?, 50, 50, 20, 30, 'partial', ?, NULL, '2019-12-31 12:00:00', '2019-12-31 12:00:00')`).run(
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('BOUND-1', ?, 50, 50, 20, 30, 'partial', ?, NULL, '2019-12-31 12:00:00', '2019-12-31 12:00:00')`,
+  ).run(
     boundaryOrderId,
     JSON.stringify([
-      { method: 'cash', amount: 20, timestamp: boundaryMoment, cash_session_id: firstBoundaryId },
+      {
+        method: 'cash',
+        amount: 20,
+        timestamp: boundaryMoment,
+        cash_session_id: firstBoundaryId,
+      },
     ]),
   );
-  db.prepare(`INSERT INTO refunds (bill_id, amount_cents, method, approved_by, created_by, created_at, cash_session_id)
-    VALUES (?, 500, 'cash', 'owner-sess', 'cashier-sess', ?, ?)`).run(
-    boundaryOrderId,
-    boundaryMoment,
-    firstBoundaryId,
-  );
+  db.prepare(
+    `INSERT INTO refunds (bill_id, amount_cents, method, approved_by, created_by, created_at, cash_session_id)
+    VALUES (?, 500, 'cash', 'owner-sess', 'cashier-sess', ?, ?)`,
+  ).run(boundaryOrderId, boundaryMoment, firstBoundaryId);
   const firstBoundaryCash = sessionExpectedCash(
     db,
     { id: firstBoundaryId, opening_float_cents: 0 },
@@ -935,20 +953,17 @@ async function main() {
     'settled carry-over bill records cash_session_id of the shift that collected the payment',
   );
   const cancelledMoment = past(600_000);
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-    VALUES ('ORD-CANCELLED-SESS', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?, NULL)`).run(
-    cancelledMoment,
-    cancelledMoment,
-  );
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-CANCELLED-SESS', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?, NULL)`,
+  ).run(cancelledMoment, cancelledMoment);
   const cancelledOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-CANCELLED-SESS'`).get() as any).id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-    VALUES ('CANCELLED-SESS', ?, 50, 50, 0, 0, 'unpaid', '[]', NULL, ?, ?)`).run(
-    cancelledOrderId,
-    cancelledMoment,
-    cancelledMoment,
-  );
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('CANCELLED-SESS', ?, 50, 50, 0, 0, 'unpaid', '[]', NULL, ?, ?)`,
+  ).run(cancelledOrderId, cancelledMoment, cancelledMoment);
   db.prepare(`UPDATE cash_sessions SET opened_at = ? WHERE id = ?`).run(
     past(3600_000),
     cancelledSessionId,
@@ -976,37 +991,42 @@ async function main() {
     shift1Id = Number(res.body?.id);
   });
 
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
-    VALUES ('ORD-GUARD-SAME', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?)`).run(
-    tClose,
-    tClose,
-  );
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
+    VALUES ('ORD-GUARD-SAME', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?)`,
+  ).run(tClose, tClose);
   const sameOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-GUARD-SAME'`).get() as any).id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
-    VALUES ('BILL-GUARD-SAME', ?, 50, 50, 20, 30, 'partial', ?, ?, ?)`).run(
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
+    VALUES ('BILL-GUARD-SAME', ?, 50, 50, 20, 30, 'partial', ?, ?, ?)`,
+  ).run(
     sameOrderId,
-    JSON.stringify([{ method: 'cash', amount: 20, timestamp: tClose, cash_session_id: shift1Id }]),
+    JSON.stringify([
+      {
+        method: 'cash',
+        amount: 20,
+        timestamp: tClose,
+        cash_session_id: shift1Id,
+      },
+    ]),
     tClose,
     tClose,
   );
 
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
-    VALUES ('ORD-GUARD-CANCELLED', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?)`).run(
-    tClose,
-    tClose,
-  );
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
+    VALUES ('ORD-GUARD-CANCELLED', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?)`,
+  ).run(tClose, tClose);
   const cancelOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-GUARD-CANCELLED'`).get() as any)
       .id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
-    VALUES ('BILL-GUARD-CANCELLED', ?, 50, 50, 0, 50, 'unpaid', '[]', ?, ?)`).run(
-    cancelOrderId,
-    tClose,
-    tClose,
-  );
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
+    VALUES ('BILL-GUARD-CANCELLED', ?, 50, 50, 0, 50, 'unpaid', '[]', ?, ?)`,
+  ).run(cancelOrderId, tClose, tClose);
 
   await withFixedClock(tCloseIso, async () => {
     const previewRes = await request(app)
@@ -1076,10 +1096,10 @@ async function main() {
   db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(
     activeStaleId,
   );
-  db.prepare(`INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at)
-    VALUES (?, 'pay_in', 1000, 'recent activity', 'cashier-sess', datetime('now'))`).run(
-    todayLocal,
-  );
+  db.prepare(
+    `INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at)
+    VALUES (?, 'pay_in', 1000, 'recent activity', 'cashier-sess', datetime('now'))`,
+  ).run(todayLocal);
   const activeStaleBlocked = await request(app)
     .post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`)
@@ -1280,7 +1300,11 @@ async function main() {
     `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES ('chef-sess', 'Chef', 'chef-sess@test.local', ?, 'chef', 1, ?, ?)`,
   ).run(bcrypt.hashSync('pw', 10), now(), now());
   const managerToken = jwt.sign(
-    { userId: 'manager-sess', email: 'manager-sess@test.local', role: 'manager' },
+    {
+      userId: 'manager-sess',
+      email: 'manager-sess@test.local',
+      role: 'manager',
+    },
     getJWTSecret(),
     { expiresIn: '1h' },
   );
@@ -1382,7 +1406,11 @@ async function main() {
   const dayClose = await request(app)
     .post('/api/cash-closures')
     .set('Authorization', `Bearer ${ownerToken}`)
-    .send({ business_date: todayLocal, opening_float_cents: 5000, counted_cash_cents: 5000 });
+    .send({
+      business_date: todayLocal,
+      opening_float_cents: 5000,
+      counted_cash_cents: 5000,
+    });
   assert(dayClose.status === 201, 'owner day-close for gate test (201)');
   const managerDayPrint = await request(app)
     .post(`/api/cash-closures/${dayClose.body?.zReport?.id}/print`)
@@ -1400,7 +1428,11 @@ async function main() {
   const blockedDayClose = await request(app)
     .post('/api/cash-closures')
     .set('Authorization', `Bearer ${ownerToken}`)
-    .send({ business_date: todayLocal, opening_float_cents: 0, counted_cash_cents: 0 });
+    .send({
+      business_date: todayLocal,
+      opening_float_cents: 0,
+      counted_cash_cents: 0,
+    });
   assert(
     blockedDayClose.status === 409,
     `day close blocked while shift open (409, got ${blockedDayClose.status})`,
@@ -1460,20 +1492,17 @@ async function main() {
   assert(turnB.status === 200, 'phase1: second shift opens on same commercial day');
   const turnBId = Number(turnB.body?.id);
   const carryMoment = now();
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-    VALUES ('ORD-CARRY-PH1', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?, NULL)`).run(
-    carryMoment,
-    carryMoment,
-  );
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-CARRY-PH1', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?, NULL)`,
+  ).run(carryMoment, carryMoment);
   const carryOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-CARRY-PH1'`).get() as any).id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-    VALUES ('CARRY-PH1', ?, 50, 50, 0, 50, 'unpaid', '[]', NULL, ?, ?)`).run(
-    carryOrderId,
-    carryMoment,
-    carryMoment,
-  );
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('CARRY-PH1', ?, 50, 50, 0, 50, 'unpaid', '[]', NULL, ?, ?)`,
+  ).run(carryOrderId, carryMoment, carryMoment);
   const closeTurnB = await request(app)
     .post(`/api/cash-sessions/${turnBId}/close`)
     .set('Authorization', `Bearer ${cashierToken}`)
@@ -1511,23 +1540,17 @@ async function main() {
   );
   // Partial bill: 50 total, 20 paid, 30 outstanding.
   const pm = past(1800_000);
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-    VALUES ('ORD-PART-1', 'cashier-sess', 'takeaway', 'completed', 50, 50, ?, ?, ?)`).run(
-    pm,
-    pm,
-    pm,
-  );
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-PART-1', 'cashier-sess', 'takeaway', 'completed', 50, 50, ?, ?, ?)`,
+  ).run(pm, pm, pm);
   const partOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-PART-1'`).get() as any).id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-    VALUES ('PART-1', ?, 50, 50, 20, 30, 'partial', ?, ?, ?, ?)`).run(
-    partOrderId,
-    JSON.stringify([{ method: 'cash', amount: 20, timestamp: pm }]),
-    pm,
-    pm,
-    pm,
-  );
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('PART-1', ?, 50, 50, 20, 30, 'partial', ?, ?, ?, ?)`,
+  ).run(partOrderId, JSON.stringify([{ method: 'cash', amount: 20, timestamp: pm }]), pm, pm, pm);
   const partPreview = await request(app)
     .get('/api/cash-sessions/current/close-preview')
     .set('Authorization', `Bearer ${cashierToken}`);
@@ -1595,7 +1618,12 @@ async function main() {
   const rfBlocked = await request(app)
     .post('/api/refunds')
     .set('Authorization', `Bearer ${managerToken}`)
-    .send({ bill_id: rfBillId, amount: 10, method: 'cash', approver_id: 'manager-sess' });
+    .send({
+      bill_id: rfBillId,
+      amount: 10,
+      method: 'cash',
+      approver_id: 'manager-sess',
+    });
   assert(rfBlocked.status === 409, 'enforcement on: cash refund without a session is 409');
   assert(
     /shift/i.test(String(rfBlocked.body?.error || '')),
@@ -1622,7 +1650,9 @@ async function main() {
   const customPay = await request(app)
     .post(`/api/bills/${customBill}/payments`)
     .set('Authorization', `Bearer ${cashierToken}`)
-    .send({ payments: [{ method: 'custom', payment_method_id: customId, amount: 50 }] });
+    .send({
+      payments: [{ method: 'custom', payment_method_id: customId, amount: 50 }],
+    });
   assert(customPay.status === 200, 'configured Cash tender settles with an open session');
   const customCurrent = await request(app)
     .get('/api/cash-sessions/current')
@@ -1700,12 +1730,20 @@ async function main() {
       const closePriorDay = await request(app)
         .post('/api/cash-closures')
         .set('Authorization', `Bearer ${ownerToken}`)
-        .send({ business_date: '2026-06-13', opening_float_cents: 0, counted_cash_cents: 0 });
+        .send({
+          business_date: '2026-06-13',
+          opening_float_cents: 0,
+          counted_cash_cents: 0,
+        });
       assert(closePriorDay.status === 201, 'owner closes prior business day 2026-06-13 (201)');
       const closeCalendarDay = await request(app)
         .post('/api/cash-closures')
         .set('Authorization', `Bearer ${ownerToken}`)
-        .send({ business_date: '2026-06-15', opening_float_cents: 0, counted_cash_cents: 0 });
+        .send({
+          business_date: '2026-06-15',
+          opening_float_cents: 0,
+          counted_cash_cents: 0,
+        });
       assert(
         closeCalendarDay.status === 201,
         'owner closes calendar date 2026-06-15 before boundary test (201)',
@@ -1746,17 +1784,25 @@ async function main() {
       const closedEffectiveDayRes = await request(app)
         .post('/api/cash-closures')
         .set('Authorization', `Bearer ${ownerToken}`)
-        .send({ business_date: '2026-06-14', opening_float_cents: 2500, counted_cash_cents: 2500 });
+        .send({
+          business_date: '2026-06-14',
+          opening_float_cents: 2500,
+          counted_cash_cents: 2500,
+        });
       assert(
         closedEffectiveDayRes.status === 201,
         'owner closes effective business day 2026-06-14 (201)',
       );
 
       const sessionsBefore = (
-        db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions`).get() as { c: number }
+        db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions`).get() as {
+          c: number;
+        }
       ).c;
       const movementsBefore = (
-        db.prepare(`SELECT COUNT(*) AS c FROM cash_drawer_movements`).get() as { c: number }
+        db.prepare(`SELECT COUNT(*) AS c FROM cash_drawer_movements`).get() as {
+          c: number;
+        }
       ).c;
 
       const closedDayPositiveFloatOpen = await request(app)
@@ -1824,7 +1870,11 @@ async function main() {
     const { escPosToText } = require('../main/printers/thermal');
     const { computeDayAggregates } = require('../main/routes/cash-closures');
     const longLivedCashierToken = jwt.sign(
-      { userId: 'cashier-sess', email: 'cashier-sess@test.local', role: 'cashier' },
+      {
+        userId: 'cashier-sess',
+        email: 'cashier-sess@test.local',
+        role: 'cashier',
+      },
       getJWTSecret(),
     );
 
@@ -1959,7 +2009,11 @@ async function main() {
 
         const sessionRow = db
           .prepare(`SELECT opened_at, closed_at, status FROM cash_sessions WHERE id = ?`)
-          .get(sessionId) as { opened_at: string; closed_at: string; status: string };
+          .get(sessionId) as {
+          opened_at: string;
+          closed_at: string;
+          status: string;
+        };
         const closureRow = db
           .prepare(
             `SELECT scope, business_date, period_start, period_end, opening_float_cents, expected_cash_cents, counted_cash_cents, variance_cents, gross_collected_cents, net_collected_cents, bill_count, z_number FROM cash_closures WHERE id = ?`,
@@ -2281,17 +2335,29 @@ async function main() {
     app.use('/api/expenses', expenseRoutes);
     app.use('/api/reports', reportRoutes);
     const s11CashierAToken = jwt.sign(
-      { userId: 'cashier-sess', email: 'cashier-sess@test.local', role: 'cashier' },
+      {
+        userId: 'cashier-sess',
+        email: 'cashier-sess@test.local',
+        role: 'cashier',
+      },
       getJWTSecret(),
       { expiresIn: '365d' },
     );
     const s11CashierBToken = jwt.sign(
-      { userId: 'cashier2-sess', email: 'cashier2-sess@test.local', role: 'cashier' },
+      {
+        userId: 'cashier2-sess',
+        email: 'cashier2-sess@test.local',
+        role: 'cashier',
+      },
       getJWTSecret(),
       { expiresIn: '365d' },
     );
     const s11ManagerToken = jwt.sign(
-      { userId: 'manager-sess', email: 'manager-sess@test.local', role: 'manager' },
+      {
+        userId: 'manager-sess',
+        email: 'manager-sess@test.local',
+        role: 'manager',
+      },
       getJWTSecret(),
       { expiresIn: '365d' },
     );
@@ -2592,7 +2658,11 @@ async function main() {
             'SELECT cash_session_id, amount_cents, movement_type FROM cash_drawer_movements WHERE id = ?',
           )
           .get(expMovId) as
-          | { cash_session_id: number; amount_cents: number; movement_type: string }
+          | {
+              cash_session_id: number;
+              amount_cents: number;
+              movement_type: string;
+            }
           | undefined;
         assert(
           Number(expMovRow?.cash_session_id) === shiftBId &&
@@ -2631,6 +2701,27 @@ async function main() {
           Number(detailsMgr[0]?.cash_session_id) === 0,
           '#1339: sessionless actor payment stores cash_session_id = 0 (NO_CASH_SESSION_ID) and does not leak into Shift A or B',
         );
+        // If the manager subsequently opens a shift and attempts to correct that sessionless payment line (cash_session_id === 0),
+        // it must be rejected with 409 shift_closed rather than moving into the manager's open shift.
+        const openMgrShift = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11ManagerToken}`)
+          .send({ opening_float_cents: 0 });
+        assert(openMgrShift.status === 200, '#1339: manager opens a shift (200)');
+        const correctSessionless = await request(app)
+          .patch(`/api/bills/${billMgrId}/payments/0/method`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`)
+          .send({
+            method: 'card',
+            reason: 'Wrong button',
+            approver_id: 'owner-sess',
+            override_pin: '1234',
+          });
+        assert(
+          correctSessionless.status === 409 && correctSessionless.body?.reason === 'shift_closed',
+          `#1339: correcting a sessionless payment line (cash_session_id=0) is rejected with 409 shift_closed (got ${correctSessionless.status} ${correctSessionless.body?.reason})`,
+        );
+        db.prepare('DELETE FROM cash_sessions WHERE id = ?').run(openMgrShift.body?.id);
         // Delete the unscoped manager test bill so day close compares purely Shift A + Shift B
         db.prepare('DELETE FROM bills WHERE id = ?').run(billMgrId);
         db.prepare(`DELETE FROM orders WHERE order_number = 'ORD-1339-MGR'`).run();
@@ -2710,8 +2801,12 @@ async function main() {
             xShiftARep?.session?.expected_cash_cents === 9000 &&
             xShiftARep?.grossCollected === 40 &&
             xShiftARep?.refunded === 10 &&
-            xShiftARep?.netCollected === 30,
-          `#1339: X report with ?session_id=${shiftAId} scopes to Shift A (expected_cash_cents=9000, got ${xShiftARep?.session?.expected_cash_cents})`,
+            xShiftARep?.netCollected === 30 &&
+            Array.isArray(xShiftARep?.staffSales) &&
+            xShiftARep.staffSales.length === 1 &&
+            Number(xShiftARep.staffSales[0]?.revenue) === 40 &&
+            Number(xShiftARep.staffSales[0]?.orderCount) === 1,
+          `#1339: X report with ?session_id=${shiftAId} scopes totals and staffSales to Shift A (expected_cash_cents=9000, got ${xShiftARep?.session?.expected_cash_cents})`,
         );
 
         const xShiftB = await request(app)
@@ -2727,9 +2822,37 @@ async function main() {
             xShiftBRep?.grossCollected === 60 &&
             xShiftBRep?.refunded === 0 &&
             xShiftBRep?.netCollected === 60 &&
-            xShiftBRep?.payOutCents === 2000,
-          `#1339: X report with ?session_id=${shiftBId} scopes to Shift B (expected_cash_cents=7000, payOut=2000, got ${xShiftBRep?.session?.expected_cash_cents})`,
+            xShiftBRep?.payOutCents === 2000 &&
+            Array.isArray(xShiftBRep?.staffSales) &&
+            xShiftBRep.staffSales.length === 1 &&
+            Number(xShiftBRep.staffSales[0]?.revenue) === 60 &&
+            Number(xShiftBRep.staffSales[0]?.orderCount) === 1,
+          `#1339: X report with ?session_id=${shiftBId} scopes totals and staffSales to Shift B (expected_cash_cents=7000, payOut=2000, got ${xShiftBRep?.session?.expected_cash_cents})`,
         );
+
+        // Cashier with reports.view can view their own shift X report (200) but is forbidden from another user's shift X report (403)
+        db.prepare(
+          `INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, updated_at)
+           VALUES ('cashier-sess', 'reports.view', 'allow', 'owner-sess', ?)
+           ON CONFLICT(user_id, permission_id) DO UPDATE SET effect = 'allow', updated_at = excluded.updated_at`,
+        ).run(now());
+        const xOwnCashier = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-10&session_id=${shiftAId}`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        assert(
+          xOwnCashier.status === 200 && Number(xOwnCashier.body?.xReport?.session?.id) === shiftAId,
+          '#1339: Cashier A with reports.view can view own shift X report (200)',
+        );
+        const xOtherCashier = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-10&session_id=${shiftBId}`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        assert(
+          xOtherCashier.status === 403 && xOtherCashier.body?.code === 'shift_access_forbidden',
+          `#1339: Cashier A cannot view Cashier B shift X report (403 shift_access_forbidden, got ${xOtherCashier.status})`,
+        );
+        db.prepare(
+          `DELETE FROM user_permission_overrides WHERE user_id = 'cashier-sess' AND permission_id = 'reports.view'`,
+        ).run();
 
         // 7) Close authority & Day Close waiting until ALL shifts are closed
         // Cashier A cannot preview or close Cashier B's shift

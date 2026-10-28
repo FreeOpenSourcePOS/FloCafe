@@ -498,7 +498,81 @@ async function main() {
       '  ✓ Waiter App append-items print-kot routed only touched stations (Bar + fallback Kitchen)',
     );
 
-    // 6. Negative verification: if station routing is bypassed (e.g. an explicit stationName forces
+    // 6. Inactive station fallback: when Bar station (stn-bar) is marked inactive,
+    //    posting /api/printers/print-kot routes Grill items to GRILL_STATION_PRINTER and
+    //    falls back both Bar (inactive station) and Dessert (unmapped) items to DEFAULT_KITCHEN_PRINTER.
+    db.prepare("UPDATE kitchen_stations SET is_active = 0 WHERE id = 'stn-bar'").run();
+    try {
+      recordedDispatches.length = 0;
+      const inactiveStationRes = await postJson(
+        serverAppBaseUrl,
+        '/api/printers/print-kot',
+        {
+          orderId: createdOrder.id,
+          items: createdOrder.items,
+        },
+        waiterToken,
+      );
+      assert.equal(inactiveStationRes.status, 200);
+      assert.equal(inactiveStationRes.body.success, true);
+      assert.equal(
+        recordedDispatches.length,
+        2,
+        'Deactivating Bar station dispatches only to Grill and fallback Kitchen printers',
+      );
+
+      const inactiveGrillDispatches = recordedDispatches.filter(
+        (d) => d.ip === GRILL_STATION_PRINTER.ip && d.port === GRILL_STATION_PRINTER.port,
+      );
+      assert.equal(
+        inactiveGrillDispatches.length,
+        1,
+        'Active Grill station printer receives 1 KOT dispatch',
+      );
+      assert.match(inactiveGrillDispatches[0].text, /GRILL/i);
+      assert.match(inactiveGrillDispatches[0].text, /Ribeye Steak/);
+      assert.match(inactiveGrillDispatches[0].text, /Charbroiled Burger/);
+      assert.doesNotMatch(inactiveGrillDispatches[0].text, /Classic Mojito/);
+      assert.doesNotMatch(inactiveGrillDispatches[0].text, /Basque Cheesecake/);
+
+      const inactiveBarDispatches = recordedDispatches.filter(
+        (d) => d.ip === BAR_STATION_PRINTER.ip && d.port === BAR_STATION_PRINTER.port,
+      );
+      assert.equal(
+        inactiveBarDispatches.length,
+        0,
+        'Inactive Bar station printer receives 0 KOT dispatches',
+      );
+
+      const inactiveKitchenDispatches = recordedDispatches.filter(
+        (d) => d.ip === DEFAULT_KITCHEN_PRINTER.ip && d.port === DEFAULT_KITCHEN_PRINTER.port,
+      );
+      assert.equal(
+        inactiveKitchenDispatches.length,
+        1,
+        'Default Kitchen printer receives 1 fallback KOT with inactive-station and unmapped items',
+      );
+      assert.match(inactiveKitchenDispatches[0].text, /KITCHEN/i);
+      assert.match(
+        inactiveKitchenDispatches[0].text,
+        /Classic Mojito/,
+        'Fallback Kitchen KOT includes item from inactive Bar station',
+      );
+      assert.match(
+        inactiveKitchenDispatches[0].text,
+        /Basque Cheesecake/,
+        'Fallback Kitchen KOT includes unmapped Dessert item',
+      );
+      assert.doesNotMatch(inactiveKitchenDispatches[0].text, /Ribeye Steak/);
+      assert.doesNotMatch(inactiveKitchenDispatches[0].text, /Charbroiled Burger/);
+      console.log(
+        '  ✓ Inactive station (stn-bar) items fell back to Default Kitchen printer while Grill routed normally',
+      );
+    } finally {
+      db.prepare("UPDATE kitchen_stations SET is_active = 1 WHERE id = 'stn-bar'").run();
+    }
+
+    // 7. Negative verification: if station routing is bypassed (e.g. an explicit stationName forces
     //    all items onto a single default-printer ticket, or items land on the wrong station),
     //    assertMultiStationRouting must fail.
     recordedDispatches.length = 0;

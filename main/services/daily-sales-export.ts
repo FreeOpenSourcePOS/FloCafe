@@ -1798,7 +1798,6 @@ export interface DailySalesHtmlOptions {
   businessName?: string;
   locale?: string;
   preferences?: LocalePreferences;
-  maxTableRows?: number;
 }
 
 export const MAX_DAILY_SALES_HTML_BYTES = 15 * 1024 * 1024;
@@ -1874,15 +1873,19 @@ export function serializeDailySalesExportHtml(
     (options?.businessName !== undefined
       ? options.businessName
       : (getSettingValue('business_name') ?? '')) || 'FloCafe';
-  const maxRows =
-    typeof options?.maxTableRows === 'number' && options.maxTableRows > 0
-      ? Math.floor(options.maxTableRows)
-      : undefined;
   const numberingSystem = resolvedPrefs.digits === 'latin' ? 'latn' : undefined;
 
   const fmtMoney = (amount: number | null | undefined): string => {
     if (amount === null || amount === undefined) return '—';
     return escapeHtml(formatMoney(amount, currency, resolvedLocale, resolvedPrefs));
+  };
+
+  const fmtMoneyWithExact = (amount: number | null | undefined): string => {
+    if (amount === null || amount === undefined) return '—';
+    const formatted = formatMoney(amount, currency, resolvedLocale, resolvedPrefs);
+    const exact = String(amount);
+    if (formatted.includes(exact)) return escapeHtml(formatted);
+    return `${escapeHtml(formatted)} <span class="exact-num">(${escapeHtml(exact)})</span>`;
   };
 
   const fmtNum = (val: number | null | undefined): string => {
@@ -1915,7 +1918,7 @@ export function serializeDailySalesExportHtml(
         } else if (row.metric.endsWith('_percent')) {
           displayHtml = fmtPercent(row.value);
         } else {
-          displayHtml = fmtMoney(row.value);
+          displayHtml = fmtMoneyWithExact(row.value);
         }
       } else if (rawStr === '') {
         displayHtml = '—';
@@ -1937,7 +1940,7 @@ export function serializeDailySalesExportHtml(
               pm,
             ) => `<tr data-section="payment-method" data-method="${escapeHtml(pm.method)}" data-total="${escapeHtml(String(pm.total))}">
           <td data-col="method" data-value="${escapeHtml(pm.method)}"><span dir="auto" class="bidi-text">${escapeHtml(pm.method)}</span></td>
-          <td class="num" data-col="total" data-value="${escapeHtml(String(pm.total))}">${fmtMoney(pm.total)}</td>
+          <td class="num" data-col="total" data-value="${escapeHtml(String(pm.total))}">${fmtMoneyWithExact(pm.total)}</td>
         </tr>`,
           )
           .join('\n')
@@ -1971,11 +1974,9 @@ export function serializeDailySalesExportHtml(
           .join('\n')
       : `<tr class="empty-row"><td colspan="16">No daily rows</td></tr>`;
 
-  const visibleTaxes = maxRows ? dataset.taxes.slice(0, maxRows) : dataset.taxes;
-  const taxesTruncated = dataset.taxes.length - visibleTaxes.length;
   const taxRowsHtml =
-    visibleTaxes.length > 0
-      ? visibleTaxes
+    dataset.taxes.length > 0
+      ? dataset.taxes
           .map(
             (
               tax,
@@ -1995,11 +1996,9 @@ export function serializeDailySalesExportHtml(
           .join('\n')
       : `<tr class="empty-row"><td colspan="10">No tax rows</td></tr>`;
 
-  const visibleItems = maxRows ? dataset.items.slice(0, maxRows) : dataset.items;
-  const itemsTruncated = dataset.items.length - visibleItems.length;
   const itemRowsHtml =
-    visibleItems.length > 0
-      ? visibleItems
+    dataset.items.length > 0
+      ? dataset.items
           .map(
             (item) => `<tr data-section="item" data-product-id="${escapeHtml(item.product_id)}">
           <td data-col="product_id" data-value="${escapeHtml(item.product_id)}">${escapeHtml(item.product_id)}</td>
@@ -2075,7 +2074,6 @@ export function serializeDailySalesExportHtml(
     }
     .report-section {
       margin-bottom: 16px;
-      break-inside: avoid;
     }
     .report-section h2 {
       font-size: 11px;
@@ -2084,6 +2082,7 @@ export function serializeDailySalesExportHtml(
       letter-spacing: 0.04em;
       color: #374151;
       margin: 0 0 6px 0;
+      break-after: avoid;
     }
     table {
       width: 100%;
@@ -2091,12 +2090,18 @@ export function serializeDailySalesExportHtml(
       table-layout: auto;
       font-size: 9.5px;
     }
+    thead {
+      display: table-header-group;
+    }
+    tr {
+      break-inside: avoid;
+    }
     th, td {
       border: 1px solid #d1d5db;
       padding: 4px 6px;
       text-align: left;
       vertical-align: top;
-      word-break: break-word;
+      overflow-wrap: break-word;
     }
     thead th {
       background: #f3f4f6;
@@ -2120,12 +2125,6 @@ export function serializeDailySalesExportHtml(
       color: #6b7280;
       font-size: 9px;
       font-weight: 400;
-    }
-    .truncation-note {
-      margin: 4px 0 0 0;
-      font-size: 9px;
-      color: #6b7280;
-      font-style: italic;
     }
     .empty-row td {
       text-align: center;
@@ -2229,7 +2228,6 @@ export function serializeDailySalesExportHtml(
         ${taxRowsHtml}
       </tbody>
     </table>
-    ${taxesTruncated > 0 ? `<p class="truncation-note">Showing first ${visibleTaxes.length} of ${dataset.taxes.length} tax rows (${taxesTruncated} omitted for print size).</p>` : ''}
   </section>
 
   <section class="report-section" data-section="items">
@@ -2255,7 +2253,6 @@ export function serializeDailySalesExportHtml(
         ${itemRowsHtml}
       </tbody>
     </table>
-    ${itemsTruncated > 0 ? `<p class="truncation-note">Showing first ${visibleItems.length} of ${dataset.items.length} item rows (${itemsTruncated} omitted for print size).</p>` : ''}
   </section>
 </body>
 </html>

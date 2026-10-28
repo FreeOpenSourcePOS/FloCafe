@@ -370,7 +370,6 @@ function serializeHtml(
     }
     .report-section {
       margin-bottom: 16px;
-      break-inside: avoid;
     }
     .report-section h2 {
       font-size: 12px;
@@ -379,11 +378,18 @@ function serializeHtml(
       letter-spacing: 0.04em;
       color: #374151;
       margin: 0 0 6px 0;
+      break-after: avoid;
     }
     table {
       width: 100%;
       border-collapse: collapse;
       table-layout: auto;
+    }
+    thead {
+      display: table-header-group;
+    }
+    tr {
+      break-inside: avoid;
     }
     th, td {
       border: 1px solid #d1d5db;

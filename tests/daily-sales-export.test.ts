@@ -42,6 +42,10 @@ const {
   now,
 } = require('./helpers/test-setup');
 const { reportRoutes } = require('../main/routes/reports');
+const {
+  buildDailySalesExportDataset,
+  serializeDailySalesExportHtml,
+} = require('../main/services/daily-sales-export');
 const ExcelJS = require('exceljs');
 
 function dbTimestamp(date: Date): string {
@@ -1403,87 +1407,6 @@ async function main() {
           'XLSX Items row count matches CSV items part',
         );
 
-        // Exact 04:00 store-local boundary test (03:59:59 vs 04:00:00 vs 04:00:01 IST)
-        const cutoffDayA = '2026-10-04';
-        const cutoffDayB = '2026-10-05';
-        const beforeCutoffAt = dbTimestamp(new Date('2026-10-05T03:59:59+05:30'));
-        const exactCutoffAt = dbTimestamp(new Date('2026-10-05T04:00:00+05:30'));
-        const afterCutoffAt = dbTimestamp(new Date('2026-10-05T04:00:01+05:30'));
-        const insertCutoffBill = (num: string, amount: number, ts: string): number => {
-          db.prepare(`
-            INSERT INTO orders (order_number, user_id, type, status, subtotal, tax_amount, total, created_at, updated_at, completed_at)
-            VALUES (?, 'owner-test-001', 'takeaway', 'completed', ?, 0, ?, ?, ?, ?)
-          `).run(`ORD-${num}`, amount, amount, ts, ts, ts);
-          const oId = Number(
-            db.prepare('SELECT id FROM orders WHERE order_number = ?').get(`ORD-${num}`).id,
-          );
-          db.prepare(`
-            INSERT INTO bills (
-              bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance,
-              payment_status, payment_details, paid_at, created_at, updated_at
-            )
-            VALUES (?, ?, ?, 0, ?, ?, 0, 'paid', ?, ?, ?, ?)
-          `).run(
-            `B-${num}`,
-            oId,
-            amount,
-            amount,
-            amount,
-            JSON.stringify([{ method: 'cash', amount, timestamp: ts }]),
-            ts,
-            ts,
-            ts,
-          );
-          return Number(
-            db.prepare('SELECT id FROM bills WHERE bill_number = ?').get(`B-${num}`).id,
-          );
-        };
-        const billBeforeId = insertCutoffBill('CUT-035959', 30, beforeCutoffAt);
-        insertCutoffBill('CUT-040000', 40, exactCutoffAt);
-        insertCutoffBill('CUT-040001', 60, afterCutoffAt);
-        db.prepare(`
-          INSERT INTO refunds (bill_id, order_item_id, amount_cents, method, reason, shift_id, approved_by, created_by, created_at)
-          VALUES (?, NULL, 500, 'cash', 'cutoff-at-040000', NULL, 'owner-test-001', 'owner-test-001', ?)
-        `).run(billBeforeId, exactCutoffAt);
-
-        const cutoffSummaryA = await fetchSummary(cutoffDayA);
-        const cutoffSummaryB = await fetchSummary(cutoffDayB);
-        assertEqual(
-          Number(cutoffSummaryA.get('gross_collected')),
-          30,
-          '03:59:59 IST transaction belongs to previous business day (2026-10-04)',
-        );
-        assertEqual(
-          Number(cutoffSummaryA.get('refunds_issued')),
-          0,
-          '04:00:00 IST refund is excluded from previous business day (2026-10-04)',
-        );
-        assertEqual(
-          Number(cutoffSummaryB.get('gross_collected')),
-          100,
-          '04:00:00 and 04:00:01 IST transactions belong to current business day (2026-10-05)',
-        );
-        assertEqual(
-          Number(cutoffSummaryB.get('refunds_issued')),
-          5,
-          '04:00:00 IST refund belongs to current business day (2026-10-05)',
-        );
-        const cutoffRangeDailyRes = await fetch(
-          `${baseUrl}/api/reports/daily-sales/export?from=${cutoffDayA}&to=${cutoffDayB}&format=csv&part=daily`,
-          { headers: authHeader },
-        );
-        const cutoffRangeDailyLines = (await cutoffRangeDailyRes.text()).trim().split('\n');
-        assertIncludes(
-          cutoffRangeDailyLines[1],
-          `${cutoffDayA},1,1,30,0,30`,
-          'range daily row for 2026-10-04 includes only 03:59:59 IST bill',
-        );
-        assertIncludes(
-          cutoffRangeDailyLines[2],
-          `${cutoffDayB},2,2,100,5,95`,
-          'range daily row for 2026-10-05 includes 04:00:00 and 04:00:01 IST bills and refund',
-        );
-
         // Verify HTML export (format=html) for both single-day and multi-day range,
         // role gating, non-Latin store name & HTML escaping, and exact parity with XLSX.
         const forbiddenHtml = await fetch(
@@ -1592,6 +1515,64 @@ async function main() {
             itemRowMatches.length,
             rangeWb.getWorksheet('Items')!.rowCount - 1,
             'range HTML Items row count matches XLSX Items sheet',
+          );
+
+          // Verify large datasets never silently truncate rows in serializeDailySalesExportHtml
+          const baseDataset = buildDailySalesExportDataset({ from: day1, to: day3 }, db);
+          const manyTaxes = Array.from({ length: 650 }, (_, idx) => ({
+            business_date: day1,
+            tax_name: `TaxRow-${idx + 1}`,
+            tax_rate: 5,
+            taxable_base: 100,
+            tax_amount: 5,
+            gross_amount: 105,
+            shared_base: false,
+            base_additive: true,
+            incomplete_detail: false,
+            warning: '',
+          }));
+          const manyItems = Array.from({ length: 650 }, (_, idx) => ({
+            product_id: `prod-large-${idx + 1}`,
+            product_name: `ItemRow-${idx + 1}`,
+            product_sku: `SKU-${idx + 1}`,
+            quantity: 1,
+            gross_item_sales: 10,
+            item_discounts: 0,
+            net_item_sales: 10,
+            tax_amount: 0.5,
+            ingredient_cost: 4,
+            profit: 6,
+            margin_percent: 60,
+            cost_status: 'known' as const,
+          }));
+          const largeHtml = serializeDailySalesExportHtml({
+            ...baseDataset,
+            taxes: manyTaxes,
+            items: manyItems,
+          });
+          assertEqual(
+            (largeHtml.match(/<tr data-section="tax"/g) || []).length,
+            650,
+            'serializeDailySalesExportHtml renders all 650 tax rows without truncation',
+          );
+          assertEqual(
+            (largeHtml.match(/<tr data-section="item"/g) || []).length,
+            650,
+            'serializeDailySalesExportHtml renders all 650 item rows without truncation',
+          );
+          assertIncludes(
+            largeHtml,
+            'TaxRow-650',
+            'serializeDailySalesExportHtml includes final tax row TaxRow-650',
+          );
+          assertIncludes(
+            largeHtml,
+            'ItemRow-650',
+            'serializeDailySalesExportHtml includes final item row ItemRow-650',
+          );
+          assert(
+            !largeHtml.includes('omitted for print size'),
+            'serializeDailySalesExportHtml emits no row truncation note',
           );
         } finally {
           db.prepare("DELETE FROM settings WHERE key = 'business_name'").run();

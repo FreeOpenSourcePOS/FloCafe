@@ -1,11 +1,42 @@
-import api from '@/lib/api';
+import api from './api';
 import {
   MenuPopupBlockedError,
   printMenuInBrowser,
   reservePrintGesture,
-} from '@/lib/printer/menu-web-print';
+} from './printer/menu-web-print';
 
 export { MenuPopupBlockedError };
+
+export interface ExportHtmlDocumentPdfOptions {
+  html: string;
+  filename: string;
+  pageSize?: 'A4' | 'Letter';
+  reservedWindow?: Window | null;
+}
+
+export async function exportHtmlDocumentAsPdf({
+  html,
+  filename,
+  pageSize = 'A4',
+  reservedWindow,
+}: ExportHtmlDocumentPdfOptions): Promise<void> {
+  const saveHtmlAsPdf =
+    typeof window !== 'undefined' ? window.electronAPI?.saveHtmlAsPdf : undefined;
+  if (saveHtmlAsPdf) {
+    const result = await saveHtmlAsPdf({
+      html,
+      defaultFileName: filename,
+      pageSize,
+    });
+    if (result?.canceled) return;
+    if (!result?.success) {
+      throw new Error(result?.error || 'Failed to export PDF');
+    }
+    return;
+  }
+
+  printMenuInBrowser(html, reservedWindow);
+}
 
 export interface ExportReportPdfOptions {
   endpoint: string;
@@ -41,22 +72,15 @@ export async function exportReportAsPdf({
       responseType: 'text',
     });
     const html = typeof res.data === 'string' ? res.data : String(res.data ?? '');
-
-    if (saveHtmlAsPdf) {
-      const result = await saveHtmlAsPdf({
-        html,
-        defaultFileName: filename,
-        pageSize,
-      });
-      if (result?.canceled) return;
-      if (!result?.success) {
-        throw new Error(result?.error || 'Failed to export PDF');
-      }
-      return;
+    await exportHtmlDocumentAsPdf({
+      html,
+      filename,
+      pageSize,
+      reservedWindow,
+    });
+    if (!saveHtmlAsPdf) {
+      handedOff = true;
     }
-
-    printMenuInBrowser(html, reservedWindow);
-    handedOff = true;
   } finally {
     if (!handedOff && reservedWindow && !reservedWindow.closed) {
       reservedWindow.close();

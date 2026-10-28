@@ -79,17 +79,17 @@ function parseHtmlSummaryMetrics(html: string): Map<string, string> {
   let match: RegExpExecArray | null;
   while ((match = re.exec(html)) !== null) {
     const key = match[1]
-      .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'");
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&');
     const val = match[2]
-      .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'");
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&');
     map.set(key, val);
   }
   return map;

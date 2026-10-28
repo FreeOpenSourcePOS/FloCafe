@@ -10,7 +10,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import api from '@/lib/api';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
-import { normalizeBillPaymentDetails } from './OrderDetailPanel';
+import { normalizeBillPaymentDetails } from '@/components/orders/OrderDetailPanel';
 import type { Bill, Order } from '@/lib/types';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';

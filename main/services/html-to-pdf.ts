@@ -52,7 +52,11 @@ export async function renderHtmlToPdfBuffer(input: {
   pdfWindow.webContents.on('will-navigate', (event) => event.preventDefault());
   try {
     await pdfWindow.loadFile(htmlPath);
-    return await pdfWindow.webContents.printToPDF({ printBackground: true, pageSize });
+    return await pdfWindow.webContents.printToPDF({
+      printBackground: true,
+      pageSize,
+      preferCSSPageSize: true,
+    });
   } finally {
     try {
       fs.unlinkSync(htmlPath);

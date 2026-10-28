@@ -10,6 +10,19 @@ const menuChannels = new Set<string>();
 let exposedApi: Record<string, any> | undefined;
 
 let lastLoadedHtmlPath = '';
+let lastLoadedHtmlContent = '';
+
+const HTML_ENTITIES: Record<string, string> = {
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&amp;': '&',
+};
+
+function unescapeHtml(value: string): string {
+  return value.replace(/&(?:lt|gt|quot|#39|amp);/g, (entity) => HTML_ENTITIES[entity] ?? entity);
+}
 
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
@@ -20,11 +33,15 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
         session: {
           webRequest: { onBeforeRequest: () => undefined },
         },
-        printToPDF: async () => Buffer.from('%PDF-1.4\n%FloCafe test PDF\n%%EOF\n'),
+        printToPDF: async (opts?: Record<string, unknown>) =>
+          Buffer.from(
+            `%PDF-1.4\n%FloCafe test PDF pageSize=${String(opts?.pageSize ?? '')} preferCSSPageSize=${String(opts?.preferCSSPageSize ?? '')}\n${lastLoadedHtmlContent}\n%%EOF\n`,
+          ),
       };
       async loadFile(filePath: string) {
         lastLoadedHtmlPath = filePath;
         assert.ok(fs.existsSync(filePath), 'staging HTML file exists during loadFile');
+        lastLoadedHtmlContent = fs.readFileSync(filePath, 'utf8');
       }
       isDestroyed() {
         return false;
@@ -78,19 +95,7 @@ function parseHtmlSummaryMetrics(html: string): Map<string, string> {
   const re = /<tr\s+data-section="summary"\s+data-metric="([^"]*)"\s+data-value="([^"]*)"/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(html)) !== null) {
-    const key = match[1]
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&amp;/g, '&');
-    const val = match[2]
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&amp;/g, '&');
-    map.set(key, val);
+    map.set(unescapeHtml(match[1]), unescapeHtml(match[2]));
   }
   return map;
 }
@@ -359,14 +364,51 @@ async function run(): Promise<void> {
       );
     }
 
+    const xPdfBuffer = await renderHtmlToPdfBuffer({
+      html: xHtml.text,
+      pageSize: 'A4',
+    });
+    const xPdfText = xPdfBuffer.toString('utf8');
+    assert.ok(xPdfText.startsWith('%PDF-1.4'), 'X report renderHtmlToPdfBuffer returns PDF bytes');
+    assert.ok(
+      xPdfText.includes('pageSize=A4 preferCSSPageSize=true'),
+      'X report PDF render passes pageSize and preferCSSPageSize=true',
+    );
+    const xPdfMetrics = parseHtmlSummaryMetrics(xPdfText);
+    for (const [metric, xlsxVal] of xMetrics.entries()) {
+      assert.equal(
+        xPdfMetrics.get(metric),
+        xlsxVal === null || xlsxVal === undefined ? '' : String(xlsxVal),
+        `X report PDF metric ${metric} matches XLSX`,
+      );
+    }
+    assert.ok(
+      lastLoadedHtmlPath.length > 0 && !fs.existsSync(lastLoadedHtmlPath),
+      'X report staging HTML file is cleaned up after PDF render',
+    );
+
     const pdfBuffer = await renderHtmlToPdfBuffer({
       html: zHtml.text,
       pageSize: 'A4',
     });
+    const zPdfText = pdfBuffer.toString('utf8');
+    assert.ok(zPdfText.startsWith('%PDF-1.4'), 'renderHtmlToPdfBuffer returns PDF bytes');
     assert.ok(
-      pdfBuffer.toString('utf8').startsWith('%PDF-1.4'),
-      'renderHtmlToPdfBuffer returns PDF bytes',
+      zPdfText.includes('pageSize=A4 preferCSSPageSize=true'),
+      'Z report PDF render passes pageSize and preferCSSPageSize=true',
     );
+    assert.ok(
+      zPdfText.includes(`Z Report #${close.body.zReport.z_number} — ${businessDate}`),
+      'Z report PDF contains Z report header',
+    );
+    const zPdfMetrics = parseHtmlSummaryMetrics(zPdfText);
+    for (const [metric, xlsxVal] of zMetrics.entries()) {
+      assert.equal(
+        zPdfMetrics.get(metric),
+        xlsxVal === null || xlsxVal === undefined ? '' : String(xlsxVal),
+        `Z report PDF metric ${metric} matches XLSX`,
+      );
+    }
     assert.ok(
       lastLoadedHtmlPath.length > 0 && !fs.existsSync(lastLoadedHtmlPath),
       'staging HTML file is cleaned up after PDF render',

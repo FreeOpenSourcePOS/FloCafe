@@ -1801,7 +1801,7 @@ export interface DailySalesHtmlOptions {
   maxTableRows?: number;
 }
 
-const DAILY_SALES_HTML_DEFAULT_MAX_ROWS = 2000;
+export const MAX_DAILY_SALES_HTML_BYTES = 15 * 1024 * 1024;
 
 const SUMMARY_METRIC_LABELS: Record<string, string> = {
   business_date: 'Business Date',
@@ -1877,31 +1877,22 @@ export function serializeDailySalesExportHtml(
   const maxRows =
     typeof options?.maxTableRows === 'number' && options.maxTableRows > 0
       ? Math.floor(options.maxTableRows)
-      : DAILY_SALES_HTML_DEFAULT_MAX_ROWS;
+      : undefined;
   const numberingSystem = resolvedPrefs.digits === 'latin' ? 'latn' : undefined;
 
   const fmtMoney = (amount: number | null | undefined): string => {
     if (amount === null || amount === undefined) return '—';
-    const formatted = formatMoney(amount, currency, resolvedLocale, resolvedPrefs);
-    const exact = String(amount);
-    if (formatted.includes(exact)) return escapeHtml(formatted);
-    return `${escapeHtml(formatted)} <span class="exact-num">(${escapeHtml(exact)})</span>`;
+    return escapeHtml(formatMoney(amount, currency, resolvedLocale, resolvedPrefs));
   };
 
   const fmtNum = (val: number | null | undefined): string => {
     if (val === null || val === undefined) return '—';
-    const formatted = formatNumber(val, resolvedLocale, numberingSystem);
-    const exact = String(val);
-    if (formatted.includes(exact)) return escapeHtml(formatted);
-    return `${escapeHtml(formatted)} <span class="exact-num">(${escapeHtml(exact)})</span>`;
+    return escapeHtml(formatNumber(val, resolvedLocale, numberingSystem));
   };
 
   const fmtPercent = (val: number | null | undefined): string => {
     if (val === null || val === undefined) return '—';
-    const exact = String(val);
-    const fixed = val.toFixed(2);
-    if (fixed.includes(exact)) return `${escapeHtml(fixed)}%`;
-    return `${escapeHtml(fixed)}% <span class="exact-num">(${escapeHtml(exact)})</span>`;
+    return `${escapeHtml(val.toFixed(2))}%`;
   };
 
   const periodLabel =
@@ -1980,7 +1971,7 @@ export function serializeDailySalesExportHtml(
           .join('\n')
       : `<tr class="empty-row"><td colspan="16">No daily rows</td></tr>`;
 
-  const visibleTaxes = dataset.taxes.slice(0, maxRows);
+  const visibleTaxes = maxRows ? dataset.taxes.slice(0, maxRows) : dataset.taxes;
   const taxesTruncated = dataset.taxes.length - visibleTaxes.length;
   const taxRowsHtml =
     visibleTaxes.length > 0
@@ -2004,7 +1995,7 @@ export function serializeDailySalesExportHtml(
           .join('\n')
       : `<tr class="empty-row"><td colspan="10">No tax rows</td></tr>`;
 
-  const visibleItems = dataset.items.slice(0, maxRows);
+  const visibleItems = maxRows ? dataset.items.slice(0, maxRows) : dataset.items;
   const itemsTruncated = dataset.items.length - visibleItems.length;
   const itemRowsHtml =
     visibleItems.length > 0
@@ -2032,13 +2023,13 @@ export function serializeDailySalesExportHtml(
     ? `<div class="tax-warning" data-tax-warning="true" role="alert">${escapeHtml(dataset.summary.tax_detail_warning)}</div>`
     : '';
 
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html lang="${escapeHtml(resolvedLocale)}">
 <head>
   <meta charset="utf-8">
   <title>${escapeHtml(businessName)} — ${escapeHtml(reportTitle)}</title>
   <style>
-    @page { size: A4 portrait; margin: 12mm; }
+    @page { size: A4 landscape; margin: 10mm; }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -2269,4 +2260,11 @@ export function serializeDailySalesExportHtml(
 </body>
 </html>
 `;
+
+  if (Buffer.byteLength(html, 'utf8') > MAX_DAILY_SALES_HTML_BYTES) {
+    throw new DailySalesExportValidationError(
+      'Date range is too large to export as PDF; narrow the date range or export as XLSX/CSV.',
+    );
+  }
+  return html;
 }

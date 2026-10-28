@@ -1,5 +1,11 @@
 import api from '@/lib/api';
-import { printMenuInBrowser, reservePrintGesture } from '@/lib/printer/menu-web-print';
+import {
+  MenuPopupBlockedError,
+  printMenuInBrowser,
+  reservePrintGesture,
+} from '@/lib/printer/menu-web-print';
+
+export { MenuPopupBlockedError };
 
 export interface ExportReportPdfOptions {
   endpoint: string;

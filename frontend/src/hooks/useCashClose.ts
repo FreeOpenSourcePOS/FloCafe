@@ -12,7 +12,7 @@ import { printerService } from '@/lib/printer/PrinterService';
 import { displayAmountToCents } from '@/lib/money';
 import { businessDateForInstant } from '@shared/business-date';
 import { downloadBlob } from '@/lib/download';
-import { exportReportAsPdf } from '@/lib/export-pdf';
+import { exportReportAsPdf, MenuPopupBlockedError } from '@/lib/export-pdf';
 import {
   shareCashCloseViaWhatsApp,
   type XReportExport,
@@ -121,6 +121,7 @@ export function useCashClose() {
   const t = useTranslations('dashboard');
   const tCommon = useTranslations('common');
   const tPrint = useTranslations('print');
+  const tProducts = useTranslations('products');
   const tSettings = useTranslations('settings');
   const locale = useLocale();
   const fmt = useFormatCurrency();
@@ -416,8 +417,12 @@ export function useCashClose() {
         responseType: 'blob',
       });
       downloadBlob(res.data as Blob, `${baseFilename}.${format}`);
-    } catch {
-      toast.error(tCommon('downloadFailed'));
+    } catch (error) {
+      toast.error(
+        error instanceof MenuPopupBlockedError
+          ? tProducts('menuPopupBlocked')
+          : tCommon('downloadFailed'),
+      );
     } finally {
       setExportingReport(false);
     }

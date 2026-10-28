@@ -56,7 +56,7 @@ import { splitHoursMinutes } from '@/lib/table-timing';
 import { tenantCan } from '@/lib/permissions';
 import { businessDateForInstant } from '@shared/business-date';
 import { downloadBlob } from '@/lib/download';
-import { exportReportAsPdf } from '@/lib/export-pdf';
+import { exportReportAsPdf, MenuPopupBlockedError } from '@/lib/export-pdf';
 
 interface PaymentMethodBreakdown {
   method: string | null;
@@ -256,6 +256,7 @@ export default function DashboardPage() {
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
   const tOrders = useTranslations('orders');
+  const tProducts = useTranslations('products');
   const router = useRouter();
   const [stats, setStats] = useState<DailyStats | null>(null);
   const [daySummary, setDaySummary] = useState<DaySummary | null>(null);
@@ -507,8 +508,12 @@ export default function DashboardPage() {
         });
         downloadBlob(res.data as Blob, `daily-sales-${span}-${part}.csv`);
       }
-    } catch {
-      toast.error(tCommon('downloadFailed'));
+    } catch (error) {
+      toast.error(
+        error instanceof MenuPopupBlockedError
+          ? tProducts('menuPopupBlocked')
+          : tCommon('downloadFailed'),
+      );
     } finally {
       setIsExporting(false);
     }

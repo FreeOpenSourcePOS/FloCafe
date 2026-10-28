@@ -945,8 +945,8 @@ router.post(
         movementType === 'opening_float',
       );
       const reason = validateMovementReason(body.reason, movementType !== 'opening_float');
-      const createdBy = String((req as any).user?.userId || '');
-      const role = String((req as any).user?.role || '');
+      const createdBy = String((req as AuthedRequest).user?.userId || '');
+      const role = String((req as AuthedRequest).user?.role || '');
       if (!createdBy) throw httpError('Authentication required', 401);
       const db = getDatabase();
       let targetSessionId: number;

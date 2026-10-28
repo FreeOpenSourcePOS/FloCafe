@@ -8,7 +8,8 @@
  * Session expected cash prefers explicit cash_session_id ownership, with
  * timestamp windows only for legacy rows, so sessions crossing midnight work.
  * The opening float lives on the session
- * row and is mirrored as the day's opening_float movement (once per day)
+ * row and is mirrored as the day's opening_float movement (once per day, or
+ * summed across per-staff shifts on that day)
  * so day close reconciles the same drawer; session math excludes in-window
  * float movements and cannot double-count.
  */

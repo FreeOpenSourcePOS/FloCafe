@@ -550,8 +550,9 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const db = getDatabase();
-      const actorUserId = String((req as any).user?.userId || '');
-      const actorRole = String((req as any).user?.role || '');
+      const actorUser = (req as Request & { user?: { userId?: string; role?: string } }).user;
+      const actorUserId = String(actorUser?.userId || '');
+      const actorRole = String(actorUser?.role || '');
       const hasOpenShift =
         Boolean(getOpenSession(db, actorUserId)) ||
         ((actorRole === 'owner' || actorRole === 'manager') && listOpenSessions(db).length > 0);

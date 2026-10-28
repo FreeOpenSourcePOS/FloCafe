@@ -130,9 +130,10 @@ and close at most one shift of their own (`cash_sessions_one_open_per_user` on `
 Cash payments, cash refunds, drawer movements, and cash expense entries attach to the authenticated
 actor's open shift (`getOpenSession(db, userId)`). Day close (`POST /api/cash-closures`) is blocked
 (`409 open_shift_blocks_day_close`) until all shifts opened on or before that business date are
-closed, and reconciles the combined day totals across all shifts. Two concurrent shifts sharing a
-single physical cash drawer are permitted, though individual shift drawer counts cannot be
-physically isolated in a shared drawer.
+closed, and reconciles the combined day totals across all shifts (summing per-staff shift opening
+floats into the day's `opening_float` drawer movement). Two concurrent shifts sharing a single
+physical cash drawer are permitted, though individual shift drawer counts cannot be physically
+isolated in a shared drawer.
 
 ### Refunds
 

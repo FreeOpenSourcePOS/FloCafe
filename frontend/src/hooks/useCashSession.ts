@@ -94,7 +94,7 @@ export function useCashSession() {
   const [closedResult, setClosedResult] = useState<ShiftCloseResult | null>(null);
   const [printing, setPrinting] = useState(false);
   const [closePreview, setClosePreview] = useState<CashSessionClosePreview | null>(null);
-  const activeUserId = user?.id ?? null;
+  const activeUserId = user?.id != null ? String(user.id) : null;
   const [syncedUserId, setSyncedUserId] = useState<string | null>(activeUserId);
   if (syncedUserId !== activeUserId) {
     setSyncedUserId(activeUserId);

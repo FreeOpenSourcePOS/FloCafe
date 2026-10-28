@@ -154,11 +154,15 @@ retains that user's exceptions; the editor shows their source (shipped default, 
 user override) so they can be reviewed or cleared. **Staff > Permission change history** lists
 every save.
 
-**Shift close.** Cashiers close only the shift they opened. An owner or manager can close any
-session, and the closing actor is recorded on the closure row. The route is
-`POST /api/cash-sessions/:id/close`; the own-session rule is enforced inside the close transaction,
-where the stored session and the actor are read together. This is a context policy, not a
-permission — see [the authentication and authorization page](../architecture/authentication-and-authorization.md).
+**Cash shifts.** Opening, viewing, and closing shifts are gated by `cash.shifts.open`,
+`cash.shifts.view`, and `cash.shifts.close`. Non-`owner`/`manager` roles (such as `cashier`) may
+only view, preview, close, or attach explicit drawer movements to the shift they opened (`403
+session_owner_required` when targeting another user's shift), whereas an `owner` or `manager` can
+inspect and close any staff member's open shift, with the closing actor recorded on the closure row.
+On `POST /api/cash-sessions/:id/close`, the own-session rule is enforced inside the close
+transaction, where the stored session and the actor are read together. This is a context policy, not
+a permission — see [the authentication and authorization page](../architecture/authentication-and-authorization.md)
+and [business time](../architecture/business-time.md#cash-closures).
 
 **Order cancellation and completion overrides.** Staff holding `orders.status.update` can cancel a
 whole order without a PIN only while the order and all of its items are `pending` and no bill holds
@@ -205,15 +209,6 @@ its navigation entry; the page offers payment, reversal, void, and replacement o
 matching grant is present, and it never opens a shift or grants a permission on the operator's
 behalf. The [Expenses API reference](api.md#expenses) lists the expense operations exposed over
 HTTP.
-
-**Cash shifts.** Opening, viewing, and closing shifts are gated by `cash.shifts.open`,
-`cash.shifts.view`, and `cash.shifts.close`. When the store setting `one_shift_per_staff` is
-enabled, each staff member opens and closes their own shift and cash activity follows the
-authenticated actor's open shift. A `cashier` (or any non-`owner`/`manager` role) may only view and
-close their own shift (`403 session_owner_required` when targeting another user's shift), whereas an
-`owner` or `manager` can inspect and close any staff member's open shift. Two concurrent shifts
-sharing one physical drawer are allowed, but individual drawer counts are not physically isolated
-when a single cash drawer is shared.
 
 **Server App.** The standalone Server App is gated by `server-app.use`, shipped by default to
 `server`, `manager`, and `owner`. When the feature is disabled its routes return 404 rather than

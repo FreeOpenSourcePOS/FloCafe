@@ -6,7 +6,7 @@ Accounting, reconciliation, and file-format contract for
 ## Scope
 
 - Single tenant business day (`?date=YYYY-MM-DD`, defaults to the current business date) or inclusive business-date range (`?from=YYYY-MM-DD&to=YYYY-MM-DD`, up to 93 calendar days per request).
-- Formats: `xlsx` (`Summary` + `Daily` + `Taxes` + `Items` + `Payments` sheets in one workbook), `csv` (separate `summary`, `daily`, `taxes`, `items`, and `payments` files; each request returns one part), and `html` (self-contained A4 print-styled HTML document used for desktop `save-html-as-pdf` and browser print).
+- Formats: `xlsx` (`Summary` + `Daily` + `Taxes` + `Items` + `Payments` sheets in one workbook), `csv` (separate `summary`, `daily`, `taxes`, `items`, and `payments` files; each request returns one part), and `html` (print-styled HTML document used for desktop `save-html-as-pdf` and browser print; see [File formats](#file-formats)).
 - Gated by `reports.daily-sales.export` (owner by default). No PII, no staff/Addons sheets.
 
 ## Architecture
@@ -94,7 +94,7 @@ See [API.md § GET `/api/reports/daily-sales/export`](api.md#get-apireportsdaily
 
 ## Tests
 
-- `tests/daily-sales-export.test.ts` (`npm run test:daily-sales-export`) - role gating, single-day and date-range validation (93-day cap, reversed/mixed/incomplete/invalid dates), range equivalence (`N`-day range equals sum of `N` single-day exports), business-day cutoff across multi-day ranges, XLSX sheet/metric assertions (`Summary`, `Daily`, `Taxes`, `Items`, `Payments`), per-tax-rate summary reconciliation, shared-base multi-component taxes, historical snapshot immunity to product tax changes, incomplete historical detail warnings, Payments rows (store-local time, verbatim transaction id), CSV headers and filenames, `format=html` parity with XLSX (single-day and range, non-Latin store names, and HTML escaping), formula neutralization, and empty-day header-only sheets.
-- `tests/reports-export.test.ts` (`npm run test:reports-export`) - X and Z report `csv`, `xlsx`, and `html`/PDF export parity, locale currency formatting, non-Latin store names, HTML escaping, and Electron `printToPDF` staging cleanup.
+- `tests/daily-sales-export.test.ts` (`npm run test:daily-sales-export`) - role gating, single-day and date-range validation (93-day cap, reversed/mixed/incomplete/invalid dates), range equivalence (`N`-day range equals sum of `N` single-day exports), business-day cutoff across multi-day ranges, XLSX sheet/metric assertions (`Summary`, `Daily`, `Taxes`, `Items`, `Payments`), per-tax-rate summary reconciliation, shared-base multi-component taxes, historical snapshot immunity to product tax changes, incomplete historical detail warnings, Payments rows (store-local time, verbatim transaction id), CSV headers and filenames, `format=html` parity with XLSX (single-day and range, non-Latin store names, HTML escaping, and large-dataset rendering without row truncation), formula neutralization, and empty-day header-only sheets.
+- `tests/reports-export.test.ts` (`npm run test:reports-export`) - X and Z report `csv`, `xlsx`, and `html`/PDF export parity, locale currency formatting, non-Latin store names, HTML escaping, and native Electron `printToPDF` rendering and staging cleanup.
 - Script coverage gate: `test:daily-sales-export` is chained from `npm test`; `npm run test:script-coverage` fails if it is removed from the chain without adding it to `TEST_EXCLUSIONS`.
 - `tests/customer-sales-export.test.ts` (`npm run test:customer-sales-export`) - customer sales export: role gating, range validation, repeated customer columns, first-row `bill_total`, split bills, CSV neutralization, XLSX.

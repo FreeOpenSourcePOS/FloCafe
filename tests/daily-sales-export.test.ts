@@ -1,11 +1,12 @@
 /**
- * Owner-only daily sales export — GET /api/reports/daily-sales/export.
+ * Owner-only daily sales export - GET /api/reports/daily-sales/export.
  *
  * Covers:
  *  - Role gating: owner OK, manager/cashier 403.
- *  - Validation: bad format → 400; csv without part → 400.
- *  - XLSX: Summary + Items + Payments sheets, Content-Disposition filename.
- *  - CSV: separate summary/items/payments files; formula-neutralized cells.
+ *  - Validation: bad format -> 400; csv without part -> 400; date-range bounds.
+ *  - XLSX: Summary + Daily + Taxes + Items + Payments sheets, Content-Disposition filename.
+ *  - CSV: separate summary/daily/taxes/items/payments files; formula-neutralized cells.
+ *  - HTML: print-styled document parity with XLSX for PDF/browser print export.
  *  - Reconciliation identities from the approved contract.
  *
  * Usage: node tests/run-electron-node-test.cjs tests/daily-sales-export.test.ts

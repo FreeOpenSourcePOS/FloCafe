@@ -833,4 +833,258 @@ test('raster 4-column pack rows rebalance spare pixel width so large financial n
   assert.equal(rendered.failures.length, 0);
   assert.ok(drawnTexts.includes('$617.28'), 'raster draws full rate $617.28 without splitting');
   assert.ok(drawnTexts.includes('$1,234.56'), 'raster draws full amount $1,234.56 without splitting');
+
+  const drawnExtraLarge: string[] = [];
+  const createExtraLargeCanvas = (): RasterCanvas => ({
+    width: 1,
+    height: 1,
+    getContext: () => ({
+      font: '',
+      textBaseline: 'top',
+      direction: 'ltr',
+      textAlign: 'left',
+      fillStyle: '#000',
+      measureText: (text: string) => ({ width: text.length * 12 }),
+      setTransform: () => undefined,
+      fillRect: () => undefined,
+      fillText: (text: string) => {
+        if (text) drawnExtraLarge.push(text);
+      },
+      getImageData: (_x: number, _y: number, width: number, height: number) => ({
+        data: new Uint8ClampedArray(width * height * 4),
+      }),
+    }),
+  });
+  const enlargedXL = applyTextSizeToRasterInput(packDoc.lines, packDoc.rasterGroups, 'extra_large');
+  const renderedXL = await renderUnsupportedRasterLines(
+    {
+      render: async (request: any) => paintRasterRequest(request, createExtraLargeCanvas),
+    },
+    enlargedXL.lines,
+    rasterCaps,
+    'pack-raster-xl',
+    enlargedXL.groups,
+  );
+  assert.equal(renderedXL.failures.length, 0);
+  assert.ok(drawnExtraLarge.includes('$617.28'), 'extra_large raster stacks full rate $617.28');
+  assert.ok(drawnExtraLarge.includes('$1,234.56'), 'extra_large raster stacks full amount $1,234.56');
+
+  const summaryRes = paintRasterRequest(
+    {
+      version: 1,
+      requestId: 'summary-rebalance',
+      text: 'Total $27,252.61',
+      widthDots: 384,
+      maxBandHeight: 200,
+      direction: 'ltr',
+      style: 'double-width',
+      styles: ['double-height', 'double-width'],
+      financial: true,
+      maxLines: 8,
+      layout: {
+        kind: 'financial-summary',
+        columns: [
+          { text: 'Total', align: 'left' },
+          { text: '$27,252.61', align: 'right' },
+        ],
+      },
+    },
+    createExtraLargeCanvas,
+  );
+  assert.equal(summaryRes.ok, true);
+  assert.ok(drawnExtraLarge.includes('$27,252.61'), 'summary without widthRatio preserves $27,252.61');
+
+  const overflowRaster = paintRasterRequest(
+    {
+      version: 1,
+      requestId: 'summary-overflow',
+      text: 'Total $100,000,000,000.99',
+      widthDots: 384,
+      maxBandHeight: 200,
+      direction: 'ltr',
+      style: 'double-width',
+      styles: ['double-height', 'double-width'],
+      financial: true,
+      maxLines: 8,
+      layout: {
+        kind: 'financial-summary',
+        columns: [
+          { text: 'Total', align: 'left' },
+          { text: '$100,000,000,000.99', align: 'right' },
+        ],
+      },
+    },
+    createExtraLargeCanvas,
+  );
+  assert.equal(overflowRaster.ok, false);
+});
+
+test('tax breakdown rates, space-grouped addon prices, and zero-gap/wrapped financial columns stay intact', () => {
+  const zeroGapTemplate = {
+    template_id: 'pack-zero-gap-wrap',
+    pack_id: 'pack-test',
+    pack_version_id: 'pack-test-v1',
+    country: 'FR',
+    jurisdiction: '*',
+    display_name: 'Pack Zero Gap Wrap',
+    paper_widths_json: '[32]',
+    renderer_json: JSON.stringify({ id: 'flocafe-thermal-receipt-template', version: 1 }),
+    template_payload_json: JSON.stringify({
+      format: 'escpos-line-template-v1',
+      widthProfiles: [
+        {
+          columns: 32,
+          layout: {
+            lineItems: {
+              gap: 0,
+              columns: [
+                { key: 'item', label: 'ITEM', width: 14, align: 'left', wrap: true, maxLines: 2 },
+                { key: 'quantity', label: 'QTY', width: 4, align: 'right', wrap: true },
+                { key: 'rate', label: 'RATE', width: 6, align: 'right', wrap: true },
+                { key: 'amount', label: 'AMOUNT', width: 8, align: 'right', wrap: true },
+              ],
+            },
+          },
+        },
+      ],
+    }),
+    status: 'active',
+    created_at: '2026-04-21T10:30:00Z',
+  };
+  const emptyLayoutTemplate = {
+    ...zeroGapTemplate,
+    template_id: 'pack-empty-layout',
+    template_payload_json: JSON.stringify({
+      format: 'escpos-line-template-v1',
+      widthProfiles: [{ columns: 32, layout: {} }],
+    }),
+  };
+  const frOrder = {
+    order_number: 'ORD-FR-1',
+    type: 'dine_in',
+    created_at: new Date('2026-04-21T10:30:00Z').toISOString(),
+    items: [
+      {
+        product_name: 'Wholesale Banquet Package',
+        quantity: 1250,
+        unit_price: 19.99,
+        total: 24987.5,
+        tax_breakdown: [{ title: 'State Goods and Services Tax', rate: 12.3456789, amount: 312.34 }],
+        addons: [{ name: 'Artisan Syrup Extra', price: 1234.56, quantity: 1 }],
+      },
+    ],
+  };
+  const frBill = {
+    bill_number: 'INV-FR-1',
+    subtotal: 26222.06,
+    tax_amount: 312.34,
+    discount_amount: 0,
+    total: 26534.4,
+  };
+  const frBiz = {
+    name: 'Flo Test Cafe',
+    country: 'FR',
+    currency: 'EUR',
+    show_tax_breakdown: true,
+  };
+
+  for (const size of SIZES) {
+    const { columns, capabilities } = resolvePrinterContext({
+      ...printer(size),
+      paper_width: 'cols-32',
+    });
+    for (const tmpl of [zeroGapTemplate, emptyLayoutTemplate]) {
+      const data = renderPluginReceipt(
+        tmpl,
+        frOrder,
+        frBill,
+        frBiz,
+        columns,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+        capabilities,
+      );
+      const measured = measureEscPos(data);
+      assert.ok(measured.maxCells <= 32, `${tmpl.template_id} ${size} fits 32 cells`);
+      const text = escPosToText(data);
+      assert.ok(text.includes('@12.3456789%'), `${tmpl.template_id} ${size} preserves @12.3456789%`);
+      assert.ok(text.includes('EUR1 234,56'), `${tmpl.template_id} ${size} preserves addon EUR1 234,56 on one line`);
+      assert.ok(text.includes('EUR24 987,50'), `${tmpl.template_id} ${size} preserves item EUR24 987,50`);
+      assert.ok(!text.includes('1250EUR'), `${tmpl.template_id} ${size} separates quantity and amount`);
+    }
+    for (const stdKind of ['classic', 'compact'] as const) {
+      const stdData = formatReceipt(
+        frOrder,
+        frBill,
+        frBiz,
+        stdKind,
+        columns,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+        undefined,
+        capabilities,
+      );
+      const measuredStd = measureEscPos(stdData);
+      assert.ok(measuredStd.maxCells <= 32, `${stdKind} ${size} fits 32 cells`);
+      const stdText = escPosToText(stdData);
+      assert.ok(stdText.includes('@12.3456789%'), `${stdKind} ${size} preserves @12.3456789%`);
+      assert.ok(stdText.includes('EUR1 234,56'), `${stdKind} ${size} preserves addon EUR1 234,56`);
+    }
+  }
+
+  const xlCtx = resolvePrinterContext({ ...printer('extra_large'), paper_width: 'cols-32' });
+  const impossibleTaxOrder = {
+    ...frOrder,
+    items: [
+      {
+        ...frOrder.items[0],
+        tax_breakdown: [{ title: 'Tax', rate: '12.345678901234567', amount: 1 }],
+      },
+    ],
+  };
+  assert.throws(
+    () =>
+      formatReceipt(
+        impossibleTaxOrder,
+        frBill,
+        frBiz,
+        'classic',
+        xlCtx.columns,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+        undefined,
+        xlCtx.capabilities,
+      ),
+    /overflows available line width/i,
+  );
+  assert.throws(
+    () =>
+      renderPluginReceipt(
+        zeroGapTemplate,
+        impossibleTaxOrder,
+        frBill,
+        frBiz,
+        xlCtx.columns,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+        xlCtx.capabilities,
+      ),
+    /overflows available line width/i,
+  );
 });

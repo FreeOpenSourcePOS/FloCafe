@@ -21,6 +21,7 @@ import {
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
+  taxBreakdownRows,
   truncate,
   truncateShapedLine,
   type PrintWarning,
@@ -348,13 +349,7 @@ export function renderBillDocumentToCompactLines(
         const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
         const rawLabel = labelOf(line.label) + rateSuffix;
         const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
-        const label =
-          displayCellWidth(normalize(rawLabel)) + 1 + displayCellWidth(value.trimStart()) <= cols
-            ? rawLabel
-            : rateSuffix
-              ? truncate(labelOf(line.label), Math.max(1, cols - 1 - displayCellWidth(rateSuffix)), options.language, options.capabilities) + rateSuffix
-              : truncate(rawLabel, Math.max(1, cols - 12), options.language, options.capabilities);
-        pushTotalRow(financialRows(label, value, cols, options.language, options.capabilities), false, rawLabel, value);
+        pushTotalRow(taxBreakdownRows(labelOf(line.label), line.rate, value, cols, options.language, options.capabilities), false, rawLabel, value);
       }
     } else if (totals.tax) {
       const value = formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals, fractionDigits);

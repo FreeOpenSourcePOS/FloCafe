@@ -44,6 +44,7 @@ import {
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
+  taxBreakdownRows,
   truncate,
   truncateShapedLine,
   type PrintWarning,
@@ -869,20 +870,16 @@ export function renderBillDocumentToClassicLines(
             trimDecimals,
             fractionDigits,
           );
-          const label =
-            displayCellWidth(normalize(rawLabel)) + 1 + displayCellWidth(value.trimStart()) <= cols
-              ? rawLabel
-              : rateSuffix
-                ? truncate(
-                    labelOf(line.label),
-                    Math.max(1, cols - 1 - displayCellWidth(rateSuffix)),
-                    options.language,
-                    options.capabilities,
-                  ) + rateSuffix
-                : truncate(rawLabel, Math.max(1, cols - 12), options.language, options.capabilities);
           appendFinancial(
             segment,
-            financialRows(label, value, cols, options.language, options.capabilities),
+            taxBreakdownRows(
+              labelOf(line.label),
+              line.rate,
+              value,
+              cols,
+              options.language,
+              options.capabilities,
+            ),
             false,
             rawLabel,
             value,

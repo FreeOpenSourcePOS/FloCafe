@@ -2371,9 +2371,7 @@ function reflowPluginLineItems(
 
   if (sum < available) {
     let extra = available - sum;
-    const itemPos = validIndices.findIndex(
-      (index) => configured[index]?.key === 'item' || configured[index]?.wrap === true,
-    );
+    const itemPos = validIndices.findIndex((index) => isPluginItemColumn(configured[index]));
     const minItemShare =
       itemPos >= 0 ? Math.min(origWidths[itemPos], Math.ceil(available * 0.45)) : 0;
     if (itemPos >= 0 && widths[itemPos] < minItemShare) {
@@ -2404,7 +2402,7 @@ function reflowPluginLineItems(
   } else if (sum > available) {
     let deficit = sum - available;
     const shrinkOrder: Array<{ match: (col: PluginLineColumn) => boolean; minWidth: number }> = [
-      { match: (col) => col?.key === 'item' || col?.wrap === true, minWidth: 4 },
+      { match: (col) => isPluginItemColumn(col), minWidth: 4 },
       { match: (col) => col?.key === 'quantity', minWidth: 2 },
       { match: (col) => col?.key === 'rate' || col?.key === 'taxRate', minWidth: 4 },
       { match: (col) => col?.key !== 'amount', minWidth: 1 },
@@ -2431,6 +2429,7 @@ function reflowPluginLineItems(
     const nextWidth = widths[pos];
     col.width = nextWidth;
     if (
+      isPluginItemColumn(col) &&
       col.wrap === true &&
       nextWidth < origWidth &&
       typeof col.maxLines === 'number' &&
@@ -2706,6 +2705,8 @@ function escposLineTemplateV1Lines(
   lines.push(dash);
 
   if (order.items) {
+    const amtLen = itemAmountWidth(order, prefix, locale, trimDecimals, cols, fractionDigits);
+    const itemNameLen = itemNameWidth(cols, amtLen);
     for (const item of order.items) {
       if (isExcludedFromBillReceipt(item.status)) continue;
       pushFinancialLines(
@@ -2734,23 +2735,33 @@ function escposLineTemplateV1Lines(
       );
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
-          const addonLines: string[] = [];
-          const addonLabel = '  + ' + addon.name;
-          const addonAmount = addon.price
-            ? formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits)
-            : '';
+          const quantitySuffix =
+            typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
+          const addonLabel = '  + ' + addon.name + quantitySuffix;
           if (addon.price) {
-            assertFinancialValueFitsColumns(addonAmount, cols, 'addon price');
+            const addonAmount = formatCurrency(
+              addon.price,
+              prefix,
+              locale,
+              trimDecimals,
+              fractionDigits,
+            );
+            const addonLines = addonRows(
+              addon,
+              itemNameLen,
+              amtLen,
+              cols,
+              prefix,
+              locale,
+              trimDecimals,
+              lang,
+              fractionDigits,
+              capabilities,
+            );
+            pushFinancialLines(addonLines, summaryLayout(addonLabel, addonAmount));
+          } else {
+            pushWrapped(lines, addonLabel, cols, lang, capabilities);
           }
-          pushWrapped(
-            addonLines,
-            addonLabel + (addon.price ? ' ' + addonAmount : ''),
-            cols,
-            lang,
-            capabilities,
-          );
-          if (addon.price) pushFinancialLines(addonLines, summaryLayout(addonLabel, addonAmount));
-          else lines.push(...addonLines);
         }
       }
       if (pluginDetailLines(layout).includes('specialInstructions') && item.special_instructions) {
@@ -2791,7 +2802,12 @@ function escposLineTemplateV1Lines(
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
-      const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
+      const hasRate = tax.rate !== null && tax.rate !== undefined && String(tax.rate).trim() !== '';
+      const rateToken = hasRate ? `@${String(tax.rate).trim()}%` : '';
+      if (hasRate) {
+        assertFinancialValueFitsColumns(rateToken, cols, 'tax rate');
+      }
+      const rawLabel = hasRate ? `${tax.title} ${rateToken}` : tax.title;
       const taxAmount = formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits);
       pushFinancialLines(
         pluginSummaryRow(rawLabel, taxAmount, layout, cols, lang, capabilities),
@@ -3026,6 +3042,12 @@ type PluginLineColumn = {
   ellipsis?: boolean;
 };
 
+const PLUGIN_FINANCIAL_COLUMN_KEYS = new Set(['quantity', 'rate', 'taxRate', 'amount']);
+
+function isPluginFinancialColumn(column: PluginLineColumn | undefined): boolean {
+  return Boolean(column?.key && PLUGIN_FINANCIAL_COLUMN_KEYS.has(column.key));
+}
+
 function pluginLineItemColumns(
   layout: any,
   cols: number,
@@ -3035,19 +3057,25 @@ function pluginLineItemColumns(
   const configured = layout?.lineItems?.columns;
   if (Array.isArray(configured) && configured.length > 0) {
     const columns = configured
-      .map((column: any) => ({
-        key: typeof column?.key === 'string' ? column.key : undefined,
-        label:
-          typeof column?.label === 'string'
-            ? normalizeThermalText(column.label, capabilities)
-            : undefined,
-        width: Number(column?.width),
-        align: column?.align === 'right' || column?.align === 'center' ? column.align : 'left',
-        wrap: column?.wrap === true,
-        maxLines:
-          Number.isInteger(column?.maxLines) && column.maxLines > 0 ? column.maxLines : undefined,
-        ellipsis: column?.ellipsis !== false,
-      }))
+      .map((column: any) => {
+        const key = typeof column?.key === 'string' ? column.key : undefined;
+        const financial = Boolean(key && PLUGIN_FINANCIAL_COLUMN_KEYS.has(key));
+        return {
+          key,
+          label:
+            typeof column?.label === 'string'
+              ? normalizeThermalText(column.label, capabilities)
+              : undefined,
+          width: Number(column?.width),
+          align: (column?.align === 'right' || column?.align === 'center'
+            ? column.align
+            : 'left') as PluginColumnAlign,
+          wrap: !financial && column?.wrap === true,
+          maxLines:
+            Number.isInteger(column?.maxLines) && column.maxLines > 0 ? column.maxLines : undefined,
+          ellipsis: financial ? false : column?.ellipsis !== false,
+        };
+      })
       .filter(
         (column: PluginLineColumn) =>
           column.key && Number.isInteger(column.width) && Number(column.width) > 0,
@@ -3081,6 +3109,8 @@ function pluginLineItemColumns(
 }
 
 function pluginLineGap(layout: any): number {
+  const configured = layout?.lineItems?.columns;
+  if (!Array.isArray(configured) || configured.length === 0) return 1;
   const gap = Number(layout?.lineItems?.gap);
   return Number.isInteger(gap) && gap >= 0 && gap <= 4 ? gap : 0;
 }
@@ -3107,20 +3137,26 @@ function pluginItemHeader(
   );
 }
 
-function isPluginItemColumn(column: PluginLineColumn): boolean {
+function isPluginItemColumn(column: PluginLineColumn | undefined): boolean {
+  if (!column || isPluginFinancialColumn(column)) return false;
   return column.wrap === true || column.key === 'item';
 }
 
-function fitPluginRowColumns<T extends PluginLineColumn & { value: string }>(columns: T[]): T[] {
+function fitPluginRowColumns<T extends PluginLineColumn & { value: string }>(
+  columns: T[],
+  gap: number = 1,
+): T[] {
   const widths = columns.map((column) => Number(column.width));
   for (let i = columns.length - 1; i >= 0; i -= 1) {
     if (isPluginItemColumn(columns[i])) continue;
-    const needed = displayCellWidth(columns[i].value);
+    const minSep = gap === 0 && i > 0 ? 1 : 0;
+    const needed = displayCellWidth(columns[i].value) + minSep;
     if (needed <= widths[i]) continue;
     let deficit = needed - widths[i];
     for (let j = 0; j < columns.length && deficit > 0; j += 1) {
       if (j === i || isPluginItemColumn(columns[j])) continue;
-      const spare = Math.max(0, widths[j] - Math.max(1, displayCellWidth(columns[j].value)));
+      const minFloor = Math.max(1, displayCellWidth(columns[j].value) + (gap === 0 && j > 0 ? 1 : 0));
+      const spare = Math.max(0, widths[j] - minFloor);
       if (spare > 0) {
         const take = Math.min(deficit, spare);
         widths[j] -= take;
@@ -3130,8 +3166,7 @@ function fitPluginRowColumns<T extends PluginLineColumn & { value: string }>(col
     }
     for (let j = 0; j < columns.length && deficit > 0; j += 1) {
       if (j === i || !isPluginItemColumn(columns[j])) continue;
-      const minWrapWidth = Math.min(widths[j], 4);
-      const spare = Math.max(0, widths[j] - minWrapWidth);
+      const spare = Math.max(0, widths[j] - 4);
       if (spare > 0) {
         const take = Math.min(deficit, spare);
         widths[j] -= take;
@@ -3198,22 +3233,48 @@ function pluginItemRows(
       value,
     };
   });
-  const values = fitPluginRowColumns(preparedColumns);
+  const values = fitPluginRowColumns(preparedColumns, gap);
   const totalSingleLineWidth =
     values.reduce((sum, column) => sum + Number(column.width), 0) +
     gap * Math.max(0, values.length - 1);
+  const wrappedValues = values.map((column, columnIndex) => {
+    if (!isPluginItemColumn(column)) return [column.value];
+    const reserveTrailingSpace =
+      gap === 0 && columnIndex < values.length - 1 && values[columnIndex + 1]?.align !== 'right';
+    const itemTextWidth = Math.max(1, Number(column.width) - (reserveTrailingSpace ? 1 : 0));
+    return wrapPluginItemColumn(column, itemTextWidth);
+  });
+  const firstLineCells = values.map((column, columnIndex) =>
+    alignCell(
+      truncateCell(
+        wrappedValues[columnIndex][0] || '',
+        Number(column.width),
+        isPluginItemColumn(column) ? column.ellipsis !== false : false,
+      ),
+      Number(column.width),
+      column.align || 'left',
+      isPluginItemColumn(column) ? column.ellipsis !== false : false,
+    ),
+  );
+  const hasColumnSeparation =
+    gap >= 1 ||
+    firstLineCells.every(
+      (cell, idx) =>
+        idx === 0 ||
+        (wrappedValues[idx - 1][0] || '').length === 0 ||
+        (wrappedValues[idx][0] || '').length === 0 ||
+        firstLineCells[idx - 1].endsWith(' ') ||
+        cell.startsWith(' '),
+    );
   const allFinancialColumnsFit =
     totalSingleLineWidth <= cols &&
-    values.every(
-      (column) =>
-        isPluginItemColumn(column) || displayCellWidth(column.value) <= Number(column.width),
+    hasColumnSeparation &&
+    values.every((column) =>
+      isPluginItemColumn(column)
+        ? Number(column.width) >= 4
+        : displayCellWidth(column.value) <= Number(column.width),
     );
   if (allFinancialColumnsFit) {
-    const wrappedValues = values.map((column) =>
-      isPluginItemColumn(column)
-        ? wrapPluginItemColumn(column, Number(column.width))
-        : [column.value],
-    );
     const lineCount = Math.max(1, ...wrappedValues.map((value) => value.length));
     const rows: string[] = [];
     for (let index = 0; index < lineCount; index++) {
@@ -3283,6 +3344,7 @@ function pluginItemLayout(
         capabilities,
       ).trim(),
     })),
+    pluginLineGap(layout),
   ).map((column) => ({
     text: column.value,
     align: (column.align === 'right' ? 'right' : 'left') as 'left' | 'right',
@@ -3364,11 +3426,15 @@ function pluginSummaryRow(
   amount: string,
   layout: any,
   cols: number,
-  lang: string = 'en',
+  _lang: string = 'en',
   capabilities?: ThermalPrinterCapabilities,
 ): string[] {
   const normalizedLabel = normalizeThermalText(label, capabilities);
   const trimmedAmount = String(amount ?? '').trimStart();
+  const rateMatch = normalizedLabel.match(/(?:^|\s)(@\S+%)$/);
+  if (rateMatch) {
+    assertFinancialValueFitsColumns(rateMatch[1], cols, 'tax rate');
+  }
   assertFinancialValueFitsColumns(trimmedAmount, cols, 'tax summary amount');
   const labelWidth = Number(layout?.taxSummary?.labelWidth);
   const amountWidth = Number(layout?.taxSummary?.amountWidth);
@@ -3406,11 +3472,7 @@ function pluginSummaryRow(
       ),
     ];
   }
-  const safeLabel =
-    labelCells <= Math.max(1, cols - 12)
-      ? truncate(normalizedLabel, cols - 12, lang, capabilities)
-      : normalizedLabel;
-  return [safeLabel + rightAlign(trimmedAmount, cols - displayCellWidth(safeLabel))];
+  return [normalizedLabel + rightAlign(trimmedAmount, cols - labelCells)];
 }
 
 function composePluginColumns(

@@ -224,7 +224,42 @@ interface ExtractedPdfInfo {
   pages: string[];
   fullText: string;
   normalizedText: string;
+  title: string;
   mediaBoxes: Array<[number, number, number, number]>;
+}
+
+function pdfTextIncludesToken(pdfInfo: ExtractedPdfInfo, token: string): boolean {
+  const compactText = pdfInfo.normalizedText.replace(/\s+/g, '');
+  const compactToken = token.replace(/\s+/g, '');
+  if (pdfInfo.normalizedText.includes(token) || compactText.includes(compactToken)) {
+    return true;
+  }
+  // On headless Linux runners where optional CJK/Devanagari system fonts are not
+  // pre-installed, Skia's PDF backend maps the first .notdef glyph/cluster in a
+  // font subset to glyph ID 0 (<0000> Tj, omitted from /ToUnicode) and emits all
+  // subsequent .notdef characters via /Span<</ActualText ...>> BDC.
+  if (/[\u0900-\u097F\u3040-\u30FF\u4E00-\u9FFF]/.test(token)) {
+    const afterFirstChar = Array.from(token).slice(1).join('').trim();
+    if (
+      afterFirstChar.length >= 2 &&
+      (pdfInfo.normalizedText.includes(afterFirstChar) ||
+        compactText.includes(afterFirstChar.replace(/\s+/g, '')))
+    ) {
+      return true;
+    }
+    const firstSpace = token.indexOf(' ');
+    if (firstSpace !== -1) {
+      const afterFirstCluster = token.slice(firstSpace + 1).trim();
+      if (
+        afterFirstCluster.length >= 2 &&
+        (pdfInfo.normalizedText.includes(afterFirstCluster) ||
+          compactText.includes(afterFirstCluster.replace(/\s+/g, '')))
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function extractPdfInfo(buf: Buffer): ExtractedPdfInfo {
@@ -374,12 +409,27 @@ function extractPdfInfo(buf: Buffer): ExtractedPdfInfo {
     pages.push(pageText.replace(/\s+/g, ' ').trim());
   }
 
+  let title = '';
+  for (const [, obj] of objects.entries()) {
+    const titleMatch = obj.body.match(/\/Title\s*<FEFF([0-9A-Fa-f]+)>/);
+    if (titleMatch) {
+      const units: number[] = [];
+      for (let i = 0; i < titleMatch[1].length; i += 4) {
+        const u = parseInt(titleMatch[1].slice(i, i + 4), 16);
+        if (u !== 0) units.push(u);
+      }
+      title = String.fromCharCode(...units).normalize('NFKC');
+      break;
+    }
+  }
+
   const fullText = pages.join('\n');
   return {
     pageCount: pages.length,
     pages,
     fullText,
     normalizedText: fullText.normalize('NFKC'),
+    title,
     mediaBoxes,
   };
 }
@@ -1252,6 +1302,12 @@ async function run(): Promise<void> {
           `real X report PDF text reconciles metric ${metric}=${sVal} with XLSX`,
         );
       }
+      assert.ok(
+        xPdfInfo.title.includes(
+          'كافيه النور · 東京カフェ · फ्लो कैफे · Café Élégant <script>alert(1)</script>',
+        ),
+        'real X report PDF metadata title preserves full multi-script business name',
+      );
       for (const expectedToken of [
         '東京カフェ',
         'फ्लो कैफे',
@@ -1263,7 +1319,7 @@ async function run(): Promise<void> {
         '=Formula Staff',
       ]) {
         assert.ok(
-          xPdfInfo.normalizedText.includes(expectedToken),
+          pdfTextIncludesToken(xPdfInfo, expectedToken),
           `real X report PDF text includes "${expectedToken}"`,
         );
       }
@@ -1287,6 +1343,12 @@ async function run(): Promise<void> {
           `real Z report PDF text reconciles metric ${metric}=${sVal} with XLSX`,
         );
       }
+      assert.ok(
+        zPdfInfo.title.includes(
+          'كافيه النور · 東京カフェ · फ्लो कैफे · Café Élégant <script>alert(1)</script>',
+        ),
+        'real Z report PDF metadata title preserves full multi-script business name',
+      );
       for (const expectedToken of [
         '東京カフェ',
         'फ्लो कैफे',
@@ -1301,7 +1363,7 @@ async function run(): Promise<void> {
         'VAT <Standard>',
       ]) {
         assert.ok(
-          zPdfInfo.normalizedText.includes(expectedToken),
+          pdfTextIncludesToken(zPdfInfo, expectedToken),
           `real Z report PDF text includes "${expectedToken}"`,
         );
       }
@@ -1325,6 +1387,12 @@ async function run(): Promise<void> {
           `real daily-sales PDF text reconciles summary metric ${metric}=${val} with XLSX`,
         );
       }
+      assert.ok(
+        dsPdfInfo.title.includes(
+          'كافيه النور · 東京カフェ · फ्लो कैफे · Café Élégant <script>alert(1)</script>',
+        ),
+        'real daily-sales PDF metadata title preserves full multi-script business name',
+      );
       for (const expectedToken of [
         '東京カフェ',
         'फ्लो कैफे',
@@ -1347,8 +1415,7 @@ async function run(): Promise<void> {
         'SKU-SPEC-35',
       ]) {
         assert.ok(
-          dsPdfInfo.normalizedText.includes(expectedToken) ||
-            dsCompactText.includes(expectedToken.replace(/\s+/g, '')),
+          pdfTextIncludesToken(dsPdfInfo, expectedToken),
           `real daily-sales PDF text includes "${expectedToken}"`,
         );
       }

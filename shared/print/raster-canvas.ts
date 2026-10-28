@@ -92,6 +92,11 @@ export function paintRasterRequest(
       ? (() => {
           const columns = layout.columns;
           const measured = columns.map((column) => Math.max(1, measure(column.text)));
+          for (let i = 1; i < columns.length; i += 1) {
+            if (Math.ceil(measured[i]) > request.widthDots) {
+              throw new Error('Financial raster column exceeds printable width');
+            }
+          }
           const gaps = gapDots * (columns.length - 1);
           const available = Math.max(1, request.widthDots - gaps);
           const hasRatios = columns.every(
@@ -110,18 +115,18 @@ export function paintRasterRequest(
               ? [
                   0,
                   Math.min(
-                    Math.max(measured[1] + gapDots, Math.floor(available * 0.25)),
+                    Math.max(Math.ceil(measured[1]) + gapDots, Math.floor(available * 0.25)),
                     Math.floor(available * 0.45),
                   ),
                 ]
               : [
                   0,
                   Math.min(
-                    Math.max(measured[1] + gapDots, Math.floor(available * 0.08)),
+                    Math.max(Math.ceil(measured[1]) + gapDots, Math.floor(available * 0.08)),
                     Math.floor(available * 0.2),
                   ),
                   Math.min(
-                    Math.max(measured[2] + gapDots, Math.floor(available * 0.22)),
+                    Math.max(Math.ceil(measured[2]) + gapDots, Math.floor(available * 0.22)),
                     Math.floor(available * 0.4),
                   ),
                 ];
@@ -129,7 +134,79 @@ export function paintRasterRequest(
             if (columns.length === 2) widths[0] = Math.max(1, available - widths[1]);
             else widths[0] = Math.max(1, available - widths[1] - widths[2]);
           }
-          const wrappedColumns = columns.map((column, index) => wrap(column.text, widths[index]));
+          for (let i = columns.length - 1; i >= 1; i -= 1) {
+            const needed = Math.ceil(measured[i]);
+            if (needed <= widths[i]) continue;
+            let deficit = needed - widths[i];
+            for (let j = 1; j < columns.length && deficit > 0; j += 1) {
+              if (j === i) continue;
+              const spare = Math.max(0, widths[j] - Math.ceil(measured[j]));
+              if (spare > 0) {
+                const take = Math.min(deficit, spare);
+                widths[j] -= take;
+                widths[i] += take;
+                deficit -= take;
+              }
+            }
+            if (deficit > 0) {
+              const minFirstWidth = Math.min(
+                widths[0],
+                Math.max(1, Math.min(Math.ceil(measured[0]), Math.floor(available * 0.25))),
+              );
+              const spare = Math.max(0, widths[0] - minFirstWidth);
+              if (spare > 0) {
+                const take = Math.min(deficit, spare);
+                widths[0] -= take;
+                widths[i] += take;
+              }
+            }
+          }
+          const financialFitsSingleRow = columns.every(
+            (_, index) => index === 0 || Math.ceil(measured[index]) <= widths[index],
+          );
+          if (!financialFitsSingleRow) {
+            const stackedLines: Cell[][] = wrap(columns[0].text, request.widthDots).map((text) => [
+              {
+                text,
+                align: columns[0].align,
+                width: request.widthDots,
+              },
+            ]);
+            type GroupItem = { text: string; width: number };
+            let currentGroup: GroupItem[] = [];
+            let currentWidth = 0;
+            const flushGroup = (group: GroupItem[]): void => {
+              if (group.length === 0) return;
+              const leadingSlack = Math.max(0, request.widthDots - currentWidth);
+              stackedLines.push(
+                group.map((item, idx) => ({
+                  text: item.text,
+                  align: 'right' as const,
+                  width: idx === 0 ? item.width + leadingSlack : item.width,
+                })),
+              );
+            };
+            for (let i = 1; i < columns.length; i += 1) {
+              const colText = columns[i].text.trim();
+              if (!colText) continue;
+              const colWidth = Math.ceil(measured[i]);
+              const nextWidth =
+                currentGroup.length === 0 ? colWidth : currentWidth + gapDots + colWidth;
+              if (currentGroup.length > 0 && nextWidth > request.widthDots) {
+                flushGroup(currentGroup);
+                currentGroup = [{ text: colText, width: colWidth }];
+                currentWidth = colWidth;
+              } else {
+                currentGroup.push({ text: colText, width: colWidth });
+                currentWidth = nextWidth;
+              }
+            }
+            flushGroup(currentGroup);
+            return stackedLines;
+          }
+          const wrappedColumns = columns.map((column, index) =>
+            index === 0 ? wrap(column.text, widths[index]) : [column.text],
+          );
           const lineCount = Math.max(1, ...wrappedColumns.map((column) => column.length));
           return Array.from({ length: lineCount }, (_, lineIndex) =>
             columns.map((column, columnIndex) => ({

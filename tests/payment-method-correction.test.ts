@@ -503,6 +503,23 @@ async function main() {
       'reusing Idempotency-Key with a different target method returns 409',
     );
 
+    const idemReasonConflict = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
+      method: 'PATCH',
+      headers: { ...cashierAuth, 'Idempotency-Key': idemKey1 },
+      body: {
+        method: 'card',
+        transaction_id: 'TX-CARD-101',
+        reason: 'Different reason than original request',
+        approver_id: managerId,
+        override_pin: '1234',
+      },
+    });
+    assertEqualOrThrow(
+      idemReasonConflict.status,
+      409,
+      'reusing Idempotency-Key with a different reason returns 409',
+    );
+
     // ── 6. Receipt reprint & GET /api/bills/:id show corrected method ─────
     const fetchedBill1 = await api(baseUrl, `/api/bills/${bill1.id}`, { headers: cashierAuth });
     assertEqualOrThrow(fetchedBill1.status, 200, 'GET /api/bills/:id succeeds');
@@ -799,6 +816,33 @@ async function main() {
       'closed shift refusal leaves bill1 payment method unchanged',
     );
 
+    // Replaying an already-committed Idempotency-Key after shift close still returns cached 200
+    const idemReplayAfterShiftClose = await api(
+      baseUrl,
+      `/api/bills/${bill1.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: { ...cashierAuth, 'Idempotency-Key': idemKey1 },
+        body: {
+          method: 'card',
+          transaction_id: 'TX-CARD-101',
+          reason: 'Customer tapped card instead of cash',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      idemReplayAfterShiftClose.status,
+      200,
+      'Idempotency-Key replay after shift close returns cached 200',
+    );
+    assertEqualOrThrow(
+      idemReplayAfterShiftClose.data.idempotentReplay,
+      true,
+      'Idempotency-Key replay after shift close sets idempotentReplay = true',
+    );
+
     // ── 12. Open shift 2, pay splitBillB, and verify split-sibling guard ──
     const openSession2Res = await api(baseUrl, '/api/cash-sessions/open', {
       method: 'POST',
@@ -806,6 +850,88 @@ async function main() {
       body: { opening_float_cents: 2000 },
     });
     assertEqualOrThrow(openSession2Res.status, 200, 'cash session 2 opened');
+
+    // Multi-line natural replay scopes audit to (bill_id, payment_index)
+    const multiLineOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: cashierAuth,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-80', quantity: 1 }] },
+    });
+    assertEqualOrThrow(multiLineOrderRes.status, 201, 'multi-line order created');
+    const multiLineBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      headers: cashierAuth,
+      body: { order_id: multiLineOrderRes.data.order.id },
+    });
+    assertEqualOrThrow(multiLineBillRes.status, 201, 'multi-line bill generated');
+    const multiLinePayRes = await api(
+      baseUrl,
+      `/api/bills/${multiLineBillRes.data.bill.id}/payments`,
+      {
+        method: 'POST',
+        headers: cashierAuth,
+        body: {
+          payments: [
+            { method: 'cash', amount: 50 },
+            { method: 'card', amount: 30, transaction_id: 'TX-MULTI-LINE-1' },
+          ],
+        },
+      },
+    );
+    assertEqualOrThrow(multiLinePayRes.status, 200, 'multi-line bill paid with 2 lines');
+    const multiLineBillId = multiLinePayRes.data.bill.id;
+
+    const correctLine0Res = await api(baseUrl, `/api/bills/${multiLineBillId}/payments/0/method`, {
+      method: 'PATCH',
+      headers: cashierAuth,
+      body: {
+        method: 'card',
+        transaction_id: 'TX-MULTI-LINE-0',
+        reason: 'Line 0 was card',
+        approver_id: managerId,
+        override_pin: '1234',
+      },
+    });
+    assertEqualOrThrow(correctLine0Res.status, 200, 'line 0 corrected to card');
+
+    const replayLine1Res = await api(baseUrl, `/api/bills/${multiLineBillId}/payments/1/method`, {
+      method: 'PATCH',
+      headers: cashierAuth,
+      body: {
+        method: 'card',
+        transaction_id: 'TX-MULTI-LINE-1',
+        approver_id: managerId,
+        override_pin: '1234',
+      },
+    });
+    assertEqualOrThrow(replayLine1Res.status, 200, 'no-op replay on line 1 returns 200');
+    assertEqualOrThrow(
+      replayLine1Res.data.idempotentReplay,
+      true,
+      'no-op replay on line 1 sets idempotentReplay = true',
+    );
+    assertEqualOrThrow(
+      replayLine1Res.data.audit,
+      null,
+      'no-op replay on uncorrected line 1 returns audit = null instead of line 0 audit',
+    );
+
+    const replayLine0Res = await api(baseUrl, `/api/bills/${multiLineBillId}/payments/0/method`, {
+      method: 'PATCH',
+      headers: cashierAuth,
+      body: {
+        method: 'card',
+        transaction_id: 'TX-MULTI-LINE-0',
+        approver_id: managerId,
+        override_pin: '1234',
+      },
+    });
+    assertEqualOrThrow(replayLine0Res.status, 200, 'no-op replay on line 0 returns 200');
+    assertEqualOrThrow(
+      replayLine0Res.data.audit?.payment_index,
+      0,
+      'no-op replay on line 0 returns line 0 audit record',
+    );
 
     const paySplitB = await api(baseUrl, `/api/bills/${splitBillB.id}/payment`, {
       method: 'POST',

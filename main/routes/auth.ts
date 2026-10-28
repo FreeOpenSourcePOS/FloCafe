@@ -357,7 +357,22 @@ router.get('/pin-users', authRateLimit({ max: 600 }), (_req: Request, res: Respo
 
 router.post(
   '/pin-login',
-  authRateLimit({ max: 600, skipSuccessfulRequests: true }),
+  authRateLimit({
+    max: 600,
+    skipSuccessfulRequests: true,
+    onRateLimited: (req: Request) => {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const rawUserId = req.body?.user_id;
+      const userId = typeof rawUserId === 'string' && rawUserId.trim() ? rawUserId.trim() : null;
+      recordAuthAudit(getDatabase(), {
+        userId,
+        eventType: 'pin_login',
+        outcome: 'rate_limited',
+        ipAddress: ip,
+        details: { reason: 'endpoint_rate_limited' },
+      });
+    },
+  }),
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';

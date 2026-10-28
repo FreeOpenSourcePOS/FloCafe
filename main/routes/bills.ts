@@ -32,6 +32,7 @@ import {
   NO_CASH_SESSION_ID,
   requireOpenSessionForCashTender,
 } from '../services/shift-session-gate';
+import { closedDayExists, tenantTimezone } from '../services/cash-drawer-movements';
 import {
   checkPinRateLimit,
   isPinRateLimited,
@@ -5587,16 +5588,7 @@ function resolveBillBusinessDate(
   db: ReturnType<typeof getDatabase>,
   timestampRaw?: unknown,
 ): string {
-  let tz = 'UTC';
-  try {
-    tz = resolveRegionalSnapshot({
-      country: getSettingValue('country') ?? undefined,
-      currency: getSettingValue('currency') ?? undefined,
-      timezone: getSettingValue('timezone') ?? undefined,
-    }).timezone;
-  } catch {
-    tz = 'UTC';
-  }
+  const tz = tenantTimezone();
   const startTime = tenantBusinessDayStartTime(db);
   if (typeof timestampRaw === 'string' && timestampRaw.trim()) {
     const parsed = parseDbTimestamp(timestampRaw);
@@ -5605,15 +5597,6 @@ function resolveBillBusinessDate(
     }
   }
   return localDateInTimezone(new Date(), tz, startTime);
-}
-
-function isBusinessDayClosed(db: ReturnType<typeof getDatabase>, businessDate: string): boolean {
-  const row = db
-    .prepare(
-      "SELECT 1 FROM cash_closures WHERE business_date = ? AND COALESCE(scope, 'day') = 'day' LIMIT 1",
-    )
-    .get(businessDate);
-  return Boolean(row);
 }
 
 // PATCH /api/bills/:id/payments/:index/method - Correct payment method on a paid bill while its shift is open
@@ -5807,6 +5790,62 @@ router.patch(
           throw paymentValidationError('Bill not found', 'bill_not_found', 404);
         }
 
+        const effectiveActorUserId =
+          rawActorUserId && db.prepare('SELECT 1 FROM users WHERE id = ?').get(rawActorUserId)
+            ? rawActorUserId
+            : verifiedApprover.id;
+        const idempotencyUserId = rawActorUserId || verifiedApprover.id;
+        const normalizedReqMethod = typeof method === 'string' ? method.trim().toLowerCase() : '';
+        const normalizedReqPaymentMethodId =
+          payment_method_id !== undefined &&
+          payment_method_id !== null &&
+          Number.isSafeInteger(Number(payment_method_id))
+            ? Number(payment_method_id)
+            : null;
+        const normalizedReqTxId =
+          typeof transaction_id === 'string' && transaction_id.trim() !== ''
+            ? transaction_id.trim()
+            : null;
+        const requestHash = idempotencyKey
+          ? createHash('sha256')
+              .update(
+                canonicalizePaymentRequest({
+                  action: 'bill.payment_method.corrected',
+                  billId: String(bill.id),
+                  paymentIndex,
+                  method: normalizedReqMethod,
+                  payment_method_id: normalizedReqPaymentMethodId,
+                  transaction_id: normalizedReqTxId,
+                  reason: normalizedReason,
+                }),
+              )
+              .digest('hex')
+          : null;
+
+        if (idempotencyKey && requestHash) {
+          const existingIdem = db
+            .prepare(
+              'SELECT bill_id, request_hash, response_json FROM payment_idempotency WHERE user_id = ? AND idempotency_key = ?',
+            )
+            .get(idempotencyUserId, idempotencyKey) as
+            | { bill_id: string; request_hash: string; response_json: string }
+            | undefined;
+          if (existingIdem) {
+            if (
+              String(existingIdem.bill_id) !== String(bill.id) ||
+              existingIdem.request_hash !== requestHash
+            ) {
+              throw paymentValidationError(
+                'Idempotency-Key has already been used for a different payment request',
+                'idempotency_key_conflict',
+                409,
+              );
+            }
+            const cached = JSON.parse(existingIdem.response_json);
+            return { ...cached, idempotentReplay: true };
+          }
+        }
+
         if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
           throw paymentValidationError(
             'Cannot correct payment method on a refunded bill',
@@ -5879,10 +5918,7 @@ router.patch(
           db,
           targetLine.timestamp || bill.paid_at || bill.created_at,
         );
-        if (
-          isBusinessDayClosed(db, billBusinessDate) ||
-          isBusinessDayClosed(db, todayBusinessDate)
-        ) {
+        if (closedDayExists(db, billBusinessDate) || closedDayExists(db, todayBusinessDate)) {
           throw paymentValidationError(
             'Cannot correct payment method: business day is already closed',
             'day_closed',
@@ -6143,47 +6179,6 @@ router.patch(
           );
         }
 
-        const effectiveActorUserId =
-          rawActorUserId && db.prepare('SELECT 1 FROM users WHERE id = ?').get(rawActorUserId)
-            ? rawActorUserId
-            : verifiedApprover.id;
-        const idempotencyUserId = rawActorUserId || verifiedApprover.id;
-        const requestHash = idempotencyKey
-          ? createHash('sha256')
-              .update(
-                canonicalizePaymentRequest({
-                  action: 'bill.payment_method.corrected',
-                  billId: String(bill.id),
-                  paymentIndex,
-                  method: resolvedMethod,
-                  payment_method_id: resolvedPaymentMethodId ?? null,
-                  transaction_id: newTxId ?? null,
-                }),
-              )
-              .digest('hex')
-          : null;
-
-        if (idempotencyKey && requestHash) {
-          const existingIdem = db
-            .prepare(
-              'SELECT request_hash, response_json FROM payment_idempotency WHERE user_id = ? AND idempotency_key = ?',
-            )
-            .get(idempotencyUserId, idempotencyKey) as
-            | { request_hash: string; response_json: string }
-            | undefined;
-          if (existingIdem) {
-            if (existingIdem.request_hash !== requestHash) {
-              throw paymentValidationError(
-                'Idempotency-Key has already been used for a different payment request',
-                'idempotency_key_conflict',
-                409,
-              );
-            }
-            const cached = JSON.parse(existingIdem.response_json);
-            return { ...cached, idempotentReplay: true };
-          }
-        }
-
         const oldMethod = String(targetLine.method || '');
         const oldPaymentMethodId =
           targetLine.payment_method_id !== undefined && targetLine.payment_method_id !== null
@@ -6202,9 +6197,16 @@ router.patch(
         if (isSameMethod) {
           const latestAuditRow = db
             .prepare(
-              `SELECT id, actor_user_id, action, details_json, created_at FROM order_audit_log WHERE order_id = ? AND action = 'bill.payment_method.corrected' ORDER BY id DESC LIMIT 1`,
+              `SELECT id, actor_user_id, action, details_json, created_at
+               FROM order_audit_log
+               WHERE order_id = ?
+                 AND action = 'bill.payment_method.corrected'
+                 AND json_extract(details_json, '$.bill_id') = ?
+                 AND json_extract(details_json, '$.payment_index') = ?
+               ORDER BY id DESC
+               LIMIT 1`,
             )
-            .get(bill.order_id) as
+            .get(bill.order_id, bill.id, paymentIndex) as
             | {
                 id: number;
                 actor_user_id: string;

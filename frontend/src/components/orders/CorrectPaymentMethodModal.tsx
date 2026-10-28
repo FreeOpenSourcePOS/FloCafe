@@ -25,6 +25,11 @@ function extractErrorMessage(error: unknown): string | null {
   return typeof data?.error === 'string' && data.error.trim() ? data.error.trim() : null;
 }
 
+function firstCorrectableLineIndex(lines: Array<{ method?: string }>): number {
+  const idx = lines.findIndex((line) => String(line?.method || '').toLowerCase() !== 'wallet');
+  return idx >= 0 ? idx : 0;
+}
+
 interface Props {
   order: Order;
   bills: Bill[];
@@ -42,15 +47,18 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
   const effectiveBill = bills.find((b) => b.id === selectedBillId) ?? bills[0] ?? null;
 
   const paymentLines = normalizeBillPaymentDetails(effectiveBill?.payment_details);
-  const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const initialLineIndex = firstCorrectableLineIndex(paymentLines);
+  const initialLine = paymentLines[initialLineIndex] ?? paymentLines[0] ?? null;
+  const [selectedIndex, setSelectedIndex] = useState<number>(initialLineIndex);
 
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
+  const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState<boolean>(false);
   const [methodSelection, setMethodSelection] = useState<string>(() => {
-    const firstMethod = String(paymentLines[0]?.method || '').toLowerCase();
+    const firstMethod = String(initialLine?.method || '').toLowerCase();
     return firstMethod === 'cash' ? 'card' : 'cash';
   });
   const [transactionId, setTransactionId] = useState<string>(() =>
-    paymentLines[0]?.transaction_id ? String(paymentLines[0].transaction_id) : '',
+    initialLine?.transaction_id ? String(initialLine.transaction_id) : '',
   );
   const [reason, setReason] = useState<string>('');
   const [overridePin, setOverridePin] = useState<string>('');
@@ -84,6 +92,16 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
       .catch(() => {
         if (!cancelled) setCustomMethods([]);
       });
+    api
+      .get('/settings/card_transaction_id_required')
+      .then((res) => {
+        if (!cancelled) {
+          setCardTransactionIdRequired(res.data?.setting?.value === 'true');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCardTransactionIdRequired(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -102,10 +120,15 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
     : null;
   const resolvedMethodName = selectedCustomMethod ? selectedCustomMethod.name : methodSelection;
   const isCashSelected = resolvedMethodName.toLowerCase() === 'cash' && !selectedCustomMethod;
+  const isBuiltInCardSelected = methodSelection === 'card' && !selectedCustomMethod;
+  const missingRequiredCardTxId =
+    isBuiltInCardSelected && cardTransactionIdRequired && !transactionId.trim();
 
   const canSubmit =
     Boolean(effectiveBill) &&
     Boolean(currentLine) &&
+    String(currentLine?.method || '').toLowerCase() !== 'wallet' &&
+    !missingRequiredCardTxId &&
     !submitting &&
     !managerApprovers.loading &&
     !managerApprovers.loadFailed &&
@@ -174,10 +197,11 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
                 onChange={(e) => {
                   const nextBillId = Number(e.target.value);
                   setSelectedBillId(nextBillId);
-                  setSelectedIndex(0);
                   const nextBill = bills.find((b) => b.id === nextBillId) ?? bills[0] ?? null;
                   const nextLines = normalizeBillPaymentDetails(nextBill?.payment_details);
-                  syncLineDefaults(nextLines[0]);
+                  const nextIdx = firstCorrectableLineIndex(nextLines);
+                  setSelectedIndex(nextIdx);
+                  syncLineDefaults(nextLines[nextIdx]);
                 }}
                 className="w-full px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground"
               >

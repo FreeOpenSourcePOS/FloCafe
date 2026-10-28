@@ -36,7 +36,6 @@ import { Router, Request, Response } from 'express';
 import {
   dayBoundsInTimezone,
   getDatabase,
-  getSettingValue,
   localDateInTimezone,
   now,
   withTxn,
@@ -55,11 +54,12 @@ import {
   MAX_MOVEMENT_REASON_LENGTH,
   closedDayExists,
   insertCashDrawerMovement,
+  tenantTimezone,
   type CashDrawerMovementType,
 } from '../services/cash-drawer-movements';
 // Type-only: erased at compile, so this adds no runtime require cycle.
 import type { AuthedRequest } from './cash-sessions';
-import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
+import { getCurrencyMinorUnitFactor } from '../countries';
 import { getOrdersWithItemsForBills } from './bills';
 import { getHttpRequestSignal } from '../shutdown';
 import { DisplayTaxComponent, aggregateTaxComponents } from '../services/tax-components';
@@ -138,13 +138,7 @@ function httpError(message: string, statusCode: number, diagnosticCode?: string)
 // wrong instant, producing an incorrect closure total. Only throws
 // RegionalNotConfiguredError when the country itself is unresolvable.
 // Exported for cash-sessions.ts so both modules resolve windows identically.
-export function tenantTimezone(): string {
-  return resolveRegionalSnapshot({
-    country: getSettingValue('country') ?? undefined,
-    currency: getSettingValue('currency') ?? undefined,
-    timezone: getSettingValue('timezone') ?? undefined,
-  }).timezone;
-}
+export { tenantTimezone };
 
 function tenantStartTime(db?: ReturnType<typeof getDatabase>): string {
   return tenantBusinessDayStartTime(db);

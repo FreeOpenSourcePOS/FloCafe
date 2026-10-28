@@ -18,9 +18,21 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import toast from 'react-hot-toast';
-import { Delete, Eye, EyeOff, KeyRound, LifeBuoy, MessageCircle, Ticket, UserCheck } from 'lucide-react';
+import {
+  Delete,
+  Eye,
+  EyeOff,
+  KeyRound,
+  LifeBuoy,
+  MessageCircle,
+  Ticket,
+  UserCheck,
+} from 'lucide-react';
 import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
-import { SupportTicketForm, PRE_LOGIN_SUPPORT_ENDPOINTS } from '@/components/support/SupportTicketForm';
+import {
+  SupportTicketForm,
+  PRE_LOGIN_SUPPORT_ENDPOINTS,
+} from '@/components/support/SupportTicketForm';
 
 interface PinPickerUser {
   id: string;
@@ -40,7 +52,8 @@ const BUSINESS_TYPE_LEAF_KEYS: Record<string, BusinessTypeKey> = {
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, pinLogin, selectTenant, user, tenants, currentTenant, loadFromStorage } = useAuthStore();
+  const { login, pinLogin, selectTenant, user, tenants, currentTenant, loadFromStorage } =
+    useAuthStore();
   const t = useTranslations('auth');
   const tStaff = useTranslations('staff');
   const tCommon = useTranslations('common');
@@ -62,15 +75,15 @@ function LoginContent() {
 
   useEffect(() => {
     fetch('/api/auth/setup/status')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
         if (data?.needsSetup) router.replace('/setup');
       })
       .catch(() => {});
 
     fetch('/api/health')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
         if (data && data.status !== 'ok') {
           setDbError(data.db || t('dbErrorPrefix'));
         }
@@ -78,8 +91,8 @@ function LoginContent() {
       .catch(() => {});
 
     fetch('/api/auth/pin-users')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
         if (Array.isArray(data?.users)) {
           setPinUsers(data.users);
         }
@@ -91,17 +104,20 @@ function LoginContent() {
     loadFromStorage();
   }, [loadFromStorage]);
 
-  const handleTenantSelect = useCallback(async (tenantId: number) => {
-    setLoading(true);
-    try {
-      await selectTenant(tenantId);
-      // useEffect on currentTenant will handle the redirect
-    } catch {
-      toast.error(t('selectBusinessFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [selectTenant, t]);
+  const handleTenantSelect = useCallback(
+    async (tenantId: number) => {
+      setLoading(true);
+      try {
+        await selectTenant(tenantId);
+        // useEffect on currentTenant will handle the redirect
+      } catch {
+        toast.error(t('selectBusinessFailed'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [selectTenant, t],
+  );
 
   useEffect(() => {
     // Navigate to landing page once user and tenant are selected (auto-selection handled in auth store).
@@ -132,8 +148,7 @@ function LoginContent() {
           } else if (typeof remaining === 'number' && remaining < 4) {
             // Warn only when getting close (≤ 4 remaining to avoid noise on first attempt)
             setLoginError(
-              t('invalidCredentials') + ' ' +
-              t('attemptsRemaining', { count: remaining })
+              t('invalidCredentials') + ' ' + t('attemptsRemaining', { count: remaining }),
             );
           } else {
             setLoginError(t('invalidCredentials'));
@@ -174,8 +189,7 @@ function LoginContent() {
             setPinError(t('lockedOut', { minutes: mins }));
           } else if (typeof remaining === 'number' && remaining < 4) {
             setPinError(
-              t('invalidCredentials') + ' ' +
-              t('attemptsRemaining', { count: remaining })
+              t('invalidCredentials') + ' ' + t('attemptsRemaining', { count: remaining }),
             );
           } else {
             setPinError(t('invalidCredentials'));
@@ -195,9 +209,10 @@ function LoginContent() {
     }
   };
 
-
-
-  const shouldShowTenantSelect = !!(user && (tenants.length > 1 || searchParams.get('select_tenant') === 'true'));
+  const shouldShowTenantSelect = !!(
+    user &&
+    (tenants.length > 1 || searchParams.get('select_tenant') === 'true')
+  );
 
   if (shouldShowTenantSelect) {
     return (
@@ -209,7 +224,9 @@ function LoginContent() {
               <p className="text-muted-foreground text-sm mb-6">{t('selectBusinessHint')}</p>
               <div className="space-y-3">
                 {tenants.map((tenant) => {
-                  const businessTypeKey = tenant.business_type ? BUSINESS_TYPE_LEAF_KEYS[tenant.business_type] : undefined;
+                  const businessTypeKey = tenant.business_type
+                    ? BUSINESS_TYPE_LEAF_KEYS[tenant.business_type]
+                    : undefined;
                   const roleKey = tenant.role ? ROLE_LABEL_KEYS[tenant.role] : undefined;
                   return (
                     <button
@@ -218,9 +235,14 @@ function LoginContent() {
                       disabled={loading}
                       className="w-full text-start p-4 border rounded-lg hover:border-primary hover:bg-accent transition-colors group"
                     >
-                      <div className="font-semibold group-hover:text-primary">{tenant.business_name}</div>
+                      <div className="font-semibold group-hover:text-primary">
+                        {tenant.business_name}
+                      </div>
                       <div className="text-sm text-muted-foreground mt-0.5">
-                        {businessTypeKey ? tBusinessType(businessTypeKey) : tenant.business_type ?? ''} &middot; {roleKey ? tStaff(roleKey) : tenant.role ?? ''}
+                        {businessTypeKey
+                          ? tBusinessType(businessTypeKey)
+                          : (tenant.business_type ?? '')}{' '}
+                        &middot; {roleKey ? tStaff(roleKey) : (tenant.role ?? '')}
                       </div>
                     </button>
                   );
@@ -254,17 +276,11 @@ function LoginContent() {
                     <KeyRound className="size-4 text-primary" />
                     {t('quickSwitchTitle')}
                   </h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {t('quickSwitchSubtitle')}
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t('quickSwitchSubtitle')}</p>
                 </div>
               </div>
               {selectedPinUser ? (
-                <form
-                  onSubmit={handlePinLogin}
-                  data-testid="pin-login-form"
-                  className="space-y-3"
-                >
+                <form onSubmit={handlePinLogin} data-testid="pin-login-form" className="space-y-3">
                   <div className="flex items-center justify-between rounded-lg border border-primary/40 bg-primary/5 px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <UserCheck className="size-4 text-primary shrink-0" />
@@ -424,12 +440,30 @@ function LoginContent() {
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">{t('email')}</Label>
-                <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('emailPlaceholder')} dir="ltr" required />
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={t('emailPlaceholder')}
+                  dir="ltr"
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">{t('password')}</Label>
                 <div className="relative">
-                  <Input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('passwordPlaceholder')} className="pe-10" required />
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t('passwordPlaceholder')}
+                    className="pe-10"
+                    required
+                  />
                   <button
                     type="button"
                     data-testid="password-visibility-toggle"
@@ -450,9 +484,7 @@ function LoginContent() {
                 />
                 {t('rememberMe')}
               </label>
-              {loginError && (
-                <p className="text-sm text-destructive text-center">{loginError}</p>
-              )}
+              {loginError && <p className="text-sm text-destructive text-center">{loginError}</p>}
               <Button type="submit" disabled={loading} className="w-full" size="lg">
                 {loading ? t('signingIn') : t('signIn')}
               </Button>

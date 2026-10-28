@@ -198,7 +198,8 @@ function normalizeAutoLockMinutes(value: unknown): string | null {
   if (value === 0 || value === '0' || value === 'off' || value === false || value === '') {
     return '0';
   }
-  const str = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
+  const str =
+    typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
   return VALID_AUTO_LOCK_MINUTES.has(str) ? str : null;
 }
 
@@ -1746,28 +1747,24 @@ router.get(
   },
 );
 
-router.get(
-  '/auto_lock_minutes',
-  settingsReadRateLimit,
-  (_req: Request, res: Response) => {
-    try {
-      const setting = getDatabase()
-        .prepare('SELECT * FROM settings WHERE key = ?')
-        .get('auto_lock_minutes');
-      if (setting) return res.json({ setting });
-      return res.json({
-        setting: {
-          key: 'auto_lock_minutes',
-          value: OPTIONAL_SETTING_DEFAULTS.auto_lock_minutes,
-          updated_at: null,
-        },
-      });
-    } catch (error) {
-      console.error('[API] Internal error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-  },
-);
+router.get('/auto_lock_minutes', settingsReadRateLimit, (_req: Request, res: Response) => {
+  try {
+    const setting = getDatabase()
+      .prepare('SELECT * FROM settings WHERE key = ?')
+      .get('auto_lock_minutes');
+    if (setting) return res.json({ setting });
+    return res.json({
+      setting: {
+        key: 'auto_lock_minutes',
+        value: OPTIONAL_SETTING_DEFAULTS.auto_lock_minutes,
+        updated_at: null,
+      },
+    });
+  } catch (error) {
+    console.error('[API] Internal error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.get('/offline-mode', requirePermission('settings.view'), (_req: Request, res: Response) => {
   res.json({ offline_mode: isOfflineMode() });

@@ -344,7 +344,7 @@ router.get('/pin-users', authRateLimit({ max: 600 }), (_req: Request, res: Respo
         role: String(row.role),
       })),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Auth] PIN users error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -402,7 +402,17 @@ router.post(
         });
       }
 
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as
+        | {
+            id: string;
+            name: string;
+            email: string;
+            role: string;
+            is_active: number;
+            pin_hash: string | null;
+            category_ids: string | null;
+          }
+        | undefined;
       let pinMatches = false;
       if (user && user.is_active === 1 && user.pin_hash) {
         try {
@@ -469,7 +479,7 @@ router.post(
         tenant,
         tenants: [tenant],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[Auth] PIN login error:', error);
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });

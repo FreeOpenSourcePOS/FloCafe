@@ -177,7 +177,11 @@ async function run() {
     role: 'cashier',
     pin: '2468', // Same PIN as owner-1!
   });
-  assertEqualOrThrow(createCashierRes.status, 201, 'Manager can create cashier with a 4-6 digit PIN');
+  assertEqualOrThrow(
+    createCashierRes.status,
+    201,
+    'Manager can create cashier with a 4-6 digit PIN',
+  );
   const cashierId = createCashierRes.body.staff.id as string;
   assertEqualOrThrow(createCashierRes.body.staff.has_pin, 1, 'Created cashier has_pin is 1');
 
@@ -230,7 +234,11 @@ async function run() {
     .post('/api/auth/pin-login')
     .send({ user_id: cashierId, pin: '2468' });
   assertEqualOrThrow(cashierPinLogin.status, 200, 'Cashier signs in with same PIN 2468');
-  assertEqualOrThrow(cashierPinLogin.body.user.id, cashierId, 'Cashier PIN login returns cashierId');
+  assertEqualOrThrow(
+    cashierPinLogin.body.user.id,
+    cashierId,
+    'Cashier PIN login returns cashierId',
+  );
   assertEqualOrThrow(
     cashierPinLogin.body.user.role,
     'cashier',
@@ -625,30 +633,24 @@ async function run() {
 
   // (h) Refund with cashier PIN -> 403
   resetBillPinRateLimit();
-  const refundCashierPin = await request(app)
-    .post('/api/refunds')
-    .set(cashierAuth)
-    .send({
-      bill_id: billId,
-      amount: 20,
-      reason: 'Customer complaint',
-      method: 'card',
-      approver_id: cashierId,
-      override_pin: '7777',
-    });
+  const refundCashierPin = await request(app).post('/api/refunds').set(cashierAuth).send({
+    bill_id: billId,
+    amount: 20,
+    reason: 'Customer complaint',
+    method: 'card',
+    approver_id: cashierId,
+    override_pin: '7777',
+  });
   assertEqualOrThrow(refundCashierPin.status, 403, 'Refund rejects cashier PIN with 403');
 
-  const refundValidOwnerPin = await request(app)
-    .post('/api/refunds')
-    .set(cashierAuth)
-    .send({
-      bill_id: billId,
-      amount: 20,
-      reason: 'Customer complaint',
-      method: 'card',
-      approver_id: 'owner-1',
-      override_pin: '2468',
-    });
+  const refundValidOwnerPin = await request(app).post('/api/refunds').set(cashierAuth).send({
+    bill_id: billId,
+    amount: 20,
+    reason: 'Customer complaint',
+    method: 'card',
+    approver_id: 'owner-1',
+    override_pin: '2468',
+  });
   assertEqualOrThrow(
     refundValidOwnerPin.status,
     201,
@@ -660,7 +662,11 @@ async function run() {
   const defaultAutoLock = await request(app)
     .get('/api/settings/auto_lock_minutes')
     .set(cashierAuth);
-  assertEqualOrThrow(defaultAutoLock.status, 200, 'Cashier can read /api/settings/auto_lock_minutes');
+  assertEqualOrThrow(
+    defaultAutoLock.status,
+    200,
+    'Cashier can read /api/settings/auto_lock_minutes',
+  );
   assertEqualOrThrow(
     defaultAutoLock.body.setting.value,
     '0',
@@ -672,11 +678,7 @@ async function run() {
       .put('/api/settings/auto_lock_minutes')
       .set(ownerAuth)
       .send({ value: validMins });
-    assertEqualOrThrow(
-      saveAutoLock.status,
-      200,
-      `Owner can set auto_lock_minutes to ${validMins}`,
-    );
+    assertEqualOrThrow(saveAutoLock.status, 200, `Owner can set auto_lock_minutes to ${validMins}`);
     assertEqualOrThrow(
       saveAutoLock.body.setting.value,
       validMins,
@@ -695,7 +697,9 @@ async function run() {
   );
 
   // ── 7. Frontend auth + cart store lock & quick-switch behavior ──
-  console.log('\n7. Frontend auth & cart store: lock preserves cart, clears privileged state, ignores stale async callbacks');
+  console.log(
+    '\n7. Frontend auth & cart store: lock preserves cart, clears privileged state, ignores stale async callbacks',
+  );
   (globalThis as any).window = {
     dispatchEvent: () => {},
   };
@@ -738,7 +742,10 @@ async function run() {
                 id: 1,
                 business_name: 'Test Cafe',
                 role: body.user_id === 'owner-1' ? 'owner' : 'cashier',
-                permission_ids: body.user_id === 'owner-1' ? ['pos.use', 'orders.item.price_override'] : ['pos.use'],
+                permission_ids:
+                  body.user_id === 'owner-1'
+                    ? ['pos.use', 'orders.item.price_override']
+                    : ['pos.use'],
               },
             ],
           },
@@ -755,7 +762,11 @@ async function run() {
   // Sign in as owner via pinLogin
   await useAuthStore.getState().pinLogin('owner-1', '2468');
   assertEqualOrThrow(useAuthStore.getState().user?.id, 'owner-1', 'Store signed in as owner-1');
-  assertEqualOrThrow(useAuthStore.getState().isLocked, false, 'Store isLocked is false after pinLogin');
+  assertEqualOrThrow(
+    useAuthStore.getState().isLocked,
+    false,
+    'Store isLocked is false after pinLogin',
+  );
 
   // Add item to cart, apply owner price override, and waive a charge
   const sampleProduct = {

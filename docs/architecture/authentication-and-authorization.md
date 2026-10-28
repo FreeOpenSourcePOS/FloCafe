@@ -35,7 +35,7 @@ list. `requireRole` (in `main/middleware/security.ts`) still exists, but a stati
 (`tests/authorization-static-audit.test.ts`) fails the build if a new call site under
 `main/routes/` uses it; the few remaining direct role checks are reviewed context policy, covered
 in their own sections below (KDS station/category scope, refund approver identity, the
-override-PIN holder for order-status, kitchen-delivery, and item cancel/void overrides, and the
+Staff Approval PIN holder for order-status, kitchen-delivery, charge-waiver, discount, and item cancel/void overrides, and the
 last-active-owner/staff-target rule).
 
 **Resolution.** For every permission id, `resolveEffectivePermissions(userId)` evaluates, in

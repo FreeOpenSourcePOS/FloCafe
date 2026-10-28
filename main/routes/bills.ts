@@ -5205,7 +5205,7 @@ router.patch(
         return res.status(400).json({ error: 'Conflicting approver identifiers' });
       }
       const explicitApproverId = suppliedApproverIds[0];
-      const callerRole = String((req as any).user?.role || '');
+      const callerRole = String((req as Request & { user?: { role?: string } }).user?.role || '');
       const requiresChargeApproval =
         override_pin !== undefined ||
         (waivedRequested === true && !hasRole(callerRole, ROLE_ACCESS.ownerManager));

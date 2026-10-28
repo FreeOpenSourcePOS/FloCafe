@@ -59,6 +59,15 @@ with `warning_acknowledgement_required`.
 **Revoke on disconnect.** Disconnecting revokes the grant at Google rather than only deleting the
 local token.
 
+**Two-step backup and retention pruning.** Each backup separates snapshot upload from retention
+cleanup: the upload step writes the database snapshot to Google Drive and immediately stamps
+`last_backup_status` as `'success'` (`last_backup_at` and `last_success_at`), while the retention
+step (`applyRetention`) moves older automatic backups beyond `retention_count` to Google Drive
+Trash. If a transient error interrupts retention pruning, the completed snapshot upload remains
+valid (`last_backup_status` stays `'success'`) and the service records `retention_pending`
+(`retention_status = 'pending'`) so automatic background retries finish pruning older backups
+without invalidating the backup.
+
 **Offline behaviour.** Every operation fails with a `driveError` code rather than hanging. The last
 error code is persisted so the settings screen can explain the failure after a restart.
 

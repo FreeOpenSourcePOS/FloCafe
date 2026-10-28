@@ -993,6 +993,84 @@ function main() {
   );
   closeDatabase();
 
+  // ── v121: whatsapp_message_attempts table creation and outbound backfill ──
+  const attemptsMigrationIndex = MIGRATIONS.findIndex(
+    (migration: any) => migration.name === 'add_whatsapp_message_attempts',
+  );
+  assert.ok(attemptsMigrationIndex > 0, 'the whatsapp_message_attempts migration is registered');
+  assert.equal(
+    MIGRATIONS[attemptsMigrationIndex].version,
+    121,
+    'the whatsapp_message_attempts migration is v121',
+  );
+  initDatabase();
+  const preAttemptsDb = getDatabase();
+  preAttemptsDb.exec(`DROP TABLE IF EXISTS whatsapp_message_attempts;`);
+  const preOutbound1 = preAttemptsDb
+    .prepare(`
+      INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, external_message_id, queued_at, typing_at, sent_at)
+      VALUES ('+15550009001', 'outbound', 'bill_receipt', 'sent', 'Receipt v120', 'ext-v120-sent-1', '2026-10-28 09:00:00', '2026-10-28 09:00:01', '2026-10-28 09:00:02')
+    `)
+    .run();
+  const preOutbound2 = preAttemptsDb
+    .prepare(`
+      INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, external_message_id, queued_at, typing_at)
+      VALUES ('+15550009002', 'outbound', 'manual_reply', 'failed', 'Timed out v120', 'ext-v120-typing-2', '2026-10-28 09:05:00', '2026-10-28 09:05:03')
+    `)
+    .run();
+  preAttemptsDb
+    .prepare(`
+      INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, external_message_id, queued_at)
+      VALUES
+        ('+15550009003', 'inbound', 'manual_reply', 'delivered', 'Inbound msg', 'ext-v120-inbound-3', '2026-10-28 09:06:00'),
+        ('+15550009004', 'outbound', 'manual_reply', 'failed', 'Blank ext id', '   ', '2026-10-28 09:07:00')
+    `)
+    .run();
+  const preOutboundId1 = Number(preOutbound1.lastInsertRowid);
+  const preOutboundId2 = Number(preOutbound2.lastInsertRowid);
+  preAttemptsDb.pragma('user_version = 120');
+  closeDatabase();
+
+  initDatabase();
+  const postAttemptsDb = getDatabase();
+  assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
+  const backfilledAttempts = postAttemptsDb
+    .prepare(`
+      SELECT message_id, external_message_id, created_at
+      FROM whatsapp_message_attempts
+      WHERE external_message_id LIKE 'ext-v120-%'
+      ORDER BY id ASC
+    `)
+    .all() as Array<{ message_id: number; external_message_id: string; created_at: string }>;
+  assert.deepEqual(
+    backfilledAttempts,
+    [
+      {
+        message_id: preOutboundId1,
+        external_message_id: 'ext-v120-sent-1',
+        created_at: '2026-10-28 09:00:02',
+      },
+      {
+        message_id: preOutboundId2,
+        external_message_id: 'ext-v120-typing-2',
+        created_at: '2026-10-28 09:05:03',
+      },
+    ],
+    'v121 backfills non-empty outbound external_message_id rows into whatsapp_message_attempts using COALESCE(sent_at, typing_at, queued_at)',
+  );
+  assert.equal(
+    runHealthCheck().findings.length,
+    0,
+    'runHealthCheck() reports zero drift after v121',
+  );
+  postAttemptsDb
+    .prepare(`DELETE FROM whatsapp_messages WHERE phone_e164 LIKE '+1555000900%'`)
+    .run();
+  console.log(
+    '   ✓ v121 creates whatsapp_message_attempts and backfills existing outbound external_message_id rows',
+  );
+  closeDatabase();
+
   console.log('='.repeat(60));
   console.log('✅ Upgrade-path regression test passed');
 }

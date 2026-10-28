@@ -93,12 +93,48 @@ async function main() {
     assert(threw, 'whatsapp_blocklist PK rejects duplicate');
 
     const allIndexes = new Set<string>();
-    for (const t of ['whatsapp_messages', 'whatsapp_blocklist']) {
+    for (const t of ['whatsapp_messages', 'whatsapp_blocklist', 'whatsapp_message_attempts']) {
       for (const i of tableIndexes(db, t)) allIndexes.add(i);
     }
     assert(allIndexes.has('idx_whatsapp_messages_phone'), 'index idx_whatsapp_messages_phone exists');
     assert(allIndexes.has('idx_whatsapp_messages_status'), 'index idx_whatsapp_messages_status exists');
     assert(allIndexes.has('idx_whatsapp_messages_bill'), 'index idx_whatsapp_messages_bill exists');
+    assert(
+      allIndexes.has('idx_whatsapp_message_attempts_message_id'),
+      'index idx_whatsapp_message_attempts_message_id exists',
+    );
+
+    const attemptCols = tableColumns(db, 'whatsapp_message_attempts');
+    for (const c of ['id', 'message_id', 'external_message_id', 'created_at']) {
+      assert(attemptCols.includes(c), `whatsapp_message_attempts has column ${c}`);
+    }
+
+    const parentInsert = db
+      .prepare(
+        `INSERT INTO whatsapp_messages (phone_e164, direction, body) VALUES ('+15555550300', 'outbound', 'attempt fk test')`,
+      )
+      .run();
+    const parentId = Number(parentInsert.lastInsertRowid);
+    db.prepare(
+      `INSERT INTO whatsapp_message_attempts (message_id, external_message_id, created_at) VALUES (?, 'ext-unique-1', '2026-10-28 12:00:00')`,
+    ).run(parentId);
+    threw = false;
+    try {
+      db.prepare(
+        `INSERT INTO whatsapp_message_attempts (message_id, external_message_id, created_at) VALUES (?, 'ext-unique-1', '2026-10-28 12:01:00')`,
+      ).run(parentId);
+    } catch {
+      threw = true;
+    }
+    assert(threw, 'whatsapp_message_attempts external_message_id UNIQUE rejects duplicate');
+    db.prepare(`DELETE FROM whatsapp_messages WHERE id = ?`).run(parentId);
+    const cascadedAttempts = db
+      .prepare(`SELECT COUNT(*) AS c FROM whatsapp_message_attempts WHERE message_id = ?`)
+      .get(parentId) as { c: number };
+    assert(
+      cascadedAttempts.c === 0,
+      'whatsapp_message_attempts ON DELETE CASCADE deletes attempts when parent message is deleted',
+    );
 
     assert(getSetting(db, 'whatsapp_enabled') === 'false', 'whatsapp_enabled defaults to false');
     assert(getSetting(db, 'whatsapp_activated_by_user_id') === '', 'whatsapp_activated_by_user_id defaults to empty');

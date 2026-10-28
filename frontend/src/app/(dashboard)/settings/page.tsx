@@ -3168,7 +3168,7 @@ export default function SettingsPage() {
         setGoogleDriveStatus((previous) => ({ ...previous, job }));
         if (job.state === 'succeeded' || job.state === 'retention_pending') {
           await Promise.all([fetchGoogleDriveStatus(), fetchRemoteGoogleDriveBackups()]);
-          if (job.state === 'retention_pending') toast.error(t('googleDriveRetentionPending'));
+          if (job.state === 'retention_pending') toast(t('googleDriveRetentionPending'));
           else toast.success(t('googleDriveBackupSuccess'));
           return;
         }

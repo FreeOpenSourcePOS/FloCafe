@@ -230,7 +230,7 @@ re-exported from `main/middleware/security.ts`) and every frontend form that set
 (first-run setup, staff create and edit, staff password reset, recovery) import it, and the
 `password-policy` test fails if a source file re-implements a password rule. Every route that
 writes a password enforces it: setup, staff create and update, password change, and both recovery
-paths. The 4-digit Master PIN and approval PINs are separate secrets with their own rules.
+paths. The 4-digit Master PIN and 4-6 digit staff PINs are separate secrets with their own rules.
 
 ## Owner password recovery
 

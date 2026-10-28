@@ -54,7 +54,7 @@ Backend owns all logic; the frontend never computes totals.
 
 ## File formats
 
-- **XLSX:** sheets `Summary`, `Daily`, `Taxes`, `Items`, then `Payments`. Money cells are numeric with `moneyNumFmt(fractionDigits)` and percentage/rate cells (`*_percent`, `tax_rate`) use `'0.00'`; `null` rate, base, gross, cost, profit, and margin values are empty string `""`; no formulas. Frozen header row.
+- **XLSX:** sheets `Summary`, `Daily`, `Taxes`, `Items`, then `Payments`. Money cells are numeric with `moneyNumFmt(fractionDigits)`, percentage cells (`*_percent`) use `'0.00'`, and `tax_rate` cells use `'0.##'`; `null` rate, base, gross, cost, profit, and margin values are empty string `""`; no formulas. Frozen header row.
 - **CSV:** stable English snake_case headers; ASCII `.` decimals; formula-neutralized via shared `toCsvRow`.
 - **Filenames:** `daily-sales-YYYY-MM-DD.xlsx` (single day) or `daily-sales-YYYY-MM-DD_to_YYYY-MM-DD.xlsx` (multi-day range), and `-summary.csv`, `-daily.csv`, `-taxes.csv`, `-items.csv`, `-payments.csv` (from `dailySalesExportFilename`).
 

@@ -12,7 +12,7 @@ import {
   getCurrencyMinorUnitFactor,
   resolveRegionalSnapshot,
 } from '../countries';
-import { isTerminalItemStatus } from '../../shared/order-item-status';
+import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import { getTenantCurrency } from './refund';
 import { roundCurrencyCost } from './supplies';
 import { computeDiscountTaxRatio } from './tax';
@@ -98,18 +98,6 @@ export type DailySalesExportTaxRow = {
   warning: string;
 };
 
-export type DailySalesExportTaxSummaryRow = {
-  tax_name: string;
-  tax_rate: number | null;
-  taxable_base: number | null;
-  tax_amount: number;
-  gross_amount: number | null;
-  shared_base: boolean;
-  base_additive: boolean;
-  incomplete_detail: boolean;
-  warning: string;
-};
-
 export type DailySalesExportSummary = {
   business_date: string;
   from_date: string;
@@ -142,7 +130,6 @@ export type DailySalesExportDataset = {
   summary: DailySalesExportSummary;
   daily: DailySalesExportDayRow[];
   taxes: DailySalesExportTaxRow[];
-  tax_summary: DailySalesExportTaxSummaryRow[];
   items: DailySalesExportItemRow[];
   payments: DailySalesExportPaymentLineRow[];
 };
@@ -564,6 +551,27 @@ function extractItemLegacyEntries(
   });
 }
 
+const MINOR_UNIT_ROUNDING_TOLERANCE = new Decimal('0.05');
+
+function shouldExtractDocumentResiduals(
+  coveredEntries: HistoricalTaxEntry[],
+  targetValue: Decimal,
+): boolean {
+  if (targetValue.isZero()) return false;
+  const representedSum = coveredEntries.reduce((sum, e) => sum.plus(e.amount), new Decimal(0));
+  const diff = targetValue.minus(representedSum);
+  if (
+    coveredEntries.length > 0 &&
+    !representedSum.isZero() &&
+    diff.abs().lte(MINOR_UNIT_ROUNDING_TOLERANCE)
+  ) {
+    return false;
+  }
+  return targetValue.isNegative()
+    ? representedSum.gt(targetValue)
+    : representedSum.lt(targetValue);
+}
+
 function extractDocumentLegacyResidualEntries(
   documentBreakdown: unknown,
   coveredEntries: HistoricalTaxEntry[],
@@ -589,6 +597,13 @@ function extractDocumentLegacyResidualEntries(
     const residual = comp.amount.minus(consumed);
     remainingByKey.set(key, covered.minus(consumed));
     if (residual.isZero()) continue;
+    if (
+      !covered.isZero() &&
+      comp.explicitBase === null &&
+      residual.abs().lte(MINOR_UNIT_ROUNDING_TOLERANCE)
+    ) {
+      continue;
+    }
     const base = comp.explicitBase;
     const incompleteDetail = rateStr === null || base === null;
     residuals.push({
@@ -642,9 +657,16 @@ function reconcileBillTaxEntries(
 
   // Minor-unit rounding remainder from order-level discount or split allocation:
   // adjust the last component so component amounts sum to the exact bill tax total.
-  if (diff.abs().lte(new Decimal('0.05'))) {
+  if (diff.abs().lte(MINOR_UNIT_ROUNDING_TOLERANCE)) {
     const cloned = entries.map((entry) => ({ ...entry }));
-    cloned[cloned.length - 1].amount = cloned[cloned.length - 1].amount.plus(diff);
+    let targetIndex = cloned.length - 1;
+    for (let i = cloned.length - 1; i >= 0; i -= 1) {
+      if (!cloned[i].incompleteDetail) {
+        targetIndex = i;
+        break;
+      }
+    }
+    cloned[targetIndex].amount = cloned[targetIndex].amount.plus(diff);
     return cloned;
   }
 
@@ -678,9 +700,7 @@ function resolveBillHistoricalTaxEntries(
       }
     | undefined,
 ): HistoricalTaxEntry[] {
-  const activeItems = (order?.items || []).filter(
-    (item) => !isTerminalItemStatus(item.status as string | null | undefined),
-  );
+  const activeItems = (order?.items || []).filter((item) => !isExcludedFromBillReceipt(item.status));
   const taxDiscountRatioDec = getTaxDiscountRatioDecimal(order?.subtotal, order?.discount_amount);
 
   const billTaxDec = decimalOrNull(bill.tax_amount);
@@ -726,14 +746,8 @@ function resolveBillHistoricalTaxEntries(
         return [];
       });
       const combined = [...splitSnapshot.entries, ...legacyItems];
-      const representedSum = combined.reduce((s, e) => s.plus(e.amount), new Decimal(0));
-      const needsResidual =
-        !effectiveTargetTax.isZero() &&
-        (effectiveTargetTax.isNegative()
-          ? representedSum.gt(effectiveTargetTax)
-          : representedSum.lt(effectiveTargetTax));
-      const docResiduals = needsResidual
-        ? extractDocumentLegacyResidualEntries(bill.tax_breakdown, splitSnapshot.entries)
+      const docResiduals = shouldExtractDocumentResiduals(combined, effectiveTargetTax)
+        ? extractDocumentLegacyResidualEntries(bill.tax_breakdown, combined)
         : [];
       return reconcileBillTaxEntries([...combined, ...docResiduals], effectiveTargetTax);
     }
@@ -741,7 +755,6 @@ function resolveBillHistoricalTaxEntries(
 
   if (activeItems.length > 0) {
     const itemEntries: HistoricalTaxEntry[] = [];
-    const itemSnapshotEntries: HistoricalTaxEntry[] = [];
     let hasSnapshotEvidence = false;
     let hasLegacyBreakdownEvidence = false;
 
@@ -750,13 +763,24 @@ function resolveBillHistoricalTaxEntries(
       if (snap.present) {
         hasSnapshotEvidence = true;
         itemEntries.push(...snap.entries);
-        itemSnapshotEntries.push(...snap.entries);
         continue;
       }
       const legacy = extractItemLegacyEntries(item, taxDiscountRatioDec);
       if (legacy.length > 0) {
         hasLegacyBreakdownEvidence = true;
         itemEntries.push(...legacy);
+        continue;
+      }
+      const itemTax = decimalOrNull(item.tax_amount);
+      if (itemTax && !itemTax.isZero()) {
+        itemEntries.push({
+          title: 'Unknown',
+          rate: null,
+          taxableBase: null,
+          amount: itemTax,
+          sharedBase: false,
+          incompleteDetail: true,
+        });
       }
     }
 
@@ -764,31 +788,36 @@ function resolveBillHistoricalTaxEntries(
       const chargeSnapshot = extractSnapshotEntries(bill.tax_snapshot, {
         onlyChargeSnapshots: true,
       });
-      if (chargeSnapshot.present) {
-        const chargeTotal = chargeSnapshot.entries.reduce(
-          (sum, e) => sum.plus(e.amount),
-          new Decimal(0),
-        );
-        const itemTarget = effectiveTargetTax.minus(chargeTotal);
-        const reconciledItems = reconcileBillTaxEntries(itemEntries, itemTarget);
-        const docResiduals = extractDocumentLegacyResidualEntries(bill.tax_breakdown, [
-          ...itemSnapshotEntries,
-          ...chargeSnapshot.entries,
-        ]);
-        return [...reconciledItems, ...chargeSnapshot.entries, ...docResiduals];
-      }
-
-      const docResiduals = extractDocumentLegacyResidualEntries(bill.tax_breakdown, itemEntries);
-      return reconcileBillTaxEntries([...itemEntries, ...docResiduals], effectiveTargetTax);
+      const chargeEntries = chargeSnapshot.present ? chargeSnapshot.entries : [];
+      const coveredEntries = [...itemEntries, ...chargeEntries];
+      const docResiduals = shouldExtractDocumentResiduals(coveredEntries, effectiveTargetTax)
+        ? extractDocumentLegacyResidualEntries(bill.tax_breakdown, coveredEntries)
+        : [];
+      const nonItemTotal = [...chargeEntries, ...docResiduals].reduce(
+        (sum, e) => sum.plus(e.amount),
+        new Decimal(0),
+      );
+      const itemTarget = effectiveTargetTax.minus(nonItemTotal);
+      const itemSum = itemEntries.reduce((sum, e) => sum.plus(e.amount), new Decimal(0));
+      const itemDiff = itemTarget.minus(itemSum);
+      const adjustedItems =
+        !itemSum.isZero() &&
+        !itemDiff.isZero() &&
+        itemDiff.abs().lte(MINOR_UNIT_ROUNDING_TOLERANCE)
+          ? reconcileBillTaxEntries(itemEntries, itemTarget)
+          : itemEntries;
+      return reconcileBillTaxEntries(
+        [...adjustedItems, ...chargeEntries, ...docResiduals],
+        effectiveTargetTax,
+      );
     }
   }
 
   const docSnapshot = extractSnapshotEntries(bill.tax_snapshot);
   if (docSnapshot.present) {
-    const docResiduals = extractDocumentLegacyResidualEntries(
-      bill.tax_breakdown,
-      docSnapshot.entries,
-    );
+    const docResiduals = shouldExtractDocumentResiduals(docSnapshot.entries, effectiveTargetTax)
+      ? extractDocumentLegacyResidualEntries(bill.tax_breakdown, docSnapshot.entries)
+      : [];
     return reconcileBillTaxEntries([...docSnapshot.entries, ...docResiduals], effectiveTargetTax);
   }
 
@@ -874,81 +903,6 @@ function aggregateDailyTaxRows(
         warning: group.incompleteDetail ? DAILY_SALES_TAX_INCOMPLETE_WARNING : '',
       };
     });
-}
-
-function rollupTaxSummaryRows(taxRows: DailySalesExportTaxRow[]): DailySalesExportTaxSummaryRow[] {
-  const merged = new Map<
-    string,
-    {
-      tax_name: string;
-      tax_rate: number | null;
-      taxableBase: Decimal | null;
-      taxAmount: Decimal;
-      grossAmount: Decimal | null;
-      shared_base: boolean;
-      incomplete_detail: boolean;
-    }
-  >();
-
-  for (const row of taxRows) {
-    const key = `${row.tax_name}\u0000${row.tax_rate ?? ''}\u0000${row.incomplete_detail ? '1' : '0'}`;
-    const existing = merged.get(key);
-    if (existing) {
-      existing.taxAmount = existing.taxAmount.plus(row.tax_amount);
-      if (
-        existing.taxableBase !== null &&
-        row.taxable_base !== null &&
-        existing.grossAmount !== null &&
-        row.gross_amount !== null &&
-        !row.incomplete_detail
-      ) {
-        existing.taxableBase = existing.taxableBase.plus(row.taxable_base);
-        existing.grossAmount = existing.grossAmount.plus(row.gross_amount);
-      } else {
-        existing.taxableBase = null;
-        existing.grossAmount = null;
-      }
-      existing.shared_base = existing.shared_base || row.shared_base;
-      existing.incomplete_detail = existing.incomplete_detail || row.incomplete_detail;
-    } else {
-      merged.set(key, {
-        tax_name: row.tax_name,
-        tax_rate: row.tax_rate,
-        taxableBase:
-          row.incomplete_detail || row.taxable_base === null ? null : new Decimal(row.taxable_base),
-        taxAmount: new Decimal(row.tax_amount),
-        grossAmount:
-          row.incomplete_detail || row.gross_amount === null ? null : new Decimal(row.gross_amount),
-        shared_base: row.shared_base,
-        incomplete_detail: row.incomplete_detail,
-      });
-    }
-  }
-
-  return Array.from(merged.values()).map((group) => {
-    const taxableBase =
-      group.taxableBase === null
-        ? null
-        : group.taxableBase.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber();
-    const taxAmount = group.taxAmount.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber();
-    const grossAmount =
-      group.grossAmount === null
-        ? null
-        : group.grossAmount.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber();
-    const sharedBase = Boolean(group.shared_base && taxableBase !== null);
-    const baseAdditive = !group.incomplete_detail && taxableBase !== null && !sharedBase;
-    return {
-      tax_name: group.tax_name,
-      tax_rate: group.tax_rate,
-      taxable_base: taxableBase,
-      tax_amount: taxAmount,
-      gross_amount: grossAmount,
-      shared_base: sharedBase,
-      base_additive: baseAdditive,
-      incomplete_detail: group.incomplete_detail,
-      warning: group.incomplete_detail ? DAILY_SALES_TAX_INCOMPLETE_WARNING : '',
-    };
-  });
 }
 
 function finalizeItemRows(
@@ -1435,7 +1389,6 @@ export function buildDailySalesExportDataset(
     }))
     .sort((a, b) => b.total - a.total);
 
-  const taxSummary = rollupTaxSummaryRows(taxes);
   const hasIncompleteTaxDetail = taxes.some((row) => row.incomplete_detail);
 
   const grossCollected = totalGrossCollected.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber();
@@ -1479,7 +1432,6 @@ export function buildDailySalesExportDataset(
     },
     daily,
     taxes,
-    tax_summary: taxSummary,
     items,
     payments,
   };

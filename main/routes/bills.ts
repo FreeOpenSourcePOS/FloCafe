@@ -5709,9 +5709,7 @@ router.patch(
         });
       }
 
-      const callerUser = (
-        req as Request & { user?: { userId?: string; id?: string; role?: string } }
-      ).user;
+      const callerUser = (req as Request & { user?: { userId?: string; id?: string } }).user;
       const rawActorUserId = String(callerUser?.userId || callerUser?.id || '');
 
       type ApproverRow = { id: string; role: string; pin_hash: string | null; is_active: number };
@@ -5720,44 +5718,19 @@ router.patch(
           return { rateLimited: true as const };
         }
 
-        if (explicitApproverId) {
-          const candidate = db
-            .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
-            .get(explicitApproverId) as ApproverRow | undefined;
-          if (
-            !candidate ||
-            candidate.is_active !== 1 ||
-            !hasRole(candidate.role, ROLE_ACCESS.ownerManager) ||
-            !candidate.pin_hash
-          ) {
-            return { approver: null };
-          }
-          if (!(await verifyPinAsync(candidate.pin_hash, override_pin))) {
-            checkPinRateLimit(rateLimitKey);
-            return { approver: null };
-          }
-          clearPinRateLimit(rateLimitKey);
-          return {
-            approver: { id: candidate.id, verifiedPinHash: candidate.pin_hash },
-          };
-        }
+        const candidates = explicitApproverId
+          ? (db
+              .prepare(
+                "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
+              )
+              .all(explicitApproverId) as ApproverRow[])
+          : (db
+              .prepare(
+                "SELECT id, role, pin_hash, is_active FROM users WHERE role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
+              )
+              .all() as ApproverRow[]);
 
-        // When approver_id is omitted, a non-manager caller's own PIN must never authorize this.
-        if (rawActorUserId && !hasRole(callerUser?.role, ROLE_ACCESS.ownerManager)) {
-          const callerRow = db
-            .prepare('SELECT pin_hash FROM users WHERE id = ?')
-            .get(rawActorUserId) as { pin_hash: string | null } | undefined;
-          if (callerRow?.pin_hash && (await verifyPinAsync(callerRow.pin_hash, override_pin))) {
-            return { approver: null };
-          }
-        }
-
-        const managers = db
-          .prepare(
-            "SELECT id, role, pin_hash, is_active FROM users WHERE role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
-          )
-          .all() as ApproverRow[];
-        for (const candidate of managers) {
+        for (const candidate of candidates) {
           if (
             candidate.is_active === 1 &&
             hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&

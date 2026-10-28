@@ -288,6 +288,40 @@ async function main() {
       403,
       'wrong manager PIN is rejected with 403',
     );
+
+    const fifthFailedPinAttempt = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
+      method: 'PATCH',
+      body: {
+        method: 'card',
+        override_pin: '5555',
+      },
+      headers: cashierAuth,
+    });
+    assertEqualOrThrow(
+      fifthFailedPinAttempt.status,
+      403,
+      'fifth failed PIN attempt is rejected with 403 and reaches rate-limit threshold',
+    );
+
+    const rateLimitedPinAttempt = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
+      method: 'PATCH',
+      body: {
+        method: 'card',
+        approver_id: managerId,
+        override_pin: '1234',
+      },
+      headers: cashierAuth,
+    });
+    assertEqualOrThrow(
+      rateLimitedPinAttempt.status,
+      429,
+      'sixth PIN attempt after five failures is rejected with 429',
+    );
+    assertEqualOrThrow(
+      rateLimitedPinAttempt.data.reason,
+      'pin_rate_limited',
+      'rate-limited PIN response includes reason = pin_rate_limited',
+    );
     resetPinRateLimitForTests();
 
     const immutableAmountAttempt = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
@@ -631,15 +665,32 @@ async function main() {
     );
 
     // Switch bill2 back to cash for subsequent shift-close assertions
-    await api(baseUrl, `/api/bills/${bill2.id}/payments/0/method`, {
+    db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+      bcrypt.hashSync('1234', 10),
+      cashierId,
+    );
+    const sharedPinNoApproverRes = await api(baseUrl, `/api/bills/${bill2.id}/payments/0/method`, {
       method: 'PATCH',
       headers: cashierAuth,
       body: {
         method: 'cash',
-        approver_id: managerId,
         override_pin: '1234',
       },
     });
+    assertEqualOrThrow(
+      sharedPinNoApproverRes.status,
+      200,
+      'omitting approver_id when active manager shares PIN value with cashier succeeds (200)',
+    );
+    assertEqualOrThrow(
+      sharedPinNoApproverRes.data.audit.approver_id,
+      managerId,
+      'shared PIN without approver_id attributes approval to the active manager',
+    );
+    db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+      bcrypt.hashSync('5555', 10),
+      cashierId,
+    );
 
     // ── 9. Refunded bill is refused with 409 ─────────────────────────────
     const { bill: refundBill } = await createPaidBill('prod-80', 'cash');

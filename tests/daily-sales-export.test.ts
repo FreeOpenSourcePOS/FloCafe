@@ -1687,6 +1687,434 @@ async function main() {
           `${taxEdgeDay2},Unknown,,,0.04,,false,false,true,`,
           'taxEdgeDay2 unknown <= 0.05 item tax emitted as Unknown row',
         );
+
+        // (5) Discounted bills: bill.tax_snapshot preference, fallback item.tax_snapshot scaling,
+        // and discounted legacy inclusive base calculation (taxEdgeDay3 = 2026-10-12).
+        const taxEdgeDay3 = '2026-10-12';
+        const taxEdgeDay3At = dbTimestamp(new Date('2026-10-12T10:00:00Z'));
+
+        // 5a) Bill with order-level 10% discount (subtotal 100, discount 10) + discounted bill.tax_snapshot (base 90, VAT 10% = 9)
+        db.prepare(`
+          INSERT INTO orders (order_number, user_id, type, status, subtotal, discount_amount, tax_amount, total, created_at, updated_at, completed_at)
+          VALUES ('ORD-DISC-SNAP', 'owner-test-001', 'takeaway', 'completed', 100, 10, 9, 99, ?, ?, ?)
+        `).run(taxEdgeDay3At, taxEdgeDay3At, taxEdgeDay3At);
+        const ordDiscSnap = Number(
+          db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-DISC-SNAP'").get().id,
+        );
+        db.prepare(`
+          INSERT INTO order_items (
+            order_id, product_id, product_name, product_sku, quantity, unit_price, subtotal, tax_amount, total,
+            tax_snapshot, status, created_at, updated_at
+          )
+          VALUES (?, 'prod-dse', 'Latte', NULL, 2, 50, 100, 10, 110, ?, 'ready', ?, ?)
+        `).run(
+          ordDiscSnap,
+          JSON.stringify({
+            taxable_base: 100,
+            components: [{ name: 'VAT', rate: 10, amount: 10 }],
+          }),
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+        );
+        db.prepare(`
+          INSERT INTO bills (
+            bill_number, order_id, subtotal, discount_amount, tax_amount, tax_snapshot, total, paid_amount, balance,
+            payment_status, payment_details, paid_at, created_at, updated_at
+          )
+          VALUES ('B-DISC-SNAP', ?, 100, 10, 9, ?, 99, 99, 0, 'paid', ?, ?, ?, ?)
+        `).run(
+          ordDiscSnap,
+          JSON.stringify({
+            lines: [{ taxableBase: 90, components: [{ label: 'VAT', rate: 10, amount: 9 }] }],
+          }),
+          JSON.stringify([{ method: 'cash', amount: 99, timestamp: taxEdgeDay3At }]),
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+        );
+
+        // 5b) Bill with order-level 20% discount (subtotal 100, discount 20) and NO bill.tax_snapshot,
+        // falling back to item.tax_snapshot (base 100, GST 5% = 5 -> scaled to base 80, tax 4).
+        db.prepare(`
+          INSERT INTO orders (order_number, user_id, type, status, subtotal, discount_amount, tax_amount, total, created_at, updated_at, completed_at)
+          VALUES ('ORD-DISC-ITEM', 'owner-test-001', 'takeaway', 'completed', 100, 20, 4, 84, ?, ?, ?)
+        `).run(taxEdgeDay3At, taxEdgeDay3At, taxEdgeDay3At);
+        const ordDiscItem = Number(
+          db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-DISC-ITEM'").get().id,
+        );
+        db.prepare(`
+          INSERT INTO order_items (
+            order_id, product_id, product_name, product_sku, quantity, unit_price, subtotal, tax_amount, total,
+            tax_snapshot, status, created_at, updated_at
+          )
+          VALUES (?, 'prod-dse2', 'Mocha', '', 2, 50, 100, 5, 105, ?, 'ready', ?, ?)
+        `).run(
+          ordDiscItem,
+          JSON.stringify({
+            taxable_base: 100,
+            components: [{ name: 'GST', rate: 5, amount: 5 }],
+          }),
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+        );
+        db.prepare(`
+          INSERT INTO bills (
+            bill_number, order_id, subtotal, discount_amount, tax_amount, total, paid_amount, balance,
+            payment_status, payment_details, paid_at, created_at, updated_at
+          )
+          VALUES ('B-DISC-ITEM', ?, 100, 20, 4, 84, 84, 0, 'paid', ?, ?, ?, ?)
+        `).run(
+          ordDiscItem,
+          JSON.stringify([{ method: 'cash', amount: 84, timestamp: taxEdgeDay3At }]),
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+        );
+
+        // 5c) Bill with order-level 10% discount on a legacy INCLUSIVE item (subtotal 110, tax 10, discount 11 -> base 90, tax 9, gross 99)
+        db.prepare(`
+          INSERT INTO orders (order_number, user_id, type, status, subtotal, discount_amount, tax_amount, total, created_at, updated_at, completed_at)
+          VALUES ('ORD-DISC-INC', 'owner-test-001', 'takeaway', 'completed', 110, 11, 9, 99, ?, ?, ?)
+        `).run(taxEdgeDay3At, taxEdgeDay3At, taxEdgeDay3At);
+        const ordDiscInc = Number(
+          db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-DISC-INC'").get().id,
+        );
+        db.prepare(`
+          INSERT INTO order_items (
+            order_id, product_id, product_name, product_sku, quantity, unit_price, subtotal, tax_type, tax_amount, total,
+            tax_breakdown, status, created_at, updated_at
+          )
+          VALUES (?, 'prod-dse', 'Latte', '', 1, 110, 110, 'inclusive', 10, 110, ?, 'ready', ?, ?)
+        `).run(
+          ordDiscInc,
+          JSON.stringify([{ title: 'VAT-Inc', rate: 10, amount: 10 }]),
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+        );
+        db.prepare(`
+          INSERT INTO bills (
+            bill_number, order_id, subtotal, discount_amount, tax_amount, total, paid_amount, balance,
+            payment_status, payment_details, paid_at, created_at, updated_at
+          )
+          VALUES ('B-DISC-INC', ?, 110, 11, 9, 99, 99, 0, 'paid', ?, ?, ?, ?)
+        `).run(
+          ordDiscInc,
+          JSON.stringify([{ method: 'cash', amount: 99, timestamp: taxEdgeDay3At }]),
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+        );
+
+        // 5d) Same-day shared-base vs independent-base for the same tax name & rate (VAT 10% shared with City Tax 2% on base 200)
+        db.prepare(`
+          INSERT INTO orders (order_number, user_id, type, status, subtotal, tax_amount, total, created_at, updated_at, completed_at)
+          VALUES ('ORD-SHARED-MIX', 'owner-test-001', 'takeaway', 'completed', 200, 24, 224, ?, ?, ?)
+        `).run(taxEdgeDay3At, taxEdgeDay3At, taxEdgeDay3At);
+        const ordSharedMix = Number(
+          db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-SHARED-MIX'").get().id,
+        );
+        db.prepare(`
+          INSERT INTO order_items (
+            order_id, product_id, product_name, product_sku, quantity, unit_price, subtotal, tax_amount, total,
+            tax_snapshot, status, created_at, updated_at
+          )
+          VALUES (?, 'prod-dse2', 'Mocha', NULL, 4, 50, 200, 24, 224, ?, 'ready', ?, ?)
+        `).run(
+          ordSharedMix,
+          JSON.stringify({
+            taxable_base: 200,
+            components: [
+              { name: 'VAT', rate: 10, amount: 20 },
+              { name: 'City Tax', rate: 2, amount: 4 },
+            ],
+          }),
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+        );
+        db.prepare(`
+          INSERT INTO bills (
+            bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance,
+            payment_status, payment_details, paid_at, created_at, updated_at
+          )
+          VALUES ('B-SHARED-MIX', ?, 200, 24, 224, 224, 0, 'paid', ?, ?, ?, ?)
+        `).run(
+          ordSharedMix,
+          JSON.stringify([{ method: 'cash', amount: 224, timestamp: taxEdgeDay3At }]),
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+          taxEdgeDay3At,
+        );
+
+        const edgeDay3Summary = await fetchSummary(taxEdgeDay3);
+        assertEqual(
+          String(edgeDay3Summary.get('tax_detail_complete')),
+          'true',
+          'taxEdgeDay3 discounted + shared-base bills have complete tax detail',
+        );
+        assertEqual(
+          Number(edgeDay3Summary.get('tax_total')),
+          46,
+          'taxEdgeDay3 tax_total = 9 + 4 + 9 + 24 = 46',
+        );
+        const edgeDay3TaxesRes = await fetch(
+          `${baseUrl}/api/reports/daily-sales/export?date=${taxEdgeDay3}&format=csv&part=taxes`,
+          { headers: authHeader },
+        );
+        const edgeDay3TaxesText = await edgeDay3TaxesRes.text();
+        assertIncludes(
+          edgeDay3TaxesText,
+          `${taxEdgeDay3},VAT,10,90,9,99,false,true,false,`,
+          'taxEdgeDay3 independent VAT 10% row has discounted base 90 and base_additive=true',
+        );
+        assertIncludes(
+          edgeDay3TaxesText,
+          `${taxEdgeDay3},VAT,10,200,20,220,true,false,false,`,
+          'taxEdgeDay3 shared-base VAT 10% row stays separate with shared_base=true, base_additive=false',
+        );
+        assertIncludes(
+          edgeDay3TaxesText,
+          `${taxEdgeDay3},GST,5,80,4,84,false,true,false,`,
+          'taxEdgeDay3 fallback item.tax_snapshot GST 5% scales to base 80, tax 4',
+        );
+        assertIncludes(
+          edgeDay3TaxesText,
+          `${taxEdgeDay3},VAT-Inc,10,90,9,99,false,true,false,`,
+          'taxEdgeDay3 discounted legacy inclusive item computes base 90 (99 - 9), not 89',
+        );
+
+        // Verify NULL vs empty-string '' product_sku are kept distinct in Items export
+        const edgeDay3ItemsRes = await fetch(
+          `${baseUrl}/api/reports/daily-sales/export?date=${taxEdgeDay3}&format=csv&part=items`,
+          { headers: authHeader },
+        );
+        const edgeDay3ItemsLines = (await edgeDay3ItemsRes.text()).trim().split('\n');
+        // prod-dse ('Latte') was sold with SKU=NULL (qty 2, net 100) and SKU='' (qty 1, net 110)
+        // prod-dse2 ('Mocha') was sold with SKU='' (qty 2, net 100) and SKU=NULL (qty 4, net 200)
+        assertEqual(
+          edgeDay3ItemsLines.length,
+          5,
+          'Items CSV keeps NULL and empty-string SKU rows distinct (header + 4 rows)',
+        );
+
+        // (6) Fixed-rule legacy tax with rate: 0 and non-zero amount + X-report parity for zero bill.tax_amount with refunded item (taxEdgeDay4 = 2026-10-13)
+        const taxEdgeDay4 = '2026-10-13';
+        const taxEdgeDay4At = dbTimestamp(new Date('2026-10-13T10:00:00Z'));
+
+        // 6a) Fixed-rule legacy tax with rate: 0 and amount: 2.5 -> rate must be blank (unknown), not 0%
+        db.prepare(`
+          INSERT INTO orders (order_number, user_id, type, status, subtotal, tax_amount, total, created_at, updated_at, completed_at)
+          VALUES ('ORD-FIXED-0', 'owner-test-001', 'takeaway', 'completed', 50, 2.5, 52.5, ?, ?, ?)
+        `).run(taxEdgeDay4At, taxEdgeDay4At, taxEdgeDay4At);
+        const ordFixed0 = Number(
+          db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-FIXED-0'").get().id,
+        );
+        db.prepare(`
+          INSERT INTO order_items (
+            order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total,
+            tax_breakdown, status, created_at, updated_at
+          )
+          VALUES (?, 'prod-dse', 'Latte', 1, 50, 50, 2.5, 52.5, ?, 'ready', ?, ?)
+        `).run(
+          ordFixed0,
+          JSON.stringify([{ title: 'Bottle Levy', rate: 0, amount: 2.5, taxable_base: 50 }]),
+          taxEdgeDay4At,
+          taxEdgeDay4At,
+        );
+        db.prepare(`
+          INSERT INTO bills (
+            bill_number, order_id, subtotal, tax_amount, tax_breakdown, total, paid_amount, balance,
+            payment_status, payment_details, paid_at, created_at, updated_at
+          )
+          VALUES ('B-FIXED-0', ?, 50, 2.5, ?, 52.5, 52.5, 0, 'paid', ?, ?, ?, ?)
+        `).run(
+          ordFixed0,
+          JSON.stringify([{ title: 'Bottle Levy', rate: 0, amount: 2.5, taxable_base: 50 }]),
+          JSON.stringify([{ method: 'cash', amount: 52.5, timestamp: taxEdgeDay4At }]),
+          taxEdgeDay4At,
+          taxEdgeDay4At,
+          taxEdgeDay4At,
+        );
+
+        // 6b) Legacy bill with tax_amount = 0 where the sole item was refunded and had oi.tax_amount = 5:
+        // daily-sales/export must respect bill.tax_amount = 0 and match X-report tax total.
+        db.prepare(`
+          INSERT INTO orders (order_number, user_id, type, status, subtotal, tax_amount, total, created_at, updated_at, completed_at)
+          VALUES ('ORD-ZERO-BILL-REF', 'owner-test-001', 'takeaway', 'completed', 50, 0, 50, ?, ?, ?)
+        `).run(taxEdgeDay4At, taxEdgeDay4At, taxEdgeDay4At);
+        const ordZeroRef = Number(
+          db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-ZERO-BILL-REF'").get().id,
+        );
+        db.prepare(`
+          INSERT INTO order_items (
+            order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total,
+            tax_snapshot, status, created_at, updated_at
+          )
+          VALUES (?, 'prod-dse2', 'Mocha', 1, 50, 50, 5, 55, ?, 'refunded', ?, ?)
+        `).run(ordZeroRef, refSnap50, taxEdgeDay4At, taxEdgeDay4At);
+        db.prepare(`
+          INSERT INTO bills (
+            bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance,
+            payment_status, payment_details, paid_at, created_at, updated_at
+          )
+          VALUES ('B-ZERO-BILL-REF', ?, 50, 0, 50, 50, 0, 'refunded', ?, ?, ?, ?)
+        `).run(
+          ordZeroRef,
+          JSON.stringify([{ method: 'cash', amount: 50, timestamp: taxEdgeDay4At }]),
+          taxEdgeDay4At,
+          taxEdgeDay4At,
+          taxEdgeDay4At,
+        );
+
+        const edgeDay4Summary = await fetchSummary(taxEdgeDay4);
+        assertEqual(
+          Number(edgeDay4Summary.get('tax_total')),
+          2.5,
+          'taxEdgeDay4 tax_total = 2.5 (respects bill.tax_amount = 0 on refunded bill)',
+        );
+        const xReportDay4Res = await fetch(`${baseUrl}/api/reports/x-report?date=${taxEdgeDay4}`, {
+          headers: authHeader,
+        });
+        assertEqual(xReportDay4Res.status, 200, 'x-report for taxEdgeDay4 → 200');
+        const xReportDay4 = (await xReportDay4Res.json()) as {
+          xReport: { taxComponents: Array<{ amount: number }> };
+        };
+        const xReportTaxTotal = xReportDay4.xReport.taxComponents.reduce(
+          (sum, comp) => sum + Number(comp.amount || 0),
+          0,
+        );
+        assertEqual(
+          xReportTaxTotal,
+          Number(edgeDay4Summary.get('tax_total')),
+          'daily-sales export tax_total matches X-report taxComponents total on taxEdgeDay4',
+        );
+        const edgeDay4TaxesRes = await fetch(
+          `${baseUrl}/api/reports/daily-sales/export?date=${taxEdgeDay4}&format=csv&part=taxes`,
+          { headers: authHeader },
+        );
+        const edgeDay4TaxesText = await edgeDay4TaxesRes.text();
+        assertIncludes(
+          edgeDay4TaxesText,
+          `${taxEdgeDay4},Bottle Levy,,,2.5,,false,false,true,`,
+          'fixed-rule legacy tax with rate:0 and nonzero amount marks rate/base blank and incomplete_detail=true',
+        );
+
+        // (7) Currency-aware rounding tolerance: 0-decimal JPY vs 3-decimal KWD
+        const jpyDay = '2026-10-14';
+        const jpyDayAt = dbTimestamp(new Date('2026-10-14T10:00:00Z'));
+        db.prepare(`
+          INSERT INTO orders (order_number, user_id, type, status, subtotal, tax_amount, total, created_at, updated_at, completed_at)
+          VALUES ('ORD-JPY-TOL', 'owner-test-001', 'takeaway', 'completed', 1000, 101, 1101, ?, ?, ?)
+        `).run(jpyDayAt, jpyDayAt, jpyDayAt);
+        const ordJpy = Number(
+          db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-JPY-TOL'").get().id,
+        );
+        db.prepare(`
+          INSERT INTO order_items (
+            order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total,
+            tax_snapshot, status, created_at, updated_at
+          )
+          VALUES (?, 'prod-dse', 'Latte', 1, 1000, 1000, 100, 1100, ?, 'ready', ?, ?)
+        `).run(
+          ordJpy,
+          JSON.stringify({
+            taxable_base: 1000,
+            components: [{ name: 'Consumption Tax', rate: 10, amount: 100 }],
+          }),
+          jpyDayAt,
+          jpyDayAt,
+        );
+        db.prepare(`
+          INSERT INTO bills (
+            bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance,
+            payment_status, payment_details, paid_at, created_at, updated_at
+          )
+          VALUES ('B-JPY-TOL', ?, 1000, 101, 1101, 1101, 0, 'paid', ?, ?, ?, ?)
+        `).run(
+          ordJpy,
+          JSON.stringify([{ method: 'cash', amount: 1101, timestamp: jpyDayAt }]),
+          jpyDayAt,
+          jpyDayAt,
+          jpyDayAt,
+        );
+
+        const kwdDay = '2026-10-15';
+        const kwdDayAt = dbTimestamp(new Date('2026-10-15T10:00:00Z'));
+        db.prepare(`
+          INSERT INTO orders (order_number, user_id, type, status, subtotal, tax_amount, total, created_at, updated_at, completed_at)
+          VALUES ('ORD-KWD-TOL', 'owner-test-001', 'takeaway', 'completed', 50, 5.02, 55.02, ?, ?, ?)
+        `).run(kwdDayAt, kwdDayAt, kwdDayAt);
+        const ordKwd = Number(
+          db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-KWD-TOL'").get().id,
+        );
+        db.prepare(`
+          INSERT INTO order_items (
+            order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total,
+            tax_snapshot, status, created_at, updated_at
+          )
+          VALUES (?, 'prod-dse', 'Latte', 1, 50, 50, 5, 55, ?, 'ready', ?, ?)
+        `).run(ordKwd, refSnap50, kwdDayAt, kwdDayAt);
+        db.prepare(`
+          INSERT INTO bills (
+            bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance,
+            payment_status, payment_details, paid_at, created_at, updated_at
+          )
+          VALUES ('B-KWD-TOL', ?, 50, 5.02, 55.02, 55.02, 0, 'paid', ?, ?, ?, ?)
+        `).run(
+          ordKwd,
+          JSON.stringify([{ method: 'cash', amount: 55.02, timestamp: kwdDayAt }]),
+          kwdDayAt,
+          kwdDayAt,
+          kwdDayAt,
+        );
+
+        try {
+          db.prepare(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('currency', 'JPY', CURRENT_TIMESTAMP)",
+          ).run();
+          const jpySummary = await fetchSummary(jpyDay);
+          assertEqual(
+            String(jpySummary.get('tax_detail_complete')),
+            'true',
+            'JPY 1-yen rounding remainder is absorbed within 0-decimal tolerance',
+          );
+          assertEqual(Number(jpySummary.get('tax_total')), 101, 'JPY tax_total = 101');
+
+          db.prepare(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('currency', 'KWD', CURRENT_TIMESTAMP)",
+          ).run();
+          const kwdSummary = await fetchSummary(kwdDay);
+          assertEqual(
+            String(kwdSummary.get('tax_detail_complete')),
+            'false',
+            'KWD 0.020 discrepancy (> 0.005 KWD tolerance) is flagged as incomplete_detail',
+          );
+        } finally {
+          db.prepare(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('currency', 'INR', CURRENT_TIMESTAMP)",
+          ).run();
+        }
+
+        // (8) Range /api/reports/insights?start_date=...&end_date=...
+        const insightsRes = await fetch(
+          `${baseUrl}/api/reports/insights?start_date=2026-10-01&end_date=2026-10-03`,
+          { headers: authHeader },
+        );
+        assertEqual(insightsRes.status, 200, 'range insights → 200');
+        const insightsBody = (await insightsRes.json()) as {
+          windowDays: number;
+          ordersAnalyzed: number;
+        };
+        assertEqual(insightsBody.windowDays, 3, 'range insights windowDays = 3');
+        assertEqual(
+          insightsBody.ordersAnalyzed,
+          4,
+          'range insights ordersAnalyzed = 4 for Oct 1..3',
+        );
+        const badInsightsRes = await fetch(
+          `${baseUrl}/api/reports/insights?start_date=2026-10-05&end_date=2026-10-01`,
+          { headers: authHeader },
+        );
+        assertEqual(badInsightsRes.status, 400, 'reversed range insights → 400');
       }
     }
   } finally {

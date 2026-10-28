@@ -996,81 +996,176 @@ router.get('/insights', requirePermission('reports.view'), (req: Request, res: R
   try {
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-    const days = Math.min(Math.max(parseInt(req.query.days as string) || 30, 1), 365);
-    // #208: "N days back" in the tenant's local calendar, with a UTC range
-    // so the window filters on the index. The same timezone drives the
-    // hour/day-of-week bucketing below.
+    const startDateParam =
+      req.query.start_date === undefined ? undefined : reportDate(req.query.start_date, '');
+    const endDateParam =
+      req.query.end_date === undefined ? undefined : reportDate(req.query.end_date, '');
+    if (
+      (req.query.start_date !== undefined && !startDateParam) ||
+      (req.query.end_date !== undefined && !endDateParam)
+    ) {
+      captureReportsDateRangeRejection('invalid_format');
+      return res.status(400).json({ error: 'start_date and end_date must use YYYY-MM-DD format' });
+    }
     const timeZone = tenantTimezone();
-    const today = reportToday();
-    const startDateValue = new Date(`${today}T00:00:00Z`);
-    startDateValue.setUTCDate(startDateValue.getUTCDate() - days);
-    const startDate = startDateValue.toISOString().slice(0, 10);
-    const [windowStart] = reportDayBounds(startDate);
+    let windowStart: string;
+    let windowEnd: string | null = null;
+    let days: number;
+    if (startDateParam || endDateParam) {
+      const effectiveStart = startDateParam || endDateParam!;
+      const effectiveEnd = endDateParam || startDateParam!;
+      if (effectiveStart > effectiveEnd) {
+        captureReportsDateRangeRejection('reversed_range');
+        return res.status(400).json({ error: 'start_date must be on or before end_date' });
+      }
+      windowStart = reportDayBounds(effectiveStart)[0];
+      windowEnd = reportDayBounds(effectiveEnd)[1];
+      days = Math.max(
+        1,
+        Math.round(
+          (new Date(`${effectiveEnd}T00:00:00Z`).getTime() -
+            new Date(`${effectiveStart}T00:00:00Z`).getTime()) /
+            86_400_000,
+        ) + 1,
+      );
+    } else {
+      days = Math.min(Math.max(parseInt(req.query.days as string) || 30, 1), 365);
+      // #208: "N days back" in the tenant's local calendar, with a UTC range
+      // so the window filters on the index. The same timezone drives the
+      // hour/day-of-week bucketing below.
+      const today = reportToday();
+      const startDateValue = new Date(`${today}T00:00:00Z`);
+      startDateValue.setUTCDate(startDateValue.getUTCDate() - days);
+      const startDate = startDateValue.toISOString().slice(0, 10);
+      [windowStart] = reportDayBounds(startDate);
+    }
 
     // AOV — same revenue basis ("paid bills") as the existing daily-stats tile.
-    const revenue = db
-      .prepare(`
-      SELECT COUNT(*) as billCount,
-        COALESCE(SUM(paid_amount), 0)
-        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ?), 0) as total
-      FROM bills
-      WHERE paid_at >= ?
-    `)
-      .get(minorFactor, windowStart, windowStart) as { billCount: number; total: number };
+    const revenue = (
+      windowEnd
+        ? db
+            .prepare(`
+          SELECT COUNT(*) as billCount,
+            COALESCE(SUM(paid_amount), 0)
+            - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as total
+          FROM bills
+          WHERE paid_at >= ? AND paid_at < ?
+        `)
+            .get(minorFactor, windowStart, windowEnd, windowStart, windowEnd)
+        : db
+            .prepare(`
+          SELECT COUNT(*) as billCount,
+            COALESCE(SUM(paid_amount), 0)
+            - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ?), 0) as total
+          FROM bills
+          WHERE paid_at >= ?
+        `)
+            .get(minorFactor, windowStart, windowStart)
+    ) as { billCount: number; total: number };
     const aov = revenue.billCount > 0 ? revenue.total / revenue.billCount : 0;
 
     // Kitchen velocity — substitutes for "best cook", which isn't derivable:
     // order_items has no per-chef attribution (marking an item ready doesn't
     // record who did it), so there's no data to rank individual cooks by.
     // Average prep time is the closest real signal for kitchen performance.
-    const prepTime = db
-      .prepare(`
-      SELECT AVG((julianday(ready_at) - julianday(cooking_started_at)) * 24 * 60) as avgMinutes,
-        COUNT(*) as sampleSize
-      FROM orders
-      WHERE cooking_started_at IS NOT NULL AND ready_at IS NOT NULL
-        AND created_at >= ? AND status != 'cancelled'
-    `)
-      .get(windowStart) as { avgMinutes: number | null; sampleSize: number };
+    const prepTime = (
+      windowEnd
+        ? db
+            .prepare(`
+          SELECT AVG((julianday(ready_at) - julianday(cooking_started_at)) * 24 * 60) as avgMinutes,
+            COUNT(*) as sampleSize
+          FROM orders
+          WHERE cooking_started_at IS NOT NULL AND ready_at IS NOT NULL
+            AND created_at >= ? AND created_at < ? AND status != 'cancelled'
+        `)
+            .get(windowStart, windowEnd)
+        : db
+            .prepare(`
+          SELECT AVG((julianday(ready_at) - julianday(cooking_started_at)) * 24 * 60) as avgMinutes,
+            COUNT(*) as sampleSize
+          FROM orders
+          WHERE cooking_started_at IS NOT NULL AND ready_at IS NOT NULL
+            AND created_at >= ? AND status != 'cancelled'
+        `)
+            .get(windowStart)
+    ) as { avgMinutes: number | null; sampleSize: number };
 
     // Top staff by revenue — covers whoever creates orders (owner/manager/
     // cashier/server, per POST /orders' own role gate), i.e. "best cashier".
-    const topStaff = db
-      .prepare(`
-      SELECT u.id as user_id, u.name, u.role,
-        COALESCE(SUM(o.total), 0) as revenue,
-        COUNT(o.id) as orderCount
-      FROM orders o
-      JOIN users u ON u.id = o.user_id
-      WHERE o.created_at >= ? AND o.status != 'cancelled'
-      GROUP BY u.id
-      ORDER BY revenue DESC
-      LIMIT 5
-    `)
-      .all(windowStart);
+    const topStaff = windowEnd
+      ? db
+          .prepare(`
+        SELECT u.id as user_id, u.name, u.role,
+          COALESCE(SUM(o.total), 0) as revenue,
+          COUNT(o.id) as orderCount
+        FROM orders o
+        JOIN users u ON u.id = o.user_id
+        WHERE o.created_at >= ? AND o.created_at < ? AND o.status != 'cancelled'
+        GROUP BY u.id
+        ORDER BY revenue DESC
+        LIMIT 5
+      `)
+          .all(windowStart, windowEnd)
+      : db
+          .prepare(`
+        SELECT u.id as user_id, u.name, u.role,
+          COALESCE(SUM(o.total), 0) as revenue,
+          COUNT(o.id) as orderCount
+        FROM orders o
+        JOIN users u ON u.id = o.user_id
+        WHERE o.created_at >= ? AND o.status != 'cancelled'
+        GROUP BY u.id
+        ORDER BY revenue DESC
+        LIMIT 5
+      `)
+          .all(windowStart);
 
     // Top categories by revenue.
-    const topCategories = db
-      .prepare(`
-      SELECT c.id as category_id, COALESCE(c.name, 'Uncategorized') as name,
-        COALESCE(SUM(oi.quantity), 0) as quantity,
-        COALESCE(SUM(oi.subtotal), 0) as revenue
-      FROM order_items oi
-      JOIN orders o ON o.id = oi.order_id
-      JOIN products p ON p.id = oi.product_id
-      LEFT JOIN categories c ON c.id = p.category_id
-      WHERE o.created_at >= ? AND oi.status != 'cancelled'
-      GROUP BY c.id
-      ORDER BY revenue DESC
-      LIMIT 5
-    `)
-      .all(windowStart);
+    const topCategories = windowEnd
+      ? db
+          .prepare(`
+        SELECT c.id as category_id, COALESCE(c.name, 'Uncategorized') as name,
+          COALESCE(SUM(oi.quantity), 0) as quantity,
+          COALESCE(SUM(oi.subtotal), 0) as revenue
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        JOIN products p ON p.id = oi.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE o.created_at >= ? AND o.created_at < ? AND oi.status != 'cancelled'
+        GROUP BY c.id
+        ORDER BY revenue DESC
+        LIMIT 5
+      `)
+          .all(windowStart, windowEnd)
+      : db
+          .prepare(`
+        SELECT c.id as category_id, COALESCE(c.name, 'Uncategorized') as name,
+          COALESCE(SUM(oi.quantity), 0) as quantity,
+          COALESCE(SUM(oi.subtotal), 0) as revenue
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        JOIN products p ON p.id = oi.product_id
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE o.created_at >= ? AND oi.status != 'cancelled'
+        GROUP BY c.id
+        ORDER BY revenue DESC
+        LIMIT 5
+      `)
+          .all(windowStart);
 
     // Busiest/idlest hour & day-of-week, bucketed in the tenant's local timezone.
     const orderTimestamps = (
-      db
-        .prepare(`SELECT created_at FROM orders WHERE created_at >= ? AND status != 'cancelled'`)
-        .all(windowStart) as { created_at: string }[]
+      (windowEnd
+        ? db
+            .prepare(
+              `SELECT created_at FROM orders WHERE created_at >= ? AND created_at < ? AND status != 'cancelled'`,
+            )
+            .all(windowStart, windowEnd)
+        : db
+            .prepare(
+              `SELECT created_at FROM orders WHERE created_at >= ? AND status != 'cancelled'`,
+            )
+            .all(windowStart)) as { created_at: string }[]
     ).map((r) => r.created_at);
 
     const { hourCounts, dayCounts } = bucketByLocalHourAndWeekday(

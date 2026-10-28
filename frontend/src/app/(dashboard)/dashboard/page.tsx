@@ -412,7 +412,13 @@ export default function DashboardPage() {
             : { date: selectedDate, limit: 6 },
         signal: controller.signal,
       }),
-      api.get('/reports/insights', { params: { days: 30 }, signal: controller.signal }),
+      api.get('/reports/insights', {
+        params:
+          periodMode !== 'day'
+            ? { start_date: range.startDate, end_date: range.endDate }
+            : { days: 30 },
+        signal: controller.signal,
+      }),
       comparisonRequest,
     ])
       .then(

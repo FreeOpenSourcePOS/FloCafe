@@ -12,7 +12,7 @@ import {
   getCurrencyMinorUnitFactor,
   resolveRegionalSnapshot,
 } from '../countries';
-import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
+import { isExcludedFromBillReceipt, isTerminalItemStatus } from '../../shared/order-item-status';
 import { getTenantCurrency } from './refund';
 import { roundCurrencyCost } from './supplies';
 import { computeDiscountTaxRatio } from './tax';
@@ -370,7 +370,11 @@ function getTaxDiscountRatioDecimal(subtotal: unknown, discountAmount: unknown):
 
 function extractSnapshotEntries(
   value: unknown,
-  options: { onlyChargeSnapshots?: boolean; filterZeroSplitLines?: boolean } = {},
+  options: {
+    onlyChargeSnapshots?: boolean;
+    excludeChargeSnapshots?: boolean;
+    filterZeroSplitLines?: boolean;
+  } = {},
 ): { present: boolean; entries: HistoricalTaxEntry[] } {
   const parsed = parseJsonValue(value);
   if (Array.isArray(parsed)) {
@@ -390,6 +394,9 @@ function extractSnapshotEntries(
       : null;
   if (!rawLines) return { present: false, entries: [] };
   if (options.onlyChargeSnapshots && typeof snapshot.chargeKind !== 'string') {
+    return { present: false, entries: [] };
+  }
+  if (options.excludeChargeSnapshots && typeof snapshot.chargeKind === 'string') {
     return { present: false, entries: [] };
   }
 
@@ -429,7 +436,10 @@ function extractSnapshotEntries(
       const amount = decimalOrNull(comp.amount);
       if (!amount) continue;
       if (options.filterZeroSplitLines && amount.isZero()) continue;
-      const rate = decimalOrNull(comp.rate);
+      const rawRate = decimalOrNull(comp.rate);
+      const isFixedRule =
+        comp.amountPer !== undefined || (rawRate !== null && rawRate.isZero() && !amount.isZero());
+      const rate = isFixedRule ? null : rawRate;
       const baseRuleIds = Array.isArray(comp.baseRuleIds)
         ? comp.baseRuleIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
         : [];
@@ -484,6 +494,26 @@ function extractSnapshotEntries(
   return { present: true, entries };
 }
 
+function scaleHistoricalTaxEntries(
+  entries: HistoricalTaxEntry[],
+  taxDiscountRatioDec: Decimal,
+  fractionDigits: number,
+): HistoricalTaxEntry[] {
+  if (taxDiscountRatioDec.equals(1)) return entries;
+  return entries.map((entry) => ({
+    ...entry,
+    taxableBase:
+      entry.taxableBase === null
+        ? null
+        : entry.taxableBase
+            .mul(taxDiscountRatioDec)
+            .toDecimalPlaces(fractionDigits, Decimal.ROUND_HALF_UP),
+    amount: entry.amount
+      .mul(taxDiscountRatioDec)
+      .toDecimalPlaces(fractionDigits, Decimal.ROUND_HALF_UP),
+  }));
+}
+
 function flattenLegacyBreakdownRaw(value: unknown): Array<{
   title: string;
   rate: Decimal | null;
@@ -507,7 +537,8 @@ function flattenLegacyBreakdownRaw(value: unknown): Array<{
     const raw = entry as Record<string, unknown>;
     const amount = decimalOrNull(raw.amount);
     if (!amount || amount.isZero()) continue;
-    const rate = decimalOrNull(raw.rate);
+    const rawRate = decimalOrNull(raw.rate);
+    const rate = rawRate !== null && rawRate.isZero() && !amount.isZero() ? null : rawRate;
     const explicitBase = decimalOrNull(raw.taxable_base ?? raw.taxableBase);
     items.push({
       title: String(raw.title || raw.name || raw.label || 'Tax'),
@@ -519,52 +550,86 @@ function flattenLegacyBreakdownRaw(value: unknown): Array<{
   return items;
 }
 
+function hasSnapshotLinesFormat(value: unknown): boolean {
+  const parsed = parseJsonValue(value);
+  if (Array.isArray(parsed)) return parsed.some(hasSnapshotLinesFormat);
+  if (!parsed || typeof parsed !== 'object') return false;
+  const lines = (parsed as Record<string, unknown>).lines;
+  return Array.isArray(lines) && lines.length > 0;
+}
+
 function extractItemLegacyEntries(
   item: Record<string, unknown>,
-  taxDiscountRatioDec: Decimal,
+  subtotalAndBaseRatioDec: Decimal,
+  amountRatioDec: Decimal,
+  fractionDigits: number,
 ): HistoricalTaxEntry[] {
   const breakdown = flattenLegacyBreakdownRaw(item.tax_breakdown);
   if (breakdown.length === 0) return [];
 
   const subtotalDec = decimalOrNull(item.subtotal);
-  const itemTaxDec = decimalOrNull(item.tax_amount) ?? new Decimal(0);
-  const derivedItemBase =
+  const rawItemTaxDec = decimalOrNull(item.tax_amount) ?? new Decimal(0);
+  const unscaledTaxDec = rawItemTaxDec.isZero()
+    ? breakdown.reduce((sum, comp) => sum.plus(comp.amount), new Decimal(0))
+    : rawItemTaxDec;
+  const discountedSubtotalDec =
     subtotalDec !== null && !subtotalDec.isZero()
+      ? subtotalAndBaseRatioDec.equals(1)
+        ? subtotalDec
+        : subtotalDec
+            .mul(subtotalAndBaseRatioDec)
+            .toDecimalPlaces(fractionDigits, Decimal.ROUND_HALF_UP)
+      : null;
+  const discountedItemTaxDec = amountRatioDec.equals(1)
+    ? unscaledTaxDec
+    : unscaledTaxDec.mul(amountRatioDec).toDecimalPlaces(fractionDigits, Decimal.ROUND_HALF_UP);
+  const derivedItemBase =
+    discountedSubtotalDec !== null
       ? item.tax_type === 'inclusive'
-        ? subtotalDec.mul(taxDiscountRatioDec).minus(itemTaxDec)
-        : subtotalDec.mul(taxDiscountRatioDec)
+        ? discountedSubtotalDec.minus(discountedItemTaxDec)
+        : discountedSubtotalDec
       : null;
 
   const sharedBase = breakdown.length > 1;
   return breakdown.map((comp) => {
     const rateStr = comp.rate === null ? null : comp.rate.toString();
-    const base = comp.explicitBase ?? (comp.rate !== null ? derivedItemBase : null);
+    const scaledExplicitBase =
+      comp.explicitBase === null
+        ? null
+        : subtotalAndBaseRatioDec.equals(1)
+          ? comp.explicitBase
+          : comp.explicitBase
+              .mul(subtotalAndBaseRatioDec)
+              .toDecimalPlaces(fractionDigits, Decimal.ROUND_HALF_UP);
+    const base = scaledExplicitBase ?? (comp.rate !== null ? derivedItemBase : null);
+    const scaledAmount = amountRatioDec.equals(1)
+      ? comp.amount
+      : comp.amount.mul(amountRatioDec).toDecimalPlaces(fractionDigits, Decimal.ROUND_HALF_UP);
     const incompleteDetail = rateStr === null || base === null;
     return {
       title: comp.title,
       rate: rateStr,
-      taxableBase: base,
-      amount: comp.amount,
-      sharedBase: sharedBase && base !== null,
+      taxableBase: incompleteDetail ? null : base,
+      amount: scaledAmount,
+      sharedBase: sharedBase && !incompleteDetail && base !== null,
       incompleteDetail,
     };
   });
 }
 
-const MINOR_UNIT_ROUNDING_TOLERANCE = new Decimal('0.05');
+function getMinorUnitRoundingTolerance(minorFactor: number): Decimal {
+  return new Decimal(5).div(minorFactor > 0 ? minorFactor : 100);
+}
 
 function shouldExtractDocumentResiduals(
   coveredEntries: HistoricalTaxEntry[],
   targetValue: Decimal,
+  roundingTolerance: Decimal,
 ): boolean {
   if (targetValue.isZero()) return false;
   const representedSum = coveredEntries.reduce((sum, e) => sum.plus(e.amount), new Decimal(0));
   const diff = targetValue.minus(representedSum);
-  if (
-    coveredEntries.length > 0 &&
-    !representedSum.isZero() &&
-    diff.abs().lte(MINOR_UNIT_ROUNDING_TOLERANCE)
-  ) {
+  if (coveredEntries.length > 0 && !representedSum.isZero() && diff.abs().lte(roundingTolerance)) {
     return false;
   }
   return targetValue.isNegative() ? representedSum.gt(targetValue) : representedSum.lt(targetValue);
@@ -573,6 +638,7 @@ function shouldExtractDocumentResiduals(
 function extractDocumentLegacyResidualEntries(
   documentBreakdown: unknown,
   coveredEntries: HistoricalTaxEntry[],
+  roundingTolerance: Decimal,
 ): HistoricalTaxEntry[] {
   const remainingByKey = new Map<string, Decimal>();
   for (const entry of coveredEntries) {
@@ -595,11 +661,7 @@ function extractDocumentLegacyResidualEntries(
     const residual = comp.amount.minus(consumed);
     remainingByKey.set(key, covered.minus(consumed));
     if (residual.isZero()) continue;
-    if (
-      !covered.isZero() &&
-      comp.explicitBase === null &&
-      residual.abs().lte(MINOR_UNIT_ROUNDING_TOLERANCE)
-    ) {
+    if (!covered.isZero() && comp.explicitBase === null && residual.abs().lte(roundingTolerance)) {
       continue;
     }
     const base = comp.explicitBase;
@@ -607,9 +669,9 @@ function extractDocumentLegacyResidualEntries(
     residuals.push({
       title: comp.title,
       rate: rateStr,
-      taxableBase: base,
+      taxableBase: incompleteDetail ? null : base,
       amount: residual,
-      sharedBase: sharedDocBase,
+      sharedBase: sharedDocBase && !incompleteDetail,
       incompleteDetail,
     });
   }
@@ -619,6 +681,7 @@ function extractDocumentLegacyResidualEntries(
 function reconcileBillTaxEntries(
   entries: HistoricalTaxEntry[],
   targetValue: Decimal | null,
+  roundingTolerance: Decimal,
 ): HistoricalTaxEntry[] {
   if (!targetValue) return entries;
   if (entries.length === 0) {
@@ -654,8 +717,8 @@ function reconcileBillTaxEntries(
   }
 
   // Minor-unit rounding remainder from order-level discount or split allocation:
-  // adjust the last component so component amounts sum to the exact bill tax total.
-  if (diff.abs().lte(MINOR_UNIT_ROUNDING_TOLERANCE)) {
+  // adjust the last complete component so component amounts sum to the exact bill tax total.
+  if (diff.abs().lte(roundingTolerance)) {
     const cloned = entries.map((entry) => ({ ...entry }));
     let targetIndex = cloned.length - 1;
     for (let i = cloned.length - 1; i >= 0; i -= 1) {
@@ -686,6 +749,8 @@ function reconcileBillTaxEntries(
 function resolveBillHistoricalTaxEntries(
   bill: {
     id: number;
+    subtotal?: number | null;
+    discount_amount?: number | null;
     tax_amount?: number | null;
     tax_snapshot?: unknown;
     tax_breakdown?: unknown;
@@ -697,25 +762,41 @@ function resolveBillHistoricalTaxEntries(
         items?: Array<Record<string, unknown>>;
       }
     | undefined,
+  fractionDigits = 2,
+  roundingTolerance: Decimal = new Decimal('0.05'),
 ): HistoricalTaxEntry[] {
-  const activeItems = (order?.items || []).filter(
+  const nonTerminalItems = (order?.items || []).filter(
+    (item) => !isTerminalItemStatus(item.status as string | null | undefined),
+  );
+  const receiptItems = (order?.items || []).filter(
     (item) => !isExcludedFromBillReceipt(item.status),
   );
-  const taxDiscountRatioDec = getTaxDiscountRatioDecimal(order?.subtotal, order?.discount_amount);
+  const orderDiscountRatioDec = getTaxDiscountRatioDecimal(order?.subtotal, order?.discount_amount);
+  const billDiscountRatioDec = getTaxDiscountRatioDecimal(
+    bill.subtotal ?? order?.subtotal,
+    bill.discount_amount ?? order?.discount_amount,
+  );
+  // getOrdersWithItemsForBills (projectOrderItems) already scales item.tax_amount,
+  // item.tax_breakdown[].amount, and non-split .lines item.tax_snapshot by orderDiscountRatioDec.
+  const unprojectedDiscountRatioDec = !orderDiscountRatioDec.equals(1)
+    ? new Decimal(1)
+    : billDiscountRatioDec;
 
   const billTaxDec = decimalOrNull(bill.tax_amount);
-  const activeItemsTaxSum = activeItems.reduce(
+  const nonTerminalItemsTaxSum = nonTerminalItems.reduce(
     (sum, item) => sum.plus(decimalOrNull(item.tax_amount) ?? 0),
     new Decimal(0),
   );
-  const billHasOwnEvidence =
-    Boolean(bill.tax_snapshot && String(bill.tax_snapshot).trim()) ||
-    Boolean(bill.tax_breakdown && String(bill.tax_breakdown).trim());
-  const effectiveTargetTax =
+  const effectiveTargetTax = billTaxDec ?? nonTerminalItemsTaxSum;
+  // Filter items using isTerminalItemStatus by default to match aggregateTaxComponents (X/Z reports).
+  // When createRefund marked an item 'refunded' while leaving bills.tax_amount at the original paid
+  // tax total, include receipt items so the refunded item's snapshot base/rate accounts for bill.tax_amount.
+  const activeItems =
     billTaxDec !== null &&
-    (!billTaxDec.isZero() || billHasOwnEvidence || activeItemsTaxSum.isZero())
-      ? billTaxDec
-      : activeItemsTaxSum;
+    !billTaxDec.isZero() &&
+    nonTerminalItemsTaxSum.mul(unprojectedDiscountRatioDec).lt(billTaxDec.minus(roundingTolerance))
+      ? receiptItems
+      : nonTerminalItems;
 
   if (hasSplitAllocatedSnapshot(bill.tax_snapshot)) {
     const hasItemSnapshot = activeItems.some(
@@ -728,16 +809,26 @@ function resolveBillHistoricalTaxEntries(
       const legacyItems = activeItems.flatMap((item) => {
         const snap = extractSnapshotEntries(item.tax_snapshot);
         if (snap.present) return [];
-        const legacy = extractItemLegacyEntries(item, taxDiscountRatioDec);
+        const legacy = extractItemLegacyEntries(
+          item,
+          billDiscountRatioDec,
+          unprojectedDiscountRatioDec,
+          fractionDigits,
+        );
         if (legacy.length > 0) return legacy;
         const itemTax = decimalOrNull(item.tax_amount);
         if (itemTax && !itemTax.isZero()) {
+          const scaledItemTax = unprojectedDiscountRatioDec.equals(1)
+            ? itemTax
+            : itemTax
+                .mul(unprojectedDiscountRatioDec)
+                .toDecimalPlaces(fractionDigits, Decimal.ROUND_HALF_UP);
           return [
             {
               title: 'Unknown',
               rate: null,
               taxableBase: null,
-              amount: itemTax,
+              amount: scaledItemTax,
               sharedBase: false,
               incompleteDetail: true,
             },
@@ -746,41 +837,102 @@ function resolveBillHistoricalTaxEntries(
         return [];
       });
       const combined = [...splitSnapshot.entries, ...legacyItems];
-      const docResiduals = shouldExtractDocumentResiduals(combined, effectiveTargetTax)
-        ? extractDocumentLegacyResidualEntries(bill.tax_breakdown, combined)
+      const docResiduals = shouldExtractDocumentResiduals(
+        combined,
+        effectiveTargetTax,
+        roundingTolerance,
+      )
+        ? extractDocumentLegacyResidualEntries(bill.tax_breakdown, combined, roundingTolerance)
         : [];
-      return reconcileBillTaxEntries([...combined, ...docResiduals], effectiveTargetTax);
+      return reconcileBillTaxEntries(
+        [...combined, ...docResiduals],
+        effectiveTargetTax,
+        roundingTolerance,
+      );
     }
   }
+
+  // Prefer the bill's own discounted non-charge snapshot when present on the bill.
+  const billNonChargeSnapshot = extractSnapshotEntries(bill.tax_snapshot, {
+    excludeChargeSnapshots: true,
+  });
 
   if (activeItems.length > 0) {
     const itemEntries: HistoricalTaxEntry[] = [];
     let hasSnapshotEvidence = false;
     let hasLegacyBreakdownEvidence = false;
 
-    for (const item of activeItems) {
-      const snap = extractSnapshotEntries(item.tax_snapshot);
-      if (snap.present) {
-        hasSnapshotEvidence = true;
-        itemEntries.push(...snap.entries);
-        continue;
+    if (billNonChargeSnapshot.present) {
+      hasSnapshotEvidence = true;
+      itemEntries.push(...billNonChargeSnapshot.entries);
+      for (const item of activeItems) {
+        if (extractSnapshotEntries(item.tax_snapshot).present) continue;
+        const legacy = extractItemLegacyEntries(
+          item,
+          billDiscountRatioDec,
+          unprojectedDiscountRatioDec,
+          fractionDigits,
+        );
+        if (legacy.length > 0) {
+          hasLegacyBreakdownEvidence = true;
+          itemEntries.push(...legacy);
+          continue;
+        }
+        const itemTax = decimalOrNull(item.tax_amount);
+        if (itemTax && !itemTax.isZero()) {
+          const scaledItemTax = unprojectedDiscountRatioDec.equals(1)
+            ? itemTax
+            : itemTax
+                .mul(unprojectedDiscountRatioDec)
+                .toDecimalPlaces(fractionDigits, Decimal.ROUND_HALF_UP);
+          itemEntries.push({
+            title: 'Unknown',
+            rate: null,
+            taxableBase: null,
+            amount: scaledItemTax,
+            sharedBase: false,
+            incompleteDetail: true,
+          });
+        }
       }
-      const legacy = extractItemLegacyEntries(item, taxDiscountRatioDec);
-      if (legacy.length > 0) {
-        hasLegacyBreakdownEvidence = true;
-        itemEntries.push(...legacy);
-        continue;
-      }
-      const itemTax = decimalOrNull(item.tax_amount);
-      if (itemTax && !itemTax.isZero()) {
-        itemEntries.push({
-          title: 'Unknown',
-          rate: null,
-          taxableBase: null,
-          amount: itemTax,
-          sharedBase: false,
-          incompleteDetail: true,
-        });
+    } else {
+      for (const item of activeItems) {
+        const snap = extractSnapshotEntries(item.tax_snapshot);
+        if (snap.present) {
+          hasSnapshotEvidence = true;
+          const snapRatio = hasSnapshotLinesFormat(item.tax_snapshot)
+            ? unprojectedDiscountRatioDec
+            : billDiscountRatioDec;
+          itemEntries.push(...scaleHistoricalTaxEntries(snap.entries, snapRatio, fractionDigits));
+          continue;
+        }
+        const legacy = extractItemLegacyEntries(
+          item,
+          billDiscountRatioDec,
+          unprojectedDiscountRatioDec,
+          fractionDigits,
+        );
+        if (legacy.length > 0) {
+          hasLegacyBreakdownEvidence = true;
+          itemEntries.push(...legacy);
+          continue;
+        }
+        const itemTax = decimalOrNull(item.tax_amount);
+        if (itemTax && !itemTax.isZero()) {
+          const scaledItemTax = unprojectedDiscountRatioDec.equals(1)
+            ? itemTax
+            : itemTax
+                .mul(unprojectedDiscountRatioDec)
+                .toDecimalPlaces(fractionDigits, Decimal.ROUND_HALF_UP);
+          itemEntries.push({
+            title: 'Unknown',
+            rate: null,
+            taxableBase: null,
+            amount: scaledItemTax,
+            sharedBase: false,
+            incompleteDetail: true,
+          });
+        }
       }
     }
 
@@ -790,8 +942,16 @@ function resolveBillHistoricalTaxEntries(
       });
       const chargeEntries = chargeSnapshot.present ? chargeSnapshot.entries : [];
       const coveredEntries = [...itemEntries, ...chargeEntries];
-      const docResiduals = shouldExtractDocumentResiduals(coveredEntries, effectiveTargetTax)
-        ? extractDocumentLegacyResidualEntries(bill.tax_breakdown, coveredEntries)
+      const docResiduals = shouldExtractDocumentResiduals(
+        coveredEntries,
+        effectiveTargetTax,
+        roundingTolerance,
+      )
+        ? extractDocumentLegacyResidualEntries(
+            bill.tax_breakdown,
+            coveredEntries,
+            roundingTolerance,
+          )
         : [];
       const nonItemTotal = [...chargeEntries, ...docResiduals].reduce(
         (sum, e) => sum.plus(e.amount),
@@ -801,26 +961,39 @@ function resolveBillHistoricalTaxEntries(
       const itemSum = itemEntries.reduce((sum, e) => sum.plus(e.amount), new Decimal(0));
       const itemDiff = itemTarget.minus(itemSum);
       const adjustedItems =
-        !itemSum.isZero() && !itemDiff.isZero() && itemDiff.abs().lte(MINOR_UNIT_ROUNDING_TOLERANCE)
-          ? reconcileBillTaxEntries(itemEntries, itemTarget)
+        !itemSum.isZero() && !itemDiff.isZero() && itemDiff.abs().lte(roundingTolerance)
+          ? reconcileBillTaxEntries(itemEntries, itemTarget, roundingTolerance)
           : itemEntries;
       return reconcileBillTaxEntries(
         [...adjustedItems, ...chargeEntries, ...docResiduals],
         effectiveTargetTax,
+        roundingTolerance,
       );
     }
   }
 
   const docSnapshot = extractSnapshotEntries(bill.tax_snapshot);
   if (docSnapshot.present) {
-    const docResiduals = shouldExtractDocumentResiduals(docSnapshot.entries, effectiveTargetTax)
-      ? extractDocumentLegacyResidualEntries(bill.tax_breakdown, docSnapshot.entries)
+    const docResiduals = shouldExtractDocumentResiduals(
+      docSnapshot.entries,
+      effectiveTargetTax,
+      roundingTolerance,
+    )
+      ? extractDocumentLegacyResidualEntries(
+          bill.tax_breakdown,
+          docSnapshot.entries,
+          roundingTolerance,
+        )
       : [];
-    return reconcileBillTaxEntries([...docSnapshot.entries, ...docResiduals], effectiveTargetTax);
+    return reconcileBillTaxEntries(
+      [...docSnapshot.entries, ...docResiduals],
+      effectiveTargetTax,
+      roundingTolerance,
+    );
   }
 
-  const docLegacy = extractDocumentLegacyResidualEntries(bill.tax_breakdown, []);
-  return reconcileBillTaxEntries(docLegacy, effectiveTargetTax);
+  const docLegacy = extractDocumentLegacyResidualEntries(bill.tax_breakdown, [], roundingTolerance);
+  return reconcileBillTaxEntries(docLegacy, effectiveTargetTax, roundingTolerance);
 }
 
 function aggregateDailyTaxRows(
@@ -844,7 +1017,8 @@ function aggregateDailyTaxRows(
       entry.rate === null ? null : new Decimal(entry.rate).toNumber().toString();
     const incomplete =
       entry.incompleteDetail || normalizedRate === null || entry.taxableBase === null;
-    const key = `${entry.title}\u0000${normalizedRate ?? ''}\u0000${incomplete ? '1' : '0'}`;
+    const effectiveShared = !incomplete && entry.sharedBase;
+    const key = `${entry.title}\u0000${normalizedRate ?? ''}\u0000${incomplete ? '1' : '0'}\u0000${effectiveShared ? '1' : '0'}`;
     const existing = merged.get(key);
     if (existing) {
       existing.amount = existing.amount.plus(entry.amount);
@@ -853,7 +1027,7 @@ function aggregateDailyTaxRows(
       } else {
         existing.taxableBase = null;
       }
-      existing.sharedBase = existing.sharedBase || entry.sharedBase;
+      existing.sharedBase = existing.sharedBase || effectiveShared;
       existing.incompleteDetail = existing.incompleteDetail || incomplete;
     } else {
       merged.set(key, {
@@ -861,7 +1035,7 @@ function aggregateDailyTaxRows(
         rate: normalizedRate,
         taxableBase: incomplete ? null : entry.taxableBase,
         amount: entry.amount,
-        sharedBase: entry.sharedBase,
+        sharedBase: effectiveShared,
         incompleteDetail: incomplete,
       });
     }
@@ -900,6 +1074,13 @@ function aggregateDailyTaxRows(
         incomplete_detail: group.incompleteDetail,
         warning: group.incompleteDetail ? DAILY_SALES_TAX_INCOMPLETE_WARNING : '',
       };
+    })
+    .sort((a, b) => {
+      if (b.tax_amount !== a.tax_amount) return b.tax_amount - a.tax_amount;
+      const byName = a.tax_name.localeCompare(b.tax_name);
+      if (byName !== 0) return byName;
+      if (a.tax_rate !== b.tax_rate) return (a.tax_rate ?? -1) - (b.tax_rate ?? -1);
+      return Number(a.shared_base) - Number(b.shared_base);
     });
 }
 
@@ -1029,6 +1210,26 @@ function computeProfitabilityMetrics(
  * `base_additive=false`). Historical records without rate/base detail keep blank rate/base
  * and preserve stored tax_amount in reconciliation with an explicit warning.
  */
+const BILL_HYDRATION_BATCH_SIZE = 250;
+const DATASET_CACHE_TTL_MS = 10_000;
+const DATASET_CACHE_MAX_ENTRIES = 4;
+const datasetCacheByDb = new WeakMap<
+  Database,
+  Map<string, { expiresAt: number; dataset: DailySalesExportDataset }>
+>();
+
+function getDatabaseStateToken(db: Database): string {
+  try {
+    const row = db.prepare('SELECT total_changes() AS total_changes').get() as
+      | { total_changes?: number }
+      | undefined;
+    const dataVersion = db.pragma('data_version', { simple: true });
+    return `${row?.total_changes ?? 0}:${String(dataVersion ?? 0)}`;
+  } catch {
+    return String(Date.now());
+  }
+}
+
 export function buildDailySalesExportDataset(
   input: DailySalesExportQueryInput,
   db: Database = getDatabase(),
@@ -1039,6 +1240,21 @@ export function buildDailySalesExportDataset(
   const currency = getTenantCurrency(db);
   const minorFactor = getCurrencyMinorUnitFactor(currency);
   const fractionDigits = getCurrencyFractionDigits(currency);
+  const roundingTolerance = getMinorUnitRoundingTolerance(minorFactor);
+
+  const stateToken = getDatabaseStateToken(db);
+  const cacheKey = `${range.fromDate}\u0000${range.toDate}\u0000${timezone}\u0000${businessDayStart}\u0000${currency}\u0000${stateToken}`;
+  const now = Date.now();
+  let dbCache = datasetCacheByDb.get(db);
+  if (dbCache) {
+    const cached = dbCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.dataset;
+    }
+    for (const [k, v] of dbCache.entries()) {
+      if (v.expiresAt <= now) dbCache.delete(k);
+    }
+  }
 
   const billAggStmt = db.prepare(`
     SELECT
@@ -1060,7 +1276,15 @@ export function buildDailySalesExportDataset(
   `);
 
   const billsStmt = db.prepare(`
-    SELECT b.*
+    SELECT
+      b.id,
+      b.order_id,
+      b.split_group_id,
+      b.subtotal,
+      b.discount_amount,
+      b.tax_amount,
+      b.tax_snapshot,
+      b.tax_breakdown
     FROM bills b
     WHERE b.paid_at >= ? AND b.paid_at < ?
     ORDER BY b.paid_at, b.id
@@ -1180,6 +1404,10 @@ export function buildDailySalesExportDataset(
 
   type PaidBillTaxRow = {
     id: number;
+    order_id?: number | null;
+    split_group_id?: string | null;
+    subtotal?: number | null;
+    discount_amount?: number | null;
     tax_amount?: number | null;
     tax_snapshot?: unknown;
     tax_breakdown?: unknown;
@@ -1201,21 +1429,26 @@ export function buildDailySalesExportDataset(
     const refundRow = refundAggStmt.get(minorFactor, start, end) as { refunds_issued: number };
 
     const bills = billsStmt.all(start, end) as PaidBillTaxRow[];
-    const orders = getOrdersWithItemsForBills(db, bills);
     const dayTaxEntries: HistoricalTaxEntry[] = [];
-    for (const bill of bills) {
-      dayTaxEntries.push(
-        ...resolveBillHistoricalTaxEntries(
-          bill,
-          orders.get(Number(bill.id)) as
-            | {
-                subtotal?: number | null;
-                discount_amount?: number | null;
-                items?: Array<Record<string, unknown>>;
-              }
-            | undefined,
-        ),
-      );
+    for (let i = 0; i < bills.length; i += BILL_HYDRATION_BATCH_SIZE) {
+      const billChunk = bills.slice(i, i + BILL_HYDRATION_BATCH_SIZE);
+      const orders = getOrdersWithItemsForBills(db, billChunk);
+      for (const bill of billChunk) {
+        dayTaxEntries.push(
+          ...resolveBillHistoricalTaxEntries(
+            bill,
+            orders.get(Number(bill.id)) as
+              | {
+                  subtotal?: number | null;
+                  discount_amount?: number | null;
+                  items?: Array<Record<string, unknown>>;
+                }
+              | undefined,
+            fractionDigits,
+            roundingTolerance,
+          ),
+        );
+      }
     }
     const dayTaxRows = aggregateDailyTaxRows(businessDate, dayTaxEntries);
     taxes.push(...dayTaxRows);
@@ -1227,7 +1460,8 @@ export function buildDailySalesExportDataset(
 
     const dayRawItems = itemsStmt.all(start, end) as RawItemAggregateRow[];
     for (const row of dayRawItems) {
-      const key = `${row.product_id}\u0000${row.product_name}\u0000${row.product_sku ?? ''}`;
+      const skuKey = row.product_sku == null ? '0:' : `1:${row.product_sku}`;
+      const key = `${row.product_id}\u0000${row.product_name}\u0000${skuKey}`;
       const existing = periodItemMap.get(key);
       if (existing) {
         existing.quantity = existing.quantity.plus(Number(row.quantity || 0));
@@ -1375,7 +1609,12 @@ export function buildDailySalesExportDataset(
     }))
     .sort((a, b) => {
       if (b.net_item_sales !== a.net_item_sales) return b.net_item_sales - a.net_item_sales;
-      return a.product_name.localeCompare(b.product_name);
+      const byName = a.product_name.localeCompare(b.product_name);
+      if (byName !== 0) return byName;
+      if (a.product_sku === b.product_sku) return 0;
+      if (a.product_sku === null) return -1;
+      if (b.product_sku === null) return 1;
+      return String(a.product_sku).localeCompare(String(b.product_sku));
     });
 
   const items = finalizeItemRows(periodRawItems, fractionDigits);
@@ -1396,7 +1635,7 @@ export function buildDailySalesExportDataset(
     .toDecimalPlaces(6, Decimal.ROUND_HALF_UP)
     .toNumber();
 
-  return {
+  const dataset: DailySalesExportDataset = {
     summary: {
       business_date: range.isSingleDay ? range.fromDate : `${range.fromDate}..${range.toDate}`,
       from_date: range.fromDate,
@@ -1433,6 +1672,21 @@ export function buildDailySalesExportDataset(
     items,
     payments,
   };
+
+  if (!dbCache) {
+    dbCache = new Map();
+    datasetCacheByDb.set(db, dbCache);
+  }
+  if (dbCache.size >= DATASET_CACHE_MAX_ENTRIES) {
+    const oldestKey = dbCache.keys().next().value;
+    if (oldestKey !== undefined) dbCache.delete(oldestKey);
+  }
+  dbCache.set(cacheKey, {
+    expiresAt: now + DATASET_CACHE_TTL_MS,
+    dataset,
+  });
+
+  return dataset;
 }
 
 /** Flat metric/value rows for the Summary sheet / summary CSV (stable field order). */

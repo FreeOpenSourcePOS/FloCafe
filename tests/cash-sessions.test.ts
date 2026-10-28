@@ -203,6 +203,9 @@ async function main() {
     app.use(express.json());
     app.use(expressRateLimit({ windowMs: 60 * 1000, limit: 1000 }));
     app.use((req: any, res: any, next: any) => {
+      if (req.path.startsWith('/api/auth') && !req.path.includes('/api/auth/me')) {
+        return next();
+      }
       const authHeader = req.headers.authorization;
       if (!authHeader?.startsWith('Bearer '))
         return res.status(401).json({ error: 'Authentication required' });
@@ -3006,6 +3009,339 @@ async function main() {
         assert(
           disableAfterClose.status === 200 && getSettingValue('one_shift_per_staff') === 'false',
           '#1339: owner disables one_shift_per_staff after concurrent shifts are closed (200)',
+        );
+      });
+
+      // 8) Combined v3.14.0 multi-feature acceptance (#1338 PIN quick-switch + #1337 payment method correction + #1339 per-staff shifts)
+      console.log(
+        'Section 12: combined v3.14.0 multi-feature acceptance (PIN switch + per-staff shifts + payment correction + X/Z export)',
+      );
+      const { authRoutes } = require('../main/routes/auth');
+      const { orderRoutes } = require('../main/routes/orders');
+      app.use('/api/auth', authRoutes);
+      app.use('/api/orders', orderRoutes);
+
+      db.prepare(
+        `INSERT OR IGNORE INTO categories (id, name, sort_order, is_active, created_at, updated_at)
+         VALUES ('cat-v314', 'Combo Menu', 1, 1, ?, ?)`,
+      ).run(now(), now());
+      db.prepare(
+        `INSERT OR IGNORE INTO products (id, category_id, name, price, tax_rate, tax_type, is_active, track_inventory, stock_quantity, low_stock_threshold, sort_order, created_at, updated_at)
+         VALUES ('prod-v314', 'cat-v314', 'Combo Platter', 75, 0, 'none', 1, 0, 0, 0, 1, ?, ?)`,
+      ).run(now(), now());
+
+      db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+        bcrypt.hashSync('1111', 10),
+        'cashier-sess',
+      );
+      db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+        bcrypt.hashSync('2222', 10),
+        'cashier2-sess',
+      );
+      db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+        bcrypt.hashSync('4321', 10),
+        'manager-sess',
+      );
+
+      await withFixedClock('2026-11-12T10:00:00.000Z', async () => {
+        // Step 1: Enable one_shift_per_staff = 'true'
+        const enableComboPerStaff = await request(app)
+          .put('/api/settings/one_shift_per_staff')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({ value: true });
+        assert(
+          enableComboPerStaff.status === 200 && getSettingValue('one_shift_per_staff') === 'true',
+          'v3.14.0 combo: enable one_shift_per_staff = true (200)',
+        );
+
+        // Step 2: Staff A (cashier) and Staff B (cashier) each open their own cash shift
+        const openComboA = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ opening_float_cents: 4000 });
+        const openComboB = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11CashierBToken}`)
+          .send({ opening_float_cents: 6000 });
+        assert(
+          openComboA.status === 200 && openComboB.status === 200,
+          'v3.14.0 combo: Staff A (4000c float) and Staff B (6000c float) each open their own shift (200)',
+        );
+        const comboShiftAId = Number(openComboA.body?.id);
+        const comboShiftBId = Number(openComboB.body?.id);
+
+        // Step 3: Staff A builds a cart/order and generates bill, then locks POS and switches via POST /api/auth/pin-login to Staff B
+        const orderComboRes = await request(app)
+          .post('/api/orders')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({
+            type: 'takeaway',
+            items: [{ product_id: 'prod-v314', quantity: 1 }],
+          });
+        assert(
+          orderComboRes.status === 201 && orderComboRes.body?.order?.user_id === 'cashier-sess',
+          'v3.14.0 combo: Staff A creates order (201)',
+        );
+        const comboOrderId = Number(orderComboRes.body?.order?.id);
+
+        const billComboRes = await request(app)
+          .post('/api/bills/generate')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ order_id: comboOrderId });
+        assert(billComboRes.status === 201, 'v3.14.0 combo: Staff A generates bill (201)');
+        const comboBillId = Number(billComboRes.body?.bill?.id);
+
+        const pinSwitchToB = await request(app)
+          .post('/api/auth/pin-login')
+          .send({ user_id: 'cashier2-sess', pin: '2222' });
+        assert(
+          pinSwitchToB.status === 200 &&
+            pinSwitchToB.body?.user?.id === 'cashier2-sess' &&
+            typeof pinSwitchToB.body?.access_token === 'string',
+          'v3.14.0 combo: POS quick-switches from Staff A to Staff B via POST /api/auth/pin-login (200)',
+        );
+        const staffBPinToken = String(pinSwitchToB.body.access_token);
+
+        // Step 4: Staff B takes a cash payment on that bill -> verify attributed to Staff B's open shift, not Staff A's
+        const payComboByB = await request(app)
+          .post(`/api/bills/${comboBillId}/payment`)
+          .set('Authorization', `Bearer ${staffBPinToken}`)
+          .send({ method: 'cash', amount: 75 });
+        assert(payComboByB.status === 200, 'v3.14.0 combo: Staff B takes 75.00 cash payment (200)');
+
+        const comboBillRowBefore = db
+          .prepare('SELECT payment_details FROM bills WHERE id = ?')
+          .get(comboBillId) as { payment_details: string };
+        const comboDetailsBefore = JSON.parse(comboBillRowBefore.payment_details);
+        assert(
+          Number(comboDetailsBefore[0]?.cash_session_id) === comboShiftBId &&
+            Number(comboDetailsBefore[0]?.cash_session_id) !== comboShiftAId,
+          `v3.14.0 combo: cash payment is attributed to Staff B shift (${comboShiftBId}), not Staff A shift (${comboShiftAId})`,
+        );
+
+        const curComboAAfterPay = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        const curComboBAfterPay = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${staffBPinToken}`);
+        assert(
+          curComboAAfterPay.body?.expected_cash_cents === 4000 &&
+            curComboBAfterPay.body?.expected_cash_cents === 13500,
+          `v3.14.0 combo: Staff B expected cash rises to 13500c (6000 + 7500) while Staff A stays at 4000c`,
+        );
+
+        // Step 5: Staff B (cashier) attempting PATCH /api/bills/:id/payments/0/method is rejected with 403 even with Manager M's override_pin
+        const cashierCorrectAttempt = await request(app)
+          .patch(`/api/bills/${comboBillId}/payments/0/method`)
+          .set('Authorization', `Bearer ${staffBPinToken}`)
+          .set('Idempotency-Key', 'v314-combo-cashier-blocked')
+          .send({
+            method: 'card',
+            transaction_id: 'TX-BLOCKED-B',
+            reason: 'Cashier attempting correction with manager PIN',
+            approver_id: 'manager-sess',
+            override_pin: '4321',
+          });
+        assert(
+          cashierCorrectAttempt.status === 403 &&
+            cashierCorrectAttempt.body?.reason === 'insufficient_role_permissions',
+          `v3.14.0 combo: Staff B (cashier) is rejected on PATCH payment method with 403 insufficient_role_permissions even with valid manager PIN`,
+        );
+        const comboAuditCountBlocked = (
+          db
+            .prepare(
+              `SELECT COUNT(*) AS c FROM order_audit_log WHERE order_id = ? AND action = 'bill.payment_method.corrected'`,
+            )
+            .get(comboOrderId) as { c: number }
+        ).c;
+        const comboIdemCountBlocked = (
+          db
+            .prepare(`SELECT COUNT(*) AS c FROM payment_idempotency WHERE bill_id = ?`)
+            .get(String(comboBillId)) as { c: number }
+        ).c;
+        assert(
+          comboAuditCountBlocked === 0 && comboIdemCountBlocked === 0,
+          'v3.14.0 combo: rejected cashier correction writes 0 audit rows and 0 idempotency rows',
+        );
+
+        // Step 6: Manager M signs in via PIN login and corrects tender from cash to card -> stays in Staff B's shift
+        const pinSwitchToMgr = await request(app)
+          .post('/api/auth/pin-login')
+          .send({ user_id: 'manager-sess', pin: '4321' });
+        assert(
+          pinSwitchToMgr.status === 200 &&
+            pinSwitchToMgr.body?.user?.id === 'manager-sess' &&
+            typeof pinSwitchToMgr.body?.access_token === 'string',
+          'v3.14.0 combo: Manager M signs in via POST /api/auth/pin-login (200)',
+        );
+        const managerPinToken = String(pinSwitchToMgr.body.access_token);
+
+        const mgrCorrectRes = await request(app)
+          .patch(`/api/bills/${comboBillId}/payments/0/method`)
+          .set('Authorization', `Bearer ${managerPinToken}`)
+          .set('Idempotency-Key', 'v314-combo-mgr-correct')
+          .send({
+            method: 'card',
+            transaction_id: 'TX-COMBO-1339',
+            reason: 'Customer paid by card terminal',
+            approver_id: 'manager-sess',
+            override_pin: '4321',
+          });
+        assert(
+          mgrCorrectRes.status === 200 &&
+            mgrCorrectRes.body?.bill?.payment_details?.[0]?.method === 'card' &&
+            Number(mgrCorrectRes.body?.bill?.payment_details?.[0]?.amount) === 75 &&
+            Number(mgrCorrectRes.body?.bill?.payment_details?.[0]?.cash_session_id) ===
+              comboShiftBId,
+          `v3.14.0 combo: Manager M corrects cash -> card (200), amount stays 75, and payment remains in Staff B shift (${comboShiftBId})`,
+        );
+
+        const curComboAAfterCorrect = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        const curComboBAfterCorrect = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${staffBPinToken}`);
+        assert(
+          curComboBAfterCorrect.body?.expected_cash_cents === 6000 &&
+            curComboAAfterCorrect.body?.expected_cash_cents === 4000,
+          `v3.14.0 combo: after cash -> card correction, Staff B expected cash drops to 6000c (float only) and Staff A remains untouched at 4000c`,
+        );
+
+        const xComboShiftB = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-12&session_id=${comboShiftBId}`)
+          .set('Authorization', `Bearer ${managerPinToken}`);
+        const xComboShiftBRep = xComboShiftB.body?.xReport;
+        assert(
+          xComboShiftB.status === 200 &&
+            xComboShiftBRep?.expectedCashCents === 0 &&
+            xComboShiftBRep?.session?.expected_cash_cents === 6000 &&
+            xComboShiftBRep?.grossCollected === 75 &&
+            Array.isArray(xComboShiftBRep?.paymentMethods) &&
+            xComboShiftBRep.paymentMethods.length === 1 &&
+            String(xComboShiftBRep.paymentMethods[0]?.method).toLowerCase() === 'card' &&
+            Number(xComboShiftBRep.paymentMethods[0]?.total) === 75,
+          'v3.14.0 combo: Staff B shift X-report reflects corrected Card method (75) and 0 net cash sales',
+        );
+
+        // Step 7: Day close is blocked with 409 while Staff A's or Staff B's shift is open, then succeeds once both close
+        const comboDayBlockedBoth = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({
+            business_date: '2026-11-12',
+            opening_float_cents: 10000,
+            counted_cash_cents: 10000,
+          });
+        assert(
+          comboDayBlockedBoth.status === 409 &&
+            comboDayBlockedBoth.body?.display_code === 'open_shift_blocks_day_close',
+          'v3.14.0 combo: day close blocked (409) while both Staff A and Staff B shifts are open',
+        );
+
+        const closeComboA = await request(app)
+          .post(`/api/cash-sessions/${comboShiftAId}/close`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ counted_cash_cents: 4000 });
+        assert(
+          closeComboA.status === 200 && closeComboA.body?.variance_cents === 0,
+          'v3.14.0 combo: Staff A closes Shift A with 4000c (200)',
+        );
+
+        const comboDayBlockedBOpen = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({
+            business_date: '2026-11-12',
+            opening_float_cents: 10000,
+            counted_cash_cents: 10000,
+          });
+        assert(
+          comboDayBlockedBOpen.status === 409 &&
+            comboDayBlockedBOpen.body?.display_code === 'open_shift_blocks_day_close' &&
+            Number(comboDayBlockedBOpen.body?.blocking_shift?.id) === comboShiftBId,
+          'v3.14.0 combo: day close remains blocked (409) while Staff B shift is still open',
+        );
+
+        const closeComboB = await request(app)
+          .post(`/api/cash-sessions/${comboShiftBId}/close`)
+          .set('Authorization', `Bearer ${staffBPinToken}`)
+          .send({ counted_cash_cents: 6000 });
+        assert(
+          closeComboB.status === 200 && closeComboB.body?.variance_cents === 0,
+          'v3.14.0 combo: Staff B closes Shift B with 6000c (200)',
+        );
+
+        const comboDayClose = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({
+            business_date: '2026-11-12',
+            opening_float_cents: 10000,
+            counted_cash_cents: 10000,
+          });
+        assert(
+          comboDayClose.status === 201 &&
+            comboDayClose.body?.zReport?.opening_float_cents === 10000 &&
+            comboDayClose.body?.zReport?.expected_cash_cents === 10000 &&
+            comboDayClose.body?.zReport?.counted_cash_cents === 10000 &&
+            comboDayClose.body?.zReport?.variance_cents === 0 &&
+            comboDayClose.body?.zReport?.gross_collected_cents === 7500 &&
+            comboDayClose.body?.zReport?.net_collected_cents === 7500 &&
+            comboDayClose.body?.zReport?.bill_count === 1,
+          'v3.14.0 combo: day close succeeds once both shifts are closed and reconciles totals (201)',
+        );
+
+        // Step 8: Verify X report and Z report JSON and CSV exports reconcile with the corrected payment method and totals
+        const xComboDay = await request(app)
+          .get('/api/reports/x-report?date=2026-11-12')
+          .set('Authorization', `Bearer ${managerPinToken}`);
+        const zComboDay = await request(app)
+          .get('/api/reports/z-report?date=2026-11-12')
+          .set('Authorization', `Bearer ${managerPinToken}`);
+        assert(
+          xComboDay.status === 200 &&
+            zComboDay.status === 200 &&
+            xComboDay.body?.xReport?.expectedCashCents === 0 &&
+            xComboDay.body?.xReport?.openingFloatCents === 10000 &&
+            xComboDay.body?.xReport?.grossCollected === 75 &&
+            zComboDay.body?.zReport?.expected_cash_cents === 10000 &&
+            zComboDay.body?.zReport?.gross_collected_cents === 7500 &&
+            Array.isArray(zComboDay.body?.zReport?.payment_methods) &&
+            zComboDay.body.zReport.payment_methods.length === 1 &&
+            String(zComboDay.body.zReport.payment_methods[0]?.method).toLowerCase() === 'card' &&
+            Number(zComboDay.body.zReport.payment_methods[0]?.total_cents) === 7500,
+          'v3.14.0 combo: day X-report and Z-report JSON reconcile with corrected Card payment and 0 cash sales',
+        );
+
+        const xCsvExport = await request(app)
+          .get('/api/reports/x-report/export?date=2026-11-12&format=csv')
+          .set('Authorization', `Bearer ${managerPinToken}`);
+        const zCsvExport = await request(app)
+          .get('/api/reports/z-report/export?date=2026-11-12&format=csv')
+          .set('Authorization', `Bearer ${managerPinToken}`);
+        assert(
+          xCsvExport.status === 200 &&
+            xCsvExport.text.includes('summary,Gross Sales,,,,75') &&
+            xCsvExport.text.includes('summary,Net Collections,,,,75') &&
+            xCsvExport.text.includes('summary,Opening Float,,,,100') &&
+            xCsvExport.text.includes('summary,Expected Cash in Drawer,,,,100') &&
+            /payment,,card,,1,75/i.test(xCsvExport.text) &&
+            !/payment,,cash,/i.test(xCsvExport.text),
+          'v3.14.0 combo: X-report CSV export reconciles with corrected Card payment and expected cash',
+        );
+        assert(
+          zCsvExport.status === 200 &&
+            zCsvExport.text.includes('summary,Gross Sales,,,,75') &&
+            zCsvExport.text.includes('summary,Net Collections,,,,75') &&
+            zCsvExport.text.includes('summary,Opening Float,,,,100') &&
+            zCsvExport.text.includes('summary,Expected Cash in Drawer,,,,100') &&
+            zCsvExport.text.includes('summary,Counted Cash,,,,100') &&
+            zCsvExport.text.includes('summary,Cash Variance,,,,0') &&
+            /payment,,card,,1,75/i.test(zCsvExport.text) &&
+            !/payment,,cash,/i.test(zCsvExport.text),
+          'v3.14.0 combo: Z-report CSV export reconciles with corrected Card payment and expected cash',
         );
       });
     } finally {

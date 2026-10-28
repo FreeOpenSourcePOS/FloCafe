@@ -1,7 +1,8 @@
 /**
- * Cash drawer movement writes shared by the standalone cash-closures routes and
- * the expense payment ledger. One place owns the closed-day rule, so an expense
- * correction can never move money into a day the store already closed.
+ * Cash drawer movement writes and closed-day / store-timezone helpers shared by
+ * the standalone cash-closures routes, paid-bill payment-method corrections, and
+ * the expense payment ledger. One place owns the closed-day rule, so a payment
+ * or expense correction can never move money into a day the store already closed.
  *
  * Leaf module: route modules and services import from here, and nothing here
  * imports a route, so no require cycle exists. Callers open the transaction and

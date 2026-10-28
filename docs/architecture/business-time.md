@@ -89,8 +89,11 @@ function tenantTimezone(): string {
 
 - [`main/routes/reports.ts`](../../main/routes/reports.ts), `tenantTimezone`, guards
   `bucketByLocalHourAndWeekday` and `dayBoundsInTimezone` in reporting.
-- [`main/routes/cash-closures.ts`](../../main/routes/cash-closures.ts) exports `tenantTimezone` so
-  that `cash-sessions.ts` resolves the same window rather than a second, divergent one.
+- [`main/services/cash-drawer-movements.ts`](../../main/services/cash-drawer-movements.ts) defines
+  `tenantTimezone` (re-exported by [`main/routes/cash-closures.ts`](../../main/routes/cash-closures.ts)
+  for `cash-sessions.ts` and imported by [`main/routes/bills.ts`](../../main/routes/bills.ts)) so that
+  cash closures, shift sessions, and bill business-day checks resolve the same window rather than a
+  second, divergent one.
 - [`main/services/refund.ts`](../../main/services/refund.ts) resolves inline, because a wrong
   business-day end there can wrongly accept or reject a late refund.
 

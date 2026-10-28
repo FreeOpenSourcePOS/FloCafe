@@ -111,8 +111,13 @@ test.describe('PIN Quick User Switch and Lock Flow (#1338)', () => {
     await page.getByTestId('pos-product-card').first().click();
     await expect(page.getByTestId('cart-item')).toHaveCount(1);
 
-    // Click Lock in the POS topbar
+    // Click Lock in the POS topbar and verify POST /api/auth/logout succeeds with 200
+    const logoutResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'POST' && url.pathname === '/api/auth/logout';
+    });
     await page.getByTestId('pos-lock-button').click();
+    expect((await logoutResponse).status()).toBe(200);
     await page.waitForURL('**/auth/login**', { timeout: 15000 });
 
     // Verify user tile picker is visible and shows our PIN-enabled cashier

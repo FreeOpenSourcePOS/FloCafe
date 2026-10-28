@@ -7,9 +7,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  addonRows,
   escPosToText,
+  financialRows,
   formatKOT,
   formatReceipt,
+  itemRows,
+  pluginReceiptLines,
   renderPluginReceipt,
   resolvePrinterContext,
   selectTemplateRenderProfile,
@@ -18,6 +22,7 @@ import {
   applyTextSizeToRasterInput,
   renderUnsupportedRasterLines,
 } from '../main/printers/raster-renderer';
+import { paintRasterRequest, type RasterCanvas } from '../shared/print/raster-canvas';
 import { measureEscPos } from './helpers/receipt-column-measure';
 import {
   applyTextSizeToLine,
@@ -394,4 +399,438 @@ test('pack width profiles are chosen by physical width and reflowed for extra la
     assert.ok(vatLine.includes('$1.23'), `${size} renders VAT $1.23 on tax summary row`);
     assert.ok(!vatLine.includes('..'), `${size} does not truncate tax summary row`);
   }
+});
+
+test('pack and standard receipts never truncate financial values across 32 and 48 columns and all text sizes', () => {
+  const layout32 = {
+    lineItems: {
+      gap: 1,
+      columns: [
+        { key: 'item', label: 'ITEM', width: 12, align: 'left', wrap: true, maxLines: 2 },
+        { key: 'quantity', label: 'QTY', width: 3, align: 'right' },
+        { key: 'rate', label: 'RATE', width: 6, align: 'right' },
+        { key: 'amount', label: 'AMOUNT', width: 8, align: 'right' },
+      ],
+    },
+    taxSummary: {
+      labelWidth: 20,
+      amountWidth: 11,
+    },
+  };
+  const layout48 = {
+    lineItems: {
+      gap: 1,
+      columns: [
+        { key: 'item', label: 'ITEM', width: 18, align: 'left', wrap: true, maxLines: 2 },
+        { key: 'quantity', label: 'QTY', width: 4, align: 'right' },
+        { key: 'rate', label: 'RATE', width: 8, align: 'right' },
+        { key: 'taxRate', label: 'TAX%', width: 5, align: 'right' },
+        { key: 'amount', label: 'AMOUNT', width: 9, align: 'right' },
+      ],
+    },
+    taxSummary: {
+      labelWidth: 34,
+      amountWidth: 13,
+    },
+  };
+  const payload = {
+    format: 'escpos-line-template-v1',
+    widthProfiles: [
+      { columns: 32, layout: layout32 },
+      { columns: 48, layout: layout48 },
+    ],
+  };
+  const template = {
+    template_id: 'pack-overflow-test',
+    pack_id: 'pack-test',
+    pack_version_id: 'pack-test-v1',
+    country: 'US',
+    jurisdiction: '*',
+    display_name: 'Pack Overflow Test',
+    paper_widths_json: '[32,48]',
+    renderer_json: JSON.stringify({ id: 'flocafe-thermal-receipt-template', version: 1 }),
+    template_payload_json: JSON.stringify(payload),
+    status: 'active',
+    created_at: '2026-04-21T10:30:00Z',
+  };
+  const highValueOrder = {
+    order_number: 'ORD-20260421-0003',
+    type: 'dine_in',
+    created_at: new Date('2026-04-21T10:30:00Z').toISOString(),
+    items: [
+      {
+        product_name: 'Coffee',
+        quantity: 2,
+        unit_price: 617.28,
+        total: 1234.56,
+        tax_breakdown: [{ title: 'VAT', rate: 5, amount: 61.73 }],
+        addons: [{ name: 'Artisan Syrup', price: 125.5, quantity: 1 }],
+      },
+      {
+        product_name: 'Wholesale Banquet Package',
+        quantity: 1250,
+        unit_price: 19.99,
+        total: 24987.5,
+        tax_breakdown: [
+          { title: 'CGST', rate: 9, amount: 1124.44 },
+          { title: 'SGST', rate: 2.5, amount: 312.34 },
+        ],
+        addons: [],
+      },
+      {
+        product_name: 'Promo Adjustment',
+        quantity: 1,
+        unit_price: -45.5,
+        total: -45.5,
+        tax_breakdown: [],
+        addons: [],
+      },
+    ],
+  };
+  const highValueBill = {
+    bill_number: 'INV-20260421-0003',
+    subtotal: 26176.56,
+    tax_amount: 1498.51,
+    discount_amount: 1234.56,
+    total: 27252.61,
+    payment_details: JSON.stringify([{ method: 'Card', amount: 27252.61 }]),
+  };
+  const highValueBusiness = {
+    name: 'Flo Test Cafe',
+    country: 'US',
+    currency: 'USD',
+    show_tax_breakdown: true,
+  };
+
+  for (const physicalCols of [32, 48] as const) {
+    for (const size of SIZES) {
+      const targetPrinter = { ...printer(size), paper_width: `cols-${physicalCols}` };
+      const { columns, capabilities } = resolvePrinterContext(targetPrinter);
+      const packWarnings: any[] = [];
+      const packData = renderPluginReceipt(
+        template,
+        highValueOrder,
+        highValueBill,
+        highValueBusiness,
+        columns,
+        false,
+        false,
+        'full',
+        packWarnings,
+        false,
+        'en',
+        capabilities,
+      );
+      assert.equal(
+        packWarnings.length,
+        0,
+        `pack ${physicalCols} cols ${size} emits no warnings`,
+      );
+      const measuredPack = measureEscPos(packData);
+      assert.equal(measuredPack.unconsumedControlBytes, 0);
+      assert.ok(
+        measuredPack.maxCells <= physicalCols,
+        `pack ${physicalCols} cols ${size} stays within ${physicalCols} cells (got ${measuredPack.maxCells})`,
+      );
+      const packText = escPosToText(packData);
+      for (const expectedToken of [
+        '$617.28',
+        '$1,234.56',
+        '1250',
+        '$19.99',
+        '$24,987.50',
+        '$-45.50',
+        'VAT @5%',
+        '$61.73',
+        'CGST @9%',
+        'SGST @2.5%',
+        '$1,124.44',
+        '$312.34',
+        '$26,176.56',
+        '-$1,234.56',
+        '$27,252.61',
+      ]) {
+        assert.ok(
+          packText.replace(/-\s+\$/g, '-$').includes(expectedToken),
+          `pack ${physicalCols} cols ${size} preserves ${expectedToken} intact`,
+        );
+      }
+      if (physicalCols === 48) {
+        assert.ok(
+          packText.includes('9+2.5'),
+          `pack 48 cols ${size} preserves combined taxRate 9+2.5`,
+        );
+      }
+      const packLines = packText.split(/\r?\n/);
+      for (const line of packLines) {
+        if (/\$|\d+\.\d{2}/.test(line)) {
+          assert.ok(
+            !line.includes('..'),
+            `pack ${physicalCols} cols ${size} financial line must not ellipsize: "${line}"`,
+          );
+        }
+      }
+
+      for (const stdKind of ['classic', 'compact'] as const) {
+        const stdWarnings: any[] = [];
+        const stdData = formatReceipt(
+          highValueOrder,
+          highValueBill,
+          highValueBusiness,
+          stdKind,
+          columns,
+          false,
+          false,
+          'full',
+          stdWarnings,
+          false,
+          'en',
+          undefined,
+          capabilities,
+        );
+        assert.equal(stdWarnings.length, 0, `${stdKind} ${physicalCols} cols ${size} warnings`);
+        const measuredStd = measureEscPos(stdData);
+        assert.equal(measuredStd.unconsumedControlBytes, 0);
+        assert.ok(
+          measuredStd.maxCells <= physicalCols,
+          `${stdKind} ${physicalCols} cols ${size} stays within ${physicalCols} cells (got ${measuredStd.maxCells})`,
+        );
+        const stdText = escPosToText(stdData);
+        for (const expectedToken of [
+          '$1,234.56',
+          '1250',
+          '$24,987.50',
+          '$-45.50',
+          '$251.00',
+          'VAT @5%',
+          '$61.73',
+          'CGST @9%',
+          '$1,124.44',
+          '$26,176.56',
+          '-$1,234.56',
+          '$27,252.61',
+        ]) {
+          assert.ok(
+            stdText.replace(/-\s+\$/g, '-$').includes(expectedToken),
+            `${stdKind} ${physicalCols} cols ${size} preserves ${expectedToken} intact`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test('overflowing unbreakable financial values throw an explicit error before emitting bytes', () => {
+  const layout32 = {
+    lineItems: {
+      gap: 1,
+      columns: [
+        { key: 'item', label: 'ITEM', width: 12, align: 'left', wrap: true, maxLines: 2 },
+        { key: 'quantity', label: 'QTY', width: 3, align: 'right' },
+        { key: 'rate', label: 'RATE', width: 6, align: 'right' },
+        { key: 'amount', label: 'AMOUNT', width: 8, align: 'right' },
+      ],
+    },
+    taxSummary: { labelWidth: 20, amountWidth: 11 },
+  };
+  const template = {
+    template_id: 'pack-unbreakable-test',
+    pack_id: 'pack-test',
+    pack_version_id: 'pack-test-v1',
+    country: 'US',
+    jurisdiction: '*',
+    display_name: 'Pack Unbreakable Test',
+    paper_widths_json: '[32]',
+    renderer_json: JSON.stringify({ id: 'flocafe-thermal-receipt-template', version: 1 }),
+    template_payload_json: JSON.stringify({
+      format: 'escpos-line-template-v1',
+      widthProfiles: [{ columns: 32, layout: layout32 }],
+    }),
+    status: 'active',
+    created_at: '2026-04-21T10:30:00Z',
+  };
+  const { columns, capabilities } = resolvePrinterContext({
+    ...printer('extra_large'),
+    paper_width: 'cols-32',
+  });
+  assert.equal(columns, 16);
+
+  const impossibleOrder = {
+    order_number: 'ORD-OVERFLOW',
+    type: 'dine_in',
+    created_at: new Date('2026-04-21T10:30:00Z').toISOString(),
+    items: [
+      {
+        product_name: 'Impossible Item',
+        quantity: 1,
+        unit_price: 100_000_000_000.99,
+        total: 100_000_000_000.99,
+        addons: [],
+      },
+    ],
+  };
+  const impossibleBill = {
+    bill_number: 'INV-OVERFLOW',
+    subtotal: 100_000_000_000.99,
+    tax_amount: 0,
+    discount_amount: 0,
+    total: 100_000_000_000.99,
+  };
+  const biz = { name: 'Flo Test Cafe', country: 'US', currency: 'USD' };
+
+  assert.throws(
+    () =>
+      renderPluginReceipt(
+        template,
+        impossibleOrder,
+        impossibleBill,
+        biz,
+        columns,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+        capabilities,
+      ),
+    /overflows available line width/i,
+  );
+  assert.throws(
+    () =>
+      formatReceipt(
+        impossibleOrder,
+        impossibleBill,
+        biz,
+        'classic',
+        columns,
+        false,
+        false,
+        'full',
+        [],
+        false,
+        'en',
+        undefined,
+        capabilities,
+      ),
+    /overflows available line width/i,
+  );
+  assert.throws(
+    () => itemRows({ product_name: 'Item', quantity: 1234567890, total: 10 }, 4, 4, 8, '$'),
+    /overflows available line width/i,
+  );
+  assert.throws(
+    () => addonRows({ name: 'Addon', price: 10_000_000 }, 4, 4, 8, '$'),
+    /overflows available line width/i,
+  );
+  assert.throws(
+    () => financialRows('Total', '$123,456,789.00', 10),
+    /overflows available line width/i,
+  );
+});
+
+test('raster 4-column pack rows rebalance spare pixel width so large financial numbers stay on one line', async () => {
+  const layout32 = {
+    lineItems: {
+      gap: 1,
+      columns: [
+        { key: 'item', label: 'ITEM', width: 12, align: 'left', wrap: true, maxLines: 2 },
+        { key: 'quantity', label: 'QTY', width: 3, align: 'right' },
+        { key: 'rate', label: 'RATE', width: 6, align: 'right' },
+        { key: 'amount', label: 'AMOUNT', width: 8, align: 'right' },
+      ],
+    },
+    taxSummary: { labelWidth: 20, amountWidth: 11 },
+  };
+  const template = {
+    template_id: 'pack-raster-4col',
+    pack_id: 'pack-test',
+    pack_version_id: 'pack-test-v1',
+    country: 'US',
+    jurisdiction: '*',
+    display_name: 'Pack Raster 4Col',
+    paper_widths_json: '[32]',
+    renderer_json: JSON.stringify({ id: 'flocafe-thermal-receipt-template', version: 1 }),
+    template_payload_json: JSON.stringify({
+      format: 'escpos-line-template-v1',
+      widthProfiles: [{ columns: 32, layout: layout32 }],
+    }),
+    status: 'active',
+    created_at: '2026-04-21T10:30:00Z',
+  };
+  const { columns, capabilities } = resolvePrinterContext({
+    ...printer('normal'),
+    paper_width: 'cols-32',
+  });
+  const rasterCaps: any = {
+    ...capabilities,
+    raster: { enabled: true, widthDots: 384, maxBandHeight: 200, modes: ['mixed'] },
+    representability: { scripts: ['ascii'] },
+  };
+  const packDoc = pluginReceiptLines(
+    template,
+    {
+      order_number: 'ORD-RASTER-4COL',
+      type: 'dine_in',
+      created_at: new Date('2026-04-21T10:30:00Z').toISOString(),
+      items: [
+        {
+          product_name: 'Café',
+          quantity: 2,
+          unit_price: 617.28,
+          total: 1234.56,
+          addons: [],
+        },
+      ],
+    },
+    {
+      bill_number: 'INV-RASTER-4COL',
+      subtotal: 1234.56,
+      tax_amount: 0,
+      discount_amount: 0,
+      total: 1234.56,
+    },
+    { name: 'Flo Test Cafe', country: 'US', currency: 'USD' },
+    columns,
+    false,
+    false,
+    [],
+    false,
+    'en',
+    rasterCaps,
+  );
+  const drawnTexts: string[] = [];
+  const createMockCanvas = (): RasterCanvas => ({
+    width: 1,
+    height: 1,
+    getContext: () => ({
+      font: '',
+      textBaseline: 'top',
+      direction: 'ltr',
+      textAlign: 'left',
+      fillStyle: '#000',
+      measureText: (text: string) => ({ width: text.length * 12 }),
+      setTransform: () => undefined,
+      fillRect: () => undefined,
+      fillText: (text: string) => {
+        if (text) drawnTexts.push(text);
+      },
+      getImageData: (_x: number, _y: number, width: number, height: number) => ({
+        data: new Uint8ClampedArray(width * height * 4),
+      }),
+    }),
+  });
+  const enlarged = applyTextSizeToRasterInput(packDoc.lines, packDoc.rasterGroups, 'normal');
+  const rendered = await renderUnsupportedRasterLines(
+    {
+      render: async (request: any) => paintRasterRequest(request, createMockCanvas),
+    },
+    enlarged.lines,
+    rasterCaps,
+    'pack-raster',
+    enlarged.groups,
+  );
+  assert.equal(rendered.failures.length, 0);
+  assert.ok(drawnTexts.includes('$617.28'), 'raster draws full rate $617.28 without splitting');
+  assert.ok(drawnTexts.includes('$1,234.56'), 'raster draws full amount $1,234.56 without splitting');
 });

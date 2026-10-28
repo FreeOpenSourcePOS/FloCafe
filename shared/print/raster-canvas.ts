@@ -104,6 +104,33 @@ export function paintRasterRequest(
                 );
                 const totalAllocated = allocated.reduce((sum, w) => sum + w, 0);
                 allocated[0] = Math.max(1, allocated[0] + (available - totalAllocated));
+                for (let i = columns.length - 1; i >= 1; i -= 1) {
+                  const needed = Math.ceil(measured[i]);
+                  if (needed <= allocated[i]) continue;
+                  let deficit = needed - allocated[i];
+                  for (let j = 1; j < columns.length && deficit > 0; j += 1) {
+                    if (j === i) continue;
+                    const spare = Math.max(0, allocated[j] - Math.ceil(measured[j]));
+                    if (spare > 0) {
+                      const take = Math.min(deficit, spare);
+                      allocated[j] -= take;
+                      allocated[i] += take;
+                      deficit -= take;
+                    }
+                  }
+                  if (deficit > 0) {
+                    const minFirstWidth = Math.min(
+                      allocated[0],
+                      Math.max(1, Math.min(Math.ceil(measured[0]), Math.floor(available * 0.25))),
+                    );
+                    const spare = Math.max(0, allocated[0] - minFirstWidth);
+                    if (spare > 0) {
+                      const take = Math.min(deficit, spare);
+                      allocated[0] -= take;
+                      allocated[i] += take;
+                    }
+                  }
+                }
                 return allocated;
               })()
             : columns.length === 2

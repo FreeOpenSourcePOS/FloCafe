@@ -265,7 +265,11 @@ read. `shared/print/text-size.ts` owns the rules:
 - Tax-pack width profiles are selected against the physical column count, then laid out at the
   text-size-adjusted columns; when `extra_large` narrows the column count,
   `selectTemplateRenderProfile()` reflows the profile's `lineItems` and `taxSummary` column widths
-  to fit the halved width.
+  to fit the halved width. When formatted financial values (`quantity`, `rate`, `taxRate`, `amount`,
+  or summary amounts) still cannot fit on a single row after borrowing spare column width, the
+  renderer stacks the item label and right-aligned financial continuation lines within the line
+  budget instead of truncating or ellipsizing digits, and fails before sending bytes with an
+  explicit overflow error if an unbreakable financial value is wider than the full line width.
 
 The enlargement is idempotent. The raster path applies it to the lines and to each group's
 `sourceControlLines` before `renderUnsupportedRasterLines()`, so rasterized rows render with the

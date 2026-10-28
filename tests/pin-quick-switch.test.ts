@@ -778,10 +778,12 @@ async function run() {
     staleMeResolver = res;
   });
   const capturedLogoutHeaders: Array<string | undefined> = [];
+  const capturedLogoutBodies: Array<unknown> = [];
 
   mockApiHandler = {
     post: async (url: string, body?: any, config?: any) => {
       if (url === '/auth/logout') {
+        capturedLogoutBodies.push(body);
         capturedLogoutHeaders.push(config?.headers?.Authorization);
         return { data: { message: 'Logged out' } };
       }
@@ -863,6 +865,11 @@ async function run() {
     capturedLogoutHeaders[capturedLogoutHeaders.length - 1],
     'Bearer token-for-owner-1',
     'lock() passes Authorization Bearer header to POST /auth/logout before clearing storage',
+  );
+  assertEqualOrThrow(
+    capturedLogoutBodies[capturedLogoutBodies.length - 1],
+    undefined,
+    'lock() passes undefined body to POST /auth/logout so express.json() accepts the empty body',
   );
   assertEqualOrThrow(
     mockPosSettingsStore.state.autoLockMinutes,

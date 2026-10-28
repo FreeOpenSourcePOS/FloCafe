@@ -150,7 +150,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const logoutPromise = api
       .post(
         '/auth/logout',
-        null,
+        undefined,
         tokenToRevoke ? { headers: { Authorization: `Bearer ${tokenToRevoke}` } } : undefined,
       )
       .catch(() => {});
@@ -199,7 +199,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     api
       .post(
         '/auth/logout',
-        null,
+        undefined,
         tokenToRevoke ? { headers: { Authorization: `Bearer ${tokenToRevoke}` } } : undefined,
       )
       .catch(() => {});

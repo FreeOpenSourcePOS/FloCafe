@@ -91,17 +91,22 @@ Node-only dependencies.
 
 ## Consumers
 
-`resolveRegionalSnapshot()` has 11 call sites in the backend, across 9 files:
+Backend consumers of `resolveRegionalSnapshot()`:
 
 | File | Use |
 | --- | --- |
 | `main/routes/auth.ts` | The local-tenant snapshot at login. |
 | `main/server-app.ts` | The Server App tenant snapshot at `/api/server-app/info`, mapping the resolver's error to a 409 `regional_not_configured` response. |
-| `main/routes/reports.ts` | Currency minor-unit factor for every monetary report. |
+| `main/routes/reports.ts` | Currency minor-unit factor for every monetary report, and locale/currency formatting options for X and Z report HTML export. |
 | `main/routes/cash-closures.ts` | Currency minor-unit factor for cash-closure arithmetic. |
+| `main/services/cash-day-close-guards.ts` | Business timezone for cash-session business-date resolution. |
+| `main/services/cash-close-export.ts` | Regional currency, locale, timezone, and formatting preferences when serializing X and Z report HTML without pre-resolved options. |
 | `main/services/refund.ts` | Refund minor units and the business timezone used for the refund window. |
-| `main/services/daily-sales-export.ts` | Currency minor-unit factor for the accounting export. |
+| `main/services/daily-sales-export.ts` | Currency minor-unit factor for the accounting export, and regional locale and formatting preferences for `serializeDailySalesExportHtml`. |
+| `main/services/expenses.ts` | Store currency and business timezone for expense business-date resolution. |
+| `main/services/whatsapp.ts` | Store regional snapshot for WhatsApp message formatting. |
 | `main/routes/menu-csv.ts` | Amount formatting and separators for menu and add-on CSV export. |
+| `main/routes/printers.ts` | Regional snapshot for menu and delivery-slip print assembly. |
 | `main/db.ts` | `requireTenantTimezone()` for order and bill numbering, and the target-currency snapshot taken inside the destructive currency reset. |
 | `main/printers/thermal.ts` | Receipt currency symbol, fraction digits, and business timezone. |
 

@@ -1549,11 +1549,13 @@ router.get(
           orderCount: staff.orderCount,
           revenue: staff.revenue_cents / minorFactor,
         })),
-        taxComponents: JSON.parse(row.tax_components_json || '[]').map((comp: any) => ({
-          title: String(comp.title ?? 'Tax'),
-          rate: typeof comp.rate === 'number' ? comp.rate : null,
-          amount: Number(comp.amount ?? 0),
-        })),
+        taxComponents: JSON.parse(row.tax_components_json || '[]').map(
+          (comp: { title?: unknown; rate?: unknown; amount?: unknown }) => ({
+            title: String(comp.title ?? 'Tax'),
+            rate: typeof comp.rate === 'number' ? comp.rate : null,
+            amount: Number(comp.amount ?? 0),
+          }),
+        ),
         zNumber: row.z_number,
         closedAt: row.created_at,
         closedBy: userRow?.name ?? row.closed_by,

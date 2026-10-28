@@ -338,6 +338,7 @@
     "exportSales": "مبيعات التصدير",
     "exportXlsx": "إكسل (.xlsx)",
     "exportCsv": "CSV (.csv)",
+    "exportPdf": "PDF (.pdf)",
     "exportCsvHint": "يتم تنزيل خمسة ملفات بتنسيق CSV: «الملخص» و«اليومي» و«الضرائب» و«العناصر» و«المدفوعات».",
     "exportCsvStarted": "جاري تنزيل ملفات CSV الخاصة بالملخص واليومي والضرائب والعناصر والمدفوعات…",
     "exportCustomerSales": "مبيعات العملاء",

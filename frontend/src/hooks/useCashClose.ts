@@ -12,6 +12,7 @@ import { printerService } from '@/lib/printer/PrinterService';
 import { displayAmountToCents } from '@/lib/money';
 import { businessDateForInstant } from '@shared/business-date';
 import { downloadBlob } from '@/lib/download';
+import { exportReportAsPdf } from '@/lib/export-pdf';
 import {
   shareCashCloseViaWhatsApp,
   type XReportExport,
@@ -393,19 +394,28 @@ export function useCashClose() {
     setOpenToken((n) => n + 1);
   };
 
-  const exportReport = async (report: 'x' | 'z', format: 'csv' | 'xlsx') => {
+  const exportReport = async (report: 'x' | 'z', format: 'csv' | 'xlsx' | 'pdf') => {
     if (report === 'z' && !closedZ) return;
     setExportingReport(true);
     try {
-      const res = await api.get(`/reports/${report}-report/export`, {
+      const endpoint = `/reports/${report}-report/export`;
+      const baseFilename =
+        report === 'x'
+          ? `x-report-${businessDate}`
+          : `z-report-Z${closedZ!.z_number}-${businessDate}`;
+      if (format === 'pdf') {
+        await exportReportAsPdf({
+          endpoint,
+          params: { date: businessDate },
+          filename: `${baseFilename}.pdf`,
+        });
+        return;
+      }
+      const res = await api.get(endpoint, {
         params: { date: businessDate, format },
         responseType: 'blob',
       });
-      const filename =
-        report === 'x'
-          ? `x-report-${businessDate}.${format}`
-          : `z-report-Z${closedZ!.z_number}-${businessDate}.${format}`;
-      downloadBlob(res.data as Blob, filename);
+      downloadBlob(res.data as Blob, `${baseFilename}.${format}`);
     } catch {
       toast.error(tCommon('downloadFailed'));
     } finally {

@@ -338,6 +338,7 @@
     "exportSales": "Esporta vendite",
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
+    "exportPdf": "PDF (.pdf)",
     "exportCsvHint": "Il CSV scarica cinque file: riepilogo, giornaliero, imposte, articoli e pagamenti.",
     "exportCsvStarted": "Download dei file CSV di riepilogo, giornaliero, imposte, articoli e pagamenti in corso…",
     "exportCustomerSales": "Vendite per cliente",

@@ -1483,6 +1483,114 @@ async function main() {
           `${cutoffDayB},2,2,100,5,95`,
           'range daily row for 2026-10-05 includes 04:00:00 and 04:00:01 IST bills and refund',
         );
+
+        // Verify HTML export (format=html) for both single-day and multi-day range,
+        // role gating, non-Latin store name & HTML escaping, and exact parity with XLSX.
+        const forbiddenHtml = await fetch(
+          `${baseUrl}/api/reports/daily-sales/export?from=${day1}&to=${day3}&format=html`,
+          { headers: { ...manager.authHeader } },
+        );
+        assertEqual(
+          forbiddenHtml.status,
+          403,
+          'manager forbidden on daily-sales format=html (403)',
+        );
+
+        db.prepare(
+          "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_name', ?, CURRENT_TIMESTAMP)",
+        ).run('قهوة فلو · फ्लो कैफे & <style>body{display:none}</style>');
+        try {
+          const singleHtmlRes = await fetch(
+            `${baseUrl}/api/reports/daily-sales/export?date=${day1}&format=html`,
+            { headers: authHeader },
+          );
+          assertEqual(singleHtmlRes.status, 200, 'single-day daily-sales format=html → 200');
+          assertIncludes(
+            singleHtmlRes.headers.get('content-type') || '',
+            'text/html',
+            'single-day daily-sales HTML Content-Type is text/html',
+          );
+          assertIncludes(
+            singleHtmlRes.headers.get('content-disposition') || '',
+            `daily-sales-${day1}.html`,
+            'single-day daily-sales HTML filename',
+          );
+          const singleHtml = await singleHtmlRes.text();
+          assertIncludes(singleHtml, '<!doctype html>', 'single-day HTML has doctype');
+          assertIncludes(
+            singleHtml,
+            'قهوة فلو · फ्लो कैफे &amp; &lt;style&gt;body{display:none}&lt;/style&gt;',
+            'single-day HTML renders non-Latin store name and escapes HTML tags',
+          );
+          assert(
+            !singleHtml.includes('<style>body{display:none}</style>'),
+            'raw unescaped style injection not present in single-day HTML',
+          );
+
+          const rangeHtmlRes = await fetch(
+            `${baseUrl}/api/reports/daily-sales/export?from=${day1}&to=${day3}&format=html`,
+            { headers: authHeader },
+          );
+          assertEqual(rangeHtmlRes.status, 200, 'range daily-sales format=html → 200');
+          assertIncludes(
+            rangeHtmlRes.headers.get('content-disposition') || '',
+            `daily-sales-${day1}_to_${day3}.html`,
+            'range daily-sales HTML filename uses from_to',
+          );
+          const rangeHtml = await rangeHtmlRes.text();
+
+          const extractHtmlSummaryMap = (doc: string): Map<string, string> => {
+            const map = new Map<string, string>();
+            const re = /<tr data-section="summary" data-metric="([^"]+)" data-value="([^"]*)">/g;
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(doc)) !== null) {
+              map.set(
+                m[1],
+                m[2]
+                  .replace(/&amp;/g, '&')
+                  .replace(/&lt;/g, '<')
+                  .replace(/&gt;/g, '>')
+                  .replace(/&quot;/g, '"')
+                  .replace(/&#39;/g, "'"),
+              );
+            }
+            return map;
+          };
+
+          const htmlSummary = extractHtmlSummaryMap(rangeHtml);
+          const rangeSummarySheet = rangeWb.getWorksheet('Summary')!;
+          rangeSummarySheet.eachRow((row, rowNumber) => {
+            if (rowNumber === 1) return;
+            const metric = String(row.getCell(1).value);
+            const xlsxVal = String(row.getCell(2).value ?? '');
+            assertEqual(
+              htmlSummary.get(metric),
+              xlsxVal,
+              `range HTML summary metric ${metric} matches XLSX (${xlsxVal})`,
+            );
+          });
+
+          const dailyRowMatches = rangeHtml.match(/<tr data-section="daily"/g) || [];
+          assertEqual(
+            dailyRowMatches.length,
+            dailySheet.rowCount - 1,
+            'range HTML Daily row count matches XLSX Daily sheet',
+          );
+          const taxRowMatches = rangeHtml.match(/<tr data-section="tax"/g) || [];
+          assertEqual(
+            taxRowMatches.length,
+            taxesSheet.rowCount - 1,
+            'range HTML Taxes row count matches XLSX Taxes sheet',
+          );
+          const itemRowMatches = rangeHtml.match(/<tr data-section="item"/g) || [];
+          assertEqual(
+            itemRowMatches.length,
+            rangeWb.getWorksheet('Items')!.rowCount - 1,
+            'range HTML Items row count matches XLSX Items sheet',
+          );
+        } finally {
+          db.prepare("DELETE FROM settings WHERE key = 'business_name'").run();
+        }
       } finally {
         db.prepare(
           "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_day_start_time', '00:00', CURRENT_TIMESTAMP)",

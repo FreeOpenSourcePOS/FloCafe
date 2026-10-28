@@ -116,6 +116,14 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
           <FileText size={14} />
           {t('exportCsv')}
         </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => {
+            void exportReport(report, 'pdf');
+          }}
+        >
+          <FileText size={14} />
+          {t('exportPdf')}
+        </DropdownMenuItem>
         {canSendWhatsApp && (report === 'x' ? xReport : closedZ) && (
           <DropdownMenuItem onSelect={() => openWhatsAppReport(report)}>
             <MessageCircle size={14} className="text-emerald-500" />

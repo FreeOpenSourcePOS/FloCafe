@@ -338,6 +338,7 @@
     "exportSales": "निर्यात बिक्री",
     "exportXlsx": "एक्सेल (.xlsx)",
     "exportCsv": "CSV (.csv)",
+    "exportPdf": "PDF (.pdf)",
     "exportCsvHint": "CSV ले पाँच फाइलहरू डाउनलोड गर्छ: सारांश, दैनिक, करहरू, वस्तुहरू र भुक्तानीहरू।",
     "exportCsvStarted": "सारांश, दैनिक, करहरू, वस्तुहरू र भुक्तानीहरू CSV फाइलहरू डाउनलोड गर्दै...",
     "exportCustomerSales": "ग्राहक बिक्री",

@@ -401,6 +401,7 @@
     "exportSales": "匯出銷售資料",
     "exportXlsx": "Excel（.xlsx）",
     "exportCsv": "CSV（.csv）",
+    "exportPdf": "PDF（.pdf）",
     "exportCsvHint": "CSV會下載五個檔案：彙總、每日、稅項、明細和付款。",
     "exportCsvStarted": "正在下載彙總、每日、稅項、明細和付款CSV檔案…",
     "exportCustomerSales": "客戶銷售",

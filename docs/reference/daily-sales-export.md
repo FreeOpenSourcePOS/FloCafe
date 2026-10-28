@@ -1,15 +1,13 @@
 # Daily sales export (XLSX / CSV)
 
-Contract for `GET /api/reports/daily-sales/export`: an owner-only export of one tenant business
-day (`?date=YYYY-MM-DD`, defaults to the current business date) or an inclusive business-date range
-(`?from=YYYY-MM-DD&to=YYYY-MM-DD`, up to 93 calendar days) as a single XLSX workbook or a five-file
-CSV set.
+Accounting, reconciliation, and file-format contract for
+[`GET /api/reports/daily-sales/export`](api.md#get-apireportsdaily-salesexport).
 
 ## Scope
 
-- Single business day (`date`) or inclusive business-date range (`from` and `to`, capped at 93 calendar days per request).
+- Single tenant business day (`?date=YYYY-MM-DD`, defaults to the current business date) or inclusive business-date range (`?from=YYYY-MM-DD&to=YYYY-MM-DD`, up to 93 calendar days per request).
 - Formats: `xlsx` (`Summary` + `Daily` + `Taxes` + `Items` + `Payments` sheets in one workbook) and `csv` (separate `summary`, `daily`, `taxes`, `items`, and `payments` files; each request returns one part).
-- Owner-only. No PII, no staff/Addons sheets.
+- Gated by `reports.daily-sales.export` (owner by default). No PII, no staff/Addons sheets.
 
 ## Architecture
 
@@ -32,10 +30,10 @@ Backend owns all logic; the frontend never computes totals.
 - **Counts:** both `order_count` (distinct orders per day, summed across the range) and `paid_bill_count`.
 - **Payment methods:** `paymentMethodBreakdown(paidOnly, refunds-by-created_at, keyByPaidAt)` so `Σ payment totals = net_collected`. Only totals are exported (no per-method `count` - that count covers payment+refund lines, not payments). Summary keys use stable snake_case (`payment_visa_terminal_2` for `Visa Terminal 2`).
 - **Daily summaries (`Daily` sheet / `part=daily`):** one row per business day in `[from, to]` with the day's counts, collections, tax, discounts, charges, and profitability metrics.
-- **Per-tax-rate summary (`Taxes` sheet / `part=taxes`):** one row per tax component and rate per business day where tax or taxable base is recorded, derived exclusively from historical snapshot evidence stored on bills and order items (`order_items.tax_snapshot`, `bills.tax_breakdown`, `order_items.tax_amount`, `bills.tax_amount`), never from current mutable product tax configuration.
+- **Per-tax-rate summary (`Taxes` sheet / `part=taxes`):** one row per tax component and rate per business day where tax or taxable base is recorded, derived exclusively from historical snapshot and breakdown evidence stored on bills and order items (`order_items.tax_snapshot`, `order_items.tax_breakdown`, `order_items.tax_amount`, `bills.tax_snapshot`, `bills.tax_breakdown`, `bills.tax_amount`), never from current mutable product tax configuration.
   - Separate named tax components (for example `CGST` at `2.5%` and `SGST` at `2.5%`) remain distinct rows.
   - When multiple tax components share the same taxable base on an item or bill, those rows carry `shared_base = true` and `base_additive = false` so accountants do not double-count `taxable_base` or `gross_amount` when summing across components. Single-component tax rows carry `shared_base = false` and `base_additive = true`.
-  - When historical records store a non-zero `tax_amount` without a complete rate or taxable-base breakdown, `tax_rate`, `taxable_base`, and `gross_amount` are left blank (`null` in the dataset, `""` in XLSX/CSV), while the stored `tax_amount` is preserved in reconciliation on an `Unknown` row with `incomplete_detail = true` and an explicit `warning` message (also surfaced on `Summary` via `tax_detail_complete` and `tax_detail_warning`).
+  - When historical records store a non-zero `tax_amount` without a complete rate or taxable-base breakdown, unknown `tax_rate` values as well as `taxable_base` and `gross_amount` are left blank (`null` in the dataset, `""` in XLSX/CSV), while the stored `tax_amount` is preserved in reconciliation (under the stored component name or `Unknown` when none was recorded) with `incomplete_detail = true` and an explicit `warning` message (also surfaced on `Summary` via `tax_detail_complete` and `tax_detail_warning`).
 - **Items:** products on paid bills, split via `bill_items`; exclude `status IN ('cancelled','voided','void_adjustment')`; include `refunded` originals (they were collected; cash reversal lives only in `refunds_issued`). Group by `product_id` + snapshot `product_name` + `product_sku`. Add-ons fold into the parent item. Order-level discounts are Summary-only. Ingredient cost, profit, and margin use frozen `order_items.ingredient_cost` on lines with `ingredient_cost_known = 1` (allocated by `bi.quantity / oi.quantity` on split bills) against ex-tax net item sales of those known-cost lines (`known_cost_net_item_sales`); `cost_status` and `cost_coverage_status` are `known`, `partial`, or `unknown` (when `unknown`, cost, profit, and margin are `null`; see [product invariants](product-invariants.md#supplies-stock-and-recipe-depletion)).
 - **Payments:** one row per `bills.payment_details` ledger line of every bill paid in the window, including lines recorded on an earlier day for a bill settled in this one. `payment_time` is the line's timestamp in the store timezone (`YYYY-MM-DD HH:MM:SS`); `method` resolves custom methods to their current name; `transaction_id` is the stored external reference verbatim (empty when none), so card lines can be matched against the card terminal's batch report. Refunds are not rows here.
 - **`discount_total`** = order-level (`bills.discount_amount`) + item-level discounts.

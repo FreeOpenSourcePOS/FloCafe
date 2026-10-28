@@ -567,9 +567,7 @@ function shouldExtractDocumentResiduals(
   ) {
     return false;
   }
-  return targetValue.isNegative()
-    ? representedSum.gt(targetValue)
-    : representedSum.lt(targetValue);
+  return targetValue.isNegative() ? representedSum.gt(targetValue) : representedSum.lt(targetValue);
 }
 
 function extractDocumentLegacyResidualEntries(
@@ -700,7 +698,9 @@ function resolveBillHistoricalTaxEntries(
       }
     | undefined,
 ): HistoricalTaxEntry[] {
-  const activeItems = (order?.items || []).filter((item) => !isExcludedFromBillReceipt(item.status));
+  const activeItems = (order?.items || []).filter(
+    (item) => !isExcludedFromBillReceipt(item.status),
+  );
   const taxDiscountRatioDec = getTaxDiscountRatioDecimal(order?.subtotal, order?.discount_amount);
 
   const billTaxDec = decimalOrNull(bill.tax_amount);
@@ -801,9 +801,7 @@ function resolveBillHistoricalTaxEntries(
       const itemSum = itemEntries.reduce((sum, e) => sum.plus(e.amount), new Decimal(0));
       const itemDiff = itemTarget.minus(itemSum);
       const adjustedItems =
-        !itemSum.isZero() &&
-        !itemDiff.isZero() &&
-        itemDiff.abs().lte(MINOR_UNIT_ROUNDING_TOLERANCE)
+        !itemSum.isZero() && !itemDiff.isZero() && itemDiff.abs().lte(MINOR_UNIT_ROUNDING_TOLERANCE)
           ? reconcileBillTaxEntries(itemEntries, itemTarget)
           : itemEntries;
       return reconcileBillTaxEntries(

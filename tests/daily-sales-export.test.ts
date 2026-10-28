@@ -1537,14 +1537,12 @@ async function main() {
               taxEdgeDay1At,
             ).lastInsertRowid,
         );
-        db.prepare('INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, 1)').run(
-          splBillId,
-          splItem1,
-        );
-        db.prepare('INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, 1)').run(
-          splBillId,
-          splItem2,
-        );
+        db.prepare(
+          'INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, 1)',
+        ).run(splBillId, splItem1);
+        db.prepare(
+          'INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, 1)',
+        ).run(splBillId, splItem2);
 
         // (3) Non-split bill with chargeSnapshot + legacy item breakdown + <= 0.05 discount rounding diff:
         // legacy item breakdown must not be double-counted and <= 0.05 rounding diff must not emit incomplete_detail.

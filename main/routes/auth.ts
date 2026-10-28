@@ -385,7 +385,8 @@ router.post(
       }
 
       const canonicalIp = normalizeIpForRateLimit(ip);
-      const rateLimitKey = `${canonicalIp}:pin:${userId}`;
+      const pinRateKey = `${canonicalIp}:pin:${userId}`;
+      const accountRateKey = `pin-user:${userId}`;
       type VerifiedUser = {
         id: string;
         name: string;
@@ -401,27 +402,34 @@ router.post(
         | { status: 200; user: VerifiedUser };
 
       const verificationResult = await withPinVerificationLock<PinLoginOutcome>(
-        rateLimitKey,
+        accountRateKey,
         async () => {
-          const rateLimit = checkLoginRateLimit(rateLimitKey);
-          if (!rateLimit.allowed) {
+          const ipRateLimit = checkLoginRateLimit(pinRateKey);
+          const accountRateLimit = checkLoginRateLimit(accountRateKey);
+          if (!ipRateLimit.allowed || !accountRateLimit.allowed) {
+            const waitMinutes = Math.max(
+              ipRateLimit.allowed ? 0 : ipRateLimit.waitMinutes || 0,
+              accountRateLimit.allowed ? 0 : accountRateLimit.waitMinutes || 0,
+            );
             recordAuthAudit(db, {
               userId,
               eventType: 'pin_login',
               outcome: 'rate_limited',
               ipAddress: ip,
-              details: { wait_minutes: rateLimit.waitMinutes },
+              details: { wait_minutes: waitMinutes },
             });
             return {
               status: 429,
               body: {
-                error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.`,
+                error: `Too many failed attempts. Try again in ${waitMinutes} minutes.`,
               },
             };
           }
 
           if (!/^\d{4,6}$/.test(rawPin)) {
-            const attemptsRemaining = incrementFailedLogin(rateLimitKey);
+            const ipAttemptsRemaining = incrementFailedLogin(pinRateKey);
+            const accountAttemptsRemaining = incrementFailedLogin(accountRateKey);
+            const attemptsRemaining = Math.min(ipAttemptsRemaining, accountAttemptsRemaining);
             recordAuthAudit(db, {
               userId,
               eventType: 'pin_login',
@@ -455,7 +463,9 @@ router.post(
           }
 
           if (!user || user.is_active !== 1 || !user.pin_hash || !pinMatches) {
-            const attemptsRemaining = incrementFailedLogin(rateLimitKey);
+            const ipAttemptsRemaining = incrementFailedLogin(pinRateKey);
+            const accountAttemptsRemaining = incrementFailedLogin(accountRateKey);
+            const attemptsRemaining = Math.min(ipAttemptsRemaining, accountAttemptsRemaining);
             recordAuthAudit(db, {
               userId,
               eventType: 'pin_login',
@@ -482,7 +492,8 @@ router.post(
             };
           }
 
-          resetSuccessfulLogin(rateLimitKey);
+          resetSuccessfulLogin(pinRateKey);
+          resetSuccessfulLogin(accountRateKey);
           recordAuthAudit(db, {
             userId: user.id,
             eventType: 'pin_login',

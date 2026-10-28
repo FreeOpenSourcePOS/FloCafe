@@ -170,6 +170,10 @@ export function incrementFailedLogin(ip: string): number {
 export function resetSuccessfulLogin(ip: string): void {
   const canonicalIp = normalizeIpForRateLimit(ip);
   loginAttempts.delete(canonicalIp);
+  const pinIdx = canonicalIp.indexOf(':pin:');
+  if (pinIdx >= 0) {
+    loginAttempts.delete(`pin-user:${canonicalIp.slice(pinIdx + 5)}`);
+  }
 }
 
 export function clearLoginRateLimits(): void {

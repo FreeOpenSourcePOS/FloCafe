@@ -360,6 +360,72 @@ async function run() {
   );
   resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
 
+  // Rotating source IP cannot bypass the 5-attempt per-account lockout (pin-user:<userId>)
+  app.set('trust proxy', true);
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const resIp = await request(app)
+      .post('/api/auth/pin-login')
+      .set('X-Forwarded-For', `10.10.0.${attempt}`)
+      .send({ user_id: cashierId, pin: '0000' });
+    assertEqualOrThrow(
+      resIp.status,
+      401,
+      `Rotated IP attempt ${attempt} (10.10.0.${attempt}) returns 401`,
+    );
+    assertEqualOrThrow(
+      resIp.body.attempts_remaining,
+      5 - attempt,
+      `Rotated IP attempt ${attempt} reports ${5 - attempt} attempts remaining on account bucket`,
+    );
+  }
+  const lockedAcrossIps = await request(app)
+    .post('/api/auth/pin-login')
+    .set('X-Forwarded-For', '10.10.0.99')
+    .send({ user_id: cashierId, pin: '2468' });
+  assertEqualOrThrow(
+    lockedAcrossIps.status,
+    429,
+    '6th attempt from a fresh source IP returns 429 due to per-account lockout',
+  );
+  const rotatedIpAuditRows = db
+    .prepare(
+      "SELECT user_id, outcome, ip_address FROM auth_audit_log WHERE event_type = 'pin_login' AND ip_address = '10.10.0.99'",
+    )
+    .all() as Array<{ user_id: string; outcome: string; ip_address: string }>;
+  assertOrThrow(
+    rotatedIpAuditRows.some((r) => r.user_id === cashierId && r.outcome === 'rate_limited'),
+    'Audit log records rate_limited on 6th attempt from rotated source IP 10.10.0.99',
+  );
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    resetSuccessfulLogin(`10.10.0.${attempt}:pin:${cashierId}`);
+  }
+  resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
+
+  // Concurrent failed attempts across distinct source IPs are serialized by withPinVerificationLock(accountRateKey)
+  const concurrentCrossIpResponses = await Promise.all(
+    Array.from({ length: 8 }, (_, idx) =>
+      request(app)
+        .post('/api/auth/pin-login')
+        .set('X-Forwarded-For', `10.20.0.${idx + 1}`)
+        .send({ user_id: cashierId, pin: '0000' }),
+    ),
+  );
+  assertEqualOrThrow(
+    concurrentCrossIpResponses.filter((r) => r.status === 401).length,
+    5,
+    'Concurrent cross-IP wrong-PIN burst is serialized by withPinVerificationLock and allows only 5 attempts (401)',
+  );
+  assertEqualOrThrow(
+    concurrentCrossIpResponses.filter((r) => r.status === 429).length,
+    3,
+    'Remaining 3 concurrent cross-IP wrong-PIN requests receive 429 rate-limited',
+  );
+  app.set('trust proxy', false);
+  for (let idx = 1; idx <= 8; idx++) {
+    resetSuccessfulLogin(`10.20.0.${idx}:pin:${cashierId}`);
+  }
+  resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
+
   // ── 5. Cashier PIN rejected on EVERY approval endpoint ──
   console.log('\n5. Cashier PIN rejected on every approval endpoint');
   const cashierAuth = makeToken(cashierId, 'cashier', 'cashier@test.local');

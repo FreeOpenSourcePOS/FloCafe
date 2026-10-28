@@ -1219,9 +1219,12 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
       if (!Number.isInteger(sessionId) || sessionId <= 0) {
         return res.status(400).json({ error: 'Invalid session_id', code: 'session_id_invalid' });
       }
-      const session = db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId) as
-        | CashSessionRow
-        | undefined;
+      const session = db
+        .prepare(
+          `SELECT id, opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by, closure_id
+           FROM cash_sessions WHERE id = ?`,
+        )
+        .get(sessionId) as CashSessionRow | undefined;
       if (!session) {
         return res.status(404).json({ error: 'Shift not found', code: 'session_unavailable' });
       }

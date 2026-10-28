@@ -5061,6 +5061,10 @@ router.patch(
       }
 
       const isItemVoidInProgress = ['preparing', 'ready'].includes(item.status);
+      const suppliedApproverIds = [req.body.approver_id, req.body.manager_id, req.body.user_id]
+        .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+        .map((val) => String(val).trim());
+      const managerId = suppliedApproverIds[0];
       let preVerifiedVoidApprover: { id: string; verifiedPinHash: string } | null = null;
       if (isItemVoidInProgress && override_pin && typeof override_pin === 'string') {
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
@@ -5073,13 +5077,9 @@ router.patch(
           checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
-        const suppliedApproverIds = [req.body.approver_id, req.body.manager_id, req.body.user_id]
-          .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
-          .map((val) => String(val).trim());
         if (new Set(suppliedApproverIds).size > 1) {
           return res.status(400).json({ error: 'Conflicting approver identifiers' });
         }
-        const managerId = suppliedApproverIds[0];
         const candidateUsers = managerId
           ? (db
               .prepare(
@@ -5221,7 +5221,6 @@ router.patch(
             });
           }
 
-          const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
           let pinUser: any = null;
           if (preVerifiedVoidApprover) {
             const candidate = db

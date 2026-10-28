@@ -840,7 +840,12 @@
     "overridePriceSaved": "อัปเดตราคาแล้ว",
     "overridePriceFailed": "ไม่สามารถอัปเดตราคาได้",
     "priceOverriddenMenu": "เปลี่ยนราคาแล้ว (เมนู {price})",
-    "overridePriceClear": "ใช้ราคาตามเมนู"
+    "overridePriceClear": "ใช้ราคาตามเมนู",
+    "correctPaymentMethod": "แก้ไขวิธีการชำระเงิน",
+    "correctPaymentMethodHint": "เปลี่ยนวิธีการชำระเงินที่บันทึกไว้ขณะที่กะยังเปิดอยู่ โดยยอดเงินจะไม่เปลี่ยนแปลง",
+    "paymentLineLabel": "รายการชำระเงิน",
+    "paymentMethodCorrected": "อัปเดตวิธีการชำระเงินแล้ว",
+    "correctPaymentMethodFailed": "ไม่สามารถอัปเดตวิธีการชำระเงินได้"
   },
   "pos": {
     "addCustomer": "เพิ่มลูกค้า",

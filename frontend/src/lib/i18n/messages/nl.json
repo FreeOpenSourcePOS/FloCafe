@@ -840,7 +840,12 @@
     "overridePriceSaved": "Prijs bijgewerkt",
     "overridePriceFailed": "Prijs kon niet worden bijgewerkt",
     "priceOverriddenMenu": "Prijs aangepast (menu {price})",
-    "overridePriceClear": "Menuprijs gebruiken"
+    "overridePriceClear": "Menuprijs gebruiken",
+    "correctPaymentMethod": "Betaalmethode corrigeren",
+    "correctPaymentMethodHint": "Wijzig de geregistreerde betaalmethode zolang de dienst open is. Het bedrag blijft ongewijzigd.",
+    "paymentLineLabel": "Betalingsregel",
+    "paymentMethodCorrected": "Betaalmethode bijgewerkt",
+    "correctPaymentMethodFailed": "Betaalmethode kon niet worden bijgewerkt"
   },
   "pos": {
     "addCustomer": "Klant toevoegen",

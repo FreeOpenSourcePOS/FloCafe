@@ -840,7 +840,12 @@
     "overridePriceSaved": "قیمت اپ ڈیٹ ہو گئی",
     "overridePriceFailed": "قیمت اپ ڈیٹ نہیں ہو سکی",
     "priceOverriddenMenu": "قیمت تبدیل کی گئی (مینو {price})",
-    "overridePriceClear": "مینو کی قیمت استعمال کریں"
+    "overridePriceClear": "مینو کی قیمت استعمال کریں",
+    "correctPaymentMethod": "ادائیگی کا طریقہ درست کریں",
+    "correctPaymentMethodHint": "شفٹ کھلی ہونے کے دوران درج شدہ ادائیگی کا طریقہ تبدیل کریں۔ رقم تبدیل نہیں ہوگی۔",
+    "paymentLineLabel": "ادائیگی کی سطر",
+    "paymentMethodCorrected": "ادائیگی کا طریقہ اپ ڈیٹ ہو گیا",
+    "correctPaymentMethodFailed": "ادائیگی کا طریقہ اپ ڈیٹ نہیں ہو سکا"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",

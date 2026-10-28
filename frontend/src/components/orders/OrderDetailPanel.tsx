@@ -92,6 +92,7 @@ export interface OrderDetailPanelProps {
   onPayBill?: (bill: Bill) => void;
   onAddItems: (order: Order) => void;
   onRefund: (order: Order, bills: Bill[]) => void;
+  onCorrectPaymentMethod?: (order: Order, bills: Bill[]) => void;
   onConvertToTakeaway: (order: Order) => void;
   onCancelOrder: (order: Order) => void;
   onPrint: (billId: number) => void;
@@ -151,6 +152,7 @@ function OrderDetailContent({
   onPayBill,
   onAddItems,
   onRefund,
+  onCorrectPaymentMethod,
   onConvertToTakeaway,
   onCancelOrder,
   onPrint,
@@ -210,6 +212,13 @@ function OrderDetailContent({
   const hasUnpaidSplitBills = splitBills.some(canPaySplitBill);
   const paidBills = orderBills.filter(
     (b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded',
+  );
+  const correctablePaidBills = orderBills.filter(
+    (b) =>
+      b.payment_status === 'paid' &&
+      normalizeBillPaymentDetails(b.payment_details).some(
+        (line) => String(line.method || '').toLowerCase() !== 'wallet',
+      ),
   );
   const hasEligibleRefund = paidBills.length > 0;
   const hasCollectedFunds = orderBills.some((candidate) => {
@@ -370,6 +379,15 @@ function OrderDetailContent({
                   <DropdownMenuItem onClick={() => onDownloadPrintPreview(bill.id)}>
                     <Download size={14} className="me-2" />
                     {tOrders('downloadPrintPreview')}
+                  </DropdownMenuItem>
+                )}
+                {onCorrectPaymentMethod && correctablePaidBills.length > 0 && (
+                  <DropdownMenuItem
+                    data-testid="correct-payment-method-menu-item"
+                    onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
+                  >
+                    <CreditCard size={14} className="me-2" />
+                    {tOrders('correctPaymentMethod')}
                   </DropdownMenuItem>
                 )}
                 {!['completed', 'cancelled'].includes(order.status) && (
@@ -929,6 +947,17 @@ function OrderDetailContent({
                   <Send size={15} className="me-1.5" />
                 )}
                 {tOrders('sendReceipt')}
+              </Button>
+            )}
+            {onCorrectPaymentMethod && correctablePaidBills.length > 0 && (
+              <Button
+                variant="outline"
+                data-testid="correct-payment-method-button"
+                onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
+                className="flex-1 h-10 border-border text-foreground hover:bg-muted font-semibold text-xs"
+              >
+                <CreditCard size={15} className="me-1.5 text-muted-foreground" />
+                {tOrders('correctPaymentMethod')}
               </Button>
             )}
             {canRefund && hasEligibleRefund && (

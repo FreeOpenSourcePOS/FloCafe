@@ -840,7 +840,12 @@
     "overridePriceSaved": "تم تحديث السعر",
     "overridePriceFailed": "تعذّر تحديث السعر",
     "priceOverriddenMenu": "تم تغيير السعر (القائمة {price})",
-    "overridePriceClear": "استخدام سعر القائمة"
+    "overridePriceClear": "استخدام سعر القائمة",
+    "correctPaymentMethod": "تصحيح طريقة الدفع",
+    "correctPaymentMethodHint": "غيّر طريقة الدفع المسجلة طالما أن الوردية مفتوحة. يبقى المبلغ دون تغيير.",
+    "paymentLineLabel": "سطر الدفع",
+    "paymentMethodCorrected": "تم تحديث طريقة الدفع",
+    "correctPaymentMethodFailed": "تعذر تحديث طريقة الدفع"
   },
   "pos": {
     "addCustomer": "إضافة عميل",

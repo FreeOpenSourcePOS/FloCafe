@@ -840,7 +840,12 @@
     "overridePriceSaved": "Na-update ang presyo",
     "overridePriceFailed": "Hindi ma-update ang presyo",
     "priceOverriddenMenu": "Binago ang presyo (menu {price})",
-    "overridePriceClear": "Gamitin ang presyo sa menu"
+    "overridePriceClear": "Gamitin ang presyo sa menu",
+    "correctPaymentMethod": "Itama ang paraan ng bayad",
+    "correctPaymentMethodHint": "Palitan ang nakatalang paraan ng bayad habang bukas ang shift. Hindi mababago ang halaga.",
+    "paymentLineLabel": "Linya ng bayad",
+    "paymentMethodCorrected": "Na-update ang paraan ng bayad",
+    "correctPaymentMethodFailed": "Hindi ma-update ang paraan ng bayad"
   },
   "pos": {
     "addCustomer": "Magdagdag ng Customer",

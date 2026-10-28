@@ -840,7 +840,12 @@
     "overridePriceSaved": "Price updated",
     "overridePriceFailed": "Could not update the price",
     "priceOverriddenMenu": "Price overridden (menu {price})",
-    "overridePriceClear": "Use menu price"
+    "overridePriceClear": "Use menu price",
+    "correctPaymentMethod": "Correct payment method",
+    "correctPaymentMethodHint": "Change the recorded payment method while the shift is open. The amount stays unchanged.",
+    "paymentLineLabel": "Payment line",
+    "paymentMethodCorrected": "Payment method updated",
+    "correctPaymentMethodFailed": "Could not update payment method"
   },
   "pos": {
     "addCustomer": "Add Customer",

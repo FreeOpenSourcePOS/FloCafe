@@ -840,7 +840,12 @@
     "overridePriceSaved": "價格已更新",
     "overridePriceFailed": "無法更新價格",
     "priceOverriddenMenu": "價格已修改（菜單價 {price}）",
-    "overridePriceClear": "使用菜單價"
+    "overridePriceClear": "使用菜單價",
+    "correctPaymentMethod": "更正付款方式",
+    "correctPaymentMethodHint": "在班次開啟期間更改已記錄的付款方式。金額保持不變。",
+    "paymentLineLabel": "付款明細",
+    "paymentMethodCorrected": "付款方式已更新",
+    "correctPaymentMethodFailed": "無法更新付款方式"
   },
   "pos": {
     "addCustomer": "新增顧客",

@@ -840,7 +840,12 @@
     "overridePriceSaved": "Precio actualizado",
     "overridePriceFailed": "No se pudo actualizar el precio",
     "priceOverriddenMenu": "Precio modificado (menú {price})",
-    "overridePriceClear": "Usar precio de menú"
+    "overridePriceClear": "Usar precio de menú",
+    "correctPaymentMethod": "Corregir método de pago",
+    "correctPaymentMethodHint": "Cambie el método de pago registrado mientras el turno esté abierto. El importe no cambia.",
+    "paymentLineLabel": "Línea de pago",
+    "paymentMethodCorrected": "Método de pago actualizado",
+    "correctPaymentMethodFailed": "No se pudo actualizar el método de pago"
   },
   "pos": {
     "addCustomer": "Agregar Cliente",

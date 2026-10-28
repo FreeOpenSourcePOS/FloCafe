@@ -5779,7 +5779,30 @@ router.patch(
           throw paymentValidationError('Invalid manager or owner approval PIN', 'invalid_pin', 403);
         }
 
-        const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+        type BillCorrectionRow = Record<string, unknown> & {
+          id: string;
+          bill_number: string;
+          order_id: string;
+          payment_status: string;
+          payment_details: string | unknown[] | Record<string, unknown> | null;
+          paid_at?: string | null;
+          created_at?: string | null;
+          split_group_id?: string | null;
+        };
+        type PaymentLineRecord = Record<string, unknown> & {
+          method?: unknown;
+          payment_method_id?: unknown;
+          transaction_id?: unknown;
+          amount?: unknown;
+          refunded?: unknown;
+          status?: unknown;
+          timestamp?: unknown;
+          cash_session_id?: unknown;
+        };
+
+        const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as
+          | BillCorrectionRow
+          | undefined;
         if (!bill) {
           throw paymentValidationError('Bill not found', 'bill_not_found', 404);
         }
@@ -5809,14 +5832,14 @@ router.patch(
           );
         }
 
-        let existingPayments: any[] = [];
+        let existingPayments: PaymentLineRecord[] = [];
         if (bill.payment_details) {
           try {
             const parsed =
               typeof bill.payment_details === 'string'
                 ? JSON.parse(bill.payment_details)
                 : bill.payment_details;
-            existingPayments = Array.isArray(parsed) ? parsed : [parsed];
+            existingPayments = (Array.isArray(parsed) ? parsed : [parsed]) as PaymentLineRecord[];
           } catch {
             existingPayments = [];
           }
@@ -5907,7 +5930,7 @@ router.patch(
         if (bill.split_group_id) {
           const siblings = db
             .prepare('SELECT * FROM bills WHERE split_group_id = ? AND id != ?')
-            .all(bill.split_group_id, bill.id) as any[];
+            .all(bill.split_group_id, bill.id) as BillCorrectionRow[];
           for (const sibling of siblings) {
             if (
               sibling.payment_status === 'refunded' ||
@@ -5921,13 +5944,15 @@ router.patch(
               );
             }
             if (!sibling.payment_details) continue;
-            let siblingPayments: any[] = [];
+            let siblingPayments: PaymentLineRecord[] = [];
             try {
               const parsedSib =
                 typeof sibling.payment_details === 'string'
                   ? JSON.parse(sibling.payment_details)
                   : sibling.payment_details;
-              siblingPayments = Array.isArray(parsedSib) ? parsedSib : [parsedSib];
+              siblingPayments = (
+                Array.isArray(parsedSib) ? parsedSib : [parsedSib]
+              ) as PaymentLineRecord[];
             } catch {
               siblingPayments = [];
             }
@@ -6392,14 +6417,19 @@ router.patch(
 
       notifyOrderUpdated();
       return res.json(result);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as {
+        statusCode?: unknown;
+        displayCode?: unknown;
+        message?: unknown;
+      } | null;
       const statusCode =
-        typeof error?.statusCode === 'number' && error.statusCode >= 400 && error.statusCode < 600
-          ? error.statusCode
+        typeof err?.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 600
+          ? err.statusCode
           : 500;
       const reasonCode =
-        typeof error?.displayCode === 'string' && error.displayCode
-          ? error.displayCode
+        typeof err?.displayCode === 'string' && err.displayCode
+          ? err.displayCode
           : statusCode >= 500
             ? 'internal_error'
             : 'validation_failed';
@@ -6407,7 +6437,7 @@ router.patch(
         console.error('[API] Payment method correction failed:', error);
       }
       return res.status(statusCode).json({
-        error: statusCode >= 500 ? 'Internal server error' : error.message,
+        error: statusCode >= 500 ? 'Internal server error' : String(err?.message ?? ''),
         reason: reasonCode,
         code: reasonCode,
       });

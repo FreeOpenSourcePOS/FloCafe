@@ -172,13 +172,11 @@ is already an owner or manager. Full safeguard, restock, and audit rules are in
 [the Orders API reference](api.md#orders).
 
 **Paid bill payment method correction.** Staff holding `payments.take` can correct the tender method
-on a recorded payment line of a `paid` bill (`PATCH /api/bills/:id/payments/:index/method`) only
-while the payment's cash shift (`cash_sessions`) and the store business day remain open, and only
-with an active owner or manager Staff Approval PIN (`override_pin`, `approver_id`). A cashier's own
-PIN never authorizes this action (`403`). Once the shift or business day is closed, or if the bill
-or a split sibling has been refunded or settled in a closed shift, the backend refuses the
-correction with `409`. The payment amount is never modified, and every correction is recorded in
-`order_audit_log` under `bill.payment_method.corrected`.
+on a recorded payment line of a `paid` bill (`PATCH /api/bills/:id/payments/:index/method`) while
+its cash shift and store business day remain open, and every correction requires an active `owner`
+or `manager` Staff Approval PIN (`override_pin`, `approver_id`); a cashier's own PIN never
+authorizes this action (`403`). Full shift, refund, split-sibling, amount-immutability, and audit
+rules are in [the Bills API reference](api.md#bills).
 
 **Owner visibility.** The permission editor itself is rendered only for an authenticated user
 holding `authorization.manage` — an active owner, always. The API enforces this independently;

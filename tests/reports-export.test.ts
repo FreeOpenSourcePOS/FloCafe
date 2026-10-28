@@ -434,18 +434,16 @@ function extractPdfInfo(buf: Buffer): ExtractedPdfInfo {
   };
 }
 
-async function verifyHtmlLayoutAndCapturePages(
+async function verifyHtmlLayout(
   html: string,
   orientation: 'portrait' | 'landscape',
   prefix: string,
-  outDir: string,
 ): Promise<{
   scrollWidth: number;
   clientWidth: number;
   scrollHeight: number;
   clientHeight: number;
   overflowingCells: number;
-  screenshots: string[];
 }> {
   const width = orientation === 'landscape' ? 1123 : 794;
   const height = orientation === 'landscape' ? 794 : 1123;
@@ -463,7 +461,7 @@ async function verifyHtmlLayoutAndCapturePages(
   });
   try {
     await win.loadFile(htmlFile);
-    const metrics = (await win.webContents.executeJavaScript(`(() => {
+    return (await win.webContents.executeJavaScript(`(() => {
       const docEl = document.documentElement;
       const vw = docEl.clientWidth;
       let overflowingCells = 0;
@@ -487,20 +485,6 @@ async function verifyHtmlLayoutAndCapturePages(
       clientHeight: number;
       overflowingCells: number;
     };
-
-    const screenshots: string[] = [];
-    const totalPages = Math.max(1, Math.ceil(metrics.scrollHeight / metrics.clientHeight));
-    for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
-      await win.webContents.executeJavaScript(
-        `window.scrollTo(0, ${pageIdx * metrics.clientHeight}); true;`,
-      );
-      await new Promise((r) => setTimeout(r, 40));
-      const image = await win.webContents.capturePage();
-      const pngPath = path.join(outDir, `${prefix}-page-${pageIdx + 1}.png`);
-      fs.writeFileSync(pngPath, image.toPNG());
-      screenshots.push(pngPath);
-    }
-    return { ...metrics, screenshots };
   } finally {
     try {
       fs.unlinkSync(htmlFile);
@@ -1160,12 +1144,7 @@ async function run(): Promise<void> {
     );
 
     // (3) Execute save-html-as-pdf on X report, Z report, and date-range daily-sales report
-    const artifactsDir = process.env.FLO_PDF_ARTIFACTS_DIR
-      ? path.resolve(process.env.FLO_PDF_ARTIFACTS_DIR)
-      : testDir;
-    fs.mkdirSync(artifactsDir, { recursive: true });
-
-    const xPdfPath = path.join(artifactsDir, `x-report-${businessDate}.pdf`);
+    const xPdfPath = path.join(testDir, `x-report-${businessDate}.pdf`);
     saveDialogResult = { canceled: false, filePath: xPdfPath };
     const xSaveRes = await saveHtmlAsPdfIpc!(trustedSender, {
       html: xHtml.text,
@@ -1190,7 +1169,7 @@ async function run(): Promise<void> {
     );
 
     const zPdfPath = path.join(
-      artifactsDir,
+      testDir,
       `z-report-Z${close.body.zReport.z_number}-${businessDate}.pdf`,
     );
     saveDialogResult = { canceled: false, filePath: zPdfPath };
@@ -1216,7 +1195,7 @@ async function run(): Promise<void> {
       'Z report staging HTML file is cleaned up after PDF render',
     );
 
-    const dsPdfPath = path.join(artifactsDir, `daily-sales-${businessDate}_to_${day3}.pdf`);
+    const dsPdfPath = path.join(testDir, `daily-sales-${businessDate}_to_${day3}.pdf`);
     saveDialogResult = { canceled: false, filePath: dsPdfPath };
     const dsSaveRes = await saveHtmlAsPdfIpc!(trustedSender, {
       html: dsRangeHtml.text,
@@ -1425,96 +1404,24 @@ async function run(): Promise<void> {
         'real daily-sales PDF repeats Item Sales table header on subsequent page',
       );
 
-      // Verify layout (no horizontal clipping/overflow) and capture PNG page screenshots
-      const xLayout = await verifyHtmlLayoutAndCapturePages(
-        xHtml.text,
-        'portrait',
-        'x-report',
-        artifactsDir,
-      );
+      // Verify layout (no horizontal clipping/overflow)
+      const xLayout = await verifyHtmlLayout(xHtml.text, 'portrait', 'x-report');
       assert.ok(
         xLayout.scrollWidth <= xLayout.clientWidth && xLayout.overflowingCells === 0,
         `X report layout has no horizontal clipping or overflow (${JSON.stringify(xLayout)})`,
       );
 
-      const zLayout = await verifyHtmlLayoutAndCapturePages(
-        zHtml.text,
-        'portrait',
-        'z-report',
-        artifactsDir,
-      );
+      const zLayout = await verifyHtmlLayout(zHtml.text, 'portrait', 'z-report');
       assert.ok(
         zLayout.scrollWidth <= zLayout.clientWidth && zLayout.overflowingCells === 0,
         `Z report layout has no horizontal clipping or overflow (${JSON.stringify(zLayout)})`,
       );
 
-      const dsLayout = await verifyHtmlLayoutAndCapturePages(
-        dsRangeHtml.text,
-        'landscape',
-        'daily-sales',
-        artifactsDir,
-      );
+      const dsLayout = await verifyHtmlLayout(dsRangeHtml.text, 'landscape', 'daily-sales');
       assert.ok(
         dsLayout.scrollWidth <= dsLayout.clientWidth && dsLayout.overflowingCells === 0,
         `daily-sales layout has no horizontal clipping or overflow (${JSON.stringify(dsLayout)})`,
       );
-
-      if (process.env.FLO_PDF_ARTIFACTS_DIR) {
-        fs.writeFileSync(
-          path.join(artifactsDir, 'x-report-extracted.txt'),
-          xPdfInfo.fullText,
-          'utf8',
-        );
-        fs.writeFileSync(
-          path.join(artifactsDir, 'z-report-extracted.txt'),
-          zPdfInfo.fullText,
-          'utf8',
-        );
-        fs.writeFileSync(
-          path.join(artifactsDir, 'daily-sales-extracted.txt'),
-          dsPdfInfo.fullText,
-          'utf8',
-        );
-        fs.writeFileSync(
-          path.join(artifactsDir, 'verification-summary.json'),
-          JSON.stringify(
-            {
-              verifiedAt: new Date().toISOString(),
-              electronVersion: process.versions.electron,
-              chromeVersion: process.versions.chrome,
-              reports: {
-                xReport: {
-                  pdfPath: xPdfPath,
-                  byteLength: xPdfBuffer.length,
-                  header: xPdfBuffer.subarray(0, 8).toString('ascii'),
-                  pageCount: xPdfInfo.pageCount,
-                  mediaBoxes: xPdfInfo.mediaBoxes,
-                  layout: xLayout,
-                },
-                zReport: {
-                  pdfPath: zPdfPath,
-                  byteLength: zPdfBuffer.length,
-                  header: zPdfBuffer.subarray(0, 8).toString('ascii'),
-                  pageCount: zPdfInfo.pageCount,
-                  mediaBoxes: zPdfInfo.mediaBoxes,
-                  layout: zLayout,
-                },
-                dailySalesRange: {
-                  pdfPath: dsPdfPath,
-                  byteLength: dsPdfBuffer.length,
-                  header: dsPdfBuffer.subarray(0, 8).toString('ascii'),
-                  pageCount: dsPdfInfo.pageCount,
-                  mediaBoxes: dsPdfInfo.mediaBoxes,
-                  layout: dsLayout,
-                },
-              },
-            },
-            null,
-            2,
-          ),
-          'utf8',
-        );
-      }
 
       console.log(
         `real Electron printToPDF verification passed (X=${xPdfBuffer.length}B/${xPdfInfo.pageCount}p, Z=${zPdfBuffer.length}B/${zPdfInfo.pageCount}p, DailySales=${dsPdfBuffer.length}B/${dsPdfInfo.pageCount}p)`,

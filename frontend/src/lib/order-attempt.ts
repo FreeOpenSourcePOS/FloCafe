@@ -1,4 +1,5 @@
 import type { AppendAttemptStorage } from './append-attempt';
+import { cartItemToOrderItem, type OrderItemPayload, type OrderItemSource } from './cart-order-item';
 
 /** Global key used by builds before prepaid attempts became user scoped. */
 export const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';
@@ -28,6 +29,93 @@ interface CompletedOrderAttempt {
  * request a fresh idempotency key. */
 export function getPrepaidOrderAttemptStorageKey(userId: string): string {
   return `${PREPAID_ATTEMPT_STORAGE_KEY}${ORDER_ATTEMPT_USER_SUFFIX}${encodeURIComponent(userId)}`;
+}
+
+export const COMMITTED_CART_STORAGE_PREFIX = 'flo.pos.committed_cart.';
+
+export interface CommittedCartRecord {
+  orderId: string | number;
+  orderNumber: string;
+  billId?: string | number;
+  isPaid?: boolean;
+  userId?: string | null;
+  committedAt: number;
+}
+
+export interface CartStateForFingerprint {
+  tableId: string | null;
+  customerId: number | string | null;
+  orderType: string;
+  guestCount: number;
+  orderNotes?: string | null;
+  onlinePlatform?: string | null;
+  externalOrderId?: string | null;
+  deliveryAddress?: string | null;
+  expectedPaymentMethod?: string | null;
+  expectedPaymentMethodId?: number | string | null;
+  deliveryNote?: string | null;
+  items: OrderItemSource[];
+  waivedChargeIds: Set<string>;
+  optedInChargeIds: Set<string>;
+}
+
+export function buildCartFingerprintFromState(
+  cartState: CartStateForFingerprint,
+  orderItems: OrderItemPayload[] = cartState.items.map(cartItemToOrderItem),
+): string {
+  return JSON.stringify({
+    table_id: cartState.tableId,
+    customer_id: cartState.customerId,
+    type: cartState.orderType,
+    guest_count: cartState.guestCount,
+    special_instructions: cartState.orderNotes,
+    online_platform: cartState.orderType === 'online' ? cartState.onlinePlatform : undefined,
+    external_order_id: cartState.orderType === 'online' ? cartState.externalOrderId : undefined,
+    delivery_address:
+      cartState.orderType === 'delivery' ? cartState.deliveryAddress || undefined : undefined,
+    expected_payment_method:
+      cartState.orderType === 'delivery' ? cartState.expectedPaymentMethod || undefined : undefined,
+    expected_payment_method_id:
+      cartState.orderType === 'delivery'
+        ? (cartState.expectedPaymentMethodId ?? undefined)
+        : undefined,
+    delivery_note:
+      cartState.orderType === 'delivery' ? cartState.deliveryNote || undefined : undefined,
+    items: orderItems,
+    waived_charge_ids: Array.from(cartState.waivedChargeIds),
+    opted_in_charge_ids: Array.from(cartState.optedInChargeIds),
+  });
+}
+
+export function recordCommittedCart(
+  storage: AppendAttemptStorage,
+  fingerprint: string,
+  record: Omit<CommittedCartRecord, 'committedAt'>,
+): void {
+  try {
+    storage.setItem(
+      `${COMMITTED_CART_STORAGE_PREFIX}${fingerprint}`,
+      JSON.stringify({ ...record, committedAt: Date.now() }),
+    );
+  } catch {}
+}
+
+export function readCommittedCart(
+  storage: AppendAttemptStorage,
+  fingerprint: string,
+  maxAgeMs = 30 * 60 * 1000,
+): CommittedCartRecord | null {
+  try {
+    const raw = storage.getItem(`${COMMITTED_CART_STORAGE_PREFIX}${fingerprint}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.orderNumber === 'string' && typeof parsed.committedAt === 'number') {
+      if (Date.now() - parsed.committedAt < maxAgeMs) {
+        return parsed as CommittedCartRecord;
+      }
+    }
+  } catch {}
+  return null;
 }
 
 function isCompletedAttempt(value: unknown): value is CompletedOrderAttempt {

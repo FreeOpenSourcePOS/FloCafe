@@ -1311,6 +1311,46 @@ async function main() {
         "UPDATE orders SET packaging_charge = 3.0, delivery_charge = 2.0, total = 63.5 WHERE order_number = 'ORD-LEGACY-01'",
       ).run();
 
+      // Bill where orders.charges_breakdown has a custom fee but bills.charges_breakdown is NULL (Qodo Finding #3)
+      insertBillWithOrder({
+        billNumber: 'INV-SPLIT-NULL-BREAKDOWN-01',
+        orderNumber: 'ORD-WITH-ORDER-FEE-01',
+        paidAt: `${chargesDate}T14:00:00Z`,
+        paymentStatus: 'paid',
+        subtotal: 40,
+        serviceCharge: 4.0,
+        taxAmount: 2.8,
+        taxRate: 7,
+        taxTitle: 'VAT 7%',
+        total: 46.8,
+        method: 'cash',
+        items: [
+          {
+            productId: 'prod-cookie',
+            productName: 'Choco Cookie',
+            qty: 1,
+            unitPrice: 40,
+            subtotal: 40,
+            taxAmount: 2.8,
+            total: 42.8,
+          },
+        ],
+      });
+      const orderOnlyCustomFee = JSON.stringify([
+        {
+          id: 'order_custom_fee',
+          name: 'Order Level Surcharge',
+          type: 'fixed',
+          amount: 25.0,
+          calculation_basis: 'net',
+          waived: false,
+        },
+      ]);
+      db.prepare("UPDATE orders SET charges_breakdown = ? WHERE order_number = 'ORD-WITH-ORDER-FEE-01'").run(
+        orderOnlyCustomFee,
+      );
+      db.prepare("UPDATE bills SET charges_breakdown = NULL WHERE bill_number = 'INV-SPLIT-NULL-BREAKDOWN-01'").run();
+
       const res = await fetch(
         `${baseUrl}/api/reports/daily-invoices/export?date=${chargesDate}&format=html`,
         { headers: owner.authHeader },
@@ -1321,6 +1361,12 @@ async function main() {
       // Verify custom Eco Fee renders in archived invoice
       assert.ok(html.includes('Eco Fee'), 'custom charge "Eco Fee" renders in archived invoice');
       assert.ok(html.includes('10.00'), 'custom charge amount "10.00" renders in archived invoice');
+
+      // Verify bill with NULL charges_breakdown never adopts orders.charges_breakdown (Qodo Finding #3)
+      assert.ok(
+        !html.includes('Order Level Surcharge'),
+        'bill with NULL charges_breakdown does not inherit orders.charges_breakdown',
+      );
 
       // Verify legacy bills with charges_breakdown = NULL still render standard charge lines
       assert.ok(

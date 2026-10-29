@@ -1396,6 +1396,117 @@ async function run() {
     'Owner recovery record preserved after switching back to owner',
   );
 
+  // ── 9. Double-charging / double-placing prevention across user switches ──
+  console.log(
+    '\n9. Cart isolation: stale continuation clears matching cart and committed cart marker blocks double-charge',
+  );
+
+  // Sign in as owner again
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  useCartStore.getState().clearCart();
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-latte',
+      name: 'Latte',
+      price: 120,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    1,
+  );
+
+  resetPOSHooks();
+  capturedCartPanelProps = null;
+  capturedPrepaidModalProps = null;
+  tree = renderPOSPage(POSPage);
+
+  let p2CartPanel = findElement(tree, CartPanelStub);
+  p2CartPanel.props.onPlaceOrder();
+  tree = renderPOSPage(POSPage);
+  const p2PrepaidModal = findElement(tree, PrepaidCheckoutModalStub);
+
+  let p2OrdersDeferredResolve!: (val: any) => void;
+  const p2OrdersPromise = new Promise((resolve) => {
+    p2OrdersDeferredResolve = resolve;
+  });
+  const p2Calls: Array<{ url: string; body?: any }> = [];
+  mockApiHandler = {
+    post: async (url: string, body?: any) => {
+      p2Calls.push({ url, body });
+      if (url === '/orders') return p2OrdersPromise;
+      if (url === '/bills/generate') return { data: { bill: { id: 'bill-2', payment_status: 'unpaid' } } };
+      if (url.includes('/payments')) return { data: { bill: { id: 'bill-2', payment_status: 'paid' } } };
+      return { data: {} };
+    },
+    get: async () => ({ data: {} }),
+  };
+
+  const p2CheckoutPromise = p2PrepaidModal.props.onConfirm([{ method: 'cash', amount: 120 }], 0, null);
+  await new Promise((r) => setTimeout(r, 15));
+
+  // User switches to manager while in-flight, but manager DOES NOT touch the cart
+  useAuthStore.setState({
+    user: null,
+    token: null,
+    isLocked: true,
+  });
+  useAuthStore.setState({
+    user: { id: 'mgr-1', name: 'Bob Manager', email: 'manager@test.local', role: 'manager' },
+    token: 'token-for-mgr-1',
+    isLocked: false,
+  });
+  renderPOSPage(POSPage);
+
+  // Cart before release still has Latte
+  assertEqualOrThrow(useCartStore.getState().items.length, 1, 'Manager starts with untouched cart');
+
+  // Release the in-flight order
+  p2OrdersDeferredResolve({ data: { order: { id: 'order-latte-456', order_number: 'ORD-LATTE-456' } } });
+  await p2CheckoutPromise;
+
+  // Stale continuation must have safely cleared the matching cart so manager cannot double-charge
+  assertEqualOrThrow(
+    useCartStore.getState().items.length,
+    0,
+    'Stale continuation safely cleared matching committed cart after switch',
+  );
+
+  // Now, suppose manager re-creates the exact same cart and attempts checkout
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-latte',
+      name: 'Latte',
+      price: 120,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    1,
+  );
+  renderPOSPage(POSPage);
+  tree = renderPOSPage(POSPage);
+  p2CartPanel = findElement(tree, CartPanelStub);
+
+  const initialCallCount = p2Calls.length;
+  // Trigger onPlaceOrder() under manager
+  p2CartPanel.props.onPlaceOrder();
+  await new Promise((r) => setTimeout(r, 15));
+
+  // Verify: readCommittedCart detected the already committed order and blocked checkout without network calls
+  assertEqualOrThrow(
+    p2Calls.length,
+    initialCallCount,
+    'No network calls made when attempting checkout on already-committed cart',
+  );
+  assertEqualOrThrow(
+    useCartStore.getState().items.length,
+    0,
+    'Cart cleared after committed cart marker blocked duplicate checkout',
+  );
+
   closeDatabase();
   fs.rmSync(testDir, { recursive: true, force: true });
   console.log('\n✅ All PIN Quick Switch & Approval Hardening tests passed!');

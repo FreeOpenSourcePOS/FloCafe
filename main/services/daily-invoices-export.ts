@@ -635,7 +635,7 @@ export function buildDailyInvoicesExportDataset(
         COALESCE(b.delivery_charge, 0) AS delivery_charge,
         COALESCE(b.packaging_charge, 0) AS packaging_charge,
         COALESCE(b.service_charge, 0) AS service_charge,
-        COALESCE(b.charges_breakdown, o.charges_breakdown) AS charges_breakdown,
+        b.charges_breakdown AS charges_breakdown,
         COALESCE(b.round_off, 0) AS round_off,
         COALESCE(b.total, 0) AS total,
         COALESCE(b.paid_amount, 0) AS paid_amount,

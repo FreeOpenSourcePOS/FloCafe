@@ -91,6 +91,9 @@ import {
   isSupportedFailureOperation,
   persistOrderAttempt,
   readOrderAttempt,
+  recordCommittedCart,
+  readCommittedCart,
+  buildCartFingerprintFromState,
 } from '@/lib/order-attempt';
 
 // Loaded on demand: the menu printer pulls the thermal print kernel in, which the
@@ -1465,39 +1468,43 @@ export default function POSPage() {
   };
 
   const buildCurrentCartFingerprint = (orderItems = cart.items.map(cartItemToOrderItem)) =>
-    JSON.stringify({
-      table_id: cart.tableId,
-      customer_id: cart.customerId,
-      type: cart.orderType,
-      guest_count: cart.guestCount,
-      special_instructions: cart.orderNotes,
-      scheduled_for:
-        cart.orderType === 'takeaway' || cart.orderType === 'delivery'
-          ? cart.scheduledFor.trim() || undefined
-          : undefined,
-      online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
-      external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
-      delivery_address:
-        cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
-      expected_payment_method:
-        cart.orderType === 'delivery' ? cart.expectedPaymentMethod || undefined : undefined,
-      expected_payment_method_id:
-        cart.orderType === 'delivery' ? (cart.expectedPaymentMethodId ?? undefined) : undefined,
-      delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
-      items: orderItems,
-      waived_charge_ids: Array.from(cart.waivedChargeIds),
-      opted_in_charge_ids: Array.from(cart.optedInChargeIds),
-    });
+    buildCartFingerprintFromState(cart, orderItems);
 
   const handlePlaceOrder = async () => {
     if (!validateOrderPreflight()) return;
+
+    const cartFingerprint = buildCurrentCartFingerprint();
+    if (!pendingOrder) {
+      const committedRecord = readCommittedCart(getAppendAttemptStorage(), cartFingerprint);
+      if (committedRecord) {
+        reportOrderFailure({
+          code: 'order.cart_already_committed',
+          title: committedRecord.isPaid
+            ? t('orderPaid', { number: committedRecord.orderNumber })
+            : t('orderPlaced', { number: committedRecord.orderNumber }),
+          message: t('saleCompleteCheckOrders'),
+          nextStep: t('saleCompleteCheckOrders'),
+          detail: committedRecord.isPaid
+            ? `Order ${committedRecord.orderNumber} was already paid for this cart`
+            : `Order ${committedRecord.orderNumber} was already placed for this cart`,
+          status: null,
+          operation: 'order.create',
+          stage: 'validation',
+          outcome: 'applied',
+          reasonCode: 'order.cart_already_committed',
+          correlationId: null,
+        });
+        cart.clearCart();
+        setSubmitting(false);
+        return;
+      }
+    }
 
     // Prepaid stores collect payment before finishing the order.
     if (shouldTakePaymentNow && !pendingOrder) {
       let matchingAttempt: PrepaidAttempt | null = null;
       try {
         const storedAttempt = readPrepaidAttempt();
-        const cartFingerprint = buildCurrentCartFingerprint();
         if (
           storedAttempt &&
           storedAttempt.userId === activeUserId &&
@@ -1531,6 +1538,7 @@ export default function POSPage() {
     let failureCorrelationId: string | null = null;
     try {
       let orderForKot: Order;
+      let postpaidOperationId: string | null = null;
 
       if (pendingOrder) {
         // Add new items to an existing order with a durable retry key.
@@ -1681,6 +1689,7 @@ export default function POSPage() {
                 operationId: createOperationReference() || undefined,
               };
         const operationId = orderAttempt.operationId || createOperationReference();
+        postpaidOperationId = operationId || null;
         failureCorrelationId = operationId;
         const attemptWithOperationId = operationId
           ? { ...orderAttempt, operationId }
@@ -1716,10 +1725,19 @@ export default function POSPage() {
               correlationId: operationId,
             });
         }
+        recordCommittedCart(getAppendAttemptStorage(), cartFingerprint, {
+          orderId: data.order.id,
+          orderNumber: data.order.order_number,
+          isPaid: false,
+          userId: originUserId,
+        });
         if (!isSessionCurrent()) {
           // Critical recovery invariant: order succeeded on server while session changed.
           // Originating user's recovery attempt is saved under getPostpaidOrderAttemptStorageKey(originUserId).
-          // Stop before mutating shared UI/cart state or triggering toasts.
+          // If the shared cart still matches the submitted cart, clear it so the new session doesn't double-order.
+          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+            useCartStore.getState().clearCart();
+          }
           return;
         }
         if (data.order.release_status === 'scheduled' && data.order.scheduled_for) {
@@ -1736,27 +1754,6 @@ export default function POSPage() {
           toast.success(t('orderPlaced', { number: data.order.order_number }));
         }
         orderForKot = data.order as Order;
-        if (!clearPostpaidAttempt(originUserId)) {
-          if (operationId)
-            void captureClientOperationFailure({
-              operation: 'order.create',
-              phase: 'retry_cleanup',
-              correlationId: operationId,
-            });
-          reportOrderFailure({
-            code: 'order.retry_state.cleanup_failed',
-            title: t('orderPlaced', { number: data.order.order_number }),
-            message: t('saleCompleteCleanupFailed'),
-            nextStep: t('saleCompleteCheckOrders'),
-            detail: 'The order was created but local retry state could not be cleared',
-            status: null,
-            operation: 'order.create',
-            stage: 'cleanup',
-            outcome: 'applied',
-            reasonCode: 'order.retry_state.cleanup_failed',
-            correlationId: operationId,
-          });
-        }
       }
 
       if (cart.tableId) {
@@ -1803,8 +1800,34 @@ export default function POSPage() {
           });
         }
       }
-      if (!isSessionCurrent()) return;
+      if (!isSessionCurrent()) {
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
+        return;
+      }
       cart.clearCart();
+      if (!pendingOrder && !clearPostpaidAttempt(originUserId)) {
+        if (postpaidOperationId)
+          void captureClientOperationFailure({
+            operation: 'order.create',
+            phase: 'retry_cleanup',
+            correlationId: postpaidOperationId,
+          });
+        reportOrderFailure({
+          code: 'order.retry_state.cleanup_failed',
+          title: t('orderPlaced', { number: orderForKot.order_number }),
+          message: t('saleCompleteCleanupFailed'),
+          nextStep: t('saleCompleteCheckOrders'),
+          detail: 'The order was created but local retry state could not be cleared',
+          status: null,
+          operation: 'order.create',
+          stage: 'cleanup',
+          outcome: 'applied',
+          reasonCode: 'order.retry_state.cleanup_failed',
+          correlationId: postpaidOperationId,
+        });
+      }
       setMobileCartOpen(false);
       await refreshTables();
       void refreshScheduledOrders();
@@ -1889,6 +1912,32 @@ export default function POSPage() {
       storedAttempt.paymentIdempotencyKey
         ? storedAttempt
         : null;
+    const committedRecord = readCommittedCart(getAppendAttemptStorage(), cartFingerprint);
+    if (
+      committedRecord &&
+      (committedRecord.isPaid || !existingAttempt)
+    ) {
+      reportOrderFailure({
+        code: 'order.cart_already_committed',
+        title: committedRecord.isPaid
+          ? t('orderPaid', { number: committedRecord.orderNumber })
+          : t('orderPlaced', { number: committedRecord.orderNumber }),
+        message: t('saleCompleteCheckOrders'),
+        nextStep: t('saleCompleteCheckOrders'),
+        detail: committedRecord.isPaid
+          ? `Order ${committedRecord.orderNumber} was already paid for this cart`
+          : `Order ${committedRecord.orderNumber} was already placed for this cart`,
+        status: null,
+        operation: 'payment.create',
+        stage: 'validation',
+        outcome: 'applied',
+        reasonCode: 'order.cart_already_committed',
+        correlationId: null,
+      });
+      cart.clearCart();
+      setSubmitting(false);
+      return;
+    }
     const savedPaymentRequest =
       existingAttempt?.bill && existingAttempt.paymentFingerprint
         ? parsePrepaidPaymentRequest(existingAttempt.paymentFingerprint)
@@ -2014,6 +2063,13 @@ export default function POSPage() {
       }
       if (attempt.order) {
         orderData = { order: attempt.order };
+        recordCommittedCart(getAppendAttemptStorage(), cartFingerprint, {
+          orderId: attempt.order.id,
+          orderNumber: attempt.order.order_number,
+          billId: attempt.bill?.id,
+          isPaid: attempt.bill?.payment_status === 'paid',
+          userId: originUserId,
+        });
       } else {
         failureOperation = 'order.create';
         failureStage = 'submission';
@@ -2058,9 +2114,18 @@ export default function POSPage() {
         orderData = data;
         committedOrder = data.order as Order;
         requirePrepaidAttemptSaved({ ...attempt, order: data.order }, originUserId);
+        recordCommittedCart(getAppendAttemptStorage(), cartFingerprint, {
+          orderId: data.order.id,
+          orderNumber: data.order.order_number,
+          isPaid: false,
+          userId: originUserId,
+        });
         if (!isSessionCurrent()) {
           // Order succeeded on the server while session changed.
           // Recovery record is preserved under originUserId. Stop before generating/paying bill under new user.
+          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+            useCartStore.getState().clearCart();
+          }
           return;
         }
       }
@@ -2157,6 +2222,16 @@ export default function POSPage() {
           // Bill was generated on server while session changed. Stop here.
           if (generatedBill?.bill) {
             savePrepaidAttempt({ ...attempt, order, bill: generatedBill.bill }, originUserId);
+            recordCommittedCart(getAppendAttemptStorage(), cartFingerprint, {
+              orderId: order.id,
+              orderNumber: order.order_number,
+              billId: generatedBill.bill.id,
+              isPaid: false,
+              userId: originUserId,
+            });
+          }
+          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+            useCartStore.getState().clearCart();
           }
           return;
         }
@@ -2195,8 +2270,19 @@ export default function POSPage() {
           ? paymentResponse.data.loyaltyPointsEarned
           : 0;
 
+      recordCommittedCart(getAppendAttemptStorage(), cartFingerprint, {
+        orderId: order.id,
+        orderNumber: order.order_number,
+        billId: paidBill.id,
+        isPaid: paidBill.payment_status === 'paid',
+        userId: originUserId,
+      });
+
       if (!isSessionCurrent()) {
         savePrepaidAttempt({ ...attempt, order, bill: paidBill }, originUserId);
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
         return;
       }
 
@@ -2312,7 +2398,12 @@ export default function POSPage() {
           }
         }
       }
-      if (!isSessionCurrent()) return;
+      if (!isSessionCurrent()) {
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
+        return;
+      }
       cart.clearCart();
       if (!clearPrepaidAttempt(originUserId)) {
         if (operationId)

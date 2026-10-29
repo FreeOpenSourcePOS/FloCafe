@@ -11,11 +11,12 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import type { Category, Product, ProductVariant } from '@/lib/types';
 import { activeVariants, isVariantSoldOut } from '@/lib/product-variants';
 import {
+  buildHierarchicalMenuWebSections,
   buildMenuWebPrintHtml,
   buildQrTableCardHtml,
+  isMenuCategoryVisible,
   printMenuInBrowser,
   type MenuTemplate,
-  type MenuWebPrintSection,
 } from '@/lib/printer/menu-web-print';
 import { SettingsTabShell } from './SettingsTabShell';
 
@@ -105,14 +106,12 @@ export function QrMenuSettingsTab({
     ]);
     const products = (productResponse.data.products || []) as Product[];
     const categories = (categoryResponse.data.categories || []) as Category[];
-    const categoryById = new Map(categories.map((category) => [category.id, category]));
+    const categoryById = new Map(categories.map((category) => [String(category.id), category]));
     const included = products
       .filter(
         (product) =>
           (prefs.includeInactive || product.is_active) &&
-          (prefs.includeHidden ||
-            !product.category_id ||
-            categoryById.get(product.category_id)?.is_active === true),
+          isMenuCategoryVisible(categoryById, product.category_id, prefs.includeHidden),
       )
       .flatMap((product) => {
         const variants = activeVariants(product.variants);
@@ -165,18 +164,7 @@ export function QrMenuSettingsTab({
           : []),
       ],
     });
-    const sections: MenuWebPrintSection[] = categories
-      .map((category) => ({
-        name: category.name,
-        products: included
-          .filter(({ product }) => product.category_id === category.id)
-          .map(mapProduct),
-      }))
-      .filter((section) => section.products.length > 0);
-    const uncategorized = included
-      .filter(({ product }) => !product.category_id || !categoryById.has(product.category_id))
-      .map(mapProduct);
-    if (uncategorized.length) sections.push({ name: null, products: uncategorized });
+    const sections = buildHierarchicalMenuWebSections(categories, included, mapProduct);
     const itemCount = sections.reduce((total, section) => total + section.products.length, 0);
     if (!itemCount) throw new Error(t('noProducts'));
     return buildMenuWebPrintHtml({

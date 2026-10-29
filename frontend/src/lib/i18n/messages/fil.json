@@ -1592,7 +1592,9 @@
     "variantToggle": "May mga variant ang produktong ito (hal. Sukat, Crust, Flavor)",
     "variantsSection": "Mga variant",
     "variantDeactivateConfirm": "I-deactivate ang variant na ito kapag nai-save at hindi ito maibabalik mula sa screen na ito.",
-    "variantRemoveAllConfirm": "Kapag pinatay ito, made-deactivate ang lahat ng variant ng produktong ito. Nananatili ang dating mga order."
+    "variantRemoveAllConfirm": "Kapag pinatay ito, made-deactivate ang lahat ng variant ng produktong ito. Nananatili ang dating mga order.",
+    "parentCategory": "Pangunahing Kategorya",
+    "parentCategoryNone": "Wala (Nangungunang antas)"
   },
   "productAnalytics": {
     "title": "Tulungan kaming magpasya kung ano ang susunod naming gagawin",

@@ -707,7 +707,7 @@ router.post(
       const categories = (
         db
           .prepare(`
-      SELECT id, name, is_active, sort_order
+      SELECT id, name, parent_id, is_active, sort_order
       FROM categories
       WHERE deleted_at IS NULL
       ORDER BY sort_order, name
@@ -715,12 +715,17 @@ router.post(
           .all() as Array<{
           id: string | number;
           name: string | null;
+          parent_id: string | number | null;
           is_active: number;
           sort_order: number | null;
         }>
       ).map((category) => ({
         id: String(category.id),
         name: String(category.name ?? ''),
+        parentId:
+          category.parent_id !== null && category.parent_id !== undefined
+            ? String(category.parent_id)
+            : null,
         isActive: category.is_active === 1,
         sortOrder: Number(category.sort_order) || 0,
       }));

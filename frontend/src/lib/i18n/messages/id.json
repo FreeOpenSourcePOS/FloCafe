@@ -1592,7 +1592,9 @@
     "variantToggle": "Produk ini memiliki varian (mis. Ukuran, Adonan, Rasa)",
     "variantsSection": "Varian",
     "variantDeactivateConfirm": "Varian ini akan dinonaktifkan saat disimpan dan tidak dapat dipulihkan dari layar ini.",
-    "variantRemoveAllConfirm": "Mematikannya akan menonaktifkan semua varian produk ini. Pesanan lama tetap menyimpannya."
+    "variantRemoveAllConfirm": "Mematikannya akan menonaktifkan semua varian produk ini. Pesanan lama tetap menyimpannya.",
+    "parentCategory": "Kategori Induk",
+    "parentCategoryNone": "Tidak ada (Tingkat atas)"
   },
   "productAnalytics": {
     "title": "Bantu kami memutuskan apa yang dibuat berikutnya",

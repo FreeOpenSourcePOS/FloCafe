@@ -1077,3 +1077,148 @@ test('menu route preserves regional conflicts, validates filters, and honors the
     Object.assign(thermal, { printMenuDocument: originals.printMenuDocument });
   }
 });
+
+test('printed menus group subcategories beneath their parent categories in thermal and web output', () => {
+  const {
+    buildHierarchicalMenuWebSections,
+    buildMenuWebPrintHtml,
+  } = require('../frontend/src/lib/printer/menu-web-print');
+
+  const treeCategories = [
+    { id: 'root-food', name: 'Food', parentId: null, sortOrder: 20, isActive: true },
+    { id: 'root-drinks', name: 'Drinks', parentId: null, sortOrder: 10, isActive: true },
+    { id: 'sub-cold', name: 'Cold', parentId: 'root-drinks', sortOrder: 2, isActive: true },
+    { id: 'sub-hot', name: 'Hot', parentId: 'root-drinks', sortOrder: 1, isActive: true },
+    { id: 'sub-food-hot', name: 'Hot', parentId: 'root-food', sortOrder: 1, isActive: true },
+    { id: 'root-inactive', name: 'Seasonal', parentId: null, sortOrder: 30, isActive: false },
+    {
+      id: 'sub-under-inactive',
+      name: 'Winter',
+      parentId: 'root-inactive',
+      sortOrder: 1,
+      isActive: true,
+    },
+  ];
+
+  const treeProducts = [
+    {
+      id: 'p-water',
+      name: 'Sparkling Water',
+      price: 3,
+      categoryId: 'root-drinks',
+      sortOrder: 1,
+      isActive: true,
+    },
+    {
+      id: 'p-iced',
+      name: 'Iced Latte',
+      price: 5,
+      categoryId: 'sub-cold',
+      sortOrder: 1,
+      isActive: true,
+    },
+    {
+      id: 'p-espresso',
+      name: 'Espresso',
+      price: 4,
+      categoryId: 'sub-hot',
+      sortOrder: 1,
+      isActive: true,
+    },
+    {
+      id: 'p-soup',
+      name: 'Tomato Soup',
+      price: 8,
+      categoryId: 'sub-food-hot',
+      sortOrder: 1,
+      isActive: true,
+    },
+    {
+      id: 'p-cocoa',
+      name: 'Spiced Cocoa',
+      price: 6,
+      categoryId: 'sub-under-inactive',
+      sortOrder: 1,
+      isActive: true,
+    },
+  ];
+
+  const doc = buildMenuDocument(treeCategories, treeProducts, {
+    businessName: 'FloCafe',
+    printedAt: '',
+    baseDirection: 'ltr',
+    formatPrice: (value: number) => `$${value.toFixed(2)}`,
+  });
+
+  assert.deepEqual(
+    doc.sections.map((section) => ({
+      name: section.name.text,
+      parentName: section.parentName?.text ?? null,
+      products: section.products.map((p) => p.name.text),
+    })),
+    [
+      { name: 'Drinks', parentName: null, products: ['Sparkling Water'] },
+      { name: 'Hot', parentName: 'Drinks', products: ['Espresso'] },
+      { name: 'Cold', parentName: 'Drinks', products: ['Iced Latte'] },
+      { name: 'Hot', parentName: 'Food', products: ['Tomato Soup'] },
+    ],
+    'subcategories are grouped under their root parents in sibling sort order and inactive parents hide their children',
+  );
+
+  const rendered = renderMenuViaDocument(doc, { columns: 42, language: 'en' });
+  const text = escPosToText(rendered.data);
+  const drinksPos = text.indexOf('--- Drinks ---');
+  const hotDrinksPos = text.indexOf('  Hot');
+  const coldDrinksPos = text.indexOf('  Cold');
+  const foodPos = text.indexOf('--- Food ---');
+  const soupPos = text.indexOf('Tomato Soup');
+  assert.ok(
+    drinksPos !== -1 &&
+      hotDrinksPos > drinksPos &&
+      coldDrinksPos > hotDrinksPos &&
+      foodPos > coldDrinksPos &&
+      soupPos > foodPos,
+    'thermal menu emits parent headings followed by indented subcategory headings in order',
+  );
+
+  const webSections = buildHierarchicalMenuWebSections(
+    treeCategories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      parent_id: c.parentId,
+      sort_order: c.sortOrder,
+    })),
+    [
+      {
+        product: { category_id: 'root-drinks' },
+        item: { name: 'Sparkling Water', price: '$3.00', details: [] },
+      },
+      {
+        product: { category_id: 'sub-hot' },
+        item: { name: 'Espresso', price: '$4.00', details: [] },
+      },
+      {
+        product: { category_id: 'sub-cold' },
+        item: { name: 'Iced Latte', price: '$5.00', details: [] },
+      },
+      {
+        product: { category_id: 'sub-food-hot' },
+        item: { name: 'Tomato Soup', price: '$8.00', details: [] },
+      },
+    ],
+    (row: { item: { name: string; price: string; details: string[] } }) => row.item,
+  );
+  const webHtml = buildMenuWebPrintHtml({
+    businessName: 'FloCafe',
+    printedAt: '',
+    pageSize: 'A4',
+    menuTitle: 'Menu',
+    totalItemsLabel: 'Total items',
+    itemCount: 4,
+    sections: webSections,
+  });
+  assert.match(webHtml, /<h2>Drinks<\/h2>/);
+  assert.match(webHtml, /<h3>Hot<\/h3>/);
+  assert.match(webHtml, /<h3>Cold<\/h3>/);
+  assert.match(webHtml, /<h2>Food<\/h2><h3>Hot<\/h3>/);
+});

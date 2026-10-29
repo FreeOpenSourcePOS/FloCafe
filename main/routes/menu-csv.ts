@@ -25,11 +25,13 @@ const router = Router();
 
 const TEXT_HEADER_FIELDS = new Set([
   'name',
+  'parent',
   'description',
   'color',
   'icon',
   'sku',
   'category',
+  'category_parent',
   'tags',
   'group_name',
   'addon_name',
@@ -352,21 +354,22 @@ function applyImportedAddonStock(
 
 const TEMPLATES: Record<string, string> = {
   categories: [
-    'name,description,color,icon,sort_order',
-    'Beverages,Hot and cold drinks,blue,☕,1',
-    'Food,Snacks and meals,green,🍔,2',
-    'Desserts,Sweet treats,pink,🍰,3',
-    'Combos,Meal deals and bundles,amber,🎁,4',
+    'name,parent,description,color,icon,sort_order',
+    'Beverages,,Hot and cold drinks,blue,☕,1',
+    'Hot Drinks,Beverages,Freshly brewed coffee and tea,amber,☕,1',
+    'Food,,Snacks and meals,green,🍔,2',
+    'Desserts,,Sweet treats,pink,🍰,3',
+    'Combos,,Meal deals and bundles,amber,🎁,4',
   ].join('\n'),
 
   products: [
-    'id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active',
-    ',,Cappuccino,Beverages,150,Rich espresso with steamed milk,50,,,,"veg,bestseller",yes',
-    ',,Espresso,Beverages,100,,40,,,,veg,yes',
-    ',,Cold Coffee,Beverages,130,Chilled blended coffee,45,,,,"veg,new_arrival",yes',
-    ',,Classic Burger,Food,250,Juicy patty with lettuce and tomato,100,,,,non_veg,yes',
-    ',,Veg Sandwich,Food,180,Fresh vegetables in toasted bread,60,,,,"veg,new_arrival",yes',
-    ',,Chocolate Cake,Desserts,120,Rich chocolate slice,,,,,veg,yes',
+    'id,sku,name,category,category_parent,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active',
+    ',,Cappuccino,Beverages,,150,Rich espresso with steamed milk,50,,,,"veg,bestseller",yes',
+    ',,Espresso,Beverages,,100,,40,,,,veg,yes',
+    ',,Cold Coffee,Beverages,,130,Chilled blended coffee,45,,,,"veg,new_arrival",yes',
+    ',,Classic Burger,Food,,250,Juicy patty with lettuce and tomato,100,,,,non_veg,yes',
+    ',,Veg Sandwich,Food,,180,Fresh vegetables in toasted bread,60,,,,"veg,new_arrival",yes',
+    ',,Chocolate Cake,Desserts,,120,Rich chocolate slice,,,,,veg,yes',
   ].join('\n'),
 
   addons: [
@@ -406,13 +409,20 @@ router.get(
     try {
       const db = getDatabase();
       const rows = db
-        .prepare('SELECT * FROM categories WHERE deleted_at IS NULL ORDER BY sort_order, name')
+        .prepare(
+          `SELECT c.*, p.name AS parent_name
+           FROM categories c
+           LEFT JOIN categories p ON c.parent_id = p.id AND p.deleted_at IS NULL
+           WHERE c.deleted_at IS NULL
+           ORDER BY CASE WHEN c.parent_id IS NULL THEN 0 ELSE 1 END, COALESCE(p.sort_order, c.sort_order), c.sort_order, c.name`,
+        )
         .all() as any[];
-      const lines = [`name,description,color,icon,sort_order,${FLO_CSV_ENCODING_COLUMN}`];
+      const lines = [`name,parent,description,color,icon,sort_order,${FLO_CSV_ENCODING_COLUMN}`];
       for (const c of rows)
         lines.push(
           toQuoteV1CsvRow([
             c.name,
+            c.parent_name ?? '',
             c.description,
             c.color,
             c.icon,
@@ -439,15 +449,16 @@ router.get(
       const db = getDatabase();
       const rows = db
         .prepare(
-          `SELECT p.*, c.name AS category_name
+          `SELECT p.*, c.name AS category_name, cp.name AS category_parent_name
          FROM products p
          LEFT JOIN categories c ON p.category_id = c.id
+         LEFT JOIN categories cp ON c.parent_id = cp.id AND cp.deleted_at IS NULL
          WHERE p.deleted_at IS NULL
-         ORDER BY c.sort_order, p.sort_order, p.name`,
+         ORDER BY COALESCE(cp.sort_order, c.sort_order), c.sort_order, p.sort_order, p.name`,
         )
         .all() as any[];
       const lines = [
-        `id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active,${FLO_CSV_ENCODING_COLUMN}`,
+        `id,sku,name,category,category_parent,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active,${FLO_CSV_ENCODING_COLUMN}`,
       ];
       for (const p of rows) {
         const tags = formatProductTagsForCsv(p.tags);
@@ -457,6 +468,7 @@ router.get(
             p.sku,
             p.name,
             p.category_name,
+            p.category_parent_name ?? '',
             formatAmountForCsv(p.price, regionalSnapshot),
             p.description,
             formatAmountForCsv(p.cost || 0, regionalSnapshot),
@@ -541,7 +553,10 @@ router.post(
         return res.status(400).json({ error: 'No CSV data provided' });
       }
 
-      const rows = toObjects(parseCSV(csv));
+      const parsedCsv = parseCSV(csv);
+      const headers = new Set((parsedCsv[0] || []).map((header) => header.trim().toLowerCase()));
+      const hasParentColumn = headers.has('parent');
+      const rows = toObjects(parsedCsv);
       if (!rows.length) {
         captureInvalidMenuCsvInput();
         return res.status(400).json({ error: 'CSV has no data rows' });
@@ -554,15 +569,33 @@ router.post(
         skipped = 0,
         failed = 0,
         changedRows = 0;
-      const errors: string[] = [];
+      const errorsByRow: Array<{ index: number; message: string }> = [];
+      const failRow = (index: number, message: string) => {
+        failed++;
+        errorsByRow.push({ index, message });
+      };
 
       db.transaction(() => {
+        type ParsedCategoryRow = {
+          index: number;
+          rowNum: number;
+          r: Record<string, string>;
+          nameNorm: string;
+          parentRaw: string;
+          parentNorm: string;
+          sortOrder: number;
+          wantsDeactivate: boolean;
+          wantsDelete: boolean;
+          rejected: boolean;
+        };
+
+        const parsedRows: ParsedCategoryRow[] = [];
         for (let i = 0; i < rows.length; i++) {
           const rawRow = rows[i];
+          const rowNum = i + 2;
           const encoding = resolveCsvRowEncoding(rawRow);
           if (!encoding.ok) {
-            failed++;
-            errors.push(`Row ${i + 2}: ${encoding.error}`);
+            failRow(i, `Row ${rowNum}: ${encoding.error}`);
             continue;
           }
           const r: Record<string, string> =
@@ -570,14 +603,14 @@ router.post(
               ? {
                   ...rawRow,
                   name: decodeQuoteV1Field(rawRow.name ?? ''),
+                  parent: decodeQuoteV1Field(rawRow.parent ?? ''),
                   description: decodeQuoteV1Field(rawRow.description ?? ''),
                   color: decodeQuoteV1Field(rawRow.color ?? ''),
                   icon: decodeQuoteV1Field(rawRow.icon ?? ''),
                 }
               : rawRow;
           if (!r.name) {
-            failed++;
-            errors.push(`Row ${i + 2}: missing name`);
+            failRow(i, `Row ${rowNum}: missing name`);
             continue;
           }
 
@@ -587,42 +620,441 @@ router.post(
             integer: true,
           });
           if (!sortOrder.ok) {
-            failed++;
-            errors.push(`Row ${i + 2} (${r.name}): ${sortOrder.error}`);
+            failRow(i, `Row ${rowNum} (${r.name}): ${sortOrder.error}`);
             continue;
           }
 
-          const exists = db
-            .prepare('SELECT id FROM categories WHERE name = ? AND deleted_at IS NULL')
-            .get(r.name);
-          if (exists) {
+          const nameNorm = r.name.trim().toLowerCase();
+          const parentRaw = (r.parent ?? '').trim();
+          const parentNorm = parentRaw.toLowerCase();
+          const wantsDeactivate =
+            r.is_active !== undefined && r.is_active.trim() !== '' && !isTruthy(r.is_active);
+          const wantsDelete =
+            isTruthy(r.deleted ?? '') || (r.action ?? '').trim().toLowerCase() === 'delete';
+
+          parsedRows.push({
+            index: i,
+            rowNum,
+            r,
+            nameNorm,
+            parentRaw,
+            parentNorm,
+            sortOrder: sortOrder.value,
+            wantsDeactivate,
+            wantsDelete,
+            rejected: false,
+          });
+        }
+
+        const dbCategories = db
+          .prepare('SELECT id, name, parent_id, is_active FROM categories WHERE deleted_at IS NULL')
+          .all() as Array<{
+          id: string;
+          name: string;
+          parent_id: string | null;
+          is_active: number;
+        }>;
+        const childCountByParentId = new Map<string, number>();
+        for (const cat of dbCategories) {
+          if (cat.parent_id) {
+            childCountByParentId.set(
+              cat.parent_id,
+              (childCountByParentId.get(cat.parent_id) ?? 0) + 1,
+            );
+          }
+        }
+
+        const csvChildParentNorms = new Map<string, Set<string>>();
+        const csvRootNorms = new Set<string>();
+        const csvReferencedParents = new Set<string>();
+        for (const item of parsedRows) {
+          if (item.parentNorm) {
+            const set = csvChildParentNorms.get(item.nameNorm) || new Set<string>();
+            set.add(item.parentNorm);
+            csvChildParentNorms.set(item.nameNorm, set);
+            if (!item.wantsDelete) csvReferencedParents.add(item.parentNorm);
+          } else if (!item.wantsDelete && !item.wantsDeactivate) {
+            csvRootNorms.add(item.nameNorm);
+          }
+        }
+
+        const hasCycleTo = (startParentNorm: string, targetNorm: string): boolean => {
+          const queue = [startParentNorm];
+          const visited = new Set<string>();
+          while (queue.length > 0) {
+            const current = queue.shift()!;
+            if (current === targetNorm) return true;
+            if (visited.has(current)) continue;
+            visited.add(current);
+            for (const next of csvChildParentNorms.get(current) || []) {
+              queue.push(next);
+            }
+            for (const dbCat of dbCategories) {
+              if (dbCat.name.trim().toLowerCase() === current && dbCat.parent_id) {
+                const parentCat = dbCategories.find((c) => c.id === dbCat.parent_id);
+                if (parentCat) queue.push(parentCat.name.trim().toLowerCase());
+              }
+            }
+          }
+          return false;
+        };
+
+        for (const item of parsedRows) {
+          if (!item.parentNorm) continue;
+          if (item.parentNorm === item.nameNorm) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): category cannot be its own parent`,
+            );
+            item.rejected = true;
+            continue;
+          }
+          if (hasCycleTo(item.parentNorm, item.nameNorm)) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): parent category "${item.parentRaw}" creates a cycle`,
+            );
+            item.rejected = true;
+            continue;
+          }
+          const hasRootInDb = dbCategories.some(
+            (c) => c.parent_id === null && c.name.trim().toLowerCase() === item.parentNorm,
+          );
+          const hasRootInCsv = csvRootNorms.has(item.parentNorm);
+          if (!hasRootInDb && !hasRootInCsv && csvChildParentNorms.has(item.parentNorm)) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): parent category "${item.parentRaw}" is a subcategory (maximum 2 levels supported)`,
+            );
+            item.rejected = true;
+          }
+        }
+
+        const seenSiblings = new Set<string>();
+
+        // Pass 1: root category rows (no parent specified)
+        for (const item of parsedRows) {
+          if (item.rejected || item.parentNorm) continue;
+          const siblingKey = `ROOT::${item.nameNorm}`;
+          if (seenSiblings.has(siblingKey)) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): duplicate sibling category name "${item.r.name}"`,
+            );
+            item.rejected = true;
+            continue;
+          }
+
+          if (!hasParentColumn) {
+            const allMatches = dbCategories.filter(
+              (c) => c.name.trim().toLowerCase() === item.nameNorm,
+            );
+            if (allMatches.length > 1) {
+              failRow(
+                item.index,
+                `Row ${item.rowNum} (${item.r.name}): category "${item.r.name}" is ambiguous; specify parent`,
+              );
+              item.rejected = true;
+              continue;
+            }
+          }
+
+          const rootMatches = dbCategories.filter(
+            (c) => c.parent_id === null && c.name.trim().toLowerCase() === item.nameNorm,
+          );
+          const targetMatches =
+            !hasParentColumn && rootMatches.length === 0
+              ? dbCategories.filter((c) => c.name.trim().toLowerCase() === item.nameNorm)
+              : rootMatches;
+
+          if (targetMatches.length > 1) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): category "${item.r.name}" is ambiguous`,
+            );
+            item.rejected = true;
+            continue;
+          }
+
+          if (targetMatches.length === 1) {
+            const existing = targetMatches[0];
+            const hasChildren =
+              (childCountByParentId.get(existing.id) ?? 0) > 0 ||
+              csvReferencedParents.has(item.nameNorm);
+            if (item.wantsDelete) {
+              if (hasChildren) {
+                failRow(
+                  item.index,
+                  `Row ${item.rowNum} (${item.r.name}): cannot delete a category that has subcategories`,
+                );
+                item.rejected = true;
+                continue;
+              }
+              db.prepare('UPDATE categories SET deleted_at = ?, updated_at = ? WHERE id = ?').run(
+                now(),
+                now(),
+                existing.id,
+              );
+              const idx = dbCategories.findIndex((c) => c.id === existing.id);
+              if (idx !== -1) dbCategories.splice(idx, 1);
+              updated++;
+              changedRows++;
+              seenSiblings.add(siblingKey);
+              continue;
+            }
+            if (item.wantsDeactivate) {
+              if (hasChildren) {
+                failRow(
+                  item.index,
+                  `Row ${item.rowNum} (${item.r.name}): cannot deactivate a category that has subcategories`,
+                );
+                item.rejected = true;
+                continue;
+              }
+              db.prepare('UPDATE categories SET is_active = 0, updated_at = ? WHERE id = ?').run(
+                now(),
+                existing.id,
+              );
+              existing.is_active = 0;
+              updated++;
+              changedRows++;
+              seenSiblings.add(siblingKey);
+              continue;
+            }
+            if (existing.name !== item.r.name) {
+              failRow(
+                item.index,
+                `Row ${item.rowNum} (${item.r.name}): duplicate sibling category name "${item.r.name}"`,
+              );
+              item.rejected = true;
+              continue;
+            }
+            seenSiblings.add(siblingKey);
             skipped++;
             continue;
           }
 
-          const slug = r.name
+          if (item.wantsDelete) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): category "${item.r.name}" not found`,
+            );
+            item.rejected = true;
+            continue;
+          }
+          if (item.wantsDeactivate && csvReferencedParents.has(item.nameNorm)) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): cannot deactivate a category that has subcategories`,
+            );
+            item.rejected = true;
+            continue;
+          }
+
+          const id = randomUUID();
+          const isActive = item.wantsDeactivate ? 0 : 1;
+          const slug = item.r.name
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/(^-|-$)/g, '');
           db.prepare(
-            `INSERT INTO categories (id, name, slug, description, color, icon, sort_order, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+            `INSERT INTO categories (id, name, slug, description, parent_id, color, icon, sort_order, is_active, created_at, updated_at)
+             VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
           ).run(
-            randomUUID(),
-            r.name,
+            id,
+            item.r.name,
             slug,
-            r.description || null,
-            r.color || null,
-            r.icon || null,
-            sortOrder.value,
+            item.r.description || null,
+            item.r.color || null,
+            item.r.icon || null,
+            item.sortOrder,
+            isActive,
             now(),
             now(),
           );
+          dbCategories.push({ id, name: item.r.name, parent_id: null, is_active: isActive });
+          seenSiblings.add(siblingKey);
+          created++;
+          changedRows++;
+        }
+
+        // Pass 2: child category rows (parent specified)
+        for (const item of parsedRows) {
+          if (item.rejected || !item.parentNorm) continue;
+
+          const rootParents = dbCategories.filter(
+            (c) => c.parent_id === null && c.name.trim().toLowerCase() === item.parentNorm,
+          );
+          if (rootParents.length > 1) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): parent category "${item.parentRaw}" is ambiguous`,
+            );
+            item.rejected = true;
+            continue;
+          }
+          if (rootParents.length === 0) {
+            const nonRootMatch = dbCategories.some(
+              (c) => c.parent_id !== null && c.name.trim().toLowerCase() === item.parentNorm,
+            );
+            failRow(
+              item.index,
+              nonRootMatch
+                ? `Row ${item.rowNum} (${item.r.name}): parent category "${item.parentRaw}" is a subcategory (maximum 2 levels supported)`
+                : `Row ${item.rowNum} (${item.r.name}): parent category "${item.parentRaw}" not found`,
+            );
+            item.rejected = true;
+            continue;
+          }
+
+          const parentCat = rootParents[0];
+          if (!parentCat.is_active) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): parent category "${item.parentRaw}" is inactive`,
+            );
+            item.rejected = true;
+            continue;
+          }
+
+          const siblingKey = `${parentCat.id}::${item.nameNorm}`;
+          if (seenSiblings.has(siblingKey)) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): duplicate sibling category name "${item.r.name}" under "${item.parentRaw}"`,
+            );
+            item.rejected = true;
+            continue;
+          }
+
+          const childMatches = dbCategories.filter(
+            (c) => c.parent_id === parentCat.id && c.name.trim().toLowerCase() === item.nameNorm,
+          );
+          if (childMatches.length > 1) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): category "${item.r.name}" under "${item.parentRaw}" is ambiguous`,
+            );
+            item.rejected = true;
+            continue;
+          }
+
+          if (childMatches.length === 1) {
+            const existingChild = childMatches[0];
+            const childGrandchildren = childCountByParentId.get(existingChild.id) ?? 0;
+            if (item.wantsDelete) {
+              if (childGrandchildren > 0) {
+                failRow(
+                  item.index,
+                  `Row ${item.rowNum} (${item.r.name}): cannot delete a category that has subcategories`,
+                );
+                item.rejected = true;
+                continue;
+              }
+              db.prepare('UPDATE categories SET deleted_at = ?, updated_at = ? WHERE id = ?').run(
+                now(),
+                now(),
+                existingChild.id,
+              );
+              const idx = dbCategories.findIndex((c) => c.id === existingChild.id);
+              if (idx !== -1) dbCategories.splice(idx, 1);
+              updated++;
+              changedRows++;
+              seenSiblings.add(siblingKey);
+              continue;
+            }
+            if (item.wantsDeactivate) {
+              if (childGrandchildren > 0) {
+                failRow(
+                  item.index,
+                  `Row ${item.rowNum} (${item.r.name}): cannot deactivate a category that has subcategories`,
+                );
+                item.rejected = true;
+                continue;
+              }
+              db.prepare('UPDATE categories SET is_active = 0, updated_at = ? WHERE id = ?').run(
+                now(),
+                existingChild.id,
+              );
+              existingChild.is_active = 0;
+              updated++;
+              changedRows++;
+              seenSiblings.add(siblingKey);
+              continue;
+            }
+            if (existingChild.name !== item.r.name) {
+              failRow(
+                item.index,
+                `Row ${item.rowNum} (${item.r.name}): duplicate sibling category name "${item.r.name}" under "${item.parentRaw}"`,
+              );
+              item.rejected = true;
+              continue;
+            }
+            seenSiblings.add(siblingKey);
+            skipped++;
+            continue;
+          }
+
+          const existingRootWithChildren = dbCategories.find(
+            (c) =>
+              c.parent_id === null &&
+              c.name.trim().toLowerCase() === item.nameNorm &&
+              (childCountByParentId.get(c.id) ?? 0) > 0,
+          );
+          if (existingRootWithChildren) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): cannot assign a parent to category "${item.r.name}" because it has subcategories`,
+            );
+            item.rejected = true;
+            continue;
+          }
+
+          if (item.wantsDelete) {
+            failRow(
+              item.index,
+              `Row ${item.rowNum} (${item.r.name}): category "${item.r.name}" under "${item.parentRaw}" not found`,
+            );
+            item.rejected = true;
+            continue;
+          }
+
+          const id = randomUUID();
+          const isActive = item.wantsDeactivate ? 0 : 1;
+          const slug = item.r.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/(^-|-$)/g, '');
+          db.prepare(
+            `INSERT INTO categories (id, name, slug, description, parent_id, color, icon, sort_order, is_active, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).run(
+            id,
+            item.r.name,
+            slug,
+            item.r.description || null,
+            parentCat.id,
+            item.r.color || null,
+            item.r.icon || null,
+            item.sortOrder,
+            isActive,
+            now(),
+            now(),
+          );
+          dbCategories.push({
+            id,
+            name: item.r.name,
+            parent_id: parentCat.id,
+            is_active: isActive,
+          });
+          childCountByParentId.set(parentCat.id, (childCountByParentId.get(parentCat.id) ?? 0) + 1);
+          seenSiblings.add(siblingKey);
           created++;
           changedRows++;
         }
       })();
 
+      const errors = errorsByRow.sort((a, b) => a.index - b.index).map((entry) => entry.message);
       captureMenuCsvRowRejections(failed, changedRows);
       res.json({ created, updated, reactivated, skipped, failed, errors });
     } catch (err: any) {
@@ -655,10 +1087,8 @@ router.post(
       const db = getDatabase();
 
       const catRows = db
-        .prepare('SELECT id, name FROM categories WHERE deleted_at IS NULL')
-        .all() as any[];
-      const catMap: Record<string, string> = {};
-      for (const c of catRows) catMap[c.name.toLowerCase()] = c.id;
+        .prepare('SELECT id, name, parent_id FROM categories WHERE deleted_at IS NULL')
+        .all() as Array<{ id: string; name: string; parent_id: string | null }>;
 
       const country = getSettingValue('country') || '';
       const businessType = getSettingValue('business_type') || 'restaurant';
@@ -676,9 +1106,11 @@ router.post(
       const errors: string[] = [];
 
       const findExistingProduct = db.prepare(
-        `SELECT p.id, p.name, p.sku, p.description, p.tags, p.is_active, c.name AS category_name
+        `SELECT p.id, p.name, p.sku, p.description, p.tags, p.is_active,
+                c.name AS category_name, cp.name AS category_parent_name
          FROM products p
          LEFT JOIN categories c ON p.category_id = c.id
+         LEFT JOIN categories cp ON c.parent_id = cp.id AND cp.deleted_at IS NULL
          WHERE p.id = ? AND p.deleted_at IS NULL`,
       );
 
@@ -702,6 +1134,7 @@ router.post(
                 tags: string | null;
                 is_active: number;
                 category_name: string | null;
+                category_parent_name: string | null;
               }
             | undefined;
 
@@ -712,6 +1145,7 @@ router.post(
               sku: decodeQuoteV1Field(rawRow.sku ?? ''),
               name: decodeQuoteV1Field(rawRow.name ?? ''),
               category: decodeQuoteV1Field(rawRow.category ?? ''),
+              category_parent: decodeQuoteV1Field(rawRow.category_parent ?? ''),
               description: decodeQuoteV1Field(rawRow.description ?? ''),
               tax_category: decodeQuoteV1Field(rawRow.tax_category ?? ''),
               tax_behavior: decodeQuoteV1Field(rawRow.tax_behavior ?? ''),
@@ -733,6 +1167,10 @@ router.post(
                 category: decodeLegacyProvenField(
                   rawRow.category ?? '',
                   existingProduct.category_name,
+                ),
+                category_parent: decodeLegacyProvenField(
+                  rawRow.category_parent ?? '',
+                  existingProduct.category_parent_name,
                 ),
                 description: decodeLegacyProvenField(
                   rawRow.description ?? '',
@@ -779,14 +1217,76 @@ router.post(
           const cost = costResult.value;
 
           let categoryId: string | null = null;
-          if (r.category) {
-            categoryId = catMap[r.category.toLowerCase()] ?? null;
-            if (!categoryId) {
-              failed++;
-              errors.push(
-                `Row ${i + 2} (${r.name}): category "${r.category}" not found — import categories first`,
+          const categoryRaw = (r.category ?? '').trim();
+          const categoryParentRaw = (r.category_parent ?? '').trim();
+          if (!categoryRaw && categoryParentRaw) {
+            failed++;
+            errors.push(
+              `Row ${i + 2} (${r.name}): category is required when category_parent is provided`,
+            );
+            continue;
+          }
+          if (categoryRaw) {
+            const catNorm = categoryRaw.toLowerCase();
+            if (categoryParentRaw) {
+              const parentNorm = categoryParentRaw.toLowerCase();
+              const rootMatches = catRows.filter(
+                (c) => c.parent_id === null && c.name.trim().toLowerCase() === parentNorm,
               );
-              continue;
+              if (rootMatches.length === 0) {
+                const subMatch = catRows.some(
+                  (c) => c.parent_id !== null && c.name.trim().toLowerCase() === parentNorm,
+                );
+                failed++;
+                errors.push(
+                  subMatch
+                    ? `Row ${i + 2} (${r.name}): category_parent "${r.category_parent}" is not a root category`
+                    : `Row ${i + 2} (${r.name}): category_parent "${r.category_parent}" not found — import categories first`,
+                );
+                continue;
+              }
+              if (rootMatches.length > 1) {
+                failed++;
+                errors.push(
+                  `Row ${i + 2} (${r.name}): category_parent "${r.category_parent}" is ambiguous`,
+                );
+                continue;
+              }
+              const childMatches = catRows.filter(
+                (c) => c.parent_id === rootMatches[0].id && c.name.trim().toLowerCase() === catNorm,
+              );
+              if (childMatches.length === 0) {
+                failed++;
+                errors.push(
+                  `Row ${i + 2} (${r.name}): category "${r.category}" under parent "${r.category_parent}" not found — import categories first`,
+                );
+                continue;
+              }
+              if (childMatches.length > 1) {
+                failed++;
+                errors.push(
+                  `Row ${i + 2} (${r.name}): category "${r.category}" under parent "${r.category_parent}" is ambiguous`,
+                );
+                continue;
+              }
+              categoryId = childMatches[0].id;
+            } else {
+              const matches = catRows.filter((c) => c.name.trim().toLowerCase() === catNorm);
+              if (matches.length === 0) {
+                failed++;
+                errors.push(
+                  `Row ${i + 2} (${r.name}): category "${r.category}" not found — import categories first`,
+                );
+                continue;
+              }
+              if (matches.length > 1) {
+                failed++;
+                errors.push(
+                  `Row ${i + 2} (${r.name}): category "${r.category}" is ambiguous — specify category_parent`,
+                );
+                continue;
+              }
+              categoryId = matches[0].id;
             }
           }
 

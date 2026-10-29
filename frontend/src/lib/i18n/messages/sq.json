@@ -1592,7 +1592,9 @@
     "variantToggle": "Ky produkt ka variante (p.sh. madhësi, kore, shije)",
     "variantsSection": "Variantet",
     "variantDeactivateConfirm": "Ky variant do të çaktivizohet kur ruhet dhe nuk mund të rikthehet nga ky ekran.",
-    "variantRemoveAllConfirm": "Nëse e çaktivizoni, do të çaktivizohen të gjitha variantet e këtij produkti. Porositë e vjetra i ruajnë."
+    "variantRemoveAllConfirm": "Nëse e çaktivizoni, do të çaktivizohen të gjitha variantet e këtij produkti. Porositë e vjetra i ruajnë.",
+    "parentCategory": "Kategoria prind",
+    "parentCategoryNone": "Asnjë (niveli kryesor)"
   },
   "productAnalytics": {
     "title": "Na ndihmoni të vendosim çfarë të ndërtojmë më pas",

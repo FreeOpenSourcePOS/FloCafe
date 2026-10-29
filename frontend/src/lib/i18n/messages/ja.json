@@ -1592,7 +1592,9 @@
     "variantToggle": "この商品にはバリアントがあります（例：サイズ、生地、フレーバー）",
     "variantsSection": "バリエーション",
     "variantDeactivateConfirm": "保存するとこのバリアントは無効になり、この画面から復元できません。",
-    "variantRemoveAllConfirm": "オフにするとこの商品のすべてのバリアントが無効になります。過去の注文には残ります。"
+    "variantRemoveAllConfirm": "オフにするとこの商品のすべてのバリアントが無効になります。過去の注文には残ります。",
+    "parentCategory": "親カテゴリー",
+    "parentCategoryNone": "なし（最上位）"
   },
   "productAnalytics": {
     "title": "次に何を作るか、一緒に決めてください",

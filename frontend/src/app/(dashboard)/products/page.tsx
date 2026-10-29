@@ -170,8 +170,10 @@ export default function ProductsPage() {
   const [editingAddonGroup, setEditingAddonGroup] = useState<AddonGroup | null>(null);
   const [categoryForm, setCategoryForm] = useState({
     name: '',
+    parent_id: '',
     description: '',
     color: '',
+    sort_order: 0,
     is_active: true,
     addon_group_ids: [] as string[],
   });
@@ -654,7 +656,15 @@ export default function ProductsPage() {
   const resetCategoryForm = () => {
     editRequestId.current += 1;
     setProductInactiveAddonGroups([]);
-    setCategoryForm({ name: '', description: '', color: '', is_active: true, addon_group_ids: [] });
+    setCategoryForm({
+      name: '',
+      parent_id: '',
+      description: '',
+      color: '',
+      sort_order: 0,
+      is_active: true,
+      addon_group_ids: [],
+    });
     setCategoryAddonGroups([]);
     setEditingCategory(null);
     setShowForm(false);
@@ -683,8 +693,10 @@ export default function ProductsPage() {
     setEditingCategory(cat);
     setCategoryForm({
       name: cat.name,
+      parent_id: cat.parent_id ? String(cat.parent_id) : '',
       description: cat.description || '',
       color: cat.color || '',
+      sort_order: Number(cat.sort_order ?? 0),
       is_active: cat.is_active,
       addon_group_ids: addonGroupIds,
     });
@@ -696,8 +708,10 @@ export default function ProductsPage() {
     try {
       const payload = {
         name: categoryForm.name,
+        parent_id: categoryForm.parent_id ? categoryForm.parent_id : null,
         description: categoryForm.description || null,
         color: categoryForm.color || null,
+        sort_order: Number(categoryForm.sort_order) || 0,
         is_active: categoryForm.is_active,
         addon_group_ids: categoryForm.addon_group_ids,
       };
@@ -710,15 +724,17 @@ export default function ProductsPage() {
       }
       resetCategoryForm();
       fetchData();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[Category] Save error:', err);
-      toast.error(t('failedToSaveCategory'));
+      const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(message || t('failedToSaveCategory'));
     }
   };
 
   const handleCategoryDelete = async (id: string, name: string) => {
-    const productCount = products.filter((p) => p.category_id === id).length;
-    if (productCount > 0) {
+    const hasChildren = categories.some((c) => String(c.parent_id ?? '') === String(id));
+    const productCount = products.filter((p) => String(p.category_id) === String(id)).length;
+    if (!hasChildren && productCount > 0) {
       setCatReassignTo('');
       setCatDeleteModal({ open: true, id, name, productCount });
       return;
@@ -730,13 +746,20 @@ export default function ProductsPage() {
       fetchData();
     } catch (err: unknown) {
       const e = err as {
-        response?: { status?: number; data?: { error?: string; productCount?: number } };
+        response?: {
+          status?: number;
+          data?: { error?: string; productCount?: number; childCount?: number };
+        };
       };
-      if (e?.response?.status === 400 && e?.response?.data?.productCount) {
+      if (
+        e?.response?.status === 400 &&
+        !e?.response?.data?.childCount &&
+        e?.response?.data?.productCount
+      ) {
         setCatReassignTo('');
         setCatDeleteModal({ open: true, id, name, productCount: e.response.data.productCount });
       } else {
-        toast.error(tCommon('failedToDelete'));
+        toast.error(e?.response?.data?.error || tCommon('failedToDelete'));
       }
     }
   };
@@ -898,6 +921,121 @@ export default function ProductsPage() {
     );
   const removeAddonItem = (idx: number) => setAddonList((prev) => prev.filter((_, i) => i !== idx));
 
+  const categoryById = new Map(categories.map((cat) => [String(cat.id), cat]));
+  const formatCategoryLabel = (cat: Category): string => {
+    if (cat.parent_id && categoryById.has(String(cat.parent_id))) {
+      return `${categoryById.get(String(cat.parent_id))!.name} › ${cat.name}`;
+    }
+    return cat.name;
+  };
+  const sortCategorySiblings = (list: Category[]) =>
+    list
+      .slice()
+      .sort(
+        (a, b) =>
+          (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) || a.name.localeCompare(b.name),
+      );
+  const rootCategories = sortCategorySiblings(
+    categories.filter(
+      (cat) =>
+        !cat.parent_id ||
+        !categoryById.has(String(cat.parent_id)) ||
+        String(cat.parent_id) === String(cat.id),
+    ),
+  );
+  const childrenByParentId = new Map<string, Category[]>();
+  for (const cat of categories) {
+    if (
+      cat.parent_id &&
+      categoryById.has(String(cat.parent_id)) &&
+      String(cat.parent_id) !== String(cat.id)
+    ) {
+      const pid = String(cat.parent_id);
+      const list = childrenByParentId.get(pid) || [];
+      list.push(cat);
+      childrenByParentId.set(pid, list);
+    }
+  }
+  for (const [pid, list] of childrenByParentId.entries()) {
+    childrenByParentId.set(pid, sortCategorySiblings(list));
+  }
+
+  const orderedCategoryTreeRows: Array<{
+    category: Category;
+    depth: 0 | 1;
+    parentName: string | null;
+    siblingIndex: number;
+    siblingCount: number;
+  }> = [];
+  const visitedCategoryIds = new Set<string>();
+  rootCategories.forEach((root, rootIdx) => {
+    visitedCategoryIds.add(String(root.id));
+    orderedCategoryTreeRows.push({
+      category: root,
+      depth: 0,
+      parentName: null,
+      siblingIndex: rootIdx,
+      siblingCount: rootCategories.length,
+    });
+    const children = childrenByParentId.get(String(root.id)) || [];
+    children.forEach((child, childIdx) => {
+      visitedCategoryIds.add(String(child.id));
+      orderedCategoryTreeRows.push({
+        category: child,
+        depth: 1,
+        parentName: root.name,
+        siblingIndex: childIdx,
+        siblingCount: children.length,
+      });
+    });
+  });
+  for (const cat of categories) {
+    if (!visitedCategoryIds.has(String(cat.id))) {
+      orderedCategoryTreeRows.push({
+        category: cat,
+        depth: cat.parent_id ? 1 : 0,
+        parentName: cat.parent_id ? (categoryById.get(String(cat.parent_id))?.name ?? null) : null,
+        siblingIndex: 0,
+        siblingCount: 1,
+      });
+    }
+  }
+  const orderedCategories = orderedCategoryTreeRows.map((row) => row.category);
+  const editingCategoryHasChildren = editingCategory
+    ? (childrenByParentId.get(String(editingCategory.id))?.length ?? 0) > 0
+    : false;
+  const availableParentCategories = rootCategories.filter(
+    (c) =>
+      String(c.id) !== String(editingCategory?.id ?? '') &&
+      (c.is_active || String(c.id) === String(categoryForm.parent_id)),
+  );
+
+  const handleMoveCategory = async (cat: Category, direction: -1 | 1) => {
+    const parentKey = cat.parent_id ? String(cat.parent_id) : '';
+    const siblings = sortCategorySiblings(
+      categories.filter((c) => (c.parent_id ? String(c.parent_id) : '') === parentKey),
+    );
+    const index = siblings.findIndex((c) => String(c.id) === String(cat.id));
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= siblings.length) return;
+    const reordered = siblings.slice();
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+    try {
+      await Promise.all(
+        reordered.map((sibling, orderIndex) =>
+          Number(sibling.sort_order) === orderIndex
+            ? Promise.resolve()
+            : api.put(`/categories/${sibling.id}`, { sort_order: orderIndex }),
+        ),
+      );
+      await fetchData();
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(message || t('failedToSaveCategory'));
+    }
+  };
+
   // One search box filters whichever list the active tab shows; every list is
   // already fully loaded, so the filter never stops at a first page.
   const normalizedSearch = search.trim().toLowerCase();
@@ -919,10 +1057,12 @@ export default function ProductsPage() {
             )?.name,
           ]),
         );
-  const visibleCategories =
+  const visibleCategoryRows =
     normalizedSearch === ''
-      ? categories
-      : categories.filter((category) => matchesSearch([category.name, category.description]));
+      ? orderedCategoryTreeRows
+      : orderedCategoryTreeRows.filter(({ category, parentName }) =>
+          matchesSearch([category.name, category.description, parentName]),
+        );
   const visibleAddonGroups =
     normalizedSearch === ''
       ? addonGroups
@@ -1362,9 +1502,9 @@ export default function ProductsPage() {
                           required
                         >
                           <option value="">{t('selectPlaceholder')}</option>
-                          {categories.map((c) => (
+                          {orderedCategories.map((c) => (
                             <option key={c.id} value={c.id}>
-                              {c.name}
+                              {formatCategoryLabel(c)}
                             </option>
                           ))}
                         </select>
@@ -2043,11 +2183,28 @@ export default function ProductsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {visibleCategories.map((cat) => {
+                {visibleCategoryRows.map(({ category: cat, depth, siblingIndex, siblingCount }) => {
                   const colorObj = CATEGORY_COLORS.find((c) => c.key === cat.color);
                   return (
-                    <tr key={cat.id} className="hover:bg-muted">
-                      <td className="p-4 font-medium text-foreground">{cat.name}</td>
+                    <tr
+                      key={cat.id}
+                      data-category-id={cat.id}
+                      data-category-depth={depth}
+                      data-parent-id={cat.parent_id || ''}
+                      className="hover:bg-muted"
+                    >
+                      <td
+                        className={`p-4 font-medium text-foreground ${depth === 1 ? 'ps-10' : ''}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {depth === 1 && (
+                            <span className="text-muted-foreground select-none" aria-hidden="true">
+                              ↳
+                            </span>
+                          )}
+                          <span>{cat.name}</span>
+                        </div>
+                      </td>
                       <td className="p-4 text-center">
                         {cat.addon_group_ids?.length ? (
                           <span className="inline-flex px-2 py-1 rounded-full bg-muted text-xs font-medium text-muted-foreground">
@@ -2095,6 +2252,30 @@ export default function ProductsPage() {
                               >
                                 <Trash2 size={16} />
                               </button>
+                              {normalizedSearch === '' && siblingCount > 1 && (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={siblingIndex === 0}
+                                    onClick={() => handleMoveCategory(cat, -1)}
+                                    aria-label={t('variantMoveUp')}
+                                    title={t('variantMoveUp')}
+                                    className="p-1.5 text-gray-400 hover:text-foreground disabled:opacity-30"
+                                  >
+                                    <ChevronUp size={16} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={siblingIndex === siblingCount - 1}
+                                    onClick={() => handleMoveCategory(cat, 1)}
+                                    aria-label={t('variantMoveDown')}
+                                    title={t('variantMoveDown')}
+                                    className="p-1.5 text-gray-400 hover:text-foreground disabled:opacity-30"
+                                  >
+                                    <ChevronDown size={16} />
+                                  </button>
+                                </>
+                              )}
                             </>
                           )}
                         </div>
@@ -2104,7 +2285,7 @@ export default function ProductsPage() {
                 })}
               </tbody>
             </table>
-            {visibleCategories.length === 0 && (
+            {visibleCategoryRows.length === 0 && (
               <p className="text-center text-muted-foreground py-12">
                 {normalizedSearch === '' ? t('categoryEmpty') : tCommon('noResults')}
               </p>
@@ -2139,6 +2320,31 @@ export default function ProductsPage() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
                       required
                     />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="category-parent-select"
+                      className="block text-sm font-medium text-foreground mb-1"
+                    >
+                      {t('parentCategory')}
+                    </label>
+                    <select
+                      id="category-parent-select"
+                      aria-label={t('parentCategory')}
+                      value={categoryForm.parent_id}
+                      disabled={editingCategoryHasChildren}
+                      onChange={(e) =>
+                        setCategoryForm({ ...categoryForm, parent_id: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
+                    >
+                      <option value="">{t('parentCategoryNone')}</option>
+                      {availableParentCategories.map((rootCat) => (
+                        <option key={rootCat.id} value={String(rootCat.id)}>
+                          {rootCat.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">
@@ -2774,13 +2980,13 @@ export default function ProductsPage() {
                         {t('defaultCategoryTag', { name: c.name })}
                       </option>
                     ))}
-                  {categories
+                  {orderedCategories
                     .filter(
                       (c) => c.name.toLowerCase() !== 'uncategorized' && c.id !== catDeleteModal.id,
                     )
                     .map((c) => (
                       <option key={c.id} value={String(c.id)}>
-                        {c.name}
+                        {formatCategoryLabel(c)}
                       </option>
                     ))}
                 </select>

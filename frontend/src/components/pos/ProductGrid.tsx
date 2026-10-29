@@ -99,7 +99,7 @@ function CategoryRow({
         <CategoryChip
           categoryName={cat.name}
           categoryColor={cat.color}
-          isSelected={selectedCategory === cat.id}
+          isSelected={selectedCategory != null && String(selectedCategory) === String(cat.id)}
           onSelect={() => setSelectedCategory(cat.id)}
         />
       ),
@@ -359,14 +359,60 @@ export default function ProductGrid({
   const parsedSearch = useMemo(() => parseQuantitySearch(search), [search]);
   const activeQuery = parsedSearch ? parsedSearch.query : search;
 
-  const sortedCategories = useMemo(
-    () => sortCategories(categories, categorySort),
-    [categories, categorySort],
+  const categoryById = useMemo(
+    () => new Map(categories.map((cat) => [String(cat.id), cat])),
+    [categories],
   );
+  const rootCategories = useMemo(
+    () =>
+      categories
+        .filter((cat) => !cat.parent_id || !categoryById.has(String(cat.parent_id)))
+        .slice()
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name)),
+    [categories, categoryById],
+  );
+  const sortedCategories = useMemo(
+    () => sortCategories(rootCategories, categorySort),
+    [rootCategories, categorySort],
+  );
+  const selectedCategoryObj = selectedCategory ? categoryById.get(String(selectedCategory)) : null;
+  const activeRootId = selectedCategoryObj
+    ? selectedCategoryObj.parent_id && categoryById.has(String(selectedCategoryObj.parent_id))
+      ? String(selectedCategoryObj.parent_id)
+      : String(selectedCategoryObj.id)
+    : selectedCategory;
+  const activeSubcategoryId =
+    selectedCategoryObj?.parent_id && categoryById.has(String(selectedCategoryObj.parent_id))
+      ? String(selectedCategoryObj.id)
+      : null;
+
+  const activeSubcategories = useMemo(() => {
+    if (!activeRootId) return [];
+    const children = categories
+      .filter((cat) => cat.is_active !== false && String(cat.parent_id) === String(activeRootId))
+      .slice()
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name));
+    return sortCategories(children, categorySort);
+  }, [categories, activeRootId, categorySort]);
+
+  const matchingCategoryIds = useMemo(() => {
+    if (!selectedCategory) return null;
+    if (activeSubcategoryId) {
+      return new Set([activeSubcategoryId]);
+    }
+    const ids = new Set<string>([String(activeRootId)]);
+    for (const sub of activeSubcategories) {
+      ids.add(String(sub.id));
+    }
+    return ids;
+  }, [selectedCategory, activeSubcategoryId, activeRootId, activeSubcategories]);
+
   const sortedProducts = useMemo(() => sortProducts(products, itemSort), [products, itemSort]);
 
   const filtered = sortedProducts.filter((p) => {
-    const matchCat = !selectedCategory || p.category_id === selectedCategory;
+    const matchCat =
+      matchingCategoryIds === null ||
+      (p.category_id != null && matchingCategoryIds.has(String(p.category_id)));
     const matchSearch = !activeQuery || p.name.toLowerCase().includes(activeQuery.toLowerCase());
     return matchCat && matchSearch;
   });
@@ -445,7 +491,7 @@ export default function ProductGrid({
           className="pb-1"
           collapse={collapseCategories}
           categories={sortedCategories}
-          selectedCategory={selectedCategory}
+          selectedCategory={activeRootId}
           setSelectedCategory={setSelectedCategory}
           allLabel={t('allCategories')}
           resetKey={
@@ -456,6 +502,26 @@ export default function ProductGrid({
               : null
           }
         />
+        {activeSubcategories.length > 0 && (
+          <div
+            data-testid="pos-subcategory-row"
+            className="mt-1.5 flex flex-nowrap gap-2 overflow-x-auto pb-1"
+          >
+            {activeSubcategories.map((sub) => (
+              <CategoryChip
+                key={sub.id}
+                categoryName={sub.name}
+                categoryColor={sub.color}
+                isSelected={activeSubcategoryId === String(sub.id)}
+                onSelect={() =>
+                  setSelectedCategory(
+                    activeSubcategoryId === String(sub.id) ? activeRootId : String(sub.id),
+                  )
+                }
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* min-h-0 overrides the content-based automatic minimum size, so a long

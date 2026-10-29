@@ -1592,7 +1592,9 @@
     "variantToggle": "Bu ürünün varyantları var (örn. Boyut, Hamur, Tat)",
     "variantsSection": "Varyantlar",
     "variantDeactivateConfirm": "Bu varyant kaydedildiğinde devre dışı bırakılır ve bu ekrandan geri alınamaz.",
-    "variantRemoveAllConfirm": "Bunu kapatırsanız bu ürünün tüm varyantları devre dışı bırakılır. Eski siparişler korunur."
+    "variantRemoveAllConfirm": "Bunu kapatırsanız bu ürünün tüm varyantları devre dışı bırakılır. Eski siparişler korunur.",
+    "parentCategory": "Üst Kategori",
+    "parentCategoryNone": "Yok (Üst düzey)"
   },
   "productAnalytics": {
     "title": "Sırada ne yapacağımıza karar vermemize yardım edin",

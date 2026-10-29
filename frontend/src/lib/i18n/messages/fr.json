@@ -1592,7 +1592,9 @@
     "variantToggle": "Ce produit possède des variantes (ex. : taille, pâte, saveur)",
     "variantsSection": "Variantes",
     "variantDeactivateConfirm": "Cette variante sera désactivée à l’enregistrement et ne pourra pas être restaurée depuis cet écran.",
-    "variantRemoveAllConfirm": "Si vous le désactivez, toutes les variantes de ce produit seront désactivées. Les commandes passées les conservent."
+    "variantRemoveAllConfirm": "Si vous le désactivez, toutes les variantes de ce produit seront désactivées. Les commandes passées les conservent.",
+    "parentCategory": "Catégorie parente",
+    "parentCategoryNone": "Aucune (niveau principal)"
   },
   "productAnalytics": {
     "title": "Aidez-nous à décider quoi construire ensuite",

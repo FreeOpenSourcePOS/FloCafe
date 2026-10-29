@@ -2,7 +2,83 @@ export type MenuTemplate = 'mobile-cafe' | 'classic-bistro' | 'standard';
 
 export interface MenuWebPrintSection {
   name: string | null;
+  parentName?: string | null;
   products: Array<{ name: string; price: string; details?: string[]; imageUrl?: string | null }>;
+}
+
+export function buildHierarchicalMenuWebSections<
+  T extends { product: { category_id?: string | number | null } },
+>(
+  categories: ReadonlyArray<{
+    id: string | number;
+    name: string;
+    parent_id?: string | number | null;
+    sort_order?: number | null;
+  }>,
+  included: readonly T[],
+  mapRow: (row: T) => MenuWebPrintSection['products'][number],
+): MenuWebPrintSection[] {
+  const categoryById = new Map(categories.map((category) => [String(category.id), category]));
+  const sortSiblings = <C extends { name: string; sort_order?: number | null }>(
+    list: readonly C[],
+  ) =>
+    list
+      .slice()
+      .sort(
+        (left, right) =>
+          (Number(left.sort_order) || 0) - (Number(right.sort_order) || 0) ||
+          left.name.localeCompare(right.name),
+      );
+
+  const childrenByParent = new Map<string, (typeof categories)[number][]>();
+  const roots: (typeof categories)[number][] = [];
+  for (const category of categories) {
+    const id = String(category.id);
+    const parentId =
+      category.parent_id !== null && category.parent_id !== undefined
+        ? String(category.parent_id)
+        : null;
+    if (parentId && categoryById.has(parentId) && parentId !== id) {
+      const list = childrenByParent.get(parentId) || [];
+      list.push(category);
+      childrenByParent.set(parentId, list);
+    } else {
+      roots.push(category);
+    }
+  }
+
+  const sections: MenuWebPrintSection[] = [];
+  for (const root of sortSiblings(roots)) {
+    const rootId = String(root.id);
+    const rootProducts = included
+      .filter((row) => String(row.product.category_id ?? '') === rootId)
+      .map(mapRow);
+    if (rootProducts.length > 0) {
+      sections.push({ name: root.name, parentName: null, products: rootProducts });
+    }
+    const children = sortSiblings(childrenByParent.get(rootId) || []);
+    for (const child of children) {
+      const childId = String(child.id);
+      const childProducts = included
+        .filter((row) => String(row.product.category_id ?? '') === childId)
+        .map(mapRow);
+      if (childProducts.length > 0) {
+        sections.push({ name: child.name, parentName: root.name, products: childProducts });
+      }
+    }
+  }
+  const uncategorized = included
+    .filter(
+      (row) =>
+        row.product.category_id === null ||
+        row.product.category_id === undefined ||
+        !categoryById.has(String(row.product.category_id)),
+    )
+    .map(mapRow);
+  if (uncategorized.length > 0) {
+    sections.push({ name: null, parentName: null, products: uncategorized });
+  }
+  return sections;
 }
 
 export interface MenuWebPrintInput {
@@ -63,13 +139,29 @@ export function buildMenuWebPrintHtml(input: MenuWebPrintInput): string {
       : `${selectedPageSize} portrait`;
   const customerFacing = input.customerFacing === true;
   const logo = safeImageDataUrl(input.logoDataUrl);
+  let activeParentHeading: string | null = null;
   const sections = input.sections
-    .map(
-      (section) => `<section class="menu-section">
-    ${section.name ? `<h2>${escapeHtml(section.name)}</h2>` : ''}
+    .map((section) => {
+      let headingHtml = '';
+      if (section.parentName) {
+        if (activeParentHeading !== section.parentName) {
+          headingHtml += `<h2>${escapeHtml(section.parentName)}</h2>`;
+          activeParentHeading = section.parentName;
+        }
+        if (section.name) {
+          headingHtml += `<h3>${escapeHtml(section.name)}</h3>`;
+        }
+      } else {
+        activeParentHeading = section.name ?? null;
+        if (section.name) {
+          headingHtml = `<h2>${escapeHtml(section.name)}</h2>`;
+        }
+      }
+      return `<section class="menu-section${section.parentName ? ' menu-subsection' : ''}">
+    ${headingHtml}
     <div class="items">${section.products.map(renderProduct).join('')}</div>
-  </section>`,
-    )
+  </section>`;
+    })
     .join('');
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.menuTitle)}</title><style>
@@ -81,6 +173,8 @@ export function buildMenuWebPrintHtml(input: MenuWebPrintInput): string {
     h1 { font-size: ${mobile ? '30px' : classic ? '30px' : '24px'}; letter-spacing: ${classic ? '.06em' : '.12em'}; margin: 8px 0; } .date { color: #666; font-size: 12px; }
     main { ${classic ? 'column-count: 2; column-gap: 28px;' : ''} } .menu-section { break-inside: avoid; margin-bottom: 16px; }
     h2 { ${mobile ? 'background: #f3dfc9; border-radius: 8px; color: #704421; padding: 8px 10px;' : classic ? 'border-bottom: 2px solid #7c6758; border-top: 1px solid #b9a99d; padding: 7px 0;' : 'border-bottom: 1px solid #999; padding-bottom: 3px;'} font-size: ${mobile ? '18px' : '15px'}; margin: 18px 0 8px; text-transform: uppercase; }
+    h3 { color: #555; font-size: ${mobile ? '15px' : '13px'}; margin: 10px 0 6px 8px; text-transform: uppercase; }
+    .menu-subsection .items { padding-left: 8px; }
     .item { align-items: flex-start; display: flex; gap: 10px; padding: ${mobile ? '8px 2px' : '4px 0'}; } .product-photo { border-radius: 8px; flex: 0 0 auto; height: ${mobile ? '58px' : '48px'}; object-fit: cover; width: ${mobile ? '58px' : '48px'}; }
     .item-copy { min-width: 0; width: 100%; } .row { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; } .item-name { font-weight: ${mobile ? '700' : 'inherit'}; min-width: 0; overflow-wrap: anywhere; }
     .leader { ${classic ? 'border-bottom: 1px dotted #8f8177; flex: 1 1 auto;' : 'display: none;'} } .price { ${mobile ? 'background: #fff1df; border-radius: 999px; color: #6d3f1c; font-weight: 700; padding: 2px 8px;' : ''} flex: 0 0 auto; text-align: right; white-space: nowrap; }

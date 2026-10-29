@@ -22,12 +22,12 @@ import { formatDateForTenant } from '@/lib/countries';
 import type { Category, Product, ProductVariant } from '@/lib/types';
 import { activeVariants, isVariantSoldOut } from '@/lib/product-variants';
 import {
+  buildHierarchicalMenuWebSections,
   buildMenuWebPrintHtml,
   MenuPopupBlockedError,
   printMenuInBrowser,
   reservePrintGesture,
   type MenuTemplate,
-  type MenuWebPrintSection,
 } from '@/lib/printer/menu-web-print';
 
 interface Props {
@@ -152,13 +152,21 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
     // A product with active variants prints one row per variant at the
     // variant's own price; the parent's unsellable price never reaches paper.
     // A product without active variants keeps its single parent row.
+    const isCategoryVisible = (categoryId: string | number | null | undefined): boolean => {
+      if (selectedFilters.includeHidden || !categoryId) return true;
+      const category = categoryById.get(String(categoryId));
+      if (category?.is_active !== true) return false;
+      if (category.parent_id) {
+        const parent = categoryById.get(String(category.parent_id));
+        if (parent && !parent.is_active) return false;
+      }
+      return true;
+    };
     const included = products
       .filter(
         (product) =>
           (selectedFilters.includeInactive || product.is_active) &&
-          (selectedFilters.includeHidden ||
-            !product.category_id ||
-            categoryById.get(product.category_id)?.is_active === true),
+          isCategoryVisible(product.category_id),
       )
       .flatMap((product) => {
         const variants = activeVariants(product.variants);
@@ -218,18 +226,10 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
         }),
       );
     }
-    const sections: MenuWebPrintSection[] = categories
-      .map((category) => ({
-        name: category.name,
-        products: included
-          .filter((row) => row.product.category_id === category.id)
-          .map((row) => ({ ...toPrintProduct(row), imageUrl: photos.get(row.product.id) || null })),
-      }))
-      .filter((section) => section.products.length > 0);
-    const uncategorized = included
-      .filter((row) => !row.product.category_id || !categoryById.has(row.product.category_id))
-      .map((row) => ({ ...toPrintProduct(row), imageUrl: photos.get(row.product.id) || null }));
-    if (uncategorized.length > 0) sections.push({ name: null, products: uncategorized });
+    const sections = buildHierarchicalMenuWebSections(categories, included, (row) => ({
+      ...toPrintProduct(row),
+      imageUrl: photos.get(row.product.id) || null,
+    }));
     const itemCount = sections.reduce((total, section) => total + section.products.length, 0);
     if (itemCount === 0) {
       toast.error(t('noProductsToPrint'));

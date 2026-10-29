@@ -1592,7 +1592,9 @@
     "variantToggle": "此商品有變體（例如：尺寸、餅底、口味）",
     "variantsSection": "變體",
     "variantDeactivateConfirm": "該變體儲存後將被停用，且無法在此頁面還原。",
-    "variantRemoveAllConfirm": "關閉後將停用該商品的所有變體，歷史訂單仍會保留。"
+    "variantRemoveAllConfirm": "關閉後將停用該商品的所有變體，歷史訂單仍會保留。",
+    "parentCategory": "父類別",
+    "parentCategoryNone": "無（頂層類別）"
   },
   "productAnalytics": {
     "title": "幫我們決定下一步要做什麼",

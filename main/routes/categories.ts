@@ -116,17 +116,20 @@ function validateParentCategory(
   if (parentId === null || parentId === undefined || parentId === '') return null;
   if (typeof parentId !== 'string')
     return { kind: 'reference_invalid', message: 'parent_id must be a string or null' };
-  if (categoryId && parentId === categoryId)
+  const normalizedParentId = parentId.trim();
+  if (!normalizedParentId) return null;
+  if (categoryId && normalizedParentId === categoryId)
     return { kind: 'cycle', message: 'Category cannot be its own parent' };
 
-  let current = db
+  const parent = db
     .prepare(
       'SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1',
     )
-    .get(parentId) as any;
-  if (!current)
+    .get(normalizedParentId) as { id: string; parent_id: string | null } | undefined;
+  if (!parent)
     return { kind: 'reference_invalid', message: 'Parent category not found or inactive' };
 
+  let current: { id: string; parent_id: string | null } | undefined = parent;
   const seen = new Set<string>();
   while (current?.parent_id) {
     if (categoryId && current.parent_id === categoryId)
@@ -136,9 +139,51 @@ function validateParentCategory(
     seen.add(current.parent_id);
     current = db
       .prepare('SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL')
-      .get(current.parent_id) as any;
+      .get(current.parent_id) as { id: string; parent_id: string | null } | undefined;
+  }
+
+  if (parent.parent_id !== null) {
+    return {
+      kind: 'reference_invalid',
+      message: 'Parent category must be a root category (maximum 2 levels supported)',
+    };
+  }
+
+  if (categoryId) {
+    const { count: childCount } = db
+      .prepare(
+        'SELECT COUNT(*) as count FROM categories WHERE parent_id = ? AND deleted_at IS NULL',
+      )
+      .get(categoryId) as { count: number };
+    if (childCount > 0) {
+      return {
+        kind: 'reference_invalid',
+        message: 'Cannot assign a parent to a category that has subcategories',
+      };
+    }
   }
   return null;
+}
+
+function findDuplicateSiblingCategory(
+  db: ReturnType<typeof getDatabase>,
+  name: string,
+  parentId: string | null,
+  excludeCategoryId?: string,
+): { id: string; name: string } | undefined {
+  const normalized = name.trim().toLowerCase();
+  return db
+    .prepare(
+      `SELECT id, name FROM categories
+       WHERE deleted_at IS NULL
+         AND COALESCE(parent_id, '') = COALESCE(?, '')
+         AND LOWER(TRIM(name)) = ?
+         AND (? IS NULL OR id != ?)
+       LIMIT 1`,
+    )
+    .get(parentId, normalized, excludeCategoryId ?? null, excludeCategoryId ?? null) as
+    | { id: string; name: string }
+    | undefined;
 }
 
 function captureParentCategoryRejection(kind: 'reference_invalid' | 'cycle'): void {
@@ -200,26 +245,6 @@ class CategoryDeleteValidationError extends Error {
   }
 }
 
-function isDescendantCategory(
-  db: ReturnType<typeof getDatabase>,
-  categoryId: string,
-  possibleDescendantId: string,
-): boolean {
-  let current = db
-    .prepare('SELECT parent_id FROM categories WHERE id = ? AND deleted_at IS NULL')
-    .get(possibleDescendantId) as any;
-  const seen = new Set<string>();
-  while (current?.parent_id) {
-    if (current.parent_id === categoryId) return true;
-    if (seen.has(current.parent_id)) return false;
-    seen.add(current.parent_id);
-    current = db
-      .prepare('SELECT parent_id FROM categories WHERE id = ? AND deleted_at IS NULL')
-      .get(current.parent_id) as any;
-  }
-  return false;
-}
-
 function serializeCategory(category: any): any {
   if (!category) return category;
   return {
@@ -279,7 +304,36 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
     const allCategories = [...categories, ...[...childRowsByParent.values()].flat()];
     const addonGroupIdsByCategory = loadAddonGroupIdsByCategory(db, allCategories);
 
-    const categoriesWithChildren = categories.map((cat) =>
+    let orderedCategories = categories;
+    if (req.query.root !== 'true' && !req.query.parent_id && categories.length > 1) {
+      const categoryById = new Map(categories.map((cat) => [cat.id, cat]));
+      const childrenInResult = new Map<string, any[]>();
+      const roots: any[] = [];
+      for (const cat of categories) {
+        if (cat.parent_id && categoryById.has(cat.parent_id) && cat.parent_id !== cat.id) {
+          const list = childrenInResult.get(cat.parent_id) || [];
+          list.push(cat);
+          childrenInResult.set(cat.parent_id, list);
+        } else {
+          roots.push(cat);
+        }
+      }
+      const visited = new Set<string>();
+      const flattened: any[] = [];
+      const visit = (cat: any) => {
+        if (visited.has(cat.id)) return;
+        visited.add(cat.id);
+        flattened.push(cat);
+        for (const child of childrenInResult.get(cat.id) || []) {
+          visit(child);
+        }
+      };
+      for (const root of roots) visit(root);
+      for (const cat of categories) visit(cat);
+      orderedCategories = flattened;
+    }
+
+    const categoriesWithChildren = orderedCategories.map((cat) =>
       serializeCategory({
         ...cat,
         addon_group_ids: addonGroupIdsByCategory.get(cat.id) || [],
@@ -350,6 +404,15 @@ function createCategory(req: Request, res: Response) {
     if (parentError) {
       captureParentCategoryRejection(parentError.kind);
       return res.status(400).json({ error: parentError.message });
+    }
+
+    const normalizedParentId = normalizeOptionalString(parent_id);
+    if (findDuplicateSiblingCategory(db, categoryName, normalizedParentId)) {
+      return res.status(400).json({
+        error: normalizedParentId
+          ? 'A subcategory with this name already exists under the selected parent'
+          : 'A root category with this name already exists',
+      });
     }
 
     const addonGroupValidation = validateCategoryAddonGroupIds(db, addon_group_ids);
@@ -430,6 +493,35 @@ function updateCategory(req: Request, res: Response) {
       if (parentError) {
         captureParentCategoryRejection(parentError.kind);
         return res.status(400).json({ error: parentError.message });
+      }
+    }
+
+    const effectiveName = hasName ? categoryName! : String((category as any).name);
+    const effectiveParentId = hasOwn(req.body, 'parent_id')
+      ? normalizeOptionalString(parent_id)
+      : normalizeOptionalString((category as any).parent_id);
+    if (hasName || hasOwn(req.body, 'parent_id')) {
+      if (findDuplicateSiblingCategory(db, effectiveName, effectiveParentId, categoryId)) {
+        return res.status(400).json({
+          error: effectiveParentId
+            ? 'A subcategory with this name already exists under the selected parent'
+            : 'A root category with this name already exists',
+        });
+      }
+    }
+
+    if (hasOwn(req.body, 'is_active') && !is_active) {
+      const { count: childCount } = db
+        .prepare(
+          'SELECT COUNT(*) as count FROM categories WHERE parent_id = ? AND deleted_at IS NULL',
+        )
+        .get(categoryId) as { count: number };
+      if (childCount > 0) {
+        return res.status(400).json({
+          error:
+            'Cannot deactivate a category that has subcategories. Move or delete its subcategories first.',
+          childCount,
+        });
       }
     }
 
@@ -533,7 +625,17 @@ function deleteCategory(req: Request, res: Response) {
       )
       .get(categoryId) as { count: number };
 
-    if ((productCount > 0 || childCount > 0) && !action) {
+    if (childCount > 0) {
+      captureCategoryDeleteRejection('requires_resolution');
+      return res.status(400).json({
+        error:
+          'Cannot delete a category that has subcategories. Move or delete its subcategories first.',
+        productCount,
+        childCount,
+      });
+    }
+
+    if (productCount > 0 && !action) {
       captureCategoryDeleteRejection('requires_resolution');
       return res.status(400).json({
         error: 'Category has active product(s) or child categories. Choose an action.',
@@ -562,25 +664,13 @@ function deleteCategory(req: Request, res: Response) {
             'target_invalid',
             'Target category not found or deleted',
           );
-        if (isDescendantCategory(db, categoryId, reassign_to)) {
-          throw new CategoryDeleteValidationError(
-            'target_cycle',
-            'Cannot reassign a category to one of its descendants',
-          );
-        }
         db.prepare(
           'UPDATE products SET category_id = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL',
-        ).run(reassign_to, now(), categoryId);
-        db.prepare(
-          'UPDATE categories SET parent_id = ?, updated_at = ? WHERE parent_id = ? AND deleted_at IS NULL',
         ).run(reassign_to, now(), categoryId);
       } else if (action === 'delete_all') {
         db.prepare(
           'UPDATE products SET deleted_at = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL',
         ).run(now(), now(), categoryId);
-        db.prepare(
-          'UPDATE categories SET parent_id = NULL, updated_at = ? WHERE parent_id = ? AND deleted_at IS NULL',
-        ).run(now(), categoryId);
       } else if (!action && productCount === 0 && childCount === 0) {
         // Empty categories have no dependent rows to resolve.
       } else {

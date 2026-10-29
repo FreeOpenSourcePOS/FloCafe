@@ -1592,7 +1592,9 @@
     "variantToggle": "Dieses Produkt hat Varianten (z. B. Größe, Belag, Geschmack)",
     "variantsSection": "Varianten",
     "variantDeactivateConfirm": "Diese Variante wird beim Speichern deaktiviert und kann auf diesem Bildschirm nicht wiederhergestellt werden.",
-    "variantRemoveAllConfirm": "Wenn Sie dies abschalten, werden alle Varianten dieses Produkts deaktiviert. Frühere Bestellungen behalten sie."
+    "variantRemoveAllConfirm": "Wenn Sie dies abschalten, werden alle Varianten dieses Produkts deaktiviert. Frühere Bestellungen behalten sie.",
+    "parentCategory": "Übergeordnete Kategorie",
+    "parentCategoryNone": "Keine (Hauptkategorie)"
   },
   "productAnalytics": {
     "title": "Hilf uns zu entscheiden, was wir als Nächstes bauen",

@@ -1592,7 +1592,9 @@
     "variantToggle": "이 상품에는 옵션이 있습니다 (예: 사이즈, 크러스트, 맛)",
     "variantsSection": "변형",
     "variantDeactivateConfirm": "저장하면 이 옵션이 비활성화되며 이 화면에서 복원할 수 없습니다.",
-    "variantRemoveAllConfirm": "끄면 이 상품의 모든 옵션이 비활성화됩니다. 기존 주문에는 그대로 남습니다."
+    "variantRemoveAllConfirm": "끄면 이 상품의 모든 옵션이 비활성화됩니다. 기존 주문에는 그대로 남습니다.",
+    "parentCategory": "상위 카테고리",
+    "parentCategoryNone": "없음 (최상위)"
   },
   "productAnalytics": {
     "title": "다음에 무엇을 만들지 함께 정해 주세요",

@@ -1592,7 +1592,9 @@
     "variantToggle": "Dit product heeft varianten (bijv. formaat, korst, smaak)",
     "variantsSection": "Varianten",
     "variantDeactivateConfirm": "Deze variant wordt bij opslaan gedeactiveerd en kan vanaf dit scherm niet worden hersteld.",
-    "variantRemoveAllConfirm": "Als u dit uitschakelt, worden alle varianten van dit product gedeactiveerd. Eerdere bestellingen behouden ze."
+    "variantRemoveAllConfirm": "Als u dit uitschakelt, worden alle varianten van dit product gedeactiveerd. Eerdere bestellingen behouden ze.",
+    "parentCategory": "Bovenliggende categorie",
+    "parentCategoryNone": "Geen (hoofdniveau)"
   },
   "productAnalytics": {
     "title": "Help ons bepalen wat we hierna bouwen",

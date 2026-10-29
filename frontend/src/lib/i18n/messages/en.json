@@ -1592,7 +1592,9 @@
     "variantToggle": "This product has variants (e.g. Size, Crust, Flavor)",
     "variantsSection": "Variants",
     "variantDeactivateConfirm": "This variant is deactivated on save and cannot be restored from this screen.",
-    "variantRemoveAllConfirm": "Turning this off deactivates every variant of this product. Historical orders keep them."
+    "variantRemoveAllConfirm": "Turning this off deactivates every variant of this product. Historical orders keep them.",
+    "parentCategory": "Parent Category",
+    "parentCategoryNone": "None (Top-level)"
   },
   "productAnalytics": {
     "title": "Help us decide what to build next",

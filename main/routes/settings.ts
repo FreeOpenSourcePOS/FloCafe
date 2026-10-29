@@ -176,6 +176,7 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   printer_arabic_shaping: 'false',
   split_checks_enabled: 'false',
   card_transaction_id_required: 'false',
+  multi_counter_enabled: 'false',
   require_open_shift: 'false',
   one_shift_per_staff: 'false',
   // Print language policies (#441) — inherit store language, no second
@@ -1906,6 +1907,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'server_app_bill_printing_enabled',
   'split_checks_enabled',
   'card_transaction_id_required',
+  'multi_counter_enabled',
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
   Z_REPORT_LANGUAGE_POLICY_KEY,
@@ -2210,8 +2212,17 @@ router.put(
       if (
         req.params.key === 'require_open_shift' ||
         req.params.key === 'one_shift_per_staff' ||
-        req.params.key === 'card_transaction_id_required'
+        req.params.key === 'card_transaction_id_required' ||
+        req.params.key === 'multi_counter_enabled'
       ) {
+        if (req.params.key === 'multi_counter_enabled') {
+          const callerUser = (req as Request & { user?: { role?: string } }).user;
+          if (callerUser?.role !== 'owner') {
+            return res
+              .status(403)
+              .json({ error: 'Only the store owner can modify counter configuration' });
+          }
+        }
         if (value !== true && value !== false && value !== 'true' && value !== 'false') {
           return res.status(400).json({ error: `${req.params.key} must be a boolean` });
         }

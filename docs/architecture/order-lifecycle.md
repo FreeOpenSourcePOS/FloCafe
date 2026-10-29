@@ -128,6 +128,47 @@ Lifecycle rules before and at release:
   collected funds requires refunding the collected amount in full through `/api/refunds` first (`409`
   with `REFUND_REQUIRED_BEFORE_CANCEL`), preserving bills and audit history.
 
+## Multi-counter ordering (create here, pay there)
+
+FloCafe supports owner-configured multi-counter ordering (`multi_counter_enabled`, disabled by
+default). In this workflow, separate physical terminals act as ordering stations, payment cashiers,
+or combined stations:
+
+- **Named counters and roles.** The store owner defines counters with roles: `ordering` (create order
+  and send to payment), `payment` (manage awaiting payment queue and take tender), or `combined`
+  (both standard checkout and send to payment). Each POS terminal selects its active counter,
+  remembered locally on that device.
+- **Workflow guidance without ownership gating.** Counter roles guide UI defaults, while staff
+  permissions remain authoritative. Staff can view and act on any order across counters; orders are
+  never ownership-gated.
+- **Real orders and bills.** "Send to payment" creates real `orders` and `bills` records, never
+  transient held-order JSON. Orders record `dispatch_policy = 'on_payment'` and start in
+  `checkout_stage = 'awaiting_payment'`.
+- **Supported order types.** Multi-counter checkout is supported for **takeaway and dine-in** orders.
+  Delivery orders cannot use "Send to payment" (`400`). Takeaway is the order type that can combine
+  both multi-counter checkout and scheduled kitchen release.
+- **Kitchen suppression prior to release.** Orders with `dispatch_policy = 'on_payment'` set
+  `release_status = 'scheduled'` and defer stock deduction, KDS display, active-order heartbeats, and
+  automatic KOT printing until full payment is collected.
+- **Shared transactional release gate.** When full payment across all bills settles:
+  - If unscheduled, the order is atomically released to the kitchen via `releaseScheduledOrder`.
+  - If scheduled for a future instant, `checkout_stage` transitions to `'paid'`, while
+    `release_status` stays `'scheduled'` until the scheduled instant arrives (or manual release is
+    triggered).
+  - Manual release (`POST /api/orders/:id/release`) on an unpaid `on_payment` order fails with `409`
+    (`ORDER_NOT_PAID`).
+  - Prepayment does not complete kitchen preparation (`orders.status` stays `'pending'`) and does
+    not clear occupied dine-in tables.
+- **Paid-but-blocked tickets.** If catalog preconditions or inventory levels fail at release time
+  after payment, the transaction atomically transitions `release_status = 'blocked'` with
+  `release_blocked_reason` without reverting the committed payment. The ticket remains clearly
+  visible in the payment queue for explicit staff retry after restocking or refund/cancellation.
+- **Shared LAN queue and QR ticket identification.** Terminals retrieve tickets via
+  `GET /api/orders/awaiting-payment` (cursor-paginated with counts) or lookup by ticket/order number
+  via `GET /api/orders/by-ticket/:ticket`. Tickets display a human-readable number and QR code
+  (`FLOCAFE-TICKET:<order_number>`), which carries zero authentication or payment authority, and can
+  be printed as a thermal ticket slip (`POST /api/printers/print-payment-ticket`).
+
 ## Discounts
 
 Three surfaces apply discounts, all gated by the discount permission for their scope and by the same

@@ -17,6 +17,7 @@ import {
   printReceiptDetailed,
   printKOTDetailed,
   printDeliverySlipDetailed,
+  printPaymentTicketDetailed,
   detectConnectedPrinters,
   prepareReceipt,
   escPosToText,
@@ -1523,6 +1524,114 @@ router.post(
       });
     } catch (error: unknown) {
       console.error('[Print Delivery Slip] Error:', error);
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }),
+);
+
+router.post(
+  '/print-payment-ticket',
+  requirePermission('printing.execute'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const orderId = req.body.orderId || req.body.order_id;
+      const printerId = req.body.printerId || req.body.printer_id;
+      const { useUnicode = false, preview = false } = req.body;
+      if (!orderId) {
+        return res.status(400).json({ error: 'orderId is required' });
+      }
+
+      const db = getDatabase();
+      let printer = printerId
+        ? db.prepare('SELECT * FROM printers WHERE id = ?').get(printerId)
+        : db
+            .prepare(
+              `SELECT * FROM printers
+               WHERE connection_type != 'webusb'
+               ORDER BY is_default DESC, name
+               LIMIT 1`,
+            )
+            .get();
+
+      if (!printer && preview === true) {
+        printer = { id: 0, name: 'Default 80mm Preview', paper_width: '80mm' };
+      }
+
+      if (!printer) {
+        return res
+          .status(400)
+          .json({ error: 'No default printer configured. Add a printer in Settings.' });
+      }
+
+      const order = getOrderWithItems(db, Number(orderId));
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      let tableName: string | null = null;
+      if (order.table_id) {
+        const tableRow = db.prepare('SELECT number FROM tables WHERE id = ?').get(order.table_id) as
+          | { number: string }
+          | undefined;
+        tableName = tableRow?.number ?? null;
+      }
+
+      const bills = db
+        .prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id ASC')
+        .all(order.id) as any[];
+      const balance = bills[0]?.balance ?? order.total;
+
+      const items = (order.items || []).map((item: any) => ({
+        product_name: item.product_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        total: item.total,
+      }));
+
+      const result = await printPaymentTicketDetailed(
+        {
+          id: order.id,
+          order_number: order.order_number,
+          type: order.type,
+          table_id: order.table_id,
+          table_name: tableName,
+          total: order.total,
+          created_at: order.created_at,
+          scheduled_for: order.scheduled_for,
+        },
+        items,
+        {
+          balance: Number(balance),
+          useUnicode,
+          targetPrinter: printer,
+          signal: getHttpRequestSignal(req),
+          preview: Boolean(preview),
+        },
+      );
+
+      if (preview && result.ok) {
+        return res.json({
+          success: true,
+          preview: true,
+          bytes: (result as any).bytes || [],
+          warnings: result.warnings || [],
+        });
+      }
+
+      if (result.ok) {
+        return res.json({ success: true, warnings: result.warnings || [] });
+      }
+      return res.status(502).json({
+        error: result.detail || 'Payment ticket print failed. Check printer connection.',
+        detail: result.detail,
+        failure_class: result.failureClass,
+        code: result.code,
+        correlation_id: result.correlationId,
+        stage: result.stage,
+      });
+    } catch (error: unknown) {
+      console.error('[Print Payment Ticket] Error:', error);
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }

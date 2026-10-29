@@ -594,7 +594,9 @@ router.post(
                             row[column] !== undefined &&
                             !(
                               tableName === 'orders' &&
-                              column === 'release_status' &&
+                              (column === 'release_status' ||
+                                column === 'checkout_stage' ||
+                                column === 'dispatch_policy') &&
                               row[column] === null
                             ),
                         )

@@ -40,6 +40,7 @@ import { whatsappRoutes } from './whatsapp';
 import { supportTicketRoutes } from './support-ticket';
 import { diagnosticsRoutes } from './diagnostics';
 import { authorizationRoutes } from './authorization';
+import { counterRoutes } from './counters';
 import { getDatabase, getSettingValue, getCachedPairingCode, setCachedPairingCode } from '../db';
 
 import { getActiveCountryPack } from '../services/tax';
@@ -146,6 +147,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/support-ticket', supportTicketRoutes);
   app.use('/api/diagnostics', diagnosticsRoutes);
   app.use('/api/authorization', authorizationRoutes);
+  app.use('/api/counters', counterRoutes);
 
   // Tax preview. Priced on every cart change in the prepaid checkout modal, so it
   // has to admit every role that can run a sale; `tax-packs.view-test` (owner and

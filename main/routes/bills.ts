@@ -27,9 +27,11 @@ import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import {
+  assertScheduledOrderUnpaidForEdit,
   hasRecordedOrderPayment,
   isScheduledOrderRow,
   isUnreleasedOrderRow,
+  releaseScheduledOrder,
 } from '../services/scheduled-orders';
 import {
   getOpenSession,
@@ -1290,6 +1292,74 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
       );
   }
 });
+
+export function createOrSyncBillForOrder(
+  db: ReturnType<typeof getDatabase>,
+  orderId: number | string,
+): any {
+  const existingBill = db
+    .prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id ASC LIMIT 1')
+    .get(orderId) as any;
+
+  if (existingBill) {
+    return parseRowJson(existingBill);
+  }
+
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+  if (!order) {
+    throw Object.assign(new Error(`Order ${orderId} not found`), { statusCode: 404 });
+  }
+
+  const billNumber = generateBillNumber();
+  const subtotal = order.subtotal || 0;
+  const taxAmount = order.tax_amount || 0;
+  const discountAmount = order.discount_amount || 0;
+  const deliveryCharge = order.delivery_charge || 0;
+  const packagingCharge = order.packaging_charge || 0;
+  const serviceCharge = order.service_charge || 0;
+  const currency = getTenantCurrency();
+  const pack = getActiveCountryPack(getSettingValue('country') || '');
+  const { total, adjustment: roundOff } = applyPayableRounding(
+    order.total || 0,
+    pack,
+    currency,
+  );
+
+  const runResult = db
+    .prepare(`
+    INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
+      discount_amount, discount_type, discount_value, discount_reason,
+      delivery_charge, packaging_charge, service_charge, charges_breakdown, round_off, total, paid_amount, balance, payment_status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
+  `)
+    .run(
+      billNumber,
+      orderId,
+      order.customer_id,
+      subtotal,
+      taxAmount,
+      order.tax_breakdown,
+      order.tax_snapshot,
+      discountAmount,
+      order.discount_type,
+      order.discount_value,
+      order.discount_reason,
+      deliveryCharge,
+      packagingCharge,
+      serviceCharge,
+      order.charges_breakdown ?? null,
+      roundOff,
+      total,
+      0,
+      total,
+      now(),
+      now(),
+    );
+
+  return parseRowJson(
+    db.prepare('SELECT * FROM bills WHERE id = ?').get(runResult.lastInsertRowid),
+  );
+}
 
 export function allocateMinorUnits(sourceMinor: number, weights: number[]): number[] {
   const n = weights.length;
@@ -3530,12 +3600,21 @@ export function completeExactBalanceSettlement(
   let orderRow: any = null;
   if (orderFullyPaid) {
     orderRow = db
-      .prepare('SELECT status, table_id, customer_id, release_status FROM orders WHERE id = ?')
+      .prepare(
+        'SELECT id, status, table_id, customer_id, release_status, dispatch_policy, checkout_stage, scheduled_for FROM orders WHERE id = ?',
+      )
       .get(bill.order_id) as any;
+    if (orderRow && orderRow.checkout_stage === 'awaiting_payment') {
+      db.prepare("UPDATE orders SET checkout_stage = 'paid', updated_at = ? WHERE id = ?").run(
+        changedAt,
+        orderRow.id,
+      );
+    }
     const canComplete =
       orderRow &&
       !['cancelled', 'completed'].includes(orderRow.status) &&
-      !isUnreleasedOrderRow(orderRow);
+      !isUnreleasedOrderRow(orderRow) &&
+      orderRow.dispatch_policy !== 'on_payment';
     if (canComplete) {
       db.prepare(
         "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
@@ -3592,6 +3671,38 @@ export function completeExactBalanceSettlement(
   return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId));
 }
 
+export async function handlePostPaymentRelease(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number,
+  actorUserId?: string | null,
+): Promise<void> {
+  const order = db
+    .prepare(
+      'SELECT id, release_status, dispatch_policy, checkout_stage, scheduled_for FROM orders WHERE id = ?',
+    )
+    .get(orderId) as any;
+  if (!order || order.dispatch_policy !== 'on_payment' || order.checkout_stage !== 'paid') {
+    return;
+  }
+  if (order.release_status !== 'scheduled') {
+    return;
+  }
+  if (order.scheduled_for) {
+    const scheduledTime = new Date(order.scheduled_for).getTime();
+    if (scheduledTime > Date.now()) {
+      return;
+    }
+  }
+  try {
+    await releaseScheduledOrder(db, order.id, {
+      trigger: 'payment',
+      actorUserId: actorUserId || null,
+    });
+  } catch (err) {
+    console.error(`[MultiCounter] Post-payment release failed for order ${order.id}:`, err);
+  }
+}
+
 function applyPaymentBatch(
   db: ReturnType<typeof getDatabase>,
   billId: string,
@@ -3609,6 +3720,7 @@ function applyPaymentBatch(
   bill: any;
   walletDebited: boolean;
   loyaltyPointsEarned: number;
+  orderFullyPaid?: boolean;
   kitchenDeliveryOverridden?: boolean;
 } {
   if (idempotencyKey && idempotencyUserId) {
@@ -3722,14 +3834,24 @@ function applyPaymentBatch(
         `SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`,
       )
       .get(bill.order_id, bill.id);
-    if (!unpaidSibling) {
+    const orderFullyPaid = !unpaidSibling;
+    if (orderFullyPaid) {
       const order = db
-        .prepare('SELECT status, table_id, customer_id, release_status FROM orders WHERE id = ?')
+        .prepare(
+          'SELECT id, status, table_id, customer_id, release_status, dispatch_policy, checkout_stage, scheduled_for FROM orders WHERE id = ?',
+        )
         .get(bill.order_id) as any;
+      if (order && order.checkout_stage === 'awaiting_payment') {
+        db.prepare("UPDATE orders SET checkout_stage = 'paid', updated_at = ? WHERE id = ?").run(
+          changedAt,
+          order.id,
+        );
+      }
       if (
         order &&
         !['cancelled', 'completed'].includes(order.status) &&
-        !isUnreleasedOrderRow(order)
+        !isUnreleasedOrderRow(order) &&
+        order.dispatch_policy !== 'on_payment'
       ) {
         db.prepare(
           "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
@@ -3783,6 +3905,7 @@ function applyPaymentBatch(
       bill: parseRowJson(freshBill),
       walletDebited: false,
       loyaltyPointsEarned,
+      orderFullyPaid,
       ...(kitchenStatus.overridden ? { kitchenDeliveryOverridden: true } : {}),
     };
     if (idempotencyKey && requestHash && idempotencyUserId) {
@@ -3878,20 +4001,32 @@ function applyPaymentBatch(
     billId,
   );
   let loyaltyPointsEarned = 0;
+  let orderFullyPaid = false;
   if (paymentStatus === 'paid') {
     const unpaidSibling = db
       .prepare(
         `SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`,
       )
       .get(bill.order_id, bill.id);
-    const orderFullyPaid = !unpaidSibling;
+    orderFullyPaid = !unpaidSibling;
     if (orderFullyPaid) {
       // Payment must not resurrect terminal orders (VALID_TRANSITIONS.cancelled = []).
       const order = db
-        .prepare('SELECT status, table_id, release_status FROM orders WHERE id = ?')
+        .prepare(
+          'SELECT id, status, table_id, release_status, dispatch_policy, checkout_stage, scheduled_for FROM orders WHERE id = ?',
+        )
         .get(bill.order_id) as any;
+      if (order && order.checkout_stage === 'awaiting_payment') {
+        db.prepare("UPDATE orders SET checkout_stage = 'paid', updated_at = ? WHERE id = ?").run(
+          changedAt,
+          order.id,
+        );
+      }
       const canComplete =
-        order && !['cancelled', 'completed'].includes(order.status) && !isUnreleasedOrderRow(order);
+        order &&
+        !['cancelled', 'completed'].includes(order.status) &&
+        !isUnreleasedOrderRow(order) &&
+        order.dispatch_policy !== 'on_payment';
       if (canComplete) {
         db.prepare(
           "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
@@ -3933,6 +4068,7 @@ function applyPaymentBatch(
     bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)),
     walletDebited,
     loyaltyPointsEarned,
+    orderFullyPaid,
     ...(kitchenStatus.overridden ? { kitchenDeliveryOverridden: true } : {}),
   };
   if (idempotencyKey && requestHash && idempotencyUserId) {
@@ -4156,6 +4292,10 @@ router.post(
       );
       operationCommitted = true;
       resolveAttempt?.(result);
+
+      if (result.orderFullyPaid) {
+        await handlePostPaymentRelease(db, result.bill.order_id, idempotencyUserId);
+      }
 
       const billStatus = (result.bill as { payment_status?: string } | undefined)?.payment_status;
       if (billStatus === 'paid') {
@@ -4417,6 +4557,10 @@ router.post(
       );
       operationCommitted = true;
       resolveAttempt?.(result);
+
+      if (result.orderFullyPaid) {
+        await handlePostPaymentRelease(db, result.bill.order_id, idempotencyUserId);
+      }
 
       const billStatus = (result.bill as { payment_status?: string } | undefined)?.payment_status;
       if (billStatus === 'paid') {
@@ -4841,6 +4985,7 @@ router.post(
             { statusCode: 409, diagnosticCode: 'order_not_discountable' },
           );
         }
+        assertScheduledOrderUnpaidForEdit(db, currentBill.order_id, currentOrder);
 
         const freshTotals = calculateOrderTotals(db, currentBill.order_id);
         let freshDiscountAmount: number;

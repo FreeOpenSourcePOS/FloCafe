@@ -503,3 +503,47 @@ npm run test:issue-248-csv
 **Change policy:** changing the `quote-v1` encoding rules or stripping unmarked apostrophes without
 existing-record proof requires an explicit product decision, because either change can silently
 rename catalog items or create duplicate categories and add-ons during CSV imports.
+
+---
+
+## Multi-counter ordering and prepayment lifecycle
+
+**Rule:** Multi-counter ordering separates order capture ("Send to payment") from cashier settlement:
+
+1. **Prepayment never marks orders complete or frees dine-in tables:** Completing payment across all
+   applicable bills for an `on_payment` order transitions its `checkout_stage` to `'paid'` and
+   triggers release to the kitchen (if unscheduled or scheduled instant is reached), but leaves its
+   kitchen `status = 'pending'`. The order completes only when kitchen delivery is marked completed
+   or table settlement concludes; dine-in tables remain occupied (`occupied = 1`) until normal
+   service concludes.
+2. **Orders and bills are real database entities, never held-order JSON:** An order sent to payment is
+   stored immediately in `orders`, `order_items`, and `bills` with quoted pricing snapshots.
+3. **Multi-counter orders are never ownership-gated:** Any staff member at any payment or combined
+   counter can view, search, and settle any awaiting-payment order.
+4. **Committed payment survives release failures:** If inventory deduction or catalog validation
+   fails during kitchen release after payment, the collected payment is never rolled back or
+   discarded; the order transitions to `release_status = 'blocked'` (`paid-but-blocked`) and remains
+   clearly visible in the queue for staff resolution (manual release retry or refund/cancellation).
+5. **Prepayment edits are locked after initial payment:** Item additions, item edits, discounts, and
+   customer adjustments are permitted on an `awaiting_payment` order only while no payments have
+   been collected.
+
+**Reason:** In busy multi-counter environments (cafes, food courts, quick-service diners), prepaying
+customers must not trigger kitchen completion notifications before food is prepared, and table
+tracking for dine-in guests must not drop off POS maps while guests are dining. Payment transactions
+cannot be rolled back due to kitchen inventory errors; staff need visibility into prepaid orders
+needing stock resolution.
+
+**Enforced by:** `main/routes/bills.ts` (`completeExactBalanceSettlement`, `applyPaymentBatch`,
+`handlePostPaymentRelease`), `main/services/scheduled-orders.ts` (`releaseScheduledOrder`,
+`assertScheduledOrderUnpaidForEdit`), `main/routes/orders.ts` (`POST /api/orders`,
+`GET /api/orders/awaiting-payment`, `GET /api/orders/by-ticket/:ticket`).
+
+**How to verify:**
+
+```sh
+npm run test:multi-counter-ordering
+```
+
+**Change policy:** Altering the prepayment lifecycle to auto-complete orders or bypass inventory
+release gates requires an explicit product architecture review.

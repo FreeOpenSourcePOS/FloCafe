@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
+import QRCode from 'qrcode';
 import {
   getDatabase,
   generateOrderNumber,
@@ -101,6 +102,7 @@ import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countr
 import {
   checkKitchenDeliveryStatus,
   completeExactBalanceSettlement,
+  createOrSyncBillForOrder,
   getTenantCurrency,
   preVerifyKitchenDeliveryPin,
   syncUnpaidBillsForOrder,
@@ -1537,6 +1539,199 @@ router.get(
 );
 
 router.get(
+  '/awaiting-payment',
+  orderReadRateLimit,
+  requirePermission('orders.read'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+
+      let limit = 50;
+      const rawLimit = req.query.limit;
+      if (typeof rawLimit === 'string') {
+        const parsedLimit = parseInt(rawLimit, 10);
+        if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+          limit = Math.min(parsedLimit, 200);
+        }
+      }
+
+      const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+      let cursor: { rank: number; created_at: string; id: number } | null = null;
+      if (typeof req.query.cursor === 'string' && req.query.cursor.trim()) {
+        try {
+          const decoded = JSON.parse(
+            Buffer.from(req.query.cursor.trim(), 'base64').toString('utf8'),
+          );
+          if (
+            typeof decoded.rank === 'number' &&
+            typeof decoded.created_at === 'string' &&
+            typeof decoded.id === 'number'
+          ) {
+            cursor = decoded;
+          }
+        } catch {
+          return res.status(400).json({ error: 'Invalid cursor', code: 'INVALID_CURSOR' });
+        }
+      }
+
+      const countRow = db
+        .prepare(
+          `SELECT
+             COUNT(CASE WHEN o.checkout_stage = 'awaiting_payment' THEN 1 END) AS awaiting_count,
+             COUNT(CASE WHEN o.release_status = 'blocked' THEN 1 END) AS blocked_count
+           FROM orders o
+           WHERE (o.checkout_stage = 'awaiting_payment' OR o.release_status = 'blocked')
+             AND o.status NOT IN ('cancelled', 'completed')`,
+        )
+        .get() as { awaiting_count: number; blocked_count: number } | undefined;
+
+      const awaiting_count = countRow?.awaiting_count ?? 0;
+      const blocked_count = countRow?.blocked_count ?? 0;
+      const total_count = awaiting_count + blocked_count;
+
+      let sql = `
+        SELECT
+          o.id,
+          o.order_number,
+          o.type,
+          o.table_id,
+          t.number AS table_name,
+          o.customer_id,
+          c.name AS customer_name,
+          c.phone AS customer_phone,
+          o.scheduled_for,
+          o.total,
+          o.checkout_stage,
+          o.dispatch_policy,
+          o.release_status,
+          o.release_blocked_reason,
+          o.created_at,
+          o.updated_at,
+          b.id AS bill_id,
+          b.bill_number,
+          COALESCE(b.paid_amount, 0) AS paid_amount,
+          COALESCE(b.balance, o.total) AS balance,
+          COALESCE(b.payment_status, 'unpaid') AS bill_payment_status
+        FROM orders o
+        LEFT JOIN tables t ON t.id = o.table_id
+        LEFT JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN bills b ON b.id = (
+          SELECT id FROM bills WHERE order_id = o.id ORDER BY id ASC LIMIT 1
+        )
+        WHERE (o.checkout_stage = 'awaiting_payment' OR o.release_status = 'blocked')
+          AND o.status NOT IN ('cancelled', 'completed')
+      `;
+      const params: unknown[] = [];
+
+      if (search) {
+        const searchPattern = `%${search.replace(/[%_]/g, '\\$&')}%`;
+        sql += ` AND (o.order_number LIKE ? ESCAPE '\\' OR t.number LIKE ? ESCAPE '\\' OR c.name LIKE ? ESCAPE '\\' OR c.phone LIKE ? ESCAPE '\\')`;
+        params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+      }
+
+      if (cursor) {
+        sql += ` AND (
+          (CASE WHEN o.release_status = 'blocked' THEN 0 ELSE 1 END > ?)
+          OR (
+            (CASE WHEN o.release_status = 'blocked' THEN 0 ELSE 1 END = ?)
+            AND (
+              (o.created_at > ?)
+              OR (o.created_at = ? AND o.id > ?)
+            )
+          )
+        )`;
+        params.push(cursor.rank, cursor.rank, cursor.created_at, cursor.created_at, cursor.id);
+      }
+
+      sql += ` ORDER BY CASE WHEN o.release_status = 'blocked' THEN 0 ELSE 1 END ASC,
+                        o.created_at ASC,
+                        o.id ASC
+               LIMIT ?`;
+      params.push(limit + 1);
+
+      const rows = (db.prepare(sql).all(...params) as Record<string, unknown>[]).map(parseRowJson);
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const next_cursor =
+        hasMore && pageRows.length > 0
+          ? Buffer.from(
+              JSON.stringify({
+                rank: pageRows[pageRows.length - 1].release_status === 'blocked' ? 0 : 1,
+                created_at: String(pageRows[pageRows.length - 1].created_at || ''),
+                id: Number(pageRows[pageRows.length - 1].id),
+              }),
+              'utf8',
+            ).toString('base64')
+          : null;
+
+      res.json({
+        orders: pageRows,
+        tickets: pageRows,
+        next_cursor,
+        has_more: hasMore,
+        awaiting_count,
+        blocked_count,
+        total_count,
+        counts: {
+          awaiting_count,
+          blocked_count,
+          total_count,
+        },
+      });
+    } catch (error: unknown) {
+      console.error('[API] Awaiting payment queue error:', error);
+      res.status(500).json({ error: 'Failed to load awaiting payment queue' });
+    }
+  },
+);
+
+router.get(
+  '/by-ticket/:ticket',
+  orderReadRateLimit,
+  requirePermission('orders.read'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const rawTicket = String(req.params.ticket || '').trim();
+      const cleanTicket = rawTicket.replace(/^FLOCAFE-TICKET:/i, '').trim();
+
+      if (!cleanTicket) {
+        return res.status(400).json({ error: 'Ticket number is required' });
+      }
+
+      const orderRow = db
+        .prepare('SELECT * FROM orders WHERE order_number = ? OR id = ?')
+        .get(cleanTicket, cleanTicket) as any;
+
+      if (!orderRow) {
+        return res.status(404).json({ error: 'Ticket not found' });
+      }
+
+      const [hydrated] = batchHydrateOrders(db, [parseRowJson(orderRow)]);
+      let bills = (
+        db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id ASC').all(orderRow.id) as any[]
+      ).map(parseRowJson);
+
+      let primaryBill = bills[0] || null;
+      if (!primaryBill && orderRow.dispatch_policy === 'on_payment') {
+        primaryBill = createOrSyncBillForOrder(db, orderRow.id);
+        bills = [primaryBill];
+      }
+
+      res.json({
+        order: hydrated,
+        bill: primaryBill,
+        bills,
+      });
+    } catch (error: unknown) {
+      console.error('[API] Ticket lookup error:', error);
+      res.status(500).json({ error: 'Failed to lookup ticket' });
+    }
+  },
+);
+
+router.get(
   '/:id',
   orderReadRateLimit,
   requirePermission('orders.read'),
@@ -1564,7 +1759,7 @@ router.post(
   '/',
   orderWriteRateLimit,
   requirePermission('orders.create'),
-  (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     let operationCommitted = false;
     try {
       const body = req.body || {};
@@ -1586,6 +1781,8 @@ router.post(
         delivery_note,
         waived_charge_ids,
         opted_in_charge_ids,
+        dispatch_policy,
+        checkout_stage,
       } = body;
       // Carries optional service charge without automatic calculation policy.
       const idempotencyKey = orderIdempotencyKey(req);
@@ -1630,6 +1827,48 @@ router.post(
               'fc.backend.order.create.other_validation',
               'not_applied',
               'Valid type is required (dine_in, takeaway, delivery, online)',
+            ),
+          );
+      }
+
+      if (
+        dispatch_policy !== undefined &&
+        dispatch_policy !== null &&
+        !['immediate', 'on_payment'].includes(dispatch_policy)
+      ) {
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.create.other_validation',
+              'not_applied',
+              'Valid dispatch_policy is required (immediate, on_payment)',
+            ),
+          );
+      }
+      const isOnPayment = dispatch_policy === 'on_payment';
+      if (isOnPayment && type === 'delivery') {
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.create.other_validation',
+              'not_applied',
+              'Multi-counter payment flow is not supported for delivery orders',
+            ),
+          );
+      }
+      if (isOnPayment && !['takeaway', 'dine_in'].includes(type)) {
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.create.other_validation',
+              'not_applied',
+              'Multi-counter payment flow is only supported for takeaway and dine-in orders',
             ),
           );
       }
@@ -1814,6 +2053,7 @@ router.post(
         });
       }
       const isScheduledCreation = Boolean(scheduledOrderMeta);
+      const shouldDeferRelease = isScheduledCreation || isOnPayment;
 
       // Free text that ends up printed on a courier slip, so it is capped and
       // validated the same way order notes are, at this boundary.
@@ -1859,7 +2099,7 @@ router.post(
         for (const item of items) {
           validateItemNotes(db, item.special_instructions);
           item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity, {
-            deferStockDeduction: isScheduledCreation,
+            deferStockDeduction: shouldDeferRelease,
           });
         }
       } catch (err: any) {
@@ -1961,8 +2201,9 @@ router.post(
           packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
           service_charge, service_charge_tax_category_id, online_platform, external_order_id,
           scheduled_for, release_status, released_at, release_blocked_reason,
+          checkout_stage, dispatch_policy,
           status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'pending', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 'pending', ?, ?)
       `)
           .run(
             orderNumber,
@@ -1985,7 +2226,9 @@ router.post(
             onlinePlatform || null,
             externalOrderId || null,
             scheduledOrderMeta ? scheduledOrderMeta.scheduledForUtc : null,
-            isScheduledCreation ? 'scheduled' : 'released',
+            shouldDeferRelease ? 'scheduled' : 'released',
+            isOnPayment ? 'awaiting_payment' : (checkout_stage || 'paid'),
+            isOnPayment ? 'on_payment' : (dispatch_policy || 'immediate'),
             now(),
             now(),
           );
@@ -2056,7 +2299,7 @@ router.post(
             );
             unitPrice = priceOverride.price;
           }
-          const deduction = isScheduledCreation
+          const deduction = shouldDeferRelease
             ? null
             : resolveInventoryDeduction(product, quantity, variant);
           if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
@@ -2177,7 +2420,7 @@ router.post(
           subtotal += itemSubtotal;
 
           const itemCreatedAt = now();
-          const recipeSnapshot = isScheduledCreation
+          const recipeSnapshot = shouldDeferRelease
             ? null
             : buildRecipeSnapshot(db, product.id, quantity, variant?.recipe_multiplier ?? 1);
           const { ingredientCost, ingredientCostKnown } =
@@ -2232,7 +2475,7 @@ router.post(
             });
           }
 
-          if (!isScheduledCreation) {
+          if (!shouldDeferRelease) {
             if (deduction) {
               adjustProductStock(db, {
                 productId: deduction.productId,
@@ -2321,6 +2564,19 @@ router.post(
           });
         }
 
+        if (isOnPayment) {
+          createOrSyncBillForOrder(db, Number(orderId));
+          recordOrderAudit(db, {
+            orderId: Number(orderId),
+            actorUserId: authenticatedUserId,
+            action: 'order_sent_to_payment',
+            details: {
+              dispatch_policy: 'on_payment',
+              checkout_stage: 'awaiting_payment',
+            },
+          });
+        }
+
         const order = parseRowJson(
           db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId),
         ) as any;
@@ -2342,14 +2598,18 @@ router.post(
       operationCommitted = true;
 
       if (!result.idempotentReplay) {
-        if (isScheduledCreation) {
+        if (shouldDeferRelease) {
           notifyOrderUpdated();
         } else {
           notifyKdsUpdate();
         }
         cloudSync.recordOrderChanged(
           result.order.id,
-          isScheduledCreation ? 'order.scheduled' : 'order.created',
+          isOnPayment
+            ? 'order.sent_to_payment'
+            : isScheduledCreation
+              ? 'order.scheduled'
+              : 'order.created',
         );
 
         if (result.order.customer_id) {
@@ -2361,9 +2621,24 @@ router.post(
         }
       }
 
+      const qrPayload =
+        result.order?.dispatch_policy === 'on_payment'
+          ? `FLOCAFE-TICKET:${result.order.order_number}`
+          : null;
+      let qrDataUrl: string | null = null;
+      if (qrPayload) {
+        qrDataUrl = await QRCode.toDataURL(qrPayload, {
+          errorCorrectionLevel: 'M',
+          width: 256,
+        });
+      }
+
       res
         .status(result.idempotentReplay ? 200 : 201)
-        .json({ order: Object.assign({}, result.order, { items: result.orderItems }) });
+        .json({
+          order: Object.assign({}, result.order, { items: result.orderItems }),
+          ...(qrPayload ? { qr_payload: qrPayload, qr_data_url: qrDataUrl } : {}),
+        });
     } catch (error: any) {
       console.error('[Orders] Create error:', error);
       console.error('[API] Internal error:', error);
@@ -2388,7 +2663,7 @@ router.post(
           ),
         );
     }
-  },
+  }),
 );
 
 router.patch(

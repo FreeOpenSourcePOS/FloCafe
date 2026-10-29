@@ -103,6 +103,7 @@ import {
 import { Toggle } from '@/components/settings/Toggle';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import { QrMenuSettingsTab } from '@/components/settings/QrMenuSettingsTab';
+import { CountersSettingsTab } from '@/components/settings/CountersSettingsTab';
 import type { HealthCheckReport } from '@/types/electron';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -3967,6 +3968,12 @@ export default function SettingsPage() {
                 onClick={handleSettingsTabChange}
               />
             )}
+            <SettingsNavItem
+              label={t('tabCounters')}
+              value="counters"
+              active={activeTab}
+              onClick={handleSettingsTabChange}
+            />
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
@@ -4858,6 +4865,10 @@ export default function SettingsPage() {
                 void connectGoogleDrive();
               }}
             />
+          </TabsContent>
+
+          <TabsContent value="counters">
+            <CountersSettingsTab isOwner={isOwner} />
           </TabsContent>
 
           <TabsContent value="kds">

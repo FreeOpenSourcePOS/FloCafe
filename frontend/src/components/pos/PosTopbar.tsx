@@ -6,12 +6,14 @@ import CustomerTopItems from './CustomerTopItems';
 import {
   Banknote,
   CalendarClock,
+  CreditCard,
   EllipsisVertical,
   Maximize2,
   Minimize2,
   LockOpen,
   Lock,
   Printer,
+  Store,
   UtensilsCrossed,
 } from 'lucide-react';
 import {
@@ -20,7 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { Product } from '@/lib/types';
+import type { Product, Counter } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 
@@ -45,6 +47,13 @@ interface Props {
   scheduledOrderCount?: number;
   blockedScheduledCount?: number;
   onShowScheduledOrders?: () => void;
+  multiCounterEnabled?: boolean;
+  counters?: Counter[];
+  activeCounter?: Counter | null;
+  onSelectCounter?: (counter: Counter | null) => void;
+  paymentQueueCount?: number;
+  paymentQueueBlockedCount?: number;
+  onShowPaymentQueue?: () => void;
 }
 
 export default function PosTopbar({
@@ -68,8 +77,16 @@ export default function PosTopbar({
   scheduledOrderCount = 0,
   blockedScheduledCount = 0,
   onShowScheduledOrders,
+  multiCounterEnabled = false,
+  counters = [],
+  activeCounter = null,
+  onSelectCounter,
+  paymentQueueCount = 0,
+  paymentQueueBlockedCount = 0,
+  onShowPaymentQueue,
 }: Props) {
   const t = useTranslations('pos');
+  const tSettings = useTranslations('settings');
   const tDashboard = useTranslations('dashboard');
   const tProducts = useTranslations('products');
   const lock = useAuthStore((s) => s.lock);
@@ -136,6 +153,80 @@ export default function PosTopbar({
                 </span>
               )}
             </button>
+          )}
+
+          {multiCounterEnabled && onShowPaymentQueue && (
+            <button
+              type="button"
+              onClick={onShowPaymentQueue}
+              data-testid="pos-payment-queue-btn"
+              className={`touch-target shrink-0 gap-1.5 rounded-lg border px-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+                paymentQueueBlockedCount > 0
+                  ? 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300'
+                  : 'border-border bg-card text-foreground hover:bg-muted active:bg-muted'
+              }`}
+              title={t('paymentQueue')}
+              aria-label={t('paymentQueue')}
+            >
+              <CreditCard size={16} />
+              <span className="hidden sm:inline">{t('paymentQueue')}</span>
+              {paymentQueueCount > 0 && (
+                <span
+                  data-testid={
+                    paymentQueueBlockedCount > 0
+                      ? 'pos-payment-queue-blocked-badge'
+                      : 'pos-payment-queue-count-badge'
+                  }
+                  className={`inline-flex min-w-5 h-5 items-center justify-center rounded-full px-1.5 text-xs font-bold tabular-nums ${
+                    paymentQueueBlockedCount > 0 ? 'bg-red-600 text-white' : 'bg-brand text-white'
+                  }`}
+                >
+                  {paymentQueueCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {multiCounterEnabled && counters && counters.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  data-testid="pos-counter-selector-btn"
+                  className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-2.5 text-sm font-medium text-foreground hover:bg-muted active:bg-muted whitespace-nowrap"
+                  title={t('selectCounter')}
+                >
+                  <Store size={15} className="text-brand" />
+                  <span className="hidden sm:inline">
+                    {activeCounter ? activeCounter.name : t('selectCounter')}
+                  </span>
+                  {activeCounter && (
+                    <span className="text-[11px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground uppercase font-semibold">
+                      {activeCounter.role === 'ordering'
+                        ? tSettings('counterRoleOrdering')
+                        : activeCounter.role === 'payment'
+                          ? tSettings('counterRolePayment')
+                          : tSettings('counterRoleCombined')}
+                    </span>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {counters.map((c) => (
+                  <DropdownMenuItem
+                    key={c.id}
+                    data-testid={`pos-counter-option-${c.id}`}
+                    onClick={() => onSelectCounter?.(c)}
+                    className="flex items-center justify-between cursor-pointer"
+                  >
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground uppercase font-semibold">
+                      {c.role}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           <div className="shrink-0">

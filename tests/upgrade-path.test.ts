@@ -1284,6 +1284,91 @@ function main() {
   );
   closeDatabase();
 
+  // ── v124: multi-counter ordering columns and counters table ───────────────
+  const multiCounterMigrationIndex = MIGRATIONS.findIndex(
+    (migration: any) => migration.name === 'multi_counter_ordering',
+  );
+  assert.ok(multiCounterMigrationIndex > 0, 'the multi_counter_ordering migration is registered');
+  assert.equal(
+    MIGRATIONS[multiCounterMigrationIndex].version,
+    124,
+    'the multi_counter_ordering migration is v124',
+  );
+  const v123SnapDb = buildIdealSchemaDb(123);
+  try {
+    v123SnapDb
+      .prepare(
+        `INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
+         VALUES ('ORD-PRE-V124', 'takeaway', 150, 0, 150, 'pending', '2026-10-29 08:30:00', '2026-10-29 08:30:00')`,
+      )
+      .run();
+    fs.writeFileSync(upgradeDbPath, v123SnapDb.serialize());
+  } finally {
+    v123SnapDb.close();
+  }
+
+  initDatabase();
+  const postMultiCounterDb = getDatabase();
+  assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
+  const postV124OrderCols = (
+    postMultiCounterDb.prepare('PRAGMA table_info(orders)').all() as Array<{ name: string }>
+  ).map((col) => col.name);
+  for (const colName of ['checkout_stage', 'dispatch_policy']) {
+    assert.ok(
+      postV124OrderCols.includes(colName),
+      `v124 adds orders.${colName} during upgrade from v123`,
+    );
+  }
+  const counterCols = (
+    postMultiCounterDb.prepare('PRAGMA table_info(counters)').all() as Array<{ name: string }>
+  ).map((col) => col.name);
+  for (const colName of [
+    'id',
+    'name',
+    'role',
+    'is_active',
+    'sort_order',
+    'created_at',
+    'updated_at',
+  ]) {
+    assert.ok(counterCols.includes(colName), `v124 adds counters.${colName}`);
+  }
+  const postV124Indexes = (
+    postMultiCounterDb.prepare('PRAGMA index_list(orders)').all() as Array<{ name: string }>
+  ).map((idx) => idx.name);
+  assert.ok(
+    postV124Indexes.includes('idx_orders_checkout_queue'),
+    'v124 creates idx_orders_checkout_queue index on orders(checkout_stage, release_status)',
+  );
+  const migratedPreV124Order = postMultiCounterDb
+    .prepare(
+      `SELECT checkout_stage, dispatch_policy
+       FROM orders WHERE order_number = 'ORD-PRE-V124'`,
+    )
+    .get() as
+    | {
+        checkout_stage: string;
+        dispatch_policy: string;
+      }
+    | undefined;
+  assert.deepEqual(
+    migratedPreV124Order,
+    {
+      checkout_stage: 'paid',
+      dispatch_policy: 'immediate',
+    },
+    'existing pre-v124 orders default to checkout_stage = paid, dispatch_policy = immediate',
+  );
+  assert.equal(
+    runHealthCheck().findings.length,
+    0,
+    'runHealthCheck() reports zero drift after v124',
+  );
+  console.log(
+    '   ✓ v124 adds checkout_stage and dispatch_policy to orders, counters table, and preserves existing orders as paid/immediate',
+  );
+  closeDatabase();
+
   console.log('='.repeat(60));
   console.log('✅ Upgrade-path regression test passed');
 }

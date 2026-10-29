@@ -36,6 +36,9 @@ import PrepaidCheckoutModal, {
 } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
 import ScheduledOrdersDrawer from '@/components/pos/ScheduledOrdersDrawer';
+import { PaymentQueueDrawer } from '@/components/pos/PaymentQueueDrawer';
+import { PaymentTicketConfirmationModal } from '@/components/pos/PaymentTicketConfirmationModal';
+import type { Counter } from '@/lib/types';
 import { canPayScheduledOrder, isPayableBill } from '@/lib/order-payment-state';
 import RefundModal from '@/components/orders/RefundModal';
 import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/scheduled-time';
@@ -315,6 +318,18 @@ export default function POSPage() {
     order: Order;
     bills: Bill[];
   } | null>(null);
+
+  // Multi-counter ordering states
+  const [multiCounterEnabled, setMultiCounterEnabled] = useState(false);
+  const [counters, setCounters] = useState<Counter[]>([]);
+  const [activeCounter, setActiveCounter] = useState<Counter | null>(null);
+  const [showPaymentQueue, setShowPaymentQueue] = useState(false);
+  const [paymentQueueCount, setPaymentQueueCount] = useState(0);
+  const [paymentQueueBlockedCount, setPaymentQueueBlockedCount] = useState(0);
+  const [showTicketModal, setShowTicketModal] = useState(false);
+  const [ticketModalOrder, setTicketModalOrder] = useState<Order | null>(null);
+  const [ticketModalQrDataUrl, setTicketModalQrDataUrl] = useState<string | null>(null);
+  const [ticketModalQrPayload, setTicketModalQrPayload] = useState<string | null>(null);
   useEffect(() => {
     if (currentTenant?.timezone) {
       setStoreTimezone(currentTenant.timezone);
@@ -1275,6 +1290,32 @@ export default function POSPage() {
           })
           .catch(() => {});
 
+        api
+          .get('/settings/multi_counter_enabled')
+          .then((res) => {
+            const isEnabled = res.data.setting?.value === 'true';
+            setMultiCounterEnabled(isEnabled);
+            if (isEnabled) {
+              api
+                .get('/counters?is_active=true')
+                .then((cRes) => {
+                  const activeList: Counter[] = cRes.data.counters || [];
+                  setCounters(activeList);
+                  const tenantId = currentTenant?.id;
+                  const savedId =
+                    typeof window !== 'undefined'
+                      ? localStorage.getItem(`flocafe_active_counter_${tenantId}`)
+                      : null;
+                  if (savedId) {
+                    const matched = activeList.find((c) => c.id === savedId);
+                    if (matched) setActiveCounter(matched);
+                  }
+                })
+                .catch(() => {});
+            }
+          })
+          .catch(() => {});
+
         // 2. Fetch other menu data
         const requests: Promise<{ data: Record<string, unknown> }>[] = [
           api.get('/categories?active=1'),
@@ -1314,6 +1355,58 @@ export default function POSPage() {
     setPrinterUseUnicode,
     setPrinterArabicShaping,
   ]);
+
+  const handleSelectCounter = (counter: Counter | null) => {
+    setActiveCounter(counter);
+    const tenantId = currentTenant?.id;
+    if (typeof window !== 'undefined') {
+      if (counter) {
+        localStorage.setItem(`flocafe_active_counter_${tenantId}`, counter.id);
+      } else {
+        localStorage.removeItem(`flocafe_active_counter_${tenantId}`);
+      }
+    }
+  };
+
+  const refreshPaymentQueueCounts = useCallback(async () => {
+    try {
+      const { data } = await api.get('/orders/awaiting-payment', { params: { limit: '1' } });
+      const awaiting = Number(data.awaiting_count) || 0;
+      const blocked = Number(data.blocked_count) || 0;
+      setPaymentQueueCount(awaiting + blocked);
+      setPaymentQueueBlockedCount(blocked);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!multiCounterEnabled) return;
+    void refreshPaymentQueueCounts();
+    const interval = setInterval(() => {
+      void refreshPaymentQueueCounts();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [multiCounterEnabled, refreshPaymentQueueCounts]);
+
+  const handleLookupAndPayTicket = useCallback(
+    async (ticket: string) => {
+      try {
+        const { data } = await api.get(`/orders/by-ticket/${encodeURIComponent(ticket)}`);
+        if (data?.bill) {
+          setPaymentBill(data.bill as Bill);
+          toast.success(t('ticketLoaded', { number: data.order?.order_number || ticket }));
+        } else if (data?.order) {
+          await handlePayScheduledOrder(data.order as Order);
+        }
+      } catch (err: unknown) {
+        const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
+        toast.error(errData?.error || t('ticketNotFound'));
+      }
+    },
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [t],
+  );
 
   const handleProductClick = (product: Product, quantity = 1) => {
     if (!productNeedsCustomizer(product)) {
@@ -1373,12 +1466,18 @@ export default function POSPage() {
     showPrintMenuModal ||
     showKeyboardShortcutsModal ||
     showScheduledOrders ||
+    showPaymentQueue ||
+    showTicketModal ||
     !!refundModalTarget ||
     actionsMenuOpen ||
     isConfirmOpen;
   const anyModalOpen = showTablePicker || anyOtherModalOpen;
 
   useBarcodeScanner((code) => {
+    if (code.startsWith('FLOCAFE-TICKET:')) {
+      void handleLookupAndPayTicket(code);
+      return;
+    }
     const scan = resolveScannedProduct(code, products);
     if (scan) {
       if (scan.scaleBarcode) cart.addItem(scan.product, scan.quantity);
@@ -1825,6 +1924,49 @@ export default function POSPage() {
         setSubmitting(false);
         activeSubmissionTokenRef.current = null;
       }
+    }
+  };
+
+  const handleSendToPayment = async () => {
+    if (cart.orderType === 'delivery') {
+      toast.error(t('sendToPaymentDeliveryError'));
+      return;
+    }
+    if (!validateOrderPreflight()) return;
+
+    setSubmitting(true);
+    try {
+      const orderPayload = {
+        type: cart.orderType,
+        table_id: cart.orderType === 'dine_in' ? cart.tableId : undefined,
+        customer_id: cart.customerId || undefined,
+        guest_count: cart.orderType === 'dine_in' ? cart.guestCount : undefined,
+        special_instructions: cart.orderNotes || undefined,
+        scheduled_for:
+          cart.orderType === 'takeaway' ? cart.scheduledFor.trim() || undefined : undefined,
+        dispatch_policy: 'on_payment',
+        waived_charge_ids: Array.from(cart.waivedChargeIds),
+        opted_in_charge_ids: Array.from(cart.optedInChargeIds),
+        items: cart.items.map(cartItemToOrderItem),
+      };
+
+      const { data } = await api.post('/orders', orderPayload);
+      const createdOrder = data.order as Order;
+
+      setTicketModalOrder(createdOrder);
+      setTicketModalQrDataUrl(data.qr_data_url || null);
+      setTicketModalQrPayload(data.qr_payload || null);
+      setShowTicketModal(true);
+
+      cart.clearCart();
+      refreshTables();
+      void refreshPaymentQueueCounts();
+      toast.success(t('orderSentToPaymentSuccess', { number: createdOrder.order_number }));
+    } catch (err: unknown) {
+      const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
+      toast.error(errData?.error || t('placeOrderFailed'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -2700,6 +2842,7 @@ export default function POSPage() {
     setCheckoutTable(null);
     refreshTables();
     void refreshScheduledOrders();
+    void refreshPaymentQueueCounts();
 
     if (bill) {
       try {
@@ -2784,6 +2927,9 @@ export default function POSPage() {
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
+    onSendToPayment: handleSendToPayment,
+    counterRole: activeCounter?.role || null,
+    multiCounterEnabled,
     onEditItem: setEditingCartItem,
     onModalOpenChange: setCartPanelModalOpen,
     existingOrder: pendingOrder,
@@ -3157,6 +3303,13 @@ export default function POSPage() {
         onCustomerModalOpenChange={setTopbarCustomerModalOpen}
         scheduledOrderCount={totalActiveScheduled}
         blockedScheduledCount={totalBlockedScheduled}
+        multiCounterEnabled={multiCounterEnabled}
+        counters={counters}
+        activeCounter={activeCounter}
+        onSelectCounter={handleSelectCounter}
+        paymentQueueCount={paymentQueueCount}
+        paymentQueueBlockedCount={paymentQueueBlockedCount}
+        onShowPaymentQueue={() => setShowPaymentQueue(true)}
         onShowScheduledOrders={() => {
           void refreshScheduledOrders();
           api
@@ -3331,6 +3484,33 @@ export default function POSPage() {
         loadingMore={loadingMoreScheduled}
         onLoadMore={handleLoadMoreScheduledOrders}
         totalScheduledCount={totalActiveScheduled}
+      />
+
+      <PaymentQueueDrawer
+        open={showPaymentQueue}
+        onClose={() => setShowPaymentQueue(false)}
+        onPayOrder={handlePayScheduledOrder}
+        onRefundOrder={(order, bills) => {
+          setShowPaymentQueue(false);
+          setRefundModalTarget({ order, bills });
+        }}
+        onCountsChanged={(awaiting, blocked) => {
+          setPaymentQueueCount(awaiting + blocked);
+          setPaymentQueueBlockedCount(blocked);
+        }}
+      />
+
+      <PaymentTicketConfirmationModal
+        open={showTicketModal}
+        order={ticketModalOrder}
+        qrDataUrl={ticketModalQrDataUrl}
+        qrPayload={ticketModalQrPayload}
+        onClose={() => {
+          setShowTicketModal(false);
+          setTicketModalOrder(null);
+          setTicketModalQrDataUrl(null);
+          setTicketModalQrPayload(null);
+        }}
       />
 
       {paymentBill && (

@@ -253,6 +253,9 @@ export default function POSPage() {
     setBillingType,
     setTablesRequired,
     setKotPrintingEnabled,
+    setAutoPrintKot,
+    setPrinterUseUnicode,
+    setPrinterArabicShaping,
   } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
@@ -1123,6 +1126,42 @@ export default function POSPage() {
           .get('/settings/kot_printing_enabled')
           .then((res) => setKotPrintingEnabled(res.data.setting?.value !== 'false'))
           .catch(() => {});
+        api
+          .get('/settings/auto_print_kot')
+          .then((res) => {
+            const setting = res.data.setting;
+            if (
+              setting?.updated_at != null &&
+              (setting.value === 'true' || setting.value === 'false')
+            ) {
+              setAutoPrintKot(setting.value === 'true');
+            }
+          })
+          .catch(() => {});
+        api
+          .get('/settings/printer_use_unicode')
+          .then((res) => {
+            const setting = res.data.setting;
+            if (
+              setting?.updated_at != null &&
+              (setting.value === 'true' || setting.value === 'false')
+            ) {
+              setPrinterUseUnicode(setting.value === 'true');
+            }
+          })
+          .catch(() => {});
+        api
+          .get('/settings/printer_arabic_shaping')
+          .then((res) => {
+            const setting = res.data.setting;
+            if (
+              setting?.updated_at != null &&
+              (setting.value === 'true' || setting.value === 'false')
+            ) {
+              setPrinterArabicShaping(setting.value === 'true');
+            }
+          })
+          .catch(() => {});
 
         // 2. Fetch other menu data
         const requests: Promise<{ data: Record<string, unknown> }>[] = [
@@ -1154,7 +1193,15 @@ export default function POSPage() {
     };
     fetchData();
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
+  }, [
+    isRestaurant,
+    setBillingType,
+    setTablesRequired,
+    setKotPrintingEnabled,
+    setAutoPrintKot,
+    setPrinterUseUnicode,
+    setPrinterArabicShaping,
+  ]);
 
   const handleProductClick = (product: Product, quantity = 1) => {
     if (!productNeedsCustomizer(product)) {
@@ -1266,11 +1313,17 @@ export default function POSPage() {
       toast.error(t('cartEmpty'));
       return false;
     }
-    if (customerMandatory && !cart.customerId) {
+    if (!pendingOrder && customerMandatory && !cart.customerId) {
       setShowCustomerPrompt(true);
       return false;
     }
-    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId) {
+    if (
+      !pendingOrder &&
+      isRestaurant &&
+      cart.orderType === 'dine_in' &&
+      tablesRequired &&
+      !cart.tableId
+    ) {
       setShowTablePicker(true);
       return false;
     }
@@ -2404,9 +2457,13 @@ export default function POSPage() {
 
   const handleAddItemsToScheduledOrder = (order: Order) => {
     setShowScheduledOrders(false);
+    setCheckoutTable(null);
     cart.setTableId(null);
     cart.setOrderType(order.type);
     cart.setScheduledFor('');
+    cart.setDeliveryAddress('');
+    cart.setExpectedPaymentMethod('', null);
+    cart.setDeliveryNote('');
     cart.setOrderNotes(order.special_instructions || '');
     setPendingOrder(order);
     toast(`${t('addingItemsToOrder', { number: order.order_number })} ${t('placeOrderReady')}`, {

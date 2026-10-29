@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "付款方式已更新",
     "correctPaymentMethodFailed": "无法更新付款方式",
     "releaseScheduled": "已预约",
-    "releaseBlocked": "送厨受阻",
-    "scheduledForLabel": "送厨时间: {time}"
+    "releaseBlocked": "送厨受阻"
   },
   "pos": {
     "addCustomer": "添加顾客",

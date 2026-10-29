@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "결제 수단이 업데이트되었습니다",
     "correctPaymentMethodFailed": "결제 수단을 업데이트할 수 없습니다",
     "releaseScheduled": "예약됨",
-    "releaseBlocked": "전송 보류",
-    "scheduledForLabel": "주방 전송: {time}"
+    "releaseBlocked": "전송 보류"
   },
   "pos": {
     "addCustomer": "고객 추가",

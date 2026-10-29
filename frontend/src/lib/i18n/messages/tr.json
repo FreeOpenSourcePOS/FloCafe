@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "Ödeme yöntemi güncellendi",
     "correctPaymentMethodFailed": "Ödeme yöntemi güncellenemedi",
     "releaseScheduled": "Planlı",
-    "releaseBlocked": "İletim engellendi",
-    "scheduledForLabel": "Mutfağa gönderim: {time}"
+    "releaseBlocked": "İletim engellendi"
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",

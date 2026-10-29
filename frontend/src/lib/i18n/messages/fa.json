@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "روش پرداخت به‌روزرسانی شد",
     "correctPaymentMethodFailed": "به‌روزرسانی روش پرداخت انجام نشد",
     "releaseScheduled": "زمان‌بندی‌شده",
-    "releaseBlocked": "ارسال مسدود",
-    "scheduledForLabel": "ارسال به آشپزخانه: {time}"
+    "releaseBlocked": "ارسال مسدود"
   },
   "pos": {
     "addCustomer": "افزودن مشتری",

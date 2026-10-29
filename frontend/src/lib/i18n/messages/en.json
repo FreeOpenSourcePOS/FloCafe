@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "Payment method updated",
     "correctPaymentMethodFailed": "Could not update payment method",
     "releaseScheduled": "Scheduled",
-    "releaseBlocked": "Release blocked",
-    "scheduledForLabel": "Send to kitchen: {time}"
+    "releaseBlocked": "Release blocked"
   },
   "pos": {
     "addCustomer": "Add Customer",

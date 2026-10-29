@@ -224,6 +224,68 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     expect(kdsAfterBody.orders.some((o: { id: number }) => Number(o.id) === blockedOrderId)).toBe(
       true,
     );
+
+    const createDeliveryScheduledRes = await page.request.post(`${BASE}/api/orders`, {
+      headers: ownerHeaders,
+      data: {
+        type: 'delivery',
+        delivery_address: '99 Sukhumvit Rd',
+        expected_payment_method: 'cash',
+        delivery_note: 'Gate code 1234',
+        scheduled_for: futureBangkokWallClock(80),
+        items: [{ product_id: 'e2e-product', quantity: 1 }],
+      },
+    });
+    expect(createDeliveryScheduledRes.status()).toBe(201);
+    const deliveryOrderId = Number((await createDeliveryScheduledRes.json()).order.id);
+    createdOrderIds.push(deliveryOrderId);
+
+    await page.evaluate(() => {
+      const raw = localStorage.getItem('pos-settings');
+      const parsed = raw ? JSON.parse(raw) : { state: {}, version: 5 };
+      parsed.state = { ...(parsed.state || {}), customerMandatory: true };
+      localStorage.setItem('pos-settings', JSON.stringify(parsed));
+    });
+    try {
+      await page.goto(`${BASE}/pos`);
+      await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+      await page.getByTestId('pos-scheduled-orders-btn').click();
+      const appendDrawer = page.getByTestId('scheduled-orders-drawer');
+      await expect(appendDrawer).toBeVisible();
+      await appendDrawer
+        .getByTestId(`scheduled-order-card-${deliveryOrderId}`)
+        .getByTestId(`scheduled-add-items-btn-${deliveryOrderId}`)
+        .click();
+
+      await expect(cartShell.getByTestId('cart-scheduled-existing-banner')).toBeVisible();
+      await expect(cartShell.getByPlaceholder('Delivery address')).toHaveCount(0);
+      await expect(cartShell.getByText('Expected payment')).toHaveCount(0);
+      await expect(cartShell.getByPlaceholder('Delivery note for the courier')).toHaveCount(0);
+
+      await page.getByTestId('pos-product-card').first().click();
+      const appendRespPromise = page.waitForResponse((res) => {
+        const url = new URL(res.url());
+        return (
+          res.request().method() === 'POST' &&
+          url.pathname === `/api/orders/${deliveryOrderId}/items`
+        );
+      });
+      await cartShell.getByRole('button', { name: 'Place Order' }).click();
+      await expect(page.getByText('Select Customer', { exact: true })).toHaveCount(0);
+      const appendResp = await appendRespPromise;
+      expect(appendResp.status()).toBe(200);
+      const appendedOrder = (await appendResp.json()).order;
+      expect(appendedOrder.items).toHaveLength(2);
+      expect(appendedOrder.delivery_address).toBe('99 Sukhumvit Rd');
+    } finally {
+      await page.evaluate(() => {
+        const raw = localStorage.getItem('pos-settings');
+        const parsed = raw ? JSON.parse(raw) : { state: {}, version: 5 };
+        parsed.state = { ...(parsed.state || {}), customerMandatory: false };
+        localStorage.setItem('pos-settings', JSON.stringify(parsed));
+      });
+    }
   } finally {
     // Clean up created orders cleanly without triggering unpaid-completion errors
     for (const orderId of createdOrderIds) {

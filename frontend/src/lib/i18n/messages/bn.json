@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "পেমেন্ট পদ্ধতি আপডেট হয়েছে",
     "correctPaymentMethodFailed": "পেমেন্ট পদ্ধতি আপডেট করা যায়নি",
     "releaseScheduled": "নির্ধারিত",
-    "releaseBlocked": "রিলিজ স্থগিত",
-    "scheduledForLabel": "কিচেনে পাঠান: {time}"
+    "releaseBlocked": "রিলিজ স্থগিত"
   },
   "pos": {
     "addCustomer": "গ্রাহক যোগ করুন",

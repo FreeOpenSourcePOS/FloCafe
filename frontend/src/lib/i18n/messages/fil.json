@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "Na-update ang paraan ng bayad",
     "correctPaymentMethodFailed": "Hindi ma-update ang paraan ng bayad",
     "releaseScheduled": "Naka-iskedyul",
-    "releaseBlocked": "Naka-hold ang pagpapadala",
-    "scheduledForLabel": "Ipadala sa kusina: {time}"
+    "releaseBlocked": "Naka-hold ang pagpapadala"
   },
   "pos": {
     "addCustomer": "Magdagdag ng Customer",

@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "支払方法を更新しました",
     "correctPaymentMethodFailed": "支払方法を更新できませんでした",
     "releaseScheduled": "予約済",
-    "releaseBlocked": "送信保留",
-    "scheduledForLabel": "キッチン送信: {time}"
+    "releaseBlocked": "送信保留"
   },
   "pos": {
     "addCustomer": "顧客を追加",

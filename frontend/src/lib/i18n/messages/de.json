@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "Zahlungsart aktualisiert",
     "correctPaymentMethodFailed": "Zahlungsart konnte nicht aktualisiert werden",
     "releaseScheduled": "Geplant",
-    "releaseBlocked": "Freigabe blockiert",
-    "scheduledForLabel": "An Küche senden: {time}"
+    "releaseBlocked": "Freigabe blockiert"
   },
   "pos": {
     "addCustomer": "Kunde hinzufügen",

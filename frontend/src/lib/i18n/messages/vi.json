@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "Đã cập nhật phương thức thanh toán",
     "correctPaymentMethodFailed": "Không thể cập nhật phương thức thanh toán",
     "releaseScheduled": "Hẹn giờ",
-    "releaseBlocked": "Chặn gửi bếp",
-    "scheduledForLabel": "Gửi xuống bếp: {time}"
+    "releaseBlocked": "Chặn gửi bếp"
   },
   "pos": {
     "addCustomer": "Thêm khách hàng",

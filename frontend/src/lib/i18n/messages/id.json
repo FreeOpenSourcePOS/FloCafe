@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "Metode pembayaran diperbarui",
     "correctPaymentMethodFailed": "Tidak dapat memperbarui metode pembayaran",
     "releaseScheduled": "Terjadwal",
-    "releaseBlocked": "Rilis tertahan",
-    "scheduledForLabel": "Kirim ke dapur: {time}"
+    "releaseBlocked": "Rilis tertahan"
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",

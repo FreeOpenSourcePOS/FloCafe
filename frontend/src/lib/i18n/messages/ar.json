@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "تم تحديث طريقة الدفع",
     "correctPaymentMethodFailed": "تعذر تحديث طريقة الدفع",
     "releaseScheduled": "مجدول",
-    "releaseBlocked": "الإرسال متوقف",
-    "scheduledForLabel": "إرسال للمطبخ: {time}"
+    "releaseBlocked": "الإرسال متوقف"
   },
   "pos": {
     "addCustomer": "إضافة عميل",

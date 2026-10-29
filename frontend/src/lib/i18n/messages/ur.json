@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "ادائیگی کا طریقہ اپ ڈیٹ ہو گیا",
     "correctPaymentMethodFailed": "ادائیگی کا طریقہ اپ ڈیٹ نہیں ہو سکا",
     "releaseScheduled": "شیڈول شدہ",
-    "releaseBlocked": "اجرا مسدود",
-    "scheduledForLabel": "کچن میں بھیجیں: {time}"
+    "releaseBlocked": "اجرا مسدود"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",

@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "Способ оплаты обновлён",
     "correctPaymentMethodFailed": "Не удалось обновить способ оплаты",
     "releaseScheduled": "Запланирован",
-    "releaseBlocked": "Отправка заблокирована",
-    "scheduledForLabel": "На кухню: {time}"
+    "releaseBlocked": "Отправка заблокирована"
   },
   "pos": {
     "addCustomer": "Добавить клиента",

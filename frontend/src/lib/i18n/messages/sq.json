@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "Mënyra e pagesës u përditësua",
     "correctPaymentMethodFailed": "Mënyra e pagesës nuk mund të përditësohej",
     "releaseScheduled": "E planifikuar",
-    "releaseBlocked": "Dërgimi i bllokuar",
-    "scheduledForLabel": "Dërgo në kuzhinë: {time}"
+    "releaseBlocked": "Dërgimi i bllokuar"
   },
   "pos": {
     "addCustomer": "Shto klient",

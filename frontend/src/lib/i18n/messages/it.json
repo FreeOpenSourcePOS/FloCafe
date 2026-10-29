@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "Metodo di pagamento aggiornato",
     "correctPaymentMethodFailed": "Impossibile aggiornare il metodo di pagamento",
     "releaseScheduled": "Programmato",
-    "releaseBlocked": "Invio bloccato",
-    "scheduledForLabel": "Invia in cucina: {time}"
+    "releaseBlocked": "Invio bloccato"
   },
   "pos": {
     "addCustomer": "Aggiungi cliente",

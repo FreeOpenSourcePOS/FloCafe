@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "อัปเดตวิธีการชำระเงินแล้ว",
     "correctPaymentMethodFailed": "ไม่สามารถอัปเดตวิธีการชำระเงินได้",
     "releaseScheduled": "ตั้งเวลา",
-    "releaseBlocked": "ส่งครัวถูกระงับ",
-    "scheduledForLabel": "ส่งเข้าครัว: {time}"
+    "releaseBlocked": "ส่งครัวถูกระงับ"
   },
   "pos": {
     "addCustomer": "เพิ่มลูกค้า",

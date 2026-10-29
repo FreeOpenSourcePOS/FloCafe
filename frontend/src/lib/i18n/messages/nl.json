@@ -852,8 +852,7 @@
     "paymentMethodCorrected": "Betaalmethode bijgewerkt",
     "correctPaymentMethodFailed": "Betaalmethode kon niet worden bijgewerkt",
     "releaseScheduled": "Ingepland",
-    "releaseBlocked": "Vrijgave geblokkeerd",
-    "scheduledForLabel": "Naar keuken: {time}"
+    "releaseBlocked": "Vrijgave geblokkeerd"
   },
   "pos": {
     "addCustomer": "Klant toevoegen",

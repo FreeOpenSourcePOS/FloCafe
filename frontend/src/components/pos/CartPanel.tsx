@@ -242,12 +242,12 @@ export default function CartPanel({
   const isDeliveryOrder = cart.orderType === 'delivery';
   const [customPaymentMethods, setCustomPaymentMethods] = useState<CustomPaymentMethod[]>([]);
   useEffect(() => {
-    if (!isDeliveryOrder) return;
+    if (!isDeliveryOrder || existingOrder) return;
     api
       .get('/payment-methods')
       .then((res) => setCustomPaymentMethods(res.data.payment_methods || []))
       .catch(() => setCustomPaymentMethods([]));
-  }, [isDeliveryOrder]);
+  }, [isDeliveryOrder, existingOrder]);
 
   const charges = useChargesStore((s) => s.charges);
   const loadCharges = useChargesStore((s) => s.load);
@@ -425,7 +425,7 @@ export default function CartPanel({
         )}
 
         {/* Delivery address — shown inline when delivery is selected */}
-        {cart.orderType === 'delivery' && (
+        {!existingOrder && cart.orderType === 'delivery' && (
           <div className="flex items-center gap-2">
             <MapPin size={14} className="text-muted-foreground shrink-0" />
             <input
@@ -439,7 +439,7 @@ export default function CartPanel({
         )}
 
         {/* Expected collection and courier note: recorded with the order, never a payment */}
-        {isDeliveryOrder && (
+        {!existingOrder && isDeliveryOrder && (
           <>
             <label className="flex items-center gap-2">
               <Wallet size={14} className="text-muted-foreground shrink-0" />
@@ -509,7 +509,7 @@ export default function CartPanel({
         )}
 
         {/* Online platform + external order id — shown inline when online is selected */}
-        {cart.orderType === 'online' && (
+        {!existingOrder && cart.orderType === 'online' && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <Globe size={14} className="text-muted-foreground shrink-0" />

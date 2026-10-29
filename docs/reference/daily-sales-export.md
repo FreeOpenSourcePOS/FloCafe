@@ -1,13 +1,14 @@
-# Daily sales export (XLSX / CSV / PDF-HTML)
+# Daily sales export
 
-Accounting, reconciliation, and file-format contract for
-[`GET /api/reports/daily-sales/export`](api.md#get-apireportsdaily-salesexport).
+Accounting, reconciliation, file-format, and plain-text WhatsApp summary contract for
+[`GET /api/reports/daily-sales/export`](api.md#get-apireportsdaily-salesexport) and
+[`POST /api/reports/daily-sales/whatsapp`](api.md#reports).
 
 ## Scope
 
-- Single tenant business day (`?date=YYYY-MM-DD`, defaults to the current business date) or inclusive business-date range (`?from=YYYY-MM-DD&to=YYYY-MM-DD`, up to 93 calendar days per request).
-- Formats: `xlsx` (`Summary` + `Daily` + `Taxes` + `Items` + `Payments` sheets in one workbook), `csv` (separate `summary`, `daily`, `taxes`, `items`, and `payments` files; each request returns one part), and `html` (print-styled HTML document used for desktop `save-html-as-pdf` and browser print; see [File formats](#file-formats)).
-- Gated by `reports.daily-sales.export` (owner by default). No PII, no staff/Addons sheets.
+- Single tenant business day (`date=YYYY-MM-DD`, defaults to the current business date) or inclusive business-date range (`from=YYYY-MM-DD` and `to=YYYY-MM-DD`, up to 93 calendar days per request).
+- Outputs: `xlsx` (`Summary` + `Daily` + `Taxes` + `Items` + `Payments` sheets in one workbook), `csv` (separate `summary`, `daily`, `taxes`, `items`, and `payments` files; each request returns one part), `html` (print-styled HTML document used for desktop `save-html-as-pdf` and browser print), and localized plain-text WhatsApp summary (`POST /api/reports/daily-sales/whatsapp`; see [File formats](#file-formats)).
+- File exports are gated by `reports.daily-sales.export` (owner by default); WhatsApp dispatch additionally requires `reports.view` and `whatsapp.use`. No customer PII, no staff/Addons sheets.
 
 ## Architecture
 
@@ -55,7 +56,7 @@ Backend owns all logic; the frontend never computes totals.
 - **XLSX:** sheets `Summary`, `Daily`, `Taxes`, `Items`, then `Payments`. Money cells are numeric with `moneyNumFmt(fractionDigits)`, percentage cells (`*_percent`) use `'0.00'`, and `tax_rate` cells use `'0.##'`; `null` rate, base, gross, cost, profit, and margin values are empty string `""`; no formulas. Frozen header row.
 - **CSV:** stable English snake_case headers; ASCII `.` decimals; formula-neutralized via shared `toCsvRow`.
 - **HTML (PDF / Print):** self-contained A4 landscape HTML5 document (`serializeDailySalesExportHtml`) containing the store header, optional `tax_detail_warning` alert banner, Summary metrics, Payment Methods summary, Daily Breakdown, Tax Summary, and Item Sales tables from the same dataset (returning `400` if the rendered HTML exceeds the 15 MB PDF export limit).
-- **WhatsApp plain text (`POST /api/reports/daily-sales/whatsapp`):** localized plain-text summary (`formatDailySalesWhatsAppMessage`, gated by `reports.view`, `reports.daily-sales.export`, and `whatsapp.use`) using the store `language`, regional number/currency formatting (`resolveRegionalSnapshot`), store `timezone`, and `business_day_start_time` across up to 93 business dates. Includes the period, order and paid-bill counts, gross/refunded/net collections, tax, discount, service/packaging/delivery charges, payment mix, and top five items by `net_item_sales`. No PDF or file attachments are sent; if the text would exceed the 4096-character WhatsApp transport limit, top-item detail is progressively shortened and omitted before financial totals are ever dropped.
+- **WhatsApp plain text (`POST /api/reports/daily-sales/whatsapp`):** localized plain-text summary (`formatDailySalesWhatsAppMessage`) using the store `language`, regional number/currency formatting (`resolveRegionalSnapshot`), store `timezone`, and `business_day_start_time` across up to 93 business dates. Includes the period, order and paid-bill counts, gross/refunded/net collections, tax, discount, service/packaging/delivery charges, payment mix, and top five items by `net_item_sales`. No PDF or file attachments are sent; if the text would exceed the 4096-character WhatsApp transport limit, top-item detail is progressively shortened and omitted before financial totals are ever dropped.
 - **Filenames:** `daily-sales-YYYY-MM-DD.xlsx` / `.html` (single day) or `daily-sales-YYYY-MM-DD_to_YYYY-MM-DD.xlsx` / `.html` (multi-day range), and `-summary.csv`, `-daily.csv`, `-taxes.csv`, `-items.csv`, `-payments.csv` (from `dailySalesExportFilename`).
 
 ### Summary metric field order
@@ -80,7 +81,8 @@ Backend owns all logic; the frontend never computes totals.
 
 ## API
 
-See [API.md § GET `/api/reports/daily-sales/export`](api.md#get-apireportsdaily-salesexport).
+See [API.md § GET `/api/reports/daily-sales/export`](api.md#get-apireportsdaily-salesexport) and the
+[`POST /api/reports/daily-sales/whatsapp` row in Reports](api.md#reports).
 
 ## Customer sales export
 
@@ -96,6 +98,7 @@ See [API.md § GET `/api/reports/daily-sales/export`](api.md#get-apireportsdaily
 ## Tests
 
 - `tests/daily-sales-export.test.ts` (`npm run test:daily-sales-export`) - role gating, single-day and date-range validation (93-day cap, reversed/mixed/incomplete/invalid dates), range equivalence (`N`-day range equals sum of `N` single-day exports), business-day cutoff across multi-day ranges, XLSX sheet/metric assertions (`Summary`, `Daily`, `Taxes`, `Items`, `Payments`), per-tax-rate summary reconciliation, shared-base multi-component taxes, historical snapshot immunity to product tax changes, incomplete historical detail warnings, Payments rows (store-local time, verbatim transaction id), CSV headers and filenames, `format=html` parity with XLSX (single-day and range, non-Latin store names, HTML escaping, and large-dataset rendering without row truncation), formula neutralization, and empty-day header-only sheets.
+- `tests/reports-whatsapp.test.ts` (`npm run test:reports-whatsapp`) - `POST /api/reports/daily-sales/whatsapp` and `z_report_day_close` permission gating, 93-day range validation, store-language and regional formatting, 4096-character progressive truncation preserving financial totals, disconnected `wa.me` fallback, Offline mode suppression, and single-row day-close idempotency.
 - `tests/reports-export.test.ts` (`npm run test:reports-export`) - X and Z report `csv`, `xlsx`, and `html`/PDF export parity, locale currency formatting, non-Latin store names, HTML escaping, and native Electron `printToPDF` rendering and staging cleanup.
-- Script coverage gate: `test:daily-sales-export` is chained from `npm test`; `npm run test:script-coverage` fails if it is removed from the chain without adding it to `TEST_EXCLUSIONS`.
+- Script coverage gate: `test:daily-sales-export` and `test:reports-whatsapp` are chained from `npm test`; `npm run test:script-coverage` fails if either is removed from the chain without adding it to `TEST_EXCLUSIONS`.
 - `tests/customer-sales-export.test.ts` (`npm run test:customer-sales-export`) - customer sales export: role gating, range validation, repeated customer columns, first-row `bill_total`, split bills, CSV neutralization, XLSX.

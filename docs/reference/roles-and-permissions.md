@@ -257,6 +257,6 @@ npm run test:server-app-server-role
 ```
 
 A static audit test rejects any newly introduced `requireRole(...)` runtime gate in
-`main/routes/`. Direct role checks remain only in reviewed context-policy files — refund approval,
-last-owner/staff target policy, and KDS station/category scope — none of which decide whether a
-request may attempt the operation at all.
+`main/routes/`. Direct role checks remain only as reviewed context policy - see
+[Configurable permissions](../architecture/authentication-and-authorization.md#configurable-permissions) -
+none of which decide whether a request may attempt the operation at all.

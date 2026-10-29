@@ -34,8 +34,10 @@ Almost every protected action — 245 call sites — is gated by `requirePermiss
 list. `requireRole` (in `main/middleware/security.ts`) still exists, but a static audit test
 (`tests/authorization-static-audit.test.ts`) fails the build if a new call site under
 `main/routes/` uses it; the few remaining direct role checks are reviewed context policy, covered
-in their own sections below (KDS station/category scope, refund approver identity, the
-Staff Approval PIN holder, and the last-active-owner/staff-target rule).
+in their own sections below or in the owning feature documentation (KDS station/category scope,
+refund approver identity, the Staff Approval PIN holder, the last-active-owner/staff-target rule,
+own-shift vs manager/owner cash-shift access, and owner-only `z_report_day_close` configuration in
+[WhatsApp receipt delivery](cloud-integrations.md#whatsapp-receipt-delivery)).
 
 **Resolution.** For every permission id, `resolveEffectivePermissions(userId)` evaluates, in
 order: the protected-owner rule (for `authorization.manage` and `staff.privileged.manage` only,

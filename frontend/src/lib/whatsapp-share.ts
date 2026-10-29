@@ -1,4 +1,4 @@
-/** Generates WhatsApp share links for bills using wa.me API. */
+/** Sends bills and reports via connected WhatsApp or wa.me share links. */
 
 import type { Bill, Tenant, Customer } from '@/lib/types';
 import { getCountryByCode, getCurrencyFractionDigits } from '@/lib/countries';

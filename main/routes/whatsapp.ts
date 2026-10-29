@@ -151,7 +151,7 @@ router.post(
       res.status(400).json({ error: 'body required', reason: 'body_required' });
       return;
     }
-    const userId = String((req as any).user?.userId ?? '');
+    const userId = String((req as Request & { user?: { userId?: string } }).user?.userId ?? '');
     const requestedKind = (kind as string) || 'manual_reply';
     if (whatsapp.isReportMessageKind(requestedKind) && !hasPermission(userId, 'reports.view')) {
       res.status(403).json({

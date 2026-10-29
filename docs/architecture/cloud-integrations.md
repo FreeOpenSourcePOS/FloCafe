@@ -339,7 +339,7 @@ channel and their outbox is unaffected by diagnostics preferences.
 
 ## WhatsApp receipt delivery
 
-Sends receipts and automated customer follow-ups over WhatsApp ([`main/services/whatsapp.ts`](../../main/services/whatsapp.ts),
+Sends receipts, owner reports, and automated customer follow-ups over WhatsApp ([`main/services/whatsapp.ts`](../../main/services/whatsapp.ts),
 [`shared/whatsapp-automation.ts`](../../shared/whatsapp-automation.ts)).
 
 **Enabled by** the merchant through the WhatsApp settings route, which calls `enable()`. The module
@@ -365,15 +365,18 @@ never re-parsed as tokens. All six automated rules ship disabled (`enabled: fals
   (bills settled at least `delayHours` ago and within 7 days of becoming due) and `winback` (active
   customers whose last paid visit was at least `inactiveDays` ago).
 - When a store-level day close commits (`POST /api/cash-closures` with `scope = 'day'`; never on a
-  per-staff shift close), `triggerDayCloseZReport()` evaluates `z_report_day_close`. Configuring
+  per-staff shift close), `triggerDayCloseZReport()` evaluates `z_report_day_close` and formats the
+  stored day-close Z-report snapshot via `formatStoredZReportWhatsAppMessage()` (using the store
+  `language`, regional formatting, and `timezone`, bounded to 4096 characters while preserving
+  financial and drawer-reconciliation totals) rather than rendering a customer template. Configuring
   `z_report_day_close` requires role `owner` and an explicit E.164 `recipientPhone` (never inferred
   from `business_phone`). Each day close claims at most one row in `whatsapp_messages` keyed by
   `cash_closure_id` (`idx_whatsapp_messages_auto_z_closure`) so repeated close requests or restarts
   cannot send duplicates, and send errors are caught after commit so closing never rolls back. When
-  explicit Offline mode is on, automatic day-close dispatch is suppressed with no delayed send on
-  reconnection. When WhatsApp is disconnected or delivery fails, the single row is recorded as
-  `failed` without automatic retry or opening a manual share window, leaving manual retry available
-  through `POST /api/whatsapp/messages/:messageId/retry`.
+  WhatsApp is disabled or explicit Offline mode is on, automatic day-close dispatch is suppressed
+  without queuing a row or triggering a delayed send on reconnection. When WhatsApp is disconnected or
+  delivery fails, the single row is recorded as `failed` without automatic retry or opening a manual
+  share window, leaving manual retry available through `POST /api/whatsapp/messages/:messageId/retry`.
 - `POST /api/whatsapp/automation/broadcast` sends a selected template to up to 50 active customers
   matching visit, inactivity, and loyalty-point filters.
 - Automated sends record `created_by_user_id` as `rule:<trigger>` (or `rule:broadcast`), which
@@ -390,10 +393,10 @@ cap (`maxPerCustomerPerWeek`), returning `quiet_hours` or `weekly_cap` when bloc
 customer caps and do not consume customer caps. Outbound sends to the
 same recipient are serialized through `sendLocks` (`sendMessageWithLock()`), keeping the lock tail
 chained onto the active send even when a waiting request cancels or aborts. All outbound sends enforce
-disabled WhatsApp (`whatsapp_enabled`), Offline mode, the blocklist, a per-recipient hourly cap
-(`RATE_LIMIT_MAX_PER_HOUR`, plus `RATE_LIMIT_MIN_GAP_MS` spacing on manual and report sends), a
-10-minute duplicate-body filter, simulated typing delay, and a content filter that rejects non-HTTPS
-URLs and URL shorteners.
+disabled WhatsApp (`whatsapp_enabled`), Offline mode, `MAX_BODY_CHARS` (4096 characters), transport
+cooldown (`isInCooldown()`), the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`,
+plus `RATE_LIMIT_MIN_GAP_MS` spacing on manual and report sends), a 10-minute duplicate-body filter,
+simulated typing delay, and a content filter that rejects non-HTTPS URLs and URL shorteners.
 
 **ACK timeout, late ACKs, and retry.** Outbound messages remain in `typing` (refreshing `typing_at` when
 `socket.sendMessage` completes) until a Baileys `messages.update` server ACK (`status = 2/3/4`) arrives,

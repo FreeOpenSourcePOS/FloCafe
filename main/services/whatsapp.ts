@@ -4087,8 +4087,11 @@ export async function triggerDayCloseZReport(
         reason: result.reason,
         error: result.error,
       };
-    } catch (sendErr: any) {
-      const errMsg = sendErr?.message || 'Send failed';
+    } catch (sendErr: unknown) {
+      const errMsg =
+        (sendErr instanceof Error
+          ? sendErr.message
+          : (sendErr as { message?: string } | null)?.message) || 'Send failed';
       ensureFailedIfUnfinished(errMsg);
       logWhatsApp('warn', 'day_close_z_report_send_error', {
         closureId,
@@ -4099,7 +4102,7 @@ export async function triggerDayCloseZReport(
     } finally {
       activeSendMessageIds.delete(messageId);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     logWhatsApp('error', 'day_close_z_report_error', {
       closureId,
       error: sanitizeLogText(err),
@@ -4107,7 +4110,9 @@ export async function triggerDayCloseZReport(
     return {
       ok: false,
       reason: 'send_failed',
-      error: err?.message || 'Failed to dispatch day-close Z report',
+      error:
+        (err instanceof Error ? err.message : (err as { message?: string } | null)?.message) ||
+        'Failed to dispatch day-close Z report',
     };
   }
 }

@@ -21,6 +21,9 @@ const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { settingsRoutes } = require('../main/routes/settings');
 const { customerDisplayFeedRoutes } = require('../main/routes/customer-display-feed');
 const { orderRoutes } = require('../main/routes/orders');
+const { billRoutes } = require('../main/routes/bills');
+const { kdsRoutes } = require('../main/routes/kds');
+const { completedKdsProjectionCutoff } = require('../main/services/orders');
 const { requireAuth } = require('../main/server');
 const { getJWTSecret } = require('../main/routes/auth');
 
@@ -88,6 +91,8 @@ async function main(): Promise<void> {
   app.use('/api/settings', settingsRoutes);
   app.use('/api/customer-display', customerDisplayFeedRoutes);
   app.use('/api/orders', orderRoutes);
+  app.use('/api/bills', billRoutes);
+  app.use('/api/kds', kdsRoutes);
 
   const created = await request(app).post(TOKENS).set(owner).send({ label: 'Queue TV' });
   assert.equal(created.status, 201);
@@ -263,9 +268,17 @@ async function main(): Promise<void> {
     assert.equal(pollOrders, 500, 'each 5-page poll returns all 500 eligible orders');
   }
 
-  // Regression for #1401: prepaid completed orders with active KDS items project board status without mutating orders.status or scanning closed history
+  // Regression for #1401: prepaid completed orders within the rolling 24h window with active KDS items
+  // project board status without mutating orders.status or scanning historical (>24h) paid orders.
   app.set('trust proxy', 1);
   const prepaidDisplay = { ...fivePageDisplay, 'X-Forwarded-For': '127.0.0.2' };
+  const testAnchorMs = Date.now();
+  const utcFromAnchor = (offsetSeconds: number): string =>
+    new Date(testAnchorMs + offsetSeconds * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\..*$/, '');
+
   db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES ('feed-cat', 'Cafe', 1)`).run();
   db.prepare(
     `INSERT INTO products (id, category_id, name, price, is_active, sort_order)
@@ -273,7 +286,32 @@ async function main(): Promise<void> {
             ('feed-prod-2', 'feed-cat', 'Muffin', 4, 1, 2)`,
   ).run();
 
-  const prepaidStamp = '2026-02-02 09:00:00';
+  // Attach positive-quantity pending/ready KDS items to all 500 historical (>24h) DONE-* completed orders
+  // (simulating stores with KDS-off history or ready-settled history) and prove zero leak onto either board.
+  const historicalCompletedRows = db
+    .prepare(
+      `SELECT id, created_at FROM orders WHERE order_number LIKE 'DONE-%' AND status = 'completed'`,
+    )
+    .all() as Array<{ id: number; created_at: string }>;
+  assert.equal(historicalCompletedRows.length, 500, '500 historical completed orders exist');
+  const historicalCompletedIdSet = new Set(historicalCompletedRows.map((r) => r.id));
+  const insertHistoricalItem = db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+     VALUES (?, 'feed-prod-1', 'Espresso', 5, 1, 5, 0, 5, ?, ?, ?)`,
+  );
+  db.transaction(() => {
+    for (let idx = 0; idx < historicalCompletedRows.length; idx += 1) {
+      const row = historicalCompletedRows[idx];
+      insertHistoricalItem.run(
+        row.id,
+        idx % 2 === 0 ? 'pending' : 'ready',
+        row.created_at,
+        row.created_at,
+      );
+    }
+  })();
+
+  const prepaidStamp = utcFromAnchor(-3 * 3600);
   const prepaidInsert = db
     .prepare(
       `INSERT INTO orders (order_number, customer_id, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
@@ -359,12 +397,19 @@ async function main(): Promise<void> {
     .set(owner)
     .send({ statuses: ['pending', 'preparing', 'ready'], refresh_seconds: 3, show_updated: true });
 
-  // Verify index usage on order_items active KDS query and zero closed-history scan across all pages
-  let capturedActiveKdsSql = '';
-  let capturedActiveKdsParams: unknown[] = [];
+  // Verify bounded index usage on completed-candidate batch query, zero closed-history scan on FROM orders o,
+  // zero inspection of >24h completed orders, and bills lookup strictly bounded to final pageRows (<= 100).
+  let capturedCompletedBatchSql = '';
+  let capturedCompletedBatchParams: unknown[] = [];
   let closedScannedDuringMerge = 0;
+  const completedCandidatesInspected: number[] = [];
+  const billLookupWidths: number[] = [];
   db.function('track_scanned_status_merge', (status: string) => {
     if (status === 'completed' || status === 'cancelled') closedScannedDuringMerge += 1;
+    return 1;
+  });
+  db.function('track_completed_candidate', (id: number) => {
+    completedCandidatesInspected.push(Number(id));
     return 1;
   });
   db.prepare = (sql: string) => {
@@ -376,12 +421,27 @@ async function main(): Promise<void> {
         ),
       );
     }
-    const stmt = origPrepare(sql);
-    if (sql.includes('FROM order_items oi') && sql.includes('orders co')) {
+    if (sql.includes('FROM orders co')) {
+      const instrumented = sql.replace(
+        'AND EXISTS (',
+        'AND track_completed_candidate(co.id) = 1 AND EXISTS (',
+      );
+      const stmt = origPrepare(instrumented);
       const origAll = stmt.all.bind(stmt);
       stmt.all = (...params: unknown[]) => {
-        capturedActiveKdsSql = sql;
-        capturedActiveKdsParams = params;
+        if (!capturedCompletedBatchSql) {
+          capturedCompletedBatchSql = sql;
+          capturedCompletedBatchParams = params;
+        }
+        return origAll(...params);
+      };
+      return stmt;
+    }
+    const stmt = origPrepare(sql);
+    if (sql.includes('FROM bills') && sql.includes('WHERE order_id IN')) {
+      const origAll = stmt.all.bind(stmt);
+      stmt.all = (...params: unknown[]) => {
+        billLookupWidths.push(params.length);
         return origAll(...params);
       };
     }
@@ -397,21 +457,37 @@ async function main(): Promise<void> {
     drainCursor = res.body.has_more ? res.body.next_cursor : null;
   } while (drainCursor);
   db.prepare = origPrepare;
-  assert.equal(drainIds.length, 501, 'all 500 active + 1 prepaid order drain across cursor pages');
+  assert.equal(
+    drainIds.length,
+    501,
+    'all 500 non-completed active orders (unbounded by age) + 1 recent prepaid order drain across cursor pages',
+  );
   assert.equal(new Set(drainIds).size, 501, 'zero duplicate IDs across active + prepaid merge');
   assert.equal(
     closedScannedDuringMerge,
     0,
     'zero closed sales history rows scanned on FROM orders o',
   );
-  assert.ok(capturedActiveKdsSql.length > 0, 'captured active KDS completed-order query');
-  const activeKdsPlan = db
-    .prepare(`EXPLAIN QUERY PLAN ${capturedActiveKdsSql}`)
-    .all(...capturedActiveKdsParams) as Array<{ detail: string }>;
-  const activeKdsPlanText = activeKdsPlan.map((r) => r.detail).join(' | ');
+  assert.equal(
+    completedCandidatesInspected.filter((id) => historicalCompletedIdSet.has(id)).length,
+    0,
+    'zero >24h historical completed orders inspected by completed-candidate batch query',
+  );
+  assert.ok(billLookupWidths.length > 0, 'bills lookup executed for non-empty pages');
   assert.ok(
-    activeKdsPlanText.includes('idx_order_items_active_kds'),
-    `prepaid feed query uses idx_order_items_active_kds (got: ${activeKdsPlanText})`,
+    billLookupWidths.every((width) => width <= 100),
+    `bills lookup resolves bill_number only for final selected pageRows <= 100 (got widths: ${billLookupWidths.join(',')})`,
+  );
+  assert.ok(capturedCompletedBatchSql.length > 0, 'captured completed-candidate batch query');
+  const completedBatchPlan = db
+    .prepare(`EXPLAIN QUERY PLAN ${capturedCompletedBatchSql}`)
+    .all(...capturedCompletedBatchParams) as Array<{ detail: string }>;
+  const completedBatchPlanText = completedBatchPlan.map((r) => r.detail).join(' | ');
+  assert.ok(
+    completedBatchPlanText.includes('idx_orders_created') &&
+      completedBatchPlanText.includes('idx_order_items_active_kds') &&
+      !completedBatchPlanText.includes('TEMP B-TREE'),
+    `completed-candidate batch query uses idx_orders_created + idx_order_items_active_kds without TEMP B-TREE (got: ${completedBatchPlanText})`,
   );
 
   const zeroQtyOrderId = Number(
@@ -427,21 +503,37 @@ async function main(): Promise<void> {
      VALUES (?, 'feed-prod-1', 'Espresso', 5, 0, 0, 0, 0, 'pending', ?, ?)`,
   ).run(zeroQtyOrderId, prepaidStamp, prepaidStamp);
 
-  let capturedActiveViewSql = '';
-  let capturedActiveViewParams: unknown[] = [];
+  let capturedActiveViewPage1Sql = '';
+  let capturedActiveViewPage1Params: unknown[] = [];
+  let capturedActiveViewCursorSql = '';
+  let capturedActiveViewCursorParams: unknown[] = [];
+  let cursorPageEvaluatedRows = 0;
+  db.function('track_active_cursor_row', () => {
+    cursorPageEvaluatedRows += 1;
+    return 1;
+  });
+  let activeViewCallIndex = 0;
   db.prepare = (sql: string) => {
-    const stmt = origPrepare(sql);
     if (sql.includes('SELECT orders.* FROM orders')) {
+      activeViewCallIndex += 1;
+      const callIdx = activeViewCallIndex;
+      const instrumentedSql =
+        callIdx === 2 ? sql.replace('WHERE (', 'WHERE track_active_cursor_row() = 1 AND (') : sql;
+      const stmt = origPrepare(instrumentedSql);
       const origAll = stmt.all.bind(stmt);
       stmt.all = (...params: unknown[]) => {
-        if (!capturedActiveViewSql) {
-          capturedActiveViewSql = sql;
-          capturedActiveViewParams = params;
+        if (callIdx === 1) {
+          capturedActiveViewPage1Sql = sql;
+          capturedActiveViewPage1Params = params;
+        } else if (callIdx === 2) {
+          capturedActiveViewCursorSql = sql;
+          capturedActiveViewCursorParams = params;
         }
         return origAll(...params);
       };
+      return stmt;
     }
-    return stmt;
+    return origPrepare(sql);
   };
   const authActiveIds: number[] = [];
   let beforeId: number | string | null = null;
@@ -462,7 +554,7 @@ async function main(): Promise<void> {
   assert.equal(
     authActiveIds.length,
     501,
-    'authenticated view=active drains 500 active + 1 prepaid order',
+    'authenticated view=active drains 500 active + 1 recent prepaid order and excludes all 500 >24h completed orders',
   );
   assert.equal(
     new Set(authActiveIds).size,
@@ -474,8 +566,13 @@ async function main(): Promise<void> {
     false,
     'completed order with 0-quantity pending item is excluded from view=active',
   );
+  assert.equal(
+    cursorPageEvaluatedRows,
+    102,
+    `authenticated view=active cursor page 2 evaluates only cursor-bounded rows (101 active + 1 zero-qty recent row = 102, not all 500+ active/historical rows; got ${cursorPageEvaluatedRows})`,
+  );
   const statusActiveRes = await request(app)
-    .get('/api/orders?status=active&per_page=100')
+    .get('/api/orders?status=active&per_page=500')
     .set({ ...owner, 'X-Forwarded-For': '127.0.0.3' });
   assert.equal(statusActiveRes.status, 200);
   assert.equal(
@@ -483,16 +580,263 @@ async function main(): Promise<void> {
     false,
     'completed order with 0-quantity pending item is excluded from status=active',
   );
-  const activeViewPlan = db
-    .prepare(`EXPLAIN QUERY PLAN ${capturedActiveViewSql}`)
-    .all(...capturedActiveViewParams) as Array<{ detail: string }>;
-  const activeViewPlanText = activeViewPlan.map((r) => r.detail).join(' | ');
-  assert.ok(
-    activeViewPlanText.includes('idx_orders_status') &&
-      activeViewPlanText.includes('idx_order_items_active_kds') &&
-      !activeViewPlanText.includes('idx_orders_created'),
-    `authenticated view=active query uses idx_orders_status + idx_order_items_active_kds without scanning idx_orders_created (got: ${activeViewPlanText})`,
+  assert.equal(
+    statusActiveRes.body.orders.some((o: any) => historicalCompletedIdSet.has(o.id)),
+    false,
+    '>24h historical completed orders are excluded from status=active',
   );
+  for (const [label, sql, params] of [
+    ['page 1', capturedActiveViewPage1Sql, capturedActiveViewPage1Params],
+    ['cursor page 2', capturedActiveViewCursorSql, capturedActiveViewCursorParams],
+  ] as const) {
+    assert.ok(sql.length > 0, `captured authenticated view=active SQL for ${label}`);
+    const planRows = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as Array<{
+      detail: string;
+    }>;
+    const planText = planRows.map((r) => r.detail).join(' | ');
+    assert.ok(
+      planText.includes('idx_orders_created') &&
+        planText.includes('idx_order_items_active_kds') &&
+        !planText.includes('COMPOUND') &&
+        !planText.includes('TEMP B-TREE'),
+      `authenticated view=active ${label} uses cursor-friendly idx_orders_created + correlated idx_order_items_active_kds without UNION or TEMP B-TREE (got: ${planText})`,
+    );
+  }
+
+  // Real API payment-flow regressions:
+  // (A) KDS-disabled settlement leaves order_items.status='pending' while settling orders.status='completed';
+  //     once >24h old, enabling KDS must NOT resurface it on signed-in or paired feeds.
+  const ownerApi = { ...owner, 'X-Forwarded-For': '127.0.0.4' };
+  for (const [key, value] of [
+    ['country', 'IN'],
+    ['currency', 'INR'],
+    ['currency_symbol', '₹'],
+    ['timezone', 'Asia/Kolkata'],
+  ] as const) {
+    db.prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
+      key,
+      value,
+      now(),
+    );
+  }
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', ?)",
+  ).run(now());
+  const kdsOffOrderRes = await request(app)
+    .post('/api/orders')
+    .set(ownerApi)
+    .send({ type: 'takeaway', items: [{ product_id: 'feed-prod-1', quantity: 1 }] });
+  assert.equal(kdsOffOrderRes.status, 201);
+  const kdsOffOrderId = Number(kdsOffOrderRes.body.order.id);
+  const kdsOffBillRes = await request(app)
+    .post('/api/bills/generate')
+    .set(ownerApi)
+    .send({ order_id: kdsOffOrderId });
+  assert.equal(kdsOffBillRes.status, 201);
+  const kdsOffPayRes = await request(app)
+    .post(`/api/bills/${kdsOffBillRes.body.bill.id}/payment`)
+    .set(ownerApi)
+    .send({ method: 'card', amount: kdsOffBillRes.body.bill.total });
+  assert.equal(kdsOffPayRes.status, 200);
+  assert.equal(
+    (db.prepare('SELECT status FROM orders WHERE id = ?').get(kdsOffOrderId) as any).status,
+    'completed',
+  );
+  assert.equal(
+    (db.prepare('SELECT status FROM order_items WHERE order_id = ?').get(kdsOffOrderId) as any)
+      .status,
+    'pending',
+  );
+  const expired25hStamp = utcFromAnchor(-25 * 3600);
+  db.prepare('UPDATE orders SET created_at = ?, updated_at = ? WHERE id = ?').run(
+    expired25hStamp,
+    expired25hStamp,
+    kdsOffOrderId,
+  );
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)",
+  ).run(now());
+
+  // (B) KDS-enabled settlement at 'ready' leaves order_items.status='ready' while orders.status='completed';
+  //     included while recent (<24h), excluded once >24h old.
+  const kdsOnOrderRes = await request(app)
+    .post('/api/orders')
+    .set(ownerApi)
+    .send({ type: 'takeaway', items: [{ product_id: 'feed-prod-1', quantity: 1 }] });
+  assert.equal(kdsOnOrderRes.status, 201);
+  const kdsOnOrderId = Number(kdsOnOrderRes.body.order.id);
+  const kdsOnItemId = Number(kdsOnOrderRes.body.order.items[0].id);
+  assert.equal(
+    (
+      await request(app)
+        .patch(`/api/kds/items/${kdsOnItemId}/status`)
+        .set(ownerApi)
+        .send({ status: 'preparing' })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(app)
+        .patch(`/api/kds/items/${kdsOnItemId}/status`)
+        .set(ownerApi)
+        .send({ status: 'ready' })
+    ).status,
+    200,
+  );
+  const kdsOnBillRes = await request(app)
+    .post('/api/bills/generate')
+    .set(ownerApi)
+    .send({ order_id: kdsOnOrderId });
+  assert.equal(kdsOnBillRes.status, 201);
+  const kdsOnPayRes = await request(app)
+    .post(`/api/bills/${kdsOnBillRes.body.bill.id}/payment`)
+    .set(ownerApi)
+    .send({ method: 'card', amount: kdsOnBillRes.body.bill.total });
+  assert.equal(kdsOnPayRes.status, 200);
+
+  // While recent (<24h), kdsOnOrderId appears on paired feed + view=active + status=active, while >24h kdsOffOrderId does not
+  const recentCheckFeed = await request(app).get(FEED).set(prepaidDisplay);
+  assert.equal(recentCheckFeed.status, 200);
+  assert.equal(
+    recentCheckFeed.body.orders.some((o: any) => o.id === kdsOffOrderId),
+    false,
+    '>24h KDS-disabled paid pending order is excluded from paired feed after KDS is enabled',
+  );
+  assert.deepEqual(
+    recentCheckFeed.body.orders.find((o: any) => o.id === kdsOnOrderId),
+    { id: kdsOnOrderId, number: kdsOnBillRes.body.bill.bill_number, status: 'ready' },
+    'recent <24h KDS-enabled paid ready order projects ready with bill_number on paired feed',
+  );
+  const recentViewActive = await request(app)
+    .get('/api/orders?view=active&per_page=50')
+    .set(ownerApi);
+  assert.equal(
+    recentViewActive.body.orders.some((o: any) => o.id === kdsOffOrderId),
+    false,
+    '>24h KDS-disabled paid pending order is excluded from view=active',
+  );
+  assert.equal(
+    recentViewActive.body.orders.some((o: any) => o.id === kdsOnOrderId),
+    true,
+    'recent <24h KDS-enabled paid ready order is included in view=active',
+  );
+  const recentStatusActive = await request(app)
+    .get('/api/orders?status=active&per_page=50')
+    .set(ownerApi);
+  assert.equal(
+    recentStatusActive.body.orders.some((o: any) => o.id === kdsOffOrderId),
+    false,
+    '>24h KDS-disabled paid pending order is excluded from status=active',
+  );
+  assert.equal(
+    recentStatusActive.body.orders.some((o: any) => o.id === kdsOnOrderId),
+    true,
+    'recent <24h KDS-enabled paid ready order is included in status=active',
+  );
+
+  // Age kdsOnOrderId past 24h -> now excluded from paired feed, view=active, and status=active
+  db.prepare('UPDATE orders SET created_at = ?, updated_at = ? WHERE id = ?').run(
+    expired25hStamp,
+    expired25hStamp,
+    kdsOnOrderId,
+  );
+  assert.equal(
+    (await request(app).get(FEED).set(prepaidDisplay)).body.orders.some(
+      (o: any) => o.id === kdsOnOrderId,
+    ),
+    false,
+    '>24h KDS-enabled paid ready order ages off paired feed',
+  );
+  assert.equal(
+    (await request(app).get('/api/orders?view=active&per_page=50').set(ownerApi)).body.orders.some(
+      (o: any) => o.id === kdsOnOrderId,
+    ),
+    false,
+    '>24h KDS-enabled paid ready order ages off view=active',
+  );
+  assert.equal(
+    (
+      await request(app).get('/api/orders?status=active&per_page=50').set(ownerApi)
+    ).body.orders.some((o: any) => o.id === kdsOnOrderId),
+    false,
+    '>24h KDS-enabled paid ready order ages off status=active',
+  );
+
+  // Exact 24-hour cutoff boundary: created_at === cutoff is included; cutoff - 1s is excluded.
+  const origDateNow = Date.now;
+  const pinnedBoundaryNowMs = Math.floor(testAnchorMs / 1000) * 1000 + 10 * 60 * 1000;
+  const exactCutoffStamp = completedKdsProjectionCutoff(pinnedBoundaryNowMs);
+  const oneSecondOlderStamp = completedKdsProjectionCutoff(pinnedBoundaryNowMs - 1000);
+  assert.notEqual(exactCutoffStamp, oneSecondOlderStamp);
+  const boundaryInclusiveId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, customer_id, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+         VALUES ('BOUNDARY-INCLUSIVE', 'feed-customer', 'feed-owner', 'takeaway', 'completed', 5, 5, ?, ?, ?)`,
+      )
+      .run(exactCutoffStamp, exactCutoffStamp, exactCutoffStamp).lastInsertRowid,
+  );
+  const boundaryExpiredId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, customer_id, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+         VALUES ('BOUNDARY-EXPIRED', 'feed-customer', 'feed-owner', 'takeaway', 'completed', 5, 5, ?, ?, ?)`,
+      )
+      .run(oneSecondOlderStamp, oneSecondOlderStamp, oneSecondOlderStamp).lastInsertRowid,
+  );
+  insertHistoricalItem.run(boundaryInclusiveId, 'pending', exactCutoffStamp, exactCutoffStamp);
+  insertHistoricalItem.run(boundaryExpiredId, 'pending', oneSecondOlderStamp, oneSecondOlderStamp);
+  try {
+    Date.now = () => pinnedBoundaryNowMs;
+    const boundaryFeed = await request(app).get(FEED).set(prepaidDisplay);
+    assert.equal(boundaryFeed.status, 200);
+    assert.equal(
+      boundaryFeed.body.orders.some((o: any) => o.id === boundaryInclusiveId),
+      true,
+      'completed order at exact 24h cutoff (created_at === cutoff) is included on paired feed',
+    );
+    assert.equal(
+      boundaryFeed.body.orders.some((o: any) => o.id === boundaryExpiredId),
+      false,
+      'completed order 1s older than 24h cutoff is excluded from paired feed',
+    );
+    const boundaryViewRes = await request(app)
+      .get('/api/orders?view=active&per_page=50')
+      .set(ownerApi);
+    assert.equal(boundaryViewRes.status, 200);
+    assert.equal(
+      boundaryViewRes.body.orders.some((o: any) => o.id === boundaryInclusiveId),
+      true,
+      'completed order at exact 24h cutoff is included in view=active',
+    );
+    assert.equal(
+      boundaryViewRes.body.orders.some((o: any) => o.id === boundaryExpiredId),
+      false,
+      'completed order 1s older than 24h cutoff is excluded from view=active',
+    );
+    const boundaryStatusRes = await request(app)
+      .get('/api/orders?status=active&per_page=50')
+      .set(ownerApi);
+    assert.equal(boundaryStatusRes.status, 200);
+    assert.equal(
+      boundaryStatusRes.body.orders.some((o: any) => o.id === boundaryInclusiveId),
+      true,
+      'completed order at exact 24h cutoff is included in status=active',
+    );
+    assert.equal(
+      boundaryStatusRes.body.orders.some((o: any) => o.id === boundaryExpiredId),
+      false,
+      'completed order 1s older than 24h cutoff is excluded from status=active',
+    );
+  } finally {
+    Date.now = origDateNow;
+    db.prepare('DELETE FROM order_items WHERE order_id IN (?, ?)').run(
+      boundaryInclusiveId,
+      boundaryExpiredId,
+    );
+    db.prepare('DELETE FROM orders WHERE id IN (?, ?)').run(boundaryInclusiveId, boundaryExpiredId);
+  }
 
   // KDS disabled excludes completed orders even if items are still ready/pending
   db.prepare(
@@ -522,6 +866,147 @@ async function main(): Promise<void> {
     (db.prepare('SELECT status FROM orders WHERE id = ?').get(prepaidOrderId) as any).status,
     'completed',
     'orders.status stays completed after all items served',
+  );
+
+  // Multi-batch status skipping (> 200 candidates) + equal-timestamp keyset ties across batch & page boundaries:
+  // Under statuses=['ready'], 225 newer (<24h) completed orders with [ready, pending] items project 'preparing'
+  // (skipped across the 200-row batch boundary, including shared timestamps across 195..206) to reach 15 older
+  // (<24h) completed orders whose items project 'ready', also sharing timestamps with active 'ready' orders.
+  assert.equal(
+    (
+      await request(app)
+        .put('/api/settings/customer-display')
+        .set(ownerApi)
+        .send({ statuses: ['ready'], refresh_seconds: 3, show_updated: true })
+    ).status,
+    200,
+  );
+  const skippedPreparingIds = new Set<number>();
+  const expectedBatchReadyCompletedIds: number[] = [];
+  const sharedBatchBoundaryStamp = utcFromAnchor(-1800);
+  const sharedPageTieStamp = utcFromAnchor(-7200);
+  const insertBatchOrder = db.prepare(
+    `INSERT INTO orders (order_number, customer_id, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+     VALUES (?, 'feed-customer', 'feed-owner', 'takeaway', ?, 9, 9, ?, ?, ?)`,
+  );
+  const insertBatchBill = db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
+     VALUES (?, ?, 9, 0, 9, 9, 0, 'paid', ?, ?, ?)`,
+  );
+  db.transaction(() => {
+    // Seed 15 older (<24h) completed orders that project 'ready', with 8 sharing sharedPageTieStamp
+    for (let i = 1; i <= 15; i += 1) {
+      const stamp = i <= 8 ? sharedPageTieStamp : utcFromAnchor(-7000 + i);
+      const oid = Number(
+        insertBatchOrder.run(`BATCH-READY-${i}`, 'completed', stamp, stamp, stamp).lastInsertRowid,
+      );
+      insertBatchBill.run(`BILL-BATCH-READY-${i}`, oid, stamp, stamp, stamp);
+      insertHistoricalItem.run(oid, 'ready', stamp, stamp);
+      expectedBatchReadyCompletedIds.push(oid);
+    }
+    // Interleave 4 active 'ready' orders at the exact same sharedPageTieStamp
+    for (let i = 1; i <= 4; i += 1) {
+      insertBatchOrder.run(
+        `ACTIVE-TIE-READY-${i}`,
+        'ready',
+        null,
+        sharedPageTieStamp,
+        sharedPageTieStamp,
+      );
+    }
+    // Seed 225 newer (<24h) completed orders with [ready, pending] -> projected 'preparing' (skipped under statuses=['ready']).
+    // Candidates 19..30 (which land across the 200th DESC candidate boundary) share sharedBatchBoundaryStamp.
+    for (let i = 1; i <= 225; i += 1) {
+      const stamp = i >= 19 && i <= 30 ? sharedBatchBoundaryStamp : utcFromAnchor(-3600 + i * 10);
+      const oid = Number(
+        insertBatchOrder.run(`BATCH-SKIP-${i}`, 'completed', stamp, stamp, stamp).lastInsertRowid,
+      );
+      insertBatchBill.run(`BILL-BATCH-SKIP-${i}`, oid, stamp, stamp, stamp);
+      insertHistoricalItem.run(oid, 'ready', stamp, stamp);
+      insertHistoricalItem.run(oid, 'pending', stamp, stamp);
+      skippedPreparingIds.add(oid);
+    }
+  })();
+
+  let page1BatchFetches = 0;
+  const readyModeBillWidths: number[] = [];
+  db.prepare = (sql: string) => {
+    const stmt = origPrepare(sql);
+    if (sql.includes('FROM orders co')) {
+      const origAll = stmt.all.bind(stmt);
+      stmt.all = (...params: unknown[]) => {
+        page1BatchFetches += 1;
+        return origAll(...params);
+      };
+    } else if (sql.includes('FROM bills') && sql.includes('WHERE order_id IN')) {
+      const origAll = stmt.all.bind(stmt);
+      stmt.all = (...params: unknown[]) => {
+        readyModeBillWidths.push(params.length);
+        return origAll(...params);
+      };
+    }
+    return stmt;
+  };
+  const readyPage1 = await request(app).get(FEED).set(prepaidDisplay);
+  db.prepare = origPrepare;
+  assert.equal(readyPage1.status, 200);
+  assert.ok(
+    page1BatchFetches >= 2,
+    `statuses=['ready'] advances past first 200 skipped preparing candidates into batch 2+ (batches=${page1BatchFetches})`,
+  );
+  assert.deepEqual(
+    readyModeBillWidths,
+    [100],
+    'bills lookup on page 1 runs once for the 100 selected pageRows (never for the 225 skipped candidates)',
+  );
+
+  const drainedReadyOrders: Array<{ id: number; number: string; status: string }> = [
+    ...readyPage1.body.orders,
+  ];
+  let readyCursor: string | null = readyPage1.body.has_more ? readyPage1.body.next_cursor : null;
+  while (readyCursor) {
+    const res = await request(app)
+      .get(`${FEED}?cursor=${encodeURIComponent(readyCursor)}`)
+      .set(prepaidDisplay);
+    assert.equal(res.status, 200);
+    drainedReadyOrders.push(...res.body.orders);
+    readyCursor = res.body.has_more ? res.body.next_cursor : null;
+  }
+
+  const drainedReadyIdSet = new Set(drainedReadyOrders.map((o) => o.id));
+  assert.equal(
+    drainedReadyIdSet.size,
+    drainedReadyOrders.length,
+    'zero duplicate IDs across multi-batch + shared-timestamp cursor pages',
+  );
+  for (const o of drainedReadyOrders) {
+    assert.equal(
+      o.status,
+      'ready',
+      'every returned order under ready-only config has status ready',
+    );
+    assert.equal(
+      skippedPreparingIds.has(o.id),
+      false,
+      'none of the 225 skipped preparing completed orders appear',
+    );
+  }
+  for (let idx = 0; idx < expectedBatchReadyCompletedIds.length; idx += 1) {
+    const expectedId = expectedBatchReadyCompletedIds[idx];
+    const found = drainedReadyOrders.find((o) => o.id === expectedId);
+    assert.deepEqual(
+      found,
+      { id: expectedId, number: `BILL-BATCH-READY-${idx + 1}`, status: 'ready' },
+      `older completed ready order BATCH-READY-${idx + 1} reached after skipping >200 preparing candidates`,
+    );
+  }
+  const activeReadyCount = (
+    db.prepare("SELECT COUNT(*) AS n FROM orders WHERE status = 'ready'").get() as { n: number }
+  ).n;
+  assert.equal(
+    drainedReadyOrders.length,
+    activeReadyCount + expectedBatchReadyCompletedIds.length,
+    'drained ready pages reconstruct exact union of all active ready orders + 15 recent completed ready orders without dropping shared-timestamp ties',
   );
 
   console.log('customer-display-feed: all assertions passed');

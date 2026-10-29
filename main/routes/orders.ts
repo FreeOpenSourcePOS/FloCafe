@@ -34,6 +34,7 @@ import {
 import { applyPayableRounding } from '../services/tax-engine';
 import {
   calculateOrderTotals,
+  completedKdsProjectionCutoff,
   recomputeOrderTotals,
   reconcileActiveOrderStatusFromItems,
 } from '../services/orders';
@@ -613,19 +614,25 @@ router.get(
       if (!['all', 'active', 'unpaid'].includes(view)) {
         return res.status(400).json({ error: 'Invalid view parameter.' });
       }
-      const activeOrderPredicate = `orders.id IN (
-        SELECT id FROM orders WHERE status IN ('pending', 'preparing', 'ready', 'served')
-        UNION
-        SELECT oi.order_id FROM order_items AS oi
-        CROSS JOIN orders AS co ON co.id = oi.order_id
-        WHERE ? = 1
-          AND oi.status IN ('pending', 'preparing', 'ready')
-          AND oi.quantity > 0
-          AND co.status = 'completed'
+      const kdsEnabledFlag = isKdsEnabled() ? 1 : 0;
+      const completedProjectionCutoff = completedKdsProjectionCutoff();
+      const activeOrderPredicate = `(
+        orders.status NOT IN ('cancelled', 'completed')
+        OR (
+          orders.status = 'completed'
+          AND ? = 1
+          AND orders.created_at >= ?
+          AND EXISTS (
+            SELECT 1 FROM order_items AS active_item
+            WHERE active_item.order_id = orders.id
+              AND active_item.status IN ('pending', 'preparing', 'ready')
+              AND active_item.quantity > 0
+          )
+        )
       )`;
       if (view === 'active') {
         wheres.push(activeOrderPredicate);
-        params.push(isKdsEnabled() ? 1 : 0);
+        params.push(kdsEnabledFlag, completedProjectionCutoff);
       } else if (view === 'unpaid') {
         wheres.push("orders.status != 'cancelled'");
         wheres.push(`(
@@ -643,7 +650,7 @@ router.get(
         const statuses = req.query.status.split(',');
         if (statuses.length === 1 && statuses[0] === 'active') {
           wheres.push(activeOrderPredicate);
-          params.push(isKdsEnabled() ? 1 : 0);
+          params.push(kdsEnabledFlag, completedProjectionCutoff);
         } else if (statuses.length === 1) {
           wheres.push('orders.status = ?');
           params.push(statuses[0]);

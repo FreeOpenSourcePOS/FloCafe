@@ -300,12 +300,13 @@ order items are appended, cancelled, edited, refunded, or restored:
   (`source: 'kds_reconciliation'`) in `order_audit_log`.
 
 Terminal `completed` and `cancelled` orders are never reopened or mutated by KDS item updates. For
-upfront-paid orders that settle to `completed` before kitchen fulfillment finishes,
-`GET /api/orders?view=active` and both `/customer-display` feeds continue surfacing the order while
-positive-quantity live items remain in `pending`, `preparing`, or `ready`, projecting its board
-status from live item statuses until KDS marks every live item `served`. When KDS is disabled,
-automatic item-to-order reconciliation stands down and manual `PATCH /api/orders/:id/status`
-transitions govern preparation and service.
+upfront-paid orders created within the rolling 24-hour `orders.created_at` window that settle to
+`completed` before kitchen fulfillment finishes, `GET /api/orders?view=active`,
+`GET /api/orders?status=active`, and both `/customer-display` feeds continue surfacing the order
+while positive-quantity live items remain in `pending`, `preparing`, or `ready`, projecting its
+board status from live item statuses until KDS marks every live item `served` (non-`completed`
+active orders are not age-bounded). When KDS is disabled, automatic item-to-order reconciliation
+stands down and manual `PATCH /api/orders/:id/status` transitions govern preparation and service.
 
 ## Refunds
 

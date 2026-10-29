@@ -2153,12 +2153,11 @@ export default function POSPage() {
           },
         );
         billData = generatedBill;
-        if (generatedBill?.bill) {
-          attempt = { ...attempt, order, bill: generatedBill.bill };
-          requirePrepaidAttemptSaved(attempt, originUserId);
-        }
         if (!isSessionCurrent()) {
           // Bill was generated on server while session changed. Stop here.
+          if (generatedBill?.bill) {
+            savePrepaidAttempt({ ...attempt, order, bill: generatedBill.bill }, originUserId);
+          }
           return;
         }
       }

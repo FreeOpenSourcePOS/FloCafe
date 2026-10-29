@@ -1042,20 +1042,18 @@ export function computePeriodAggregates(
             END
           ) = ?
           AND (
-            datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')) IS NULL
-            OR (
-              CASE
-                WHEN NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NOT NULL
-                  THEN datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')) <= datetime(?)
-                ELSE datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')) < datetime(?)
-              END
-            )
+            NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NOT NULL
+            OR COALESCE(
+              datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+              datetime(NULLIF(b.paid_at, '')),
+              datetime(NULLIF(b.created_at, ''))
+            ) < datetime(?)
           )
       )
     ORDER BY COALESCE(b.paid_at, b.created_at), b.id
   `,
         )
-        .all(NO_CASH_SESSION_ID, session.id, end, end) as TaxBillRow[])
+        .all(NO_CASH_SESSION_ID, session.id, end) as TaxBillRow[])
     : (db
         .prepare(
           `
@@ -1084,7 +1082,6 @@ export function computePeriodAggregates(
           CAST(je.key AS INTEGER) AS line_index,
           json_extract(je.value, '$.amount') AS raw_amount,
           NULLIF(json_extract(je.value, '$.cash_session_id'), '') AS raw_session_id,
-          datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')) AS raw_ts,
           COALESCE(
             datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
             datetime(NULLIF(b.paid_at, '')),
@@ -1115,9 +1112,8 @@ export function computePeriodAggregates(
           )
         END AS resolved_session_id,
         CASE
-          WHEN raw_ts IS NULL THEN 1
-          WHEN raw_session_id IS NOT NULL AND raw_ts <= datetime(?) THEN 1
-          WHEN raw_session_id IS NULL AND raw_ts < datetime(?) THEN 1
+          WHEN raw_session_id IS NOT NULL THEN 1
+          WHEN line_time < datetime(?) THEN 1
           ELSE 0
         END AS within_end
       FROM lines
@@ -1126,7 +1122,7 @@ export function computePeriodAggregates(
     );
     const perBillComponents = bills.map((bill, billIndex) => {
       const doc = taxDocuments[billIndex];
-      const rawLines = billPaymentLinesStmt.all(bill.id, NO_CASH_SESSION_ID, end, end) as Array<{
+      const rawLines = billPaymentLinesStmt.all(bill.id, NO_CASH_SESSION_ID, end) as Array<{
         raw_amount: unknown;
         resolved_session_id: number;
         within_end: number;
@@ -1181,8 +1177,8 @@ export function computePeriodAggregates(
       const ownedMinorSum = ownedWithinEndLines.reduce((sum, line) => sum + line.amountMinor, 0);
 
       if (
-        paymentLines.length === 1 &&
-        ownedWithinEndLines.length === 1 &&
+        paymentLines.length > 0 &&
+        ownedWithinEndLines.length === paymentLines.length &&
         (isSettled || (billTotalMinor > 0 && ownedMinorSum >= billTotalMinor))
       ) {
         return resolveTaxComponents(doc);

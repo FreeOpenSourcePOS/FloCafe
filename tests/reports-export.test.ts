@@ -1757,6 +1757,7 @@ async function run(): Promise<void> {
         let hookStateCursor = 0;
         const capturedApiGets: Array<{ url: string; params: Record<string, unknown> }> = [];
         const capturedDownloads: Array<{ filename: string; text: string }> = [];
+        const pendingDownloadReads: Array<Promise<void>> = [];
         const capturedPdfExports: Array<{
           endpoint: string;
           params?: Record<string, unknown>;
@@ -1866,10 +1867,13 @@ async function run(): Promise<void> {
           if (reqName === '@/lib/download') {
             return {
               downloadBlob: (blob: Blob, filename: string) => {
-                capturedDownloads.push({ filename, text: '' });
-                void blob.text().then((t) => {
-                  capturedDownloads[capturedDownloads.length - 1].text = t;
-                });
+                const entry = { filename, text: '' };
+                capturedDownloads.push(entry);
+                pendingDownloadReads.push(
+                  blob.text().then((t) => {
+                    entry.text = t;
+                  }),
+                );
               },
             };
           }
@@ -1913,7 +1917,7 @@ async function run(): Promise<void> {
           await model.exportReport('x', 'csv');
           await model.exportReport('x', 'xlsx');
           await model.exportReport('x', 'pdf');
-          await new Promise((resolve) => setTimeout(resolve, 10));
+          await Promise.all(pendingDownloadReads.splice(0));
 
           assert.deepEqual(capturedApiGets[0], {
             url: '/reports/x-report/export',
@@ -1940,7 +1944,7 @@ async function run(): Promise<void> {
           await model.exportReport('x', 'csv');
           await model.exportReport('x', 'xlsx');
           await model.exportReport('x', 'pdf');
-          await new Promise((resolve) => setTimeout(resolve, 10));
+          await Promise.all(pendingDownloadReads.splice(0));
 
           assert.deepEqual(capturedApiGets[2], {
             url: '/reports/x-report/export',

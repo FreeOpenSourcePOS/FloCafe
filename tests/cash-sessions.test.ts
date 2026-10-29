@@ -4108,26 +4108,135 @@ async function main() {
           ]),
           subCentBill,
         );
-        const { xSubCent, closeSubCent } = await withFixedClock(
+        const subCentSplitBill = seedTaxBill(
+          'SUBCENT-SPLIT-1',
+          95,
+          5.01,
+          100.01,
+          [
+            { label: 'CGST', rate: 2.5, amount: 2.505 },
+            { label: 'SGST', rate: 2.5, amount: 2.505 },
+          ],
+          '2026-11-19 08:45:00',
+        );
+        const subCentSplitPay = await withFixedClock('2026-11-19T09:15:00.000Z', async () =>
+          request(app)
+            .post(`/api/bills/${subCentSplitBill}/payments`)
+            .set('Authorization', `Bearer ${s11CashierAToken}`)
+            .send({
+              payments: [
+                { method: 'cash', amount: 40 },
+                { method: 'card', amount: 60.01, transaction_id: 'TX-SUBCENT-SPLIT-1' },
+              ],
+            }),
+        );
+        const { xSubCent, xSubCentDay, closeSubCent, closeSubCentDay } = await withFixedClock(
           '2026-11-19T10:00:00.000Z',
           async () => {
             const xRes = await request(app)
               .get(`/api/reports/x-report?date=2026-11-19&session_id=${subCentShift}`)
               .set('Authorization', `Bearer ${s11ManagerToken}`);
+            const xDayRes = await request(app)
+              .get('/api/reports/x-report?date=2026-11-19')
+              .set('Authorization', `Bearer ${s11ManagerToken}`);
             const cRes = await request(app)
               .post(`/api/cash-sessions/${subCentShift}/close`)
               .set('Authorization', `Bearer ${s11CashierAToken}`)
-              .send({ counted_cash_cents: 0 });
-            return { xSubCent: xRes, closeSubCent: cRes };
+              .send({ counted_cash_cents: 4000 });
+            const dRes = await request(app)
+              .post('/api/cash-closures')
+              .set('Authorization', `Bearer ${s11OwnerToken}`)
+              .send({
+                business_date: '2026-11-19',
+                opening_float_cents: 0,
+                counted_cash_cents: 4000,
+              });
+            return {
+              xSubCent: xRes,
+              xSubCentDay: xDayRes,
+              closeSubCent: cRes,
+              closeSubCentDay: dRes,
+            };
           },
         );
         const zSubCent = readStoredSessionTax(closeSubCent.body.closure_id);
+        const zSubCentDay = closeSubCentDay.body?.zReport?.tax_components;
         assert(
-          xSubCent.status === 200 &&
+          subCentSplitPay.status === 200 &&
+            xSubCent.status === 200 &&
+            xSubCentDay.status === 200 &&
             closeSubCent.status === 200 &&
+            closeSubCentDay.status === 201 &&
             findCompAmt(xSubCent.body?.xReport?.taxComponents, 'VAT', 10) === 0.005 &&
-            findCompAmt(zSubCent, 'VAT', 10) === 0.005,
-          `Section 13d: single-session paid bill preserves exact sub-cent historical tax precision 0.005 (x=${JSON.stringify(xSubCent.body?.xReport?.taxComponents)}, z=${JSON.stringify(zSubCent)})`,
+            findCompAmt(xSubCent.body?.xReport?.taxComponents, 'CGST', 2.5) === 2.505 &&
+            findCompAmt(xSubCent.body?.xReport?.taxComponents, 'SGST', 2.5) === 2.505 &&
+            findCompAmt(zSubCent, 'VAT', 10) === 0.005 &&
+            findCompAmt(zSubCent, 'CGST', 2.5) === 2.505 &&
+            findCompAmt(zSubCent, 'SGST', 2.5) === 2.505 &&
+            JSON.stringify(xSubCent.body?.xReport?.taxComponents) ===
+              JSON.stringify(xSubCentDay.body?.xReport?.taxComponents) &&
+            JSON.stringify(zSubCent) === JSON.stringify(zSubCentDay),
+          `Section 13d: single-session paid bills (single-line and split-tender) preserve exact sub-cent historical tax precision and match whole-day X/Z (x=${JSON.stringify(xSubCent.body?.xReport?.taxComponents)}, z=${JSON.stringify(zSubCent)}, day=${JSON.stringify(zSubCentDay)})`,
+        );
+
+        const skewShift = await withFixedClock('2026-11-20T10:00:00.000Z', async () =>
+          Number(
+            (
+              await request(app)
+                .post('/api/cash-sessions/open')
+                .set('Authorization', `Bearer ${s11CashierAToken}`)
+                .send({ opening_float_cents: 0 })
+            ).body.id,
+          ),
+        );
+        const skewOwnedBill = seedTaxBill(
+          'SKEW-OWNED-1',
+          100,
+          10,
+          110,
+          [{ label: 'VAT', rate: 10, amount: 10 }],
+          '2026-11-20 10:02:00',
+        );
+        const skewOwnedPay = await withFixedClock('2026-11-20T10:05:10.000Z', async () =>
+          request(app)
+            .post(`/api/bills/${skewOwnedBill}/payment`)
+            .set('Authorization', `Bearer ${s11CashierAToken}`)
+            .send({ method: 'cash', amount: 110 }),
+        );
+        const skewUntaggedFutureBill = seedTaxBill(
+          'SKEW-UNTAGGED-1',
+          50,
+          5,
+          55,
+          [{ label: 'VAT', rate: 10, amount: 5 }],
+          '2026-11-20 10:10:00',
+        );
+        db.prepare(
+          `UPDATE bills
+           SET paid_amount = 55, balance = 0, payment_status = 'paid',
+               paid_at = '2026-11-20 10:10:00', payment_details = ?
+           WHERE id = ?`,
+        ).run(JSON.stringify([{ method: 'card', amount: 55 }]), skewUntaggedFutureBill);
+        const { xSkew, closeSkew } = await withFixedClock('2026-11-20T10:05:05.000Z', async () => {
+          const xRes = await request(app)
+            .get(`/api/reports/x-report?date=2026-11-20&session_id=${skewShift}`)
+            .set('Authorization', `Bearer ${s11ManagerToken}`);
+          const cRes = await request(app)
+            .post(`/api/cash-sessions/${skewShift}/close`)
+            .set('Authorization', `Bearer ${s11CashierAToken}`)
+            .send({ counted_cash_cents: 11000 });
+          return { xSkew: xRes, closeSkew: cRes };
+        });
+        const zSkew = readStoredSessionTax(closeSkew.body.closure_id);
+        assert(
+          skewOwnedPay.status === 200 &&
+            xSkew.status === 200 &&
+            closeSkew.status === 200 &&
+            closeSkew.body?.variance_cents === 0 &&
+            xSkew.body?.xReport?.grossCollected === 110 &&
+            findCompAmt(xSkew.body?.xReport?.taxComponents, 'VAT', 10) === 10 &&
+            findCompAmt(zSkew, 'VAT', 10) === 10,
+          `Section 13e: explicit session ownership retains tax across backward clock step while untagged lines without timestamp obey line_time < end (x=${JSON.stringify(xSkew.body?.xReport?.taxComponents)}, z=${JSON.stringify(zSkew)})`,
         );
       }
     } finally {

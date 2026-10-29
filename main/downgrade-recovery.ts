@@ -8,7 +8,6 @@ import type {
   DowngradeRestoreResult,
   SchemaVersionMismatchError,
 } from './db';
-import { isSafeExternalUrl } from './security/url-allowlist';
 
 export const FLOCAFE_RELEASES_URL = 'https://github.com/FreeOpenSourcePOS/FloCafe/releases';
 
@@ -34,7 +33,6 @@ export interface DowngradeRecoveryDeps {
   ) => Promise<DowngradeRestoreResult>;
   getBackupDir: () => string;
   getDbPath: () => string;
-  releasesUrl?: string;
 }
 
 export type DowngradeRecoveryOutcome =
@@ -107,36 +105,19 @@ function buildNoCompatibleBackupsDetail(discovery: DowngradeBackupDiscovery): st
   return lines.join('\n');
 }
 
-async function openReleasesPage(
-  deps: DowngradeRecoveryDeps,
-  releasesUrl: string,
-): Promise<boolean> {
-  if (!isSafeExternalUrl(releasesUrl)) {
-    deps.log.error('[Recovery] Refused unsafe releases URL:', releasesUrl);
-    await deps.dialog.showMessageBox({
-      type: 'error',
-      title: 'Cannot Open Download Page',
-      message: 'Could not open the Flo Cafe download page automatically.',
-      detail: `Download the latest version of Flo Cafe from:\n${FLOCAFE_RELEASES_URL}`,
-      buttons: ['OK'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    });
-    return false;
-  }
-
+async function openReleasesPage(deps: DowngradeRecoveryDeps): Promise<boolean> {
   try {
-    await deps.shell.openExternal(releasesUrl);
+    await deps.shell.openExternal(FLOCAFE_RELEASES_URL);
     return true;
   } catch (error: unknown) {
+    if (deps.isShutdownRequested()) return false;
     deps.log.error('[Recovery] Failed to open Flo Cafe releases page:', error);
     const errorMessage = error instanceof Error ? error.message : 'unknown error';
     await deps.dialog.showMessageBox({
       type: 'error',
       title: 'Cannot Open Download Page',
       message: 'Could not open the Flo Cafe releases page in your browser.',
-      detail: `Open this address manually to download the latest Flo Cafe release:\n${releasesUrl}\n\nError: ${errorMessage}`,
+      detail: `Open this address manually to download the latest Flo Cafe release:\n${FLOCAFE_RELEASES_URL}\n\nError: ${errorMessage}`,
       buttons: ['OK'],
       defaultId: 0,
       cancelId: 0,
@@ -157,6 +138,7 @@ async function revealBackupsFolder(deps: DowngradeRecoveryDeps): Promise<void> {
 
   try {
     const openError = await deps.shell.openPath(targetDir);
+    if (deps.isShutdownRequested()) return;
     if (openError) {
       deps.log.warn('[Recovery] shell.openPath reported an error:', openError);
       await deps.dialog.showMessageBox({
@@ -171,6 +153,7 @@ async function revealBackupsFolder(deps: DowngradeRecoveryDeps): Promise<void> {
       });
     }
   } catch (error: unknown) {
+    if (deps.isShutdownRequested()) return;
     deps.log.error('[Recovery] Failed to open backups folder:', error);
     const errorMessage = error instanceof Error ? error.message : 'unknown error';
     await deps.dialog.showMessageBox({
@@ -242,6 +225,7 @@ async function selectCompatibleBackup(
       noLink: true,
     });
 
+    if (deps.isShutdownRequested()) return null;
     if (selection.response === cancelButtonIndex) return null;
     if (selection.response === prevButtonIndex) {
       page -= 1;
@@ -262,7 +246,6 @@ export async function runDowngradeRecoveryFlow(
   mismatch: SchemaVersionMismatchError,
   deps: DowngradeRecoveryDeps,
 ): Promise<DowngradeRecoveryOutcome> {
-  const releasesUrl = deps.releasesUrl || FLOCAFE_RELEASES_URL;
   const dbAppMeta = mismatch.dbAppVersion ? ` (Flo Cafe v${mismatch.dbAppVersion})` : '';
 
   while (!deps.isShutdownRequested()) {
@@ -293,8 +276,9 @@ export async function runDowngradeRecoveryFlow(
     if (deps.isShutdownRequested()) return { outcome: 'exit' };
 
     if (mainChoice.response === 0) {
-      const opened = await openReleasesPage(deps, releasesUrl);
-      if (opened) return { outcome: 'opened_releases', url: releasesUrl };
+      const opened = await openReleasesPage(deps);
+      if (deps.isShutdownRequested()) return { outcome: 'exit' };
+      if (opened) return { outcome: 'opened_releases', url: FLOCAFE_RELEASES_URL };
       continue;
     }
 
@@ -305,6 +289,7 @@ export async function runDowngradeRecoveryFlow(
 
     if (mainChoice.response === 2) {
       const discovery = deps.discoverBackups();
+      if (deps.isShutdownRequested()) return { outcome: 'exit' };
       if (discovery.compatible.length === 0) {
         const emptyChoice = await deps.dialog.showMessageBox({
           type: 'warning',
@@ -319,8 +304,9 @@ export async function runDowngradeRecoveryFlow(
 
         if (deps.isShutdownRequested()) return { outcome: 'exit' };
         if (emptyChoice.response === 0) {
-          const opened = await openReleasesPage(deps, releasesUrl);
-          if (opened) return { outcome: 'opened_releases', url: releasesUrl };
+          const opened = await openReleasesPage(deps);
+          if (deps.isShutdownRequested()) return { outcome: 'exit' };
+          if (opened) return { outcome: 'opened_releases', url: FLOCAFE_RELEASES_URL };
           continue;
         }
         if (emptyChoice.response === 1) {
@@ -331,8 +317,8 @@ export async function runDowngradeRecoveryFlow(
       }
 
       const selectedBackup = await selectCompatibleBackup(discovery, deps);
-      if (!selectedBackup) continue;
       if (deps.isShutdownRequested()) return { outcome: 'exit' };
+      if (!selectedBackup) continue;
 
       const plannedArchivePath = deps.planPreservedArchivePath(mismatch.dbVersion);
       const selectedAppMeta = selectedBackup.appVersion
@@ -376,6 +362,7 @@ export async function runDowngradeRecoveryFlow(
         );
         return { outcome: 'restored', result };
       } catch (restoreError: unknown) {
+        if (deps.isShutdownRequested()) return { outcome: 'exit' };
         deps.log.error('[Recovery] Compatible backup restore failed:', restoreError);
         const restoreMessage =
           restoreError instanceof Error && restoreError.message

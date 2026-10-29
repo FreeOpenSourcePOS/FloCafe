@@ -10,6 +10,8 @@ const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-newer-db-recovery-'));
 
+let safeStorageEnabled = false;
+
 const mockApp = {
   isPackaged: true,
   getPath: () => testDir,
@@ -21,9 +23,13 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
     return {
       app: mockApp,
       safeStorage: {
-        isEncryptionAvailable: () => false,
-        encryptString: (value: string) => Buffer.from(value),
-        decryptString: (value: Buffer) => value.toString(),
+        isEncryptionAvailable: () => safeStorageEnabled,
+        encryptString: (value: string) => Buffer.from(`enc:${value}`, 'utf8'),
+        decryptString: (value: Buffer) => {
+          const text = value.toString('utf8');
+          if (!text.startsWith('enc:')) throw new Error('corrupt ciphertext');
+          return text.slice(4);
+        },
       },
       shell: {
         openExternal: () => Promise.resolve(),
@@ -35,6 +41,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 import Database from 'better-sqlite3';
+import jwt from 'jsonwebtoken';
 import {
   buildIdealSchemaDb,
   closeDatabase,
@@ -53,6 +60,12 @@ import {
   SchemaVersionMismatchError,
 } from '../main/db';
 import { FLOCAFE_RELEASES_URL, runDowngradeRecoveryFlow } from '../main/downgrade-recovery';
+import { getUserAuthStatus, isTokenRevoked, revokeToken } from '../main/middleware/security';
+import {
+  clearJWTSecretCache,
+  getJWTSecret,
+  JWT_SECRET_SAFE_STORAGE_MARKER,
+} from '../main/security/jwt-secret';
 import { runHealthCheck } from '../main/services/schema-health';
 
 function sha256File(filePath: string): string {
@@ -219,6 +232,10 @@ async function run(): Promise<void> {
 
   const dbPath = getDbPath();
   const backupDir = getBackupDir();
+  const secureJwtFilePath = path.join(testDir, 'jwt-secret.enc');
+  const previousJwtSecretEnv = process.env.JWT_SECRET;
+  delete process.env.JWT_SECRET;
+  safeStorageEnabled = true;
 
   try {
     // Seed a baseline valid database at maxSupported to build clean backup fixtures.
@@ -230,6 +247,27 @@ async function run(): Promise<void> {
     baseDb
       .prepare('INSERT INTO products (id, category_id, name, price) VALUES (?, ?, ?, ?)')
       .run('prod-espresso', 'cat-recovery', 'Espresso', 4.5);
+    baseDb
+      .prepare(
+        "INSERT OR REPLACE INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES ('user-staff-1', 'Staff One', 'staff1@test.local', 'unused', 'owner', 1, '2026-10-28 09:00:00', '2026-10-28 09:00:00')",
+      )
+      .run();
+    baseDb
+      .prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('jwt_secret', ?, '2026-10-28 09:00:00')",
+      )
+      .run(JWT_SECRET_SAFE_STORAGE_MARKER);
+    fs.writeFileSync(secureJwtFilePath, Buffer.from('enc:live-newer-jwt-secret-hex-0001', 'utf8'));
+    clearJWTSecretCache();
+    assert.equal(getJWTSecret(), 'live-newer-jwt-secret-hex-0001');
+    const preRestoreBearerToken = jwt.sign(
+      { userId: 'user-staff-1', role: 'owner' },
+      getJWTSecret(),
+      { expiresIn: '24h' },
+    );
+    assert.equal(getUserAuthStatus('user-staff-1')?.role, 'owner');
+    revokeToken('in-memory-revoked-token');
+    assert.equal(isTokenRevoked('in-memory-revoked-token'), true);
     const sameSchemaSeedBackup = (await createBackup()).path;
     const baseTemplateCopy = path.join(testDir, 'base-template.db');
     fs.copyFileSync(sameSchemaSeedBackup, baseTemplateCopy);
@@ -266,6 +304,32 @@ async function run(): Promise<void> {
       sha256File(dbPath),
       deleteModeShaBefore,
       'DELETE-mode newer database bytes are untouched',
+    );
+
+    const staleMetaNewerPath = path.join(testDir, 'newer-stale-meta.db');
+    writeStampedSchemaSnapshot(staleMetaNewerPath, maxSupported, {
+      appVersion: '3.10.0',
+      overridePragmaVersion: newerDbVersion,
+      overrideMetaSchemaVersion: String(olderCompatibleVersion),
+    });
+    removeDbSet(dbPath);
+    fs.copyFileSync(staleMetaNewerPath, dbPath);
+    let caughtStaleMetaMismatch: SchemaVersionMismatchError | null = null;
+    assert.throws(
+      () => initDatabase(),
+      (err: unknown) => {
+        if (err instanceof SchemaVersionMismatchError) {
+          caughtStaleMetaMismatch = err;
+          return true;
+        }
+        return false;
+      },
+    );
+    assert.equal(caughtStaleMetaMismatch!.dbVersion, newerDbVersion);
+    assert.equal(
+      caughtStaleMetaMismatch!.dbAppVersion,
+      null,
+      'stale _flo_meta.app_version with mismatched _flo_meta.schema_version is ignored',
     );
 
     const walHashes = buildActiveNewerWalDatabase(
@@ -341,6 +405,26 @@ async function run(): Promise<void> {
         snapDb
           .prepare(
             "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('google_drive_account_subject', 'stale-drive-subject', '2026-10-28 09:00:00')",
+          )
+          .run();
+        snapDb
+          .prepare(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('jwt_secret', ?, '2026-10-28 09:00:00')",
+          )
+          .run(JWT_SECRET_SAFE_STORAGE_MARKER);
+        snapDb
+          .prepare(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('mobile_pairing_code', '654321', '2026-10-28 09:00:00')",
+          )
+          .run();
+        snapDb
+          .prepare(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('mobile_pairing_code_expires_at', '2099-01-01T00:00:00.000Z', '2026-10-28 09:00:00')",
+          )
+          .run();
+        snapDb
+          .prepare(
+            "INSERT OR REPLACE INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES ('user-staff-1', 'Staff One', 'staff1@test.local', 'unused', 'server', 1, '2026-10-28 09:00:00', '2026-10-28 09:00:00')",
           )
           .run();
       },
@@ -569,6 +653,75 @@ async function run(): Promise<void> {
       'cancelled restore leaves no preserved archive files behind',
     );
 
+    for (const shutdownScenario of [
+      'restore-abort',
+      'open-external-fail',
+      'open-path-error',
+      'open-path-throw',
+    ] as const) {
+      let shutdownActive = false;
+      const seenDialogTitles: string[] = [];
+      const shutdownOutcome = await runDowngradeRecoveryFlow(caughtWalMismatch!, {
+        appVersion: '3.13.14',
+        dialog: {
+          showMessageBox: async (options: any) => {
+            seenDialogTitles.push(options.title);
+            if (shutdownScenario === 'restore-abort') {
+              if (seenDialogTitles.length === 1) return { response: 2, checkboxChecked: false };
+              return { response: 0, checkboxChecked: false };
+            }
+            if (shutdownScenario === 'open-external-fail') {
+              return { response: 0, checkboxChecked: false };
+            }
+            return { response: 1, checkboxChecked: false };
+          },
+        } as any,
+        shell: {
+          openExternal: async () => {
+            shutdownActive = true;
+            throw new Error('browser unavailable during shutdown');
+          },
+          openPath: async () => {
+            shutdownActive = true;
+            if (shutdownScenario === 'open-path-throw') {
+              throw new Error('file manager unavailable during shutdown');
+            }
+            return 'could not open path during shutdown';
+          },
+        },
+        log: { info() {}, warn() {}, error() {} },
+        isShutdownRequested: () => shutdownActive,
+        discoverBackups: discoverDowngradeBackups,
+        planPreservedArchivePath: (v) => planNewerDatabaseArchivePath(v),
+        restoreBackup: async () => {
+          shutdownActive = true;
+          const abortErr = new Error('Database maintenance cancelled during shutdown') as Error & {
+            code?: string;
+          };
+          abortErr.code = 'ERR_SHUTDOWN_ABORTED';
+          throw abortErr;
+        },
+        getBackupDir,
+        getDbPath,
+      });
+      assert.deepEqual(shutdownOutcome, { outcome: 'exit' });
+      assert.equal(
+        seenDialogTitles.includes('Backup Restore Failed'),
+        false,
+        `no Backup Restore Failed dialog on ${shutdownScenario}`,
+      );
+      assert.equal(
+        seenDialogTitles.includes('Cannot Open Download Page'),
+        false,
+        `no Cannot Open Download Page dialog on ${shutdownScenario}`,
+      );
+      assert.equal(
+        seenDialogTitles.includes('Cannot Open Backups Folder'),
+        false,
+        `no Cannot Open Backups Folder dialog on ${shutdownScenario}`,
+      );
+    }
+
     // 4a. Direct calls with missing, corrupt, or newer-incompatible backups fail closed before touching DB.
     await assert.rejects(
       () => restoreCompatibleBackupForDowngrade(path.join(backupDir, 'missing-does-not-exist.db')),
@@ -717,9 +870,75 @@ async function run(): Promise<void> {
     );
     verifyPreservedNewerSetReadable(dbPath, newerDbVersion, 'ORD-AFTER-UPGRADE-900');
 
-    // Clean any earlier archive from 4b before testing full successful restore in step 5.
+    const backupFilesBefore4d = new Set(fs.readdirSync(backupDir));
+    const schemaDriftOlderBackupPath = path.join(
+      backupDir,
+      `flo-backup-2026-10-28T10-30-00-000Z-pre-v${olderCompatibleVersion}-to-v${newerDbVersion}.db`,
+    );
+    writeStampedSchemaSnapshot(schemaDriftOlderBackupPath, olderCompatibleVersion, {
+      appVersion: '3.12.9',
+      backupCreatedAt: '2026-10-28T10:30:00.000Z',
+      seed: (snapDb) => {
+        snapDb.exec('CREATE TABLE unexpected_rogue_artifact (id TEXT PRIMARY KEY)');
+      },
+    });
+    const schemaDriftDialogs: { title?: string; detail?: string }[] = [];
+    const schemaDriftOutcome = await runDowngradeRecoveryFlow(caughtWalMismatch!, {
+      appVersion: '3.13.14',
+      dialog: {
+        showMessageBox: async (options: any) => {
+          schemaDriftDialogs.push({ title: options.title, detail: options.detail });
+          if (schemaDriftDialogs.length === 1) return { response: 2, checkboxChecked: false };
+          if (schemaDriftDialogs.length === 2) return { response: 0, checkboxChecked: false };
+          if (schemaDriftDialogs.length === 3) return { response: 0, checkboxChecked: false };
+          return { response: 2, checkboxChecked: false };
+        },
+      } as any,
+      shell: { openExternal: async () => {}, openPath: async () => '' },
+      log: { info() {}, warn() {}, error() {} },
+      isShutdownRequested: () => false,
+      discoverBackups: discoverDowngradeBackups,
+      planPreservedArchivePath: (v) => planNewerDatabaseArchivePath(v),
+      restoreBackup: restoreCompatibleBackupForDowngrade,
+      getBackupDir,
+      getDbPath,
+    });
+    assert.deepEqual(schemaDriftOutcome, { outcome: 'exit' });
+    assert.equal(schemaDriftDialogs[3]?.title, 'Backup Restore Failed');
+    assert.match(
+      schemaDriftDialogs[3]?.detail || '',
+      /Restored database table structure does not match schema v/,
+      'post-migration tableColumns mismatch surfaces Backup Restore Failed instead of committing',
+    );
+    assert.equal(sha256File(dbPath), walHashes.dbSha, 'post-migration schema failure rolls back flo.db');
+    assert.equal(
+      sha256File(`${dbPath}-wal`),
+      walHashes.walSha,
+      'post-migration schema failure rolls back flo.db-wal',
+    );
+    assert.equal(
+      sha256File(`${dbPath}-shm`),
+      walHashes.shmSha,
+      'post-migration schema failure rolls back flo.db-shm',
+    );
+    assert.deepEqual(
+      fs.readdirSync(backupDir).filter((name) => name.includes('recovery-')),
+      [],
+      'post-migration schema failure cleans up temporary journal artifacts',
+    );
+    assert.equal(
+      fs.readFileSync(secureJwtFilePath, 'utf8'),
+      'enc:live-newer-jwt-secret-hex-0001',
+      'rollback leaves OS-backed jwt-secret.enc untouched',
+    );
+    assert.equal(
+      getJWTSecret(),
+      'live-newer-jwt-secret-hex-0001',
+      'rollback leaves cached JWT secret untouched',
+    );
+
     for (const fileName of fs.readdirSync(backupDir)) {
-      if (fileName.startsWith('flo-preserved-newer-')) {
+      if (fileName.startsWith('flo-preserved-newer-') || !backupFilesBefore4d.has(fileName)) {
         fs.unlinkSync(path.join(backupDir, fileName));
       }
     }
@@ -841,6 +1060,63 @@ async function run(): Promise<void> {
       .prepare("SELECT value FROM settings WHERE key = 'google_drive_account_subject'")
       .get();
     assert.equal(staleDriveSubject, undefined, 'Google Drive restore binding is cleared');
+    const rotatedJwtSecret = getJWTSecret();
+    assert.notEqual(
+      rotatedJwtSecret,
+      'live-newer-jwt-secret-hex-0001',
+      'committed downgrade restore rotates the JWT signing secret',
+    );
+    assert.match(rotatedJwtSecret, /^[0-9a-f]{64}$/, 'rotated JWT secret is 32-byte random hex');
+    assert.throws(
+      () => jwt.verify(preRestoreBearerToken, rotatedJwtSecret),
+      'bearer JWT minted before downgrade restore is rejected after secret rotation',
+    );
+    assert.equal(
+      fs.readFileSync(secureJwtFilePath, 'utf8'),
+      `enc:${rotatedJwtSecret}`,
+      'getJWTSecret() rotates OS-backed jwt-secret.enc to the new secret on startup',
+    );
+    assert.equal(
+      (
+        activeDb.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as {
+          value: string;
+        }
+      ).value,
+      JWT_SECRET_SAFE_STORAGE_MARKER,
+      'settings.jwt_secret upgrades back to safe-storage marker after rotating jwt-secret.enc',
+    );
+    assert.equal(
+      activeDb
+        .prepare("SELECT key FROM settings WHERE key LIKE 'mobile\\_pairing\\_code%' ESCAPE '\\'")
+        .all().length,
+      0,
+      'stale mobile pairing codes are cleared on downgrade restore',
+    );
+    assert.equal(
+      getUserAuthStatus('user-staff-1')?.role,
+      'server',
+      'in-memory userAuthCache is cleared on downgrade restore so restored user role applies',
+    );
+    assert.equal(
+      isTokenRevoked('in-memory-revoked-token'),
+      false,
+      'in-memory revoked token set is cleared on downgrade restore',
+    );
+    const activeMetaRows = activeDb
+      .prepare('SELECT key, value FROM _flo_meta')
+      .all() as { key: string; value: string | null }[];
+    const activeMeta = new Map(activeMetaRows.map((row) => [row.key, row.value]));
+    assert.equal(activeMeta.get('schema_version'), String(maxSupported));
+    assert.equal(
+      activeMeta.get('app_version'),
+      '3.13.14',
+      '_flo_meta.app_version is aligned with running app version after forward migration',
+    );
+    assert.equal(
+      activeMeta.has('backup_created_at'),
+      false,
+      'backup-only backup_created_at stamp is removed from live _flo_meta after restore',
+    );
     const sequenceRow = activeDb
       .prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20261028'")
       .get() as { current_value: number } | undefined;
@@ -853,8 +1129,8 @@ async function run(): Promise<void> {
 
     // 6. Electron main/index.ts startup interception (via tests/startup-failure-child.cjs):
     //    SchemaVersionMismatchError triggers Newer Database Detected (never dialog.showErrorBox),
-    //    supports Exit, Get Latest Version, and Restore Compatible Backup -> normal initialize().
-    for (const mode of ['exit', 'update', 'restore'] as const) {
+    //    and supports Exit, Get Latest Version, and Restore Compatible Backup -> normal initialize().
+    for (const mode of ['exit', 'update', 'restore', 'shutdown'] as const) {
       const childEnv: NodeJS.ProcessEnv = {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
@@ -913,6 +1189,8 @@ async function run(): Promise<void> {
     console.log('Newer-database downgrade recovery tests passed.');
   } finally {
     closeDatabase();
+    if (previousJwtSecretEnv === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = previousJwtSecretEnv;
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
   }

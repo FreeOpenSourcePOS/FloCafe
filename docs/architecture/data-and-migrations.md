@@ -111,8 +111,9 @@ data:
      any files. On confirmation, `restoreCompatibleBackupForDowngrade` preserves `flo.db` and any
      `-wal` and `-shm` sidecars in `backups/`, records a replacement journal so an interrupted or
      failed restore rolls `flo.db` and its sidecars back cleanly, migrates an older compatible
-     backup forward to the supported schema, clears pairing tokens and Google Drive bindings,
-     repairs sequences, and resumes normal `initialize()` startup.
+     backup forward to the supported schema, rotates the JWT signing secret, clears pairing
+     tokens/codes and Google Drive bindings, repairs sequences, and resumes normal `initialize()`
+     startup.
    - **Exit** - runs cleanup and exits with code `0` without modifying any files.
 
 ## The automatic pre-migration backup

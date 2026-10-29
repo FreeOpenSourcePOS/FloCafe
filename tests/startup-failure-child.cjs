@@ -17,7 +17,7 @@ const realProcessExit = process.exit.bind(process);
 let releaseServerStart;
 let rejectServerStart;
 
-if (startupRace || startupFailureRace) {
+if (startupRace || startupFailureRace || newerDbMode === 'shutdown') {
   process.exit = (code = 0) => {
     exitCodes.push(code);
   };
@@ -27,6 +27,12 @@ function register(event, listener) {
   const listeners = appListeners.get(event) || [];
   listeners.push(listener);
   appListeners.set(event, listeners);
+}
+
+function emitAppEvent(event, ...args) {
+  for (const listener of appListeners.get(event) || []) {
+    listener(...args);
+  }
 }
 
 const app = {
@@ -127,13 +133,23 @@ Module._load = function (request, parent, isMain) {
           messageBoxCalls += 1;
           events.push(`dialog.showMessageBox:${options.title}`);
           if (newerDbMode === 'exit') {
+            await new Promise((resolve) => setImmediate(resolve));
+            emitAppEvent('activate');
+            emitAppEvent('second-instance');
             return { response: 3 };
           }
           if (newerDbMode === 'update') {
             return { response: 0 };
           }
-          if (newerDbMode === 'restore') {
-            if (messageBoxCalls === 1) return { response: 2 };
+          if (newerDbMode === 'restore' || newerDbMode === 'shutdown') {
+            if (messageBoxCalls === 1) {
+              if (newerDbMode === 'restore') {
+                await new Promise((resolve) => setImmediate(resolve));
+                emitAppEvent('activate');
+                emitAppEvent('second-instance');
+              }
+              return { response: 2 };
+            }
             if (messageBoxCalls === 2) return { response: 0 };
             if (messageBoxCalls === 3) return { response: 0 };
           }
@@ -213,8 +229,26 @@ Module._load = function (request, parent, isMain) {
       }),
       planNewerDatabaseArchivePath: (version) =>
         path.join(testDir, 'backups', `flo-preserved-newer-v${version}-test.db`),
-      restoreCompatibleBackupForDowngrade: async (backupPath) => {
-        events.push('database.downgradeRestore');
+      restoreCompatibleBackupForDowngrade: async (backupPath, options) => {
+        const hasSignal = Boolean(options?.signal && typeof options.signal.aborted === 'boolean');
+        events.push(
+          hasSignal ? 'database.downgradeRestore' : 'database.downgradeRestore:missingSignal',
+        );
+        if (newerDbMode === 'shutdown') {
+          return new Promise((_resolve, reject) => {
+            options.signal.addEventListener(
+              'abort',
+              () => {
+                events.push('database.downgradeRestore.aborted');
+                const abortErr = new Error('Database maintenance cancelled during shutdown');
+                abortErr.code = 'ERR_SHUTDOWN_ABORTED';
+                reject(abortErr);
+              },
+              { once: true },
+            );
+            setImmediate(() => process.emit('SIGTERM'));
+          });
+        }
         return {
           restoredBackupPath: backupPath,
           backupSchemaVersion: 120,
@@ -339,6 +373,10 @@ Module._load = function (request, parent, isMain) {
     };
   if (request === './printers/thermal')
     return { initPrinter: async () => {}, printReceipt() {}, printKOT() {} };
+  if (request === './backend-health')
+    return {
+      probeBackendHealth: async () => serverRunning && kdsRunning && serverAppRunning,
+    };
   if (request === './ipc') return { registerIpcHandlers() {} };
   if (request === './services/whatsapp')
     return {
@@ -377,6 +415,7 @@ setTimeout(
       ];
       passed =
         expectedExitOrder.every((event, index) => events[index] === event) &&
+        !events.includes('app.relaunch') &&
         !events.includes('dialog.showErrorBox') &&
         !events.includes('diagnostics.capture') &&
         exitCodes.length === 1 &&
@@ -399,6 +438,7 @@ setTimeout(
       ];
       passed =
         expectedUpdateOrder.every((event, index) => events[index] === event) &&
+        !events.includes('app.relaunch') &&
         !events.includes('dialog.showErrorBox') &&
         !events.includes('diagnostics.capture') &&
         exitCodes.length === 1 &&
@@ -422,9 +462,37 @@ setTimeout(
       ];
       passed =
         expectedRestoreOrder.every((event, index) => events[index] === event) &&
+        !events.includes('app.relaunch') &&
         !events.includes('dialog.showErrorBox') &&
         !events.includes('diagnostics.capture') &&
         exitCodes.length === 0;
+    } else if (newerDbMode === 'shutdown') {
+      const expectedShutdownOrder = [
+        'database.init',
+        'database.close',
+        'dialog.showMessageBox:Newer Database Detected',
+        'dialog.showMessageBox:Select Compatible Backup',
+        'dialog.showMessageBox:Confirm Backup Restore',
+        'database.downgradeRestore',
+        'database.downgradeRestore.aborted',
+        'server-app.stop',
+        'server.stop',
+        'kds.stop',
+        'cloud.shutdown',
+        'telemetry.stop',
+        'drive.stop',
+        'whatsapp.stop',
+        'database.admission',
+        'database.close',
+      ];
+      passed =
+        expectedShutdownOrder.every((event, index) => events[index] === event) &&
+        !events.includes('dialog.showMessageBox:Backup Restore Failed') &&
+        !events.includes('app.relaunch') &&
+        !events.includes('dialog.showErrorBox') &&
+        !events.includes('diagnostics.capture') &&
+        exitCodes.length === 1 &&
+        exitCodes[0] === 0;
     } else {
       const expectedOrder =
         startupRace || startupFailureRace

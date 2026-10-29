@@ -1673,7 +1673,6 @@ async function initialize(): Promise<void> {
       return;
     } catch (error) {
       if (isSchemaVersionMismatchError(error)) {
-        runtimeState = 'failed';
         log.warn('[Lifecycle] Newer database schema detected during startup:', error);
         closeDatabase();
         if (isShutdownRequested()) {
@@ -1694,7 +1693,13 @@ async function initialize(): Promise<void> {
           discoverBackups: discoverDowngradeBackups,
           planPreservedArchivePath: (newerDbVersion) =>
             planNewerDatabaseArchivePath(newerDbVersion),
-          restoreBackup: restoreCompatibleBackupForDowngrade,
+          restoreBackup: (backupPath, options) =>
+            restoreCompatibleBackupForDowngrade(backupPath, {
+              ...options,
+              signal: options?.signal
+                ? AbortSignal.any([shutdownSignal, options.signal])
+                : shutdownSignal,
+            }),
           getBackupDir,
           getDbPath,
         });
@@ -1706,7 +1711,17 @@ async function initialize(): Promise<void> {
           continue;
         }
 
+        if (isShutdownRequested()) {
+          try {
+            await runCleanup();
+          } catch (cleanupError) {
+            console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
+          }
+          return;
+        }
+
         isQuitting = true;
+        runtimeState = 'stopping';
         try {
           await runCleanup();
         } catch (cleanupError) {

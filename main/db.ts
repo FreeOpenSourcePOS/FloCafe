@@ -24,6 +24,8 @@ import {
   resolveRegionalSnapshot,
   resolveTenantCurrency,
 } from './countries';
+import { clearInMemoryRevokedTokens, clearUserAuthCache } from './middleware/security';
+import { clearJWTSecretCache } from './security/jwt-secret';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
 
@@ -1031,6 +1033,28 @@ function isReadableRecoverySnapshotWithSidecars(
   }
 }
 
+function validateDatabaseSchemaTableColumns(
+  dbInstance: Database.Database,
+  schemaVersion: number,
+  subjectLabel = 'Database',
+): string | null {
+  const tables = new Set(getTables(dbInstance));
+  const expectedSchema = getRecoverySchemaReference(schemaVersion).tableColumns;
+  if (
+    tables.size !== expectedSchema.size ||
+    ![...expectedSchema.keys()].every((table) => tables.has(table))
+  ) {
+    return `${subjectLabel} table structure does not match schema v${schemaVersion}`;
+  }
+  for (const [table, columns] of expectedSchema.entries()) {
+    const available = new Set(getColumns(dbInstance, table));
+    if (!columns.every((column) => available.has(column))) {
+      return `${subjectLabel} table ${table} is missing expected column(s)`;
+    }
+  }
+  return null;
+}
+
 function isHealthyDowngradeCommittedDatabaseFile(
   filePath: string,
   allowedForeignKeyViolations: Set<string> | null | undefined = undefined,
@@ -1054,18 +1078,7 @@ function isHealthyDowngradeCommittedDatabaseFile(
     const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
     const supportedVersion = getLatestSupportedSchemaVersion();
     if (schemaVersion < 1 || schemaVersion > supportedVersion) return false;
-    const tables = new Set(getTables(candidate));
-    const expectedSchema = getRecoverySchemaReference(schemaVersion).tableColumns;
-    if (
-      tables.size !== expectedSchema.size ||
-      ![...expectedSchema.keys()].every((table) => tables.has(table))
-    ) {
-      return false;
-    }
-    for (const [table, columns] of expectedSchema.entries()) {
-      const available = new Set(getColumns(candidate, table));
-      if (!columns.every((column) => available.has(column))) return false;
-    }
+    if (validateDatabaseSchemaTableColumns(candidate, schemaVersion) !== null) return false;
     return validateInventoryLedgerDatabase(candidate) === null;
   } catch {
     return false;
@@ -1647,10 +1660,19 @@ function inspectDatabaseVersionNonMutating(
     if (!Number.isSafeInteger(pragmaVersion)) return null;
     let appVersion: string | null = null;
     try {
-      const row = probeDb.prepare("SELECT value FROM _flo_meta WHERE key = 'app_version'").get() as
-        | { value?: string | null }
-        | undefined;
-      if (typeof row?.value === 'string' && row.value.trim()) appVersion = row.value.trim();
+      const metaRows = probeDb
+        .prepare("SELECT key, value FROM _flo_meta WHERE key IN ('schema_version', 'app_version')")
+        .all() as { key: string; value: string | null }[];
+      const metaValues = new Map(metaRows.map((row) => [row.key, row.value]));
+      const metaSchemaVersion = parseCanonicalSchemaVersion(metaValues.get('schema_version'));
+      const rawAppVersion = metaValues.get('app_version');
+      if (
+        metaSchemaVersion === pragmaVersion &&
+        typeof rawAppVersion === 'string' &&
+        rawAppVersion.trim()
+      ) {
+        appVersion = rawAppVersion.trim();
+      }
     } catch {}
     return { schemaVersion: pragmaVersion, appVersion };
   } catch {
@@ -2973,7 +2995,8 @@ function inspectBackupSnapshotForDowngrade(
     }
 
     const pragmaVersion = Number(candidateDb.pragma('user_version', { simple: true }));
-    let metaSchemaRaw: string | undefined;
+    let hasMetaSchemaStamp = false;
+    let parsedMetaVersion: number | null = null;
     let appVersion: string | null = null;
     let backupCreatedAt: string | null = null;
     const hasMetaTable = Boolean(
@@ -2988,33 +3011,38 @@ function inspectBackupSnapshotForDowngrade(
         )
         .all() as { key: string; value: string | null }[];
       const values = new Map(metaRows.map((row) => [row.key, row.value]));
-      const rawSchema = values.get('schema_version');
-      if (typeof rawSchema === 'string') metaSchemaRaw = rawSchema;
-      const rawAppVersion = values.get('app_version');
-      if (typeof rawAppVersion === 'string' && rawAppVersion.trim()) {
-        appVersion = rawAppVersion.trim();
-      }
-      const rawCreatedAt = values.get('backup_created_at');
-      if (typeof rawCreatedAt === 'string' && rawCreatedAt.trim()) {
-        backupCreatedAt = rawCreatedAt.trim();
+      hasMetaSchemaStamp = values.has('schema_version');
+      parsedMetaVersion = parseCanonicalSchemaVersion(values.get('schema_version'));
+      if (
+        hasMetaSchemaStamp &&
+        parsedMetaVersion !== null &&
+        parsedMetaVersion >= 1 &&
+        parsedMetaVersion === pragmaVersion
+      ) {
+        const rawAppVersion = values.get('app_version');
+        if (typeof rawAppVersion === 'string' && rawAppVersion.trim()) {
+          appVersion = rawAppVersion.trim();
+        }
+        const rawCreatedAt = values.get('backup_created_at');
+        if (typeof rawCreatedAt === 'string' && rawCreatedAt.trim()) {
+          backupCreatedAt = rawCreatedAt.trim();
+        }
       }
     }
 
-    if (metaSchemaRaw !== undefined) {
-      const parsedMetaVersion = parseCanonicalSchemaVersion(metaSchemaRaw);
-      if (
-        parsedMetaVersion === null ||
+    if (
+      hasMetaSchemaStamp &&
+      (parsedMetaVersion === null ||
         parsedMetaVersion < 1 ||
-        parsedMetaVersion !== pragmaVersion
-      ) {
-        return {
-          status: 'corrupt_or_invalid',
-          schemaVersion:
-            Number.isSafeInteger(pragmaVersion) && pragmaVersion > 0 ? pragmaVersion : null,
-          appVersion,
-          detail: 'Backup schema metadata does not match the SQLite header',
-        };
-      }
+        parsedMetaVersion !== pragmaVersion)
+    ) {
+      return {
+        status: 'corrupt_or_invalid',
+        schemaVersion:
+          Number.isSafeInteger(pragmaVersion) && pragmaVersion > 0 ? pragmaVersion : null,
+        appVersion: null,
+        detail: 'Backup schema metadata does not match the SQLite header',
+      };
     }
 
     if (!Number.isSafeInteger(pragmaVersion) || pragmaVersion < 1) {
@@ -3047,28 +3075,18 @@ function inspectBackupSnapshotForDowngrade(
     }
 
     if (pragmaVersion === maxSupportedSchemaVersion) {
-      const expectedSchema = getRecoverySchemaReference(maxSupportedSchemaVersion).tableColumns;
-      if (
-        tables.size !== expectedSchema.size ||
-        ![...expectedSchema.keys()].every((table) => tables.has(table))
-      ) {
+      const schemaError = validateDatabaseSchemaTableColumns(
+        candidateDb,
+        maxSupportedSchemaVersion,
+        'Backup',
+      );
+      if (schemaError) {
         return {
           status: 'corrupt_or_invalid',
           schemaVersion: pragmaVersion,
           appVersion,
-          detail: 'Backup table structure does not match schema v' + pragmaVersion,
+          detail: schemaError,
         };
-      }
-      for (const [table, columns] of expectedSchema.entries()) {
-        const available = new Set(getColumns(candidateDb, table));
-        if (!columns.every((column) => available.has(column))) {
-          return {
-            status: 'corrupt_or_invalid',
-            schemaVersion: pragmaVersion,
-            appVersion,
-            detail: `Backup table ${table} is missing expected column(s)`,
-          };
-        }
       }
     }
 
@@ -3439,6 +3457,10 @@ export function restoreCompatibleBackupForDowngrade(
           freshDb
             .prepare("INSERT OR REPLACE INTO _flo_meta (key, value) VALUES ('schema_version', ?)")
             .run(String(restoredSchemaVersion));
+          freshDb
+            .prepare("INSERT OR REPLACE INTO _flo_meta (key, value) VALUES ('app_version', ?)")
+            .run(app.getVersion());
+          freshDb.prepare("DELETE FROM _flo_meta WHERE key = 'backup_created_at'").run();
         }
 
         const existingTables = new Set(getTables(freshDb));
@@ -3449,6 +3471,17 @@ export function restoreCompatibleBackupForDowngrade(
           freshDb.prepare('DELETE FROM customer_display_tokens').run();
         }
         clearGoogleDriveRestoreBinding(freshDb);
+        const rotatedJwtSecret = crypto.randomBytes(32).toString('hex');
+        const credentialTimestamp = now();
+        freshDb
+          .prepare(`
+            INSERT INTO settings (key, value, updated_at) VALUES ('jwt_secret', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+          `)
+          .run(rotatedJwtSecret, credentialTimestamp);
+        freshDb
+          .prepare("DELETE FROM settings WHERE key LIKE 'mobile\\_pairing\\_code%' ESCAPE '\\'")
+          .run();
         executeSequenceRepair(freshDb);
         freshDb
           .prepare(`
@@ -3467,15 +3500,23 @@ export function restoreCompatibleBackupForDowngrade(
           integrity_check: string;
         }[];
         const fkViolations = getForeignKeyViolationKeys(freshDb);
-        const inventoryError = validateInventoryLedgerDatabase(freshDb);
+        const schemaError =
+          restoredSchemaVersion < 1 || restoredSchemaVersion > maxSupported
+            ? `Restored database schema v${restoredSchemaVersion} is outside supported range`
+            : validateDatabaseSchemaTableColumns(freshDb, restoredSchemaVersion, 'Restored database');
+        const inventoryError =
+          schemaError === null ? validateInventoryLedgerDatabase(freshDb) : null;
         if (
           integrity.length === 0 ||
           integrity.some((row) => row.integrity_check !== 'ok') ||
           fkViolations.size > 0 ||
+          schemaError !== null ||
           inventoryError !== null
         ) {
           throw new Error(
-            inventoryError || 'Restored database failed post-restore integrity validation',
+            schemaError ||
+              inventoryError ||
+              'Restored database failed post-restore integrity validation',
           );
         }
 
@@ -3494,6 +3535,9 @@ export function restoreCompatibleBackupForDowngrade(
           downgradeRecovery: true,
           recoverySidecars: [...presentSidecars],
         });
+        clearUserAuthCache();
+        clearInMemoryRevokedTokens();
+        clearJWTSecretCache();
         closeDatabase();
 
         return {
@@ -3509,6 +3553,9 @@ export function restoreCompatibleBackupForDowngrade(
             ? replaceError.message
             : 'unknown error';
         if (readReplacementJournal(journalPath)?.phase === 'committed') {
+          clearUserAuthCache();
+          clearInMemoryRevokedTokens();
+          clearJWTSecretCache();
           closeDatabase();
           return {
             restoredBackupPath: path.resolve(backupPath),
@@ -3547,11 +3594,15 @@ export function restoreCompatibleBackupForDowngrade(
             { cause: rollbackError },
           );
         }
-        throw new Error(
+        const wrappedReplaceError = new Error(
           `Compatible backup restore failed: ${replaceMessage}. ` +
             `Your newer database and its sidecar files were restored in place and preserved at ${preservedDbPath}.`,
           { cause: replaceError },
-        );
+        ) as Error & { code?: string };
+        if ((replaceError as { code?: unknown } | null)?.code === 'ERR_SHUTDOWN_ABORTED') {
+          wrappedReplaceError.code = 'ERR_SHUTDOWN_ABORTED';
+        }
+        throw wrappedReplaceError;
       }
     } finally {
       stagedSource?.cleanup();

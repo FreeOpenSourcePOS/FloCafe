@@ -1346,10 +1346,12 @@ async function main() {
           waived: false,
         },
       ]);
-      db.prepare("UPDATE orders SET charges_breakdown = ? WHERE order_number = 'ORD-WITH-ORDER-FEE-01'").run(
-        orderOnlyCustomFee,
-      );
-      db.prepare("UPDATE bills SET charges_breakdown = NULL WHERE bill_number = 'INV-SPLIT-NULL-BREAKDOWN-01'").run();
+      db.prepare(
+        "UPDATE orders SET charges_breakdown = ? WHERE order_number = 'ORD-WITH-ORDER-FEE-01'",
+      ).run(orderOnlyCustomFee);
+      db.prepare(
+        "UPDATE bills SET charges_breakdown = NULL WHERE bill_number = 'INV-SPLIT-NULL-BREAKDOWN-01'",
+      ).run();
 
       const res = await fetch(
         `${baseUrl}/api/reports/daily-invoices/export?date=${chargesDate}&format=html`,

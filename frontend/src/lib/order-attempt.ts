@@ -1,5 +1,9 @@
 import type { AppendAttemptStorage } from './append-attempt';
-import { cartItemToOrderItem, type OrderItemPayload, type OrderItemSource } from './cart-order-item';
+import {
+  cartItemToOrderItem,
+  type OrderItemPayload,
+  type OrderItemSource,
+} from './cart-order-item';
 
 /** Global key used by builds before prepaid attempts became user scoped. */
 export const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';

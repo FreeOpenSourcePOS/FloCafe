@@ -220,8 +220,9 @@ terminals, while approval authority stays restricted to active `owner` and `mana
    and user switch, while privileged cart adjustments (line price overrides and charge waivers),
    cached override PINs, and open privileged modals are cleared. Pending asynchronous checkout
    continuations are guarded by session epoch and originating tokens so a user switch halts downstream
-   billing, payment, and cart clearance under the new session, while committed-order recovery state
-   is preserved under the originating user's attempt record.
+   billing and payment transitions under the new session, clears any untouched matching cart to
+   prevent duplicate ordering, and preserves committed-order recovery state under the originating
+   user's attempt record.
 4. **Approval boundary:** `GET /api/staff/approvers` and every Staff Approval PIN check (refunds,
    item voids, order/item/bill discounts, order-status overrides, kitchen-delivery overrides,
    charge waivers, and paid-bill payment-method corrections) enforce active `owner` or `manager`

@@ -1278,7 +1278,9 @@ async function run() {
       if (eqIdx !== -1) {
         const k = pair.slice(0, eqIdx).trim();
         const v = pair.slice(eqIdx + 1).trim();
-        const maxAgeDirective = directives.find((d) => d.trim().toLowerCase().startsWith('max-age='));
+        const maxAgeDirective = directives.find((d) =>
+          d.trim().toLowerCase().startsWith('max-age='),
+        );
         if (maxAgeDirective && maxAgeDirective.split('=')[1].trim() === '0') {
           documentCookieMap.delete(k);
         } else {
@@ -1479,14 +1481,20 @@ async function run() {
     post: async (url: string, body?: any) => {
       p2Calls.push({ url, body });
       if (url === '/orders') return p2OrdersPromise;
-      if (url === '/bills/generate') return { data: { bill: { id: 'bill-2', payment_status: 'unpaid' } } };
-      if (url.includes('/payments')) return { data: { bill: { id: 'bill-2', payment_status: 'paid' } } };
+      if (url === '/bills/generate')
+        return { data: { bill: { id: 'bill-2', payment_status: 'unpaid' } } };
+      if (url.includes('/payments'))
+        return { data: { bill: { id: 'bill-2', payment_status: 'paid' } } };
       return { data: {} };
     },
     get: async () => ({ data: {} }),
   };
 
-  const p2CheckoutPromise = p2PrepaidModal.props.onConfirm([{ method: 'cash', amount: 120 }], 0, null);
+  const p2CheckoutPromise = p2PrepaidModal.props.onConfirm(
+    [{ method: 'cash', amount: 120 }],
+    0,
+    null,
+  );
   await new Promise((r) => setTimeout(r, 15));
 
   // User switches to manager while in-flight, but manager DOES NOT touch the cart
@@ -1506,7 +1514,9 @@ async function run() {
   assertEqualOrThrow(useCartStore.getState().items.length, 1, 'Manager starts with untouched cart');
 
   // Release the in-flight order
-  p2OrdersDeferredResolve({ data: { order: { id: 'order-latte-456', order_number: 'ORD-LATTE-456' } } });
+  p2OrdersDeferredResolve({
+    data: { order: { id: 'order-latte-456', order_number: 'ORD-LATTE-456' } },
+  });
   await p2CheckoutPromise;
 
   // Stale continuation must have safely cleared the matching cart so manager cannot double-charge
@@ -1575,7 +1585,10 @@ async function run() {
     scheduledFor: '2026-10-30T11:00:00.000Z',
   });
   assertOrThrow(fpImmediate !== fpScheduled1, 'Immediate and scheduled order fingerprints differ');
-  assertOrThrow(fpScheduled1 !== fpScheduled2, 'Different scheduled times yield different fingerprints');
+  assertOrThrow(
+    fpScheduled1 !== fpScheduled2,
+    'Different scheduled times yield different fingerprints',
+  );
 
   const fpDineIn1 = buildCartFingerprintFromState({
     ...baseCartForFingerprint,

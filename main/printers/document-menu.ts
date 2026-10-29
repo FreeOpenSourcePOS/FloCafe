@@ -119,21 +119,21 @@ export function buildMenuDocument(
   const childrenByParent = new Map<string, MenuCategoryInput[]>();
   const rootCategories: MenuCategoryInput[] = [];
   for (const category of categories) {
-    if (
-      category.parentId &&
-      categoryById.has(category.parentId) &&
-      category.parentId !== category.id
-    ) {
-      const list = childrenByParent.get(category.parentId) || [];
+    const parentId = category.parentId || null;
+    if (parentId && categoryById.has(parentId) && parentId !== category.id) {
+      const list = childrenByParent.get(parentId) || [];
       list.push(category);
-      childrenByParent.set(category.parentId, list);
+      childrenByParent.set(parentId, list);
     } else {
       rootCategories.push(category);
     }
   }
 
   const sections: MenuDocument['sections'] = [];
-  for (const root of sortBySiblingOrder(rootCategories)) {
+  const visitedCategoryIds = new Set<string>();
+  const visitSubtree = (root: MenuCategoryInput) => {
+    if (visitedCategoryIds.has(root.id)) return;
+    visitedCategoryIds.add(root.id);
     const rootProducts = toRows(
       visibleProducts.filter((product) => product.categoryId === root.id),
     );
@@ -145,20 +145,45 @@ export function buildMenuDocument(
         products: rootProducts,
       });
     }
-    const children = sortBySiblingOrder(childrenByParent.get(root.id) || []);
-    for (const child of children) {
-      const childProducts = toRows(
-        visibleProducts.filter((product) => product.categoryId === child.id),
-      );
-      if (childProducts.length > 0) {
-        sections.push({
-          rootCategoryId: root.id,
-          name: toDirectionalText(child.name),
-          parentName: toDirectionalText(root.name),
-          products: childProducts,
-        });
+    const visitDescendants = (parentId: string) => {
+      const children = sortBySiblingOrder(childrenByParent.get(parentId) || []);
+      for (const child of children) {
+        if (visitedCategoryIds.has(child.id)) continue;
+        visitedCategoryIds.add(child.id);
+        const childProducts = toRows(
+          visibleProducts.filter((product) => product.categoryId === child.id),
+        );
+        if (childProducts.length > 0) {
+          sections.push({
+            rootCategoryId: root.id,
+            name: toDirectionalText(child.name),
+            parentName: toDirectionalText(root.name),
+            products: childProducts,
+          });
+        }
+        visitDescendants(child.id);
       }
+    };
+    visitDescendants(root.id);
+  };
+
+  for (const root of sortBySiblingOrder(rootCategories)) {
+    visitSubtree(root);
+  }
+  for (const category of sortBySiblingOrder(categories)) {
+    if (visitedCategoryIds.has(category.id)) continue;
+    let entry = category;
+    const chain = new Set<string>([entry.id]);
+    while (
+      entry.parentId &&
+      categoryById.has(entry.parentId) &&
+      !chain.has(entry.parentId) &&
+      !visitedCategoryIds.has(entry.parentId)
+    ) {
+      entry = categoryById.get(entry.parentId)!;
+      chain.add(entry.id);
     }
+    visitSubtree(entry);
   }
   const uncategorized = visibleProducts.filter(
     (product) => !product.categoryId || !categoryById.has(product.categoryId),

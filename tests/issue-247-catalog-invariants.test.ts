@@ -27,6 +27,7 @@ const {
   seedOwnerUser,
   seedCategory,
   seedProduct,
+  seedCustomer,
   api,
   assert,
   assertEqual,
@@ -38,6 +39,7 @@ const {
 const { categoryRoutes } = require('../main/routes/categories');
 const { productRoutes } = require('../main/routes/products');
 const { addonGroupRoutes } = require('../main/routes/addon-groups');
+const { getCustomerTopItems } = require('../main/routes/customers');
 
 async function main() {
   console.log('Integration Test: Issue #247 catalog invariants');
@@ -481,6 +483,122 @@ async function main() {
       res.status,
       400,
       'deactivating the reactivated parent while it still has subcategories is refused',
+    );
+
+    console.log('\n─── Preserved deep categories and soft-deleted category guards ───');
+    db.prepare(`
+      INSERT INTO categories (id, name, parent_id, sort_order, is_active, deleted_at, created_at, updated_at)
+      VALUES
+        ('cat-deep-root', 'Deep Root', NULL, 50, 1, NULL, ?, ?),
+        ('cat-deep-child', 'Deep Child', 'cat-deep-root', 1, 1, NULL, ?, ?),
+        ('cat-deep-grand', 'Deep Grandchild', 'cat-deep-child', 1, 1, NULL, ?, ?),
+        ('cat-soft-deleted', 'Soft Deleted Cat', NULL, 51, 1, ?, ?, ?)
+    `).run(now(), now(), now(), now(), now(), now(), now(), now(), now());
+    seedProduct(db, 'prod-soft-deleted-cat', 'cat-soft-deleted', 'Orphaned Cat Product', 7);
+
+    res = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'Deep Grandchild Tea', category_id: 'cat-deep-grand', price: 6 },
+    });
+    assertEqual(
+      res.status,
+      201,
+      'creating a product in an active preserved depth-2 category succeeds',
+    );
+    const deepProdId = res.data.product.id;
+
+    res = await api(baseUrl, '/api/categories/cat-deep-grand', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { name: 'Deep Grandchild Edited', parent_id: 'cat-deep-child', is_active: true },
+    });
+    assertEqual(
+      res.status,
+      200,
+      'editing a preserved depth-2 category while retaining its unchanged parent succeeds',
+    );
+
+    seedCustomer(db, 'cust-247-deep', 'Deep Catalog Customer');
+    const deepOrderRes = db
+      .prepare(`
+      INSERT INTO orders (order_number, customer_id, type, status, created_at, updated_at)
+      VALUES ('ORD-247-DEEP', 'cust-247-deep', 'takeaway', 'completed', ?, ?)
+    `)
+      .run(now(), now());
+    const deepOrderId = Number(deepOrderRes.lastInsertRowid);
+    db.prepare(`
+      INSERT INTO bills (bill_number, order_id, customer_id, total, paid_amount, payment_status, created_at, updated_at)
+      VALUES ('BILL-247-DEEP', ?, 'cust-247-deep', 13, 13, 'paid', ?, ?)
+    `).run(deepOrderId, now(), now());
+    db.prepare(`
+      INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
+      VALUES
+        (?, ?, 'Deep Grandchild Tea', 6, 1, 6, 6, 'completed', ?, ?),
+        (?, 'prod-soft-deleted-cat', 'Orphaned Cat Product', 7, 1, 7, 7, 'completed', ?, ?)
+    `).run(deepOrderId, deepProdId, now(), now(), deepOrderId, now(), now());
+
+    res = await api(baseUrl, '/api/products?active=1', { headers: authHeader });
+    assert(
+      res.data.products.some((p: any) => p.id === deepProdId) &&
+        !res.data.products.some((p: any) => p.id === 'prod-soft-deleted-cat'),
+      'GET /api/products?active=1 includes active depth-2 product and excludes soft-deleted category product',
+    );
+    let topItems = getCustomerTopItems(db, 'cust-247-deep');
+    assertEqual(
+      topItems.find((item: any) => item.product_id === deepProdId)?.available,
+      true,
+      'getCustomerTopItems marks active preserved depth-2 product available',
+    );
+    assertEqual(
+      topItems.find((item: any) => item.product_id === 'prod-soft-deleted-cat')?.available,
+      false,
+      'getCustomerTopItems marks product in soft-deleted category unavailable',
+    );
+
+    db.prepare('UPDATE categories SET is_active = 0 WHERE id = ?').run('cat-deep-root');
+
+    res = await api(baseUrl, '/api/categories?active=1', { headers: authHeader });
+    const activeIdsAfterDeepRootOff = res.data.categories.map((c: any) => c.id);
+    assert(
+      !activeIdsAfterDeepRootOff.includes('cat-deep-root') &&
+        !activeIdsAfterDeepRootOff.includes('cat-deep-child') &&
+        !activeIdsAfterDeepRootOff.includes('cat-deep-grand'),
+      'GET /api/categories?active=1 excludes depth-2 category when its root ancestor is inactive',
+    );
+
+    res = await api(baseUrl, '/api/products?active=1', { headers: authHeader });
+    assert(
+      !res.data.products.some((p: any) => p.id === deepProdId),
+      'GET /api/products?active=1 excludes depth-2 product when its root ancestor is inactive',
+    );
+    topItems = getCustomerTopItems(db, 'cust-247-deep');
+    assertEqual(
+      topItems.find((item: any) => item.product_id === deepProdId)?.available,
+      false,
+      'getCustomerTopItems marks depth-2 product unavailable when its root ancestor is inactive',
+    );
+
+    res = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'Blocked Deep Product', category_id: 'cat-deep-grand', price: 8 },
+    });
+    assertEqual(
+      res.status,
+      400,
+      'creating a product in a depth-2 category under an inactive root ancestor is rejected',
+    );
+
+    res = await api(baseUrl, `/api/products/${deepProdId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: { name: 'Deep Grandchild Tea Retained', category_id: 'cat-deep-grand', price: 6.5 },
+    });
+    assertEqual(
+      res.status,
+      200,
+      'editing a product while retaining its depth-2 category under an inactive root succeeds',
     );
 
     console.log('\n─── Product nullable field updates ───');

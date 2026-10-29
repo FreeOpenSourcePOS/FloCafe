@@ -13,6 +13,30 @@ const categoryWriteRateLimit = expressRateLimit({
   legacyHeaders: false,
 });
 
+export const ACTIVE_CATEGORIES_CTE_CLAUSES = `category_ancestors(start_id, current_id, parent_id, is_active, path) AS (
+  SELECT id, id, NULLIF(TRIM(parent_id), ''), is_active, CHAR(31) || id || CHAR(31)
+  FROM categories
+  WHERE deleted_at IS NULL
+  UNION ALL
+  SELECT ca.start_id,
+    p.id,
+    NULLIF(TRIM(p.parent_id), ''),
+    COALESCE(p.is_active, 0),
+    ca.path || COALESCE(p.id, '') || CHAR(31)
+  FROM category_ancestors ca
+  LEFT JOIN categories p ON p.id = ca.parent_id AND p.deleted_at IS NULL
+  WHERE ca.parent_id IS NOT NULL
+    AND ca.is_active = 1
+    AND ca.current_id IS NOT NULL
+    AND INSTR(ca.path, CHAR(31) || ca.parent_id || CHAR(31)) = 0
+),
+active_categories AS (
+  SELECT start_id AS id
+  FROM category_ancestors
+  GROUP BY start_id
+  HAVING MIN(CASE WHEN current_id IS NOT NULL AND is_active = 1 THEN 1 ELSE 0 END) = 1
+)`;
+
 function hasOwn(body: Record<string, unknown>, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(body, field);
 }
@@ -143,24 +167,26 @@ function validateParentCategory(
       .get(current.parent_id) as { id: string; parent_id: string | null } | undefined;
   }
 
-  if (parent.parent_id !== null) {
-    return {
-      kind: 'reference_invalid',
-      message: 'Parent category must be a root category (maximum 2 levels supported)',
-    };
-  }
-
-  if (categoryId) {
-    const { count: childCount } = db
-      .prepare(
-        'SELECT COUNT(*) as count FROM categories WHERE parent_id = ? AND deleted_at IS NULL',
-      )
-      .get(categoryId) as { count: number };
-    if (childCount > 0) {
+  if (normalizedParentId !== retainedParentId) {
+    if (parent.parent_id !== null) {
       return {
         kind: 'reference_invalid',
-        message: 'Cannot assign a parent to a category that has subcategories',
+        message: 'Parent category must be a root category (maximum 2 levels supported)',
       };
+    }
+
+    if (categoryId) {
+      const { count: childCount } = db
+        .prepare(
+          'SELECT COUNT(*) as count FROM categories WHERE parent_id = ? AND deleted_at IS NULL',
+        )
+        .get(categoryId) as { count: number };
+      if (childCount > 0) {
+        return {
+          kind: 'reference_invalid',
+          message: 'Cannot assign a parent to a category that has subcategories',
+        };
+      }
     }
   }
   return null;
@@ -268,12 +294,12 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
   try {
     const db = getDatabase();
     const activeOnly = req.query.active === 'true' || req.query.active === '1';
-    let query =
-      'SELECT c.* FROM categories c LEFT JOIN categories p ON c.parent_id = p.id AND p.deleted_at IS NULL WHERE c.deleted_at IS NULL';
+    const ctePrefix = activeOnly ? `WITH RECURSIVE ${ACTIVE_CATEGORIES_CTE_CLAUSES} ` : '';
+    let query = `${ctePrefix}SELECT c.* FROM categories c WHERE c.deleted_at IS NULL`;
     const params: any[] = [];
 
     if (activeOnly) {
-      query += ' AND c.is_active = 1 AND (c.parent_id IS NULL OR p.is_active = 1)';
+      query += ' AND c.id IN (SELECT id FROM active_categories)';
     }
     if (req.query.root === 'true') {
       query += ' AND c.parent_id IS NULL';

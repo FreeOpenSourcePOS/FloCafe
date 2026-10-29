@@ -61,7 +61,7 @@ export function buildHierarchicalMenuWebSections<
   for (const category of categories) {
     const id = String(category.id);
     const parentId =
-      category.parent_id !== null && category.parent_id !== undefined
+      category.parent_id !== null && category.parent_id !== undefined && category.parent_id !== ''
         ? String(category.parent_id)
         : null;
     if (parentId && categoryById.has(parentId) && parentId !== id) {
@@ -74,8 +74,11 @@ export function buildHierarchicalMenuWebSections<
   }
 
   const sections: MenuWebPrintSection[] = [];
-  for (const root of sortSiblings(roots)) {
+  const visitedCategoryIds = new Set<string>();
+  const visitSubtree = (root: (typeof categories)[number]) => {
     const rootId = String(root.id);
+    if (visitedCategoryIds.has(rootId)) return;
+    visitedCategoryIds.add(rootId);
     const rootProducts = included
       .filter((row) => String(row.product.category_id ?? '') === rootId)
       .map(mapRow);
@@ -87,21 +90,44 @@ export function buildHierarchicalMenuWebSections<
         products: rootProducts,
       });
     }
-    const children = sortSiblings(childrenByParent.get(rootId) || []);
-    for (const child of children) {
-      const childId = String(child.id);
-      const childProducts = included
-        .filter((row) => String(row.product.category_id ?? '') === childId)
-        .map(mapRow);
-      if (childProducts.length > 0) {
-        sections.push({
-          rootCategoryId: rootId,
-          name: child.name,
-          parentName: root.name,
-          products: childProducts,
-        });
+    const visitDescendants = (parentId: string) => {
+      const children = sortSiblings(childrenByParent.get(parentId) || []);
+      for (const child of children) {
+        const childId = String(child.id);
+        if (visitedCategoryIds.has(childId)) continue;
+        visitedCategoryIds.add(childId);
+        const childProducts = included
+          .filter((row) => String(row.product.category_id ?? '') === childId)
+          .map(mapRow);
+        if (childProducts.length > 0) {
+          sections.push({
+            rootCategoryId: rootId,
+            name: child.name,
+            parentName: root.name,
+            products: childProducts,
+          });
+        }
+        visitDescendants(childId);
       }
+    };
+    visitDescendants(rootId);
+  };
+
+  for (const root of sortSiblings(roots)) {
+    visitSubtree(root);
+  }
+  for (const category of sortSiblings(categories)) {
+    const startId = String(category.id);
+    if (visitedCategoryIds.has(startId)) continue;
+    let entry = category;
+    const chain = new Set<string>([startId]);
+    while (entry.parent_id !== null && entry.parent_id !== undefined && entry.parent_id !== '') {
+      const nextId = String(entry.parent_id);
+      if (!categoryById.has(nextId) || chain.has(nextId) || visitedCategoryIds.has(nextId)) break;
+      entry = categoryById.get(nextId)!;
+      chain.add(String(entry.id));
     }
+    visitSubtree(entry);
   }
   const uncategorized = included
     .filter(

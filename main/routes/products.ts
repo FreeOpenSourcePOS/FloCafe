@@ -18,6 +18,7 @@ import * as dns from 'dns';
 import * as https from 'https';
 import * as net from 'net';
 import { asyncHandler } from '../middleware/async-handler';
+import { ACTIVE_CATEGORIES_CTE_CLAUSES } from './categories';
 
 const MAX_FETCH_BYTES = 10 * 1024 * 1024;
 
@@ -1127,27 +1128,24 @@ function validateCategoryId(
   if (typeof categoryId !== 'string') return 'category_id must be a string or null';
   const normalizedCategoryId = categoryId.trim();
   if (!normalizedCategoryId) return null;
-  const category = db
-    .prepare(
-      `SELECT c.id, c.is_active, c.parent_id, cp.is_active AS parent_is_active
-       FROM categories c
-       LEFT JOIN categories cp ON c.parent_id = cp.id AND cp.deleted_at IS NULL AND cp.parent_id IS NULL
-       WHERE c.id = ? AND c.deleted_at IS NULL`,
-    )
-    .get(normalizedCategoryId) as
-    | {
-        id: string;
-        is_active: number | boolean;
-        parent_id: string | null;
-        parent_is_active: number | boolean | null;
-      }
+  const selectCategory = db.prepare(
+    'SELECT id, is_active, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL',
+  );
+  const category = selectCategory.get(normalizedCategoryId) as
+    | { id: string; is_active: number | boolean; parent_id: string | null }
     | undefined;
   if (!category) return 'Category not found or inactive';
-  const isEffectivelyActive =
-    Boolean(category.is_active) &&
-    (category.parent_id === null || Boolean(category.parent_is_active));
-  if (!isEffectivelyActive && normalizedCategoryId !== (retainedCategoryId ?? null)) {
-    return 'Category not found or inactive';
+  if (normalizedCategoryId === (retainedCategoryId ?? null)) return null;
+  if (!category.is_active) return 'Category not found or inactive';
+  const seen = new Set<string>([category.id]);
+  let nextParentId = category.parent_id ? category.parent_id.trim() || null : null;
+  while (nextParentId && !seen.has(nextParentId)) {
+    seen.add(nextParentId);
+    const ancestor = selectCategory.get(nextParentId) as
+      | { id: string; is_active: number | boolean; parent_id: string | null }
+      | undefined;
+    if (!ancestor || !ancestor.is_active) return 'Category not found or inactive';
+    nextParentId = ancestor.parent_id ? ancestor.parent_id.trim() || null : null;
   }
   return null;
 }
@@ -1201,15 +1199,16 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
   try {
     const db = getDatabase();
     const includeInactiveVariants = wantsInactiveVariants(req);
-    let query = `SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
+    const activeOnly = req.query.active === 'true' || req.query.active === '1';
+    const ctePrefix = activeOnly ? `WITH RECURSIVE ${ACTIVE_CATEGORIES_CTE_CLAUSES} ` : '';
+    let query = `${ctePrefix}SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
       p.sale_unit, p.allow_fractional_quantity, p.weight_precision,
       p.inventory_product_id, p.inventory_deduction_quantity,
       p.is_active, p.sort_order, p.track_inventory, p.stock_quantity, p.low_stock_threshold,
       p.tax_type, p.tax_rate, p.tax_category_id, p.tax_behavior, p.cb_percent, p.tags, p.dietary_tags, p.deleted_at, p.created_at, p.updated_at,
       CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
-      FROM products p 
-      LEFT JOIN categories c ON p.category_id = c.id
-      LEFT JOIN categories cp ON c.parent_id = cp.id AND cp.deleted_at IS NULL
+      FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id AND c.deleted_at IS NULL
       WHERE p.deleted_at IS NULL`;
     const params: any[] = [];
 
@@ -1217,9 +1216,9 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
       query += ' AND p.category_id = ?';
       params.push(req.query.category_id);
     }
-    if (req.query.active === 'true' || req.query.active === '1') {
+    if (activeOnly) {
       query +=
-        ' AND p.is_active = 1 AND (c.id IS NULL OR (c.is_active = 1 AND (c.parent_id IS NULL OR cp.is_active = 1)))';
+        " AND p.is_active = 1 AND (NULLIF(TRIM(p.category_id), '') IS NULL OR c.id IN (SELECT id FROM active_categories))";
     }
     if (req.query.search) {
       query += ' AND (p.name LIKE ? OR p.sku LIKE ?)';

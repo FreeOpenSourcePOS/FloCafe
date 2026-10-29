@@ -924,10 +924,16 @@ export default function ProductsPage() {
 
   const categoryById = new Map(categories.map((cat) => [String(cat.id), cat]));
   const formatCategoryLabel = (cat: Category): string => {
-    if (cat.parent_id && categoryById.has(String(cat.parent_id))) {
-      return `${categoryById.get(String(cat.parent_id))!.name} › ${cat.name}`;
+    const chain: string[] = [cat.name];
+    let currentParentId = cat.parent_id ? String(cat.parent_id) : null;
+    const seen = new Set<string>([String(cat.id)]);
+    while (currentParentId && categoryById.has(currentParentId) && !seen.has(currentParentId)) {
+      seen.add(currentParentId);
+      const parent = categoryById.get(currentParentId)!;
+      chain.unshift(parent.name);
+      currentParentId = parent.parent_id ? String(parent.parent_id) : null;
     }
-    return cat.name;
+    return chain.join(' › ');
   };
   const sortCategorySiblings = (list: Category[]) =>
     list
@@ -969,6 +975,22 @@ export default function ProductsPage() {
     siblingCount: number;
   }> = [];
   const visitedCategoryIds = new Set<string>();
+  const visitCategoryDescendants = (parent: Category) => {
+    const children = childrenByParentId.get(String(parent.id)) || [];
+    children.forEach((child, childIdx) => {
+      const childId = String(child.id);
+      if (visitedCategoryIds.has(childId)) return;
+      visitedCategoryIds.add(childId);
+      orderedCategoryTreeRows.push({
+        category: child,
+        depth: 1,
+        parentName: parent.name,
+        siblingIndex: childIdx,
+        siblingCount: children.length,
+      });
+      visitCategoryDescendants(child);
+    });
+  };
   rootCategories.forEach((root, rootIdx) => {
     visitedCategoryIds.add(String(root.id));
     orderedCategoryTreeRows.push({
@@ -978,17 +1000,7 @@ export default function ProductsPage() {
       siblingIndex: rootIdx,
       siblingCount: rootCategories.length,
     });
-    const children = childrenByParentId.get(String(root.id)) || [];
-    children.forEach((child, childIdx) => {
-      visitedCategoryIds.add(String(child.id));
-      orderedCategoryTreeRows.push({
-        category: child,
-        depth: 1,
-        parentName: root.name,
-        siblingIndex: childIdx,
-        siblingCount: children.length,
-      });
-    });
+    visitCategoryDescendants(root);
   });
   for (const cat of categories) {
     if (!visitedCategoryIds.has(String(cat.id))) {
@@ -1006,7 +1018,7 @@ export default function ProductsPage() {
     ? (childrenByParentId.get(String(editingCategory.id))?.length ?? 0) > 0
     : false;
   const retainedCategoryParentId = String(editingCategory?.parent_id ?? '');
-  const availableParentCategories = rootCategories.filter(
+  const availableParentCategories = orderedCategories.filter(
     (c) =>
       String(c.id) !== String(editingCategory?.id ?? '') &&
       ((!c.parent_id && c.is_active) || String(c.id) === retainedCategoryParentId),
@@ -1249,11 +1261,9 @@ export default function ProductsPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {visibleProducts.map((product) => {
-                  const parentCat = categoryById.get(
-                    String(product.category_id || product.category?.id || ''),
-                  );
-                  const isCategoryInactive = Boolean(
-                    parentCat && !isMenuCategoryVisible(categoryById, parentCat.id),
+                  const isCategoryInactive = !isMenuCategoryVisible(
+                    categoryById,
+                    product.category_id ?? product.category?.id ?? null,
                   );
                   const matchedTaxCategory = taxCategories.find(
                     (tc) => tc.id === product.tax_category_id,

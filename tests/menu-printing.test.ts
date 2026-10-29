@@ -1312,4 +1312,83 @@ test('printed menus group subcategories beneath their parent categories in therm
     2,
     'HTML menu emits a separate h2 heading for each legacy duplicate root category',
   );
+
+  const deepAndCyclicCategories = [
+    { id: 'deep-root', name: 'Beverages', parentId: null, sortOrder: 1, isActive: true },
+    { id: 'deep-child', name: 'Tea', parentId: 'deep-root', sortOrder: 1, isActive: true },
+    { id: 'deep-grand', name: 'Herbal', parentId: 'deep-child', sortOrder: 1, isActive: true },
+    { id: 'cycle-a', name: 'Cycle A', parentId: 'cycle-b', sortOrder: 2, isActive: true },
+    { id: 'cycle-b', name: 'Cycle B', parentId: 'cycle-a', sortOrder: 3, isActive: true },
+  ];
+  const deepAndCyclicProducts = [
+    {
+      id: 'p-herbal',
+      name: 'Chamomile',
+      price: 4,
+      categoryId: 'deep-grand',
+      sortOrder: 1,
+      isActive: true,
+      trackInventory: false,
+      stockQuantity: 0,
+    },
+    {
+      id: 'p-cycle-b',
+      name: 'Loop Pastry',
+      price: 5,
+      categoryId: 'cycle-b',
+      sortOrder: 1,
+      isActive: true,
+      trackInventory: false,
+      stockQuantity: 0,
+    },
+  ];
+  const deepDoc = buildMenuDocument(deepAndCyclicCategories, deepAndCyclicProducts, {
+    businessName: 'FloCafe',
+    printedAt: '',
+    baseDirection: 'ltr',
+    formatPrice: (value: number) => `$${value.toFixed(2)}`,
+  });
+  assert.equal(deepDoc.itemCount, 2, 'thermal menu preserves deep and cyclic category items');
+  const deepThermalText = escPosToText(
+    renderMenuViaDocument(deepDoc, { columns: 42, language: 'en' }).data,
+  );
+  assert.match(deepThermalText, /--- Beverages ---/);
+  assert.match(deepThermalText, /  Herbal/);
+  assert.match(deepThermalText, /Chamomile/);
+  assert.match(deepThermalText, /Loop Pastry/);
+
+  const deepWebSections = buildHierarchicalMenuWebSections(
+    deepAndCyclicCategories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      parent_id: c.parentId,
+      sort_order: c.sortOrder,
+    })),
+    [
+      { product: { category_id: 'deep-grand' }, item: { name: 'Chamomile', price: '$4.00' } },
+      { product: { category_id: 'cycle-b' }, item: { name: 'Loop Pastry', price: '$5.00' } },
+    ],
+    (row: { item: { name: string; price: string } }) => row.item,
+  );
+  const deepWebCount = deepWebSections.reduce(
+    (sum: number, section: { products: unknown[] }) => sum + section.products.length,
+    0,
+  );
+  assert.equal(
+    deepWebCount,
+    2,
+    'HTML/QR menu section builder preserves depth >= 2 and cyclic category items',
+  );
+  const deepWebHtml = buildMenuWebPrintHtml({
+    businessName: 'FloCafe',
+    printedAt: '',
+    pageSize: 'A4',
+    menuTitle: 'Menu',
+    totalItemsLabel: 'Total items',
+    itemCount: 2,
+    sections: deepWebSections,
+  });
+  assert.match(deepWebHtml, /<h2>Beverages<\/h2><h3>Herbal<\/h3>/);
+  assert.match(deepWebHtml, /Chamomile/);
+  assert.match(deepWebHtml, /Loop Pastry/);
 });

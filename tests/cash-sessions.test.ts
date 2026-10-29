@@ -4630,6 +4630,227 @@ async function main() {
             JSON.stringify(zSingleLegacy) === JSON.stringify(zSingleLegacyDay),
           `Section 13h: single-payment legacy settled bill without timestamp still attributes cash and tax at paid_at (x=${JSON.stringify(xSingleLegacy.body?.xReport?.taxComponents)}, z=${JSON.stringify(zSingleLegacy)}, day=${JSON.stringify(zSingleLegacyDay)})`,
         );
+
+        const cancelShift = await withFixedClock('2026-11-24T08:00:00.000Z', async () =>
+          Number(
+            (
+              await request(app)
+                .post('/api/cash-sessions/open')
+                .set('Authorization', `Bearer ${s11CashierAToken}`)
+                .send({ opening_float_cents: 0 })
+            ).body.id,
+          ),
+        );
+        const cancelPartialBill = seedTaxBill(
+          'CANCEL-PARTIAL-1',
+          100,
+          10,
+          110,
+          [{ label: 'VAT', rate: 10, amount: 10 }],
+          '2026-11-24 08:05:00',
+        );
+        const cancelOrderRow = db
+          .prepare('SELECT order_id FROM bills WHERE id = ?')
+          .get(cancelPartialBill) as { order_id: number };
+        const cancelPartialOrderId = Number(cancelOrderRow.order_id);
+        const cancelPartialPay = await withFixedClock('2026-11-24T08:15:00.000Z', async () =>
+          request(app)
+            .post(`/api/bills/${cancelPartialBill}/payment`)
+            .set('Authorization', `Bearer ${s11CashierAToken}`)
+            .send({ method: 'cash', amount: 44 }),
+        );
+        const xPreCancel = await withFixedClock('2026-11-24T08:18:00.000Z', async () =>
+          request(app)
+            .get(`/api/reports/x-report?date=2026-11-24&session_id=${cancelShift}`)
+            .set('Authorization', `Bearer ${s11ManagerToken}`),
+        );
+        const cancelOrderRes = await withFixedClock('2026-11-24T08:20:00.000Z', async () =>
+          request(app)
+            .patch(`/api/orders/${cancelPartialOrderId}/status`)
+            .set('Authorization', `Bearer ${s11ManagerToken}`)
+            .send({
+              status: 'cancelled',
+              reason: 'Guest walked out after partial deposit',
+              approver_id: 'manager-sess',
+              override_pin: '4321',
+            }),
+        );
+        const s13iPart1 = await withFixedClock('2026-11-24T08:25:00.000Z', async () => {
+          const xRes = await request(app)
+            .get(`/api/reports/x-report?date=2026-11-24&session_id=${cancelShift}`)
+            .set('Authorization', `Bearer ${s11ManagerToken}`);
+          const hRes = await request(app)
+            .get(
+              `/api/reports/x-report/export?date=2026-11-24&format=html&session_id=${cancelShift}`,
+            )
+            .set('Authorization', `Bearer ${s11ManagerToken}`);
+          const tRes = await request(app)
+            .get('/api/reports/tax-components?start_date=2026-11-24&end_date=2026-11-24')
+            .set('Authorization', `Bearer ${s11ManagerToken}`);
+          return { xRes, hRes, tRes };
+        });
+        assert(
+          cancelPartialPay.status === 200 &&
+            xPreCancel.status === 200 &&
+            findCompAmt(xPreCancel.body?.xReport?.taxComponents, 'VAT', 10) === 4 &&
+            cancelOrderRes.status === 200 &&
+            s13iPart1.xRes.status === 200 &&
+            s13iPart1.hRes.status === 200 &&
+            s13iPart1.tRes.status === 200 &&
+            (s13iPart1.xRes.body?.xReport?.taxComponents || []).length === 0 &&
+            !s13iPart1.hRes.text.includes('data-section="tax"') &&
+            (s13iPart1.tRes.body?.taxComponents?.components || []).length === 0,
+          `Section 13i (part 1): cancelling a partially paid unsettled order zeroes shift X, shift export, and tax-components tax (pre=${JSON.stringify(xPreCancel.body?.xReport?.taxComponents)}, post=${JSON.stringify(s13iPart1.xRes.body?.xReport?.taxComponents)})`,
+        );
+
+        const scKey = 'split_checks_enabled';
+        const prevSplitCancel = getSettingValue(scKey);
+        db.prepare(
+          `INSERT INTO settings (key, value, updated_at)
+           VALUES (?, 'true', '2026-11-24 08:26:00')
+           ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`,
+        ).run(scKey);
+        try {
+          const splitCancelSnap = JSON.stringify({
+            lines: [{ taxableBase: 100, components: [{ label: 'VAT', rate: 10, amount: 10 }] }],
+          });
+          const splitCancelOrderSnap = JSON.stringify([JSON.parse(splitCancelSnap)]);
+          const splitCancelOrderIns = db
+            .prepare(
+              `INSERT INTO orders (
+                 order_number, type, status, user_id, subtotal, tax_amount,
+                 tax_snapshot, total, created_at, updated_at
+               ) VALUES (
+                 'ORD-SPLIT-CANCEL-1', 'dine_in', 'ready', 'cashier-sess', 100, 10,
+                 ?, 110, '2026-11-24 08:27:00', '2026-11-24 08:27:00'
+               )`,
+            )
+            .run(splitCancelOrderSnap);
+          const splitCancelOrderId = Number(splitCancelOrderIns.lastInsertRowid);
+          const splitCancelItemIns = db
+            .prepare(
+              `INSERT INTO order_items (
+                 order_id, product_id, product_name, quantity, unit_price, subtotal,
+                 tax_amount, total, tax_snapshot, status, created_at, updated_at
+               ) VALUES (
+                 ?, 'prod-v314', 'Split Cancel Item', 2, 50, 100,
+                 10, 110, ?, 'ready', '2026-11-24 08:27:00', '2026-11-24 08:27:00'
+               )`,
+            )
+            .run(splitCancelOrderId, splitCancelSnap);
+          const splitCancelItemId = Number(splitCancelItemIns.lastInsertRowid);
+          const splitCancelSrcBillIns = db
+            .prepare(
+              `INSERT INTO bills (
+                 bill_number, order_id, subtotal, tax_amount, tax_snapshot,
+                 total, paid_amount, balance, payment_status, payment_details, created_at, updated_at
+               ) VALUES (
+                 'B-SPLIT-CANCEL-1', ?, 100, 10, ?, 110, 0, 110, 'unpaid', NULL,
+                 '2026-11-24 08:27:00', '2026-11-24 08:27:00'
+               )`,
+            )
+            .run(splitCancelOrderId, splitCancelOrderSnap);
+          const splitCancelSrcBillId = Number(splitCancelSrcBillIns.lastInsertRowid);
+          const splitCancelRes = await withFixedClock('2026-11-24T08:30:00.000Z', async () =>
+            request(app)
+              .post(`/api/bills/${splitCancelSrcBillId}/split-check`)
+              .set('Authorization', `Bearer ${s11ManagerToken}`)
+              .send({
+                checks: [
+                  {
+                    label: 'Guest 1',
+                    items: [{ order_item_id: splitCancelItemId, quantity: 1 }],
+                  },
+                  {
+                    label: 'Guest 2',
+                    items: [{ order_item_id: splitCancelItemId, quantity: 1 }],
+                  },
+                ],
+              }),
+          );
+          const splitCancelBills = splitCancelRes.body?.bills || [];
+          const paySettledChild = await withFixedClock('2026-11-24T08:35:00.000Z', async () =>
+            request(app)
+              .post(`/api/bills/${splitCancelBills[0].id}/payment`)
+              .set('Authorization', `Bearer ${s11CashierAToken}`)
+              .send({ method: 'cash', amount: 55 }),
+          );
+          const payPartialChild = await withFixedClock('2026-11-24T08:40:00.000Z', async () =>
+            request(app)
+              .post(`/api/bills/${splitCancelBills[1].id}/payment`)
+              .set('Authorization', `Bearer ${s11CashierAToken}`)
+              .send({ method: 'cash', amount: 22 }),
+          );
+          const cancelSplitOrderRes = await withFixedClock('2026-11-24T08:45:00.000Z', async () =>
+            request(app)
+              .patch(`/api/orders/${splitCancelOrderId}/status`)
+              .set('Authorization', `Bearer ${s11ManagerToken}`)
+              .send({
+                status: 'cancelled',
+                reason: 'Guest 2 cancelled',
+                approver_id: 'manager-sess',
+                override_pin: '4321',
+              }),
+          );
+          const s13i = await withFixedClock('2026-11-24T09:00:00.000Z', async () => {
+            const xShiftRes = await request(app)
+              .get(`/api/reports/x-report?date=2026-11-24&session_id=${cancelShift}`)
+              .set('Authorization', `Bearer ${s11ManagerToken}`);
+            const htmlShiftRes = await request(app)
+              .get(
+                `/api/reports/x-report/export?date=2026-11-24&format=html&session_id=${cancelShift}`,
+              )
+              .set('Authorization', `Bearer ${s11ManagerToken}`);
+            const xDayRes = await request(app)
+              .get('/api/reports/x-report?date=2026-11-24')
+              .set('Authorization', `Bearer ${s11ManagerToken}`);
+            const closeShiftRes = await request(app)
+              .post(`/api/cash-sessions/${cancelShift}/close`)
+              .set('Authorization', `Bearer ${s11CashierAToken}`)
+              .send({ counted_cash_cents: 12100 });
+            const closeDayRes = await request(app)
+              .post('/api/cash-closures')
+              .set('Authorization', `Bearer ${s11OwnerToken}`)
+              .send({
+                business_date: '2026-11-24',
+                opening_float_cents: 0,
+                counted_cash_cents: 12100,
+              });
+            return { xShiftRes, htmlShiftRes, xDayRes, closeShiftRes, closeDayRes };
+          });
+          const zCancelShift = readStoredSessionTax(Number(s13i.closeShiftRes.body?.closure_id));
+          const zCancelDay = s13i.closeDayRes.body?.zReport?.tax_components;
+          const xCancelShiftTax = s13i.xShiftRes.body?.xReport?.taxComponents;
+          const xCancelDayTax = s13i.xDayRes.body?.xReport?.taxComponents;
+          assert(
+            splitCancelRes.status === 201 &&
+              paySettledChild.status === 200 &&
+              payPartialChild.status === 200 &&
+              cancelSplitOrderRes.status === 200 &&
+              s13i.xShiftRes.status === 200 &&
+              s13i.htmlShiftRes.status === 200 &&
+              s13i.xDayRes.status === 200 &&
+              s13i.closeShiftRes.status === 200 &&
+              s13i.closeShiftRes.body?.variance_cents === 0 &&
+              s13i.closeDayRes.status === 201 &&
+              s13i.closeDayRes.body?.zReport?.variance_cents === 0 &&
+              findCompAmt(xCancelShiftTax, 'VAT', 10) === 5 &&
+              sumCompAmts(xCancelShiftTax) === 5 &&
+              s13i.htmlShiftRes.text.includes(
+                'data-section="tax" data-title="VAT" data-rate="10" data-amount="5"',
+              ) &&
+              JSON.stringify(zCancelShift) === JSON.stringify(xCancelShiftTax) &&
+              JSON.stringify(xCancelDayTax) === JSON.stringify(xCancelShiftTax) &&
+              JSON.stringify(zCancelDay) === JSON.stringify(zCancelShift),
+            `Section 13i (part 2): settled child check retains tax while unsettled partial checks on cancelled orders contribute zero across shift X/export/Z and day X/Z (xShift=${JSON.stringify(xCancelShiftTax)}, zShift=${JSON.stringify(zCancelShift)}, day=${JSON.stringify(zCancelDay)})`,
+          );
+        } finally {
+          if (prevSplitCancel === null) {
+            db.prepare('DELETE FROM settings WHERE key = ?').run(scKey);
+          } else {
+            db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(prevSplitCancel, scKey);
+          }
+        }
       }
     } finally {
       db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'one_shift_per_staff'`).run();

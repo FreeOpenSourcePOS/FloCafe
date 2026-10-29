@@ -1015,7 +1015,12 @@ export function computePeriodAggregates(
           `
     SELECT b.id, b.order_id, b.split_group_id, b.total, b.paid_at, b.tax_amount, b.tax_snapshot, b.tax_breakdown
     FROM bills b
+    LEFT JOIN orders o ON o.id = b.order_id
     WHERE b.payment_details IS NOT NULL
+      AND (
+        NULLIF(TRIM(b.paid_at), '') IS NOT NULL
+        OR (o.id IS NOT NULL AND COALESCE(o.status, '') != 'cancelled')
+      )
       AND EXISTS (
         SELECT 1
         FROM json_each(CASE
@@ -1024,10 +1029,15 @@ export function computePeriodAggregates(
           ELSE '[]' END) je
         WHERE json_type(je.value) = 'object'
           AND (
-            CASE
-              WHEN NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NOT NULL
-                THEN CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER)
-              ELSE COALESCE(
+            (
+              NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NOT NULL
+              AND CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) = ?
+            )
+            OR (
+              NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NULL
+              AND ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} >= datetime(?)
+              AND ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} < datetime(?)
+              AND COALESCE(
                 (
                   SELECT cs.id
                   FROM cash_sessions cs
@@ -1040,18 +1050,14 @@ export function computePeriodAggregates(
                   LIMIT 1
                 ),
                 ?
-              )
-            END
-          ) = ?
-          AND (
-            NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NOT NULL
-            OR ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} < datetime(?)
+              ) = ?
+            )
           )
       )
     ORDER BY COALESCE(b.paid_at, b.created_at), b.id
   `,
         )
-        .all(NO_CASH_SESSION_ID, session.id, end) as TaxBillRow[])
+        .all(session.id, session.opened_at, end, NO_CASH_SESSION_ID, session.id) as TaxBillRow[])
     : (db
         .prepare(
           `
@@ -1092,35 +1098,39 @@ export function computePeriodAggregates(
       SELECT
         raw_amount,
         CASE
-          WHEN raw_session_id IS NOT NULL THEN CAST(raw_session_id AS INTEGER)
-          ELSE COALESCE(
-            (
-              SELECT cs.id
-              FROM cash_sessions cs
-              WHERE line_time >= datetime(cs.opened_at)
-                AND (cs.closed_at IS NULL OR line_time < datetime(cs.closed_at))
-              ORDER BY datetime(cs.opened_at) DESC, cs.id DESC
-              LIMIT 1
-            ),
-            ?
-          )
-        END AS resolved_session_id,
-        CASE
-          WHEN raw_session_id IS NOT NULL THEN 1
-          WHEN line_time < datetime(?) THEN 1
+          WHEN raw_session_id IS NOT NULL THEN
+            CASE WHEN CAST(raw_session_id AS INTEGER) = ? THEN 1 ELSE 0 END
+          WHEN line_time >= datetime(?) AND line_time < datetime(?) THEN
+            CASE
+              WHEN COALESCE(
+                (
+                  SELECT cs.id
+                  FROM cash_sessions cs
+                  WHERE line_time >= datetime(cs.opened_at)
+                    AND (cs.closed_at IS NULL OR line_time < datetime(cs.closed_at))
+                  ORDER BY datetime(cs.opened_at) DESC, cs.id DESC
+                  LIMIT 1
+                ),
+                ?
+              ) = ? THEN 1
+              ELSE 0
+            END
           ELSE 0
-        END AS within_end
+        END AS owned_within_end
       FROM lines
       ORDER BY line_index ASC
     `,
     );
     const perBillComponents = bills.map((bill, billIndex) => {
       const doc = taxDocuments[billIndex];
-      const rawLines = billPaymentLinesStmt.all(bill.id, NO_CASH_SESSION_ID, end) as Array<{
-        raw_amount: unknown;
-        resolved_session_id: number;
-        within_end: number;
-      }>;
+      const rawLines = billPaymentLinesStmt.all(
+        bill.id,
+        session.id,
+        session.opened_at,
+        end,
+        NO_CASH_SESSION_ID,
+        session.id,
+      ) as Array<{ raw_amount: unknown; owned_within_end: number }>;
 
       const paymentLines = rawLines.map((line) => {
         let amountMinor = 0;
@@ -1139,14 +1149,11 @@ export function computePeriodAggregates(
         }
         return {
           amountMinor,
-          resolvedSessionId: Number(line.resolved_session_id),
-          withinEnd: Number(line.within_end) === 1,
+          ownedWithinEnd: Number(line.owned_within_end) === 1,
         };
       });
 
-      const ownedWithinEndLines = paymentLines.filter(
-        (line) => line.resolvedSessionId === session.id && line.withinEnd,
-      );
+      const ownedWithinEndLines = paymentLines.filter((line) => line.ownedWithinEnd);
       if (ownedWithinEndLines.length === 0) return [];
 
       const sumAllLineMinors = paymentLines.reduce((sum, line) => sum + line.amountMinor, 0);
@@ -1212,7 +1219,7 @@ export function computePeriodAggregates(
           remainingPoolMinor -= lineMinor;
         }
 
-        if (line.resolvedSessionId === session.id && line.withinEnd) {
+        if (line.ownedWithinEnd) {
           for (let i = 0; i < docComponents.length; i++) {
             sessionCompMinors[i] += lineShares[i];
           }

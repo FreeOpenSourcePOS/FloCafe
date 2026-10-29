@@ -2272,7 +2272,7 @@ function inspectDatabaseVersionNonMutating(
 ): { schemaVersion: number; appVersion: string | null } | null {
   const headerInfo = readSqliteHeaderInfo(dbPath, true);
   if (!headerInfo) return null;
-  const { headerVersion, isLegacyRollbackFormat } = headerInfo;
+  const { headerVersion } = headerInfo;
   const maxSupported = getLatestSupportedSchemaVersion();
   const effectiveHeaderVersion = getEffectiveDatabaseHeaderVersion(dbPath, headerInfo);
 

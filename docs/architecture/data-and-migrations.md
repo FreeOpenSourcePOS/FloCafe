@@ -85,15 +85,14 @@ data:
 2. **A database newer than the build.** Before opening `flo.db` read-write, `initDatabase` reads the
    SQLite header (including committed page-1 `user_version` frames in any active `-wal`) and inspects
    both `user_version` and any canonical `_flo_meta.schema_version` stamp without mutating `flo.db`
-   or creating sidecar files in `userData` (probing sidecar-free legacy rollback-format files read-only
-   in place, staging WAL-mode databases and any `-wal`, `-shm`, or `-journal` sidecars in `os.tmpdir()`
-   with fallback to a private `.flo-db-stage-*` directory on the database volume when `os.tmpdir()`
-   cannot be written, and falling back to in-place read-only probing for the live database if both
-   staging volumes encounter a storage error while the effective header is supported), and
-   `runMigrations` enforces the same guard. When either `user_version` or canonical
-   `_flo_meta.schema_version` exceeds `getLatestSupportedSchemaVersion()`,
-   `SchemaVersionMismatchError` is thrown. An older build never reverse-migrates or opens a newer
-   schema directly.
+   or creating sidecar files in `userData` (probing sidecar-free databases read-only in place, staging
+   databases with active `-wal`, `-shm`, or `-journal` sidecars in `os.tmpdir()` with fallback to a
+   private `.flo-db-stage-*` directory on the database volume when `os.tmpdir()` cannot be written,
+   and falling back to in-place read-only probing without a `-journal` sidecar if both staging volumes
+   encounter a storage error while the effective header is supported), and `runMigrations` enforces
+   the same guard. When either `user_version` or canonical `_flo_meta.schema_version` exceeds
+   `getLatestSupportedSchemaVersion()`, `SchemaVersionMismatchError` is thrown. An older build never
+   reverse-migrates or opens a newer schema directly.
 
    `initialize()` in [`main/index.ts`](../../main/index.ts) intercepts `SchemaVersionMismatchError`
    before the generic startup-error dialog, quiesces database access, and runs
@@ -253,7 +252,8 @@ directory. The journal records a `prepared` or `committed` phase (plus `downgrad
 `recoverySidecars` when replacing a newer database), and `recoverInterruptedDatabaseReplacement`
 replays it on the next start: an interrupted replacement clears active `-wal`, `-shm`, and
 `-journal` sidecars before restoring the snapshot (with recorded `-wal`/`-shm` sidecars on a
-downgrade journal), using `.cleanup-<id>` copies during artifact removal, and startup removes any
+downgrade journal, falling back to in-place read-only snapshot verification when staging encounters
+storage errors), using `.cleanup-<id>` copies during artifact removal, and startup removes any
 stranded `.flo-db-stage-*` directories. If a `committed` journal is retained for Google Drive
 invalidation while `flo.db` has a schema newer than the running build, replay leaves `flo.db` and
 the journal untouched so the preflight raises `SchemaVersionMismatchError` rather than rolling back
@@ -282,7 +282,8 @@ Directory syncing is skipped on Windows, which does not support it.
 `isHealthyDatabaseFile` is the predicate that decides whether a candidate file is usable at all. It
 probes legacy rollback-journal files read-only in place and stages WAL-mode or sidecar-accompanied
 files in `os.tmpdir()` (falling back to `.flo-db-stage-*` on the database volume when `os.tmpdir()`
-cannot be written) so probing never leaves orphaned `-wal` or `-shm` files behind. It requires a
+cannot be written, with in-place read-only fallback when staging encounters storage errors on files
+without a `-journal` sidecar) so probing never leaves orphaned `-wal` or `-shm` files behind. It requires a
 clean `integrity_check`, no foreign-key violations outside an explicit allowlist, a schema version
 above zero and within the supported range, an `_flo_meta` stamp that matches the pragma, and a table
 and column set, plus normalised `CREATE` definitions, that match the ideal schema built by running

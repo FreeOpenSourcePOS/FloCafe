@@ -61,6 +61,7 @@ import {
   isSchemaVersionMismatchError,
   isSqliteStorageOrOpenError,
   planNewerDatabaseArchivePath,
+  readWalCommittedPage1UserVersion,
   restoreBackup,
   restoreCompatibleBackupForDowngrade,
   SchemaVersionMismatchError,
@@ -1977,11 +1978,24 @@ async function run(): Promise<void> {
         fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db'), dbPath);
         fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-wal'), `${dbPath}-wal`);
         fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-shm'), `${dbPath}-shm`);
+        let enospcWalNewerMismatch: SchemaVersionMismatchError | null = null;
         assert.throws(
           () => initDatabase(),
-          /ENOSPC/,
-          'WAL preflight staging failure propagates instead of opening newer WAL DB read-write',
+          (err: unknown) => {
+            if (err instanceof SchemaVersionMismatchError) {
+              enospcWalNewerMismatch = err;
+              return true;
+            }
+            return false;
+          },
+          'newer-version (> maxSupported) user_version inside -wal is detected non-mutatingly without modifying flo.db or flo.db-wal even when staging fails with ENOSPC',
         );
+        assert.equal(enospcWalNewerMismatch!.dbVersion, newerDbVersion);
+        assert.equal(enospcWalNewerMismatch!.dbAppVersion, null);
+        assert.equal(sha256File(dbPath), walNewerEnospcHashes.dbSha);
+        assert.equal(sha256File(`${dbPath}-wal`), walNewerEnospcHashes.walSha);
+        assert.equal(sha256File(`${dbPath}-shm`), walNewerEnospcHashes.shmSha);
+
         const bothFullRestoreCandidate = path.join(
           backupDir,
           'flo-backup-2026-10-28T17-00-00-000Z-both-full.db',
@@ -1995,6 +2009,22 @@ async function run(): Promise<void> {
         assert.equal(sha256File(dbPath), walNewerEnospcHashes.dbSha);
         assert.equal(sha256File(`${dbPath}-wal`), walNewerEnospcHashes.walSha);
         assert.equal(sha256File(`${dbPath}-shm`), walNewerEnospcHashes.shmSha);
+
+        // Regression test for Qodo finding #3 (a): supported-version WAL DB (with -wal sidecar)
+        // starts cleanly via initDatabase() even when staging fails with ENOSPC.
+        removeDbSet(dbPath);
+        fs.copyFileSync(path.join(walSupportedCrashLiveDir, 'flo.db'), dbPath);
+        fs.copyFileSync(path.join(walSupportedCrashLiveDir, 'flo.db-wal'), `${dbPath}-wal`);
+        fs.copyFileSync(path.join(walSupportedCrashLiveDir, 'flo.db-shm'), `${dbPath}-shm`);
+        initDatabase();
+        assert.deepEqual(
+          getDatabase()
+            .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0093'")
+            .get(),
+          { order_number: 'ORD-20261029-0093' },
+          'supported-version WAL DB starts cleanly via initDatabase() when staging fails with ENOSPC',
+        );
+        closeDatabase();
 
         clearDirectory(backupDir);
         removeDbSet(dbPath);
@@ -2045,18 +2075,13 @@ async function run(): Promise<void> {
             recoverySidecars: [],
           }),
         );
-        assert.equal(isHealthyDatabaseFile(dbPath, undefined, false), false);
+        assert.equal(isHealthyDatabaseFile(dbPath, undefined, false), true);
         assert.equal(fs.existsSync(`${dbPath}-wal`), false);
         assert.equal(fs.existsSync(`${dbPath}-shm`), false);
-        assert.throws(
-          () => initDatabase(),
-          /ENOSPC/,
-          'cleanly closed WAL-header committed journal fails closed under temp ENOSPC without creating sidecars',
-        );
-        assert.equal(sha256File(dbPath), committedCleanSha);
-        assert.equal(fs.existsSync(`${dbPath}-wal`), false);
-        assert.equal(fs.existsSync(`${dbPath}-shm`), false);
+        initDatabase();
         assert.equal(getDatabaseReplacementJournal()?.phase, 'committed');
+        finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+        closeDatabase();
 
         for (const [index, isDowngradeJournal] of [true, false].entries()) {
           clearDirectory(backupDir);
@@ -2082,17 +2107,20 @@ async function run(): Promise<void> {
           );
           assert.equal(
             isHealthyDatabaseFile(dbPath, undefined, false),
-            false,
-            'exported isHealthyDatabaseFile remains non-throwing when temp staging fails',
+            true,
+            'exported isHealthyDatabaseFile falls back to read-only in-place probe for supported database under temp ENOSPC',
           );
-          assert.throws(
-            () => initDatabase(),
-            /ENOSPC/,
-            `committed WAL journal (downgrade=${isDowngradeJournal}) fails closed under temp ENOSPC instead of rolling back`,
-          );
-          assert.equal(sha256File(dbPath), walLiveDbSha);
-          assert.equal(sha256File(`${dbPath}-wal`), walLiveWalSha);
+          initDatabase();
           assert.equal(getDatabaseReplacementJournal()?.phase, 'committed');
+          assert.deepEqual(
+            getDatabase()
+              .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
+              .get(),
+            { order_number: 'ORD-20261029-0091' },
+            `committed WAL journal (downgrade=${isDowngradeJournal}) succeeds under temp ENOSPC without rolling back`,
+          );
+          finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+          closeDatabase();
         }
 
         clearDirectory(backupDir);
@@ -2472,27 +2500,36 @@ async function run(): Promise<void> {
             recoverySidecars: [],
           }),
         );
-        assert.equal(isHealthyDatabaseFile(dbPath, undefined, false), false);
-        assert.throws(
-          () => initDatabase(),
-          /Could not stage .*disk I\/O error/,
-          'committed WAL journal fails closed when both volumes throw SQLITE_IOERR_SHMSIZE',
+        assert.equal(
+          isHealthyDatabaseFile(dbPath, undefined, false),
+          true,
+          'committed WAL journal falls back to read-only in-place probe when staging throws SQLITE_IOERR_SHMSIZE',
         );
-        assert.equal(sha256File(dbPath), walLiveDbSha);
-        assert.equal(sha256File(`${dbPath}-wal`), walLiveWalSha);
+        initDatabase();
         assert.equal(getDatabaseReplacementJournal()?.phase, 'committed');
+        finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+        closeDatabase();
 
-        // Supported-header + newer-WAL preflight fails closed instead of returning null.
+        // Supported-header + newer-WAL preflight detects newer version via zero-copy WAL reading
+        // and throws SchemaVersionMismatchError even when both volumes throw SQLITE_IOERR_SHMSIZE.
         clearDirectory(backupDir);
         removeDbSet(dbPath);
         fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db'), dbPath);
         fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-wal'), `${dbPath}-wal`);
         fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-shm'), `${dbPath}-shm`);
+        let dualShmWalMismatch: SchemaVersionMismatchError | null = null;
         assert.throws(
           () => initDatabase(),
-          /Could not stage active database for schema preflight.*disk I\/O error/,
-          'newer-WAL preflight fails closed when both volumes throw SQLITE_IOERR_SHMSIZE',
+          (err: unknown) => {
+            if (err instanceof SchemaVersionMismatchError) {
+              dualShmWalMismatch = err;
+              return true;
+            }
+            return false;
+          },
+          'newer-WAL preflight throws SchemaVersionMismatchError without mutating files when both volumes throw SQLITE_IOERR_SHMSIZE',
         );
+        assert.equal(dualShmWalMismatch!.dbVersion, newerDbVersion);
         assert.equal(sha256File(dbPath), walNewerEnospcHashes.dbSha);
         assert.equal(sha256File(`${dbPath}-wal`), walNewerEnospcHashes.walSha);
         assert.equal(sha256File(`${dbPath}-shm`), walNewerEnospcHashes.shmSha);
@@ -3260,6 +3297,32 @@ async function run(): Promise<void> {
       assert.equal(isSqliteStorageOrOpenError(corruptError), false);
       assert.equal(isSqliteStorageOrOpenError(genericError), false);
       assert.equal(isSqliteStorageOrOpenError(null), false);
+
+      // Unit tests for readWalCommittedPage1UserVersion
+      assert.equal(readWalCommittedPage1UserVersion('/non/existent/path-wal'), null);
+      const tempWalTestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-wal-unit-'));
+      try {
+        const dummyWal = path.join(tempWalTestDir, 'dummy.db-wal');
+        fs.writeFileSync(dummyWal, Buffer.alloc(16));
+        assert.equal(readWalCommittedPage1UserVersion(dummyWal), null);
+
+        const badMagic = Buffer.alloc(64);
+        fs.writeFileSync(dummyWal, badMagic);
+        assert.equal(readWalCommittedPage1UserVersion(dummyWal), null);
+
+        const unitDbPath = path.join(tempWalTestDir, 'unit.db');
+        const unitDb = new Database(unitDbPath);
+        unitDb.pragma('journal_mode = WAL');
+        unitDb.pragma('user_version = 145');
+        unitDb.exec('CREATE TABLE t (id INT)');
+        const unitWalPath = `${unitDbPath}-wal`;
+        assert.equal(readWalCommittedPage1UserVersion(unitWalPath), 145);
+        assert.equal(readWalCommittedPage1UserVersion(unitWalPath, 4096), 145);
+        assert.equal(readWalCommittedPage1UserVersion(unitWalPath, 8192), null);
+        unitDb.close();
+      } finally {
+        fs.rmSync(tempWalTestDir, { recursive: true, force: true });
+      }
 
       const memDb = new Database(':memory:');
       try {

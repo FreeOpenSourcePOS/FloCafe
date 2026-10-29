@@ -1209,6 +1209,7 @@ function probeStagedDatabaseWithFallback<T>(
 interface SqliteHeaderInfo {
   headerVersion: number;
   isLegacyRollbackFormat: boolean;
+  pageSize: number;
 }
 
 function readSqliteHeaderInfo(filePath: string, throwOnReadError = false): SqliteHeaderInfo | null {
@@ -1254,10 +1255,138 @@ function readSqliteHeaderInfo(filePath: string, throwOnReadError = false): Sqlit
   if (headerBytesRead < 100 || !header.subarray(0, 16).equals(SQLITE_HEADER_MAGIC)) {
     return null;
   }
+  const rawPageSize = header.readUInt16BE(16);
+  const pageSize = rawPageSize === 1 ? 65536 : rawPageSize;
   return {
     headerVersion: header.readInt32BE(60),
     isLegacyRollbackFormat: header[18] === 1 && header[19] === 1,
+    pageSize,
   };
+}
+
+function walChecksum(
+  buf: Buffer,
+  offset: number,
+  length: number,
+  initialS1: number,
+  initialS2: number,
+  bigEndian: boolean,
+): [number, number] {
+  let s1 = initialS1;
+  let s2 = initialS2;
+  for (let i = 0; i < length; i += 8) {
+    const w1 = bigEndian ? buf.readUInt32BE(offset + i) : buf.readUInt32LE(offset + i);
+    const w2 = bigEndian ? buf.readUInt32BE(offset + i + 4) : buf.readUInt32LE(offset + i + 4);
+    s1 = (s1 + w1 + s2) >>> 0;
+    s2 = (s2 + w2 + s1) >>> 0;
+  }
+  return [s1, s2];
+}
+
+export function readWalCommittedPage1UserVersion(
+  walPath: string,
+  expectedPageSize?: number,
+): number | null {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(walPath);
+  } catch {
+    return null;
+  }
+  if (stat.isSymbolicLink() || !stat.isFile() || stat.size < 32) return null;
+
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(walPath, 'r');
+    const header = Buffer.alloc(32);
+    if (fs.readSync(fd, header, 0, 32, 0) < 32) return null;
+
+    const magic = header.readUInt32BE(0);
+    if (magic !== 0x377f0682 && magic !== 0x377f0683) return null;
+    const isBigEndianChecksum = magic === 0x377f0683;
+
+    const rawPageSize = header.readUInt32BE(8);
+    const pageSize = rawPageSize === 1 ? 65536 : rawPageSize;
+    if (pageSize < 512 || pageSize > 65536 || (pageSize & (pageSize - 1)) !== 0) return null;
+    if (expectedPageSize !== undefined && pageSize !== expectedPageSize) return null;
+
+    const salt1 = header.readUInt32BE(16);
+    const salt2 = header.readUInt32BE(20);
+    const headerCksum1 = header.readUInt32BE(24);
+    const headerCksum2 = header.readUInt32BE(28);
+
+    const [hS1, hS2] = walChecksum(header, 0, 24, 0, 0, isBigEndianChecksum);
+    if (hS1 !== headerCksum1 || hS2 !== headerCksum2) return null;
+
+    let runningS1 = headerCksum1;
+    let runningS2 = headerCksum2;
+
+    const frameHeader = Buffer.alloc(24);
+    const pageData = Buffer.alloc(pageSize);
+    const frameSize = 24 + pageSize;
+    const totalFrames = Math.floor((stat.size - 32) / frameSize);
+
+    let lastCommittedPage1UserVersion: number | null = null;
+    let pendingPage1UserVersion: number | null = null;
+
+    for (let f = 0; f < totalFrames; f++) {
+      const frameOffset = 32 + f * frameSize;
+      if (fs.readSync(fd, frameHeader, 0, 24, frameOffset) < 24) break;
+      if (fs.readSync(fd, pageData, 0, pageSize, frameOffset + 24) < pageSize) break;
+
+      const pageNo = frameHeader.readUInt32BE(0);
+      const dbSize = frameHeader.readUInt32BE(4);
+      const fSalt1 = frameHeader.readUInt32BE(8);
+      const fSalt2 = frameHeader.readUInt32BE(12);
+      const fCksum1 = frameHeader.readUInt32BE(16);
+      const fCksum2 = frameHeader.readUInt32BE(20);
+
+      if (fSalt1 !== salt1 || fSalt2 !== salt2) break;
+
+      let [s1, s2] = walChecksum(frameHeader, 0, 8, runningS1, runningS2, isBigEndianChecksum);
+      [s1, s2] = walChecksum(pageData, 0, pageSize, s1, s2, isBigEndianChecksum);
+
+      if (s1 !== fCksum1 || s2 !== fCksum2) break;
+
+      runningS1 = s1;
+      runningS2 = s2;
+
+      if (pageNo === 1) {
+        pendingPage1UserVersion = pageData.readInt32BE(60);
+      }
+
+      if (dbSize > 0) {
+        if (pendingPage1UserVersion !== null) {
+          lastCommittedPage1UserVersion = pendingPage1UserVersion;
+          pendingPage1UserVersion = null;
+        }
+      }
+    }
+
+    return lastCommittedPage1UserVersion;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    }
+  }
+}
+
+function getEffectiveDatabaseHeaderVersion(
+  dbPath: string,
+  headerInfo: SqliteHeaderInfo,
+): number {
+  const walPath = `${dbPath}-wal`;
+  if (!pathEntryExists(walPath)) {
+    return headerInfo.headerVersion;
+  }
+  const walPage1Version = readWalCommittedPage1UserVersion(walPath, headerInfo.pageSize);
+  return walPage1Version !== null
+    ? Math.max(headerInfo.headerVersion, walPage1Version)
+    : headerInfo.headerVersion;
 }
 
 function isReadableRecoverySnapshotWithSidecars(
@@ -1357,6 +1486,8 @@ function withProbedDatabaseFile<T>(
 ): T | null {
   const headerInfo = readSqliteHeaderInfo(filePath, throwOnStagingError);
   if (!headerInfo) return null;
+  const maxSupported = getLatestSupportedSchemaVersion();
+  const effectiveHeaderVersion = getEffectiveDatabaseHeaderVersion(filePath, headerInfo);
 
   const presentSidecars: SqliteProbeSidecar[] = [];
   for (const suffix of SQLITE_PROBE_SIDECAR_SUFFIXES) {
@@ -1418,7 +1549,46 @@ function withProbedDatabaseFile<T>(
     );
     return probed.kind === 'ok' ? probed.value : null;
   } catch (stageError) {
-    if (isShutdownOrMaintenanceAbortError(stageError) || throwOnStagingError) {
+    if (isShutdownOrMaintenanceAbortError(stageError)) {
+      throw stageError;
+    }
+    const isLiveDb = path.resolve(filePath) === path.resolve(getDbPath());
+    if (isLiveDb && isSqliteStorageOrOpenError(stageError) && effectiveHeaderVersion <= maxSupported) {
+      const walExistedBefore = pathEntryExists(`${filePath}-wal`);
+      const shmExistedBefore = pathEntryExists(`${filePath}-shm`);
+      let candidate: Database.Database | undefined;
+      try {
+        candidate = new Database(filePath, { readonly: true, fileMustExist: true });
+        candidate.pragma('temp_store = MEMORY');
+        return fn(candidate);
+      } catch (inPlaceError) {
+        if (isShutdownOrMaintenanceAbortError(inPlaceError)) {
+          throw inPlaceError;
+        }
+        if (throwOnStagingError && isSqliteStorageOrOpenError(inPlaceError)) {
+          throw inPlaceError;
+        }
+        return null;
+      } finally {
+        try {
+          candidate?.close();
+        } catch {}
+        if (!walExistedBefore && pathEntryExists(`${filePath}-wal`)) {
+          try {
+            const walStat = fs.lstatSync(`${filePath}-wal`);
+            if (walStat.isFile() && walStat.size === 0) {
+              fs.unlinkSync(`${filePath}-wal`);
+            }
+          } catch {}
+        }
+        if (!shmExistedBefore && pathEntryExists(`${filePath}-shm`)) {
+          try {
+            fs.unlinkSync(`${filePath}-shm`);
+          } catch {}
+        }
+      }
+    }
+    if (throwOnStagingError) {
       throw stageError;
     }
     return null;
@@ -2059,6 +2229,7 @@ function inspectDatabaseVersionNonMutating(
   if (!headerInfo) return null;
   const { headerVersion, isLegacyRollbackFormat } = headerInfo;
   const maxSupported = getLatestSupportedSchemaVersion();
+  const effectiveHeaderVersion = getEffectiveDatabaseHeaderVersion(dbPath, headerInfo);
 
   const presentSidecars: SqliteProbeSidecar[] = [];
   for (const suffix of SQLITE_PROBE_SIDECAR_SUFFIXES) {
@@ -2068,8 +2239,8 @@ function inspectDatabaseVersionNonMutating(
     try {
       sidecarStat = fs.lstatSync(sidecarPath);
     } catch (statError) {
-      if (headerVersion > maxSupported) {
-        return { schemaVersion: headerVersion, appVersion: null };
+      if (effectiveHeaderVersion > maxSupported) {
+        return { schemaVersion: effectiveHeaderVersion, appVersion: null };
       }
       throw new Error(
         `Could not inspect database sidecar ${sidecarPath}: ${statError instanceof Error ? statError.message : 'unknown error'}`,
@@ -2077,8 +2248,8 @@ function inspectDatabaseVersionNonMutating(
       );
     }
     if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) {
-      if (headerVersion > maxSupported) {
-        return { schemaVersion: headerVersion, appVersion: null };
+      if (effectiveHeaderVersion > maxSupported) {
+        return { schemaVersion: effectiveHeaderVersion, appVersion: null };
       }
       throw new Error(`Database sidecar ${sidecarPath} is not a regular file`);
     }
@@ -2091,7 +2262,7 @@ function inspectDatabaseVersionNonMutating(
       probeDb = new Database(dbPath, { readonly: true, fileMustExist: true });
       probeDb.pragma('temp_store = MEMORY');
       return (
-        inspectEffectiveDatabaseVersion(probeDb, headerVersion, maxSupported) ?? {
+        inspectEffectiveDatabaseVersion(probeDb, effectiveHeaderVersion, maxSupported) ?? {
           schemaVersion: headerVersion,
           appVersion: null,
         }
@@ -2100,13 +2271,13 @@ function inspectDatabaseVersionNonMutating(
       if (isShutdownOrMaintenanceAbortError(error)) {
         throw error;
       }
-      if (headerVersion > maxSupported) {
-        return { schemaVersion: headerVersion, appVersion: null };
+      if (effectiveHeaderVersion > maxSupported) {
+        return { schemaVersion: effectiveHeaderVersion, appVersion: null };
       }
       if (isSqliteStorageOrOpenError(error)) {
         throw error;
       }
-      return { schemaVersion: headerVersion, appVersion: null };
+      return { schemaVersion: effectiveHeaderVersion, appVersion: null };
     } finally {
       try {
         probeDb?.close();
@@ -2125,18 +2296,23 @@ function inspectDatabaseVersionNonMutating(
         targetFileName: 'probe.db',
         purposeLabel: 'active database for schema preflight',
       },
-      (probeDb) => inspectEffectiveDatabaseVersion(probeDb, headerVersion, maxSupported),
+      (probeDb) => inspectEffectiveDatabaseVersion(probeDb, effectiveHeaderVersion, maxSupported),
     );
     if (probed.kind === 'ok') {
       return probed.value;
     }
-    return headerVersion > maxSupported ? { schemaVersion: headerVersion, appVersion: null } : null;
+    return effectiveHeaderVersion > maxSupported
+      ? { schemaVersion: effectiveHeaderVersion, appVersion: null }
+      : null;
   } catch (stageError) {
     if (isShutdownOrMaintenanceAbortError(stageError)) {
       throw stageError;
     }
-    if (headerVersion > maxSupported) {
-      return { schemaVersion: headerVersion, appVersion: null };
+    if (effectiveHeaderVersion > maxSupported) {
+      return { schemaVersion: effectiveHeaderVersion, appVersion: null };
+    }
+    if (isSqliteStorageOrOpenError(stageError)) {
+      return { schemaVersion: effectiveHeaderVersion, appVersion: null };
     }
     throw stageError;
   }

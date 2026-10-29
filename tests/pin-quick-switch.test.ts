@@ -174,7 +174,8 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
     };
   }
   if (reqName === 'react') return reactHooks;
-  if (reqName === 'react-hot-toast') return { __esModule: true, default: toastStub, toast: toastStub };
+  if (reqName === 'react-hot-toast')
+    return { __esModule: true, default: toastStub, toast: toastStub };
   if (reqName === 'lucide-react') return new Proxy({}, { get: () => () => null });
   if (reqName === 'use-intl') return { useTranslations: () => (k: string) => k };
   if (reqName === 'next/dynamic') return () => () => null;
@@ -210,7 +211,10 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   if (reqName === '@/hooks/useSupportTicketStatus')
     return { useSupportTicketStatus: () => ({ errorCount: 0 }) };
   if (reqName === '@/lib/countries')
-    return { getCurrencySymbol: () => '$', getCountryByCode: () => ({ code: 'US', currency: 'USD' }) };
+    return {
+      getCurrencySymbol: () => '$',
+      getCountryByCode: () => ({ code: 'US', currency: 'USD' }),
+    };
   if (reqName === '@/lib/api') {
     return {
       __esModule: true,
@@ -1031,10 +1035,7 @@ async function run() {
     VALUES (?, 'reports.view', 'allow', 'owner-1', ?, ?)
   `).run(reportsOnlyId, ts, ts);
 
-  await request(app)
-    .put('/api/settings/auto_lock_minutes')
-    .set(ownerAuth)
-    .send({ value: '15' });
+  await request(app).put('/api/settings/auto_lock_minutes').set(ownerAuth).send({ value: '15' });
 
   const reportsUserAutoLock = await request(app)
     .get('/api/settings/auto_lock_minutes')

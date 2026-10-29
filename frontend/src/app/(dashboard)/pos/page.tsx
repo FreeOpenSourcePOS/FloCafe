@@ -425,7 +425,8 @@ export default function POSPage() {
     } catch {
       throw new OrderAttemptStorageError();
     }
-    if (effectiveUserId === activeUserId && postpaidAttemptRef.current?.userId === activeUserId) return postpaidAttemptRef.current;
+    if (effectiveUserId === activeUserId && postpaidAttemptRef.current?.userId === activeUserId)
+      return postpaidAttemptRef.current;
     if (effectiveUserId === activeUserId) {
       postpaidAttemptRef.current = null;
       postpaidAttemptKeyRef.current = null;
@@ -467,10 +468,7 @@ export default function POSPage() {
   };
   /** Only advance the in-memory attempt after a verified write: keys that never
    * reached a backend must not be executed from memory either. */
-  const savePostpaidAttempt = (
-    attempt: PostpaidAttempt,
-    targetUserId?: string | null,
-  ): boolean => {
+  const savePostpaidAttempt = (attempt: PostpaidAttempt, targetUserId?: string | null): boolean => {
     const previous = postpaidAttemptRef.current;
     const effectiveUserId = targetUserId || attempt.userId || activeUserId;
     if (!effectiveUserId) return false;
@@ -537,7 +535,8 @@ export default function POSPage() {
 
   const readPrepaidAttempt = (targetUserId?: string | null): PrepaidAttempt | null => {
     const effectiveUserId = targetUserId || activeUserId;
-    if (effectiveUserId === activeUserId && prepaidAttemptRef.current?.userId === activeUserId) return prepaidAttemptRef.current;
+    if (effectiveUserId === activeUserId && prepaidAttemptRef.current?.userId === activeUserId)
+      return prepaidAttemptRef.current;
     if (effectiveUserId === activeUserId) {
       prepaidAttemptRef.current = null;
       prepaidAttemptKeyRef.current = null;
@@ -577,10 +576,7 @@ export default function POSPage() {
     clearOrderAttempt(storage, PREPAID_ATTEMPT_STORAGE_KEY, migrated);
     return migrated;
   };
-  const savePrepaidAttempt = (
-    attempt: PrepaidAttempt,
-    targetUserId?: string | null,
-  ): boolean => {
+  const savePrepaidAttempt = (attempt: PrepaidAttempt, targetUserId?: string | null): boolean => {
     const previous = prepaidAttemptRef.current;
     const effectiveUserId = targetUserId || attempt.userId || activeUserId;
     if (!effectiveUserId) return false;
@@ -602,10 +598,7 @@ export default function POSPage() {
   };
   /** Intermediate prepaid states are persisted too: a request that runs under a
    * key the next run cannot replay can capture the same payment twice. */
-  const requirePrepaidAttemptSaved = (
-    attempt: PrepaidAttempt,
-    targetUserId?: string | null,
-  ) => {
+  const requirePrepaidAttemptSaved = (attempt: PrepaidAttempt, targetUserId?: string | null) => {
     if (!savePrepaidAttempt(attempt, targetUserId)) throw new OrderAttemptStorageError();
   };
   const clearPrepaidAttempt = (targetUserId?: string | null) => {

@@ -140,7 +140,7 @@ permission check inside the `withTxn` callback, after the transaction opens, usi
 `.../restore` endpoint in `main/routes/orders.ts`, and the bill payment kitchen-delivery override
 and charge waiver override in `main/routes/bills.ts` do this, and their override-PIN paths
 (along with paid-bill payment-method correction on `PATCH /api/bills/:id/payments/:index/method`,
-which also requires the authenticated caller itself to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)`)
+which also requires the authenticated caller itself to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)` and hold `payments.take`)
 additionally require the presenting
 user to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)` - a deliberate context-policy role check,
 not a permission, because the Staff Approval PIN belongs to a
@@ -214,11 +214,14 @@ terminals, while approval authority stays restricted to active `owner` and `mana
    `'success'`, `'failure'`, or `'rate_limited'`).
 3. **Terminal lock and session boundary:** Only one user is signed in on a device at a time. The
    manual **Lock** action in the POS topbar/sidebar (and the optional `auto_lock_minutes` idle
-   setting in **Settings > POS**, off by default with choices `1`, `5`, `15`, or `30` minutes)
-   revokes the active token without closing the open cash shift. Unfinished POS cart items remain on
-   the terminal across lock and user switch, while privileged cart adjustments (line price overrides
-   and charge waivers), cached override PINs, and open privileged modals are cleared and stale
-   asynchronous responses from the previous session are ignored.
+   setting in **Settings > POS**, off by default with choices `1`, `5`, `15`, or `30` minutes,
+   readable by all authenticated staff independently of feature permissions) revokes the active token
+   without closing the open cash shift. Unfinished POS cart items remain on the terminal across lock
+   and user switch, while privileged cart adjustments (line price overrides and charge waivers),
+   cached override PINs, and open privileged modals are cleared. Pending asynchronous checkout
+   continuations are guarded by session epoch and originating tokens so a user switch halts downstream
+   billing, payment, and cart clearance under the new session, while committed-order recovery state
+   is preserved under the originating user's attempt record.
 4. **Approval boundary:** `GET /api/staff/approvers` and every Staff Approval PIN check (refunds,
    item voids, order/item/bill discounts, order-status overrides, kitchen-delivery overrides,
    charge waivers, and paid-bill payment-method corrections) enforce active `owner` or `manager`

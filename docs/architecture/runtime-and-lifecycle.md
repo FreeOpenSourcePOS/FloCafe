@@ -42,10 +42,15 @@ continuing, so a quit during startup unwinds instead of half-starting:
 11. On a non-store build, the auto-updater is configured and a delayed update check runs. Store
     builds report a `store-managed` one-shot status instead.
 
-If any step throws, the state becomes `failed`, the error is reported to telemetry on a best-effort
-basis, cleanup runs, and the process exits with code 1. A `SchemaVersionMismatchError` adds the
-database and application schema versions to that report. A shutdown that interrupts startup is not
-treated as a failure.
+If `initDatabase()` throws `SchemaVersionMismatchError`, `initialize()` intercepts it before the
+generic startup-error dialog, quiesces database access, and enters `runDowngradeRecoveryFlow` in
+[`main/downgrade-recovery.ts`](../../main/downgrade-recovery.ts); restoring a validated compatible
+backup restarts `initialize()` from step 1, while choosing to update or exit runs cleanup and exits
+with code `0` without modifying any files (see
+[Data and migrations](data-and-migrations.md#the-two-fail-closed-rules)). If any other step throws,
+the state becomes `failed`, `dialog.showErrorBox` reports the startup error, a safe failure
+classification is captured for diagnostics on a best-effort basis, cleanup runs, and the process
+exits with code `1`. A shutdown that interrupts startup is not treated as a failure.
 
 ## No window without a healthy runtime
 

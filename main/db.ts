@@ -9376,10 +9376,9 @@ export function completeSettledReleasedOrderIfServed(
   if (updated.changes !== 1) return false;
 
   if (orderRow.table_id) {
-    dbInstance.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(
-      changedAt,
-      orderRow.table_id,
-    );
+    dbInstance
+      .prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
+      .run(changedAt, orderRow.table_id);
   }
   return true;
 }

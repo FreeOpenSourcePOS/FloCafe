@@ -149,8 +149,8 @@ export function isOrderItemEditLocked(
 ): boolean {
   if (order.status === 'completed' || order.status === 'cancelled') return true;
   if (isScheduledOrderEditLocked(order)) return true;
-  return getOrderBills(order).some(
-    (b) => ['paid', 'partially_refunded', 'refunded'].includes(String(b.payment_status || '')),
+  return getOrderBills(order).some((b) =>
+    ['paid', 'partially_refunded', 'refunded'].includes(String(b.payment_status || '')),
   );
 }
 

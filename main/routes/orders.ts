@@ -2765,17 +2765,15 @@ router.post(
         : statusCode >= 500
           ? 'fc.backend.order.append.persistence'
           : 'fc.backend.order.append.validation';
-      return res
-        .status(statusCode)
-        .json({
-          ...structuredOperationFailure(
-            req,
-            point,
-            operationCommitted ? 'applied' : 'not_applied',
-            message,
-          ),
-          ...(error.code ? { code: error.code } : {}),
-        });
+      return res.status(statusCode).json({
+        ...structuredOperationFailure(
+          req,
+          point,
+          operationCommitted ? 'applied' : 'not_applied',
+          message,
+        ),
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   },
 );
@@ -3763,12 +3761,10 @@ router.patch(
     } catch (error: unknown) {
       const err = error as { statusCode?: number; message?: string; code?: string };
       console.error('[API] Internal error:', err);
-      res
-        .status(err.statusCode || 500)
-        .json({
-          error: err.statusCode ? err.message : 'Internal server error',
-          ...(err.code ? { code: err.code } : {}),
-        });
+      res.status(err.statusCode || 500).json({
+        error: err.statusCode ? err.message : 'Internal server error',
+        ...(err.code ? { code: err.code } : {}),
+      });
     }
   },
 );
@@ -4513,18 +4509,16 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
       : statusCode >= 500
         ? 'fc.backend.order.discount.persistence'
         : 'fc.backend.order.discount.validation';
-    return res
-      .status(statusCode)
-      .json({
-        ...structuredOperationFailure(
-          req,
-          point,
-          operationCommitted ? 'applied' : 'not_applied',
-          message,
-          operationCommitted ? undefined : error.diagnosticCode,
-        ),
-        ...(error.code ? { code: error.code } : {}),
-      });
+    return res.status(statusCode).json({
+      ...structuredOperationFailure(
+        req,
+        point,
+        operationCommitted ? 'applied' : 'not_applied',
+        message,
+        operationCommitted ? undefined : error.diagnosticCode,
+      ),
+      ...(error.code ? { code: error.code } : {}),
+    });
   }
 });
 
@@ -5060,12 +5054,10 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     res.json({ item: updatedItem });
   } catch (error: any) {
     console.error('[API] Internal error:', error);
-    res
-      .status(error.statusCode || 500)
-      .json({
-        error: error.statusCode ? error.message : 'Internal server error',
-        ...(error.code ? { code: error.code } : {}),
-      });
+    res.status(error.statusCode || 500).json({
+      error: error.statusCode ? error.message : 'Internal server error',
+      ...(error.code ? { code: error.code } : {}),
+    });
   }
 });
 
@@ -5327,12 +5319,10 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
   } catch (error: unknown) {
     console.error('[API] Internal error:', error);
     const failure = error as { statusCode?: number; message?: string; code?: string };
-    res
-      .status(failure.statusCode || 500)
-      .json({
-        error: failure.statusCode ? failure.message : 'Internal server error',
-        ...(failure.code ? { code: failure.code } : {}),
-      });
+    res.status(failure.statusCode || 500).json({
+      error: failure.statusCode ? failure.message : 'Internal server error',
+      ...(failure.code ? { code: failure.code } : {}),
+    });
   }
 });
 
@@ -5910,12 +5900,10 @@ router.patch(
     } catch (error: any) {
       console.error('[Orders] Cancel item error:', error);
       console.error('[API] Internal error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({
-          error: error.statusCode ? error.message : 'Internal server error',
-          ...(error.code ? { code: error.code } : {}),
-        });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   }),
 );
@@ -6451,12 +6439,10 @@ router.patch(
     } catch (err) {
       const error = err as { statusCode?: number; message?: string; code?: string };
       console.error('[Orders] Edit item error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({
-          error: error.statusCode ? error.message : 'Internal server error',
-          ...(error.code ? { code: error.code } : {}),
-        });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   },
 );
@@ -6707,12 +6693,10 @@ router.patch(
     } catch (error: any) {
       console.error('[Orders] Restore item error:', error);
       console.error('[API] Internal error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({
-          error: error.statusCode ? error.message : 'Internal server error',
-          ...(error.code ? { code: error.code } : {}),
-        });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   },
 );

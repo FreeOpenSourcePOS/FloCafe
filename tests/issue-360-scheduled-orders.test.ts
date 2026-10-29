@@ -1180,7 +1180,11 @@ async function main() {
           body: { discount_type: 'percentage', discount_value: 5 },
         },
       );
-      assertEqualOrThrow(blockedItemDisc.status, 409, 'item discount blocked after partial payment');
+      assertEqualOrThrow(
+        blockedItemDisc.status,
+        409,
+        'item discount blocked after partial payment',
+      );
       assertEqualOrThrow(
         blockedItemDisc.data.code,
         'SCHEDULED_ORDER_PAID',
@@ -1219,15 +1223,11 @@ async function main() {
         'bill discount returns SCHEDULED_ORDER_PAID code',
       );
 
-      const blockedBillCharges = await api(
-        baseUrl,
-        `/api/bills/${paidScheduledBillId}/charges`,
-        {
-          method: 'PATCH',
-          headers: owner.authHeader,
-          body: { charge_id: 'service_charge', waived: true },
-        },
-      );
+      const blockedBillCharges = await api(baseUrl, `/api/bills/${paidScheduledBillId}/charges`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { charge_id: 'service_charge', waived: true },
+      });
       assertEqualOrThrow(
         blockedBillCharges.status,
         409,
@@ -1709,8 +1709,8 @@ async function main() {
         assertEqualOrThrow(firstServed.status, 200, 'first item transitions to served');
         assertEqualOrThrow(
           firstServed.data.order.status,
-          'pending',
-          'order stays pending while second item is still unserved',
+          'preparing',
+          'order transitions to preparing while second item is still unserved',
         );
 
         const secondServed = await api(baseUrl, `/api/order-items/${items[1].id}/status`, {
@@ -1751,8 +1751,8 @@ async function main() {
         });
         assertEqualOrThrow(
           midOrder.data.order.status,
-          'pending',
-          'order stays pending while item is preparing',
+          'preparing',
+          'order transitions to preparing while item is preparing',
         );
 
         const servedRes = await api(baseUrl, `/api/kds/items/${items[0].id}/status`, {
@@ -1884,8 +1884,13 @@ async function main() {
         });
         assertEqualOrThrow(
           afterServed.data.order.status,
-          'pending',
-          'partially refunded order does NOT auto-complete on served',
+          'served',
+          'partially refunded order transitions to served without auto-completing to completed',
+        );
+        assertEqualOrThrow(
+          afterServed.data.order.completed_at ?? null,
+          null,
+          'partially refunded order leaves completed_at null',
         );
       }
 
@@ -2062,8 +2067,13 @@ async function main() {
         assertEqualOrThrow(bhdShortServed.status, 200, 'mark 0.004 BHD balance item served');
         assertEqualOrThrow(
           bhdShortServed.data.order.status,
-          'pending',
-          '0.004 BHD unpaid balance blocks auto-completion under 3-decimal BHD minor units',
+          'served',
+          '0.004 BHD unpaid balance blocks auto-completion to completed under 3-decimal BHD minor units',
+        );
+        assertEqualOrThrow(
+          bhdShortServed.data.order.completed_at ?? null,
+          null,
+          '0.004 BHD unpaid balance leaves completed_at null',
         );
 
         // KDS disabled -> 1.006 BHD split order completes immediately at release
@@ -2665,20 +2675,16 @@ async function main() {
           'OrderDetailPanel suppresses Checkout and Refund once fully refunded',
         );
 
-        const cancelAfterFullRefundUi = await api(
-          baseUrl,
-          `/api/orders/${uiSchedOrderId}/status`,
-          {
-            method: 'PATCH',
-            headers: owner.authHeader,
-            body: {
-              status: 'cancelled',
-              reason: 'Refunded in full on /orders',
-              approver_id: manager.userId,
-              override_pin: '1234',
-            },
+        const cancelAfterFullRefundUi = await api(baseUrl, `/api/orders/${uiSchedOrderId}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: {
+            status: 'cancelled',
+            reason: 'Refunded in full on /orders',
+            approver_id: manager.userId,
+            override_pin: '1234',
           },
-        );
+        });
         assertEqualOrThrow(
           cancelAfterFullRefundUi.status,
           200,

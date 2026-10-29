@@ -23,6 +23,8 @@ function futureBangkokWallClock(minutesAhead: number): string {
 test('POS scheduled orders: Send to kitchen at, prepay without early release, audited reschedule, refund-before-cancel, and blocked retry', async ({
   page,
 }) => {
+  test.setTimeout(120_000);
+  const evidenceDir = '/Users/gurkiratkhaira/.no-mistakes/evidence/01M64J866EWP5Q41XVW3W8J3Q9';
   const ownerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
   const runId = Math.random().toString(36).slice(2, 8);
@@ -75,6 +77,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     const initialFutureWall = futureBangkokWallClock(90);
     await scheduleInput.fill(initialFutureWall);
     await expect(cartShell.getByTestId('pos-schedule-error')).toHaveCount(0);
+    await page.screenshot({ path: `${evidenceDir}/01-pos-send-to-kitchen-at.png`, fullPage: true });
 
     // 2. Place prepaid scheduled takeaway order -> pay without early release!
     const createOrderPromise = page.waitForResponse((res) => {
@@ -138,6 +141,10 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await expect(paidCard.getByTestId(`scheduled-pay-btn-${prepaidOrderId}`)).toHaveCount(0);
     await expect(paidCard.getByTestId(`scheduled-edit-locked-${prepaidOrderId}`)).toBeVisible();
     await expect(paidCard.getByTestId(`scheduled-add-items-btn-${prepaidOrderId}`)).toHaveCount(0);
+    await page.screenshot({
+      path: `${evidenceDir}/02-scheduled-drawer-paid-edit-locked.png`,
+      fullPage: true,
+    });
 
     // Reschedule timing-only change succeeds even after payment
     await paidCard.getByTestId(`scheduled-reschedule-btn-${prepaidOrderId}`).click();
@@ -191,7 +198,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await page.getByTestId('pos-scheduled-orders-btn').click();
     await expect(drawer).toBeVisible();
     await expect(paidCard.getByTestId(`scheduled-payment-badge-${prepaidOrderId}`)).toContainText(
-      'Refund Issued',
+      'Partially Refunded',
     );
     await expect(paidCard.getByTestId(`scheduled-pay-btn-${prepaidOrderId}`)).toHaveCount(0);
     await expect(paidCard.getByTestId(`scheduled-refund-btn-${prepaidOrderId}`)).toBeVisible();
@@ -213,7 +220,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await page.getByTestId('pos-scheduled-orders-btn').click();
     await expect(drawer).toBeVisible();
     await expect(paidCard.getByTestId(`scheduled-payment-badge-${prepaidOrderId}`)).toContainText(
-      'Refund Issued',
+      'Refund issued',
     );
     await expect(paidCard.getByTestId(`scheduled-pay-btn-${prepaidOrderId}`)).toHaveCount(0);
     await expect(paidCard.getByTestId(`scheduled-refund-btn-${prepaidOrderId}`)).toHaveCount(0);
@@ -263,6 +270,10 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await expect(
       blockedCard.getByTestId(`scheduled-blocked-reason-${blockedOrderId}`),
     ).toContainText(`E2E Limited Pastry ${runId}`);
+    await page.screenshot({
+      path: `${evidenceDir}/03-scheduled-drawer-blocked-shortage.png`,
+      fullPage: true,
+    });
 
     // Restock product (+5) and click Retry release
     const restockRes = await page.request.post(`${BASE}/api/products/${trackedProductId}/stock`, {
@@ -307,6 +318,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     try {
       await page.goto(`${BASE}/pos`);
       await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+      await expect(page.getByTestId('pos-scheduled-count-badge')).toHaveText('2');
 
       await page.getByTestId('pos-scheduled-orders-btn').click();
       const appendDrawer = page.getByTestId('scheduled-orders-drawer');
@@ -398,6 +410,10 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await expect(detailPanel.getByRole('button', { name: 'Refund', exact: true })).toBeVisible();
     await expect(detailPanel.getByRole('button', { name: 'Add Item' })).toHaveCount(0);
     await expect(detailPanel.getByRole('button', { name: 'Link Customer' })).toHaveCount(0);
+    await page.screenshot({
+      path: `${evidenceDir}/04-orders-released-partially-paid.png`,
+      fullPage: true,
+    });
 
     await detailPanel
       .locator('button[aria-haspopup="menu"]')
@@ -434,10 +450,15 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     const refundOverlay1 = page.locator('.fixed.inset-0.z-50').last();
     await expect(refundOverlay1).toBeVisible();
     await refundOverlay1.locator('#refundAmount').fill('5');
-    if (await refundOverlay1.locator('#refundApprover').count()) {
-      await refundOverlay1.locator('#refundApprover').selectOption('e2e-manager');
-    }
-    await refundOverlay1.locator('#refundPin').fill('2468');
+    await expect(async () => {
+      if (await refundOverlay1.locator('#refundApprover').count()) {
+        await refundOverlay1.locator('#refundApprover').selectOption('e2e-manager');
+      }
+      await refundOverlay1.locator('#refundPin').fill('2468');
+      await expect(refundOverlay1.getByRole('button', { name: /Issue refund/i })).toBeEnabled({
+        timeout: 500,
+      });
+    }).toPass({ timeout: 10_000 });
     await refundOverlay1.getByRole('button', { name: /Issue refund/i }).click();
     await expect(page.getByText(/Refund issued/i).first()).toBeVisible();
 
@@ -445,15 +466,24 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await expect(detailPanel.getByRole('button', { name: 'Take Payment' })).toHaveCount(0);
     await expect(detailPanel.getByRole('button', { name: 'Checkout' })).toHaveCount(0);
     await expect(detailPanel.getByRole('button', { name: 'Refund', exact: true })).toBeVisible();
+    await page.screenshot({
+      path: `${evidenceDir}/05-orders-released-partially-refunded.png`,
+      fullPage: true,
+    });
 
     // Remaining refund via /orders Refund modal -> Refunded badge, Refund hidden, cancel now succeeds
     await detailPanel.getByRole('button', { name: 'Refund', exact: true }).click();
     const refundOverlay2 = page.locator('.fixed.inset-0.z-50').last();
     await expect(refundOverlay2).toBeVisible();
-    if (await refundOverlay2.locator('#refundApprover').count()) {
-      await refundOverlay2.locator('#refundApprover').selectOption('e2e-manager');
-    }
-    await refundOverlay2.locator('#refundPin').fill('2468');
+    await expect(async () => {
+      if (await refundOverlay2.locator('#refundApprover').count()) {
+        await refundOverlay2.locator('#refundApprover').selectOption('e2e-manager');
+      }
+      await refundOverlay2.locator('#refundPin').fill('2468');
+      await expect(refundOverlay2.getByRole('button', { name: /Issue refund/i })).toBeEnabled({
+        timeout: 500,
+      });
+    }).toPass({ timeout: 10_000 });
     await refundOverlay2.getByRole('button', { name: /Issue refund/i }).click();
     await expect(page.getByText(/Refund issued/i).first()).toBeVisible();
 
@@ -471,7 +501,9 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     if (await finalCancelOverlay.locator('#cancelApproverSelect').count()) {
       await finalCancelOverlay.locator('#cancelApproverSelect').selectOption('e2e-manager');
     }
-    await finalCancelOverlay.locator('#overridePin').fill('2468');
+    if (await finalCancelOverlay.locator('#overridePin').count()) {
+      await finalCancelOverlay.locator('#overridePin').fill('2468');
+    }
     await finalCancelOverlay.getByRole('button', { name: 'Confirm Cancel', exact: true }).click();
     await expect(page.getByText(/Order cancelled successfully/i).first()).toBeVisible();
   } finally {

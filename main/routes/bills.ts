@@ -5031,18 +5031,16 @@ router.post(
         : statusCode >= 500
           ? 'fc.backend.bill.discount.persistence'
           : 'fc.backend.bill.discount.validation';
-      return res
-        .status(statusCode)
-        .json({
-          ...structuredBillFailure(
-            req,
-            point,
-            message,
-            operationCommitted ? undefined : error.diagnosticCode,
-            operationCommitted ? 'applied' : 'not_applied',
-          ),
-          ...(error.code ? { code: error.code } : {}),
-        });
+      return res.status(statusCode).json({
+        ...structuredBillFailure(
+          req,
+          point,
+          message,
+          operationCommitted ? undefined : error.diagnosticCode,
+          operationCommitted ? 'applied' : 'not_applied',
+        ),
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   }),
 );
@@ -5568,20 +5566,16 @@ router.patch(
         : operationCommitted
           ? 'fc.backend.bill.charge.completion'
           : 'fc.backend.bill.charge.persistence';
-      res
-        .status(statusCode)
-        .json({
-          ...structuredBillFailure(
-            req,
-            capturePoint,
-            statusCode >= 500 ? 'Internal server error' : (error as Error).message,
-            diagnosticCode,
-            outcome,
-          ),
-          ...((error as { code?: string })?.code
-            ? { code: (error as { code?: string }).code }
-            : {}),
-        });
+      res.status(statusCode).json({
+        ...structuredBillFailure(
+          req,
+          capturePoint,
+          statusCode >= 500 ? 'Internal server error' : (error as Error).message,
+          diagnosticCode,
+          outcome,
+        ),
+        ...((error as { code?: string })?.code ? { code: (error as { code?: string }).code } : {}),
+      });
     }
   }),
 );

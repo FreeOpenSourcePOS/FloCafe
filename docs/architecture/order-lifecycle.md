@@ -51,7 +51,8 @@ Everything monetary is resolved server-side inside one transaction:
 - The unit price comes from the catalog: `products.price`, or the variant price for an order with an
   `online_platform`. A client-sent price is never read.
 - Quantity rules are checked per sale unit, including fractional and weight-precision products.
-- Stock deduction and recipe depletion are written in the same transaction, so the order and its
+- Stock deduction and recipe depletion are written in the same transaction for immediate orders
+  (scheduled orders defer stock and recipe depletion until kitchen release), so the order and its
   inventory effects commit together.
 - Each line's tax is computed by the tax engine ([Taxation](taxation.md)) and stored on the line as
   `tax_amount`, `tax_breakdown`, `tax_snapshot`, and `tax_type`.

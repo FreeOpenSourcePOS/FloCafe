@@ -563,9 +563,9 @@ router.post(
       }
 
       const db = getDatabase();
+      const updated = 0,
+        reactivated = 0;
       let created = 0,
-        updated = 0,
-        reactivated = 0,
         skipped = 0,
         failed = 0,
         changedRows = 0;
@@ -584,8 +584,6 @@ router.post(
           parentRaw: string;
           parentNorm: string;
           sortOrder: number;
-          wantsDeactivate: boolean;
-          wantsDelete: boolean;
           rejected: boolean;
         };
 
@@ -627,10 +625,6 @@ router.post(
           const nameNorm = r.name.trim().toLowerCase();
           const parentRaw = (r.parent ?? '').trim();
           const parentNorm = parentRaw.toLowerCase();
-          const wantsDeactivate =
-            r.is_active !== undefined && r.is_active.trim() !== '' && !isTruthy(r.is_active);
-          const wantsDelete =
-            isTruthy(r.deleted ?? '') || (r.action ?? '').trim().toLowerCase() === 'delete';
 
           parsedRows.push({
             index: i,
@@ -640,8 +634,6 @@ router.post(
             parentRaw,
             parentNorm,
             sortOrder: sortOrder.value,
-            wantsDeactivate,
-            wantsDelete,
             rejected: false,
           });
         }
@@ -654,28 +646,15 @@ router.post(
           parent_id: string | null;
           is_active: number;
         }>;
-        const childCountByParentId = new Map<string, number>();
-        for (const cat of dbCategories) {
-          if (cat.parent_id) {
-            childCountByParentId.set(
-              cat.parent_id,
-              (childCountByParentId.get(cat.parent_id) ?? 0) + 1,
-            );
-          }
-        }
 
         const csvChildParentNorms = new Map<string, Set<string>>();
         const csvRootNorms = new Set<string>();
-        const csvReferencedParents = new Set<string>();
         for (const item of parsedRows) {
           if (item.parentNorm) {
-            if (!item.wantsDelete) {
-              const set = csvChildParentNorms.get(item.nameNorm) || new Set<string>();
-              set.add(item.parentNorm);
-              csvChildParentNorms.set(item.nameNorm, set);
-              csvReferencedParents.add(item.parentNorm);
-            }
-          } else if (!item.wantsDelete && !item.wantsDeactivate) {
+            const set = csvChildParentNorms.get(item.nameNorm) || new Set<string>();
+            set.add(item.parentNorm);
+            csvChildParentNorms.set(item.nameNorm, set);
+          } else {
             csvRootNorms.add(item.nameNorm);
           }
         }
@@ -784,49 +763,6 @@ router.post(
 
           if (targetMatches.length === 1) {
             const existing = targetMatches[0];
-            const hasChildren =
-              (childCountByParentId.get(existing.id) ?? 0) > 0 ||
-              csvReferencedParents.has(item.nameNorm);
-            if (item.wantsDelete) {
-              if (hasChildren) {
-                failRow(
-                  item.index,
-                  `Row ${item.rowNum} (${item.r.name}): cannot delete a category that has subcategories`,
-                );
-                item.rejected = true;
-                continue;
-              }
-              db.prepare('UPDATE categories SET deleted_at = ?, updated_at = ? WHERE id = ?').run(
-                now(),
-                now(),
-                existing.id,
-              );
-              const idx = dbCategories.findIndex((c) => c.id === existing.id);
-              if (idx !== -1) dbCategories.splice(idx, 1);
-              updated++;
-              changedRows++;
-              seenSiblings.add(siblingKey);
-              continue;
-            }
-            if (item.wantsDeactivate && existing.is_active) {
-              if (hasChildren) {
-                failRow(
-                  item.index,
-                  `Row ${item.rowNum} (${item.r.name}): cannot deactivate a category that has subcategories`,
-                );
-                item.rejected = true;
-                continue;
-              }
-              db.prepare('UPDATE categories SET is_active = 0, updated_at = ? WHERE id = ?').run(
-                now(),
-                existing.id,
-              );
-              existing.is_active = 0;
-              updated++;
-              changedRows++;
-              seenSiblings.add(siblingKey);
-              continue;
-            }
             if (existing.name !== item.r.name) {
               failRow(
                 item.index,
@@ -840,32 +776,14 @@ router.post(
             continue;
           }
 
-          if (item.wantsDelete) {
-            failRow(
-              item.index,
-              `Row ${item.rowNum} (${item.r.name}): category "${item.r.name}" not found`,
-            );
-            item.rejected = true;
-            continue;
-          }
-          if (item.wantsDeactivate && csvReferencedParents.has(item.nameNorm)) {
-            failRow(
-              item.index,
-              `Row ${item.rowNum} (${item.r.name}): cannot deactivate a category that has subcategories`,
-            );
-            item.rejected = true;
-            continue;
-          }
-
           const id = randomUUID();
-          const isActive = item.wantsDeactivate ? 0 : 1;
           const slug = item.r.name
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/(^-|-$)/g, '');
           db.prepare(
             `INSERT INTO categories (id, name, slug, description, parent_id, color, icon, sort_order, is_active, created_at, updated_at)
-             VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 1, ?, ?)`,
           ).run(
             id,
             item.r.name,
@@ -874,11 +792,10 @@ router.post(
             item.r.color || null,
             item.r.icon || null,
             item.sortOrder,
-            isActive,
             now(),
             now(),
           );
-          dbCategories.push({ id, name: item.r.name, parent_id: null, is_active: isActive });
+          dbCategories.push({ id, name: item.r.name, parent_id: null, is_active: 1 });
           seenSiblings.add(siblingKey);
           created++;
           changedRows++;
@@ -938,47 +855,6 @@ router.post(
 
           if (childMatches.length === 1) {
             const existingChild = childMatches[0];
-            const childGrandchildren = childCountByParentId.get(existingChild.id) ?? 0;
-            if (item.wantsDelete) {
-              if (childGrandchildren > 0) {
-                failRow(
-                  item.index,
-                  `Row ${item.rowNum} (${item.r.name}): cannot delete a category that has subcategories`,
-                );
-                item.rejected = true;
-                continue;
-              }
-              db.prepare('UPDATE categories SET deleted_at = ?, updated_at = ? WHERE id = ?').run(
-                now(),
-                now(),
-                existingChild.id,
-              );
-              const idx = dbCategories.findIndex((c) => c.id === existingChild.id);
-              if (idx !== -1) dbCategories.splice(idx, 1);
-              updated++;
-              changedRows++;
-              seenSiblings.add(siblingKey);
-              continue;
-            }
-            if (item.wantsDeactivate && existingChild.is_active) {
-              if (childGrandchildren > 0) {
-                failRow(
-                  item.index,
-                  `Row ${item.rowNum} (${item.r.name}): cannot deactivate a category that has subcategories`,
-                );
-                item.rejected = true;
-                continue;
-              }
-              db.prepare('UPDATE categories SET is_active = 0, updated_at = ? WHERE id = ?').run(
-                now(),
-                existingChild.id,
-              );
-              existingChild.is_active = 0;
-              updated++;
-              changedRows++;
-              seenSiblings.add(siblingKey);
-              continue;
-            }
             if (existingChild.name !== item.r.name) {
               failRow(
                 item.index,
@@ -992,15 +868,6 @@ router.post(
             continue;
           }
 
-          if (item.wantsDelete) {
-            failRow(
-              item.index,
-              `Row ${item.rowNum} (${item.r.name}): category "${item.r.name}" under "${item.parentRaw}" not found`,
-            );
-            item.rejected = true;
-            continue;
-          }
-
           if (!parentCat.is_active) {
             failRow(
               item.index,
@@ -1011,14 +878,13 @@ router.post(
           }
 
           const id = randomUUID();
-          const isActive = item.wantsDeactivate ? 0 : 1;
           const slug = item.r.name
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/(^-|-$)/g, '');
           db.prepare(
             `INSERT INTO categories (id, name, slug, description, parent_id, color, icon, sort_order, is_active, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
           ).run(
             id,
             item.r.name,
@@ -1028,7 +894,6 @@ router.post(
             item.r.color || null,
             item.r.icon || null,
             item.sortOrder,
-            isActive,
             now(),
             now(),
           );
@@ -1036,9 +901,8 @@ router.post(
             id,
             name: item.r.name,
             parent_id: parentCat.id,
-            is_active: isActive,
+            is_active: 1,
           });
-          childCountByParentId.set(parentCat.id, (childCountByParentId.get(parentCat.id) ?? 0) + 1);
           seenSiblings.add(siblingKey);
           created++;
           changedRows++;

@@ -395,24 +395,14 @@ export default function ProductGrid({
     return sortCategories(children, categorySort);
   }, [categories, activeRootId, categorySort]);
 
-  const matchingCategoryIds = useMemo(() => {
-    if (!selectedCategory) return null;
-    if (activeSubcategoryId) {
-      return new Set([activeSubcategoryId]);
-    }
-    const ids = new Set<string>([String(activeRootId)]);
-    for (const sub of activeSubcategories) {
-      ids.add(String(sub.id));
-    }
-    return ids;
-  }, [selectedCategory, activeSubcategoryId, activeRootId, activeSubcategories]);
+  const filterCategoryId = selectedCategory ? activeSubcategoryId || String(activeRootId) : null;
 
   const sortedProducts = useMemo(() => sortProducts(products, itemSort), [products, itemSort]);
 
   const filtered = sortedProducts.filter((p) => {
     const matchCat =
-      matchingCategoryIds === null ||
-      (p.category_id != null && matchingCategoryIds.has(String(p.category_id)));
+      filterCategoryId === null ||
+      (p.category_id != null && String(p.category_id) === filterCategoryId);
     const matchSearch = !activeQuery || p.name.toLowerCase().includes(activeQuery.toLowerCase());
     return matchCat && matchSearch;
   });

@@ -1670,16 +1670,15 @@ async function main() {
       'identical child category names under different parents are created as distinct subcategories',
     );
 
-    // Reject self-cycles, grandchildren, duplicate siblings, and deactivating/deleting a parent with children.
     const catInvalidHierarchy = await api(baseUrl, '/api/menu/csv/import/categories', {
       method: 'POST',
       body: {
         csv: [
-          'name,parent,description,color,icon,sort_order,is_active,deleted',
-          'CycleCat,CycleCat,Self parent,,,1,yes,no',
-          'Grandchild,Hot,Grandchild of subcategory,,,1,yes,no',
-          'CSV Drinks,,Attempt deactivate parent with children,,,10,no,no',
-          'CSV Food,,Attempt delete parent with children,,,20,yes,yes',
+          'name,parent,description,color,icon,sort_order',
+          'CycleCat,CycleCat,Self parent,,,1',
+          'Grandchild,Hot,Grandchild of subcategory,,,1',
+          'csv drinks,,Case-differing duplicate root,,,10',
+          'hot,CSV Drinks,Case-differing duplicate child,,,2',
         ].join('\n'),
       },
       headers: authHeader,
@@ -1692,7 +1691,7 @@ async function main() {
     assertEqualOrThrow(
       catInvalidHierarchy.data.failed,
       4,
-      'cycle, grandchild, parent deactivate, and parent delete rows fail',
+      'cycle, grandchild, and duplicate sibling rows fail',
     );
     assert(
       catInvalidHierarchy.data.errors.some((e: string) => e.includes('cannot be its own parent')),
@@ -1704,17 +1703,41 @@ async function main() {
       ),
       'grandchild parent row error is reported',
     );
-    assert(
-      catInvalidHierarchy.data.errors.some((e: string) =>
-        e.includes('cannot deactivate a category that has subcategories'),
-      ),
-      'parent deactivation refusal is reported in CSV import',
+    assertEqualOrThrow(
+      catInvalidHierarchy.data.errors.filter((e: string) =>
+        e.includes('duplicate sibling category name'),
+      ).length,
+      2,
+      'duplicate root and child sibling errors are reported',
     );
+
+    const catAdditiveSkip = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,parent,sort_order,is_active,deleted,action',
+          'Cold,CSV Drinks,2,no,yes,delete',
+          'CSV Drinks,,10,no,yes,delete',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      catAdditiveSkip.data.skipped,
+      2,
+      'existing categories are skipped additively',
+    );
+    assertEqualOrThrow(
+      catAdditiveSkip.data.updated,
+      0,
+      'category CSV import does not mutate rows',
+    );
+    const coldAfterSkip = db
+      .prepare('SELECT is_active, deleted_at FROM categories WHERE name = ? AND parent_id = ?')
+      .get('Cold', csvDrinksRoot!.id) as { is_active: number; deleted_at: string | null };
     assert(
-      catInvalidHierarchy.data.errors.some((e: string) =>
-        e.includes('cannot delete a category that has subcategories'),
-      ),
-      'parent deletion refusal is reported in CSV import',
+      coldAfterSkip.is_active === 1 && coldAfterSkip.deleted_at === null,
+      'extra deleted/action/is_active columns do not delete or deactivate categories',
     );
 
     // Also test explicit grandchild rejection when parent is an unambiguous subcategory ('Cold' under 'CSV Drinks').

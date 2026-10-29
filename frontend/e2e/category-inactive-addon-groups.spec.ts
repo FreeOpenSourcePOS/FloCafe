@@ -290,11 +290,11 @@ test.describe('two-level category hierarchy UI', () => {
     await expect(page.getByText(parentProdName)).toHaveCount(0);
     await expect(page.getByTestId('pos-subcategory-row')).toHaveCount(0);
 
-    // Selecting parent category shows both direct parent product AND subcategory product, plus subcategory chips
+    // Selecting parent category shows its own direct products and subcategory chips
     await page.getByRole('button', { name: parentName, exact: true }).click();
     await expect(page.getByTestId('pos-subcategory-row')).toBeVisible();
     await expect(page.getByText(parentProdName)).toBeVisible();
-    await expect(page.getByText(childProdName)).toBeVisible();
+    await expect(page.getByText(childProdName)).toHaveCount(0);
     await expect(page.getByText(flatProdName)).toHaveCount(0);
 
     // Selecting subcategory chip filters to only that subcategory's products
@@ -304,6 +304,14 @@ test.describe('two-level category hierarchy UI', () => {
       .click();
     await expect(page.getByText(childProdName)).toBeVisible();
     await expect(page.getByText(parentProdName)).toHaveCount(0);
+
+    await page
+      .getByTestId('pos-subcategory-row')
+      .getByRole('button', { name: childName, exact: true })
+      .click();
+    await expect(page.getByTestId('pos-subcategory-row')).toBeVisible();
+    await expect(page.getByText(parentProdName)).toBeVisible();
+    await expect(page.getByText(childProdName)).toHaveCount(0);
 
     // Selecting "All" shows everything again and hides subcategory chips
     await page.getByRole('button', { name: 'All', exact: true }).click();

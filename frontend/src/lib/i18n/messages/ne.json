@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "WhatsApp मा प्रतिवेदन पठाउनुहोस्",
     "recipientPhone": "प्रापकको फोन नम्बर",
     "reportSentSuccess": "प्रतिवेदन WhatsApp मा सफलतापूर्वक पठाइयो",
+    "reportSubmittedPending": "प्रतिवेदन WhatsApp मा पेस गरियो; डेलिभरी पुष्टिको प्रतीक्षामा",
     "reportOpeningWhatsAppWeb": "प्रतिवेदनसहित WhatsApp खोलिँदैछ...",
     "salesSummary": "बिक्री सारांश",
     "paymentBreakdown": "भुक्तानी",

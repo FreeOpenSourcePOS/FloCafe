@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "通过 WhatsApp 发送报表",
     "recipientPhone": "收件人电话号码",
     "reportSentSuccess": "报表已成功发送到 WhatsApp",
+    "reportSubmittedPending": "报表已提交至 WhatsApp，正在等待送达确认",
     "reportOpeningWhatsAppWeb": "正在打开附带报表的 WhatsApp...",
     "salesSummary": "销售摘要",
     "paymentBreakdown": "付款",

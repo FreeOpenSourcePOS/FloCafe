@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Rapport via WhatsApp versturen",
     "recipientPhone": "Telefoonnummer van ontvanger",
     "reportSentSuccess": "Rapport succesvol via WhatsApp verstuurd",
+    "reportSubmittedPending": "Rapport ingediend bij WhatsApp; wacht op afleverbevestiging",
     "reportOpeningWhatsAppWeb": "WhatsApp wordt geopend met het rapport...",
     "salesSummary": "VERKOOPOVERZICHT",
     "paymentBreakdown": "BETALINGEN",

@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Gửi báo cáo qua WhatsApp",
     "recipientPhone": "Số điện thoại người nhận",
     "reportSentSuccess": "Đã gửi báo cáo qua WhatsApp thành công",
+    "reportSubmittedPending": "Đã gửi báo cáo lên WhatsApp; đang chờ xác nhận chuyển phát",
     "reportOpeningWhatsAppWeb": "Đang mở WhatsApp cùng báo cáo...",
     "salesSummary": "TÓM TẮT DOANH SỐ",
     "paymentBreakdown": "THANH TOÁN",

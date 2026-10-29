@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Enviar informe por WhatsApp",
     "recipientPhone": "Número de teléfono del destinatario",
     "reportSentSuccess": "Informe enviado a WhatsApp correctamente",
+    "reportSubmittedPending": "Informe enviado a WhatsApp; esperando confirmación de entrega",
     "reportOpeningWhatsAppWeb": "Abriendo WhatsApp con el informe...",
     "salesSummary": "RESUMEN DE VENTAS",
     "paymentBreakdown": "PAGOS",

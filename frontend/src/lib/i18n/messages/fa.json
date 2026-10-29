@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "ارسال گزارش به واتساپ",
     "recipientPhone": "شماره تلفن گیرنده",
     "reportSentSuccess": "گزارش با موفقیت به واتساپ ارسال شد",
+    "reportSubmittedPending": "گزارش به واتساپ تحویل شد؛ در انتظار تأیید ارسال",
     "reportOpeningWhatsAppWeb": "در حال باز کردن واتساپ همراه گزارش...",
     "salesSummary": "خلاصه فروش",
     "paymentBreakdown": "پرداخت‌ها",

@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Отправить отчёт в WhatsApp",
     "recipientPhone": "Номер телефона получателя",
     "reportSentSuccess": "Отчёт успешно отправлен в WhatsApp",
+    "reportSubmittedPending": "Отчёт передан в WhatsApp; ожидается подтверждение доставки",
     "reportOpeningWhatsAppWeb": "Открываем WhatsApp с отчётом...",
     "salesSummary": "СВОДКА ПРОДАЖ",
     "paymentBreakdown": "ПЛАТЕЖИ",

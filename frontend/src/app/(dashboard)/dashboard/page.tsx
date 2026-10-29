@@ -592,7 +592,15 @@ export default function DashboardPage() {
         toast.error(tCommon('somethingWrong'));
         return false;
       }
-      toast.success(t(result === 'sent' ? 'reportSentSuccess' : 'reportOpeningWhatsAppWeb'));
+      toast.success(
+        t(
+          result === 'sent'
+            ? 'reportSentSuccess'
+            : result === 'submitted'
+              ? 'reportSubmittedPending'
+              : 'reportOpeningWhatsAppWeb',
+        ),
+      );
       return true;
     } catch (err: unknown) {
       const reason = (err as { response?: { data?: { reason?: string } } })?.response?.data?.reason;

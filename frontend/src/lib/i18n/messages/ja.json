@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "WhatsAppにレポートを送信",
     "recipientPhone": "受信者の電話番号",
     "reportSentSuccess": "レポートをWhatsAppに送信しました",
+    "reportSubmittedPending": "レポートをWhatsAppに送信しました（配信確認待ち）",
     "reportOpeningWhatsAppWeb": "レポートを添えてWhatsAppを開いています...",
     "salesSummary": "売上概要",
     "paymentBreakdown": "支払い",

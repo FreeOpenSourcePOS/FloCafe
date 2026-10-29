@@ -276,7 +276,10 @@ router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, r
     req.body && typeof req.body === 'object' && !Array.isArray(req.body)
       ? { ...(req.body as Record<string, unknown>) }
       : {};
-  const role = (req as Request & { user?: { role?: string } }).user?.role;
+  const reqUser = (req as Request & { user?: { userId?: string; role?: string } }).user;
+  const role = reqUser?.role;
+  const userId = String(reqUser?.userId || '');
+  const canViewReports = Boolean(userId && hasPermission(userId, 'reports.view'));
   const current = whatsapp.getAutomationConfig();
   const currentZRule = current.rules.find((r) => r.trigger === 'z_report_day_close');
   const prevEnabled = Boolean(currentZRule?.enabled);
@@ -299,13 +302,23 @@ router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, r
       if (rawPhone) {
         const parsed = parsePhoneE164(rawPhone, getSettingValue('country') || '');
         if (!parsed) {
-          if (role !== 'owner' && rawPhone !== prevPhone) {
-            res.status(403).json({
-              error: 'Only the store owner can configure automatic Z-report delivery',
-              reason: 'owner_required',
-              code: 'PERMISSION_DENIED',
-            });
-            return;
+          if (rawPhone !== prevPhone) {
+            if (role !== 'owner') {
+              res.status(403).json({
+                error: 'Only the store owner can configure automatic Z-report delivery',
+                reason: 'owner_required',
+                code: 'PERMISSION_DENIED',
+              });
+              return;
+            }
+            if (!canViewReports) {
+              res.status(403).json({
+                error: 'Insufficient permissions',
+                required: 'reports.view',
+                code: 'PERMISSION_DENIED',
+              });
+              return;
+            }
           }
           res.status(400).json({
             error: 'Valid recipient phone in E.164 format is required',
@@ -315,13 +328,23 @@ router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, r
         }
         normalizedPhone = parsed.e164;
       }
-      if ((nextEnabled !== prevEnabled || normalizedPhone !== prevPhone) && role !== 'owner') {
-        res.status(403).json({
-          error: 'Only the store owner can configure automatic Z-report delivery',
-          reason: 'owner_required',
-          code: 'PERMISSION_DENIED',
-        });
-        return;
+      if (nextEnabled !== prevEnabled || normalizedPhone !== prevPhone) {
+        if (role !== 'owner') {
+          res.status(403).json({
+            error: 'Only the store owner can configure automatic Z-report delivery',
+            reason: 'owner_required',
+            code: 'PERMISSION_DENIED',
+          });
+          return;
+        }
+        if (!canViewReports) {
+          res.status(403).json({
+            error: 'Insufficient permissions',
+            required: 'reports.view',
+            code: 'PERMISSION_DENIED',
+          });
+          return;
+        }
       }
       if (nextEnabled && !normalizedPhone) {
         res.status(400).json({
@@ -343,7 +366,7 @@ router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, r
     const otherRules = bodyObj.rules.filter(
       (r) => whatsapp.resolveWhatsAppRuleTrigger(r) !== 'z_report_day_close',
     );
-    if (role !== 'owner') {
+    if (role !== 'owner' || !canViewReports) {
       bodyObj.rules = currentZRule ? [...otherRules, { ...currentZRule }] : otherRules;
     } else if (normalizedZRule) {
       bodyObj.rules = [...otherRules, normalizedZRule];

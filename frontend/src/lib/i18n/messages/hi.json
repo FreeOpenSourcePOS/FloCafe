@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "WhatsApp पर रिपोर्ट भेजें",
     "recipientPhone": "प्राप्तकर्ता का फ़ोन नंबर",
     "reportSentSuccess": "रिपोर्ट WhatsApp पर सफलतापूर्वक भेजी गई",
+    "reportSubmittedPending": "रिपोर्ट WhatsApp को सबमिट कर दी गई है; डिलीवरी पुष्टि की प्रतीक्षा है",
     "reportOpeningWhatsAppWeb": "रिपोर्ट के साथ WhatsApp खुल रहा है...",
     "salesSummary": "बिक्री सारांश",
     "paymentBreakdown": "भुगतान",

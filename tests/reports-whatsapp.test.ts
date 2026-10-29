@@ -22,6 +22,7 @@ const sentSocketMessages: Array<{ jid: string; payload: any }> = [];
 let socketSendShouldThrow = false;
 let autoServerAck = true;
 let socketMsgSeq = 0;
+let customSocketSendMessage: ((jid: string, payload: any) => Promise<any>) | null = null;
 const fakeSocket: any = {
   ev: {
     on: (event: string, handler: (value: any) => void) => {
@@ -32,6 +33,9 @@ const fakeSocket: any = {
   presenceSubscribe: async () => {},
   sendPresenceUpdate: async () => {},
   sendMessage: async (jid: string, payload: any) => {
+    if (customSocketSendMessage) {
+      return customSocketSendMessage(jid, payload);
+    }
     if (socketSendShouldThrow) {
       throw new Error('simulated_socket_failure');
     }
@@ -76,6 +80,14 @@ const fakeWhatsApp = {
       return realWhatsAppRef.sendMessage(request);
     }
     return sendResult;
+  },
+  waitForMessageAck: async (messageId: number, timeoutMs?: number, signal?: AbortSignal) => {
+    if (useRealWhatsAppInReportsRoute && realWhatsAppRef) {
+      return realWhatsAppRef.waitForMessageAck(messageId, timeoutMs, signal);
+    }
+    return sendResult?.deliveryStatus === 'sent' || sendResult?.acknowledged === true
+      ? 'sent'
+      : 'submitted';
   },
 };
 
@@ -276,6 +288,12 @@ async function main(): Promise<void> {
       'the full-report localization test covers all supported locales',
     );
     for (const localeFile of localeFiles) {
+      const rawLocale = JSON.parse(fs.readFileSync(path.join(messageDir, localeFile), 'utf8'));
+      assert.ok(
+        typeof rawLocale?.dashboard?.reportSubmittedPending === 'string' &&
+          rawLocale.dashboard.reportSubmittedPending.trim().length > 0,
+        `${localeFile}: dashboard.reportSubmittedPending is translated`,
+      );
       const labels = getLocalizedLabels(localeFile);
       const localizedX = formatCashCloseWhatsAppMessage(reportBase, tenant, 'en-US', labels);
       const localizedZ = formatCashCloseWhatsAppMessage(zReport(0), tenant, 'en-US', labels);
@@ -394,7 +412,7 @@ async function main(): Promise<void> {
         scope, business_date, period_start, period_end, opening_float_cents,
         expected_cash_cents, counted_cash_cents, variance_cents, gross_collected_cents,
         refunded_cents, net_collected_cents, bill_count, refund_count, z_number, closed_by, notes
-      ) VALUES ('day', ?, ?, ?, 0, 43000, 43000, 0, 123450, 1250, 122200, 18, 1, 7, ?, ?)
+      ) VALUES ('day', ?, ?, ?, 0, 43000, 43000, 0, 123450, 1250, 122200, 18, 1, 700, ?, ?)
     `)
       .run(
         '2026-09-30',
@@ -807,7 +825,14 @@ async function main(): Promise<void> {
     assert.ok(dailySalesTextEn.length <= whatsappService.MAX_BODY_CHARS);
     assert.match(dailySalesTextEn, /Cafe North/);
     assert.match(dailySalesTextEn, /Daily Sales Report/);
-    assert.match(dailySalesTextEn, /Business date: 2026-10-05 \(America\/Toronto\)/);
+    const expectedEnBizDate = new Intl.DateTimeFormat('en-US', {
+      dateStyle: 'medium',
+      timeZone: 'UTC',
+    }).format(new Date(Date.UTC(2026, 9, 5, 12, 0, 0)));
+    assert.ok(
+      dailySalesTextEn.includes(`Business date: ${expectedEnBizDate} (America/Toronto)`),
+      'formats single business date via Intl.DateTimeFormat medium style',
+    );
     assert.match(dailySalesTextEn, /\$242\.30/); // gross collected
     assert.match(dailySalesTextEn, /\$5\.00/); // refunds & discounts
     assert.match(dailySalesTextEn, /\$237\.30/); // net collected
@@ -851,7 +876,39 @@ async function main(): Promise<void> {
       language: 'fr',
       locale: 'fr-CA',
     });
-    assert.ok(frenchDailySales.includes('2026-10-05') && frenchDailySales.includes('2026-10-06'));
+    const expectedFrStart = new Intl.DateTimeFormat('fr-CA', {
+      dateStyle: 'medium',
+      timeZone: 'UTC',
+    }).format(new Date(Date.UTC(2026, 9, 5, 12, 0, 0)));
+    const expectedFrEnd = new Intl.DateTimeFormat('fr-CA', {
+      dateStyle: 'medium',
+      timeZone: 'UTC',
+    }).format(new Date(Date.UTC(2026, 9, 6, 12, 0, 0)));
+    assert.ok(
+      frenchDailySales.includes(expectedFrStart) && frenchDailySales.includes(expectedFrEnd),
+    );
+    const persianSingleDailySales = formatDailySalesWhatsAppMessage(singleDayDataset, {
+      language: 'fa',
+      locale: 'fa-IR',
+      preferences: { currencyDisplay: 'rial', digits: 'locale', calendar: 'persian' },
+    });
+    assert.match(
+      persianSingleDailySales,
+      /\u06F1\u06F4\u06F0\u06F5/,
+      'single-day daily-sales WhatsApp period formats business date in Persian calendar + locale digits',
+    );
+    assert.doesNotMatch(persianSingleDailySales, /2026-10-05/);
+    const persianRangeDailySales = formatDailySalesWhatsAppMessage(frenchRangeDataset, {
+      language: 'fa',
+      locale: 'fa-IR',
+      preferences: { currencyDisplay: 'rial', digits: 'locale', calendar: 'persian' },
+    });
+    assert.match(
+      persianRangeDailySales,
+      /\u06F1\u06F4\u06F0\u06F5/,
+      'range daily-sales WhatsApp period formats from_date and to_date in Persian calendar + locale digits',
+    );
+    assert.doesNotMatch(persianRangeDailySales, /2026-10-0[56]/);
     const expectedFrNet = new Intl.NumberFormat('fr-CA', {
       style: 'currency',
       currency: 'USD',
@@ -1034,7 +1091,12 @@ async function main(): Promise<void> {
 
     clientApiCalls.length = 0;
     clientApiError = null;
-    clientApiResponse = { success: true, messageId: 91, body: dailyFallbackRes.body.body };
+    clientApiResponse = {
+      success: true,
+      deliveryStatus: 'sent',
+      messageId: 91,
+      body: dailyFallbackRes.body.body,
+    };
     const dailySentPopup = popupWindow();
     assert.equal(
       await shareDailySalesViaWhatsApp({ date: '2026-10-05' }, '+14165551234'),
@@ -1043,6 +1105,25 @@ async function main(): Promise<void> {
     );
     assert.equal(dailySentPopup.closed, true, 'confirmed transport send closes pre-opened popup');
     assert.equal(dailySentPopup.location.href, '');
+
+    clientApiResponse = {
+      success: true,
+      deliveryStatus: 'submitted',
+      messageId: 92,
+      body: dailyFallbackRes.body.body,
+    };
+    const dailySubmittedPopup = popupWindow();
+    assert.equal(
+      await shareDailySalesViaWhatsApp({ date: '2026-10-05' }, '+14165551234'),
+      'submitted',
+      'unacknowledged socket submission returns submitted without claiming confirmed delivery',
+    );
+    assert.equal(
+      dailySubmittedPopup.closed,
+      true,
+      'submitted transport send closes pre-opened popup without opening wa.me',
+    );
+    assert.equal(dailySubmittedPopup.location.href, '');
 
     clientApiResponse = {
       fallback: true,
@@ -1393,6 +1474,78 @@ async function main(): Promise<void> {
     assert.equal(managerDuplicateZRuleBypass.status, 403);
     assert.equal(managerDuplicateZRuleBypass.body.reason, 'owner_required');
 
+    // Owner with an explicit deny override on reports.view cannot modify z_report_day_close
+    db.prepare(`
+      INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES (?, 'reports.view', 'deny', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(owner.userId, owner.userId);
+    try {
+      const deniedOwnerModifyZRule = await request(fullApp)
+        .put('/api/whatsapp/automation')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .send({
+          rules: [
+            ...ownerConfigureAuto.body.config.rules.filter(
+              (r: any) => r.trigger !== 'z_report_day_close',
+            ),
+            {
+              id: 'z_report_day_close',
+              trigger: 'z_report_day_close',
+              enabled: true,
+              templateId: 'receipt',
+              recipientPhone: '+14165559999',
+            },
+          ],
+        });
+      assert.equal(
+        deniedOwnerModifyZRule.status,
+        403,
+        'owner denied reports.view cannot change z_report_day_close recipient',
+      );
+      assert.equal(deniedOwnerModifyZRule.body.required, 'reports.view');
+      assert.equal(deniedOwnerModifyZRule.body.code, 'PERMISSION_DENIED');
+
+      const deniedOwnerInvalidPhoneZRule = await request(fullApp)
+        .put('/api/whatsapp/automation')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .send({
+          rules: [
+            {
+              id: 'z_report_day_close',
+              trigger: 'z_report_day_close',
+              enabled: true,
+              recipientPhone: 'invalid-phone',
+            },
+          ],
+        });
+      assert.equal(
+        deniedOwnerInvalidPhoneZRule.status,
+        403,
+        'owner denied reports.view cannot probe invalid phone on z_report_day_close',
+      );
+      assert.equal(deniedOwnerInvalidPhoneZRule.body.required, 'reports.view');
+      assert.equal(deniedOwnerInvalidPhoneZRule.body.code, 'PERMISSION_DENIED');
+
+      const deniedOwnerSaveOtherRules = await request(fullApp)
+        .put('/api/whatsapp/automation')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .send({
+          rules: ownerConfigureAuto.body.config.rules.filter(
+            (r: any) => r.trigger !== 'z_report_day_close',
+          ),
+        });
+      assert.equal(deniedOwnerSaveOtherRules.status, 200);
+      const preservedZRule = whatsappService
+        .getAutomationConfig()
+        .rules.find((r: any) => r.trigger === 'z_report_day_close');
+      assert.equal(preservedZRule?.enabled, true);
+      assert.equal(preservedZRule?.recipientPhone, '+14165559900');
+    } finally {
+      db.prepare(
+        `DELETE FROM user_permission_overrides WHERE user_id = ? AND permission_id = 'reports.view'`,
+      ).run(owner.userId);
+    }
+
     // Seed a prior customer auto_followup to +14165558802 so weekly cap (1) is already reached,
     // and verify customer campaign send is blocked while owner report send succeeds!
     db.prepare(`
@@ -1423,6 +1576,28 @@ async function main(): Promise<void> {
       'owner daily-sales report bypasses quiet hours and weekly customer cap',
     );
     assert.equal(reportBypassesCampaignLimits.body.success, true);
+    assert.equal(
+      reportBypassesCampaignLimits.body.deliveryStatus,
+      'sent',
+      'acknowledged daily-sales WhatsApp report returns deliveryStatus=sent',
+    );
+
+    autoServerAck = false;
+    try {
+      const unackedDailyRes = await request(fullApp)
+        .post('/api/reports/daily-sales/whatsapp')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .send({ date: '2026-10-05', phone_e164: '+14165558818' });
+      assert.equal(unackedDailyRes.status, 200);
+      assert.equal(unackedDailyRes.body.success, true);
+      assert.equal(
+        unackedDailyRes.body.deliveryStatus,
+        'submitted',
+        'unacknowledged daily-sales WhatsApp report returns deliveryStatus=submitted',
+      );
+    } finally {
+      autoServerAck = true;
+    }
 
     // Rate limit (RATE_LIMIT_MIN_GAP_MS) and blocklist are STILL obeyed by owner reports:
     delete process.env.FLO_WHATSAPP_FAST_DELAY;
@@ -1449,6 +1624,43 @@ async function main(): Promise<void> {
       .send({ date: '2026-10-05', phone_e164: '+14165558803' });
     assert.equal(blockedReportRes.status, 400, 'owner report still obeys blocklist');
     assert.equal(blockedReportRes.body.reason, 'blocked');
+
+    // MAX_BODY_CHARS (4096) applies ONLY to report message kinds (z_report, daily_sales_report), NOT bill_receipt / manual_reply
+    const longReceiptBody = `Receipt item line\n`.repeat(260); // > 4096 chars
+    assert.ok(longReceiptBody.length > 4096);
+    const longBillSend = await whatsappService.sendMessage({
+      phoneE164: '+14165558815',
+      body: longReceiptBody,
+      billId: null,
+      customerId: null,
+      kind: 'bill_receipt',
+      userId: owner.userId,
+    });
+    assert.equal(
+      longBillSend.ok,
+      true,
+      'bill_receipt longer than 4096 characters sends without content_blocked truncation error',
+    );
+    const overLimitZSend = await whatsappService.sendMessage({
+      phoneE164: '+14165558816',
+      body: longReceiptBody,
+      billId: null,
+      customerId: null,
+      kind: 'z_report',
+      userId: owner.userId,
+    });
+    assert.equal(overLimitZSend.ok, false);
+    assert.equal(overLimitZSend.reason, 'content_blocked');
+    const overLimitDailySend = await whatsappService.sendMessage({
+      phoneE164: '+14165558817',
+      body: longReceiptBody,
+      billId: null,
+      customerId: null,
+      kind: 'daily_sales_report',
+      userId: owner.userId,
+    });
+    assert.equal(overLimitDailySend.ok, false);
+    assert.equal(overLimitDailySend.reason, 'content_blocked');
 
     // Per-staff shift close (scope = 'session') MUST NOT trigger automatic Z-report on day close
     const openShiftRes = await request(fullApp)
@@ -1530,7 +1742,7 @@ async function main(): Promise<void> {
     assert.equal(autoZRowsAfterClose[0].kind, 'z_report');
     assert.equal(autoZRowsAfterClose[0].status, 'sent');
     assert.match(autoZRowsAfterClose[0].body, /Z report #/);
-    assert.match(autoZRowsAfterClose[0].body, /2026-10-05/);
+    assert.ok(autoZRowsAfterClose[0].body.includes(expectedEnBizDate));
     assert.match(autoZRowsAfterClose[0].body, /\$237\.30/); // canonical day net collections
 
     const sampleIrClosure = {
@@ -1560,8 +1772,9 @@ async function main(): Promise<void> {
       setSetting.run('number_digits', 'latin');
       const irGregorianLatinZ = whatsappService.formatStoredZReportWhatsAppMessage(sampleIrClosure);
       const irPeriodLine =
-        irGregorianLatinZ.split('\n').find((line: string) => line.includes('2026-10-05 (')) ?? '';
-      assert.match(irPeriodLine, /\(.*2026.*-.*2026.*\)/);
+        irGregorianLatinZ.split('\n').find((line: string) => line.startsWith('📅 ')) ?? '';
+      assert.match(irPeriodLine, /2026.*\([\s\S]*2026[\s\S]*-[\s\S]*2026[\s\S]*\)/);
+      assert.doesNotMatch(irPeriodLine, /2026-10-05/);
       assert.doesNotMatch(irPeriodLine, /[\u06F0-\u06F9]/);
       assert.doesNotMatch(irPeriodLine, /1405/);
 
@@ -1569,7 +1782,14 @@ async function main(): Promise<void> {
       setSetting.run('number_digits', 'locale');
       const irPersianLocaleZ = whatsappService.formatStoredZReportWhatsAppMessage(sampleIrClosure);
       const irPersianLine =
-        irPersianLocaleZ.split('\n').find((line: string) => line.includes('2026-10-05 (')) ?? '';
+        irPersianLocaleZ.split('\n').find((line: string) => line.startsWith('📅 ')) ?? '';
+      const irBizDatePart = irPersianLine.split('(')[0] ?? '';
+      assert.match(
+        irBizDatePart,
+        /\u06F1\u06F4\u06F0\u06F5/,
+        'stored Z-report business_date uses Persian calendar + locale digits before period window',
+      );
+      assert.doesNotMatch(irPersianLine, /2026-10-05/);
       assert.match(irPersianLine, /\u06F1\u06F4\u06F0\u06F5/);
     } finally {
       setSetting.run('country', 'US');
@@ -1817,6 +2037,243 @@ async function main(): Promise<void> {
       2,
       'whatsapp_message_attempts records both the unacked initial send and manual retry',
     );
+
+    // Acknowledged automatic/preclaimed Z-report must NEVER be downgraded to failed by (a) abort/shutdown or (b) post-ACK error
+    const seedTestDayClosure = (bizDate: string, zNum: number): number => {
+      const ins = db
+        .prepare(`
+          INSERT INTO cash_closures (
+            scope, business_date, period_start, period_end, opening_float_cents,
+            expected_cash_cents, counted_cash_cents, variance_cents, gross_collected_cents,
+            refunded_cents, net_collected_cents, bill_count, refund_count, z_number, closed_by, notes
+          ) VALUES ('day', ?, '2026-09-20 08:00:00', '2026-09-21 08:00:00', 0, 10000, 10000, 0, 10000, 0, 10000, 1, 0, ?, ?, NULL)
+        `)
+        .run(bizDate, zNum, owner.userId);
+      return Number(ins.lastInsertRowid);
+    };
+
+    await request(fullApp)
+      .put('/api/whatsapp/automation')
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({
+        rules: [
+          ...ownerConfigureAuto.body.config.rules.filter(
+            (r: any) => r.trigger !== 'z_report_day_close',
+          ),
+          {
+            id: 'z_report_day_close',
+            trigger: 'z_report_day_close',
+            enabled: true,
+            templateId: 'receipt',
+            recipientPhone: '+14165559911',
+          },
+        ],
+      });
+    const ackThenAbortClosureId = seedTestDayClosure('2026-09-21', 901);
+    customSocketSendMessage = async (jid: string, payload: any) => {
+      const extId = `reports-wa-ext-${++socketMsgSeq}`;
+      sentSocketMessages.push({ jid, payload });
+      // Record attempt ID on the active row and deliver server ACK before disconnecting/aborting
+      const activeRow = db
+        .prepare('SELECT id FROM whatsapp_messages WHERE cash_closure_id = ?')
+        .get(ackThenAbortClosureId) as { id: number };
+      whatsappService.recordMessageAttemptExternalId(activeRow.id, extId);
+      baileysEventHandlers.get('messages.update')?.([{ key: { id: extId }, update: { status: 2 } }]);
+      await new Promise((resolve) => setImmediate(resolve));
+      whatsappService.cancelPairing();
+      whatsappService.disconnect();
+      return { key: { id: extId } };
+    };
+    try {
+      await whatsappService.triggerDayCloseZReport(ackThenAbortClosureId);
+    } finally {
+      customSocketSendMessage = null;
+      await whatsappService.enable(owner.userId);
+      await whatsappService.connectWithQr();
+      baileysEventHandlers.get('connection.update')?.({ connection: 'open' });
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const ackThenAbortRow = db
+      .prepare('SELECT id, status, error, failed_at FROM whatsapp_messages WHERE cash_closure_id = ?')
+      .get(ackThenAbortClosureId) as {
+      id: number;
+      status: string;
+      error: string | null;
+      failed_at: string | null;
+    };
+    assert.equal(
+      ackThenAbortRow.status,
+      'sent',
+      'acknowledged preclaimed Z-report stays sent after abort/disconnect',
+    );
+    assert.equal(ackThenAbortRow.error, null);
+    assert.equal(ackThenAbortRow.failed_at, null);
+    const retryAckThenAbort = await whatsappService.retryMessage(ackThenAbortRow.id);
+    assert.equal(retryAckThenAbort.ok, false);
+    assert.equal(retryAckThenAbort.reason, 'not_failed');
+
+    await request(fullApp)
+      .put('/api/whatsapp/automation')
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({
+        rules: [
+          ...ownerConfigureAuto.body.config.rules.filter(
+            (r: any) => r.trigger !== 'z_report_day_close',
+          ),
+          {
+            id: 'z_report_day_close',
+            trigger: 'z_report_day_close',
+            enabled: true,
+            templateId: 'receipt',
+            recipientPhone: '+14165559912',
+          },
+        ],
+      });
+    const ackThenPostErrorClosureId = seedTestDayClosure('2026-09-22', 902);
+    customSocketSendMessage = async (jid: string, payload: any) => {
+      const extId = `reports-wa-ext-${++socketMsgSeq}`;
+      sentSocketMessages.push({ jid, payload });
+      const activeRow = db
+        .prepare('SELECT id FROM whatsapp_messages WHERE cash_closure_id = ?')
+        .get(ackThenPostErrorClosureId) as { id: number };
+      whatsappService.recordMessageAttemptExternalId(activeRow.id, extId);
+      baileysEventHandlers.get('messages.update')?.([{ key: { id: extId }, update: { status: 2 } }]);
+      await new Promise((resolve) => setImmediate(resolve));
+      return {
+        key: { id: extId },
+        get message() {
+          throw new Error('simulated_post_ack_cache_failure');
+        },
+      };
+    };
+    try {
+      await whatsappService.triggerDayCloseZReport(ackThenPostErrorClosureId);
+    } finally {
+      customSocketSendMessage = null;
+    }
+    const ackThenPostErrorRow = db
+      .prepare('SELECT id, status, error, failed_at FROM whatsapp_messages WHERE cash_closure_id = ?')
+      .get(ackThenPostErrorClosureId) as {
+      id: number;
+      status: string;
+      error: string | null;
+      failed_at: string | null;
+    };
+    assert.equal(
+      ackThenPostErrorRow.status,
+      'sent',
+      'acknowledged preclaimed Z-report stays sent after post-ACK send-path error',
+    );
+    assert.equal(ackThenPostErrorRow.error, null);
+    assert.equal(ackThenPostErrorRow.failed_at, null);
+    const retryAckThenPostError = await whatsappService.retryMessage(ackThenPostErrorRow.id);
+    assert.equal(retryAckThenPostError.ok, false);
+    assert.equal(retryAckThenPostError.reason, 'not_failed');
+
+    // Q4: Day close atomically claims the queued Z-report row inside the close transaction
+    // so a crash before post-response async dispatch is still recoverable on startup + manual retry,
+    // and any claim failure rolls back ONLY the savepoint without failing the day close.
+    await request(fullApp)
+      .put('/api/whatsapp/automation')
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({
+        rules: [
+          ...ownerConfigureAuto.body.config.rules.filter(
+            (r: any) => r.trigger !== 'z_report_day_close',
+          ),
+          {
+            id: 'z_report_day_close',
+            trigger: 'z_report_day_close',
+            enabled: true,
+            templateId: 'receipt',
+            recipientPhone: '+14165559913',
+          },
+        ],
+      });
+    whatsappService._setTriggerDayCloseZReportInterceptor(async () => ({
+      ok: false,
+      skipped: true,
+      reason: 'simulated_crash_before_async_dispatch',
+    }));
+    let atomicCloseId = 0;
+    try {
+      const atomicCloseRes = await request(fullApp)
+        .post('/api/cash-closures')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .send({
+          business_date: '2026-09-23',
+          opening_float_cents: 1000,
+          counted_cash_cents: 1000,
+        });
+      assert.equal(atomicCloseRes.status, 201);
+      atomicCloseId = atomicCloseRes.body.zReport.id;
+    } finally {
+      whatsappService._setTriggerDayCloseZReportInterceptor(null);
+    }
+    const atomicClaimRow = db
+      .prepare(
+        `SELECT id, status, phone_e164, created_by_user_id FROM whatsapp_messages WHERE cash_closure_id = ?`,
+      )
+      .get(atomicCloseId) as
+      | { id: number; status: string; phone_e164: string; created_by_user_id: string }
+      | undefined;
+    assert.ok(
+      atomicClaimRow,
+      'committed day close atomically persists queued Z-report row even if async dispatch never runs',
+    );
+    assert.equal(atomicClaimRow.status, 'queued');
+    assert.equal(atomicClaimRow.phone_e164, '+14165559913');
+    assert.equal(atomicClaimRow.created_by_user_id, 'rule:z_report_day_close');
+
+    whatsappService.releaseClaimedDayCloseZReportAttempt(atomicClaimRow.id);
+    whatsappService.sweepAckTimeouts(Date.now(), { includeAllUnfinished: true });
+    const sweptAtomicRow = db
+      .prepare('SELECT status, error FROM whatsapp_messages WHERE id = ?')
+      .get(atomicClaimRow.id) as { status: string; error: string | null };
+    assert.equal(
+      sweptAtomicRow.status,
+      'failed',
+      'startup sweep marks undelivered preclaimed day-close Z-report row failed for manual retry',
+    );
+    assert.equal(sweptAtomicRow.error, 'ack_timeout');
+    const manualRetryAtomicRes = await request(fullApp)
+      .post(`/api/whatsapp/messages/${atomicClaimRow.id}/retry`)
+      .set('Authorization', `Bearer ${owner.token}`);
+    assert.equal(manualRetryAtomicRes.status, 200);
+    await new Promise((resolve) => setImmediate(resolve));
+    const retriedAtomicRow = db
+      .prepare('SELECT status FROM whatsapp_messages WHERE id = ?')
+      .get(atomicClaimRow.id) as { status: string };
+    assert.equal(retriedAtomicRow.status, 'sent');
+
+    db.exec(`
+      CREATE TEMP TRIGGER fail_z_claim_insert
+      BEFORE INSERT ON whatsapp_messages
+      BEGIN
+        SELECT RAISE(ABORT, 'simulated_claim_db_error');
+      END;
+    `);
+    try {
+      const savepointIsolatedCloseRes = await request(fullApp)
+        .post('/api/cash-closures')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .send({
+          business_date: '2026-09-24',
+          opening_float_cents: 1000,
+          counted_cash_cents: 1000,
+        });
+      assert.equal(
+        savepointIsolatedCloseRes.status,
+        201,
+        'claim error inside savepoint never fails or rolls back day close',
+      );
+      const savedClosure = db
+        .prepare(`SELECT id FROM cash_closures WHERE business_date = '2026-09-24' AND scope = 'day'`)
+        .get() as { id: number } | undefined;
+      assert.ok(savedClosure, 'day close remains committed when Z-report claim throws');
+    } finally {
+      db.exec('DROP TRIGGER IF EXISTS temp.fail_z_claim_insert;');
+    }
 
     // Explicit Offline mode suppresses automatic Z-on-day-close with NO delayed send on reconnection
     setSetting.run('offline_mode', 'true');

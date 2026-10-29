@@ -2307,6 +2307,38 @@ function localizeWhatsAppPaymentMethod(language: string, method: string): string
  * regional money/number formatting, and progressive truncation so optional item
  * detail is shortened or dropped before financial totals are ever omitted.
  */
+function formatBusinessDate(
+  value: string,
+  locale: string,
+  preferences?: LocalePreferences,
+): string {
+  if (!value || typeof value !== 'string') return String(value || '');
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return value;
+  try {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const noonUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    if (Number.isNaN(noonUtc.getTime())) return value;
+    const numberingSystem = preferences?.digits === 'latin' ? 'latn' : undefined;
+    const calendar =
+      preferences?.calendar === 'gregorian'
+        ? 'gregory'
+        : preferences?.calendar === 'persian'
+          ? 'persian'
+          : undefined;
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium',
+      timeZone: 'UTC',
+      ...(numberingSystem ? { numberingSystem } : {}),
+      ...(calendar ? { calendar } : {}),
+    }).format(noonUtc);
+  } catch {
+    return value;
+  }
+}
+
 export function formatDailySalesWhatsAppMessage(
   dataset: DailySalesExportDataset,
   options?: DailySalesWhatsAppOptions,
@@ -2367,12 +2399,14 @@ export function formatDailySalesWhatsAppMessage(
   const fmtNum = (val: number): string => formatNumber(val, resolvedLocale, numberingSystem);
 
   const summary = dataset.summary;
+  const fromFormatted = formatBusinessDate(summary.from_date, resolvedLocale, resolvedPrefs);
+  const toFormatted = formatBusinessDate(summary.to_date, resolvedLocale, resolvedPrefs);
   const periodLine =
     summary.from_date === summary.to_date
-      ? `${printLabel(language, 'dashboard.businessDateLabel')}: ${summary.from_date} (${summary.timezone})`
+      ? `${printLabel(language, 'dashboard.businessDateLabel')}: ${fromFormatted} (${summary.timezone})`
       : `${printLabel(language, 'dashboard.periodWindow')
-          .replace('{start}', summary.from_date)
-          .replace('{end}', summary.to_date)} (${summary.timezone})`;
+          .replace('{start}', fromFormatted)
+          .replace('{end}', toFormatted)} (${summary.timezone})`;
 
   const countsLine = `${printLabel(language, 'dashboard.ordersCount').replace('{count}', fmtNum(summary.order_count))} · ${printLabel(language, 'dashboard.billsCount').replace('{count}', fmtNum(summary.paid_bill_count))}`;
 

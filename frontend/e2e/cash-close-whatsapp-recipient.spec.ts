@@ -102,7 +102,7 @@ test('daily-sales WhatsApp send distinguishes confirmed transport delivery from 
   });
 
   const sentBodies: Array<Record<string, unknown>> = [];
-  let routeMode: 'sent' | 'fallback' = 'sent';
+  let routeMode: 'sent' | 'submitted' | 'fallback' = 'sent';
   await page.route('**/api/reports/daily-sales/whatsapp', async (route) => {
     const reqBody = route.request().postDataJSON() as Record<string, unknown>;
     sentBodies.push(reqBody);
@@ -112,7 +112,21 @@ test('daily-sales WhatsApp send distinguishes confirmed transport delivery from 
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
+          deliveryStatus: 'sent',
           messageId: 101,
+          body: '*FloCafe*\nDaily Sales Report\n*Net Collections: ฿250.00*',
+        }),
+      });
+      return;
+    }
+    if (routeMode === 'submitted') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          deliveryStatus: 'submitted',
+          messageId: 102,
           body: '*FloCafe*\nDaily Sales Report\n*Net Collections: ฿250.00*',
         }),
       });
@@ -151,7 +165,29 @@ test('daily-sales WhatsApp send distinguishes confirmed transport delivery from 
   );
   expect(popupsAfterConfirmed).toEqual([{ href: '', closed: true }]);
 
-  // 2. Disconnected fallback opens manual wa.me share window and shows manual-share toast
+  // 2. Unacknowledged socket submission closes pre-opened popup and shows pending-confirmation toast
+  routeMode = 'submitted';
+  await page.getByRole('button', { name: 'Export sales' }).click();
+  await page.getByRole('menuitem', { name: 'Send to WhatsApp' }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Recipient Phone Number').fill('+66812345678');
+  await dialog.getByRole('button', { name: 'Send to WhatsApp' }).click();
+
+  await expect(
+    page.getByText('Report submitted to WhatsApp; awaiting delivery confirmation'),
+  ).toBeVisible();
+  await expect(dialog).toBeHidden();
+  const popupsAfterSubmitted = await page.evaluate(
+    () =>
+      (window as unknown as { __openedPopups: Array<{ href: string; closed: boolean }> })
+        .__openedPopups,
+  );
+  expect(popupsAfterSubmitted).toEqual([
+    { href: '', closed: true },
+    { href: '', closed: true },
+  ]);
+
+  // 3. Disconnected fallback opens manual wa.me share window and shows manual-share toast
   routeMode = 'fallback';
   await page.getByRole('button', { name: 'Export sales' }).click();
   await page.getByRole('menuitem', { name: 'Send to WhatsApp' }).click();
@@ -166,9 +202,9 @@ test('daily-sales WhatsApp send distinguishes confirmed transport delivery from 
       (window as unknown as { __openedPopups: Array<{ href: string; closed: boolean }> })
         .__openedPopups,
   );
-  expect(popupsAfterFallback.length).toBe(2);
-  expect(popupsAfterFallback[1].closed).toBe(false);
-  expect(popupsAfterFallback[1].href).toContain('https://wa.me/66812345678?text=');
+  expect(popupsAfterFallback.length).toBe(3);
+  expect(popupsAfterFallback[2].closed).toBe(false);
+  expect(popupsAfterFallback[2].href).toContain('https://wa.me/66812345678?text=');
 });
 
 test('Z-on-day-close rule starts disabled without business-phone inference and saves normalized E.164 recipient', async ({

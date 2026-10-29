@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Kirim laporan ke WhatsApp",
     "recipientPhone": "Nomor telepon penerima",
     "reportSentSuccess": "Laporan berhasil dikirim ke WhatsApp",
+    "reportSubmittedPending": "Laporan telah dikirim ke WhatsApp; menunggu konfirmasi pengiriman",
     "reportOpeningWhatsAppWeb": "Membuka WhatsApp dengan laporan...",
     "salesSummary": "RINGKASAN PENJUALAN",
     "paymentBreakdown": "PEMBAYARAN",

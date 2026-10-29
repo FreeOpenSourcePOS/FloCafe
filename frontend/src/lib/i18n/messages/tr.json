@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Raporu WhatsApp’a gönder",
     "recipientPhone": "Alıcının telefon numarası",
     "reportSentSuccess": "Rapor WhatsApp’a başarıyla gönderildi",
+    "reportSubmittedPending": "Rapor WhatsApp’a iletildi; teslim onayı bekleniyor",
     "reportOpeningWhatsAppWeb": "Raporla birlikte WhatsApp açılıyor...",
     "salesSummary": "SATIŞ ÖZETİ",
     "paymentBreakdown": "ÖDEMELER",

@@ -178,7 +178,7 @@ export async function shareCashCloseViaWhatsApp(
 export async function shareDailySalesViaWhatsApp(
   params: { date?: string; from?: string; to?: string },
   phoneE164: string,
-): Promise<'sent' | 'opened' | false> {
+): Promise<'sent' | 'submitted' | 'opened' | false> {
   const popup = window.electronAPI ? null : window.open('', '_blank');
   if (popup) popup.opener = null;
 
@@ -200,7 +200,7 @@ export async function shareDailySalesViaWhatsApp(
     });
     if (data?.success === true) {
       popup?.close();
-      return 'sent';
+      return data.deliveryStatus === 'sent' ? 'sent' : 'submitted';
     }
     if (
       data?.fallback === true &&

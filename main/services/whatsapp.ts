@@ -887,7 +887,18 @@ function updateMessageRow(
   }
   if (fields.length === 0) return;
   values.push(id);
-  db.prepare(`UPDATE whatsapp_messages SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  const guardAlreadySent =
+    patch.status !== undefined && (STATUS_RANK[patch.status] ?? -1) < STATUS_RANK.sent;
+  const res = db
+    .prepare(
+      `UPDATE whatsapp_messages SET ${fields.join(', ')} WHERE id = ?${
+        guardAlreadySent ? " AND status NOT IN ('sent', 'delivered', 'read')" : ''
+      }`,
+    )
+    .run(...values);
+  if (patch.status === 'failed' && res.changes > 0) {
+    resolveAckWaiters(id, 'submitted');
+  }
 }
 
 /** Advances message status and backfills earlier timestamps using COALESCE. */
@@ -913,12 +924,103 @@ function advanceStatus(id: number, latest: 'sent' | 'delivered' | 'read'): void 
   db.prepare(
     `UPDATE whatsapp_messages SET status = ?, error = NULL, failed_at = NULL, ${exprs} WHERE id = ?`,
   ).run(nextStatus, ...placeholders, id);
+  resolveAckWaiters(id, 'sent');
 }
 
 const EXTERNAL_ID_MAP_MAX = 1000;
 const externalIdToMessageId = new Map<string, number>();
 const activeSendMessageIds = new Set<number>();
 const inProcessSubmittedIds = new Set<number>();
+const ackWaiters = new Map<number, Set<(outcome: 'sent' | 'submitted') => void>>();
+
+function resolveAckWaiters(id: number, outcome: 'sent' | 'submitted'): void {
+  const listeners = ackWaiters.get(id);
+  if (!listeners) return;
+  ackWaiters.delete(id);
+  for (const listener of listeners) {
+    try {
+      listener(outcome);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function clearAllAckWaiters(): void {
+  const allIds = Array.from(ackWaiters.keys());
+  for (const id of allIds) {
+    resolveAckWaiters(id, 'submitted');
+  }
+}
+
+export function waitForMessageAck(
+  messageId: number,
+  timeoutMs = 1500,
+  signal?: AbortSignal,
+): Promise<'sent' | 'submitted'> {
+  if (!Number.isInteger(messageId) || messageId <= 0) {
+    return Promise.resolve('submitted');
+  }
+  try {
+    const db = getDatabase();
+    const cur = db.prepare('SELECT status FROM whatsapp_messages WHERE id = ?').get(messageId) as
+      | { status: string }
+      | undefined;
+    if (!cur) return Promise.resolve('submitted');
+    if ((STATUS_RANK[cur.status] ?? -1) >= STATUS_RANK.sent) {
+      return Promise.resolve('sent');
+    }
+    if (cur.status === 'failed') {
+      return Promise.resolve('submitted');
+    }
+  } catch {
+    return Promise.resolve('submitted');
+  }
+  if (signal?.aborted || isWhatsAppTerminal() || timeoutMs <= 0) {
+    return Promise.resolve('submitted');
+  }
+
+  return new Promise<'sent' | 'submitted'>((resolve) => {
+    let settled = false;
+    const finish = (outcome: 'sent' | 'submitted') => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      const set = ackWaiters.get(messageId);
+      if (set) {
+        set.delete(finish);
+        if (set.size === 0) ackWaiters.delete(messageId);
+      }
+      resolve(outcome);
+    };
+    const onAbort = () => finish('submitted');
+    const timer = setTimeout(() => finish('submitted'), timeoutMs);
+    timer.unref?.();
+
+    let set = ackWaiters.get(messageId);
+    if (!set) {
+      set = new Set();
+      ackWaiters.set(messageId, set);
+    }
+    set.add(finish);
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    try {
+      const db = getDatabase();
+      const cur = db
+        .prepare('SELECT status FROM whatsapp_messages WHERE id = ?')
+        .get(messageId) as { status: string } | undefined;
+      if (!cur || cur.status === 'failed') {
+        finish('submitted');
+      } else if ((STATUS_RANK[cur.status] ?? -1) >= STATUS_RANK.sent) {
+        finish('sent');
+      }
+    } catch {
+      finish('submitted');
+    }
+  });
+}
 
 function rememberExternalMessageId(externalId: string | null | undefined, messageId: number): void {
   if (!externalId) return;
@@ -1007,6 +1109,7 @@ export function sweepAckTimeouts(
         AND datetime(COALESCE(typing_at, seen_at, queued_at)) <= datetime(?)
     `);
     let count = 0;
+    const sweptIds: number[] = [];
     const sweepTx = db.transaction(() => {
       for (const row of staleRows) {
         if (activeSendMessageIds.has(row.id)) continue;
@@ -1018,10 +1121,14 @@ export function sweepAckTimeouts(
           : updateCutoffStmt.run(failedAt, row.id, cutoff);
         if (result.changes > 0) {
           count += result.changes;
+          sweptIds.push(row.id);
         }
       }
     });
     sweepTx();
+    for (const sweptId of sweptIds) {
+      resolveAckWaiters(sweptId, 'submitted');
+    }
     return count;
   } catch (err) {
     logWhatsApp('warn', 'ack_sweep_failed', { error: sanitizeLogText(err) });
@@ -1691,6 +1798,7 @@ export function disable(): void {
     state.automationTimer = null;
   }
   clearAckSweepTimer();
+  clearAllAckWaiters();
   inFlightRetries.clear();
   activeSendMessageIds.clear();
   inProcessSubmittedIds.clear();
@@ -1929,6 +2037,7 @@ export function disconnect(): void {
     state.automationTimer = null;
   }
   clearAckSweepTimer();
+  clearAllAckWaiters();
   inFlightRetries.clear();
   activeSendMessageIds.clear();
   inProcessSubmittedIds.clear();
@@ -2196,7 +2305,15 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     return { ok: false, ...retryIdPart, error: 'WhatsApp is not enabled.', reason: 'feature_off' };
   if (!req.phoneE164)
     return { ok: false, ...retryIdPart, error: 'Phone number required.', reason: 'no_phone' };
-  if (typeof req.body !== 'string' || !req.body.trim() || req.body.length > MAX_BODY_CHARS) {
+  if (typeof req.body !== 'string' || !req.body.trim()) {
+    return {
+      ok: false,
+      ...retryIdPart,
+      error: 'Message must be a non-empty string.',
+      reason: 'content_blocked',
+    };
+  }
+  if (isReportMessageKind(req.kind) && req.body.length > MAX_BODY_CHARS) {
     return {
       ok: false,
       ...retryIdPart,
@@ -2367,6 +2484,14 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
       resolvedKind = 'bill_receipt';
     }
   }
+  if (isReportMessageKind(resolvedKind) && req.body.length > MAX_BODY_CHARS) {
+    return {
+      ok: false,
+      ...retryIdPart,
+      error: `Message must be a non-empty string of at most ${MAX_BODY_CHARS} characters.`,
+      reason: 'content_blocked',
+    };
+  }
   if (
     req.userId === 'rule:nth_visit' &&
     req.billId != null &&
@@ -2453,7 +2578,6 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   let submittedToSocket = false;
 
   const isAlreadyDeliveredOrSent = (): boolean => {
-    if (req.retryMessageId == null) return false;
     const cur = db.prepare('SELECT status FROM whatsapp_messages WHERE id = ?').get(messageId) as
       | { status: string }
       | undefined;
@@ -2461,13 +2585,16 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   };
 
   const shutdownFailure = (): SendResult => {
+    if (isAlreadyDeliveredOrSent()) {
+      return { ok: true, messageId };
+    }
     if (!submittedToSocket) {
       removeRecentBodyForMessage(req.phoneE164, messageId);
     }
     const offline = isOfflineMode() && !isWhatsAppTerminal();
     const errorMsg = offline ? 'Offline mode is on.' : 'WhatsApp is shutting down.';
     const reason = offline ? ('offline_mode' as const) : ('send_failed' as const);
-    if (!whatsappTerminalCleanup && !isAlreadyDeliveredOrSent()) {
+    if (!whatsappTerminalCleanup) {
       try {
         updateMessageRow(messageId, {
           status: 'failed',
@@ -2554,13 +2681,14 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     return { ok: true, messageId };
   } catch (err: any) {
     if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
-    if (!isAlreadyDeliveredOrSent()) {
-      updateMessageRow(messageId, {
-        status: 'failed',
-        error: err?.message ?? 'Send failed',
-        timestamp_field: 'failed_at',
-      });
+    if (isAlreadyDeliveredOrSent()) {
+      return { ok: true, messageId };
     }
+    updateMessageRow(messageId, {
+      status: 'failed',
+      error: err?.message ?? 'Send failed',
+      timestamp_field: 'failed_at',
+    });
     const statusCode = (err as any)?.output?.statusCode;
     if (typeof statusCode === 'number' && RATE_LIMITED_STATUS_CODES.has(statusCode)) {
       triggerCooldown(
@@ -3813,6 +3941,38 @@ function formatZReportDateTime(
   }
 }
 
+function formatBusinessDate(
+  value: string,
+  locale: string,
+  preferences?: LocalePreferences,
+): string {
+  if (!value || typeof value !== 'string') return String(value || '');
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return value;
+  try {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const noonUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    if (Number.isNaN(noonUtc.getTime())) return value;
+    const numberingSystem = preferences?.digits === 'latin' ? 'latn' : undefined;
+    const calendar =
+      preferences?.calendar === 'gregorian'
+        ? 'gregory'
+        : preferences?.calendar === 'persian'
+          ? 'persian'
+          : undefined;
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium',
+      timeZone: 'UTC',
+      ...(numberingSystem ? { numberingSystem } : {}),
+      ...(calendar ? { calendar } : {}),
+    }).format(noonUtc);
+  } catch {
+    return value;
+  }
+}
+
 export function formatStoredZReportWhatsAppMessage(
   closure: StoredZReportClosureRow,
   options?: {
@@ -3880,13 +4040,15 @@ export function formatStoredZReportWhatsAppMessage(
         ? `⚠️ ${printLabel(language, 'dashboard.varianceShort')}`
         : `⚠️ ${printLabel(language, 'dashboard.varianceOver')}`;
 
+  const formattedBizDate = formatBusinessDate(closure.business_date, locale, preferences);
+
   const buildPrefixLines = (storeCap?: number, closedByCap = 80): string[] => {
     const storeDisplay = storeCap
       ? truncateWhatsAppText(businessName.trim(), storeCap)
       : businessName.trim();
     return [
       `📊 *${zTitle} #${fmtNum(closure.z_number)} - ${storeDisplay}*`,
-      `📅 *${dateLabel}:* ${closure.business_date} (${period})`,
+      `📅 *${dateLabel}:* ${formattedBizDate} (${period})`,
       `👤 *${closedByLabel}:* ${truncateWhatsAppText(String(closedByName || ''), closedByCap)}`,
       '',
       `💰 *${printLabel(language, 'dashboard.salesSummary')}*`,
@@ -3991,6 +4153,96 @@ export interface TriggerDayCloseZReportResult {
   error?: string;
 }
 
+export interface ClaimedDayCloseZReportAttempt {
+  messageId: number;
+  phoneE164: string;
+  body: string;
+}
+
+export function releaseClaimedDayCloseZReportAttempt(messageId: number | null | undefined): void {
+  if (typeof messageId === 'number' && Number.isInteger(messageId) && messageId > 0) {
+    activeSendMessageIds.delete(messageId);
+  }
+}
+
+function evaluateDayCloseZReportAttempt(
+  closureId: number,
+): { claimed: ClaimedDayCloseZReportAttempt } | { skippedReason: string } {
+  if (!Number.isInteger(closureId) || closureId <= 0) {
+    return { skippedReason: 'invalid_closure' };
+  }
+  if (isOfflineMode()) {
+    return { skippedReason: 'offline_mode' };
+  }
+  if (!state.enabled || isWhatsAppTerminal()) {
+    return { skippedReason: 'feature_off' };
+  }
+  const config = getAutomationConfig();
+  const rule = config.rules.find((r) => r.trigger === 'z_report_day_close');
+  if (!rule?.enabled) {
+    return { skippedReason: 'rule_disabled' };
+  }
+  const rawRecipient = typeof rule.recipientPhone === 'string' ? rule.recipientPhone.trim() : '';
+  if (!rawRecipient) {
+    return { skippedReason: 'phone_required' };
+  }
+  const parsedPhone = parsePhoneE164(rawRecipient, getSettingValue('country') || '');
+  if (!parsedPhone) {
+    return { skippedReason: 'invalid_phone' };
+  }
+
+  const db = getDatabase();
+  const closure = db
+    .prepare("SELECT * FROM cash_closures WHERE id = ? AND scope = 'day'")
+    .get(closureId) as StoredZReportClosureRow | undefined;
+  if (!closure) {
+    return { skippedReason: 'not_day_close' };
+  }
+
+  const body = formatStoredZReportWhatsAppMessage(closure);
+  const queuedAt = now();
+  const claim = db
+    .prepare(`
+      INSERT OR IGNORE INTO whatsapp_messages (
+        phone_e164, direction, kind, status, body, queued_at,
+        created_by_user_id, cash_closure_id
+      ) VALUES (?, 'outbound', 'z_report', 'queued', ?, ?, 'rule:z_report_day_close', ?)
+    `)
+    .run(parsedPhone.e164, body, queuedAt, closureId);
+
+  if (claim.changes === 0) {
+    return { skippedReason: 'duplicate_closure' };
+  }
+  const messageId = Number(claim.lastInsertRowid);
+  activeSendMessageIds.add(messageId);
+  return {
+    claimed: {
+      messageId,
+      phoneE164: parsedPhone.e164,
+      body,
+    },
+  };
+}
+
+export function claimDayCloseZReportAttempt(
+  closureId: number,
+): ClaimedDayCloseZReportAttempt | null {
+  const res = evaluateDayCloseZReportAttempt(closureId);
+  return 'claimed' in res ? res.claimed : null;
+}
+
+let triggerDayCloseZReportInterceptor:
+  | ((closureId: number, preclaimedMessageId?: number | null) => Promise<TriggerDayCloseZReportResult>)
+  | null = null;
+
+export function _setTriggerDayCloseZReportInterceptor(
+  fn:
+    | ((closureId: number, preclaimedMessageId?: number | null) => Promise<TriggerDayCloseZReportResult>)
+    | null,
+): void {
+  triggerDayCloseZReportInterceptor = fn;
+}
+
 /**
  * Fires at most one automatic Z-report WhatsApp attempt for a completed
  * store-level day close (`scope = 'day'`). Suppresses cleanly with no queued
@@ -3999,56 +4251,52 @@ export interface TriggerDayCloseZReportResult {
  */
 export async function triggerDayCloseZReport(
   closureId: number,
+  preclaimedMessageId?: number | null,
 ): Promise<TriggerDayCloseZReportResult> {
+  if (triggerDayCloseZReportInterceptor) {
+    return triggerDayCloseZReportInterceptor(closureId, preclaimedMessageId);
+  }
+  const hasPreclaimedId =
+    typeof preclaimedMessageId === 'number' &&
+    Number.isInteger(preclaimedMessageId) &&
+    preclaimedMessageId > 0;
   try {
-    if (!Number.isInteger(closureId) || closureId <= 0) {
-      return { ok: false, skipped: true, reason: 'invalid_closure' };
-    }
-    if (isOfflineMode()) {
-      return { ok: false, skipped: true, reason: 'offline_mode' };
-    }
-    if (!state.enabled || isWhatsAppTerminal()) {
-      return { ok: false, skipped: true, reason: 'feature_off' };
-    }
-    const config = getAutomationConfig();
-    const rule = config.rules.find((r) => r.trigger === 'z_report_day_close');
-    if (!rule?.enabled) {
-      return { ok: false, skipped: true, reason: 'rule_disabled' };
-    }
-    const rawRecipient = typeof rule.recipientPhone === 'string' ? rule.recipientPhone.trim() : '';
-    if (!rawRecipient) {
-      return { ok: false, skipped: true, reason: 'phone_required' };
-    }
-    const parsedPhone = parsePhoneE164(rawRecipient, getSettingValue('country') || '');
-    if (!parsedPhone) {
-      return { ok: false, skipped: true, reason: 'invalid_phone' };
+    let messageId: number;
+    let phoneE164: string;
+    let body: string;
+
+    if (hasPreclaimedId) {
+      if (!Number.isInteger(closureId) || closureId <= 0) {
+        releaseClaimedDayCloseZReportAttempt(preclaimedMessageId);
+        return { ok: false, skipped: true, reason: 'invalid_closure' };
+      }
+      const db = getDatabase();
+      const row = db
+        .prepare(
+          "SELECT id, phone_e164, body FROM whatsapp_messages WHERE id = ? AND cash_closure_id = ? AND kind = 'z_report'",
+        )
+        .get(preclaimedMessageId, closureId) as
+        | { id: number; phone_e164: string; body: string }
+        | undefined;
+      if (!row) {
+        releaseClaimedDayCloseZReportAttempt(preclaimedMessageId);
+        return { ok: false, skipped: true, reason: 'not_found' };
+      }
+      messageId = row.id;
+      phoneE164 = row.phone_e164;
+      body = row.body;
+      activeSendMessageIds.add(messageId);
+    } else {
+      const evaluated = evaluateDayCloseZReportAttempt(closureId);
+      if ('skippedReason' in evaluated) {
+        return { ok: false, skipped: true, reason: evaluated.skippedReason };
+      }
+      messageId = evaluated.claimed.messageId;
+      phoneE164 = evaluated.claimed.phoneE164;
+      body = evaluated.claimed.body;
     }
 
     const db = getDatabase();
-    const closure = db
-      .prepare("SELECT * FROM cash_closures WHERE id = ? AND scope = 'day'")
-      .get(closureId) as StoredZReportClosureRow | undefined;
-    if (!closure) {
-      return { ok: false, skipped: true, reason: 'not_day_close' };
-    }
-
-    const body = formatStoredZReportWhatsAppMessage(closure);
-    const queuedAt = now();
-    const claim = db
-      .prepare(`
-        INSERT OR IGNORE INTO whatsapp_messages (
-          phone_e164, direction, kind, status, body, queued_at,
-          created_by_user_id, cash_closure_id
-        ) VALUES (?, 'outbound', 'z_report', 'queued', ?, ?, 'rule:z_report_day_close', ?)
-      `)
-      .run(parsedPhone.e164, body, queuedAt, closureId);
-
-    if (claim.changes === 0) {
-      return { ok: false, skipped: true, reason: 'duplicate_closure' };
-    }
-    const messageId = Number(claim.lastInsertRowid);
-    activeSendMessageIds.add(messageId);
-
     const ensureFailedIfUnfinished = (fallbackError: string) => {
       try {
         const cur = db
@@ -4069,7 +4317,7 @@ export async function triggerDayCloseZReport(
     try {
       const result = await trackWhatsAppWork(
         sendMessageWithLock({
-          phoneE164: parsedPhone.e164,
+          phoneE164,
           body,
           billId: null,
           customerId: null,
@@ -4103,6 +4351,9 @@ export async function triggerDayCloseZReport(
       activeSendMessageIds.delete(messageId);
     }
   } catch (err: unknown) {
+    if (hasPreclaimedId) {
+      releaseClaimedDayCloseZReportAttempt(preclaimedMessageId);
+    }
     logWhatsApp('error', 'day_close_z_report_error', {
       closureId,
       error: sanitizeLogText(err),
@@ -4150,6 +4401,7 @@ export function requestShutdown(): void {
     state.automationTimer = null;
   }
   clearAckSweepTimer();
+  clearAllAckWaiters();
   inFlightRetries.clear();
   activeSendMessageIds.clear();
   const socket = state.socket;

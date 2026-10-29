@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Dërgo raportin në WhatsApp",
     "recipientPhone": "Numri i telefonit të marrësit",
     "reportSentSuccess": "Raporti u dërgua me sukses në WhatsApp",
+    "reportSubmittedPending": "Raporti u dorëzua në WhatsApp; në pritje të konfirmimit të dërgimit",
     "reportOpeningWhatsAppWeb": "Po hapet WhatsApp me raportin...",
     "salesSummary": "PËRMBLEDHJE E SHITJEVE",
     "paymentBreakdown": "PAGESAT",

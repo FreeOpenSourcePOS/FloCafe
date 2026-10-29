@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "WhatsApp으로 보고서 보내기",
     "recipientPhone": "수신자 전화번호",
     "reportSentSuccess": "보고서를 WhatsApp으로 보냈습니다",
+    "reportSubmittedPending": "보고서가 WhatsApp에 접수되었습니다. 전송 확인 대기 중",
     "reportOpeningWhatsAppWeb": "보고서와 함께 WhatsApp을 여는 중...",
     "salesSummary": "매출 요약",
     "paymentBreakdown": "결제",

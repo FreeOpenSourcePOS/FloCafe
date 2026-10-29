@@ -1910,7 +1910,19 @@ router.post(
         return res.status(status).json({ error: result.error, reason: result.reason });
       }
 
-      return res.json({ success: true, messageId: result.messageId, body });
+      const deliveryStatus: 'sent' | 'submitted' =
+        typeof whatsapp.waitForMessageAck === 'function' && result.messageId != null
+          ? await trackHttpRequestWork(
+              req,
+              whatsapp.waitForMessageAck(result.messageId, 1500, getHttpRequestSignal(req)),
+            )
+          : (result as { deliveryStatus?: string; acknowledged?: boolean }).deliveryStatus ===
+                'sent' ||
+              (result as { acknowledged?: boolean }).acknowledged === true
+            ? 'sent'
+            : 'submitted';
+
+      return res.json({ success: true, deliveryStatus, messageId: result.messageId, body });
     } catch (error: unknown) {
       if (error instanceof DailySalesExportValidationError) {
         return res.status(400).json({ error: error.message, reason: 'invalid_range' });

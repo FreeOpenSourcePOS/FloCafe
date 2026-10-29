@@ -1512,6 +1512,7 @@ router.post(
 router.post('/', requirePermission('cash.day-close'), (req: Request, res: Response) => {
   let operationCommitted = false;
   let transactionBodyCompleted = false;
+  let claimedZReport: whatsapp.ClaimedDayCloseZReportAttempt | null = null;
   try {
     const body = req.body || {};
     const businessDate = validateBusinessDate(body.business_date);
@@ -1670,6 +1671,25 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
         ).id,
       );
 
+      claimedZReport = null;
+      if (typeof whatsapp.claimDayCloseZReportAttempt === 'function') {
+        db.exec('SAVEPOINT z_report_claim');
+        try {
+          claimedZReport = whatsapp.claimDayCloseZReportAttempt(id);
+          db.exec('RELEASE SAVEPOINT z_report_claim');
+        } catch (claimErr) {
+          try {
+            db.exec('ROLLBACK TO SAVEPOINT z_report_claim');
+            db.exec('RELEASE SAVEPOINT z_report_claim');
+          } catch {
+            /* ignore */
+          }
+          whatsapp.releaseClaimedDayCloseZReportAttempt?.(claimedZReport?.messageId);
+          claimedZReport = null;
+          console.warn('[CashClosures] Automatic Z-report claim skipped after error:', claimErr);
+        }
+      }
+
       transactionBodyCompleted = true;
       return {
         id,
@@ -1703,14 +1723,23 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
 
     res.status(201).json({ zReport: result });
 
+    const activeClaim = claimedZReport as whatsapp.ClaimedDayCloseZReportAttempt | null;
+    const preclaimedMessageId = activeClaim?.messageId;
     try {
-      void whatsapp.triggerDayCloseZReport(result.id).catch((err) => {
+      void whatsapp.triggerDayCloseZReport(result.id, preclaimedMessageId).catch((err) => {
+        whatsapp.releaseClaimedDayCloseZReportAttempt?.(preclaimedMessageId);
         console.warn('[CashClosures] Automatic Z-report WhatsApp dispatch error:', err);
       });
     } catch (err) {
+      whatsapp.releaseClaimedDayCloseZReportAttempt?.(preclaimedMessageId);
       console.warn('[CashClosures] Automatic Z-report WhatsApp dispatch error:', err);
     }
   } catch (error: any) {
+    const uncommittedClaim = claimedZReport as whatsapp.ClaimedDayCloseZReportAttempt | null;
+    if (!operationCommitted && uncommittedClaim) {
+      whatsapp.releaseClaimedDayCloseZReportAttempt?.(uncommittedClaim.messageId);
+      claimedZReport = null;
+    }
     const status = error.statusCode || 500;
     if (status === 500) console.error('[CashClosures] Internal error:', error);
     const safeMessage =

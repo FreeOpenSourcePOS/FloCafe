@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "ส่งรายงานไปยัง WhatsApp",
     "recipientPhone": "หมายเลขโทรศัพท์ผู้รับ",
     "reportSentSuccess": "ส่งรายงานไปยัง WhatsApp สำเร็จแล้ว",
+    "reportSubmittedPending": "ส่งคำขอรายงานไปยัง WhatsApp แล้ว กำลังรอการยืนยันการส่ง",
     "reportOpeningWhatsAppWeb": "กำลังเปิด WhatsApp พร้อมรายงาน...",
     "salesSummary": "สรุปยอดขาย",
     "paymentBreakdown": "การชำระเงิน",

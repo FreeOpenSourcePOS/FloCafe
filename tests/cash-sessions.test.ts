@@ -4238,6 +4238,197 @@ async function main() {
             findCompAmt(zSkew, 'VAT', 10) === 10,
           `Section 13e: explicit session ownership retains tax across backward clock step while untagged lines without timestamp obey line_time < end (x=${JSON.stringify(xSkew.body?.xReport?.taxComponents)}, z=${JSON.stringify(zSkew)})`,
         );
+
+        const splitKey = 'split_checks_enabled';
+        const prevSplit = getSettingValue(splitKey);
+        db.prepare(
+          `INSERT INTO settings (key, value, updated_at)
+           VALUES (?, 'true', '2026-11-21 08:00:00')
+           ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`,
+        ).run(splitKey);
+        try {
+          const vatComp = { label: 'VAT', rate: 10, amount: 3 };
+          const splitCatSnap = { lines: [{ taxableBase: 30, components: [vatComp] }] };
+          const splitOrderSnap = JSON.stringify([splitCatSnap]);
+          const splitItemSnap = JSON.stringify(splitCatSnap);
+          const vatBk = { title: 'VAT', rate: 10, amount: 3 };
+          const cityBk = { title: 'City Tax', rate: 5, amount: 0.05 };
+          const splitCatBk = JSON.stringify([vatBk]);
+          const splitLegBk = JSON.stringify([cityBk]);
+          const splitBillBk = JSON.stringify([vatBk, cityBk]);
+          const insSplitOrder = db.prepare(
+            `INSERT INTO orders (
+               order_number, type, status, user_id, subtotal, tax_amount,
+               tax_snapshot, tax_breakdown, total, created_at, updated_at
+             ) VALUES (
+               'ORD-SPLIT-MIX-1', 'dine_in', 'ready', 'cashier-sess', 33, 3.05,
+               ?, ?, 36.05, '2026-11-21 08:05:00', '2026-11-21 08:05:00'
+             )`,
+          );
+          const splitOrderRes = insSplitOrder.run(splitOrderSnap, splitBillBk);
+          const splitOrderId = Number(splitOrderRes.lastInsertRowid);
+          const insSplitItem = db.prepare(
+            `INSERT INTO order_items (
+               order_id, product_id, product_name, quantity, unit_price, subtotal,
+               tax_amount, total, tax_snapshot, tax_breakdown, status, created_at, updated_at
+             ) VALUES (
+               ?, 'prod-v314', ?, 3, ?, ?, ?, ?, ?, ?, 'delivered',
+               '2026-11-21 08:05:00', '2026-11-21 08:05:00'
+             )`,
+          );
+          const catItemRes = insSplitItem.run(
+            splitOrderId,
+            'Split Cat Item',
+            10,
+            30,
+            3,
+            33,
+            splitItemSnap,
+            splitCatBk,
+          );
+          const legItemRes = insSplitItem.run(
+            splitOrderId,
+            'Split Legacy Item',
+            1,
+            3,
+            0.05,
+            3.05,
+            null,
+            splitLegBk,
+          );
+          const catItemId = Number(catItemRes.lastInsertRowid);
+          const legItemId = Number(legItemRes.lastInsertRowid);
+          const insSplitBill = db.prepare(
+            `INSERT INTO bills (
+               bill_number, order_id, subtotal, tax_amount, tax_snapshot, tax_breakdown,
+               total, paid_amount, balance, payment_status, payment_details, created_at, updated_at
+             ) VALUES (
+               'B-SPLIT-MIX-1', ?, 33, 3.05, ?, ?, 36.05, 0, 36.05, 'unpaid', NULL,
+               '2026-11-21 08:05:00', '2026-11-21 08:05:00'
+             )`,
+          );
+          const srcBillRes = insSplitBill.run(splitOrderId, splitOrderSnap, splitBillBk);
+          const srcBillId = Number(srcBillRes.lastInsertRowid);
+          const checkItems = [
+            { order_item_id: catItemId, quantity: 1 },
+            { order_item_id: legItemId, quantity: 1 },
+          ];
+          const splitChecksPayload = [
+            { label: 'Guest 1', items: checkItems },
+            { label: 'Guest 2', items: checkItems },
+            { label: 'Guest 3', items: checkItems },
+          ];
+          const splitRes = await withFixedClock('2026-11-21T08:10:00.000Z', async () =>
+            request(app)
+              .post(`/api/bills/${srcBillId}/split-check`)
+              .set('Authorization', `Bearer ${s11ManagerToken}`)
+              .send({ checks: splitChecksPayload }),
+          );
+          const splitBills = splitRes.body?.bills || [];
+          const splitShiftA = await withFixedClock('2026-11-21T09:00:00.000Z', async () =>
+            Number(
+              (
+                await request(app)
+                  .post('/api/cash-sessions/open')
+                  .set('Authorization', `Bearer ${s11CashierAToken}`)
+                  .send({ opening_float_cents: 0 })
+              ).body.id,
+            ),
+          );
+          const paySplit0 = await withFixedClock('2026-11-21T09:30:00.000Z', async () =>
+            request(app)
+              .post(`/api/bills/${splitBills[0].id}/payment`)
+              .set('Authorization', `Bearer ${s11CashierAToken}`)
+              .send({ method: 'cash', amount: 12.02 }),
+          );
+          const paySplit1 = await withFixedClock('2026-11-21T09:35:00.000Z', async () =>
+            request(app)
+              .post(`/api/bills/${splitBills[1].id}/payment`)
+              .set('Authorization', `Bearer ${s11CashierAToken}`)
+              .send({ method: 'cash', amount: 12.02 }),
+          );
+          const closeSplitA = await withFixedClock('2026-11-21T10:00:00.000Z', async () =>
+            request(app)
+              .post(`/api/cash-sessions/${splitShiftA}/close`)
+              .set('Authorization', `Bearer ${s11CashierAToken}`)
+              .send({ counted_cash_cents: 2404 }),
+          );
+          const splitShiftB = await withFixedClock('2026-11-21T11:00:00.000Z', async () =>
+            Number(
+              (
+                await request(app)
+                  .post('/api/cash-sessions/open')
+                  .set('Authorization', `Bearer ${s11CashierBToken}`)
+                  .send({ opening_float_cents: 0 })
+              ).body.id,
+            ),
+          );
+          const paySplit2 = await withFixedClock('2026-11-21T11:30:00.000Z', async () =>
+            request(app)
+              .post(`/api/bills/${splitBills[2].id}/payment`)
+              .set('Authorization', `Bearer ${s11CashierBToken}`)
+              .send({ method: 'cash', amount: 12.01 }),
+          );
+          const s13f = await withFixedClock('2026-11-21T12:00:00.000Z', async () => {
+            const xSplitB = await request(app)
+              .get(`/api/reports/x-report?date=2026-11-21&session_id=${splitShiftB}`)
+              .set('Authorization', `Bearer ${s11ManagerToken}`);
+            const xSplitDay = await request(app)
+              .get('/api/reports/x-report?date=2026-11-21')
+              .set('Authorization', `Bearer ${s11ManagerToken}`);
+            const closeSplitB = await request(app)
+              .post(`/api/cash-sessions/${splitShiftB}/close`)
+              .set('Authorization', `Bearer ${s11CashierBToken}`)
+              .send({ counted_cash_cents: 1201 });
+            const closeSplitDay = await request(app)
+              .post('/api/cash-closures')
+              .set('Authorization', `Bearer ${s11OwnerToken}`)
+              .send({
+                business_date: '2026-11-21',
+                opening_float_cents: 0,
+                counted_cash_cents: 3605,
+              });
+            const taxCompRep = await request(app)
+              .get('/api/reports/tax-components?start_date=2026-11-21&end_date=2026-11-21')
+              .set('Authorization', `Bearer ${s11ManagerToken}`);
+            return { xSplitB, xSplitDay, closeSplitB, closeSplitDay, taxCompRep };
+          });
+          const zSplitA = readStoredSessionTax(closeSplitA.body.closure_id);
+          const zSplitB = readStoredSessionTax(s13f.closeSplitB.body.closure_id);
+          const zSplitDay = s13f.closeSplitDay.body?.zReport?.tax_components;
+          const xSplitBTax = s13f.xSplitB.body?.xReport?.taxComponents;
+          const xSplitDayTax = s13f.xSplitDay.body?.xReport?.taxComponents;
+          const repTaxComps = s13f.taxCompRep.body?.taxComponents?.components;
+          assert(
+            splitRes.status === 201 &&
+              splitBills.length === 3 &&
+              paySplit0.status === 200 &&
+              paySplit1.status === 200 &&
+              paySplit2.status === 200 &&
+              closeSplitA.status === 200 &&
+              s13f.closeSplitB.status === 200 &&
+              s13f.closeSplitDay.status === 201 &&
+              s13f.xSplitB.status === 200 &&
+              s13f.xSplitDay.status === 200 &&
+              s13f.taxCompRep.status === 200 &&
+              findCompAmt(zSplitA, 'VAT', 10) === 2 &&
+              findCompAmt(zSplitA, 'City Tax', 5) === 0.04 &&
+              findCompAmt(xSplitBTax, 'VAT', 10) === 1 &&
+              findCompAmt(xSplitBTax, 'City Tax', 5) === 0.01 &&
+              JSON.stringify(zSplitB) === JSON.stringify(xSplitBTax) &&
+              findCompAmt(xSplitDayTax, 'VAT', 10) === 3 &&
+              findCompAmt(xSplitDayTax, 'City Tax', 5) === 0.05 &&
+              JSON.stringify(zSplitDay) === JSON.stringify(xSplitDayTax) &&
+              JSON.stringify(zSplitDay) === JSON.stringify(repTaxComps),
+            `Section 13f: split-check mixed snapshot and legacy breakdown preserves child owner allocations across shift X/Z, day X/Z, and tax-components report (zA=${JSON.stringify(zSplitA)}, zB=${JSON.stringify(zSplitB)}, day=${JSON.stringify(zSplitDay)})`,
+          );
+        } finally {
+          if (prevSplit === null) {
+            db.prepare('DELETE FROM settings WHERE key = ?').run(splitKey);
+          } else {
+            db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(prevSplit, splitKey);
+          }
+        }
       }
     } finally {
       db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'one_shift_per_staff'`).run();

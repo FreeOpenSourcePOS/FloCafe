@@ -993,6 +993,7 @@ export function computePeriodAggregates(
   type TaxBillRow = {
     id: number;
     order_id: number;
+    split_group_id: string | null;
     total: number | null;
     paid_at: string | null;
     tax_amount: number | null;
@@ -1003,7 +1004,7 @@ export function computePeriodAggregates(
     ? (db
         .prepare(
           `
-    SELECT b.id, b.order_id, b.total, b.paid_at, b.tax_amount, b.tax_snapshot, b.tax_breakdown
+    SELECT b.id, b.order_id, b.split_group_id, b.total, b.paid_at, b.tax_amount, b.tax_snapshot, b.tax_breakdown
     FROM bills b
     WHERE b.payment_details IS NOT NULL
       AND EXISTS (
@@ -1057,7 +1058,7 @@ export function computePeriodAggregates(
     : (db
         .prepare(
           `
-    SELECT b.id, b.order_id, b.total, b.paid_at, b.tax_amount, b.tax_snapshot, b.tax_breakdown
+    SELECT b.id, b.order_id, b.split_group_id, b.total, b.paid_at, b.tax_amount, b.tax_snapshot, b.tax_breakdown
     FROM bills b
     WHERE b.paid_at >= ? AND b.paid_at < ?
     ORDER BY b.paid_at, b.id

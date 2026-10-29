@@ -84,7 +84,9 @@ async function loginAsOwner(page: Page): Promise<void> {
 async function openKdsInTabsView(page: Page): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${KDS_BASE}/kds-standalone`);
-  await expect(page.getByTestId('kds-login-form').or(page.getByTestId('kds-workspace'))).toBeVisible({
+  await expect(
+    page.getByTestId('kds-login-form').or(page.getByTestId('kds-workspace')),
+  ).toBeVisible({
     timeout: 30_000,
   });
   if (await page.getByTestId('kds-login-form').isVisible()) {
@@ -114,7 +116,10 @@ async function advanceKdsItemOnce(
     .filter({ hasText: `#${orderNumber}` })
     .first();
   await expect(orderCard).toBeVisible({ timeout: 15_000 });
-  await orderCard.getByRole('button', { name: new RegExp(productName) }).first().click();
+  await orderCard
+    .getByRole('button', { name: new RegExp(productName) })
+    .first()
+    .click();
   const modal = kdsPage.getByRole('dialog');
   await expect(modal).toBeVisible({ timeout: 10_000 });
   await modal.getByRole('button', { name: markAsButtonName, exact: true }).click();
@@ -216,9 +221,9 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
       const pairedDisplayPage = await pairedContext.newPage();
       await pairedDisplayPage.setViewportSize({ width: 1920, height: 1080 });
       await pairedDisplayPage.goto(`${BASE}/customer-display/#token=${pairedToken}`);
-      await expect(
-        pairedDisplayPage.getByTestId('customer-display-preparing-scroll'),
-      ).toBeVisible({ timeout: 30_000 });
+      await expect(pairedDisplayPage.getByTestId('customer-display-preparing-scroll')).toBeVisible({
+        timeout: 30_000,
+      });
 
       const kdsPage = await kdsContext.newPage();
       await openKdsInTabsView(kdsPage);
@@ -260,7 +265,13 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
         PRODUCT_ESPRESSO,
         'Mark as Preparing',
       );
-      await advanceKdsItemOnce(kdsPage, 'Preparing', orderNumber, PRODUCT_ESPRESSO, 'Mark as Ready');
+      await advanceKdsItemOnce(
+        kdsPage,
+        'Preparing',
+        orderNumber,
+        PRODUCT_ESPRESSO,
+        'Mark as Ready',
+      );
 
       const partialOrderRes = await request.get(`${BASE}/api/orders/${orderId}`, {
         headers: ownerHeaders(),
@@ -367,7 +378,13 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
         PRODUCT_ESPRESSO,
         'Mark as Preparing',
       );
-      await advanceKdsItemOnce(kdsPage, 'Preparing', orderNumber, PRODUCT_ESPRESSO, 'Mark as Ready');
+      await advanceKdsItemOnce(
+        kdsPage,
+        'Preparing',
+        orderNumber,
+        PRODUCT_ESPRESSO,
+        'Mark as Ready',
+      );
       for (const board of [staffDisplayPage, pairedDisplayPage]) {
         await expect(board.getByTestId('customer-display-ready-scroll')).toContainText(
           orderNumber,
@@ -443,9 +460,9 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
       const pairedDisplayPage = await pairedContext.newPage();
       await pairedDisplayPage.setViewportSize({ width: 1920, height: 1080 });
       await pairedDisplayPage.goto(`${BASE}/customer-display/#token=${pairedToken}`);
-      await expect(
-        pairedDisplayPage.getByTestId('customer-display-preparing-scroll'),
-      ).toBeVisible({ timeout: 30_000 });
+      await expect(pairedDisplayPage.getByTestId('customer-display-preparing-scroll')).toBeVisible({
+        timeout: 30_000,
+      });
 
       const kdsPage = await kdsContext.newPage();
       await openKdsInTabsView(kdsPage);
@@ -520,7 +537,13 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
         PRODUCT_ESPRESSO,
         'Mark as Preparing',
       );
-      await advanceKdsItemOnce(kdsPage, 'Preparing', orderNumber, PRODUCT_ESPRESSO, 'Mark as Ready');
+      await advanceKdsItemOnce(
+        kdsPage,
+        'Preparing',
+        orderNumber,
+        PRODUCT_ESPRESSO,
+        'Mark as Ready',
+      );
       await checkCompletedStatus();
 
       for (const board of [staffDisplayPage, pairedDisplayPage]) {

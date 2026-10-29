@@ -370,7 +370,10 @@ async function main(): Promise<void> {
   db.prepare = (sql: string) => {
     if (sql.includes('FROM orders o')) {
       return origPrepare(
-        sql.replace('WHERE o.status IN', 'WHERE track_scanned_status_merge(o.status) AND o.status IN'),
+        sql.replace(
+          'WHERE o.status IN',
+          'WHERE track_scanned_status_merge(o.status) AND o.status IN',
+        ),
       );
     }
     const stmt = origPrepare(sql);
@@ -396,7 +399,11 @@ async function main(): Promise<void> {
   db.prepare = origPrepare;
   assert.equal(drainIds.length, 501, 'all 500 active + 1 prepaid order drain across cursor pages');
   assert.equal(new Set(drainIds).size, 501, 'zero duplicate IDs across active + prepaid merge');
-  assert.equal(closedScannedDuringMerge, 0, 'zero closed sales history rows scanned on FROM orders o');
+  assert.equal(
+    closedScannedDuringMerge,
+    0,
+    'zero closed sales history rows scanned on FROM orders o',
+  );
   assert.ok(capturedActiveKdsSql.length > 0, 'captured active KDS completed-order query');
   const activeKdsPlan = db
     .prepare(`EXPLAIN QUERY PLAN ${capturedActiveKdsSql}`)

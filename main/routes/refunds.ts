@@ -379,9 +379,7 @@ router.post('/', requirePermission('refunds.initiate'), async (req: Request, res
       let beforeOrderStatus: string | null = null;
       if (!wasReplay && orderItemId !== null) {
         const beforeRow = db
-          .prepare(
-            'SELECT o.status FROM orders o JOIN bills b ON b.order_id = o.id WHERE b.id = ?',
-          )
+          .prepare('SELECT o.status FROM orders o JOIN bills b ON b.order_id = o.id WHERE b.id = ?')
           .get(billId) as { status: string } | undefined;
         beforeOrderStatus = beforeRow?.status ?? null;
       }

@@ -289,22 +289,23 @@ order items are appended, cancelled, edited, refunded, or restored:
 - Starting kitchen work (`preparing`, `ready`, `served`, or `completed` on any live item while
   unfinished items remain) promotes `pending` to `preparing` and sets `cooking_started_at`.
 - Once every live item is `ready` (or mixed `ready` with already `served` or `completed` lines), the
-  order promotes to `ready` and records `ready_at`.
+  order transitions to `ready`, records `ready_at`, and clears `served_at`.
 - Once every live item is `served` or `completed`, the order promotes to `served` and records
   `served_at`, removing handed-over active orders from `/customer-display`.
-- Appending, restoring, editing to add pending work, or requeuing items on a `ready` or `served`
-  order demotes it back to `preparing` and clears stale `ready_at` and `served_at` timestamps;
-  `preparing` never regresses to `pending` when a started item is voided while pending items remain.
-- Each resulting parent status change records an actor-attributed `status_changed` entry in
-  `order_audit_log`.
+- Appending, restoring, editing to add pending work, or requeuing items to `pending` or `preparing`
+  on a `ready` or `served` order demotes it back to `preparing` and clears stale `ready_at` and
+  `served_at` timestamps; `preparing` never regresses to `pending` when a started item is voided
+  while pending items remain.
+- Each resulting parent status change records an actor-attributed `status_changed` entry
+  (`source: 'kds_reconciliation'`) in `order_audit_log`.
 
 Terminal `completed` and `cancelled` orders are never reopened or mutated by KDS item updates. For
 upfront-paid orders that settle to `completed` before kitchen fulfillment finishes,
 `GET /api/orders?view=active` and both `/customer-display` feeds continue surfacing the order while
-live items remain in `pending`, `preparing`, or `ready`, projecting its board status from live item
-statuses until KDS marks every live item `served`. When KDS is disabled, automatic item-to-order
-reconciliation stands down and manual `PATCH /api/orders/:id/status` transitions govern preparation
-and service.
+positive-quantity live items remain in `pending`, `preparing`, or `ready`, projecting its board
+status from live item statuses until KDS marks every live item `served`. When KDS is disabled,
+automatic item-to-order reconciliation stands down and manual `PATCH /api/orders/:id/status`
+transitions govern preparation and service.
 
 ## Refunds
 

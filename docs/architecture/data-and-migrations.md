@@ -220,9 +220,13 @@ requires a clean `integrity_check`, no foreign-key violations outside an explici
 schema version above zero and within the supported range, an `_flo_meta` stamp that matches the
 pragma, and a table and column set, plus normalised `CREATE` definitions, that match the ideal
 schema built by running the whole migration pipeline in memory (cached across health checks and
-invalidated on migration registry changes). `runHealthCheck()` in
-[`main/services/schema-health.ts`](../../main/services/schema-health.ts) likewise caches its ideal
-`DbSchemaSnapshot` in memory and invalidates it when the `MIGRATIONS` registry identity changes.
+invalidated on migration registry changes; runtime-ensured indexes in
+`RUNTIME_ENSURED_SCHEMA_OBJECTS` such as `idx_order_items_active_kds` at schema v121+ may be absent
+on an unopened file or direct-restore backup and are created on writable open by
+`ensureRuntimeIndexes()`, while mismatched definitions or unknown extra objects are still rejected).
+`runHealthCheck()` in [`main/services/schema-health.ts`](../../main/services/schema-health.ts)
+likewise caches its ideal `DbSchemaSnapshot` in memory and invalidates it when the `MIGRATIONS`
+registry identity changes.
 
 ## Adding a migration
 

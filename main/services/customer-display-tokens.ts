@@ -261,7 +261,10 @@ export function buildDisplayFeed(options?: CustomerDisplayFeedOptions): Customer
         status: string | null;
         quantity: number | null;
       }>;
-      const itemsByOrderId = new Map<number, Array<{ status: string | null; quantity: number | null }>>();
+      const itemsByOrderId = new Map<
+        number,
+        Array<{ status: string | null; quantity: number | null }>
+      >();
       for (const item of itemRows) {
         let bucket = itemsByOrderId.get(item.order_id);
         if (!bucket) {

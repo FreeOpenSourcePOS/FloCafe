@@ -1022,7 +1022,11 @@ async function main() {
       .patch(`/api/orders/${mutOrderId}/items/${mutItem1Id}/cancel`)
       .set(authHeader)
       .send({ override_pin: '1234', reason: 'dropped' });
-    assertEqualOrThrow(voidStartedRes.status, 200, 'voiding started item with manager PIN succeeds');
+    assertEqualOrThrow(
+      voidStartedRes.status,
+      200,
+      'voiding started item with manager PIN succeeds',
+    );
     const afterVoid = readOrderState(mutOrderId);
     assertEqualOrThrow(
       afterVoid.status,
@@ -1053,9 +1057,7 @@ async function main() {
     );
 
     // Edit ready item to increase quantity (adds new pending line) -> demotes ready -> preparing
-    const fetchedMutOrder = await request(app)
-      .get(`/api/orders/${mutOrderId}`)
-      .set(authHeader);
+    const fetchedMutOrder = await request(app).get(`/api/orders/${mutOrderId}`).set(authHeader);
     const currentAppendedItem = fetchedMutOrder.body.order.items.find(
       (i: any) => i.id === appendedItem.id,
     );
@@ -1067,7 +1069,11 @@ async function main() {
         expected_edit_version: currentAppendedItem.edit_version,
         reason: 'add one more',
       });
-    assertEqualOrThrow(editIncreaseRes.status, 200, 'quantity-increase edit on ready item succeeds');
+    assertEqualOrThrow(
+      editIncreaseRes.status,
+      200,
+      'quantity-increase edit on ready item succeeds',
+    );
     assertEqualOrThrow(
       editIncreaseRes.body.order.status,
       'preparing',
@@ -1117,17 +1123,14 @@ async function main() {
       'partially paid active order blocks item cancel in favor of refund',
     );
     db.prepare('DELETE FROM cloud_sync_outbox').run();
-    const itemRefundRes = await request(app)
-      .post('/api/refunds')
-      .set(authHeader)
-      .send({
-        bill_id: partialBillId,
-        order_item_id: refundBlockerItemId,
-        method: 'card',
-        approver_id: 'mgr-test-001',
-        override_pin: '1234',
-        reason: 'out of stock',
-      });
+    const itemRefundRes = await request(app).post('/api/refunds').set(authHeader).send({
+      bill_id: partialBillId,
+      order_item_id: refundBlockerItemId,
+      method: 'card',
+      approver_id: 'mgr-test-001',
+      override_pin: '1234',
+      reason: 'out of stock',
+    });
     assertEqualOrThrow(itemRefundRes.status, 201, 'item refund on active partial bill succeeds');
     const afterRefundState = readOrderState(refundActiveOrderId);
     assertEqualOrThrow(
@@ -1204,7 +1207,11 @@ async function main() {
         .patch(`/api/orders/${manualOrderId}/status`)
         .set(authHeader)
         .send({ status: 'ready' });
-      assertEqualOrThrow(manualReadyRes.status, 200, 'manual parent ready succeeds with KDS disabled');
+      assertEqualOrThrow(
+        manualReadyRes.status,
+        200,
+        'manual parent ready succeeds with KDS disabled',
+      );
       assertEqualOrThrow(
         readOrderState(manualOrderId).status,
         'ready',

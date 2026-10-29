@@ -675,7 +675,11 @@ export function startKdsServer(): Promise<void> {
                 reconciledEvent: null,
               };
             }
-            const reconcile = reconcileActiveOrderStatusFromItems(db, item.order_id, kdsUser.userId);
+            const reconcile = reconcileActiveOrderStatusFromItems(
+              db,
+              item.order_id,
+              kdsUser.userId,
+            );
             return {
               statusCode: 200,
               error: null,

@@ -351,9 +351,9 @@ export function reconcileActiveOrderStatusFromItems(
   orderId: number | string,
   actorUserId: string,
 ): ReconciledOrderStatusResult {
-  const order = db
-    .prepare('SELECT id, type, status FROM orders WHERE id = ?')
-    .get(orderId) as { id: number | string; type: string; status: string } | undefined;
+  const order = db.prepare('SELECT id, type, status FROM orders WHERE id = ?').get(orderId) as
+    | { id: number | string; type: string; status: string }
+    | undefined;
   if (!order) {
     return { changed: false, previousStatus: null, status: null };
   }

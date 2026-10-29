@@ -321,6 +321,13 @@ variant that links to a recipe ingredient is not gated by its own pool, and `inc
 decides whether a sold-out variant row is emitted; the printed item count counts emitted rows on
 every destination.
 
+Unless `includeHidden` is set, products in an inactive category or with a missing or inactive
+ancestor category are omitted. Both renderers order root categories by sibling `sort_order, name`
+and group each root's subcategories immediately beneath it in sibling `sort_order, name` order,
+followed by uncategorized items. A root category with no direct visible products of its own emits
+its root heading once before its first visible subcategory section, while flat catalogs without
+subcategories emit only root headings.
+
 Products and POS expose a filtered menu print dialog with optional descriptions and effective
 add-on groups. The dialog can send ESC/POS to a selected receipt printer and roll width, open the
 system print dialog for A4 or Letter paper, or save a structured PDF. In Electron, the PDF uses the

@@ -1120,7 +1120,7 @@ function writeProductVariants(
 }
 
 function validateCategoryId(
-  db: any,
+  db: ReturnType<typeof getDatabase>,
   categoryId: unknown,
   retainedCategoryId?: string | null,
 ): string | null {

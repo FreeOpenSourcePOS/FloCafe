@@ -1727,11 +1727,7 @@ async function main() {
       2,
       'existing categories are skipped additively',
     );
-    assertEqualOrThrow(
-      catAdditiveSkip.data.updated,
-      0,
-      'category CSV import does not mutate rows',
-    );
+    assertEqualOrThrow(catAdditiveSkip.data.updated, 0, 'category CSV import does not mutate rows');
     const coldAfterSkip = db
       .prepare('SELECT is_active, deleted_at FROM categories WHERE name = ? AND parent_id = ?')
       .get('Cold', csvDrinksRoot!.id) as { is_active: number; deleted_at: string | null };

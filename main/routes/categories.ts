@@ -335,9 +335,10 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
 
     let orderedCategories = categories;
     if (req.query.root !== 'true' && !req.query.parent_id && categories.length > 1) {
+      type CategoryRow = { id: string; parent_id?: string | null } & Record<string, unknown>;
       const categoryById = new Map(categories.map((cat) => [cat.id, cat]));
-      const childrenInResult = new Map<string, any[]>();
-      const roots: any[] = [];
+      const childrenInResult = new Map<string, CategoryRow[]>();
+      const roots: CategoryRow[] = [];
       for (const cat of categories) {
         if (cat.parent_id && categoryById.has(cat.parent_id) && cat.parent_id !== cat.id) {
           const list = childrenInResult.get(cat.parent_id) || [];
@@ -348,8 +349,8 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
         }
       }
       const visited = new Set<string>();
-      const flattened: any[] = [];
-      const visit = (cat: any) => {
+      const flattened: CategoryRow[] = [];
+      const visit = (cat: CategoryRow) => {
         if (visited.has(cat.id)) return;
         visited.add(cat.id);
         flattened.push(cat);
@@ -506,7 +507,15 @@ function updateCategory(req: Request, res: Response) {
 
     const category = db
       .prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL')
-      .get(categoryId);
+      .get(categoryId) as
+      | ({
+          id: string;
+          name?: string | null;
+          slug?: string | null;
+          parent_id?: string | null;
+          is_active?: number | boolean | null;
+        } & Record<string, unknown>)
+      | undefined;
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
@@ -517,7 +526,7 @@ function updateCategory(req: Request, res: Response) {
       captureCategoryValidation('name_required');
       return res.status(400).json({ error: 'Name is required' });
     }
-    const currentParentId = normalizeOptionalString((category as any).parent_id);
+    const currentParentId = normalizeOptionalString(category.parent_id);
     if (hasOwn(req.body, 'parent_id')) {
       const parentError = validateParentCategory(db, parent_id, categoryId, currentParentId);
       if (parentError) {
@@ -526,7 +535,7 @@ function updateCategory(req: Request, res: Response) {
       }
     }
 
-    const effectiveName = hasName ? categoryName! : String((category as any).name);
+    const effectiveName = hasName ? categoryName! : String(category.name);
     const effectiveParentId = hasOwn(req.body, 'parent_id')
       ? normalizeOptionalString(parent_id)
       : currentParentId;
@@ -540,7 +549,7 @@ function updateCategory(req: Request, res: Response) {
       }
     }
 
-    if (hasOwn(req.body, 'is_active') && !is_active && Boolean((category as any).is_active)) {
+    if (hasOwn(req.body, 'is_active') && !is_active && Boolean(category.is_active)) {
       const { count: childCount } = db
         .prepare(
           'SELECT COUNT(*) as count FROM categories WHERE parent_id = ? AND deleted_at IS NULL',
@@ -566,7 +575,7 @@ function updateCategory(req: Request, res: Response) {
       return res.status(400).json({ error: addonGroupValidation.error });
     }
 
-    const slug = categoryName ? slugForName(categoryName) : (category as any).slug;
+    const slug = categoryName ? slugForName(categoryName) : category.slug;
     const activeInt = is_active !== undefined ? (is_active ? 1 : 0) : undefined;
 
     const saveCategory = db.transaction(() => {

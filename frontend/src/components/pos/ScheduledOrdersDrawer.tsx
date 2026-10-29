@@ -31,6 +31,13 @@ import {
   formatScheduledInstantForDisplay,
   parseScheduledForInput,
 } from '@/lib/scheduled-time';
+import {
+  getOrderBills,
+  getRefundEligibleBills,
+  isScheduledOrderEditLocked,
+  orderHasCollectedFunds,
+  resolveOrderPaymentStatus,
+} from '@/lib/order-payment-state';
 import type { Bill, Order, OrderItem } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
@@ -51,71 +58,12 @@ function getCurrentTime(): number {
   return Date.now();
 }
 
-function getOrderBills(order: Order): Bill[] {
-  if (order.bills && order.bills.length > 0) return order.bills;
-  if (order.bill) return [order.bill];
-  return [];
-}
-
-function hasRecordedPayment(order: Order): boolean {
-  const bills = getOrderBills(order);
-  return bills.some((b) => {
-    const status = String(b.payment_status || '');
-    const paidAmount = Number(b.paid_amount || 0);
-    const detailsCount = Array.isArray(b.payment_details) ? b.payment_details.length : 0;
-    return (
-      paidAmount > 0 ||
-      detailsCount > 0 ||
-      ['partial', 'paid', 'refunded', 'partially_refunded'].includes(status)
-    );
-  });
-}
-
-function hasCollectedFunds(order: Order): boolean {
-  const bills = getOrderBills(order);
-  return bills.some((b) => {
-    const status = String(b.payment_status || '');
-    const paidAmount = Number(b.paid_amount || 0);
-    const total = Number(b.total || 0);
-    const detailsCount = Array.isArray(b.payment_details) ? b.payment_details.length : 0;
-    return (
-      (paidAmount > 0 && status !== 'refunded') ||
-      status === 'partial' ||
-      status === 'partially_refunded' ||
-      (status === 'paid' && (total > 0 || detailsCount > 0))
-    );
-  });
-}
-
 export function canPayScheduledOrder(order: Order): boolean {
   const bills = getOrderBills(order);
   return (
     bills.length === 0 ||
     bills.some((b) => b.payment_status === 'unpaid' || b.payment_status === 'partial')
   );
-}
-
-function getPaymentBadgeState(order: Order): 'paid' | 'partial' | 'refunded' | 'unpaid' {
-  const bills = getOrderBills(order);
-  if (
-    bills.length > 0 &&
-    bills.every(
-      (b) =>
-        b.payment_status === 'paid' ||
-        b.payment_status === 'partially_refunded' ||
-        b.payment_status === 'refunded',
-    ) &&
-    bills.some((b) => b.payment_status === 'refunded' || b.payment_status === 'partially_refunded')
-  ) {
-    return 'refunded';
-  }
-  if (bills.length > 0 && bills.every((b) => b.payment_status === 'paid')) {
-    return 'paid';
-  }
-  if (hasCollectedFunds(order)) {
-    return 'partial';
-  }
-  return 'unpaid';
 }
 
 export default function ScheduledOrdersDrawer({
@@ -277,10 +225,9 @@ export default function ScheduledOrdersDrawer({
 
   const renderOrderCard = (order: Order) => {
     const isBlocked = order.release_status === 'blocked';
-    const paymentRecorded = hasRecordedPayment(order);
-    const collectedFunds = hasCollectedFunds(order);
-    const payState = getPaymentBadgeState(order);
-    const bills = getOrderBills(order);
+    const paymentRecorded = isScheduledOrderEditLocked(order);
+    const collectedFunds = orderHasCollectedFunds(order);
+    const payState = resolveOrderPaymentStatus(order) ?? 'unpaid';
     const activeItems = (order.items || []).filter((item) => !isTerminalItemStatus(item.status));
     const displayTotal = Number(order.bill?.total ?? order.total);
     const isRescheduling = rescheduleOrderId === order.id;
@@ -340,7 +287,7 @@ export default function ScheduledOrdersDrawer({
               className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
                 payState === 'paid'
                   ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300'
-                  : payState === 'partial'
+                  : payState === 'partial' || payState === 'partially_refunded'
                     ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
                     : payState === 'refunded'
                       ? 'bg-muted text-muted-foreground'
@@ -351,9 +298,11 @@ export default function ScheduledOrdersDrawer({
                 ? tOrders('paid')
                 : payState === 'partial'
                   ? tOrders('partiallyPaid')
-                  : payState === 'refunded'
-                    ? tOrders('refundIssued')
-                    : tOrders('unpaidBadge')}
+                  : payState === 'partially_refunded'
+                    ? tOrders('partiallyRefunded')
+                    : payState === 'refunded'
+                      ? tOrders('refundIssued')
+                      : tOrders('unpaidBadge')}
             </span>
           </div>
           <span className="font-bold text-base text-foreground shrink-0">{fmt(displayTotal)}</span>
@@ -547,7 +496,7 @@ export default function ScheduledOrdersDrawer({
                       data-testid={`scheduled-cancel-open-refund-${order.id}`}
                       onClick={() => {
                         setCancelOrderId(null);
-                        onRefundOrder(order, bills);
+                        onRefundOrder(order, getRefundEligibleBills(order));
                       }}
                     >
                       <RotateCcw size={13} className="me-1" />
@@ -677,7 +626,7 @@ export default function ScheduledOrdersDrawer({
               variant="outline"
               size="sm"
               data-testid={`scheduled-refund-btn-${order.id}`}
-              onClick={() => onRefundOrder(order, bills)}
+              onClick={() => onRefundOrder(order, getRefundEligibleBills(order))}
               className="gap-1"
             >
               <RotateCcw size={13} />

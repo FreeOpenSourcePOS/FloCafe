@@ -247,7 +247,7 @@ export function assertScheduledOrderUnpaidForEdit(
     throw new ScheduledOrderError(
       409,
       'Item and financial edits are locked after payment is recorded on a scheduled order. Use the refund or payment correction flow instead.',
-      'SCHEDULED_ORDER_PAID_EDIT_LOCKED',
+      'SCHEDULED_ORDER_PAID',
     );
   }
 }

@@ -2553,6 +2553,8 @@ router.post(
           if (replayResponse) return { replayResponse };
         }
 
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+
         if (
           db
             .prepare(
@@ -2579,7 +2581,6 @@ router.post(
             statusCode: 409,
           });
         }
-        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
         const deferUnreleased = isUnreleasedOrderRow(currentOrder);
 
         try {
@@ -2766,14 +2767,15 @@ router.post(
           : 'fc.backend.order.append.validation';
       return res
         .status(statusCode)
-        .json(
-          structuredOperationFailure(
+        .json({
+          ...structuredOperationFailure(
             req,
             point,
             operationCommitted ? 'applied' : 'not_applied',
             message,
           ),
-        );
+          ...(error.code ? { code: error.code } : {}),
+        });
     }
   },
 );
@@ -3482,6 +3484,8 @@ router.patch(
             { statusCode: 400 },
           );
         }
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+
         const blockingBill = db
           .prepare(
             `SELECT id FROM bills
@@ -3500,7 +3504,6 @@ router.patch(
             { statusCode: 409 },
           );
         }
-        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
 
         const oldCustomer = currentOrder.customer_id
           ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
@@ -3758,11 +3761,14 @@ router.patch(
 
       res.json({ order: { ...updatedOrder, customer } });
     } catch (error: unknown) {
-      const err = error as { statusCode?: number; message?: string };
+      const err = error as { statusCode?: number; message?: string; code?: string };
       console.error('[API] Internal error:', err);
       res
         .status(err.statusCode || 500)
-        .json({ error: err.statusCode ? err.message : 'Internal server error' });
+        .json({
+          error: err.statusCode ? err.message : 'Internal server error',
+          ...(err.code ? { code: err.code } : {}),
+        });
     }
   },
 );
@@ -3969,6 +3975,21 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
+    try {
+      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, order);
+    } catch (err: unknown) {
+      const typedErr = err as { statusCode?: number; message?: string };
+      return res.status(typedErr.statusCode || 409).json({
+        ...structuredOperationFailure(
+          req,
+          'fc.backend.order.discount.validation',
+          'not_applied',
+          typedErr.message || 'Scheduled order edit locked after payment',
+          'paid',
+        ),
+        code: 'SCHEDULED_ORDER_PAID',
+      });
+    }
     if (
       db
         .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
@@ -4000,21 +4021,6 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
             'order_not_discountable',
           ),
         );
-    }
-    try {
-      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, order);
-    } catch (err: unknown) {
-      const typedErr = err as { statusCode?: number; message?: string };
-      return res.status(typedErr.statusCode || 409).json({
-        ...structuredOperationFailure(
-          req,
-          'fc.backend.order.discount.validation',
-          'not_applied',
-          typedErr.message || 'Scheduled order edit locked after payment',
-          'paid',
-        ),
-        code: 'SCHEDULED_ORDER_PAID',
-      });
     }
 
     const {
@@ -4280,6 +4286,19 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       }
+      try {
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+      } catch (err: unknown) {
+        const typedErr = err as { statusCode?: number; message?: string };
+        throw Object.assign(
+          new Error(typedErr.message || 'Scheduled order edit locked after payment'),
+          {
+            statusCode: typedErr.statusCode || 409,
+            diagnosticCode: 'paid',
+            code: 'SCHEDULED_ORDER_PAID',
+          },
+        );
+      }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), {
           statusCode: 400,
@@ -4305,18 +4324,6 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
           statusCode: 409,
           diagnosticCode: 'refunded',
         });
-      }
-      try {
-        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
-      } catch (err: unknown) {
-        const typedErr = err as { statusCode?: number; message?: string };
-        throw Object.assign(
-          new Error(typedErr.message || 'Scheduled order edit locked after payment'),
-          {
-            statusCode: typedErr.statusCode || 409,
-            diagnosticCode: 'paid',
-          },
-        );
       }
 
       const customer = currentOrder.customer_id
@@ -4508,15 +4515,16 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
         : 'fc.backend.order.discount.validation';
     return res
       .status(statusCode)
-      .json(
-        structuredOperationFailure(
+      .json({
+        ...structuredOperationFailure(
           req,
           point,
           operationCommitted ? 'applied' : 'not_applied',
           message,
           operationCommitted ? undefined : error.diagnosticCode,
         ),
-      );
+        ...(error.code ? { code: error.code } : {}),
+      });
   }
 });
 
@@ -4539,6 +4547,17 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+    try {
+      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, order);
+    } catch (err: unknown) {
+      const typedErr = err as { statusCode?: number; message?: string; code?: string };
+      return res.status(typedErr.statusCode || 409).json({
+        error:
+          typedErr.message ||
+          'Item and financial edits are locked after payment is recorded on a scheduled order.',
+        code: typedErr.code || 'SCHEDULED_ORDER_PAID',
+      });
     }
     if (
       db
@@ -4564,7 +4583,6 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
         .status(400)
         .json({ error: 'Cannot apply discount to a completed or cancelled order' });
     }
-    assertScheduledOrderUnpaidForEdit(db, req.params.id as string, order);
 
     const item = db
       .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
@@ -4753,6 +4771,18 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       }
+      try {
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+      } catch (err: unknown) {
+        const typedErr = err as { statusCode?: number; message?: string; code?: string };
+        throw Object.assign(
+          new Error(typedErr.message || 'Scheduled order edit locked after payment'),
+          {
+            statusCode: typedErr.statusCode || 409,
+            code: typedErr.code || 'SCHEDULED_ORDER_PAID',
+          },
+        );
+      }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), {
           statusCode: 400,
@@ -4767,7 +4797,6 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
           statusCode: 409,
         });
       }
-      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
 
       const refundedBill = db
         .prepare(
@@ -5033,7 +5062,10 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     console.error('[API] Internal error:', error);
     res
       .status(error.statusCode || 500)
-      .json({ error: error.statusCode ? error.message : 'Internal server error' });
+      .json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
   }
 });
 
@@ -5070,6 +5102,8 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
           statusCode: 400,
         });
       }
+      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+
       const blockingBill = db
         .prepare(
           `SELECT payment_status, split_group_id, COALESCE(paid_amount, 0) AS paid_amount
@@ -5086,7 +5120,6 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
           { statusCode: 409 },
         );
       }
-      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
 
       const currentItem = db
         .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
@@ -5293,10 +5326,13 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
     res.json({ item: updatedItem });
   } catch (error: unknown) {
     console.error('[API] Internal error:', error);
-    const failure = error as { statusCode?: number; message?: string };
+    const failure = error as { statusCode?: number; message?: string; code?: string };
     res
       .status(failure.statusCode || 500)
-      .json({ error: failure.statusCode ? failure.message : 'Internal server error' });
+      .json({
+        error: failure.statusCode ? failure.message : 'Internal server error',
+        ...(failure.code ? { code: failure.code } : {}),
+      });
   }
 });
 
@@ -5586,6 +5622,8 @@ router.patch(
           };
         }
 
+        assertScheduledOrderUnpaidForEdit(db, orderId, currentOrder);
+
         if (
           db
             .prepare(`
@@ -5613,7 +5651,6 @@ router.patch(
             statusCode: 400,
           });
         }
-        assertScheduledOrderUnpaidForEdit(db, orderId, currentOrder);
 
         // Voiding items in preparation requires manager PIN and records a void adjustment line.
         const isItemVoid = ['preparing', 'ready'].includes(currentItem.status);
@@ -5875,7 +5912,10 @@ router.patch(
       console.error('[API] Internal error:', error);
       res
         .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+        .json({
+          error: error.statusCode ? error.message : 'Internal server error',
+          ...(error.code ? { code: error.code } : {}),
+        });
     }
   }),
 );
@@ -5980,6 +6020,8 @@ router.patch(
             statusCode: 400,
           });
         }
+        assertScheduledOrderUnpaidForEdit(db, orderId, currentOrder);
+
         const bills = db.prepare('SELECT * FROM bills WHERE order_id = ?').all(orderId) as {
           split_group_id: string | null;
           payment_status: string;
@@ -5999,7 +6041,6 @@ router.patch(
             statusCode: 409,
           });
         }
-        assertScheduledOrderUnpaidForEdit(db, orderId, currentOrder);
         const deferUnreleased = isUnreleasedOrderRow(currentOrder);
 
         const tenantInfo = {
@@ -6408,11 +6449,14 @@ router.patch(
       }
       res.json({ order: result.order });
     } catch (err) {
-      const error = err as { statusCode?: number; message?: string };
+      const error = err as { statusCode?: number; message?: string; code?: string };
       console.error('[Orders] Edit item error:', error);
       res
         .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+        .json({
+          error: error.statusCode ? error.message : 'Internal server error',
+          ...(error.code ? { code: error.code } : {}),
+        });
     }
   },
 );
@@ -6665,7 +6709,10 @@ router.patch(
       console.error('[API] Internal error:', error);
       res
         .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+        .json({
+          error: error.statusCode ? error.message : 'Internal server error',
+          ...(error.code ? { code: error.code } : {}),
+        });
     }
   },
 );

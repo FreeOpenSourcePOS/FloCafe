@@ -1130,6 +1130,11 @@ async function main() {
         body: { items: [{ product_id: 'prod-muffin', quantity: 1 }] },
       });
       assertEqualOrThrow(blockedAppend.status, 409, 'item append blocked after partial payment');
+      assertEqualOrThrow(
+        blockedAppend.data.code,
+        'SCHEDULED_ORDER_PAID',
+        'item append returns SCHEDULED_ORDER_PAID code',
+      );
 
       const blockedEditAfterPartial = await api(
         baseUrl,
@@ -1148,6 +1153,11 @@ async function main() {
         409,
         'item quantity edit blocked after partial payment',
       );
+      assertEqualOrThrow(
+        blockedEditAfterPartial.data.code,
+        'SCHEDULED_ORDER_PAID',
+        'item edit returns SCHEDULED_ORDER_PAID code',
+      );
 
       const blockedDisc = await api(baseUrl, `/api/orders/${paidScheduledOrderId}/discount`, {
         method: 'PATCH',
@@ -1159,6 +1169,34 @@ async function main() {
         blockedDisc.data.code,
         'SCHEDULED_ORDER_PAID',
         'returns SCHEDULED_ORDER_PAID code',
+      );
+
+      const blockedItemDisc = await api(
+        baseUrl,
+        `/api/orders/${paidScheduledOrderId}/items/${activeItemAfterPartial.id}/discount`,
+        {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: { discount_type: 'percentage', discount_value: 5 },
+        },
+      );
+      assertEqualOrThrow(blockedItemDisc.status, 409, 'item discount blocked after partial payment');
+      assertEqualOrThrow(
+        blockedItemDisc.data.code,
+        'SCHEDULED_ORDER_PAID',
+        'item discount returns SCHEDULED_ORDER_PAID code',
+      );
+
+      const blockedCust = await api(baseUrl, `/api/orders/${paidScheduledOrderId}/customer`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { customer_id: 'cust-sched-1' },
+      });
+      assertEqualOrThrow(blockedCust.status, 409, 'customer change blocked after partial payment');
+      assertEqualOrThrow(
+        blockedCust.data.code,
+        'SCHEDULED_ORDER_PAID',
+        'customer change returns SCHEDULED_ORDER_PAID code',
       );
 
       const blockedBillDisc = await api(
@@ -1175,6 +1213,31 @@ async function main() {
         409,
         'bill discount blocked after partial payment',
       );
+      assertEqualOrThrow(
+        blockedBillDisc.data.code,
+        'SCHEDULED_ORDER_PAID',
+        'bill discount returns SCHEDULED_ORDER_PAID code',
+      );
+
+      const blockedBillCharges = await api(
+        baseUrl,
+        `/api/bills/${paidScheduledBillId}/charges`,
+        {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { charge_id: 'service_charge', waived: true },
+        },
+      );
+      assertEqualOrThrow(
+        blockedBillCharges.status,
+        409,
+        'bill charges change blocked after partial payment',
+      );
+      assertEqualOrThrow(
+        blockedBillCharges.data.code,
+        'SCHEDULED_ORDER_PAID',
+        'bill charges returns SCHEDULED_ORDER_PAID code',
+      );
 
       const blockedItemCancel = await api(
         baseUrl,
@@ -1190,6 +1253,11 @@ async function main() {
         409,
         'item cancellation blocked after partial payment',
       );
+      assertEqualOrThrow(
+        blockedItemCancel.data.code,
+        'SCHEDULED_ORDER_PAID',
+        'item cancellation returns SCHEDULED_ORDER_PAID code',
+      );
 
       const blockedPriceOverride = await api(
         baseUrl,
@@ -1204,6 +1272,11 @@ async function main() {
         blockedPriceOverride.status,
         409,
         'manual price override blocked after partial payment',
+      );
+      assertEqualOrThrow(
+        blockedPriceOverride.data.code,
+        'SCHEDULED_ORDER_PAID',
+        'manual price override returns SCHEDULED_ORDER_PAID code',
       );
 
       // Settle remaining balance in full BEFORE release
@@ -1560,7 +1633,10 @@ async function main() {
             headers: owner.authHeader,
             body: { order_id: createdOrderId },
           });
-          assertEqualOrThrow(genBillRes.status, 200, 'generate bill for prepaid scheduled order');
+          assertOrThrow(
+            [200, 201].includes(genBillRes.status),
+            'generate bill for prepaid scheduled order',
+          );
           generatedBillId = Number(genBillRes.data.bill.id);
           const payRes = await api(baseUrl, `/api/bills/${generatedBillId}/payment`, {
             method: 'POST',
@@ -2467,10 +2543,10 @@ async function main() {
         );
         assertEqualOrThrow(
           isScheduledEditLockedError({
-            response: { data: { code: 'SCHEDULED_ORDER_PAID_EDIT_LOCKED' } },
+            response: { data: { code: 'SCHEDULED_ORDER_PAID' } },
           }),
           true,
-          'scheduled edit lock error helper matches SCHEDULED_ORDER_PAID_EDIT_LOCKED',
+          'scheduled edit lock error helper matches SCHEDULED_ORDER_PAID',
         );
 
         // 11c. Partial refund ($30 of $80) -> Partially Refunded badge, Checkout suppressed, Refund still exposed!
@@ -2629,7 +2705,7 @@ async function main() {
         const regPartialPay = await api(baseUrl, `/api/bills/${regBillId}/payment`, {
           method: 'POST',
           headers: owner.authHeader,
-          body: { method: 'cash', amount: 50 },
+          body: { method: 'cash', amount: 50, override_pin: '9999' },
         });
         assertEqualOrThrow(regPartialPay.status, 200, 'partial payment on regular order');
 

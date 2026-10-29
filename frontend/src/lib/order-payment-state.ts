@@ -180,5 +180,5 @@ export function getCancelOrderFailureKind(
 export function isScheduledEditLockedError(error: unknown): boolean {
   const err = error as { response?: { data?: { code?: unknown } } };
   const code = err?.response?.data?.code;
-  return code === 'SCHEDULED_ORDER_PAID_EDIT_LOCKED' || code === 'SCHEDULED_ORDER_PAID';
+  return code === 'SCHEDULED_ORDER_PAID';
 }

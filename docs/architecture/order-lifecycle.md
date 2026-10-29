@@ -97,7 +97,8 @@ Lifecycle rules before and at release:
   (`powerMonitor` `resume`). The sweep releases due orders where `release_status = 'scheduled'` and
   `scheduled_for <= now`. Orders in `release_status = 'blocked'` are skipped by automatic sweeps and
   must be retried explicitly via `POST /api/orders/:id/release` after resolving the stock or catalog
-  problem.
+  problem. Unexpected release errors during a sweep are isolated and transition that order to
+  `release_status = 'blocked'` with an actionable message so sweeps do not stall.
 - **Shared transactional release (`releaseScheduledOrder`).** Both automatic sweeps and manual
   release execute the same SQLite transaction with an atomic compare-and-check on `release_status`
   so concurrent sweeps and retries never deduct stock twice, plus an optional `checkPreconditions`
@@ -120,10 +121,12 @@ Lifecycle rules before and at release:
   before the first payment is recorded (`409` with `SCHEDULED_ORDER_PAID` once paid). Timing-only
   changes (`PATCH /api/orders/:id/schedule` or `POST /api/orders/:id/release`) remain allowed until
   release even after payment and record `schedule_updated` or `order_released` in `order_audit_log`.
-  Cancelling a scheduled order before release never restores inventory because none was deducted;
-  cancelling a scheduled order with collected funds requires refunding the collected amount in full
-  through `/api/refunds` first (`409` with `REFUND_REQUIRED_BEFORE_CANCEL`), preserving bills and
-  audit history.
+  Rescheduling resets `release_status` to `'scheduled'` and clears `release_blocked_reason` for
+  orders in `'scheduled'`, while preserving `release_status = 'blocked'` and its reason for held
+  orders so only explicit manual release retries release. Cancelling a scheduled order before
+  release never restores inventory because none was deducted; cancelling a scheduled order with
+  collected funds requires refunding the collected amount in full through `/api/refunds` first (`409`
+  with `REFUND_REQUIRED_BEFORE_CANCEL`), preserving bills and audit history.
 
 ## Discounts
 

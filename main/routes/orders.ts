@@ -1495,7 +1495,13 @@ router.get(
             )
           )
         )`;
-        params.push(cursor.rank, cursor.rank, cursor.scheduled_for, cursor.scheduled_for, cursor.id);
+        params.push(
+          cursor.rank,
+          cursor.rank,
+          cursor.scheduled_for,
+          cursor.scheduled_for,
+          cursor.id,
+        );
       }
 
       sql += ` ORDER BY CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END ASC,

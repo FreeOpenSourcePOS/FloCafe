@@ -2562,10 +2562,7 @@ export default function POSPage() {
   const totalBlockedScheduled = Math.max(
     blockedScheduledCount,
     scheduledOrders.filter(
-      (o) =>
-        o.status !== 'cancelled' &&
-        o.status !== 'completed' &&
-        o.release_status === 'blocked',
+      (o) => o.status !== 'cancelled' && o.status !== 'completed' && o.release_status === 'blocked',
     ).length,
   );
 

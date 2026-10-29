@@ -668,7 +668,11 @@ async function main() {
           items: [{ product_id: 'prod-latte', quantity: 1 }],
         },
       });
-      assertEqualOrThrow(schedSecondOrderRes.status, 201, 'second scheduled order created for pagination test');
+      assertEqualOrThrow(
+        schedSecondOrderRes.status,
+        201,
+        'second scheduled order created for pagination test',
+      );
 
       // Page 1 with limit = 1 returns next_cursor
       const page1Res = await api(baseUrl, '/api/orders/scheduled?limit=1', {
@@ -697,20 +701,31 @@ async function main() {
       );
 
       // Invalid cursor returns 400 with INVALID_CURSOR
-      const invalidCursorRes = await api(baseUrl, '/api/orders/scheduled?cursor=not-a-valid-cursor-token', {
-        headers: owner.authHeader,
-      });
+      const invalidCursorRes = await api(
+        baseUrl,
+        '/api/orders/scheduled?cursor=not-a-valid-cursor-token',
+        {
+          headers: owner.authHeader,
+        },
+      );
       assertEqualOrThrow(invalidCursorRes.status, 400, 'invalid cursor rejected with 400');
       assertEqualOrThrow(invalidCursorRes.data.code, 'INVALID_CURSOR', 'code is INVALID_CURSOR');
 
       // Heartbeat active orders excludes unreleased scheduled orders
       const { cloudSync } = require('../main/services/cloud-sync');
-      const heartbeatPayload = (cloudSync as any).buildHeartbeatPayload({ pos_hash: 'test_hash', pos_id: 'pos_1' });
-      const rawActiveOrdersCount = (db.prepare(`
+      const heartbeatPayload = (cloudSync as any).buildHeartbeatPayload({
+        pos_hash: 'test_hash',
+        pos_id: 'pos_1',
+      });
+      const rawActiveOrdersCount = (
+        db
+          .prepare(`
         SELECT COUNT(*) as count FROM orders
         WHERE status IN ('pending', 'preparing', 'ready', 'served')
           AND release_status = 'released'
-      `).get() as { count: number }).count;
+      `)
+          .get() as { count: number }
+      ).count;
       assertEqualOrThrow(
         heartbeatPayload.active_orders,
         rawActiveOrdersCount,
@@ -2744,11 +2759,7 @@ async function main() {
           true,
           'isPayableBillStatus accepts partially_paid',
         );
-        assertEqualOrThrow(
-          isPayableBillStatus('paid'),
-          false,
-          'isPayableBillStatus rejects paid',
-        );
+        assertEqualOrThrow(isPayableBillStatus('paid'), false, 'isPayableBillStatus rejects paid');
         assertEqualOrThrow(
           isPayableBillStatus('refunded'),
           false,

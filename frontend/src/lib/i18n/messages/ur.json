@@ -733,6 +733,8 @@
     "overridePinLabel": "اوور رائیڈ PIN",
     "paid": "ادا شدہ",
     "partiallyPaid": " جزوی طور پر ادا شدہ",
+    "partiallyRefunded": "جزوی رقم واپس کی گئی",
+    "refunded": "رقم واپس کر دی گئی",
     "pending": "زیر التوا",
     "percentOnSubtotal": "(ذیلی رقم پر {value}%)",
     "preparing": "تیار کیا جا رہا ہے",

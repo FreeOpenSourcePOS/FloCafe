@@ -733,6 +733,8 @@
     "overridePinLabel": "पिन को ओवरराइड करें",
     "paid": "भुगतान किया गया",
     "partiallyPaid": "आंशिक भुगतान",
+    "partiallyRefunded": "आंशिक धनवापसी",
+    "refunded": "धनवापसी",
     "pending": "लंबित",
     "percentOnSubtotal": "(कुल योग पर {value}%)",
     "preparing": "तैयारी",

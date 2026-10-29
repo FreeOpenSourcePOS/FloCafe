@@ -733,6 +733,8 @@
     "overridePinLabel": "PIN de substituição",
     "paid": "Pago",
     "partiallyPaid": "Parcialmente Pago",
+    "partiallyRefunded": "Parcialmente Reembolsado",
+    "refunded": "Reembolsado",
     "pending": "Pendente",
     "percentOnSubtotal": "({value}% no subtotal)",
     "preparing": "Em Preparo",

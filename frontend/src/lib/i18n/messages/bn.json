@@ -733,6 +733,8 @@
     "overridePinLabel": "পিন ওভাররাইড করুন",
     "paid": "পেড",
     "partiallyPaid": "আংশিক অর্থ প্রদান করা হয়",
+    "partiallyRefunded": "আংশিক ফেরত দেওয়া হয়েছে",
+    "refunded": "ফেরত দেওয়া হয়েছে",
     "pending": "মুলতুবি",
     "percentOnSubtotal": "({value} সাবটোটালের উপর %)",
     "preparing": "প্রস্তুতি নিচ্ছে",

@@ -733,6 +733,8 @@
     "overridePinLabel": "Переопределить PIN-код",
     "paid": "Оплачено",
     "partiallyPaid": "Частично оплачено",
+    "partiallyRefunded": "Частично возвращено",
+    "refunded": "Возвращено",
     "pending": "В ожидании",
     "percentOnSubtotal": "({value}% от промежуточного итога)",
     "preparing": "Подготовка",

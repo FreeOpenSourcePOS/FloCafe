@@ -733,6 +733,8 @@
     "overridePinLabel": "PIN-i mbizotësues",
     "paid": "U pagua",
     "partiallyPaid": "U pagua pjesërisht",
+    "partiallyRefunded": "U rimbursua pjesërisht",
+    "refunded": "U rimbursua",
     "pending": "Në pritje",
     "percentOnSubtotal": "({value}% në nëntotalin)",
     "preparing": "Po përgatitet",

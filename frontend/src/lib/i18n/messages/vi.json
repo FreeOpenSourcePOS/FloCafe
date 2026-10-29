@@ -733,6 +733,8 @@
     "overridePinLabel": "Mã PIN ghi đè",
     "paid": "Đã thanh toán",
     "partiallyPaid": "Đã thanh toán một phần",
+    "partiallyRefunded": "Hoàn tiền một phần",
+    "refunded": "Đã hoàn tiền",
     "pending": "Đang chờ",
     "percentOnSubtotal": "({value}% trên tạm tính)",
     "preparing": "Đang chuẩn bị",

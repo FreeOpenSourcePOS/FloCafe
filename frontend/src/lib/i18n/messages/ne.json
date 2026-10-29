@@ -733,6 +733,8 @@
     "overridePinLabel": "PIN ओभरराइड गर्नुहोस्",
     "paid": "भुक्तान गरियो",
     "partiallyPaid": "आंशिक रूपमा भुक्तान गरियो",
+    "partiallyRefunded": "आंशिक रूपमा फिर्ता गरियो",
+    "refunded": "फिर्ता गरियो",
     "pending": "विचाराधीन",
     "percentOnSubtotal": "(उप-जम्माको {value}%)",
     "preparing": "तयारी गर्दै",

@@ -55,6 +55,13 @@ import { fetchLoadedOrderPages } from '@/lib/orders-search';
 import { tenantCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { classifyOrderRequestFailure } from '@/lib/order-attempt';
+import {
+  getCancelOrderFailureKind,
+  isOrderItemEditLocked,
+  isScheduledEditLockedError,
+  isScheduledOrder,
+  orderHasCollectedFunds,
+} from '@/lib/order-payment-state';
 
 import { OrderCard } from '@/components/orders/OrderCard';
 import { OrdersMasterList } from '@/components/orders/OrdersMasterList';
@@ -92,26 +99,12 @@ interface CancelModal {
   freeTable: boolean;
   overridePin: string;
   requiresPin?: boolean;
+  refundRequired?: boolean;
   approverId?: string | null;
 }
 
 function orderHasCollectedPayment(order: Order): boolean {
-  const bills =
-    order.bills && order.bills.length > 0 ? order.bills : order.bill ? [order.bill] : [];
-  return bills.some((candidate) => {
-    const status = String(candidate.payment_status || '');
-    const paidAmount = Number(candidate.paid_amount || 0);
-    const total = Number(candidate.total || 0);
-    const detailsCount = Array.isArray(candidate.payment_details)
-      ? candidate.payment_details.length
-      : 0;
-    return (
-      (paidAmount > 0 && status !== 'refunded') ||
-      status === 'partial' ||
-      status === 'partially_refunded' ||
-      (status === 'paid' && (total > 0 || detailsCount > 0))
-    );
-  });
+  return orderHasCollectedFunds(order);
 }
 
 function orderRequiresCancelPin(order: Order): boolean {
@@ -915,8 +908,14 @@ export default function OrdersPage() {
       setLinkCustomerSearch('');
       setLinkCustomerResults([]);
       fetchOrders(undefined, { refreshLoadedPages: true });
-    } catch {
-      toast.error(tOrders('linkCustomerFailed'));
+    } catch (error) {
+      if (isScheduledEditLockedError(error)) {
+        toast.error(tPos('scheduledEditLockedPaid'));
+        setLinkCustomerOrderId(null);
+        fetchOrders(undefined, { refreshLoadedPages: true });
+      } else {
+        toast.error(tOrders('linkCustomerFailed'));
+      }
     } finally {
       setLinkingCustomer(false);
     }
@@ -1191,8 +1190,13 @@ export default function OrdersPage() {
       });
       toast.success(tOrders('itemRemoved'));
       fetchOrders(undefined, { refreshLoadedPages: true });
-    } catch {
-      toast.error(tOrders('removeItemFailed'));
+    } catch (error) {
+      if (isScheduledEditLockedError(error)) {
+        toast.error(tPos('scheduledEditLockedPaid'));
+        fetchOrders(undefined, { refreshLoadedPages: true });
+      } else {
+        toast.error(tOrders('removeItemFailed'));
+      }
     }
   };
 
@@ -1219,8 +1223,14 @@ export default function OrdersPage() {
       toast.success(tOrders('itemVoided'));
       setVoidItemModal(null);
       fetchOrders(undefined, { refreshLoadedPages: true });
-    } catch {
-      toast.error(tOrders('voidItemFailed'));
+    } catch (error) {
+      if (isScheduledEditLockedError(error)) {
+        toast.error(tPos('scheduledEditLockedPaid'));
+        setVoidItemModal(null);
+        fetchOrders(undefined, { refreshLoadedPages: true });
+      } else {
+        toast.error(tOrders('voidItemFailed'));
+      }
     } finally {
       setVoidingItem(false);
     }
@@ -1232,8 +1242,13 @@ export default function OrdersPage() {
       await api.patch(`/orders/${orderId}/items/${itemId}/restore`);
       toast.success(tOrders('itemRestored'));
       fetchOrders(undefined, { refreshLoadedPages: true });
-    } catch {
-      toast.error(tOrders('restoreItemFailed'));
+    } catch (error) {
+      if (isScheduledEditLockedError(error)) {
+        toast.error(tPos('scheduledEditLockedPaid'));
+        fetchOrders(undefined, { refreshLoadedPages: true });
+      } else {
+        toast.error(tOrders('restoreItemFailed'));
+      }
     }
   };
 
@@ -1370,6 +1385,10 @@ export default function OrdersPage() {
   };
 
   const openAddItemsModal = (order: Order | null) => {
+    if (order && isOrderItemEditLocked(order)) {
+      toast.error(tPos('scheduledEditLockedPaid'));
+      return;
+    }
     setSelectedItems([]);
     setProductSearch('');
     setAddItemsOrder(order);
@@ -1580,14 +1599,14 @@ export default function OrdersPage() {
       setCancelModal(null);
       fetchOrders(undefined, { refreshLoadedPages: true });
     } catch (error) {
-      const err = error as { response?: { data?: { error?: string } }; message?: string };
-      const message =
-        typeof err?.response?.data?.error === 'string'
-          ? err.response.data.error
-          : typeof err?.message === 'string'
-            ? err.message
-            : '';
-      if (/PIN/i.test(message)) {
+      const failureKind = getCancelOrderFailureKind(error);
+      if (failureKind === 'refund_required_before_cancel') {
+        setCancelModal((prev) => (prev ? { ...prev, refundRequired: true } : prev));
+        toast.error(tPos('scheduledRefundBeforeCancel'));
+        void fetchOrders(undefined, { refreshLoadedPages: true });
+        return;
+      }
+      if (failureKind === 'pin_required') {
         setCancelModal((prev) => (prev ? { ...prev, requiresPin: true } : prev));
       }
       toast.error(tOrders('cancelOrderFailed'));
@@ -2132,6 +2151,16 @@ export default function OrdersPage() {
             <p className="text-sm text-muted-foreground -mt-2 mb-4">
               {tOrders('cancelOrderStatusHint')}
             </p>
+            {(cancelModal.refundRequired ||
+              (isScheduledOrder(cancelModal.order) &&
+                orderHasCollectedPayment(cancelModal.order))) && (
+              <p
+                role="alert"
+                className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-100"
+              >
+                {tPos('scheduledRefundBeforeCancel')}
+              </p>
+            )}
 
             <div className="space-y-4">
               <div>

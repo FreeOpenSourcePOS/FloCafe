@@ -733,6 +733,8 @@
     "overridePinLabel": "رمز چشم‌پوشی",
     "paid": "پرداخت‌شده",
     "partiallyPaid": "بخشی پرداخت‌شده",
+    "partiallyRefunded": "بازپرداخت جزئی",
+    "refunded": "بازپرداخت‌شده",
     "pending": "در انتظار",
     "percentOnSubtotal": "({value}% از جمع جزء)",
     "preparing": "در حال آماده‌سازی",

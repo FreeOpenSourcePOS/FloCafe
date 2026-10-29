@@ -733,6 +733,8 @@
     "overridePinLabel": "تجاوز رقم التعريف الشخصي (PIN)",
     "paid": "مدفوع الأجر",
     "partiallyPaid": "مدفوع جزئيًا",
+    "partiallyRefunded": "مسترد جزئيًا",
+    "refunded": "مسترد",
     "pending": "قيد الانتظار",
     "percentOnSubtotal": "({value}% من المجموع الفرعي)",
     "preparing": "التحضير",

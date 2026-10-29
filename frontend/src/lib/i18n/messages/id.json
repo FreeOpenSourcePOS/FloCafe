@@ -733,6 +733,8 @@
     "overridePinLabel": "PIN Timpaan",
     "paid": "Lunas",
     "partiallyPaid": "Dibayar Sebagian",
+    "partiallyRefunded": "Dikembalikan Sebagian",
+    "refunded": "Dikembalikan",
     "pending": "Tertunda",
     "percentOnSubtotal": "({value}% dari subtotal)",
     "preparing": "Disiapkan",

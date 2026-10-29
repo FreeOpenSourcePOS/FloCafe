@@ -733,6 +733,8 @@
     "overridePinLabel": "覆蓋 PIN",
     "paid": "已支付",
     "partiallyPaid": "部分支付",
+    "partiallyRefunded": "部分退款",
+    "refunded": "已退款",
     "pending": "待處理",
     "percentOnSubtotal": "（小計的 {value}%）",
     "preparing": "製作中",

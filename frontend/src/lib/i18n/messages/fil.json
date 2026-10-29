@@ -733,6 +733,8 @@
     "overridePinLabel": "Override PIN",
     "paid": "Bayad Na",
     "partiallyPaid": "Bahagyang Bayad",
+    "partiallyRefunded": "Bahagyang Na-refund",
+    "refunded": "Na-refund",
     "pending": "Nakabinbin",
     "percentOnSubtotal": "({value}% sa subtotal)",
     "preparing": "Inihahanda",

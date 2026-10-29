@@ -733,6 +733,8 @@
     "overridePinLabel": "Yetki PIN Kodu",
     "paid": "Ödendi",
     "partiallyPaid": "Kısmi Ödendi",
+    "partiallyRefunded": "Kısmen İade Edildi",
+    "refunded": "İade Edildi",
     "pending": "Beklemede",
     "percentOnSubtotal": "(Ara toplam üzerinden %{value})",
     "preparing": "Hazırlanıyor",

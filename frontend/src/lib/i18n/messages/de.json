@@ -733,6 +733,8 @@
     "overridePinLabel": "Autorisierungs-PIN",
     "paid": "Bezahlt",
     "partiallyPaid": "Teilweise bezahlt",
+    "partiallyRefunded": "Teilweise erstattet",
+    "refunded": "Erstattet",
     "pending": "Ausstehend",
     "percentOnSubtotal": "({value}% der Zwischensumme)",
     "preparing": "In Zubereitung",

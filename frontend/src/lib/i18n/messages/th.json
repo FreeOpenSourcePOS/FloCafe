@@ -733,6 +733,8 @@
     "overridePinLabel": "PIN สำหรับดำเนินการแทน",
     "paid": "ชำระแล้ว",
     "partiallyPaid": "ชำระบางส่วน",
+    "partiallyRefunded": "คืนเงินบางส่วน",
+    "refunded": "คืนเงินแล้ว",
     "pending": "รอดำเนินการ",
     "percentOnSubtotal": "({value}% ของยอดรวมย่อย)",
     "preparing": "กำลังเตรียม",

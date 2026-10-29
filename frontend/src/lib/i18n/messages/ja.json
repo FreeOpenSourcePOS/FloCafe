@@ -733,6 +733,8 @@
     "overridePinLabel": "上書きPIN",
     "paid": "支払い済み",
     "partiallyPaid": "一部支払い済み",
+    "partiallyRefunded": "一部返金済み",
+    "refunded": "返金済み",
     "pending": "保留中",
     "percentOnSubtotal": "（小計の{value}%）",
     "preparing": "調理中",

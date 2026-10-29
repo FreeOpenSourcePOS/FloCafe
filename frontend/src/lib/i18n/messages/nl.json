@@ -733,6 +733,8 @@
     "overridePinLabel": "Goedkeurings-PIN",
     "paid": "Betaald",
     "partiallyPaid": "Gedeeltelijk betaald",
+    "partiallyRefunded": "Gedeeltelijk terugbetaald",
+    "refunded": "Terugbetaald",
     "pending": "In behandeling",
     "percentOnSubtotal": "({value}% op subtotaal)",
     "preparing": "In bereiding",

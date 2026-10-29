@@ -733,6 +733,8 @@
     "overridePinLabel": "우선 적용 PIN",
     "paid": "결제됨",
     "partiallyPaid": "부분 결제",
+    "partiallyRefunded": "부분 환불",
+    "refunded": "환불 완료",
     "pending": "대기",
     "percentOnSubtotal": "(소계 대비 {value}%)",
     "preparing": "준비 중",

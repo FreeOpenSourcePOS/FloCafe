@@ -344,6 +344,136 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
         localStorage.setItem('pos-settings', JSON.stringify(parsed));
       });
     }
+
+    // 5. Released scheduled order on /orders: Refund exposed on partial/partially_refunded,
+    //    edit controls locked after payment, REFUND_REQUIRED_BEFORE_CANCEL surfaced, and cancel after full refund
+    const releasedSchedCreate = await page.request.post(`${BASE}/api/orders`, {
+      headers: ownerHeaders,
+      data: {
+        type: 'takeaway',
+        scheduled_for: futureBangkokWallClock(75),
+        items: [{ product_id: 'e2e-product', quantity: 2 }],
+      },
+    });
+    expect(releasedSchedCreate.status()).toBe(201);
+    const releasedSchedOrder = (await releasedSchedCreate.json()).order as {
+      id: number;
+      order_number: string;
+    };
+    const releasedSchedId = Number(releasedSchedOrder.id);
+    createdOrderIds.push(releasedSchedId);
+
+    const releasedBillGen = await page.request.post(`${BASE}/api/bills/generate`, {
+      headers: ownerHeaders,
+      data: { order_id: releasedSchedId },
+    });
+    expect(releasedBillGen.status()).toBe(201);
+    const releasedBill = (await releasedBillGen.json()).bill as { id: number };
+
+    const releasedPartialPay = await page.request.post(
+      `${BASE}/api/bills/${releasedBill.id}/payment`,
+      {
+        headers: ownerHeaders,
+        data: { method: 'cash', amount: 20 },
+      },
+    );
+    expect(releasedPartialPay.ok()).toBeTruthy();
+
+    const relRes = await page.request.post(`${BASE}/api/orders/${releasedSchedId}/release`, {
+      headers: ownerHeaders,
+    });
+    expect(relRes.status()).toBe(200);
+
+    await page.goto(`${BASE}/orders`);
+    const masterRow = page
+      .getByRole('button')
+      .filter({ hasText: `#${releasedSchedOrder.order_number}` })
+      .first();
+    await expect(masterRow).toBeVisible();
+    await masterRow.click();
+
+    const detailPanel = page.getByTestId('orders-detail-panel');
+    await expect(detailPanel.getByText('Partially Paid', { exact: true })).toBeVisible();
+    await expect(detailPanel.getByRole('button', { name: 'Take Payment' })).toBeVisible();
+    await expect(detailPanel.getByRole('button', { name: 'Refund', exact: true })).toBeVisible();
+    await expect(detailPanel.getByRole('button', { name: 'Add Item' })).toHaveCount(0);
+    await expect(detailPanel.getByRole('button', { name: 'Link Customer' })).toHaveCount(0);
+
+    await detailPanel
+      .locator('button[aria-haspopup="menu"]')
+      .filter({ has: page.locator('svg.lucide-ellipsis') })
+      .click();
+    await page.getByRole('menuitem', { name: /^Cancel$/ }).click();
+
+    const cancelOverlay = page.locator('.fixed.inset-0.z-50').last();
+    await expect(cancelOverlay).toBeVisible();
+    await expect(
+      cancelOverlay.getByText('Refund collected payment before cancelling this scheduled order.'),
+    ).toBeVisible();
+    if (await cancelOverlay.locator('#cancelApproverSelect').count()) {
+      await cancelOverlay.locator('#cancelApproverSelect').selectOption('e2e-manager');
+    }
+    await cancelOverlay.locator('#overridePin').fill('2468');
+    const blockedCancelRespPromise = page.waitForResponse((res) => {
+      const url = new URL(res.url());
+      return (
+        res.request().method() === 'PATCH' &&
+        url.pathname === `/api/orders/${releasedSchedId}/status`
+      );
+    });
+    await cancelOverlay.getByRole('button', { name: 'Confirm Cancel', exact: true }).click();
+    const blockedCancelResp = await blockedCancelRespPromise;
+    expect(blockedCancelResp.status()).toBe(409);
+    await expect(
+      page.getByText('Refund collected payment before cancelling this scheduled order.').first(),
+    ).toBeVisible();
+    await cancelOverlay.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+    // Partial refund via /orders Refund modal -> Partially Refunded badge, Checkout suppressed, Refund still exposed
+    await detailPanel.getByRole('button', { name: 'Refund', exact: true }).click();
+    const refundOverlay1 = page.locator('.fixed.inset-0.z-50').last();
+    await expect(refundOverlay1).toBeVisible();
+    await refundOverlay1.locator('#refundAmount').fill('5');
+    if (await refundOverlay1.locator('#refundApprover').count()) {
+      await refundOverlay1.locator('#refundApprover').selectOption('e2e-manager');
+    }
+    await refundOverlay1.locator('#refundPin').fill('2468');
+    await refundOverlay1.getByRole('button', { name: /Issue refund/i }).click();
+    await expect(page.getByText(/Refund issued/i).first()).toBeVisible();
+
+    await expect(detailPanel.getByText('Partially Refunded', { exact: true })).toBeVisible();
+    await expect(detailPanel.getByRole('button', { name: 'Take Payment' })).toHaveCount(0);
+    await expect(detailPanel.getByRole('button', { name: 'Checkout' })).toHaveCount(0);
+    await expect(detailPanel.getByRole('button', { name: 'Refund', exact: true })).toBeVisible();
+
+    // Remaining refund via /orders Refund modal -> Refunded badge, Refund hidden, cancel now succeeds
+    await detailPanel.getByRole('button', { name: 'Refund', exact: true }).click();
+    const refundOverlay2 = page.locator('.fixed.inset-0.z-50').last();
+    await expect(refundOverlay2).toBeVisible();
+    if (await refundOverlay2.locator('#refundApprover').count()) {
+      await refundOverlay2.locator('#refundApprover').selectOption('e2e-manager');
+    }
+    await refundOverlay2.locator('#refundPin').fill('2468');
+    await refundOverlay2.getByRole('button', { name: /Issue refund/i }).click();
+    await expect(page.getByText(/Refund issued/i).first()).toBeVisible();
+
+    await expect(detailPanel.getByText('Refunded', { exact: true })).toBeVisible();
+    await expect(detailPanel.getByRole('button', { name: 'Refund', exact: true })).toHaveCount(0);
+    await expect(detailPanel.getByRole('button', { name: 'Checkout' })).toHaveCount(0);
+
+    await detailPanel
+      .locator('button[aria-haspopup="menu"]')
+      .filter({ has: page.locator('svg.lucide-ellipsis') })
+      .click();
+    await page.getByRole('menuitem', { name: /^Cancel$/ }).click();
+    const finalCancelOverlay = page.locator('.fixed.inset-0.z-50').last();
+    await expect(finalCancelOverlay).toBeVisible();
+    if (await finalCancelOverlay.locator('#cancelApproverSelect').count()) {
+      await finalCancelOverlay.locator('#cancelApproverSelect').selectOption('e2e-manager');
+    }
+    await finalCancelOverlay.locator('#overridePin').fill('2468');
+    await finalCancelOverlay.getByRole('button', { name: 'Confirm Cancel', exact: true }).click();
+    await expect(page.getByText(/Order cancelled successfully/i).first()).toBeVisible();
   } finally {
     // Clean up created orders cleanly without triggering unpaid-completion errors
     for (const orderId of createdOrderIds) {

@@ -2148,6 +2148,507 @@ async function main() {
       }
     }
 
+    // ── 11. /orders UI surfaces: Refund exposure, payment badges, post-payment edit lock, and cancel error ─
+    console.log('\n--- 11. /orders UI surfaces (OrderCard, OrderDetailPanel, PaymentModal) ---');
+    {
+      const rootDir = path.resolve(__dirname, '..');
+      const frontendRequire = Module.createRequire(path.join(rootDir, 'frontend/package.json'));
+      const zustandPath = frontendRequire.resolve('zustand');
+      const resolveFrontendPackage = (reqName: string): string | null => {
+        if (reqName.startsWith('.') || path.isAbsolute(reqName) || reqName.startsWith('node:')) {
+          return null;
+        }
+        try {
+          return frontendRequire.resolve(reqName);
+        } catch {
+          return null;
+        }
+      };
+      const origResolveFilename = Module._resolveFilename;
+      Module._resolveFilename = function (
+        reqName: string,
+        parent: unknown,
+        isMain: boolean,
+        options?: unknown,
+      ) {
+        const resolvedRequest =
+          reqName === 'zustand'
+            ? zustandPath
+            : reqName === '@countries'
+              ? path.resolve(rootDir, 'main/countries.ts')
+              : reqName.startsWith('@/')
+                ? path.resolve(rootDir, 'frontend/src', reqName.slice(2))
+                : reqName.startsWith('@print/')
+                  ? path.resolve(rootDir, 'shared/print', reqName.slice('@print/'.length))
+                  : reqName.startsWith('@shared/')
+                    ? path.resolve(rootDir, 'shared', reqName.slice('@shared/'.length))
+                    : (resolveFrontendPackage(reqName) ?? reqName);
+        return origResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+      };
+      try {
+        const React = frontendRequire('react');
+        const ReactDOMServer = frontendRequire('react-dom/server');
+        const { IntlProvider } = frontendRequire('use-intl');
+        const messages = require('../frontend/src/lib/i18n/messages/en.json');
+        const { useAuthStore } = require('../frontend/src/store/auth');
+        const { OrderCard } = require('../frontend/src/components/orders/OrderCard');
+        const { OrderDetailPanel } = require('../frontend/src/components/orders/OrderDetailPanel');
+        const PaymentModal = require('../frontend/src/components/pos/PaymentModal').default;
+        const {
+          canCheckoutOrder,
+          getCancelOrderFailureKind,
+          isOrderCustomerEditLocked,
+          isOrderItemEditLocked,
+          isScheduledEditLockedError,
+          resolveOrderPaymentStatus,
+        } = require('../frontend/src/lib/order-payment-state');
+
+        useAuthStore.setState({
+          user: { id: owner.userId, role: 'owner', name: 'Owner', email: 'owner@test.com' },
+          currentTenant: {
+            id: 'local',
+            business_name: 'FloCafe Test',
+            role: 'owner',
+            currency: 'USD',
+            country: 'US',
+          },
+        });
+
+        const renderWithIntl = (element: unknown) =>
+          ReactDOMServer.renderToStaticMarkup(
+            React.createElement(
+              IntlProvider,
+              { locale: 'en', messages, onError: () => {} },
+              element,
+            ),
+          );
+
+        const buildSurfaceProps = (orderRow: unknown) => ({
+          order: orderRow,
+          now: Date.now(),
+          canCancelItems: true,
+          canEditItems: true,
+          onEditItem: () => {},
+          canOverridePrice: true,
+          onOverridePrice: () => {},
+          canRestoreItems: true,
+          canRefund: true,
+          isWhatsAppReady: false,
+          printHistory: {},
+          generatingBillId: null,
+          printingBillId: null,
+          sendingWaOrderId: null,
+          cancellingOrderId: null,
+          convertingOrderId: null,
+          onCheckout: () => {},
+          onAddItems: () => {},
+          onRefund: () => {},
+          onConvertToTakeaway: () => {},
+          onCancelOrder: () => {},
+          onPrint: () => {},
+          onSendWhatsApp: () => {},
+          onLinkCustomer: () => {},
+          onCreateNewOrderForCustomer: () => {},
+          onDeleteItem: () => {},
+          onVoidItem: () => {},
+          onRestoreItem: () => {},
+        });
+
+        const fetchOrderFromActiveFeed = async (targetOrderId: number) => {
+          const listRes = await api(baseUrl, '/api/orders?view=active', {
+            headers: owner.authHeader,
+          });
+          assertEqualOrThrow(listRes.status, 200, 'GET /api/orders?view=active succeeds');
+          const found = (listRes.data.orders as Array<{ id: number }>).find(
+            (o) => Number(o.id) === Number(targetOrderId),
+          );
+          assertOrThrow(Boolean(found), `order ${targetOrderId} returned in active /orders feed`);
+          return found as any;
+        };
+
+        // 11a. Unpaid scheduled order on /orders allows edits, Checkout, Add Item, and Discount in PaymentModal
+        const uiSchedRes = await api(baseUrl, '/api/orders', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: {
+            type: 'takeaway',
+            scheduled_for: futureWallClockInZone('America/New_York', 90),
+            items: [{ product_id: 'prod-latte', quantity: 2 }],
+          },
+        });
+        assertEqualOrThrow(uiSchedRes.status, 201, 'create scheduled order for /orders UI test');
+        const uiSchedOrderId = Number(uiSchedRes.data.order.id);
+
+        const unpaidScheduled = await fetchOrderFromActiveFeed(uiSchedOrderId);
+        assertEqualOrThrow(
+          resolveOrderPaymentStatus(unpaidScheduled),
+          'unpaid',
+          'unpaid scheduled order resolves unpaid badge',
+        );
+        const unpaidCardHtml = renderWithIntl(
+          React.createElement(OrderCard, buildSurfaceProps(unpaidScheduled)),
+        );
+        const unpaidPanelHtml = renderWithIntl(
+          React.createElement(OrderDetailPanel, buildSurfaceProps(unpaidScheduled)),
+        );
+        assertIncludesOrThrow(unpaidCardHtml, 'Unpaid', 'unpaid OrderCard shows Unpaid badge');
+        assertIncludesOrThrow(unpaidCardHtml, 'Checkout', 'unpaid OrderCard shows Checkout');
+        assertIncludesOrThrow(unpaidCardHtml, 'Add Item', 'unpaid OrderCard shows Add Item');
+        assertIncludesOrThrow(
+          unpaidCardHtml,
+          'Link Customer',
+          'unpaid OrderCard shows Link Customer',
+        );
+        assertIncludesOrThrow(
+          unpaidCardHtml,
+          'title="Edit item"',
+          'unpaid OrderCard shows Edit item',
+        );
+        assertIncludesOrThrow(
+          unpaidPanelHtml,
+          'Add Item',
+          'unpaid OrderDetailPanel shows Add Item',
+        );
+        assertOrThrow(
+          !unpaidCardHtml.includes('>Refund<'),
+          'unpaid OrderCard hides Refund before payment',
+        );
+
+        const uiBillGenRes = await api(baseUrl, '/api/bills/generate', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: { order_id: String(uiSchedOrderId) },
+        });
+        assertEqualOrThrow(uiBillGenRes.status, 201, 'generate bill for scheduled order');
+        const uiBillId = Number(uiBillGenRes.data.bill.id);
+        const unpaidPaymentModalHtml = renderWithIntl(
+          React.createElement(PaymentModal, {
+            bill: uiBillGenRes.data.bill,
+            currency: '$',
+            onClose: () => {},
+            onPaid: () => {},
+          }),
+        );
+        assertIncludesOrThrow(
+          unpaidPaymentModalHtml,
+          'Apply Discount',
+          'unpaid scheduled bill shows Apply Discount in PaymentModal',
+        );
+
+        // 11b. Record partial payment + release to kitchen -> no longer in ScheduledOrdersDrawer,
+        //      so /orders MUST expose Refund alongside Take Payment AND lock edits/discounts!
+        const partialPayUiRes = await api(baseUrl, `/api/bills/${uiBillId}/payment`, {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: { method: 'cash', amount: 80 },
+        });
+        assertEqualOrThrow(partialPayUiRes.status, 200, 'record partial payment');
+
+        const releaseUiRes = await api(baseUrl, `/api/orders/${uiSchedOrderId}/release`, {
+          method: 'POST',
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(
+          releaseUiRes.status,
+          200,
+          'release partially paid scheduled order to kitchen',
+        );
+
+        const partialReleased = await fetchOrderFromActiveFeed(uiSchedOrderId);
+        assertEqualOrThrow(partialReleased.release_status, 'released', 'order is released');
+        assertEqualOrThrow(partialReleased.status, 'pending', 'released order is pending');
+        assertEqualOrThrow(
+          resolveOrderPaymentStatus(partialReleased),
+          'partial',
+          'partial released scheduled order resolves partial badge',
+        );
+        assertEqualOrThrow(
+          isOrderItemEditLocked(partialReleased),
+          true,
+          'item edits locked on released scheduled order after partial payment',
+        );
+        assertEqualOrThrow(
+          isOrderCustomerEditLocked(partialReleased),
+          true,
+          'customer edits locked on released scheduled order after partial payment',
+        );
+
+        const partialCardHtml = renderWithIntl(
+          React.createElement(OrderCard, buildSurfaceProps(partialReleased)),
+        );
+        const partialPanelHtml = renderWithIntl(
+          React.createElement(OrderDetailPanel, buildSurfaceProps(partialReleased)),
+        );
+        assertIncludesOrThrow(
+          partialCardHtml,
+          'Partially Paid',
+          'OrderCard shows Partially Paid badge',
+        );
+        assertIncludesOrThrow(
+          partialCardHtml,
+          'Take Payment',
+          'OrderCard keeps Take Payment for remaining balance',
+        );
+        assertIncludesOrThrow(
+          partialCardHtml,
+          'Refund',
+          'OrderCard exposes Refund on pending partially paid scheduled order',
+        );
+        assertIncludesOrThrow(
+          partialPanelHtml,
+          'Refund',
+          'OrderDetailPanel exposes Refund on pending partially paid scheduled order',
+        );
+        for (const [label, html] of [
+          ['OrderCard', partialCardHtml],
+          ['OrderDetailPanel', partialPanelHtml],
+        ] as const) {
+          assertOrThrow(
+            !html.includes('Add Item'),
+            `${label} hides Add Item after first payment on scheduled order`,
+          );
+          assertOrThrow(
+            !html.includes('Link Customer'),
+            `${label} hides Link Customer after first payment on scheduled order`,
+          );
+          assertOrThrow(
+            !html.includes('title="Edit item"'),
+            `${label} hides Edit item after first payment on scheduled order`,
+          );
+          assertOrThrow(
+            !html.includes('title="Override price"'),
+            `${label} hides Override price after first payment on scheduled order`,
+          );
+          assertOrThrow(
+            !html.includes('title="Remove item"'),
+            `${label} hides Remove item after first payment on scheduled order`,
+          );
+        }
+
+        const partialBillLookup = await api(baseUrl, '/api/bills/generate', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: { order_id: String(uiSchedOrderId) },
+        });
+        assertEqualOrThrow(partialBillLookup.status, 200, 'fetch partial bill');
+        const partialPaymentModalHtml = renderWithIntl(
+          React.createElement(PaymentModal, {
+            bill: partialBillLookup.data.bill,
+            currency: '$',
+            onClose: () => {},
+            onPaid: () => {},
+          }),
+        );
+        assertOrThrow(
+          !partialPaymentModalHtml.includes('Apply Discount'),
+          'PaymentModal locks Apply Discount after first payment on scheduled order',
+        );
+
+        // Cancel attempt fails with REFUND_REQUIRED_BEFORE_CANCEL and classifies specifically
+        const cancelBeforeRefund = await api(baseUrl, `/api/orders/${uiSchedOrderId}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: {
+            status: 'cancelled',
+            reason: 'Customer cancelled',
+            approver_id: manager.userId,
+            override_pin: '1234',
+          },
+        });
+        assertEqualOrThrow(
+          cancelBeforeRefund.status,
+          409,
+          'cancel rejected with 409 while partial payment remains unrefunded',
+        );
+        assertEqualOrThrow(
+          getCancelOrderFailureKind({ response: { data: cancelBeforeRefund.data } }),
+          'refund_required_before_cancel',
+          'orders/page cancel failure classifier identifies REFUND_REQUIRED_BEFORE_CANCEL',
+        );
+        assertEqualOrThrow(
+          isScheduledEditLockedError({
+            response: { data: { code: 'SCHEDULED_ORDER_PAID_EDIT_LOCKED' } },
+          }),
+          true,
+          'scheduled edit lock error helper matches SCHEDULED_ORDER_PAID_EDIT_LOCKED',
+        );
+
+        // 11c. Partial refund ($30 of $80) -> Partially Refunded badge, Checkout suppressed, Refund still exposed!
+        const partialRefundUiRes = await api(baseUrl, '/api/refunds', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: {
+            bill_id: uiBillId,
+            amount: 30,
+            method: 'cash',
+            reason: 'Partial refund on /orders',
+            approver_id: manager.userId,
+            override_pin: '1234',
+          },
+        });
+        assertEqualOrThrow(partialRefundUiRes.status, 201, 'issue partial refund');
+
+        const partiallyRefundedOrder = await fetchOrderFromActiveFeed(uiSchedOrderId);
+        assertEqualOrThrow(
+          resolveOrderPaymentStatus(partiallyRefundedOrder),
+          'partially_refunded',
+          'partially refunded order resolves partially_refunded badge',
+        );
+        assertEqualOrThrow(
+          canCheckoutOrder(partiallyRefundedOrder),
+          false,
+          'partially_refunded bill suppresses Checkout (backend rejects pay on refunded bills)',
+        );
+        const partRefCardHtml = renderWithIntl(
+          React.createElement(OrderCard, buildSurfaceProps(partiallyRefundedOrder)),
+        );
+        const partRefPanelHtml = renderWithIntl(
+          React.createElement(OrderDetailPanel, buildSurfaceProps(partiallyRefundedOrder)),
+        );
+        assertIncludesOrThrow(
+          partRefCardHtml,
+          'Partially Refunded',
+          'OrderCard shows Partially Refunded badge instead of Unpaid',
+        );
+        assertIncludesOrThrow(
+          partRefPanelHtml,
+          'Partially Refunded',
+          'OrderDetailPanel shows Partially Refunded badge instead of Unpaid',
+        );
+        assertIncludesOrThrow(
+          partRefCardHtml,
+          'Refund',
+          'OrderCard keeps Refund exposed for remaining refundable balance',
+        );
+        assertIncludesOrThrow(
+          partRefPanelHtml,
+          'Refund',
+          'OrderDetailPanel keeps Refund exposed for remaining refundable balance',
+        );
+        assertOrThrow(
+          !partRefCardHtml.includes('Checkout') && !partRefCardHtml.includes('Take Payment'),
+          'OrderCard suppresses Checkout/Take Payment on partially_refunded order',
+        );
+        assertOrThrow(
+          !partRefPanelHtml.includes('Checkout') && !partRefPanelHtml.includes('Take Payment'),
+          'OrderDetailPanel suppresses Checkout/Take Payment on partially_refunded order',
+        );
+
+        // 11d. Refund remaining $50 -> Refunded badge, Checkout & Refund suppressed, cancellation now succeeds!
+        const fullRefundUiRes = await api(baseUrl, '/api/refunds', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: {
+            bill_id: uiBillId,
+            amount: 50,
+            method: 'cash',
+            reason: 'Remaining refund before cancel',
+            approver_id: manager.userId,
+            override_pin: '1234',
+          },
+        });
+        assertEqualOrThrow(fullRefundUiRes.status, 201, 'issue remaining refund to $0 net paid');
+
+        const fullyRefundedOrder = await fetchOrderFromActiveFeed(uiSchedOrderId);
+        assertEqualOrThrow(
+          resolveOrderPaymentStatus(fullyRefundedOrder),
+          'refunded',
+          'fully refunded pending order resolves refunded badge',
+        );
+        assertEqualOrThrow(
+          canCheckoutOrder(fullyRefundedOrder),
+          false,
+          'fully refunded order suppresses Checkout',
+        );
+        const fullRefCardHtml = renderWithIntl(
+          React.createElement(OrderCard, buildSurfaceProps(fullyRefundedOrder)),
+        );
+        const fullRefPanelHtml = renderWithIntl(
+          React.createElement(OrderDetailPanel, buildSurfaceProps(fullyRefundedOrder)),
+        );
+        assertIncludesOrThrow(
+          fullRefCardHtml,
+          'Refunded',
+          'OrderCard shows Refunded badge instead of Unpaid',
+        );
+        assertIncludesOrThrow(
+          fullRefPanelHtml,
+          'Refunded',
+          'OrderDetailPanel shows Refunded badge instead of Unpaid',
+        );
+        assertOrThrow(
+          !fullRefCardHtml.includes('Checkout') &&
+            !fullRefCardHtml.includes('Take Payment') &&
+            !fullRefCardHtml.includes('>Refund<'),
+          'OrderCard suppresses Checkout and Refund once fully refunded',
+        );
+        assertOrThrow(
+          !fullRefPanelHtml.includes('Checkout') &&
+            !fullRefPanelHtml.includes('Take Payment') &&
+            !fullRefPanelHtml.includes('>Refund<'),
+          'OrderDetailPanel suppresses Checkout and Refund once fully refunded',
+        );
+
+        const cancelAfterFullRefundUi = await api(
+          baseUrl,
+          `/api/orders/${uiSchedOrderId}/status`,
+          {
+            method: 'PATCH',
+            headers: owner.authHeader,
+            body: {
+              status: 'cancelled',
+              reason: 'Refunded in full on /orders',
+              approver_id: manager.userId,
+              override_pin: '1234',
+            },
+          },
+        );
+        assertEqualOrThrow(
+          cancelAfterFullRefundUi.status,
+          200,
+          'released scheduled order cancels cleanly once refunded in full via /orders',
+        );
+
+        // 11e. Ordinary (non-scheduled) partial order retains Add Item while gaining Refund on /orders
+        const regularOrderRes = await api(baseUrl, '/api/orders', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: {
+            type: 'takeaway',
+            items: [{ product_id: 'prod-latte', quantity: 2 }],
+          },
+        });
+        assertEqualOrThrow(regularOrderRes.status, 201, 'create regular non-scheduled order');
+        const regularOrderId = Number(regularOrderRes.data.order.id);
+        const regBillGen = await api(baseUrl, '/api/bills/generate', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: { order_id: String(regularOrderId) },
+        });
+        const regBillId = Number(regBillGen.data.bill.id);
+        const regPartialPay = await api(baseUrl, `/api/bills/${regBillId}/payment`, {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: { method: 'cash', amount: 50 },
+        });
+        assertEqualOrThrow(regPartialPay.status, 200, 'partial payment on regular order');
+
+        const regularPartial = await fetchOrderFromActiveFeed(regularOrderId);
+        const regCardHtml = renderWithIntl(
+          React.createElement(OrderCard, buildSurfaceProps(regularPartial)),
+        );
+        assertIncludesOrThrow(
+          regCardHtml,
+          'Take Payment',
+          'regular partial order keeps Take Payment',
+        );
+        assertIncludesOrThrow(regCardHtml, 'Add Item', 'regular partial order keeps Add Item');
+        assertIncludesOrThrow(regCardHtml, 'Refund', 'regular partial order also exposes Refund');
+      } finally {
+        Module._resolveFilename = origResolveFilename;
+      }
+    }
+
     const results = getResults();
     console.log('\n' + '='.repeat(66));
     console.log(`Passed: ${results.passed}/${results.total}`);

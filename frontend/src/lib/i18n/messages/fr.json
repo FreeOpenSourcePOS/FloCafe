@@ -733,6 +733,8 @@
     "overridePinLabel": "Code PIN de dérogation",
     "paid": "Payée",
     "partiallyPaid": "Partiellement payée",
+    "partiallyRefunded": "Partiellement remboursée",
+    "refunded": "Remboursée",
     "pending": "En attente",
     "percentOnSubtotal": "({value} % du sous-total)",
     "preparing": "En préparation",

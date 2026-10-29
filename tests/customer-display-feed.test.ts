@@ -1243,7 +1243,11 @@ async function main(): Promise<void> {
     fetchPage: async (params: Record<string, unknown>) => {
       defaultSignedInPageRequests += 1;
       const res = await request(app).get('/api/orders').query(params).set(signedInOwnerDefault);
-      assert.equal(res.status, 200, `signed-in default board page ${defaultSignedInPageRequests} returns 200`);
+      assert.equal(
+        res.status,
+        200,
+        `signed-in default board page ${defaultSignedInPageRequests} returns 200`,
+      );
       return res.body;
     },
   });
@@ -1315,7 +1319,11 @@ async function main(): Promise<void> {
     fetchPage: async (params: Record<string, unknown>) => {
       readySignedInPageRequests += 1;
       const res = await request(app).get('/api/orders').query(params).set(signedInOwnerReady);
-      assert.equal(res.status, 200, `signed-in ready-only board page ${readySignedInPageRequests} returns 200`);
+      assert.equal(
+        res.status,
+        200,
+        `signed-in ready-only board page ${readySignedInPageRequests} returns 200`,
+      );
       return res.body;
     },
   });

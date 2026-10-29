@@ -798,13 +798,14 @@ router.get(
           return res.json({ orders: [] });
         }
         const idPlaceholders = pageRows.map(() => '?').join(',');
+        type OrderRow = { id: number } & Record<string, unknown>;
         const fetchedOrders = db
           .prepare(`SELECT orders.* FROM orders WHERE orders.id IN (${idPlaceholders})`)
-          .all(...pageRows.map((row) => row.id)) as any[];
+          .all(...pageRows.map((row) => row.id)) as OrderRow[];
         const orderById = new Map(fetchedOrders.map((order) => [Number(order.id), order]));
         const pageOrders = pageRows
           .map((row) => orderById.get(row.id))
-          .filter((order): order is any => order !== undefined);
+          .filter((order): order is OrderRow => order !== undefined);
         const nextCursor =
           hasMore && pageOrders.length > 0 ? pageOrders[pageOrders.length - 1].id : null;
         const ordersWithRelations = batchHydrateOrders(db, pageOrders);

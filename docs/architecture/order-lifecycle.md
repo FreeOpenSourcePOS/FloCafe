@@ -299,16 +299,18 @@ order items are appended, cancelled, edited, refunded, or restored:
 - Each resulting parent status change records an actor-attributed `status_changed` entry
   (`source: 'kds_reconciliation'`) in `order_audit_log`.
 
-Terminal `completed` and `cancelled` orders are never reopened or mutated by KDS item updates. For
-upfront-paid orders created within the rolling 24-hour `orders.created_at` window that settle to
-`completed` before kitchen fulfillment finishes, `GET /api/orders?view=active`,
-`GET /api/orders?status=active`, and `GET /api/orders?board_status=...` continue returning the
-`completed` order while positive-quantity live items remain in `pending`, `preparing`, or `ready`
-(non-`completed` active orders are not age-bounded), and both `/customer-display` surfaces project
-its board status (`pending`, `preparing`, or `ready`) from live item statuses via
-`projectBoardStatusFromItems` before pagination until every remaining live item is `served` or
-`completed`. When KDS is disabled, automatic item-to-order reconciliation stands down and manual
-`PATCH /api/orders/:id/status` transitions govern preparation and service.
+Terminal `completed` and `cancelled` orders are never reopened or mutated by item-status
+reconciliation. When KDS is enabled, upfront-paid orders created within the rolling 24-hour
+`orders.created_at` window that settle to `completed` before kitchen fulfillment finishes remain in
+`GET /api/orders?view=active` and `GET /api/orders?status=active` while positive-quantity live items
+stay in `pending`, `preparing`, or `ready` (non-`completed` active orders are not age-bounded). Both
+`/customer-display` surfaces (`GET /api/orders?board_status=...` and
+`GET /api/customer-display/feed`) project such an order's effective board status (`pending`,
+`preparing`, or `ready`) from live item statuses via `projectBoardStatusFromItems` and filter by
+configured statuses before pagination, omitting the order once no live item remains unfinished
+(for example once every remaining live item is `served` or `completed`). When KDS is disabled,
+automatic item-to-order reconciliation stands down and manual `PATCH /api/orders/:id/status`
+transitions govern preparation and service.
 
 ## Refunds
 
@@ -341,4 +343,6 @@ npm run test:integration-tax                  # tax extraction and rounding
 npm run test:held-orders                      # held-cart API and store
 npm run test:cash-sessions                    # shift gate
 npm run test:refunds                          # refund window and approvals
+npm run test:kds-contract                     # KDS item-to-order status reconciliation across write paths
+npm run test:customer-display-feed            # pickup board projection and board_status pagination
 ```

@@ -211,7 +211,8 @@ order to takeaway (`PATCH /api/orders/:id/convert-to-takeaway`) re-sync open bil
 rules:
 
 - `PATCH /api/orders/:id/customer` requires an active order (`400` on `completed` or `cancelled`),
-  refuses changes once any bill has payments, a split, or a refund (`409`), re-evaluates
+  refuses changes on a paid scheduled order (`409` with `SCHEDULED_ORDER_PAID`) or once any bill has
+  payments, a split, or a refund (`409`), re-evaluates
   non-terminal item taxes for the new customer against each item's saved `tax_snapshot` category,
   behavior, and pack version when taxes are enabled and the customer's tax context (B2B status or
   state code) changes, recomputes order and open-bill totals, and records `customer_updated` in

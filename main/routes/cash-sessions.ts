@@ -33,10 +33,8 @@ import {
   type CashSessionRow,
 } from '../services/shift-session-gate';
 import {
-  computePeriodAggregates,
+  computeSessionAggregates,
   sessionExpectedCash,
-  sessionFinancialTotals,
-  listCashDrawerMovementsForSession,
   tenantTimezone,
   cashOperationFailurePayload,
 } from './cash-closures';
@@ -117,25 +115,8 @@ function closeSessionTxn(
   counted_cash_cents: number;
 } {
   const closedAt = now();
-  const sessionMovements = listCashDrawerMovementsForSession(
-    db,
-    session.id,
-    session.opened_at,
-    closedAt,
-    false,
-  );
-  const aggregates = {
-    ...computePeriodAggregates(
-      db,
-      session.opened_at,
-      closedAt,
-      sessionMovements,
-      Number(session.opening_float_cents || 0),
-      session,
-    ),
-    ...sessionFinancialTotals(db, session, closedAt),
-  };
-  const expectedCashCents = sessionExpectedCash(db, session, closedAt, sessionMovements);
+  const aggregates = computeSessionAggregates(db, session, closedAt);
+  const expectedCashCents = sessionExpectedCash(db, session, closedAt, aggregates.cashMovements);
   const varianceCents = countedCashCents - expectedCashCents;
   let zNumber: number;
   try {

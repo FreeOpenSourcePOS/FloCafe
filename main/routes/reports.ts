@@ -32,12 +32,10 @@ import type { CashSessionRow } from '../services/shift-session-gate';
 import type { AuthedRequest } from './cash-sessions';
 import {
   computeDayAggregates,
-  computePeriodAggregates,
+  computeSessionAggregates,
   expectedCashFromAggregates,
-  listCashDrawerMovementsForSession,
   paymentMethodBreakdown,
   sessionExpectedCash,
-  sessionFinancialTotals,
 } from './cash-closures';
 import { getCurrencyFractionDigits } from '../countries';
 import { roundCurrencyCost } from '../services/supplies';
@@ -1265,38 +1263,54 @@ router.get('/insights', requirePermission('reports.view'), (req: Request, res: R
 //   opening_float_cents. Consumers must not compare them directly; X is the
 //   live drawer expectation, Z is the point-in-time snapshot that bakes in the
 //   float.
+function resolveRequestedCashSession(
+  db: ReturnType<typeof getDatabase>,
+  req: Request,
+  res: Response,
+): CashSessionRow | null | 'responded' {
+  if (req.query.session_id === undefined || String(req.query.session_id).trim() === '') {
+    return null;
+  }
+  const sessionId = Number(req.query.session_id);
+  if (!Number.isInteger(sessionId) || sessionId <= 0) {
+    res.status(400).json({ error: 'Invalid session_id', code: 'session_id_invalid' });
+    return 'responded';
+  }
+  const session = db
+    .prepare(
+      `SELECT id, opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by, closure_id
+       FROM cash_sessions WHERE id = ?`,
+    )
+    .get(sessionId) as CashSessionRow | undefined;
+  if (!session) {
+    res.status(404).json({ error: 'Shift not found', code: 'session_unavailable' });
+    return 'responded';
+  }
+  const actor = (req as AuthedRequest).user;
+  const actorRole = String(actor?.role || '');
+  const actorUserId = String(actor?.userId || '');
+  if (
+    actorRole !== 'owner' &&
+    actorRole !== 'manager' &&
+    String(session.opened_by) !== actorUserId
+  ) {
+    res.status(403).json({
+      error: "Only owners and managers can view another staff member's shift report",
+      code: 'shift_access_forbidden',
+    });
+    return 'responded';
+  }
+  return session;
+}
+
 router.get('/x-report', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
 
-    if (req.query.session_id !== undefined && String(req.query.session_id).trim() !== '') {
-      const sessionId = Number(req.query.session_id);
-      if (!Number.isInteger(sessionId) || sessionId <= 0) {
-        return res.status(400).json({ error: 'Invalid session_id', code: 'session_id_invalid' });
-      }
-      const session = db
-        .prepare(
-          `SELECT id, opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by, closure_id
-           FROM cash_sessions WHERE id = ?`,
-        )
-        .get(sessionId) as CashSessionRow | undefined;
-      if (!session) {
-        return res.status(404).json({ error: 'Shift not found', code: 'session_unavailable' });
-      }
-      const actor = (req as AuthedRequest).user;
-      const actorRole = String(actor?.role || '');
-      const actorUserId = String(actor?.userId || '');
-      if (
-        actorRole !== 'owner' &&
-        actorRole !== 'manager' &&
-        String(session.opened_by) !== actorUserId
-      ) {
-        return res.status(403).json({
-          error: "Only owners and managers can view another staff member's shift report",
-          code: 'shift_access_forbidden',
-        });
-      }
+    const session = resolveRequestedCashSession(db, req, res);
+    if (session === 'responded') return;
+    if (session) {
       const shiftDate = sessionBusinessDate(db, session);
       const sessionClosedRow =
         session.closure_id != null
@@ -1322,26 +1336,14 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
         opened_at: s.opened_at,
       }));
       const sessionEnd = session.closed_at || now();
-      const sessionMovements = listCashDrawerMovementsForSession(
-        db,
-        session.id,
-        session.opened_at,
-        sessionEnd,
-        false,
-      );
       const openingFloatCents = Number(session.opening_float_cents || 0);
-      const sessionAggregates = {
-        ...computePeriodAggregates(
-          db,
-          session.opened_at,
-          sessionEnd,
-          sessionMovements,
-          openingFloatCents,
-          session,
-        ),
-        ...sessionFinancialTotals(db, session, sessionEnd),
-      };
-      const totalExpectedCashCents = sessionExpectedCash(db, session, sessionEnd, sessionMovements);
+      const sessionAggregates = computeSessionAggregates(db, session, sessionEnd);
+      const totalExpectedCashCents = sessionExpectedCash(
+        db,
+        session,
+        sessionEnd,
+        sessionAggregates.cashMovements,
+      );
       return res.json({
         xReport: {
           businessDate: shiftDate,
@@ -1584,7 +1586,6 @@ router.get(
   requirePermission('reports.view'),
   async (req: Request, res: Response) => {
     try {
-      const date = reportDate(req.query.date, reportToday());
       const format =
         req.query.format === 'csv'
           ? 'csv'
@@ -1596,40 +1597,94 @@ router.get(
       if (!format) return res.status(400).json({ error: 'format must be xlsx, csv, or html' });
 
       const db = getDatabase();
+      const session = resolveRequestedCashSession(db, req, res);
+      if (session === 'responded') return;
+
       const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-      const [periodStart, periodEnd] = reportDayBounds(date);
-      const aggregates = computeDayAggregates(db, date);
-      const report: XReportExport = {
-        businessDate: date,
-        periodStart,
-        periodEnd,
-        grossSales: aggregates.grossCollectedCents / minorFactor,
-        refunds: aggregates.refundedCents / minorFactor,
-        netCollections: aggregates.netCollectedCents / minorFactor,
-        billCount: aggregates.billCount,
-        expectedCash: expectedCashFromAggregates(aggregates) / minorFactor,
-        openingFloat: aggregates.openingFloatCents / minorFactor,
-        payIn: aggregates.payInCents / minorFactor,
-        payOut: aggregates.payOutCents / minorFactor,
-        safeDrops: aggregates.safeDropCents / minorFactor,
-        paymentMethods: aggregates.paymentMethods.map((row) => ({
-          method: row.method,
-          count: row.count,
-          total: row.total_cents / minorFactor,
-        })),
-        staffSales: aggregates.staffSales.map((row) => ({
-          name: row.name,
-          role: row.role,
-          orderCount: row.orderCount,
-          revenue: row.revenue_cents / minorFactor,
-        })),
-        taxComponents: aggregates.taxComponents.map((comp) => ({
-          title: comp.title,
-          rate: comp.rate,
-          amount: comp.amount,
-        })),
-      };
-      const filename = `x-report-${date}.${format}`;
+      let report: XReportExport;
+      let filename: string;
+      if (session) {
+        const shiftDate = sessionBusinessDate(db, session);
+        const sessionEnd = session.closed_at || now();
+        const openingFloatCents = Number(session.opening_float_cents || 0);
+        const sessionAggregates = computeSessionAggregates(db, session, sessionEnd);
+        const totalExpectedCashCents = sessionExpectedCash(
+          db,
+          session,
+          sessionEnd,
+          sessionAggregates.cashMovements,
+        );
+        report = {
+          businessDate: shiftDate,
+          periodStart: session.opened_at,
+          periodEnd: sessionEnd,
+          grossSales: sessionAggregates.grossCollectedCents / minorFactor,
+          refunds: sessionAggregates.refundedCents / minorFactor,
+          netCollections: sessionAggregates.netCollectedCents / minorFactor,
+          billCount: sessionAggregates.billCount,
+          expectedCash: totalExpectedCashCents / minorFactor,
+          openingFloat: openingFloatCents / minorFactor,
+          payIn: sessionAggregates.payInCents / minorFactor,
+          payOut: sessionAggregates.payOutCents / minorFactor,
+          safeDrops: sessionAggregates.safeDropCents / minorFactor,
+          paymentMethods: sessionAggregates.paymentMethods.map((row) => ({
+            method: row.method,
+            count: row.count,
+            total: row.total_cents / minorFactor,
+          })),
+          staffSales: sessionAggregates.staffSales.map((row) => ({
+            name: row.name,
+            role: row.role,
+            orderCount: row.orderCount,
+            revenue: row.revenue_cents / minorFactor,
+          })),
+          taxComponents: sessionAggregates.taxComponents.map((comp) => ({
+            title: comp.title,
+            rate: comp.rate,
+            amount: comp.amount,
+          })),
+          session: {
+            id: session.id,
+            openedByName: session.opened_by_name || session.opened_by,
+          },
+        };
+        filename = `x-report-${shiftDate}-shift-${session.id}.${format}`;
+      } else {
+        const date = reportDate(req.query.date, reportToday());
+        const [periodStart, periodEnd] = reportDayBounds(date);
+        const aggregates = computeDayAggregates(db, date);
+        report = {
+          businessDate: date,
+          periodStart,
+          periodEnd,
+          grossSales: aggregates.grossCollectedCents / minorFactor,
+          refunds: aggregates.refundedCents / minorFactor,
+          netCollections: aggregates.netCollectedCents / minorFactor,
+          billCount: aggregates.billCount,
+          expectedCash: expectedCashFromAggregates(aggregates) / minorFactor,
+          openingFloat: aggregates.openingFloatCents / minorFactor,
+          payIn: aggregates.payInCents / minorFactor,
+          payOut: aggregates.payOutCents / minorFactor,
+          safeDrops: aggregates.safeDropCents / minorFactor,
+          paymentMethods: aggregates.paymentMethods.map((row) => ({
+            method: row.method,
+            count: row.count,
+            total: row.total_cents / minorFactor,
+          })),
+          staffSales: aggregates.staffSales.map((row) => ({
+            name: row.name,
+            role: row.role,
+            orderCount: row.orderCount,
+            revenue: row.revenue_cents / minorFactor,
+          })),
+          taxComponents: aggregates.taxComponents.map((comp) => ({
+            title: comp.title,
+            rate: comp.rate,
+            amount: comp.amount,
+          })),
+        };
+        filename = `x-report-${date}.${format}`;
+      }
       if (format === 'xlsx') {
         res.setHeader(
           'Content-Type',

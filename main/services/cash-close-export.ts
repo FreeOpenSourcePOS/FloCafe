@@ -45,7 +45,14 @@ interface CashCloseExportBase {
   taxComponents?: CashCloseTaxComponentExportRow[];
 }
 
-export type XReportExport = CashCloseExportBase;
+export interface CashCloseShiftExportMeta {
+  id: number;
+  openedByName: string;
+}
+
+export interface XReportExport extends CashCloseExportBase {
+  session?: CashCloseShiftExportMeta | null;
+}
 
 export interface ZReportExport extends CashCloseExportBase {
   zNumber: number;
@@ -148,7 +155,12 @@ function formatCountWithExact(count: number, resolved: Required<CashCloseHtmlOpt
   return `${escapeHtml(formatted)} <span class="exact-num">(${escapeHtml(exact)})</span>`;
 }
 
-function xReportMetrics(report: XReportExport): ReportMetric[] {
+function formatShiftScope(session: CashCloseShiftExportMeta): string {
+  const staffName = session.openedByName.trim();
+  return staffName ? `Shift #${session.id} - ${staffName}` : `Shift #${session.id}`;
+}
+
+function baseReportMetrics(report: CashCloseExportBase): ReportMetric[] {
   return [
     ['Business Date', report.businessDate],
     ['Period Start', report.periodStart],
@@ -165,9 +177,15 @@ function xReportMetrics(report: XReportExport): ReportMetric[] {
   ];
 }
 
+function xReportMetrics(report: XReportExport): ReportMetric[] {
+  const base = baseReportMetrics(report);
+  if (!report.session) return base;
+  return [base[0], ['Shift', formatShiftScope(report.session)], ...base.slice(1)];
+}
+
 function zReportMetrics(report: ZReportExport): ReportMetric[] {
   return [
-    ...xReportMetrics(report),
+    ...baseReportMetrics(report),
     ['Z Number', report.zNumber],
     ['Closed At', report.closedAt],
     ['Closed By', report.closedBy],
@@ -232,14 +250,17 @@ async function serializeXlsx(
 function serializeHtml(
   kind: 'x' | 'z',
   metrics: ReportMetric[],
-  report: CashCloseExportBase & Partial<ZReportExport>,
+  report: CashCloseExportBase & Partial<XReportExport> & Partial<ZReportExport>,
   options?: CashCloseHtmlOptions,
 ): string {
   const resolved = resolveHtmlOptions(options);
+  const shiftScopeText = kind === 'x' && report.session ? formatShiftScope(report.session) : null;
   const titleText =
     kind === 'z' && typeof report.zNumber === 'number'
       ? `Z Report #${report.zNumber} — ${report.businessDate}`
-      : `X Report — ${report.businessDate}`;
+      : shiftScopeText
+        ? `X Report (${shiftScopeText}) - ${report.businessDate}`
+        : `X Report — ${report.businessDate}`;
 
   const summaryRowsHtml = metrics
     .map(([metric, value]) => {
@@ -431,7 +452,11 @@ function serializeHtml(
     <h1 class="business-name" dir="auto">${escapeHtml(resolved.businessName)}</h1>
     <div class="report-title">${escapeHtml(titleText)}</div>
     <p class="report-meta">
-      Business Date: <strong>${escapeHtml(report.businessDate)}</strong>
+      Business Date: <strong>${escapeHtml(report.businessDate)}</strong>${
+        shiftScopeText
+          ? `\n      &middot; Shift: <strong>${escapeHtml(shiftScopeText)}</strong>`
+          : ''
+      }
       &middot; Period: <strong>${escapeHtml(report.periodStart)}</strong> to <strong>${escapeHtml(report.periodEnd)}</strong>
       &middot; Currency: <strong>${escapeHtml(resolved.currency)}</strong>
     </p>

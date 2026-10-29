@@ -59,10 +59,19 @@ import {
 } from '../services/cash-drawer-movements';
 // Type-only: erased at compile, so this adds no runtime require cycle.
 import type { AuthedRequest } from './cash-sessions';
+import Decimal from 'decimal.js';
 import { getCurrencyMinorUnitFactor } from '../countries';
-import { getOrdersWithItemsForBills } from './bills';
+import {
+  allocateSignedMinorUnits,
+  getOrdersWithItemsForBills,
+  reconcileSnapshotAllocations,
+} from './bills';
 import { getHttpRequestSignal } from '../shutdown';
-import { DisplayTaxComponent, aggregateTaxComponents } from '../services/tax-components';
+import {
+  DisplayTaxComponent,
+  aggregateTaxComponents,
+  resolveTaxComponents,
+} from '../services/tax-components';
 import {
   Z_REPORT_LANGUAGE_POLICY_KEY,
   parseStoredLanguagePolicy,
@@ -781,6 +790,95 @@ export function sessionFinancialTotals(
   };
 }
 
+function roundComponentsToMinorUnits(
+  components: DisplayTaxComponent[],
+  minorFactor: number,
+): { compMinors: number[]; totalMinor: number } {
+  const exactMinors = components.map((comp) => new Decimal(comp.amount).times(minorFactor));
+  if (exactMinors.every((m) => m.isInteger())) {
+    const compMinors = exactMinors.map((m) => m.toNumber());
+    return {
+      compMinors,
+      totalMinor: compMinors.reduce((sum, minor) => sum + minor, 0),
+    };
+  }
+  const totalExact = exactMinors.reduce((sum, m) => sum.plus(m), new Decimal(0));
+  const totalMinor = totalExact.toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber();
+  const compMinors = exactMinors.map((m) =>
+    m.isNegative() ? m.ceil().toNumber() : m.floor().toNumber(),
+  );
+  const delta = totalMinor - compMinors.reduce((sum, minor) => sum + minor, 0);
+  if (delta !== 0 && compMinors.length > 0) {
+    const sign = delta > 0 ? 1 : -1;
+    const ranked = exactMinors
+      .map((m, index) => ({
+        index,
+        remainder:
+          sign > 0
+            ? m.minus(compMinors[index]).toNumber()
+            : new Decimal(compMinors[index]).minus(m).toNumber(),
+      }))
+      .sort((a, b) =>
+        Math.abs(b.remainder - a.remainder) > 1e-9 ? b.remainder - a.remainder : a.index - b.index,
+      );
+    for (let i = 0; i < Math.abs(delta); i++) {
+      compMinors[ranked[i % ranked.length].index] += sign;
+    }
+  }
+  return { compMinors, totalMinor };
+}
+
+function mergeSessionTaxComponents(lists: DisplayTaxComponent[][]): DisplayTaxComponent[] {
+  const merged = new Map<string, { title: string; rate: number | null; amount: Decimal }>();
+  for (const list of lists) {
+    for (const comp of list) {
+      const rateKey = comp.rate === null ? '' : new Decimal(comp.rate).toString();
+      const key = `${comp.title}\u0000${rateKey}`;
+      const current = merged.get(key);
+      if (current) {
+        current.amount = current.amount.plus(comp.amount);
+      } else {
+        merged.set(key, {
+          title: comp.title,
+          rate: comp.rate === null ? null : new Decimal(comp.rate).toNumber(),
+          amount: new Decimal(comp.amount),
+        });
+      }
+    }
+  }
+  return Array.from(merged.values()).map((entry) => ({
+    title: entry.title,
+    rate: entry.rate,
+    amount: entry.amount.toDecimalPlaces(6).toNumber(),
+  }));
+}
+
+export function computeSessionAggregates(
+  db: ReturnType<typeof getDatabase>,
+  session: { id: number; opened_at: string; opening_float_cents: number },
+  end: string,
+): DayAggregates {
+  const sessionMovements = listCashDrawerMovementsForSession(
+    db,
+    session.id,
+    session.opened_at,
+    end,
+    false,
+  );
+  const openingFloatCents = Number(session.opening_float_cents || 0);
+  return {
+    ...computePeriodAggregates(
+      db,
+      session.opened_at,
+      end,
+      sessionMovements,
+      openingFloatCents,
+      session,
+    ),
+    ...sessionFinancialTotals(db, session, end),
+  };
+}
+
 /**
  * Window-based aggregation shared by day close and session close (#279).
  * Same queries as the day pipeline, parameterized by raw timestamp window
@@ -977,7 +1075,115 @@ export function computePeriodAggregates(
     tax_breakdown: bill.tax_breakdown,
     items: orders.get(Number(bill.id))?.items || [],
   }));
-  const taxComponents = aggregateTaxComponents(taxDocuments);
+  let taxComponents: DisplayTaxComponent[];
+  if (!session) {
+    taxComponents = aggregateTaxComponents(taxDocuments);
+  } else {
+    const billPaymentLinesStmt = db.prepare(
+      `
+      WITH lines AS (
+        SELECT
+          CAST(je.key AS INTEGER) AS line_index,
+          json_extract(je.value, '$.amount') AS raw_amount,
+          json_extract(je.value, '$.cash_session_id') AS raw_session_id,
+          COALESCE(
+            datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+            datetime(NULLIF(b.paid_at, '')),
+            datetime(NULLIF(b.created_at, ''))
+          ) AS line_time
+        FROM bills b
+        JOIN json_each(CASE
+          WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
+          WHEN json_valid(b.payment_details) THEN json_array(b.payment_details)
+          ELSE '[]'
+        END) je
+        WHERE b.id = ? AND json_type(je.value) = 'object'
+      )
+      SELECT
+        raw_amount,
+        CASE
+          WHEN raw_session_id IS NOT NULL THEN CAST(raw_session_id AS INTEGER)
+          WHEN line_time >= datetime(?) AND line_time < datetime(?) THEN ?
+          ELSE COALESCE(
+            (
+              SELECT cs.id
+              FROM cash_sessions cs
+              WHERE cs.id != ?
+                AND line_time >= datetime(cs.opened_at)
+                AND (cs.closed_at IS NULL OR line_time < datetime(cs.closed_at))
+              ORDER BY cs.opened_at DESC, cs.id DESC
+              LIMIT 1
+            ),
+            ?
+          )
+        END AS resolved_session_id
+      FROM lines
+      ORDER BY line_index ASC
+    `,
+    );
+    const perBillComponents = bills.map((bill, billIndex) => {
+      const doc = taxDocuments[billIndex];
+      const paymentLines = billPaymentLinesStmt.all(
+        bill.id,
+        session.opened_at,
+        end,
+        session.id,
+        session.id,
+        NO_CASH_SESSION_ID,
+      ) as Array<{ raw_amount: unknown; resolved_session_id: number }>;
+
+      const buckets = new Map<number, number>();
+      for (const line of paymentLines) {
+        let amountMinor = 0;
+        if (typeof line.raw_amount === 'number' || typeof line.raw_amount === 'string') {
+          try {
+            const dec = new Decimal(line.raw_amount);
+            if (dec.isFinite() && dec.gt(0)) {
+              amountMinor = dec
+                .times(minorFactor)
+                .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+                .toNumber();
+            }
+          } catch {
+            amountMinor = 0;
+          }
+        }
+        const sessionKey = Number(line.resolved_session_id);
+        buckets.set(sessionKey, (buckets.get(sessionKey) ?? 0) + amountMinor);
+      }
+
+      if (!buckets.has(session.id)) return [];
+      if (buckets.size === 1) return resolveTaxComponents(doc);
+
+      const docComponents = resolveTaxComponents(doc);
+      if (docComponents.length === 0) return [];
+
+      const sessionIds = Array.from(buckets.keys());
+      const weights = Array.from(buckets.values());
+      const sessionIndex = sessionIds.indexOf(session.id);
+      const { compMinors, totalMinor } = roundComponentsToMinorUnits(docComponents, minorFactor);
+      const entries = compMinors.map((minor) => ({
+        allocations: allocateSignedMinorUnits(minor, weights),
+      }));
+      if (entries.length > 1) {
+        const targetSessionMinors = allocateSignedMinorUnits(totalMinor, weights);
+        reconcileSnapshotAllocations(entries, targetSessionMinors);
+      }
+
+      const allocated: DisplayTaxComponent[] = [];
+      for (let i = 0; i < docComponents.length; i++) {
+        const minorShare = entries[i].allocations[sessionIndex];
+        if (minorShare === 0 && compMinors[i] !== 0) continue;
+        allocated.push({
+          title: docComponents[i].title,
+          rate: docComponents[i].rate,
+          amount: new Decimal(minorShare).dividedBy(minorFactor).toDecimalPlaces(6).toNumber(),
+        });
+      }
+      return allocated;
+    });
+    taxComponents = mergeSessionTaxComponents(perBillComponents);
+  }
 
   const grossCollectedCents = Math.round(Number(billRow.gross_collected || 0) * minorFactor);
   const refundedCents = Number(refundRow.refunded_cents || 0);

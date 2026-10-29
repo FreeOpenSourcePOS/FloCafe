@@ -1488,6 +1488,493 @@ async function run(): Promise<void> {
       );
     }
 
+    // ── Session-scoped X-report export (CSV, XLSX, HTML/PDF) + useCashClose hook regression ──
+    {
+      const shiftExportDate = '2026-09-28';
+      const shift1OpenAt = '2026-09-28 08:00:00';
+      const shift2OpenAt = '2026-09-28 09:00:00';
+      const shiftSaleAt = '2026-09-28 10:30:00';
+
+      const s1Insert = db
+        .prepare(
+          `INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
+           VALUES (?, ?, ?, ?, 'open')`,
+        )
+        .run('cashier-reports-export', 'Cashier User', shift1OpenAt, 10000);
+      const shift1Id = Number(s1Insert.lastInsertRowid);
+
+      const s2Insert = db
+        .prepare(
+          `INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
+           VALUES (?, ?, ?, ?, 'open')`,
+        )
+        .run(owner.userId, '=Formula Staff', shift2OpenAt, 20000);
+      const shift2Id = Number(s2Insert.lastInsertRowid);
+
+      db.prepare(
+        `INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at)
+         VALUES (?, 'opening_float', 30000, 'Day float', ?, ?)`,
+      ).run(shiftExportDate, owner.userId, shift1OpenAt);
+      db.prepare(
+        `INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, cash_session_id, created_at)
+         VALUES (?, 'pay_in', 2500, 'Shift 1 change', 'cashier-reports-export', ?, ?)`,
+      ).run(shiftExportDate, shift1Id, shiftSaleAt);
+
+      // Bill S1: 150 subtotal + 15 VAT (10%) = 165 paid in Shift 1 (cash)
+      const ordS1 = db
+        .prepare(
+          `INSERT INTO orders (order_number, user_id, type, status, subtotal, tax_amount, total, created_at, updated_at, completed_at)
+           VALUES ('ORD-SHIFT-EXP-1', 'cashier-reports-export', 'takeaway', 'completed', 150, 15, 165, ?, ?, ?)`,
+        )
+        .run(shiftSaleAt, shiftSaleAt, shiftSaleAt);
+      const ordS1Id = Number(ordS1.lastInsertRowid);
+      const s1TaxSnap = JSON.stringify({
+        lines: [
+          { taxableBase: 150, components: [{ label: 'VAT <Standard>', rate: 10, amount: 15 }] },
+        ],
+      });
+      db.prepare(
+        `INSERT INTO order_items (
+           order_id, product_id, product_name, product_sku, quantity, unit_price, subtotal, tax_amount, total,
+           tax_snapshot, ingredient_cost, ingredient_cost_known, status, created_at, updated_at
+         ) VALUES (?, 'prod-rep-1', 'Shift 1 Item', 'SKU-S1', 1, 150, 150, 15, 165, ?, 40, 1, 'ready', ?, ?)`,
+      ).run(ordS1Id, s1TaxSnap, shiftSaleAt, shiftSaleAt);
+      db.prepare(
+        `INSERT INTO bills (
+           bill_number, order_id, subtotal, tax_amount, tax_snapshot, total, paid_amount, balance,
+           payment_status, payment_details, paid_at, created_at, updated_at
+         ) VALUES ('B-SHIFT-EXP-1', ?, 150, 15, ?, 165, 165, 0, 'paid', ?, ?, ?, ?)`,
+      ).run(
+        ordS1Id,
+        s1TaxSnap,
+        JSON.stringify([
+          { method: 'cash', amount: 165, timestamp: shiftSaleAt, cash_session_id: shift1Id },
+        ]),
+        shiftSaleAt,
+        shiftSaleAt,
+        shiftSaleAt,
+      );
+
+      // Bill S2: 200 subtotal + 20 VAT (10%) = 220 split 55 (Shift 1 cash) + 165 (Shift 2 card)
+      const ordS2 = db
+        .prepare(
+          `INSERT INTO orders (order_number, user_id, type, status, subtotal, tax_amount, total, created_at, updated_at, completed_at)
+           VALUES ('ORD-SHIFT-EXP-2', ?, 'takeaway', 'completed', 200, 20, 220, ?, ?, ?)`,
+        )
+        .run(owner.userId, shiftSaleAt, shiftSaleAt, shiftSaleAt);
+      const ordS2Id = Number(ordS2.lastInsertRowid);
+      const s2TaxSnap = JSON.stringify({
+        lines: [
+          { taxableBase: 200, components: [{ label: 'VAT <Standard>', rate: 10, amount: 20 }] },
+        ],
+      });
+      db.prepare(
+        `INSERT INTO order_items (
+           order_id, product_id, product_name, product_sku, quantity, unit_price, subtotal, tax_amount, total,
+           tax_snapshot, ingredient_cost, ingredient_cost_known, status, created_at, updated_at
+         ) VALUES (?, 'prod-rep-2', 'Shift Split Item', 'SKU-S2', 1, 200, 200, 20, 220, ?, 50, 1, 'ready', ?, ?)`,
+      ).run(ordS2Id, s2TaxSnap, shiftSaleAt, shiftSaleAt);
+      db.prepare(
+        `INSERT INTO bills (
+           bill_number, order_id, subtotal, tax_amount, tax_snapshot, total, paid_amount, balance,
+           payment_status, payment_details, paid_at, created_at, updated_at
+         ) VALUES ('B-SHIFT-EXP-2', ?, 200, 20, ?, 220, 220, 0, 'paid', ?, ?, ?, ?)`,
+      ).run(
+        ordS2Id,
+        s2TaxSnap,
+        JSON.stringify([
+          { method: 'cash', amount: 55, timestamp: shiftSaleAt, cash_session_id: shift1Id },
+          { method: 'card', amount: 165, timestamp: shiftSaleAt, cash_session_id: shift2Id },
+        ]),
+        shiftSaleAt,
+        shiftSaleAt,
+        shiftSaleAt,
+      );
+
+      // Permission & validation checks on GET /api/reports/x-report/export?session_id=...
+      const badShiftIdRes = await http
+        .get(`/api/reports/x-report/export?date=${shiftExportDate}&format=csv&session_id=bad`)
+        .set(auth);
+      assert.equal(badShiftIdRes.status, 400);
+      assert.equal(badShiftIdRes.body.code, 'session_id_invalid');
+
+      const missingShiftIdRes = await http
+        .get(`/api/reports/x-report/export?date=${shiftExportDate}&format=csv&session_id=999999`)
+        .set(auth);
+      assert.equal(missingShiftIdRes.status, 404);
+      assert.equal(missingShiftIdRes.body.code, 'session_unavailable');
+
+      db.prepare(
+        `INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, updated_at)
+         VALUES ('cashier-reports-export', 'reports.view', 'allow', ?, ?)
+         ON CONFLICT(user_id, permission_id) DO UPDATE SET effect = 'allow', updated_at = excluded.updated_at`,
+      ).run(owner.userId, shiftSaleAt);
+      const cashierAuth = { Authorization: `Bearer ${cashier.token}` };
+
+      const cashierCrossShift = await http
+        .get(
+          `/api/reports/x-report/export?date=${shiftExportDate}&format=csv&session_id=${shift2Id}`,
+        )
+        .set(cashierAuth);
+      assert.equal(
+        cashierCrossShift.status,
+        403,
+        'cashier with reports.view cannot export another staff shift',
+      );
+      assert.equal(cashierCrossShift.body.code, 'shift_access_forbidden');
+
+      const shift1Csv = await http
+        .get(
+          `/api/reports/x-report/export?date=${shiftExportDate}&format=csv&session_id=${shift1Id}`,
+        )
+        .set(cashierAuth);
+      assert.equal(shift1Csv.status, 200, 'cashier exports own shift X report CSV');
+      assert.ok(
+        shift1Csv.headers['content-disposition'].includes(
+          `filename="x-report-${shiftExportDate}-shift-${shift1Id}.csv"`,
+        ),
+        'shift CSV filename includes shift identity',
+      );
+      assert.ok(
+        shift1Csv.text.includes(`summary,Shift,,,,Shift #${shift1Id} - Cashier User\n`),
+        'shift CSV includes Shift summary row',
+      );
+      assert.ok(shift1Csv.text.includes('summary,Gross Sales,,,,220\n'));
+      assert.ok(shift1Csv.text.includes('summary,Expected Cash in Drawer,,,,345\n'));
+      assert.ok(shift1Csv.text.includes('summary,Opening Float,,,,100\n'));
+      assert.ok(shift1Csv.text.includes('summary,Pay-in Total,,,,25\n'));
+      assert.ok(!shift1Csv.text.includes('summary,Gross Sales,,,,385\n'));
+
+      db.prepare(
+        `DELETE FROM user_permission_overrides WHERE user_id = 'cashier-reports-export' AND permission_id = 'reports.view'`,
+      ).run();
+
+      const shift1Xlsx = await http
+        .get(
+          `/api/reports/x-report/export?date=${shiftExportDate}&format=xlsx&session_id=${shift1Id}`,
+        )
+        .set(auth)
+        .buffer(true)
+        .parse(parseBuffer);
+      assert.equal(shift1Xlsx.status, 200, 'owner exports Shift 1 XLSX');
+      assert.ok(
+        shift1Xlsx.headers['content-disposition'].includes(
+          `filename="x-report-${shiftExportDate}-shift-${shift1Id}.xlsx"`,
+        ),
+        'shift XLSX filename includes shift identity',
+      );
+      const shift1Wb = new ExcelJS.Workbook();
+      await shift1Wb.xlsx.load(shift1Xlsx.body);
+      const shift1Metrics = new Map<string, unknown>();
+      shift1Wb.getWorksheet('Summary').eachRow((row: any, rowNumber: number) => {
+        if (rowNumber > 1) shift1Metrics.set(String(row.getCell(1).value), row.getCell(2).value);
+      });
+      assert.equal(shift1Metrics.get('Shift'), `Shift #${shift1Id} - Cashier User`);
+      assert.equal(shift1Metrics.get('Gross Sales'), 220);
+      assert.equal(shift1Metrics.get('Expected Cash in Drawer'), 345);
+      assert.equal(shift1Metrics.get('Opening Float'), 100);
+      assert.equal(shift1Metrics.get('Pay-in Total'), 25);
+      assert.equal(shift1Metrics.get('Bill Count'), 2);
+
+      const shift1Html = await http
+        .get(
+          `/api/reports/x-report/export?date=${shiftExportDate}&format=html&session_id=${shift1Id}`,
+        )
+        .set(auth);
+      assert.equal(shift1Html.status, 200, 'owner exports Shift 1 HTML');
+      assert.ok(
+        shift1Html.headers['content-disposition'].includes(
+          `filename="x-report-${shiftExportDate}-shift-${shift1Id}.html"`,
+        ),
+        'shift HTML filename includes shift identity',
+      );
+      const shiftLabel = `Shift #${shift1Id} - Cashier User`;
+      assert.ok(
+        shift1Html.text.includes(`X Report (${shiftLabel}) - ${shiftExportDate}`),
+        'shift HTML title displays shift identity',
+      );
+      assert.ok(
+        shift1Html.text.includes(`Shift: <strong>${shiftLabel}</strong>`),
+        'shift HTML meta header displays shift identity',
+      );
+      assert.ok(
+        shift1Html.text.includes(
+          'data-section="tax" data-title="VAT &lt;Standard&gt;" data-rate="10" data-amount="20"',
+        ),
+        'shift HTML tax breakdown displays proportional Shift 1 tax (15 + 5 = 20, not 35)',
+      );
+      const shift1HtmlMetrics = parseHtmlSummaryMetrics(shift1Html.text);
+      for (const [metric, xlsxVal] of shift1Metrics.entries()) {
+        assert.equal(
+          shift1HtmlMetrics.get(metric),
+          xlsxVal === null || xlsxVal === undefined ? '' : String(xlsxVal),
+          `shift HTML metric ${metric} matches shift XLSX`,
+        );
+      }
+
+      // Unscoped whole-day export on the same date preserves whole-day figures and filename
+      const unscopedDay4Csv = await http
+        .get(`/api/reports/x-report/export?date=${shiftExportDate}&format=csv`)
+        .set(auth);
+      assert.equal(unscopedDay4Csv.status, 200);
+      assert.ok(
+        unscopedDay4Csv.headers['content-disposition'].includes(
+          `filename="x-report-${shiftExportDate}.csv"`,
+        ),
+      );
+      assert.ok(!unscopedDay4Csv.text.includes('summary,Shift,'));
+      assert.ok(unscopedDay4Csv.text.includes('summary,Gross Sales,,,,385\n'));
+
+      // Render Shift 1 HTML to PDF via save-html-as-pdf IPC
+      const shift1PdfPath = path.join(testDir, `x-report-${shiftExportDate}-shift-${shift1Id}.pdf`);
+      saveDialogResult = { canceled: false, filePath: shift1PdfPath };
+      const shift1PdfSave = await saveHtmlAsPdfIpc!(trustedSender, {
+        html: shift1Html.text,
+        defaultFileName: `x-report-${shiftExportDate}-shift-${shift1Id}.pdf`,
+        pageSize: 'A4',
+      });
+      assert.deepEqual(shift1PdfSave, { success: true, path: shift1PdfPath });
+      const shift1PdfBuffer = fs.readFileSync(shift1PdfPath);
+      if (isRealElectronRuntime) {
+        const shift1PdfInfo = extractPdfInfo(shift1PdfBuffer);
+        assert.ok(
+          pdfTextIncludesToken(shift1PdfInfo, `X Report (${shiftLabel}) - ${shiftExportDate}`),
+          'real Shift 1 PDF renders shift-scoped title',
+        );
+        assert.ok(
+          pdfTextIncludesToken(shift1PdfInfo, '₹220.00'),
+          'real Shift 1 PDF renders Shift 1 gross sales',
+        );
+        const shift1Layout = await verifyHtmlLayout(shift1Html.text, 'portrait', 'x-report-shift');
+        assert.ok(
+          shift1Layout.scrollWidth <= shift1Layout.clientWidth &&
+            shift1Layout.overflowingCells === 0,
+          `Shift 1 X report PDF layout has no horizontal clipping or overflow (${JSON.stringify(shift1Layout)})`,
+        );
+      } else {
+        // Direct frontend useCashClose hook verification (selectedSessionId null vs selected)
+        const hookStates: unknown[] = [];
+        let hookStateCursor = 0;
+        const capturedApiGets: Array<{ url: string; params: Record<string, unknown> }> = [];
+        const capturedDownloads: Array<{ filename: string; text: string }> = [];
+        const capturedPdfExports: Array<{
+          endpoint: string;
+          params?: Record<string, unknown>;
+          filename: string;
+        }> = [];
+
+        class StubPopupBlockedError extends Error {}
+        const priorLoad = Module._load;
+        Module._load = function (reqName: string, parentMod: unknown, isMainMod: boolean) {
+          if (reqName === 'react') {
+            return {
+              useState: <T>(initial: T) => {
+                const idx = hookStateCursor++;
+                if (!(idx in hookStates)) {
+                  hookStates[idx] =
+                    typeof initial === 'function' ? (initial as () => T)() : initial;
+                }
+                const setter = (next: T | ((prev: T) => T)) => {
+                  hookStates[idx] =
+                    typeof next === 'function'
+                      ? (next as (prev: T) => T)(hookStates[idx] as T)
+                      : next;
+                };
+                return [hookStates[idx] as T, setter] as const;
+              },
+              useEffect: () => undefined,
+              useCallback: <T extends (...args: any[]) => any>(fn: T) => fn,
+            };
+          }
+          if (reqName === '@/store/auth') {
+            return {
+              useAuthStore: () => ({
+                currentTenant: {
+                  currency: 'INR',
+                  timezone: 'UTC',
+                  business_day_start_time: '00:00',
+                  country: 'IN',
+                  permission_ids: [],
+                },
+              }),
+            };
+          }
+          if (reqName === '@/lib/api') {
+            return {
+              __esModule: true,
+              default: {
+                get: async (url: string, config?: { params?: Record<string, unknown> }) => {
+                  const params = config?.params ?? {};
+                  capturedApiGets.push({ url, params });
+                  const qs = new URLSearchParams();
+                  for (const [k, v] of Object.entries(params)) {
+                    if (v !== undefined && v !== null) qs.set(k, String(v));
+                  }
+                  const apiRes = await http
+                    .get(`/api${url}?${qs.toString()}`)
+                    .set(auth)
+                    .buffer(true)
+                    .parse(parseBuffer);
+                  assert.equal(apiRes.status, 200, `useCashClose api.get ${url} succeeds`);
+                  return { data: new Blob([apiRes.body]) };
+                },
+                post: async () => ({ data: {} }),
+              },
+            };
+          }
+          if (reqName === 'use-intl') {
+            return {
+              useLocale: () => 'en',
+              useTranslations: () => (key: string) => key,
+            };
+          }
+          if (reqName === 'react-hot-toast') {
+            return {
+              __esModule: true,
+              default: {
+                success: () => undefined,
+                error: (msg: string) => {
+                  throw new Error(`Unexpected toast.error in useCashClose: ${msg}`);
+                },
+              },
+            };
+          }
+          if (reqName === '@/hooks/useFormatCurrency') {
+            return { useFormatCurrency: () => (n: number) => String(n) };
+          }
+          if (reqName === '@/hooks/useCurrencyUnitAdapter') {
+            return {
+              useCurrencyUnitAdapter: () => ({
+                toDisplay: (n: number) => n,
+                fromDisplay: (n: number) => n,
+                maxDecimals: 2,
+              }),
+            };
+          }
+          if (reqName === '@/lib/countries') {
+            return { getCurrencyMinorUnitFactor: () => 100 };
+          }
+          if (reqName === '@/lib/printer/PrinterService') {
+            return { printerService: { printZReport: async () => undefined } };
+          }
+          if (reqName === '@/lib/money') {
+            return { displayAmountToCents: (v: string) => Math.round(Number(v || 0) * 100) };
+          }
+          if (reqName === '@shared/business-date') {
+            return { businessDateForInstant: () => shiftExportDate };
+          }
+          if (reqName === '@/lib/download') {
+            return {
+              downloadBlob: (blob: Blob, filename: string) => {
+                capturedDownloads.push({ filename, text: '' });
+                void blob.text().then((t) => {
+                  capturedDownloads[capturedDownloads.length - 1].text = t;
+                });
+              },
+            };
+          }
+          if (reqName === '@/lib/export-pdf') {
+            return {
+              MenuPopupBlockedError: StubPopupBlockedError,
+              exportReportAsPdf: async (opts: {
+                endpoint: string;
+                params?: Record<string, unknown>;
+                filename: string;
+              }) => {
+                capturedPdfExports.push(opts);
+              },
+            };
+          }
+          if (reqName === '@/lib/whatsapp-share') {
+            return { shareCashCloseViaWhatsApp: async () => ({ mode: 'sent' }) };
+          }
+          return priorLoad.call(this, reqName, parentMod, isMainMod);
+        };
+
+        try {
+          const hookModulePath = require.resolve('../frontend/src/hooks/useCashClose');
+          delete require.cache[hookModulePath];
+          const { useCashClose } = require('../frontend/src/hooks/useCashClose') as {
+            useCashClose: () => {
+              businessDate: string;
+              selectedSessionId: number | null;
+              setSelectedSessionId: (id: number | null) => void;
+              exportReport: (report: 'x' | 'z', format: 'csv' | 'xlsx' | 'pdf') => Promise<void>;
+            };
+          };
+          const renderUseCashClose = () => {
+            hookStateCursor = 0;
+            return useCashClose();
+          };
+
+          // 1) All shifts (selectedSessionId === null) -> whole-day params & filename
+          let model = renderUseCashClose();
+          assert.equal(model.selectedSessionId, null);
+          await model.exportReport('x', 'csv');
+          await model.exportReport('x', 'xlsx');
+          await model.exportReport('x', 'pdf');
+          await new Promise((resolve) => setTimeout(resolve, 10));
+
+          assert.deepEqual(capturedApiGets[0], {
+            url: '/reports/x-report/export',
+            params: { date: shiftExportDate, format: 'csv' },
+          });
+          assert.deepEqual(capturedApiGets[1], {
+            url: '/reports/x-report/export',
+            params: { date: shiftExportDate, format: 'xlsx' },
+          });
+          assert.equal(capturedDownloads[0].filename, `x-report-${shiftExportDate}.csv`);
+          assert.ok(capturedDownloads[0].text.includes('summary,Gross Sales,,,,385\n'));
+          assert.equal(capturedDownloads[1].filename, `x-report-${shiftExportDate}.xlsx`);
+          assert.deepEqual(capturedPdfExports[0], {
+            endpoint: '/reports/x-report/export',
+            params: { date: shiftExportDate },
+            filename: `x-report-${shiftExportDate}.pdf`,
+          });
+
+          // 2) Specific staff shift selected -> passes session_id and shift-scoped filename across csv, xlsx, pdf
+          model.setSelectedSessionId(shift1Id);
+          model = renderUseCashClose();
+          assert.equal(model.selectedSessionId, shift1Id);
+
+          await model.exportReport('x', 'csv');
+          await model.exportReport('x', 'xlsx');
+          await model.exportReport('x', 'pdf');
+          await new Promise((resolve) => setTimeout(resolve, 10));
+
+          assert.deepEqual(capturedApiGets[2], {
+            url: '/reports/x-report/export',
+            params: { date: shiftExportDate, session_id: shift1Id, format: 'csv' },
+          });
+          assert.deepEqual(capturedApiGets[3], {
+            url: '/reports/x-report/export',
+            params: { date: shiftExportDate, session_id: shift1Id, format: 'xlsx' },
+          });
+          assert.equal(
+            capturedDownloads[2].filename,
+            `x-report-${shiftExportDate}-shift-${shift1Id}.csv`,
+          );
+          assert.ok(
+            capturedDownloads[2].text.includes(
+              `summary,Shift,,,,Shift #${shift1Id} - Cashier User\n`,
+            ),
+          );
+          assert.ok(capturedDownloads[2].text.includes('summary,Gross Sales,,,,220\n'));
+          assert.equal(
+            capturedDownloads[3].filename,
+            `x-report-${shiftExportDate}-shift-${shift1Id}.xlsx`,
+          );
+          assert.deepEqual(capturedPdfExports[1], {
+            endpoint: '/reports/x-report/export',
+            params: { date: shiftExportDate, session_id: shift1Id },
+            filename: `x-report-${shiftExportDate}-shift-${shift1Id}.pdf`,
+          });
+        } finally {
+          Module._load = priorLoad;
+        }
+      }
+    }
+
     if (
       !isRealElectronRuntime &&
       typeof rawElectron === 'string' &&

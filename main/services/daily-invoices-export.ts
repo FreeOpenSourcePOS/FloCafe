@@ -30,6 +30,7 @@ import {
   type DailySalesExportQueryInput,
 } from './daily-sales-export';
 import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
+import { receiptChargeLines } from '../../shared/charges';
 
 export const DAILY_INVOICES_EXPORT_MAX_RANGE_DAYS = 366;
 export const MAX_DAILY_INVOICES_COUNT = 5000;
@@ -118,6 +119,7 @@ export type DailyInvoiceCard = {
   service_charge: number;
   packaging_charge: number;
   delivery_charge: number;
+  charges_breakdown: string | null;
   tax_amount: number;
   tax_components: DisplayTaxComponent[];
   tip_amount: number;
@@ -599,6 +601,7 @@ export function buildDailyInvoicesExportDataset(
     delivery_charge: number;
     packaging_charge: number;
     service_charge: number;
+    charges_breakdown: string | null;
     round_off: number;
     total: number;
     paid_amount: number;
@@ -632,6 +635,7 @@ export function buildDailyInvoicesExportDataset(
         COALESCE(b.delivery_charge, 0) AS delivery_charge,
         COALESCE(b.packaging_charge, 0) AS packaging_charge,
         COALESCE(b.service_charge, 0) AS service_charge,
+        COALESCE(b.charges_breakdown, o.charges_breakdown) AS charges_breakdown,
         COALESCE(b.round_off, 0) AS round_off,
         COALESCE(b.total, 0) AS total,
         COALESCE(b.paid_amount, 0) AS paid_amount,
@@ -944,6 +948,7 @@ export function buildDailyInvoicesExportDataset(
       service_charge: Number(bill.service_charge || 0),
       packaging_charge: Number(bill.packaging_charge || 0),
       delivery_charge: Number(bill.delivery_charge || 0),
+      charges_breakdown: bill.charges_breakdown ? String(bill.charges_breakdown) : null,
       tax_amount: Number(bill.tax_amount || 0),
       tax_components: taxComponents,
       tip_amount: tipAmount,
@@ -1220,6 +1225,33 @@ export function serializeDailyInvoicesExportHtml(
               })
               .join('\n');
 
+            const itemisedCharges = receiptChargeLines(inv.charges_breakdown);
+            const itemisedIds = new Set(itemisedCharges.map((charge) => charge.id));
+            const chargeLines: string[] = [];
+            if (inv.service_charge > 0 && !itemisedIds.has('service_charge')) {
+              chargeLines.push(
+                `<div class="totals-line"><span>Service Charge</span><span class="mono">${escapeHtml(fmtMoney(inv.service_charge))}</span></div>`,
+              );
+            }
+            if (inv.packaging_charge > 0 && !itemisedIds.has('packaging_charge')) {
+              chargeLines.push(
+                `<div class="totals-line"><span>Packaging Charge</span><span class="mono">${escapeHtml(fmtMoney(inv.packaging_charge))}</span></div>`,
+              );
+            }
+            if (inv.delivery_charge > 0 && !itemisedIds.has('delivery_charge')) {
+              chargeLines.push(
+                `<div class="totals-line"><span>Delivery Charge</span><span class="mono">${escapeHtml(fmtMoney(inv.delivery_charge))}</span></div>`,
+              );
+            }
+            for (const charge of itemisedCharges) {
+              const label = (charge as any).label || charge.name || charge.id;
+              chargeLines.push(
+                `<div class="totals-line"><span>${escapeHtml(label)}</span><span class="mono">${escapeHtml(fmtMoney(charge.amount))}</span></div>`,
+              );
+            }
+            const chargesHtml =
+              chargeLines.length > 0 ? chargeLines.join('\n                  ') : '';
+
             const taxComponentLines =
               inv.tax_components.length > 0
                 ? inv.tax_components
@@ -1328,9 +1360,7 @@ export function serializeDailyInvoicesExportHtml(
                 <div class="invoice-totals">
                   <div class="totals-line"><span>Subtotal</span><span class="mono">${escapeHtml(fmtMoney(inv.subtotal))}</span></div>
                   ${inv.discount_amount > 0 ? `<div class="totals-line"><span>Discount</span><span class="mono">-${escapeHtml(fmtMoney(inv.discount_amount))}</span></div>` : ''}
-                  ${inv.service_charge > 0 ? `<div class="totals-line"><span>Service Charge</span><span class="mono">${escapeHtml(fmtMoney(inv.service_charge))}</span></div>` : ''}
-                  ${inv.packaging_charge > 0 ? `<div class="totals-line"><span>Packaging Charge</span><span class="mono">${escapeHtml(fmtMoney(inv.packaging_charge))}</span></div>` : ''}
-                  ${inv.delivery_charge > 0 ? `<div class="totals-line"><span>Delivery Charge</span><span class="mono">${escapeHtml(fmtMoney(inv.delivery_charge))}</span></div>` : ''}
+                  ${chargesHtml}
                   ${taxComponentLines}
                   ${inv.tip_amount > 0 ? `<div class="totals-line"><span>Tip</span><span class="mono">${escapeHtml(fmtMoney(inv.tip_amount))}</span></div>` : ''}
                   ${inv.round_off !== 0 ? `<div class="totals-line"><span>Round-off</span><span class="mono">${escapeHtml(fmtMoney(inv.round_off))}</span></div>` : ''}

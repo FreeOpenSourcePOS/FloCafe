@@ -240,7 +240,7 @@ const parsePrepaidPaymentRequest = (serialized: string): PrepaidPaymentRequest |
 };
 
 export default function POSPage() {
-  const { currentTenant, user } = useAuthStore();
+  const { currentTenant, user, token } = useAuthStore();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
@@ -341,10 +341,26 @@ export default function POSPage() {
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
   const delivery = useSupportTicketStatus(sentTicketId);
   const activeUserId = user?.id == null ? null : String(user.id);
-  const lastActiveUserIdRef = useRef<string | null>(activeUserId);
+  const activeToken = token ?? null;
+  const sessionEpochRef = useRef(0);
+  const lastActiveSessionRef = useRef<{ userId: string | null; token: string | null }>({
+    userId: activeUserId,
+    token: activeToken,
+  });
+  const activeSubmissionTokenRef = useRef<symbol | null>(null);
+
   useEffect(() => {
-    if (lastActiveUserIdRef.current === activeUserId) return;
-    lastActiveUserIdRef.current = activeUserId;
+    if (
+      lastActiveSessionRef.current.userId === activeUserId &&
+      lastActiveSessionRef.current.token === activeToken
+    ) {
+      return;
+    }
+    lastActiveSessionRef.current = { userId: activeUserId, token: activeToken };
+    sessionEpochRef.current += 1;
+    activeSubmissionTokenRef.current = null;
+    setSubmitting(false);
+
     setCheckoutOverridePin(undefined);
     setPaymentBill(null);
     setCheckoutTable(null);
@@ -355,7 +371,16 @@ export default function POSPage() {
     cashDrawer.setOpen(false);
     shift.setOpenModalOpen(false);
     shift.setCloseModalOpen(false);
-  }, [activeUserId, cashDrawer, shift]);
+  }, [activeUserId, activeToken, cashDrawer, shift]);
+
+  const pinnedAuthHeaders = (authToken: string | null): Record<string, string> =>
+    authToken ? { Authorization: `Bearer ${authToken}` } : {};
+  const checkSessionCurrent = (originEpoch: number, originUserId: string | null): boolean => {
+    if (sessionEpochRef.current !== originEpoch) return false;
+    const currentUser = useAuthStore.getState().user;
+    const currentUserId = currentUser?.id == null ? null : String(currentUser.id);
+    return currentUserId === originUserId;
+  };
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const prepaidAttemptKeyRef = useRef<string | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
@@ -386,31 +411,36 @@ export default function POSPage() {
     return appendAttemptStorageRef.current;
   };
 
-  const readPostpaidAttempt = () => {
+  const readPostpaidAttempt = (targetUserId?: string | null) => {
     if (typeof window === 'undefined') return null;
+    const effectiveUserId = targetUserId || activeUserId;
     const storage = getAppendAttemptStorage();
     let sharedLegacyAppendRetained = false;
     try {
       const migratedAppend = migrateLegacyAppendAttempt(storage, {
-        userId: activeUserId || undefined,
+        userId: effectiveUserId || undefined,
       });
       sharedLegacyAppendRetained =
         migratedAppend !== null && storage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY) !== null;
     } catch {
       throw new OrderAttemptStorageError();
     }
-    if (postpaidAttemptRef.current?.userId === activeUserId) return postpaidAttemptRef.current;
-    postpaidAttemptRef.current = null;
-    postpaidAttemptKeyRef.current = null;
-    postpaidAttemptWasLegacyRef.current = false;
-    if (activeUserId) {
-      const userStorageKey = getPostpaidOrderAttemptStorageKey(activeUserId);
-      const scoped = readOrderAttempt<PostpaidAttempt>(storage, userStorageKey, activeUserId, {
+    if (effectiveUserId === activeUserId && postpaidAttemptRef.current?.userId === activeUserId) return postpaidAttemptRef.current;
+    if (effectiveUserId === activeUserId) {
+      postpaidAttemptRef.current = null;
+      postpaidAttemptKeyRef.current = null;
+      postpaidAttemptWasLegacyRef.current = false;
+    }
+    if (effectiveUserId) {
+      const userStorageKey = getPostpaidOrderAttemptStorageKey(effectiveUserId);
+      const scoped = readOrderAttempt<PostpaidAttempt>(storage, userStorageKey, effectiveUserId, {
         isValid: isUsablePostpaidAttempt,
       });
       if (scoped) {
-        postpaidAttemptRef.current = scoped;
-        postpaidAttemptKeyRef.current = userStorageKey;
+        if (effectiveUserId === activeUserId) {
+          postpaidAttemptRef.current = scoped;
+          postpaidAttemptKeyRef.current = userStorageKey;
+        }
         return scoped;
       }
     }
@@ -419,44 +449,62 @@ export default function POSPage() {
       : readOrderAttempt<PostpaidAttempt>(
           storage,
           POSTPAID_ATTEMPT_STORAGE_KEY,
-          activeUserId || '',
+          effectiveUserId || '',
           {
             sharedKey: true,
             isValid: isUsablePostpaidAttempt,
           },
         );
     if (legacy) {
-      postpaidAttemptRef.current = legacy;
-      postpaidAttemptKeyRef.current = POSTPAID_ATTEMPT_STORAGE_KEY;
-      postpaidAttemptWasLegacyRef.current = true;
+      if (effectiveUserId === activeUserId) {
+        postpaidAttemptRef.current = legacy;
+        postpaidAttemptKeyRef.current = POSTPAID_ATTEMPT_STORAGE_KEY;
+        postpaidAttemptWasLegacyRef.current = true;
+      }
+      return legacy;
     }
-    return postpaidAttemptRef.current;
+    return null;
   };
   /** Only advance the in-memory attempt after a verified write: keys that never
    * reached a backend must not be executed from memory either. */
-  const savePostpaidAttempt = (attempt: PostpaidAttempt): boolean => {
+  const savePostpaidAttempt = (
+    attempt: PostpaidAttempt,
+    targetUserId?: string | null,
+  ): boolean => {
     const previous = postpaidAttemptRef.current;
-    if (!activeUserId) return false;
-    const storageKey = getPostpaidOrderAttemptStorageKey(activeUserId);
+    const effectiveUserId = targetUserId || attempt.userId || activeUserId;
+    if (!effectiveUserId) return false;
+    const storageKey = getPostpaidOrderAttemptStorageKey(effectiveUserId);
     try {
       persistOrderAttempt(getAppendAttemptStorage(), storageKey, attempt);
     } catch {
-      postpaidAttemptRef.current = previous;
+      if (effectiveUserId === activeUserId) {
+        postpaidAttemptRef.current = previous;
+      }
       return false;
     }
-    postpaidAttemptRef.current = attempt;
-    postpaidAttemptKeyRef.current = storageKey;
+    if (effectiveUserId === activeUserId) {
+      postpaidAttemptRef.current = attempt;
+      postpaidAttemptKeyRef.current = storageKey;
+    }
     return true;
   };
-  const clearPostpaidAttempt = () => {
-    const completedAttempt = postpaidAttemptRef.current;
+  const clearPostpaidAttempt = (targetUserId?: string | null) => {
+    const effectiveUserId = targetUserId || activeUserId;
+    const completedAttempt =
+      (effectiveUserId === activeUserId ? postpaidAttemptRef.current : null) ||
+      readPostpaidAttempt(effectiveUserId);
     const storageKeys = [
-      postpaidAttemptKeyRef.current,
-      postpaidAttemptWasLegacyRef.current ? POSTPAID_ATTEMPT_STORAGE_KEY : null,
+      effectiveUserId ? getPostpaidOrderAttemptStorageKey(effectiveUserId) : null,
+      (effectiveUserId === activeUserId && postpaidAttemptWasLegacyRef.current) || !effectiveUserId
+        ? POSTPAID_ATTEMPT_STORAGE_KEY
+        : null,
     ];
     if (!completedAttempt) {
-      postpaidAttemptKeyRef.current = null;
-      postpaidAttemptWasLegacyRef.current = false;
+      if (effectiveUserId === activeUserId) {
+        postpaidAttemptKeyRef.current = null;
+        postpaidAttemptWasLegacyRef.current = false;
+      }
       return true;
     }
     const storage = getAppendAttemptStorage();
@@ -469,7 +517,7 @@ export default function POSPage() {
         cleared = false;
       }
     }
-    if (cleared) {
+    if (cleared && effectiveUserId === activeUserId) {
       postpaidAttemptRef.current = null;
       postpaidAttemptKeyRef.current = null;
       postpaidAttemptWasLegacyRef.current = false;
@@ -487,21 +535,24 @@ export default function POSPage() {
     return { ...attempt, discount: safeDiscount };
   };
 
-  const readPrepaidAttempt = (): PrepaidAttempt | null => {
-    if (prepaidAttemptRef.current?.userId === activeUserId) return prepaidAttemptRef.current;
-    prepaidAttemptRef.current = null;
-    prepaidAttemptKeyRef.current = null;
-    if (typeof window === 'undefined' || !activeUserId) return null;
+  const readPrepaidAttempt = (targetUserId?: string | null): PrepaidAttempt | null => {
+    const effectiveUserId = targetUserId || activeUserId;
+    if (effectiveUserId === activeUserId && prepaidAttemptRef.current?.userId === activeUserId) return prepaidAttemptRef.current;
+    if (effectiveUserId === activeUserId) {
+      prepaidAttemptRef.current = null;
+      prepaidAttemptKeyRef.current = null;
+    }
+    if (typeof window === 'undefined' || !effectiveUserId) return null;
     const storage = getAppendAttemptStorage();
-    const scopedKey = getPrepaidOrderAttemptStorageKey(activeUserId);
-    const scoped = readOrderAttempt<PrepaidAttempt>(storage, scopedKey, activeUserId, {
+    const scopedKey = getPrepaidOrderAttemptStorageKey(effectiveUserId);
+    const scoped = readOrderAttempt<PrepaidAttempt>(storage, scopedKey, effectiveUserId, {
       isValid: isUsablePrepaidAttempt,
     });
     if (scoped) {
       const safeAttempt = stripPrepaidDiscountPin(scoped);
       if (safeAttempt !== scoped) {
-        if (!savePrepaidAttempt(safeAttempt)) throw new OrderAttemptStorageError();
-      } else {
+        if (!savePrepaidAttempt(safeAttempt, effectiveUserId)) throw new OrderAttemptStorageError();
+      } else if (effectiveUserId === activeUserId) {
         prepaidAttemptRef.current = safeAttempt;
         prepaidAttemptKeyRef.current = scopedKey;
       }
@@ -514,7 +565,7 @@ export default function POSPage() {
     const legacy = readOrderAttempt<PrepaidAttempt>(
       storage,
       PREPAID_ATTEMPT_STORAGE_KEY,
-      activeUserId,
+      effectiveUserId,
       {
         sharedKey: true,
         isValid: isUsablePrepaidAttempt,
@@ -522,36 +573,54 @@ export default function POSPage() {
     );
     if (!legacy) return null;
     const migrated = stripPrepaidDiscountPin(legacy);
-    if (!savePrepaidAttempt(migrated)) throw new OrderAttemptStorageError();
+    if (!savePrepaidAttempt(migrated, effectiveUserId)) throw new OrderAttemptStorageError();
     clearOrderAttempt(storage, PREPAID_ATTEMPT_STORAGE_KEY, migrated);
     return migrated;
   };
-  const savePrepaidAttempt = (attempt: PrepaidAttempt): boolean => {
+  const savePrepaidAttempt = (
+    attempt: PrepaidAttempt,
+    targetUserId?: string | null,
+  ): boolean => {
     const previous = prepaidAttemptRef.current;
-    if (!activeUserId) return false;
-    const storageKey = getPrepaidOrderAttemptStorageKey(activeUserId);
+    const effectiveUserId = targetUserId || attempt.userId || activeUserId;
+    if (!effectiveUserId) return false;
+    const storageKey = getPrepaidOrderAttemptStorageKey(effectiveUserId);
     const safeAttempt = stripPrepaidDiscountPin(attempt);
     try {
       persistOrderAttempt(getAppendAttemptStorage(), storageKey, safeAttempt);
     } catch {
-      prepaidAttemptRef.current = previous;
+      if (effectiveUserId === activeUserId) {
+        prepaidAttemptRef.current = previous;
+      }
       return false;
     }
-    prepaidAttemptRef.current = safeAttempt;
-    prepaidAttemptKeyRef.current = storageKey;
+    if (effectiveUserId === activeUserId) {
+      prepaidAttemptRef.current = safeAttempt;
+      prepaidAttemptKeyRef.current = storageKey;
+    }
     return true;
   };
   /** Intermediate prepaid states are persisted too: a request that runs under a
    * key the next run cannot replay can capture the same payment twice. */
-  const requirePrepaidAttemptSaved = (attempt: PrepaidAttempt) => {
-    if (!savePrepaidAttempt(attempt)) throw new OrderAttemptStorageError();
+  const requirePrepaidAttemptSaved = (
+    attempt: PrepaidAttempt,
+    targetUserId?: string | null,
+  ) => {
+    if (!savePrepaidAttempt(attempt, targetUserId)) throw new OrderAttemptStorageError();
   };
-  const clearPrepaidAttempt = () => {
-    const completedAttempt = prepaidAttemptRef.current;
-    const storageKey = prepaidAttemptKeyRef.current;
+  const clearPrepaidAttempt = (targetUserId?: string | null) => {
+    const effectiveUserId = targetUserId || activeUserId;
+    const completedAttempt =
+      (effectiveUserId === activeUserId ? prepaidAttemptRef.current : null) ||
+      (effectiveUserId ? readPrepaidAttempt(effectiveUserId) : null);
+    const storageKey = effectiveUserId
+      ? getPrepaidOrderAttemptStorageKey(effectiveUserId)
+      : prepaidAttemptKeyRef.current;
     if (!completedAttempt || !storageKey) {
-      prepaidAttemptRef.current = null;
-      prepaidAttemptKeyRef.current = null;
+      if (effectiveUserId === activeUserId) {
+        prepaidAttemptRef.current = null;
+        prepaidAttemptKeyRef.current = null;
+      }
       return true;
     }
     // The payment is already captured: report a cleanup problem without turning
@@ -560,8 +629,10 @@ export default function POSPage() {
       console.error('Failed to close the prepaid retry attempt after the payment was captured');
       return false;
     }
-    prepaidAttemptRef.current = null;
-    prepaidAttemptKeyRef.current = null;
+    if (effectiveUserId === activeUserId) {
+      prepaidAttemptRef.current = null;
+      prepaidAttemptKeyRef.current = null;
+    }
     return true;
   };
 
@@ -1453,6 +1524,15 @@ export default function POSPage() {
 
     // Postpaid store / unpaid order → place order, kitchen gets the ticket, payment collected later
     setSubmitting(true);
+    const originEpoch = sessionEpochRef.current;
+    const originUserId = activeUserId;
+    const originToken =
+      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const submissionToken = Symbol('pos-place-order');
+    activeSubmissionTokenRef.current = submissionToken;
+
+    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+
     let failureOperation = pendingOrder ? 'order.append' : 'order.create';
     let failureStage = 'submission';
     let failureCorrelationId: string | null = null;
@@ -1472,7 +1552,7 @@ export default function POSPage() {
         const candidateOperationId = createOperationReference() || undefined;
         failureCorrelationId = candidateOperationId || null;
         let itemAttempt = getOrCreateAppendAttempt(storage, {
-          userId: activeUserId || '',
+          userId: originUserId || '',
           orderId: pendingOrder.id,
           fingerprint: itemFingerprint,
           createKey: newIdempotencyKey,
@@ -1496,18 +1576,25 @@ export default function POSPage() {
           }
         }
         failureCorrelationId = itemAttempt.operationId || null;
-        addItemsAttemptRef.current = itemAttempt;
+        if (originUserId === activeUserId) {
+          addItemsAttemptRef.current = itemAttempt;
+        }
         failureStage = 'append_items';
         const { data } = await api.post(
           `/orders/${pendingOrder.id}/items`,
           { items: newItems, special_instructions: specialInstructions },
           {
             headers: {
+              ...pinnedAuthHeaders(originToken),
               'Idempotency-Key': itemAttempt.idempotencyKey,
               ...operationHeaders(itemAttempt.operationId),
             },
           },
         );
+        if (!isSessionCurrent()) {
+          // Item append succeeded on server while session changed. Stop before mutating state.
+          return;
+        }
         toast.success(t('itemsAddedToOrder', { number: pendingOrder.order_number }));
         const updatedOrder = data.order as Order;
         const existingItemIds = new Set((pendingOrder.items || []).map((item) => Number(item.id)));
@@ -1566,9 +1653,9 @@ export default function POSPage() {
           items: cart.items.map(cartItemToOrderItem),
         };
         const orderFingerprint = JSON.stringify(orderPayload);
-        const priorOrderAttempt = readPostpaidAttempt();
+        const priorOrderAttempt = readPostpaidAttempt(originUserId);
         if (
-          priorOrderAttempt?.userId === activeUserId &&
+          priorOrderAttempt?.userId === originUserId &&
           priorOrderAttempt.fingerprint === orderFingerprint &&
           priorOrderAttempt.order
         ) {
@@ -1591,11 +1678,11 @@ export default function POSPage() {
         failureOperation = 'order.create';
         failureStage = 'order_submission';
         const orderAttempt: PostpaidAttempt =
-          priorOrderAttempt?.userId === activeUserId &&
+          priorOrderAttempt?.userId === originUserId &&
           priorOrderAttempt.fingerprint === orderFingerprint
             ? priorOrderAttempt
             : {
-                userId: activeUserId || '',
+                userId: originUserId || '',
                 fingerprint: orderFingerprint,
                 idempotencyKey: newIdempotencyKey(),
                 operationId: createOperationReference() || undefined,
@@ -1605,7 +1692,7 @@ export default function POSPage() {
         const attemptWithOperationId = operationId
           ? { ...orderAttempt, operationId }
           : orderAttempt;
-        if (!savePostpaidAttempt(attemptWithOperationId)) {
+        if (!savePostpaidAttempt(attemptWithOperationId, originUserId)) {
           if (operationId)
             void captureClientOperationFailure({
               operation: 'order.create',
@@ -1618,20 +1705,29 @@ export default function POSPage() {
           ? { data: { order: attemptWithOperationId.order } }
           : await api.post('/orders', orderPayload, {
               headers: {
+                ...pinnedAuthHeaders(originToken),
                 'Idempotency-Key': attemptWithOperationId.idempotencyKey,
                 ...operationHeaders(operationId),
               },
             });
         const confirmedAttempt = { ...attemptWithOperationId, order: data.order as Order };
-        if (!attemptWithOperationId.order && !savePostpaidAttempt(confirmedAttempt)) {
+        if (!attemptWithOperationId.order && !savePostpaidAttempt(confirmedAttempt, originUserId)) {
           console.error('The confirmed order could not be copied into retry storage');
-          postpaidAttemptRef.current = confirmedAttempt;
+          if (originUserId === activeUserId) {
+            postpaidAttemptRef.current = confirmedAttempt;
+          }
           if (operationId)
             void captureClientOperationFailure({
               operation: 'order.create',
               phase: 'retry_state_update',
               correlationId: operationId,
             });
+        }
+        if (!isSessionCurrent()) {
+          // Critical recovery invariant: order succeeded on server while session changed.
+          // Originating user's recovery attempt is saved under getPostpaidOrderAttemptStorageKey(originUserId).
+          // Stop before mutating shared UI/cart state or triggering toasts.
+          return;
         }
         if (data.order.release_status === 'scheduled' && data.order.scheduled_for) {
           toast.success(
@@ -1647,7 +1743,7 @@ export default function POSPage() {
           toast.success(t('orderPlaced', { number: data.order.order_number }));
         }
         orderForKot = data.order as Order;
-        if (!clearPostpaidAttempt()) {
+        if (!clearPostpaidAttempt(originUserId)) {
           if (operationId)
             void captureClientOperationFailure({
               operation: 'order.create',
@@ -1676,7 +1772,7 @@ export default function POSPage() {
             cart.tableId,
             cart.heldOrderId || undefined,
           );
-          if (!deleted) await heldOrders.fetchHeldOrders();
+          if (!deleted && isSessionCurrent()) await heldOrders.fetchHeldOrders();
         } catch (heldOrderError) {
           // The order has already been placed. Do not turn a cleanup failure
           // into a failed sale or leave an unhandled promise in the console.
@@ -1714,13 +1810,16 @@ export default function POSPage() {
           });
         }
       }
+      if (!isSessionCurrent()) return;
       cart.clearCart();
       setMobileCartOpen(false);
       await refreshTables();
       void refreshScheduledOrders();
 
+      if (!isSessionCurrent()) return;
       await printKotIfEnabled(orderForKot);
     } catch (error) {
+      if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError)
         reportOrderStorageFailure(
           t('placeOrderFailed'),
@@ -1736,7 +1835,10 @@ export default function POSPage() {
           failureCorrelationId,
         );
     } finally {
-      setSubmitting(false);
+      if (isSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
+        setSubmitting(false);
+        activeSubmissionTokenRef.current = null;
+      }
     }
   };
 
@@ -1749,6 +1851,15 @@ export default function POSPage() {
     const isPrepaidCheckout = shouldTakePaymentNow;
     setShowPrepaidCheckout(false);
     setSubmitting(true);
+    const originEpoch = sessionEpochRef.current;
+    const originUserId = activeUserId;
+    const originToken =
+      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const submissionToken = Symbol('pos-prepaid-checkout');
+    activeSubmissionTokenRef.current = submissionToken;
+
+    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+
     const orderItems = cart.items.map(cartItemToOrderItem);
     let paymentLines = payments
       .filter((p) => p.amount > 0)
@@ -1767,17 +1878,19 @@ export default function POSPage() {
     const cartFingerprint = buildCurrentCartFingerprint(orderItems);
     let storedAttempt: PrepaidAttempt | null;
     try {
-      storedAttempt = readPrepaidAttempt();
+      storedAttempt = readPrepaidAttempt(originUserId);
     } catch (error) {
       // An unreadable attempt cannot be safely replaced with a fresh key.
       if (!(error instanceof OrderAttemptStorageError)) throw error;
-      reportOrderStorageFailure(t('processOrderFailed'));
-      setSubmitting(false);
+      if (isSessionCurrent()) {
+        reportOrderStorageFailure(t('processOrderFailed'));
+        setSubmitting(false);
+      }
       return;
     }
     const existingAttempt =
       storedAttempt &&
-      storedAttempt.userId === activeUserId &&
+      storedAttempt.userId === originUserId &&
       storedAttempt.cartFingerprint === cartFingerprint &&
       storedAttempt.orderIdempotencyKey &&
       storedAttempt.paymentIdempotencyKey
@@ -1788,21 +1901,23 @@ export default function POSPage() {
         ? parsePrepaidPaymentRequest(existingAttempt.paymentFingerprint)
         : null;
     if (existingAttempt?.bill && existingAttempt.paymentFingerprint && !savedPaymentRequest) {
-      reportOrderFailure({
-        code: 'request.outcome_unknown',
-        title: t('processOrderFailed'),
-        message: t('operationOutcomeUnknown'),
-        nextStep: t('operationCheckBeforeRetry'),
-        detail:
-          'The saved payment request could not be validated, so no replacement payment was submitted',
-        status: null,
-        operation: 'payment.create',
-        stage: 'recovery',
-        outcome: 'unknown',
-        reasonCode: 'request.outcome_unknown',
-        correlationId: existingAttempt.operationId,
-      });
-      setSubmitting(false);
+      if (isSessionCurrent()) {
+        reportOrderFailure({
+          code: 'request.outcome_unknown',
+          title: t('processOrderFailed'),
+          message: t('operationOutcomeUnknown'),
+          nextStep: t('operationCheckBeforeRetry'),
+          detail:
+            'The saved payment request could not be validated, so no replacement payment was submitted',
+          status: null,
+          operation: 'payment.create',
+          stage: 'recovery',
+          outcome: 'unknown',
+          reasonCode: 'request.outcome_unknown',
+          correlationId: existingAttempt.operationId,
+        });
+        setSubmitting(false);
+      }
       return;
     }
     if (savedPaymentRequest && existingAttempt) {
@@ -1813,12 +1928,17 @@ export default function POSPage() {
       const recoveryOperationId = existingAttempt.operationId || createOperationReference();
       try {
         const { data } = await api.get(`/bills/${existingAttempt.bill.id}`, {
-          headers: operationHeaders(recoveryOperationId),
+          headers: {
+            ...pinnedAuthHeaders(originToken),
+            ...operationHeaders(recoveryOperationId),
+          },
         });
+        if (!isSessionCurrent()) return;
         if (!data?.bill || !['paid', 'partial', 'unpaid'].includes(data.bill.payment_status)) {
           throw new Error('Bill status unavailable');
         }
       } catch (recoveryError) {
+        if (!isSessionCurrent()) return;
         if (!(recoveryError as { response?: unknown } | null)?.response && recoveryOperationId) {
           void captureClientOperationFailure({
             operation: 'payment.create',
@@ -1843,6 +1963,7 @@ export default function POSPage() {
         return;
       }
     }
+    if (!isSessionCurrent()) return;
     const currentDiscount = savedPaymentRequest
       ? existingAttempt?.discount || null
       : discount && discount.value > 0
@@ -1868,7 +1989,7 @@ export default function POSPage() {
               : newIdempotencyKey(),
         }
       : {
-          userId: activeUserId || '',
+          userId: originUserId || '',
           cartFingerprint,
           paymentFingerprint,
           discount: discount && discount.value > 0 ? discount : null,
@@ -1880,7 +2001,8 @@ export default function POSPage() {
     if (operationId && attempt.operationId !== operationId) attempt = { ...attempt, operationId };
     // Persist the keys before the first order mutation. The server replays the
     // order response if this renderer loses the response or restarts.
-    if (!savePrepaidAttempt(attempt)) {
+    if (!savePrepaidAttempt(attempt, originUserId)) {
+      if (!isSessionCurrent()) return;
       reportOrderStorageFailure(t('processOrderFailed'), 'order.create', operationId || null);
       setSubmitting(false);
       return;
@@ -1895,7 +2017,7 @@ export default function POSPage() {
       failureCorrelationId = operationId;
       if (operationId && attempt.operationId !== operationId) {
         attempt = { ...attempt, operationId };
-        requirePrepaidAttemptSaved(attempt);
+        requirePrepaidAttemptSaved(attempt, originUserId);
       }
       if (attempt.order) {
         orderData = { order: attempt.order };
@@ -1934,6 +2056,7 @@ export default function POSPage() {
           },
           {
             headers: {
+              ...pinnedAuthHeaders(originToken),
               'Idempotency-Key': attempt.orderIdempotencyKey,
               ...operationHeaders(operationId),
             },
@@ -1941,7 +2064,12 @@ export default function POSPage() {
         );
         orderData = data;
         committedOrder = data.order as Order;
-        requirePrepaidAttemptSaved({ ...attempt, order: data.order });
+        requirePrepaidAttemptSaved({ ...attempt, order: data.order }, originUserId);
+        if (!isSessionCurrent()) {
+          // Order succeeded on the server while session changed.
+          // Recovery record is preserved under originUserId. Stop before generating/paying bill under new user.
+          return;
+        }
       }
       if (!orderData) throw new Error('Order result unavailable');
       const order = orderData.order;
@@ -1967,8 +2095,12 @@ export default function POSPage() {
       ) {
         try {
           const { data: currentOrderData } = await api.get(`/orders/${orderId}`, {
-            headers: operationHeaders(operationId),
+            headers: {
+              ...pinnedAuthHeaders(originToken),
+              ...operationHeaders(operationId),
+            },
           });
+          if (!isSessionCurrent()) return;
           const serverDiscount =
             currentOrderData.order?.discount_type &&
             Number(currentOrderData.order.discount_value) > 0
@@ -1985,6 +2117,7 @@ export default function POSPage() {
           // an approval PIN may be required to reapply an uncertain discount.
         }
       }
+      if (!isSessionCurrent()) return;
       if (
         !attempt.bill &&
         !discountAlreadyApplied &&
@@ -2001,8 +2134,14 @@ export default function POSPage() {
             override_pin: discountForRequest?.override_pin,
             approver_id: discountForRequest?.approver_id,
           },
-          { headers: operationHeaders(operationId) },
+          {
+            headers: {
+              ...pinnedAuthHeaders(originToken),
+              ...operationHeaders(operationId),
+            },
+          },
         );
+        if (!isSessionCurrent()) return;
       }
 
       if (attempt.bill) {
@@ -2013,9 +2152,22 @@ export default function POSPage() {
         const { data: generatedBill } = await api.post(
           '/bills/generate',
           { order_id: orderId },
-          { headers: operationHeaders(operationId) },
+          {
+            headers: {
+              ...pinnedAuthHeaders(originToken),
+              ...operationHeaders(operationId),
+            },
+          },
         );
         billData = generatedBill;
+        if (generatedBill?.bill) {
+          attempt = { ...attempt, order, bill: generatedBill.bill };
+          requirePrepaidAttemptSaved(attempt, originUserId);
+        }
+        if (!isSessionCurrent()) {
+          // Bill was generated on server while session changed. Stop here.
+          return;
+        }
       }
       if (!billData) throw new Error('Bill result unavailable');
       const bill = billData.bill;
@@ -2030,8 +2182,9 @@ export default function POSPage() {
         failureOperation = attempt.bill ? 'payment.create' : 'bill.generate';
         failureStage = 'retry_state';
         attempt = { ...attempt, order, bill, paymentFingerprint: exactPaymentFingerprint };
-        requirePrepaidAttemptSaved(attempt);
+        requirePrepaidAttemptSaved(attempt, originUserId);
       }
+      if (!isSessionCurrent()) return;
 
       // Record every split in one atomic request. The persisted bill/key pair
       // makes a lost response safe to retry without creating a second order.
@@ -2039,6 +2192,7 @@ export default function POSPage() {
       failureStage = 'payment_submission';
       const paymentResponse = await api.post(`/bills/${bill.id}/payments`, paymentRequest, {
         headers: {
+          ...pinnedAuthHeaders(originToken),
           'Idempotency-Key': attempt.paymentIdempotencyKey,
           ...operationHeaders(operationId),
         },
@@ -2049,16 +2203,24 @@ export default function POSPage() {
           ? paymentResponse.data.loyaltyPointsEarned
           : 0;
 
+      if (!isSessionCurrent()) {
+        savePrepaidAttempt({ ...attempt, order, bill: paidBill }, originUserId);
+        return;
+      }
+
       if (paidBill.payment_status !== 'paid') {
         const incompleteMessage = t('paymentIncomplete', {
           amount: currencyFmt(Number(paidBill.balance) || 0),
         });
-        savePrepaidAttempt({
-          ...attempt,
-          bill: paidBill,
-          paymentFingerprint: '',
-          paymentIdempotencyKey: newIdempotencyKey(),
-        });
+        savePrepaidAttempt(
+          {
+            ...attempt,
+            bill: paidBill,
+            paymentFingerprint: '',
+            paymentIdempotencyKey: newIdempotencyKey(),
+          },
+          originUserId,
+        );
         reportOrderFailure({
           code: 'payment.incomplete',
           title: incompleteMessage,
@@ -2076,10 +2238,12 @@ export default function POSPage() {
       }
 
       const completedAttempt = { ...attempt, order, bill: paidBill };
-      if (!savePrepaidAttempt(completedAttempt)) {
+      if (!savePrepaidAttempt(completedAttempt, originUserId)) {
         // Payment is confirmed. Keep that fact in memory and never turn a
         // local retry-state write failure into advice to charge again.
-        prepaidAttemptRef.current = stripPrepaidDiscountPin(completedAttempt);
+        if (originUserId === activeUserId) {
+          prepaidAttemptRef.current = stripPrepaidDiscountPin(completedAttempt);
+        }
         if (operationId)
           void captureClientOperationFailure({
             operation: 'payment.create',
@@ -2120,7 +2284,7 @@ export default function POSPage() {
             cart.tableId,
             cart.heldOrderId || undefined,
           );
-          if (!deleted) await heldOrders.fetchHeldOrders();
+          if (!deleted && isSessionCurrent()) await heldOrders.fetchHeldOrders();
         } catch (heldOrderError) {
           // The payment is complete; clearing the held-order record is cleanup.
           console.error('Failed to clear held order after payment', heldOrderError);
@@ -2131,31 +2295,34 @@ export default function POSPage() {
               correlationId: operationId,
             });
           }
-          reportOrderFailure({
-            code: 'order.held_state.cleanup_failed',
-            title: t('orderPaid', { number: order.order_number }),
-            message: t('saleCompleteCleanupFailed'),
-            nextStep: t('saleCompleteCheckOrders'),
-            detail: 'Payment completed but its held-order record could not be refreshed',
-            status: null,
-            operation: 'payment.create',
-            stage: 'cleanup',
-            outcome: 'applied',
-            reasonCode: 'order.held_state.cleanup_failed',
-            correlationId: operationId,
-            operationFailure:
-              !(heldOrderError as { response?: unknown } | null)?.response && !!operationId
-                ? {
-                    capture_point: 'fc.frontend.pos.payment.create.held_cleanup',
-                    operation_id: operationId,
-                    outcome: 'applied',
-                  }
-                : undefined,
-          });
+          if (isSessionCurrent()) {
+            reportOrderFailure({
+              code: 'order.held_state.cleanup_failed',
+              title: t('orderPaid', { number: order.order_number }),
+              message: t('saleCompleteCleanupFailed'),
+              nextStep: t('saleCompleteCheckOrders'),
+              detail: 'Payment completed but its held-order record could not be refreshed',
+              status: null,
+              operation: 'payment.create',
+              stage: 'cleanup',
+              outcome: 'applied',
+              reasonCode: 'order.held_state.cleanup_failed',
+              correlationId: operationId,
+              operationFailure:
+                !(heldOrderError as { response?: unknown } | null)?.response && !!operationId
+                  ? {
+                      capture_point: 'fc.frontend.pos.payment.create.held_cleanup',
+                      operation_id: operationId,
+                      outcome: 'applied',
+                    }
+                  : undefined,
+            });
+          }
         }
       }
+      if (!isSessionCurrent()) return;
       cart.clearCart();
-      if (!clearPrepaidAttempt()) {
+      if (!clearPrepaidAttempt(originUserId)) {
         if (operationId)
           void captureClientOperationFailure({
             operation: 'payment.create',
@@ -2179,11 +2346,14 @@ export default function POSPage() {
       setMobileCartOpen(false);
       await refreshTables();
       void refreshScheduledOrders();
+      if (!isSessionCurrent()) return;
 
       await printKotIfEnabled(order);
+      if (!isSessionCurrent()) return;
 
       await printBillForTenant(paidBill, isPrepaidCheckout);
     } catch (error) {
+      if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError && committedOrder) {
         if (
           failureOperation === 'payment.create' &&
@@ -2262,11 +2432,14 @@ export default function POSPage() {
             failure.outcome === 'not_applied' &&
             failure.displayCode !== 'idempotency_conflict'
           ) {
-            savePrepaidAttempt({
-              ...attempt,
-              paymentFingerprint: '',
-              paymentIdempotencyKey: newIdempotencyKey(),
-            });
+            savePrepaidAttempt(
+              {
+                ...attempt,
+                paymentFingerprint: '',
+                paymentIdempotencyKey: newIdempotencyKey(),
+              },
+              originUserId,
+            );
           }
         }
         reportOrderRequestFailure(
@@ -2278,7 +2451,10 @@ export default function POSPage() {
         );
       }
     } finally {
-      setSubmitting(false);
+      if (isSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
+        setSubmitting(false);
+        activeSubmissionTokenRef.current = null;
+      }
     }
   };
 
@@ -2402,6 +2578,15 @@ export default function POSPage() {
       return;
     }
     setSubmitting(true);
+    const originEpoch = sessionEpochRef.current;
+    const originUserId = activeUserId;
+    const originToken =
+      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const submissionToken = Symbol('pos-add-cart-to-order');
+    activeSubmissionTokenRef.current = submissionToken;
+
+    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+
     const operationId = createOperationReference();
     try {
       const items = cart.items.map(cartItemToOrderItem);
@@ -2409,7 +2594,7 @@ export default function POSPage() {
       const fingerprint = buildAppendItemsFingerprint(order.id, items, specialInstructions);
       const storage = getAppendAttemptStorage();
       const itemAttempt = getOrCreateAppendAttempt(storage, {
-        userId: activeUserId || '',
+        userId: originUserId || '',
         orderId: order.id,
         fingerprint,
         createKey: newIdempotencyKey,
@@ -2418,7 +2603,9 @@ export default function POSPage() {
         orderNumber: order.order_number,
         operationId: operationId || undefined,
       });
-      addItemsAttemptRef.current = itemAttempt;
+      if (originUserId === activeUserId) {
+        addItemsAttemptRef.current = itemAttempt;
+      }
       const { data } = await api.post(
         `/orders/${order.id}/items`,
         {
@@ -2427,11 +2614,16 @@ export default function POSPage() {
         },
         {
           headers: {
+            ...pinnedAuthHeaders(originToken),
             'Idempotency-Key': itemAttempt.idempotencyKey,
             ...operationHeaders(itemAttempt.operationId),
           },
         },
       );
+      if (!isSessionCurrent()) {
+        // Items append succeeded on server while session changed. Stop before mutating state.
+        return;
+      }
       // A resolved response is the confirmation boundary. Keep the durable
       // attempt through all network errors so a lost response can replay it.
       const cleared = clearAppendAttempt(storage, itemAttempt);
@@ -2465,10 +2657,12 @@ export default function POSPage() {
       await printKotIfEnabled(
         appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder,
       );
+      if (!isSessionCurrent()) return;
       cart.clearCart();
       setCheckoutTable(null);
       refreshTables();
     } catch (error) {
+      if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError)
         reportOrderStorageFailure(t('addItemsFailed'), 'order.append', operationId);
       else
@@ -2480,11 +2674,18 @@ export default function POSPage() {
           operationId,
         );
     } finally {
-      setSubmitting(false);
+      if (isSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
+        setSubmitting(false);
+        activeSubmissionTokenRef.current = null;
+      }
     }
   };
 
   const handlePaymentComplete = async () => {
+    const originEpoch = sessionEpochRef.current;
+    const originUserId = activeUserId;
+    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+
     const bill = paymentBill; // capture before clearing state
     setPaymentBill(null);
     setCheckoutOverridePin(undefined);
@@ -2494,9 +2695,13 @@ export default function POSPage() {
 
     if (bill) {
       try {
-        await printBillForTenant(await fetchLatestBill(bill.id));
+        const latestBill = await fetchLatestBill(bill.id);
+        if (!isSessionCurrent()) return;
+        await printBillForTenant(latestBill);
       } catch {
-        toast.error(t('receiptPrintFailed'));
+        if (isSessionCurrent()) {
+          toast.error(t('receiptPrintFailed'));
+        }
       }
     }
   };
@@ -3087,11 +3292,15 @@ export default function POSPage() {
           canGenerateBill={tenantCan(currentTenant, 'bills.generate')}
           canReadBills={tenantCan(currentTenant, 'bills.read')}
           onPayment={(bill, overridePin) => {
+            if (!checkoutTable) return;
             setCheckoutTable(null);
             setPaymentBill(bill);
             setCheckoutOverridePin(overridePin);
           }}
-          onAddCartToOrder={handleAddCartToOrder}
+          onAddCartToOrder={(table, order) => {
+            if (!checkoutTable) return;
+            handleAddCartToOrder(table, order);
+          }}
           onOrderMoved={({ sourceTable, targetTable }) => {
             if (cart.tableId === sourceTable.id) {
               cart.setTableId(targetTable.id);
@@ -3134,10 +3343,19 @@ export default function POSPage() {
               // pay against the remainder source bill during the fetch window.
               setPaymentBill(null);
               setCheckoutOverridePin(undefined);
+              const originEpoch = sessionEpochRef.current;
               void api
                 .get(`/bills/${departingBill.id}`)
-                .then(({ data }) => setPaymentBill((data?.bill as Bill) ?? departingBill))
-                .catch(() => setPaymentBill(departingBill));
+                .then(({ data }) => {
+                  if (sessionEpochRef.current === originEpoch) {
+                    setPaymentBill((data?.bill as Bill) ?? departingBill);
+                  }
+                })
+                .catch(() => {
+                  if (sessionEpochRef.current === originEpoch) {
+                    setPaymentBill(departingBill);
+                  }
+                });
             } else {
               setPaymentBill(null);
               setCheckoutOverridePin(undefined);

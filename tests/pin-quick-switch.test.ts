@@ -12,17 +12,20 @@ const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-pin-quick-switch-'));
 
 let mockApiHandler: {
-  get?: (url: string) => Promise<any>;
+  get?: (url: string, config?: any) => Promise<any>;
   post?: (url: string, body?: any, config?: any) => Promise<any>;
+  patch?: (url: string, body?: any, config?: any) => Promise<any>;
 } = {};
 
 const mockPosSettingsStore = {
   state: {
     language: 'en',
+    billingType: 'prepaid',
     billTemplateSource: 'core' as 'core' | null,
     billLanguagePolicy: null as unknown,
     kotLanguagePolicy: null as unknown,
     autoLockMinutes: 0,
+    tablesRequired: false,
     setLanguage(language: string) {
       this.language = language;
     },
@@ -43,6 +46,122 @@ const mockPosSettingsStore = {
     return this.state;
   },
 };
+const mockPosSettingsStoreFn = Object.assign(
+  (selector?: (s: any) => any) =>
+    selector ? selector(mockPosSettingsStore.state) : mockPosSettingsStore.state,
+  mockPosSettingsStore,
+);
+
+const realReact = frontendRequire('react');
+const hookStates: any[] = [];
+const hookSetters: any[] = [];
+const hookRefs: any[] = [];
+const hookEffectEntries: any[] = [];
+const hookPendingEffects: Array<() => void> = [];
+
+let hookStateIndex = 0;
+let hookRefIndex = 0;
+let hookEffectIndex = 0;
+
+const reactHooks: Record<string, any> = {
+  ...realReact,
+  useSyncExternalStore: (subscribe: any, getSnapshot: () => any) => getSnapshot(),
+  useDebugValue: () => {},
+  useState: (initial: any) => {
+    const idx = hookStateIndex++;
+    if (idx >= hookStates.length) {
+      hookStates.push(typeof initial === 'function' ? initial() : initial);
+      hookSetters.push((next: any) => {
+        hookStates[idx] = typeof next === 'function' ? next(hookStates[idx]) : next;
+      });
+    }
+    return [hookStates[idx], hookSetters[idx]];
+  },
+  useRef: (initial: any) => {
+    const idx = hookRefIndex++;
+    if (idx >= hookRefs.length) {
+      hookRefs.push({ current: initial });
+    }
+    return hookRefs[idx];
+  },
+  useEffect: (effect: any, deps: any) => {
+    const idx = hookEffectIndex++;
+    const prev = hookEffectEntries[idx];
+    const changed =
+      !prev ||
+      !prev.initialized ||
+      deps === undefined ||
+      prev.deps === undefined ||
+      deps.length !== prev.deps.length ||
+      deps.some((d: any, i: number) => !Object.is(d, prev.deps[i]));
+    if (!prev) hookEffectEntries[idx] = { deps, initialized: false };
+    else prev.deps = deps;
+    if (changed) {
+      hookPendingEffects.push(() => {
+        if (typeof hookEffectEntries[idx].cleanup === 'function') hookEffectEntries[idx].cleanup();
+        hookEffectEntries[idx].cleanup = effect();
+        hookEffectEntries[idx].initialized = true;
+      });
+    }
+  },
+  useCallback: (fn: any) => fn,
+  useMemo: (fn: any) => fn(),
+};
+
+function findElement(node: any, type: any): any {
+  if (!node || typeof node !== 'object') return null;
+  if (node.type === type) return node;
+  const children = Array.isArray(node.props?.children)
+    ? node.props.children
+    : node.props?.children
+      ? [node.props.children]
+      : [];
+  for (const child of children) {
+    const found = findElement(child, type);
+    if (found) return found;
+  }
+  return null;
+}
+
+function renderPOSPage(POSPage: any) {
+  hookStateIndex = 0;
+  hookRefIndex = 0;
+  hookEffectIndex = 0;
+  const res = POSPage({});
+  while (hookPendingEffects.length > 0) {
+    const fn = hookPendingEffects.shift()!;
+    fn();
+  }
+  return res;
+}
+
+function resetPOSHooks() {
+  hookStates.length = 0;
+  hookSetters.length = 0;
+  hookRefs.length = 0;
+  hookEffectEntries.length = 0;
+  hookPendingEffects.length = 0;
+  hookStateIndex = 0;
+  hookRefIndex = 0;
+  hookEffectIndex = 0;
+}
+
+let capturedCartPanelProps: any = null;
+let capturedPrepaidModalProps: any = null;
+
+const CartPanelStub = (props: any) => {
+  capturedCartPanelProps = props;
+  return null;
+};
+const PrepaidCheckoutModalStub = (props: any) => {
+  capturedPrepaidModalProps = props;
+  return null;
+};
+const toastStub = Object.assign(() => {}, {
+  success: () => {},
+  error: () => {},
+  custom: () => {},
+});
 
 Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   if (reqName === 'electron') {
@@ -54,15 +173,70 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
       },
     };
   }
+  if (reqName === 'react') return reactHooks;
+  if (reqName === 'react-hot-toast') return { __esModule: true, default: toastStub, toast: toastStub };
+  if (reqName === 'lucide-react') return new Proxy({}, { get: () => () => null });
+  if (reqName === 'use-intl') return { useTranslations: () => (k: string) => k };
+  if (reqName === 'next/dynamic') return () => () => null;
+  if (reqName === '@/components/ui/sidebar') return { useSidebar: () => ({ isMobile: false }) };
+  if (reqName === '@/components/ui/drawer')
+    return { Drawer: () => null, DrawerContent: () => null, DrawerTrigger: () => null };
+  if (reqName === '@/hooks/use-confirm')
+    return { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: () => null }) };
+  if (reqName === '@/hooks/useCashSession')
+    return {
+      useCashSession: () => ({
+        isShiftOpen: true,
+        openSessions: [],
+        openModalOpen: false,
+        setOpenModalOpen: () => {},
+        closeModalOpen: false,
+        setCloseModalOpen: () => {},
+      }),
+    };
+  if (reqName === '@/hooks/usePosSort')
+    return { usePosSortPreference: () => ({ sortBy: 'name', sortDirection: 'asc' }) };
+  if (reqName === '@/hooks/useCashDrawerMovements')
+    return { useCashDrawerMovements: () => ({ open: false, setOpen: () => {} }) };
+  if (reqName === '@/hooks/usePrinter')
+    return {
+      usePrinterStore: () => ({ isConnected: false, status: 'disconnected' }),
+      isPrintCancelledOnTenantChangeError: () => false,
+    };
+  if (reqName === '@/hooks/useBarcodeScanner') return { useBarcodeScanner: () => {} };
+  if (reqName === '@/hooks/usePosKeyboardShortcuts') return { usePosKeyboardShortcuts: () => {} };
+  if (reqName === '@/hooks/useFormatCurrency')
+    return { useFormatCurrency: () => (v: number) => `$${v}` };
+  if (reqName === '@/hooks/useSupportTicketStatus')
+    return { useSupportTicketStatus: () => ({ errorCount: 0 }) };
+  if (reqName === '@/lib/countries')
+    return { getCurrencySymbol: () => '$', getCountryByCode: () => ({ code: 'US', currency: 'USD' }) };
   if (reqName === '@/lib/api') {
     return {
-      get: (...args: [string]) => mockApiHandler.get?.(...args),
+      __esModule: true,
+      default: {
+        get: (...args: [string, any]) => mockApiHandler.get?.(...args),
+        post: (...args: [string, any, any]) => mockApiHandler.post?.(...args),
+        patch: (...args: [string, any, any]) => mockApiHandler.patch?.(...args),
+      },
+      get: (...args: [string, any]) => mockApiHandler.get?.(...args),
       post: (...args: [string, any, any]) => mockApiHandler.post?.(...args),
+      patch: (...args: [string, any, any]) => mockApiHandler.patch?.(...args),
+      operationHeaders: () => ({}),
+      createOperationReference: () => 'op-test',
+      captureClientOperationFailure: () => {},
     };
   }
   if (reqName === '@/store/pos-settings') {
-    return { usePosSettingsStore: mockPosSettingsStore };
+    return { usePosSettingsStore: mockPosSettingsStoreFn };
   }
+  if (reqName === '@/components/pos/PrepaidCheckoutModal') {
+    return { __esModule: true, default: PrepaidCheckoutModalStub };
+  }
+  if (reqName === '@/components/pos/CartPanel') {
+    return { __esModule: true, default: CartPanelStub };
+  }
+  if (reqName.startsWith('@/components/')) return () => null;
   if (reqName === '@/lib/cart-identity') {
     return originalLoad.call(
       this,
@@ -81,6 +255,18 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   }
   if (reqName === 'zustand') {
     return originalLoad.call(this, frontendRequire.resolve('zustand'), parent, isMain);
+  }
+  if (reqName.startsWith('@/')) {
+    try {
+      return originalLoad.call(
+        this,
+        path.join(process.cwd(), 'frontend/src', reqName.slice(2)),
+        parent,
+        isMain,
+      );
+    } catch {
+      return () => null;
+    }
   }
   return originalLoad.apply(this, arguments as any);
 };
@@ -816,6 +1002,54 @@ async function run() {
     'Invalid auto_lock_minutes value (10) is rejected with 400',
   );
 
+  // User with only reports.view / dashboard access can read auto_lock_minutes (PR #1392)
+  const reportsOnlyId = 'reports-only-user';
+  const reportsOnlyAuth = makeToken(reportsOnlyId, 'server', 'reports@test.local');
+  db.prepare(`
+    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES (?, 'Reports Staff', 'reports@test.local', ?, 'server', ?, 1, ?, ?)
+  `).run(reportsOnlyId, bcrypt.hashSync('Pass123!', 10), bcrypt.hashSync('8888', 10), ts, ts);
+
+  for (const perm of [
+    'pos.use',
+    'orders.read',
+    'orders.create',
+    'orders.status.update',
+    'tables.view',
+    'catalog.view',
+    'kitchen.use',
+    'support.use',
+    'settings.view',
+  ]) {
+    db.prepare(`
+      INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES (?, ?, 'deny', 'owner-1', ?, ?)
+    `).run(reportsOnlyId, perm, ts, ts);
+  }
+  db.prepare(`
+    INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+    VALUES (?, 'reports.view', 'allow', 'owner-1', ?, ?)
+  `).run(reportsOnlyId, ts, ts);
+
+  await request(app)
+    .put('/api/settings/auto_lock_minutes')
+    .set(ownerAuth)
+    .send({ value: '15' });
+
+  const reportsUserAutoLock = await request(app)
+    .get('/api/settings/auto_lock_minutes')
+    .set(reportsOnlyAuth);
+  assertEqualOrThrow(
+    reportsUserAutoLock.status,
+    200,
+    'Reports-only staff user can read /api/settings/auto_lock_minutes (200)',
+  );
+  assertEqualOrThrow(
+    reportsUserAutoLock.body.setting.value,
+    '15',
+    'Reports-only staff user receives configured non-zero idle-lock timeout (15)',
+  );
+
   // ── 7. Frontend auth + cart store lock & quick-switch behavior ──
   console.log(
     '\n7. Frontend auth & cart store: lock preserves cart, clears privileged state, ignores stale async callbacks',
@@ -980,6 +1214,185 @@ async function run() {
     useAuthStore.getState().user?.id,
     cashierId,
     'Stale /auth/me callback from previous session is ignored after user switch',
+  );
+
+  // ── 8. POS checkout session-continuation guard ──
+  console.log(
+    '\n8. POS checkout session-continuation guard: switching session invalidates in-flight checkout and preserves recovery state',
+  );
+
+  const fakeStorage = {
+    values: new Map<string, string>(),
+    getItem(k: string) {
+      return this.values.get(k) ?? null;
+    },
+    setItem(k: string, v: string) {
+      this.values.set(k, String(v));
+    },
+    removeItem(k: string) {
+      this.values.delete(k);
+    },
+  };
+  (globalThis as any).window = {
+    dispatchEvent: () => {},
+    setTimeout,
+    clearTimeout,
+    localStorage: fakeStorage,
+    sessionStorage: fakeStorage,
+  };
+  (globalThis as any).document = {
+    fullscreenElement: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+  (globalThis as any).localStorage = fakeStorage;
+  (globalThis as any).sessionStorage = fakeStorage;
+
+  const { getPrepaidOrderAttemptStorageKey } = require('../frontend/src/lib/order-attempt');
+  const POSPage = require('../frontend/src/app/(dashboard)/pos/page').default;
+
+  resetPOSHooks();
+  capturedCartPanelProps = null;
+  capturedPrepaidModalProps = null;
+
+  // 1. Sign in as owner
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  useCartStore.getState().clearCart();
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-1',
+      name: 'Coffee',
+      price: 100,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    1,
+  );
+
+  let tree = renderPOSPage(POSPage);
+  const cartPanelEl = findElement(tree, CartPanelStub);
+  assertOrThrow(cartPanelEl, 'CartPanel element found in render tree');
+  assertOrThrow(
+    typeof cartPanelEl.props?.onPlaceOrder === 'function',
+    'CartPanel onPlaceOrder is a function',
+  );
+
+  // Trigger place order to open prepaid checkout modal
+  cartPanelEl.props.onPlaceOrder();
+  tree = renderPOSPage(POSPage);
+  const prepaidModalEl = findElement(tree, PrepaidCheckoutModalStub);
+  assertOrThrow(prepaidModalEl, 'PrepaidCheckoutModal element found in render tree');
+  assertOrThrow(
+    typeof prepaidModalEl.props?.onConfirm === 'function',
+    'PrepaidCheckoutModal onConfirm is a function',
+  );
+
+  const handlePrepaidCheckout = prepaidModalEl.props.onConfirm;
+
+  let ordersDeferredResolve!: (val: any) => void;
+  const ordersPromise = new Promise((resolve) => {
+    ordersDeferredResolve = resolve;
+  });
+  const checkoutCalls: Array<{ url: string; body?: any; headers?: any }> = [];
+  mockApiHandler = {
+    post: async (url: string, body?: any, config?: any) => {
+      checkoutCalls.push({ url, body, headers: config?.headers });
+      if (url === '/orders') {
+        return ordersPromise;
+      }
+      if (url === '/bills/generate') {
+        return { data: { bill: { id: 'bill-1', payment_status: 'unpaid' } } };
+      }
+      if (url.includes('/payments')) {
+        return { data: { bill: { id: 'bill-1', payment_status: 'paid' } } };
+      }
+      return { data: {} };
+    },
+    get: async () => ({ data: {} }),
+  };
+
+  // 2. Trigger prepaid checkout (starts /orders call and holds)
+  const checkoutPromise = handlePrepaidCheckout([{ method: 'cash', amount: 100 }], 0, null);
+
+  // Allow promise tick so api.post('/orders') executes
+  await new Promise((r) => setTimeout(r, 15));
+
+  // 3. While /orders is held, lock and switch to manager
+  useAuthStore.setState({
+    user: null,
+    token: null,
+    isLocked: true,
+  });
+  useAuthStore.setState({
+    user: { id: 'mgr-1', name: 'Bob Manager', email: 'manager@test.local', role: 'manager' },
+    token: 'token-for-mgr-1',
+    isLocked: false,
+  });
+  useCartStore.getState().clearCart();
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-2',
+      name: 'Tea',
+      price: 50,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    1,
+  );
+
+  // Re-render to propagate session switch
+  renderPOSPage(POSPage);
+
+  // 4. Release /orders response
+  ordersDeferredResolve({ data: { order: { id: 'order-123', order_number: 'ORD-123' } } });
+  await checkoutPromise;
+
+  // 5. Assertions under manager
+  const billOrPayCalls = checkoutCalls.filter(
+    (c) => c.url === '/bills/generate' || c.url.includes('/payments'),
+  );
+  assertEqualOrThrow(
+    billOrPayCalls.length,
+    0,
+    'No bill generation or payment calls executed under manager session',
+  );
+
+  const mgrCartItems = useCartStore.getState().items;
+  assertEqualOrThrow(mgrCartItems.length, 1, 'Manager cart has 1 item');
+  assertEqualOrThrow(mgrCartItems[0].product.id, 'prod-2', 'Manager cart item is Tea');
+
+  const ownerKey = getPrepaidOrderAttemptStorageKey('owner-1');
+  const ownerSavedRaw = fakeStorage.getItem(ownerKey);
+  assertOrThrow(ownerSavedRaw, 'Owner recovery state exists in storage under owner key');
+  const ownerSaved = JSON.parse(ownerSavedRaw!);
+  assertEqualOrThrow(
+    ownerSaved?.order?.id,
+    'order-123',
+    'Owner recovery state preserved with created order id',
+  );
+
+  // 6. Switch back to owner-1 and verify owner recovery state is preserved
+  useAuthStore.setState({
+    user: null,
+    token: null,
+    isLocked: true,
+  });
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  renderPOSPage(POSPage);
+
+  const ownerRestored = JSON.parse(fakeStorage.getItem(ownerKey)!);
+  assertEqualOrThrow(
+    ownerRestored?.order?.id,
+    'order-123',
+    'Owner recovery record preserved after switching back to owner',
   );
 
   closeDatabase();

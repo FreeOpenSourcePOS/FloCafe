@@ -1230,6 +1230,113 @@ async function main() {
       );
     }
     console.log('  ✓ All 7 Qodo review invariants verified');
+
+    console.log(
+      '\n─── 7. Custom charges (Eco Fee) and legacy charge fallback in archived invoices (PR #1400) ───',
+    );
+    {
+      const chargesDate = '2026-09-22';
+      const ecoBreakdown = JSON.stringify([
+        {
+          id: 'eco_fee',
+          name: 'Eco Fee',
+          type: 'fixed',
+          amount: 10.0,
+          calculation_basis: 'net',
+          waived: false,
+        },
+      ]);
+
+      // Bill with 10.00 custom Eco Fee (subtotal: 60.00, tax: 4.20, total: 74.20)
+      insertBillWithOrder({
+        billNumber: 'INV-ECO-01',
+        orderNumber: 'ORD-ECO-01',
+        paidAt: `${chargesDate}T12:00:00Z`,
+        paymentStatus: 'paid',
+        subtotal: 60,
+        taxAmount: 4.2,
+        taxRate: 7,
+        taxTitle: 'VAT 7%',
+        total: 74.2,
+        method: 'cash',
+        items: [
+          {
+            productId: 'prod-latte',
+            productName: 'Eco Coffee',
+            qty: 1,
+            unitPrice: 60,
+            subtotal: 60,
+            taxAmount: 4.2,
+            total: 64.2,
+          },
+        ],
+      });
+      // Attach charges_breakdown to the newly inserted order and bill
+      db.prepare("UPDATE orders SET charges_breakdown = ? WHERE order_number = 'ORD-ECO-01'").run(
+        ecoBreakdown,
+      );
+      db.prepare("UPDATE bills SET charges_breakdown = ? WHERE bill_number = 'INV-ECO-01'").run(
+        ecoBreakdown,
+      );
+
+      // Legacy bill with charges_breakdown = NULL and legacy service, packaging, delivery charges
+      insertBillWithOrder({
+        billNumber: 'INV-LEGACY-01',
+        orderNumber: 'ORD-LEGACY-01',
+        paidAt: `${chargesDate}T13:00:00Z`,
+        paymentStatus: 'paid',
+        subtotal: 50,
+        serviceCharge: 5.0,
+        taxAmount: 3.5,
+        taxRate: 7,
+        taxTitle: 'VAT 7%',
+        total: 63.5,
+        method: 'card',
+        items: [
+          {
+            productId: 'prod-croissant',
+            productName: 'Legacy Croissant',
+            qty: 1,
+            unitPrice: 50,
+            subtotal: 50,
+            taxAmount: 3.5,
+            total: 53.5,
+          },
+        ],
+      });
+      db.prepare(
+        "UPDATE bills SET packaging_charge = 3.0, delivery_charge = 2.0, total = 63.5 WHERE bill_number = 'INV-LEGACY-01'",
+      ).run();
+      db.prepare(
+        "UPDATE orders SET packaging_charge = 3.0, delivery_charge = 2.0, total = 63.5 WHERE order_number = 'ORD-LEGACY-01'",
+      ).run();
+
+      const res = await fetch(
+        `${baseUrl}/api/reports/daily-invoices/export?date=${chargesDate}&format=html`,
+        { headers: owner.authHeader },
+      );
+      assert.equal(res.status, 200, 'owner export for charges date returns 200');
+      const html = await res.text();
+
+      // Verify custom Eco Fee renders in archived invoice
+      assert.ok(html.includes('Eco Fee'), 'custom charge "Eco Fee" renders in archived invoice');
+      assert.ok(html.includes('10.00'), 'custom charge amount "10.00" renders in archived invoice');
+
+      // Verify legacy bills with charges_breakdown = NULL still render standard charge lines
+      assert.ok(
+        html.includes('Service Charge'),
+        'legacy bill renders "Service Charge" when charges_breakdown is NULL',
+      );
+      assert.ok(
+        html.includes('Packaging Charge'),
+        'legacy bill renders "Packaging Charge" when charges_breakdown is NULL',
+      );
+      assert.ok(
+        html.includes('Delivery Charge'),
+        'legacy bill renders "Delivery Charge" when charges_breakdown is NULL',
+      );
+    }
+    console.log('  ✓ Custom charges and legacy fallbacks verified in archived invoices');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     closeDatabase();

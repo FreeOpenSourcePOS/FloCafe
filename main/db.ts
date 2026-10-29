@@ -7796,6 +7796,27 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 121,
     name: 'add_whatsapp_message_attempts',
     up: () => {
+      if (getTables(db).includes('whatsapp_message_attempts')) {
+        const fks = db.prepare('PRAGMA foreign_key_list(whatsapp_message_attempts)').all() as {
+          table: string;
+        }[];
+        if (fks.some((fk) => fk.table !== 'whatsapp_messages')) {
+          db.exec(`
+            ALTER TABLE whatsapp_message_attempts RENAME TO whatsapp_message_attempts_recreate;
+            CREATE TABLE whatsapp_message_attempts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              message_id INTEGER NOT NULL REFERENCES whatsapp_messages(id) ON DELETE CASCADE,
+              external_message_id TEXT NOT NULL UNIQUE,
+              created_at TEXT NOT NULL
+            );
+            INSERT OR IGNORE INTO whatsapp_message_attempts (id, message_id, external_message_id, created_at)
+            SELECT a.id, a.message_id, a.external_message_id, a.created_at
+            FROM whatsapp_message_attempts_recreate a
+            JOIN whatsapp_messages m ON m.id = a.message_id;
+            DROP TABLE whatsapp_message_attempts_recreate;
+          `);
+        }
+      }
       db.exec(`
         CREATE TABLE IF NOT EXISTS whatsapp_message_attempts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,

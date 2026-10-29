@@ -1810,7 +1810,9 @@ async function main(): Promise<void> {
         ]);
         await new Promise((resolve) => setImmediate(resolve));
         const f2AfterDelivered = db
-          .prepare('SELECT status, error, failed_at, delivered_at FROM whatsapp_messages WHERE id = ?')
+          .prepare(
+            'SELECT status, error, failed_at, delivered_at FROM whatsapp_messages WHERE id = ?',
+          )
           .get(f2MsgId) as {
           status: string;
           error: string | null;

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import {
+  ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
   getDatabase,
   getKdsStationCategoryIds,
   getKdsStationRoutingScope,
@@ -21,15 +22,6 @@ const router = Router();
 
 router.use(requirePermission('kitchen.use'));
 router.use(requireKdsEnabled);
-
-// Query active kitchen orders using indexed UNION query across order and item statuses.
-const ACTIVE_KITCHEN_ORDER_IDS_SQL = `
-  SELECT id FROM orders WHERE release_status = 'released' AND status IN ('pending','preparing','ready','served')
-  UNION
-  SELECT o.id FROM orders o
-  JOIN order_items oi ON oi.order_id = o.id AND oi.status NOT IN ('served','cancelled')
-  WHERE o.release_status = 'released' AND o.status NOT IN ('pending','preparing','ready','served','cancelled')
-`;
 
 // GET /api/kitchen/orders — returns active orders with items for KDS display
 router.get('/orders', (req: Request, res: Response) => {
@@ -79,7 +71,7 @@ router.get('/orders', (req: Request, res: Response) => {
       .prepare(`
       SELECT o.*, t.kitchen_station_id
       FROM orders o LEFT JOIN tables t ON t.id = o.table_id
-      WHERE o.id IN (${ACTIVE_KITCHEN_ORDER_IDS_SQL})${stationFilter}
+      WHERE o.id IN (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})${stationFilter}
       ORDER BY o.created_at ASC
     `)
       .all(...stationIds, ...stationRoutingCategoryIds) as any[];

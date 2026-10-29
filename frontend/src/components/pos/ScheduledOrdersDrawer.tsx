@@ -87,9 +87,26 @@ function hasCollectedFunds(order: Order): boolean {
   });
 }
 
+export function canPayScheduledOrder(order: Order): boolean {
+  const bills = getOrderBills(order);
+  return (
+    bills.length === 0 ||
+    bills.some((b) => b.payment_status === 'unpaid' || b.payment_status === 'partial')
+  );
+}
+
 function getPaymentBadgeState(order: Order): 'paid' | 'partial' | 'refunded' | 'unpaid' {
   const bills = getOrderBills(order);
-  if (bills.length > 0 && bills.every((b) => b.payment_status === 'refunded')) {
+  if (
+    bills.length > 0 &&
+    bills.every(
+      (b) =>
+        b.payment_status === 'paid' ||
+        b.payment_status === 'partially_refunded' ||
+        b.payment_status === 'refunded',
+    ) &&
+    bills.some((b) => b.payment_status === 'refunded' || b.payment_status === 'partially_refunded')
+  ) {
     return 'refunded';
   }
   if (bills.length > 0 && bills.every((b) => b.payment_status === 'paid')) {
@@ -628,7 +645,7 @@ export default function ScheduledOrdersDrawer({
             </Button>
           )}
 
-          {payState !== 'paid' && canPay && (
+          {canPayScheduledOrder(order) && canPay && (
             <Button
               type="button"
               variant="outline"

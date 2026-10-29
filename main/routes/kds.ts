@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import {
+  ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
   getDatabase,
+  getKdsItemParentOrderState,
   getKdsStationCategoryIds,
   getKdsStationRoutingScope,
   getUserKdsStationIds,
@@ -13,6 +15,7 @@ import {
   projectKdsItem,
   projectKdsOrder,
   projectKdsStation,
+  UNRELEASED_KDS_ORDER_ITEM_ERROR,
   withTxn,
 } from '../db';
 import * as crypto from 'crypto';
@@ -135,13 +138,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     }
     // Include active orders and completed orders with items still being prepared.
     let query = `
-      WITH active_ids AS (
-        SELECT id FROM orders WHERE release_status = 'released' AND status IN ('pending','preparing','ready','served')
-        UNION
-        SELECT o.id FROM orders o
-        JOIN order_items oi ON oi.order_id = o.id AND oi.status NOT IN ('served','cancelled')
-        WHERE o.release_status = 'released' AND o.status NOT IN ('pending','preparing','ready','served','cancelled')
-      )
+      WITH active_ids AS (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})
       SELECT o.*, t.number as table_name, t.floor, t.section, t.kitchen_station_id
       FROM orders o
       LEFT JOIN tables t ON o.table_id = t.id
@@ -572,13 +569,11 @@ router.patch(
             throw new Error('CATEGORY_FORBIDDEN');
           }
         }
-        const parentOrder = db
-          .prepare('SELECT id, release_status FROM orders WHERE id = ?')
-          .get(item.order_id) as { id: number; release_status?: string | null } | undefined;
-        if (!parentOrder) {
+        const parentOrderState = getKdsItemParentOrderState(db, item.order_id);
+        if (parentOrderState === 'missing') {
           throw new Error('ORPHANED_ORDER_ITEM');
         }
-        if (parentOrder.release_status && parentOrder.release_status !== 'released') {
+        if (parentOrderState === 'unreleased') {
           throw new Error('UNRELEASED_ORDER_ITEM');
         }
         if (currentStationIds.length > 0) {
@@ -666,9 +661,7 @@ router.patch(
         return res.status(404).json({ error: 'Order item is not attached to an order' });
       }
       if (error.message === 'UNRELEASED_ORDER_ITEM') {
-        return res
-          .status(409)
-          .json({ error: 'Scheduled order has not been released to the kitchen yet' });
+        return res.status(409).json({ error: UNRELEASED_KDS_ORDER_ITEM_ERROR });
       }
       if (error.message === 'STATUS_CONFLICT') {
         return res.status(409).json({ error: 'Item status changed; refresh and try again' });

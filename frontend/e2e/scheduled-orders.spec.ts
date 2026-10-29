@@ -28,6 +28,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
   const runId = Math.random().toString(36).slice(2, 8);
   const createdOrderIds: number[] = [];
   let trackedProductId: string | null = null;
+  let managerPinSet = false;
 
   try {
     await page.goto(`${BASE}/auth/login`);
@@ -134,6 +135,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await expect(paidCard.getByTestId(`scheduled-payment-badge-${prepaidOrderId}`)).toContainText(
       'Paid',
     );
+    await expect(paidCard.getByTestId(`scheduled-pay-btn-${prepaidOrderId}`)).toHaveCount(0);
     await expect(paidCard.getByTestId(`scheduled-edit-locked-${prepaidOrderId}`)).toBeVisible();
     await expect(paidCard.getByTestId(`scheduled-add-items-btn-${prepaidOrderId}`)).toHaveCount(0);
 
@@ -159,6 +161,62 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await expect(
       paidCard.getByTestId(`scheduled-refund-required-msg-${prepaidOrderId}`),
     ).toBeVisible();
+
+    const setPinRes = await page.request.put(`${BASE}/api/staff/e2e-manager`, {
+      headers: ownerHeaders,
+      data: { pin: '2468' },
+    });
+    expect(setPinRes.ok()).toBeTruthy();
+    managerPinSet = true;
+
+    const billRes = await page.request.get(`${BASE}/api/bills/order/${prepaidOrderId}`, {
+      headers: ownerHeaders,
+    });
+    expect(billRes.ok()).toBeTruthy();
+    const prepaidBill = (await billRes.json()).bill as { id: number; total: number };
+
+    const partialRefundRes = await page.request.post(`${BASE}/api/refunds`, {
+      headers: ownerHeaders,
+      data: {
+        bill_id: prepaidBill.id,
+        amount: 10,
+        method: 'cash',
+        approver_id: 'e2e-manager',
+        override_pin: '2468',
+      },
+    });
+    expect(partialRefundRes.status()).toBe(201);
+
+    await drawer.locator('button[aria-label="Close"]').click();
+    await page.getByTestId('pos-scheduled-orders-btn').click();
+    await expect(drawer).toBeVisible();
+    await expect(paidCard.getByTestId(`scheduled-payment-badge-${prepaidOrderId}`)).toContainText(
+      'Refund Issued',
+    );
+    await expect(paidCard.getByTestId(`scheduled-pay-btn-${prepaidOrderId}`)).toHaveCount(0);
+    await expect(paidCard.getByTestId(`scheduled-refund-btn-${prepaidOrderId}`)).toBeVisible();
+
+    const remainingRefund = Number((Number(prepaidBill.total) - 10).toFixed(2));
+    const fullRefundRes = await page.request.post(`${BASE}/api/refunds`, {
+      headers: ownerHeaders,
+      data: {
+        bill_id: prepaidBill.id,
+        amount: remainingRefund,
+        method: 'cash',
+        approver_id: 'e2e-manager',
+        override_pin: '2468',
+      },
+    });
+    expect(fullRefundRes.status()).toBe(201);
+
+    await drawer.locator('button[aria-label="Close"]').click();
+    await page.getByTestId('pos-scheduled-orders-btn').click();
+    await expect(drawer).toBeVisible();
+    await expect(paidCard.getByTestId(`scheduled-payment-badge-${prepaidOrderId}`)).toContainText(
+      'Refund Issued',
+    );
+    await expect(paidCard.getByTestId(`scheduled-pay-btn-${prepaidOrderId}`)).toHaveCount(0);
+    await expect(paidCard.getByTestId(`scheduled-refund-btn-${prepaidOrderId}`)).toHaveCount(0);
 
     // 4. Blocked release -> Needs Attention -> Restock -> Retry release
     const createProdRes = await page.request.post(`${BASE}/api/products`, {
@@ -319,6 +377,14 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     if (trackedProductId) {
       await page.request
         .delete(`${BASE}/api/products/${trackedProductId}`, { headers: ownerHeaders })
+        .catch(() => {});
+    }
+    if (managerPinSet) {
+      await page.request
+        .put(`${BASE}/api/staff/e2e-manager`, {
+          headers: ownerHeaders,
+          data: { pin: null },
+        })
         .catch(() => {});
     }
   }

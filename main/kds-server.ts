@@ -13,8 +13,10 @@ import {
   installHttpShutdownTracking,
 } from './shutdown';
 import {
+  ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
   databaseMaintenanceMiddleware,
   getDatabase,
+  getKdsItemParentOrderState,
   getKdsStationCategoryIds,
   getKdsStationRoutingScope,
   getUserKdsStationIds,
@@ -28,6 +30,7 @@ import {
   KDS_VOIDED_ITEM_VISIBILITY_MS,
   projectKdsItem,
   projectKdsOrder,
+  UNRELEASED_KDS_ORDER_ITEM_ERROR,
 } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { reconcileActiveOrderStatusFromItems } from './services/orders';
@@ -396,14 +399,7 @@ export function startKdsServer(): Promise<void> {
           FROM orders o
           LEFT JOIN tables t ON o.table_id = t.id
           INNER JOIN order_items oi ON oi.order_id = o.id
-          WHERE o.id IN (
-            SELECT id FROM orders WHERE status IN ('pending', 'preparing', 'ready', 'served')
-            UNION
-            SELECT active_o.id FROM orders active_o
-            JOIN order_items active_oi ON active_oi.order_id = active_o.id
-              AND active_oi.status NOT IN ('served', 'cancelled')
-            WHERE active_o.status NOT IN ('pending', 'preparing', 'ready', 'served', 'cancelled')
-          )
+          WHERE o.id IN (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})
           AND oi.status NOT IN ('completed', 'cancelled', 'void_adjustment', 'refunded')
           AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         `;
@@ -592,8 +588,12 @@ export function startKdsServer(): Promise<void> {
           `)
               .get(req.params.id) as any;
             if (!item) return { statusCode: 404, error: 'Order item not found' };
-            if (!db.prepare('SELECT id FROM orders WHERE id = ?').get(item.order_id)) {
+            const parentOrderState = getKdsItemParentOrderState(db, item.order_id);
+            if (parentOrderState === 'missing') {
               return { statusCode: 404, error: 'Order item is not attached to an order' };
+            }
+            if (parentOrderState === 'unreleased') {
+              return { statusCode: 409, error: UNRELEASED_KDS_ORDER_ITEM_ERROR };
             }
 
             // #150: locked once voided — see main/routes/order-items.ts for the same rule.

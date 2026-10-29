@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import {
   getDatabase,
+  getKdsItemParentOrderState,
   getKdsStationCategoryIds,
   getKdsStationRoutingScope,
   getUserKdsStationIds,
@@ -13,6 +14,7 @@ import {
   isVoidedItemKdsVisible,
   projectKdsItem,
   projectKdsOrder,
+  UNRELEASED_KDS_ORDER_ITEM_ERROR,
   withTxn,
 } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
@@ -275,14 +277,12 @@ router.patch(
             diagnosticCode: 'category_scope_denied',
           });
         }
-        const parentOrder = db
-          .prepare('SELECT id, release_status FROM orders WHERE id = ?')
-          .get(item.order_id) as { id: number; release_status?: string | null } | undefined;
-        if (!parentOrder)
+        const parentOrderState = getKdsItemParentOrderState(db, item.order_id);
+        if (parentOrderState === 'missing')
           throw Object.assign(new Error('ORPHANED_ORDER_ITEM'), {
             diagnosticCode: 'orphaned_order',
           });
-        if (parentOrder.release_status && parentOrder.release_status !== 'released')
+        if (parentOrderState === 'unreleased')
           throw Object.assign(new Error('UNRELEASED_ORDER_ITEM'), {
             diagnosticCode: 'order_unreleased',
           });
@@ -461,7 +461,7 @@ router.patch(
             .json({ error: 'Order item is not attached to an order', ...diagnostic });
         if (error.message === 'UNRELEASED_ORDER_ITEM')
           return res.status(409).json({
-            error: 'Scheduled order has not been released to the kitchen yet',
+            error: UNRELEASED_KDS_ORDER_ITEM_ERROR,
             ...diagnostic,
           });
         if (error.message === 'STATUS_CONFLICT')
@@ -490,9 +490,7 @@ router.patch(
         return res.status(404).json({ error: 'Order item is not attached to an order' });
       }
       if (error.message === 'UNRELEASED_ORDER_ITEM') {
-        return res
-          .status(409)
-          .json({ error: 'Scheduled order has not been released to the kitchen yet' });
+        return res.status(409).json({ error: UNRELEASED_KDS_ORDER_ITEM_ERROR });
       }
       if (error.message === 'STATUS_CONFLICT') {
         return res.status(409).json({ error: 'Item status changed; refresh and try again' });

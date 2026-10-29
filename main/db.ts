@@ -9216,6 +9216,34 @@ export function isVoidedItemKdsVisible(voidedAt: string | null | undefined): boo
   return Date.now() - parseDbTimestamp(voidedAt).getTime() < KDS_VOIDED_ITEM_VISIBILITY_MS;
 }
 
+export const ACTIVE_RELEASED_KDS_ORDER_IDS_SQL = `
+  SELECT id FROM orders
+  WHERE release_status = 'released' AND status IN ('pending', 'preparing', 'ready', 'served')
+  UNION
+  SELECT active_o.id FROM orders active_o
+  JOIN order_items active_oi ON active_oi.order_id = active_o.id
+    AND active_oi.status NOT IN ('served', 'cancelled')
+  WHERE active_o.release_status = 'released'
+    AND active_o.status NOT IN ('pending', 'preparing', 'ready', 'served', 'cancelled')
+`;
+
+export const UNRELEASED_KDS_ORDER_ITEM_ERROR =
+  'Scheduled order has not been released to the kitchen yet';
+
+export function getKdsItemParentOrderState(
+  dbInstance: ReturnType<typeof getDatabase>,
+  orderId: number | string,
+): 'released' | 'unreleased' | 'missing' {
+  const parentOrder = dbInstance
+    .prepare('SELECT id, release_status FROM orders WHERE id = ?')
+    .get(orderId) as { id: number; release_status?: string | null } | undefined;
+  if (!parentOrder) return 'missing';
+  if (parentOrder.release_status && parentOrder.release_status !== 'released') {
+    return 'unreleased';
+  }
+  return 'released';
+}
+
 /** Remove customer/payment/order-financial fields from category-scoped KDS payloads. */
 export function projectKdsOrder(order: any, restricted: boolean): any {
   if (!restricted) return order;

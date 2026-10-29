@@ -35,7 +35,9 @@ import PrepaidCheckoutModal, {
   type PrepaidDiscount,
 } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
-import ScheduledOrdersDrawer from '@/components/pos/ScheduledOrdersDrawer';
+import ScheduledOrdersDrawer, {
+  canPayScheduledOrder,
+} from '@/components/pos/ScheduledOrdersDrawer';
 import RefundModal from '@/components/orders/RefundModal';
 import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/scheduled-time';
 import dynamic from 'next/dynamic';
@@ -2472,6 +2474,7 @@ export default function POSPage() {
   };
 
   const handlePayScheduledOrder = async (order: Order) => {
+    if (!canPayScheduledOrder(order)) return;
     try {
       const existingBills =
         order.bills && order.bills.length > 0 ? order.bills : order.bill ? [order.bill] : [];
@@ -2484,6 +2487,10 @@ export default function POSPage() {
       } else {
         const { data } = await api.post('/bills/generate', { order_id: order.id });
         billToPay = data.bill as Bill;
+      }
+      if (billToPay.payment_status !== 'unpaid' && billToPay.payment_status !== 'partial') {
+        await refreshScheduledOrders();
+        return;
       }
       setCheckoutOverridePin(undefined);
       setPaymentBill(billToPay);

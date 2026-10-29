@@ -1,6 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import {
+  ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
   getDatabase,
+  getKdsItemParentOrderState,
   getKdsStationCategoryIds,
   getKdsStationRoutingScope,
   getUserKdsStationIds,
@@ -16,6 +18,7 @@ import {
   projectKdsItem,
   projectKdsOrder,
   registerDatabaseMaintenanceStartListener,
+  UNRELEASED_KDS_ORDER_ITEM_ERROR,
   withTxn,
 } from '../db';
 import * as jwt from 'jsonwebtoken';
@@ -505,11 +508,12 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
         return { error: 'This terminal item cannot be updated from KDS' };
       }
 
-      const parentOrder = db
-        .prepare('SELECT id, release_status FROM orders WHERE id = ?')
-        .get(existingItem.order_id) as { id: number; release_status?: string | null } | undefined;
-      if (parentOrder?.release_status && parentOrder.release_status !== 'released') {
-        return { error: 'Scheduled order has not been released to the kitchen yet' };
+      const parentOrderState = getKdsItemParentOrderState(db, existingItem.order_id);
+      if (parentOrderState === 'missing') {
+        return { error: 'Order item is not attached to an order' };
+      }
+      if (parentOrderState === 'unreleased') {
+        return { error: UNRELEASED_KDS_ORDER_ITEM_ERROR };
       }
 
       if (client.stationIds.length > 0) {
@@ -607,13 +611,7 @@ function activeOrdersCondition(): string {
   if (!isKdsEnabled())
     return `o.release_status = 'released' AND o.status NOT IN ('completed', 'cancelled')`;
   // Fast indexed CTE query matching active orders or unserved items.
-  return `o.id IN (
-    SELECT id FROM orders WHERE release_status = 'released' AND status IN ('pending','preparing','ready','served')
-    UNION
-    SELECT o2.id FROM orders o2
-    JOIN order_items oi2 ON oi2.order_id = o2.id AND oi2.status NOT IN ('served','cancelled')
-    WHERE o2.release_status = 'released' AND o2.status NOT IN ('pending','preparing','ready','served','cancelled')
-  )`;
+  return `o.id IN (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})`;
 }
 
 function sendActiveOrders(

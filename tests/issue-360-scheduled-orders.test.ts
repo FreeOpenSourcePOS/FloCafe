@@ -53,6 +53,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 process.env.JWT_SECRET = 'test-secret-scheduled-orders-360';
+process.env.KDS_PORT = '0';
 
 const bcrypt = require('bcryptjs');
 const {
@@ -92,6 +93,7 @@ const {
 } = require('../shared/scheduled-time');
 const { resetPinRateLimitForTests } = require('../main/routes/orders');
 const { registerRoutes } = require('../main/routes/index');
+const { startKdsServer, stopKdsServer, getKdsPort } = require('../main/kds-server');
 
 function setStoreSetting(db: any, key: string, value: string) {
   db.prepare(
@@ -285,6 +287,8 @@ async function main() {
   const app = createApp({});
   registerRoutes(app);
   const { baseUrl, server } = await startServer(app);
+  await startKdsServer();
+  const kdsBaseUrl = `http://127.0.0.1:${getKdsPort()}`;
 
   try {
     // ── 1. Order type gating & Timezone / DST validation ─────────────────────
@@ -487,6 +491,19 @@ async function main() {
         'unreleased order excluded from /api/kds/orders',
       );
 
+      const standaloneKdsPreRes = await api(kdsBaseUrl, '/api/kds/orders', {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(
+        standaloneKdsPreRes.status,
+        200,
+        'standalone GET /api/kds/orders succeeds',
+      );
+      assertOrThrow(
+        !standaloneKdsPreRes.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
+        'unreleased order excluded from standalone /api/kds/orders',
+      );
+
       const kdsDisplayRes = await api(baseUrl, '/api/kds/display?station_id=stn-sched-1', {
         headers: owner.authHeader,
       });
@@ -533,6 +550,21 @@ async function main() {
         kdsItemMutateRes.status,
         409,
         'PATCH /api/kds/items/:id/status rejected (409) before release',
+      );
+
+      const standaloneKdsMutatePreRes = await api(
+        kdsBaseUrl,
+        `/api/kds/items/${scheduledOrder1ItemId}/status`,
+        {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'preparing' },
+        },
+      );
+      assertEqualOrThrow(
+        standaloneKdsMutatePreRes.status,
+        409,
+        'standalone PATCH /api/kds/items/:id/status rejected (409) before release',
       );
 
       const orderItemMutateRes = await api(
@@ -696,6 +728,27 @@ async function main() {
         kdsAfter.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
         'released order now appears on KDS',
       );
+      const standaloneKdsAfter = await api(kdsBaseUrl, '/api/kds/orders', {
+        headers: owner.authHeader,
+      });
+      assertOrThrow(
+        standaloneKdsAfter.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
+        'released order appears on standalone KDS server',
+      );
+      const standaloneKdsMutatePost = await api(
+        kdsBaseUrl,
+        `/api/kds/items/${scheduledOrder1ItemId}/status`,
+        {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'preparing' },
+        },
+      );
+      assertEqualOrThrow(
+        standaloneKdsMutatePost.status,
+        200,
+        'standalone PATCH /api/kds/items/:id/status succeeds after release',
+      );
       assertOrThrow(
         buildDisplayFeed().orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
         'released order now appears on customer display feed',
@@ -854,6 +907,28 @@ async function main() {
       assertOrThrow(
         !kdsWhileBlocked.data.orders.some((o: any) => Number(o.id) === blockedOrderId),
         'blocked order remains excluded from KDS',
+      );
+      const standaloneKdsBlocked = await api(kdsBaseUrl, '/api/kds/orders', {
+        headers: owner.authHeader,
+      });
+      assertOrThrow(
+        !standaloneKdsBlocked.data.orders.some((o: any) => Number(o.id) === blockedOrderId),
+        'blocked order excluded from standalone KDS server',
+      );
+      const blockedItemId = Number(blockedOrderRes.data.order.items[0].id);
+      const standaloneMutateBlocked = await api(
+        kdsBaseUrl,
+        `/api/kds/items/${blockedItemId}/status`,
+        {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'preparing' },
+        },
+      );
+      assertEqualOrThrow(
+        standaloneMutateBlocked.status,
+        409,
+        'standalone PATCH /api/kds/items/:id/status rejected (409) while blocked',
       );
 
       // Restock prod-muffin (+5 -> total 7), verify automatic due sweep does NOT auto-release a blocked order!
@@ -1410,6 +1485,7 @@ async function main() {
     assertEqualOrThrow(results.failed, 0, 'zero failed assertions');
   } finally {
     stopScheduledOrderSweep();
+    await stopKdsServer();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     closeDatabase();
     Module._load = originalLoad;

@@ -1049,7 +1049,94 @@ function stageDatabaseCopyInDirectory(
   }
 }
 
-function stageDatabaseCopyWithFallback(
+function isShutdownOrMaintenanceAbortError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'ERR_SHUTDOWN_ABORTED' || code === 'ABORT_ERR';
+}
+
+function isSqliteStorageOrOpenError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  if (
+    error instanceof TypeError &&
+    error.message.includes('Cannot open database because the directory does not exist')
+  ) {
+    return true;
+  }
+  const err = error as { code?: unknown; errno?: unknown };
+  if (typeof err.errno === 'number') return true;
+  if (typeof err.code !== 'string') return false;
+  const code = err.code;
+  if (code === 'SQLITE_IOERR_SHORT_READ') return false;
+  if (
+    code === 'SQLITE_IOERR' ||
+    code.startsWith('SQLITE_IOERR_') ||
+    code === 'SQLITE_FULL' ||
+    code.startsWith('SQLITE_FULL_') ||
+    code === 'SQLITE_CANTOPEN' ||
+    code.startsWith('SQLITE_CANTOPEN_') ||
+    code === 'SQLITE_NOMEM' ||
+    code.startsWith('SQLITE_NOMEM_') ||
+    code === 'SQLITE_BUSY' ||
+    code.startsWith('SQLITE_BUSY_') ||
+    code === 'SQLITE_LOCKED' ||
+    code.startsWith('SQLITE_LOCKED_') ||
+    code === 'SQLITE_PERM' ||
+    code.startsWith('SQLITE_PERM_') ||
+    code === 'SQLITE_READONLY' ||
+    code.startsWith('SQLITE_READONLY_') ||
+    code === 'SQLITE_PROTOCOL' ||
+    code.startsWith('SQLITE_PROTOCOL_') ||
+    code === 'SQLITE_NOLFS'
+  ) {
+    return true;
+  }
+  return /^(?:ENOSPC|EDQUOT|EIO|EACCES|EPERM|EROFS|EMFILE|ENFILE|ENOMEM|EBUSY|EAGAIN|EXDEV|ENOENT|ENOTDIR)$/.test(
+    code,
+  );
+}
+
+function runStagedDatabaseProbeInDirectory<T>(
+  parentDir: string,
+  dirPrefix: string,
+  targetFileName: string,
+  sourceDbPath: string,
+  sidecars: readonly SqliteProbeSidecar[],
+  probeFn: (probeDb: Database.Database) => T,
+): { kind: 'ok'; value: T } | { kind: 'corrupt'; error: unknown } {
+  let tempDir: string | null = null;
+  let probeDb: Database.Database | undefined;
+  try {
+    const staged = stageDatabaseCopyInDirectory(
+      parentDir,
+      dirPrefix,
+      targetFileName,
+      sourceDbPath,
+      sidecars,
+    );
+    tempDir = staged.tempDir;
+    try {
+      probeDb = new Database(staged.tempDbPath, { fileMustExist: true });
+      probeDb.pragma('temp_store = MEMORY');
+      return { kind: 'ok', value: probeFn(probeDb) };
+    } catch (probeError) {
+      if (isShutdownOrMaintenanceAbortError(probeError) || isSqliteStorageOrOpenError(probeError)) {
+        throw probeError;
+      }
+      return { kind: 'corrupt', error: probeError };
+    }
+  } finally {
+    try {
+      probeDb?.close();
+    } catch {}
+    if (tempDir) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {}
+    }
+  }
+}
+
+function probeStagedDatabaseWithFallback<T>(
   sourceDbPath: string,
   sidecars: readonly SqliteProbeSidecar[],
   options: {
@@ -1058,26 +1145,41 @@ function stageDatabaseCopyWithFallback(
     targetFileName: string;
     purposeLabel: string;
   },
-): { tempDir: string; tempDbPath: string } {
+  probeFn: (probeDb: Database.Database) => T,
+): { kind: 'ok'; value: T } | { kind: 'corrupt'; error: unknown } {
   try {
-    return stageDatabaseCopyInDirectory(
+    return runStagedDatabaseProbeInDirectory(
       os.tmpdir(),
       options.tmpPrefix,
       options.targetFileName,
       sourceDbPath,
       sidecars,
+      probeFn,
     );
   } catch (primaryError) {
+    if (
+      isShutdownOrMaintenanceAbortError(primaryError) ||
+      !isSqliteStorageOrOpenError(primaryError)
+    ) {
+      throw primaryError;
+    }
     const fallbackParentDir = path.dirname(path.resolve(sourceDbPath));
     try {
-      return stageDatabaseCopyInDirectory(
+      return runStagedDatabaseProbeInDirectory(
         fallbackParentDir,
         `${INTERNAL_DB_STAGE_DIR_PREFIX}${options.fallbackSubprefix}`,
         options.targetFileName,
         sourceDbPath,
         sidecars,
+        probeFn,
       );
     } catch (fallbackError) {
+      if (
+        isShutdownOrMaintenanceAbortError(fallbackError) ||
+        !isSqliteStorageOrOpenError(fallbackError)
+      ) {
+        throw fallbackError;
+      }
       const primaryMessage = primaryError instanceof Error ? primaryError.message : 'unknown error';
       const fallbackMessage =
         fallbackError instanceof Error ? fallbackError.message : 'unknown error';
@@ -1118,6 +1220,8 @@ function readSqliteHeaderInfo(filePath: string, throwOnReadError = false): Sqlit
     fd = fs.openSync(filePath, 'r');
     headerBytesRead = fs.readSync(fd, header, 0, 100, 0);
   } catch (readError) {
+    const readCode = (readError as NodeJS.ErrnoException | null)?.code;
+    if (readCode === 'ENOENT' || readCode === 'ENOTDIR') return null;
     if (throwOnReadError) {
       throw new Error(
         `Could not read SQLite header from ${filePath}: ${readError instanceof Error ? readError.message : 'unknown error'}`,
@@ -1145,7 +1249,7 @@ function isReadableRecoverySnapshotWithSidecars(
   recoveryPath: string,
   expectedSidecars: readonly ReplacementJournalSidecar[],
 ): boolean {
-  const headerInfo = readSqliteHeaderInfo(recoveryPath);
+  const headerInfo = readSqliteHeaderInfo(recoveryPath, true);
   if (!headerInfo) return false;
   if (pathEntryExists(`${recoveryPath}-journal`)) return false;
   const expectedSet = new Set(expectedSidecars);
@@ -1157,8 +1261,13 @@ function isReadableRecoverySnapshotWithSidecars(
       let sidecarStat: fs.Stats;
       try {
         sidecarStat = fs.lstatSync(sidecarPath);
-      } catch {
-        return false;
+      } catch (statError) {
+        const code = (statError as NodeJS.ErrnoException | null)?.code;
+        if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+        throw new Error(
+          `Could not inspect recovery sidecar ${sidecarPath}: ${statError instanceof Error ? statError.message : 'unknown error'}`,
+          { cause: statError },
+        );
       }
       if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) return false;
     }
@@ -1168,11 +1277,15 @@ function isReadableRecoverySnapshotWithSidecars(
     let probeDb: Database.Database | undefined;
     try {
       probeDb = new Database(recoveryPath, { readonly: true, fileMustExist: true });
+      probeDb.pragma('temp_store = MEMORY');
       const integrity = probeDb.prepare('PRAGMA integrity_check').all() as {
         integrity_check: string;
       }[];
       return integrity.length > 0 && integrity.every((row) => row.integrity_check === 'ok');
-    } catch {
+    } catch (error) {
+      if (isShutdownOrMaintenanceAbortError(error) || isSqliteStorageOrOpenError(error)) {
+        throw error;
+      }
       return false;
     } finally {
       try {
@@ -1181,36 +1294,23 @@ function isReadableRecoverySnapshotWithSidecars(
     }
   }
 
-  let tempDir: string | null = null;
-  let probeDb: Database.Database | undefined;
-  try {
-    const staged = stageDatabaseCopyWithFallback(recoveryPath, expectedSidecars, {
+  const probed = probeStagedDatabaseWithFallback(
+    recoveryPath,
+    expectedSidecars,
+    {
       tmpPrefix: 'flo-recovery-verify-',
       fallbackSubprefix: 'recovery-',
       targetFileName: 'recovery.db',
       purposeLabel: 'recovery snapshot for verification',
-    });
-    tempDir = staged.tempDir;
-    const tempDbPath = staged.tempDbPath;
-    try {
-      probeDb = new Database(tempDbPath, { fileMustExist: true });
+    },
+    (probeDb) => {
       const integrity = probeDb.prepare('PRAGMA integrity_check').all() as {
         integrity_check: string;
       }[];
       return integrity.length > 0 && integrity.every((row) => row.integrity_check === 'ok');
-    } catch {
-      return false;
-    }
-  } finally {
-    try {
-      probeDb?.close();
-    } catch {}
-    if (tempDir) {
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch {}
-    }
-  }
+    },
+  );
+  return probed.kind === 'ok' ? probed.value : false;
 }
 
 function validateDatabaseSchemaTableColumns(
@@ -1272,8 +1372,15 @@ function withProbedDatabaseFile<T>(
     let candidate: Database.Database | undefined;
     try {
       candidate = new Database(filePath, { readonly: true, fileMustExist: true });
+      candidate.pragma('temp_store = MEMORY');
       return fn(candidate);
-    } catch {
+    } catch (error) {
+      if (isShutdownOrMaintenanceAbortError(error)) {
+        throw error;
+      }
+      if (throwOnStagingError && isSqliteStorageOrOpenError(error)) {
+        throw error;
+      }
       return null;
     } finally {
       try {
@@ -1282,38 +1389,24 @@ function withProbedDatabaseFile<T>(
     }
   }
 
-  let tempDir: string | null = null;
-  let candidate: Database.Database | undefined;
   try {
-    let tempDbPath: string;
-    try {
-      const staged = stageDatabaseCopyWithFallback(filePath, presentSidecars, {
+    const probed = probeStagedDatabaseWithFallback(
+      filePath,
+      presentSidecars,
+      {
         tmpPrefix: 'flo-db-health-probe-',
         fallbackSubprefix: 'health-',
         targetFileName: 'probe.db',
         purposeLabel: 'database file for health verification',
-      });
-      tempDir = staged.tempDir;
-      tempDbPath = staged.tempDbPath;
-    } catch (stageError) {
-      if (throwOnStagingError) throw stageError;
-      return null;
+      },
+      (candidate) => fn(candidate),
+    );
+    return probed.kind === 'ok' ? probed.value : null;
+  } catch (stageError) {
+    if (isShutdownOrMaintenanceAbortError(stageError) || throwOnStagingError) {
+      throw stageError;
     }
-    try {
-      candidate = new Database(tempDbPath, { fileMustExist: true });
-      return fn(candidate);
-    } catch {
-      return null;
-    }
-  } finally {
-    try {
-      candidate?.close();
-    } catch {}
-    if (tempDir) {
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch {}
-    }
+    return null;
   }
 }
 
@@ -1517,7 +1610,14 @@ function checkHealthyDatabaseFile(
           metadata = candidate
             .prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'")
             .get() as { value: string } | undefined;
-        } catch {}
+        } catch (metaError) {
+          if (
+            isShutdownOrMaintenanceAbortError(metaError) ||
+            isSqliteStorageOrOpenError(metaError)
+          ) {
+            throw metaError;
+          }
+        }
 
         const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
         if (schemaVersion < 1 || schemaVersion > supportedVersion) {
@@ -1799,8 +1899,12 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     let recoveryStat: fs.Stats;
     try {
       recoveryStat = fs.lstatSync(recoveryPath);
-    } catch {
-      throw new Error('Interrupted database replacement snapshot is missing');
+    } catch (statError) {
+      const code = (statError as NodeJS.ErrnoException | null)?.code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') {
+        throw new Error('Interrupted database replacement snapshot is missing');
+      }
+      throw statError;
     }
     const recoverySidecars =
       pathEntryExists(`${recoveryPath}-wal`) ||
@@ -1902,7 +2006,10 @@ function readCanonicalMetaVersionInfo(probeDb: Database.Database): {
     const appVersion =
       typeof rawAppVersion === 'string' && rawAppVersion.trim() ? rawAppVersion.trim() : null;
     return { schemaVersion, appVersion };
-  } catch {
+  } catch (error) {
+    if (isShutdownOrMaintenanceAbortError(error) || isSqliteStorageOrOpenError(error)) {
+      throw error;
+    }
     return { schemaVersion: null, appVersion: null };
   }
 }
@@ -1933,7 +2040,7 @@ function inspectEffectiveDatabaseVersion(
 function inspectDatabaseVersionNonMutating(
   dbPath: string,
 ): { schemaVersion: number; appVersion: string | null } | null {
-  const headerInfo = readSqliteHeaderInfo(dbPath);
+  const headerInfo = readSqliteHeaderInfo(dbPath, true);
   if (!headerInfo) return null;
   const { headerVersion, isLegacyRollbackFormat } = headerInfo;
   const maxSupported = getLatestSupportedSchemaVersion();
@@ -1967,13 +2074,23 @@ function inspectDatabaseVersionNonMutating(
     let probeDb: Database.Database | undefined;
     try {
       probeDb = new Database(dbPath, { readonly: true, fileMustExist: true });
+      probeDb.pragma('temp_store = MEMORY');
       return (
         inspectEffectiveDatabaseVersion(probeDb, headerVersion, maxSupported) ?? {
           schemaVersion: headerVersion,
           appVersion: null,
         }
       );
-    } catch {
+    } catch (error) {
+      if (isShutdownOrMaintenanceAbortError(error)) {
+        throw error;
+      }
+      if (headerVersion > maxSupported) {
+        return { schemaVersion: headerVersion, appVersion: null };
+      }
+      if (isSqliteStorageOrOpenError(error)) {
+        throw error;
+      }
       return { schemaVersion: headerVersion, appVersion: null };
     } finally {
       try {
@@ -1983,42 +2100,30 @@ function inspectDatabaseVersionNonMutating(
   }
 
   // Inspect a disposable copy so live WAL/SHM/journal sidecars are never checkpointed or removed.
-  let tempDir: string | null = null;
-  let probeDb: Database.Database | undefined;
   try {
-    let tempDbPath: string;
-    try {
-      const staged = stageDatabaseCopyWithFallback(dbPath, presentSidecars, {
+    const probed = probeStagedDatabaseWithFallback(
+      dbPath,
+      presentSidecars,
+      {
         tmpPrefix: 'flo-schema-preflight-',
         fallbackSubprefix: 'preflight-',
         targetFileName: 'probe.db',
         purposeLabel: 'active database for schema preflight',
-      });
-      tempDir = staged.tempDir;
-      tempDbPath = staged.tempDbPath;
-    } catch (stageError) {
-      if (headerVersion > maxSupported) {
-        return { schemaVersion: headerVersion, appVersion: null };
-      }
+      },
+      (probeDb) => inspectEffectiveDatabaseVersion(probeDb, headerVersion, maxSupported),
+    );
+    if (probed.kind === 'ok') {
+      return probed.value;
+    }
+    return headerVersion > maxSupported ? { schemaVersion: headerVersion, appVersion: null } : null;
+  } catch (stageError) {
+    if (isShutdownOrMaintenanceAbortError(stageError)) {
       throw stageError;
     }
-    try {
-      probeDb = new Database(tempDbPath, { fileMustExist: true });
-      return inspectEffectiveDatabaseVersion(probeDb, headerVersion, maxSupported);
-    } catch {
-      return headerVersion > maxSupported
-        ? { schemaVersion: headerVersion, appVersion: null }
-        : null;
+    if (headerVersion > maxSupported) {
+      return { schemaVersion: headerVersion, appVersion: null };
     }
-  } finally {
-    try {
-      probeDb?.close();
-    } catch {}
-    if (tempDir) {
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch {}
-    }
+    throw stageError;
   }
 }
 
@@ -3413,6 +3518,145 @@ function validatePreLedgerBackupInventory(
   return null;
 }
 
+function inspectOpenBackupDatabaseForDowngrade(
+  candidateDb: Database.Database,
+  maxSupportedSchemaVersion: number,
+): DowngradeBackupSnapshotInspection {
+  candidateDb.pragma('temp_store = MEMORY');
+  const integrityRows = candidateDb.prepare('PRAGMA integrity_check').all() as {
+    integrity_check: string;
+  }[];
+  if (integrityRows.length === 0 || integrityRows.some((row) => row.integrity_check !== 'ok')) {
+    return {
+      status: 'corrupt_or_invalid',
+      schemaVersion: null,
+      appVersion: null,
+      detail: 'SQLite integrity check failed',
+    };
+  }
+
+  const pragmaVersion = Number(candidateDb.pragma('user_version', { simple: true }));
+  let hasMetaSchemaStamp = false;
+  let parsedMetaVersion: number | null = null;
+  let appVersion: string | null = null;
+  let backupCreatedAt: string | null = null;
+  const hasMetaTable = Boolean(
+    candidateDb
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_flo_meta'")
+      .get(),
+  );
+  if (hasMetaTable) {
+    const metaRows = candidateDb
+      .prepare(
+        "SELECT key, value FROM _flo_meta WHERE key IN ('schema_version', 'app_version', 'backup_created_at')",
+      )
+      .all() as { key: string; value: string | null }[];
+    const values = new Map(metaRows.map((row) => [row.key, row.value]));
+    hasMetaSchemaStamp = values.has('schema_version');
+    parsedMetaVersion = parseCanonicalSchemaVersion(values.get('schema_version'));
+    if (
+      hasMetaSchemaStamp &&
+      parsedMetaVersion !== null &&
+      parsedMetaVersion >= 1 &&
+      parsedMetaVersion === pragmaVersion
+    ) {
+      const rawAppVersion = values.get('app_version');
+      if (typeof rawAppVersion === 'string' && rawAppVersion.trim()) {
+        appVersion = rawAppVersion.trim();
+      }
+      const rawCreatedAt = values.get('backup_created_at');
+      if (typeof rawCreatedAt === 'string' && rawCreatedAt.trim()) {
+        backupCreatedAt = rawCreatedAt.trim();
+      }
+    }
+  }
+
+  if (hasMetaSchemaStamp && (parsedMetaVersion === null || parsedMetaVersion !== pragmaVersion)) {
+    return {
+      status: 'corrupt_or_invalid',
+      schemaVersion:
+        Number.isSafeInteger(pragmaVersion) && pragmaVersion > 0 ? pragmaVersion : null,
+      appVersion: null,
+      detail: 'Backup schema metadata does not match the SQLite header',
+    };
+  }
+
+  if (!Number.isSafeInteger(pragmaVersion) || pragmaVersion < 1) {
+    return {
+      status: 'corrupt_or_invalid',
+      schemaVersion: null,
+      appVersion: null,
+      detail: 'Backup does not contain an initialized Flo Cafe schema',
+    };
+  }
+
+  if (pragmaVersion > maxSupportedSchemaVersion) {
+    return {
+      status: 'incompatible_newer',
+      schemaVersion: pragmaVersion,
+      appVersion,
+      detail: `Requires schema v${pragmaVersion} (this version supports up to v${maxSupportedSchemaVersion})`,
+    };
+  }
+
+  const tables = new Set(getTables(candidateDb));
+  const missingCoreTables = CORE_FLO_BACKUP_TABLES.filter((table) => !tables.has(table));
+  if (missingCoreTables.length > 0) {
+    return {
+      status: 'corrupt_or_invalid',
+      schemaVersion: pragmaVersion,
+      appVersion,
+      detail: `Backup is missing required Flo Cafe table(s): ${missingCoreTables.join(', ')}`,
+    };
+  }
+
+  if (pragmaVersion === maxSupportedSchemaVersion) {
+    const schemaError = validateDatabaseSchemaTableColumns(
+      candidateDb,
+      maxSupportedSchemaVersion,
+      'Backup',
+    );
+    if (schemaError) {
+      return {
+        status: 'corrupt_or_invalid',
+        schemaVersion: pragmaVersion,
+        appVersion,
+        detail: schemaError,
+      };
+    }
+  }
+
+  const fkViolations = getForeignKeyViolationKeys(candidateDb);
+  if (fkViolations.size > 0) {
+    return {
+      status: 'corrupt_or_invalid',
+      schemaVersion: pragmaVersion,
+      appVersion,
+      detail: `Backup contains ${fkViolations.size} foreign-key violation(s)`,
+    };
+  }
+
+  const inventoryError =
+    pragmaVersion < 85 && !tables.has('inventory_movements')
+      ? validatePreLedgerBackupInventory(candidateDb, tables)
+      : validateInventoryLedgerDatabase(candidateDb);
+  if (inventoryError) {
+    return {
+      status: 'corrupt_or_invalid',
+      schemaVersion: pragmaVersion,
+      appVersion,
+      detail: inventoryError,
+    };
+  }
+
+  return {
+    status: 'compatible',
+    schemaVersion: pragmaVersion,
+    appVersion,
+    backupCreatedAt,
+  };
+}
+
 function inspectBackupSnapshotForDowngrade(
   snapshotPath: string,
   maxSupportedSchemaVersion: number,
@@ -3420,139 +3664,11 @@ function inspectBackupSnapshotForDowngrade(
   let candidateDb: Database.Database | undefined;
   try {
     candidateDb = new Database(snapshotPath, { readonly: true, fileMustExist: true });
-    const integrityRows = candidateDb.prepare('PRAGMA integrity_check').all() as {
-      integrity_check: string;
-    }[];
-    if (integrityRows.length === 0 || integrityRows.some((row) => row.integrity_check !== 'ok')) {
-      return {
-        status: 'corrupt_or_invalid',
-        schemaVersion: null,
-        appVersion: null,
-        detail: 'SQLite integrity check failed',
-      };
-    }
-
-    const pragmaVersion = Number(candidateDb.pragma('user_version', { simple: true }));
-    let hasMetaSchemaStamp = false;
-    let parsedMetaVersion: number | null = null;
-    let appVersion: string | null = null;
-    let backupCreatedAt: string | null = null;
-    const hasMetaTable = Boolean(
-      candidateDb
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_flo_meta'")
-        .get(),
-    );
-    if (hasMetaTable) {
-      const metaRows = candidateDb
-        .prepare(
-          "SELECT key, value FROM _flo_meta WHERE key IN ('schema_version', 'app_version', 'backup_created_at')",
-        )
-        .all() as { key: string; value: string | null }[];
-      const values = new Map(metaRows.map((row) => [row.key, row.value]));
-      hasMetaSchemaStamp = values.has('schema_version');
-      parsedMetaVersion = parseCanonicalSchemaVersion(values.get('schema_version'));
-      if (
-        hasMetaSchemaStamp &&
-        parsedMetaVersion !== null &&
-        parsedMetaVersion >= 1 &&
-        parsedMetaVersion === pragmaVersion
-      ) {
-        const rawAppVersion = values.get('app_version');
-        if (typeof rawAppVersion === 'string' && rawAppVersion.trim()) {
-          appVersion = rawAppVersion.trim();
-        }
-        const rawCreatedAt = values.get('backup_created_at');
-        if (typeof rawCreatedAt === 'string' && rawCreatedAt.trim()) {
-          backupCreatedAt = rawCreatedAt.trim();
-        }
-      }
-    }
-
-    if (hasMetaSchemaStamp && (parsedMetaVersion === null || parsedMetaVersion !== pragmaVersion)) {
-      return {
-        status: 'corrupt_or_invalid',
-        schemaVersion:
-          Number.isSafeInteger(pragmaVersion) && pragmaVersion > 0 ? pragmaVersion : null,
-        appVersion: null,
-        detail: 'Backup schema metadata does not match the SQLite header',
-      };
-    }
-
-    if (!Number.isSafeInteger(pragmaVersion) || pragmaVersion < 1) {
-      return {
-        status: 'corrupt_or_invalid',
-        schemaVersion: null,
-        appVersion: null,
-        detail: 'Backup does not contain an initialized Flo Cafe schema',
-      };
-    }
-
-    if (pragmaVersion > maxSupportedSchemaVersion) {
-      return {
-        status: 'incompatible_newer',
-        schemaVersion: pragmaVersion,
-        appVersion,
-        detail: `Requires schema v${pragmaVersion} (this version supports up to v${maxSupportedSchemaVersion})`,
-      };
-    }
-
-    const tables = new Set(getTables(candidateDb));
-    const missingCoreTables = CORE_FLO_BACKUP_TABLES.filter((table) => !tables.has(table));
-    if (missingCoreTables.length > 0) {
-      return {
-        status: 'corrupt_or_invalid',
-        schemaVersion: pragmaVersion,
-        appVersion,
-        detail: `Backup is missing required Flo Cafe table(s): ${missingCoreTables.join(', ')}`,
-      };
-    }
-
-    if (pragmaVersion === maxSupportedSchemaVersion) {
-      const schemaError = validateDatabaseSchemaTableColumns(
-        candidateDb,
-        maxSupportedSchemaVersion,
-        'Backup',
-      );
-      if (schemaError) {
-        return {
-          status: 'corrupt_or_invalid',
-          schemaVersion: pragmaVersion,
-          appVersion,
-          detail: schemaError,
-        };
-      }
-    }
-
-    const fkViolations = getForeignKeyViolationKeys(candidateDb);
-    if (fkViolations.size > 0) {
-      return {
-        status: 'corrupt_or_invalid',
-        schemaVersion: pragmaVersion,
-        appVersion,
-        detail: `Backup contains ${fkViolations.size} foreign-key violation(s)`,
-      };
-    }
-
-    const inventoryError =
-      pragmaVersion < 85 && !tables.has('inventory_movements')
-        ? validatePreLedgerBackupInventory(candidateDb, tables)
-        : validateInventoryLedgerDatabase(candidateDb);
-    if (inventoryError) {
-      return {
-        status: 'corrupt_or_invalid',
-        schemaVersion: pragmaVersion,
-        appVersion,
-        detail: inventoryError,
-      };
-    }
-
-    return {
-      status: 'compatible',
-      schemaVersion: pragmaVersion,
-      appVersion,
-      backupCreatedAt,
-    };
+    return inspectOpenBackupDatabaseForDowngrade(candidateDb, maxSupportedSchemaVersion);
   } catch (error: unknown) {
+    if (isShutdownOrMaintenanceAbortError(error) || isSqliteStorageOrOpenError(error)) {
+      throw error;
+    }
     return {
       status: 'corrupt_or_invalid',
       schemaVersion: null,
@@ -3577,6 +3693,7 @@ function inspectNewerHeaderBackupFastPath(
   let candidateDb: Database.Database | undefined;
   try {
     candidateDb = new Database(snapshotPath, { readonly: true, fileMustExist: true });
+    candidateDb.pragma('temp_store = MEMORY');
     let hasMetaSchemaStamp = false;
     let parsedMetaVersion: number | null = null;
     let appVersion: string | null = null;
@@ -3614,6 +3731,17 @@ function inspectNewerHeaderBackupFastPath(
       detail: `Requires schema v${headerVersion} (this version supports up to v${maxSupportedSchemaVersion})`,
     };
   } catch (error: unknown) {
+    if (isShutdownOrMaintenanceAbortError(error)) {
+      throw error;
+    }
+    if (isSqliteStorageOrOpenError(error)) {
+      return {
+        status: 'incompatible_newer',
+        schemaVersion: headerVersion,
+        appVersion: null,
+        detail: `Requires schema v${headerVersion} (this version supports up to v${maxSupportedSchemaVersion})`,
+      };
+    }
     return {
       status: 'corrupt_or_invalid',
       schemaVersion: null,
@@ -3735,7 +3863,6 @@ function evaluateDowngradeBackupCandidate(
     return;
   }
 
-  let tempDir: string | null = null;
   try {
     let inspection: DowngradeBackupSnapshotInspection;
     if (headerInfo.headerVersion > maxSupportedSchemaVersion) {
@@ -3751,19 +3878,32 @@ function evaluateDowngradeBackupCandidate(
             appVersion: null,
             detail: `Requires schema v${headerInfo.headerVersion} (this version supports up to v${maxSupportedSchemaVersion})`,
           };
+    } else if (headerInfo.isLegacyRollbackFormat) {
+      inspection = inspectBackupSnapshotForDowngrade(fullPath, maxSupportedSchemaVersion);
     } else {
-      let inspectTargetPath = fullPath;
-      if (!headerInfo.isLegacyRollbackFormat) {
-        const staged = stageDatabaseCopyWithFallback(fullPath, [], {
+      const probed = probeStagedDatabaseWithFallback(
+        fullPath,
+        [],
+        {
           tmpPrefix: 'flo-backup-discover-',
           fallbackSubprefix: 'discover-',
           targetFileName: 'candidate.db',
           purposeLabel: 'backup candidate for discovery',
-        });
-        tempDir = staged.tempDir;
-        inspectTargetPath = staged.tempDbPath;
-      }
-      inspection = inspectBackupSnapshotForDowngrade(inspectTargetPath, maxSupportedSchemaVersion);
+        },
+        (probeDb) => inspectOpenBackupDatabaseForDowngrade(probeDb, maxSupportedSchemaVersion),
+      );
+      inspection =
+        probed.kind === 'ok'
+          ? probed.value
+          : {
+              status: 'corrupt_or_invalid',
+              schemaVersion: null,
+              appVersion: null,
+              detail:
+                probed.error instanceof Error && probed.error.message
+                  ? probed.error.message
+                  : 'File is not a readable SQLite database',
+            };
     }
 
     const afterStat = fs.lstatSync(fullPath);
@@ -3820,6 +3960,9 @@ function evaluateDowngradeBackupCandidate(
       });
     }
   } catch (error: unknown) {
+    if (isShutdownOrMaintenanceAbortError(error)) {
+      throw error;
+    }
     corruptOrInvalid.push({
       fileName,
       path: fullPath,
@@ -3831,12 +3974,6 @@ function evaluateDowngradeBackupCandidate(
           ? error.message
           : 'Backup candidate could not be read safely',
     });
-  } finally {
-    if (tempDir) {
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch {}
-    }
   }
 }
 
@@ -5419,7 +5556,20 @@ export function restoreBackup(
       metadataStampPresent = Boolean(metaRow);
       metadataVersion = metaRow ? (parseCanonicalSchemaVersion(metaRow.value) ?? 0) : 0;
       pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
-    } catch {
+    } catch (openError) {
+      if (isShutdownOrMaintenanceAbortError(openError)) {
+        throw openError;
+      }
+      if (isSqliteStorageOrOpenError(openError)) {
+        return {
+          success: false,
+          mode: forceDirect ? 'direct' : 'data_only',
+          backupSchemaVersion: 0,
+          currentSchemaVersion: getCurrentSchemaVersion(),
+          tablesRestored: 0,
+          error: openError instanceof Error ? openError.message : 'Could not read restore source',
+        };
+      }
       // A file that is not a readable SQLite database (truncated, corrupt, or
       // simply not a database at all) must be refused, never applied.
       unreadableSource = true;
@@ -5716,7 +5866,11 @@ export function getForeignKeyViolationKeys(dbInstance: Database.Database): Set<s
             foreign: foreignKey.map((column) => values[column]),
           };
       }
-    } catch {}
+    } catch (fkError) {
+      if (isShutdownOrMaintenanceAbortError(fkError) || isSqliteStorageOrOpenError(fkError)) {
+        throw fkError;
+      }
+    }
     keys.add(JSON.stringify([row.table, identity, row.parent, row.fkid]));
   }
   return keys;
@@ -5791,6 +5945,13 @@ function materializeRestoreSource(
     ) {
       throw new Error('Restore source acquired SQLite sidecars while it was being read');
     }
+    const hasSqliteMagic =
+      sourceBytes.length >= 100 && sourceBytes.subarray(0, 16).equals(SQLITE_HEADER_MAGIC);
+    const isWalFormatSource =
+      hasSqliteMagic &&
+      (sourceBytes[18] === 2 || sourceBytes[19] === 2) &&
+      (sourceBytes[18] === 1 || sourceBytes[18] === 2) &&
+      (sourceBytes[19] === 1 || sourceBytes[19] === 2);
     const writeStagedRestoreSnapshot = (
       parentDir: string,
       dirPrefix: string,
@@ -5800,6 +5961,38 @@ function materializeRestoreSource(
         dir = fs.mkdtempSync(path.join(parentDir, dirPrefix));
         const filePath = path.join(dir, 'source.db');
         fs.writeFileSync(filePath, sourceBytes, { flag: 'wx', mode: 0o600 });
+        if (hasSqliteMagic) {
+          let probeDb: Database.Database | undefined;
+          try {
+            if (isWalFormatSource) {
+              probeDb = new Database(filePath, { fileMustExist: true });
+              probeDb.pragma('temp_store = MEMORY');
+              probeDb.pragma('journal_mode = DELETE');
+            } else {
+              probeDb = new Database(filePath, { readonly: true, fileMustExist: true });
+              probeDb.pragma('temp_store = MEMORY');
+              probeDb.pragma('schema_version');
+            }
+          } catch (probeError) {
+            if (
+              isShutdownOrMaintenanceAbortError(probeError) ||
+              isSqliteStorageOrOpenError(probeError)
+            ) {
+              throw probeError;
+            }
+          } finally {
+            try {
+              probeDb?.close();
+            } catch {}
+          }
+          for (const suffix of SQLITE_PROBE_SIDECAR_SUFFIXES) {
+            try {
+              if (pathEntryExists(`${filePath}${suffix}`)) {
+                fs.unlinkSync(`${filePath}${suffix}`);
+              }
+            } catch {}
+          }
+        }
         return { dir, filePath };
       } catch (writeError) {
         if (dir) {
@@ -5814,6 +6007,12 @@ function materializeRestoreSource(
     try {
       staged = writeStagedRestoreSnapshot(os.tmpdir(), 'flo-restore-source-');
     } catch (primaryError) {
+      if (
+        isShutdownOrMaintenanceAbortError(primaryError) ||
+        !isSqliteStorageOrOpenError(primaryError)
+      ) {
+        throw primaryError;
+      }
       const fallbackParentDir = path.dirname(path.resolve(livePath));
       try {
         staged = writeStagedRestoreSnapshot(
@@ -5821,6 +6020,12 @@ function materializeRestoreSource(
           `${INTERNAL_DB_STAGE_DIR_PREFIX}restore-source-`,
         );
       } catch (fallbackError) {
+        if (
+          isShutdownOrMaintenanceAbortError(fallbackError) ||
+          !isSqliteStorageOrOpenError(fallbackError)
+        ) {
+          throw fallbackError;
+        }
         const primaryMessage =
           primaryError instanceof Error ? primaryError.message : 'unknown error';
         const fallbackMessage =

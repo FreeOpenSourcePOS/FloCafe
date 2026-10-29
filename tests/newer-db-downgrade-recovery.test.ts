@@ -2225,6 +2225,381 @@ async function run(): Promise<void> {
       );
       finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
       closeDatabase();
+
+      // Subcase C: File copy/write into os.tmpdir() succeeds, then SQLite WAL/SHM/pager initialization
+      // in os.tmpdir() throws SQLITE_IOERR_SHMSIZE while the database volume succeeds.
+      const dbProto = Database.prototype as unknown as {
+        prepare: typeof Database.prototype.prepare;
+        pragma: typeof Database.prototype.pragma;
+      };
+      const originalDbPrepare = dbProto.prepare;
+      const originalDbPragma = dbProto.pragma;
+      const preExistingTmpStageDirs = new Set(
+        fs.readdirSync(os.tmpdir()).filter((name) => isOsTmpStagingTarget(name)),
+      );
+      let injectedTmpShmFailures = 0;
+      dbProto.prepare = function (this: Database.Database, source: string) {
+        if (isOsTmpStagingTarget(this.name)) {
+          injectedTmpShmFailures += 1;
+          throw new Database.SqliteError('disk I/O error', 'SQLITE_IOERR_SHMSIZE');
+        }
+        return originalDbPrepare.call(this, source);
+      } as typeof Database.prototype.prepare;
+      dbProto.pragma = function (
+        this: Database.Database,
+        source: string,
+        options?: Database.PragmaOptions,
+      ) {
+        if (isOsTmpStagingTarget(this.name) && !/^\s*temp_store\b/i.test(String(source))) {
+          injectedTmpShmFailures += 1;
+          throw new Database.SqliteError('disk I/O error', 'SQLITE_IOERR_SHMSIZE');
+        }
+        return originalDbPragma.call(this, source, options);
+      } as typeof Database.prototype.pragma;
+
+      try {
+        // (1) Committed WAL journal (both downgrade and standard) + isHealthyDatabaseFile fall back
+        // to DB-volume staging on os.tmpdir() SQLITE_IOERR_SHMSIZE instead of rolling back committed data.
+        for (const [idx, isDowngradeJournal] of [true, false].entries()) {
+          clearDirectory(backupDir);
+          removeDbSet(dbPath);
+          fs.copyFileSync(path.join(walEnospcStageDir, 'flo.db'), dbPath);
+          fs.copyFileSync(path.join(walEnospcStageDir, 'flo.db-wal'), `${dbPath}-wal`);
+          const shmCommittedBase = path.join(
+            backupDir,
+            `flo-restore-recovery-shmcommit0${idx + 1}`,
+          );
+          fs.copyFileSync(baseTemplateCopy, `${shmCommittedBase}.db`);
+          fs.writeFileSync(
+            `${shmCommittedBase}.json`,
+            JSON.stringify({
+              phase: 'committed',
+              recoveryPath: `${shmCommittedBase}.db`,
+              dbPath,
+              driveInvalidationRequired: true,
+              ...(isDowngradeJournal
+                ? { downgradeRecovery: true, recoverySidecars: [] }
+                : { baselineForeignKeyViolations: [] }),
+            }),
+          );
+          assert.equal(
+            isHealthyDatabaseFile(dbPath, undefined, false),
+            true,
+            'isHealthyDatabaseFile retries on DB volume when os.tmpdir() throws SQLITE_IOERR_SHMSIZE',
+          );
+          initDatabase();
+          assert.deepEqual(
+            getDatabase()
+              .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0092'")
+              .get(),
+            { order_number: 'ORD-20261029-0092' },
+            `committed WAL journal (downgrade=${isDowngradeJournal}) preserves committed DB when os.tmpdir() throws SQLITE_IOERR_SHMSIZE`,
+          );
+          finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+          closeDatabase();
+        }
+
+        // (3) Prepared journal with WAL-header recovery snapshot retries on DB volume instead of failing validation.
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.writeFileSync(dbPath, 'partial replacement interrupted before commit');
+        const shmPreparedBase = path.join(backupDir, 'flo-restore-recovery-shmprepwal');
+        fs.copyFileSync(committedCleanSnapshot, `${shmPreparedBase}.db`);
+        fs.writeFileSync(
+          `${shmPreparedBase}.json`,
+          JSON.stringify({
+            phase: 'prepared',
+            recoveryPath: `${shmPreparedBase}.db`,
+            dbPath,
+            driveInvalidationRequired: true,
+            downgradeRecovery: true,
+            recoverySidecars: [],
+          }),
+        );
+        initDatabase();
+        assert.equal(getDatabaseReplacementJournal(), null);
+        assert.deepEqual(
+          getDatabase()
+            .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
+            .get(),
+          { order_number: 'ORD-20261029-0091' },
+          'prepared WAL-header recovery snapshot verifies via DB-volume fallback on os.tmpdir() SQLITE_IOERR_SHMSIZE',
+        );
+        closeDatabase();
+
+        // (2) Supported-header + newer-WAL preflight retries on DB volume instead of returning null.
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db'), dbPath);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-wal'), `${dbPath}-wal`);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-shm'), `${dbPath}-shm`);
+        let shmPreflightMismatch: SchemaVersionMismatchError | null = null;
+        assert.throws(
+          () => initDatabase(),
+          (err: unknown) => {
+            if (err instanceof SchemaVersionMismatchError) {
+              shmPreflightMismatch = err;
+              return true;
+            }
+            return false;
+          },
+          'supported-header + newer-WAL preflight detects newer schema via DB volume when os.tmpdir() throws SQLITE_IOERR_SHMSIZE',
+        );
+        assert.equal(shmPreflightMismatch!.dbVersion, newerDbVersion);
+        assert.equal(shmPreflightMismatch!.dbAppVersion, '4.4.0');
+        assert.equal(sha256File(dbPath), walNewerEnospcHashes.dbSha);
+        assert.equal(sha256File(`${dbPath}-wal`), walNewerEnospcHashes.walSha);
+        assert.equal(sha256File(`${dbPath}-shm`), walNewerEnospcHashes.shmSha);
+
+        // (4) & (5) WAL-header backup candidate discovery + downgrade restore + direct restoreBackup
+        // all succeed via DB-volume fallback when os.tmpdir() throws SQLITE_IOERR_SHMSIZE after copy.
+        const shmWalCandidatePath = path.join(
+          backupDir,
+          'flo-backup-2026-10-28T18-00-00-000Z-wal-shm-fallback.db',
+        );
+        fs.copyFileSync(committedCleanSnapshot, shmWalCandidatePath);
+        const shmDiscovery = await discoverDowngradeBackupsAsync();
+        assert.equal(
+          shmDiscovery.compatible.length,
+          1,
+          'discoverDowngradeBackupsAsync classifies WAL-header backup as compatible via DB-volume fallback on SQLITE_IOERR_SHMSIZE',
+        );
+        assert.equal(shmDiscovery.compatible[0]?.path, shmWalCandidatePath);
+        assert.equal(shmDiscovery.corruptOrInvalid.length, 0);
+
+        const shmDowngradeRestore = await restoreCompatibleBackupForDowngrade(shmWalCandidatePath, {
+          newerDbVersion,
+        });
+        assert.equal(sha256File(shmDowngradeRestore.preservedDbPath), walNewerEnospcHashes.dbSha);
+        initDatabase();
+        assert.deepEqual(
+          getDatabase()
+            .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
+            .get(),
+          { order_number: 'ORD-20261029-0091' },
+          'downgrade restore of WAL-header backup succeeds via DB-volume fallback on os.tmpdir() SQLITE_IOERR_SHMSIZE',
+        );
+        finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+
+        const stampedWalDirectBackupPath = path.join(
+          walEnospcStageDir,
+          'stamped-wal-header-direct-restore.db',
+        );
+        {
+          const created = await createBackup(stampedWalDirectBackupPath);
+          const walStampDb = new Database(created.path);
+          walStampDb.pragma('journal_mode = WAL');
+          walStampDb.pragma('wal_checkpoint(TRUNCATE)');
+          walStampDb.close();
+          assert.equal(fs.existsSync(`${created.path}-wal`), false);
+          assert.equal(fs.existsSync(`${created.path}-shm`), false);
+          assert.equal(fs.readFileSync(created.path)[18], 2);
+        }
+        const shmDirectRestore = restoreBackup(stampedWalDirectBackupPath, true);
+        assert.equal(
+          shmDirectRestore.success,
+          true,
+          `direct restoreBackup of WAL-header backup succeeds under os.tmpdir() SQLITE_IOERR_SHMSIZE (${shmDirectRestore.error || ''})`,
+        );
+        finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+        closeDatabase();
+
+        assert.ok(injectedTmpShmFailures >= 6, 'SQLITE_IOERR_SHMSIZE fault injection fired');
+        assert.deepEqual(
+          fs
+            .readdirSync(os.tmpdir())
+            .filter((name) => isOsTmpStagingTarget(name) && !preExistingTmpStageDirs.has(name)),
+          [],
+          'failed os.tmpdir() SQLite probes clean up all temporary staging directories',
+        );
+        assert.deepEqual(
+          fs.readdirSync(testDir).filter((name) => name.startsWith('.flo-db-stage-')),
+          [],
+          'DB-volume SQLite fallback probes clean up userData staging directories',
+        );
+        assert.deepEqual(
+          fs.readdirSync(backupDir).filter((name) => name.startsWith('.flo-db-stage-')),
+          [],
+          'DB-volume SQLite fallback probes clean up backups staging directories',
+        );
+      } finally {
+        dbProto.prepare = originalDbPrepare;
+        dbProto.pragma = originalDbPragma;
+      }
+
+      // Subcase D: Dual-volume SQLITE_IOERR_SHMSIZE and in-place SQLITE_IOERR_READ fail closed
+      // instead of overwriting committed data or opening a newer WAL/_flo_meta database read-write.
+      const isAnyStagingDbTarget = (rawPath: unknown): boolean => {
+        const text = String(rawPath);
+        return isOsTmpStagingTarget(text) || text.includes('.flo-db-stage-');
+      };
+      dbProto.prepare = function (this: Database.Database, source: string) {
+        if (isAnyStagingDbTarget(this.name)) {
+          throw new Database.SqliteError('disk I/O error', 'SQLITE_IOERR_SHMSIZE');
+        }
+        return originalDbPrepare.call(this, source);
+      } as typeof Database.prototype.prepare;
+      dbProto.pragma = function (
+        this: Database.Database,
+        source: string,
+        options?: Database.PragmaOptions,
+      ) {
+        if (isAnyStagingDbTarget(this.name) && !/^\s*temp_store\b/i.test(String(source))) {
+          throw new Database.SqliteError('disk I/O error', 'SQLITE_IOERR_SHMSIZE');
+        }
+        return originalDbPragma.call(this, source, options);
+      } as typeof Database.prototype.pragma;
+
+      try {
+        // Committed WAL journal fails closed without overwriting committed flo.db.
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.copyFileSync(path.join(walEnospcStageDir, 'flo.db'), dbPath);
+        fs.copyFileSync(path.join(walEnospcStageDir, 'flo.db-wal'), `${dbPath}-wal`);
+        const dualShmCommittedBase = path.join(backupDir, 'flo-restore-recovery-dualshmcommit');
+        fs.copyFileSync(baseTemplateCopy, `${dualShmCommittedBase}.db`);
+        fs.writeFileSync(
+          `${dualShmCommittedBase}.json`,
+          JSON.stringify({
+            phase: 'committed',
+            recoveryPath: `${dualShmCommittedBase}.db`,
+            dbPath,
+            driveInvalidationRequired: true,
+            downgradeRecovery: true,
+            recoverySidecars: [],
+          }),
+        );
+        assert.equal(isHealthyDatabaseFile(dbPath, undefined, false), false);
+        assert.throws(
+          () => initDatabase(),
+          /Could not stage .*disk I\/O error/,
+          'committed WAL journal fails closed when both volumes throw SQLITE_IOERR_SHMSIZE',
+        );
+        assert.equal(sha256File(dbPath), walLiveDbSha);
+        assert.equal(sha256File(`${dbPath}-wal`), walLiveWalSha);
+        assert.equal(getDatabaseReplacementJournal()?.phase, 'committed');
+
+        // Supported-header + newer-WAL preflight fails closed instead of returning null.
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db'), dbPath);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-wal'), `${dbPath}-wal`);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-shm'), `${dbPath}-shm`);
+        assert.throws(
+          () => initDatabase(),
+          /Could not stage active database for schema preflight.*disk I\/O error/,
+          'newer-WAL preflight fails closed when both volumes throw SQLITE_IOERR_SHMSIZE',
+        );
+        assert.equal(sha256File(dbPath), walNewerEnospcHashes.dbSha);
+        assert.equal(sha256File(`${dbPath}-wal`), walNewerEnospcHashes.walSha);
+        assert.equal(sha256File(`${dbPath}-shm`), walNewerEnospcHashes.shmSha);
+
+        const dualShmWalBackup = path.join(
+          backupDir,
+          'flo-backup-2026-10-28T19-00-00-000Z-dual-shm.db',
+        );
+        fs.copyFileSync(committedCleanSnapshot, dualShmWalBackup);
+        await assert.rejects(
+          () => restoreCompatibleBackupForDowngrade(dualShmWalBackup, { newerDbVersion }),
+          /Could not stage restore source.*disk I\/O error/,
+          'restoreCompatibleBackupForDowngrade fails closed when both volumes throw SQLITE_IOERR_SHMSIZE',
+        );
+        assert.equal(sha256File(dbPath), walNewerEnospcHashes.dbSha);
+
+        // Prepared WAL-header journal fails closed and preserves journal on disk.
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.writeFileSync(dbPath, 'interrupted partial replacement');
+        const dualShmPreparedBase = path.join(backupDir, 'flo-restore-recovery-dualshmprep');
+        fs.copyFileSync(committedCleanSnapshot, `${dualShmPreparedBase}.db`);
+        fs.writeFileSync(
+          `${dualShmPreparedBase}.json`,
+          JSON.stringify({
+            phase: 'prepared',
+            recoveryPath: `${dualShmPreparedBase}.db`,
+            dbPath,
+            driveInvalidationRequired: true,
+            downgradeRecovery: true,
+            recoverySidecars: [],
+          }),
+        );
+        assert.throws(
+          () => initDatabase(),
+          /Could not stage recovery snapshot for verification.*disk I\/O error/,
+          'prepared WAL-header journal fails closed when both volumes throw SQLITE_IOERR_SHMSIZE',
+        );
+        assert.equal(getDatabaseReplacementJournal()?.phase, 'prepared');
+      } finally {
+        dbProto.prepare = originalDbPrepare;
+        dbProto.pragma = originalDbPragma;
+      }
+
+      // In-place legacy rollback-format SQLITE_IOERR_READ fails closed on committed journal and
+      // _flo_meta preflight instead of rolling back committed data or opening newer _flo_meta DB.
+      const deleteModeNewerMetaOnlyPath = path.join(
+        walEnospcStageDir,
+        'delete-mode-supported-header-newer-meta.db',
+      );
+      fs.copyFileSync(committedDeleteModeSnapshot, deleteModeNewerMetaOnlyPath);
+      {
+        const metaEditDb = new Database(deleteModeNewerMetaOnlyPath);
+        metaEditDb.pragma('journal_mode = DELETE');
+        metaEditDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+        metaEditDb
+          .prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)')
+          .run('schema_version', String(newerDbVersion));
+        metaEditDb.pragma(`user_version = ${maxSupported}`);
+        metaEditDb.close();
+      }
+      const deleteModeNewerMetaSha = sha256File(deleteModeNewerMetaOnlyPath);
+      const committedDeleteSha = sha256File(committedDeleteModeSnapshot);
+
+      dbProto.prepare = function (this: Database.Database, source: string) {
+        if (this.readonly && path.resolve(this.name) === path.resolve(dbPath)) {
+          throw new Database.SqliteError('disk I/O error', 'SQLITE_IOERR_READ');
+        }
+        return originalDbPrepare.call(this, source);
+      } as typeof Database.prototype.prepare;
+      try {
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.copyFileSync(committedDeleteModeSnapshot, dbPath);
+        const inPlaceCommittedBase = path.join(backupDir, 'flo-restore-recovery-inplaceio');
+        fs.copyFileSync(baseTemplateCopy, `${inPlaceCommittedBase}.db`);
+        fs.writeFileSync(
+          `${inPlaceCommittedBase}.json`,
+          JSON.stringify({
+            phase: 'committed',
+            recoveryPath: `${inPlaceCommittedBase}.db`,
+            dbPath,
+            driveInvalidationRequired: true,
+            downgradeRecovery: true,
+            recoverySidecars: [],
+          }),
+        );
+        assert.throws(
+          () => initDatabase(),
+          /disk I\/O error/,
+          'in-place legacy committed journal fails closed on SQLITE_IOERR_READ instead of rolling back',
+        );
+        assert.equal(sha256File(dbPath), committedDeleteSha);
+        assert.equal(getDatabaseReplacementJournal()?.phase, 'committed');
+
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.copyFileSync(deleteModeNewerMetaOnlyPath, dbPath);
+        assert.throws(
+          () => initDatabase(),
+          /disk I\/O error/,
+          'in-place _flo_meta preflight fails closed on SQLITE_IOERR_READ instead of opening newer DB read-write',
+        );
+        assert.equal(sha256File(dbPath), deleteModeNewerMetaSha);
+      } finally {
+        dbProto.prepare = originalDbPrepare;
+      }
+
+      clearDirectory(backupDir);
+      removeDbSet(dbPath);
     } finally {
       fs.rmSync(walEnospcStageDir, { recursive: true, force: true });
     }

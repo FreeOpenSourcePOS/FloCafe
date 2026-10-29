@@ -507,6 +507,9 @@ router.patch(
       if (error.message === 'STATUS_CONFLICT') {
         return res.status(409).json({ error: 'Item status changed; refresh and try again' });
       }
+      if (error?.statusCode === 409) {
+        return res.status(409).json({ error: error.message });
+      }
       const capturePoint = operationCommitted
         ? 'fc.backend.kds.item.status.completion'
         : 'fc.backend.kds.item.status.persistence';

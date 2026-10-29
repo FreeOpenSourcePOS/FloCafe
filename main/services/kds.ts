@@ -614,7 +614,12 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
     );
   } catch (error: any) {
     console.error('[KDS] Status update error:', error);
-    client.ws.send(JSON.stringify({ type: 'error', message: 'Could not update item status' }));
+    client.ws.send(
+      JSON.stringify({
+        type: 'error',
+        message: error?.statusCode === 409 ? error.message : 'Could not update item status',
+      }),
+    );
   }
 }
 

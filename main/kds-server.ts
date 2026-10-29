@@ -718,6 +718,9 @@ export function startKdsServer(): Promise<void> {
         }
         res.json({ success: true });
       } catch (error: any) {
+        if (error?.statusCode === 409) {
+          return res.status(409).json({ error: error.message });
+        }
         console.error('[KDS Server] PATCH item status error:', error);
         console.error('[API] Internal error:', error);
         res.status(500).json({ error: 'Internal server error' });

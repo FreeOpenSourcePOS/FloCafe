@@ -22,6 +22,7 @@ import {
   getCurrencyFractionDigits,
   getCurrencyMinorUnitFactor,
   resolveRegionalSnapshot,
+  resolveTenantCurrency,
 } from './countries';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
@@ -9286,17 +9287,23 @@ export function isOrderSettledAndNonRefunded(
     refunded_cents?: number | null;
   }>;
   if (billRows.length === 0) return false;
-
-  const currencyRow = dbInstance
-    .prepare("SELECT value FROM settings WHERE key = 'currency'")
-    .get() as { value?: string } | undefined;
-  const minorFactor = getCurrencyMinorUnitFactor(currencyRow?.value || 'USD');
-
-  let billedCoverageMinor = 0;
   for (const bill of billRows) {
     if (bill.payment_status !== 'paid') return false;
     if (Math.round(Number(bill.refunded_cents || 0)) > 0) return false;
+  }
 
+  const regionalRows = dbInstance
+    .prepare("SELECT key, value FROM settings WHERE key IN ('currency', 'country')")
+    .all() as Array<{ key: string; value: string }>;
+  const regionalSettings = Object.fromEntries(regionalRows.map((row) => [row.key, row.value]));
+  const tenantCurrency = resolveTenantCurrency(
+    regionalSettings.currency,
+    regionalSettings.country || '',
+  );
+  const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
+
+  let billedCoverageMinor = 0;
+  for (const bill of billRows) {
     const totalMinor = Math.max(0, Math.round(Number(bill.total || 0) * minorFactor));
     const roundOffMinor = Math.round(Number(bill.round_off || 0) * minorFactor);
     const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);

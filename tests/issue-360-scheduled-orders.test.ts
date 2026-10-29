@@ -1852,6 +1852,300 @@ async function main() {
       }
 
       assertLedgerReconciles(db, 'after prepaid scheduled order completion tests');
+
+      // 9g. 3-decimal country (BH -> BHD) with unset settings.currency + missing-country 409 guard
+      seedProduct(db, 'prod-bhd-sweet', 'cat-sched', 'Bahraini Sweet', 0.503, {
+        track_inventory: false,
+        stock_quantity: 0,
+      });
+      seedProduct(db, 'prod-bhd-tea', 'cat-sched', 'Bahraini Tea', 1, {
+        track_inventory: false,
+        stock_quantity: 0,
+      });
+
+      try {
+        setStoreSetting(db, 'country', 'BH');
+        setStoreSetting(db, 'timezone', 'Asia/Bahrain');
+        db.prepare("DELETE FROM settings WHERE key = 'currency'").run();
+
+        // Split 1.006 BHD order across two paid 0.503 BHD bills -> auto-completes on KDS served
+        const bhdSplitCreate = await api(baseUrl, '/api/orders', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: {
+            type: 'takeaway',
+            scheduled_for: futureWallClockInZone('Asia/Bahrain', 60),
+            items: [{ product_id: 'prod-bhd-sweet', quantity: 2 }],
+          },
+        });
+        assertEqualOrThrow(bhdSplitCreate.status, 201, 'create 1.006 BHD scheduled order');
+        const bhdSplitOrderId = Number(bhdSplitCreate.data.order.id);
+        assertEqualOrThrow(
+          Number(bhdSplitCreate.data.order.total),
+          1.006,
+          'order total resolved using 3-decimal BHD from country BH',
+        );
+
+        const insertBhdBill = db.prepare(
+          `INSERT INTO bills (
+             bill_number, order_id, subtotal, total, paid_amount, balance,
+             payment_status, payment_details, paid_at, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?, ?)`,
+        );
+        const billTs = now();
+        insertBhdBill.run(
+          `BILL-BHD-${bhdSplitOrderId}-1`,
+          bhdSplitOrderId,
+          0.503,
+          0.503,
+          0.503,
+          0,
+          JSON.stringify([{ method: 'card', amount: 0.503 }]),
+          billTs,
+          billTs,
+          billTs,
+        );
+        insertBhdBill.run(
+          `BILL-BHD-${bhdSplitOrderId}-2`,
+          bhdSplitOrderId,
+          0.503,
+          0.503,
+          0.503,
+          0,
+          JSON.stringify([{ method: 'card', amount: 0.503 }]),
+          billTs,
+          billTs,
+          billTs,
+        );
+
+        const bhdSplitRel = await api(baseUrl, `/api/orders/${bhdSplitOrderId}/release`, {
+          method: 'POST',
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(bhdSplitRel.status, 200, 'release 1.006 BHD split order');
+        assertEqualOrThrow(
+          bhdSplitRel.data.order.status,
+          'pending',
+          'BHD split order stays pending at release while KDS is enabled',
+        );
+        const bhdSplitDetail = await api(baseUrl, `/api/orders/${bhdSplitOrderId}`, {
+          headers: owner.authHeader,
+        });
+        const bhdSplitItemId = Number(bhdSplitDetail.data.order.items[0].id);
+
+        const bhdSplitServed = await api(baseUrl, `/api/order-items/${bhdSplitItemId}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(bhdSplitServed.status, 200, 'mark 1.006 BHD split item served');
+        assertEqualOrThrow(
+          bhdSplitServed.data.order.status,
+          'completed',
+          '1.006 BHD split order auto-completes on served without USD 2-decimal rounding loss',
+        );
+
+        // Unpaid 0.004 BHD balance (0.996 paid on 1.000 BHD) must NOT round to 0 or auto-complete
+        const bhdShortCreate = await api(baseUrl, '/api/orders', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: {
+            type: 'takeaway',
+            scheduled_for: futureWallClockInZone('Asia/Bahrain', 60),
+            items: [{ product_id: 'prod-bhd-tea', quantity: 1 }],
+          },
+        });
+        assertEqualOrThrow(bhdShortCreate.status, 201, 'create 1.000 BHD scheduled order');
+        const bhdShortOrderId = Number(bhdShortCreate.data.order.id);
+        insertBhdBill.run(
+          `BILL-BHD-${bhdShortOrderId}-SHORT`,
+          bhdShortOrderId,
+          1,
+          1,
+          0.996,
+          0.004,
+          JSON.stringify([{ method: 'card', amount: 0.996 }]),
+          billTs,
+          billTs,
+          billTs,
+        );
+        const bhdShortRel = await api(baseUrl, `/api/orders/${bhdShortOrderId}/release`, {
+          method: 'POST',
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(bhdShortRel.status, 200, 'release 0.004 BHD balance order');
+        const bhdShortDetail = await api(baseUrl, `/api/orders/${bhdShortOrderId}`, {
+          headers: owner.authHeader,
+        });
+        const bhdShortItemId = Number(bhdShortDetail.data.order.items[0].id);
+        const bhdShortServed = await api(baseUrl, `/api/order-items/${bhdShortItemId}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(bhdShortServed.status, 200, 'mark 0.004 BHD balance item served');
+        assertEqualOrThrow(
+          bhdShortServed.data.order.status,
+          'pending',
+          '0.004 BHD unpaid balance blocks auto-completion under 3-decimal BHD minor units',
+        );
+
+        // KDS disabled -> 1.006 BHD split order completes immediately at release
+        setStoreSetting(db, 'kds_enabled', 'false');
+        const bhdNoKdsCreate = await api(baseUrl, '/api/orders', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: {
+            type: 'takeaway',
+            scheduled_for: futureWallClockInZone('Asia/Bahrain', 60),
+            items: [{ product_id: 'prod-bhd-sweet', quantity: 2 }],
+          },
+        });
+        assertEqualOrThrow(bhdNoKdsCreate.status, 201, 'create KDS-disabled 1.006 BHD order');
+        const bhdNoKdsOrderId = Number(bhdNoKdsCreate.data.order.id);
+        insertBhdBill.run(
+          `BILL-BHD-${bhdNoKdsOrderId}-1`,
+          bhdNoKdsOrderId,
+          0.503,
+          0.503,
+          0.503,
+          0,
+          JSON.stringify([{ method: 'card', amount: 0.503 }]),
+          billTs,
+          billTs,
+          billTs,
+        );
+        insertBhdBill.run(
+          `BILL-BHD-${bhdNoKdsOrderId}-2`,
+          bhdNoKdsOrderId,
+          0.503,
+          0.503,
+          0.503,
+          0,
+          JSON.stringify([{ method: 'card', amount: 0.503 }]),
+          billTs,
+          billTs,
+          billTs,
+        );
+        const bhdNoKdsRel = await api(baseUrl, `/api/orders/${bhdNoKdsOrderId}/release`, {
+          method: 'POST',
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(bhdNoKdsRel.status, 200, 'release KDS-disabled 1.006 BHD order');
+        assertEqualOrThrow(
+          bhdNoKdsRel.data.order.status,
+          'completed',
+          'KDS-disabled 1.006 BHD split order completes immediately at release',
+        );
+        setStoreSetting(db, 'kds_enabled', 'true');
+
+        // Unconfigured country + currency fails loudly with 409 rather than defaulting to USD
+        const missingRegCreate = await api(baseUrl, '/api/orders', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: {
+            type: 'takeaway',
+            scheduled_for: futureWallClockInZone('Asia/Bahrain', 60),
+            items: [{ product_id: 'prod-bhd-tea', quantity: 1 }],
+          },
+        });
+        const missingRegOrderId = Number(missingRegCreate.data.order.id);
+        insertBhdBill.run(
+          `BILL-BHD-${missingRegOrderId}-PAID`,
+          missingRegOrderId,
+          1,
+          1,
+          1,
+          0,
+          JSON.stringify([{ method: 'card', amount: 1 }]),
+          billTs,
+          billTs,
+          billTs,
+        );
+
+        db.prepare("DELETE FROM settings WHERE key IN ('currency', 'country')").run();
+        const missingRegRel = await api(baseUrl, `/api/orders/${missingRegOrderId}/release`, {
+          method: 'POST',
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(
+          missingRegRel.status,
+          409,
+          'POST /api/orders/:id/release returns 409 when regional country/currency are missing',
+        );
+
+        setStoreSetting(db, 'country', 'BH');
+        const okRel = await api(baseUrl, `/api/orders/${missingRegOrderId}/release`, {
+          method: 'POST',
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(okRel.status, 200, 'release succeeds once country is set');
+        const missingRegDetail = await api(baseUrl, `/api/orders/${missingRegOrderId}`, {
+          headers: owner.authHeader,
+        });
+        const missingItemId = Number(missingRegDetail.data.order.items[0].id);
+
+        db.prepare("DELETE FROM settings WHERE key IN ('currency', 'country')").run();
+        const item409Res1 = await api(baseUrl, `/api/order-items/${missingItemId}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(
+          item409Res1.status,
+          409,
+          'PATCH /api/order-items/:id/status returns 409 when regional settings are missing',
+        );
+
+        const item409Res2 = await api(baseUrl, `/api/kds/items/${missingItemId}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(
+          item409Res2.status,
+          409,
+          'PATCH /api/kds/items/:id/status returns 409 when regional settings are missing',
+        );
+
+        const item409Res3 = await api(kdsBaseUrl, `/api/kds/items/${missingItemId}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(
+          item409Res3.status,
+          409,
+          'standalone KDS PATCH returns 409 when regional settings are missing',
+        );
+
+        const after409Detail = await api(baseUrl, `/api/orders/${missingRegOrderId}`, {
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(
+          after409Detail.data.order.items[0].status,
+          'pending',
+          'item status update rolls back cleanly when regional check returns 409',
+        );
+
+        setStoreSetting(db, 'country', 'BH');
+        const recoveredServed = await api(baseUrl, `/api/order-items/${missingItemId}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(recoveredServed.status, 200, 'served succeeds after restoring country');
+        assertEqualOrThrow(
+          recoveredServed.data.order.status,
+          'completed',
+          'restored BH regional setting completes paid order on served',
+        );
+      } finally {
+        setStoreSetting(db, 'country', 'US');
+        setStoreSetting(db, 'currency', 'USD');
+        setStoreSetting(db, 'timezone', 'America/New_York');
+        setStoreSetting(db, 'kds_enabled', 'true');
+      }
     }
 
     const results = getResults();

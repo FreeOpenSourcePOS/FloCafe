@@ -678,6 +678,9 @@ router.patch(
       if (error.message === 'STATUS_CONFLICT') {
         return res.status(409).json({ error: 'Item status changed; refresh and try again' });
       }
+      if (error?.statusCode === 409) {
+        return res.status(409).json({ error: error.message });
+      }
       console.error('[API] KDS item status update error:', error);
       res.status(500).json({ error: 'Could not update item status' });
     }

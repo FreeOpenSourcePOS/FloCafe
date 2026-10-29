@@ -1917,8 +1917,7 @@ router.post(
               whatsapp.waitForMessageAck(result.messageId, 1500, getHttpRequestSignal(req)),
             )
           : (result as { deliveryStatus?: string; acknowledged?: boolean }).deliveryStatus ===
-                'sent' ||
-              (result as { acknowledged?: boolean }).acknowledged === true
+                'sent' || (result as { acknowledged?: boolean }).acknowledged === true
             ? 'sent'
             : 'submitted';
 

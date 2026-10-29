@@ -2078,7 +2078,9 @@ async function main(): Promise<void> {
         .prepare('SELECT id FROM whatsapp_messages WHERE cash_closure_id = ?')
         .get(ackThenAbortClosureId) as { id: number };
       whatsappService.recordMessageAttemptExternalId(activeRow.id, extId);
-      baileysEventHandlers.get('messages.update')?.([{ key: { id: extId }, update: { status: 2 } }]);
+      baileysEventHandlers.get('messages.update')?.([
+        { key: { id: extId }, update: { status: 2 } },
+      ]);
       await new Promise((resolve) => setImmediate(resolve));
       whatsappService.cancelPairing();
       whatsappService.disconnect();
@@ -2094,7 +2096,9 @@ async function main(): Promise<void> {
       await new Promise((resolve) => setImmediate(resolve));
     }
     const ackThenAbortRow = db
-      .prepare('SELECT id, status, error, failed_at FROM whatsapp_messages WHERE cash_closure_id = ?')
+      .prepare(
+        'SELECT id, status, error, failed_at FROM whatsapp_messages WHERE cash_closure_id = ?',
+      )
       .get(ackThenAbortClosureId) as {
       id: number;
       status: string;
@@ -2137,7 +2141,9 @@ async function main(): Promise<void> {
         .prepare('SELECT id FROM whatsapp_messages WHERE cash_closure_id = ?')
         .get(ackThenPostErrorClosureId) as { id: number };
       whatsappService.recordMessageAttemptExternalId(activeRow.id, extId);
-      baileysEventHandlers.get('messages.update')?.([{ key: { id: extId }, update: { status: 2 } }]);
+      baileysEventHandlers.get('messages.update')?.([
+        { key: { id: extId }, update: { status: 2 } },
+      ]);
       await new Promise((resolve) => setImmediate(resolve));
       return {
         key: { id: extId },
@@ -2152,7 +2158,9 @@ async function main(): Promise<void> {
       customSocketSendMessage = null;
     }
     const ackThenPostErrorRow = db
-      .prepare('SELECT id, status, error, failed_at FROM whatsapp_messages WHERE cash_closure_id = ?')
+      .prepare(
+        'SELECT id, status, error, failed_at FROM whatsapp_messages WHERE cash_closure_id = ?',
+      )
       .get(ackThenPostErrorClosureId) as {
       id: number;
       status: string;
@@ -2268,7 +2276,9 @@ async function main(): Promise<void> {
         'claim error inside savepoint never fails or rolls back day close',
       );
       const savedClosure = db
-        .prepare(`SELECT id FROM cash_closures WHERE business_date = '2026-09-24' AND scope = 'day'`)
+        .prepare(
+          `SELECT id FROM cash_closures WHERE business_date = '2026-09-24' AND scope = 'day'`,
+        )
         .get() as { id: number } | undefined;
       assert.ok(savedClosure, 'day close remains committed when Z-report claim throws');
     } finally {

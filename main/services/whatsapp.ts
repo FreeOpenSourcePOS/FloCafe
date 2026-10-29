@@ -1008,9 +1008,9 @@ export function waitForMessageAck(
 
     try {
       const db = getDatabase();
-      const cur = db
-        .prepare('SELECT status FROM whatsapp_messages WHERE id = ?')
-        .get(messageId) as { status: string } | undefined;
+      const cur = db.prepare('SELECT status FROM whatsapp_messages WHERE id = ?').get(messageId) as
+        | { status: string }
+        | undefined;
       if (!cur || cur.status === 'failed') {
         finish('submitted');
       } else if ((STATUS_RANK[cur.status] ?? -1) >= STATUS_RANK.sent) {
@@ -4232,12 +4232,18 @@ export function claimDayCloseZReportAttempt(
 }
 
 let triggerDayCloseZReportInterceptor:
-  | ((closureId: number, preclaimedMessageId?: number | null) => Promise<TriggerDayCloseZReportResult>)
+  | ((
+      closureId: number,
+      preclaimedMessageId?: number | null,
+    ) => Promise<TriggerDayCloseZReportResult>)
   | null = null;
 
 export function _setTriggerDayCloseZReportInterceptor(
   fn:
-    | ((closureId: number, preclaimedMessageId?: number | null) => Promise<TriggerDayCloseZReportResult>)
+    | ((
+        closureId: number,
+        preclaimedMessageId?: number | null,
+      ) => Promise<TriggerDayCloseZReportResult>)
     | null,
 ): void {
   triggerDayCloseZReportInterceptor = fn;

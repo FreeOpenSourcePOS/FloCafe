@@ -2302,11 +2302,6 @@ function localizeWhatsAppPaymentMethod(language: string, method: string): string
   return method.charAt(0).toUpperCase() + method.slice(1);
 }
 
-/**
- * Plain-text daily-sales summary for WhatsApp delivery. Uses store language,
- * regional money/number formatting, and progressive truncation so optional item
- * detail is shortened or dropped before financial totals are ever omitted.
- */
 function formatBusinessDate(
   value: string,
   locale: string,
@@ -2339,6 +2334,11 @@ function formatBusinessDate(
   }
 }
 
+/**
+ * Plain-text daily-sales summary for WhatsApp delivery. Uses store language,
+ * regional money/number formatting, and progressive truncation so optional item
+ * detail is shortened or dropped before financial totals are ever omitted.
+ */
 export function formatDailySalesWhatsAppMessage(
   dataset: DailySalesExportDataset,
   options?: DailySalesWhatsAppOptions,

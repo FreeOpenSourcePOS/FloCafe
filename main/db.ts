@@ -1375,10 +1375,7 @@ export function readWalCommittedPage1UserVersion(
   }
 }
 
-function getEffectiveDatabaseHeaderVersion(
-  dbPath: string,
-  headerInfo: SqliteHeaderInfo,
-): number {
+function getEffectiveDatabaseHeaderVersion(dbPath: string, headerInfo: SqliteHeaderInfo): number {
   const walPath = `${dbPath}-wal`;
   if (!pathEntryExists(walPath)) {
     return headerInfo.headerVersion;
@@ -1553,7 +1550,11 @@ function withProbedDatabaseFile<T>(
       throw stageError;
     }
     const isLiveDb = path.resolve(filePath) === path.resolve(getDbPath());
-    if (isLiveDb && isSqliteStorageOrOpenError(stageError) && effectiveHeaderVersion <= maxSupported) {
+    if (
+      isLiveDb &&
+      isSqliteStorageOrOpenError(stageError) &&
+      effectiveHeaderVersion <= maxSupported
+    ) {
       const walExistedBefore = pathEntryExists(`${filePath}-wal`);
       const shmExistedBefore = pathEntryExists(`${filePath}-shm`);
       let candidate: Database.Database | undefined;

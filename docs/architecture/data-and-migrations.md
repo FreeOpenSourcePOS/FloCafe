@@ -83,13 +83,15 @@ data:
    with no orders. The error tells the user to restore from a backup. A genuinely fresh install has
    no marker and proceeds normally.
 2. **A database newer than the build.** Before opening `flo.db` read-write, `initDatabase` reads the
-   SQLite header and inspects both `user_version` and any canonical `_flo_meta.schema_version` stamp
-   without mutating `flo.db` or creating sidecar files in `userData` (probing sidecar-free legacy
-   rollback-format files read-only in place, and staging WAL-mode databases and any `-wal`, `-shm`,
-   or `-journal` sidecars in `os.tmpdir()` with fallback to a private `.flo-db-stage-*` directory on
-   the database volume when `os.tmpdir()` cannot be written, failing closed with a storage error if
-   neither volume can stage), and `runMigrations` enforces the same guard. When either `user_version`
-   or canonical `_flo_meta.schema_version` exceeds `getLatestSupportedSchemaVersion()`,
+   SQLite header (including committed page-1 `user_version` frames in any active `-wal`) and inspects
+   both `user_version` and any canonical `_flo_meta.schema_version` stamp without mutating `flo.db`
+   or creating sidecar files in `userData` (probing sidecar-free legacy rollback-format files read-only
+   in place, staging WAL-mode databases and any `-wal`, `-shm`, or `-journal` sidecars in `os.tmpdir()`
+   with fallback to a private `.flo-db-stage-*` directory on the database volume when `os.tmpdir()`
+   cannot be written, and falling back to in-place read-only probing for the live database if both
+   staging volumes encounter a storage error while the effective header is supported), and
+   `runMigrations` enforces the same guard. When either `user_version` or canonical
+   `_flo_meta.schema_version` exceeds `getLatestSupportedSchemaVersion()`,
    `SchemaVersionMismatchError` is thrown. An older build never reverse-migrates or opens a newer
    schema directly.
 

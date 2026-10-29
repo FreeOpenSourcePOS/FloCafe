@@ -157,14 +157,15 @@ every save.
 **Cash shifts.** Opening, viewing, and closing shifts are gated by `cash.shifts.open`,
 `cash.shifts.view`, and `cash.shifts.close`. Non-`owner`/`manager` roles (such as `cashier`) may
 only view, preview, close, attach explicit drawer movements to, or read/export the shift X-report
-for the shift they opened (`403 session_owner_required` on shift/movement routes and `403
-shift_access_forbidden` on `GET /api/reports/x-report?session_id=` and
-`GET /api/reports/x-report/export?session_id=` when targeting another user's shift), whereas an `owner` or `manager` can inspect and close any staff member's shift, with the
-closing actor recorded on the closure row. On `POST /api/cash-sessions/:id/close` and
-`POST /api/cash-closures/movements`, the own-session rule is enforced inside the write transaction,
-where the stored session and the actor are read together. This is a context policy, not
-a permission — see [the authentication and authorization page](../architecture/authentication-and-authorization.md)
-and [business time](../architecture/business-time.md#cash-closures).
+for the shift they opened (`403` when targeting another user's shift), whereas an `owner` or
+`manager` can inspect, export, and close any staff member's shift, with the closing actor recorded
+on the closure row. On `POST /api/cash-sessions/:id/close` and `POST /api/cash-closures/movements`,
+the own-session rule is enforced inside the write transaction, where the stored session and the
+actor are read together. This is a context policy, not a permission - see
+[the authentication and authorization page](../architecture/authentication-and-authorization.md),
+[business time](../architecture/business-time.md#cash-closures), and per-route error codes in
+[Cash sessions](api.md#cash-sessions), [Cash closures](api.md#cash-closures), and
+[Reports](api.md#reports).
 
 **Order cancellation and completion overrides.** Staff holding `orders.status.update` can cancel a
 whole order without a PIN only while the order and all of its items are `pending` and no bill holds

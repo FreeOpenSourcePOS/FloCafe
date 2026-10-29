@@ -424,20 +424,30 @@ export function useCashClose() {
     setExportingReport(true);
     try {
       const endpoint = `/reports/${report}-report/export`;
+      const isShiftScopedX = report === 'x' && selectedSessionId !== null;
+      const exportDate =
+        isShiftScopedX && xReport?.session?.id === selectedSessionId && xReport.businessDate
+          ? xReport.businessDate
+          : businessDate;
       const baseFilename =
         report === 'x'
-          ? `x-report-${businessDate}`
+          ? isShiftScopedX
+            ? `x-report-${exportDate}-shift-${selectedSessionId}`
+            : `x-report-${businessDate}`
           : `z-report-Z${closedZ!.z_number}-${businessDate}`;
+      const baseParams = isShiftScopedX
+        ? { date: exportDate, session_id: selectedSessionId }
+        : { date: businessDate };
       if (format === 'pdf') {
         await exportReportAsPdf({
           endpoint,
-          params: { date: businessDate },
+          params: baseParams,
           filename: `${baseFilename}.pdf`,
         });
         return;
       }
       const res = await api.get(endpoint, {
-        params: { date: businessDate, format },
+        params: { ...baseParams, format },
         responseType: 'blob',
       });
       downloadBlob(res.data as Blob, `${baseFilename}.${format}`);

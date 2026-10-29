@@ -1357,7 +1357,7 @@ interface TaxSnapshotAllocationResult {
   exclusiveTaxMinors: number[] | null;
 }
 
-function reconcileSnapshotAllocations(
+export function reconcileSnapshotAllocations(
   entries: Array<{ allocations: number[] }>,
   targets: number[],
 ): void {

@@ -182,10 +182,20 @@ reinterpreted as a per-line amount.
 Refunds read the snapshot. Recomputing tax at refund time would produce a different answer if the
 pack had been updated in between, which is the exact failure the snapshot exists to prevent.
 
-The reporting counterpart is `GET /api/reports/tax-components`, backed by
-[`main/services/tax-components.ts`](../../main/services/tax-components.ts). It derives components
-item by item so a bill that mixes categorized and uncategorized lines cannot double-count the
-categorized portion against the bill-level `tax_breakdown`.
+The reporting counterparts are `GET /api/reports/tax-components` and X/Z cash-closure reporting in
+[`main/routes/cash-closures.ts`](../../main/routes/cash-closures.ts), both backed by
+[`main/services/tax-components.ts`](../../main/services/tax-components.ts). `resolveTaxComponents()`
+derives components item by item from stored snapshots and breakdowns so a bill mixing categorized and
+uncategorized lines cannot double-count the categorized portion against the bill-level
+`tax_breakdown`, and never recomputes historical tax from live tax settings. Whole-day X/Z reports
+aggregate paid bills in the day window through `aggregateTaxComponents()`. Session-scoped X/Z reports
+(`computeSessionAggregates()`) include settled bills and partially paid bills on non-cancelled
+orders: a bill settled wholly within
+one shift keeps `resolveTaxComponents()` as-is, while partial or cross-shift bills allocate resolved
+components sequentially across payment lines against the remaining bill total in minor units
+(`allocateSignedMinorUnits()`, `reconcileSnapshotAllocations()`, and `mergeDisplayTaxComponents()`),
+so a shift closed before settlement keeps its collected tax share in its immutable Z snapshot and
+subsequent shifts receive the exact remaining tax.
 
 ## Bundled packs
 
@@ -318,8 +328,9 @@ author cannot rely on any of them.
 - **`storeId` on a pack.** No pack schema field references a store.
 - **Customer tax fields.** A customer carries a registration number, state code, and exempt flag
   through `TaxCustomer`, and nothing tax-address-shaped beyond that.
-- **Reporting by anything other than tax component.** The report surface is
-  `GET /api/reports/tax-components`. There is no reporting by rule, by category, or by jurisdiction.
+- **Reporting by anything other than tax component.** Tax reporting surfaces (such as
+  `GET /api/reports/tax-components` and X/Z cash-closure reports) group only by resolved tax
+  component; there is no reporting by rule, by category, or by jurisdiction.
 
 ## Verification
 

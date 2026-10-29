@@ -59,10 +59,20 @@ import {
 } from '../services/cash-drawer-movements';
 // Type-only: erased at compile, so this adds no runtime require cycle.
 import type { AuthedRequest } from './cash-sessions';
+import Decimal from 'decimal.js';
 import { getCurrencyMinorUnitFactor } from '../countries';
-import { getOrdersWithItemsForBills } from './bills';
+import {
+  allocateSignedMinorUnits,
+  getOrdersWithItemsForBills,
+  reconcileSnapshotAllocations,
+} from './bills';
 import { getHttpRequestSignal } from '../shutdown';
-import { DisplayTaxComponent, aggregateTaxComponents } from '../services/tax-components';
+import {
+  DisplayTaxComponent,
+  aggregateTaxComponents,
+  mergeDisplayTaxComponents,
+  resolveTaxComponents,
+} from '../services/tax-components';
 import {
   Z_REPORT_LANGUAGE_POLICY_KEY,
   parseStoredLanguagePolicy,
@@ -513,6 +523,25 @@ export function expectedCashFromAggregates(
     aggregates.cashRefundsByCreatedAtCents
   );
 }
+// `b.paid_at` represents a timestamp-less line only when it is the single/final settling
+// line; earlier pre-settlement installments stay anchored to `b.created_at`.
+const LEGACY_STABLE_PAYMENT_LINE_TIME_SQL = `(
+  CASE
+    WHEN json_valid(b.payment_details)
+      AND json_type(b.payment_details) = 'array'
+      AND CAST(je.key AS INTEGER) < json_array_length(b.payment_details) - 1
+    THEN COALESCE(
+      datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+      datetime(NULLIF(b.created_at, ''))
+    )
+    ELSE COALESCE(
+      datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+      datetime(NULLIF(b.paid_at, '')),
+      datetime(NULLIF(b.created_at, ''))
+    )
+  END
+)`;
+
 /**
  * Drawer-reality cash inputs for one raw timestamp window: cash sales by each
  * payment line's timestamp (includes partial tenders before `paid_at` is set)
@@ -537,11 +566,7 @@ export function cashDrawerSalesAndRefunds(
         CAST(json_extract(je.value, '$.amount') AS REAL) AS amount,
         COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), '') AS method,
         CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER) AS payment_method_id,
-        COALESCE(
-          datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-          datetime(NULLIF(b.paid_at, '')),
-          datetime(NULLIF(b.created_at, ''))
-        ) AS line_time
+        ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} AS line_time
       FROM bills b
       JOIN json_each(
         CASE
@@ -647,11 +672,7 @@ export function sessionExpectedCash(
         COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), '') AS method,
         CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER) AS payment_method_id,
         CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) AS line_session,
-        COALESCE(
-          datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-          datetime(NULLIF(b.paid_at, '')),
-          datetime(NULLIF(b.created_at, ''))
-        ) AS line_time
+        ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} AS line_time
       FROM bills b
       JOIN json_each(
         CASE
@@ -702,7 +723,7 @@ export function sessionExpectedCash(
   );
 }
 
-/** Sales and refunds attributed to a session for its immutable Z snapshot. */
+/** Sales and refunds attributed to a session for shift X/Z reports. */
 export function sessionFinancialTotals(
   db: ReturnType<typeof getDatabase>,
   session: { id: number; opened_at: string },
@@ -725,8 +746,7 @@ export function sessionFinancialTotals(
         CAST(ROUND(CAST(json_extract(je.value, '$.amount') AS REAL) * ?) AS INTEGER) AS amount_cents,
         COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), 'unknown') AS method,
         CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) AS line_session,
-        COALESCE(datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-          datetime(NULLIF(b.paid_at, '')), datetime(NULLIF(b.created_at, ''))) AS line_time
+        ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} AS line_time
       FROM bills b
       JOIN json_each(CASE
         WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
@@ -778,6 +798,70 @@ export function sessionFinancialTotals(
     refundedCents,
     netCollectedCents: grossCollectedCents - refundedCents,
     paymentMethods: JSON.parse(row.methods_json),
+  };
+}
+
+function roundComponentsToMinorUnits(
+  components: DisplayTaxComponent[],
+  minorFactor: number,
+): { compMinors: number[]; totalMinor: number } {
+  const exactMinors = components.map((comp) => new Decimal(comp.amount).times(minorFactor));
+  if (exactMinors.every((m) => m.isInteger())) {
+    const compMinors = exactMinors.map((m) => m.toNumber());
+    return {
+      compMinors,
+      totalMinor: compMinors.reduce((sum, minor) => sum + minor, 0),
+    };
+  }
+  const totalExact = exactMinors.reduce((sum, m) => sum.plus(m), new Decimal(0));
+  const totalMinor = totalExact.toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber();
+  const compMinors = exactMinors.map((m) =>
+    m.isNegative() ? m.ceil().toNumber() : m.floor().toNumber(),
+  );
+  const delta = totalMinor - compMinors.reduce((sum, minor) => sum + minor, 0);
+  if (delta !== 0 && compMinors.length > 0) {
+    const sign = delta > 0 ? 1 : -1;
+    const ranked = exactMinors
+      .map((m, index) => ({
+        index,
+        remainder:
+          sign > 0
+            ? m.minus(compMinors[index]).toNumber()
+            : new Decimal(compMinors[index]).minus(m).toNumber(),
+      }))
+      .sort((a, b) =>
+        Math.abs(b.remainder - a.remainder) > 1e-9 ? b.remainder - a.remainder : a.index - b.index,
+      );
+    for (let i = 0; i < Math.abs(delta); i++) {
+      compMinors[ranked[i % ranked.length].index] += sign;
+    }
+  }
+  return { compMinors, totalMinor };
+}
+
+export function computeSessionAggregates(
+  db: ReturnType<typeof getDatabase>,
+  session: { id: number; opened_at: string; opening_float_cents: number },
+  end: string,
+): DayAggregates {
+  const sessionMovements = listCashDrawerMovementsForSession(
+    db,
+    session.id,
+    session.opened_at,
+    end,
+    false,
+  );
+  const openingFloatCents = Number(session.opening_float_cents || 0);
+  return {
+    ...computePeriodAggregates(
+      db,
+      session.opened_at,
+      end,
+      sessionMovements,
+      openingFloatCents,
+      session,
+    ),
+    ...sessionFinancialTotals(db, session, end),
   };
 }
 
@@ -868,8 +952,7 @@ export function computePeriodAggregates(
       SELECT b.id AS bill_id,
         CAST(json_extract(je.value, '$.amount') AS REAL) AS amount,
         CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) AS line_session,
-        COALESCE(datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-          datetime(NULLIF(b.paid_at, '')), datetime(NULLIF(b.created_at, ''))) AS line_time
+        ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} AS line_time
       FROM bills b
       JOIN json_each(CASE
         WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
@@ -914,13 +997,14 @@ export function computePeriodAggregates(
         )
         .all(start, end) as StaffSalesRow[]);
 
-  // Tax components — keyed by paid_at window to stay reconciled with the
-  // rest of the Z. Bills are hydrated with their order items and then
-  // aggregated via the existing `aggregateTaxComponents` pipeline, unchanged.
-  // Unpaid bills drop out by the same logic as the staff query above.
+  // Day scope aggregates paid bills in [start, end); session scope allocates stored
+  // historical tax components sequentially across payment lines in minor units.
   type TaxBillRow = {
     id: number;
     order_id: number;
+    split_group_id: string | null;
+    total: number | null;
+    paid_at: string | null;
     tax_amount: number | null;
     tax_snapshot: string | null;
     tax_breakdown: string | null;
@@ -929,9 +1013,14 @@ export function computePeriodAggregates(
     ? (db
         .prepare(
           `
-    SELECT b.*
+    SELECT b.id, b.order_id, b.split_group_id, b.total, b.paid_at, b.tax_amount, b.tax_snapshot, b.tax_breakdown
     FROM bills b
-    WHERE b.paid_at IS NOT NULL
+    LEFT JOIN orders o ON o.id = b.order_id
+    WHERE b.payment_details IS NOT NULL
+      AND (
+        NULLIF(TRIM(b.paid_at), '') IS NOT NULL
+        OR (o.id IS NOT NULL AND COALESCE(o.status, '') != 'cancelled')
+      )
       AND EXISTS (
         SELECT 1
         FROM json_each(CASE
@@ -940,30 +1029,39 @@ export function computePeriodAggregates(
           ELSE '[]' END) je
         WHERE json_type(je.value) = 'object'
           AND (
-            CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) = ?
+            (
+              NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NOT NULL
+              AND CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) = ?
+            )
             OR (
-              json_extract(je.value, '$.cash_session_id') IS NULL
+              NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NULL
+              AND ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} >= datetime(?)
+              AND ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} < datetime(?)
               AND COALESCE(
-                datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-                datetime(NULLIF(b.paid_at, '')),
-                datetime(NULLIF(b.created_at, ''))
-              ) >= datetime(?)
-              AND COALESCE(
-                datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-                datetime(NULLIF(b.paid_at, '')),
-                datetime(NULLIF(b.created_at, ''))
-              ) < datetime(?)
+                (
+                  SELECT cs.id
+                  FROM cash_sessions cs
+                  WHERE ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} >= datetime(cs.opened_at)
+                    AND (
+                      cs.closed_at IS NULL
+                      OR ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} < datetime(cs.closed_at)
+                    )
+                  ORDER BY datetime(cs.opened_at) DESC, cs.id DESC
+                  LIMIT 1
+                ),
+                ?
+              ) = ?
             )
           )
       )
-    ORDER BY b.paid_at, b.id
+    ORDER BY COALESCE(b.paid_at, b.created_at), b.id
   `,
         )
-        .all(session.id, session.opened_at, end) as TaxBillRow[])
+        .all(session.id, session.opened_at, end, NO_CASH_SESSION_ID, session.id) as TaxBillRow[])
     : (db
         .prepare(
           `
-    SELECT b.*
+    SELECT b.id, b.order_id, b.split_group_id, b.total, b.paid_at, b.tax_amount, b.tax_snapshot, b.tax_breakdown
     FROM bills b
     WHERE b.paid_at >= ? AND b.paid_at < ?
     ORDER BY b.paid_at, b.id
@@ -977,7 +1075,171 @@ export function computePeriodAggregates(
     tax_breakdown: bill.tax_breakdown,
     items: orders.get(Number(bill.id))?.items || [],
   }));
-  const taxComponents = aggregateTaxComponents(taxDocuments);
+  let taxComponents: DisplayTaxComponent[];
+  if (!session) {
+    taxComponents = aggregateTaxComponents(taxDocuments);
+  } else {
+    const billPaymentLinesStmt = db.prepare(
+      `
+      WITH lines AS (
+        SELECT
+          CAST(je.key AS INTEGER) AS line_index,
+          json_extract(je.value, '$.amount') AS raw_amount,
+          NULLIF(json_extract(je.value, '$.cash_session_id'), '') AS raw_session_id,
+          ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} AS line_time
+        FROM bills b
+        JOIN json_each(CASE
+          WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
+          WHEN json_valid(b.payment_details) THEN json_array(b.payment_details)
+          ELSE '[]'
+        END) je
+        WHERE b.id = ? AND json_type(je.value) = 'object'
+      )
+      SELECT
+        raw_amount,
+        CASE
+          WHEN raw_session_id IS NOT NULL THEN
+            CASE WHEN CAST(raw_session_id AS INTEGER) = ? THEN 1 ELSE 0 END
+          WHEN line_time >= datetime(?) AND line_time < datetime(?) THEN
+            CASE
+              WHEN COALESCE(
+                (
+                  SELECT cs.id
+                  FROM cash_sessions cs
+                  WHERE line_time >= datetime(cs.opened_at)
+                    AND (cs.closed_at IS NULL OR line_time < datetime(cs.closed_at))
+                  ORDER BY datetime(cs.opened_at) DESC, cs.id DESC
+                  LIMIT 1
+                ),
+                ?
+              ) = ? THEN 1
+              ELSE 0
+            END
+          ELSE 0
+        END AS owned_within_end
+      FROM lines
+      ORDER BY line_index ASC
+    `,
+    );
+    const perBillComponents = bills.map((bill, billIndex) => {
+      const doc = taxDocuments[billIndex];
+      const rawLines = billPaymentLinesStmt.all(
+        bill.id,
+        session.id,
+        session.opened_at,
+        end,
+        NO_CASH_SESSION_ID,
+        session.id,
+      ) as Array<{ raw_amount: unknown; owned_within_end: number }>;
+
+      const paymentLines = rawLines.map((line) => {
+        let amountMinor = 0;
+        if (typeof line.raw_amount === 'number' || typeof line.raw_amount === 'string') {
+          try {
+            const dec = new Decimal(line.raw_amount);
+            if (dec.isFinite() && dec.gt(0)) {
+              amountMinor = dec
+                .times(minorFactor)
+                .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+                .toNumber();
+            }
+          } catch {
+            amountMinor = 0;
+          }
+        }
+        return {
+          amountMinor,
+          ownedWithinEnd: Number(line.owned_within_end) === 1,
+        };
+      });
+
+      const ownedWithinEndLines = paymentLines.filter((line) => line.ownedWithinEnd);
+      if (ownedWithinEndLines.length === 0) return [];
+
+      const sumAllLineMinors = paymentLines.reduce((sum, line) => sum + line.amountMinor, 0);
+      let billTotalFromCol = 0;
+      if (bill.total !== null && bill.total !== undefined) {
+        try {
+          const totalDec = new Decimal(bill.total);
+          if (totalDec.isFinite() && totalDec.gt(0)) {
+            billTotalFromCol = totalDec
+              .times(minorFactor)
+              .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+              .toNumber();
+          }
+        } catch {
+          billTotalFromCol = 0;
+        }
+      }
+      const isSettled = bill.paid_at !== null && String(bill.paid_at).trim() !== '';
+      const billTotalMinor = isSettled
+        ? sumAllLineMinors
+        : Math.max(billTotalFromCol, sumAllLineMinors);
+      const ownedMinorSum = ownedWithinEndLines.reduce((sum, line) => sum + line.amountMinor, 0);
+
+      if (
+        paymentLines.length > 0 &&
+        ownedWithinEndLines.length === paymentLines.length &&
+        (isSettled || (billTotalMinor > 0 && ownedMinorSum >= billTotalMinor))
+      ) {
+        return resolveTaxComponents(doc);
+      }
+
+      const docComponents = resolveTaxComponents(doc);
+      if (docComponents.length === 0) return [];
+
+      const { compMinors, totalMinor } = roundComponentsToMinorUnits(docComponents, minorFactor);
+      let remainingPoolMinor = billTotalMinor;
+      let remainingCompMinors = [...compMinors];
+      let remainingTotalMinor = totalMinor;
+      const sessionCompMinors = new Array<number>(docComponents.length).fill(0);
+
+      for (const line of paymentLines) {
+        const lineMinor = line.amountMinor;
+        let lineShares: number[];
+        if (lineMinor <= 0 && remainingPoolMinor > 0) {
+          lineShares = new Array<number>(docComponents.length).fill(0);
+        } else if (remainingPoolMinor - lineMinor <= 0) {
+          lineShares = [...remainingCompMinors];
+          remainingCompMinors = new Array<number>(docComponents.length).fill(0);
+          remainingTotalMinor = 0;
+          remainingPoolMinor = 0;
+        } else {
+          const pairWeights = [lineMinor, remainingPoolMinor - lineMinor];
+          const entries = remainingCompMinors.map((minor) => ({
+            allocations: allocateSignedMinorUnits(minor, pairWeights),
+          }));
+          if (entries.length > 1) {
+            const targetPair = allocateSignedMinorUnits(remainingTotalMinor, pairWeights);
+            reconcileSnapshotAllocations(entries, targetPair);
+          }
+          lineShares = entries.map((entry) => entry.allocations[0]);
+          remainingCompMinors = entries.map((entry) => entry.allocations[1]);
+          remainingTotalMinor = remainingCompMinors.reduce((sum, minor) => sum + minor, 0);
+          remainingPoolMinor -= lineMinor;
+        }
+
+        if (line.ownedWithinEnd) {
+          for (let i = 0; i < docComponents.length; i++) {
+            sessionCompMinors[i] += lineShares[i];
+          }
+        }
+      }
+
+      const allocated: DisplayTaxComponent[] = [];
+      for (let i = 0; i < docComponents.length; i++) {
+        const minorShare = sessionCompMinors[i];
+        if (minorShare === 0 && compMinors[i] !== 0) continue;
+        allocated.push({
+          title: docComponents[i].title,
+          rate: docComponents[i].rate,
+          amount: new Decimal(minorShare).dividedBy(minorFactor).toDecimalPlaces(6).toNumber(),
+        });
+      }
+      return allocated;
+    });
+    taxComponents = mergeDisplayTaxComponents(perBillComponents);
+  }
 
   const grossCollectedCents = Math.round(Number(billRow.gross_collected || 0) * minorFactor);
   const refundedCents = Number(refundRow.refunded_cents || 0);

@@ -194,6 +194,7 @@ async function main() {
   setStoreSetting(db, 'kot_printing_enabled', 'true');
   setStoreSetting(db, 'auto_print_kot', 'true');
   setStoreSetting(db, 'require_kitchen_delivered_before_settlement', 'true');
+  setStoreSetting(db, 'split_checks_enabled', 'true');
 
   // Seed default printer for ticket printing tests
   db.prepare(
@@ -673,6 +674,92 @@ async function main() {
     const orderDineInAfterPay = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderDineIn.id) as any;
     assertEqualOrThrow(orderDineInAfterPay.checkout_stage, 'paid', 'dine in checkout stage is paid');
     assertEqualOrThrow(orderDineInAfterPay.status, 'pending', 'dine in status remains pending');
+
+    const splitDineInRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'dine_in',
+        table_id: 'tbl-mc-1',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-burger', quantity: 2 }],
+      },
+    });
+    assertEqualOrThrow(splitDineInRes.status, 201, 'split dine-in order created');
+    const splitOrder = splitDineInRes.body.order;
+    const splitItem1 = splitOrder.items[0];
+
+    const initialSplitBill = db
+      .prepare('SELECT * FROM bills WHERE order_id = ?')
+      .get(splitOrder.id) as any;
+
+    const splitRes = await req({
+      path: `/api/bills/${initialSplitBill.id}/split-check`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: {
+        checks: [
+          { label: 'Seat 1', items: [{ order_item_id: splitItem1.id, quantity: 1 }] },
+          { label: 'Seat 2', items: [{ order_item_id: splitItem1.id, quantity: 1 }] },
+        ],
+      },
+    });
+    assertEqualOrThrow(splitRes.status, 201, 'dine-in check split 201');
+    const [splitBill1, splitBill2] = splitRes.body.bills;
+
+    const payBill1Res = await req({
+      path: `/api/bills/${splitBill1.id}/payment`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: {
+        method: 'cash',
+        amount: Number(splitBill1.total),
+      },
+    });
+    assertEqualOrThrow(payBill1Res.status, 200, 'first split bill paid');
+
+    const splitOrderAfterBill1 = db.prepare('SELECT checkout_stage FROM orders WHERE id = ?').get(splitOrder.id) as any;
+    assertEqualOrThrow(splitOrderAfterBill1.checkout_stage, 'awaiting_payment', 'stage remains awaiting_payment');
+
+    const queueAfterSplitBill1 = await req({
+      path: '/api/orders/awaiting-payment',
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    const splitQueueRow = queueAfterSplitBill1.body?.orders?.find((o: any) => o.id === splitOrder.id);
+    assertOrThrow(!!splitQueueRow, 'order present in awaiting-payment queue');
+    assertEqualOrThrow(splitQueueRow.bill_id, splitBill2.id, 'queue row joins unpaid splitBill2');
+    assertEqualOrThrow(Number(splitQueueRow.balance), Number(splitBill2.balance), 'queue row shows splitBill2 balance');
+
+    const lookupSplitTicket = await req({
+      path: `/api/orders/by-ticket/${splitOrder.order_number}`,
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(lookupSplitTicket.status, 200, 'ticket lookup succeeds while second check is unpaid');
+    assertEqualOrThrow(lookupSplitTicket.body?.bill?.id, splitBill2.id, 'primaryBill is splitBill2');
+
+    const payBill2Res = await req({
+      path: `/api/bills/${splitBill2.id}/payment`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: {
+        method: 'cash',
+        amount: Number(splitBill2.total),
+      },
+    });
+    assertEqualOrThrow(payBill2Res.status, 200, 'second split bill paid');
+
+    const splitOrderAfterAllPaid = db.prepare('SELECT checkout_stage FROM orders WHERE id = ?').get(splitOrder.id) as any;
+    assertEqualOrThrow(splitOrderAfterAllPaid.checkout_stage, 'paid', 'stage transitions to paid when all checks settled');
+
+    const lookupSplitTicketAllPaid = await req({
+      path: `/api/orders/by-ticket/${splitOrder.order_number}`,
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(lookupSplitTicketAllPaid.status, 404, 'ticket lookup 404 after all split checks paid');
 
     // -------------------------------------------------------------------------
     // 6. Scheduled + on_payment takeaway combination

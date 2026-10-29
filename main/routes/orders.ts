@@ -1617,8 +1617,9 @@ router.get(
         FROM orders o
         LEFT JOIN tables t ON t.id = o.table_id
         LEFT JOIN customers c ON c.id = o.customer_id
-        LEFT JOIN bills b ON b.id = (
-          SELECT id FROM bills WHERE order_id = o.id ORDER BY id ASC LIMIT 1
+        LEFT JOIN bills b ON b.id = COALESCE(
+          (SELECT id FROM bills WHERE order_id = o.id AND payment_status NOT IN ('paid', 'refunded') ORDER BY id ASC LIMIT 1),
+          (SELECT id FROM bills WHERE order_id = o.id ORDER BY id ASC LIMIT 1)
         )
         WHERE (o.checkout_stage = 'awaiting_payment' OR o.release_status = 'blocked')
           AND o.status NOT IN ('cancelled', 'completed')
@@ -1719,13 +1720,21 @@ router.get(
         db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id ASC').all(orderRow.id) as any[]
       ).map(parseRowJson);
 
-      let primaryBill = bills[0] || null;
+      const payableBill = bills.find(
+        (b: any) => b.payment_status !== 'paid' && Number(b.balance || 0) > 0,
+      );
+      let primaryBill = payableBill || bills[0] || null;
       if (!primaryBill && orderRow.dispatch_policy === 'on_payment') {
         primaryBill = createOrSyncBillForOrder(db, orderRow.id);
         bills = [primaryBill];
       }
 
-      if (primaryBill && primaryBill.payment_status === 'paid' && Number(primaryBill.balance || 0) <= 0) {
+      const allBillsSettled =
+        bills.length > 0 &&
+        bills.every(
+          (b: any) => b.payment_status === 'paid' && Number(b.balance || 0) <= 0,
+        );
+      if (allBillsSettled) {
         return res.status(404).json({ error: 'Ticket not found or already paid' });
       }
 

@@ -1139,7 +1139,7 @@ async function main() {
     const refundAudits = readStatusAudits(refundActiveOrderId);
     assertEqualOrThrow(refundAudits.length, 1, 'item refund records status_changed audit');
     assertEqualOrThrow(
-      JSON.parse(refundAudits[0].details).to,
+      JSON.parse(refundAudits[0].details_json).to,
       'ready',
       'item refund status_changed audit records ready target',
     );

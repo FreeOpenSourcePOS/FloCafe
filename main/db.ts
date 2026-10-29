@@ -10487,16 +10487,6 @@ function createSchema(): void {
       reservation_customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL
     );
 
-    CREATE TABLE IF NOT EXISTS counters (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('ordering', 'payment', 'combined')),
-      is_active INTEGER NOT NULL DEFAULT 1,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
     CREATE TABLE IF NOT EXISTS customers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -10776,7 +10766,6 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_orders_user       ON orders(user_id);
     CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
     CREATE INDEX IF NOT EXISTS idx_bills_order       ON bills(order_id);
-    CREATE INDEX IF NOT EXISTS idx_counters_active   ON counters(is_active, sort_order);
     CREATE INDEX IF NOT EXISTS idx_country_pack_versions_pack ON country_pack_versions(pack_id);
     CREATE INDEX IF NOT EXISTS idx_tax_categories_pack_version ON tax_categories(pack_version_id);
     CREATE INDEX IF NOT EXISTS idx_tax_rules_pack_version ON tax_rules(pack_version_id);
@@ -11021,7 +11010,6 @@ function seedInstallDefaults(): void {
   insert('taxes_enabled', 'false');
   insert('billing_type', 'postpaid');
   insert('tables_required', 'true');
-  insert('multi_counter_enabled', 'false');
   insert('service_model', 'finedine');
   insert('setup_profile', '');
   // Unified charges & fees engine: JSON array of ChargeDefinition objects.

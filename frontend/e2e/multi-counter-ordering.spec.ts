@@ -103,13 +103,22 @@ test('Multi-counter ordering flow (create here, pay there) (#361)', async ({ pag
     await counterSelect.click();
     await page.getByTestId(`pos-counter-option-${paymentCounter.id}`).click();
 
-    // Queue button with badge should be visible
+    // Selecting payment counter opens the shared waiting queue automatically
+    const queueDrawer = page.getByTestId('payment-queue-drawer');
+    await expect(queueDrawer).toBeVisible();
+
+    // Topbar queue button with badge should also be visible
     const queueBtn = page.getByTestId('pos-payment-queue-btn');
     await expect(queueBtn).toBeVisible();
-    await queueBtn.click();
 
-    // Payment queue drawer opens
-    const queueDrawer = page.getByTestId('payment-queue-drawer');
+    // Closing the queue drawer reveals payment-counter CTA in CartPanel
+    const closeDrawerBtn = page.getByTestId('close-queue-drawer-btn');
+    await closeDrawerBtn.click();
+    await expect(queueDrawer).toHaveCount(0);
+
+    const openQueueCartBtn = cartShell.getByTestId('pos-open-payment-queue-btn');
+    await expect(openQueueCartBtn).toBeVisible();
+    await openQueueCartBtn.click();
     await expect(queueDrawer).toBeVisible();
 
     // The created ticket should be visible in the queue

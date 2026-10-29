@@ -19,6 +19,7 @@ import {
   Wallet,
   StickyNote,
   CalendarClock,
+  CreditCard,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -52,6 +53,7 @@ interface Props {
   submitting: boolean;
   onPlaceOrder: () => void;
   onSendToPayment?: () => void;
+  onOpenPaymentQueue?: () => void;
   counterRole?: 'ordering' | 'payment' | 'combined' | null;
   multiCounterEnabled?: boolean;
   onEditItem?: (item: CartItem) => void;
@@ -173,6 +175,7 @@ export default function CartPanel({
   submitting,
   onPlaceOrder,
   onSendToPayment,
+  onOpenPaymentQueue,
   counterRole,
   multiCounterEnabled = false,
   onEditItem,
@@ -836,7 +839,52 @@ export default function CartPanel({
               </span>
             </Button>
           )}
-          {multiCounterEnabled && onSendToPayment && counterRole === 'ordering' ? (
+          {multiCounterEnabled && counterRole === 'payment' ? (
+            cart.items.length === 0 ? (
+              <Button
+                type="button"
+                onClick={onOpenPaymentQueue}
+                className="flex-1"
+                size="lg"
+                data-testid="pos-open-payment-queue-btn"
+              >
+                <CreditCard className="me-2 h-4 w-4" />
+                {t('paymentQueue')}
+              </Button>
+            ) : (
+              <>
+                {onOpenPaymentQueue && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onOpenPaymentQueue}
+                    className="flex-1"
+                    size="lg"
+                    data-testid="pos-open-payment-queue-btn"
+                  >
+                    <CreditCard className="me-2 h-4 w-4" />
+                    {t('paymentQueue')}
+                  </Button>
+                )}
+                <Button
+                  onClick={onPlaceOrder}
+                  disabled={submitting || Boolean(scheduleErrorMessage)}
+                  className="flex-1"
+                  size="lg"
+                >
+                  {submitting ? t('placing') : t('placeOrderButton')}
+                  {!submitting && (
+                    <span
+                      aria-hidden="true"
+                      className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
+                    >
+                      Space
+                    </span>
+                  )}
+                </Button>
+              </>
+            )
+          ) : multiCounterEnabled && onSendToPayment && counterRole === 'ordering' ? (
             <Button
               onClick={onSendToPayment}
               disabled={

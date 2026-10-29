@@ -1308,7 +1308,12 @@ export default function POSPage() {
                       : null;
                   if (savedId) {
                     const matched = activeList.find((c) => c.id === savedId);
-                    if (matched) setActiveCounter(matched);
+                    if (matched) {
+                      setActiveCounter(matched);
+                      if (matched.role === 'payment') {
+                        setShowPaymentQueue(true);
+                      }
+                    }
                   }
                 })
                 .catch(() => {});
@@ -1358,6 +1363,9 @@ export default function POSPage() {
 
   const handleSelectCounter = (counter: Counter | null) => {
     setActiveCounter(counter);
+    if (multiCounterEnabled && counter?.role === 'payment') {
+      setShowPaymentQueue(true);
+    }
     const tenantId = currentTenant?.id;
     if (typeof window !== 'undefined') {
       if (counter) {
@@ -2928,6 +2936,7 @@ export default function POSPage() {
     submitting,
     onPlaceOrder: handlePlaceOrder,
     onSendToPayment: handleSendToPayment,
+    onOpenPaymentQueue: () => setShowPaymentQueue(true),
     counterRole: activeCounter?.role || null,
     multiCounterEnabled,
     onEditItem: setEditingCartItem,

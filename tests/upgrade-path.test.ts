@@ -1296,6 +1296,10 @@ function main() {
   );
   const v123SnapDb = buildIdealSchemaDb(123);
   try {
+    const preV124Tables = (
+      v123SnapDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
+    ).map((t) => t.name);
+    assert.ok(!preV124Tables.includes('counters'), 'v123 schema must not include counters table');
     v123SnapDb
       .prepare(
         `INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)

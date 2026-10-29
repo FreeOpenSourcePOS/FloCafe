@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
+  completeSettledReleasedOrderIfServed,
   getDatabase,
   getKdsItemParentOrderState,
   getKdsStationCategoryIds,
@@ -479,6 +480,7 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
 
   try {
     const db = getDatabase();
+    let autoCompletedOrderId: string | null = null;
 
     const result = withTxn(() => {
       const existingItem = db
@@ -550,23 +552,30 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
         return { error: 'Not authorized to update this item' };
       }
 
+      const updatedAt = now();
       const updateResult =
         expectedStatus === undefined
           ? db
               .prepare(
                 "UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled', 'refunded')",
               )
-              .run(status, now(), order_item_id)
+              .run(status, updatedAt, order_item_id)
           : db
               .prepare(
                 'UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?',
               )
-              .run(status, now(), order_item_id, expectedStatus);
+              .run(status, updatedAt, order_item_id, expectedStatus);
       if (updateResult.changes !== 1) {
         return { error: 'Item status changed; refresh and try again' };
       }
 
       const reconcile = reconcileActiveOrderStatusFromItems(db, existingItem.order_id, actorUserId);
+      if (
+        status === 'served' &&
+        completeSettledReleasedOrderIfServed(db, existingItem.order_id, updatedAt)
+      ) {
+        autoCompletedOrderId = String(existingItem.order_id);
+      }
 
       return {
         success: true,
@@ -592,6 +601,9 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
     }
 
     broadcastOrderUpdate();
+    if (autoCompletedOrderId) {
+      cloudSync.recordOrderChanged(autoCompletedOrderId, 'order.completed');
+    }
 
     client.ws.send(
       JSON.stringify({

@@ -46,9 +46,6 @@ interface WallClockParts {
 
 const WALL_CLOCK_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/;
 
-const EXPLICIT_OFFSET_RE =
-  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|([+-])(\d{2}):(\d{2}))$/i;
-
 function isValidCalendarAndClock(
   year: number,
   month: number,
@@ -144,8 +141,6 @@ function formatWallClockLabel(
  *   interpreted in `timezone`, rejecting nonexistent (skipped spring-forward)
  *   and ambiguous (repeated fall-back) daylight-saving times with a clear
  *   explanation.
- * - Explicit-offset ISO inputs (`...Z` or `...+HH:MM`) are accepted as exact
- *   instants.
  * - Past or current instants (`<= nowMs`) are rejected.
  */
 export function parseScheduledForInput(
@@ -247,55 +242,6 @@ export function parseScheduledForInput(
     }
 
     const instantMs = uniqueMatches[0];
-    if (instantMs <= nowMs) {
-      return {
-        ok: false,
-        code: 'PAST_SCHEDULED_TIME',
-        message:
-          'Scheduled kitchen release time must be in the future. Place an unscheduled order or use Release now for immediate kitchen preparation.',
-      };
-    }
-
-    return {
-      ok: true,
-      isoUtc: new Date(instantMs).toISOString(),
-      instantMs,
-    };
-  }
-
-  const explicitMatch = EXPLICIT_OFFSET_RE.exec(trimmed);
-  if (explicitMatch) {
-    const year = Number(explicitMatch[1]);
-    const month = Number(explicitMatch[2]);
-    const day = Number(explicitMatch[3]);
-    const hour = Number(explicitMatch[4]);
-    const minute = Number(explicitMatch[5]);
-    const second = explicitMatch[6] !== undefined ? Number(explicitMatch[6]) : 0;
-    const ms = explicitMatch[7] !== undefined ? Number(explicitMatch[7].padEnd(3, '0')) : 0;
-    const rawZone = explicitMatch[8];
-    const sign = explicitMatch[9];
-    const offHour = explicitMatch[10] !== undefined ? Number(explicitMatch[10]) : 0;
-    const offMin = explicitMatch[11] !== undefined ? Number(explicitMatch[11]) : 0;
-
-    if (
-      !isValidCalendarAndClock(year, month, day, hour, minute, second) ||
-      offHour > 23 ||
-      offMin > 59
-    ) {
-      return {
-        ok: false,
-        code: 'INVALID_CALENDAR_DATE',
-        message: 'Scheduled kitchen release date or time is not a valid calendar date.',
-      };
-    }
-
-    const baseUtc = Date.UTC(year, month - 1, day, hour, minute, second, ms);
-    const offsetDeltaMs =
-      rawZone.toUpperCase() === 'Z'
-        ? 0
-        : (sign === '+' ? 1 : -1) * (offHour * 60 + offMin) * 60 * 1000;
-    const instantMs = baseUtc - offsetDeltaMs;
-
     if (instantMs <= nowMs) {
       return {
         ok: false,

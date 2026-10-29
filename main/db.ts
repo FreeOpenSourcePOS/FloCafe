@@ -18,7 +18,11 @@ import {
   normalizeBusinessDayStartTime,
   utcDayBounds,
 } from '../shared/business-date';
-import { getCurrencyFractionDigits, resolveRegionalSnapshot } from './countries';
+import {
+  getCurrencyFractionDigits,
+  getCurrencyMinorUnitFactor,
+  resolveRegionalSnapshot,
+} from './countries';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
 
@@ -9242,6 +9246,135 @@ export function getKdsItemParentOrderState(
     return 'unreleased';
   }
   return 'released';
+}
+
+export function hasActiveUnservedOrderItems(
+  dbInstance: ReturnType<typeof getDatabase>,
+  orderId: number | string,
+): boolean {
+  const row = dbInstance
+    .prepare(
+      "SELECT 1 FROM order_items WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready') LIMIT 1",
+    )
+    .get(orderId);
+  return Boolean(row);
+}
+
+export function isOrderSettledAndNonRefunded(
+  dbInstance: ReturnType<typeof getDatabase>,
+  orderId: number | string,
+): boolean {
+  const orderRow = dbInstance
+    .prepare('SELECT id, total, round_off FROM orders WHERE id = ?')
+    .get(orderId) as { id: number; total?: number | null; round_off?: number | null } | undefined;
+  if (!orderRow) return false;
+
+  const billRows = dbInstance
+    .prepare(
+      `SELECT b.total, b.round_off, b.paid_amount, b.balance, b.payment_status, b.payment_details,
+              COALESCE((SELECT SUM(r.amount_cents) FROM refunds r WHERE r.bill_id = b.id), 0) AS refunded_cents
+       FROM bills b
+       WHERE b.order_id = ?`,
+    )
+    .all(orderId) as Array<{
+    total?: number | null;
+    round_off?: number | null;
+    paid_amount?: number | null;
+    balance?: number | null;
+    payment_status?: string | null;
+    payment_details?: unknown;
+    refunded_cents?: number | null;
+  }>;
+  if (billRows.length === 0) return false;
+
+  const currencyRow = dbInstance
+    .prepare("SELECT value FROM settings WHERE key = 'currency'")
+    .get() as { value?: string } | undefined;
+  const minorFactor = getCurrencyMinorUnitFactor(currencyRow?.value || 'USD');
+
+  let billedCoverageMinor = 0;
+  for (const bill of billRows) {
+    if (bill.payment_status !== 'paid') return false;
+    if (Math.round(Number(bill.refunded_cents || 0)) > 0) return false;
+
+    const totalMinor = Math.max(0, Math.round(Number(bill.total || 0) * minorFactor));
+    const roundOffMinor = Math.round(Number(bill.round_off || 0) * minorFactor);
+    const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
+    const paidMinor = Math.max(0, Math.round(Number(bill.paid_amount || 0) * minorFactor));
+    const fallbackBalance = Math.max(0, Number(bill.total || 0) - Number(bill.paid_amount || 0));
+    const storedBalanceMinor = Math.max(
+      0,
+      Math.round(Number(bill.balance ?? fallbackBalance) * minorFactor),
+    );
+    let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
+    if (typeof bill.payment_details === 'string' && bill.payment_details.trim()) {
+      try {
+        const parsed = JSON.parse(bill.payment_details);
+        if (Array.isArray(parsed)) parsedPaymentDetails = parsed;
+      } catch {
+        parsedPaymentDetails = [];
+      }
+    } else if (Array.isArray(bill.payment_details)) {
+      parsedPaymentDetails = bill.payment_details as Array<{ amount?: unknown }>;
+    }
+    const detailsPaidMinor = parsedPaymentDetails.reduce(
+      (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
+      0,
+    );
+    const recordedPaidMinor = Math.max(paidMinor, detailsPaidMinor);
+    if (storedBalanceMinor > 0 || recordedPaidMinor < totalMinor) return false;
+
+    billedCoverageMinor += Math.max(totalMinor, unroundedTotalMinor);
+  }
+
+  const orderTotalMinor = Math.max(0, Math.round(Number(orderRow.total || 0) * minorFactor));
+  const orderRoundOffMinor = Math.round(Number(orderRow.round_off || 0) * minorFactor);
+  const effectiveOrderTargetMinor = Math.min(
+    orderTotalMinor,
+    Math.max(0, orderTotalMinor - orderRoundOffMinor),
+  );
+  return billedCoverageMinor >= effectiveOrderTargetMinor;
+}
+
+export function completeSettledReleasedOrderIfServed(
+  dbInstance: ReturnType<typeof getDatabase>,
+  orderId: number | string,
+  changedAt: string = now(),
+): boolean {
+  const orderRow = dbInstance
+    .prepare('SELECT id, status, release_status, table_id FROM orders WHERE id = ?')
+    .get(orderId) as
+    | { id: number; status: string; release_status?: string | null; table_id?: string | null }
+    | undefined;
+  if (!orderRow) return false;
+  if (orderRow.status === 'completed' || orderRow.status === 'cancelled') return false;
+  if (orderRow.release_status && orderRow.release_status !== 'released') return false;
+  if (hasActiveUnservedOrderItems(dbInstance, orderId)) return false;
+
+  const hasServedItem = dbInstance
+    .prepare("SELECT 1 FROM order_items WHERE order_id = ? AND status = 'served' LIMIT 1")
+    .get(orderId);
+  if (!hasServedItem) return false;
+  if (!isOrderSettledAndNonRefunded(dbInstance, orderId)) return false;
+
+  const updated = dbInstance
+    .prepare(
+      `UPDATE orders
+       SET status = 'completed',
+           completed_at = COALESCE(completed_at, ?),
+           updated_at = ?
+       WHERE id = ? AND status NOT IN ('completed', 'cancelled')`,
+    )
+    .run(changedAt, changedAt, orderId);
+  if (updated.changes !== 1) return false;
+
+  if (orderRow.table_id) {
+    dbInstance.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(
+      changedAt,
+      orderRow.table_id,
+    );
+  }
+  return true;
 }
 
 /** Remove customer/payment/order-financial fields from category-scoped KDS payloads. */

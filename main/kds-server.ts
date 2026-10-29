@@ -14,6 +14,7 @@ import {
 } from './shutdown';
 import {
   ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
+  completeSettledReleasedOrderIfServed,
   databaseMaintenanceMiddleware,
   getDatabase,
   getKdsItemParentOrderState,
@@ -23,6 +24,7 @@ import {
   hasUserKdsStationAssignments,
   isDatabaseMaintenanceActive,
   isKdsStationItemAllowed,
+  now,
   parseItemJson,
   attachEffectiveAddons,
   isKdsEnabled,
@@ -541,6 +543,7 @@ export function startKdsServer(): Promise<void> {
           return res
             .status(403)
             .json({ error: 'No active kitchen station is assigned to this user' });
+        let autoCompletedOrderId: string | null = null;
         const updateResult = db
           .transaction(() => {
             const currentUser = db
@@ -652,22 +655,23 @@ export function startKdsServer(): Promise<void> {
               return { statusCode: 403, error: 'Not authorized to update this item' };
             }
 
+            const updatedAt = now();
             const updated =
               expectedStatus === undefined
                 ? db
                     .prepare(`
                 UPDATE order_items
-                SET status = ?, updated_at = datetime('now')
+                SET status = ?, updated_at = ?
                 WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled', 'refunded')
               `)
-                    .run(status, req.params.id)
+                    .run(status, updatedAt, req.params.id)
                 : db
                     .prepare(`
                 UPDATE order_items
-                SET status = ?, updated_at = datetime('now')
+                SET status = ?, updated_at = ?
                 WHERE id = ? AND status = ?
               `)
-                    .run(status, req.params.id, expectedStatus);
+                    .run(status, updatedAt, req.params.id, expectedStatus);
             if (updated.changes !== 1) {
               return {
                 statusCode: 409,
@@ -680,6 +684,12 @@ export function startKdsServer(): Promise<void> {
               item.order_id,
               kdsUser.userId,
             );
+            if (
+              status === 'served' &&
+              completeSettledReleasedOrderIfServed(db, item.order_id, updatedAt)
+            ) {
+              autoCompletedOrderId = String(item.order_id);
+            }
             return {
               statusCode: 200,
               error: null,
@@ -703,6 +713,9 @@ export function startKdsServer(): Promise<void> {
           } catch {}
         }
         notifyKdsUpdate();
+        if (autoCompletedOrderId) {
+          cloudSync.recordOrderChanged(autoCompletedOrderId, 'order.completed');
+        }
         res.json({ success: true });
       } catch (error: any) {
         console.error('[KDS Server] PATCH item status error:', error);

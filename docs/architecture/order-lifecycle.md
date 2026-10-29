@@ -109,7 +109,9 @@ Lifecycle rules before and at release:
   savepoint rolls back partial deductions and atomically sets `release_status = 'blocked'` with
   `release_blocked_reason` (`release_blocked` in `order_audit_log`). On release, `release_status`
   becomes `'released'`, `released_at` is set, KDS updates are broadcast, and configured backend
-  automatic KOT printing runs.
+  automatic KOT printing runs; an already-settled non-refunded order keeps `status = 'pending'` when
+  KDS is enabled and active unserved items exist, and becomes `status = 'completed'` (recording
+  `completed_at`) immediately when KDS is disabled or no active unserved items remain.
 - **Prepayment, edit lock, rescheduling, and cancellation.** Full or partial payment is allowed
   before release without triggering early release, without kitchen-delivery blocking, and without
   marking `orders.status = 'completed'`. Item additions, edits, removals, customer changes, manual
@@ -294,8 +296,10 @@ its amount via `PATCH /api/bills/:id/payments/:index/method` (see [the Bills API
 A bill moves `unpaid` to `partial` to `paid`; refunds move it to `partially_refunded` or `refunded`.
 When a payment settles the last unpaid bill of an order, an immediate or already-released order
 becomes `completed` (unless it was already completed or cancelled) and its dine-in table is released
-to `available`; an unreleased scheduled order remains `pending` until released and fulfilled. A
-payment never resurrects a terminal order.
+to `available`; an unreleased scheduled order remains `pending` at payment time, then completes on
+release when KDS is disabled (or no active unserved items exist) or when its last active kitchen
+item transitions to `served` while KDS is enabled, provided the order remains settled and
+non-refunded. A payment never resurrects a terminal order.
 
 When a discount, an order mutation (`syncUnpaidBillsForOrder`), or a `POST /api/bills/generate`
 re-sync reduces the remaining balance of a partially paid bill to exactly zero (where collected funds

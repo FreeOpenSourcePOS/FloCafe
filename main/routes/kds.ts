@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import {
   ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
+  completeSettledReleasedOrderIfServed,
   getDatabase,
   getKdsItemParentOrderState,
   getKdsStationCategoryIds,
@@ -502,6 +503,7 @@ router.patch(
       const stationRoutingCategoryIds = stationScope.tablelessCategoryIds;
       let restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
       let reconciledEvent: { orderId: string; status: string } | null = null;
+      let autoCompletedOrderId: string | null = null;
 
       const updatedItem = withTxn(() => {
         const token = req.headers.authorization?.startsWith('Bearer ')
@@ -600,18 +602,19 @@ router.patch(
           }
         }
 
+        const updatedAt = now();
         const updateResult =
           expectedStatus === undefined
             ? db
                 .prepare(
                   "UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled', 'refunded')",
                 )
-                .run(status, now(), req.params.id)
+                .run(status, updatedAt, req.params.id)
             : db
                 .prepare(
                   'UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?',
                 )
-                .run(status, now(), req.params.id, expectedStatus);
+                .run(status, updatedAt, req.params.id, expectedStatus);
         if (updateResult.changes !== 1) throw new Error('STATUS_CONFLICT');
 
         const reconcile = reconcileActiveOrderStatusFromItems(
@@ -621,6 +624,12 @@ router.patch(
         );
         if (reconcile.changed && reconcile.status) {
           reconciledEvent = { orderId: String(item.order_id), status: reconcile.status };
+        }
+        if (
+          status === 'served' &&
+          completeSettledReleasedOrderIfServed(db, item.order_id, updatedAt)
+        ) {
+          autoCompletedOrderId = String(item.order_id);
         }
         return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id);
       });
@@ -638,6 +647,9 @@ router.patch(
         } catch {}
       }
       notifyKdsUpdate();
+      if (autoCompletedOrderId) {
+        cloudSync.recordOrderChanged(autoCompletedOrderId, 'order.completed');
+      }
       res.json({ item: projectKdsItem(updatedItem, restrictedPayload) });
     } catch (error: any) {
       if (error.message === 'VOIDED_ITEM') {

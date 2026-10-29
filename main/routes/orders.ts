@@ -688,31 +688,6 @@ router.get(
         wheres.push('orders.type = ?');
         params.push(req.query.type);
       }
-      let isScheduledQueueFilter = false;
-      if (typeof req.query.release_status === 'string' && req.query.release_status.trim()) {
-        const releaseStatuses = req.query.release_status
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-        const validReleaseStatuses = new Set(['scheduled', 'released', 'blocked']);
-        if (
-          releaseStatuses.length === 0 ||
-          releaseStatuses.some((s) => !validReleaseStatuses.has(s))
-        ) {
-          return res.status(400).json({ error: 'Invalid release_status parameter.' });
-        }
-        if (releaseStatuses.length === 1) {
-          wheres.push('orders.release_status = ?');
-          params.push(releaseStatuses[0]);
-        } else {
-          wheres.push(`orders.release_status IN (${releaseStatuses.map(() => '?').join(',')})`);
-          params.push(...releaseStatuses);
-        }
-        isScheduledQueueFilter = releaseStatuses.every((s) => s !== 'released');
-        if (isScheduledQueueFilter && !req.query.status) {
-          wheres.push("orders.status NOT IN ('cancelled', 'completed')");
-        }
-      }
       const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
       if (search) {
         ensureOrderSearchFunctions(db);
@@ -887,16 +862,11 @@ router.get(
       const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
       const perPagePlusOne = perPage + 1;
 
-      const orderBySql =
-        isScheduledQueueFilter && !req.query.before_id
-          ? `CASE WHEN orders.release_status = 'blocked' THEN 0 ELSE 1 END ASC, COALESCE(orders.scheduled_for, orders.created_at) ASC, orders.id ASC`
-          : `orders.created_at DESC, orders.id DESC`;
-
       const orders = db
         .prepare(`
       SELECT orders.* FROM orders
       ${whereSql}
-      ORDER BY ${orderBySql}
+      ORDER BY orders.created_at DESC, orders.id DESC
       LIMIT ?
     `)
         .all(...params, perPagePlusOne) as any[];

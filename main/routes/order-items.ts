@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import {
+  completeSettledReleasedOrderIfServed,
   getDatabase,
   getKdsItemParentOrderState,
   getKdsStationCategoryIds,
@@ -195,6 +196,7 @@ router.patch(
         currentUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
       let reconciledEvent: { orderId: string; status: string } | null = null;
 
+      let autoCompletedOrderId: string | null = null;
       const orderData = withTxn(() => {
         const liveUser = db
           .prepare(
@@ -314,24 +316,31 @@ router.patch(
           }
         }
 
+        const updatedAt = now();
         const updateResult =
           expectedStatus === undefined
             ? db
                 .prepare(
                   "UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled', 'refunded')",
                 )
-                .run(status, now(), itemId)
+                .run(status, updatedAt, itemId)
             : db
                 .prepare(
                   'UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?',
                 )
-                .run(status, now(), itemId, expectedStatus);
+                .run(status, updatedAt, itemId, expectedStatus);
         if (updateResult.changes !== 1)
           throw Object.assign(new Error('STATUS_CONFLICT'), { diagnosticCode: 'status_conflict' });
 
         const reconcile = reconcileActiveOrderStatusFromItems(db, item.order_id, userId);
         if (reconcile.changed && reconcile.status) {
           reconciledEvent = { orderId: String(item.order_id), status: reconcile.status };
+        }
+        if (
+          status === 'served' &&
+          completeSettledReleasedOrderIfServed(db, item.order_id, updatedAt)
+        ) {
+          autoCompletedOrderId = String(item.order_id);
         }
 
         const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(item.order_id) as any;
@@ -411,6 +420,9 @@ router.patch(
         } catch {}
       }
       notifyKdsUpdate();
+      if (autoCompletedOrderId) {
+        cloudSync.recordOrderChanged(autoCompletedOrderId, 'order.completed');
+      }
 
       res.json({ order: orderData });
     } catch (error: any) {

@@ -56,6 +56,7 @@ process.env.JWT_SECRET = 'test-secret-scheduled-orders-360';
 process.env.KDS_PORT = '0';
 
 const bcrypt = require('bcryptjs');
+const WebSocket = require('ws');
 const {
   initTestDb,
   createApp,
@@ -374,6 +375,50 @@ async function main() {
         );
       }
 
+      // Explicit-offset ISO inputs are rejected in favor of store-timezone wall-clock format
+      const explicitUtcParsed = parseScheduledForInput({
+        input: '2028-05-01T15:00:00Z',
+        timezone: 'America/New_York',
+        nowMs: Date.parse('2028-05-01T10:00:00Z'),
+      });
+      assertEqualOrThrow(explicitUtcParsed.ok, false, 'explicit Z offset input rejected');
+      if (!explicitUtcParsed.ok) {
+        assertEqualOrThrow(
+          explicitUtcParsed.code,
+          'INVALID_FORMAT',
+          'explicit Z offset returns INVALID_FORMAT',
+        );
+      }
+
+      const explicitOffsetParsed = parseScheduledForInput({
+        input: '2028-05-01T15:00:00-04:00',
+        timezone: 'America/New_York',
+        nowMs: Date.parse('2028-05-01T10:00:00Z'),
+      });
+      assertEqualOrThrow(explicitOffsetParsed.ok, false, 'explicit numeric offset input rejected');
+      if (!explicitOffsetParsed.ok) {
+        assertEqualOrThrow(
+          explicitOffsetParsed.code,
+          'INVALID_FORMAT',
+          'explicit numeric offset returns INVALID_FORMAT',
+        );
+      }
+
+      const httpExplicitOffsetRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: '2028-05-01T15:00:00Z',
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      assertEqualOrThrow(
+        httpExplicitOffsetRes.status,
+        400,
+        'POST /api/orders rejects explicit-offset scheduled_for with 400',
+      );
+
       // HTTP endpoint also rejects future spring-forward DST time (2028-03-12T02:30 in America/New_York)
       const httpDstRes = await api(baseUrl, '/api/orders', {
         method: 'POST',
@@ -593,15 +638,7 @@ async function main() {
         'PATCH /api/orders/:id/status (preparing) rejected (409) before release',
       );
 
-      // Visible in scheduled queue endpoint
-      const queueRes = await api(baseUrl, '/api/orders?release_status=scheduled,blocked', {
-        headers: owner.authHeader,
-      });
-      assertEqualOrThrow(queueRes.status, 200, 'scheduled queue query succeeds');
-      assertOrThrow(
-        queueRes.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
-        'scheduled order returned in scheduled queue filter',
-      );
+      // Visible in dedicated scheduled queue endpoint
       const dedicatedQueueRes = await api(baseUrl, '/api/orders/scheduled', {
         headers: owner.authHeader,
       });
@@ -1477,6 +1514,344 @@ async function main() {
         'checkPreconditions holdReason persisted',
       );
       assertLedgerReconciles(db, 'after checkPreconditions tests');
+    }
+
+    // ── 9. Prepaid scheduled order completion across KDS surfaces & KDS-disabled release ──
+    console.log(
+      '\n--- 9. Prepaid scheduled order completion across KDS surfaces & KDS-disabled release ---',
+    );
+    {
+      withTxn(() => {
+        adjustProductStock(db, {
+          productId: 'prod-latte',
+          quantityDelta: 20,
+          movementType: 'adjustment',
+          referenceType: 'opening_balance',
+          reason: 'Restock for prepaid scheduled completion tests',
+          actorUserId: owner.userId,
+        });
+      });
+
+      const createPrepaidScheduledOrder = async (
+        lineLabels: string[],
+        options?: { pay?: boolean; partialRefundAmount?: number },
+      ) => {
+        const shouldPay = options?.pay !== false;
+        const createRes = await api(baseUrl, '/api/orders', {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: {
+            type: 'takeaway',
+            scheduled_for: futureWallClockInZone('America/New_York', 60),
+            items: lineLabels.map((label) => ({
+              product_id: 'prod-latte',
+              quantity: 1,
+              special_instructions: label,
+            })),
+          },
+        });
+        assertEqualOrThrow(createRes.status, 201, 'create scheduled order for completion test');
+        const createdOrderId = Number(createRes.data.order.id);
+        let generatedBillId: number | null = null;
+
+        if (shouldPay) {
+          const genBillRes = await api(baseUrl, '/api/bills/generate', {
+            method: 'POST',
+            headers: owner.authHeader,
+            body: { order_id: createdOrderId },
+          });
+          assertEqualOrThrow(genBillRes.status, 200, 'generate bill for prepaid scheduled order');
+          generatedBillId = Number(genBillRes.data.bill.id);
+          const payRes = await api(baseUrl, `/api/bills/${generatedBillId}/payment`, {
+            method: 'POST',
+            headers: owner.authHeader,
+            body: {
+              method: 'card',
+              transaction_id: `TXN-SCHED-COMP-${createdOrderId}`,
+            },
+          });
+          assertEqualOrThrow(payRes.status, 200, 'settle prepaid scheduled order before release');
+        }
+
+        if (options?.partialRefundAmount && generatedBillId !== null) {
+          const refundRes = await api(baseUrl, '/api/refunds', {
+            method: 'POST',
+            headers: owner.authHeader,
+            body: {
+              bill_id: generatedBillId,
+              amount: options.partialRefundAmount,
+              method: 'card',
+              reason: 'Partial refund before release',
+              approver_id: manager.userId,
+              override_pin: '1234',
+            },
+          });
+          assertEqualOrThrow(refundRes.status, 201, 'issue partial refund on scheduled order');
+        }
+
+        const releaseRes = await api(baseUrl, `/api/orders/${createdOrderId}/release`, {
+          method: 'POST',
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(releaseRes.status, 200, 'release scheduled order');
+
+        const detailRes = await api(baseUrl, `/api/orders/${createdOrderId}`, {
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(detailRes.status, 200, 'fetch released scheduled order details');
+        return {
+          orderId: createdOrderId,
+          billId: generatedBillId,
+          releasedOrder: releaseRes.data.order,
+          items: detailRes.data.order.items as Array<{ id: number; status: string }>,
+        };
+      };
+
+      // 9a. KDS enabled + PATCH /api/order-items/:id/status (2 items -> completes only on last item served)
+      {
+        const { orderId, releasedOrder, items } = await createPrepaidScheduledOrder([
+          'Cup A',
+          'Cup B',
+        ]);
+        assertEqualOrThrow(
+          releasedOrder.status,
+          'pending',
+          'KDS-enabled prepaid order stays pending at release while active items exist',
+        );
+        assertEqualOrThrow(
+          releasedOrder.completed_at ?? null,
+          null,
+          'completed_at remains null at release when KDS is enabled',
+        );
+        assertEqualOrThrow(items.length, 2, 'two active items created');
+
+        const firstServed = await api(baseUrl, `/api/order-items/${items[0].id}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(firstServed.status, 200, 'first item transitions to served');
+        assertEqualOrThrow(
+          firstServed.data.order.status,
+          'pending',
+          'order stays pending while second item is still unserved',
+        );
+
+        const secondServed = await api(baseUrl, `/api/order-items/${items[1].id}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(secondServed.status, 200, 'last item transitions to served');
+        assertEqualOrThrow(
+          secondServed.data.order.status,
+          'completed',
+          'order auto-completes via /api/order-items/:id/status when last item becomes served',
+        );
+        assertOrThrow(
+          Boolean(secondServed.data.order.completed_at),
+          'completed_at recorded on auto-completed order',
+        );
+
+        const verified = await api(baseUrl, `/api/orders/${orderId}`, {
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(verified.data.order.status, 'completed', 'persisted order is completed');
+      }
+
+      // 9b. KDS enabled + PATCH /api/kds/items/:id/status on main API (:3001)
+      {
+        const { orderId, releasedOrder, items } = await createPrepaidScheduledOrder(['Main KDS']);
+        assertEqualOrThrow(releasedOrder.status, 'pending', 'stays pending at release');
+
+        const prepRes = await api(baseUrl, `/api/kds/items/${items[0].id}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'preparing' },
+        });
+        assertEqualOrThrow(prepRes.status, 200, 'preparing via /api/kds/items/:id/status');
+        const midOrder = await api(baseUrl, `/api/orders/${orderId}`, {
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(
+          midOrder.data.order.status,
+          'pending',
+          'order stays pending while item is preparing',
+        );
+
+        const servedRes = await api(baseUrl, `/api/kds/items/${items[0].id}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(servedRes.status, 200, 'served via /api/kds/items/:id/status');
+        const doneOrder = await api(baseUrl, `/api/orders/${orderId}`, {
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(
+          doneOrder.data.order.status,
+          'completed',
+          'order auto-completes via main /api/kds/items/:id/status',
+        );
+        assertOrThrow(
+          Boolean(doneOrder.data.order.completed_at),
+          'completed_at set via main /api/kds/items/:id/status',
+        );
+      }
+
+      // 9c. KDS enabled + standalone KDS HTTP server (:3002) PATCH /api/kds/items/:id/status
+      {
+        const { orderId, releasedOrder, items } = await createPrepaidScheduledOrder([
+          'Standalone KDS HTTP',
+        ]);
+        assertEqualOrThrow(releasedOrder.status, 'pending', 'stays pending at release');
+
+        const standaloneServed = await api(kdsBaseUrl, `/api/kds/items/${items[0].id}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(
+          standaloneServed.status,
+          200,
+          'served via standalone KDS server PATCH /api/kds/items/:id/status',
+        );
+        const doneOrder = await api(baseUrl, `/api/orders/${orderId}`, {
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(
+          doneOrder.data.order.status,
+          'completed',
+          'order auto-completes via standalone KDS server',
+        );
+        assertOrThrow(
+          Boolean(doneOrder.data.order.completed_at),
+          'completed_at set via standalone KDS server',
+        );
+      }
+
+      // 9d. KDS enabled + KDS WebSocket status_update
+      {
+        const { orderId, releasedOrder, items } = await createPrepaidScheduledOrder(['KDS WS']);
+        assertEqualOrThrow(releasedOrder.status, 'pending', 'stays pending at release');
+
+        await new Promise<void>((resolve, reject) => {
+          const ws = new WebSocket(`ws://127.0.0.1:${getKdsPort()}/kds`);
+          const timeout = setTimeout(() => {
+            ws.terminate();
+            reject(new Error('Timed out waiting for KDS WebSocket status_updated'));
+          }, 5000);
+
+          ws.on('error', (err: Error) => {
+            clearTimeout(timeout);
+            reject(err);
+          });
+          ws.on('open', () => {
+            ws.send(JSON.stringify({ type: 'auth', token: owner.token }));
+          });
+          ws.on('message', (raw: Buffer) => {
+            const msg = JSON.parse(raw.toString());
+            if (msg.type === 'auth_success') {
+              ws.send(
+                JSON.stringify({
+                  type: 'status_update',
+                  order_item_id: items[0].id,
+                  status: 'served',
+                }),
+              );
+            } else if (msg.type === 'status_updated' && Number(msg.order_item_id) === items[0].id) {
+              clearTimeout(timeout);
+              ws.close();
+              resolve();
+            } else if (msg.type === 'error') {
+              clearTimeout(timeout);
+              ws.close();
+              reject(new Error(`KDS WS error: ${msg.message}`));
+            }
+          });
+        });
+
+        const doneOrder = await api(baseUrl, `/api/orders/${orderId}`, {
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(
+          doneOrder.data.order.status,
+          'completed',
+          'order auto-completes via KDS WebSocket status_update',
+        );
+        assertOrThrow(
+          Boolean(doneOrder.data.order.completed_at),
+          'completed_at set via KDS WebSocket status_update',
+        );
+      }
+
+      // 9e. Partially refunded scheduled order does NOT auto-complete when item becomes served
+      {
+        const { orderId, releasedOrder, items } = await createPrepaidScheduledOrder(
+          ['Partially Refunded'],
+          { partialRefundAmount: 50 },
+        );
+        assertEqualOrThrow(
+          releasedOrder.status,
+          'pending',
+          'partially refunded order stays pending at release',
+        );
+
+        const servedRes = await api(baseUrl, `/api/order-items/${items[0].id}/status`, {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'served' },
+        });
+        assertEqualOrThrow(servedRes.status, 200, 'partially refunded order item marked served');
+        const afterServed = await api(baseUrl, `/api/orders/${orderId}`, {
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(
+          afterServed.data.order.status,
+          'pending',
+          'partially refunded order does NOT auto-complete on served',
+        );
+      }
+
+      // 9f. KDS disabled -> settled non-refunded scheduled order completes immediately at release
+      setStoreSetting(db, 'kds_enabled', 'false');
+      try {
+        const settledNoKds = await createPrepaidScheduledOrder(['No KDS Paid']);
+        assertEqualOrThrow(
+          settledNoKds.releasedOrder.status,
+          'completed',
+          'settled non-refunded order completes immediately at release when KDS is disabled',
+        );
+        assertOrThrow(
+          Boolean(settledNoKds.releasedOrder.completed_at),
+          'completed_at populated at release when KDS is disabled',
+        );
+
+        const unpaidNoKds = await createPrepaidScheduledOrder(['No KDS Unpaid'], { pay: false });
+        assertEqualOrThrow(
+          unpaidNoKds.releasedOrder.status,
+          'pending',
+          'unpaid scheduled order stays pending at release when KDS is disabled',
+        );
+        assertEqualOrThrow(
+          unpaidNoKds.releasedOrder.completed_at ?? null,
+          null,
+          'unpaid scheduled order leaves completed_at null at release',
+        );
+
+        const refundedNoKds = await createPrepaidScheduledOrder(['No KDS Partially Refunded'], {
+          partialRefundAmount: 50,
+        });
+        assertEqualOrThrow(
+          refundedNoKds.releasedOrder.status,
+          'pending',
+          'partially refunded scheduled order stays pending at release when KDS is disabled',
+        );
+      } finally {
+        setStoreSetting(db, 'kds_enabled', 'true');
+      }
+
+      assertLedgerReconciles(db, 'after prepaid scheduled order completion tests');
     }
 
     const results = getResults();

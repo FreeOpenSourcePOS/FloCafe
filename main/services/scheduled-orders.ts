@@ -10,7 +10,9 @@
 import {
   getDatabase,
   getSettingValue,
+  hasActiveUnservedOrderItems,
   isDatabaseMaintenanceActive,
+  isOrderSettledAndNonRefunded,
   parseDbTimestamp,
   recordOrderAudit,
   withDatabaseRequest,
@@ -774,15 +776,36 @@ export async function releaseScheduledOrder(
       };
     }
 
-    db.prepare(
-      `UPDATE orders
-       SET release_status = 'released',
-           released_at = ?,
-           release_blocked_reason = NULL,
-           status = 'pending',
-           updated_at = ?
-       WHERE id = ?`,
-    ).run(nowIso, nowDb, currentOrder.id);
+    const kdsSetting = db.prepare("SELECT value FROM settings WHERE key = 'kds_enabled'").get() as
+      | { value?: string }
+      | undefined;
+    const kdsEnabled = kdsSetting?.value !== 'false';
+    const shouldCompleteAtRelease =
+      isOrderSettledAndNonRefunded(db, currentOrder.id) &&
+      (!kdsEnabled || !hasActiveUnservedOrderItems(db, currentOrder.id));
+
+    if (shouldCompleteAtRelease) {
+      db.prepare(
+        `UPDATE orders
+         SET release_status = 'released',
+             released_at = ?,
+             release_blocked_reason = NULL,
+             status = 'completed',
+             completed_at = COALESCE(completed_at, ?),
+             updated_at = ?
+         WHERE id = ?`,
+      ).run(nowIso, nowDb, nowDb, currentOrder.id);
+    } else {
+      db.prepare(
+        `UPDATE orders
+         SET release_status = 'released',
+             released_at = ?,
+             release_blocked_reason = NULL,
+             status = 'pending',
+             updated_at = ?
+         WHERE id = ?`,
+      ).run(nowIso, nowDb, currentOrder.id);
+    }
 
     if (effectiveActorId) {
       recordOrderAudit(db, {

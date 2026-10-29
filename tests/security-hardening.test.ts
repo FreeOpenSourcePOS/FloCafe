@@ -411,7 +411,7 @@ async function main() {
   );
 
   // ── mobile_pairing_code protection on generic settings endpoints ─────────
-  const syntheticPairingCode = 'SYNTH-PAIR-9482';
+  const syntheticPairingCode = 'SYNTH-PAIR-ZXQ!';
   const syntheticPairingSuffix = syntheticPairingCode.slice(-4);
   db.prepare(`
     INSERT OR REPLACE INTO settings (key, value, updated_at)

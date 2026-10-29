@@ -3241,9 +3241,14 @@ async function run(): Promise<void> {
       });
       const wrappedTwice = new Error('Database replacement failed', { cause: wrappedOnce });
       const directSqliteIoErr = new Database.SqliteError('disk I/O error', 'SQLITE_IOERR');
-      const wrappedSqliteIoErr = new Error('Backup inspection failed', { cause: directSqliteIoErr });
+      const wrappedSqliteIoErr = new Error('Backup inspection failed', {
+        cause: directSqliteIoErr,
+      });
       const shortReadError = new Database.SqliteError('short read', 'SQLITE_IOERR_SHORT_READ');
-      const corruptError = new Database.SqliteError('database disk image is malformed', 'SQLITE_CORRUPT');
+      const corruptError = new Database.SqliteError(
+        'database disk image is malformed',
+        'SQLITE_CORRUPT',
+      );
       const genericError = new Error('unrelated error');
 
       assert.equal(isSqliteStorageOrOpenError(directEnospc), true);
@@ -3289,7 +3294,11 @@ async function run(): Promise<void> {
         } as typeof Database.prototype.prepare;
 
         assert.deepEqual(getTables(memDb), [], 'getTables catches non-storage error');
-        assert.deepEqual(getColumns(memDb, 'test_table'), [], 'getColumns catches non-storage error');
+        assert.deepEqual(
+          getColumns(memDb, 'test_table'),
+          [],
+          'getColumns catches non-storage error',
+        );
       } finally {
         memDb.close();
       }
@@ -3319,7 +3328,10 @@ async function run(): Promise<void> {
       }
 
       const tempScanDir = fs.mkdtempSync(path.join(testDir, 'candidate-error-scan-'));
-      const fakeBackupPath = path.join(getBackupDir(), 'flo-backup-2026-10-29T10-00-00-000Z-disappear.db');
+      const fakeBackupPath = path.join(
+        getBackupDir(),
+        'flo-backup-2026-10-29T10-00-00-000Z-disappear.db',
+      );
       fs.writeFileSync(fakeBackupPath, 'fake-backup');
       try {
         let injectedEnoent = false;

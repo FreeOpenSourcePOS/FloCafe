@@ -614,26 +614,28 @@ router.get(
       if (!['all', 'active', 'unpaid'].includes(view)) {
         return res.status(400).json({ error: 'Invalid view parameter.' });
       }
-      const kdsEnabledFlag = isKdsEnabled() ? 1 : 0;
-      const completedProjectionCutoff = completedKdsProjectionCutoff();
-      const activeOrderPredicate = `(
-        orders.status NOT IN ('cancelled', 'completed')
-        OR (
-          orders.status = 'completed'
-          AND ? = 1
-          AND orders.created_at >= ?
-          AND EXISTS (
-            SELECT 1 FROM order_items AS active_item
-            WHERE active_item.order_id = orders.id
-              AND active_item.status IN ('pending', 'preparing', 'ready')
-              AND active_item.quantity > 0
-          )
-        )
-      )`;
-      if (view === 'active') {
-        wheres.push(activeOrderPredicate);
-        params.push(kdsEnabledFlag, completedProjectionCutoff);
-      } else if (view === 'unpaid') {
+      const statusQuery = typeof req.query.status === 'string' ? req.query.status : '';
+      const statuses = statusQuery ? statusQuery.split(',') : [];
+      const statusIsActive = statuses.length === 1 && statuses[0] === 'active';
+      if (view === 'active' || statusIsActive) {
+        wheres.push(`orders.id IN (
+          SELECT ao.id FROM orders AS ao
+          WHERE ao.status IN ('pending', 'preparing', 'ready', 'served')
+          UNION ALL
+          SELECT co.id FROM orders AS co
+          WHERE ? = 1
+            AND +co.status = 'completed'
+            AND co.created_at >= ?
+            AND EXISTS (
+              SELECT 1 FROM order_items AS active_item
+              WHERE active_item.order_id = co.id
+                AND active_item.status IN ('pending', 'preparing', 'ready')
+                AND active_item.quantity > 0
+            )
+        )`);
+        params.push(isKdsEnabled() ? 1 : 0, completedKdsProjectionCutoff());
+      }
+      if (view === 'unpaid') {
         wheres.push("orders.status != 'cancelled'");
         wheres.push(`(
           NOT EXISTS (SELECT 1 FROM bills AS existing_bill WHERE existing_bill.order_id = orders.id)
@@ -646,12 +648,8 @@ router.get(
         )`);
       }
 
-      if (typeof req.query.status === 'string' && req.query.status) {
-        const statuses = req.query.status.split(',');
-        if (statuses.length === 1 && statuses[0] === 'active') {
-          wheres.push(activeOrderPredicate);
-          params.push(kdsEnabledFlag, completedProjectionCutoff);
-        } else if (statuses.length === 1) {
+      if (statuses.length > 0 && !statusIsActive) {
+        if (statuses.length === 1) {
           wheres.push('orders.status = ?');
           params.push(statuses[0]);
         } else {

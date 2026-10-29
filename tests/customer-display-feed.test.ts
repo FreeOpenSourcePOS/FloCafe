@@ -507,9 +507,23 @@ async function main(): Promise<void> {
   let capturedActiveViewPage1Params: unknown[] = [];
   let capturedActiveViewCursorSql = '';
   let capturedActiveViewCursorParams: unknown[] = [];
-  let cursorPageEvaluatedRows = 0;
-  db.function('track_active_cursor_row', () => {
-    cursorPageEvaluatedRows += 1;
+  let capturedActiveViewFinalSql = '';
+  let capturedActiveViewFinalParams: unknown[] = [];
+  const perPageOuterEvaluated: number[] = [];
+  let closedHistoricalOuterEvaluated = 0;
+  let coHistoricalEvaluated = 0;
+  let currentOuterEvaluated = 0;
+  db.function('track_active_outer_row', (id: number, status: string) => {
+    currentOuterEvaluated += 1;
+    if (status === 'cancelled' || historicalCompletedIdSet.has(Number(id))) {
+      closedHistoricalOuterEvaluated += 1;
+    }
+    return 1;
+  });
+  db.function('track_active_co_row', (id: number) => {
+    if (historicalCompletedIdSet.has(Number(id))) {
+      coHistoricalEvaluated += 1;
+    }
     return 1;
   });
   let activeViewCallIndex = 0;
@@ -517,11 +531,18 @@ async function main(): Promise<void> {
     if (sql.includes('SELECT orders.* FROM orders')) {
       activeViewCallIndex += 1;
       const callIdx = activeViewCallIndex;
-      const instrumentedSql =
-        callIdx === 2 ? sql.replace('WHERE (', 'WHERE track_active_cursor_row() = 1 AND (') : sql;
+      const instrumentedSql = sql
+        .replace(
+          'WHERE orders.id IN (',
+          'WHERE track_active_outer_row(orders.id, orders.status) = 1 AND orders.id IN (',
+        )
+        .replace('AND EXISTS (', 'AND track_active_co_row(co.id) = 1 AND EXISTS (');
       const stmt = origPrepare(instrumentedSql);
       const origAll = stmt.all.bind(stmt);
       stmt.all = (...params: unknown[]) => {
+        currentOuterEvaluated = 0;
+        const rows = origAll(...params);
+        perPageOuterEvaluated.push(currentOuterEvaluated);
         if (callIdx === 1) {
           capturedActiveViewPage1Sql = sql;
           capturedActiveViewPage1Params = params;
@@ -529,7 +550,9 @@ async function main(): Promise<void> {
           capturedActiveViewCursorSql = sql;
           capturedActiveViewCursorParams = params;
         }
-        return origAll(...params);
+        capturedActiveViewFinalSql = sql;
+        capturedActiveViewFinalParams = params;
+        return rows;
       };
       return stmt;
     }
@@ -567,9 +590,23 @@ async function main(): Promise<void> {
     'completed order with 0-quantity pending item is excluded from view=active',
   );
   assert.equal(
-    cursorPageEvaluatedRows,
-    102,
-    `authenticated view=active cursor page 2 evaluates only cursor-bounded rows (101 active + 1 zero-qty recent row = 102, not all 500+ active/historical rows; got ${cursorPageEvaluatedRows})`,
+    perPageOuterEvaluated.length,
+    6,
+    'authenticated view=active drains 501 active orders across 6 pages',
+  );
+  assert.equal(
+    closedHistoricalOuterEvaluated,
+    0,
+    'zero closed historical orders evaluated across all 6 drained pages including final page',
+  );
+  assert.equal(
+    coHistoricalEvaluated,
+    0,
+    'zero >24h historical completed orders evaluated inside completed projection subquery',
+  );
+  assert.ok(
+    perPageOuterEvaluated.every((count) => count === 501),
+    `every drained page including final page 6 evaluates only the 501 active candidates (got ${perPageOuterEvaluated.join(',')})`,
   );
   const statusActiveRes = await request(app)
     .get('/api/orders?status=active&per_page=500')
@@ -588,6 +625,7 @@ async function main(): Promise<void> {
   for (const [label, sql, params] of [
     ['page 1', capturedActiveViewPage1Sql, capturedActiveViewPage1Params],
     ['cursor page 2', capturedActiveViewCursorSql, capturedActiveViewCursorParams],
+    ['final cursor page', capturedActiveViewFinalSql, capturedActiveViewFinalParams],
   ] as const) {
     assert.ok(sql.length > 0, `captured authenticated view=active SQL for ${label}`);
     const planRows = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as Array<{
@@ -595,11 +633,13 @@ async function main(): Promise<void> {
     }>;
     const planText = planRows.map((r) => r.detail).join(' | ');
     assert.ok(
-      planText.includes('idx_orders_created') &&
+      planText.includes('SEARCH orders USING INTEGER PRIMARY KEY') &&
+        planText.includes('USING COVERING INDEX idx_orders_status') &&
+        planText.includes('USING INDEX idx_orders_created') &&
         planText.includes('idx_order_items_active_kds') &&
-        !planText.includes('COMPOUND') &&
-        !planText.includes('TEMP B-TREE'),
-      `authenticated view=active ${label} uses cursor-friendly idx_orders_created + correlated idx_order_items_active_kds without UNION or TEMP B-TREE (got: ${planText})`,
+        !planText.includes('SCAN orders') &&
+        !planText.includes('SCAN co'),
+      `authenticated view=active ${label} narrows active orders via idx_orders_status + idx_orders_created + idx_order_items_active_kds without scanning orders (got: ${planText})`,
     );
   }
 
@@ -1008,6 +1048,86 @@ async function main(): Promise<void> {
     activeReadyCount + expectedBatchReadyCompletedIds.length,
     'drained ready pages reconstruct exact union of all active ready orders + 15 recent completed ready orders without dropping shared-timestamp ties',
   );
+
+  const steadyKeepReadyIds = expectedBatchReadyCompletedIds.slice(0, 2);
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE orders
+       SET status = 'completed',
+           completed_at = '2026-01-02 00:00:00',
+           created_at = '2026-01-02 00:00:00',
+           updated_at = '2026-01-02 00:00:00'
+       WHERE status IN ('pending', 'preparing', 'ready', 'served')
+         AND order_number NOT IN ('E-001', 'E-002', 'E-003', 'E-004', 'E-005')`,
+    ).run();
+    db.prepare(
+      `UPDATE orders
+       SET created_at = '2026-01-02 00:00:00',
+           updated_at = '2026-01-02 00:00:00'
+       WHERE status = 'completed'
+         AND id NOT IN (?, ?, ?, ?)`,
+    ).run(steadyKeepReadyIds[0], steadyKeepReadyIds[1], prepaidOrderId, zeroQtyOrderId);
+  })();
+  const steadyCutoff = completedKdsProjectionCutoff();
+  let steadyOuterEvaluated = 0;
+  let steadyClosedOuterEvaluated = 0;
+  let steadyCoEvaluated = 0;
+  db.function('track_steady_outer', (status: string, createdAt: string) => {
+    steadyOuterEvaluated += 1;
+    if (status === 'cancelled' || (status === 'completed' && createdAt < steadyCutoff)) {
+      steadyClosedOuterEvaluated += 1;
+    }
+    return 1;
+  });
+  db.function('track_steady_co', () => {
+    steadyCoEvaluated += 1;
+    return 1;
+  });
+  db.prepare = (sql: string) => {
+    if (sql.includes('SELECT orders.* FROM orders')) {
+      return origPrepare(
+        sql
+          .replace(
+            'WHERE orders.id IN (',
+            'WHERE track_steady_outer(orders.status, orders.created_at) = 1 AND orders.id IN (',
+          )
+          .replace('AND EXISTS (', 'AND track_steady_co() = 1 AND EXISTS ('),
+      );
+    }
+    return origPrepare(sql);
+  };
+  try {
+    for (const steadyQuery of [
+      'view=active&per_page=100',
+      'status=active&per_page=100',
+      'view=active&status=active&per_page=100',
+    ] as const) {
+      steadyOuterEvaluated = 0;
+      steadyClosedOuterEvaluated = 0;
+      steadyCoEvaluated = 0;
+      const steadyRes = await request(app).get(`/api/orders?${steadyQuery}`).set(ownerApi);
+      assert.equal(steadyRes.status, 200);
+      assert.equal(steadyRes.body.orders.length, 7, `${steadyQuery} returns all 7 active orders`);
+      assert.equal(steadyRes.body.nextCursor, undefined, `${steadyQuery} has no nextCursor`);
+      assert.equal(
+        steadyClosedOuterEvaluated,
+        0,
+        `${steadyQuery} scans zero closed historical rows when < 100 active orders exist`,
+      );
+      assert.equal(
+        steadyOuterEvaluated,
+        7,
+        `${steadyQuery} evaluates only the 7 active rows in outer orders`,
+      );
+      assert.equal(
+        steadyCoEvaluated,
+        4,
+        `${steadyQuery} evaluates only the 4 <24h completed rows once`,
+      );
+    }
+  } finally {
+    db.prepare = origPrepare;
+  }
 
   console.log('customer-display-feed: all assertions passed');
 }

@@ -870,7 +870,10 @@ async function run(): Promise<void> {
     );
     verifyPreservedNewerSetReadable(dbPath, newerDbVersion, 'ORD-AFTER-UPGRADE-900');
 
-    const backupFilesBefore4d = new Set(fs.readdirSync(backupDir));
+    const nonArchiveBackupsBefore4d = fs
+      .readdirSync(backupDir)
+      .filter((name) => !name.startsWith('flo-preserved-newer-'))
+      .sort();
     const schemaDriftOlderBackupPath = path.join(
       backupDir,
       `flo-backup-2026-10-28T10-30-00-000Z-pre-v${olderCompatibleVersion}-to-v${newerDbVersion}.db`,
@@ -936,9 +939,17 @@ async function run(): Promise<void> {
       'live-newer-jwt-secret-hex-0001',
       'rollback leaves cached JWT secret untouched',
     );
-
+    fs.unlinkSync(schemaDriftOlderBackupPath);
+    assert.deepEqual(
+      fs
+        .readdirSync(backupDir)
+        .filter((name) => !name.startsWith('flo-preserved-newer-'))
+        .sort(),
+      nonArchiveBackupsBefore4d,
+      'failed forward-migrating downgrade restore leaves zero extra pre-migration backups behind',
+    );
     for (const fileName of fs.readdirSync(backupDir)) {
-      if (fileName.startsWith('flo-preserved-newer-') || !backupFilesBefore4d.has(fileName)) {
+      if (fileName.startsWith('flo-preserved-newer-')) {
         fs.unlinkSync(path.join(backupDir, fileName));
       }
     }
@@ -1126,6 +1137,118 @@ async function run(): Promise<void> {
       0,
       'restored and migrated database passes runHealthCheck() with zero drift',
     );
+    assert.deepEqual(
+      fs
+        .readdirSync(backupDir)
+        .filter((name) => !name.startsWith('flo-preserved-newer-'))
+        .sort(),
+      nonArchiveBackupsBefore4d,
+      'successful forward-migrating downgrade restore does not write duplicate pre-migration backups',
+    );
+
+    for (const [index, isDowngradeJournal] of [true, false].entries()) {
+      const orderNumber = `ORD-20261029-000${index + 1}`;
+      const journalBase = path.join(backupDir, `flo-restore-recovery-walcommit0${index + 1}`);
+      if (isDowngradeJournal) {
+        fs.copyFileSync(restoreResult.preservedDbPath, `${journalBase}.db`);
+        fs.copyFileSync(`${restoreResult.preservedDbPath}-wal`, `${journalBase}.db-wal`);
+        fs.copyFileSync(`${restoreResult.preservedDbPath}-shm`, `${journalBase}.db-shm`);
+      } else {
+        fs.copyFileSync(baseTemplateCopy, `${journalBase}.db`);
+      }
+      fs.writeFileSync(
+        `${journalBase}.json`,
+        JSON.stringify({
+          phase: 'committed',
+          recoveryPath: `${journalBase}.db`,
+          dbPath,
+          driveInvalidationRequired: true,
+          ...(isDowngradeJournal
+            ? { downgradeRecovery: true, recoverySidecars: ['-wal', '-shm'] }
+            : { baselineForeignKeyViolations: [] }),
+        }),
+      );
+
+      const crashStageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-committed-wal-crash-'));
+      try {
+        const openDb = getDatabase();
+        openDb.pragma('wal_autocheckpoint = 0');
+        openDb
+          .prepare(`
+            INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+            VALUES (?, 'takeaway', 'completed', 9.5, 9.5, '2026-10-29 12:00:00', '2026-10-29 12:05:00')
+          `)
+          .run(orderNumber);
+        assert.ok(fs.statSync(`${dbPath}-wal`).size > 0);
+        fs.copyFileSync(dbPath, path.join(crashStageDir, 'flo.db'));
+        fs.copyFileSync(`${dbPath}-wal`, path.join(crashStageDir, 'flo.db-wal'));
+        closeDatabase();
+        removeDbSet(dbPath);
+        fs.copyFileSync(path.join(crashStageDir, 'flo.db'), dbPath);
+        fs.copyFileSync(path.join(crashStageDir, 'flo.db-wal'), `${dbPath}-wal`);
+        assert.equal(fs.existsSync(`${dbPath}-shm`), false);
+      } finally {
+        fs.rmSync(crashStageDir, { recursive: true, force: true });
+      }
+
+      initDatabase();
+      const retainedCommitted = getDatabaseReplacementJournal();
+      assert.equal(
+        retainedCommitted?.phase,
+        'committed',
+        `committed journal (downgrade=${isDowngradeJournal}) survives unclean WAL restart`,
+      );
+      assert.deepEqual(
+        getDatabase()
+          .prepare('SELECT order_number FROM orders WHERE order_number = ?')
+          .get(orderNumber),
+        { order_number: orderNumber },
+        `unrecovered WAL frames survive startup when committed journal (downgrade=${isDowngradeJournal}) is pending Drive invalidation`,
+      );
+      finalizeDatabaseReplacementJournal(retainedCommitted!);
+    }
+    closeDatabase();
+
+    const upgradedAfterCommitHashes = buildActiveNewerWalDatabase(
+      dbPath,
+      baseTemplateCopy,
+      newerDbVersion,
+      '4.3.0',
+    );
+    for (const [index, isDowngradeJournal] of [true, false].entries()) {
+      const journalBase = path.join(backupDir, `flo-restore-recovery-newercommit0${index + 1}`);
+      fs.copyFileSync(baseTemplateCopy, `${journalBase}.db`);
+      fs.writeFileSync(
+        `${journalBase}.json`,
+        JSON.stringify({
+          phase: 'committed',
+          recoveryPath: `${journalBase}.db`,
+          dbPath,
+          driveInvalidationRequired: true,
+          ...(isDowngradeJournal ? { downgradeRecovery: true, recoverySidecars: [] } : {}),
+        }),
+      );
+      let caughtCommittedMismatch: SchemaVersionMismatchError | null = null;
+      assert.throws(
+        () => initDatabase(),
+        (err: unknown) => {
+          if (err instanceof SchemaVersionMismatchError) {
+            caughtCommittedMismatch = err;
+            return true;
+          }
+          return false;
+        },
+        `committed journal (downgrade=${isDowngradeJournal}) never rolls back a subsequently upgraded newer DB`,
+      );
+      assert.equal(caughtCommittedMismatch!.dbVersion, newerDbVersion);
+      assert.equal(caughtCommittedMismatch!.dbAppVersion, '4.3.0');
+      assert.equal(sha256File(dbPath), upgradedAfterCommitHashes.dbSha);
+      assert.equal(sha256File(`${dbPath}-wal`), upgradedAfterCommitHashes.walSha);
+      assert.equal(sha256File(`${dbPath}-shm`), upgradedAfterCommitHashes.shmSha);
+      const preservedJournal = getDatabaseReplacementJournal();
+      assert.equal(preservedJournal?.phase, 'committed');
+      finalizeDatabaseReplacementJournal(preservedJournal!);
+    }
 
     // 6. Electron main/index.ts startup interception (via tests/startup-failure-child.cjs):
     //    SchemaVersionMismatchError triggers Newer Database Detected (never dialog.showErrorBox),

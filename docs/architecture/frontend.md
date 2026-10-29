@@ -570,11 +570,12 @@ against `en.json`, the derived print-label table, and a `tsc` pass over the fron
 ## Customer display
 
 `/customer-display` is a signed-in order-status board. It pages through `GET /orders` with
-`view=active` via `before_id` cursor pagination (100 orders per page, up to 50 pages), projects
-effective board status from `order.items` for settled `completed` orders via
+`view=active` and `board_status` set to the configured statuses via `before_id` cursor pagination
+(100 orders per page, up to 50 pages) so effective board eligibility applies before pagination,
+projects effective board status from `order.items` for settled `completed` orders via
 `projectBoardStatusFromItems` in [`shared/order-item-status.ts`](../../shared/order-item-status.ts)
-(see [Order lifecycle](order-lifecycle.md#order-status)), filters by configured statuses, and shows
-eligible orders in a Preparing column (`pending`, `preparing`) and a Ready column (`ready`).
+(see [Order lifecycle](order-lifecycle.md#order-status)), and shows eligible orders in a Preparing
+column (`pending`, `preparing`) and a Ready column (`ready`).
 It re-reads `GET /settings/customer-display` on every poll cycle, so changes made in Settings >
 Kitchen Display apply without reloading the board. The tenant-wide config sets which statuses show,
 the refresh interval, and whether the last-updated time is shown. Deduplicated orders are sorted

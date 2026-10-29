@@ -2812,6 +2812,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       await page.clock.install();
       const staffBeforeIds: Array<string | null> = [];
       const staffViews: Array<string | null> = [];
+      const staffBoardStatuses: Array<string | null> = [];
       const staffPerPages: Array<string | null> = [];
       let staffSettingsMode: 'all' | 'ready-only' | 'preparing-only' | 'fail' = 'all';
       let staffOrdersFail = false;
@@ -2848,6 +2849,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
           const beforeId = params.get('before_id');
           staffBeforeIds.push(beforeId);
           staffViews.push(params.get('view'));
+          staffBoardStatuses.push(params.get('board_status'));
           staffPerPages.push(params.get('per_page'));
           if (!beforeId) {
             return route.fulfill({
@@ -2874,6 +2876,10 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       const staffReady = page.getByTestId('customer-display-ready-scroll');
       await expect.poll(() => staffBeforeIds.slice(0, 2)).toEqual([null, 'staff-cursor-2']);
       expect(staffViews[0]).toBe('active');
+      expect(staffBoardStatuses.slice(0, 2)).toEqual([
+        'pending,preparing,ready',
+        'pending,preparing,ready',
+      ]);
       expect(staffPerPages[0]).toBe('100');
       await expect
         .poll(() => readVisibleIds(staffReady))
@@ -2890,6 +2896,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       staffSettingsMode = 'ready-only';
       await page.clock.runFor(3000);
       await expect(page.getByTestId('customer-display-preparing-scroll')).toHaveCount(0);
+      expect(staffBoardStatuses).toContain('ready');
       await expect(staffReady.locator('[data-order-id="display-ready-1"]:visible')).toBeVisible();
 
       // Next poll reads preparing-only settings, but /api/orders fails; then settings fails while /api/orders succeeds.

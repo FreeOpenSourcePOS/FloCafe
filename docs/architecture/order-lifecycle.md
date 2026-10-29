@@ -301,14 +301,14 @@ order items are appended, cancelled, edited, refunded, or restored:
 
 Terminal `completed` and `cancelled` orders are never reopened or mutated by KDS item updates. For
 upfront-paid orders created within the rolling 24-hour `orders.created_at` window that settle to
-`completed` before kitchen fulfillment finishes, `GET /api/orders?view=active` and
-`GET /api/orders?status=active` continue returning the `completed` order while positive-quantity
-live items remain in `pending`, `preparing`, or `ready` (non-`completed` active orders are not
-age-bounded), and both `/customer-display` surfaces project its board status (`pending`,
-`preparing`, or `ready`) from live item statuses via `projectBoardStatusFromItems` until every
-remaining live item is `served` or `completed`. When KDS is disabled, automatic item-to-order
-reconciliation stands down and manual `PATCH /api/orders/:id/status` transitions govern preparation
-and service.
+`completed` before kitchen fulfillment finishes, `GET /api/orders?view=active`,
+`GET /api/orders?status=active`, and `GET /api/orders?board_status=...` continue returning the
+`completed` order while positive-quantity live items remain in `pending`, `preparing`, or `ready`
+(non-`completed` active orders are not age-bounded), and both `/customer-display` surfaces project
+its board status (`pending`, `preparing`, or `ready`) from live item statuses via
+`projectBoardStatusFromItems` before pagination until every remaining live item is `served` or
+`completed`. When KDS is disabled, automatic item-to-order reconciliation stands down and manual
+`PATCH /api/orders/:id/status` transitions govern preparation and service.
 
 ## Refunds
 

@@ -39,6 +39,12 @@ import {
   reconcileActiveOrderStatusFromItems,
 } from '../services/orders';
 import {
+  collectProjectedCompletedOrderIds,
+  parseBoardStatuses,
+  selectBoardEligibleOrderPage,
+  type DisplayFeedCursor,
+} from '../services/customer-display-tokens';
+import {
   buildAppliedCharges,
   ChargeValidationError,
   serializeAppliedCharges,
@@ -614,10 +620,15 @@ router.get(
       if (!['all', 'active', 'unpaid'].includes(view)) {
         return res.status(400).json({ error: 'Invalid view parameter.' });
       }
+      const boardStatuses =
+        req.query.board_status !== undefined ? parseBoardStatuses(req.query.board_status) : null;
+      if (req.query.board_status !== undefined && boardStatuses === null) {
+        return res.status(400).json({ error: 'Invalid board_status parameter.' });
+      }
       const statusQuery = typeof req.query.status === 'string' ? req.query.status : '';
       const statuses = statusQuery ? statusQuery.split(',') : [];
       const statusIsActive = statuses.length === 1 && statuses[0] === 'active';
-      if (view === 'active' || statusIsActive) {
+      if (boardStatuses === null && (view === 'active' || statusIsActive)) {
         wheres.push(`orders.id IN (
           SELECT ao.id FROM orders AS ao
           WHERE ao.status IN ('pending', 'preparing', 'ready', 'served')
@@ -755,6 +766,7 @@ router.get(
       }
       // Cursor pagination: `before` / `after` are ORDER BY keys (created_at),
       // composed with `id` to break ties when many orders share a second.
+      let beforeCursor: DisplayFeedCursor | null = null;
       if (typeof req.query.before_id === 'string' && /^\d+$/.test(req.query.before_id)) {
         const oid = parseInt(req.query.before_id, 10);
         if (Number.isSafeInteger(oid) && oid > 0) {
@@ -762,13 +774,11 @@ router.get(
             | { created_at: string }
             | undefined;
           if (ref) {
-            wheres.push('(orders.created_at, orders.id) < (?, ?)');
-            params.push(ref.created_at, oid);
+            beforeCursor = { created_at: ref.created_at, id: oid };
           }
         }
       }
 
-      const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
       // Limit per-page items with default 50 and maximum 500.
       const requestedPerPage = req.query.per_page
         ? parseInt(req.query.per_page as string, 10)
@@ -777,6 +787,62 @@ router.get(
         Number.isInteger(requestedPerPage) && requestedPerPage > 0
           ? Math.min(requestedPerPage, 500)
           : 50;
+
+      if (boardStatuses !== null && wheres.length === 0) {
+        const { pageRows, hasMore } = selectBoardEligibleOrderPage(db, {
+          statuses: boardStatuses,
+          cursor: beforeCursor,
+          limit: perPage,
+        });
+        if (pageRows.length === 0) {
+          return res.json({ orders: [] });
+        }
+        const idPlaceholders = pageRows.map(() => '?').join(',');
+        const fetchedOrders = db
+          .prepare(`SELECT orders.* FROM orders WHERE orders.id IN (${idPlaceholders})`)
+          .all(...pageRows.map((row) => row.id)) as any[];
+        const orderById = new Map(fetchedOrders.map((order) => [Number(order.id), order]));
+        const pageOrders = pageRows
+          .map((row) => orderById.get(row.id))
+          .filter((order): order is any => order !== undefined);
+        const nextCursor =
+          hasMore && pageOrders.length > 0 ? pageOrders[pageOrders.length - 1].id : null;
+        const ordersWithRelations = batchHydrateOrders(db, pageOrders);
+        return res.json({
+          orders: ordersWithRelations,
+          ...(nextCursor !== null && { nextCursor }),
+        });
+      }
+
+      if (boardStatuses !== null) {
+        const boardPlaceholders = boardStatuses.map(() => '?').join(',');
+        const projectedCompletedIds = collectProjectedCompletedOrderIds(
+          db,
+          boardStatuses,
+          beforeCursor,
+        );
+        if (projectedCompletedIds.length > 0) {
+          wheres.push(`orders.id IN (
+            SELECT ao.id FROM orders AS ao
+            WHERE ao.status IN (${boardPlaceholders})
+            UNION ALL
+            SELECT CAST(value AS INTEGER) FROM json_each(?)
+          )`);
+          params.push(...boardStatuses, JSON.stringify(projectedCompletedIds));
+        } else {
+          wheres.push(`orders.id IN (
+            SELECT ao.id FROM orders AS ao
+            WHERE ao.status IN (${boardPlaceholders})
+          )`);
+          params.push(...boardStatuses);
+        }
+      }
+      if (beforeCursor) {
+        wheres.push('(orders.created_at, orders.id) < (?, ?)');
+        params.push(beforeCursor.created_at, beforeCursor.id);
+      }
+
+      const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
       const perPagePlusOne = perPage + 1;
 
       const orders = db

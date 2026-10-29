@@ -26,6 +26,7 @@ const { kdsRoutes } = require('../main/routes/kds');
 const { completedKdsProjectionCutoff } = require('../main/services/orders');
 const { requireAuth } = require('../main/server');
 const { getJWTSecret } = require('../main/routes/auth');
+const { fetchSignedInBoardOrders } = require('../frontend/src/lib/customer-display');
 
 const TOKENS = '/api/settings/customer-display/tokens';
 const FEED = '/api/customer-display/feed';
@@ -1128,6 +1129,290 @@ async function main(): Promise<void> {
   } finally {
     db.prepare = origPrepare;
   }
+
+  // Regression for Round-2 P2: excluded active statuses (5,000+ newer served, pending, preparing orders
+  // and >200 newer <24h completed orders projecting preparing) must never consume signed-in pickup board
+  // pagination slots or hide older eligible orders behind the 50-page (5,000-row) client fetch budget.
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE orders
+       SET status = 'completed',
+           completed_at = '2026-01-02 00:00:00',
+           created_at = '2026-01-02 00:00:00',
+           updated_at = '2026-01-02 00:00:00'
+       WHERE created_at >= '2026-01-03 00:00:00'`,
+    ).run();
+  })();
+
+  const eligiblePendingStamp = utcFromAnchor(-7200);
+  const eligiblePreparingStamp = utcFromAnchor(-7199);
+  const eligibleActiveReadyStamp = utcFromAnchor(-7198);
+  const eligiblePrepaidReadyStamp = utcFromAnchor(-7197);
+
+  const olderEligibleActivePendingId = Number(
+    insertBatchOrder.run(
+      'ELIG-ACTIVE-PENDING',
+      'pending',
+      null,
+      eligiblePendingStamp,
+      eligiblePendingStamp,
+    ).lastInsertRowid,
+  );
+  const olderEligibleActivePreparingId = Number(
+    insertBatchOrder.run(
+      'ELIG-ACTIVE-PREPARING',
+      'preparing',
+      null,
+      eligiblePreparingStamp,
+      eligiblePreparingStamp,
+    ).lastInsertRowid,
+  );
+  const olderEligibleActiveReadyId = Number(
+    insertBatchOrder.run(
+      'ELIG-ACTIVE-READY',
+      'ready',
+      null,
+      eligibleActiveReadyStamp,
+      eligibleActiveReadyStamp,
+    ).lastInsertRowid,
+  );
+  const olderEligiblePrepaidReadyId = Number(
+    insertBatchOrder.run(
+      'ELIG-PREPAID-READY',
+      'completed',
+      eligiblePrepaidReadyStamp,
+      eligiblePrepaidReadyStamp,
+      eligiblePrepaidReadyStamp,
+    ).lastInsertRowid,
+  );
+  insertBatchBill.run(
+    'BILL-ELIG-PREPAID-READY',
+    olderEligiblePrepaidReadyId,
+    eligiblePrepaidReadyStamp,
+    eligiblePrepaidReadyStamp,
+    eligiblePrepaidReadyStamp,
+  );
+  insertHistoricalItem.run(
+    olderEligiblePrepaidReadyId,
+    'ready',
+    eligiblePrepaidReadyStamp,
+    eligiblePrepaidReadyStamp,
+  );
+  insertHistoricalItem.run(
+    olderEligiblePrepaidReadyId,
+    'served',
+    eligiblePrepaidReadyStamp,
+    eligiblePrepaidReadyStamp,
+  );
+
+  // Seed 5,000 newer served active orders ahead of the 4 older eligible orders
+  db.transaction(() => {
+    for (let i = 1; i <= 5000; i += 1) {
+      const stamp = utcFromAnchor(-6000 + Math.floor(i / 2));
+      insertBatchOrder.run(
+        `EXCL-SERVED-${String(i).padStart(4, '0')}`,
+        'served',
+        null,
+        stamp,
+        stamp,
+      );
+    }
+  })();
+
+  const signedInOwnerDefault = { ...owner, 'X-Forwarded-For': '127.0.0.10' };
+  const pairedBudgetDisplay = { ...fivePageDisplay, 'X-Forwarded-For': '127.0.0.11' };
+
+  const defaultConfig = {
+    statuses: ['pending', 'preparing', 'ready'] as Array<'pending' | 'preparing' | 'ready'>,
+    refresh_seconds: 3,
+    show_updated: true,
+  };
+  assert.equal(
+    (
+      await request(app)
+        .put('/api/settings/customer-display')
+        .set(signedInOwnerDefault)
+        .send(defaultConfig)
+    ).status,
+    200,
+  );
+
+  let defaultSignedInPageRequests = 0;
+  const defaultSignedIn = await fetchSignedInBoardOrders({
+    config: defaultConfig,
+    fetchPage: async (params: Record<string, unknown>) => {
+      defaultSignedInPageRequests += 1;
+      const res = await request(app).get('/api/orders').query(params).set(signedInOwnerDefault);
+      assert.equal(res.status, 200, `signed-in default board page ${defaultSignedInPageRequests} returns 200`);
+      return res.body;
+    },
+  });
+  const defaultPairedFeed = await request(app).get(FEED).set(pairedBudgetDisplay);
+  assert.equal(defaultPairedFeed.status, 200);
+  const expectedDefaultBoardOrders = [
+    { id: olderEligibleActivePendingId, number: 'ELIG-ACTIVE-PENDING', status: 'pending' },
+    { id: olderEligibleActivePreparingId, number: 'ELIG-ACTIVE-PREPARING', status: 'preparing' },
+    { id: olderEligibleActiveReadyId, number: 'ELIG-ACTIVE-READY', status: 'ready' },
+    { id: olderEligiblePrepaidReadyId, number: 'BILL-ELIG-PREPAID-READY', status: 'ready' },
+  ];
+  assert.deepEqual(
+    defaultPairedFeed.body.orders,
+    expectedDefaultBoardOrders,
+    'paired feed returns all 4 older eligible orders on page 1 despite 5,000 newer served orders',
+  );
+  assert.equal(defaultPairedFeed.body.has_more, false);
+  assert.deepEqual(
+    defaultSignedIn.orders,
+    expectedDefaultBoardOrders,
+    'signed-in board returns all 4 older eligible orders despite 5,000 newer served orders',
+  );
+  assert.equal(
+    defaultSignedInPageRequests,
+    1,
+    'signed-in board filters out served orders before pagination so 4 eligible orders fit in 1 page',
+  );
+
+  // Under ready-only config, also seed newer pending + preparing active orders and >200 newer <24h
+  // completed orders projecting preparing so 5,602 excluded active orders + 225 excluded projected-preparing
+  // completed orders sit ahead of the 2 older eligible ready orders (active ready + prepaid completed ready).
+  db.transaction(() => {
+    for (let i = 1; i <= 300; i += 1) {
+      const stamp = utcFromAnchor(-900 + i);
+      insertBatchOrder.run(`EXCL-PENDING-${i}`, 'pending', null, stamp, stamp);
+      insertBatchOrder.run(`EXCL-PREPARING-${i}`, 'preparing', null, stamp, stamp);
+    }
+    for (let i = 1; i <= 225; i += 1) {
+      const stamp = utcFromAnchor(-400 + i);
+      const oid = Number(
+        insertBatchOrder.run(`EXCL-COMP-PREP-${i}`, 'completed', stamp, stamp, stamp)
+          .lastInsertRowid,
+      );
+      insertBatchBill.run(`BILL-EXCL-COMP-PREP-${i}`, oid, stamp, stamp, stamp);
+      insertHistoricalItem.run(oid, 'ready', stamp, stamp);
+      insertHistoricalItem.run(oid, 'pending', stamp, stamp);
+    }
+  })();
+
+  const signedInOwnerReady = { ...owner, 'X-Forwarded-For': '127.0.0.12' };
+  const readyOnlyConfig = {
+    statuses: ['ready'] as Array<'pending' | 'preparing' | 'ready'>,
+    refresh_seconds: 3,
+    show_updated: true,
+  };
+  assert.equal(
+    (
+      await request(app)
+        .put('/api/settings/customer-display')
+        .set(signedInOwnerReady)
+        .send(readyOnlyConfig)
+    ).status,
+    200,
+  );
+
+  let readySignedInPageRequests = 0;
+  const readySignedIn = await fetchSignedInBoardOrders({
+    config: readyOnlyConfig,
+    fetchPage: async (params: Record<string, unknown>) => {
+      readySignedInPageRequests += 1;
+      const res = await request(app).get('/api/orders').query(params).set(signedInOwnerReady);
+      assert.equal(res.status, 200, `signed-in ready-only board page ${readySignedInPageRequests} returns 200`);
+      return res.body;
+    },
+  });
+  const readyPairedFeed = await request(app).get(FEED).set(pairedBudgetDisplay);
+  assert.equal(readyPairedFeed.status, 200);
+  const expectedReadyBoardOrders = [
+    { id: olderEligibleActiveReadyId, number: 'ELIG-ACTIVE-READY', status: 'ready' },
+    { id: olderEligiblePrepaidReadyId, number: 'BILL-ELIG-PREPAID-READY', status: 'ready' },
+  ];
+  assert.deepEqual(
+    readyPairedFeed.body.orders,
+    expectedReadyBoardOrders,
+    'paired ready-only feed returns both active and <24h projected-ready completed orders on page 1',
+  );
+  assert.equal(readyPairedFeed.body.has_more, false);
+  assert.deepEqual(
+    readySignedIn.orders,
+    expectedReadyBoardOrders,
+    'signed-in ready-only board returns both active and <24h projected-ready completed orders despite 5,602 excluded active + 225 excluded completed orders',
+  );
+  assert.equal(
+    readySignedInPageRequests,
+    1,
+    'signed-in ready-only board filters effective board_status before pagination in 1 page',
+  );
+  assert.equal(
+    (db.prepare('SELECT status FROM orders WHERE id = ?').get(olderEligiblePrepaidReadyId) as any)
+      .status,
+    'completed',
+    'older prepaid ready order retains terminal completed status in DB',
+  );
+
+  // Validate board_status query parameter error handling and composition with other GET /api/orders filters
+  for (const invalidBoardStatus of ['', 'served', 'completed', 'ready,invalid', 'ready,']) {
+    const badBoardRes = await request(app)
+      .get(`/api/orders?view=active&board_status=${encodeURIComponent(invalidBoardStatus)}`)
+      .set(signedInOwnerReady);
+    assert.equal(
+      badBoardRes.status,
+      400,
+      `invalid board_status=${JSON.stringify(invalidBoardStatus)} returns 400`,
+    );
+  }
+  const completedReadyOnlyRes = await request(app)
+    .get('/api/orders?view=active&status=completed&board_status=ready&per_page=50')
+    .set(signedInOwnerReady);
+  assert.equal(completedReadyOnlyRes.status, 200);
+  assert.deepEqual(
+    completedReadyOnlyRes.body.orders.map((o: any) => [o.id, o.status]),
+    [[olderEligiblePrepaidReadyId, 'completed']],
+    'combining status=completed with board_status=ready returns only the <24h completed order projecting ready',
+  );
+
+  const takeawayReadyRes = await request(app)
+    .get('/api/orders?view=active&type=takeaway&board_status=ready&per_page=50')
+    .set(signedInOwnerReady);
+  assert.equal(takeawayReadyRes.status, 200);
+  assert.deepEqual(
+    takeawayReadyRes.body.orders.map((o: any) => [o.id, o.status]),
+    [
+      [olderEligiblePrepaidReadyId, 'completed'],
+      [olderEligibleActiveReadyId, 'ready'],
+    ],
+    'combining type=takeaway with board_status=ready returns both <24h projected-ready completed and active ready takeaway orders',
+  );
+
+  // Verify multi-page before_id cursor advancement with board_status=ready across per_page=1 pages
+  const cursorPage1 = await request(app)
+    .get('/api/orders?view=active&board_status=ready&per_page=1')
+    .set(signedInOwnerReady);
+  assert.equal(cursorPage1.status, 200);
+  assert.deepEqual(
+    cursorPage1.body.orders.map((o: any) => o.id),
+    [olderEligiblePrepaidReadyId],
+    'board_status=ready page 1 (per_page=1) returns the newer eligible ready order',
+  );
+  assert.equal(
+    cursorPage1.body.nextCursor,
+    olderEligiblePrepaidReadyId,
+    'board_status=ready page 1 sets nextCursor to the returned order id',
+  );
+  const cursorPage2 = await request(app)
+    .get(
+      `/api/orders?view=active&board_status=ready&per_page=1&before_id=${cursorPage1.body.nextCursor}`,
+    )
+    .set(signedInOwnerReady);
+  assert.equal(cursorPage2.status, 200);
+  assert.deepEqual(
+    cursorPage2.body.orders.map((o: any) => o.id),
+    [olderEligibleActiveReadyId],
+    'board_status=ready page 2 (per_page=1) advances past page 1 to the older active ready order',
+  );
+  assert.equal(
+    cursorPage2.body.nextCursor,
+    undefined,
+    'board_status=ready terminal page omits nextCursor',
+  );
 
   console.log('customer-display-feed: all assertions passed');
 }

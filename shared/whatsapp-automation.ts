@@ -394,6 +394,21 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
   return Math.max(min, Math.min(max, Math.round(num)));
 }
 
+const VALID_TRIGGER_TYPES = new Set<WhatsAppTriggerType>(
+  DEFAULT_WHATSAPP_RULES.map((r) => r.trigger),
+);
+
+export function resolveWhatsAppRuleTrigger(raw: unknown): WhatsAppTriggerType | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const rec = raw as Record<string, unknown>;
+  const key = rec.trigger ?? rec.id;
+  if (typeof key !== 'string') return null;
+  const trimmed = key.trim();
+  return VALID_TRIGGER_TYPES.has(trimmed as WhatsAppTriggerType)
+    ? (trimmed as WhatsAppTriggerType)
+    : null;
+}
+
 function normalizeTimeHhMm(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();
@@ -450,11 +465,9 @@ export function normalizeWhatsAppAutomationConfig(raw: unknown): WhatsAppAutomat
   const rawRules = Array.isArray(parsed.rules) ? parsed.rules : [];
   const ruleByTrigger = new Map<WhatsAppTriggerType, Record<string, unknown>>();
   for (const r of rawRules) {
-    if (!r || typeof r !== 'object') continue;
-    const rec = r as Record<string, unknown>;
-    const trigger = (rec.trigger ?? rec.id) as WhatsAppTriggerType;
+    const trigger = resolveWhatsAppRuleTrigger(r);
     if (trigger && !ruleByTrigger.has(trigger)) {
-      ruleByTrigger.set(trigger, rec);
+      ruleByTrigger.set(trigger, r as Record<string, unknown>);
     }
   }
 

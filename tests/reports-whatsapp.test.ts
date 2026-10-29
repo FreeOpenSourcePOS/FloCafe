@@ -1349,6 +1349,50 @@ async function main(): Promise<void> {
     assert.equal(savedZRule.enabled, true);
     assert.equal(savedZRule.recipientPhone, '+14165559900', 'recipientPhone normalized to E.164');
 
+    const managerArrayTriggerBypass = await request(fullApp)
+      .put('/api/whatsapp/automation')
+      .set('Authorization', `Bearer ${manager.token}`)
+      .send({ rules: [{ trigger: ['z_report_day_close'] }] });
+    assert.equal(managerArrayTriggerBypass.status, 200);
+    const afterTriggerRules = whatsappService.getAutomationConfig().rules;
+    const zAfterTriggerArray = afterTriggerRules.find(
+      (r: any) => r.trigger === 'z_report_day_close',
+    );
+    assert.equal(zAfterTriggerArray?.enabled, true);
+    assert.equal(zAfterTriggerArray?.recipientPhone, '+14165559900');
+
+    const managerArrayIdBypass = await request(fullApp)
+      .put('/api/whatsapp/automation')
+      .set('Authorization', `Bearer ${manager.token}`)
+      .send({ rules: [{ id: ['z_report_day_close'] }] });
+    assert.equal(managerArrayIdBypass.status, 200);
+    const afterIdRules = whatsappService.getAutomationConfig().rules;
+    const zAfterIdArray = afterIdRules.find((r: any) => r.trigger === 'z_report_day_close');
+    assert.equal(zAfterIdArray?.enabled, true);
+    assert.equal(zAfterIdArray?.recipientPhone, '+14165559900');
+
+    const managerDuplicateZRuleBypass = await request(fullApp)
+      .put('/api/whatsapp/automation')
+      .set('Authorization', `Bearer ${manager.token}`)
+      .send({
+        rules: [
+          {
+            id: 'z_report_day_close',
+            trigger: 'z_report_day_close',
+            enabled: true,
+            recipientPhone: '+14165559900',
+          },
+          {
+            id: 'z_report_day_close',
+            trigger: 'z_report_day_close',
+            enabled: false,
+            recipientPhone: '',
+          },
+        ],
+      });
+    assert.equal(managerDuplicateZRuleBypass.status, 403);
+    assert.equal(managerDuplicateZRuleBypass.body.reason, 'owner_required');
+
     // Seed a prior customer auto_followup to +14165558802 so weekly cap (1) is already reached,
     // and verify customer campaign send is blocked while owner report send succeeds!
     db.prepare(`

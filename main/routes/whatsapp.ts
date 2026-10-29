@@ -274,23 +274,21 @@ router.get('/automation', requirePermission('whatsapp.use'), (_req: Request, res
 router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {
   const bodyObj =
     req.body && typeof req.body === 'object' && !Array.isArray(req.body)
-      ? (req.body as Record<string, unknown>)
+      ? { ...(req.body as Record<string, unknown>) }
       : {};
+  const role = (req as Request & { user?: { role?: string } }).user?.role;
   const current = whatsapp.getAutomationConfig();
   const currentZRule = current.rules.find((r) => r.trigger === 'z_report_day_close');
   const prevEnabled = Boolean(currentZRule?.enabled);
   const prevPhone = (currentZRule?.recipientPhone ?? '').trim();
 
   if (Array.isArray(bodyObj.rules)) {
-    const incomingZRule = bodyObj.rules.find((r): r is Record<string, unknown> =>
-      Boolean(
-        r &&
-        typeof r === 'object' &&
-        ((r as Record<string, unknown>).trigger === 'z_report_day_close' ||
-          (r as Record<string, unknown>).id === 'z_report_day_close'),
-      ),
+    const incomingZRules = bodyObj.rules.filter(
+      (r): r is Record<string, unknown> =>
+        whatsapp.resolveWhatsAppRuleTrigger(r) === 'z_report_day_close',
     );
-    if (incomingZRule) {
+    let normalizedZRule: Record<string, unknown> | null = null;
+    for (const incomingZRule of incomingZRules) {
       const nextEnabled =
         typeof incomingZRule.enabled === 'boolean' ? incomingZRule.enabled : prevEnabled;
       const rawPhone =
@@ -301,6 +299,14 @@ router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, r
       if (rawPhone) {
         const parsed = parsePhoneE164(rawPhone, getSettingValue('country') || '');
         if (!parsed) {
+          if (role !== 'owner' && rawPhone !== prevPhone) {
+            res.status(403).json({
+              error: 'Only the store owner can configure automatic Z-report delivery',
+              reason: 'owner_required',
+              code: 'PERMISSION_DENIED',
+            });
+            return;
+          }
           res.status(400).json({
             error: 'Valid recipient phone in E.164 format is required',
             reason: 'invalid_phone',
@@ -309,14 +315,6 @@ router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, r
         }
         normalizedPhone = parsed.e164;
       }
-      if (nextEnabled && !normalizedPhone) {
-        res.status(400).json({
-          error: 'Recipient phone is required when automatic Z-report delivery is enabled',
-          reason: 'phone_required',
-        });
-        return;
-      }
-      const role = (req as Request & { user?: { role?: string } }).user?.role;
       if ((nextEnabled !== prevEnabled || normalizedPhone !== prevPhone) && role !== 'owner') {
         res.status(403).json({
           error: 'Only the store owner can configure automatic Z-report delivery',
@@ -325,20 +323,30 @@ router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, r
         });
         return;
       }
-      bodyObj.rules = bodyObj.rules.map((r) => {
-        if (!r || typeof r !== 'object') return r;
-        const rec = r as Record<string, unknown>;
-        if (rec.trigger === 'z_report_day_close' || rec.id === 'z_report_day_close') {
-          return {
-            ...rec,
-            trigger: 'z_report_day_close',
-            id: 'z_report_day_close',
-            enabled: nextEnabled,
-            recipientPhone: normalizedPhone,
-          };
-        }
-        return r;
-      });
+      if (nextEnabled && !normalizedPhone) {
+        res.status(400).json({
+          error: 'Recipient phone is required when automatic Z-report delivery is enabled',
+          reason: 'phone_required',
+        });
+        return;
+      }
+      if (!normalizedZRule) {
+        normalizedZRule = {
+          ...incomingZRule,
+          id: 'z_report_day_close',
+          trigger: 'z_report_day_close',
+          enabled: nextEnabled,
+          recipientPhone: normalizedPhone,
+        };
+      }
+    }
+    const otherRules = bodyObj.rules.filter(
+      (r) => whatsapp.resolveWhatsAppRuleTrigger(r) !== 'z_report_day_close',
+    );
+    if (role !== 'owner') {
+      bodyObj.rules = currentZRule ? [...otherRules, { ...currentZRule }] : otherRules;
+    } else if (normalizedZRule) {
+      bodyObj.rules = [...otherRules, normalizedZRule];
     }
   }
 

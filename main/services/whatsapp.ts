@@ -30,6 +30,7 @@ import {
   renderWhatsAppTemplate,
   buildSampleWhatsAppContext,
   normalizeWhatsAppAutomationConfig,
+  resolveWhatsAppRuleTrigger,
   isAutoOptOutText,
   isTimeWithinQuietHours,
   extractTriggerRule,
@@ -57,6 +58,7 @@ export {
   renderWhatsAppTemplate,
   buildSampleWhatsAppContext,
   normalizeWhatsAppAutomationConfig,
+  resolveWhatsAppRuleTrigger,
   isAutoOptOutText,
   isTimeWithinQuietHours,
   extractTriggerRule,
@@ -565,11 +567,11 @@ export function saveAutomationConfig(raw: unknown): WhatsAppAutomationConfig {
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   let mergedRules: unknown = current.rules;
   if (Array.isArray(patch.rules)) {
-    const providedTriggers = new Set(
-      patch.rules
-        .filter((r): r is Record<string, unknown> => Boolean(r && typeof r === 'object'))
-        .map((r) => String(r.trigger ?? r.id ?? '')),
-    );
+    const providedTriggers = new Set<WhatsAppTriggerType>();
+    for (const r of patch.rules) {
+      const trigger = resolveWhatsAppRuleTrigger(r);
+      if (trigger) providedTriggers.add(trigger);
+    }
     mergedRules = [
       ...patch.rules,
       ...current.rules.filter((r) => !providedTriggers.has(r.trigger)),

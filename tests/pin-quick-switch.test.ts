@@ -1398,9 +1398,9 @@ async function run() {
     'Owner recovery record preserved after switching back to owner',
   );
 
-  // ── 9. Double-charging / double-placing prevention across user switches ──
+  // ── 9. Cart isolation across user switches ──
   console.log(
-    '\n9. Cart isolation: stale continuation clears matching cart and committed cart marker blocks double-charge',
+    '\n9. Cart isolation: in-flight response resolution under !isSessionCurrent() clears untouched cart while subsequent orders can be placed normally',
   );
 
   // Sign in as owner again
@@ -1492,21 +1492,18 @@ async function run() {
   tree = renderPOSPage(POSPage);
   p2CartPanel = findElement(tree, CartPanelStub);
 
-  const initialCallCount = p2Calls.length;
-  // Trigger onPlaceOrder() under manager
+  // Trigger onPlaceOrder() under manager: subsequent order with identical items can be placed normally
   p2CartPanel.props.onPlaceOrder();
-  await new Promise((r) => setTimeout(r, 15));
-
-  // Verify: readCommittedCart detected the already committed order and blocked checkout without network calls
-  assertEqualOrThrow(
-    p2Calls.length,
-    initialCallCount,
-    'No network calls made when attempting checkout on already-committed cart',
+  tree = renderPOSPage(POSPage);
+  const managerPrepaidModal = findElement(tree, PrepaidCheckoutModalStub);
+  assertOrThrow(
+    managerPrepaidModal,
+    'Prepaid checkout modal opens for subsequent order with identical items',
   );
   assertEqualOrThrow(
     useCartStore.getState().items.length,
-    0,
-    'Cart cleared after committed cart marker blocked duplicate checkout',
+    1,
+    'Cart preserved for checkout rather than blocked or cleared',
   );
 
   const { buildCartFingerprintFromState } = require('../frontend/src/lib/order-attempt');
@@ -1583,7 +1580,7 @@ async function run() {
   const recoveredModal = findElement(tree, PrepaidCheckoutModalStub);
   assertOrThrow(
     recoveredModal,
-    'Prepaid checkout modal opens for originating user with unpaid committed cart and matching attempt',
+    'Prepaid checkout modal opens for originating user with matching attempt',
   );
   assertEqualOrThrow(
     useCartStore.getState().items.length,

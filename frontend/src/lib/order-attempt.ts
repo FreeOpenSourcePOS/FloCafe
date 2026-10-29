@@ -31,17 +31,6 @@ export function getPrepaidOrderAttemptStorageKey(userId: string): string {
   return `${PREPAID_ATTEMPT_STORAGE_KEY}${ORDER_ATTEMPT_USER_SUFFIX}${encodeURIComponent(userId)}`;
 }
 
-export const COMMITTED_CART_STORAGE_PREFIX = 'flo.pos.committed_cart.';
-
-export interface CommittedCartRecord {
-  orderId: string | number;
-  orderNumber: string;
-  billId?: string | number;
-  isPaid?: boolean;
-  userId?: string | null;
-  committedAt: number;
-}
-
 export interface CartStateForFingerprint {
   tableId: string | null;
   customerId: number | string | null;
@@ -90,37 +79,6 @@ export function buildCartFingerprintFromState(
     waived_charge_ids: Array.from(cartState.waivedChargeIds),
     opted_in_charge_ids: Array.from(cartState.optedInChargeIds),
   });
-}
-
-export function recordCommittedCart(
-  storage: AppendAttemptStorage,
-  fingerprint: string,
-  record: Omit<CommittedCartRecord, 'committedAt'>,
-): void {
-  try {
-    storage.setItem(
-      `${COMMITTED_CART_STORAGE_PREFIX}${fingerprint}`,
-      JSON.stringify({ ...record, committedAt: Date.now() }),
-    );
-  } catch {}
-}
-
-export function readCommittedCart(
-  storage: AppendAttemptStorage,
-  fingerprint: string,
-  maxAgeMs = 30 * 60 * 1000,
-): CommittedCartRecord | null {
-  try {
-    const raw = storage.getItem(`${COMMITTED_CART_STORAGE_PREFIX}${fingerprint}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.orderNumber === 'string' && typeof parsed.committedAt === 'number') {
-      if (Date.now() - parsed.committedAt < maxAgeMs) {
-        return parsed as CommittedCartRecord;
-      }
-    }
-  } catch {}
-  return null;
 }
 
 function isCompletedAttempt(value: unknown): value is CompletedOrderAttempt {

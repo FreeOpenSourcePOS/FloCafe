@@ -91,8 +91,6 @@ import {
   isSupportedFailureOperation,
   persistOrderAttempt,
   readOrderAttempt,
-  recordCommittedCart,
-  readCommittedCart,
   buildCartFingerprintFromState,
 } from '@/lib/order-attempt';
 
@@ -1474,55 +1472,26 @@ export default function POSPage() {
     if (!validateOrderPreflight()) return;
 
     const cartFingerprint = buildCurrentCartFingerprint();
-    if (!pendingOrder) {
+    // Prepaid stores collect payment before finishing the order.
+    if (shouldTakePaymentNow && !pendingOrder) {
       let matchingAttempt: PrepaidAttempt | null = null;
-      if (shouldTakePaymentNow) {
-        try {
-          const storedAttempt = readPrepaidAttempt();
-          if (
-            storedAttempt &&
-            storedAttempt.userId === activeUserId &&
-            storedAttempt.cartFingerprint === cartFingerprint &&
-            storedAttempt.orderIdempotencyKey &&
-            storedAttempt.paymentIdempotencyKey
-          ) {
-            matchingAttempt = storedAttempt;
-          }
-        } catch {
-          // Storage failures are reported when checkout is confirmed.
+      try {
+        const storedAttempt = readPrepaidAttempt();
+        if (
+          storedAttempt &&
+          storedAttempt.userId === activeUserId &&
+          storedAttempt.cartFingerprint === cartFingerprint &&
+          storedAttempt.orderIdempotencyKey &&
+          storedAttempt.paymentIdempotencyKey
+        ) {
+          matchingAttempt = storedAttempt;
         }
+      } catch {
+        // Storage failures are reported when checkout is confirmed.
       }
-
-      const committedRecord = readCommittedCart(getAppendAttemptStorage(), cartFingerprint);
-      if (committedRecord && (committedRecord.isPaid || !matchingAttempt)) {
-        reportOrderFailure({
-          code: 'order.cart_already_committed',
-          title: committedRecord.isPaid
-            ? t('orderPaid', { number: committedRecord.orderNumber })
-            : t('orderPlaced', { number: committedRecord.orderNumber }),
-          message: t('saleCompleteCheckOrders'),
-          nextStep: t('saleCompleteCheckOrders'),
-          detail: committedRecord.isPaid
-            ? `Order ${committedRecord.orderNumber} was already paid for this cart`
-            : `Order ${committedRecord.orderNumber} was already placed for this cart`,
-          status: null,
-          operation: 'order.create',
-          stage: 'validation',
-          outcome: 'applied',
-          reasonCode: 'order.cart_already_committed',
-          correlationId: null,
-        });
-        cart.clearCart();
-        setSubmitting(false);
-        return;
-      }
-
-      // Prepaid stores collect payment before finishing the order.
-      if (shouldTakePaymentNow) {
-        setPrepaidModalAttempt(matchingAttempt);
-        setShowPrepaidCheckout(true);
-        return;
-      }
+      setPrepaidModalAttempt(matchingAttempt);
+      setShowPrepaidCheckout(true);
+      return;
     }
 
     // Postpaid store / unpaid order → place order, kitchen gets the ticket, payment collected later
@@ -1728,12 +1697,6 @@ export default function POSPage() {
               correlationId: operationId,
             });
         }
-        recordCommittedCart(getAppendAttemptStorage(), cartFingerprint, {
-          orderId: data.order.id,
-          orderNumber: data.order.order_number,
-          isPaid: false,
-          userId: originUserId,
-        });
         if (!isSessionCurrent()) {
           // Critical recovery invariant: order succeeded on server while session changed.
           // Originating user's recovery attempt is saved under getPostpaidOrderAttemptStorageKey(originUserId).
@@ -1915,32 +1878,6 @@ export default function POSPage() {
       storedAttempt.paymentIdempotencyKey
         ? storedAttempt
         : null;
-    const committedRecord = readCommittedCart(getAppendAttemptStorage(), cartFingerprint);
-    if (
-      committedRecord &&
-      (committedRecord.isPaid || !existingAttempt)
-    ) {
-      reportOrderFailure({
-        code: 'order.cart_already_committed',
-        title: committedRecord.isPaid
-          ? t('orderPaid', { number: committedRecord.orderNumber })
-          : t('orderPlaced', { number: committedRecord.orderNumber }),
-        message: t('saleCompleteCheckOrders'),
-        nextStep: t('saleCompleteCheckOrders'),
-        detail: committedRecord.isPaid
-          ? `Order ${committedRecord.orderNumber} was already paid for this cart`
-          : `Order ${committedRecord.orderNumber} was already placed for this cart`,
-        status: null,
-        operation: 'payment.create',
-        stage: 'validation',
-        outcome: 'applied',
-        reasonCode: 'order.cart_already_committed',
-        correlationId: null,
-      });
-      cart.clearCart();
-      setSubmitting(false);
-      return;
-    }
     const savedPaymentRequest =
       existingAttempt?.bill && existingAttempt.paymentFingerprint
         ? parsePrepaidPaymentRequest(existingAttempt.paymentFingerprint)
@@ -2066,13 +2003,6 @@ export default function POSPage() {
       }
       if (attempt.order) {
         orderData = { order: attempt.order };
-        recordCommittedCart(getAppendAttemptStorage(), cartFingerprint, {
-          orderId: attempt.order.id,
-          orderNumber: attempt.order.order_number,
-          billId: attempt.bill?.id,
-          isPaid: attempt.bill?.payment_status === 'paid',
-          userId: originUserId,
-        });
       } else {
         failureOperation = 'order.create';
         failureStage = 'submission';
@@ -2117,12 +2047,6 @@ export default function POSPage() {
         orderData = data;
         committedOrder = data.order as Order;
         requirePrepaidAttemptSaved({ ...attempt, order: data.order }, originUserId);
-        recordCommittedCart(getAppendAttemptStorage(), cartFingerprint, {
-          orderId: data.order.id,
-          orderNumber: data.order.order_number,
-          isPaid: false,
-          userId: originUserId,
-        });
         if (!isSessionCurrent()) {
           // Order succeeded on the server while session changed.
           // Recovery record is preserved under originUserId. Stop before generating/paying bill under new user.
@@ -2225,13 +2149,6 @@ export default function POSPage() {
           // Bill was generated on server while session changed. Stop here.
           if (generatedBill?.bill) {
             savePrepaidAttempt({ ...attempt, order, bill: generatedBill.bill }, originUserId);
-            recordCommittedCart(getAppendAttemptStorage(), cartFingerprint, {
-              orderId: order.id,
-              orderNumber: order.order_number,
-              billId: generatedBill.bill.id,
-              isPaid: false,
-              userId: originUserId,
-            });
           }
           if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
             useCartStore.getState().clearCart();
@@ -2272,14 +2189,6 @@ export default function POSPage() {
         paymentResponse.data?.loyaltyPointsEarned > 0
           ? paymentResponse.data.loyaltyPointsEarned
           : 0;
-
-      recordCommittedCart(getAppendAttemptStorage(), cartFingerprint, {
-        orderId: order.id,
-        orderNumber: order.order_number,
-        billId: paidBill.id,
-        isPaid: paidBill.payment_status === 'paid',
-        userId: originUserId,
-      });
 
       if (!isSessionCurrent()) {
         savePrepaidAttempt({ ...attempt, order, bill: paidBill }, originUserId);

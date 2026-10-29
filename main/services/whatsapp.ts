@@ -3880,22 +3880,14 @@ export function formatStoredZReportWhatsAppMessage(
         ? `⚠️ ${printLabel(language, 'dashboard.varianceShort')}`
         : `⚠️ ${printLabel(language, 'dashboard.varianceOver')}`;
 
-  const buildMessage = (notesCap?: number, storeCap?: number): string => {
+  const buildPrefixLines = (storeCap?: number, closedByCap = 80): string[] => {
     const storeDisplay = storeCap
       ? truncateWhatsAppText(businessName.trim(), storeCap)
       : businessName.trim();
-    const paymentLines =
-      rawMethods.length > 0
-        ? rawMethods.map(
-            (pm) =>
-              `• ${localizeZPaymentMethod(language, String(pm.method || ''))}: ${fmtMoney(Number(pm.total_cents || 0))} (${fmtNum(Number(pm.count || 0))})`,
-          )
-        : [`• ${printLabel(language, 'print.zReport.none')}`];
-
-    const lines: string[] = [
+    return [
       `📊 *${zTitle} #${fmtNum(closure.z_number)} - ${storeDisplay}*`,
       `📅 *${dateLabel}:* ${closure.business_date} (${period})`,
-      `👤 *${closedByLabel}:* ${truncateWhatsAppText(String(closedByName || ''), 80)}`,
+      `👤 *${closedByLabel}:* ${truncateWhatsAppText(String(closedByName || ''), closedByCap)}`,
       '',
       `💰 *${printLabel(language, 'dashboard.salesSummary')}*`,
       `• ${printLabel(language, 'dashboard.grossCollections')}: ${fmtMoney(closure.gross_collected_cents)}`,
@@ -3904,13 +3896,36 @@ export function formatStoredZReportWhatsAppMessage(
       `• ${printLabel(language, 'dashboard.billsCount').replace('{count}', fmtNum(closure.bill_count))}`,
       '',
       `💳 *${printLabel(language, 'dashboard.paymentBreakdown')}*`,
-      ...paymentLines,
-      '',
-      `💵 *${printLabel(language, 'dashboard.drawerReconciliation')}*`,
-      `• ${printLabel(language, 'dashboard.openingFloat')}: ${fmtMoney(closure.opening_float_cents)}`,
-      `• ${printLabel(language, 'dashboard.expectedCash')}: ${fmtMoney(closure.expected_cash_cents)}`,
-      `• ${printLabel(language, 'dashboard.countedCash')}: ${fmtMoney(closure.counted_cash_cents)}`,
-      `• ${printLabel(language, 'dashboard.variance')}: ${fmtMoney(closure.variance_cents)} (${varianceIndicator})`,
+    ];
+  };
+
+  const buildPaymentLines = (methodCap?: number): string[] => {
+    if (rawMethods.length === 0) {
+      return [`• ${printLabel(language, 'print.zReport.none')}`];
+    }
+    return rawMethods.map((pm) => {
+      const rawLabel = localizeZPaymentMethod(language, String(pm.method || ''));
+      const label = methodCap ? truncateWhatsAppText(rawLabel, methodCap) : rawLabel;
+      const amount = fmtMoney(Number(pm.total_cents || 0));
+      const count = fmtNum(Number(pm.count || 0));
+      return `• ${label}: ${amount} (${count})`;
+    });
+  };
+
+  const reconciliationLines: string[] = [
+    '',
+    `💵 *${printLabel(language, 'dashboard.drawerReconciliation')}*`,
+    `• ${printLabel(language, 'dashboard.openingFloat')}: ${fmtMoney(closure.opening_float_cents)}`,
+    `• ${printLabel(language, 'dashboard.expectedCash')}: ${fmtMoney(closure.expected_cash_cents)}`,
+    `• ${printLabel(language, 'dashboard.countedCash')}: ${fmtMoney(closure.counted_cash_cents)}`,
+    `• ${printLabel(language, 'dashboard.variance')}: ${fmtMoney(closure.variance_cents)} (${varianceIndicator})`,
+  ];
+
+  const buildMessage = (notesCap?: number, storeCap?: number, methodCap?: number): string => {
+    const lines: string[] = [
+      ...buildPrefixLines(storeCap),
+      ...buildPaymentLines(methodCap),
+      ...reconciliationLines,
     ];
 
     if (notesCap !== 0) {
@@ -3925,17 +3940,47 @@ export function formatStoredZReportWhatsAppMessage(
     return lines.join('\n');
   };
 
-  for (const [notesCap, storeCap] of [
-    [undefined, undefined],
-    [240, undefined],
-    [80, undefined],
-    [0, undefined],
-    [0, 48],
-  ] as Array<[number | undefined, number | undefined]>) {
-    const candidate = buildMessage(notesCap, storeCap);
+  const candidates: Array<[number | undefined, number | undefined, number | undefined]> = [
+    [undefined, undefined, undefined],
+    [240, undefined, undefined],
+    [80, undefined, undefined],
+    [0, undefined, undefined],
+    [0, undefined, 36],
+    [0, 48, 24],
+    [0, 32, 16],
+  ];
+
+  for (const [notesCap, storeCap, methodCap] of candidates) {
+    const candidate = buildMessage(notesCap, storeCap, methodCap);
     if (candidate.length <= maxChars) return candidate;
   }
-  return truncateWhatsAppText(buildMessage(0, 32), maxChars);
+
+  const prefix = buildPrefixLines(32, 32).join('\n');
+  const suffix = reconciliationLines.join('\n');
+  const ellipsisRow = '• ...';
+  const budget = maxChars - prefix.length - 1 - suffix.length;
+  if (budget >= 1 + ellipsisRow.length) {
+    const keptRows: string[] = [];
+    let used = 0;
+    const paymentRows = buildPaymentLines(16);
+    for (let i = 0; i < paymentRows.length; i++) {
+      const row = paymentRows[i];
+      const remaining = paymentRows.length - i - 1;
+      const reserve = remaining > 0 ? 1 + ellipsisRow.length : 0;
+      if (used + 1 + row.length + reserve <= budget) {
+        keptRows.push(row);
+        used += 1 + row.length;
+      } else {
+        keptRows.push(ellipsisRow);
+        break;
+      }
+    }
+    return [prefix, ...keptRows, suffix].join('\n');
+  }
+
+  const minimal = [prefix, suffix].join('\n');
+  if (minimal.length <= maxChars) return minimal;
+  return truncateWhatsAppText(minimal, maxChars);
 }
 
 export interface TriggerDayCloseZReportResult {

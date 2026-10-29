@@ -1482,6 +1482,44 @@ async function main(): Promise<void> {
     });
     assert.match(enPersianCalendarZ, /1405/);
 
+    const manyMethodsClosure = {
+      ...sampleIrClosure,
+      notes: 'N'.repeat(500),
+      opening_float_cents: 10000,
+      expected_cash_cents: 53000,
+      counted_cash_cents: 50500,
+      variance_cents: -2500,
+      payment_methods_json: JSON.stringify(
+        longPaymentMethods.map((pm) => ({
+          method: pm.method,
+          count: pm.count,
+          total_cents: pm.total * 100,
+        })),
+      ),
+    };
+    const storedZ48 = whatsappService.formatStoredZReportWhatsAppMessage(manyMethodsClosure, {
+      language: 'en',
+      maxChars: 4096,
+    });
+    assert.ok(storedZ48.length <= 4096);
+    assert.match(storedZ48, /DRAWER RECONCILIATION/);
+    assert.match(storedZ48, /Opening float: \$100\.00/);
+    assert.match(storedZ48, /Expected cash: \$530\.00/);
+    assert.match(storedZ48, /Counted cash: \$505\.00/);
+    assert.match(storedZ48, /Difference: -\$25\.00/);
+    assert.match(storedZ48, /Tender 47 /);
+
+    const storedZTight = whatsappService.formatStoredZReportWhatsAppMessage(manyMethodsClosure, {
+      language: 'en',
+      maxChars: 520,
+    });
+    assert.ok(storedZTight.length <= 520);
+    assert.match(storedZTight, /Opening float: \$100\.00/);
+    assert.match(storedZTight, /Expected cash: \$530\.00/);
+    assert.match(storedZTight, /Counted cash: \$505\.00/);
+    assert.match(storedZTight, /Difference: -\$25\.00/);
+    assert.ok(storedZTight.includes('• ...'));
+
     // Duplicate close request (409) + repeated triggerDayCloseZReport + simulated restart never send a duplicate
     const sentCountAfterFirstAutoZ = sentSocketMessages.length;
     const duplicateCloseRes = await request(fullApp)

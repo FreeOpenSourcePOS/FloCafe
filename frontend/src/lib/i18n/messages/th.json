@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "ส่งรายงานไปยัง WhatsApp",
     "recipientPhone": "หมายเลขโทรศัพท์ผู้รับ",
     "reportSentSuccess": "ส่งรายงานไปยัง WhatsApp สำเร็จแล้ว",
+    "reportSubmittedPending": "ส่งคำขอรายงานไปยัง WhatsApp แล้ว กำลังรอการยืนยันการส่ง",
     "reportOpeningWhatsAppWeb": "กำลังเปิด WhatsApp พร้อมรายงาน...",
     "salesSummary": "สรุปยอดขาย",
     "paymentBreakdown": "การชำระเงิน",
@@ -446,7 +447,8 @@
     "costUnknown": "ไม่ทราบต้นทุน",
     "partialCost": "ต้นทุนบางส่วน",
     "ingredientCostLabel": "ต้นทุน: {amount}",
-    "profitMarginLabel": "กำไร: {profit} ({margin})"
+    "profitMarginLabel": "กำไร: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "รายงานยอดขายรายวัน"
   },
   "expenses": {
     "addTitle": "เพิ่มค่าใช้จ่าย",
@@ -3289,7 +3291,9 @@
       "no_qr": "ยังไม่มี QR โปรดเริ่มเซสชันการจับคู่ก่อน",
       "phone_not_in_blocklist": "หมายเลขโทรศัพท์ไม่อยู่ในรายชื่อบล็อก",
       "phone_required": "ต้องระบุหมายเลขโทรศัพท์",
-      "phone_required_pairing": "ต้องระบุหมายเลขโทรศัพท์สำหรับรหัสการจับคู่"
+      "phone_required_pairing": "ต้องระบุหมายเลขโทรศัพท์สำหรับรหัสการจับคู่",
+      "invalid_phone": "กรอกหมายเลขโทรศัพท์ที่ถูกต้องในรูปแบบสากล",
+      "owner_required": "เฉพาะเจ้าของร้านเท่านั้นที่ตั้งค่าการส่งรายงาน Z อัตโนมัติได้"
     },
     "automation": {
       "autoOptOutLabel": "ยกเลิกรับข้อความอัตโนมัติเมื่อตอบกลับ STOP / UNSUBSCRIBE (เพิ่มในรายการบล็อก)",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "จำนวนวันที่ไม่มา",
       "thresholdHours": "ชั่วโมงที่รอส่ง",
       "thresholdPoints": "เกณฑ์คะแนน",
-      "thresholdVisits": "ทุกๆ N ครั้ง"
+      "thresholdVisits": "ทุกๆ N ครั้ง",
+      "ruleZReportDayCloseHint": "ส่งรายงาน Z อัตโนมัติไปยังหมายเลขโทรศัพท์ที่เจ้าของร้านกำหนดหลังจากปิดยอดประจำวัน",
+      "zReportOwnerOnlyHint": "เฉพาะเจ้าของร้านเท่านั้นที่แก้ไขกฎนี้ได้",
+      "zReportRecipientLabel": "โทรศัพท์ผู้รับ (E.164)"
     },
     "blocklist": {
       "addCta": "เพิ่ม",
@@ -3416,7 +3423,8 @@
       "auto_followup": "ติดตามอัตโนมัติ",
       "bill_receipt": "ใบเสร็จบิล",
       "manual_reply": "ตอบกลับด้วยตนเอง",
-      "z_report": "รายงาน Z"
+      "z_report": "รายงาน Z",
+      "daily_sales_report": "รายงานยอดขายรายวัน"
     },
     "lastError": {
       "cooldown": "การส่งถูกหยุดชั่วคราว",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "ติดตามขอรีวิวหลังใช้บริการ",
       "nth_visit": "ครบกำหนดจำนวนครั้งที่มาใช้บริการ",
       "points_threshold": "คะแนนสะสมถึงเกณฑ์",
-      "winback": "ดึงลูกค้าที่ไม่ได้มานานกลับมา"
+      "winback": "ดึงลูกค้าที่ไม่ได้มานานกลับมา",
+      "z_report_day_close": "รายงาน Z เมื่อปิดยอดประจำวัน"
     },
     "send": {
       "customerPhoneRequired": "เพิ่มหมายเลขโทรศัพท์ของลูกค้ารายนี้ก่อนส่ง",

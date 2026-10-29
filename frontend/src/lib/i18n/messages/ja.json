@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "WhatsAppにレポートを送信",
     "recipientPhone": "受信者の電話番号",
     "reportSentSuccess": "レポートをWhatsAppに送信しました",
+    "reportSubmittedPending": "レポートをWhatsAppに送信しました（配信確認待ち）",
     "reportOpeningWhatsAppWeb": "レポートを添えてWhatsAppを開いています...",
     "salesSummary": "売上概要",
     "paymentBreakdown": "支払い",
@@ -446,7 +447,8 @@
     "costUnknown": "原価未設定",
     "partialCost": "一部原価のみ",
     "ingredientCostLabel": "原価: {amount}",
-    "profitMarginLabel": "利益: {profit} ({margin})"
+    "profitMarginLabel": "利益: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "日次売上レポート"
   },
   "expenses": {
     "addTitle": "経費を追加",
@@ -3289,7 +3291,9 @@
       "no_qr": "QRコードがありません。先にペアリングを開始してください。",
       "phone_not_in_blocklist": "電話番号はブロックリストにありません",
       "phone_required": "電話番号が必要です",
-      "phone_required_pairing": "ペアリングコードには電話番号が必要です"
+      "phone_required_pairing": "ペアリングコードには電話番号が必要です",
+      "invalid_phone": "国際形式の有効な電話番号を入力してください",
+      "owner_required": "Zレポートの自動送信を設定できるのは店舗オーナーのみです"
     },
     "automation": {
       "autoOptOutLabel": "STOP / UNSUBSCRIBE 受信時に自動配信停止（ブロックリストに追加）",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "未来店日数",
       "thresholdHours": "経過時間（時間）",
       "thresholdPoints": "ポイントしきい値",
-      "thresholdVisits": "N回来店ごと"
+      "thresholdVisits": "N回来店ごと",
+      "ruleZReportDayCloseHint": "日次締め完了後、オーナーが指定した電話番号へZレポートを自動送信します。",
+      "zReportOwnerOnlyHint": "このルールを変更できるのは店舗オーナーのみです。",
+      "zReportRecipientLabel": "送信先電話番号（E.164）"
     },
     "blocklist": {
       "addCta": "追加",
@@ -3416,7 +3423,8 @@
       "auto_followup": "自動フォローアップ",
       "bill_receipt": "請求レシート",
       "manual_reply": "手動返信",
-      "z_report": "Zレポート"
+      "z_report": "Zレポート",
+      "daily_sales_report": "日次売上レポート"
     },
     "lastError": {
       "cooldown": "送信は一時停止中です。",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "フィードバック依頼",
       "nth_visit": "来店回数マイルストーン",
       "points_threshold": "ポイント達成通知",
-      "winback": "休眠顧客の再来店促進"
+      "winback": "休眠顧客の再来店促進",
+      "z_report_day_close": "日次締め時のZレポート"
     },
     "send": {
       "customerPhoneRequired": "送信する前にこの顧客の電話番号を追加してください。",

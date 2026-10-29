@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Raporu WhatsApp’a gönder",
     "recipientPhone": "Alıcının telefon numarası",
     "reportSentSuccess": "Rapor WhatsApp’a başarıyla gönderildi",
+    "reportSubmittedPending": "Rapor WhatsApp’a iletildi; teslim onayı bekleniyor",
     "reportOpeningWhatsAppWeb": "Raporla birlikte WhatsApp açılıyor...",
     "salesSummary": "SATIŞ ÖZETİ",
     "paymentBreakdown": "ÖDEMELER",
@@ -446,7 +447,8 @@
     "costUnknown": "Maliyet bilinmiyor",
     "partialCost": "Kısmi maliyet",
     "ingredientCostLabel": "Maliyet: {amount}",
-    "profitMarginLabel": "Kâr: {profit} ({margin})"
+    "profitMarginLabel": "Kâr: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Günlük Satış Raporu"
   },
   "expenses": {
     "addTitle": "Gider ekle",
@@ -3289,7 +3291,9 @@
       "no_qr": "QR kod yok. Önce bir eşleşme oturumu başlatın.",
       "phone_not_in_blocklist": "Telefon engellenenler listesinde değil",
       "phone_required": "Telefon numarası gereklidir",
-      "phone_required_pairing": "Eşleşme kodu için telefon numarası gereklidir"
+      "phone_required_pairing": "Eşleşme kodu için telefon numarası gereklidir",
+      "invalid_phone": "Uluslararası biçimde geçerli bir telefon numarası girin",
+      "owner_required": "Otomatik Z Raporu gönderimini yalnızca işletme sahibi yapılandırabilir"
     },
     "automation": {
       "autoOptOutLabel": "Gelen STOP / UNSUBSCRIBE mesajında otomatik çıkış (göndereni engelleme listesine ekler)",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "Pasif gün sayısı",
       "thresholdHours": "Gecikme saati",
       "thresholdPoints": "Puan eşiği",
-      "thresholdVisits": "Her N ziyarette"
+      "thresholdVisits": "Her N ziyarette",
+      "ruleZReportDayCloseHint": "Gün sonu kapanışından sonra Z Raporunu işletme sahibinin belirlediği telefon numarasına otomatik gönder.",
+      "zReportOwnerOnlyHint": "Bu kuralı yalnızca işletme sahibi değiştirebilir.",
+      "zReportRecipientLabel": "Alıcı telefonu (E.164)"
     },
     "blocklist": {
       "addCta": "Ekle",
@@ -3416,7 +3423,8 @@
       "auto_followup": "Otomatik Takip",
       "bill_receipt": "Hesap Fişi",
       "manual_reply": "Manuel Yanıt",
-      "z_report": "Z Raporu"
+      "z_report": "Z Raporu",
+      "daily_sales_report": "Günlük satış raporu"
     },
     "lastError": {
       "cooldown": "Gönderim geçici olarak duraklatıldı.",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "Geri bildirim takibi",
       "nth_visit": "Ziyaret dönüm noktası",
       "points_threshold": "Sadakat puanı eşiği",
-      "winback": "Pasif müşteri kazanımı"
+      "winback": "Pasif müşteri kazanımı",
+      "z_report_day_close": "Gün kapanışında Z Raporu"
     },
     "send": {
       "customerPhoneRequired": "Göndermeden önce müşterinin telefon numarasını ekleyin.",

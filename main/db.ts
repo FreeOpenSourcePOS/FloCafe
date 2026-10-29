@@ -7840,6 +7840,109 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       backfillWhatsAppMessageAttempts(db);
     },
   },
+  {
+    version: 122,
+    name: 'add_whatsapp_daily_sales_and_day_close_dispatch',
+    up: () => {
+      const hasAttemptsTable = getTables(db).includes('whatsapp_message_attempts');
+      const existingCols = new Set(
+        (db.prepare('PRAGMA table_info(whatsapp_messages)').all() as { name: string }[]).map(
+          (col) => col.name,
+        ),
+      );
+      const selectCashClosureExpr = existingCols.has('cash_closure_id')
+        ? 'cash_closure_id'
+        : 'NULL';
+
+      if (hasAttemptsTable) {
+        db.exec(`
+          DROP TABLE IF EXISTS whatsapp_message_attempts_v122_bak;
+          CREATE TABLE whatsapp_message_attempts_v122_bak (
+            id INTEGER PRIMARY KEY,
+            message_id INTEGER NOT NULL,
+            external_message_id TEXT NOT NULL,
+            created_at TEXT NOT NULL
+          );
+          INSERT INTO whatsapp_message_attempts_v122_bak (id, message_id, external_message_id, created_at)
+          SELECT id, message_id, external_message_id, created_at
+          FROM whatsapp_message_attempts;
+          DROP TABLE whatsapp_message_attempts;
+        `);
+      }
+
+      db.exec(`
+        DROP TABLE IF EXISTS whatsapp_messages_v122;
+        CREATE TABLE whatsapp_messages_v122 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bill_id INTEGER REFERENCES bills(id),
+          customer_id TEXT REFERENCES customers(id),
+          phone_e164 TEXT NOT NULL,
+          direction TEXT NOT NULL CHECK (direction IN ('outbound','inbound')),
+          kind TEXT NOT NULL DEFAULT 'manual_reply'
+            CHECK (kind IN ('bill_receipt','manual_reply','auto_followup','z_report','daily_sales_report')),
+          status TEXT NOT NULL DEFAULT 'queued'
+            CHECK (status IN ('queued','seen','typing','sent','delivered','read','failed')),
+          body TEXT NOT NULL,
+          external_message_id TEXT,
+          error TEXT,
+          queued_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          seen_at TEXT,
+          typing_at TEXT,
+          sent_at TEXT,
+          delivered_at TEXT,
+          read_at TEXT,
+          failed_at TEXT,
+          created_by_user_id TEXT,
+          cash_closure_id INTEGER REFERENCES cash_closures(id) ON DELETE SET NULL
+        );
+
+        INSERT INTO whatsapp_messages_v122 (
+          id, bill_id, customer_id, phone_e164, direction, kind, status, body,
+          external_message_id, error, queued_at, seen_at, typing_at, sent_at,
+          delivered_at, read_at, failed_at, created_by_user_id, cash_closure_id
+        )
+        SELECT
+          id, bill_id, customer_id, phone_e164, direction, kind, status, body,
+          external_message_id, error, queued_at, seen_at, typing_at, sent_at,
+          delivered_at, read_at, failed_at, created_by_user_id, ${selectCashClosureExpr}
+        FROM whatsapp_messages;
+
+        DROP TABLE whatsapp_messages;
+        ALTER TABLE whatsapp_messages_v122 RENAME TO whatsapp_messages;
+
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone
+          ON whatsapp_messages(phone_e164, queued_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_status
+          ON whatsapp_messages(status, queued_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_bill
+          ON whatsapp_messages(bill_id);
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_inbound_unread
+          ON whatsapp_messages(direction, status, queued_at DESC)
+          WHERE direction = 'inbound' AND status NOT IN ('read','failed');
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_messages_auto_z_closure
+          ON whatsapp_messages(cash_closure_id)
+          WHERE cash_closure_id IS NOT NULL AND created_by_user_id = 'rule:z_report_day_close';
+      `);
+
+      if (hasAttemptsTable) {
+        db.exec(`
+          CREATE TABLE whatsapp_message_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL REFERENCES whatsapp_messages(id) ON DELETE CASCADE,
+            external_message_id TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+          );
+          INSERT OR IGNORE INTO whatsapp_message_attempts (id, message_id, external_message_id, created_at)
+          SELECT a.id, a.message_id, a.external_message_id, a.created_at
+          FROM whatsapp_message_attempts_v122_bak a
+          JOIN whatsapp_messages m ON m.id = a.message_id;
+          DROP TABLE whatsapp_message_attempts_v122_bak;
+          CREATE INDEX IF NOT EXISTS idx_whatsapp_message_attempts_message_id
+            ON whatsapp_message_attempts(message_id);
+        `);
+      }
+    },
+  },
 ];
 
 export function backfillWhatsAppMessageAttempts(

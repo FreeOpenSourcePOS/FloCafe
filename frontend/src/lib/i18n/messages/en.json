@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Send Report to WhatsApp",
     "recipientPhone": "Recipient Phone Number",
     "reportSentSuccess": "Report sent to WhatsApp successfully",
+    "reportSubmittedPending": "Report submitted to WhatsApp; awaiting delivery confirmation",
     "reportOpeningWhatsAppWeb": "Opening WhatsApp with report...",
     "salesSummary": "SALES SUMMARY",
     "paymentBreakdown": "PAYMENTS",
@@ -446,7 +447,8 @@
     "costUnknown": "Cost unknown",
     "partialCost": "Partial cost",
     "ingredientCostLabel": "Cost: {amount}",
-    "profitMarginLabel": "Profit: {profit} ({margin})"
+    "profitMarginLabel": "Profit: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Daily Sales Report"
   },
   "expenses": {
     "addTitle": "Add expense",
@@ -3289,7 +3291,9 @@
       "no_qr": "No QR available. Start a pairing session first.",
       "phone_not_in_blocklist": "Phone is not in the blocklist",
       "phone_required": "Phone number required",
-      "phone_required_pairing": "Phone required for pairing code"
+      "phone_required_pairing": "Phone required for pairing code",
+      "invalid_phone": "Enter a valid phone number in international format",
+      "owner_required": "Only the store owner can configure automatic Z-report delivery"
     },
     "automation": {
       "autoOptOutLabel": "Auto opt-out on inbound STOP / UNSUBSCRIBE (adds sender to blocklist)",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "Inactive days",
       "thresholdHours": "Delay hours",
       "thresholdPoints": "Points threshold",
-      "thresholdVisits": "Every N visits"
+      "thresholdVisits": "Every N visits",
+      "ruleZReportDayCloseHint": "Send the Z-report automatically to an owner-configured phone number after closing the day.",
+      "zReportOwnerOnlyHint": "Only the store owner can change this rule.",
+      "zReportRecipientLabel": "Recipient phone (E.164)"
     },
     "blocklist": {
       "addCta": "Add",
@@ -3416,7 +3423,8 @@
       "auto_followup": "Auto follow-up",
       "bill_receipt": "Bill receipt",
       "manual_reply": "Manual reply",
-      "z_report": "Z-Report"
+      "z_report": "Z-Report",
+      "daily_sales_report": "Daily sales report"
     },
     "lastError": {
       "cooldown": "Send is temporarily paused.",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "Feedback follow-up",
       "nth_visit": "Nth visit milestone",
       "points_threshold": "Loyalty points milestone",
-      "winback": "Inactive customer win-back"
+      "winback": "Inactive customer win-back",
+      "z_report_day_close": "Z-Report on day close"
     },
     "send": {
       "customerPhoneRequired": "Add this customer’s phone number before sending.",

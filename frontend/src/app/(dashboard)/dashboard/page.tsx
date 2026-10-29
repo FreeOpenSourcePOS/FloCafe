@@ -23,6 +23,7 @@ import {
   Hourglass,
   LayoutGrid,
   Lock,
+  MessageCircle,
   Minus,
   ReceiptText,
   RotateCcw,
@@ -57,6 +58,8 @@ import { tenantCan } from '@/lib/permissions';
 import { businessDateForInstant } from '@shared/business-date';
 import { downloadBlob } from '@/lib/download';
 import { exportReportAsPdf, MenuPopupBlockedError } from '@/lib/export-pdf';
+import { SendWhatsAppReportModal } from '@/components/dashboard/SendWhatsAppReportModal';
+import { shareDailySalesViaWhatsApp } from '@/lib/whatsapp-share';
 
 interface PaymentMethodBreakdown {
   method: string | null;
@@ -257,6 +260,9 @@ export default function DashboardPage() {
   const tPos = useTranslations('pos');
   const tOrders = useTranslations('orders');
   const tProducts = useTranslations('products');
+  const tSettings = useTranslations('settings');
+  const tWhatsAppConnection = useTranslations('whatsapp.connection');
+  const tWhatsAppSend = useTranslations('whatsapp.send');
   const router = useRouter();
   const [stats, setStats] = useState<DailyStats | null>(null);
   const [daySummary, setDaySummary] = useState<DaySummary | null>(null);
@@ -267,9 +273,15 @@ export default function DashboardPage() {
   const [weeklyComparison, setWeeklyComparison] = useState<WeeklyComparison | null>(null);
   const [loading, setLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [dailySalesWhatsAppOpen, setDailySalesWhatsAppOpen] = useState(false);
 
   const isOwner = tenantCan(currentTenant, 'dashboard.view');
   const canViewFinancials = tenantCan(currentTenant, 'reports.financial.view');
+  const canSendDailySalesWhatsApp =
+    tenantCan(currentTenant, 'reports.view') &&
+    tenantCan(currentTenant, 'reports.daily-sales.export') &&
+    tenantCan(currentTenant, 'whatsapp.use');
+  const canViewSettings = tenantCan(currentTenant, 'settings.view');
   const fmt = useFormatCurrency();
   // Financial figures require `reports.financial.view`, independently of `dashboard.view`;
   // mask them instead of showing a misleading zero when that permission isn't granted.
@@ -566,6 +578,46 @@ export default function DashboardPage() {
       toast.error(tCommon('downloadFailed'));
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleSendDailySalesWhatsApp = async (phoneE164: string): Promise<boolean> => {
+    try {
+      const dateParams =
+        periodMode === 'day'
+          ? { date: selectedDate }
+          : { from: range.startDate, to: range.endDate };
+      const result = await shareDailySalesViaWhatsApp(dateParams, phoneE164);
+      if (result === false) {
+        toast.error(tCommon('somethingWrong'));
+        return false;
+      }
+      toast.success(
+        t(
+          result === 'sent'
+            ? 'reportSentSuccess'
+            : result === 'submitted'
+              ? 'reportSubmittedPending'
+              : 'reportOpeningWhatsAppWeb',
+        ),
+      );
+      return true;
+    } catch (err: unknown) {
+      const reason = (err as { response?: { data?: { reason?: string } } })?.response?.data?.reason;
+      if (reason === 'offline_mode') {
+        toast.error(tSettings('offlineModeTitle'));
+      } else if (reason === 'feature_off') {
+        toast.error(tWhatsAppConnection('notEnabled'));
+      } else if (reason === 'blocked') {
+        toast.error(tWhatsAppSend('error.blocked'));
+      } else if (reason === 'not_on_whatsapp') {
+        toast.error(tWhatsAppSend('error.notOnWhatsapp'));
+      } else if (reason === 'rate_limited' || reason === 'cooldown') {
+        toast.error(tWhatsAppSend('error.rateLimited'));
+      } else {
+        toast.error(tCommon('somethingWrong'));
+      }
+      return false;
     }
   };
 
@@ -930,6 +982,12 @@ export default function DashboardPage() {
                 <FileText size={14} />
                 {t('exportPdf')}
               </DropdownMenuItem>
+              {canSendDailySalesWhatsApp && (
+                <DropdownMenuItem onSelect={() => setDailySalesWhatsAppOpen(true)}>
+                  <MessageCircle size={14} className="text-emerald-500" />
+                  {t('sendViaWhatsApp')}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onSelect={() => exportDailyInvoices()}>
                 <FileText size={14} />
                 {t('exportInvoicesPdf')}
@@ -950,6 +1008,13 @@ export default function DashboardPage() {
       </div>
 
       <CashCloseModal model={cashClose} />
+      <SendWhatsAppReportModal
+        open={dailySalesWhatsAppOpen}
+        country={currentTenant?.country ?? ''}
+        canViewSettings={canViewSettings}
+        onOpenChange={setDailySalesWhatsAppOpen}
+        onSend={handleSendDailySalesWhatsApp}
+      />
 
       {loading ? (
         <div

@@ -38,13 +38,27 @@ const OUT_FILE = path.join(ROOT, 'main/print/print-labels.generated.ts');
 /** Find a top-level const initializer without depending on source formatting. */
 function readConstInitializer(filePath, name) {
   const source = fs.readFileSync(filePath, 'utf8');
-  const file = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const file = ts.createSourceFile(
+    filePath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
   for (const statement of file.statements) {
     if (!ts.isVariableStatement(statement)) continue;
     for (const declaration of statement.declarationList.declarations) {
-      if (ts.isIdentifier(declaration.name) && declaration.name.text === name && declaration.initializer) {
+      if (
+        ts.isIdentifier(declaration.name) &&
+        declaration.name.text === name &&
+        declaration.initializer
+      ) {
         let initializer = declaration.initializer;
-        while (ts.isAsExpression(initializer) || ts.isSatisfiesExpression(initializer) || ts.isParenthesizedExpression(initializer)) {
+        while (
+          ts.isAsExpression(initializer) ||
+          ts.isSatisfiesExpression(initializer) ||
+          ts.isParenthesizedExpression(initializer)
+        ) {
           initializer = initializer.expression;
         }
         return initializer;
@@ -57,7 +71,8 @@ function readConstInitializer(filePath, name) {
 /** Derive print locales in canonical registry order; translations stay JSON-backed. */
 function readCanonicalLanguages() {
   const initializer = readConstInitializer(LANGUAGE_REGISTRY_FILE, 'LANGUAGES');
-  if (!ts.isObjectLiteralExpression(initializer)) throw new Error('Canonical LANGUAGES registry must be an object');
+  if (!ts.isObjectLiteralExpression(initializer))
+    throw new Error('Canonical LANGUAGES registry must be an object');
   const languages = initializer.properties
     .filter((property) => ts.isPropertyAssignment(property))
     .map((property) => property.name)
@@ -68,7 +83,6 @@ function readCanonicalLanguages() {
 }
 
 const LANGUAGES = readCanonicalLanguages();
-
 
 /**
  * New `print.*` keys owned by issue #440, in contract order. Dotted leaf
@@ -212,6 +226,22 @@ const BORROWED_KEYS = [
   'dashboard.countedCash',
   'dashboard.variance',
   'dashboard.ticketFooter',
+  'dashboard.dailySalesWhatsAppTitle',
+  'dashboard.salesSummary',
+  'dashboard.grossCollections',
+  'dashboard.refunds',
+  'dashboard.netCollections',
+  'dashboard.paymentMethods',
+  'dashboard.paymentBreakdown',
+  'dashboard.topProducts',
+  'dashboard.billsCount',
+  'dashboard.ordersCount',
+  'dashboard.periodWindow',
+  'dashboard.drawerReconciliation',
+  'dashboard.varianceExact',
+  'dashboard.varianceShort',
+  'dashboard.varianceOver',
+  'dashboard.closureNotes',
   // Delivery-slip expected-payment states.
   'common.unknown',
   'orders.pending',
@@ -219,7 +249,8 @@ const BORROWED_KEYS = [
 
 function readSharedConcepts() {
   const initializer = readConstInitializer(SHARED_CONCEPTS_FILE, 'PRINT_CONCEPT_IDS');
-  if (!ts.isArrayLiteralExpression(initializer)) throw new Error('Shared print-concept catalog must be an array');
+  if (!ts.isArrayLiteralExpression(initializer))
+    throw new Error('Shared print-concept catalog must be an array');
   const concepts = initializer.elements
     .filter((element) => ts.isStringLiteral(element))
     .map((element) => element.text);
@@ -268,7 +299,7 @@ function generateTypeScript(tables) {
   lines.push('// printing (#440). Do not edit by hand: regeneration must be byte-identical.');
   lines.push('');
   lines.push("import type { PrintConceptId } from '../../shared/print/concepts';");
-  lines.push('export type { PrintConceptId } from \'../../shared/print/concepts\';');
+  lines.push("export type { PrintConceptId } from '../../shared/print/concepts';");
   lines.push('');
   lines.push('export const PRINT_LABEL_LANGUAGES = [');
   for (const lang of LANGUAGES) {
@@ -296,12 +327,16 @@ function generateTypeScript(tables) {
   lines.push(' * back to English so a receipt always renders real labels, never raw keys.');
   lines.push(' */');
   lines.push('export function printLabel(lang: string, conceptId: PrintConceptId): string {');
-  lines.push('  const table = (PRINT_LABELS as Record<string, PrintLabelTable | undefined>)[lang];');
+  lines.push(
+    '  const table = (PRINT_LABELS as Record<string, PrintLabelTable | undefined>)[lang];',
+  );
   lines.push('  return table?.[conceptId] ?? PRINT_LABELS.en[conceptId];');
   lines.push('}');
   lines.push('');
   lines.push('/** True when the generated view carries a dedicated table for `lang`. */');
-  lines.push('export function isGeneratedPrintLanguage(lang: string): lang is PrintLabelLanguage {');
+  lines.push(
+    'export function isGeneratedPrintLanguage(lang: string): lang is PrintLabelLanguage {',
+  );
   lines.push('  return (PRINT_LABELS as Record<string, unknown>).hasOwnProperty(lang);');
   lines.push('}');
   lines.push('');
@@ -332,15 +367,19 @@ function main() {
     return;
   }
 
-  const committed = fs.existsSync(OUT_FILE)
-    ? normalizeEol(fs.readFileSync(OUT_FILE, 'utf8'))
-    : '';
+  const committed = fs.existsSync(OUT_FILE) ? normalizeEol(fs.readFileSync(OUT_FILE, 'utf8')) : '';
   if (committed !== normalizeEol(content)) {
-    console.error('[generate-print-labels] DRIFT DETECTED: main/print/print-labels.generated.ts is stale.');
-    console.error('Run `npm run generate:print-labels` after editing messages and commit the result.');
+    console.error(
+      '[generate-print-labels] DRIFT DETECTED: main/print/print-labels.generated.ts is stale.',
+    );
+    console.error(
+      'Run `npm run generate:print-labels` after editing messages and commit the result.',
+    );
     process.exit(1);
   }
-  console.log('[generate-print-labels] drift check passed: generated view matches canonical messages.');
+  console.log(
+    '[generate-print-labels] drift check passed: generated view matches canonical messages.',
+  );
 }
 
 if (require.main === module) {
@@ -352,4 +391,14 @@ if (require.main === module) {
   }
 }
 
-module.exports = { LANGUAGES, PRINT_NAMESPACE_KEYS, BORROWED_KEYS, ALL_CONCEPTS, OUT_FILE, normalizeEol, regenerate, readCanonicalLanguages, readSharedConcepts };
+module.exports = {
+  LANGUAGES,
+  PRINT_NAMESPACE_KEYS,
+  BORROWED_KEYS,
+  ALL_CONCEPTS,
+  OUT_FILE,
+  normalizeEol,
+  regenerate,
+  readCanonicalLanguages,
+  readSharedConcepts,
+};

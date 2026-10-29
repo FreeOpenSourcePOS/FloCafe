@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "WhatsApp-এ প্রতিবেদন পাঠান",
     "recipientPhone": "প্রাপকের ফোন নম্বর",
     "reportSentSuccess": "প্রতিবেদনটি WhatsApp-এ সফলভাবে পাঠানো হয়েছে",
+    "reportSubmittedPending": "প্রতিবেদনটি WhatsApp-এ জমা দেওয়া হয়েছে; ডেলিভারি নিশ্চিতকরণের অপেক্ষায়",
     "reportOpeningWhatsAppWeb": "প্রতিবেদনসহ WhatsApp খোলা হচ্ছে...",
     "salesSummary": "বিক্রয় সারাংশ",
     "paymentBreakdown": "পেমেন্ট",
@@ -446,7 +447,8 @@
     "costUnknown": "খরচ অজানা",
     "partialCost": "আংশিক খরচ",
     "ingredientCostLabel": "খরচ: {amount}",
-    "profitMarginLabel": "লাভ: {profit} ({margin})"
+    "profitMarginLabel": "লাভ: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "দৈনিক বিক্রয় প্রতিবেদন"
   },
   "expenses": {
     "addTitle": "খরচ যোগ করুন",
@@ -3289,7 +3291,9 @@
       "no_qr": "কোন QR উপলব্ধ নেই। প্রথমে একটি পেয়ারিং সেশন শুরু করুন।",
       "phone_not_in_blocklist": "ফোনটি ব্লকলিস্টে নেই",
       "phone_required": "ফোন নম্বর প্রয়োজন",
-      "phone_required_pairing": "পেয়ারিং কোডের জন্য ফোন প্রয়োজন"
+      "phone_required_pairing": "পেয়ারিং কোডের জন্য ফোন প্রয়োজন",
+      "invalid_phone": "আন্তর্জাতিক ফরম্যাটে একটি বৈধ ফোন নম্বর লিখুন",
+      "owner_required": "শুধুমাত্র স্টোর মালিক স্বয়ংক্রিয় Z প্রতিবেদন পাঠানো কনফিগার করতে পারেন"
     },
     "automation": {
       "autoOptOutLabel": "STOP / UNSUBSCRIBE এলে স্বয়ংক্রিয় অপ্ট-আউট (ব্লকলিস্টে যুক্ত করে)",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "নিষ্ক্রিয় দিন",
       "thresholdHours": "বিলম্বের ঘণ্টা",
       "thresholdPoints": "পয়েন্ট সীমা",
-      "thresholdVisits": "প্রতি N ভিজিট"
+      "thresholdVisits": "প্রতি N ভিজিট",
+      "ruleZReportDayCloseHint": "দিন শেষে ক্লোজ করার পর মালিকের নির্ধারিত ফোন নম্বরে স্বয়ংক্রিয়ভাবে Z প্রতিবেদন পাঠান।",
+      "zReportOwnerOnlyHint": "শুধুমাত্র স্টোর মালিক এই নিয়ম পরিবর্তন করতে পারেন।",
+      "zReportRecipientLabel": "প্রাপকের ফোন (E.164)"
     },
     "blocklist": {
       "addCta": "যোগ করুন",
@@ -3416,7 +3423,8 @@
       "auto_followup": "অটো ফলো-আপ",
       "bill_receipt": "বিলের রসিদ",
       "manual_reply": "ম্যানুয়াল উত্তর",
-      "z_report": "Z প্রতিবেদন"
+      "z_report": "Z প্রতিবেদন",
+      "daily_sales_report": "দৈনিক বিক্রয় প্রতিবেদন"
     },
     "lastError": {
       "cooldown": "পাঠানো সাময়িকভাবে থামানো হয়েছে.",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "ফিডব্যাক ফলো-আপ",
       "nth_visit": "ভিজিট মাইলফলক",
       "points_threshold": "লয়্যালটি পয়েন্ট মাইলফলক",
-      "winback": "নিষ্ক্রিয় গ্রাহক ফিরিয়ে আনা"
+      "winback": "নিষ্ক্রিয় গ্রাহক ফিরিয়ে আনা",
+      "z_report_day_close": "দিন শেষে Z প্রতিবেদন"
     },
     "send": {
       "customerPhoneRequired": "পাঠানোর আগে এই গ্রাহকের ফোন নম্বর যোগ করুন।",

@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Gửi báo cáo qua WhatsApp",
     "recipientPhone": "Số điện thoại người nhận",
     "reportSentSuccess": "Đã gửi báo cáo qua WhatsApp thành công",
+    "reportSubmittedPending": "Đã gửi báo cáo lên WhatsApp; đang chờ xác nhận chuyển phát",
     "reportOpeningWhatsAppWeb": "Đang mở WhatsApp cùng báo cáo...",
     "salesSummary": "TÓM TẮT DOANH SỐ",
     "paymentBreakdown": "THANH TOÁN",
@@ -446,7 +447,8 @@
     "costUnknown": "Chưa rõ giá vốn",
     "partialCost": "Giá vốn một phần",
     "ingredientCostLabel": "Giá vốn: {amount}",
-    "profitMarginLabel": "Lợi nhuận: {profit} ({margin})"
+    "profitMarginLabel": "Lợi nhuận: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Báo cáo doanh thu hằng ngày"
   },
   "expenses": {
     "addTitle": "Thêm chi phí",
@@ -3289,7 +3291,9 @@
       "no_qr": "Không có mã QR. Hãy bắt đầu phiên ghép nối trước.",
       "phone_not_in_blocklist": "Số điện thoại không có trong danh sách chặn",
       "phone_required": "Cần có số điện thoại",
-      "phone_required_pairing": "Cần có số điện thoại để dùng mã ghép nối"
+      "phone_required_pairing": "Cần có số điện thoại để dùng mã ghép nối",
+      "invalid_phone": "Nhập số điện thoại hợp lệ theo định dạng quốc tế",
+      "owner_required": "Chỉ chủ cửa hàng mới có thể cấu hình tự động gửi Báo cáo Z"
     },
     "automation": {
       "autoOptOutLabel": "Tự động hủy nhận tin khi khách nhắn STOP / UNSUBSCRIBE (thêm vào danh sách chặn)",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "Số ngày vắng mặt",
       "thresholdHours": "Số giờ chờ",
       "thresholdPoints": "Ngưỡng điểm",
-      "thresholdVisits": "Mỗi N lần ghé"
+      "thresholdVisits": "Mỗi N lần ghé",
+      "ruleZReportDayCloseHint": "Tự động gửi Báo cáo Z đến số điện thoại do chủ cửa hàng cấu hình sau khi chốt ngày.",
+      "zReportOwnerOnlyHint": "Chỉ chủ cửa hàng mới có thể thay đổi quy tắc này.",
+      "zReportRecipientLabel": "Điện thoại người nhận (E.164)"
     },
     "blocklist": {
       "addCta": "Thêm",
@@ -3416,7 +3423,8 @@
       "auto_followup": "Tự động liên hệ lại",
       "bill_receipt": "Biên nhận hóa đơn",
       "manual_reply": "Trả lời thủ công",
-      "z_report": "Báo cáo Z"
+      "z_report": "Báo cáo Z",
+      "daily_sales_report": "Báo cáo doanh thu hằng ngày"
     },
     "lastError": {
       "cooldown": "Đang tạm dừng gửi.",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "Hỏi thăm đánh giá",
       "nth_visit": "Cột mốc số lần ghé quán",
       "points_threshold": "Cột mốc điểm tích lũy",
-      "winback": "Mời khách cũ quay lại"
+      "winback": "Mời khách cũ quay lại",
+      "z_report_day_close": "Báo cáo Z khi chốt ngày"
     },
     "send": {
       "customerPhoneRequired": "Hãy thêm số điện thoại của khách hàng trước khi gửi.",

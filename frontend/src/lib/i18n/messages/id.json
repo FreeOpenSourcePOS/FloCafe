@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Kirim laporan ke WhatsApp",
     "recipientPhone": "Nomor telepon penerima",
     "reportSentSuccess": "Laporan berhasil dikirim ke WhatsApp",
+    "reportSubmittedPending": "Laporan telah dikirim ke WhatsApp; menunggu konfirmasi pengiriman",
     "reportOpeningWhatsAppWeb": "Membuka WhatsApp dengan laporan...",
     "salesSummary": "RINGKASAN PENJUALAN",
     "paymentBreakdown": "PEMBAYARAN",
@@ -446,7 +447,8 @@
     "costUnknown": "Biaya belum diketahui",
     "partialCost": "Biaya sebagian",
     "ingredientCostLabel": "Biaya: {amount}",
-    "profitMarginLabel": "Laba: {profit} ({margin})"
+    "profitMarginLabel": "Laba: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Laporan Penjualan Harian"
   },
   "expenses": {
     "addTitle": "Tambah pengeluaran",
@@ -3289,7 +3291,9 @@
       "no_qr": "Tidak ada QR yang tersedia. Mulai sesi pemasangan terlebih dahulu.",
       "phone_not_in_blocklist": "Nomor telepon tidak ada di daftar blokir",
       "phone_required": "Nomor telepon wajib diisi",
-      "phone_required_pairing": "Telepon wajib diisi untuk kode pemasangan"
+      "phone_required_pairing": "Telepon wajib diisi untuk kode pemasangan",
+      "invalid_phone": "Masukkan nomor telepon yang valid dalam format internasional",
+      "owner_required": "Hanya pemilik toko yang dapat mengatur pengiriman otomatis Laporan Z"
     },
     "automation": {
       "autoOptOutLabel": "Berhenti otomatis saat menerima STOP / UNSUBSCRIBE (masuk daftar blokir)",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "Hari tidak aktif",
       "thresholdHours": "Jam tunda",
       "thresholdPoints": "Ambang poin",
-      "thresholdVisits": "Setiap N kunjungan"
+      "thresholdVisits": "Setiap N kunjungan",
+      "ruleZReportDayCloseHint": "Kirim Laporan Z secara otomatis ke nomor telepon yang ditetapkan pemilik setelah tutup hari.",
+      "zReportOwnerOnlyHint": "Hanya pemilik toko yang dapat mengubah aturan ini.",
+      "zReportRecipientLabel": "Telepon penerima (E.164)"
     },
     "blocklist": {
       "addCta": "Tambah",
@@ -3416,7 +3423,8 @@
       "auto_followup": "Tindak lanjut otomatis",
       "bill_receipt": "Struk tagihan",
       "manual_reply": "Balasan manual",
-      "z_report": "Laporan Z"
+      "z_report": "Laporan Z",
+      "daily_sales_report": "Laporan penjualan harian"
     },
     "lastError": {
       "cooldown": "Pengiriman dihentikan sementara.",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "Tindak lanjut ulasan",
       "nth_visit": "Pencapaian kunjungan ke-N",
       "points_threshold": "Ambang poin loyalitas",
-      "winback": "Sapa pelanggan tidak aktif"
+      "winback": "Sapa pelanggan tidak aktif",
+      "z_report_day_close": "Laporan Z saat tutup hari"
     },
     "send": {
       "customerPhoneRequired": "Tambahkan nomor telepon pelanggan ini sebelum mengirim.",

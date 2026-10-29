@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Ipadala ang ulat sa WhatsApp",
     "recipientPhone": "Numero ng telepono ng tatanggap",
     "reportSentSuccess": "Matagumpay na naipadala ang ulat sa WhatsApp",
+    "reportSubmittedPending": "Naipasa na ang ulat sa WhatsApp; naghihintay ng kumpirmasyon ng paghatid",
     "reportOpeningWhatsAppWeb": "Binubuksan ang WhatsApp kasama ang ulat...",
     "salesSummary": "BUOD NG BENTA",
     "paymentBreakdown": "MGA BAYAD",
@@ -446,7 +447,8 @@
     "costUnknown": "Hindi alam ang gastos",
     "partialCost": "Bahagyang gastos",
     "ingredientCostLabel": "Gastos: {amount}",
-    "profitMarginLabel": "Tubo: {profit} ({margin})"
+    "profitMarginLabel": "Tubo: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Ulat ng Pang-araw-araw na Benta"
   },
   "expenses": {
     "addTitle": "Magdagdag ng gastos",
@@ -3289,7 +3291,9 @@
       "no_qr": "Walang available na QR code. Magsimula muna ng pairing session.",
       "phone_not_in_blocklist": "Wala sa blocklist ang numero ng telepono",
       "phone_required": "Kailangan ang numero ng telepono",
-      "phone_required_pairing": "Kailangan ang telepono para sa pairing code"
+      "phone_required_pairing": "Kailangan ang telepono para sa pairing code",
+      "invalid_phone": "Maglagay ng wastong numero ng telepono sa internasyonal na format",
+      "owner_required": "Ang may-ari ng tindahan lang ang maaaring magtakda ng awtomatikong pagpapadala ng Ulat Z"
     },
     "automation": {
       "autoOptOutLabel": "Kusang opt-out kapag nag-reply ng STOP / UNSUBSCRIBE (idinadagdag sa blocklist)",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "Mga araw na hindi aktibo",
       "thresholdHours": "Oras ng paghihintay",
       "thresholdPoints": "Limitasyon ng puntos",
-      "thresholdVisits": "Bawat N bisita"
+      "thresholdVisits": "Bawat N bisita",
+      "ruleZReportDayCloseHint": "Awtomatikong ipadala ang Ulat Z sa numerong itinakda ng may-ari pagkatapos isara ang araw.",
+      "zReportOwnerOnlyHint": "Ang may-ari ng tindahan lang ang maaaring magbago ng panuntunang ito.",
+      "zReportRecipientLabel": "Telepono ng tatanggap (E.164)"
     },
     "blocklist": {
       "addCta": "Magdagdag",
@@ -3416,7 +3423,8 @@
       "auto_followup": "Awtomatikong follow-up",
       "bill_receipt": "Resibo ng bill",
       "manual_reply": "Manual na tugon",
-      "z_report": "Ulat Z"
+      "z_report": "Ulat Z",
+      "daily_sales_report": "Ulat ng pang-araw-araw na benta"
     },
     "lastError": {
       "cooldown": "Pansamantalang naka-pause ang pagpapadala.",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "Paalala sa feedback",
       "nth_visit": "Milestone sa bilang ng bisita",
       "points_threshold": "Milestone sa puntos ng katapatan",
-      "winback": "Pagbabalik ng hindi aktibong customer"
+      "winback": "Pagbabalik ng hindi aktibong customer",
+      "z_report_day_close": "Ulat Z sa pagsasara ng araw"
     },
     "send": {
       "customerPhoneRequired": "Magdagdag this customer’s phone number before sending.",

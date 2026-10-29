@@ -69,6 +69,7 @@ async function main() {
       'read_at',
       'failed_at',
       'created_by_user_id',
+      'cash_closure_id',
     ]) {
       assert(cols.includes(c), `whatsapp_messages has column ${c}`);
     }
@@ -102,6 +103,16 @@ async function main() {
       threw = true;
     }
     assert(!threw, 'whatsapp_messages accepts kind=z_report');
+
+    threw = false;
+    try {
+      db.prepare(
+        `INSERT INTO whatsapp_messages (phone_e164, direction, kind, body) VALUES (?, ?, ?, ?)`,
+      ).run('+15555550113', 'outbound', 'daily_sales_report', 'Daily sales');
+    } catch {
+      threw = true;
+    }
+    assert(!threw, 'whatsapp_messages accepts kind=daily_sales_report');
 
     threw = false;
     try {
@@ -141,6 +152,10 @@ async function main() {
       'index idx_whatsapp_messages_status exists',
     );
     assert(allIndexes.has('idx_whatsapp_messages_bill'), 'index idx_whatsapp_messages_bill exists');
+    assert(
+      allIndexes.has('idx_whatsapp_messages_auto_z_closure'),
+      'index idx_whatsapp_messages_auto_z_closure exists',
+    );
     assert(
       allIndexes.has('idx_whatsapp_message_attempts_message_id'),
       'index idx_whatsapp_message_attempts_message_id exists',

@@ -151,7 +151,27 @@ router.post(
       res.status(400).json({ error: 'body required', reason: 'body_required' });
       return;
     }
-    const userId = (req as any).user?.userId ?? null;
+    const userId = String((req as Request & { user?: { userId?: string } }).user?.userId ?? '');
+    const requestedKind = (kind as string) || 'manual_reply';
+    if (whatsapp.isReportMessageKind(requestedKind) && !hasPermission(userId, 'reports.view')) {
+      res.status(403).json({
+        error: 'Insufficient permissions',
+        required: 'reports.view',
+        code: 'PERMISSION_DENIED',
+      });
+      return;
+    }
+    if (
+      requestedKind === 'daily_sales_report' &&
+      !hasPermission(userId, 'reports.daily-sales.export')
+    ) {
+      res.status(403).json({
+        error: 'Insufficient permissions',
+        required: 'reports.daily-sales.export',
+        code: 'PERMISSION_DENIED',
+      });
+      return;
+    }
     const result = await trackHttpRequestWork(
       req,
       whatsapp.sendMessage({
@@ -159,8 +179,8 @@ router.post(
         body: String(body),
         billId: bill_id != null ? Number(bill_id) : null,
         customerId: null,
-        kind: (kind as any) || 'manual_reply',
-        userId,
+        kind: requestedKind as whatsapp.MessageKind,
+        userId: userId || null,
         signal: getHttpRequestSignal(req),
       }),
     );
@@ -203,10 +223,18 @@ router.post(
       res.status(404).json({ error: 'Message not found.', reason: 'not_found' });
       return;
     }
-    if (row.kind === 'z_report' && !hasPermission(userId, 'reports.view')) {
+    if (whatsapp.isReportMessageKind(row.kind) && !hasPermission(userId, 'reports.view')) {
       res.status(403).json({
         error: 'Insufficient permissions',
         required: 'reports.view',
+        code: 'PERMISSION_DENIED',
+      });
+      return;
+    }
+    if (row.kind === 'daily_sales_report' && !hasPermission(userId, 'reports.daily-sales.export')) {
+      res.status(403).json({
+        error: 'Insufficient permissions',
+        required: 'reports.daily-sales.export',
         code: 'PERMISSION_DENIED',
       });
       return;
@@ -244,7 +272,108 @@ router.get('/automation', requirePermission('whatsapp.use'), (_req: Request, res
 });
 
 router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {
-  const config = whatsapp.saveAutomationConfig(req.body ?? {});
+  const bodyObj =
+    req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? { ...(req.body as Record<string, unknown>) }
+      : {};
+  const reqUser = (req as Request & { user?: { userId?: string; role?: string } }).user;
+  const role = reqUser?.role;
+  const userId = String(reqUser?.userId || '');
+  const canViewReports = Boolean(userId && hasPermission(userId, 'reports.view'));
+  const current = whatsapp.getAutomationConfig();
+  const currentZRule = current.rules.find((r) => r.trigger === 'z_report_day_close');
+  const prevEnabled = Boolean(currentZRule?.enabled);
+  const prevPhone = (currentZRule?.recipientPhone ?? '').trim();
+
+  if (Array.isArray(bodyObj.rules)) {
+    const incomingZRules = bodyObj.rules.filter(
+      (r): r is Record<string, unknown> =>
+        whatsapp.resolveWhatsAppRuleTrigger(r) === 'z_report_day_close',
+    );
+    let normalizedZRule: Record<string, unknown> | null = null;
+    for (const incomingZRule of incomingZRules) {
+      const nextEnabled =
+        typeof incomingZRule.enabled === 'boolean' ? incomingZRule.enabled : prevEnabled;
+      const rawPhone =
+        typeof incomingZRule.recipientPhone === 'string'
+          ? incomingZRule.recipientPhone.trim()
+          : prevPhone;
+      let normalizedPhone = '';
+      if (rawPhone) {
+        const parsed = parsePhoneE164(rawPhone, getSettingValue('country') || '');
+        if (!parsed) {
+          if (rawPhone !== prevPhone) {
+            if (role !== 'owner') {
+              res.status(403).json({
+                error: 'Only the store owner can configure automatic Z-report delivery',
+                reason: 'owner_required',
+                code: 'PERMISSION_DENIED',
+              });
+              return;
+            }
+            if (!canViewReports) {
+              res.status(403).json({
+                error: 'Insufficient permissions',
+                required: 'reports.view',
+                code: 'PERMISSION_DENIED',
+              });
+              return;
+            }
+          }
+          res.status(400).json({
+            error: 'Valid recipient phone in E.164 format is required',
+            reason: 'invalid_phone',
+          });
+          return;
+        }
+        normalizedPhone = parsed.e164;
+      }
+      if (nextEnabled !== prevEnabled || normalizedPhone !== prevPhone) {
+        if (role !== 'owner') {
+          res.status(403).json({
+            error: 'Only the store owner can configure automatic Z-report delivery',
+            reason: 'owner_required',
+            code: 'PERMISSION_DENIED',
+          });
+          return;
+        }
+        if (!canViewReports) {
+          res.status(403).json({
+            error: 'Insufficient permissions',
+            required: 'reports.view',
+            code: 'PERMISSION_DENIED',
+          });
+          return;
+        }
+      }
+      if (nextEnabled && !normalizedPhone) {
+        res.status(400).json({
+          error: 'Recipient phone is required when automatic Z-report delivery is enabled',
+          reason: 'phone_required',
+        });
+        return;
+      }
+      if (!normalizedZRule) {
+        normalizedZRule = {
+          ...incomingZRule,
+          id: 'z_report_day_close',
+          trigger: 'z_report_day_close',
+          enabled: nextEnabled,
+          recipientPhone: normalizedPhone,
+        };
+      }
+    }
+    const otherRules = bodyObj.rules.filter(
+      (r) => whatsapp.resolveWhatsAppRuleTrigger(r) !== 'z_report_day_close',
+    );
+    if (role !== 'owner' || !canViewReports) {
+      bodyObj.rules = currentZRule ? [...otherRules, { ...currentZRule }] : otherRules;
+    } else if (normalizedZRule) {
+      bodyObj.rules = [...otherRules, normalizedZRule];
+    }
+  }
+
+  const config = whatsapp.saveAutomationConfig(bodyObj);
   res.json({ ok: true, config });
 });
 
@@ -305,6 +434,7 @@ router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: R
   }
   const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
   const canViewReports = hasPermission(userId, 'reports.view');
+  const canExportDailySales = hasPermission(userId, 'reports.daily-sales.export');
   res.json({
     messages: whatsapp.listMessages({
       direction,
@@ -314,6 +444,7 @@ router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: R
       limit,
       offset,
       canViewReports,
+      canExportDailySales,
     }),
   });
 });

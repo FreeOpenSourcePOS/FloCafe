@@ -75,8 +75,10 @@ const WHATSAPP_API_ERROR_KEYS: readonly WhatsAppApiErrorKey[] = [
   'bad_connect_method',
   'body_required',
   'inbound_not_found',
+  'invalid_phone',
   'no_pairing_code',
   'no_qr',
+  'owner_required',
   'phone_not_in_blocklist',
   'phone_required',
   'phone_required_pairing',
@@ -104,7 +106,7 @@ interface SentMessage {
   bill_id: number | null;
   customer_id: number | null;
   direction: 'inbound' | 'outbound';
-  kind: 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report';
+  kind: 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report' | 'daily_sales_report';
   status: string;
   body: string;
   error: string | null;
@@ -128,6 +130,7 @@ const WHATSAPP_RULE_KEYS: Record<string, WhatsAppRuleKey | undefined> = {
   points_threshold: 'points_threshold',
   nth_visit: 'nth_visit',
   broadcast: 'broadcast',
+  z_report_day_close: 'z_report_day_close',
 };
 
 interface InboxMessage {
@@ -157,7 +160,12 @@ const WHATSAPP_STATUS_KEYS = {
   failed: 'failed',
 } as const satisfies Record<WhatsAppMessageStatus, WhatsAppStatusKey>;
 
-type WhatsAppMessageKind = 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report';
+type WhatsAppMessageKind =
+  | 'bill_receipt'
+  | 'manual_reply'
+  | 'auto_followup'
+  | 'z_report'
+  | 'daily_sales_report';
 type WhatsAppKindKey = keyof AppConfig['Messages']['whatsapp']['kind'];
 
 const WHATSAPP_KIND_KEYS = {
@@ -165,6 +173,7 @@ const WHATSAPP_KIND_KEYS = {
   manual_reply: 'manual_reply',
   auto_followup: 'auto_followup',
   z_report: 'z_report',
+  daily_sales_report: 'daily_sales_report',
 } as const satisfies Record<WhatsAppMessageKind, WhatsAppKindKey>;
 
 type WhatsAppState =
@@ -278,6 +287,9 @@ export default function WhatsAppPage() {
   const setWhatsappEnabled = usePosSettingsStore((s) => s.setWhatsappEnabled);
   const { currentTenant } = useAuthStore();
   const isAdmin = tenantCan(currentTenant, 'whatsapp.manage');
+  const isOwnerRole = currentTenant?.role === 'owner';
+  const canViewReports = tenantCan(currentTenant, 'reports.view');
+  const canExportDailySales = tenantCan(currentTenant, 'reports.daily-sales.export');
   const { formatDateTime: fmt, formatTime: fmtClock } = useFormatDate();
 
   const tenantCountry = currentTenant?.country || '';
@@ -471,17 +483,41 @@ export default function WhatsAppPage() {
       toast.error(tCommon('somethingWrong'));
       return;
     }
+    let payload: WhatsAppAutomationConfig = automationConfig;
+    const zRule = automationConfig.rules.find((r) => r.trigger === 'z_report_day_close');
+    if (zRule && isOwnerRole) {
+      const rawRecipient = (zRule.recipientPhone ?? '').trim();
+      if (zRule.enabled && !rawRecipient) {
+        toast.error(tApiError('phone_required'));
+        return;
+      }
+      let normalizedRecipient = '';
+      if (rawRecipient) {
+        const parsed = parsePhone(rawRecipient, tenantCountry);
+        if (!parsed) {
+          toast.error(tApiError('invalid_phone'));
+          return;
+        }
+        normalizedRecipient = parsed.e164;
+      }
+      payload = {
+        ...automationConfig,
+        rules: automationConfig.rules.map((r) =>
+          r.trigger === 'z_report_day_close' ? { ...r, recipientPhone: normalizedRecipient } : r,
+        ),
+      };
+    }
     setSavingAutomation(true);
     try {
-      const { data } = await api.put('/whatsapp/automation', automationConfig);
+      const { data } = await api.put('/whatsapp/automation', payload);
       if (data?.config) {
         setAutomationConfig(data.config);
         setAutomationLoaded(true);
         setAutomationLoadError(false);
       }
       toast.success(tAutomation('savedSuccess'));
-    } catch {
-      toast.error(tCommon('saveFailed'));
+    } catch (err) {
+      toastApiError(err, tCommon('saveFailed'), tApiError);
     } finally {
       setSavingAutomation(false);
     }
@@ -1200,27 +1236,32 @@ export default function WhatsAppPage() {
                             <div className="flex flex-col items-start gap-1">
                               <StatusStepper status={m.status} />
                               {m.error && <div className="text-xs text-destructive">{m.error}</div>}
-                              {m.status === 'failed' && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 px-2 text-xs"
-                                  disabled={
-                                    retryingIds.has(m.id) ||
-                                    Boolean(status?.offlineMode) ||
-                                    status?.state !== 'connected'
-                                  }
-                                  onClick={() => void retrySentMessage(m.id)}
-                                >
-                                  {retryingIds.has(m.id) ? (
-                                    <Loader2 className="h-3 w-3 me-1 animate-spin" />
-                                  ) : (
-                                    <RotateCcw className="h-3 w-3 me-1" />
-                                  )}
-                                  {tSettings('retry')}
-                                </Button>
-                              )}
+                              {m.status === 'failed' &&
+                                (m.kind === 'daily_sales_report'
+                                  ? canViewReports && canExportDailySales
+                                  : m.kind === 'z_report'
+                                    ? canViewReports
+                                    : true) && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2 text-xs"
+                                    disabled={
+                                      retryingIds.has(m.id) ||
+                                      Boolean(status?.offlineMode) ||
+                                      status?.state !== 'connected'
+                                    }
+                                    onClick={() => void retrySentMessage(m.id)}
+                                  >
+                                    {retryingIds.has(m.id) ? (
+                                      <Loader2 className="h-3 w-3 me-1 animate-spin" />
+                                    ) : (
+                                      <RotateCcw className="h-3 w-3 me-1" />
+                                    )}
+                                    {tSettings('retry')}
+                                  </Button>
+                                )}
                             </div>
                           </TableCell>
                           <TableCell className="text-sm max-w-md">
@@ -1516,6 +1557,8 @@ export default function WhatsAppPage() {
                 <CardContent className="space-y-3">
                   {automationConfig.rules.map((rule) => {
                     const ruleKey = WHATSAPP_RULE_KEYS[rule.trigger];
+                    const isZDayCloseRule = rule.trigger === 'z_report_day_close';
+                    const ruleDisabled = isZDayCloseRule && !isOwnerRole;
                     const hint =
                       rule.trigger === 'after_payment'
                         ? tAutomation('ruleAfterPaymentHint')
@@ -1525,7 +1568,9 @@ export default function WhatsAppPage() {
                             ? tAutomation('ruleWinbackHint')
                             : rule.trigger === 'points_threshold'
                               ? tAutomation('rulePointsThresholdHint')
-                              : tAutomation('ruleNthVisitHint');
+                              : isZDayCloseRule
+                                ? tAutomation('ruleZReportDayCloseHint')
+                                : tAutomation('ruleNthVisitHint');
 
                     const updateRule = (patch: Partial<typeof rule>) => {
                       setAutomationConfig((prev) => ({
@@ -1541,11 +1586,14 @@ export default function WhatsAppPage() {
                         key={rule.trigger}
                         className="rounded-lg border p-3 flex flex-col md:flex-row md:items-center justify-between gap-3"
                       >
-                        <label className="flex items-start gap-3 cursor-pointer flex-1">
+                        <label
+                          className={`flex items-start gap-3 flex-1 ${ruleDisabled ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}
+                        >
                           <input
                             type="checkbox"
                             className="mt-1 size-4 accent-primary"
                             checked={rule.enabled}
+                            disabled={ruleDisabled}
                             onChange={(e) => updateRule({ enabled: e.target.checked })}
                           />
                           <div>
@@ -1553,6 +1601,11 @@ export default function WhatsAppPage() {
                               {ruleKey ? tRule(ruleKey) : rule.trigger}
                             </div>
                             <div className="text-xs text-muted-foreground">{hint}</div>
+                            {ruleDisabled && (
+                              <div className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                                {tAutomation('zReportOwnerOnlyHint')}
+                              </div>
+                            )}
                           </div>
                         </label>
 
@@ -1650,26 +1703,50 @@ export default function WhatsAppPage() {
                             </div>
                           )}
 
-                          <div className="flex items-center gap-1.5">
-                            <label
-                              htmlFor={`wa-rule-template-${rule.trigger}`}
-                              className="text-xs text-muted-foreground"
-                            >
-                              {tAutomation('templateSelectLabel')}
-                            </label>
-                            <select
-                              id={`wa-rule-template-${rule.trigger}`}
-                              value={rule.templateId}
-                              onChange={(e) => updateRule({ templateId: e.target.value })}
-                              className="h-8 rounded-md border bg-background px-2 text-xs"
-                            >
-                              {automationConfig.templates.map((tpl) => (
-                                <option key={tpl.id} value={tpl.id}>
-                                  {tpl.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
+                          {isZDayCloseRule ? (
+                            <div className="flex items-center gap-1.5">
+                              <label
+                                htmlFor="wa-rule-recipient-z_report_day_close"
+                                className="text-xs text-muted-foreground"
+                              >
+                                {tAutomation('zReportRecipientLabel')}
+                              </label>
+                              <Input
+                                id="wa-rule-recipient-z_report_day_close"
+                                type="tel"
+                                inputMode="tel"
+                                dir="ltr"
+                                disabled={ruleDisabled}
+                                className="w-44 h-8 text-xs font-mono"
+                                value={rule.recipientPhone ?? ''}
+                                placeholder={tBlocklist('phonePlaceholder', {
+                                  dialCode: dialCode || '+CC',
+                                })}
+                                onChange={(e) => updateRule({ recipientPhone: e.target.value })}
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <label
+                                htmlFor={`wa-rule-template-${rule.trigger}`}
+                                className="text-xs text-muted-foreground"
+                              >
+                                {tAutomation('templateSelectLabel')}
+                              </label>
+                              <select
+                                id={`wa-rule-template-${rule.trigger}`}
+                                value={rule.templateId}
+                                onChange={(e) => updateRule({ templateId: e.target.value })}
+                                className="h-8 rounded-md border bg-background px-2 text-xs"
+                              >
+                                {automationConfig.templates.map((tpl) => (
+                                  <option key={tpl.id} value={tpl.id}>
+                                    {tpl.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

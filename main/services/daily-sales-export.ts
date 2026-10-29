@@ -21,6 +21,7 @@ import { roundCurrencyCost } from './supplies';
 import { computeDiscountTaxRatio } from './tax';
 import { getOrdersWithItemsForBills } from '../routes/bills';
 import { paymentMethodBreakdown } from '../routes/cash-closures';
+import { printLabel } from '../print/print-labels.generated';
 
 export const DAILY_SALES_EXPORT_MAX_RANGE_DAYS = 93;
 
@@ -2266,4 +2267,284 @@ export function serializeDailySalesExportHtml(
     );
   }
   return html;
+}
+
+export const DAILY_SALES_WHATSAPP_MAX_CHARS = 4096;
+
+export type DailySalesWhatsAppOptions = {
+  language?: string;
+  locale?: string;
+  preferences?: LocalePreferences;
+  businessName?: string;
+  maxChars?: number;
+};
+
+function truncateUtf16Safe(value: string, maxUnits: number): string {
+  if (maxUnits <= 0) return '';
+  if (value.length <= maxUnits) return value;
+  const suffix = maxUnits > 3 ? '...' : '';
+  let cut = maxUnits - suffix.length;
+  if (cut > 0) {
+    const code = value.charCodeAt(cut - 1);
+    if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  }
+  return `${value.slice(0, Math.max(0, cut)).trimEnd()}${suffix}`;
+}
+
+function localizeWhatsAppPaymentMethod(language: string, method: string): string {
+  const key = String(method || '')
+    .trim()
+    .toLowerCase();
+  if (key === 'cash') return printLabel(language, 'pos.methodCash');
+  if (key === 'card') return printLabel(language, 'pos.methodCard');
+  if (key === 'wallet') return printLabel(language, 'pos.methodWallet');
+  if (!method) return printLabel(language, 'common.unknown');
+  return method.charAt(0).toUpperCase() + method.slice(1);
+}
+
+function formatBusinessDate(
+  value: string,
+  locale: string,
+  preferences?: LocalePreferences,
+): string {
+  if (!value || typeof value !== 'string') return String(value || '');
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return value;
+  try {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const noonUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    if (Number.isNaN(noonUtc.getTime())) return value;
+    const numberingSystem = preferences?.digits === 'latin' ? 'latn' : undefined;
+    const calendar =
+      preferences?.calendar === 'gregorian'
+        ? 'gregory'
+        : preferences?.calendar === 'persian'
+          ? 'persian'
+          : undefined;
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium',
+      timeZone: 'UTC',
+      ...(numberingSystem ? { numberingSystem } : {}),
+      ...(calendar ? { calendar } : {}),
+    }).format(noonUtc);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Plain-text daily-sales summary for WhatsApp delivery. Uses store language,
+ * regional money/number formatting, and progressive truncation so optional item
+ * detail is shortened or dropped before financial totals are ever omitted.
+ */
+export function formatDailySalesWhatsAppMessage(
+  dataset: DailySalesExportDataset,
+  options?: DailySalesWhatsAppOptions,
+): string {
+  const maxChars = Math.max(
+    256,
+    Math.min(4096, options?.maxChars ?? DAILY_SALES_WHATSAPP_MAX_CHARS),
+  );
+  let language = options?.language || '';
+  if (!language) {
+    try {
+      language = getSettingValue('language') || 'en';
+    } catch {
+      language = 'en';
+    }
+  }
+
+  let locale = options?.locale || '';
+  let preferences = options?.preferences;
+  if (!locale || !preferences) {
+    try {
+      const snapshot = resolveRegionalSnapshot({
+        country: getSettingValue('country') ?? undefined,
+        currency: dataset.summary.currency || (getSettingValue('currency') ?? undefined),
+        timezone: dataset.summary.timezone || (getSettingValue('timezone') ?? undefined),
+        currency_display: getSettingValue('currency_display') ?? undefined,
+        number_digits: getSettingValue('number_digits') ?? undefined,
+        calendar: getSettingValue('calendar') ?? undefined,
+      });
+      if (!locale) locale = snapshot.locale;
+      if (!preferences) preferences = snapshot.preferences;
+    } catch {
+      if (!locale) locale = 'en-US';
+    }
+  }
+
+  const resolvedLocale = locale || 'en-US';
+  const resolvedPrefs: LocalePreferences = preferences ?? {
+    currencyDisplay: 'rial',
+    digits: 'locale',
+    calendar: 'locale',
+  };
+  const currency = dataset.summary.currency || 'USD';
+  const rawBusinessName =
+    (options?.businessName !== undefined
+      ? options.businessName
+      : (() => {
+          try {
+            return getSettingValue('business_name') ?? '';
+          } catch {
+            return '';
+          }
+        })()) || 'FloCafe';
+  const numberingSystem = resolvedPrefs.digits === 'latin' ? 'latn' : undefined;
+
+  const fmtMoney = (amount: number): string =>
+    formatMoney(amount, currency, resolvedLocale, resolvedPrefs);
+  const fmtNum = (val: number): string => formatNumber(val, resolvedLocale, numberingSystem);
+
+  const summary = dataset.summary;
+  const fromFormatted = formatBusinessDate(summary.from_date, resolvedLocale, resolvedPrefs);
+  const toFormatted = formatBusinessDate(summary.to_date, resolvedLocale, resolvedPrefs);
+  const periodLine =
+    summary.from_date === summary.to_date
+      ? `${printLabel(language, 'dashboard.businessDateLabel')}: ${fromFormatted} (${summary.timezone})`
+      : `${printLabel(language, 'dashboard.periodWindow')
+          .replace('{start}', fromFormatted)
+          .replace('{end}', toFormatted)} (${summary.timezone})`;
+
+  const countsLine = `${printLabel(language, 'dashboard.ordersCount').replace('{count}', fmtNum(summary.order_count))} · ${printLabel(language, 'dashboard.billsCount').replace('{count}', fmtNum(summary.paid_bill_count))}`;
+
+  const financialLines = [
+    `*${printLabel(language, 'dashboard.salesSummary')}*`,
+    `${printLabel(language, 'dashboard.grossCollections')}: ${fmtMoney(summary.gross_collected)}`,
+    `${printLabel(language, 'dashboard.refunds')}: ${fmtMoney(summary.refunds_issued)}`,
+    `*${printLabel(language, 'dashboard.netCollections')}: ${fmtMoney(summary.net_collected)}*`,
+    `${printLabel(language, 'pos.tax')}: ${fmtMoney(summary.tax_total)}`,
+    `${printLabel(language, 'pos.discount')}: ${fmtMoney(summary.discount_total)}`,
+    `${printLabel(language, 'receipt.serviceCharge')}: ${fmtMoney(summary.service_charge_total)}`,
+    `${printLabel(language, 'pos.packaging')}: ${fmtMoney(summary.packaging_charge_total)}`,
+    `${printLabel(language, 'pos.delivery')}: ${fmtMoney(summary.delivery_charge_total)}`,
+  ];
+
+  const topFiveItems = [...dataset.items]
+    .sort(
+      (a, b) =>
+        b.net_item_sales - a.net_item_sales ||
+        b.quantity - a.quantity ||
+        a.product_name.localeCompare(b.product_name),
+    )
+    .slice(0, 5);
+
+  const buildPaymentLines = (maxMethodChars?: number): string[] => {
+    const header = `*${printLabel(language, 'dashboard.paymentMethods')}*`;
+    if (summary.payment_methods.length === 0) {
+      return [header, `- ${printLabel(language, 'print.zReport.none')}`];
+    }
+    return [
+      header,
+      ...summary.payment_methods.map((pm) => {
+        const label = localizeWhatsAppPaymentMethod(language, pm.method);
+        const safeLabel = maxMethodChars ? truncateUtf16Safe(label, maxMethodChars) : label;
+        return `- ${safeLabel}: ${fmtMoney(pm.total)}`;
+      }),
+    ];
+  };
+
+  const buildItemsSection = (itemCount: number, maxNameChars?: number): string[] => {
+    if (itemCount < 0) return [];
+    const header = `*${printLabel(language, 'dashboard.topProducts')}*`;
+    if (topFiveItems.length === 0) {
+      return itemCount === 0 ? [] : [header, `- ${printLabel(language, 'print.zReport.none')}`];
+    }
+    if (itemCount === 0) return [];
+    const chosen = topFiveItems.slice(0, itemCount);
+    return [
+      header,
+      ...chosen.map((item, idx) => {
+        const rawName = String(item.product_name || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const name = maxNameChars ? truncateUtf16Safe(rawName, maxNameChars) : rawName;
+        return `${fmtNum(idx + 1)}. ${name} (${fmtNum(item.quantity)}) - ${fmtMoney(item.net_item_sales)}`;
+      }),
+    ];
+  };
+
+  const assemble = (
+    storeNameMaxChars: number | undefined,
+    paymentMethodMaxChars: number | undefined,
+    itemCount: number,
+    itemNameMaxChars: number | undefined,
+  ): string => {
+    const storeName = storeNameMaxChars
+      ? truncateUtf16Safe(rawBusinessName.trim(), storeNameMaxChars)
+      : rawBusinessName.trim();
+    const headerLines = [
+      `*${storeName}*`,
+      printLabel(language, 'dashboard.dailySalesWhatsAppTitle'),
+      periodLine,
+      countsLine,
+    ];
+    const paymentLines = buildPaymentLines(paymentMethodMaxChars);
+    const itemLines = buildItemsSection(itemCount, itemNameMaxChars);
+    const sections = [
+      headerLines.join('\n'),
+      financialLines.join('\n'),
+      paymentLines.join('\n'),
+      ...(itemLines.length > 0 ? [itemLines.join('\n')] : []),
+    ];
+    return sections.join('\n\n').trim();
+  };
+
+  const initialCount = Math.min(5, Math.max(1, topFiveItems.length));
+  const candidates: Array<[number | undefined, number | undefined, number, number | undefined]> = [
+    [undefined, undefined, initialCount, undefined],
+    [undefined, undefined, initialCount, 80],
+    [undefined, undefined, initialCount, 48],
+    [undefined, undefined, initialCount, 24],
+    [undefined, undefined, 3, 32],
+    [undefined, undefined, 2, 28],
+    [undefined, undefined, 1, 24],
+    [undefined, undefined, 0, undefined],
+    [60, 24, 0, undefined],
+    [40, 16, 0, undefined],
+  ];
+
+  for (const [storeCap, methodCap, count, itemCap] of candidates) {
+    const built = assemble(storeCap, methodCap, count, itemCap);
+    if (built.length <= maxChars) {
+      return built;
+    }
+  }
+
+  // Fallback when custom payment method rows themselves exceed maxChars:
+  // keep all financial totals intact and fit as many payment rows as possible.
+  const storeName = truncateUtf16Safe(rawBusinessName.trim(), 40);
+  const corePrefix = [
+    [
+      `*${storeName}*`,
+      printLabel(language, 'dashboard.dailySalesWhatsAppTitle'),
+      periodLine,
+      countsLine,
+    ].join('\n'),
+    financialLines.join('\n'),
+    `*${printLabel(language, 'dashboard.paymentMethods')}*`,
+  ].join('\n\n');
+
+  if (corePrefix.length >= maxChars) {
+    return truncateUtf16Safe(corePrefix, maxChars);
+  }
+
+  const lines = [corePrefix];
+  let currentLen = corePrefix.length;
+  const paymentRows = buildPaymentLines(16).slice(1);
+  for (let i = 0; i < paymentRows.length; i++) {
+    const row = paymentRows[i];
+    const remaining = paymentRows.length - i - 1;
+    const reserve = remaining > 0 ? 5 : 0;
+    if (currentLen + 1 + row.length + reserve <= maxChars) {
+      lines.push(row);
+      currentLen += 1 + row.length;
+    } else {
+      if (currentLen + 4 <= maxChars) lines.push('...');
+      break;
+    }
+  }
+  return lines.join('\n');
 }

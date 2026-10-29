@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "Invia il report su WhatsApp",
     "recipientPhone": "Numero di telefono del destinatario",
     "reportSentSuccess": "Report inviato correttamente su WhatsApp",
+    "reportSubmittedPending": "Report inviato a WhatsApp; in attesa di conferma di consegna",
     "reportOpeningWhatsAppWeb": "Apertura di WhatsApp con il report...",
     "salesSummary": "RIEPILOGO VENDITE",
     "paymentBreakdown": "PAGAMENTI",
@@ -446,7 +447,8 @@
     "costUnknown": "Costo sconosciuto",
     "partialCost": "Costo parziale",
     "ingredientCostLabel": "Costo: {amount}",
-    "profitMarginLabel": "Profitto: {profit} ({margin})"
+    "profitMarginLabel": "Profitto: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Report vendite giornaliere"
   },
   "expenses": {
     "addTitle": "Aggiungi spesa",
@@ -3289,7 +3291,9 @@
       "no_qr": "Nessun QR disponibile. Avvia prima una sessione di abbinamento.",
       "phone_not_in_blocklist": "Il telefono non è nella blocklist",
       "phone_required": "Numero di telefono obbligatorio",
-      "phone_required_pairing": "Telefono obbligatorio per il codice di abbinamento"
+      "phone_required_pairing": "Telefono obbligatorio per il codice di abbinamento",
+      "invalid_phone": "Inserisci un numero di telefono valido in formato internazionale",
+      "owner_required": "Solo il titolare del negozio può configurare l’invio automatico del Report Z"
     },
     "automation": {
       "autoOptOutLabel": "Disiscrizione automatica con STOP / UNSUBSCRIBE (aggiunge alla lista bloccati)",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "Giorni di inattività",
       "thresholdHours": "Ore di attesa",
       "thresholdPoints": "Soglia punti",
-      "thresholdVisits": "Ogni N visite"
+      "thresholdVisits": "Ogni N visite",
+      "ruleZReportDayCloseHint": "Invia automaticamente il Report Z a un numero configurato dal titolare dopo la chiusura giornaliera.",
+      "zReportOwnerOnlyHint": "Solo il titolare del negozio può modificare questa regola.",
+      "zReportRecipientLabel": "Telefono destinatario (E.164)"
     },
     "blocklist": {
       "addCta": "Aggiungi",
@@ -3416,7 +3423,8 @@
       "auto_followup": "Follow-up automatico",
       "bill_receipt": "Ricevuta conto",
       "manual_reply": "Risposta manuale",
-      "z_report": "Report Z"
+      "z_report": "Report Z",
+      "daily_sales_report": "Report vendite giornaliere"
     },
     "lastError": {
       "cooldown": "L'invio è temporaneamente in pausa.",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "Richiesta recensione",
       "nth_visit": "Traguardo visite",
       "points_threshold": "Traguardo punti fedeltà",
-      "winback": "Recupero clienti inattivi"
+      "winback": "Recupero clienti inattivi",
+      "z_report_day_close": "Report Z a chiusura giornata"
     },
     "send": {
       "customerPhoneRequired": "Aggiungi il numero di telefono di questo cliente prima di inviare.",

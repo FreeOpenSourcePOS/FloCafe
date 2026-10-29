@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "WhatsApp मा प्रतिवेदन पठाउनुहोस्",
     "recipientPhone": "प्रापकको फोन नम्बर",
     "reportSentSuccess": "प्रतिवेदन WhatsApp मा सफलतापूर्वक पठाइयो",
+    "reportSubmittedPending": "प्रतिवेदन WhatsApp मा पेस गरियो; डेलिभरी पुष्टिको प्रतीक्षामा",
     "reportOpeningWhatsAppWeb": "प्रतिवेदनसहित WhatsApp खोलिँदैछ...",
     "salesSummary": "बिक्री सारांश",
     "paymentBreakdown": "भुक्तानी",
@@ -446,7 +447,8 @@
     "costUnknown": "लागत थाहा छैन",
     "partialCost": "आंशिक लागत",
     "ingredientCostLabel": "लागत: {amount}",
-    "profitMarginLabel": "नाफा: {profit} ({margin})"
+    "profitMarginLabel": "नाफा: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "दैनिक बिक्री प्रतिवेदन"
   },
   "expenses": {
     "addTitle": "खर्च थप्नुहोस्",
@@ -3276,7 +3278,9 @@
       "no_qr": "कुनै QR उपलब्ध छैन। पहिले एक जोडी सत्र सुरु गर्नुहोस्।",
       "phone_not_in_blocklist": "फोन ब्लकलिस्टमा छैन",
       "phone_required": "फोन नम्बर आवश्यक छ",
-      "phone_required_pairing": "जोडा कोडको लागि फोन आवश्यक छ"
+      "phone_required_pairing": "जोडा कोडको लागि फोन आवश्यक छ",
+      "invalid_phone": "अन्तर्राष्ट्रिय ढाँचामा मान्य फोन नम्बर प्रविष्ट गर्नुहोस्",
+      "owner_required": "स्टोर धनीले मात्र स्वचालित Z प्रतिवेदन पठाउने सेटिङ मिलाउन सक्छन्"
     },
     "automation": {
       "autoOptOutLabel": "STOP / UNSUBSCRIBE आउँदा स्वतः अप्ट-आउट (ब्लकलिस्टमा थप्छ)",
@@ -3317,7 +3321,10 @@
       "thresholdDays": "निष्क्रिय दिनहरू",
       "thresholdHours": "ढिलाइ घण्टा",
       "thresholdPoints": "पोइन्ट सीमा",
-      "thresholdVisits": "हरेक N भ्रमण"
+      "thresholdVisits": "हरेक N भ्रमण",
+      "ruleZReportDayCloseHint": "दिन बन्द भएपछि धनीले तोकेको फोन नम्बरमा स्वचालित रूपमा Z प्रतिवेदन पठाउनुहोस्।",
+      "zReportOwnerOnlyHint": "यो नियम स्टोर धनीले मात्र परिवर्तन गर्न सक्छन्।",
+      "zReportRecipientLabel": "प्राप्तकर्ता फोन (E.164)"
     },
     "blocklist": {
       "addCta": "थप्नुहोस्",
@@ -3403,7 +3410,8 @@
       "auto_followup": "स्वत: फलो-अप",
       "bill_receipt": "बिल रसिद",
       "manual_reply": "म्यानुअल जवाफ",
-      "z_report": "Z प्रतिवेदन"
+      "z_report": "Z प्रतिवेदन",
+      "daily_sales_report": "दैनिक बिक्री प्रतिवेदन"
     },
     "lastError": {
       "cooldown": "पठाउने कार्य अस्थायी रूपमा रोकिएको छ।",
@@ -3418,7 +3426,8 @@
       "feedback_delay": "प्रतिक्रिया फलो-अप",
       "nth_visit": "भ्रमण उपलब्धि",
       "points_threshold": "लोयल्टी पोइन्ट सीमा",
-      "winback": "निष्क्रिय ग्राहक पुनरागमन"
+      "winback": "निष्क्रिय ग्राहक पुनरागमन",
+      "z_report_day_close": "दिन बन्द हुँदा Z प्रतिवेदन"
     },
     "send": {
       "customerPhoneRequired": "पठाउनु अघि यो ग्राहकको फोन नम्बर थप्नुहोस्।",

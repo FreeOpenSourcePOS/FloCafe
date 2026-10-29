@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "رپورٹ WhatsApp پر بھیجیں",
     "recipientPhone": "وصول کنندہ کا فون نمبر",
     "reportSentSuccess": "رپورٹ کامیابی سے WhatsApp پر بھیج دی گئی",
+    "reportSubmittedPending": "رپورٹ WhatsApp کو جمع کرا دی گئی؛ ترسیل کی تصدیق کا انتظار ہے",
     "reportOpeningWhatsAppWeb": "رپورٹ کے ساتھ WhatsApp کھولا جا رہا ہے...",
     "salesSummary": "فروخت کا خلاصہ",
     "paymentBreakdown": "ادائیگیاں",
@@ -446,7 +447,8 @@
     "costUnknown": "لاگت نامعلوم",
     "partialCost": "جزوی لاگت",
     "ingredientCostLabel": "لاگت: {amount}",
-    "profitMarginLabel": "منافع: {profit} ({margin})"
+    "profitMarginLabel": "منافع: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "روزانہ فروخت کی رپورٹ"
   },
   "expenses": {
     "addTitle": "خرچ شامل کریں",
@@ -3289,7 +3291,9 @@
       "no_qr": "کوئی QR دستیاب نہیں۔ پہلے جوڑی کا سیشن شروع کریں۔",
       "phone_not_in_blocklist": "فون نمبر بلاک لسٹ میں نہیں",
       "phone_required": "فون نمبر درکار ہے",
-      "phone_required_pairing": "جوڑی کے کوڈ کے لیے فون نمبر درکار ہے"
+      "phone_required_pairing": "جوڑی کے کوڈ کے لیے فون نمبر درکار ہے",
+      "invalid_phone": "بین الاقوامی فارمیٹ میں درست فون نمبر درج کریں",
+      "owner_required": "صرف اسٹور مالک خودکار Z رپورٹ کی ترسیل ترتیب دے سکتا ہے"
     },
     "automation": {
       "autoOptOutLabel": "STOP / UNSUBSCRIBE موصول ہونے پر خودکار ان سبسکرائب (بلاک لسٹ میں شامل کریں)",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "غیر فعال دن",
       "thresholdHours": "تاخیر کے گھنٹے",
       "thresholdPoints": "پوائنٹس کی حد",
-      "thresholdVisits": "ہر N وزٹس"
+      "thresholdVisits": "ہر N وزٹس",
+      "ruleZReportDayCloseHint": "دن بند ہونے کے بعد مالک کے مقرر کردہ فون نمبر پر خودکار طور پر Z رپورٹ بھیجیں۔",
+      "zReportOwnerOnlyHint": "صرف اسٹور مالک اس اصول کو تبدیل کر سکتا ہے۔",
+      "zReportRecipientLabel": "وصول کنندہ کا فون (E.164)"
     },
     "blocklist": {
       "addCta": "شامل کریں",
@@ -3416,7 +3423,8 @@
       "auto_followup": "خودکار فالو اپ",
       "bill_receipt": "بل کی رسید",
       "manual_reply": "دستی جواب",
-      "z_report": "Z رپورٹ"
+      "z_report": "Z رپورٹ",
+      "daily_sales_report": "روزانہ فروخت کی رپورٹ"
     },
     "lastError": {
       "cooldown": "بھیجنا عارضی طور پر روکا گیا ہے۔",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "فیڈ بیک فالو اپ",
       "nth_visit": "وزٹ سنگ میل",
       "points_threshold": "وفاداری پوائنٹس سنگ میل",
-      "winback": "غیر فعال کسٹمر واپسی"
+      "winback": "غیر فعال کسٹمر واپسی",
+      "z_report_day_close": "دن بند ہونے پر Z رپورٹ"
     },
     "send": {
       "customerPhoneRequired": "بھیجنے سے پہلے اس گاہک کا فون نمبر شامل کریں۔",

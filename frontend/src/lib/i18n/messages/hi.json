@@ -418,6 +418,7 @@
     "sendWhatsAppTitle": "WhatsApp पर रिपोर्ट भेजें",
     "recipientPhone": "प्राप्तकर्ता का फ़ोन नंबर",
     "reportSentSuccess": "रिपोर्ट WhatsApp पर सफलतापूर्वक भेजी गई",
+    "reportSubmittedPending": "रिपोर्ट WhatsApp को सबमिट कर दी गई है; डिलीवरी पुष्टि की प्रतीक्षा है",
     "reportOpeningWhatsAppWeb": "रिपोर्ट के साथ WhatsApp खुल रहा है...",
     "salesSummary": "बिक्री सारांश",
     "paymentBreakdown": "भुगतान",
@@ -446,7 +447,8 @@
     "costUnknown": "लागत अज्ञात",
     "partialCost": "आंशिक लागत",
     "ingredientCostLabel": "लागत: {amount}",
-    "profitMarginLabel": "लाभ: {profit} ({margin})"
+    "profitMarginLabel": "लाभ: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "दैनिक बिक्री रिपोर्ट"
   },
   "expenses": {
     "addTitle": "व्यय जोड़ें",
@@ -3289,7 +3291,9 @@
       "no_qr": "कोई क्यूआर उपलब्ध नहीं है. पहले युग्मन सत्र प्रारंभ करें.",
       "phone_not_in_blocklist": "फ़ोन ब्लॉकलिस्ट में नहीं है",
       "phone_required": "फ़ोन नंबर आवश्यक है",
-      "phone_required_pairing": "पेयरिंग कोड के लिए फ़ोन आवश्यक है"
+      "phone_required_pairing": "पेयरिंग कोड के लिए फ़ोन आवश्यक है",
+      "invalid_phone": "अंतरराष्ट्रीय प्रारूप में एक मान्य फ़ोन नंबर दर्ज करें",
+      "owner_required": "केवल स्टोर स्वामी ही स्वचालित Z रिपोर्ट भेजना कॉन्फ़िगर कर सकता है"
     },
     "automation": {
       "autoOptOutLabel": "STOP / UNSUBSCRIBE आने पर स्वतः ऑप्ट-आउट (ब्लॉकलिस्ट में जोड़ता है)",
@@ -3330,7 +3334,10 @@
       "thresholdDays": "निष्क्रिय दिन",
       "thresholdHours": "देरी के घंटे",
       "thresholdPoints": "पॉइंट्स सीमा",
-      "thresholdVisits": "हर N विज़िट"
+      "thresholdVisits": "हर N विज़िट",
+      "ruleZReportDayCloseHint": "दिन बंद होने के बाद स्वामी द्वारा निर्धारित फ़ोन नंबर पर स्वचालित रूप से Z रिपोर्ट भेजें।",
+      "zReportOwnerOnlyHint": "केवल स्टोर स्वामी इस नियम को बदल सकता है।",
+      "zReportRecipientLabel": "प्राप्तकर्ता फ़ोन (ई.164)"
     },
     "blocklist": {
       "addCta": "जोड़ें",
@@ -3416,7 +3423,8 @@
       "auto_followup": "ऑटो अनुवर्ती",
       "bill_receipt": "बिल रसीद",
       "manual_reply": "मैन्युअल उत्तर",
-      "z_report": "Z रिपोर्ट"
+      "z_report": "Z रिपोर्ट",
+      "daily_sales_report": "दैनिक बिक्री रिपोर्ट"
     },
     "lastError": {
       "cooldown": "भेजना अस्थायी रूप से रोक दिया गया है.",
@@ -3431,7 +3439,8 @@
       "feedback_delay": "फ़ीडबैक फ़ॉलो-अप",
       "nth_visit": "विज़िट उपलब्धि",
       "points_threshold": "लॉयल्टी पॉइंट्स उपलब्धि",
-      "winback": "निष्क्रिय ग्राहक वापसी"
+      "winback": "निष्क्रिय ग्राहक वापसी",
+      "z_report_day_close": "दिन बंद होने पर Z रिपोर्ट"
     },
     "send": {
       "customerPhoneRequired": "भेजने से पहले इस ग्राहक का फ़ोन नंबर जोड़ें.",

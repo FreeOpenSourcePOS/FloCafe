@@ -42,6 +42,7 @@ import { roundCurrencyCost } from '../services/supplies';
 import {
   buildDailySalesExportDataset,
   DailySalesExportValidationError,
+  formatDailySalesWhatsAppMessage,
   parseValidBusinessDate,
   resolveDailySalesExportRange,
   type DailySalesCostStatus,
@@ -1846,6 +1847,104 @@ router.post(
       return res.status(status).json({ error: result.error, reason: result.reason });
     }
     return res.json({ success: true, messageId: result.messageId });
+  },
+);
+
+router.post(
+  '/daily-sales/whatsapp',
+  requirePermission('reports.view'),
+  requirePermission('reports.daily-sales.export'),
+  requirePermission('whatsapp.use'),
+  async (req: Request, res: Response) => {
+    try {
+      const payload =
+        req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+      const phoneE164 = payload.phone_e164;
+      if (typeof phoneE164 !== 'string' || !phoneE164.trim()) {
+        return res.status(400).json({ error: 'phone_e164 required', reason: 'phone_required' });
+      }
+      const parsedPhone = parsePhoneE164(phoneE164.trim(), getSettingValue('country') || '');
+      if (!parsedPhone) {
+        return res
+          .status(400)
+          .json({ error: 'Valid phone_e164 required', reason: 'invalid_phone' });
+      }
+
+      const range = resolveDailySalesExportRange(
+        {
+          date: payload.date,
+          from: payload.from,
+          to: payload.to,
+          defaultDate: reportToday(),
+        },
+        reportToday(),
+      );
+
+      const dataset = buildDailySalesExportDataset({
+        from: range.fromDate,
+        to: range.toDate,
+      });
+      const body = formatDailySalesWhatsAppMessage(dataset, {
+        maxChars: whatsapp.MAX_BODY_CHARS,
+      });
+
+      const userId = (req as Request & { user?: { userId?: string } }).user?.userId ?? null;
+      const result = await trackHttpRequestWork(
+        req,
+        whatsapp.sendMessage({
+          phoneE164: parsedPhone.e164,
+          body,
+          billId: null,
+          customerId: null,
+          kind: 'daily_sales_report',
+          userId,
+          signal: getHttpRequestSignal(req),
+        }),
+      );
+
+      if (!result.ok) {
+        if (result.reason === 'not_connected') {
+          return res.json({ fallback: true, reason: 'not_connected', body });
+        }
+        const status = result.reason === 'cooldown' || result.reason === 'rate_limited' ? 429 : 400;
+        return res.status(status).json({ error: result.error, reason: result.reason });
+      }
+
+      const deliveryStatus: 'sent' | 'submitted' =
+        typeof whatsapp.waitForMessageAck === 'function' && result.messageId != null
+          ? await trackHttpRequestWork(
+              req,
+              whatsapp.waitForMessageAck(result.messageId, 1500, getHttpRequestSignal(req)),
+            )
+          : (result as { deliveryStatus?: string; acknowledged?: boolean }).deliveryStatus ===
+                'sent' || (result as { acknowledged?: boolean }).acknowledged === true
+            ? 'sent'
+            : 'submitted';
+
+      return res.json({ success: true, deliveryStatus, messageId: result.messageId, body });
+    } catch (error: unknown) {
+      if (error instanceof DailySalesExportValidationError) {
+        return res.status(400).json({ error: error.message, reason: 'invalid_range' });
+      }
+      const statusCode =
+        typeof error === 'object' && error !== null
+          ? (error as { statusCode?: number }).statusCode
+          : undefined;
+      const message = error instanceof Error ? error.message : 'Internal server error';
+      if (statusCode === 400) {
+        return res.status(400).json({
+          error: error instanceof Error ? error.message : 'Invalid export request',
+          reason: 'invalid_range',
+        });
+      }
+      if (statusCode === 409) {
+        return res.status(409).json({ error: message });
+      }
+      console.error('[API] Daily sales WhatsApp send error:', error);
+      return res
+        .status(statusCode || 500)
+        .json({ error: statusCode ? message : 'Internal server error' });
+    }
   },
 );
 

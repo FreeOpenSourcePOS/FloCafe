@@ -115,9 +115,7 @@ const { refundRoutes } = require('../main/routes/refunds');
 const { resetSuccessfulLogin } = require('../main/middleware/security');
 
 function makeToken(id: string, role: string, email: string) {
-  const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), {
-    expiresIn: '1h',
-  });
+  const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -135,34 +133,26 @@ async function run() {
   ).run(ts);
 
   // Seed owner (PIN 2468) and manager (PIN 1357)
-  db.prepare(
-    `
+  db.prepare(`
     INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
     VALUES ('owner-1', 'Alice Owner', 'owner@test.local', ?, 'owner', ?, 1, ?, ?)
-  `,
-  ).run(bcrypt.hashSync('OwnerPass1!', 10), bcrypt.hashSync('2468', 10), ts, ts);
+  `).run(bcrypt.hashSync('OwnerPass1!', 10), bcrypt.hashSync('2468', 10), ts, ts);
 
-  db.prepare(
-    `
+  db.prepare(`
     INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
     VALUES ('mgr-1', 'Bob Manager', 'manager@test.local', ?, 'manager', ?, 1, ?, ?)
-  `,
-  ).run(bcrypt.hashSync('MgrPass1!', 10), bcrypt.hashSync('1357', 10), ts, ts);
+  `).run(bcrypt.hashSync('MgrPass1!', 10), bcrypt.hashSync('1357', 10), ts, ts);
 
   // Seed user without PIN (server) and inactive user with PIN
-  db.prepare(
-    `
+  db.prepare(`
     INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
     VALUES ('server-no-pin', 'NoPin Server', 'server@test.local', ?, 'server', NULL, 1, ?, ?)
-  `,
-  ).run(bcrypt.hashSync('SrvPass1!', 10), ts, ts);
+  `).run(bcrypt.hashSync('SrvPass1!', 10), ts, ts);
 
-  db.prepare(
-    `
+  db.prepare(`
     INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
     VALUES ('inactive-pin', 'Inactive Chef', 'inactive@test.local', ?, 'chef', ?, 0, ?, ?)
-  `,
-  ).run(bcrypt.hashSync('ChefPass1!', 10), bcrypt.hashSync('9999', 10), ts, ts);
+  `).run(bcrypt.hashSync('ChefPass1!', 10), bcrypt.hashSync('9999', 10), ts, ts);
 
   const ownerAuth = makeToken('owner-1', 'owner', 'owner@test.local');
   const managerAuth = makeToken('mgr-1', 'manager', 'manager@test.local');
@@ -272,11 +262,7 @@ async function run() {
     .prepare(
       "SELECT user_id, outcome, details_json FROM auth_audit_log WHERE event_type = 'pin_login' AND outcome = 'failure' ORDER BY id ASC",
     )
-    .all() as Array<{
-    user_id: string | null;
-    outcome: string;
-    details_json: string | null;
-  }>;
+    .all() as Array<{ user_id: string | null; outcome: string; details_json: string | null }>;
   assertOrThrow(
     missingAuditRows.some(
       (r) => r.user_id === null && String(r.details_json).includes('missing_user_id'),
@@ -386,6 +372,11 @@ async function run() {
       401,
       `Rotated IP attempt ${attempt} (10.10.0.${attempt}) returns 401`,
     );
+    assertEqualOrThrow(
+      resIp.body.attempts_remaining,
+      5 - attempt,
+      `Rotated IP attempt ${attempt} reports ${5 - attempt} attempts remaining on account bucket`,
+    );
   }
   const lockedAcrossIps = await request(app)
     .post('/api/auth/pin-login')
@@ -396,7 +387,43 @@ async function run() {
     429,
     '6th attempt from a fresh source IP returns 429 due to per-account lockout',
   );
+  const rotatedIpAuditRows = db
+    .prepare(
+      "SELECT user_id, outcome, ip_address FROM auth_audit_log WHERE event_type = 'pin_login' AND ip_address = '10.10.0.99'",
+    )
+    .all() as Array<{ user_id: string; outcome: string; ip_address: string }>;
+  assertOrThrow(
+    rotatedIpAuditRows.some((r) => r.user_id === cashierId && r.outcome === 'rate_limited'),
+    'Audit log records rate_limited on 6th attempt from rotated source IP 10.10.0.99',
+  );
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    resetSuccessfulLogin(`10.10.0.${attempt}:pin:${cashierId}`);
+  }
+  resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
+
+  // Concurrent failed attempts across distinct source IPs are serialized by withPinVerificationLock(accountRateKey)
+  const concurrentCrossIpResponses = await Promise.all(
+    Array.from({ length: 8 }, (_, idx) =>
+      request(app)
+        .post('/api/auth/pin-login')
+        .set('X-Forwarded-For', `10.20.0.${idx + 1}`)
+        .send({ user_id: cashierId, pin: '0000' }),
+    ),
+  );
+  assertEqualOrThrow(
+    concurrentCrossIpResponses.filter((r) => r.status === 401).length,
+    5,
+    'Concurrent cross-IP wrong-PIN burst is serialized by withPinVerificationLock and allows only 5 attempts (401)',
+  );
+  assertEqualOrThrow(
+    concurrentCrossIpResponses.filter((r) => r.status === 429).length,
+    3,
+    'Remaining 3 concurrent cross-IP wrong-PIN requests receive 429 rate-limited',
+  );
   app.set('trust proxy', false);
+  for (let idx = 1; idx <= 8; idx++) {
+    resetSuccessfulLogin(`10.20.0.${idx}:pin:${cashierId}`);
+  }
   resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
 
   // ── 5. Cashier PIN rejected on EVERY approval endpoint ──
@@ -434,12 +461,10 @@ async function run() {
   // Even when a store grants cashier route permissions for discounts, item cancel, and refunds,
   // cashier PINs must STILL be rejected on every PIN approval check (only owner/manager PINs approve).
   for (const permId of ['bills.discount.apply', 'orders.item.cancel', 'refunds.initiate']) {
-    db.prepare(
-      `
+    db.prepare(`
       INSERT OR REPLACE INTO role_permission_overrides (role, permission_id, effect, updated_by, updated_at)
       VALUES ('cashier', ?, 'allow', 'owner-1', ?)
-    `,
-    ).run(permId, ts);
+    `).run(permId, ts);
   }
 
   // Seed an active order + item + bill for discount, void, status, kitchen-delivery, charge waiver, and refund tests
@@ -484,32 +509,26 @@ async function run() {
     },
   ]);
 
-  db.prepare(
-    `
+  db.prepare(`
     INSERT INTO orders (order_number, type, table_id, subtotal, tax_amount, service_charge, charges_breakdown, total, status, user_id, created_at, updated_at)
     VALUES ('ORD-PIN-001', 'dine_in', ?, 100, 0, 10, ?, 110, 'preparing', ?, ?, ?)
-  `,
-  ).run(tableId, initialChargesBreakdown, cashierId, ts, ts);
+  `).run(tableId, initialChargesBreakdown, cashierId, ts, ts);
   const orderId = (
     db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-PIN-001'").get() as any
   ).id;
 
-  db.prepare(
-    `
+  db.prepare(`
     INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total, status, created_at, updated_at)
     VALUES (?, ?, 'Espresso', 1, 100, 100, 0, 100, 'preparing', ?, ?)
-  `,
-  ).run(orderId, prodId, ts, ts);
+  `).run(orderId, prodId, ts, ts);
   const orderItemId = (
     db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any
   ).id;
 
-  db.prepare(
-    `
+  db.prepare(`
     INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, service_charge, packaging_charge, charges_breakdown, total, paid_amount, balance, payment_status, created_at, updated_at)
     VALUES ('BILL-PIN-001', ?, 100, 0, 10, 0, ?, 110, 0, 110, 'unpaid', ?, ?)
-  `,
-  ).run(orderId, initialChargesBreakdown, ts, ts);
+  `).run(orderId, initialChargesBreakdown, ts, ts);
   const billId = (
     db.prepare("SELECT id FROM bills WHERE bill_number = 'BILL-PIN-001'").get() as any
   ).id;
@@ -529,12 +548,7 @@ async function run() {
   const billDiscCashierTargeted = await request(app)
     .post(`/api/bills/${billId}/discount`)
     .set(cashierAuth)
-    .send({
-      type: 'percentage',
-      value: 10,
-      approver_id: cashierId,
-      override_pin: '7777',
-    });
+    .send({ type: 'percentage', value: 10, approver_id: cashierId, override_pin: '7777' });
   assertEqualOrThrow(
     billDiscCashierTargeted.status,
     403,
@@ -546,21 +560,13 @@ async function run() {
   const orderDiscCashier = await request(app)
     .patch(`/api/orders/${orderId}/discount`)
     .set(cashierAuth)
-    .send({
-      discount_type: 'percentage',
-      discount_value: 10,
-      override_pin: '7777',
-    });
+    .send({ discount_type: 'percentage', discount_value: 10, override_pin: '7777' });
   assertEqualOrThrow(orderDiscCashier.status, 403, 'Order discount rejects cashier PIN with 403');
 
   const itemDiscCashier = await request(app)
     .patch(`/api/orders/${orderId}/items/${orderItemId}/discount`)
     .set(cashierAuth)
-    .send({
-      discount_type: 'percentage',
-      discount_value: 10,
-      override_pin: '7777',
-    });
+    .send({ discount_type: 'percentage', discount_value: 10, override_pin: '7777' });
   assertEqualOrThrow(
     itemDiscCashier.status,
     403,
@@ -582,32 +588,24 @@ async function run() {
   const itemVoidCashierTargeted = await request(app)
     .patch(`/api/orders/${orderId}/items/${orderItemId}/cancel`)
     .set(cashierAuth)
-    .send({
-      reason: 'Customer changed mind',
-      approver_id: cashierId,
-      override_pin: '7777',
-    });
+    .send({ reason: 'Customer changed mind', approver_id: cashierId, override_pin: '7777' });
   assertEqualOrThrow(
     itemVoidCashierTargeted.status,
     403,
     'In-progress item void rejects cashier PIN (targeted approver_id) with 403',
   );
 
-  db.prepare(
-    `
+  db.prepare(`
     INSERT INTO orders (order_number, type, status, subtotal, tax_amount, total, created_at, updated_at)
     VALUES ('ORD-PIN-VOID-002', 'dine_in', 'preparing', 100, 0, 100, ?, ?)
-  `,
-  ).run(ts, ts);
+  `).run(ts, ts);
   const voidOrder2Id = (
     db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-PIN-VOID-002'").get() as any
   ).id;
-  db.prepare(
-    `
+  db.prepare(`
     INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total, status, created_at, updated_at)
     VALUES (?, ?, 'Espresso', 1, 100, 100, 0, 100, 'preparing', ?, ?)
-  `,
-  ).run(voidOrder2Id, prodId, ts, ts);
+  `).run(voidOrder2Id, prodId, ts, ts);
   const voidOrder2ItemId = (
     db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(voidOrder2Id) as any
   ).id;
@@ -642,11 +640,7 @@ async function run() {
   const orderCompleteCashier = await request(app)
     .patch(`/api/orders/${orderId}/status`)
     .set(cashierAuth)
-    .send({
-      status: 'completed',
-      approver_id: cashierId,
-      override_pin: '7777',
-    });
+    .send({ status: 'completed', approver_id: cashierId, override_pin: '7777' });
   assertEqualOrThrow(
     orderCompleteCashier.status,
     403,
@@ -977,12 +971,7 @@ async function run() {
   // Resolve stale /auth/me from owner-1's previous session and confirm it is ignored
   staleMeResolver({
     data: {
-      user: {
-        id: 'owner-1',
-        name: 'Alice Owner',
-        email: 'owner@test.local',
-        role: 'owner',
-      },
+      user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
       tenants: [{ id: 1, business_name: 'Test Cafe', role: 'owner' }],
     },
   });

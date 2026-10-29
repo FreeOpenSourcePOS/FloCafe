@@ -205,12 +205,7 @@ export async function preVerifyKitchenDeliveryPin(
           "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
         )
         .get(explicitApproverId) as
-        | {
-            id: string;
-            role: string;
-            pin_hash: string | null;
-            is_active: number;
-          }
+        | { id: string; role: string; pin_hash: string | null; is_active: number }
         | undefined;
       if (
         !candidate ||
@@ -220,9 +215,7 @@ export async function preVerifyKitchenDeliveryPin(
         !(await verifyPinAsync(candidate.pin_hash, overridePin))
       ) {
         checkPinRateLimit(rateLimitKey);
-        throw Object.assign(new Error('Invalid manager PIN'), {
-          statusCode: 403,
-        });
+        throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
       }
       clearPinRateLimit(rateLimitKey);
       return { id: candidate.id, verifiedPinHash: candidate.pin_hash };
@@ -284,22 +277,18 @@ export function checkKitchenDeliveryStatus(
     db.prepare('SELECT 1 FROM bill_items WHERE bill_id = ? LIMIT 1').get(billId);
   const undeliveredItems = hasBillItems
     ? (db
-        .prepare(
-          `
+        .prepare(`
         SELECT oi.product_name FROM bill_items bi
         JOIN order_items oi ON oi.id = bi.order_item_id
         WHERE bi.bill_id = ? AND bi.quantity > 0 AND oi.order_id = ?
           AND oi.status IN ('pending', 'preparing', 'ready')
-      `,
-        )
+      `)
         .all(billId, orderId) as { product_name: string }[])
     : (db
-        .prepare(
-          `
+        .prepare(`
         SELECT product_name FROM order_items
         WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
-      `,
-        )
+      `)
         .all(orderId) as { product_name: string }[]);
   if (undeliveredItems.length === 0) return { allowed: true, count: 0, items: [] };
 
@@ -332,12 +321,7 @@ export function checkKitchenDeliveryStatus(
           "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
         )
         .get(preVerifiedManager.id) as
-        | {
-            id: string;
-            role: string;
-            pin_hash: string | null;
-            is_active: number;
-          }
+        | { id: string; role: string; pin_hash: string | null; is_active: number }
         | undefined;
       if (
         candidate &&
@@ -381,13 +365,7 @@ export function checkKitchenDeliveryStatus(
     throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
   }
   clearPinRateLimit(rateLimitKey);
-  return {
-    allowed: true,
-    count: items.length,
-    items,
-    overridden: true,
-    managerUserId: manager.id,
-  };
+  return { allowed: true, count: items.length, items, overridden: true, managerUserId: manager.id };
 }
 
 export function getTenantCurrency(): string {
@@ -1147,8 +1125,7 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
         const paidAmount = Number(existingBill.paid_amount || 0);
         if (totalsChanged) {
           const newBalance = Math.max(0, roundedOrderTotal - paidAmount);
-          db.prepare(
-            `
+          db.prepare(`
             UPDATE bills
             SET subtotal       = ?,
                 tax_amount     = ?,
@@ -1167,8 +1144,7 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
                 balance        = ?,
                 updated_at     = ?
             WHERE id = ?
-          `,
-          ).run(
+          `).run(
             orderSubtotal,
             orderTaxAmount,
             order.tax_breakdown,
@@ -1241,14 +1217,12 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
       );
 
       const runResult = db
-        .prepare(
-          `
+        .prepare(`
         INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
           discount_amount, discount_type, discount_value, discount_reason,
           delivery_charge, packaging_charge, service_charge, charges_breakdown, round_off, total, paid_amount, balance, payment_status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
-      `,
-        )
+      `)
         .run(
           billNumber,
           order_id,
@@ -1684,11 +1658,7 @@ function allocateTaxSnapshotsWithTax(
     return JSON.stringify(childResult);
   });
 
-  return {
-    snapshots: childSnapshots,
-    taxMinors: snapshotTaxMinors,
-    exclusiveTaxMinors,
-  };
+  return { snapshots: childSnapshots, taxMinors: snapshotTaxMinors, exclusiveTaxMinors };
 }
 
 export function allocateTaxSnapshots(
@@ -1845,11 +1815,7 @@ function allocateTaxBreakdown(
 
   const allocationGroups = new Map<
     string,
-    {
-      entries: Array<{ allocations: number[] }>;
-      weights: number[];
-      sourceMinor: number;
-    }
+    { entries: Array<{ allocations: number[] }>; weights: number[]; sourceMinor: number }
   >();
   const flatOwnerAllocations = new Array(numChecks).fill(0);
   components.forEach((comp, index) => {
@@ -2032,11 +1998,7 @@ function allocateLegacyTaxContribution(
   snapshotAllocation: TaxSnapshotAllocationResult,
   contribution: LegacyTaxContribution,
   fallbackWeights: number[],
-): {
-  legacySourceTaxMinor: number;
-  legacyTaxMinors: number[];
-  legacyExclusiveTaxMinors: number[];
-} {
+): { legacySourceTaxMinor: number; legacyTaxMinors: number[]; legacyExclusiveTaxMinors: number[] } {
   const snapshotSourceTaxMinor =
     snapshotAllocation.taxMinors === null
       ? 0
@@ -2227,10 +2189,7 @@ function resolveSplitTaxAllocations(
     return { taxMinors: fallbackTaxMinors, exclusiveTaxMinors: null };
   }
   if (legacySourceTaxMinor === sourceTaxMinor) {
-    return {
-      taxMinors: legacyTaxMinors,
-      exclusiveTaxMinors: legacyExclusiveTaxMinors,
-    };
+    return { taxMinors: legacyTaxMinors, exclusiveTaxMinors: legacyExclusiveTaxMinors };
   }
   return { taxMinors: fallbackTaxMinors, exclusiveTaxMinors: null };
 }
@@ -2547,9 +2506,7 @@ router.post(
           .prepare('SELECT * FROM orders WHERE id = ?')
           .get(txnSource.order_id) as any;
         if (txnOrder?.type !== 'dine_in')
-          throw Object.assign(new Error('Only dine-in checks can be split'), {
-            statusCode: 400,
-          });
+          throw Object.assign(new Error('Only dine-in checks can be split'), { statusCode: 400 });
         if (
           txnSource.payment_status !== 'unpaid' ||
           Number(txnSource.paid_amount || 0) !== 0 ||
@@ -2574,9 +2531,7 @@ router.post(
             ).n,
           ) > 1
         ) {
-          throw Object.assign(new Error('This check has already been split'), {
-            statusCode: 409,
-          });
+          throw Object.assign(new Error('This check has already been split'), { statusCode: 409 });
         }
 
         const tenantCurrency = getTenantCurrency();
@@ -2604,10 +2559,7 @@ router.post(
             .prepare(
               'SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ? ORDER BY order_item_id',
             )
-            .all(txnSource.id) as {
-            order_item_id: number | string;
-            quantity: number | string;
-          }[];
+            .all(txnSource.id) as { order_item_id: number | string; quantity: number | string }[];
           const wellFormed =
             sourceAllocations.length > 0 &&
             sourceAllocations.every(
@@ -2870,15 +2822,13 @@ router.post(
             billId = Number(txnSource.id);
           } else {
             const inserted = db
-              .prepare(
-                `
+              .prepare(`
             INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
               discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge,
               service_charge, charges_breakdown, round_off, total, paid_amount, balance, payment_status, split_group_id, split_label,
               created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)
-          `,
-              )
+          `)
               .run(
                 generateBillNumber(),
                 txnSource.order_id,
@@ -2971,9 +2921,7 @@ function paymentIdempotencyKey(req: Request): string | null {
   const supplied = req.get('Idempotency-Key')?.trim();
   if (!supplied) return null;
   if (supplied.length > MAX_IDEMPOTENCY_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(supplied)) {
-    throw Object.assign(new Error('Idempotency-Key is invalid or too long'), {
-      statusCode: 400,
-    });
+    throw Object.assign(new Error('Idempotency-Key is invalid or too long'), { statusCode: 400 });
   }
   return supplied;
 }
@@ -3182,11 +3130,7 @@ function preparePaymentBatch(
         `Unsupported or inactive custom payment method at line ${index + 1}`,
         'payment_method_unavailable',
       );
-    return {
-      ...payment,
-      method: configured.name,
-      payment_method_id: Number(configured.id),
-    };
+    return { ...payment, method: configured.name, payment_method_id: Number(configured.id) };
   });
   const requestedCustomerId =
     bodyCustomerId === undefined || bodyCustomerId === null || bodyCustomerId === ''
@@ -3282,13 +3226,7 @@ function preparePaymentBatch(
       ),
   );
   if (replay) {
-    return {
-      bill,
-      prepared: [],
-      existingPayments,
-      effectiveCustomerId,
-      idempotentReplay: true,
-    };
+    return { bill, prepared: [], existingPayments, effectiveCustomerId, idempotentReplay: true };
   }
   if (getSettingValue('card_transaction_id_required') === 'true') {
     resolvedPayments.forEach((payment, index) => {
@@ -3659,15 +3597,13 @@ function applyPaymentBatch(
   if (idempotencyKey && idempotencyUserId) {
     // Look up idempotency record scoped to user or legacy fallback.
     const prior = db
-      .prepare(
-        `
+      .prepare(`
       SELECT bill_id, request_hash, response_json
       FROM payment_idempotency
       WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
       ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
       LIMIT 1
-    `,
-      )
+    `)
       .get(idempotencyUserId, idempotencyKey, idempotencyUserId) as
       | { bill_id: string; request_hash: string; response_json: string }
       | undefined;
@@ -3682,9 +3618,7 @@ function applyPaymentBatch(
       try {
         return JSON.parse(prior.response_json);
       } catch {
-        throw Object.assign(new Error('Stored payment response is invalid'), {
-          statusCode: 500,
-        });
+        throw Object.assign(new Error('Stored payment response is invalid'), { statusCode: 500 });
       }
     }
   }
@@ -4042,15 +3976,13 @@ router.post(
       if (idempotencyKey && idempotencyUserId) {
         const inFlightAttemptKey = `${idempotencyUserId}:${idempotencyKey}`;
         const prior = db
-          .prepare(
-            `
+          .prepare(`
           SELECT bill_id, request_hash, response_json
           FROM payment_idempotency
           WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
           ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
           LIMIT 1
-        `,
-          )
+        `)
           .get(idempotencyUserId, idempotencyKey, idempotencyUserId) as
           | { bill_id: string; request_hash: string; response_json: string }
           | undefined;
@@ -4089,21 +4021,15 @@ router.post(
               return res.json(sharedResult);
             } catch {
               const committed = db
-                .prepare(
-                  `
+                .prepare(`
                 SELECT bill_id, request_hash, response_json
                 FROM payment_idempotency
                 WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
                 ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
                 LIMIT 1
-              `,
-                )
+              `)
                 .get(idempotencyUserId, idempotencyKey, idempotencyUserId) as
-                | {
-                    bill_id: string;
-                    request_hash: string;
-                    response_json: string;
-                  }
+                | { bill_id: string; request_hash: string; response_json: string }
                 | undefined;
               if (committed) {
                 if (
@@ -4167,15 +4093,13 @@ router.post(
         } catch (pinErr: unknown) {
           if (idempotencyKey && idempotencyUserId) {
             const committed = db
-              .prepare(
-                `
+              .prepare(`
               SELECT bill_id, request_hash, response_json
               FROM payment_idempotency
               WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
               ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
               LIMIT 1
-            `,
-              )
+            `)
               .get(idempotencyUserId, idempotencyKey, idempotencyUserId) as
               | { bill_id: string; request_hash: string; response_json: string }
               | undefined;
@@ -4313,15 +4237,13 @@ router.post(
       if (idempotencyKey && idempotencyUserId) {
         const inFlightAttemptKey = `${idempotencyUserId}:${idempotencyKey}`;
         const prior = db
-          .prepare(
-            `
+          .prepare(`
           SELECT bill_id, request_hash, response_json
           FROM payment_idempotency
           WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
           ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
           LIMIT 1
-        `,
-          )
+        `)
           .get(idempotencyUserId, idempotencyKey, idempotencyUserId) as
           | { bill_id: string; request_hash: string; response_json: string }
           | undefined;
@@ -4360,21 +4282,15 @@ router.post(
               return res.json(sharedResult);
             } catch {
               const committed = db
-                .prepare(
-                  `
+                .prepare(`
                 SELECT bill_id, request_hash, response_json
                 FROM payment_idempotency
                 WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
                 ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
                 LIMIT 1
-              `,
-                )
+              `)
                 .get(idempotencyUserId, idempotencyKey, idempotencyUserId) as
-                | {
-                    bill_id: string;
-                    request_hash: string;
-                    response_json: string;
-                  }
+                | { bill_id: string; request_hash: string; response_json: string }
                 | undefined;
               if (committed) {
                 if (
@@ -4438,15 +4354,13 @@ router.post(
         } catch (pinErr: unknown) {
           if (idempotencyKey && idempotencyUserId) {
             const committed = db
-              .prepare(
-                `
+              .prepare(`
               SELECT bill_id, request_hash, response_json
               FROM payment_idempotency
               WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
               ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
               LIMIT 1
-            `,
-              )
+            `)
               .get(idempotencyUserId, idempotencyKey, idempotencyUserId) as
               | { bill_id: string; request_hash: string; response_json: string }
               | undefined;
@@ -4647,10 +4561,9 @@ router.post(
       if (requiresApproval && value > 0) {
         const { override_pin } = req.body;
         if (!override_pin) {
-          return res.status(403).json({
-            error: 'Manager PIN required for discounts',
-            requiresApproval: true,
-          });
+          return res
+            .status(403)
+            .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
         }
         const canonicalIp = normalizeIpForRateLimit(clientIp);
         const rateLimitKey = `pin:${canonicalIp}:bill-discount`;
@@ -4662,11 +4575,7 @@ router.post(
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
         const managerId = explicitApproverId;
-        type ManagerCandidate = {
-          id: string;
-          role: string;
-          pin_hash: string | null;
-        };
+        type ManagerCandidate = { id: string; role: string; pin_hash: string | null };
         const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
           if (isPinRateLimited(rateLimitKey)) {
             return { rateLimited: true };
@@ -4723,15 +4632,9 @@ router.post(
         preVerifiedPinHash = verifiedResult.user.pin_hash ?? undefined;
       }
 
-      let preVerifiedKitchenManager: {
-        id: string;
-        verifiedPinHash: string;
-      } | null = null;
+      let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
       if (approvedByUserId && preVerifiedPinHash) {
-        preVerifiedKitchenManager = {
-          id: approvedByUserId,
-          verifiedPinHash: preVerifiedPinHash,
-        };
+        preVerifiedKitchenManager = { id: approvedByUserId, verifiedPinHash: preVerifiedPinHash };
       } else if (override_pin) {
         const initialKitchenStatus = checkKitchenDeliveryStatus(
           db,
@@ -4838,12 +4741,7 @@ router.post(
               "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
             )
             .get(approvedByUserId) as
-            | {
-                id: string;
-                role: string;
-                pin_hash: string | null;
-                is_active: number;
-              }
+            | { id: string; role: string; pin_hash: string | null; is_active: number }
             | undefined;
           if (
             !approver ||
@@ -4852,9 +4750,7 @@ router.post(
             !hasPermission(approver.id, 'bills.discount.apply') ||
             approver.pin_hash !== preVerifiedPinHash
           ) {
-            throw Object.assign(new Error('Invalid manager PIN'), {
-              statusCode: 403,
-            });
+            throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
         }
 
@@ -4890,9 +4786,7 @@ router.post(
           .prepare('SELECT * FROM orders WHERE id = ?')
           .get(currentBill.order_id) as ChargeOrderRow | undefined;
         if (!currentOrder) {
-          throw Object.assign(new Error('Order not found'), {
-            statusCode: 404,
-          });
+          throw Object.assign(new Error('Order not found'), { statusCode: 404 });
         }
         if (['completed', 'cancelled'].includes(currentOrder.status)) {
           throw Object.assign(
@@ -4976,8 +4870,7 @@ router.post(
         );
         const isNowPaid = freshPaidAmount > 0 && freshNewBalance === 0 && kitchenStatus.allowed;
 
-        db.prepare(
-          `
+        db.prepare(`
         UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
           service_charge = ?, packaging_charge = ?, charges_breakdown = ?,
@@ -4986,8 +4879,7 @@ router.post(
           paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
           updated_at = ?
         WHERE id = ?
-      `,
-        ).run(
+      `).run(
           freshTotals.subtotal,
           freshDiscountAmount,
           type,
@@ -5011,15 +4903,13 @@ router.post(
 
         // orders.total stays the exact, unrounded amount — only the bill (the
         // settlement boundary) holds the pack-rounded payable total (#170).
-        db.prepare(
-          `
+        db.prepare(`
         UPDATE orders SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
           service_charge = ?, packaging_charge = ?, charges_breakdown = ?,
           total = ?, round_off = ?, updated_at = ?
         WHERE id = ?
-      `,
-        ).run(
+      `).run(
           freshTotals.subtotal,
           freshDiscountAmount,
           type,
@@ -5329,10 +5219,9 @@ router.patch(
       let preVerifiedChargePinHash: string | undefined;
       if (requiresChargeApproval) {
         if (!override_pin) {
-          return res.status(403).json({
-            error: 'Manager PIN required to waive charges',
-            requiresApproval: true,
-          });
+          return res
+            .status(403)
+            .json({ error: 'Manager PIN required to waive charges', requiresApproval: true });
         }
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
         const canonicalIp = normalizeIpForRateLimit(clientIp);
@@ -5344,11 +5233,7 @@ router.patch(
           checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
-        type ManagerCandidate = {
-          id: string;
-          role: string;
-          pin_hash: string | null;
-        };
+        type ManagerCandidate = { id: string; role: string; pin_hash: string | null };
         const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
           if (isPinRateLimited(rateLimitKey)) {
             return { rateLimited: true };
@@ -5412,12 +5297,7 @@ router.patch(
               "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
             )
             .get(approvedByUserId) as
-            | {
-                id: string;
-                role: string;
-                pin_hash: string | null;
-                is_active: number;
-              }
+            | { id: string; role: string; pin_hash: string | null; is_active: number }
             | undefined;
           if (
             !approver ||
@@ -5426,9 +5306,7 @@ router.patch(
             !hasPermission(approver.id, 'bills.discount.apply') ||
             approver.pin_hash !== preVerifiedChargePinHash
           ) {
-            throw Object.assign(new Error('Invalid manager PIN'), {
-              statusCode: 403,
-            });
+            throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
         }
 
@@ -5544,12 +5422,10 @@ router.patch(
 
         // The order owns the authoritative breakdown; a bill that never carried one
         // inherits it so the two cannot disagree.
-        db.prepare(
-          `
+        db.prepare(`
         UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?,
           service_charge = ?, packaging_charge = ?, charges_breakdown = ?, total = ?, updated_at = ? WHERE id = ?
-      `,
-        ).run(
+      `).run(
           totals.subtotal,
           taxRollup.taxAmount,
           JSON.stringify(taxRollup.breakdowns),
@@ -5681,9 +5557,9 @@ router.post(
       // Return 404 for "Bill not found", 500 for other errors
       const statusCode = error.message?.includes('Bill not found') ? 404 : 500;
       console.error('[API] Receipt printing failed:', error);
-      res.status(statusCode).json({
-        error: statusCode >= 500 ? 'Receipt printing failed' : 'Bill not found',
-      });
+      res
+        .status(statusCode)
+        .json({ error: statusCode >= 500 ? 'Receipt printing failed' : 'Bill not found' });
     }
   }),
 );
@@ -5693,15 +5569,13 @@ router.get('/:id/print-history', requirePermission('bills.read'), (req: Request,
   try {
     const db = getDatabase();
     const prints = db
-      .prepare(
-        `
+      .prepare(`
       SELECT pl.*, u.name as user_name
       FROM print_logs pl
       LEFT JOIN users u ON pl.user_id = u.id
       WHERE pl.bill_id = ?
       ORDER BY pl.printed_at DESC
-    `,
-      )
+    `)
       .all(req.params.id);
 
     res.json({ prints });
@@ -5843,12 +5717,7 @@ router.patch(
         });
       }
 
-      type ApproverRow = {
-        id: string;
-        role: string;
-        pin_hash: string | null;
-        is_active: number;
-      };
+      type ApproverRow = { id: string; role: string; pin_hash: string | null; is_active: number };
       const preVerifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
         if (isPinRateLimited(rateLimitKey)) {
           return { rateLimited: true as const };
@@ -5875,10 +5744,7 @@ router.patch(
           ) {
             clearPinRateLimit(rateLimitKey);
             return {
-              approver: {
-                id: candidate.id,
-                verifiedPinHash: candidate.pin_hash,
-              },
+              approver: { id: candidate.id, verifiedPinHash: candidate.pin_hash },
             };
           }
         }

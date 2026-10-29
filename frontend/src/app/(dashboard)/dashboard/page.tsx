@@ -56,6 +56,7 @@ import { splitHoursMinutes } from '@/lib/table-timing';
 import { tenantCan } from '@/lib/permissions';
 import { businessDateForInstant } from '@shared/business-date';
 import { downloadBlob } from '@/lib/download';
+import { exportReportAsPdf, MenuPopupBlockedError } from '@/lib/export-pdf';
 
 interface PaymentMethodBreakdown {
   method: string | null;
@@ -255,6 +256,7 @@ export default function DashboardPage() {
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
   const tOrders = useTranslations('orders');
+  const tProducts = useTranslations('products');
   const router = useRouter();
   const [stats, setStats] = useState<DailyStats | null>(null);
   const [daySummary, setDaySummary] = useState<DaySummary | null>(null);
@@ -286,14 +288,46 @@ export default function DashboardPage() {
   });
   const [selectedDate, setSelectedDate] = useState(todayLocal);
   const [selectedMonth, setSelectedMonth] = useState(todayLocal.slice(0, 7));
-  const [periodMode, setPeriodMode] = useState<'day' | 'month'>('day');
+  const [rangeStartDate, setRangeStartDate] = useState(() => shiftDate(todayLocal, -6));
+  const [rangeEndDate, setRangeEndDate] = useState(todayLocal);
+  const [periodMode, setPeriodMode] = useState<'day' | 'month' | 'range'>('day');
   const dayInputRef = useRef<HTMLInputElement>(null);
   const monthInputRef = useRef<HTMLInputElement>(null);
+  const rangeFromInputRef = useRef<HTMLInputElement>(null);
+  const rangeToInputRef = useRef<HTMLInputElement>(null);
   const isToday = periodMode === 'day' && selectedDate === todayLocal;
   const range =
     periodMode === 'month'
       ? getMonthRange(selectedMonth)
-      : { startDate: selectedDate, endDate: selectedDate };
+      : periodMode === 'range'
+        ? { startDate: rangeStartDate, endDate: rangeEndDate }
+        : { startDate: selectedDate, endDate: selectedDate };
+
+  const handleRangeStartChange = (nextFrom: string) => {
+    if (!nextFrom) return;
+    setRangeStartDate(nextFrom);
+    if (nextFrom > rangeEndDate) {
+      setRangeEndDate(nextFrom);
+    } else {
+      const maxEnd = shiftDate(nextFrom, 92);
+      if (rangeEndDate > maxEnd) {
+        setRangeEndDate(maxEnd > todayLocal ? todayLocal : maxEnd);
+      }
+    }
+  };
+
+  const handleRangeEndChange = (nextTo: string) => {
+    if (!nextTo) return;
+    setRangeEndDate(nextTo);
+    if (nextTo < rangeStartDate) {
+      setRangeStartDate(nextTo);
+    } else {
+      const minStart = shiftDate(nextTo, -92);
+      if (rangeStartDate < minStart) {
+        setRangeStartDate(minStart);
+      }
+    }
+  };
 
   /** Opens Chromium's native calendar UI while preserving keyboard fallback. */
   const openPicker = (input: HTMLInputElement | null) => {
@@ -328,7 +362,7 @@ export default function DashboardPage() {
       ? api.get('/reports/daily-stats', { signal: controller.signal })
       : Promise.resolve(null);
     const scopedSummary =
-      periodMode === 'month'
+      periodMode !== 'day'
         ? Promise.resolve(null)
         : api.get('/reports/summary', {
             params: { date: selectedDate },
@@ -375,12 +409,18 @@ export default function DashboardPage() {
       }),
       api.get('/reports/recentOrders', {
         params:
-          periodMode === 'month'
+          periodMode !== 'day'
             ? { start_date: range.startDate, end_date: range.endDate, limit: 6 }
             : { date: selectedDate, limit: 6 },
         signal: controller.signal,
       }),
-      api.get('/reports/insights', { params: { days: 30 }, signal: controller.signal }),
+      api.get('/reports/insights', {
+        params:
+          periodMode !== 'day'
+            ? { start_date: range.startDate, end_date: range.endDate }
+            : { days: 30 },
+        signal: controller.signal,
+      }),
       comparisonRequest,
     ])
       .then(
@@ -404,7 +444,15 @@ export default function DashboardPage() {
       });
     return () => controller.abort();
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOwner, canViewFinancials, periodMode, selectedDate, selectedMonth]);
+  }, [
+    isOwner,
+    canViewFinancials,
+    periodMode,
+    selectedDate,
+    selectedMonth,
+    rangeStartDate,
+    rangeEndDate,
+  ]);
 
   // Day-close wizard lives in useCashClose + CashCloseModal; the page
   // only opens it and mounts it.
@@ -422,28 +470,50 @@ export default function DashboardPage() {
     router.replace('/dashboard', { scroll: false });
   }, [cashCloseAction, cashCloseView, openCloseModal, router]);
 
-  const exportDailySales = async (format: 'xlsx' | 'csv') => {
-    if (periodMode !== 'day' || isExporting) return;
+  const exportDailySales = async (format: 'xlsx' | 'csv' | 'pdf') => {
+    if (isExporting) return;
     setIsExporting(true);
     try {
+      const dateParams =
+        periodMode === 'day'
+          ? { date: selectedDate }
+          : { from: range.startDate, to: range.endDate };
+      const span =
+        periodMode === 'day' || range.startDate === range.endDate
+          ? range.startDate
+          : `${range.startDate}_to_${range.endDate}`;
+
+      if (format === 'pdf') {
+        await exportReportAsPdf({
+          endpoint: '/reports/daily-sales/export',
+          params: dateParams,
+          filename: `daily-sales-${span}.pdf`,
+        });
+        return;
+      }
+
       if (format === 'xlsx') {
         const res = await api.get('/reports/daily-sales/export', {
-          params: { date: selectedDate, format: 'xlsx' },
+          params: { ...dateParams, format: 'xlsx' },
           responseType: 'blob',
         });
-        downloadBlob(res.data as Blob, `daily-sales-${selectedDate}.xlsx`);
+        downloadBlob(res.data as Blob, `daily-sales-${span}.xlsx`);
         return;
       }
       toast(t('exportCsvStarted'));
-      for (const part of ['summary', 'items', 'payments'] as const) {
+      for (const part of ['summary', 'daily', 'taxes', 'items', 'payments'] as const) {
         const res = await api.get('/reports/daily-sales/export', {
-          params: { date: selectedDate, format: 'csv', part },
+          params: { ...dateParams, format: 'csv', part },
           responseType: 'blob',
         });
-        downloadBlob(res.data as Blob, `daily-sales-${selectedDate}-${part}.csv`);
+        downloadBlob(res.data as Blob, `daily-sales-${span}-${part}.csv`);
       }
-    } catch {
-      toast.error(tCommon('downloadFailed'));
+    } catch (error) {
+      toast.error(
+        error instanceof MenuPopupBlockedError
+          ? tProducts('menuPopupBlocked')
+          : tCommon('downloadFailed'),
+      );
     } finally {
       setIsExporting(false);
     }
@@ -514,7 +584,7 @@ export default function DashboardPage() {
       )
     : null;
   const primaryTiles: DashboardTile[] =
-    periodMode === 'month'
+    periodMode !== 'day'
       ? [
           {
             label: t('netCollections'),
@@ -678,7 +748,11 @@ export default function DashboardPage() {
             {t('title')}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {periodMode === 'month' ? t('selectMonth') : t('selectDate')}
+            {periodMode === 'month'
+              ? t('selectMonth')
+              : periodMode === 'range'
+                ? t('periodWindow', { start: rangeStartDate, end: rangeEndDate })
+                : t('selectDate')}
           </p>
         </div>
 
@@ -703,7 +777,7 @@ export default function DashboardPage() {
                 <CalendarDays size={16} />
               </button>
             </div>
-          ) : (
+          ) : periodMode === 'month' ? (
             <div className="relative">
               <input
                 ref={monthInputRef}
@@ -723,6 +797,52 @@ export default function DashboardPage() {
                 <CalendarDays size={16} />
               </button>
             </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <input
+                  ref={rangeFromInputRef}
+                  type="date"
+                  value={rangeStartDate}
+                  max={todayLocal}
+                  onChange={(e) => handleRangeStartChange(e.target.value)}
+                  className="h-10 appearance-none rounded-xl border border-border bg-card ps-3 pe-10 text-sm text-foreground shadow-sm [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-brand/30 dark:[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:pointer-events-none [&::-webkit-calendar-picker-indicator]:opacity-0"
+                  aria-label={t('periodStart')}
+                />
+                <button
+                  type="button"
+                  onClick={() => openPicker(rangeFromInputRef.current)}
+                  className="absolute inset-y-0 end-0 z-10 flex w-9 items-center justify-center rounded-e-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={t('openDatePicker')}
+                >
+                  <CalendarDays size={16} />
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  ref={rangeToInputRef}
+                  type="date"
+                  value={rangeEndDate}
+                  min={rangeStartDate}
+                  max={
+                    shiftDate(rangeStartDate, 92) < todayLocal
+                      ? shiftDate(rangeStartDate, 92)
+                      : todayLocal
+                  }
+                  onChange={(e) => handleRangeEndChange(e.target.value)}
+                  className="h-10 appearance-none rounded-xl border border-border bg-card ps-3 pe-10 text-sm text-foreground shadow-sm [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-brand/30 dark:[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:pointer-events-none [&::-webkit-calendar-picker-indicator]:opacity-0"
+                  aria-label={t('periodEnd')}
+                />
+                <button
+                  type="button"
+                  onClick={() => openPicker(rangeToInputRef.current)}
+                  className="absolute inset-y-0 end-0 z-10 flex w-9 items-center justify-center rounded-e-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={t('openDatePicker')}
+                >
+                  <CalendarDays size={16} />
+                </button>
+              </div>
+            </div>
           )}
 
           <div
@@ -730,7 +850,7 @@ export default function DashboardPage() {
             role="group"
             aria-label={t('periodView')}
           >
-            {(['day', 'month'] as const).map((mode) => (
+            {(['day', 'month', 'range'] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -768,19 +888,19 @@ export default function DashboardPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              {periodMode === 'day' && (
-                <>
-                  <DropdownMenuItem onSelect={() => exportDailySales('xlsx')}>
-                    <FileSpreadsheet size={14} />
-                    {t('exportXlsx')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => exportDailySales('csv')}>
-                    <FileText size={14} />
-                    {t('exportCsv')}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
+              <DropdownMenuItem onSelect={() => exportDailySales('xlsx')}>
+                <FileSpreadsheet size={14} />
+                {t('exportXlsx')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportDailySales('csv')}>
+                <FileText size={14} />
+                {t('exportCsv')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportDailySales('pdf')}>
+                <FileText size={14} />
+                {t('exportPdf')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuLabel>{t('exportCustomerSales')}</DropdownMenuLabel>
               <DropdownMenuItem onSelect={() => exportCustomerSales('xlsx')}>
                 <FileSpreadsheet size={14} />

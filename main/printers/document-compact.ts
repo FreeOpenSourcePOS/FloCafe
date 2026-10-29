@@ -3,10 +3,17 @@
 import { parseDbTimestamp } from '../db';
 import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
-import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
+import {
+  isThermalTextRepresentable,
+  type ThermalPrinterCapabilities,
+} from '../../shared/print/thermal-capabilities';
 import { receiptChargeLines } from '../../shared/charges';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
-import { displayCellWidth, padToDisplayCells, truncateToDisplayCells } from '../../shared/print/width';
+import {
+  displayCellWidth,
+  padToDisplayCells,
+  truncateToDisplayCells,
+} from '../../shared/print/width';
 import {
   addonRows,
   appendPoweredByFooter,
@@ -21,6 +28,7 @@ import {
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
+  taxBreakdownRows,
   truncate,
   truncateShapedLine,
   type PrintWarning,
@@ -80,28 +88,41 @@ function capitalize(text: string): string {
 }
 
 function compactBannerLines(label: SemanticLabel, context: ThermalLayoutContext): string[] {
-  const layout = layoutStyledUnit({
-    label: {
-      primary: `** ${label.primary} **`,
-      ...(label.secondary ? { secondary: `** ${label.secondary} **` } : {}),
+  const layout = layoutStyledUnit(
+    {
+      label: {
+        primary: `** ${label.primary} **`,
+        ...(label.secondary ? { secondary: `** ${label.secondary} **` } : {}),
+      },
+      widthMultiplier: 2,
+      field: 'reprint banner',
     },
-    widthMultiplier: 2,
-    field: 'reprint banner',
-  }, context);
+    context,
+  );
   const widthToken = layout.widthMultiplier === 2 ? '{DOUBLE_WIDTH}' : '';
   const closeWidthToken = layout.widthMultiplier === 2 ? '{/DOUBLE_WIDTH}' : '';
-  return layout.lines.map((line) => `{CENTER}{BOLD}{DOUBLE_HEIGHT}${widthToken}${normalizeThermalText(line, context.capabilities)}${closeWidthToken}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}`);
+  return layout.lines.map(
+    (line) =>
+      `{CENTER}{BOLD}{DOUBLE_HEIGHT}${widthToken}${normalizeThermalText(line, context.capabilities)}${closeWidthToken}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}`,
+  );
 }
 
 /** Column header row, composed from the document's own header labels. */
-function compactItemHeader(block: ItemTableBlock, nameLen: number, amtLen: number, language: string, capabilities?: ThermalPrinterCapabilities): string {
+function compactItemHeader(
+  block: ItemTableBlock,
+  nameLen: number,
+  amtLen: number,
+  language: string,
+  capabilities?: ThermalPrinterCapabilities,
+): string {
   const qtyW = 4;
   const itemLabel = normalizeThermalText(labelOf(block.header.item), capabilities);
   const qtyLabel = normalizeThermalText(labelOf(block.header.quantity), capabilities);
   const amountLabel = normalizeThermalText(labelOf(block.header.amount), capabilities);
-  const fit = (value: string, length: number): string => capabilities?.raster.enabled === true && !isThermalTextRepresentable(value, capabilities)
-    ? value
-    : truncateToDisplayCells(value, length);
+  const fit = (value: string, length: number): string =>
+    capabilities?.raster.enabled === true && !isThermalTextRepresentable(value, capabilities)
+      ? value
+      : truncateToDisplayCells(value, length);
   const item = padToDisplayCells(fit(itemLabel, nameLen), nameLen);
   const qty = padToDisplayCells(fit(qtyLabel, qtyW), qtyW);
   const amount = fit(amountLabel, Math.max(1, amtLen - 1));
@@ -125,17 +146,43 @@ export function renderBillDocumentToCompactLines(
   const payments = getBlock(document, 'payments') as PaymentsBlock | undefined;
   const messages = getBlock(document, 'message') as MessageBlock | undefined;
 
-  const prefix = resolveCurrencyPrefix(options.currencySymbol, options.useUnicode, options.capabilities, options.preserveCurrencySymbol === true, options.currency);
+  const prefix = resolveCurrencyPrefix(
+    options.currencySymbol,
+    options.useUnicode,
+    options.capabilities,
+    options.preserveCurrencySymbol === true,
+    options.currency,
+  );
   const fractionDigits = getCurrencyFractionDigits(options.currency);
   const trimDecimals = options.trimDecimals === true;
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
   const normalize = (text: string): string => normalizeThermalText(text, options.capabilities);
-  const markGroup = (groupId: string, start: number, sourceLines?: readonly string[], sourceControlLines?: readonly string[], financial = false, sourceLayouts?: readonly (RasterTextLayout | undefined)[]): void => {
-    if (options.rasterGroups && lines.length > start) options.rasterGroups.push({ groupId, lineIndex: start, lineCount: lines.length - start, ...(sourceLines ? { sourceLines } : {}), ...(sourceControlLines ? { sourceControlLines } : {}), ...(sourceLayouts ? { sourceLayouts } : {}), ...(financial ? { financial: true } : {}) });
+  const markGroup = (
+    groupId: string,
+    start: number,
+    sourceLines?: readonly string[],
+    sourceControlLines?: readonly string[],
+    financial = false,
+    sourceLayouts?: readonly (RasterTextLayout | undefined)[],
+  ): void => {
+    if (options.rasterGroups && lines.length > start)
+      options.rasterGroups.push({
+        groupId,
+        lineIndex: start,
+        lineCount: lines.length - start,
+        ...(sourceLines ? { sourceLines } : {}),
+        ...(sourceControlLines ? { sourceControlLines } : {}),
+        ...(sourceLayouts ? { sourceLayouts } : {}),
+        ...(financial ? { financial: true } : {}),
+      });
   };
-  const recordFinancialLines = (start: number, rendered: readonly string[], financial = true): void => {
+  const recordFinancialLines = (
+    start: number,
+    rendered: readonly string[],
+    financial = true,
+  ): void => {
     if (!financial) return;
     if (!options.financialLineRanges) return;
     rendered.forEach((line, offset) => {
@@ -188,8 +235,24 @@ export function renderBillDocumentToCompactLines(
 
   // Business header (store name only — compact keeps contact facts in the footer).
   const headerStart = lines.length;
-  if (header?.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(header.name.text, cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
-  markGroup('business-header', headerStart, header?.name ? [header.name.text] : [], header?.name ? [lines[headerStart] ?? ''] : []);
+  if (header?.name)
+    lines.push(
+      '{STORE_NAME}{CENTER}{BOLD}' +
+        truncateShapedLine(
+          header.name.text,
+          cols,
+          options.arabicShaping,
+          options.language,
+          options.capabilities,
+        ) +
+        '{/BOLD}{/CENTER}',
+    );
+  markGroup(
+    'business-header',
+    headerStart,
+    header?.name ? [header.name.text] : [],
+    header?.name ? [lines[headerStart] ?? ''] : [],
+  );
   lines.push(bar);
 
   // Document meta.
@@ -199,11 +262,22 @@ export function renderBillDocumentToCompactLines(
     lines.push(normalize(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text));
     metaSourceLines.push(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text);
     const date = parseDbTimestamp(meta.timestamp.text);
-    const dateText = date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions);
+    const dateText =
+      date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) +
+      ' ' +
+      date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions);
     lines.push(normalize(labelOf(meta.dateLabel) + ': ' + dateText));
     metaSourceLines.push(labelOf(meta.dateLabel) + ': ' + dateText);
     if (meta.table) {
-      lines.push(truncateShapedLine(meta.table.label.primary.replace('{name}', meta.table.name.text), cols, options.arabicShaping, options.language, options.capabilities));
+      lines.push(
+        truncateShapedLine(
+          meta.table.label.primary.replace('{name}', meta.table.name.text),
+          cols,
+          options.arabicShaping,
+          options.language,
+          options.capabilities,
+        ),
+      );
       metaSourceLines.push(meta.table.label.primary.replace('{name}', meta.table.name.text));
     }
   }
@@ -217,12 +291,22 @@ export function renderBillDocumentToCompactLines(
     customerSourceControlLines.push(lines.at(-1) ?? '');
   }
   if (customer?.name) {
-    lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping, options.language, options.capabilities));
+    lines.push(
+      truncateShapedLine(
+        labelOf(customer.nameLabel) + ': ' + customer.name.text,
+        cols,
+        options.arabicShaping,
+        options.language,
+        options.capabilities,
+      ),
+    );
     customerSourceLines.push(labelOf(customer.nameLabel) + ': ' + customer.name.text);
     customerSourceControlLines.push(lines.at(-1) ?? '');
   }
   if (customer?.phone) {
-    const phone = options.maskCustomerPhone ? maskPhoneOnReceipt(customer.phone.text) : customer.phone.text;
+    const phone = options.maskCustomerPhone
+      ? maskPhoneOnReceipt(customer.phone.text)
+      : customer.phone.text;
     lines.push(normalize(labelOf(customer.phoneLabel) + ': ' + phone));
     customerSourceLines.push(labelOf(customer.phoneLabel) + ': ' + phone);
     customerSourceControlLines.push(lines.at(-1) ?? '');
@@ -235,13 +319,25 @@ export function renderBillDocumentToCompactLines(
     customerSourceLines.push(labeled);
     customerSourceControlLines.push(lines[addressStart] ?? '');
   }
-  if (options.rasterGroups && lines.length > customerStart) options.rasterGroups.push({ groupId: 'customer', lineIndex: customerStart, lineCount: lines.length - customerStart, sourceLines: customerSourceLines, sourceControlLines: customerSourceControlLines });
+  if (options.rasterGroups && lines.length > customerStart)
+    options.rasterGroups.push({
+      groupId: 'customer',
+      lineIndex: customerStart,
+      lineCount: lines.length - customerStart,
+      sourceLines: customerSourceLines,
+      sourceControlLines: customerSourceControlLines,
+    });
   lines.push(dash);
 
   // Item table.
   if (items) {
     const amtLen = itemAmountWidth(
-      { items: items.rows.map((row) => ({ total: row.amount, addons: row.addons.map((addon) => ({ price: addon.price })) })) },
+      {
+        items: items.rows.map((row) => ({
+          total: row.amount,
+          addons: row.addons.map((addon) => ({ price: addon.price })),
+        })),
+      },
       prefix,
       options.locale,
       trimDecimals,
@@ -268,39 +364,78 @@ export function renderBillDocumentToCompactLines(
       );
       lines.push(...rowLines);
       recordFinancialLines(rowStart, rowLines);
-      const amount = formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      const amount = formatCurrency(
+        row.amount,
+        prefix,
+        options.locale,
+        trimDecimals,
+        fractionDigits,
+      );
       const sourceLines = [`${row.name.text} ${row.quantity} ${amount}`];
       const sourceControlLines = [rowLines[0] ?? ''];
-      const sourceLayouts: Array<RasterTextLayout | undefined> = [{
-        kind: 'financial-item',
-        columns: [
-          { text: row.name.text, align: 'left', widthRatio: nameLen / cols },
-          { text: String(row.quantity), align: 'left', widthRatio: 4 / cols },
-          { text: amount.trimStart(), align: 'right', widthRatio: amtLen / cols },
-        ],
-      }];
+      const sourceLayouts: Array<RasterTextLayout | undefined> = [
+        {
+          kind: 'financial-item',
+          columns: [
+            { text: row.name.text, align: 'left', widthRatio: nameLen / cols },
+            { text: String(row.quantity), align: 'left', widthRatio: 4 / cols },
+            { text: amount.trimStart(), align: 'right', widthRatio: amtLen / cols },
+          ],
+        },
+      ];
       const financialSourceLines = [true];
       for (const addon of row.addons) {
-        const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
+        const addonLines = addonRows(
+          { name: addon.name.text, price: addon.price, quantity: addon.quantity },
+          nameLen,
+          amtLen,
+          cols,
+          prefix,
+          options.locale,
+          trimDecimals,
+          options.language,
+          fractionDigits,
+          options.capabilities,
+        );
         const addonStart = lines.length;
         lines.push(...addonLines);
         if (addon.price) recordFinancialLines(addonStart, addonLines);
         const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
         const addonLabel = `  + ${addon.name.text}${quantitySuffix}`;
-        const addonAmount = addon.price ? formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits) : '';
+        const addonAmount = addon.price
+          ? formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)
+          : '';
         sourceLines.push(`${addonLabel}${addon.price ? ` ${addonAmount}` : ''}`);
         sourceControlLines.push(addonLines[0] ?? '');
-        sourceLayouts.push(addon.price ? {
-          kind: 'financial-summary',
-          columns: [
-            { text: addonLabel, align: 'left', widthRatio: nameLen / cols },
-            { text: addonAmount.trimStart(), align: 'right', widthRatio: (cols - nameLen) / cols },
-          ],
-        } : undefined);
+        sourceLayouts.push(
+          addon.price
+            ? {
+                kind: 'financial-summary',
+                columns: [
+                  { text: addonLabel, align: 'left', widthRatio: nameLen / cols },
+                  {
+                    text: addonAmount.trimStart(),
+                    align: 'right',
+                    widthRatio: (cols - nameLen) / cols,
+                  },
+                ],
+              }
+            : undefined,
+        );
         financialSourceLines.push(Boolean(addon.price));
       }
       if (row.specialInstructions) {
-        const instructionLine = normalize('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language, options.capabilities));
+        const instructionLine = normalize(
+          '  ' +
+            labelOf(items.noteLabel) +
+            ': ' +
+            truncate(
+              row.specialInstructions.text,
+              cols - 8,
+              options.language,
+              options.capabilities,
+            ),
+        );
         lines.push(instructionLine);
         sourceLines.push('  ' + labelOf(items.noteLabel) + ': ' + row.specialInstructions.text);
         sourceControlLines.push(instructionLine);
@@ -308,8 +443,19 @@ export function renderBillDocumentToCompactLines(
         financialSourceLines.push(false);
       }
       if (options.rasterGroups && lines.length > rowStart) {
-        const group = { groupId: `item-table-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart };
-        options.rasterGroups.push({ ...group, sourceLines, sourceControlLines, sourceLayouts, financialSourceLines, financial: true });
+        const group = {
+          groupId: `item-table-row-${rowIndex}`,
+          lineIndex: rowStart,
+          lineCount: lines.length - rowStart,
+        };
+        options.rasterGroups.push({
+          ...group,
+          sourceLines,
+          sourceControlLines,
+          sourceLayouts,
+          financialSourceLines,
+          financial: true,
+        });
       }
     }
   }
@@ -321,63 +467,236 @@ export function renderBillDocumentToCompactLines(
   const totalsSourceLines: string[] = [];
   const totalsSourceControlLines: string[] = [];
   const totalsSourceLayouts: Array<RasterTextLayout | undefined> = [];
-  const pushTotalRow = (rendered: string[], bold = false, sourceLabel?: string, sourceValue?: string): void => {
+  const pushTotalRow = (
+    rendered: string[],
+    bold = false,
+    sourceLabel?: string,
+    sourceValue?: string,
+  ): void => {
     const start = lines.length;
     const tokenLines = bold ? rendered.map((line) => `{BOLD}${line}{/BOLD}`) : rendered;
     lines.push(...tokenLines);
     recordFinancialLines(start, tokenLines);
-    totalsSourceLines.push(sourceLabel !== undefined && sourceValue !== undefined ? `${sourceLabel} ${sourceValue.trimStart()}` : rendered.join(' '));
+    totalsSourceLines.push(
+      sourceLabel !== undefined && sourceValue !== undefined
+        ? `${sourceLabel} ${sourceValue.trimStart()}`
+        : rendered.join(' '),
+    );
     totalsSourceControlLines.push(tokenLines[0] ?? '');
-    totalsSourceLayouts.push(sourceLabel !== undefined && sourceValue !== undefined ? {
-      kind: 'financial-summary',
-      columns: [
-        { text: sourceLabel, align: 'left', widthRatio: Math.max(0.1, (cols - 12) / cols) },
-        { text: sourceValue.trimStart(), align: 'right', widthRatio: Math.min(0.9, 12 / cols) },
-      ],
-    } : undefined);
+    totalsSourceLayouts.push(
+      sourceLabel !== undefined && sourceValue !== undefined
+        ? {
+            kind: 'financial-summary',
+            columns: [
+              { text: sourceLabel, align: 'left', widthRatio: Math.max(0.1, (cols - 12) / cols) },
+              {
+                text: sourceValue.trimStart(),
+                align: 'right',
+                widthRatio: Math.min(0.9, 12 / cols),
+              },
+            ],
+          }
+        : undefined,
+    );
   };
   if (totals) {
-    const subtotalValue = formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
-    pushTotalRow(financialRows(labelOf(totals.subtotal.label), subtotalValue, cols, options.language, options.capabilities), false, labelOf(totals.subtotal.label), subtotalValue);
+    const subtotalValue = formatCurrency(
+      totals.subtotal.amount,
+      prefix,
+      options.locale,
+      trimDecimals,
+      fractionDigits,
+    );
+    pushTotalRow(
+      financialRows(
+        labelOf(totals.subtotal.label),
+        subtotalValue,
+        cols,
+        options.language,
+        options.capabilities,
+      ),
+      false,
+      labelOf(totals.subtotal.label),
+      subtotalValue,
+    );
     if (totals.discount) {
-      const discountValue = '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.discount.label), discountValue, cols, options.language, options.capabilities), false, labelOf(totals.discount.label), discountValue);
+      const discountValue =
+        '-' +
+        formatCurrency(
+          totals.discount.amount,
+          prefix,
+          options.locale,
+          trimDecimals,
+          fractionDigits,
+        );
+      pushTotalRow(
+        financialRows(
+          labelOf(totals.discount.label),
+          discountValue,
+          cols,
+          options.language,
+          options.capabilities,
+        ),
+        false,
+        labelOf(totals.discount.label),
+        discountValue,
+      );
     }
     if (breakdown && breakdown.lines.length > 0) {
       for (const line of breakdown.lines) {
         const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
         const rawLabel = labelOf(line.label) + rateSuffix;
-        const label = truncate(rawLabel, cols - 12, options.language, options.capabilities);
-        const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
-        pushTotalRow(financialRows(label, value, cols, options.language, options.capabilities), false, rawLabel, value);
+        const value = formatCurrency(
+          line.amount,
+          prefix,
+          options.locale,
+          trimDecimals,
+          fractionDigits,
+        );
+        pushTotalRow(
+          taxBreakdownRows(
+            labelOf(line.label),
+            line.rate,
+            value,
+            cols,
+            options.language,
+            options.capabilities,
+          ),
+          false,
+          rawLabel,
+          value,
+        );
       }
     } else if (totals.tax) {
-      const value = formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities), false, labelOf(totals.tax.label), value);
+      const value = formatCurrency(
+        totals.tax.amount,
+        prefix,
+        options.locale,
+        trimDecimals,
+        fractionDigits,
+      );
+      pushTotalRow(
+        financialRows(
+          labelOf(totals.tax.label),
+          value,
+          cols,
+          options.language,
+          options.capabilities,
+        ),
+        false,
+        labelOf(totals.tax.label),
+        value,
+      );
     }
     const itemisedCharges = receiptChargeLines(totals.chargesBreakdown);
     const itemisedIds = new Set(itemisedCharges.map((charge) => charge.id));
     if (totals.serviceCharge && !itemisedIds.has('service_charge')) {
-      const value = formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities), false, labelOf(totals.serviceCharge.label), value);
+      const value = formatCurrency(
+        totals.serviceCharge.amount,
+        prefix,
+        options.locale,
+        trimDecimals,
+        fractionDigits,
+      );
+      pushTotalRow(
+        financialRows(
+          labelOf(totals.serviceCharge.label),
+          value,
+          cols,
+          options.language,
+          options.capabilities,
+        ),
+        false,
+        labelOf(totals.serviceCharge.label),
+        value,
+      );
     }
     if (totals.deliveryCharge) {
-      const value = formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities), false, labelOf(totals.deliveryCharge.label), value);
+      const value = formatCurrency(
+        totals.deliveryCharge.amount,
+        prefix,
+        options.locale,
+        trimDecimals,
+        fractionDigits,
+      );
+      pushTotalRow(
+        financialRows(
+          labelOf(totals.deliveryCharge.label),
+          value,
+          cols,
+          options.language,
+          options.capabilities,
+        ),
+        false,
+        labelOf(totals.deliveryCharge.label),
+        value,
+      );
     }
     if (totals.packagingCharge && !itemisedIds.has('packaging_charge')) {
-      const value = formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities), false, labelOf(totals.packagingCharge.label), value);
+      const value = formatCurrency(
+        totals.packagingCharge.amount,
+        prefix,
+        options.locale,
+        trimDecimals,
+        fractionDigits,
+      );
+      pushTotalRow(
+        financialRows(
+          labelOf(totals.packagingCharge.label),
+          value,
+          cols,
+          options.language,
+          options.capabilities,
+        ),
+        false,
+        labelOf(totals.packagingCharge.label),
+        value,
+      );
     }
     // Itemised engine charges: a bill without a breakdown keeps the legacy rows.
     for (const charge of itemisedCharges) {
-      const value = formatCurrency(charge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(charge.name, value, cols, options.language, options.capabilities), false, charge.name, value);
+      const value = formatCurrency(
+        charge.amount,
+        prefix,
+        options.locale,
+        trimDecimals,
+        fractionDigits,
+      );
+      pushTotalRow(
+        financialRows(charge.name, value, cols, options.language, options.capabilities),
+        false,
+        charge.name,
+        value,
+      );
     }
-    const grandTotalValue = formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
-    pushTotalRow(financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities), true, labelOf(totals.grandTotal.label), grandTotalValue);
+    const grandTotalValue = formatCurrency(
+      totals.grandTotal.amount,
+      prefix,
+      options.locale,
+      trimDecimals,
+      fractionDigits,
+    );
+    pushTotalRow(
+      financialRows(
+        labelOf(totals.grandTotal.label),
+        grandTotalValue,
+        cols,
+        options.language,
+        options.capabilities,
+      ),
+      true,
+      labelOf(totals.grandTotal.label),
+      grandTotalValue,
+    );
   }
-  markGroup('totals', totalsStart, totalsSourceLines, totalsSourceControlLines, true, totalsSourceLayouts);
+  markGroup(
+    'totals',
+    totalsStart,
+    totalsSourceLines,
+    totalsSourceControlLines,
+    true,
+    totalsSourceLayouts,
+  );
 
   // Payments.
   const paymentsStart = lines.length;
@@ -392,7 +711,13 @@ export function renderBillDocumentToCompactLines(
     const pushPaymentRow = (rawLabel: string, amount: number): void => {
       const methodLabel = truncate(rawLabel, cols - 12, options.language, options.capabilities);
       const value = formatCurrency(amount, prefix, options.locale, trimDecimals, fractionDigits);
-      const rendered = financialRows(methodLabel, value, cols, options.language, options.capabilities);
+      const rendered = financialRows(
+        methodLabel,
+        value,
+        cols,
+        options.language,
+        options.capabilities,
+      );
       recordFinancialLines(lines.length, rendered);
       lines.push(...rendered);
       paymentSourceLines.push(`${rawLabel} ${value.trimStart()}`);
@@ -411,7 +736,14 @@ export function renderBillDocumentToCompactLines(
       }
     }
   }
-  markGroup('payments', paymentsStart, paymentSourceLines, paymentSourceControlLines, true, paymentSourceLayouts);
+  markGroup(
+    'payments',
+    paymentsStart,
+    paymentSourceLines,
+    paymentSourceControlLines,
+    true,
+    paymentSourceLayouts,
+  );
 
   // Footer contact details.
   lines.push(bar);
@@ -426,24 +758,47 @@ export function renderBillDocumentToCompactLines(
   }
   if (header?.phone && header.phoneLabel) {
     const start = lines.length;
-    pushWrapped(lines, labelOf(header.phoneLabel) + ': ' + header.phone.text, cols, options.language, options.capabilities);
+    pushWrapped(
+      lines,
+      labelOf(header.phoneLabel) + ': ' + header.phone.text,
+      cols,
+      options.language,
+      options.capabilities,
+    );
     businessFooterSourceLines.push(labelOf(header.phoneLabel) + ': ' + header.phone.text);
     businessFooterSourceControlLines.push(lines[start] ?? '');
   }
   if (header?.taxId) {
     const start = lines.length;
-    pushWrapped(lines, labelOf(header.taxId.label) + ': ' + header.taxId.value.text, cols, options.language, options.capabilities);
+    pushWrapped(
+      lines,
+      labelOf(header.taxId.label) + ': ' + header.taxId.value.text,
+      cols,
+      options.language,
+      options.capabilities,
+    );
     businessFooterSourceLines.push(labelOf(header.taxId.label) + ': ' + header.taxId.value.text);
     businessFooterSourceControlLines.push(lines[start] ?? '');
   }
-  markGroup('business-header', businessFooterStart, businessFooterSourceLines, businessFooterSourceControlLines);
+  markGroup(
+    'business-header',
+    businessFooterStart,
+    businessFooterSourceLines,
+    businessFooterSourceControlLines,
+  );
 
   const messageFooterStart = lines.length;
   const messageFooterSourceLines: string[] = [];
   const messageFooterSourceControlLines: string[] = [];
   if (messages?.footerNote) {
     const start = lines.length;
-    pushCenteredWrapped(lines, messages.footerNote.text, cols, options.language, options.capabilities);
+    pushCenteredWrapped(
+      lines,
+      messages.footerNote.text,
+      cols,
+      options.language,
+      options.capabilities,
+    );
     messageFooterSourceLines.push(messages.footerNote.text);
     messageFooterSourceControlLines.push(lines[start] ?? '');
   } else if (messages?.thankYou) {
@@ -451,7 +806,12 @@ export function renderBillDocumentToCompactLines(
     messageFooterSourceLines.push(labelOf(messages.thankYou));
     messageFooterSourceControlLines.push(lines.at(-1) ?? '');
   }
-  markGroup('message', messageFooterStart, messageFooterSourceLines, messageFooterSourceControlLines);
+  markGroup(
+    'message',
+    messageFooterStart,
+    messageFooterSourceLines,
+    messageFooterSourceControlLines,
+  );
   appendPoweredByFooter(lines, cols);
   lines.push('{CUT}');
 
@@ -487,13 +847,18 @@ export function renderCompactReceiptViaDocument(
   },
 ): CompactDocumentRenderResult {
   const semanticBusiness = opts.maskCustomerPhone
-    ? { ...(business || {}), customer_phone: maskPhoneOnReceipt(String(business?.customer_phone ?? '')) }
+    ? {
+        ...(business || {}),
+        customer_phone: maskPhoneOnReceipt(String(business?.customer_phone ?? '')),
+      }
     : business;
   const printData = buildBillPrintData(order, bill, semanticBusiness, opts.isReprint);
   const printContext = buildBillPrintContext({
     columns: opts.columns,
     language: opts.language,
-    ...(opts.additionalLanguage !== undefined ? { additionalLanguage: opts.additionalLanguage } : {}),
+    ...(opts.additionalLanguage !== undefined
+      ? { additionalLanguage: opts.additionalLanguage }
+      : {}),
     business: semanticBusiness,
   });
   const document = buildBillDocument(printData, printContext);
@@ -517,6 +882,18 @@ export function renderCompactReceiptViaDocument(
     rasterGroups,
     financialLineRanges,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges }, warnings);
+  const data = buildEscPos(
+    lines,
+    opts.useUnicode,
+    {
+      cutMode: opts.cutMode,
+      arabicShaping: opts.arabicShaping,
+      columns: opts.columns,
+      language: opts.language,
+      capabilities: opts.capabilities,
+      financialLineRanges,
+    },
+    warnings,
+  );
   return { document, lines, data, warnings, rasterGroups };
 }

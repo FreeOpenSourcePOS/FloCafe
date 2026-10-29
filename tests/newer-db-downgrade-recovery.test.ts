@@ -47,6 +47,7 @@ import {
   closeDatabase,
   createBackup,
   discoverDowngradeBackups,
+  discoverDowngradeBackupsAsync,
   finalizeDatabaseReplacementJournal,
   getBackupDir,
   getCurrentSchemaVersion,
@@ -75,7 +76,7 @@ function sha256File(filePath: string): string {
 }
 
 function removeDbSet(basePath: string): void {
-  for (const suffix of ['', '-wal', '-shm']) {
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
     const candidate = `${basePath}${suffix}`;
     if (fs.existsSync(candidate)) fs.unlinkSync(candidate);
   }
@@ -189,6 +190,81 @@ function buildActiveNewerWalDatabase(
     dbSha: sha256File(destinationDbPath),
     walSha: sha256File(`${destinationDbPath}-wal`),
     shmSha: sha256File(`${destinationDbPath}-shm`),
+  };
+}
+
+const SQLITE_HOT_JOURNAL_MAGIC = Buffer.from('d9d505f920a163d7', 'hex');
+
+function buildActiveHotJournalDatabase(
+  destinationDbPath: string,
+  seededCommittedBackupPath: string,
+  options: {
+    pragmaVersion: number;
+    metaSchemaVersion: string;
+    appVersion: string;
+  },
+): { dbSha: string; journalSha: string } {
+  const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-hot-journal-stage-'));
+  const stageDbPath = path.join(stageDir, 'flo.db');
+  fs.copyFileSync(seededCommittedBackupPath, stageDbPath);
+
+  let setupDb: Database.Database | undefined;
+  let writerDb: Database.Database | undefined;
+  try {
+    setupDb = new Database(stageDbPath);
+    setupDb.pragma('journal_mode = DELETE');
+    setupDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+    setupDb
+      .prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)')
+      .run('app_version', options.appVersion);
+    setupDb
+      .prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)')
+      .run('schema_version', options.metaSchemaVersion);
+    setupDb
+      .prepare(
+        "UPDATE settings SET value = replace(value, 'COMMITTED-', 'NEWER-COMMITTED-') WHERE key LIKE 'hotjournalfill%'",
+      )
+      .run();
+    setupDb.pragma(`user_version = ${options.pragmaVersion}`);
+    setupDb.close();
+    setupDb = undefined;
+
+    writerDb = new Database(stageDbPath);
+    writerDb.pragma('journal_mode = DELETE');
+    writerDb.pragma('cache_size = 5');
+    writerDb.pragma('synchronous = FULL');
+    writerDb.exec('BEGIN IMMEDIATE');
+    writerDb
+      .prepare(
+        "UPDATE settings SET value = 'UNCOMMITTED-' || substr(value, 1, 2000) WHERE key LIKE 'hotjournalfill%'",
+      )
+      .run();
+
+    const stageJournalPath = `${stageDbPath}-journal`;
+    assert.equal(fs.existsSync(stageJournalPath), true, 'genuine SQLite -journal exists on spill');
+    const journalHeader = fs.readFileSync(stageJournalPath).subarray(0, 8);
+    assert.deepEqual(
+      journalHeader,
+      SQLITE_HOT_JOURNAL_MAGIC,
+      'rollback journal begins with genuine SQLite magic header',
+    );
+
+    removeDbSet(destinationDbPath);
+    fs.copyFileSync(stageDbPath, destinationDbPath);
+    fs.copyFileSync(stageJournalPath, `${destinationDbPath}-journal`);
+  } finally {
+    try {
+      writerDb?.close();
+    } catch {}
+    try {
+      setupDb?.close();
+    } catch {}
+    fs.rmSync(stageDir, { recursive: true, force: true });
+  }
+
+  return {
+    dbSha: sha256File(destinationDbPath),
+    journalSha: sha256File(`${destinationDbPath}-journal`),
   };
 }
 
@@ -1530,14 +1606,159 @@ async function run(): Promise<void> {
       fs.copyFileSync(`${dbPath}-wal`, path.join(walNewerCopyDir, 'flo.db-wal'));
       fs.copyFileSync(`${dbPath}-shm`, path.join(walNewerCopyDir, 'flo.db-shm'));
 
-      const mutableFsMkdtemp = nativeFs as unknown as { mkdtempSync: typeof fs.mkdtempSync };
+      // Also build a supported WAL database whose header is still older/unchanged while a
+      // committed row lives only in -wal/-shm (crash-recovery startup with full /tmp volume).
+      const walSupportedCrashDir = path.join(walEnospcStageDir, 'supported-wal-crash');
+      fs.mkdirSync(walSupportedCrashDir);
+      {
+        const crashStageDbPath = path.join(walSupportedCrashDir, 'flo.db');
+        fs.copyFileSync(committedCleanSnapshot, crashStageDbPath);
+        const crashWriter = new Database(crashStageDbPath);
+        crashWriter.pragma('journal_mode = WAL');
+        crashWriter.pragma('wal_autocheckpoint = 0');
+        crashWriter
+          .prepare(`
+            INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+            VALUES ('ORD-20261029-0093', 'takeaway', 'completed', 29, 29, '2026-10-29 14:00:00', '2026-10-29 14:05:00')
+          `)
+          .run();
+        const crashCopyDir = path.join(walEnospcStageDir, 'supported-wal-crash-live');
+        fs.mkdirSync(crashCopyDir);
+        fs.copyFileSync(crashStageDbPath, path.join(crashCopyDir, 'flo.db'));
+        fs.copyFileSync(`${crashStageDbPath}-wal`, path.join(crashCopyDir, 'flo.db-wal'));
+        fs.copyFileSync(`${crashStageDbPath}-shm`, path.join(crashCopyDir, 'flo.db-shm'));
+        crashWriter.close();
+      }
+      const walSupportedCrashLiveDir = path.join(walEnospcStageDir, 'supported-wal-crash-live');
+
+      const mutableFsMkdtemp = nativeFs as unknown as {
+        mkdtempSync: typeof fs.mkdtempSync;
+        copyFileSync: typeof fs.copyFileSync;
+      };
       const originalMkdtempSync = nativeFs.mkdtempSync;
+      const originalStageCopyFileSync = nativeFs.copyFileSync;
+
+      // Subcase A: Only os.tmpdir() staging fails (e.g. separate full /tmp tmpfs), while the
+      // database volume (testDir / backupDir) still has space.
+      mutableFsMkdtemp.copyFileSync = ((src, dest, mode) => {
+        const destText = String(dest);
+        if (
+          destText.includes('flo-schema-preflight-') ||
+          destText.includes('flo-db-health-probe-') ||
+          destText.includes('flo-recovery-verify-')
+        ) {
+          throw Object.assign(new Error('ENOSPC: injected os.tmpdir() snapshot copy full'), {
+            code: 'ENOSPC',
+          });
+        }
+        return originalStageCopyFileSync.call(nativeFs, src, dest, mode);
+      }) as typeof fs.copyFileSync;
+      try {
+        // Crash-stranded .flo-db-stage-* directories are ignored by discovery and cleaned on boot.
+        clearDirectory(backupDir);
+        const strandedUserDataStage = path.join(testDir, '.flo-db-stage-preflight-stranded');
+        const strandedBackupStage = path.join(backupDir, '.flo-db-stage-health-stranded');
+        fs.mkdirSync(strandedUserDataStage, { recursive: true });
+        fs.mkdirSync(strandedBackupStage, { recursive: true });
+        fs.writeFileSync(path.join(strandedBackupStage, 'probe.db'), 'stranded temp bytes');
+        const strandedDiscovery = discoverDowngradeBackups();
+        assert.deepEqual(strandedDiscovery.compatible, []);
+        assert.deepEqual(strandedDiscovery.corruptOrInvalid, []);
+
+        // Supported WAL crash-recovery database boots cleanly via DB-volume fallback staging.
+        removeDbSet(dbPath);
+        fs.copyFileSync(path.join(walSupportedCrashLiveDir, 'flo.db'), dbPath);
+        fs.copyFileSync(path.join(walSupportedCrashLiveDir, 'flo.db-wal'), `${dbPath}-wal`);
+        fs.copyFileSync(path.join(walSupportedCrashLiveDir, 'flo.db-shm'), `${dbPath}-shm`);
+        initDatabase();
+        assert.deepEqual(
+          getDatabase()
+            .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0093'")
+            .get(),
+          { order_number: 'ORD-20261029-0093' },
+          'supported WAL crash-recovery database initializes cleanly via DB-volume staging when os.tmpdir() is full',
+        );
+        assert.equal(
+          fs.existsSync(strandedUserDataStage),
+          false,
+          'startup removes crash-stranded .flo-db-stage-* directory in userData',
+        );
+        assert.equal(
+          fs.existsSync(strandedBackupStage),
+          false,
+          'startup removes crash-stranded .flo-db-stage-* directory in backups',
+        );
+        closeDatabase();
+
+        // Supported-header + newer-WAL database still detects newer WAL version via DB-volume
+        // fallback staging without mutating live files or leaking staging directories.
+        removeDbSet(dbPath);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db'), dbPath);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-wal'), `${dbPath}-wal`);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-shm'), `${dbPath}-shm`);
+        let tmpOnlyNewerWalMismatch: SchemaVersionMismatchError | null = null;
+        assert.throws(
+          () => initDatabase(),
+          (err: unknown) => {
+            if (err instanceof SchemaVersionMismatchError) {
+              tmpOnlyNewerWalMismatch = err;
+              return true;
+            }
+            return false;
+          },
+          'newer WAL database detects SchemaVersionMismatchError via DB-volume fallback when os.tmpdir() is full',
+        );
+        assert.equal(tmpOnlyNewerWalMismatch!.dbVersion, newerDbVersion);
+        assert.equal(tmpOnlyNewerWalMismatch!.dbAppVersion, '4.4.0');
+        assert.equal(sha256File(dbPath), walNewerEnospcHashes.dbSha);
+        assert.equal(sha256File(`${dbPath}-wal`), walNewerEnospcHashes.walSha);
+        assert.equal(sha256File(`${dbPath}-shm`), walNewerEnospcHashes.shmSha);
+        assert.deepEqual(
+          fs.readdirSync(testDir).filter((name) => name.startsWith('.flo-db-stage-')),
+          [],
+          'DB-volume fallback staging cleans up private temp directories in finally',
+        );
+
+        // Committed WAL replacement journal health probe also succeeds via DB-volume fallback.
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.copyFileSync(path.join(walEnospcStageDir, 'flo.db'), dbPath);
+        fs.copyFileSync(path.join(walEnospcStageDir, 'flo.db-wal'), `${dbPath}-wal`);
+        const tmpOnlyWalCommittedBase = path.join(backupDir, 'flo-restore-recovery-tmponlywal');
+        fs.copyFileSync(baseTemplateCopy, `${tmpOnlyWalCommittedBase}.db`);
+        fs.writeFileSync(
+          `${tmpOnlyWalCommittedBase}.json`,
+          JSON.stringify({
+            phase: 'committed',
+            recoveryPath: `${tmpOnlyWalCommittedBase}.db`,
+            dbPath,
+            driveInvalidationRequired: true,
+            downgradeRecovery: true,
+            recoverySidecars: [],
+          }),
+        );
+        initDatabase();
+        assert.deepEqual(
+          getDatabase()
+            .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0092'")
+            .get(),
+          { order_number: 'ORD-20261029-0092' },
+          'committed WAL replacement journal verifies cleanly via DB-volume fallback when os.tmpdir() is full',
+        );
+        finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+        closeDatabase();
+      } finally {
+        mutableFsMkdtemp.copyFileSync = originalStageCopyFileSync;
+      }
+
+      // Subcase B: Both os.tmpdir() AND database-volume staging fail with ENOSPC -> fail closed.
       mutableFsMkdtemp.mkdtempSync = ((prefix: string, options?: any) => {
         const text = String(prefix);
         if (
           text.includes('flo-schema-preflight-') ||
           text.includes('flo-db-health-probe-') ||
-          text.includes('flo-recovery-verify-')
+          text.includes('flo-recovery-verify-') ||
+          text.includes('.flo-db-stage-')
         ) {
           throw Object.assign(new Error('ENOSPC: no space left on device, mkdtemp'), {
             code: 'ENOSPC',
@@ -1854,6 +2075,468 @@ async function run(): Promise<void> {
       closeDatabase();
     } finally {
       fs.rmSync(walEnospcStageDir, { recursive: true, force: true });
+    }
+
+    // 5h. Genuine active hot rollback journal (flo.db-journal) is refused before any archive,
+    //     replacement journal, or live-file mutation, and interrupted recovery clears stale -journal.
+    const hotJournalSeedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-hot-journal-seed-'));
+    try {
+      const committedHotSeedBackup = path.join(hotJournalSeedDir, 'flo-backup-committed-seed.db');
+      fs.copyFileSync(baseTemplateCopy, committedHotSeedBackup);
+      {
+        const seedDb = new Database(committedHotSeedBackup);
+        seedDb.pragma('journal_mode = DELETE');
+        const insertFill = seedDb.prepare(
+          'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+        );
+        seedDb.transaction(() => {
+          for (let i = 0; i < 600; i += 1) {
+            insertFill.run(`hotjournalfill${i}`, `COMMITTED-${'c'.repeat(2000)}`);
+          }
+        })();
+        seedDb.close();
+      }
+
+      clearDirectory(backupDir);
+      const hotCompatibleBackupPath = path.join(backupDir, 'flo-backup-hot-compatible.db');
+      fs.copyFileSync(committedHotSeedBackup, hotCompatibleBackupPath);
+
+      const hotJournalHashes = buildActiveHotJournalDatabase(dbPath, committedHotSeedBackup, {
+        pragmaVersion: newerDbVersion,
+        metaSchemaVersion: String(newerDbVersion),
+        appVersion: '4.7.0',
+      });
+      const savedHotRawDb = path.join(hotJournalSeedDir, 'saved-hot.db');
+      const savedHotJournal = `${savedHotRawDb}-journal`;
+      fs.copyFileSync(dbPath, savedHotRawDb);
+      fs.copyFileSync(`${dbPath}-journal`, savedHotJournal);
+
+      // Verify fixture genuineness: raw main file holds spilled UNCOMMITTED- bytes while replaying
+      // with its hot journal in an isolated copy recovers NEWER-COMMITTED-.
+      assert.equal(
+        fs.readFileSync(dbPath).includes(Buffer.from('UNCOMMITTED-', 'utf8')),
+        true,
+        'spilled uncommitted pages are present in raw flo.db before rollback replay',
+      );
+
+      let hotPreflightMismatch: SchemaVersionMismatchError | null = null;
+      assert.throws(
+        () => initDatabase(),
+        (err: unknown) => {
+          if (err instanceof SchemaVersionMismatchError) {
+            hotPreflightMismatch = err;
+            return true;
+          }
+          return false;
+        },
+        'hot-journaled newer database triggers SchemaVersionMismatchError preflight',
+      );
+      assert.equal(hotPreflightMismatch!.dbVersion, newerDbVersion);
+      assert.equal(hotPreflightMismatch!.dbAppVersion, '4.7.0');
+      assert.equal(sha256File(dbPath), hotJournalHashes.dbSha, 'preflight preserves flo.db bytes');
+      assert.equal(
+        sha256File(`${dbPath}-journal`),
+        hotJournalHashes.journalSha,
+        'preflight preserves flo.db-journal bytes',
+      );
+
+      await assert.rejects(
+        () =>
+          restoreCompatibleBackupForDowngrade(hotCompatibleBackupPath, {
+            newerDbVersion,
+          }),
+        /rollback journal[\s\S]*update Flo Cafe/i,
+        'downgrade restore refuses active hot rollback journal with actionable update guidance',
+      );
+      assert.equal(
+        sha256File(dbPath),
+        hotJournalHashes.dbSha,
+        'refused hot-journal restore leaves flo.db SHA-256 untouched',
+      );
+      assert.equal(
+        sha256File(`${dbPath}-journal`),
+        hotJournalHashes.journalSha,
+        'refused hot-journal restore leaves flo.db-journal SHA-256 untouched',
+      );
+      assert.deepEqual(
+        fs
+          .readdirSync(backupDir)
+          .filter(
+            (name) =>
+              name.startsWith('flo-preserved-newer-') || name.startsWith('flo-restore-recovery-'),
+          ),
+        [],
+        'refused hot-journal restore writes no archive or replacement journal artifacts',
+      );
+
+      // Verify isolated replay of untouched flo.db + flo.db-journal still yields NEWER-COMMITTED-.
+      const verifyHotDir = path.join(hotJournalSeedDir, 'verify-replay');
+      fs.mkdirSync(verifyHotDir);
+      const verifyHotDbPath = path.join(verifyHotDir, 'flo.db');
+      fs.copyFileSync(dbPath, verifyHotDbPath);
+      fs.copyFileSync(`${dbPath}-journal`, `${verifyHotDbPath}-journal`);
+      {
+        const replayedDb = new Database(verifyHotDbPath);
+        const replayedRow = replayedDb
+          .prepare("SELECT substr(value, 1, 16) AS prefix FROM settings WHERE key = 'hotjournalfill0'")
+          .get() as { prefix: string } | undefined;
+        assert.deepEqual(replayedRow, { prefix: 'NEWER-COMMITTED-' });
+        replayedDb.close();
+      }
+
+      // Verify runDowngradeRecoveryFlow surfaces the actionable rollback-journal refusal dialog
+      // and allows exiting safely without modifying flo.db or flo.db-journal.
+      let hotJournalErrorDialogDetail = '';
+      const hotJournalFlowOutcome = await runDowngradeRecoveryFlow(hotPreflightMismatch!, {
+        appVersion: '3.13.14',
+        dialog: {
+          showMessageBox: async (options: any) => {
+            if (options.title === 'Newer Database Detected') {
+              return { response: 2, checkboxChecked: false }; // Restore Compatible Backup
+            }
+            if (options.title === 'Select Compatible Backup') {
+              return { response: 0, checkboxChecked: false }; // Select hotCompatibleBackupPath
+            }
+            if (options.title === 'Confirm Backup Restore') {
+              return { response: 0, checkboxChecked: false }; // Confirm restore
+            }
+            if (options.title === 'Backup Restore Failed') {
+              hotJournalErrorDialogDetail = String(options.detail || '');
+              return { response: 2, checkboxChecked: false }; // Exit safely
+            }
+            throw new Error(`Unexpected dialog title: ${options.title}`);
+          },
+        } as any,
+        shell: { openExternal: async () => {}, openPath: async () => '' },
+        log: { info() {}, warn() {}, error() {} },
+        isShutdownRequested: () => false,
+        discoverBackups: () => discoverDowngradeBackupsAsync(),
+        planPreservedArchivePath: planNewerDatabaseArchivePath,
+        restoreBackup: restoreCompatibleBackupForDowngrade,
+        getBackupDir,
+        getDbPath,
+      });
+      assert.deepEqual(hotJournalFlowOutcome, { outcome: 'exit' });
+      assert.match(hotJournalErrorDialogDetail, /rollback journal/i);
+      assert.equal(sha256File(dbPath), hotJournalHashes.dbSha);
+      assert.equal(sha256File(`${dbPath}-journal`), hotJournalHashes.journalSha);
+
+      // Interrupted replacement recovery clears any mismatched flo.db-journal before installing
+      // the verified recovery snapshot so old journal pages never replay into the recovered DB.
+      clearDirectory(backupDir);
+      fs.copyFileSync(savedHotRawDb, dbPath);
+      fs.copyFileSync(savedHotJournal, `${dbPath}-journal`);
+      const staleJournalRecoveryBase = path.join(
+        backupDir,
+        'flo-restore-recovery-stalejournalcheck',
+      );
+      fs.copyFileSync(committedHotSeedBackup, `${staleJournalRecoveryBase}.db`);
+      fs.writeFileSync(
+        `${staleJournalRecoveryBase}.json`,
+        JSON.stringify({
+          phase: 'prepared',
+          recoveryPath: `${staleJournalRecoveryBase}.db`,
+          dbPath,
+          driveInvalidationRequired: true,
+          downgradeRecovery: true,
+          recoverySidecars: [],
+        }),
+      );
+      initDatabase();
+      assert.equal(
+        fs.existsSync(`${dbPath}-journal`),
+        false,
+        'interrupted replacement recovery removes stale flo.db-journal before restoring snapshot',
+      );
+      const recoveredMarker = getDatabase()
+        .prepare("SELECT substr(value, 1, 10) AS prefix FROM settings WHERE key = 'hotjournalfill0'")
+        .get() as { prefix: string } | undefined;
+      assert.deepEqual(
+        recoveredMarker,
+        { prefix: 'COMMITTED-' },
+        'mismatched hot journal is never replayed into the recovered snapshot',
+      );
+      closeDatabase();
+    } finally {
+      fs.rmSync(hotJournalSeedDir, { recursive: true, force: true });
+    }
+
+    // 5i. Metadata-only newer schema stamp (_flo_meta.schema_version > maxSupported while
+    //     PRAGMA user_version <= maxSupported) is intercepted across clean DELETE-mode, WAL,
+    //     and active rollback-journal databases without mutating live bytes or sidecars.
+    const metaOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-meta-only-newer-'));
+    try {
+      clearDirectory(backupDir);
+
+      // (a) Clean DELETE-mode with user_version = maxSupported, _flo_meta.schema_version = maxSupported + 3.
+      const metaOnlyDeletePath = path.join(metaOnlyDir, 'meta-only-delete.db');
+      writeStampedSchemaSnapshot(metaOnlyDeletePath, maxSupported, {
+        appVersion: '4.8.0',
+        overridePragmaVersion: maxSupported,
+        overrideMetaSchemaVersion: String(newerDbVersion),
+      });
+      removeDbSet(dbPath);
+      fs.copyFileSync(metaOnlyDeletePath, dbPath);
+      const metaOnlyDeleteSha = sha256File(dbPath);
+      let caughtMetaOnlyDelete: SchemaVersionMismatchError | null = null;
+      assert.throws(
+        () => initDatabase(),
+        (err: unknown) => {
+          if (err instanceof SchemaVersionMismatchError) {
+            caughtMetaOnlyDelete = err;
+            return true;
+          }
+          return false;
+        },
+        'clean DELETE-mode metadata-only newer schema throws SchemaVersionMismatchError',
+      );
+      assert.equal(caughtMetaOnlyDelete!.dbVersion, newerDbVersion);
+      assert.equal(caughtMetaOnlyDelete!.appVersion, maxSupported);
+      assert.equal(caughtMetaOnlyDelete!.dbAppVersion, '4.8.0');
+      assert.equal(
+        sha256File(dbPath),
+        metaOnlyDeleteSha,
+        'clean DELETE-mode metadata-only newer DB SHA-256 is untouched',
+      );
+      assert.equal(fs.existsSync(`${dbPath}-wal`), false);
+      assert.equal(fs.existsSync(`${dbPath}-shm`), false);
+      assert.equal(fs.existsSync(`${dbPath}-journal`), false);
+
+      // (b) Active WAL database with user_version = maxSupported and newer _flo_meta.schema_version in WAL.
+      const metaOnlyWalStagePath = path.join(metaOnlyDir, 'wal-stage.db');
+      fs.copyFileSync(baseTemplateCopy, metaOnlyWalStagePath);
+      let metaOnlyWalHashes: { dbSha: string; walSha: string; shmSha: string };
+      {
+        const walWriter = new Database(metaOnlyWalStagePath);
+        walWriter.pragma('journal_mode = WAL');
+        walWriter.pragma('wal_autocheckpoint = 0');
+        walWriter.pragma(`user_version = ${maxSupported}`);
+        walWriter
+          .prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)')
+          .run('schema_version', String(newerDbVersion));
+        walWriter
+          .prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)')
+          .run('app_version', '4.8.1');
+        removeDbSet(dbPath);
+        fs.copyFileSync(metaOnlyWalStagePath, dbPath);
+        fs.copyFileSync(`${metaOnlyWalStagePath}-wal`, `${dbPath}-wal`);
+        fs.copyFileSync(`${metaOnlyWalStagePath}-shm`, `${dbPath}-shm`);
+        walWriter.close();
+        metaOnlyWalHashes = {
+          dbSha: sha256File(dbPath),
+          walSha: sha256File(`${dbPath}-wal`),
+          shmSha: sha256File(`${dbPath}-shm`),
+        };
+      }
+      let caughtMetaOnlyWal: SchemaVersionMismatchError | null = null;
+      assert.throws(
+        () => initDatabase(),
+        (err: unknown) => {
+          if (err instanceof SchemaVersionMismatchError) {
+            caughtMetaOnlyWal = err;
+            return true;
+          }
+          return false;
+        },
+        'WAL metadata-only newer schema throws SchemaVersionMismatchError',
+      );
+      assert.equal(caughtMetaOnlyWal!.dbVersion, newerDbVersion);
+      assert.equal(caughtMetaOnlyWal!.appVersion, maxSupported);
+      assert.equal(caughtMetaOnlyWal!.dbAppVersion, '4.8.1');
+      assert.equal(sha256File(dbPath), metaOnlyWalHashes.dbSha);
+      assert.equal(sha256File(`${dbPath}-wal`), metaOnlyWalHashes.walSha);
+      assert.equal(sha256File(`${dbPath}-shm`), metaOnlyWalHashes.shmSha);
+
+      // (c) Active rollback-journal database with user_version = maxSupported and committed
+      //     _flo_meta.schema_version = newerDbVersion protected by hot flo.db-journal.
+      const metaOnlyHotSeedPath = path.join(metaOnlyDir, 'hot-seed.db');
+      fs.copyFileSync(baseTemplateCopy, metaOnlyHotSeedPath);
+      {
+        const seedDb = new Database(metaOnlyHotSeedPath);
+        seedDb.pragma('journal_mode = DELETE');
+        const ins = seedDb.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+        seedDb.transaction(() => {
+          for (let i = 0; i < 400; i += 1) {
+            ins.run(`hotjournalfill${i}`, `COMMITTED-${'m'.repeat(2000)}`);
+          }
+        })();
+        seedDb.close();
+      }
+      const metaOnlyHotHashes = buildActiveHotJournalDatabase(dbPath, metaOnlyHotSeedPath, {
+        pragmaVersion: maxSupported,
+        metaSchemaVersion: String(newerDbVersion),
+        appVersion: '4.8.2',
+      });
+      let caughtMetaOnlyJournal: SchemaVersionMismatchError | null = null;
+      assert.throws(
+        () => initDatabase(),
+        (err: unknown) => {
+          if (err instanceof SchemaVersionMismatchError) {
+            caughtMetaOnlyJournal = err;
+            return true;
+          }
+          return false;
+        },
+        'rollback-journal metadata-only newer schema throws SchemaVersionMismatchError',
+      );
+      assert.equal(caughtMetaOnlyJournal!.dbVersion, newerDbVersion);
+      assert.equal(caughtMetaOnlyJournal!.appVersion, maxSupported);
+      assert.equal(caughtMetaOnlyJournal!.dbAppVersion, '4.8.2');
+      assert.equal(sha256File(dbPath), metaOnlyHotHashes.dbSha);
+      assert.equal(sha256File(`${dbPath}-journal`), metaOnlyHotHashes.journalSha);
+
+      // (d) Older or absent _flo_meta stamps on supported user_version remain compatible.
+      removeDbSet(dbPath);
+      writeStampedSchemaSnapshot(dbPath, maxSupported, {
+        appVersion: '3.10.0',
+        overridePragmaVersion: maxSupported,
+        overrideMetaSchemaVersion: String(olderCompatibleVersion),
+      });
+      initDatabase();
+      assert.equal(getCurrentSchemaVersion(), maxSupported);
+      getDatabase().exec('DROP TABLE IF EXISTS _flo_meta');
+      closeDatabase();
+      initDatabase();
+      assert.equal(getCurrentSchemaVersion(), maxSupported);
+      closeDatabase();
+    } finally {
+      fs.rmSync(metaOnlyDir, { recursive: true, force: true });
+    }
+
+    // 5j. Non-blocking async backup discovery prefilters non-SQLite and header-newer standalone
+    //     candidates without PRAGMA integrity_check or temp materialization, yields to event-loop
+    //     timers during multi-backup scans, and surfaces all compatible backups without truncation.
+    const asyncScanSeedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-async-scan-seed-'));
+    try {
+      clearDirectory(backupDir);
+      removeDbSet(dbPath);
+      fs.copyFileSync(deleteModeNewerPath, dbPath);
+
+      const multiMbSeedBackup = path.join(asyncScanSeedDir, 'seed-large.db');
+      fs.copyFileSync(baseTemplateCopy, multiMbSeedBackup);
+      {
+        const seedDb = new Database(multiMbSeedBackup);
+        seedDb.pragma('journal_mode = DELETE');
+        const ins = seedDb.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+        seedDb.transaction(() => {
+          for (let i = 0; i < 1200; i += 1) {
+            ins.run(`scanfill${i}`, `SCAN-${'s'.repeat(2500)}`);
+          }
+        })();
+        seedDb.close();
+      }
+
+      // Add non-SQLite junk and standalone newer-header backups that must be prefiltered cheaply.
+      for (let i = 0; i < 4; i += 1) {
+        fs.writeFileSync(
+          path.join(backupDir, `flo-backup-junk-${i}.db`),
+          Buffer.from(`not sqlite ${i}`),
+        );
+      }
+      for (let i = 0; i < 4; i += 1) {
+        const newerBackupCandidate = path.join(
+          backupDir,
+          `flo-backup-2026-10-29T00-0${i}-00-000Z-newer-${i}.db`,
+        );
+        fs.copyFileSync(deleteModeNewerPath, newerBackupCandidate);
+      }
+
+      let prefilterIntegrityChecks = 0;
+      const origPrepare = Database.prototype.prepare;
+      Database.prototype.prepare = function (sql: string, ...rest: unknown[]) {
+        if (sql === 'PRAGMA integrity_check') prefilterIntegrityChecks += 1;
+        return (origPrepare as any).call(this, sql, ...rest);
+      };
+      try {
+        const prefilterOnlyResult = await discoverDowngradeBackupsAsync();
+        assert.equal(prefilterOnlyResult.compatible.length, 0);
+        assert.equal(prefilterOnlyResult.incompatibleNewer.length, 4);
+        assert.equal(prefilterOnlyResult.corruptOrInvalid.length, 4);
+        assert.equal(
+          prefilterIntegrityChecks,
+          0,
+          'cheap SQLite header prefilter skips PRAGMA integrity_check on non-SQLite and header-newer files',
+        );
+      } finally {
+        Database.prototype.prepare = origPrepare;
+      }
+
+      // Add 24 valid multi-MB compatible backups (> 5 pages in UI) and verify event-loop timers
+      // fire promptly DURING discoverDowngradeBackupsAsync while all 24 compatible backups surface.
+      const compatibleCount = 24;
+      for (let i = 0; i < compatibleCount; i += 1) {
+        const padded = String(i).padStart(2, '0');
+        const candidatePath = path.join(
+          backupDir,
+          `flo-backup-2026-10-28T12-${padded}-00-000Z.db`,
+        );
+        fs.copyFileSync(multiMbSeedBackup, candidatePath);
+        const ts = new Date(Date.UTC(2026, 9, 28, 12, i, 0));
+        fs.utimesSync(candidatePath, ts, ts);
+      }
+
+      let timerTicksDuringScan = 0;
+      let scanFinished = false;
+      const interval = setInterval(() => {
+        if (!scanFinished) timerTicksDuringScan += 1;
+      }, 5);
+      let asyncDiscoveryResult;
+      try {
+        asyncDiscoveryResult = await discoverDowngradeBackupsAsync();
+        scanFinished = true;
+      } finally {
+        clearInterval(interval);
+      }
+
+      assert.equal(
+        asyncDiscoveryResult.compatible.length,
+        compatibleCount,
+        'all compatible backups are surfaced without silent truncation',
+      );
+      assert.equal(asyncDiscoveryResult.incompatibleNewer.length, 4);
+      assert.equal(asyncDiscoveryResult.corruptOrInvalid.length, 4);
+      assert.ok(
+        timerTicksDuringScan >= 1,
+        `expected event-loop timer callbacks to fire during multi-backup discovery (got ${timerTicksDuringScan})`,
+      );
+
+      // Verify runDowngradeRecoveryFlow awaits async discoverBackups and pages through to the oldest backup.
+      let mainDialogVisits = 0;
+      const asyncFlowOutcome = await runDowngradeRecoveryFlow(
+        new SchemaVersionMismatchError(newerDbVersion, maxSupported, '4.1.0'),
+        {
+          appVersion: '3.13.14',
+          dialog: {
+            showMessageBox: async (options: any) => {
+              if (options.title === 'Newer Database Detected') {
+                mainDialogVisits += 1;
+                return {
+                  response: mainDialogVisits === 1 ? 2 : 3,
+                  checkboxChecked: false,
+                };
+              }
+              const moreIdx = (options.buttons as string[]).indexOf('More Backups...');
+              if (moreIdx >= 0) return { response: moreIdx, checkboxChecked: false };
+              // On final page (items 21..24), verify oldest item #24 is reachable, then Cancel -> Exit.
+              assert.match(options.detail || '', /24\./, 'oldest compatible backup #24 is reachable');
+              const cancelIdx = (options.buttons as string[]).indexOf('Cancel');
+              assert.ok(cancelIdx >= 0, 'Select Compatible Backup dialog includes Cancel');
+              return { response: cancelIdx, checkboxChecked: false };
+            },
+          } as any,
+          shell: { openExternal: async () => {}, openPath: async () => '' },
+          log: { info() {}, warn() {}, error() {} },
+          isShutdownRequested: () => false,
+          discoverBackups: () => discoverDowngradeBackupsAsync(),
+          planPreservedArchivePath: planNewerDatabaseArchivePath,
+          restoreBackup: restoreCompatibleBackupForDowngrade,
+          getBackupDir,
+          getDbPath,
+        },
+      );
+      assert.deepEqual(asyncFlowOutcome, { outcome: 'exit' });
+    } finally {
+      fs.rmSync(asyncScanSeedDir, { recursive: true, force: true });
     }
 
     // 6. Electron main/index.ts startup interception (via tests/startup-failure-child.cjs):

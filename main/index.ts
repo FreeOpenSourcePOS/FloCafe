@@ -25,7 +25,7 @@ import {
   beginDatabaseShutdown,
   now,
   withDatabaseRequest,
-  discoverDowngradeBackups,
+  discoverDowngradeBackupsAsync,
   isSchemaVersionMismatchError,
   planNewerDatabaseArchivePath,
   restoreCompatibleBackupForDowngrade,
@@ -1690,7 +1690,7 @@ async function initialize(): Promise<void> {
           shell,
           log,
           isShutdownRequested,
-          discoverBackups: discoverDowngradeBackups,
+          discoverBackups: () => discoverDowngradeBackupsAsync({ signal: shutdownSignal }),
           planPreservedArchivePath: planNewerDatabaseArchivePath,
           restoreBackup: (backupPath, options) =>
             restoreCompatibleBackupForDowngrade(backupPath, {

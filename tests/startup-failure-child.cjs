@@ -227,6 +227,24 @@ Module._load = function (request, parent, isMain) {
         incompatibleNewer: [],
         corruptOrInvalid: [],
       }),
+      discoverDowngradeBackupsAsync: async () => ({
+        backupDir: path.join(testDir, 'backups'),
+        maxSupportedSchemaVersion: 121,
+        compatible: [
+          {
+            fileName: 'flo-backup-2026-10-28-pre-v120-to-v121.db',
+            path: path.join(testDir, 'backups', 'flo-backup-2026-10-28-pre-v120-to-v121.db'),
+            sizeBytes: 4096,
+            createdAt: '2026-10-28T10:00:00.000Z',
+            backupCreatedAt: '2026-10-28T10:00:00.000Z',
+            appVersion: '3.13.14',
+            schemaVersion: 120,
+            kind: 'pre-upgrade',
+          },
+        ],
+        incompatibleNewer: [],
+        corruptOrInvalid: [],
+      }),
       planNewerDatabaseArchivePath: (version) =>
         path.join(testDir, 'backups', `flo-preserved-newer-v${version}-test.db`),
       restoreCompatibleBackupForDowngrade: async (backupPath, options) => {

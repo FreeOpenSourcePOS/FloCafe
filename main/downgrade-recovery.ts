@@ -25,7 +25,7 @@ export interface DowngradeRecoveryDeps {
   shell: Pick<typeof ElectronShell, 'openExternal' | 'openPath'>;
   log: DowngradeRecoveryLogger;
   isShutdownRequested: () => boolean;
-  discoverBackups: () => DowngradeBackupDiscovery;
+  discoverBackups: () => DowngradeBackupDiscovery | Promise<DowngradeBackupDiscovery>;
   planPreservedArchivePath: (newerDbVersion: number) => string;
   restoreBackup: (
     backupPath: string,
@@ -288,7 +288,7 @@ export async function runDowngradeRecoveryFlow(
     }
 
     if (mainChoice.response === 2) {
-      const discovery = deps.discoverBackups();
+      const discovery = await deps.discoverBackups();
       if (deps.isShutdownRequested()) return { outcome: 'exit' };
       if (discovery.compatible.length === 0) {
         const emptyChoice = await deps.dialog.showMessageBox({

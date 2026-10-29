@@ -992,6 +992,103 @@ export function finalizeDatabaseReplacementJournal(handle: DatabaseReplacementJo
 const SQLITE_HEADER_MAGIC = Buffer.from('SQLite format 3\0', 'utf8');
 const SQLITE_PROBE_SIDECAR_SUFFIXES = ['-wal', '-shm', '-journal'] as const;
 type SqliteProbeSidecar = (typeof SQLITE_PROBE_SIDECAR_SUFFIXES)[number];
+const INTERNAL_DB_STAGE_DIR_PREFIX = '.flo-db-stage-';
+
+function cleanupStaleDatabaseStageDirectories(directoryPaths: readonly string[]): void {
+  const seen = new Set<string>();
+  for (const rawDir of directoryPaths) {
+    const resolvedDir = path.resolve(rawDir);
+    if (seen.has(resolvedDir)) continue;
+    seen.add(resolvedDir);
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(resolvedDir);
+    } catch {
+      continue;
+    }
+    for (const entryName of entries) {
+      if (!entryName.startsWith(INTERNAL_DB_STAGE_DIR_PREFIX)) continue;
+      const entryPath = path.join(resolvedDir, entryName);
+      try {
+        const stat = fs.lstatSync(entryPath);
+        if (!stat.isSymbolicLink() && stat.isDirectory()) {
+          fs.rmSync(entryPath, { recursive: true, force: true });
+        }
+      } catch {}
+    }
+  }
+}
+
+function stageDatabaseCopyInDirectory(
+  parentDir: string,
+  dirPrefix: string,
+  targetFileName: string,
+  sourceDbPath: string,
+  sidecars: readonly SqliteProbeSidecar[],
+): { tempDir: string; tempDbPath: string } {
+  let tempDir: string | null = null;
+  try {
+    tempDir = fs.mkdtempSync(path.join(parentDir, dirPrefix));
+    const tempDbPath = path.join(tempDir, targetFileName);
+    fs.copyFileSync(sourceDbPath, tempDbPath, fs.constants.COPYFILE_EXCL);
+    for (const suffix of sidecars) {
+      fs.copyFileSync(
+        `${sourceDbPath}${suffix}`,
+        `${tempDbPath}${suffix}`,
+        fs.constants.COPYFILE_EXCL,
+      );
+    }
+    return { tempDir, tempDbPath };
+  } catch (error) {
+    if (tempDir) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {}
+    }
+    throw error;
+  }
+}
+
+function stageDatabaseCopyWithFallback(
+  sourceDbPath: string,
+  sidecars: readonly SqliteProbeSidecar[],
+  options: {
+    tmpPrefix: string;
+    fallbackSubprefix: string;
+    targetFileName: string;
+    purposeLabel: string;
+  },
+): { tempDir: string; tempDbPath: string } {
+  try {
+    return stageDatabaseCopyInDirectory(
+      os.tmpdir(),
+      options.tmpPrefix,
+      options.targetFileName,
+      sourceDbPath,
+      sidecars,
+    );
+  } catch (primaryError) {
+    const fallbackParentDir = path.dirname(path.resolve(sourceDbPath));
+    try {
+      return stageDatabaseCopyInDirectory(
+        fallbackParentDir,
+        `${INTERNAL_DB_STAGE_DIR_PREFIX}${options.fallbackSubprefix}`,
+        options.targetFileName,
+        sourceDbPath,
+        sidecars,
+      );
+    } catch (fallbackError) {
+      const primaryMessage =
+        primaryError instanceof Error ? primaryError.message : 'unknown error';
+      const fallbackMessage =
+        fallbackError instanceof Error ? fallbackError.message : 'unknown error';
+      throw new Error(
+        `Could not stage ${options.purposeLabel} in system temp (${primaryMessage}) or on the database volume at ${fallbackParentDir} (${fallbackMessage}). Free disk space and try again.`,
+        { cause: fallbackError },
+      );
+    }
+  }
+}
 
 interface SqliteHeaderInfo {
   headerVersion: number;
@@ -1088,20 +1185,14 @@ function isReadableRecoverySnapshotWithSidecars(
   let tempDir: string | null = null;
   let probeDb: Database.Database | undefined;
   try {
-    let tempDbPath: string;
-    try {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-recovery-verify-'));
-      tempDbPath = path.join(tempDir, 'recovery.db');
-      fs.copyFileSync(recoveryPath, tempDbPath);
-      for (const suffix of expectedSidecars) {
-        fs.copyFileSync(`${recoveryPath}${suffix}`, `${tempDbPath}${suffix}`);
-      }
-    } catch (stageError) {
-      throw new Error(
-        `Could not stage recovery snapshot for verification: ${stageError instanceof Error ? stageError.message : 'unknown error'}`,
-        { cause: stageError },
-      );
-    }
+    const staged = stageDatabaseCopyWithFallback(recoveryPath, expectedSidecars, {
+      tmpPrefix: 'flo-recovery-verify-',
+      fallbackSubprefix: 'recovery-',
+      targetFileName: 'recovery.db',
+      purposeLabel: 'recovery snapshot for verification',
+    });
+    tempDir = staged.tempDir;
+    const tempDbPath = staged.tempDbPath;
     try {
       probeDb = new Database(tempDbPath, { fileMustExist: true });
       const integrity = probeDb.prepare('PRAGMA integrity_check').all() as {
@@ -1197,19 +1288,16 @@ function withProbedDatabaseFile<T>(
   try {
     let tempDbPath: string;
     try {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-db-health-probe-'));
-      tempDbPath = path.join(tempDir, 'probe.db');
-      fs.copyFileSync(filePath, tempDbPath);
-      for (const suffix of presentSidecars) {
-        fs.copyFileSync(`${filePath}${suffix}`, `${tempDbPath}${suffix}`);
-      }
+      const staged = stageDatabaseCopyWithFallback(filePath, presentSidecars, {
+        tmpPrefix: 'flo-db-health-probe-',
+        fallbackSubprefix: 'health-',
+        targetFileName: 'probe.db',
+        purposeLabel: 'database file for health verification',
+      });
+      tempDir = staged.tempDir;
+      tempDbPath = staged.tempDbPath;
     } catch (stageError) {
-      if (throwOnStagingError) {
-        throw new Error(
-          `Could not stage database file for health verification: ${stageError instanceof Error ? stageError.message : 'unknown error'}`,
-          { cause: stageError },
-        );
-      }
+      if (throwOnStagingError) throw stageError;
       return null;
     }
     try {
@@ -1252,6 +1340,10 @@ function isHealthyDowngradeCommittedDatabaseFile(
         const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
         const supportedVersion = getLatestSupportedSchemaVersion();
         if (schemaVersion < 1 || schemaVersion > supportedVersion) return false;
+        const metaInfo = readCanonicalMetaVersionInfo(candidate);
+        if (metaInfo.schemaVersion !== null && metaInfo.schemaVersion > supportedVersion) {
+          return false;
+        }
         if (validateDatabaseSchemaTableColumns(candidate, schemaVersion) !== null) return false;
         return validateInventoryLedgerDatabase(candidate) === null;
       },
@@ -1797,26 +1889,46 @@ export function registerSettingsRevisionTriggers(dbInstance: Database.Database =
   }
 }
 
-function readMatchingMetaAppVersion(
-  probeDb: Database.Database,
-  schemaVersion: number,
-): string | null {
+function readCanonicalMetaVersionInfo(probeDb: Database.Database): {
+  schemaVersion: number | null;
+  appVersion: string | null;
+} {
   try {
     const metaRows = probeDb
       .prepare("SELECT key, value FROM _flo_meta WHERE key IN ('schema_version', 'app_version')")
       .all() as { key: string; value: string | null }[];
     const metaValues = new Map(metaRows.map((row) => [row.key, row.value]));
-    const metaSchemaVersion = parseCanonicalSchemaVersion(metaValues.get('schema_version'));
+    const schemaVersion = parseCanonicalSchemaVersion(metaValues.get('schema_version'));
     const rawAppVersion = metaValues.get('app_version');
-    if (
-      metaSchemaVersion === schemaVersion &&
-      typeof rawAppVersion === 'string' &&
-      rawAppVersion.trim()
-    ) {
-      return rawAppVersion.trim();
-    }
-  } catch {}
-  return null;
+    const appVersion =
+      typeof rawAppVersion === 'string' && rawAppVersion.trim() ? rawAppVersion.trim() : null;
+    return { schemaVersion, appVersion };
+  } catch {
+    return { schemaVersion: null, appVersion: null };
+  }
+}
+
+function inspectEffectiveDatabaseVersion(
+  probeDb: Database.Database,
+  fallbackVersion: number,
+  maxSupported: number,
+): { schemaVersion: number; appVersion: string | null } | null {
+  const rawPragma = Number(probeDb.pragma('user_version', { simple: true }));
+  const baseVersion = Number.isSafeInteger(rawPragma) ? rawPragma : fallbackVersion;
+  const metaInfo = readCanonicalMetaVersionInfo(probeDb);
+  const effectiveVersion =
+    metaInfo.schemaVersion !== null && metaInfo.schemaVersion > maxSupported
+      ? Math.max(baseVersion, metaInfo.schemaVersion)
+      : baseVersion;
+  if (!Number.isSafeInteger(effectiveVersion)) {
+    return fallbackVersion > maxSupported
+      ? { schemaVersion: fallbackVersion, appVersion: null }
+      : null;
+  }
+  return {
+    schemaVersion: effectiveVersion,
+    appVersion: metaInfo.schemaVersion === effectiveVersion ? metaInfo.appVersion : null,
+  };
 }
 
 function inspectDatabaseVersionNonMutating(
@@ -1852,61 +1964,48 @@ function inspectDatabaseVersionNonMutating(
     presentSidecars.push(suffix);
   }
 
-  if (presentSidecars.length === 0) {
-    if (headerVersion <= maxSupported) {
-      return { schemaVersion: headerVersion, appVersion: null };
-    }
-    if (isLegacyRollbackFormat) {
-      let probeDb: Database.Database | undefined;
-      try {
-        probeDb = new Database(dbPath, { readonly: true, fileMustExist: true });
-        return {
+  if (presentSidecars.length === 0 && isLegacyRollbackFormat) {
+    let probeDb: Database.Database | undefined;
+    try {
+      probeDb = new Database(dbPath, { readonly: true, fileMustExist: true });
+      return (
+        inspectEffectiveDatabaseVersion(probeDb, headerVersion, maxSupported) ?? {
           schemaVersion: headerVersion,
-          appVersion: readMatchingMetaAppVersion(probeDb, headerVersion),
-        };
-      } catch {
-        return { schemaVersion: headerVersion, appVersion: null };
-      } finally {
-        try {
-          probeDb?.close();
-        } catch {}
-      }
+          appVersion: null,
+        }
+      );
+    } catch {
+      return { schemaVersion: headerVersion, appVersion: null };
+    } finally {
+      try {
+        probeDb?.close();
+      } catch {}
     }
   }
 
-  // Inspect a disposable copy so live WAL/SHM sidecars are never checkpointed or removed.
+  // Inspect a disposable copy so live WAL/SHM/journal sidecars are never checkpointed or removed.
   let tempDir: string | null = null;
   let probeDb: Database.Database | undefined;
   try {
     let tempDbPath: string;
     try {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-schema-preflight-'));
-      tempDbPath = path.join(tempDir, 'probe.db');
-      fs.copyFileSync(dbPath, tempDbPath);
-      for (const suffix of presentSidecars) {
-        fs.copyFileSync(`${dbPath}${suffix}`, `${tempDbPath}${suffix}`);
-      }
+      const staged = stageDatabaseCopyWithFallback(dbPath, presentSidecars, {
+        tmpPrefix: 'flo-schema-preflight-',
+        fallbackSubprefix: 'preflight-',
+        targetFileName: 'probe.db',
+        purposeLabel: 'active database for schema preflight',
+      });
+      tempDir = staged.tempDir;
+      tempDbPath = staged.tempDbPath;
     } catch (stageError) {
       if (headerVersion > maxSupported) {
         return { schemaVersion: headerVersion, appVersion: null };
       }
-      throw new Error(
-        `Could not stage active database for schema preflight: ${stageError instanceof Error ? stageError.message : 'unknown error'}`,
-        { cause: stageError },
-      );
+      throw stageError;
     }
     try {
       probeDb = new Database(tempDbPath, { fileMustExist: true });
-      const pragmaVersion = Number(probeDb.pragma('user_version', { simple: true }));
-      if (!Number.isSafeInteger(pragmaVersion)) {
-        return headerVersion > maxSupported
-          ? { schemaVersion: headerVersion, appVersion: null }
-          : null;
-      }
-      return {
-        schemaVersion: pragmaVersion,
-        appVersion: readMatchingMetaAppVersion(probeDb, pragmaVersion),
-      };
+      return inspectEffectiveDatabaseVersion(probeDb, headerVersion, maxSupported);
     } catch {
       return headerVersion > maxSupported
         ? { schemaVersion: headerVersion, appVersion: null }
@@ -1943,6 +2042,7 @@ function initializeDatabase(
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
   }
+  cleanupStaleDatabaseStageDirectories([path.dirname(dbPath), backupDir]);
   if (recoverInterruptedReplacement) recoverInterruptedDatabaseReplacement(dbPath, backupDir);
 
   // Startup guard: prevent silent recreation of missing database if previously initialized.
@@ -2544,7 +2644,7 @@ export function createBackup(
 
 function removeDatabaseFiles(dbPath: string): string[] {
   const failures: string[] = [];
-  for (const filePath of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+  for (const filePath of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`, `${dbPath}-journal`]) {
     try {
       if (pathEntryExists(filePath)) fs.unlinkSync(filePath);
     } catch (error: any) {
@@ -2644,7 +2744,12 @@ async function resetDatabaseWithBackupUnlocked(
     }
     try {
       closeDatabase();
-      removeDatabaseFiles(dbPath);
+      const recoveryRemoveFailures = removeDatabaseFiles(dbPath);
+      if (recoveryRemoveFailures.length > 0) {
+        throw new Error(
+          `Could not remove database files during reset recovery: ${recoveryRemoveFailures.join(', ')}`,
+        );
+      }
       fs.copyFileSync(backupPath, dbPath);
       syncFile(dbPath);
       if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
@@ -3463,121 +3568,274 @@ function inspectBackupSnapshotForDowngrade(
   }
 }
 
-export function discoverDowngradeBackups(): DowngradeBackupDiscovery {
-  const backupDir = getBackupDir();
-  const maxSupportedSchemaVersion = getLatestSupportedSchemaVersion();
-  const compatible: CompatibleDowngradeBackup[] = [];
-  const incompatibleNewer: RejectedDowngradeBackup[] = [];
-  const corruptOrInvalid: RejectedDowngradeBackup[] = [];
-
-  if (!fs.existsSync(backupDir)) {
+function inspectNewerHeaderBackupFastPath(
+  snapshotPath: string,
+  headerVersion: number,
+  maxSupportedSchemaVersion: number,
+): DowngradeBackupSnapshotInspection {
+  let candidateDb: Database.Database | undefined;
+  try {
+    candidateDb = new Database(snapshotPath, { readonly: true, fileMustExist: true });
+    let hasMetaSchemaStamp = false;
+    let parsedMetaVersion: number | null = null;
+    let appVersion: string | null = null;
+    const hasMetaTable = Boolean(
+      candidateDb
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_flo_meta'")
+        .get(),
+    );
+    if (hasMetaTable) {
+      const metaRows = candidateDb
+        .prepare("SELECT key, value FROM _flo_meta WHERE key IN ('schema_version', 'app_version')")
+        .all() as { key: string; value: string | null }[];
+      const values = new Map(metaRows.map((row) => [row.key, row.value]));
+      hasMetaSchemaStamp = values.has('schema_version');
+      parsedMetaVersion = parseCanonicalSchemaVersion(values.get('schema_version'));
+      if (hasMetaSchemaStamp && parsedMetaVersion === headerVersion) {
+        const rawAppVersion = values.get('app_version');
+        if (typeof rawAppVersion === 'string' && rawAppVersion.trim()) {
+          appVersion = rawAppVersion.trim();
+        }
+      }
+    }
+    if (hasMetaSchemaStamp && (parsedMetaVersion === null || parsedMetaVersion !== headerVersion)) {
+      return {
+        status: 'corrupt_or_invalid',
+        schemaVersion: headerVersion,
+        appVersion: null,
+        detail: 'Backup schema metadata does not match the SQLite header',
+      };
+    }
     return {
-      backupDir,
-      maxSupportedSchemaVersion,
-      compatible,
-      incompatibleNewer,
-      corruptOrInvalid,
+      status: 'incompatible_newer',
+      schemaVersion: headerVersion,
+      appVersion,
+      detail: `Requires schema v${headerVersion} (this version supports up to v${maxSupportedSchemaVersion})`,
     };
+  } catch (error: unknown) {
+    return {
+      status: 'corrupt_or_invalid',
+      schemaVersion: null,
+      appVersion: null,
+      detail:
+        error instanceof Error && error.message
+          ? error.message
+          : 'File is not a readable SQLite database',
+    };
+  } finally {
+    try {
+      candidateDb?.close();
+    } catch {}
   }
+}
 
-  const liveDbPath = getDbPath();
+function listDowngradeBackupCandidateEntries(
+  backupDir: string,
+  liveDbPath: string,
+): { fileName: string; fullPath: string }[] {
+  if (!fs.existsSync(backupDir)) return [];
   let entries: string[];
   try {
     entries = fs.readdirSync(backupDir);
   } catch {
-    return {
-      backupDir,
-      maxSupportedSchemaVersion,
-      compatible,
-      incompatibleNewer,
-      corruptOrInvalid,
-    };
+    return [];
   }
-
+  const candidates: { fileName: string; fullPath: string }[] = [];
   for (const fileName of entries.sort()) {
-    if (!fileName.endsWith('.db') || INTERNAL_BACKUP_ARTIFACT_PATTERN.test(fileName)) continue;
+    if (
+      fileName.startsWith(INTERNAL_DB_STAGE_DIR_PREFIX) ||
+      !fileName.endsWith('.db') ||
+      INTERNAL_BACKUP_ARTIFACT_PATTERN.test(fileName)
+    ) {
+      continue;
+    }
     const fullPath = resolveContainedPath(backupDir, fileName);
     if (!fullPath) continue;
     if (
-      [liveDbPath, `${liveDbPath}-wal`, `${liveDbPath}-shm`].some((target) =>
-        isLiveDatabaseTarget(fullPath, target),
+      [liveDbPath, `${liveDbPath}-wal`, `${liveDbPath}-shm`, `${liveDbPath}-journal`].some(
+        (target) => isLiveDatabaseTarget(fullPath, target),
       )
     ) {
       continue;
     }
+    candidates.push({ fileName, fullPath });
+  }
+  return candidates;
+}
 
-    let lstat: fs.Stats;
-    try {
-      lstat = fs.lstatSync(fullPath);
-    } catch {
-      continue;
-    }
-    if (lstat.isSymbolicLink() || !lstat.isFile()) {
-      corruptOrInvalid.push({
-        fileName,
-        path: fullPath,
-        reason: 'corrupt_or_invalid',
-        schemaVersion: null,
-        appVersion: null,
-        detail: 'Backup candidate must be a regular file',
-      });
-      continue;
-    }
-
-    let staged: { snapshotPath: string; cleanup: () => void } | undefined;
-    try {
-      staged = materializeRestoreSource(fullPath, liveDbPath);
-      const inspection = inspectBackupSnapshotForDowngrade(
-        staged.snapshotPath,
-        maxSupportedSchemaVersion,
-      );
-      if (inspection.status === 'compatible') {
-        compatible.push({
-          fileName,
-          path: fullPath,
-          sizeBytes: lstat.size,
-          createdAt: lstat.mtime.toISOString(),
-          backupCreatedAt: inspection.backupCreatedAt,
-          appVersion: inspection.appVersion,
-          schemaVersion: inspection.schemaVersion,
-          kind: classifyDowngradeBackupKind(fileName),
-        });
-      } else if (inspection.status === 'incompatible_newer') {
-        incompatibleNewer.push({
-          fileName,
-          path: fullPath,
-          reason: 'incompatible_newer',
-          schemaVersion: inspection.schemaVersion,
-          appVersion: inspection.appVersion,
-          detail: inspection.detail,
-        });
-      } else {
-        corruptOrInvalid.push({
-          fileName,
-          path: fullPath,
-          reason: 'corrupt_or_invalid',
-          schemaVersion: inspection.schemaVersion,
-          appVersion: inspection.appVersion,
-          detail: inspection.detail,
-        });
-      }
-    } catch (error: unknown) {
-      corruptOrInvalid.push({
-        fileName,
-        path: fullPath,
-        reason: 'corrupt_or_invalid',
-        schemaVersion: null,
-        appVersion: null,
-        detail:
-          error instanceof Error && error.message
-            ? error.message
-            : 'Backup candidate could not be read safely',
-      });
-    } finally {
-      staged?.cleanup();
-    }
+function evaluateDowngradeBackupCandidate(
+  fileName: string,
+  fullPath: string,
+  maxSupportedSchemaVersion: number,
+  compatible: CompatibleDowngradeBackup[],
+  incompatibleNewer: RejectedDowngradeBackup[],
+  corruptOrInvalid: RejectedDowngradeBackup[],
+): void {
+  let lstat: fs.Stats;
+  try {
+    lstat = fs.lstatSync(fullPath);
+  } catch {
+    return;
+  }
+  if (lstat.isSymbolicLink() || !lstat.isFile()) {
+    corruptOrInvalid.push({
+      fileName,
+      path: fullPath,
+      reason: 'corrupt_or_invalid',
+      schemaVersion: null,
+      appVersion: null,
+      detail: 'Backup candidate must be a regular file',
+    });
+    return;
   }
 
+  if (
+    pathEntryExists(`${fullPath}-wal`) ||
+    pathEntryExists(`${fullPath}-shm`) ||
+    pathEntryExists(`${fullPath}-journal`)
+  ) {
+    corruptOrInvalid.push({
+      fileName,
+      path: fullPath,
+      reason: 'corrupt_or_invalid',
+      schemaVersion: null,
+      appVersion: null,
+      detail: 'Restore source must not have SQLite sidecars',
+    });
+    return;
+  }
+
+  let headerInfo: SqliteHeaderInfo | null;
+  try {
+    headerInfo = readSqliteHeaderInfo(fullPath, true);
+  } catch (readError: unknown) {
+    corruptOrInvalid.push({
+      fileName,
+      path: fullPath,
+      reason: 'corrupt_or_invalid',
+      schemaVersion: null,
+      appVersion: null,
+      detail:
+        readError instanceof Error && readError.message
+          ? readError.message
+          : 'Backup candidate could not be read safely',
+    });
+    return;
+  }
+  if (!headerInfo) {
+    corruptOrInvalid.push({
+      fileName,
+      path: fullPath,
+      reason: 'corrupt_or_invalid',
+      schemaVersion: null,
+      appVersion: null,
+      detail: 'File is not a readable SQLite database',
+    });
+    return;
+  }
+
+  let tempDir: string | null = null;
+  try {
+    let inspection: DowngradeBackupSnapshotInspection;
+    if (headerInfo.headerVersion > maxSupportedSchemaVersion) {
+      inspection = headerInfo.isLegacyRollbackFormat
+        ? inspectNewerHeaderBackupFastPath(fullPath, headerInfo.headerVersion, maxSupportedSchemaVersion)
+        : {
+            status: 'incompatible_newer',
+            schemaVersion: headerInfo.headerVersion,
+            appVersion: null,
+            detail: `Requires schema v${headerInfo.headerVersion} (this version supports up to v${maxSupportedSchemaVersion})`,
+          };
+    } else {
+      let inspectTargetPath = fullPath;
+      if (!headerInfo.isLegacyRollbackFormat) {
+        const staged = stageDatabaseCopyWithFallback(fullPath, [], {
+          tmpPrefix: 'flo-backup-discover-',
+          fallbackSubprefix: 'discover-',
+          targetFileName: 'candidate.db',
+          purposeLabel: 'backup candidate for discovery',
+        });
+        tempDir = staged.tempDir;
+        inspectTargetPath = staged.tempDbPath;
+      }
+      inspection = inspectBackupSnapshotForDowngrade(inspectTargetPath, maxSupportedSchemaVersion);
+    }
+
+    const afterStat = fs.lstatSync(fullPath);
+    if (
+      afterStat.isSymbolicLink() ||
+      !afterStat.isFile() ||
+      afterStat.dev !== lstat.dev ||
+      afterStat.ino !== lstat.ino ||
+      afterStat.size !== lstat.size ||
+      afterStat.mtimeMs !== lstat.mtimeMs ||
+      pathEntryExists(`${fullPath}-wal`) ||
+      pathEntryExists(`${fullPath}-shm`) ||
+      pathEntryExists(`${fullPath}-journal`)
+    ) {
+      corruptOrInvalid.push({
+        fileName,
+        path: fullPath,
+        reason: 'corrupt_or_invalid',
+        schemaVersion: null,
+        appVersion: null,
+        detail: 'Restore source changed while it was being read',
+      });
+      return;
+    }
+
+    if (inspection.status === 'compatible') {
+      compatible.push({
+        fileName,
+        path: fullPath,
+        sizeBytes: lstat.size,
+        createdAt: lstat.mtime.toISOString(),
+        backupCreatedAt: inspection.backupCreatedAt,
+        appVersion: inspection.appVersion,
+        schemaVersion: inspection.schemaVersion,
+        kind: classifyDowngradeBackupKind(fileName),
+      });
+    } else if (inspection.status === 'incompatible_newer') {
+      incompatibleNewer.push({
+        fileName,
+        path: fullPath,
+        reason: 'incompatible_newer',
+        schemaVersion: inspection.schemaVersion,
+        appVersion: inspection.appVersion,
+        detail: inspection.detail,
+      });
+    } else {
+      corruptOrInvalid.push({
+        fileName,
+        path: fullPath,
+        reason: 'corrupt_or_invalid',
+        schemaVersion: inspection.schemaVersion,
+        appVersion: inspection.appVersion,
+        detail: inspection.detail,
+      });
+    }
+  } catch (error: unknown) {
+    corruptOrInvalid.push({
+      fileName,
+      path: fullPath,
+      reason: 'corrupt_or_invalid',
+      schemaVersion: null,
+      appVersion: null,
+      detail:
+        error instanceof Error && error.message
+          ? error.message
+          : 'Backup candidate could not be read safely',
+    });
+  } finally {
+    if (tempDir) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {}
+    }
+  }
+}
+
+function sortCompatibleDowngradeBackups(compatible: CompatibleDowngradeBackup[]): void {
   const effectiveTimeMs = (item: CompatibleDowngradeBackup): number => {
     if (item.backupCreatedAt) {
       const parsed = Date.parse(item.backupCreatedAt);
@@ -3596,6 +3854,62 @@ export function discoverDowngradeBackups(): DowngradeBackupDiscovery {
     }
     return right.fileName.localeCompare(left.fileName);
   });
+}
+
+export function discoverDowngradeBackups(): DowngradeBackupDiscovery {
+  const backupDir = getBackupDir();
+  const maxSupportedSchemaVersion = getLatestSupportedSchemaVersion();
+  const compatible: CompatibleDowngradeBackup[] = [];
+  const incompatibleNewer: RejectedDowngradeBackup[] = [];
+  const corruptOrInvalid: RejectedDowngradeBackup[] = [];
+  const liveDbPath = getDbPath();
+
+  for (const { fileName, fullPath } of listDowngradeBackupCandidateEntries(backupDir, liveDbPath)) {
+    evaluateDowngradeBackupCandidate(
+      fileName,
+      fullPath,
+      maxSupportedSchemaVersion,
+      compatible,
+      incompatibleNewer,
+      corruptOrInvalid,
+    );
+  }
+  sortCompatibleDowngradeBackups(compatible);
+
+  return {
+    backupDir,
+    maxSupportedSchemaVersion,
+    compatible,
+    incompatibleNewer,
+    corruptOrInvalid,
+  };
+}
+
+export async function discoverDowngradeBackupsAsync(options?: {
+  signal?: AbortSignal;
+}): Promise<DowngradeBackupDiscovery> {
+  const backupDir = getBackupDir();
+  const maxSupportedSchemaVersion = getLatestSupportedSchemaVersion();
+  const compatible: CompatibleDowngradeBackup[] = [];
+  const incompatibleNewer: RejectedDowngradeBackup[] = [];
+  const corruptOrInvalid: RejectedDowngradeBackup[] = [];
+  const liveDbPath = getDbPath();
+
+  const candidates = listDowngradeBackupCandidateEntries(backupDir, liveDbPath);
+  for (const { fileName, fullPath } of candidates) {
+    if (options?.signal?.aborted) break;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    if (options?.signal?.aborted) break;
+    evaluateDowngradeBackupCandidate(
+      fileName,
+      fullPath,
+      maxSupportedSchemaVersion,
+      compatible,
+      incompatibleNewer,
+      corruptOrInvalid,
+    );
+  }
+  sortCompatibleDowngradeBackups(compatible);
 
   return {
     backupDir,
@@ -3620,7 +3934,8 @@ export function planNewerDatabaseArchivePath(newerDbVersion: number): string {
     if (
       !pathEntryExists(candidatePath) &&
       !pathEntryExists(`${candidatePath}-wal`) &&
-      !pathEntryExists(`${candidatePath}-shm`)
+      !pathEntryExists(`${candidatePath}-shm`) &&
+      !pathEntryExists(`${candidatePath}-journal`)
     ) {
       return candidatePath;
     }
@@ -3639,6 +3954,17 @@ export function restoreCompatibleBackupForDowngrade(
     const dbPath = getDbPath();
     const backupDir = getBackupDir();
     const maxSupported = getLatestSupportedSchemaVersion();
+    const activeRollbackJournalPath = `${dbPath}-journal`;
+    const throwIfActiveRollbackJournalPresent = () => {
+      if (pathEntryExists(activeRollbackJournalPath)) {
+        throw new Error(
+          `Active SQLite rollback journal detected (${activeRollbackJournalPath}). ` +
+            `Refusing backup restore so uncommitted newer-database recovery state is not lost or replayed. ` +
+            `Update Flo Cafe to the latest compatible version to recover the database cleanly before restoring.`,
+        );
+      }
+    };
+    throwIfActiveRollbackJournalPresent();
 
     let stagedSource: { snapshotPath: string; cleanup: () => void } | undefined;
     try {
@@ -3660,6 +3986,7 @@ export function restoreCompatibleBackupForDowngrade(
       if (liveStat.isSymbolicLink() || !liveStat.isFile()) {
         throw new Error('Active database path is not a regular file.');
       }
+      throwIfActiveRollbackJournalPresent();
 
       const presentSidecars: ReplacementJournalSidecar[] = [];
       for (const suffix of ['-wal', '-shm'] as const) {
@@ -3698,7 +4025,8 @@ export function restoreCompatibleBackupForDowngrade(
         preservedDbPath =
           !pathEntryExists(contained) &&
           !pathEntryExists(`${contained}-wal`) &&
-          !pathEntryExists(`${contained}-shm`)
+          !pathEntryExists(`${contained}-shm`) &&
+          !pathEntryExists(`${contained}-journal`)
             ? contained
             : planNewerDatabaseArchivePath(newerVersion);
       } else {
@@ -5427,10 +5755,14 @@ function materializeRestoreSource(
   const sourceStat = fs.lstatSync(sourcePath);
   if (sourceStat.isSymbolicLink() || !sourceStat.isFile())
     throw new Error('Restore source must be a regular file');
-  if (pathEntryExists(`${sourcePath}-wal`) || pathEntryExists(`${sourcePath}-shm`))
+  if (
+    pathEntryExists(`${sourcePath}-wal`) ||
+    pathEntryExists(`${sourcePath}-shm`) ||
+    pathEntryExists(`${sourcePath}-journal`)
+  )
     throw new Error('Restore source must not have SQLite sidecars');
   if (
-    [livePath, `${livePath}-wal`, `${livePath}-shm`].some((liveTarget) =>
+    [livePath, `${livePath}-wal`, `${livePath}-shm`, `${livePath}-journal`].some((liveTarget) =>
       isLiveDatabaseTarget(sourcePath, liveTarget),
     )
   ) {
@@ -5473,7 +5805,11 @@ function materializeRestoreSource(
     ) {
       throw new Error('Restore source changed while it was being read');
     }
-    if (pathEntryExists(`${sourcePath}-wal`) || pathEntryExists(`${sourcePath}-shm`)) {
+    if (
+      pathEntryExists(`${sourcePath}-wal`) ||
+      pathEntryExists(`${sourcePath}-shm`) ||
+      pathEntryExists(`${sourcePath}-journal`)
+    ) {
       throw new Error('Restore source acquired SQLite sidecars while it was being read');
     }
     snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-restore-source-'));
@@ -5509,7 +5845,7 @@ function dataOnlyRestore(
   throwIfDatabaseMaintenanceAborted(signal);
   const livePath = getDbPath();
   if (
-    [livePath, `${livePath}-wal`, `${livePath}-shm`].some((liveTarget) =>
+    [livePath, `${livePath}-wal`, `${livePath}-shm`, `${livePath}-journal`].some((liveTarget) =>
       isLiveDatabaseTarget(backupPath, liveTarget),
     )
   ) {
@@ -9417,9 +9753,19 @@ function runMigrations(targetVersion?: number, skipPreMigrationBackup = false): 
   const target = targetVersion !== undefined ? targetVersion : maxSupported;
   const verboseMigrationLogs = process.env.FLOCAFE_TEST_VERBOSE === '1';
 
-  if (current > target) {
+  const metaInfo = readCanonicalMetaVersionInfo(db ?? getDatabase());
+  const effectiveCurrent =
+    metaInfo.schemaVersion !== null && metaInfo.schemaVersion > target
+      ? Math.max(current, metaInfo.schemaVersion)
+      : current;
+
+  if (effectiveCurrent > target) {
     // Fail startup if database schema version is newer than supported by this build.
-    throw new SchemaVersionMismatchError(current, target);
+    throw new SchemaVersionMismatchError(
+      effectiveCurrent,
+      target,
+      metaInfo.schemaVersion === effectiveCurrent ? metaInfo.appVersion : null,
+    );
   }
 
   if (current === target) {

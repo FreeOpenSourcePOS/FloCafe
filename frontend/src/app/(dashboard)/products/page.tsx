@@ -50,6 +50,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { nameToColor } from '@/lib/image-utils';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { tenantCan } from '@/lib/permissions';
+import { isMenuCategoryVisible } from '@/lib/printer/menu-web-print';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type ProductsKey = keyof AppConfig['Messages']['products'];
@@ -1004,10 +1005,17 @@ export default function ProductsPage() {
   const editingCategoryHasChildren = editingCategory
     ? (childrenByParentId.get(String(editingCategory.id))?.length ?? 0) > 0
     : false;
+  const retainedCategoryParentId = String(editingCategory?.parent_id ?? '');
   const availableParentCategories = rootCategories.filter(
     (c) =>
       String(c.id) !== String(editingCategory?.id ?? '') &&
-      (c.is_active || String(c.id) === String(categoryForm.parent_id)),
+      ((!c.parent_id && c.is_active) || String(c.id) === retainedCategoryParentId),
+  );
+  const retainedProductCategoryId = String(
+    editingProduct?.category_id || editingProduct?.category?.id || '',
+  );
+  const availableProductCategories = orderedCategories.filter(
+    (c) => isMenuCategoryVisible(categoryById, c.id) || String(c.id) === retainedProductCategoryId,
   );
 
   const handleMoveCategory = async (cat: Category, direction: -1 | 1) => {
@@ -1241,10 +1249,12 @@ export default function ProductsPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {visibleProducts.map((product) => {
-                  const parentCat = categories.find(
-                    (c) => String(c.id) === String(product.category_id || product.category?.id),
+                  const parentCat = categoryById.get(
+                    String(product.category_id || product.category?.id || ''),
                   );
-                  const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
+                  const isCategoryInactive = Boolean(
+                    parentCat && !isMenuCategoryVisible(categoryById, parentCat.id),
+                  );
                   const matchedTaxCategory = taxCategories.find(
                     (tc) => tc.id === product.tax_category_id,
                   );
@@ -1502,7 +1512,7 @@ export default function ProductsPage() {
                           required
                         >
                           <option value="">{t('selectPlaceholder')}</option>
-                          {orderedCategories.map((c) => (
+                          {availableProductCategories.map((c) => (
                             <option key={c.id} value={c.id}>
                               {formatCategoryLabel(c)}
                             </option>
@@ -2231,6 +2241,11 @@ export default function ProductsPage() {
                         >
                           {cat.is_active ? 'Active' : 'Inactive'}
                         </span>
+                        {cat.is_active && !isMenuCategoryVisible(categoryById, cat.id) && (
+                          <span className="text-[10px] text-amber-600 font-medium block mt-1">
+                            {t('hiddenOnPos')}
+                          </span>
+                        )}
                       </td>
                       <td className="p-4 text-end">
                         <div className="flex gap-2 justify-end">

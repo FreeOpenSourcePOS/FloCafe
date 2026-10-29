@@ -345,6 +345,7 @@ async function main() {
         ('cat-sort-child-inactive', 'Sub Inactive', 'cat-sort-root-a', 3, 0, ?, ?)
     `).run(now(), now(), now(), now(), now(), now());
     seedProduct(db, 'prod-under-inactive-parent', 'cat-legacy-active-child', 'Hidden Child Tea', 9);
+    seedProduct(db, 'prod-in-inactive-cat', 'cat-sort-child-inactive', 'Inactive Cat Product', 10);
 
     res = await api(baseUrl, '/api/categories?active=1', { headers: authHeader });
     assertEqual(res.status, 200, 'GET /api/categories?active=1 succeeds');
@@ -404,6 +405,65 @@ async function main() {
       200,
       'editing an already-inactive parent category without activating it succeeds',
     );
+
+    res = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'Blocked Hidden Product', category_id: 'cat-legacy-active-child', price: 11 },
+    });
+    assertEqual(
+      res.status,
+      400,
+      'creating a product in a subcategory under an inactive parent is rejected',
+    );
+
+    res = await api(baseUrl, '/api/products/prod-under-inactive-parent', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { name: 'Hidden Child Tea Edited', category_id: 'cat-legacy-active-child', price: 11 },
+    });
+    assertEqual(
+      res.status,
+      200,
+      'editing a product while retaining its subcategory under an inactive parent succeeds',
+    );
+
+    res = await api(baseUrl, '/api/products/prod-247-reassign', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { category_id: 'cat-legacy-active-child' },
+    });
+    assertEqual(
+      res.status,
+      400,
+      'moving a product into a subcategory under an inactive parent is rejected',
+    );
+
+    res = await api(baseUrl, '/api/products/prod-in-inactive-cat', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        name: 'Inactive Cat Product Edited',
+        category_id: 'cat-sort-child-inactive',
+        price: 12,
+      },
+    });
+    assertEqual(
+      res.status,
+      200,
+      'editing a product while retaining its unchanged inactive category succeeds',
+    );
+
+    res = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        name: 'Blocked Inactive Cat Product',
+        category_id: 'cat-sort-child-inactive',
+        price: 12,
+      },
+    });
+    assertEqual(res.status, 400, 'creating a product in an inactive category is rejected');
 
     res = await api(baseUrl, '/api/categories/cat-legacy-inactive-parent', {
       method: 'PUT',

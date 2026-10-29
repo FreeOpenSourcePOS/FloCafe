@@ -1118,13 +1118,37 @@ function writeProductVariants(
   }
 }
 
-function validateCategoryId(db: any, categoryId: unknown): string | null {
+function validateCategoryId(
+  db: any,
+  categoryId: unknown,
+  retainedCategoryId?: string | null,
+): string | null {
   if (categoryId === null || categoryId === undefined || categoryId === '') return null;
   if (typeof categoryId !== 'string') return 'category_id must be a string or null';
+  const normalizedCategoryId = categoryId.trim();
+  if (!normalizedCategoryId) return null;
   const category = db
-    .prepare('SELECT id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1')
-    .get(categoryId);
+    .prepare(
+      `SELECT c.id, c.is_active, c.parent_id, cp.is_active AS parent_is_active
+       FROM categories c
+       LEFT JOIN categories cp ON c.parent_id = cp.id AND cp.deleted_at IS NULL AND cp.parent_id IS NULL
+       WHERE c.id = ? AND c.deleted_at IS NULL`,
+    )
+    .get(normalizedCategoryId) as
+    | {
+        id: string;
+        is_active: number | boolean;
+        parent_id: string | null;
+        parent_is_active: number | boolean | null;
+      }
+    | undefined;
   if (!category) return 'Category not found or inactive';
+  const isEffectivelyActive =
+    Boolean(category.is_active) &&
+    (category.parent_id === null || Boolean(category.parent_is_active));
+  if (!isEffectivelyActive && normalizedCategoryId !== (retainedCategoryId ?? null)) {
+    return 'Category not found or inactive';
+  }
   return null;
 }
 
@@ -1737,6 +1761,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       .prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL')
       .get(req.params.id) as
       | {
+          category_id?: string | null;
           sale_unit?: string;
           allow_fractional_quantity?: number;
           stock_quantity?: number;
@@ -1825,7 +1850,11 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       return res.status(400).json({ error: taxCategoryError });
     }
     if (hasOwn(req.body, 'category_id')) {
-      const categoryError = validateCategoryId(db, category_id);
+      const categoryError = validateCategoryId(
+        db,
+        category_id,
+        normalizeNullableString(product.category_id),
+      );
       if (categoryError) {
         captureProductValidation('fc.backend.product.update.validation', 'category_invalid');
         return res.status(400).json({ error: categoryError });

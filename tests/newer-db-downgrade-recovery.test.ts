@@ -55,6 +55,7 @@ import {
   getDbPath,
   getLatestSupportedSchemaVersion,
   initDatabase,
+  isHealthyDatabaseFile,
   planNewerDatabaseArchivePath,
   restoreCompatibleBackupForDowngrade,
   SchemaVersionMismatchError,
@@ -271,6 +272,12 @@ async function run(): Promise<void> {
     const sameSchemaSeedBackup = (await createBackup()).path;
     const baseTemplateCopy = path.join(testDir, 'base-template.db');
     fs.copyFileSync(sameSchemaSeedBackup, baseTemplateCopy);
+    const firstBootPreV0File = fs
+      .readdirSync(backupDir)
+      .find((name) => name.includes('-pre-v0-to-v'));
+    assert.ok(firstBootPreV0File, 'fresh install created a pre-v0 migration backup');
+    const preV0TemplateCopy = path.join(testDir, 'pre-v0-template.db');
+    fs.copyFileSync(path.join(backupDir, firstBootPreV0File), preV0TemplateCopy);
     closeDatabase();
     clearDirectory(backupDir);
 
@@ -478,6 +485,12 @@ async function run(): Promise<void> {
       unrelatedDb.close();
     }
 
+    const preV0BackupPath = path.join(
+      backupDir,
+      `flo-backup-2026-10-28T05-00-00-000Z-pre-v0-to-v${maxSupported}.db`,
+    );
+    fs.copyFileSync(preV0TemplateCopy, preV0BackupPath);
+
     const discovery = discoverDowngradeBackups();
     assert.equal(discovery.maxSupportedSchemaVersion, maxSupported);
     assert.deepEqual(
@@ -523,9 +536,24 @@ async function run(): Promise<void> {
       [
         path.basename(corruptBackupPath),
         path.basename(mismatchMetaBackupPath),
+        path.basename(preV0BackupPath),
         path.basename(unrelatedSqlitePath),
       ].sort(),
-      'corrupt, metadata-mismatched, and non-Flo SQLite files are rejected as corrupt_or_invalid',
+      'corrupt, metadata-mismatched, pre-v0, and non-Flo SQLite files are rejected as corrupt_or_invalid',
+    );
+    const rejectedByName = new Map(
+      discovery.corruptOrInvalid.map((item) => [item.fileName, item]),
+    );
+    assert.equal(
+      rejectedByName.get(path.basename(preV0BackupPath))?.detail,
+      'Backup does not contain an initialized Flo Cafe schema',
+      'first-boot pre-v0 snapshot reports uninitialized schema rather than header mismatch',
+    );
+    assert.equal(rejectedByName.get(path.basename(preV0BackupPath))?.schemaVersion, null);
+    assert.equal(
+      rejectedByName.get(path.basename(mismatchMetaBackupPath))?.detail,
+      'Backup schema metadata does not match the SQLite header',
+      'true header/metadata mismatch still reports mismatch detail',
     );
 
     // 3a. Recovery dialog when NO compatible backups exist keeps Get Latest Version,
@@ -1248,6 +1276,341 @@ async function run(): Promise<void> {
       const preservedJournal = getDatabaseReplacementJournal();
       assert.equal(preservedJournal?.phase, 'committed');
       finalizeDatabaseReplacementJournal(preservedJournal!);
+    }
+
+    clearDirectory(backupDir);
+    const validV84BackupPath = path.join(
+      backupDir,
+      'flo-backup-2026-10-28T09-00-00-000Z-pre-v84.db',
+    );
+    writeStampedSchemaSnapshot(validV84BackupPath, 84, {
+      appVersion: '3.9.0',
+      backupCreatedAt: '2026-10-28T09:00:00.000Z',
+      seed: (snapDb) => {
+        snapDb.prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run('cat-v84', 'Roasts');
+        snapDb
+          .prepare(
+            'INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity) VALUES (?, ?, ?, ?, 1, 18.5)',
+          )
+          .run('prod-v84-beans', 'cat-v84', 'House Beans', 16);
+        snapDb
+          .prepare(
+            "INSERT OR REPLACE INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES ('user-v84-owner', 'V84 Owner', 'v84@test.local', 'unused', 'owner', 1, '2026-10-28 08:00:00', '2026-10-28 08:00:00')",
+          )
+          .run();
+      },
+    });
+    const noStaffV84BackupPath = path.join(
+      backupDir,
+      'flo-backup-2026-10-28T08-30-00-000Z-pre-v84-no-staff.db',
+    );
+    writeStampedSchemaSnapshot(noStaffV84BackupPath, 84, {
+      appVersion: '3.9.0',
+      seed: (snapDb) => {
+        snapDb.prepare('DELETE FROM users').run();
+        snapDb.prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run('cat-v84', 'Roasts');
+        snapDb
+          .prepare(
+            'INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity) VALUES (?, ?, ?, ?, 1, 12)',
+          )
+          .run('prod-v84-beans', 'cat-v84', 'House Beans', 16);
+      },
+    });
+    const negativeV84BackupPath = path.join(
+      backupDir,
+      'flo-backup-2026-10-28T08-15-00-000Z-pre-v84-neg.db',
+    );
+    writeStampedSchemaSnapshot(negativeV84BackupPath, 84, {
+      appVersion: '3.9.0',
+      seed: (snapDb) => {
+        snapDb.prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run('cat-v84', 'Roasts');
+        snapDb
+          .prepare(
+            'INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity) VALUES (?, ?, ?, ?, 1, -2)',
+          )
+          .run('prod-v84-neg', 'cat-v84', 'Negative Stock', 16);
+      },
+    });
+
+    const v84Discovery = discoverDowngradeBackups();
+    assert.deepEqual(
+      v84Discovery.compatible.map((item) => ({
+        fileName: item.fileName,
+        schemaVersion: item.schemaVersion,
+        appVersion: item.appVersion,
+      })),
+      [{ fileName: path.basename(validV84BackupPath), schemaVersion: 84, appVersion: '3.9.0' }],
+      'valid pre-v85 backup with stocked products is discovered as compatible',
+    );
+    assert.deepEqual(
+      v84Discovery.corruptOrInvalid.map((item) => item.fileName).sort(),
+      [path.basename(noStaffV84BackupPath), path.basename(negativeV84BackupPath)].sort(),
+      'pre-v85 backups violating migration v85 preconditions are rejected at preflight',
+    );
+    await assert.rejects(
+      () => restoreCompatibleBackupForDowngrade(noStaffV84BackupPath, { newerDbVersion }),
+      /staff user/i,
+      'pre-v85 stocked backup without staff users fails preflight before touching active DB',
+    );
+    assert.equal(sha256File(dbPath), upgradedAfterCommitHashes.dbSha);
+    assert.equal(sha256File(`${dbPath}-wal`), upgradedAfterCommitHashes.walSha);
+    assert.equal(sha256File(`${dbPath}-shm`), upgradedAfterCommitHashes.shmSha);
+
+    const v84RestoreResult = await restoreCompatibleBackupForDowngrade(validV84BackupPath, {
+      newerDbVersion,
+    });
+    assert.equal(v84RestoreResult.backupSchemaVersion, 84);
+    assert.equal(v84RestoreResult.restoredSchemaVersion, maxSupported);
+    initDatabase();
+    finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+    assert.deepEqual(
+      getDatabase()
+        .prepare(
+          "SELECT product_id, quantity_delta, movement_type, reference_type, actor_user_id, stock_after FROM inventory_movements WHERE product_id = 'prod-v84-beans'",
+        )
+        .get(),
+      {
+        product_id: 'prod-v84-beans',
+        quantity_delta: 18.5,
+        movement_type: 'adjustment',
+        reference_type: 'opening_balance',
+        actor_user_id: 'user-v84-owner',
+        stock_after: 18.5,
+      },
+      'restoring a pre-v85 stocked backup backfills opening_balance inventory movement cleanly',
+    );
+    assert.equal(runHealthCheck().findings.length, 0);
+
+    getDatabase()
+      .prepare(`
+        INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+        VALUES ('ORD-20261029-0091', 'takeaway', 'completed', 11, 11, '2026-10-29 13:00:00', '2026-10-29 13:05:00')
+      `)
+      .run();
+    getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+    closeDatabase();
+    const committedCleanSnapshot = path.join(testDir, 'committed-clean-snapshot.db');
+    fs.copyFileSync(dbPath, committedCleanSnapshot);
+
+    const walEnospcStageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-enospc-wal-live-'));
+    let walLiveDbSha = '';
+    let walLiveWalSha = '';
+    try {
+      initDatabase();
+      const openWalDb = getDatabase();
+      openWalDb.pragma('wal_autocheckpoint = 0');
+      openWalDb
+        .prepare(`
+          INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+          VALUES ('ORD-20261029-0092', 'takeaway', 'completed', 13, 13, '2026-10-29 13:10:00', '2026-10-29 13:15:00')
+        `)
+        .run();
+      fs.copyFileSync(dbPath, path.join(walEnospcStageDir, 'flo.db'));
+      fs.copyFileSync(`${dbPath}-wal`, path.join(walEnospcStageDir, 'flo.db-wal'));
+      walLiveDbSha = sha256File(path.join(walEnospcStageDir, 'flo.db'));
+      walLiveWalSha = sha256File(path.join(walEnospcStageDir, 'flo.db-wal'));
+      closeDatabase();
+
+      const walNewerEnospcHashes = buildActiveNewerWalDatabase(
+        dbPath,
+        baseTemplateCopy,
+        newerDbVersion,
+        '4.4.0',
+      );
+      const walNewerCopyDir = path.join(walEnospcStageDir, 'newer-wal');
+      fs.mkdirSync(walNewerCopyDir);
+      fs.copyFileSync(dbPath, path.join(walNewerCopyDir, 'flo.db'));
+      fs.copyFileSync(`${dbPath}-wal`, path.join(walNewerCopyDir, 'flo.db-wal'));
+      fs.copyFileSync(`${dbPath}-shm`, path.join(walNewerCopyDir, 'flo.db-shm'));
+
+      const mutableFsMkdtemp = nativeFs as unknown as { mkdtempSync: typeof fs.mkdtempSync };
+      const originalMkdtempSync = nativeFs.mkdtempSync;
+      mutableFsMkdtemp.mkdtempSync = ((prefix: string, options?: any) => {
+        const text = String(prefix);
+        if (
+          text.includes('flo-schema-preflight-') ||
+          text.includes('flo-db-health-probe-') ||
+          text.includes('flo-recovery-verify-')
+        ) {
+          throw Object.assign(new Error('ENOSPC: no space left on device, mkdtemp'), {
+            code: 'ENOSPC',
+          });
+        }
+        return originalMkdtempSync.call(nativeFs, prefix, options);
+      }) as typeof fs.mkdtempSync;
+
+      try {
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.copyFileSync(deleteModeNewerPath, dbPath);
+        let enospcSidecarFreeMismatch: SchemaVersionMismatchError | null = null;
+        assert.throws(
+          () => initDatabase(),
+          (err: unknown) => {
+            if (err instanceof SchemaVersionMismatchError) {
+              enospcSidecarFreeMismatch = err;
+              return true;
+            }
+            return false;
+          },
+          'sidecar-free newer database throws SchemaVersionMismatchError without temp staging',
+        );
+        assert.equal(enospcSidecarFreeMismatch!.dbVersion, newerDbVersion);
+        assert.equal(enospcSidecarFreeMismatch!.dbAppVersion, '4.1.0');
+        assert.equal(sha256File(dbPath), deleteModeShaBefore);
+        assert.equal(fs.existsSync(`${dbPath}-wal`), false);
+        assert.equal(fs.existsSync(`${dbPath}-shm`), false);
+
+        fs.writeFileSync(`${dbPath}-wal`, Buffer.alloc(0));
+        let enospcHeaderNewerWithWalMismatch: SchemaVersionMismatchError | null = null;
+        assert.throws(
+          () => initDatabase(),
+          (err: unknown) => {
+            if (err instanceof SchemaVersionMismatchError) {
+              enospcHeaderNewerWithWalMismatch = err;
+              return true;
+            }
+            return false;
+          },
+          'headerVersion > maxSupported database preserves mismatch error even if WAL staging fails',
+        );
+        assert.equal(enospcHeaderNewerWithWalMismatch!.dbVersion, newerDbVersion);
+        assert.equal(enospcHeaderNewerWithWalMismatch!.dbAppVersion, null);
+
+        removeDbSet(dbPath);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db'), dbPath);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-wal'), `${dbPath}-wal`);
+        fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-shm'), `${dbPath}-shm`);
+        assert.throws(
+          () => initDatabase(),
+          /ENOSPC/,
+          'WAL preflight staging failure propagates instead of opening newer WAL DB read-write',
+        );
+        assert.equal(sha256File(dbPath), walNewerEnospcHashes.dbSha);
+        assert.equal(sha256File(`${dbPath}-wal`), walNewerEnospcHashes.walSha);
+        assert.equal(sha256File(`${dbPath}-shm`), walNewerEnospcHashes.shmSha);
+
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.copyFileSync(committedCleanSnapshot, dbPath);
+        const cleanCommittedJournalBase = path.join(backupDir, 'flo-restore-recovery-enospcclean');
+        fs.copyFileSync(baseTemplateCopy, `${cleanCommittedJournalBase}.db`);
+        fs.writeFileSync(
+          `${cleanCommittedJournalBase}.json`,
+          JSON.stringify({
+            phase: 'committed',
+            recoveryPath: `${cleanCommittedJournalBase}.db`,
+            dbPath,
+            driveInvalidationRequired: true,
+            downgradeRecovery: true,
+            recoverySidecars: [],
+          }),
+        );
+        initDatabase();
+        assert.deepEqual(
+          getDatabase()
+            .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
+            .get(),
+          { order_number: 'ORD-20261029-0091' },
+          'sidecar-free committed journal succeeds under temp ENOSPC without rolling back',
+        );
+        finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+        closeDatabase();
+
+        for (const [index, isDowngradeJournal] of [true, false].entries()) {
+          clearDirectory(backupDir);
+          removeDbSet(dbPath);
+          fs.copyFileSync(path.join(walEnospcStageDir, 'flo.db'), dbPath);
+          fs.copyFileSync(path.join(walEnospcStageDir, 'flo.db-wal'), `${dbPath}-wal`);
+          const walCommittedBase = path.join(
+            backupDir,
+            `flo-restore-recovery-enospcwal0${index + 1}`,
+          );
+          fs.copyFileSync(baseTemplateCopy, `${walCommittedBase}.db`);
+          fs.writeFileSync(
+            `${walCommittedBase}.json`,
+            JSON.stringify({
+              phase: 'committed',
+              recoveryPath: `${walCommittedBase}.db`,
+              dbPath,
+              driveInvalidationRequired: true,
+              ...(isDowngradeJournal
+                ? { downgradeRecovery: true, recoverySidecars: [] }
+                : { baselineForeignKeyViolations: [] }),
+            }),
+          );
+          assert.equal(
+            isHealthyDatabaseFile(dbPath, undefined, false),
+            false,
+            'exported isHealthyDatabaseFile remains non-throwing when temp staging fails',
+          );
+          assert.throws(
+            () => initDatabase(),
+            /ENOSPC/,
+            `committed WAL journal (downgrade=${isDowngradeJournal}) fails closed under temp ENOSPC instead of rolling back`,
+          );
+          assert.equal(sha256File(dbPath), walLiveDbSha);
+          assert.equal(sha256File(`${dbPath}-wal`), walLiveWalSha);
+          assert.equal(getDatabaseReplacementJournal()?.phase, 'committed');
+        }
+
+        clearDirectory(backupDir);
+        const preparedNoSidecarBase = path.join(backupDir, 'flo-restore-recovery-enospcprep');
+        fs.copyFileSync(committedCleanSnapshot, `${preparedNoSidecarBase}.db`);
+        fs.writeFileSync(
+          `${preparedNoSidecarBase}.json`,
+          JSON.stringify({
+            phase: 'prepared',
+            recoveryPath: `${preparedNoSidecarBase}.db`,
+            dbPath,
+            driveInvalidationRequired: true,
+            downgradeRecovery: true,
+            recoverySidecars: [],
+          }),
+        );
+        initDatabase();
+        assert.equal(getDatabaseReplacementJournal(), null);
+        assert.deepEqual(
+          getDatabase()
+            .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
+            .get(),
+          { order_number: 'ORD-20261029-0091' },
+          'prepared journal with sidecar-free snapshot recovers under temp ENOSPC without probing WAL dbPath',
+        );
+        closeDatabase();
+      } finally {
+        mutableFsMkdtemp.mkdtempSync = originalMkdtempSync;
+      }
+
+      clearDirectory(backupDir);
+      removeDbSet(dbPath);
+      fs.copyFileSync(path.join(walEnospcStageDir, 'flo.db'), dbPath);
+      fs.copyFileSync(path.join(walEnospcStageDir, 'flo.db-wal'), `${dbPath}-wal`);
+      const recoveredWalBase = path.join(backupDir, 'flo-restore-recovery-enospcwalok');
+      fs.copyFileSync(baseTemplateCopy, `${recoveredWalBase}.db`);
+      fs.writeFileSync(
+        `${recoveredWalBase}.json`,
+        JSON.stringify({
+          phase: 'committed',
+          recoveryPath: `${recoveredWalBase}.db`,
+          dbPath,
+          driveInvalidationRequired: true,
+          downgradeRecovery: true,
+          recoverySidecars: [],
+        }),
+      );
+      initDatabase();
+      assert.deepEqual(
+        getDatabase()
+          .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0092'")
+          .get(),
+        { order_number: 'ORD-20261029-0092' },
+        'committed WAL database boots intact once temp staging recovers',
+      );
+      finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+      closeDatabase();
+    } finally {
+      fs.rmSync(walEnospcStageDir, { recursive: true, force: true });
     }
 
     // 6. Electron main/index.ts startup interception (via tests/startup-failure-child.cjs):

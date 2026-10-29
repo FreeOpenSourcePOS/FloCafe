@@ -993,34 +993,72 @@ function isReadableRecoverySnapshotWithSidecars(
   recoveryPath: string,
   expectedSidecars: readonly ReplacementJournalSidecar[],
 ): boolean {
+  let recoveryStat: fs.Stats;
+  try {
+    recoveryStat = fs.lstatSync(recoveryPath);
+  } catch {
+    return false;
+  }
+  if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile()) return false;
+  const expectedSet = new Set(expectedSidecars);
+  for (const suffix of ['-wal', '-shm'] as const) {
+    const sidecarPath = `${recoveryPath}${suffix}`;
+    const exists = pathEntryExists(sidecarPath);
+    if (exists !== expectedSet.has(suffix)) return false;
+    if (exists) {
+      let sidecarStat: fs.Stats;
+      try {
+        sidecarStat = fs.lstatSync(sidecarPath);
+      } catch {
+        return false;
+      }
+      if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) return false;
+    }
+  }
+
+  if (expectedSidecars.length === 0) {
+    let probeDb: Database.Database | undefined;
+    try {
+      probeDb = new Database(recoveryPath, { readonly: true, fileMustExist: true });
+      const integrity = probeDb.prepare('PRAGMA integrity_check').all() as {
+        integrity_check: string;
+      }[];
+      return integrity.length > 0 && integrity.every((row) => row.integrity_check === 'ok');
+    } catch {
+      return false;
+    } finally {
+      try {
+        probeDb?.close();
+      } catch {}
+    }
+  }
+
   let tempDir: string | null = null;
   let probeDb: Database.Database | undefined;
   try {
-    const recoveryStat = fs.lstatSync(recoveryPath);
-    if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile()) return false;
-    const expectedSet = new Set(expectedSidecars);
-    for (const suffix of ['-wal', '-shm'] as const) {
-      const sidecarPath = `${recoveryPath}${suffix}`;
-      const exists = pathEntryExists(sidecarPath);
-      if (exists !== expectedSet.has(suffix)) return false;
-      if (exists) {
-        const sidecarStat = fs.lstatSync(sidecarPath);
-        if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) return false;
+    let tempDbPath: string;
+    try {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-recovery-verify-'));
+      tempDbPath = path.join(tempDir, 'recovery.db');
+      fs.copyFileSync(recoveryPath, tempDbPath);
+      for (const suffix of expectedSidecars) {
+        fs.copyFileSync(`${recoveryPath}${suffix}`, `${tempDbPath}${suffix}`);
       }
+    } catch (stageError) {
+      throw new Error(
+        `Could not stage recovery snapshot for verification: ${stageError instanceof Error ? stageError.message : 'unknown error'}`,
+        { cause: stageError },
+      );
     }
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-recovery-verify-'));
-    const tempDbPath = path.join(tempDir, 'recovery.db');
-    fs.copyFileSync(recoveryPath, tempDbPath);
-    for (const suffix of expectedSidecars) {
-      fs.copyFileSync(`${recoveryPath}${suffix}`, `${tempDbPath}${suffix}`);
+    try {
+      probeDb = new Database(tempDbPath, { fileMustExist: true });
+      const integrity = probeDb.prepare('PRAGMA integrity_check').all() as {
+        integrity_check: string;
+      }[];
+      return integrity.length > 0 && integrity.every((row) => row.integrity_check === 'ok');
+    } catch {
+      return false;
     }
-    probeDb = new Database(tempDbPath, { fileMustExist: true });
-    const integrity = probeDb.prepare('PRAGMA integrity_check').all() as {
-      integrity_check: string;
-    }[];
-    return integrity.length > 0 && integrity.every((row) => row.integrity_check === 'ok');
-  } catch {
-    return false;
   } finally {
     try {
       probeDb?.close();
@@ -1058,6 +1096,7 @@ function validateDatabaseSchemaTableColumns(
 function withProbedDatabaseFile<T>(
   filePath: string,
   fn: (candidate: Database.Database) => T,
+  throwOnStagingError = false,
 ): T | null {
   let fileStat: fs.Stats;
   try {
@@ -1067,23 +1106,71 @@ function withProbedDatabaseFile<T>(
   }
   if (fileStat.isSymbolicLink() || !fileStat.isFile()) return null;
 
+  const presentSidecars: ReplacementJournalSidecar[] = [];
+  for (const suffix of ['-wal', '-shm'] as const) {
+    const sidecarPath = `${filePath}${suffix}`;
+    if (!pathEntryExists(sidecarPath)) continue;
+    let sidecarStat: fs.Stats;
+    try {
+      sidecarStat = fs.lstatSync(sidecarPath);
+    } catch (statError) {
+      if (throwOnStagingError) {
+        throw new Error(
+          `Could not inspect database sidecar ${sidecarPath}: ${statError instanceof Error ? statError.message : 'unknown error'}`,
+          { cause: statError },
+        );
+      }
+      return null;
+    }
+    if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) {
+      if (throwOnStagingError) {
+        throw new Error(`Database sidecar ${sidecarPath} is not a regular file`);
+      }
+      return null;
+    }
+    presentSidecars.push(suffix);
+  }
+
+  if (presentSidecars.length === 0) {
+    let candidate: Database.Database | undefined;
+    try {
+      candidate = new Database(filePath, { readonly: true, fileMustExist: true });
+      return fn(candidate);
+    } catch {
+      return null;
+    } finally {
+      try {
+        candidate?.close();
+      } catch {}
+    }
+  }
+
   let tempDir: string | null = null;
   let candidate: Database.Database | undefined;
   try {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-db-health-probe-'));
-    const tempDbPath = path.join(tempDir, 'probe.db');
-    fs.copyFileSync(filePath, tempDbPath);
-    for (const suffix of ['-wal', '-shm'] as const) {
-      const sidecarPath = `${filePath}${suffix}`;
-      if (!pathEntryExists(sidecarPath)) continue;
-      const sidecarStat = fs.lstatSync(sidecarPath);
-      if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) return null;
-      fs.copyFileSync(sidecarPath, `${tempDbPath}${suffix}`);
+    let tempDbPath: string;
+    try {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-db-health-probe-'));
+      tempDbPath = path.join(tempDir, 'probe.db');
+      fs.copyFileSync(filePath, tempDbPath);
+      for (const suffix of presentSidecars) {
+        fs.copyFileSync(`${filePath}${suffix}`, `${tempDbPath}${suffix}`);
+      }
+    } catch (stageError) {
+      if (throwOnStagingError) {
+        throw new Error(
+          `Could not stage database file for health verification: ${stageError instanceof Error ? stageError.message : 'unknown error'}`,
+          { cause: stageError },
+        );
+      }
+      return null;
     }
-    candidate = new Database(tempDbPath, { fileMustExist: true });
-    return fn(candidate);
-  } catch {
-    return null;
+    try {
+      candidate = new Database(tempDbPath, { fileMustExist: true });
+      return fn(candidate);
+    } catch {
+      return null;
+    }
   } finally {
     try {
       candidate?.close();
@@ -1098,29 +1185,31 @@ function withProbedDatabaseFile<T>(
 
 function isHealthyDowngradeCommittedDatabaseFile(
   filePath: string,
-  allowedForeignKeyViolations: Set<string> | null | undefined = undefined,
+  allowedForeignKeyViolations: Set<string> | null,
 ): boolean {
   return (
-    withProbedDatabaseFile(filePath, (candidate) => {
-      const integrity = candidate.prepare('PRAGMA integrity_check').all() as {
-        integrity_check: string;
-      }[];
-      if (integrity.length === 0 || integrity.some((row) => row.integrity_check !== 'ok')) {
-        return false;
-      }
-      const foreignKeyViolations = getForeignKeyViolationKeys(candidate);
-      const foreignKeysClean =
-        allowedForeignKeyViolations === null ||
-        (allowedForeignKeyViolations
-          ? [...foreignKeyViolations].every((key) => allowedForeignKeyViolations.has(key))
-          : foreignKeyViolations.size === 0);
-      if (!foreignKeysClean) return false;
-      const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
-      const supportedVersion = getLatestSupportedSchemaVersion();
-      if (schemaVersion < 1 || schemaVersion > supportedVersion) return false;
-      if (validateDatabaseSchemaTableColumns(candidate, schemaVersion) !== null) return false;
-      return validateInventoryLedgerDatabase(candidate) === null;
-    }) ?? false
+    withProbedDatabaseFile(
+      filePath,
+      (candidate) => {
+        const integrity = candidate.prepare('PRAGMA integrity_check').all() as {
+          integrity_check: string;
+        }[];
+        if (integrity.length === 0 || integrity.some((row) => row.integrity_check !== 'ok')) {
+          return false;
+        }
+        const foreignKeyViolations = getForeignKeyViolationKeys(candidate);
+        const foreignKeysClean =
+          allowedForeignKeyViolations === null ||
+          [...foreignKeyViolations].every((key) => allowedForeignKeyViolations.has(key));
+        if (!foreignKeysClean) return false;
+        const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
+        const supportedVersion = getLatestSupportedSchemaVersion();
+        if (schemaVersion < 1 || schemaVersion > supportedVersion) return false;
+        if (validateDatabaseSchemaTableColumns(candidate, schemaVersion) !== null) return false;
+        return validateInventoryLedgerDatabase(candidate) === null;
+      },
+      true,
+    ) ?? false
   );
 }
 
@@ -1261,67 +1350,80 @@ function normalizedSchemaDefinitions(dbInstance: Database.Database): Map<string,
   );
 }
 
+function checkHealthyDatabaseFile(
+  filePath: string,
+  allowedForeignKeyViolations: Set<string> | null | undefined,
+  requireMetadata: boolean,
+  throwOnStagingError: boolean,
+): boolean {
+  return (
+    withProbedDatabaseFile(
+      filePath,
+      (candidate) => {
+        const integrity =
+          (
+            candidate.prepare('PRAGMA integrity_check').get() as
+              | { integrity_check: string }
+              | undefined
+          )?.integrity_check === 'ok';
+        const foreignKeyViolations = getForeignKeyViolationKeys(candidate);
+        const foreignKeysClean =
+          allowedForeignKeyViolations === null ||
+          (allowedForeignKeyViolations
+            ? [...foreignKeyViolations].every((key) => allowedForeignKeyViolations.has(key))
+            : foreignKeyViolations.size === 0);
+        const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
+        let metadata: { value: string } | undefined;
+        try {
+          metadata = candidate
+            .prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'")
+            .get() as { value: string } | undefined;
+        } catch {}
+
+        const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
+        if (schemaVersion < 1 || schemaVersion > supportedVersion) {
+          return false;
+        }
+
+        const tables = new Set(getTables(candidate));
+        const schemaRef = getRecoverySchemaReference(schemaVersion);
+        const expectedSchema = schemaRef.tableColumns;
+        const columnsValid = [...expectedSchema.entries()].every(([table, columns]) => {
+          const available = new Set(getColumns(candidate, table));
+          return columns.every((column) => available.has(column));
+        });
+        const actualDefinitions = normalizedSchemaDefinitions(candidate);
+        const requiredDefinitionsValid = [...schemaRef.definitions].every(([key, sql]) =>
+          actualDefinitions.has(key)
+            ? actualDefinitions.get(key) === sql
+            : RUNTIME_ENSURED_SCHEMA_OBJECTS.has(key),
+        );
+        const definitionsValid =
+          requiredDefinitionsValid &&
+          [...actualDefinitions.keys()].every((key) => schemaRef.definitions.has(key));
+        return (
+          integrity &&
+          foreignKeysClean &&
+          schemaVersion > 0 &&
+          schemaVersion <= supportedVersion &&
+          (!requireMetadata || metadata?.value === String(schemaVersion)) &&
+          tables.size === expectedSchema.size &&
+          [...expectedSchema.keys()].every((table) => tables.has(table)) &&
+          columnsValid &&
+          definitionsValid
+        );
+      },
+      throwOnStagingError,
+    ) ?? false
+  );
+}
+
 export function isHealthyDatabaseFile(
   filePath: string,
   allowedForeignKeyViolations: Set<string> | null | undefined = undefined,
   requireMetadata = true,
 ): boolean {
-  return (
-    withProbedDatabaseFile(filePath, (candidate) => {
-      const integrity =
-        (
-          candidate.prepare('PRAGMA integrity_check').get() as
-            | { integrity_check: string }
-            | undefined
-        )?.integrity_check === 'ok';
-      const foreignKeyViolations = getForeignKeyViolationKeys(candidate);
-      const foreignKeysClean =
-        allowedForeignKeyViolations === null ||
-        (allowedForeignKeyViolations
-          ? [...foreignKeyViolations].every((key) => allowedForeignKeyViolations.has(key))
-          : foreignKeyViolations.size === 0);
-      const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
-      let metadata: { value: string } | undefined;
-      try {
-        metadata = candidate
-          .prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'")
-          .get() as { value: string } | undefined;
-      } catch {}
-
-      const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
-      if (schemaVersion < 1 || schemaVersion > supportedVersion) {
-        return false;
-      }
-
-      const tables = new Set(getTables(candidate));
-      const schemaRef = getRecoverySchemaReference(schemaVersion);
-      const expectedSchema = schemaRef.tableColumns;
-      const columnsValid = [...expectedSchema.entries()].every(([table, columns]) => {
-        const available = new Set(getColumns(candidate, table));
-        return columns.every((column) => available.has(column));
-      });
-      const actualDefinitions = normalizedSchemaDefinitions(candidate);
-      const requiredDefinitionsValid = [...schemaRef.definitions].every(([key, sql]) =>
-        actualDefinitions.has(key)
-          ? actualDefinitions.get(key) === sql
-          : RUNTIME_ENSURED_SCHEMA_OBJECTS.has(key),
-      );
-      const definitionsValid =
-        requiredDefinitionsValid &&
-        [...actualDefinitions.keys()].every((key) => schemaRef.definitions.has(key));
-      return (
-        integrity &&
-        foreignKeysClean &&
-        schemaVersion > 0 &&
-        schemaVersion <= supportedVersion &&
-        (!requireMetadata || metadata?.value === String(schemaVersion)) &&
-        tables.size === expectedSchema.size &&
-        [...expectedSchema.keys()].every((table) => tables.has(table)) &&
-        columnsValid &&
-        definitionsValid
-      );
-    }) ?? false
-  );
+  return checkHealthyDatabaseFile(filePath, allowedForeignKeyViolations, requireMetadata, false);
 }
 
 export const MAX_RETAINED_RESTORE_SAFETY_COPIES = 3;
@@ -1498,12 +1600,6 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     if (journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
-    if (journal.phase === 'committed') {
-      const liveVersion = inspectDatabaseVersionNonMutating(dbPath);
-      if (liveVersion && liveVersion.schemaVersion > getLatestSupportedSchemaVersion()) {
-        return;
-      }
-    }
     // Preserve baseline FK violations for compatibility with older journals.
     const allowedForeignKeyViolations =
       journal.baselineForeignKeyViolations === undefined
@@ -1511,28 +1607,34 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
         : new Set(journal.baselineForeignKeyViolations);
     // Snapshots copy live database without metadata table.
     const requireMetadata = false;
-    const committedHealthy = journal.downgradeRecovery
-      ? isHealthyDowngradeCommittedDatabaseFile(dbPath, allowedForeignKeyViolations)
-      : isHealthyDatabaseFile(dbPath, allowedForeignKeyViolations, requireMetadata);
-    // Finalize committed replacement if database file is healthy.
-    if (journal.phase === 'committed' && committedHealthy) {
-      if (journal.driveInvalidationRequired !== false) {
-        if (journal.driveInvalidationRequired !== true) {
-          writeReplacementJournal(journalPath, {
-            ...journal,
-            driveInvalidationRequired: true,
-          });
-        }
-        removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
-        console.warn(
-          `[DB] Preserved committed replacement journal for Drive invalidation: ${journalPath}`,
-        );
+    if (journal.phase === 'committed') {
+      const liveVersion = inspectDatabaseVersionNonMutating(dbPath);
+      if (liveVersion && liveVersion.schemaVersion > getLatestSupportedSchemaVersion()) {
         return;
       }
-      removeReplacementArtifactsDurably(journalPath, recoveryPath);
-      removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
-      console.warn(`[DB] Finalized committed database replacement journal: ${journalPath}`);
-      return;
+      const committedHealthy = journal.downgradeRecovery
+        ? isHealthyDowngradeCommittedDatabaseFile(dbPath, allowedForeignKeyViolations)
+        : checkHealthyDatabaseFile(dbPath, allowedForeignKeyViolations, requireMetadata, true);
+      // Finalize committed replacement if database file is healthy.
+      if (committedHealthy) {
+        if (journal.driveInvalidationRequired !== false) {
+          if (journal.driveInvalidationRequired !== true) {
+            writeReplacementJournal(journalPath, {
+              ...journal,
+              driveInvalidationRequired: true,
+            });
+          }
+          removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
+          console.warn(
+            `[DB] Preserved committed replacement journal for Drive invalidation: ${journalPath}`,
+          );
+          return;
+        }
+        removeReplacementArtifactsDurably(journalPath, recoveryPath);
+        removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
+        console.warn(`[DB] Finalized committed database replacement journal: ${journalPath}`);
+        return;
+      }
     }
     if (journal.downgradeRecovery) {
       const expectedSidecars = journal.recoverySidecars ?? [];
@@ -1647,6 +1749,28 @@ export function registerSettingsRevisionTriggers(dbInstance: Database.Database =
 
 const SQLITE_HEADER_MAGIC = Buffer.from('SQLite format 3\0', 'utf8');
 
+function readMatchingMetaAppVersion(
+  probeDb: Database.Database,
+  schemaVersion: number,
+): string | null {
+  try {
+    const metaRows = probeDb
+      .prepare("SELECT key, value FROM _flo_meta WHERE key IN ('schema_version', 'app_version')")
+      .all() as { key: string; value: string | null }[];
+    const metaValues = new Map(metaRows.map((row) => [row.key, row.value]));
+    const metaSchemaVersion = parseCanonicalSchemaVersion(metaValues.get('schema_version'));
+    const rawAppVersion = metaValues.get('app_version');
+    if (
+      metaSchemaVersion === schemaVersion &&
+      typeof rawAppVersion === 'string' &&
+      rawAppVersion.trim()
+    ) {
+      return rawAppVersion.trim();
+    }
+  } catch {}
+  return null;
+}
+
 function inspectDatabaseVersionNonMutating(
   dbPath: string,
 ): { schemaVersion: number; appVersion: string | null } | null {
@@ -1660,7 +1784,6 @@ function inspectDatabaseVersionNonMutating(
   if (stat.isSymbolicLink() || !stat.isFile() || stat.size < 100) return null;
 
   const maxSupported = getLatestSupportedSchemaVersion();
-  const hasSidecars = pathEntryExists(`${dbPath}-wal`) || pathEntryExists(`${dbPath}-shm`);
   const header = Buffer.alloc(100);
   let headerBytesRead = 0;
   let fd: number | null = null;
@@ -1680,46 +1803,90 @@ function inspectDatabaseVersionNonMutating(
     return null;
   }
   const headerVersion = header.readInt32BE(60);
-  if (!hasSidecars && headerVersion <= maxSupported) {
-    return { schemaVersion: headerVersion, appVersion: null };
+
+  const presentSidecars: ReplacementJournalSidecar[] = [];
+  for (const suffix of ['-wal', '-shm'] as const) {
+    const sidecarPath = `${dbPath}${suffix}`;
+    if (!pathEntryExists(sidecarPath)) continue;
+    let sidecarStat: fs.Stats;
+    try {
+      sidecarStat = fs.lstatSync(sidecarPath);
+    } catch (statError) {
+      if (headerVersion > maxSupported) {
+        return { schemaVersion: headerVersion, appVersion: null };
+      }
+      throw new Error(
+        `Could not inspect database sidecar ${sidecarPath}: ${statError instanceof Error ? statError.message : 'unknown error'}`,
+        { cause: statError },
+      );
+    }
+    if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) {
+      if (headerVersion > maxSupported) {
+        return { schemaVersion: headerVersion, appVersion: null };
+      }
+      throw new Error(`Database sidecar ${sidecarPath} is not a regular file`);
+    }
+    presentSidecars.push(suffix);
+  }
+
+  if (presentSidecars.length === 0) {
+    if (headerVersion <= maxSupported) {
+      return { schemaVersion: headerVersion, appVersion: null };
+    }
+    let probeDb: Database.Database | undefined;
+    try {
+      probeDb = new Database(dbPath, { readonly: true, fileMustExist: true });
+      return {
+        schemaVersion: headerVersion,
+        appVersion: readMatchingMetaAppVersion(probeDb, headerVersion),
+      };
+    } catch {
+      return { schemaVersion: headerVersion, appVersion: null };
+    } finally {
+      try {
+        probeDb?.close();
+      } catch {}
+    }
   }
 
   // Inspect a disposable copy so live WAL/SHM sidecars are never checkpointed or removed.
   let tempDir: string | null = null;
   let probeDb: Database.Database | undefined;
   try {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-schema-preflight-'));
-    const tempDbPath = path.join(tempDir, 'probe.db');
-    fs.copyFileSync(dbPath, tempDbPath);
-    for (const suffix of ['-wal', '-shm'] as const) {
-      const sidecarPath = `${dbPath}${suffix}`;
-      if (!pathEntryExists(sidecarPath)) continue;
-      const sidecarStat = fs.lstatSync(sidecarPath);
-      if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) return null;
-      fs.copyFileSync(sidecarPath, `${tempDbPath}${suffix}`);
-    }
-    probeDb = new Database(tempDbPath, { fileMustExist: true });
-    const pragmaVersion = Number(probeDb.pragma('user_version', { simple: true }));
-    if (!Number.isSafeInteger(pragmaVersion)) return null;
-    let appVersion: string | null = null;
+    let tempDbPath: string;
     try {
-      const metaRows = probeDb
-        .prepare("SELECT key, value FROM _flo_meta WHERE key IN ('schema_version', 'app_version')")
-        .all() as { key: string; value: string | null }[];
-      const metaValues = new Map(metaRows.map((row) => [row.key, row.value]));
-      const metaSchemaVersion = parseCanonicalSchemaVersion(metaValues.get('schema_version'));
-      const rawAppVersion = metaValues.get('app_version');
-      if (
-        metaSchemaVersion === pragmaVersion &&
-        typeof rawAppVersion === 'string' &&
-        rawAppVersion.trim()
-      ) {
-        appVersion = rawAppVersion.trim();
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-schema-preflight-'));
+      tempDbPath = path.join(tempDir, 'probe.db');
+      fs.copyFileSync(dbPath, tempDbPath);
+      for (const suffix of presentSidecars) {
+        fs.copyFileSync(`${dbPath}${suffix}`, `${tempDbPath}${suffix}`);
       }
-    } catch {}
-    return { schemaVersion: pragmaVersion, appVersion };
-  } catch {
-    return null;
+    } catch (stageError) {
+      if (headerVersion > maxSupported) {
+        return { schemaVersion: headerVersion, appVersion: null };
+      }
+      throw new Error(
+        `Could not stage active database for schema preflight: ${stageError instanceof Error ? stageError.message : 'unknown error'}`,
+        { cause: stageError },
+      );
+    }
+    try {
+      probeDb = new Database(tempDbPath, { fileMustExist: true });
+      const pragmaVersion = Number(probeDb.pragma('user_version', { simple: true }));
+      if (!Number.isSafeInteger(pragmaVersion)) {
+        return headerVersion > maxSupported
+          ? { schemaVersion: headerVersion, appVersion: null }
+          : null;
+      }
+      return {
+        schemaVersion: pragmaVersion,
+        appVersion: readMatchingMetaAppVersion(probeDb, pragmaVersion),
+      };
+    } catch {
+      return headerVersion > maxSupported
+        ? { schemaVersion: headerVersion, appVersion: null }
+        : null;
+    }
   } finally {
     try {
       probeDb?.close();
@@ -3026,6 +3193,93 @@ type DowngradeBackupSnapshotInspection =
       detail: string;
     };
 
+function validatePreLedgerBackupInventory(
+  dbInstance: Database.Database,
+  tables: ReadonlySet<string>,
+): string | null {
+  const productColumns = getColumns(dbInstance, 'products');
+  if (!productColumns.includes('id') || !productColumns.includes('stock_quantity')) {
+    return 'Backup products table is missing stock_quantity';
+  }
+
+  const products = dbInstance
+    .prepare('SELECT id, stock_quantity FROM products')
+    .all() as Record<string, unknown>[];
+  let hasStockedProduct = false;
+  for (const row of products) {
+    const productId = row?.id == null ? '' : String(row.id);
+    if (!productId) {
+      return 'Product stock quantity is missing from the inventory snapshot';
+    }
+    const rawStock = row.stock_quantity;
+    if (
+      rawStock !== null &&
+      (typeof rawStock !== 'number' || !Number.isFinite(rawStock) || rawStock < 0)
+    ) {
+      return 'Product stock quantity is invalid in the inventory snapshot';
+    }
+    if (typeof rawStock === 'number' && rawStock > 0) {
+      hasStockedProduct = true;
+    }
+  }
+
+  if (
+    tables.has('product_variants') &&
+    getColumns(dbInstance, 'product_variants').includes('stock_quantity')
+  ) {
+    const variants = dbInstance
+      .prepare('SELECT id, product_id, stock_quantity FROM product_variants')
+      .all() as Record<string, unknown>[];
+    for (const variant of variants) {
+      const rawStock = variant.stock_quantity;
+      if (
+        rawStock !== null &&
+        (typeof rawStock !== 'number' || !Number.isFinite(rawStock) || rawStock < 0)
+      ) {
+        return 'Variant stock quantity is invalid in the inventory snapshot';
+      }
+      if (typeof rawStock === 'number' && rawStock > 0) {
+        return 'Backup is missing inventory movement history for variant stock';
+      }
+    }
+  }
+
+  if (tables.has('addons') && getColumns(dbInstance, 'addons').includes('stock_quantity')) {
+    const addons = dbInstance
+      .prepare('SELECT id, stock_quantity FROM addons')
+      .all() as Record<string, unknown>[];
+    for (const addon of addons) {
+      const rawStock = addon.stock_quantity;
+      if (
+        rawStock !== null &&
+        (typeof rawStock !== 'number' || !Number.isFinite(rawStock) || rawStock < 0)
+      ) {
+        return 'Add-on stock quantity is invalid in the inventory snapshot';
+      }
+      if (typeof rawStock === 'number' && rawStock > 0) {
+        return 'Backup is missing inventory movement history for add-on stock';
+      }
+    }
+  }
+
+  if (hasStockedProduct) {
+    const userColumns = new Set(getColumns(dbInstance, 'users'));
+    if (!userColumns.has('id') || !userColumns.has('role') || !userColumns.has('created_at')) {
+      return 'Backup users table is missing required columns for inventory migration';
+    }
+    const actor = dbInstance
+      .prepare(
+        `SELECT id FROM users ORDER BY CASE WHEN role = 'owner' THEN 0 ELSE 1 END, created_at, id LIMIT 1`,
+      )
+      .get() as { id: unknown } | undefined;
+    if (!actor || typeof actor.id !== 'string' || actor.id.length === 0) {
+      return 'Backup requires at least one staff user to migrate product stock';
+    }
+  }
+
+  return null;
+}
+
 function inspectBackupSnapshotForDowngrade(
   snapshotPath: string,
   maxSupportedSchemaVersion: number,
@@ -3083,9 +3337,7 @@ function inspectBackupSnapshotForDowngrade(
 
     if (
       hasMetaSchemaStamp &&
-      (parsedMetaVersion === null ||
-        parsedMetaVersion < 1 ||
-        parsedMetaVersion !== pragmaVersion)
+      (parsedMetaVersion === null || parsedMetaVersion !== pragmaVersion)
     ) {
       return {
         status: 'corrupt_or_invalid',
@@ -3100,7 +3352,7 @@ function inspectBackupSnapshotForDowngrade(
       return {
         status: 'corrupt_or_invalid',
         schemaVersion: null,
-        appVersion,
+        appVersion: null,
         detail: 'Backup does not contain an initialized Flo Cafe schema',
       };
     }
@@ -3151,7 +3403,10 @@ function inspectBackupSnapshotForDowngrade(
       };
     }
 
-    const inventoryError = validateInventoryLedgerDatabase(candidateDb);
+    const inventoryError =
+      pragmaVersion < 85 && !tables.has('inventory_movements')
+        ? validatePreLedgerBackupInventory(candidateDb, tables)
+        : validateInventoryLedgerDatabase(candidateDb);
     if (inventoryError) {
       return {
         status: 'corrupt_or_invalid',
@@ -3397,7 +3652,12 @@ export function restoreCompatibleBackupForDowngrade(
         presentSidecars.push(suffix);
       }
 
-      const liveVersionInfo = inspectDatabaseVersionNonMutating(dbPath);
+      let liveVersionInfo: { schemaVersion: number; appVersion: string | null } | null = null;
+      try {
+        liveVersionInfo = inspectDatabaseVersionNonMutating(dbPath);
+      } catch (preflightError) {
+        if (options?.newerDbVersion === undefined) throw preflightError;
+      }
       const newerVersion = liveVersionInfo?.schemaVersion ?? options?.newerDbVersion ?? 0;
 
       if (!fs.existsSync(backupDir)) {

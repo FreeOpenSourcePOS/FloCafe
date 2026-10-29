@@ -3582,15 +3582,11 @@ export function discoverDowngradeBackups(): DowngradeBackupDiscovery {
   };
 }
 
-export function planNewerDatabaseArchivePath(
-  newerDbVersion: number,
-  timestampOverride?: string,
-): string {
+export function planNewerDatabaseArchivePath(newerDbVersion: number): string {
   const backupDir = getBackupDir();
   const safeVersion =
     Number.isFinite(newerDbVersion) && newerDbVersion > 0 ? Math.trunc(newerDbVersion) : 0;
-  const rawTimestamp = timestampOverride || new Date().toISOString();
-  const sanitizedTimestamp = rawTimestamp.replace(/[^0-9A-Za-z._-]/g, '-');
+  const sanitizedTimestamp = new Date().toISOString().replace(/[^0-9A-Za-z._-]/g, '-');
   const basePrefix = `flo-preserved-newer-v${safeVersion}-${sanitizedTimestamp}`;
   let suffixIndex = 1;
   while (true) {
@@ -9384,14 +9380,7 @@ export class SchemaVersionMismatchError extends Error {
 }
 
 export function isSchemaVersionMismatchError(error: unknown): error is SchemaVersionMismatchError {
-  if (error instanceof SchemaVersionMismatchError) return true;
-  if (!error || typeof error !== 'object') return false;
-  const candidate = error as Partial<SchemaVersionMismatchError>;
-  return (
-    candidate.name === 'SchemaVersionMismatchError' &&
-    typeof candidate.dbVersion === 'number' &&
-    typeof candidate.appVersion === 'number'
-  );
+  return error instanceof SchemaVersionMismatchError;
 }
 
 function runMigrations(targetVersion?: number, skipPreMigrationBackup = false): void {

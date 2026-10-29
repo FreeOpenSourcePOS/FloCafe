@@ -56,6 +56,7 @@ import {
   getLatestSupportedSchemaVersion,
   initDatabase,
   isHealthyDatabaseFile,
+  isSchemaVersionMismatchError,
   planNewerDatabaseArchivePath,
   restoreCompatibleBackupForDowngrade,
   SchemaVersionMismatchError,
@@ -307,6 +308,15 @@ async function run(): Promise<void> {
     assert.equal(caughtDeleteMismatch!.dbVersion, newerDbVersion);
     assert.equal(caughtDeleteMismatch!.appVersion, maxSupported);
     assert.equal(caughtDeleteMismatch!.dbAppVersion, '4.1.0');
+    assert.equal(isSchemaVersionMismatchError(caughtDeleteMismatch), true);
+    assert.equal(
+      isSchemaVersionMismatchError({
+        name: 'SchemaVersionMismatchError',
+        dbVersion: newerDbVersion,
+        appVersion: maxSupported,
+      }),
+      false,
+    );
     assert.equal(
       sha256File(dbPath),
       deleteModeShaBefore,
@@ -595,7 +605,7 @@ async function run(): Promise<void> {
         incompatibleNewer: discovery.incompatibleNewer,
         corruptOrInvalid: discovery.corruptOrInvalid,
       }),
-      planPreservedArchivePath: (v) => planNewerDatabaseArchivePath(v),
+      planPreservedArchivePath: planNewerDatabaseArchivePath,
       restoreBackup: restoreCompatibleBackupForDowngrade,
       getBackupDir,
       getDbPath,
@@ -647,7 +657,7 @@ async function run(): Promise<void> {
       log: { info() {}, warn() {}, error() {} },
       isShutdownRequested: () => false,
       discoverBackups: discoverDowngradeBackups,
-      planPreservedArchivePath: (v) => planNewerDatabaseArchivePath(v),
+      planPreservedArchivePath: planNewerDatabaseArchivePath,
       restoreBackup: restoreCompatibleBackupForDowngrade,
       getBackupDir,
       getDbPath,
@@ -720,7 +730,7 @@ async function run(): Promise<void> {
         log: { info() {}, warn() {}, error() {} },
         isShutdownRequested: () => shutdownActive,
         discoverBackups: discoverDowngradeBackups,
-        planPreservedArchivePath: (v) => planNewerDatabaseArchivePath(v),
+        planPreservedArchivePath: planNewerDatabaseArchivePath,
         restoreBackup: async () => {
           shutdownActive = true;
           const abortErr = new Error('Database maintenance cancelled during shutdown') as Error & {
@@ -806,7 +816,7 @@ async function run(): Promise<void> {
         log: { info() {}, warn() {}, error() {} },
         isShutdownRequested: () => false,
         discoverBackups: discoverDowngradeBackups,
-        planPreservedArchivePath: (v) => planNewerDatabaseArchivePath(v),
+        planPreservedArchivePath: planNewerDatabaseArchivePath,
         restoreBackup: restoreCompatibleBackupForDowngrade,
         getBackupDir,
         getDbPath,
@@ -929,7 +939,7 @@ async function run(): Promise<void> {
       log: { info() {}, warn() {}, error() {} },
       isShutdownRequested: () => false,
       discoverBackups: discoverDowngradeBackups,
-      planPreservedArchivePath: (v) => planNewerDatabaseArchivePath(v),
+      planPreservedArchivePath: planNewerDatabaseArchivePath,
       restoreBackup: restoreCompatibleBackupForDowngrade,
       getBackupDir,
       getDbPath,
@@ -1000,7 +1010,7 @@ async function run(): Promise<void> {
       log: { info() {}, warn() {}, error() {} },
       isShutdownRequested: () => false,
       discoverBackups: discoverDowngradeBackups,
-      planPreservedArchivePath: (v) => planNewerDatabaseArchivePath(v),
+      planPreservedArchivePath: planNewerDatabaseArchivePath,
       restoreBackup: restoreCompatibleBackupForDowngrade,
       getBackupDir,
       getDbPath,

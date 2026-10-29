@@ -1691,8 +1691,7 @@ async function initialize(): Promise<void> {
           log,
           isShutdownRequested,
           discoverBackups: discoverDowngradeBackups,
-          planPreservedArchivePath: (newerDbVersion) =>
-            planNewerDatabaseArchivePath(newerDbVersion),
+          planPreservedArchivePath: planNewerDatabaseArchivePath,
           restoreBackup: (backupPath, options) =>
             restoreCompatibleBackupForDowngrade(backupPath, {
               ...options,

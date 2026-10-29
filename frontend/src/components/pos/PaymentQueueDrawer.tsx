@@ -33,7 +33,8 @@ export interface AwaitingPaymentOrder {
   table_name?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
-  total_amount: number;
+  total?: number;
+  total_amount?: number;
   paid_amount: number;
   balance: number;
   checkout_stage: 'building' | 'awaiting_payment' | 'paid';
@@ -42,6 +43,9 @@ export interface AwaitingPaymentOrder {
   scheduled_for?: string | null;
   created_at: string;
   items?: unknown[];
+  bill_id?: number | string | null;
+  bill_number?: string | null;
+  bill_payment_status?: string | null;
   bill?: Bill | null;
   bills?: Bill[];
 }
@@ -273,7 +277,7 @@ export function PaymentQueueDrawer({
           </div>
           <div className="text-end shrink-0">
             <span className="text-base font-bold text-foreground">
-              {fmt(order.balance > 0 ? order.balance : order.total_amount)}
+              {fmt(order.balance > 0 ? order.balance : (order.total_amount ?? order.total ?? 0))}
             </span>
             {order.paid_amount > 0 && order.balance > 0 && (
               <p className="text-xs text-muted-foreground">
@@ -340,11 +344,27 @@ export function PaymentQueueDrawer({
                 size="sm"
                 data-testid={`refund-blocked-btn-${order.id}`}
                 onClick={() => {
-                  const bills = order.bills && order.bills.length > 0
+                  const bills: Bill[] = order.bills && order.bills.length > 0
                     ? order.bills
                     : order.bill
                       ? [order.bill]
-                      : [];
+                      : order.bill_id
+                        ? [{
+                            id: Number(order.bill_id),
+                            bill_number: order.bill_number || '',
+                            order_id: Number(order.id),
+                            subtotal: Number(order.total_amount ?? order.total ?? 0),
+                            tax_amount: 0,
+                            discount_amount: 0,
+                            service_charge: 0,
+                            delivery_charge: 0,
+                            total: Number(order.total_amount ?? order.total ?? 0),
+                            paid_amount: Number(order.paid_amount || 0),
+                            balance: Number(order.balance || 0),
+                            payment_status: (order.bill_payment_status as any) || (Number(order.balance || 0) === 0 ? 'paid' : 'partial'),
+                            payment_details: [],
+                          } as unknown as Bill]
+                        : [];
                   onRefundOrder(order as unknown as Order, bills);
                 }}
                 className="gap-1 text-red-600 hover:text-red-700"
@@ -359,7 +379,32 @@ export function PaymentQueueDrawer({
                 type="button"
                 size="sm"
                 data-testid="queue-pay-btn"
-                onClick={() => void onPayOrder(order as unknown as Order)}
+                onClick={() => {
+                  const billForOrder = order.bill_id
+                    ? ({
+                        id: Number(order.bill_id),
+                        bill_number: order.bill_number || '',
+                        order_id: Number(order.id),
+                        subtotal: Number(order.total_amount ?? order.total ?? 0),
+                        tax_amount: 0,
+                        discount_amount: 0,
+                        service_charge: 0,
+                        delivery_charge: 0,
+                        total: Number(order.total_amount ?? order.total ?? 0),
+                        paid_amount: Number(order.paid_amount || 0),
+                        balance: Number(order.balance || 0),
+                        payment_status: (order.bill_payment_status as any) || 'unpaid',
+                        payment_details: [],
+                      } as unknown as Bill)
+                    : null;
+                  const orderToPay = {
+                    ...order,
+                    total: Number(order.total_amount ?? order.total ?? 0),
+                    bill: order.bill ?? billForOrder,
+                    bills: order.bills ?? (billForOrder ? [billForOrder] : []),
+                  };
+                  void onPayOrder(orderToPay as unknown as Order);
+                }}
                 className="gap-1 bg-brand text-white hover:bg-brand/90"
               >
                 <CreditCard size={13} />

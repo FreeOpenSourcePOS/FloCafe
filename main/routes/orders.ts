@@ -1602,6 +1602,7 @@ router.get(
           c.phone AS customer_phone,
           o.scheduled_for,
           o.total,
+          o.total AS total_amount,
           o.checkout_stage,
           o.dispatch_policy,
           o.release_status,
@@ -1701,11 +1702,16 @@ router.get(
       }
 
       const orderRow = db
-        .prepare('SELECT * FROM orders WHERE order_number = ? OR id = ?')
+        .prepare(
+          `SELECT * FROM orders
+           WHERE (order_number = ? OR id = ?)
+             AND status NOT IN ('cancelled', 'completed')
+             AND checkout_stage = 'awaiting_payment'`,
+        )
         .get(cleanTicket, cleanTicket) as any;
 
       if (!orderRow) {
-        return res.status(404).json({ error: 'Ticket not found' });
+        return res.status(404).json({ error: 'Ticket not found or already paid' });
       }
 
       const [hydrated] = batchHydrateOrders(db, [parseRowJson(orderRow)]);
@@ -1717,6 +1723,10 @@ router.get(
       if (!primaryBill && orderRow.dispatch_policy === 'on_payment') {
         primaryBill = createOrSyncBillForOrder(db, orderRow.id);
         bills = [primaryBill];
+      }
+
+      if (primaryBill && primaryBill.payment_status === 'paid' && Number(primaryBill.balance || 0) <= 0) {
+        return res.status(404).json({ error: 'Ticket not found or already paid' });
       }
 
       res.json({

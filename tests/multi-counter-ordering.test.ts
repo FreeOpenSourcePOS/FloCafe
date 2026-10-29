@@ -544,6 +544,15 @@ async function main() {
     });
     assertEqualOrThrow(lookup404.status, 404, 'lookup non-existent ticket 404');
 
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(order1.id);
+    const lookupCancelled = await req({
+      path: `/api/orders/by-ticket/${order1.order_number}`,
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(lookupCancelled.status, 404, 'lookup cancelled ticket 404');
+    db.prepare("UPDATE orders SET status = 'pending' WHERE id = ?").run(order1.id);
+
     // -------------------------------------------------------------------------
     // 5. Prepayment Release Gates & Prepayment Lifecycle
     // -------------------------------------------------------------------------
@@ -622,6 +631,13 @@ async function main() {
     assertEqualOrThrow(order1AfterFinal.checkout_stage, 'paid', 'checkout_stage transitioned to paid');
     assertEqualOrThrow(order1AfterFinal.release_status, 'released', 'order released to kitchen!');
     assertEqualOrThrow(order1AfterFinal.status, 'pending', 'kitchen status remains pending, NOT completed!');
+
+    const lookupPaid = await req({
+      path: `/api/orders/by-ticket/${order1.order_number}`,
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(lookupPaid.status, 404, 'lookup already paid ticket 404');
 
     // Verify stock deducted
     assertEqualOrThrow(
@@ -798,6 +814,57 @@ async function main() {
     assertEqualOrThrow(retrySuccess.body?.order?.release_status, 'released', 'order is released');
     assertEqualOrThrow(productStock(db, 'prod-limited'), 4, '1 unit deducted on successful release');
     assertLedgerReconciles(db, 'after retry release');
+
+    adjustStock(db, 'prod-limited', -productStock(db, 'prod-limited'), 'clear stock for refund test', owner.userId);
+    const refundOrderRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-limited', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(refundOrderRes.status, 201, 'refund test order created 201');
+    const refundOrder = refundOrderRes.body.order;
+    const refundBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(refundOrder.id) as any;
+
+    const refundPayRes = await req({
+      path: `/api/bills/${refundBill.id}/payment`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: {
+        method: 'cash',
+        amount: Number(refundBill.total),
+      },
+    });
+    assertEqualOrThrow(refundPayRes.status, 200, 'pay for blocked order 200');
+
+    const refundRes = await req({
+      path: '/api/refunds',
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        bill_id: refundBill.id,
+        amount: Number(refundBill.total) / 100,
+        method: 'cash',
+        reason: 'Out of stock customer refund',
+        approver_id: owner.userId,
+        override_pin: '9999',
+      },
+    });
+    assertEqualOrThrow(refundRes.status, 201, 'refund issued 201');
+
+    adjustStock(db, 'prod-limited', 5, 'restock for test', owner.userId);
+
+    const releaseRefundedAttempt = await req({
+      path: `/api/orders/${refundOrder.id}/release`,
+      method: 'POST',
+      headers: manager.authHeader,
+    });
+    assertEqualOrThrow(releaseRefundedAttempt.status, 409, 'release of refunded order rejected 409');
+    assertEqualOrThrow(releaseRefundedAttempt.body?.code, 'ORDER_NOT_PAID', 'code is ORDER_NOT_PAID');
 
     // -------------------------------------------------------------------------
     // 8. Printer Route: Print Payment Ticket

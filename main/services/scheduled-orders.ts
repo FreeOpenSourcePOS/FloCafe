@@ -366,8 +366,7 @@ export async function releaseScheduledOrder(
 
     // Gate 1: If dispatch_policy === 'on_payment', full payment across all applicable bills is required.
     if (currentOrder.dispatch_policy === 'on_payment') {
-      const isPaid =
-        currentOrder.checkout_stage === 'paid' || isOrderSettledAndNonRefunded(db, currentOrder.id);
+      const isPaid = isOrderSettledAndNonRefunded(db, currentOrder.id);
       if (!isPaid) {
         if (isAutoTrigger) {
           return {

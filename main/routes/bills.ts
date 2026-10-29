@@ -3688,7 +3688,7 @@ export async function handlePostPaymentRelease(
     return;
   }
   if (order.scheduled_for) {
-    const scheduledTime = new Date(order.scheduled_for).getTime();
+    const scheduledTime = parseDbTimestamp(order.scheduled_for).getTime();
     if (scheduledTime > Date.now()) {
       return;
     }

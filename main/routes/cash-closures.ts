@@ -523,6 +523,25 @@ export function expectedCashFromAggregates(
     aggregates.cashRefundsByCreatedAtCents
   );
 }
+// `b.paid_at` represents a timestamp-less line only when it is the single/final settling
+// line; earlier pre-settlement installments stay anchored to `b.created_at`.
+const LEGACY_STABLE_PAYMENT_LINE_TIME_SQL = `(
+  CASE
+    WHEN json_valid(b.payment_details)
+      AND json_type(b.payment_details) = 'array'
+      AND CAST(je.key AS INTEGER) < json_array_length(b.payment_details) - 1
+    THEN COALESCE(
+      datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+      datetime(NULLIF(b.created_at, ''))
+    )
+    ELSE COALESCE(
+      datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+      datetime(NULLIF(b.paid_at, '')),
+      datetime(NULLIF(b.created_at, ''))
+    )
+  END
+)`;
+
 /**
  * Drawer-reality cash inputs for one raw timestamp window: cash sales by each
  * payment line's timestamp (includes partial tenders before `paid_at` is set)
@@ -547,11 +566,7 @@ export function cashDrawerSalesAndRefunds(
         CAST(json_extract(je.value, '$.amount') AS REAL) AS amount,
         COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), '') AS method,
         CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER) AS payment_method_id,
-        COALESCE(
-          datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-          datetime(NULLIF(b.paid_at, '')),
-          datetime(NULLIF(b.created_at, ''))
-        ) AS line_time
+        ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} AS line_time
       FROM bills b
       JOIN json_each(
         CASE
@@ -657,11 +672,7 @@ export function sessionExpectedCash(
         COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), '') AS method,
         CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER) AS payment_method_id,
         CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) AS line_session,
-        COALESCE(
-          datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-          datetime(NULLIF(b.paid_at, '')),
-          datetime(NULLIF(b.created_at, ''))
-        ) AS line_time
+        ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} AS line_time
       FROM bills b
       JOIN json_each(
         CASE
@@ -735,8 +746,7 @@ export function sessionFinancialTotals(
         CAST(ROUND(CAST(json_extract(je.value, '$.amount') AS REAL) * ?) AS INTEGER) AS amount_cents,
         COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), 'unknown') AS method,
         CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) AS line_session,
-        COALESCE(datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-          datetime(NULLIF(b.paid_at, '')), datetime(NULLIF(b.created_at, ''))) AS line_time
+        ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} AS line_time
       FROM bills b
       JOIN json_each(CASE
         WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
@@ -942,8 +952,7 @@ export function computePeriodAggregates(
       SELECT b.id AS bill_id,
         CAST(json_extract(je.value, '$.amount') AS REAL) AS amount,
         CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) AS line_session,
-        COALESCE(datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-          datetime(NULLIF(b.paid_at, '')), datetime(NULLIF(b.created_at, ''))) AS line_time
+        ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} AS line_time
       FROM bills b
       JOIN json_each(CASE
         WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
@@ -1022,18 +1031,10 @@ export function computePeriodAggregates(
                 (
                   SELECT cs.id
                   FROM cash_sessions cs
-                  WHERE COALESCE(
-                          datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-                          datetime(NULLIF(b.paid_at, '')),
-                          datetime(NULLIF(b.created_at, ''))
-                        ) >= datetime(cs.opened_at)
+                  WHERE ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} >= datetime(cs.opened_at)
                     AND (
                       cs.closed_at IS NULL
-                      OR COALESCE(
-                           datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-                           datetime(NULLIF(b.paid_at, '')),
-                           datetime(NULLIF(b.created_at, ''))
-                         ) < datetime(cs.closed_at)
+                      OR ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} < datetime(cs.closed_at)
                     )
                   ORDER BY datetime(cs.opened_at) DESC, cs.id DESC
                   LIMIT 1
@@ -1044,11 +1045,7 @@ export function computePeriodAggregates(
           ) = ?
           AND (
             NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NOT NULL
-            OR COALESCE(
-              datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-              datetime(NULLIF(b.paid_at, '')),
-              datetime(NULLIF(b.created_at, ''))
-            ) < datetime(?)
+            OR ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} < datetime(?)
           )
       )
     ORDER BY COALESCE(b.paid_at, b.created_at), b.id
@@ -1083,11 +1080,7 @@ export function computePeriodAggregates(
           CAST(je.key AS INTEGER) AS line_index,
           json_extract(je.value, '$.amount') AS raw_amount,
           NULLIF(json_extract(je.value, '$.cash_session_id'), '') AS raw_session_id,
-          COALESCE(
-            datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-            datetime(NULLIF(b.paid_at, '')),
-            datetime(NULLIF(b.created_at, ''))
-          ) AS line_time
+          ${LEGACY_STABLE_PAYMENT_LINE_TIME_SQL} AS line_time
         FROM bills b
         JOIN json_each(CASE
           WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details

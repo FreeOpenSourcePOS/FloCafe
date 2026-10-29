@@ -106,12 +106,19 @@ function buildNoCompatibleBackupsDetail(discovery: DowngradeBackupDiscovery): st
 }
 
 function isShutdownAbortError(error: unknown): boolean {
-  const details = error as { code?: unknown; name?: unknown } | null;
-  return (
-    details?.code === 'ERR_SHUTDOWN_ABORTED' ||
-    details?.code === 'ABORT_ERR' ||
-    details?.name === 'AbortError'
-  );
+  let current: unknown = error;
+  for (let depth = 0; depth < 10 && current && typeof current === 'object'; depth++) {
+    const details = current as { code?: unknown; name?: unknown; cause?: unknown } | null;
+    if (
+      details?.code === 'ERR_SHUTDOWN_ABORTED' ||
+      details?.code === 'ABORT_ERR' ||
+      details?.name === 'AbortError'
+    ) {
+      return true;
+    }
+    current = details?.cause;
+  }
+  return false;
 }
 
 async function openReleasesPage(deps: DowngradeRecoveryDeps): Promise<boolean> {

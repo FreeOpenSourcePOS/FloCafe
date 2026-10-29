@@ -49,14 +49,17 @@ import {
   discoverDowngradeBackupsAsync,
   finalizeDatabaseReplacementJournal,
   getBackupDir,
+  getColumns,
   getCurrentSchemaVersion,
   getDatabase,
   getDatabaseReplacementJournal,
   getDbPath,
   getLatestSupportedSchemaVersion,
+  getTables,
   initDatabase,
   isHealthyDatabaseFile,
   isSchemaVersionMismatchError,
+  isSqliteStorageOrOpenError,
   planNewerDatabaseArchivePath,
   restoreBackup,
   restoreCompatibleBackupForDowngrade,
@@ -3229,6 +3232,130 @@ async function run(): Promise<void> {
       assert.match(planErrorDialogs[2]?.detail || '', /simulated EACCES planning archive path/);
     } finally {
       fs.rmSync(asyncScanSeedDir, { recursive: true, force: true });
+    }
+
+    {
+      const directEnospc = Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+      const wrappedOnce = new Error('Could not stage restore source in system temp', {
+        cause: directEnospc,
+      });
+      const wrappedTwice = new Error('Database replacement failed', { cause: wrappedOnce });
+      const directSqliteIoErr = new Database.SqliteError('disk I/O error', 'SQLITE_IOERR');
+      const wrappedSqliteIoErr = new Error('Backup inspection failed', { cause: directSqliteIoErr });
+      const shortReadError = new Database.SqliteError('short read', 'SQLITE_IOERR_SHORT_READ');
+      const corruptError = new Database.SqliteError('database disk image is malformed', 'SQLITE_CORRUPT');
+      const genericError = new Error('unrelated error');
+
+      assert.equal(isSqliteStorageOrOpenError(directEnospc), true);
+      assert.equal(isSqliteStorageOrOpenError(wrappedOnce), true);
+      assert.equal(isSqliteStorageOrOpenError(wrappedTwice), true);
+      assert.equal(isSqliteStorageOrOpenError(directSqliteIoErr), true);
+      assert.equal(isSqliteStorageOrOpenError(wrappedSqliteIoErr), true);
+      assert.equal(isSqliteStorageOrOpenError(shortReadError), false);
+      assert.equal(isSqliteStorageOrOpenError(corruptError), false);
+      assert.equal(isSqliteStorageOrOpenError(genericError), false);
+      assert.equal(isSqliteStorageOrOpenError(null), false);
+
+      const memDb = new Database(':memory:');
+      try {
+        memDb.exec('CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)');
+        assert.deepEqual(getTables(memDb), ['test_table']);
+        assert.deepEqual(getColumns(memDb, 'test_table'), ['id', 'name']);
+
+        const origPrepare = memDb.prepare;
+        memDb.prepare = function (sql: string) {
+          if (sql.includes('table_info') || sql.includes('sqlite_master')) {
+            throw new Database.SqliteError('disk I/O error', 'SQLITE_IOERR');
+          }
+          return origPrepare.call(this, sql);
+        } as typeof Database.prototype.prepare;
+
+        assert.throws(
+          () => getTables(memDb),
+          (err: unknown) => isSqliteStorageOrOpenError(err),
+          'getTables rethrows SQLITE_IOERR storage error',
+        );
+        assert.throws(
+          () => getColumns(memDb, 'test_table'),
+          (err: unknown) => isSqliteStorageOrOpenError(err),
+          'getColumns rethrows SQLITE_IOERR storage error',
+        );
+
+        memDb.prepare = function (sql: string) {
+          if (sql.includes('table_info') || sql.includes('sqlite_master')) {
+            throw new Error('synthetic non-storage query error');
+          }
+          return origPrepare.call(this, sql);
+        } as typeof Database.prototype.prepare;
+
+        assert.deepEqual(getTables(memDb), [], 'getTables catches non-storage error');
+        assert.deepEqual(getColumns(memDb, 'test_table'), [], 'getColumns catches non-storage error');
+      } finally {
+        memDb.close();
+      }
+
+      const mutableFsForDiscovery = nativeFs as unknown as {
+        readdirSync: typeof fs.readdirSync;
+        lstatSync: typeof fs.lstatSync;
+      };
+      const origReaddir = mutableFsForDiscovery.readdirSync;
+      const origLstat = mutableFsForDiscovery.lstatSync;
+
+      mutableFsForDiscovery.readdirSync = ((p: fs.PathLike, options?: any) => {
+        if (String(p) === getBackupDir()) {
+          throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+        }
+        return origReaddir.call(nativeFs, p, options);
+      }) as typeof fs.readdirSync;
+
+      try {
+        await assert.rejects(
+          () => discoverDowngradeBackupsAsync(),
+          (err: any) => err?.code === 'EACCES',
+          'discoverDowngradeBackupsAsync rethrows non-ENOENT readdir errors',
+        );
+      } finally {
+        mutableFsForDiscovery.readdirSync = origReaddir;
+      }
+
+      const tempScanDir = fs.mkdtempSync(path.join(testDir, 'candidate-error-scan-'));
+      const fakeBackupPath = path.join(getBackupDir(), 'flo-backup-2026-10-29T10-00-00-000Z-disappear.db');
+      fs.writeFileSync(fakeBackupPath, 'fake-backup');
+      try {
+        let injectedEnoent = false;
+        mutableFsForDiscovery.lstatSync = ((p: fs.PathLike, options?: any) => {
+          if (String(p) === fakeBackupPath && !injectedEnoent) {
+            injectedEnoent = true;
+            throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
+          }
+          return origLstat.call(nativeFs, p, options);
+        }) as typeof fs.lstatSync;
+
+        const enoentDiscovery = await discoverDowngradeBackupsAsync();
+        assert.equal(injectedEnoent, true);
+        assert.equal(
+          enoentDiscovery.compatible.some((b) => b.path === fakeBackupPath),
+          false,
+          'vanished candidate with ENOENT is cleanly skipped',
+        );
+
+        mutableFsForDiscovery.lstatSync = ((p: fs.PathLike, options?: any) => {
+          if (String(p) === fakeBackupPath) {
+            throw Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
+          }
+          return origLstat.call(nativeFs, p, options);
+        }) as typeof fs.lstatSync;
+
+        await assert.rejects(
+          () => discoverDowngradeBackupsAsync(),
+          (err: any) => err?.code === 'EMFILE',
+          'lstatSync EMFILE propagates out of discoverDowngradeBackupsAsync',
+        );
+      } finally {
+        mutableFsForDiscovery.lstatSync = origLstat;
+        if (fs.existsSync(fakeBackupPath)) fs.unlinkSync(fakeBackupPath);
+        fs.rmSync(tempScanDir, { recursive: true, force: true });
+      }
     }
 
     // 6. Electron main/index.ts startup interception (via tests/startup-failure-child.cjs):

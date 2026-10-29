@@ -1050,49 +1050,64 @@ function stageDatabaseCopyInDirectory(
 }
 
 function isShutdownOrMaintenanceAbortError(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === 'ERR_SHUTDOWN_ABORTED' || code === 'ABORT_ERR';
+  let current: unknown = error;
+  for (let depth = 0; depth < 10 && current && typeof current === 'object'; depth++) {
+    const code = (current as { code?: unknown; cause?: unknown }).code;
+    if (code === 'ERR_SHUTDOWN_ABORTED' || code === 'ABORT_ERR') return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
-function isSqliteStorageOrOpenError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  if (
-    error instanceof TypeError &&
-    error.message.includes('Cannot open database because the directory does not exist')
-  ) {
-    return true;
+export function isSqliteStorageOrOpenError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 10 && current && typeof current === 'object'; depth++) {
+    if (
+      current instanceof TypeError &&
+      current.message.includes('Cannot open database because the directory does not exist')
+    ) {
+      return true;
+    }
+    const err = current as { code?: unknown; errno?: unknown; cause?: unknown };
+    if (typeof err.errno === 'number') return true;
+    if (typeof err.code === 'string') {
+      const code = err.code;
+      if (code !== 'SQLITE_IOERR_SHORT_READ') {
+        if (
+          code === 'SQLITE_IOERR' ||
+          code.startsWith('SQLITE_IOERR_') ||
+          code === 'SQLITE_FULL' ||
+          code.startsWith('SQLITE_FULL_') ||
+          code === 'SQLITE_CANTOPEN' ||
+          code.startsWith('SQLITE_CANTOPEN_') ||
+          code === 'SQLITE_NOMEM' ||
+          code.startsWith('SQLITE_NOMEM_') ||
+          code === 'SQLITE_BUSY' ||
+          code.startsWith('SQLITE_BUSY_') ||
+          code === 'SQLITE_LOCKED' ||
+          code.startsWith('SQLITE_LOCKED_') ||
+          code === 'SQLITE_PERM' ||
+          code.startsWith('SQLITE_PERM_') ||
+          code === 'SQLITE_READONLY' ||
+          code.startsWith('SQLITE_READONLY_') ||
+          code === 'SQLITE_PROTOCOL' ||
+          code.startsWith('SQLITE_PROTOCOL_') ||
+          code === 'SQLITE_NOLFS'
+        ) {
+          return true;
+        }
+        if (
+          /^(?:ENOSPC|EDQUOT|EIO|EACCES|EPERM|EROFS|EMFILE|ENFILE|ENOMEM|EBUSY|EAGAIN|EXDEV|ENOENT|ENOTDIR)$/.test(
+            code,
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+    current = err.cause;
   }
-  const err = error as { code?: unknown; errno?: unknown };
-  if (typeof err.errno === 'number') return true;
-  if (typeof err.code !== 'string') return false;
-  const code = err.code;
-  if (code === 'SQLITE_IOERR_SHORT_READ') return false;
-  if (
-    code === 'SQLITE_IOERR' ||
-    code.startsWith('SQLITE_IOERR_') ||
-    code === 'SQLITE_FULL' ||
-    code.startsWith('SQLITE_FULL_') ||
-    code === 'SQLITE_CANTOPEN' ||
-    code.startsWith('SQLITE_CANTOPEN_') ||
-    code === 'SQLITE_NOMEM' ||
-    code.startsWith('SQLITE_NOMEM_') ||
-    code === 'SQLITE_BUSY' ||
-    code.startsWith('SQLITE_BUSY_') ||
-    code === 'SQLITE_LOCKED' ||
-    code.startsWith('SQLITE_LOCKED_') ||
-    code === 'SQLITE_PERM' ||
-    code.startsWith('SQLITE_PERM_') ||
-    code === 'SQLITE_READONLY' ||
-    code.startsWith('SQLITE_READONLY_') ||
-    code === 'SQLITE_PROTOCOL' ||
-    code.startsWith('SQLITE_PROTOCOL_') ||
-    code === 'SQLITE_NOLFS'
-  ) {
-    return true;
-  }
-  return /^(?:ENOSPC|EDQUOT|EIO|EACCES|EPERM|EROFS|EMFILE|ENFILE|ENOMEM|EBUSY|EAGAIN|EXDEV|ENOENT|ENOTDIR)$/.test(
-    code,
-  );
+  return false;
 }
 
 function runStagedDatabaseProbeInDirectory<T>(
@@ -3762,12 +3777,13 @@ function listDowngradeBackupCandidateEntries(
   backupDir: string,
   liveDbPath: string,
 ): { fileName: string; fullPath: string }[] {
-  if (!fs.existsSync(backupDir)) return [];
   let entries: string[];
   try {
     entries = fs.readdirSync(backupDir);
-  } catch {
-    return [];
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | null)?.code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return [];
+    throw error;
   }
   const candidates: { fileName: string; fullPath: string }[] = [];
   for (const fileName of entries.sort()) {
@@ -3803,8 +3819,12 @@ function evaluateDowngradeBackupCandidate(
   let lstat: fs.Stats;
   try {
     lstat = fs.lstatSync(fullPath);
-  } catch {
-    return;
+  } catch (statError) {
+    const code = (statError as NodeJS.ErrnoException | null)?.code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      return;
+    }
+    throw statError;
   }
   if (lstat.isSymbolicLink() || !lstat.isFile()) {
     corruptOrInvalid.push({
@@ -3838,6 +3858,9 @@ function evaluateDowngradeBackupCandidate(
   try {
     headerInfo = readSqliteHeaderInfo(fullPath, true);
   } catch (readError: unknown) {
+    if (isShutdownOrMaintenanceAbortError(readError) || isSqliteStorageOrOpenError(readError)) {
+      throw readError;
+    }
     corruptOrInvalid.push({
       fileName,
       path: fullPath,
@@ -3906,7 +3929,24 @@ function evaluateDowngradeBackupCandidate(
             };
     }
 
-    const afterStat = fs.lstatSync(fullPath);
+    let afterStat: fs.Stats;
+    try {
+      afterStat = fs.lstatSync(fullPath);
+    } catch (afterStatError) {
+      const code = (afterStatError as NodeJS.ErrnoException | null)?.code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') {
+        corruptOrInvalid.push({
+          fileName,
+          path: fullPath,
+          reason: 'corrupt_or_invalid',
+          schemaVersion: null,
+          appVersion: null,
+          detail: 'Restore source was removed while it was being read',
+        });
+        return;
+      }
+      throw afterStatError;
+    }
     if (
       afterStat.isSymbolicLink() ||
       !afterStat.isFile() ||
@@ -3960,7 +4000,7 @@ function evaluateDowngradeBackupCandidate(
       });
     }
   } catch (error: unknown) {
-    if (isShutdownOrMaintenanceAbortError(error)) {
+    if (isShutdownOrMaintenanceAbortError(error) || isSqliteStorageOrOpenError(error)) {
       throw error;
     }
     corruptOrInvalid.push({
@@ -4404,13 +4444,16 @@ function getSchemaDefinitions(dbInstance: Database.Database): Map<string, string
   );
 }
 
-function getColumns(dbInstance: Database.Database, tableName: string): string[] {
+export function getColumns(dbInstance: Database.Database, tableName: string): string[] {
   try {
     const columns = dbInstance.prepare(`PRAGMA table_info(${tableName})`).all() as {
       name: string;
     }[];
     return columns.map((col) => col.name);
-  } catch {
+  } catch (error) {
+    if (isShutdownOrMaintenanceAbortError(error) || isSqliteStorageOrOpenError(error)) {
+      throw error;
+    }
     return [];
   }
 }
@@ -4428,7 +4471,10 @@ export function getTables(dbInstance: Database.Database): string[] {
     `)
       .all() as { name: string }[];
     return tables.map((t) => t.name);
-  } catch {
+  } catch (error) {
+    if (isShutdownOrMaintenanceAbortError(error) || isSqliteStorageOrOpenError(error)) {
+      throw error;
+    }
     return [];
   }
 }

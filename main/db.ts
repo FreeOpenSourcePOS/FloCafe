@@ -617,7 +617,7 @@ export function getDbPath(): string {
   return path.join(userDataPath, 'flo.db');
 }
 
-function getBackupDir(): string {
+export function getBackupDir(): string {
   const userDataPath = app.getPath('userData');
   return path.join(userDataPath, 'backups');
 }
@@ -628,12 +628,16 @@ function getDbInitializedMarkerPath(): string {
   return path.join(userDataPath, '.flo-db-initialized');
 }
 
+type ReplacementJournalSidecar = '-wal' | '-shm';
+
 type ReplacementJournal = {
   phase: 'prepared' | 'committed';
   recoveryPath: string;
   dbPath: string;
   baselineForeignKeyViolations?: string[];
   driveInvalidationRequired?: boolean;
+  downgradeRecovery?: boolean;
+  recoverySidecars?: ReplacementJournalSidecar[];
 };
 
 export type DatabaseReplacementJournalHandle = {
@@ -828,11 +832,14 @@ function restoreReplacementCleanupEvidence(backupDir: string, dbPath: string): v
         );
       continue;
     }
-    for (const [canonicalPath, evidenceName] of [
+    const evidencePairs: [string, string | undefined][] = [
       [journalPath, journalEvidence],
       [recoveryPath, recoveryEvidence],
-    ] as const) {
-      if (pathEntryExists(canonicalPath)) continue;
+      [`${recoveryPath}-wal`, group.get(`${recoveryName}-wal`)],
+      [`${recoveryPath}-shm`, group.get(`${recoveryName}-shm`)],
+    ];
+    for (const [canonicalPath, evidenceName] of evidencePairs) {
+      if (!evidenceName || pathEntryExists(canonicalPath)) continue;
       const evidencePath = path.join(backupDir, evidenceName);
       const evidenceStat = fs.lstatSync(evidencePath);
       if (evidenceStat.isSymbolicLink() || !evidenceStat.isFile())
@@ -864,6 +871,19 @@ function replacementJournalPath(kind: 'restore' | 'reset'): string {
   return recoveryPath.replace(/\.db$/, '.json');
 }
 
+function isValidReplacementSidecarList(
+  value: unknown,
+): value is ReplacementJournalSidecar[] | undefined {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if ((entry !== '-wal' && entry !== '-shm') || seen.has(entry)) return false;
+    seen.add(entry);
+  }
+  return true;
+}
+
 function readReplacementJournal(journalPath: string): ReplacementJournal | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as Partial<ReplacementJournal>;
@@ -874,6 +894,8 @@ function readReplacementJournal(journalPath: string): ReplacementJournal | null 
       !path.isAbsolute(parsed.recoveryPath) ||
       !path.isAbsolute(parsed.dbPath) ||
       parsed.driveInvalidationRequired !== true ||
+      (parsed.downgradeRecovery !== undefined && typeof parsed.downgradeRecovery !== 'boolean') ||
+      !isValidReplacementSidecarList(parsed.recoverySidecars) ||
       parsed.dbPath !== getDbPath() ||
       path.dirname(parsed.recoveryPath) !== path.resolve(getBackupDir()) ||
       `${path.basename(journalPath, '.json')}.db` !== path.basename(parsed.recoveryPath)
@@ -965,6 +987,107 @@ export function finalizeDatabaseReplacementJournal(handle: DatabaseReplacementJo
   removeReplacementArtifactsDurably(handle.journalPath, handle.recoveryPath);
 }
 
+function isReadableRecoverySnapshotWithSidecars(
+  recoveryPath: string,
+  expectedSidecars: readonly ReplacementJournalSidecar[],
+): boolean {
+  let tempDir: string | null = null;
+  let probeDb: Database.Database | undefined;
+  try {
+    const recoveryStat = fs.lstatSync(recoveryPath);
+    if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile()) return false;
+    const expectedSet = new Set(expectedSidecars);
+    for (const suffix of ['-wal', '-shm'] as const) {
+      const sidecarPath = `${recoveryPath}${suffix}`;
+      const exists = pathEntryExists(sidecarPath);
+      if (exists !== expectedSet.has(suffix)) return false;
+      if (exists) {
+        const sidecarStat = fs.lstatSync(sidecarPath);
+        if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) return false;
+      }
+    }
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-recovery-verify-'));
+    const tempDbPath = path.join(tempDir, 'recovery.db');
+    fs.copyFileSync(recoveryPath, tempDbPath);
+    for (const suffix of expectedSidecars) {
+      fs.copyFileSync(`${recoveryPath}${suffix}`, `${tempDbPath}${suffix}`);
+    }
+    probeDb = new Database(tempDbPath, { fileMustExist: true });
+    const integrity = probeDb.prepare('PRAGMA integrity_check').all() as {
+      integrity_check: string;
+    }[];
+    return integrity.length > 0 && integrity.every((row) => row.integrity_check === 'ok');
+  } catch {
+    return false;
+  } finally {
+    try {
+      probeDb?.close();
+    } catch {}
+    if (tempDir) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {}
+    }
+  }
+}
+
+function isHealthyDowngradeCommittedDatabaseFile(
+  filePath: string,
+  allowedForeignKeyViolations: Set<string> | null | undefined = undefined,
+): boolean {
+  let candidate: Database.Database | undefined;
+  try {
+    candidate = new Database(filePath, { readonly: true, fileMustExist: true });
+    const integrity = candidate.prepare('PRAGMA integrity_check').all() as {
+      integrity_check: string;
+    }[];
+    if (integrity.length === 0 || integrity.some((row) => row.integrity_check !== 'ok')) {
+      return false;
+    }
+    const foreignKeyViolations = getForeignKeyViolationKeys(candidate);
+    const foreignKeysClean =
+      allowedForeignKeyViolations === null ||
+      (allowedForeignKeyViolations
+        ? [...foreignKeyViolations].every((key) => allowedForeignKeyViolations.has(key))
+        : foreignKeyViolations.size === 0);
+    if (!foreignKeysClean) return false;
+    const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
+    const supportedVersion = getLatestSupportedSchemaVersion();
+    if (schemaVersion < 1 || schemaVersion > supportedVersion) return false;
+    const tables = new Set(getTables(candidate));
+    const expectedSchema = getRecoverySchemaReference(schemaVersion).tableColumns;
+    if (
+      tables.size !== expectedSchema.size ||
+      ![...expectedSchema.keys()].every((table) => tables.has(table))
+    ) {
+      return false;
+    }
+    for (const [table, columns] of expectedSchema.entries()) {
+      const available = new Set(getColumns(candidate, table));
+      if (!columns.every((column) => available.has(column))) return false;
+    }
+    return validateInventoryLedgerDatabase(candidate) === null;
+  } catch {
+    return false;
+  } finally {
+    candidate?.close();
+  }
+}
+
+function restoreDatabaseWithSidecars(
+  recoveryPath: string,
+  dbPath: string,
+  sidecars: readonly ReplacementJournalSidecar[],
+): void {
+  fs.copyFileSync(recoveryPath, dbPath);
+  syncFile(dbPath);
+  for (const suffix of sidecars) {
+    const targetSidecar = `${dbPath}${suffix}`;
+    fs.copyFileSync(`${recoveryPath}${suffix}`, targetSidecar);
+    syncFile(targetSidecar);
+  }
+}
+
 export function recoverDatabaseReplacementJournal(handle: DatabaseReplacementJournalHandle): void {
   const journal = readReplacementJournal(handle.journalPath);
   if (journal?.phase === 'committed') return;
@@ -974,6 +1097,22 @@ export function recoverDatabaseReplacementJournal(handle: DatabaseReplacementJou
     journal.dbPath !== handle.dbPath
   ) {
     throw new Error('Database replacement journal could not be validated');
+  }
+  const expectedSidecars = journal.recoverySidecars ?? [];
+  if (journal.downgradeRecovery) {
+    if (!isReadableRecoverySnapshotWithSidecars(handle.recoveryPath, expectedSidecars)) {
+      throw new Error('Database replacement recovery snapshot could not be validated');
+    }
+    closeDatabase();
+    const failures = removeDatabaseFiles(handle.dbPath);
+    if (failures.length > 0)
+      throw new Error(`Could not clear failed database replacement: ${failures.join(', ')}`);
+    restoreDatabaseWithSidecars(handle.recoveryPath, handle.dbPath, expectedSidecars);
+    if (!syncDirectory(path.dirname(handle.dbPath)) && process.platform !== 'win32') {
+      throw new Error('Could not durably recover failed database replacement');
+    }
+    removeReplacementArtifactsDurably(handle.journalPath, handle.recoveryPath);
+    return;
   }
   try {
     const recoveryStat = fs.lstatSync(handle.recoveryPath);
@@ -1287,6 +1426,8 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
         typeof parsed.dbPath !== 'string' ||
         !path.isAbsolute(parsed.recoveryPath) ||
         !path.isAbsolute(parsed.dbPath) ||
+        (parsed.downgradeRecovery !== undefined && typeof parsed.downgradeRecovery !== 'boolean') ||
+        !isValidReplacementSidecarList(parsed.recoverySidecars) ||
         (parsed.baselineForeignKeyViolations !== undefined &&
           (!Array.isArray(parsed.baselineForeignKeyViolations) ||
             parsed.baselineForeignKeyViolations.some((key) => typeof key !== 'string')))
@@ -1314,11 +1455,11 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
         : new Set(journal.baselineForeignKeyViolations);
     // Snapshots copy live database without metadata table.
     const requireMetadata = false;
+    const committedHealthy = journal.downgradeRecovery
+      ? isHealthyDowngradeCommittedDatabaseFile(dbPath, allowedForeignKeyViolations)
+      : isHealthyDatabaseFile(dbPath, allowedForeignKeyViolations, requireMetadata);
     // Finalize committed replacement if database file is healthy.
-    if (
-      journal.phase === 'committed' &&
-      isHealthyDatabaseFile(dbPath, allowedForeignKeyViolations, requireMetadata)
-    ) {
+    if (journal.phase === 'committed' && committedHealthy) {
       if (journal.driveInvalidationRequired !== false) {
         if (journal.driveInvalidationRequired !== true) {
           writeReplacementJournal(journalPath, {
@@ -1335,6 +1476,27 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
       removeReplacementArtifactsDurably(journalPath, recoveryPath);
       removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
       console.warn(`[DB] Finalized committed database replacement journal: ${journalPath}`);
+      return;
+    }
+    if (journal.downgradeRecovery) {
+      const expectedSidecars = journal.recoverySidecars ?? [];
+      if (!isReadableRecoverySnapshotWithSidecars(recoveryPath, expectedSidecars)) {
+        throw new Error(
+          'Interrupted database replacement recovery snapshot could not be validated',
+        );
+      }
+      const failures = removeDatabaseFiles(dbPath);
+      if (failures.length > 0)
+        throw new Error(`Could not clear interrupted database replacement: ${failures.join(', ')}`);
+      restoreDatabaseWithSidecars(recoveryPath, dbPath, expectedSidecars);
+      if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+        throw new Error('Could not durably install recovered database');
+      }
+      removeReplacementArtifactsDurably(journalPath, recoveryPath);
+      removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
+      console.warn(
+        `[DB] Recovered newer database from interrupted downgrade replacement snapshot: ${recoveryPath}`,
+      );
       return;
     }
     let recoveryStat: fs.Stats;
@@ -1427,6 +1589,84 @@ export function registerSettingsRevisionTriggers(dbInstance: Database.Database =
   }
 }
 
+const SQLITE_HEADER_MAGIC = Buffer.from('SQLite format 3\0', 'utf8');
+
+function inspectDatabaseVersionNonMutating(
+  dbPath: string,
+): { schemaVersion: number; appVersion: string | null } | null {
+  if (!pathEntryExists(dbPath)) return null;
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(dbPath);
+  } catch {
+    return null;
+  }
+  if (stat.isSymbolicLink() || !stat.isFile() || stat.size < 100) return null;
+
+  const maxSupported = getLatestSupportedSchemaVersion();
+  const hasSidecars = pathEntryExists(`${dbPath}-wal`) || pathEntryExists(`${dbPath}-shm`);
+  const header = Buffer.alloc(100);
+  let headerBytesRead = 0;
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(dbPath, 'r');
+    headerBytesRead = fs.readSync(fd, header, 0, 100, 0);
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    }
+  }
+  if (headerBytesRead < 100 || !header.subarray(0, 16).equals(SQLITE_HEADER_MAGIC)) {
+    return null;
+  }
+  const headerVersion = header.readInt32BE(60);
+  if (!hasSidecars && headerVersion <= maxSupported) {
+    return { schemaVersion: headerVersion, appVersion: null };
+  }
+
+  // Inspect a disposable copy so live WAL/SHM sidecars are never checkpointed or removed.
+  let tempDir: string | null = null;
+  let probeDb: Database.Database | undefined;
+  try {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-schema-preflight-'));
+    const tempDbPath = path.join(tempDir, 'probe.db');
+    fs.copyFileSync(dbPath, tempDbPath);
+    for (const suffix of ['-wal', '-shm'] as const) {
+      const sidecarPath = `${dbPath}${suffix}`;
+      if (!pathEntryExists(sidecarPath)) continue;
+      const sidecarStat = fs.lstatSync(sidecarPath);
+      if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) return null;
+      fs.copyFileSync(sidecarPath, `${tempDbPath}${suffix}`);
+    }
+    probeDb = new Database(tempDbPath, { fileMustExist: true });
+    const pragmaVersion = Number(probeDb.pragma('user_version', { simple: true }));
+    if (!Number.isSafeInteger(pragmaVersion)) return null;
+    let appVersion: string | null = null;
+    try {
+      const row = probeDb.prepare("SELECT value FROM _flo_meta WHERE key = 'app_version'").get() as
+        | { value?: string | null }
+        | undefined;
+      if (typeof row?.value === 'string' && row.value.trim()) appVersion = row.value.trim();
+    } catch {}
+    return { schemaVersion: pragmaVersion, appVersion };
+  } catch {
+    return null;
+  } finally {
+    try {
+      probeDb?.close();
+    } catch {}
+    if (tempDir) {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {}
+    }
+  }
+}
+
 export function initDatabase(
   recoverInterruptedReplacement = true,
   allowDuringShutdown = false,
@@ -1449,6 +1689,16 @@ export function initDatabase(
     fs.existsSync(getDbInitializedMarkerPath())
   ) {
     throw createDatabaseMissingError(dbPath);
+  }
+
+  const maxSupported = getLatestSupportedSchemaVersion();
+  const preflight = inspectDatabaseVersionNonMutating(dbPath);
+  if (preflight && preflight.schemaVersion > maxSupported) {
+    throw new SchemaVersionMismatchError(
+      preflight.schemaVersion,
+      maxSupported,
+      preflight.appVersion,
+    );
   }
 
   console.log(`[DB] Opening database at: ${dbPath}`);
@@ -2624,6 +2874,689 @@ export function isManagedBackupFile(candidatePath: string): boolean {
   } catch {
     return false;
   }
+}
+
+export type DowngradeBackupKind = 'pre-upgrade' | 'pre-restore' | 'manual';
+
+export interface CompatibleDowngradeBackup {
+  fileName: string;
+  path: string;
+  sizeBytes: number;
+  createdAt: string;
+  backupCreatedAt: string | null;
+  appVersion: string | null;
+  schemaVersion: number;
+  kind: DowngradeBackupKind;
+}
+
+export interface RejectedDowngradeBackup {
+  fileName: string;
+  path: string;
+  reason: 'incompatible_newer' | 'corrupt_or_invalid';
+  schemaVersion: number | null;
+  appVersion: string | null;
+  detail: string;
+}
+
+export interface DowngradeBackupDiscovery {
+  backupDir: string;
+  maxSupportedSchemaVersion: number;
+  compatible: CompatibleDowngradeBackup[];
+  incompatibleNewer: RejectedDowngradeBackup[];
+  corruptOrInvalid: RejectedDowngradeBackup[];
+}
+
+export interface DowngradeRestoreOptions {
+  newerDbVersion?: number;
+  archivePath?: string;
+  signal?: AbortSignal;
+}
+
+export interface DowngradeRestoreResult {
+  restoredBackupPath: string;
+  backupSchemaVersion: number;
+  restoredSchemaVersion: number;
+  preservedDbPath: string;
+  preservedSidecarPaths: string[];
+}
+
+const CORE_FLO_BACKUP_TABLES = [
+  'settings',
+  'users',
+  'categories',
+  'products',
+  'orders',
+  'order_items',
+  'bills',
+] as const;
+
+const INTERNAL_BACKUP_ARTIFACT_PATTERN =
+  /^(?:(?:flo-restore|flo-reset)-recovery-.+|flo-preserved-newer-.+)\.db$/;
+
+function classifyDowngradeBackupKind(fileName: string): DowngradeBackupKind {
+  if (fileName.includes('-pre-v')) return 'pre-upgrade';
+  if (isRestoreSafetyCopyName(fileName)) return 'pre-restore';
+  return 'manual';
+}
+
+type DowngradeBackupSnapshotInspection =
+  | {
+      status: 'compatible';
+      schemaVersion: number;
+      appVersion: string | null;
+      backupCreatedAt: string | null;
+    }
+  | {
+      status: 'incompatible_newer' | 'corrupt_or_invalid';
+      schemaVersion: number | null;
+      appVersion: string | null;
+      detail: string;
+    };
+
+function inspectBackupSnapshotForDowngrade(
+  snapshotPath: string,
+  maxSupportedSchemaVersion: number,
+): DowngradeBackupSnapshotInspection {
+  let candidateDb: Database.Database | undefined;
+  try {
+    candidateDb = new Database(snapshotPath, { readonly: true, fileMustExist: true });
+    const integrityRows = candidateDb.prepare('PRAGMA integrity_check').all() as {
+      integrity_check: string;
+    }[];
+    if (integrityRows.length === 0 || integrityRows.some((row) => row.integrity_check !== 'ok')) {
+      return {
+        status: 'corrupt_or_invalid',
+        schemaVersion: null,
+        appVersion: null,
+        detail: 'SQLite integrity check failed',
+      };
+    }
+
+    const pragmaVersion = Number(candidateDb.pragma('user_version', { simple: true }));
+    let metaSchemaRaw: string | undefined;
+    let appVersion: string | null = null;
+    let backupCreatedAt: string | null = null;
+    const hasMetaTable = Boolean(
+      candidateDb
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_flo_meta'")
+        .get(),
+    );
+    if (hasMetaTable) {
+      const metaRows = candidateDb
+        .prepare(
+          "SELECT key, value FROM _flo_meta WHERE key IN ('schema_version', 'app_version', 'backup_created_at')",
+        )
+        .all() as { key: string; value: string | null }[];
+      const values = new Map(metaRows.map((row) => [row.key, row.value]));
+      const rawSchema = values.get('schema_version');
+      if (typeof rawSchema === 'string') metaSchemaRaw = rawSchema;
+      const rawAppVersion = values.get('app_version');
+      if (typeof rawAppVersion === 'string' && rawAppVersion.trim()) {
+        appVersion = rawAppVersion.trim();
+      }
+      const rawCreatedAt = values.get('backup_created_at');
+      if (typeof rawCreatedAt === 'string' && rawCreatedAt.trim()) {
+        backupCreatedAt = rawCreatedAt.trim();
+      }
+    }
+
+    if (metaSchemaRaw !== undefined) {
+      const parsedMetaVersion = parseCanonicalSchemaVersion(metaSchemaRaw);
+      if (
+        parsedMetaVersion === null ||
+        parsedMetaVersion < 1 ||
+        parsedMetaVersion !== pragmaVersion
+      ) {
+        return {
+          status: 'corrupt_or_invalid',
+          schemaVersion:
+            Number.isSafeInteger(pragmaVersion) && pragmaVersion > 0 ? pragmaVersion : null,
+          appVersion,
+          detail: 'Backup schema metadata does not match the SQLite header',
+        };
+      }
+    }
+
+    if (!Number.isSafeInteger(pragmaVersion) || pragmaVersion < 1) {
+      return {
+        status: 'corrupt_or_invalid',
+        schemaVersion: null,
+        appVersion,
+        detail: 'Backup does not contain an initialized Flo Cafe schema',
+      };
+    }
+
+    if (pragmaVersion > maxSupportedSchemaVersion) {
+      return {
+        status: 'incompatible_newer',
+        schemaVersion: pragmaVersion,
+        appVersion,
+        detail: `Requires schema v${pragmaVersion} (this version supports up to v${maxSupportedSchemaVersion})`,
+      };
+    }
+
+    const tables = new Set(getTables(candidateDb));
+    const missingCoreTables = CORE_FLO_BACKUP_TABLES.filter((table) => !tables.has(table));
+    if (missingCoreTables.length > 0) {
+      return {
+        status: 'corrupt_or_invalid',
+        schemaVersion: pragmaVersion,
+        appVersion,
+        detail: `Backup is missing required Flo Cafe table(s): ${missingCoreTables.join(', ')}`,
+      };
+    }
+
+    if (pragmaVersion === maxSupportedSchemaVersion) {
+      const expectedSchema = getRecoverySchemaReference(maxSupportedSchemaVersion).tableColumns;
+      if (
+        tables.size !== expectedSchema.size ||
+        ![...expectedSchema.keys()].every((table) => tables.has(table))
+      ) {
+        return {
+          status: 'corrupt_or_invalid',
+          schemaVersion: pragmaVersion,
+          appVersion,
+          detail: 'Backup table structure does not match schema v' + pragmaVersion,
+        };
+      }
+      for (const [table, columns] of expectedSchema.entries()) {
+        const available = new Set(getColumns(candidateDb, table));
+        if (!columns.every((column) => available.has(column))) {
+          return {
+            status: 'corrupt_or_invalid',
+            schemaVersion: pragmaVersion,
+            appVersion,
+            detail: `Backup table ${table} is missing expected column(s)`,
+          };
+        }
+      }
+    }
+
+    const fkViolations = getForeignKeyViolationKeys(candidateDb);
+    if (fkViolations.size > 0) {
+      return {
+        status: 'corrupt_or_invalid',
+        schemaVersion: pragmaVersion,
+        appVersion,
+        detail: `Backup contains ${fkViolations.size} foreign-key violation(s)`,
+      };
+    }
+
+    const inventoryError = validateInventoryLedgerDatabase(candidateDb);
+    if (inventoryError) {
+      return {
+        status: 'corrupt_or_invalid',
+        schemaVersion: pragmaVersion,
+        appVersion,
+        detail: inventoryError,
+      };
+    }
+
+    return {
+      status: 'compatible',
+      schemaVersion: pragmaVersion,
+      appVersion,
+      backupCreatedAt,
+    };
+  } catch (error: unknown) {
+    return {
+      status: 'corrupt_or_invalid',
+      schemaVersion: null,
+      appVersion: null,
+      detail:
+        error instanceof Error && error.message
+          ? error.message
+          : 'File is not a readable SQLite database',
+    };
+  } finally {
+    try {
+      candidateDb?.close();
+    } catch {}
+  }
+}
+
+export function discoverDowngradeBackups(): DowngradeBackupDiscovery {
+  const backupDir = getBackupDir();
+  const maxSupportedSchemaVersion = getLatestSupportedSchemaVersion();
+  const compatible: CompatibleDowngradeBackup[] = [];
+  const incompatibleNewer: RejectedDowngradeBackup[] = [];
+  const corruptOrInvalid: RejectedDowngradeBackup[] = [];
+
+  if (!fs.existsSync(backupDir)) {
+    return {
+      backupDir,
+      maxSupportedSchemaVersion,
+      compatible,
+      incompatibleNewer,
+      corruptOrInvalid,
+    };
+  }
+
+  const liveDbPath = getDbPath();
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(backupDir);
+  } catch {
+    return {
+      backupDir,
+      maxSupportedSchemaVersion,
+      compatible,
+      incompatibleNewer,
+      corruptOrInvalid,
+    };
+  }
+
+  for (const fileName of entries.sort()) {
+    if (!fileName.endsWith('.db') || INTERNAL_BACKUP_ARTIFACT_PATTERN.test(fileName)) continue;
+    const fullPath = resolveContainedPath(backupDir, fileName);
+    if (!fullPath) continue;
+    if (
+      [liveDbPath, `${liveDbPath}-wal`, `${liveDbPath}-shm`].some((target) =>
+        isLiveDatabaseTarget(fullPath, target),
+      )
+    ) {
+      continue;
+    }
+
+    let lstat: fs.Stats;
+    try {
+      lstat = fs.lstatSync(fullPath);
+    } catch {
+      continue;
+    }
+    if (lstat.isSymbolicLink() || !lstat.isFile()) {
+      corruptOrInvalid.push({
+        fileName,
+        path: fullPath,
+        reason: 'corrupt_or_invalid',
+        schemaVersion: null,
+        appVersion: null,
+        detail: 'Backup candidate must be a regular file',
+      });
+      continue;
+    }
+
+    let staged: { snapshotPath: string; cleanup: () => void } | undefined;
+    try {
+      staged = materializeRestoreSource(fullPath, liveDbPath);
+      const inspection = inspectBackupSnapshotForDowngrade(
+        staged.snapshotPath,
+        maxSupportedSchemaVersion,
+      );
+      if (inspection.status === 'compatible') {
+        compatible.push({
+          fileName,
+          path: fullPath,
+          sizeBytes: lstat.size,
+          createdAt: lstat.mtime.toISOString(),
+          backupCreatedAt: inspection.backupCreatedAt,
+          appVersion: inspection.appVersion,
+          schemaVersion: inspection.schemaVersion,
+          kind: classifyDowngradeBackupKind(fileName),
+        });
+      } else if (inspection.status === 'incompatible_newer') {
+        incompatibleNewer.push({
+          fileName,
+          path: fullPath,
+          reason: 'incompatible_newer',
+          schemaVersion: inspection.schemaVersion,
+          appVersion: inspection.appVersion,
+          detail: inspection.detail,
+        });
+      } else {
+        corruptOrInvalid.push({
+          fileName,
+          path: fullPath,
+          reason: 'corrupt_or_invalid',
+          schemaVersion: inspection.schemaVersion,
+          appVersion: inspection.appVersion,
+          detail: inspection.detail,
+        });
+      }
+    } catch (error: unknown) {
+      corruptOrInvalid.push({
+        fileName,
+        path: fullPath,
+        reason: 'corrupt_or_invalid',
+        schemaVersion: null,
+        appVersion: null,
+        detail:
+          error instanceof Error && error.message
+            ? error.message
+            : 'Backup candidate could not be read safely',
+      });
+    } finally {
+      staged?.cleanup();
+    }
+  }
+
+  const effectiveTimeMs = (item: CompatibleDowngradeBackup): number => {
+    if (item.backupCreatedAt) {
+      const parsed = Date.parse(item.backupCreatedAt);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+    const created = Date.parse(item.createdAt);
+    return Number.isNaN(created) ? 0 : created;
+  };
+
+  compatible.sort((left, right) => {
+    const timeDiff = effectiveTimeMs(right) - effectiveTimeMs(left);
+    if (timeDiff !== 0) return timeDiff;
+    if (left.kind !== right.kind) {
+      if (left.kind === 'pre-upgrade') return -1;
+      if (right.kind === 'pre-upgrade') return 1;
+    }
+    return right.fileName.localeCompare(left.fileName);
+  });
+
+  return {
+    backupDir,
+    maxSupportedSchemaVersion,
+    compatible,
+    incompatibleNewer,
+    corruptOrInvalid,
+  };
+}
+
+export function planNewerDatabaseArchivePath(
+  newerDbVersion: number,
+  timestampOverride?: string,
+): string {
+  const backupDir = getBackupDir();
+  const safeVersion =
+    Number.isFinite(newerDbVersion) && newerDbVersion > 0 ? Math.trunc(newerDbVersion) : 0;
+  const rawTimestamp = timestampOverride || new Date().toISOString();
+  const sanitizedTimestamp = rawTimestamp.replace(/[^0-9A-Za-z._-]/g, '-');
+  const basePrefix = `flo-preserved-newer-v${safeVersion}-${sanitizedTimestamp}`;
+  let suffixIndex = 1;
+  while (true) {
+    const candidateName =
+      suffixIndex === 1 ? `${basePrefix}.db` : `${basePrefix}-${suffixIndex}.db`;
+    const candidatePath = path.join(backupDir, candidateName);
+    if (
+      !pathEntryExists(candidatePath) &&
+      !pathEntryExists(`${candidatePath}-wal`) &&
+      !pathEntryExists(`${candidatePath}-shm`)
+    ) {
+      return candidatePath;
+    }
+    suffixIndex += 1;
+  }
+}
+
+export function restoreCompatibleBackupForDowngrade(
+  backupPath: string,
+  options?: DowngradeRestoreOptions,
+): Promise<DowngradeRestoreResult> {
+  return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
+    throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+    closeDatabase();
+
+    const dbPath = getDbPath();
+    const backupDir = getBackupDir();
+    const maxSupported = getLatestSupportedSchemaVersion();
+
+    let stagedSource: { snapshotPath: string; cleanup: () => void } | undefined;
+    try {
+      stagedSource = materializeRestoreSource(backupPath, dbPath);
+      const inspection = inspectBackupSnapshotForDowngrade(stagedSource.snapshotPath, maxSupported);
+      if (inspection.status === 'incompatible_newer') {
+        throw new Error(
+          `Selected backup cannot be restored: ${inspection.detail}. Update Flo Cafe or choose an older compatible backup.`,
+        );
+      }
+      if (inspection.status !== 'compatible') {
+        throw new Error(`Selected backup failed validation: ${inspection.detail}.`);
+      }
+
+      if (!pathEntryExists(dbPath)) {
+        throw new Error(`Active database was not found at ${dbPath}.`);
+      }
+      const liveStat = fs.lstatSync(dbPath);
+      if (liveStat.isSymbolicLink() || !liveStat.isFile()) {
+        throw new Error('Active database path is not a regular file.');
+      }
+
+      const presentSidecars: ReplacementJournalSidecar[] = [];
+      for (const suffix of ['-wal', '-shm'] as const) {
+        const sidecarPath = `${dbPath}${suffix}`;
+        if (!pathEntryExists(sidecarPath)) continue;
+        const sidecarStat = fs.lstatSync(sidecarPath);
+        if (sidecarStat.isSymbolicLink() || !sidecarStat.isFile()) {
+          throw new Error(`Active database sidecar ${sidecarPath} is not a regular file.`);
+        }
+        presentSidecars.push(suffix);
+      }
+
+      const liveVersionInfo = inspectDatabaseVersionNonMutating(dbPath);
+      const newerVersion = liveVersionInfo?.schemaVersion ?? options?.newerDbVersion ?? 0;
+
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+
+      let preservedDbPath: string;
+      if (options?.archivePath) {
+        const requestedName = path.basename(options.archivePath);
+        const contained = resolveContainedPath(backupDir, requestedName);
+        if (
+          !contained ||
+          path.resolve(options.archivePath) !== path.resolve(contained) ||
+          !/^flo-preserved-newer-v\d+-[\w.-]+\.db$/.test(requestedName)
+        ) {
+          throw new Error('Preserved newer-database archive path must reside in backups.');
+        }
+        preservedDbPath =
+          !pathEntryExists(contained) &&
+          !pathEntryExists(`${contained}-wal`) &&
+          !pathEntryExists(`${contained}-shm`)
+            ? contained
+            : planNewerDatabaseArchivePath(newerVersion);
+      } else {
+        preservedDbPath = planNewerDatabaseArchivePath(newerVersion);
+      }
+
+      const preservedSidecarPaths = presentSidecars.map((suffix) => `${preservedDbPath}${suffix}`);
+      let archiveComplete = false;
+      try {
+        throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+        fs.copyFileSync(dbPath, preservedDbPath, fs.constants.COPYFILE_EXCL);
+        syncFile(preservedDbPath);
+        if (fs.statSync(preservedDbPath).size !== liveStat.size) {
+          throw new Error('Preserved newer-database archive size did not match active database');
+        }
+        for (const suffix of presentSidecars) {
+          const sourceSidecar = `${dbPath}${suffix}`;
+          const targetSidecar = `${preservedDbPath}${suffix}`;
+          const expectedSize = fs.statSync(sourceSidecar).size;
+          fs.copyFileSync(sourceSidecar, targetSidecar, fs.constants.COPYFILE_EXCL);
+          syncFile(targetSidecar);
+          if (fs.statSync(targetSidecar).size !== expectedSize) {
+            throw new Error(`Preserved sidecar ${targetSidecar} size did not match source`);
+          }
+        }
+        if (!syncDirectory(backupDir) && process.platform !== 'win32') {
+          throw new Error('Could not durably persist preserved newer-database archive');
+        }
+        archiveComplete = true;
+      } finally {
+        if (!archiveComplete) {
+          for (const partialPath of [preservedDbPath, ...preservedSidecarPaths]) {
+            try {
+              if (pathEntryExists(partialPath)) fs.unlinkSync(partialPath);
+            } catch {}
+          }
+        }
+      }
+
+      const journalPath = replacementJournalPath('restore');
+      const recoveryPath = journalPath.replace(/\.json$/, '.db');
+      let journalPrepared = false;
+      try {
+        fs.copyFileSync(preservedDbPath, recoveryPath);
+        syncFile(recoveryPath);
+        for (const suffix of presentSidecars) {
+          fs.copyFileSync(`${preservedDbPath}${suffix}`, `${recoveryPath}${suffix}`);
+          syncFile(`${recoveryPath}${suffix}`);
+        }
+        writeReplacementJournal(journalPath, {
+          phase: 'prepared',
+          recoveryPath,
+          dbPath,
+          driveInvalidationRequired: true,
+          downgradeRecovery: true,
+          recoverySidecars: [...presentSidecars],
+        });
+        journalPrepared = true;
+      } catch (prepError) {
+        removeReplacementArtifactsDurably(journalPath, recoveryPath);
+        throw prepError;
+      }
+
+      try {
+        throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+        const removeFailures = removeDatabaseFiles(dbPath);
+        if (removeFailures.length > 0) {
+          throw new Error(
+            `Could not clear active database files for replacement: ${removeFailures.join(', ')}`,
+          );
+        }
+
+        throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+        fs.copyFileSync(stagedSource.snapshotPath, dbPath);
+        syncFile(dbPath);
+
+        initDatabase(false, true);
+        const freshDb = getDatabase();
+        const restoredSchemaVersion = getCurrentSchemaVersion();
+
+        const hasMetaTable = Boolean(
+          freshDb
+            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_flo_meta'")
+            .get(),
+        );
+        if (hasMetaTable) {
+          freshDb
+            .prepare("INSERT OR REPLACE INTO _flo_meta (key, value) VALUES ('schema_version', ?)")
+            .run(String(restoredSchemaVersion));
+        }
+
+        const existingTables = new Set(getTables(freshDb));
+        if (existingTables.has('kds_pairing_tokens')) {
+          freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
+        }
+        if (existingTables.has('customer_display_tokens')) {
+          freshDb.prepare('DELETE FROM customer_display_tokens').run();
+        }
+        clearGoogleDriveRestoreBinding(freshDb);
+        executeSequenceRepair(freshDb);
+        freshDb
+          .prepare(`
+            INSERT INTO settings (key, value, updated_at) VALUES ('sequence_repair_completed_at', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+          `)
+          .run(now(), now());
+        freshDb
+          .prepare(`
+            INSERT INTO settings (key, value, updated_at) VALUES ('sequence_repair_pending', '0', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+          `)
+          .run(now());
+
+        const integrity = freshDb.prepare('PRAGMA integrity_check').all() as {
+          integrity_check: string;
+        }[];
+        const fkViolations = getForeignKeyViolationKeys(freshDb);
+        const inventoryError = validateInventoryLedgerDatabase(freshDb);
+        if (
+          integrity.length === 0 ||
+          integrity.some((row) => row.integrity_check !== 'ok') ||
+          fkViolations.size > 0 ||
+          inventoryError !== null
+        ) {
+          throw new Error(
+            inventoryError || 'Restored database failed post-restore integrity validation',
+          );
+        }
+
+        throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+        freshDb.pragma('wal_checkpoint(TRUNCATE)');
+        syncFile(dbPath);
+        if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+          throw new Error('Could not durably commit restored compatible database');
+        }
+
+        writeReplacementJournal(journalPath, {
+          phase: 'committed',
+          recoveryPath,
+          dbPath,
+          driveInvalidationRequired: true,
+          downgradeRecovery: true,
+          recoverySidecars: [...presentSidecars],
+        });
+        closeDatabase();
+
+        return {
+          restoredBackupPath: path.resolve(backupPath),
+          backupSchemaVersion: inspection.schemaVersion,
+          restoredSchemaVersion,
+          preservedDbPath,
+          preservedSidecarPaths,
+        };
+      } catch (replaceError: unknown) {
+        const replaceMessage =
+          replaceError instanceof Error && replaceError.message
+            ? replaceError.message
+            : 'unknown error';
+        if (readReplacementJournal(journalPath)?.phase === 'committed') {
+          closeDatabase();
+          return {
+            restoredBackupPath: path.resolve(backupPath),
+            backupSchemaVersion: inspection.schemaVersion,
+            restoredSchemaVersion: maxSupported,
+            preservedDbPath,
+            preservedSidecarPaths,
+          };
+        }
+        if (!journalPrepared) {
+          closeDatabase();
+          throw replaceError;
+        }
+        try {
+          closeDatabase();
+          const rollbackRemoveFailures = removeDatabaseFiles(dbPath);
+          if (rollbackRemoveFailures.length > 0) {
+            throw new Error(
+              `Could not remove partial database files during rollback: ${rollbackRemoveFailures.join(', ')}`,
+            );
+          }
+          restoreDatabaseWithSidecars(recoveryPath, dbPath, presentSidecars);
+          if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+            throw new Error('Could not durably restore original database during rollback');
+          }
+          removeReplacementArtifactsDurably(journalPath, recoveryPath);
+        } catch (rollbackError: unknown) {
+          const rollbackMessage =
+            rollbackError instanceof Error && rollbackError.message
+              ? rollbackError.message
+              : 'unknown error';
+          throw new Error(
+            `Compatible backup restore failed (${replaceMessage}), ` +
+              `and automatic rollback encountered an error (${rollbackMessage}). ` +
+              `Recovery journal artifacts were retained for next startup and the newer database is preserved at ${preservedDbPath}.`,
+            { cause: rollbackError },
+          );
+        }
+        throw new Error(
+          `Compatible backup restore failed: ${replaceMessage}. ` +
+            `Your newer database and its sidecar files were restored in place and preserved at ${preservedDbPath}.`,
+          { cause: replaceError },
+        );
+      }
+    } finally {
+      stagedSource?.cleanup();
+    }
+  }, options?.signal);
 }
 
 function getSchemaDefinitions(dbInstance: Database.Database): Map<string, string> {
@@ -4139,9 +5072,11 @@ function materializeRestoreSource(
     ) {
       throw new Error('Restore source changed while it was being opened');
     }
-    const liveStat = fs.lstatSync(livePath);
-    if (openedStat.dev === liveStat.dev && openedStat.ino === liveStat.ino)
-      throw new Error('Restore source cannot be the live database');
+    if (pathEntryExists(livePath)) {
+      const liveStat = fs.lstatSync(livePath);
+      if (openedStat.dev === liveStat.dev && openedStat.ino === liveStat.ino)
+        throw new Error('Restore source cannot be the live database');
+    }
     const sourceBytes = fs.readFileSync(sourceFd);
     const finalStat = fs.fstatSync(sourceFd);
     if (
@@ -8067,10 +9002,15 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
   }
 }
 
+export function getLatestSupportedSchemaVersion(): number {
+  return MIGRATIONS.length > 0 ? MIGRATIONS[MIGRATIONS.length - 1].version : 0;
+}
+
 export class SchemaVersionMismatchError extends Error {
   constructor(
     public readonly dbVersion: number,
     public readonly appVersion: number,
+    public readonly dbAppVersion: string | null = null,
   ) {
     super(
       `Database schema (v${dbVersion}) is newer than this app version supports (v${appVersion}). ` +
@@ -8079,6 +9019,17 @@ export class SchemaVersionMismatchError extends Error {
     );
     this.name = 'SchemaVersionMismatchError';
   }
+}
+
+export function isSchemaVersionMismatchError(error: unknown): error is SchemaVersionMismatchError {
+  if (error instanceof SchemaVersionMismatchError) return true;
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as Partial<SchemaVersionMismatchError>;
+  return (
+    candidate.name === 'SchemaVersionMismatchError' &&
+    typeof candidate.dbVersion === 'number' &&
+    typeof candidate.appVersion === 'number'
+  );
 }
 
 function runMigrations(targetVersion?: number): void {

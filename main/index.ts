@@ -17,13 +17,20 @@ import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
 import {
   getDatabase,
+  getBackupDir,
+  getDbPath,
   initDatabase,
   closeDatabase,
   waitForDatabaseRequests,
   beginDatabaseShutdown,
   now,
   withDatabaseRequest,
+  discoverDowngradeBackups,
+  isSchemaVersionMismatchError,
+  planNewerDatabaseArchivePath,
+  restoreCompatibleBackupForDowngrade,
 } from './db';
+import { runDowngradeRecoveryFlow } from './downgrade-recovery';
 import {
   BETA_CHANNEL_SETTING_KEY,
   parseStoredBetaChannelEnabled,
@@ -1540,167 +1547,216 @@ function showAbout(): void {
 }
 
 async function initialize(): Promise<void> {
-  runtimeState = 'starting';
-  log.info('[Lifecycle] Runtime is starting');
-  try {
-    if (isShutdownRequested()) return;
-    console.log('[Flo] Initializing...');
+  while (true) {
+    runtimeState = 'starting';
+    startupFailure = false;
+    log.info('[Lifecycle] Runtime is starting');
+    try {
+      if (isShutdownRequested()) return;
+      console.log('[Flo] Initializing...');
 
-    console.log('[Flo] Initializing database...');
-    initDatabase();
-    if (isShutdownRequested()) return;
+      console.log('[Flo] Initializing database...');
+      initDatabase();
+      if (isShutdownRequested()) return;
 
-    console.log('[Flo] Starting local server...');
-    await startServer();
-    if (isShutdownRequested()) return;
+      console.log('[Flo] Starting local server...');
+      await startServer();
+      if (isShutdownRequested()) return;
 
-    cloudSync.start();
-    telemetry.start();
-    startPostHog();
-    googleDrive.start();
-    localBackup.start();
+      cloudSync.start();
+      telemetry.start();
+      startPostHog();
+      googleDrive.start();
+      localBackup.start();
 
-    console.log('[Flo] Starting KDS server on port 3002...');
-    await startKdsServer();
-    if (isShutdownRequested()) return;
+      console.log('[Flo] Starting KDS server on port 3002...');
+      await startKdsServer();
+      if (isShutdownRequested()) return;
 
-    console.log('[Flo] Starting Server App on port 3003...');
-    await startServerApp();
-    if (isShutdownRequested()) return;
+      console.log('[Flo] Starting Server App on port 3003...');
+      await startServerApp();
+      if (isShutdownRequested()) return;
 
-    // Native E2E owns an offline fixture; optional LAN discovery must not
-    // contend with a developer session or keep the test process alive.
-    if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
-      console.log('[Flo] Starting mDNS advertisement...');
-      startMdns();
-    }
-
-    console.log('[Flo] Initializing printer...');
-    await initPrinter();
-    if (isShutdownRequested()) return;
-
-    console.log('[Flo] Registering IPC handlers...');
-    registerIpcHandlers(
-      shutdownSignal,
-      () => mainWindow,
-      showMainWindow,
-      () => currentEffectiveIsDark,
-    );
-
-    registerDirectUpdateIpcHandlers({
-      ipcMain,
-      getMainWindow: () => mainWindow,
-      getServerPort,
-      getStoredUpdateStatus: () => storedUpdateStatus,
-      getStagedUpdateReady: () => stagedUpdateReady,
-      getUpdaterPhase: () => updaterPhase,
-      getAppVersion: () => app.getVersion(),
-      checkForUpdates,
-      downloadUpdate: () => downloadUpdate(),
-      readAutoUpdateCheckEnabled,
-      writeAutoUpdateCheckEnabled,
-      readBetaChannelEnabled,
-      writeBetaChannelEnabled,
-      enqueueBetaChannelTransition,
-      configureAutoUpdaterChannel,
-      setUpdateStatus,
-      restartAndInstallHandler: createRestartAndInstallHandler({
-        isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
-        authorize: (pin) => authorizeMasterPin(pin, 'ipc:restart-and-install'),
-        runCleanup,
-        quitAndInstall: (isSilent, isForceRunAfter) =>
-          autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
-        updateState: updateShutdownState,
-        onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
-        warn: (message) => log.warn(message),
-        error: (message, error) => log.error(message, error),
-      }),
-      isServerRunning,
-      isKdsServerRunning,
-      isServerAppRunning,
-      getResolvedTitleBarMode: () => resolvedTitleBarMode,
-      getRendererReadinessEpoch,
-      getRendererDocumentNonce,
-      getCurrentEffectiveIsDark: () => currentEffectiveIsDark,
-      setCurrentEffectiveIsDark: (isDark) => {
-        currentEffectiveIsDark = isDark;
-      },
-      applyTitleBarOverlayTheme,
-      resolveTitleBarOverlayColors,
-      withDatabaseRequest,
-      log,
-    });
-
-    runtimeState = 'ready';
-    relaunchAttemptGuard.markRuntimeRecovered();
-    log.info('[Lifecycle] Runtime is ready');
-    console.log('[Flo] Creating window...');
-    createWindow();
-    registerPowerMonitorRecovery();
-    registerChildProcessCrashTelemetry();
-    createTray();
-    createMenu();
-    // Auto-updater configured on non-store platforms.
-    if (!isStoreBuild) {
+      // Native E2E owns an offline fixture; optional LAN discovery must not
+      // contend with a developer session or keep the test process alive.
       if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
-        setupAutoUpdater();
-        if (readAutoUpdateCheckEnabled()) {
-          setTimeout(() => checkForUpdates(), 5000);
-        } else {
-          log.info('[Update] Automatic update check disabled; waiting for a manual check');
-        }
+        console.log('[Flo] Starting mDNS advertisement...');
+        startMdns();
       }
-    } else {
-      // Store builds skip auto-updater and report store-managed status.
-      setUpdateStatus(oneShotUpdateState('store-managed'));
-    }
-    if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
-      setTimeout(() => {
-        void checkTaxPackUpdatesOnStartup();
-      }, 5000);
-    }
 
-    console.log('[Flo] Ready!');
-  } catch (error) {
-    runtimeState = 'failed';
-    log.error('[Lifecycle] Runtime initialization failed:', error);
-    console.error('[Flo] Initialization error:', error);
-    const errorDetails = error as { code?: unknown; name?: unknown } | null;
-    const expectedShutdownCancellation =
-      errorDetails?.code === 'ERR_SHUTDOWN_ABORTED' ||
-      errorDetails?.code === 'ABORT_ERR' ||
-      errorDetails?.name === 'AbortError';
-    if (!expectedShutdownCancellation) startupFailure = true;
-    if (isShutdownRequested()) {
+      console.log('[Flo] Initializing printer...');
+      await initPrinter();
+      if (isShutdownRequested()) return;
+
+      console.log('[Flo] Registering IPC handlers...');
+      registerIpcHandlers(
+        shutdownSignal,
+        () => mainWindow,
+        showMainWindow,
+        () => currentEffectiveIsDark,
+      );
+
+      registerDirectUpdateIpcHandlers({
+        ipcMain,
+        getMainWindow: () => mainWindow,
+        getServerPort,
+        getStoredUpdateStatus: () => storedUpdateStatus,
+        getStagedUpdateReady: () => stagedUpdateReady,
+        getUpdaterPhase: () => updaterPhase,
+        getAppVersion: () => app.getVersion(),
+        checkForUpdates,
+        downloadUpdate: () => downloadUpdate(),
+        readAutoUpdateCheckEnabled,
+        writeAutoUpdateCheckEnabled,
+        readBetaChannelEnabled,
+        writeBetaChannelEnabled,
+        enqueueBetaChannelTransition,
+        configureAutoUpdaterChannel,
+        setUpdateStatus,
+        restartAndInstallHandler: createRestartAndInstallHandler({
+          isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
+          authorize: (pin) => authorizeMasterPin(pin, 'ipc:restart-and-install'),
+          runCleanup,
+          quitAndInstall: (isSilent, isForceRunAfter) =>
+            autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
+          updateState: updateShutdownState,
+          onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
+          warn: (message) => log.warn(message),
+          error: (message, error) => log.error(message, error),
+        }),
+        isServerRunning,
+        isKdsServerRunning,
+        isServerAppRunning,
+        getResolvedTitleBarMode: () => resolvedTitleBarMode,
+        getRendererReadinessEpoch,
+        getRendererDocumentNonce,
+        getCurrentEffectiveIsDark: () => currentEffectiveIsDark,
+        setCurrentEffectiveIsDark: (isDark) => {
+          currentEffectiveIsDark = isDark;
+        },
+        applyTitleBarOverlayTheme,
+        resolveTitleBarOverlayColors,
+        withDatabaseRequest,
+        log,
+      });
+
+      runtimeState = 'ready';
+      relaunchAttemptGuard.markRuntimeRecovered();
+      log.info('[Lifecycle] Runtime is ready');
+      console.log('[Flo] Creating window...');
+      createWindow();
+      registerPowerMonitorRecovery();
+      registerChildProcessCrashTelemetry();
+      createTray();
+      createMenu();
+      // Auto-updater configured on non-store platforms.
+      if (!isStoreBuild) {
+        if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
+          setupAutoUpdater();
+          if (readAutoUpdateCheckEnabled()) {
+            setTimeout(() => checkForUpdates(), 5000);
+          } else {
+            log.info('[Update] Automatic update check disabled; waiting for a manual check');
+          }
+        }
+      } else {
+        // Store builds skip auto-updater and report store-managed status.
+        setUpdateStatus(oneShotUpdateState('store-managed'));
+      }
+      if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
+        setTimeout(() => {
+          void checkTaxPackUpdatesOnStartup();
+        }, 5000);
+      }
+
+      console.log('[Flo] Ready!');
+      return;
+    } catch (error) {
+      if (isSchemaVersionMismatchError(error)) {
+        runtimeState = 'failed';
+        log.warn('[Lifecycle] Newer database schema detected during startup:', error);
+        closeDatabase();
+        if (isShutdownRequested()) {
+          try {
+            await runCleanup();
+          } catch (cleanupError) {
+            console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
+          }
+          return;
+        }
+
+        const recoveryOutcome = await runDowngradeRecoveryFlow(error, {
+          appVersion: app.getVersion(),
+          dialog,
+          shell,
+          log,
+          isShutdownRequested,
+          discoverBackups: discoverDowngradeBackups,
+          planPreservedArchivePath: (newerDbVersion) =>
+            planNewerDatabaseArchivePath(newerDbVersion),
+          restoreBackup: restoreCompatibleBackupForDowngrade,
+          getBackupDir,
+          getDbPath,
+        });
+
+        if (recoveryOutcome.outcome === 'restored' && !isShutdownRequested()) {
+          log.info(
+            `[Lifecycle] Compatible backup restored (${recoveryOutcome.result.restoredBackupPath}); continuing startup`,
+          );
+          continue;
+        }
+
+        isQuitting = true;
+        try {
+          await runCleanup();
+        } catch (cleanupError) {
+          console.error('[Flo] Cleanup after newer-database recovery exit failed:', cleanupError);
+        }
+        app.exit(0);
+        return;
+      }
+
+      runtimeState = 'failed';
+      log.error('[Lifecycle] Runtime initialization failed:', error);
+      console.error('[Flo] Initialization error:', error);
+      const errorDetails = error as { code?: unknown; name?: unknown } | null;
+      const expectedShutdownCancellation =
+        errorDetails?.code === 'ERR_SHUTDOWN_ABORTED' ||
+        errorDetails?.code === 'ABORT_ERR' ||
+        errorDetails?.name === 'AbortError';
+      if (!expectedShutdownCancellation) startupFailure = true;
+      if (isShutdownRequested()) {
+        try {
+          await runCleanup();
+        } catch (cleanupError) {
+          console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
+        }
+        return;
+      }
+      dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
+
+      // Capture only a safe classification; exception text can contain business data.
+      try {
+        cloudSync.captureOperationFailure({
+          capture_point: 'fc.electron.startup.failure',
+          outcome: 'not_applied',
+        });
+      } catch (diagnosticError) {
+        console.error('[Flo] Failed to capture startup failure:', diagnosticError);
+      }
+
+      isQuitting = true;
       try {
         await runCleanup();
       } catch (cleanupError) {
-        console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
+        console.error('[Flo] Cleanup after initialization failure failed:', cleanupError);
       }
+      // Cleanup has settled (or reported its bounded failure) before exiting.
+      app.exit(1);
       return;
+    } finally {
+      if (isShutdownRequested() && runtimeState === 'starting') runtimeState = 'stopping';
     }
-    dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
-
-    // Capture only a safe classification; exception text can contain business data.
-    try {
-      cloudSync.captureOperationFailure({
-        capture_point: 'fc.electron.startup.failure',
-        outcome: 'not_applied',
-      });
-    } catch (diagnosticError) {
-      console.error('[Flo] Failed to capture startup failure:', diagnosticError);
-    }
-
-    isQuitting = true;
-    try {
-      await runCleanup();
-    } catch (cleanupError) {
-      console.error('[Flo] Cleanup after initialization failure failed:', cleanupError);
-    }
-    // Cleanup has settled (or reported its bounded failure) before exiting.
-    app.exit(1);
-  } finally {
-    if (isShutdownRequested() && runtimeState === 'starting') runtimeState = 'stopping';
   }
 }
 

@@ -56,11 +56,14 @@ flowchart TB
   A["initDatabase()"] --> B{"interrupted replacement journal?"}
   B -->|"yes"| C["recover journal:<br/>restore or commit staged file"]
   B -->|"no"| D
+  C --> D
   D{"packaged start and<br/>flo.db missing but<br/>.flo-db-initialized present?"}
   D -->|"yes"| E["THROW: database missing<br/>refuse silent recreation"]
-  D -->|"no"| F["open flo.db<br/>WAL, synchronous NORMAL,<br/>busy_timeout 5000,<br/>foreign_keys OFF"]
+  D -->|"no"| P{"non-mutating preflight:<br/>user_version > highest MIGRATIONS?"}
+  P -->|"newer than build"| H["THROW SchemaVersionMismatchError<br/>enter downgrade recovery flow"]
+  P -->|"supported"| F["open flo.db<br/>WAL, synchronous NORMAL,<br/>busy_timeout 5000,<br/>foreign_keys OFF"]
   F --> G{"user_version ><br/>highest MIGRATIONS?"}
-  G -->|"newer than build"| H["THROW SchemaVersionMismatchError<br/>startup fails"]
+  G -->|"newer than build"| H
   G -->|"equal"| J["integrity checks and repairs"]
   G -->|"older"| I["checkpoint WAL, copy to backups/<br/>flo-backup-...-pre-vA-to-vB.db"]
   I --> K["for each pending migration:<br/>transaction { up(); user_version = n }"]
@@ -71,17 +74,46 @@ flowchart TB
 
 ## The two fail-closed rules
 
-Startup refuses to continue in two situations, and both exist to protect customer data:
+Startup refuses to open the database directly in two situations, and both exist to protect customer
+data:
 
 1. **A missing database on a previously initialized install.** If this is a packaged start, the
    database file is absent, and `.flo-db-initialized` exists, `initDatabase` throws rather than
    creating a fresh empty file. A silently recreated empty database would look like a working POS
    with no orders. The error tells the user to restore from a backup. A genuinely fresh install has
    no marker and proceeds normally.
-2. **A database newer than the build.** If `user_version` is greater than the highest migration in
-   this build, `runMigrations` throws `SchemaVersionMismatchError`. An older build must not open a
-   newer schema, because the migrations it does know how to run would be the wrong ones. Startup
-   fails with both version numbers reported to telemetry.
+2. **A database newer than the build.** Before opening `flo.db` read-write, `initDatabase` inspects
+   `user_version` without mutating `flo.db` or its `-wal` and `-shm` sidecar files (replaying any
+   present sidecars in a temporary copy), and `runMigrations` enforces the same guard. When
+   `user_version` exceeds `getLatestSupportedSchemaVersion()`, `SchemaVersionMismatchError` is
+   thrown. An older build never reverse-migrates or opens a newer schema directly.
+
+   `initialize()` in [`main/index.ts`](../../main/index.ts) intercepts `SchemaVersionMismatchError`
+   before the generic startup-error dialog, quiesces database access, and runs
+   `runDowngradeRecoveryFlow` ([`main/downgrade-recovery.ts`](../../main/downgrade-recovery.ts)). The
+   recovery flow compares the database schema version (and recorded app version when available)
+   against the running build and offers four actions:
+
+   - **Get Latest Version** - opens `FLOCAFE_RELEASES_URL` in the system browser and exits with code
+     `0` without modifying any files.
+   - **Open Backups Folder** - opens `backups/` in the file manager via `shell.openPath` and returns
+     to the recovery dialog.
+   - **Restore Compatible Backup** - calls `discoverDowngradeBackups()`, which inspects candidate
+     `.db` files in `backups/` by SQLite content (`PRAGMA integrity_check`, `_flo_meta`,
+     `PRAGMA user_version`, foreign keys, core tables, and inventory ledger) rather than trusting
+     filenames, and lists candidates with `schemaVersion <= getLatestSupportedSchemaVersion()`. When
+     no compatible valid backup exists, the dialog reports whether backups are missing, require a
+     newer FloCafe version, or failed validation, while keeping update, folder-open, and exit
+     actions available. Restoring a selected backup requires explicit confirmation warning that
+     orders, payments, inventory changes, and settings recorded after that backup are absent from
+     the restored database and stating the archive path
+     (`backups/flo-preserved-newer-v<version>-<timestamp>.db`). Cancelling aborts without touching
+     any files. On confirmation, `restoreCompatibleBackupForDowngrade` preserves `flo.db` and any
+     `-wal` and `-shm` sidecars in `backups/`, records a replacement journal so an interrupted or
+     failed restore rolls `flo.db` and its sidecars back cleanly, migrates an older compatible
+     backup forward to the supported schema, clears pairing tokens and Google Drive bindings,
+     repairs sequences, and resumes normal `initialize()` startup.
+   - **Exit** - runs cleanup and exits with code `0` without modifying any files.
 
 ## The automatic pre-migration backup
 
@@ -132,7 +164,9 @@ After migrations and with `foreign_keys` re-enabled, startup runs:
 | --- | --- | --- |
 | Create a backup | `createBackup(targetPath?, signal?, options?)` | Runs under the database maintenance lock, so it cannot overlap another backup, restore, or wipe. Returns the path and the schema version. |
 | List backups | `listBackups(options?)` | Reports file name, path, size, creation time, `manual` or `auto` kind, and the schema version when readable. Supports cursor pagination (`limit`, `cursor`) via `listBackupsPage()`. |
+| Discover downgrade backups | `discoverDowngradeBackups()` | Validates `.db` files in `backups/` by SQLite content and integrity, classifying compatible (`<= getLatestSupportedSchemaVersion()`), newer-incompatible, and corrupt/invalid candidates. |
 | Restore a backup | `restoreBackup(backupPath, forceDirect?, signal?)` | Also under the maintenance lock. |
+| Restore compatible backup on downgrade | `restoreCompatibleBackupForDowngrade(backupPath, options?)` | Under the maintenance lock; preserves the newer database and `-wal`/`-shm` sidecars in `backups/` and replaces `flo.db` via the replacement journal. |
 
 Backup, restore, and wipe are serialised by one lock. Two of them running at once is the failure
 mode that corrupts a database, so any new entry point in this area must take the same lock.
@@ -214,6 +248,7 @@ Directory syncing is skipped on Windows, which does not support it.
 | `npm run test:local-backup` | The daily local backup: naming, due logic, retention (including future-dated files), opt-out, empty-database skip, and the Initialize copy warning. |
 | `npm run test:sequence` | Order and bill sequence generation, repair performance, and no-reuse invariants. |
 | `npm run test:issue-278-fail-closed-db` | The missing-database guard. |
+| `npm run test:newer-db-recovery` | Newer-database startup interception, content-based backup discovery, sidecar preservation, journaled downgrade restore, and rollback. |
 
 `isHealthyDatabaseFile` is the predicate that decides whether a candidate file is usable at all. It
 requires a clean `integrity_check`, no foreign-key violations outside an explicit allowlist, a

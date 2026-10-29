@@ -1672,68 +1672,73 @@ async function initialize(): Promise<void> {
       console.log('[Flo] Ready!');
       return;
     } catch (error) {
+      let fatalStartupError: unknown = error;
       if (isSchemaVersionMismatchError(error)) {
-        log.warn('[Lifecycle] Newer database schema detected during startup:', error);
-        closeDatabase();
-        if (isShutdownRequested()) {
-          try {
-            await runCleanup();
-          } catch (cleanupError) {
-            console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
-          }
-          return;
-        }
-
-        const recoveryOutcome = await runDowngradeRecoveryFlow(error, {
-          appVersion: app.getVersion(),
-          dialog,
-          shell,
-          log,
-          isShutdownRequested,
-          discoverBackups: () => discoverDowngradeBackupsAsync({ signal: shutdownSignal }),
-          planPreservedArchivePath: planNewerDatabaseArchivePath,
-          restoreBackup: (backupPath, options) =>
-            restoreCompatibleBackupForDowngrade(backupPath, {
-              ...options,
-              signal: options?.signal
-                ? AbortSignal.any([shutdownSignal, options.signal])
-                : shutdownSignal,
-            }),
-          getBackupDir,
-          getDbPath,
-        });
-
-        if (recoveryOutcome.outcome === 'restored' && !isShutdownRequested()) {
-          log.info(
-            `[Lifecycle] Compatible backup restored (${recoveryOutcome.result.restoredBackupPath}); continuing startup`,
-          );
-          continue;
-        }
-
-        if (isShutdownRequested()) {
-          try {
-            await runCleanup();
-          } catch (cleanupError) {
-            console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
-          }
-          return;
-        }
-
-        isQuitting = true;
-        runtimeState = 'stopping';
         try {
-          await runCleanup();
-        } catch (cleanupError) {
-          console.error('[Flo] Cleanup after newer-database recovery exit failed:', cleanupError);
+          log.warn('[Lifecycle] Newer database schema detected during startup:', error);
+          closeDatabase();
+          if (isShutdownRequested()) {
+            try {
+              await runCleanup();
+            } catch (cleanupError) {
+              console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
+            }
+            return;
+          }
+
+          const recoveryOutcome = await runDowngradeRecoveryFlow(error, {
+            appVersion: app.getVersion(),
+            dialog,
+            shell,
+            log,
+            isShutdownRequested,
+            discoverBackups: () => discoverDowngradeBackupsAsync({ signal: shutdownSignal }),
+            planPreservedArchivePath: planNewerDatabaseArchivePath,
+            restoreBackup: (backupPath, options) =>
+              restoreCompatibleBackupForDowngrade(backupPath, {
+                ...options,
+                signal: options?.signal
+                  ? AbortSignal.any([shutdownSignal, options.signal])
+                  : shutdownSignal,
+              }),
+            getBackupDir,
+            getDbPath,
+          });
+
+          if (recoveryOutcome.outcome === 'restored' && !isShutdownRequested()) {
+            log.info(
+              `[Lifecycle] Compatible backup restored (${recoveryOutcome.result.restoredBackupPath}); continuing startup`,
+            );
+            continue;
+          }
+
+          if (isShutdownRequested()) {
+            try {
+              await runCleanup();
+            } catch (cleanupError) {
+              console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
+            }
+            return;
+          }
+
+          isQuitting = true;
+          runtimeState = 'stopping';
+          try {
+            await runCleanup();
+          } catch (cleanupError) {
+            console.error('[Flo] Cleanup after newer-database recovery exit failed:', cleanupError);
+          }
+          app.exit(0);
+          return;
+        } catch (recoveryFlowError) {
+          fatalStartupError = recoveryFlowError;
         }
-        app.exit(0);
-        return;
       }
 
       runtimeState = 'failed';
-      log.error('[Lifecycle] Runtime initialization failed:', error);
-      console.error('[Flo] Initialization error:', error);
-      const errorDetails = error as { code?: unknown; name?: unknown } | null;
+      log.error('[Lifecycle] Runtime initialization failed:', fatalStartupError);
+      console.error('[Flo] Initialization error:', fatalStartupError);
+      const errorDetails = fatalStartupError as { code?: unknown; name?: unknown } | null;
       const expectedShutdownCancellation =
         errorDetails?.code === 'ERR_SHUTDOWN_ABORTED' ||
         errorDetails?.code === 'ABORT_ERR' ||
@@ -1747,7 +1752,11 @@ async function initialize(): Promise<void> {
         }
         return;
       }
-      dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
+      try {
+        dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${fatalStartupError}`);
+      } catch (dialogError) {
+        console.error('[Flo] Failed to display initialization error dialog:', dialogError);
+      }
 
       // Capture only a safe classification; exception text can contain business data.
       try {
@@ -1783,11 +1792,25 @@ app.whenReady().then(() => {
       void handleMainWindowActivation();
     },
     (error) => {
-      if (!activationPending) return;
-      activationPending = false;
-      log.error('[Lifecycle] Startup failed while activation was pending:', error);
-      if (!isQuitting && !isShutdownRequested())
-        requestRuntimeRelaunchOnce('activation-startup-failed');
+      log.error('[Lifecycle] Unhandled startup error:', error);
+      if (activationPending) {
+        activationPending = false;
+        if (!isQuitting && !isShutdownRequested()) {
+          requestRuntimeRelaunchOnce('activation-startup-failed');
+          return;
+        }
+      }
+      if (!isQuitting && !isShutdownRequested()) {
+        isQuitting = true;
+        runtimeState = 'failed';
+        void runCleanup()
+          .catch((cleanupError) => {
+            console.error('[Flo] Cleanup after unhandled startup error failed:', cleanupError);
+          })
+          .finally(() => {
+            app.exit(1);
+          });
+      }
     },
   );
 });

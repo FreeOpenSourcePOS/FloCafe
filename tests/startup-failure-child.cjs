@@ -17,7 +17,12 @@ const realProcessExit = process.exit.bind(process);
 let releaseServerStart;
 let rejectServerStart;
 
-if (startupRace || startupFailureRace || newerDbMode === 'shutdown') {
+if (
+  startupRace ||
+  startupFailureRace ||
+  newerDbMode === 'shutdown' ||
+  newerDbMode === 'discover-shutdown'
+) {
   process.exit = (code = 0) => {
     exitCodes.push(code);
   };
@@ -132,6 +137,9 @@ Module._load = function (request, parent, isMain) {
         showMessageBox: async (options) => {
           messageBoxCalls += 1;
           events.push(`dialog.showMessageBox:${options.title}`);
+          if (newerDbMode === 'dialog-throw') {
+            throw new Error('simulated dialog failure during recovery');
+          }
           if (newerDbMode === 'exit') {
             await new Promise((resolve) => setImmediate(resolve));
             emitAppEvent('activate');
@@ -141,7 +149,11 @@ Module._load = function (request, parent, isMain) {
           if (newerDbMode === 'update') {
             return { response: 0 };
           }
-          if (newerDbMode === 'restore' || newerDbMode === 'shutdown') {
+          if (
+            newerDbMode === 'restore' ||
+            newerDbMode === 'shutdown' ||
+            newerDbMode === 'discover-shutdown'
+          ) {
             if (messageBoxCalls === 1) {
               if (newerDbMode === 'restore') {
                 await new Promise((resolve) => setImmediate(resolve));
@@ -227,24 +239,45 @@ Module._load = function (request, parent, isMain) {
         incompatibleNewer: [],
         corruptOrInvalid: [],
       }),
-      discoverDowngradeBackupsAsync: async () => ({
-        backupDir: path.join(testDir, 'backups'),
-        maxSupportedSchemaVersion: 121,
-        compatible: [
-          {
-            fileName: 'flo-backup-2026-10-28-pre-v120-to-v121.db',
-            path: path.join(testDir, 'backups', 'flo-backup-2026-10-28-pre-v120-to-v121.db'),
-            sizeBytes: 4096,
-            createdAt: '2026-10-28T10:00:00.000Z',
-            backupCreatedAt: '2026-10-28T10:00:00.000Z',
-            appVersion: '3.13.14',
-            schemaVersion: 120,
-            kind: 'pre-upgrade',
-          },
-        ],
-        incompatibleNewer: [],
-        corruptOrInvalid: [],
-      }),
+      discoverDowngradeBackupsAsync: async (options) => {
+        if (newerDbMode === 'discover-shutdown') {
+          const hasSignal = Boolean(options?.signal && typeof options.signal.aborted === 'boolean');
+          events.push(
+            hasSignal ? 'database.discoverBackups' : 'database.discoverBackups:missingSignal',
+          );
+          return new Promise((_resolve, reject) => {
+            options.signal.addEventListener(
+              'abort',
+              () => {
+                events.push('database.discoverBackups.aborted');
+                const abortErr = new Error('Database maintenance cancelled during shutdown');
+                abortErr.code = 'ERR_SHUTDOWN_ABORTED';
+                reject(abortErr);
+              },
+              { once: true },
+            );
+            setImmediate(() => process.emit('SIGTERM'));
+          });
+        }
+        return {
+          backupDir: path.join(testDir, 'backups'),
+          maxSupportedSchemaVersion: 121,
+          compatible: [
+            {
+              fileName: 'flo-backup-2026-10-28-pre-v120-to-v121.db',
+              path: path.join(testDir, 'backups', 'flo-backup-2026-10-28-pre-v120-to-v121.db'),
+              sizeBytes: 4096,
+              createdAt: '2026-10-28T10:00:00.000Z',
+              backupCreatedAt: '2026-10-28T10:00:00.000Z',
+              appVersion: '3.13.14',
+              schemaVersion: 120,
+              kind: 'pre-upgrade',
+            },
+          ],
+          incompatibleNewer: [],
+          corruptOrInvalid: [],
+        };
+      },
       planNewerDatabaseArchivePath: (version) =>
         path.join(testDir, 'backups', `flo-preserved-newer-v${version}-test.db`),
       restoreCompatibleBackupForDowngrade: async (backupPath, options) => {
@@ -511,6 +544,54 @@ setTimeout(
         !events.includes('diagnostics.capture') &&
         exitCodes.length === 1 &&
         exitCodes[0] === 0;
+    } else if (newerDbMode === 'discover-shutdown') {
+      const expectedDiscoverShutdownOrder = [
+        'database.init',
+        'database.close',
+        'dialog.showMessageBox:Newer Database Detected',
+        'database.discoverBackups',
+        'database.discoverBackups.aborted',
+        'server-app.stop',
+        'server.stop',
+        'kds.stop',
+        'cloud.shutdown',
+        'telemetry.stop',
+        'drive.stop',
+        'whatsapp.stop',
+        'database.admission',
+        'database.close',
+      ];
+      passed =
+        expectedDiscoverShutdownOrder.every((event, index) => events[index] === event) &&
+        !events.includes('dialog.showMessageBox:No Compatible Backup Available') &&
+        !events.includes('dialog.showMessageBox:Backup Inspection Failed') &&
+        !events.includes('app.relaunch') &&
+        !events.includes('dialog.showErrorBox') &&
+        !events.includes('diagnostics.capture') &&
+        exitCodes.length === 1 &&
+        exitCodes[0] === 0;
+    } else if (newerDbMode === 'dialog-throw') {
+      const expectedDialogThrowOrder = [
+        'database.init',
+        'database.close',
+        'dialog.showMessageBox:Newer Database Detected',
+        'dialog.showErrorBox',
+        'diagnostics.capture',
+        'server-app.stop',
+        'server.stop',
+        'kds.stop',
+        'cloud.shutdown',
+        'telemetry.stop',
+        'drive.stop',
+        'whatsapp.stop',
+        'database.admission',
+        'database.close',
+      ];
+      passed =
+        expectedDialogThrowOrder.every((event, index) => events[index] === event) &&
+        !events.includes('app.relaunch') &&
+        exitCodes.length === 1 &&
+        exitCodes[0] === 1;
     } else {
       const expectedOrder =
         startupRace || startupFailureRace

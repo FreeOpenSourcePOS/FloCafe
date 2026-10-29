@@ -105,12 +105,21 @@ function buildNoCompatibleBackupsDetail(discovery: DowngradeBackupDiscovery): st
   return lines.join('\n');
 }
 
+function isShutdownAbortError(error: unknown): boolean {
+  const details = error as { code?: unknown; name?: unknown } | null;
+  return (
+    details?.code === 'ERR_SHUTDOWN_ABORTED' ||
+    details?.code === 'ABORT_ERR' ||
+    details?.name === 'AbortError'
+  );
+}
+
 async function openReleasesPage(deps: DowngradeRecoveryDeps): Promise<boolean> {
   try {
     await deps.shell.openExternal(FLOCAFE_RELEASES_URL);
     return true;
   } catch (error: unknown) {
-    if (deps.isShutdownRequested()) return false;
+    if (deps.isShutdownRequested() || isShutdownAbortError(error)) return false;
     deps.log.error('[Recovery] Failed to open Flo Cafe releases page:', error);
     const errorMessage = error instanceof Error ? error.message : 'unknown error';
     await deps.dialog.showMessageBox({
@@ -128,15 +137,15 @@ async function openReleasesPage(deps: DowngradeRecoveryDeps): Promise<boolean> {
 }
 
 async function revealBackupsFolder(deps: DowngradeRecoveryDeps): Promise<void> {
-  const backupDir = deps.getBackupDir();
-  const fallbackDir = path.dirname(deps.getDbPath());
-  const targetDir = fs.existsSync(backupDir)
-    ? backupDir
-    : fs.existsSync(fallbackDir)
-      ? fallbackDir
-      : backupDir;
-
+  let backupDir = '(backups folder)';
   try {
+    backupDir = deps.getBackupDir();
+    const fallbackDir = path.dirname(deps.getDbPath());
+    const targetDir = fs.existsSync(backupDir)
+      ? backupDir
+      : fs.existsSync(fallbackDir)
+        ? fallbackDir
+        : backupDir;
     const openError = await deps.shell.openPath(targetDir);
     if (deps.isShutdownRequested()) return;
     if (openError) {
@@ -153,7 +162,7 @@ async function revealBackupsFolder(deps: DowngradeRecoveryDeps): Promise<void> {
       });
     }
   } catch (error: unknown) {
-    if (deps.isShutdownRequested()) return;
+    if (deps.isShutdownRequested() || isShutdownAbortError(error)) return;
     deps.log.error('[Recovery] Failed to open backups folder:', error);
     const errorMessage = error instanceof Error ? error.message : 'unknown error';
     await deps.dialog.showMessageBox({
@@ -167,6 +176,40 @@ async function revealBackupsFolder(deps: DowngradeRecoveryDeps): Promise<void> {
       noLink: true,
     });
   }
+}
+
+async function presentRestoreStepErrorDialog(
+  deps: DowngradeRecoveryDeps,
+  options: {
+    title: string;
+    message: string;
+    error: unknown;
+    fallbackErrorText: string;
+    recoveryGuidance: string;
+  },
+): Promise<'retry' | 'exit'> {
+  const errorMessage =
+    options.error instanceof Error && options.error.message
+      ? options.error.message
+      : options.fallbackErrorText;
+  const errorChoice = await deps.dialog.showMessageBox({
+    type: 'error',
+    title: options.title,
+    message: options.message,
+    detail: [errorMessage, '', options.recoveryGuidance].join('\n'),
+    buttons: ['Back to Recovery Options', 'Open Backups Folder', 'Exit'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+  });
+
+  if (deps.isShutdownRequested()) return 'exit';
+  if (errorChoice.response === 0) return 'retry';
+  if (errorChoice.response === 1) {
+    await revealBackupsFolder(deps);
+    return deps.isShutdownRequested() ? 'exit' : 'retry';
+  }
+  return 'exit';
 }
 
 async function selectCompatibleBackup(
@@ -288,7 +331,25 @@ export async function runDowngradeRecoveryFlow(
     }
 
     if (mainChoice.response === 2) {
-      const discovery = await deps.discoverBackups();
+      let discovery: DowngradeBackupDiscovery;
+      try {
+        discovery = await deps.discoverBackups();
+      } catch (discoveryError: unknown) {
+        if (deps.isShutdownRequested() || isShutdownAbortError(discoveryError)) {
+          return { outcome: 'exit' };
+        }
+        deps.log.error('[Recovery] Compatible backup discovery failed:', discoveryError);
+        const action = await presentRestoreStepErrorDialog(deps, {
+          title: 'Backup Inspection Failed',
+          message: 'Flo Cafe could not inspect local backups.',
+          error: discoveryError,
+          fallbackErrorText: 'An unexpected error occurred while inspecting backups.',
+          recoveryGuidance:
+            'No database or backup files were modified. You can update Flo Cafe to the latest version, inspect the backups folder, try again, or exit safely.',
+        });
+        if (action === 'retry') continue;
+        return { outcome: 'exit' };
+      }
       if (deps.isShutdownRequested()) return { outcome: 'exit' };
       if (discovery.compatible.length === 0) {
         const emptyChoice = await deps.dialog.showMessageBox({
@@ -320,7 +381,28 @@ export async function runDowngradeRecoveryFlow(
       if (deps.isShutdownRequested()) return { outcome: 'exit' };
       if (!selectedBackup) continue;
 
-      const plannedArchivePath = deps.planPreservedArchivePath(mismatch.dbVersion);
+      let plannedArchivePath: string;
+      try {
+        plannedArchivePath = deps.planPreservedArchivePath(mismatch.dbVersion);
+      } catch (planError: unknown) {
+        if (deps.isShutdownRequested() || isShutdownAbortError(planError)) {
+          return { outcome: 'exit' };
+        }
+        deps.log.error(
+          '[Recovery] Failed to plan preserved newer-database archive path:',
+          planError,
+        );
+        const action = await presentRestoreStepErrorDialog(deps, {
+          title: 'Backup Restore Failed',
+          message: 'Flo Cafe could not prepare the archive path for the newer database.',
+          error: planError,
+          fallbackErrorText: 'An unexpected error occurred while preparing the archive path.',
+          recoveryGuidance:
+            'No database or backup files were modified. You can update Flo Cafe to the latest version, inspect the backups folder, try again, or exit safely.',
+        });
+        if (action === 'retry') continue;
+        return { outcome: 'exit' };
+      }
       const selectedAppMeta = selectedBackup.appVersion
         ? `Flo Cafe v${selectedBackup.appVersion}`
         : 'not recorded';
@@ -362,33 +444,19 @@ export async function runDowngradeRecoveryFlow(
         );
         return { outcome: 'restored', result };
       } catch (restoreError: unknown) {
-        if (deps.isShutdownRequested()) return { outcome: 'exit' };
+        if (deps.isShutdownRequested() || isShutdownAbortError(restoreError)) {
+          return { outcome: 'exit' };
+        }
         deps.log.error('[Recovery] Compatible backup restore failed:', restoreError);
-        const restoreMessage =
-          restoreError instanceof Error && restoreError.message
-            ? restoreError.message
-            : 'An unexpected error occurred while restoring the backup.';
-        const errorChoice = await deps.dialog.showMessageBox({
-          type: 'error',
+        const action = await presentRestoreStepErrorDialog(deps, {
           title: 'Backup Restore Failed',
           message: 'Flo Cafe could not restore the selected backup.',
-          detail: [
-            restoreMessage,
-            '',
+          error: restoreError,
+          fallbackErrorText: 'An unexpected error occurred while restoring the backup.',
+          recoveryGuidance:
             'Your newer database remains recoverable. You can update Flo Cafe to the latest version, inspect the backups folder, try another compatible backup, or exit safely.',
-          ].join('\n'),
-          buttons: ['Back to Recovery Options', 'Open Backups Folder', 'Exit'],
-          defaultId: 0,
-          cancelId: 2,
-          noLink: true,
         });
-
-        if (deps.isShutdownRequested()) return { outcome: 'exit' };
-        if (errorChoice.response === 0) continue;
-        if (errorChoice.response === 1) {
-          await revealBackupsFolder(deps);
-          continue;
-        }
+        if (action === 'retry') continue;
         return { outcome: 'exit' };
       }
     }

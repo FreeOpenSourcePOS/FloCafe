@@ -59,6 +59,7 @@ import {
   isHealthyDatabaseFile,
   isSchemaVersionMismatchError,
   planNewerDatabaseArchivePath,
+  restoreBackup,
   restoreCompatibleBackupForDowngrade,
   SchemaVersionMismatchError,
 } from '../main/db';
@@ -1634,25 +1635,43 @@ async function run(): Promise<void> {
       const mutableFsMkdtemp = nativeFs as unknown as {
         mkdtempSync: typeof fs.mkdtempSync;
         copyFileSync: typeof fs.copyFileSync;
+        writeFileSync: typeof fs.writeFileSync;
       };
       const originalMkdtempSync = nativeFs.mkdtempSync;
       const originalStageCopyFileSync = nativeFs.copyFileSync;
+      const originalStageWriteFileSync = nativeFs.writeFileSync;
+      const isOsTmpStagingTarget = (rawPath: unknown): boolean => {
+        const text = String(rawPath);
+        return (
+          text.includes('flo-schema-preflight-') ||
+          text.includes('flo-db-health-probe-') ||
+          text.includes('flo-recovery-verify-') ||
+          text.includes('flo-backup-discover-') ||
+          text.includes('flo-restore-source-')
+        );
+      };
 
       // Subcase A: Only os.tmpdir() staging fails (e.g. separate full /tmp tmpfs), while the
       // database volume (testDir / backupDir) still has space.
+      const preExistingTmpRestoreSourceDirs = new Set(
+        fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('flo-restore-source-')),
+      );
       mutableFsMkdtemp.copyFileSync = ((src, dest, mode) => {
-        const destText = String(dest);
-        if (
-          destText.includes('flo-schema-preflight-') ||
-          destText.includes('flo-db-health-probe-') ||
-          destText.includes('flo-recovery-verify-')
-        ) {
+        if (isOsTmpStagingTarget(dest)) {
           throw Object.assign(new Error('ENOSPC: injected os.tmpdir() snapshot copy full'), {
             code: 'ENOSPC',
           });
         }
         return originalStageCopyFileSync.call(nativeFs, src, dest, mode);
       }) as typeof fs.copyFileSync;
+      mutableFsMkdtemp.writeFileSync = ((file, data, options) => {
+        if (isOsTmpStagingTarget(file)) {
+          throw Object.assign(new Error('ENOSPC: injected os.tmpdir() snapshot write full'), {
+            code: 'ENOSPC',
+          });
+        }
+        return originalStageWriteFileSync.call(nativeFs, file, data, options as any);
+      }) as typeof fs.writeFileSync;
       try {
         // Crash-stranded .flo-db-stage-* directories are ignored by discovery and cleaned on boot.
         clearDirectory(backupDir);
@@ -1691,7 +1710,9 @@ async function run(): Promise<void> {
         closeDatabase();
 
         // Supported-header + newer-WAL database still detects newer WAL version via DB-volume
-        // fallback staging without mutating live files or leaking staging directories.
+        // fallback staging without mutating live files or leaking staging directories, AND
+        // full async discovery + downgrade restore + subsequent startup all succeed via DB-volume staging.
+        clearDirectory(backupDir);
         removeDbSet(dbPath);
         fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db'), dbPath);
         fs.copyFileSync(path.join(walNewerCopyDir, 'flo.db-wal'), `${dbPath}-wal`);
@@ -1718,6 +1739,132 @@ async function run(): Promise<void> {
           [],
           'DB-volume fallback staging cleans up private temp directories in finally',
         );
+
+        const tmpOnlyDeleteCandidate = path.join(
+          backupDir,
+          'flo-backup-2026-10-28T15-00-00-000Z-pre-v120-to-v121.db',
+        );
+        const tmpOnlyWalHeaderCandidate = path.join(
+          backupDir,
+          'flo-backup-2026-10-28T16-00-00-000Z-wal-header.db',
+        );
+        fs.copyFileSync(baseTemplateCopy, tmpOnlyDeleteCandidate);
+        fs.copyFileSync(committedCleanSnapshot, tmpOnlyWalHeaderCandidate);
+        const tmpOnlyAsyncDiscovery = await discoverDowngradeBackupsAsync();
+        assert.equal(
+          tmpOnlyAsyncDiscovery.compatible.length,
+          2,
+          'discoverDowngradeBackupsAsync stages WAL-header candidates on DB volume when os.tmpdir() is full',
+        );
+        assert.deepEqual(
+          fs.readdirSync(backupDir).filter((name) => name.startsWith('.flo-db-stage-')),
+          [],
+          'discoverDowngradeBackupsAsync cleans up DB-volume stage directories',
+        );
+
+        const tmpOnlyDowngradeRestore = await restoreCompatibleBackupForDowngrade(
+          tmpOnlyWalHeaderCandidate,
+          { newerDbVersion },
+        );
+        assert.equal(
+          sha256File(tmpOnlyDowngradeRestore.preservedDbPath),
+          walNewerEnospcHashes.dbSha,
+        );
+        assert.equal(
+          sha256File(`${tmpOnlyDowngradeRestore.preservedDbPath}-wal`),
+          walNewerEnospcHashes.walSha,
+        );
+        assert.equal(
+          sha256File(`${tmpOnlyDowngradeRestore.preservedDbPath}-shm`),
+          walNewerEnospcHashes.shmSha,
+        );
+        assert.deepEqual(
+          fs
+            .readdirSync(os.tmpdir())
+            .filter(
+              (name) =>
+                name.startsWith('flo-restore-source-') &&
+                !preExistingTmpRestoreSourceDirs.has(name),
+            ),
+          [],
+          'failed os.tmpdir() writeFileSync cleans up empty flo-restore-source-* directory before fallback',
+        );
+        assert.deepEqual(
+          fs.readdirSync(testDir).filter((name) => name.startsWith('.flo-db-stage-')),
+          [],
+          'restoreCompatibleBackupForDowngrade cleans up DB-volume restore-source staging directory',
+        );
+        initDatabase();
+        assert.deepEqual(
+          getDatabase()
+            .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
+            .get(),
+          { order_number: 'ORD-20261029-0091' },
+          'downgrade restore + post-restore initDatabase succeed end-to-end when os.tmpdir() returns ENOSPC',
+        );
+        finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+
+        // Also verify mkdtempSync ENOSPC in os.tmpdir() AND that in-process initDatabase(false, true)
+        // during restoreBackup preserves active .flo-db-stage-* directories instead of sweeping them.
+        const sameVersionBackupResult = await createBackup(
+          path.join(walEnospcStageDir, 'same-version-direct-restore.db'),
+        );
+        const activeUserDataStage = path.join(testDir, '.flo-db-stage-active-probe');
+        const activeBackupStage = path.join(backupDir, '.flo-db-stage-active-discover');
+        fs.mkdirSync(activeUserDataStage, { recursive: true });
+        fs.mkdirSync(activeBackupStage, { recursive: true });
+        fs.writeFileSync(path.join(activeUserDataStage, 'probe.db'), 'in-flight probe');
+        fs.writeFileSync(path.join(activeBackupStage, 'candidate.db'), 'in-flight discovery');
+        mutableFsMkdtemp.mkdtempSync = ((prefix: string, options?: any) => {
+          if (isOsTmpStagingTarget(prefix)) {
+            throw Object.assign(new Error('ENOSPC: injected os.tmpdir() mkdtemp full'), {
+              code: 'ENOSPC',
+            });
+          }
+          return originalMkdtempSync.call(nativeFs, prefix, options);
+        }) as typeof fs.mkdtempSync;
+        try {
+          const directRestoreUnderTmpEnospc = restoreBackup(sameVersionBackupResult.path, true);
+          assert.equal(
+            directRestoreUnderTmpEnospc.success,
+            true,
+            `restoreBackup succeeds via DB-volume fallback when os.tmpdir() mkdtemp fails (${directRestoreUnderTmpEnospc.error || ''})`,
+          );
+          assert.equal(directRestoreUnderTmpEnospc.mode, 'direct');
+          assert.equal(
+            fs.existsSync(activeUserDataStage),
+            true,
+            'in-process initDatabase(false, true) preserves active .flo-db-stage-* in userData',
+          );
+          assert.equal(
+            fs.existsSync(activeBackupStage),
+            true,
+            'in-process initDatabase(false, true) preserves active .flo-db-stage-* in backups',
+          );
+          assert.deepEqual(
+            fs
+              .readdirSync(testDir)
+              .filter((name) => name.startsWith('.flo-db-stage-restore-source-')),
+            [],
+            'restoreBackup cleans up its own .flo-db-stage-restore-source-* directory',
+          );
+        } finally {
+          mutableFsMkdtemp.mkdtempSync = originalMkdtempSync;
+        }
+        finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+        closeDatabase();
+        initDatabase();
+        assert.equal(
+          fs.existsSync(activeUserDataStage),
+          false,
+          'top-level startup initDatabase() sweeps crash-stranded .flo-db-stage-* in userData',
+        );
+        assert.equal(
+          fs.existsSync(activeBackupStage),
+          false,
+          'top-level startup initDatabase() sweeps crash-stranded .flo-db-stage-* in backups',
+        );
+        closeDatabase();
 
         // Committed WAL replacement journal health probe also succeeds via DB-volume fallback.
         clearDirectory(backupDir);
@@ -1749,17 +1896,13 @@ async function run(): Promise<void> {
         closeDatabase();
       } finally {
         mutableFsMkdtemp.copyFileSync = originalStageCopyFileSync;
+        mutableFsMkdtemp.writeFileSync = originalStageWriteFileSync;
       }
 
       // Subcase B: Both os.tmpdir() AND database-volume staging fail with ENOSPC -> fail closed.
       mutableFsMkdtemp.mkdtempSync = ((prefix: string, options?: any) => {
         const text = String(prefix);
-        if (
-          text.includes('flo-schema-preflight-') ||
-          text.includes('flo-db-health-probe-') ||
-          text.includes('flo-recovery-verify-') ||
-          text.includes('.flo-db-stage-')
-        ) {
+        if (isOsTmpStagingTarget(text) || text.includes('.flo-db-stage-')) {
           throw Object.assign(new Error('ENOSPC: no space left on device, mkdtemp'), {
             code: 'ENOSPC',
           });
@@ -1836,6 +1979,16 @@ async function run(): Promise<void> {
           () => initDatabase(),
           /ENOSPC/,
           'WAL preflight staging failure propagates instead of opening newer WAL DB read-write',
+        );
+        const bothFullRestoreCandidate = path.join(
+          backupDir,
+          'flo-backup-2026-10-28T17-00-00-000Z-both-full.db',
+        );
+        fs.copyFileSync(baseTemplateCopy, bothFullRestoreCandidate);
+        await assert.rejects(
+          () => restoreCompatibleBackupForDowngrade(bothFullRestoreCandidate, { newerDbVersion }),
+          /ENOSPC/,
+          'restoreCompatibleBackupForDowngrade fails closed when neither os.tmpdir() nor DB volume can stage',
         );
         assert.equal(sha256File(dbPath), walNewerEnospcHashes.dbSha);
         assert.equal(sha256File(`${dbPath}-wal`), walNewerEnospcHashes.walSha);
@@ -2178,7 +2331,9 @@ async function run(): Promise<void> {
       {
         const replayedDb = new Database(verifyHotDbPath);
         const replayedRow = replayedDb
-          .prepare("SELECT substr(value, 1, 16) AS prefix FROM settings WHERE key = 'hotjournalfill0'")
+          .prepare(
+            "SELECT substr(value, 1, 16) AS prefix FROM settings WHERE key = 'hotjournalfill0'",
+          )
           .get() as { prefix: string } | undefined;
         assert.deepEqual(replayedRow, { prefix: 'NEWER-COMMITTED-' });
         replayedDb.close();
@@ -2249,7 +2404,9 @@ async function run(): Promise<void> {
         'interrupted replacement recovery removes stale flo.db-journal before restoring snapshot',
       );
       const recoveredMarker = getDatabase()
-        .prepare("SELECT substr(value, 1, 10) AS prefix FROM settings WHERE key = 'hotjournalfill0'")
+        .prepare(
+          "SELECT substr(value, 1, 10) AS prefix FROM settings WHERE key = 'hotjournalfill0'",
+        )
         .get() as { prefix: string } | undefined;
       assert.deepEqual(
         recoveredMarker,
@@ -2466,10 +2623,7 @@ async function run(): Promise<void> {
       const compatibleCount = 24;
       for (let i = 0; i < compatibleCount; i += 1) {
         const padded = String(i).padStart(2, '0');
-        const candidatePath = path.join(
-          backupDir,
-          `flo-backup-2026-10-28T12-${padded}-00-000Z.db`,
-        );
+        const candidatePath = path.join(backupDir, `flo-backup-2026-10-28T12-${padded}-00-000Z.db`);
         fs.copyFileSync(multiMbSeedBackup, candidatePath);
         const ts = new Date(Date.UTC(2026, 9, 28, 12, i, 0));
         fs.utimesSync(candidatePath, ts, ts);
@@ -2518,7 +2672,11 @@ async function run(): Promise<void> {
               const moreIdx = (options.buttons as string[]).indexOf('More Backups...');
               if (moreIdx >= 0) return { response: moreIdx, checkboxChecked: false };
               // On final page (items 21..24), verify oldest item #24 is reachable, then Cancel -> Exit.
-              assert.match(options.detail || '', /24\./, 'oldest compatible backup #24 is reachable');
+              assert.match(
+                options.detail || '',
+                /24\./,
+                'oldest compatible backup #24 is reachable',
+              );
               const cancelIdx = (options.buttons as string[]).indexOf('Cancel');
               assert.ok(cancelIdx >= 0, 'Select Compatible Backup dialog includes Cancel');
               return { response: cancelIdx, checkboxChecked: false };
@@ -2535,6 +2693,166 @@ async function run(): Promise<void> {
         },
       );
       assert.deepEqual(asyncFlowOutcome, { outcome: 'exit' });
+
+      // Verify discoverDowngradeBackupsAsync rejects with ERR_SHUTDOWN_ABORTED on pre-aborted or
+      // mid-scan AbortSignal (never resolving with truncated partial results), and that
+      // runDowngradeRecoveryFlow handles discovery aborts and discovery/archive-planning errors.
+      clearDirectory(backupDir);
+      const preAbortedController = new AbortController();
+      preAbortedController.abort();
+      await assert.rejects(
+        () => discoverDowngradeBackupsAsync({ signal: preAbortedController.signal }),
+        (err: any) => err?.code === 'ERR_SHUTDOWN_ABORTED',
+        'pre-aborted signal rejects discoverDowngradeBackupsAsync even when backups/ is empty',
+      );
+
+      fs.writeFileSync(path.join(backupDir, 'flo-backup-a-corrupt.db'), 'not a sqlite file');
+      fs.copyFileSync(baseTemplateCopy, path.join(backupDir, 'flo-backup-z-compatible.db'));
+      const midScanAbortController = new AbortController();
+      const origLstatForMidScan = nativeFs.lstatSync;
+      const mutableFsForMidScan = nativeFs as unknown as { lstatSync: typeof fs.lstatSync };
+      mutableFsForMidScan.lstatSync = ((targetPath: fs.PathLike, options?: any) => {
+        const result = origLstatForMidScan.call(nativeFs, targetPath, options);
+        if (String(targetPath).endsWith('flo-backup-a-corrupt.db')) {
+          midScanAbortController.abort();
+        }
+        return result;
+      }) as typeof fs.lstatSync;
+      try {
+        await assert.rejects(
+          () => discoverDowngradeBackupsAsync({ signal: midScanAbortController.signal }),
+          (err: any) => err?.code === 'ERR_SHUTDOWN_ABORTED',
+          'mid-scan abort rejects with ERR_SHUTDOWN_ABORTED instead of returning truncated compatible=[]',
+        );
+      } finally {
+        mutableFsForMidScan.lstatSync = origLstatForMidScan;
+      }
+
+      const flowAbortSeenDialogs: string[] = [];
+      const flowMidScanController = new AbortController();
+      mutableFsForMidScan.lstatSync = ((targetPath: fs.PathLike, options?: any) => {
+        const result = origLstatForMidScan.call(nativeFs, targetPath, options);
+        if (String(targetPath).endsWith('flo-backup-a-corrupt.db')) {
+          flowMidScanController.abort();
+        }
+        return result;
+      }) as typeof fs.lstatSync;
+      try {
+        const abortedDiscoveryOutcome = await runDowngradeRecoveryFlow(
+          new SchemaVersionMismatchError(newerDbVersion, maxSupported, '4.1.0'),
+          {
+            appVersion: '3.13.14',
+            dialog: {
+              showMessageBox: async (options: any) => {
+                flowAbortSeenDialogs.push(String(options.title));
+                return { response: 2, checkboxChecked: false };
+              },
+            } as any,
+            shell: { openExternal: async () => {}, openPath: async () => '' },
+            log: { info() {}, warn() {}, error() {} },
+            isShutdownRequested: () => flowMidScanController.signal.aborted,
+            discoverBackups: () =>
+              discoverDowngradeBackupsAsync({ signal: flowMidScanController.signal }),
+            planPreservedArchivePath: planNewerDatabaseArchivePath,
+            restoreBackup: restoreCompatibleBackupForDowngrade,
+            getBackupDir,
+            getDbPath,
+          },
+        );
+        assert.deepEqual(abortedDiscoveryOutcome, { outcome: 'exit' });
+        assert.deepEqual(
+          flowAbortSeenDialogs,
+          ['Newer Database Detected'],
+          'aborted backup discovery exits cleanly without false No Compatible Backup or error dialogs',
+        );
+      } finally {
+        mutableFsForMidScan.lstatSync = origLstatForMidScan;
+      }
+
+      const discoveryErrorDialogs: { title: string; detail: string }[] = [];
+      let discoveryErrorMainVisits = 0;
+      const discoveryErrorOutcome = await runDowngradeRecoveryFlow(
+        new SchemaVersionMismatchError(newerDbVersion, maxSupported, '4.1.0'),
+        {
+          appVersion: '3.13.14',
+          dialog: {
+            showMessageBox: async (options: any) => {
+              discoveryErrorDialogs.push({
+                title: String(options.title),
+                detail: String(options.detail || ''),
+              });
+              if (options.title === 'Newer Database Detected') {
+                discoveryErrorMainVisits += 1;
+                return {
+                  response: discoveryErrorMainVisits === 1 ? 2 : 3,
+                  checkboxChecked: false,
+                };
+              }
+              if (options.title === 'Backup Inspection Failed') {
+                return { response: 0, checkboxChecked: false };
+              }
+              throw new Error(`Unexpected dialog: ${options.title}`);
+            },
+          } as any,
+          shell: { openExternal: async () => {}, openPath: async () => '' },
+          log: { info() {}, warn() {}, error() {} },
+          isShutdownRequested: () => false,
+          discoverBackups: async () => {
+            throw new Error('simulated EIO while reading backups directory');
+          },
+          planPreservedArchivePath: planNewerDatabaseArchivePath,
+          restoreBackup: restoreCompatibleBackupForDowngrade,
+          getBackupDir,
+          getDbPath,
+        },
+      );
+      assert.deepEqual(discoveryErrorOutcome, { outcome: 'exit' });
+      assert.equal(discoveryErrorDialogs[1]?.title, 'Backup Inspection Failed');
+      assert.match(discoveryErrorDialogs[1]?.detail || '', /simulated EIO/);
+
+      const planErrorDialogs: { title: string; detail: string }[] = [];
+      let planErrorMainVisits = 0;
+      const planErrorOutcome = await runDowngradeRecoveryFlow(
+        new SchemaVersionMismatchError(newerDbVersion, maxSupported, '4.1.0'),
+        {
+          appVersion: '3.13.14',
+          dialog: {
+            showMessageBox: async (options: any) => {
+              planErrorDialogs.push({
+                title: String(options.title),
+                detail: String(options.detail || ''),
+              });
+              if (options.title === 'Newer Database Detected') {
+                planErrorMainVisits += 1;
+                return {
+                  response: planErrorMainVisits === 1 ? 2 : 3,
+                  checkboxChecked: false,
+                };
+              }
+              if (options.title === 'Select Compatible Backup') {
+                return { response: 0, checkboxChecked: false };
+              }
+              if (options.title === 'Backup Restore Failed') {
+                return { response: 0, checkboxChecked: false };
+              }
+              throw new Error(`Unexpected dialog: ${options.title}`);
+            },
+          } as any,
+          shell: { openExternal: async () => {}, openPath: async () => '' },
+          log: { info() {}, warn() {}, error() {} },
+          isShutdownRequested: () => false,
+          discoverBackups: () => discoverDowngradeBackupsAsync(),
+          planPreservedArchivePath: () => {
+            throw new Error('simulated EACCES planning archive path');
+          },
+          restoreBackup: restoreCompatibleBackupForDowngrade,
+          getBackupDir,
+          getDbPath,
+        },
+      );
+      assert.deepEqual(planErrorOutcome, { outcome: 'exit' });
+      assert.equal(planErrorDialogs[2]?.title, 'Backup Restore Failed');
+      assert.match(planErrorDialogs[2]?.detail || '', /simulated EACCES planning archive path/);
     } finally {
       fs.rmSync(asyncScanSeedDir, { recursive: true, force: true });
     }
@@ -2542,7 +2860,14 @@ async function run(): Promise<void> {
     // 6. Electron main/index.ts startup interception (via tests/startup-failure-child.cjs):
     //    SchemaVersionMismatchError triggers Newer Database Detected (never dialog.showErrorBox),
     //    and supports Exit, Get Latest Version, and Restore Compatible Backup -> normal initialize().
-    for (const mode of ['exit', 'update', 'restore', 'shutdown'] as const) {
+    for (const mode of [
+      'exit',
+      'update',
+      'restore',
+      'shutdown',
+      'discover-shutdown',
+      'dialog-throw',
+    ] as const) {
       const childEnv: NodeJS.ProcessEnv = {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',

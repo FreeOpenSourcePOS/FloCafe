@@ -1078,8 +1078,7 @@ function stageDatabaseCopyWithFallback(
         sidecars,
       );
     } catch (fallbackError) {
-      const primaryMessage =
-        primaryError instanceof Error ? primaryError.message : 'unknown error';
+      const primaryMessage = primaryError instanceof Error ? primaryError.message : 'unknown error';
       const fallbackMessage =
         fallbackError instanceof Error ? fallbackError.message : 'unknown error';
       throw new Error(
@@ -2042,8 +2041,10 @@ function initializeDatabase(
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
   }
-  cleanupStaleDatabaseStageDirectories([path.dirname(dbPath), backupDir]);
-  if (recoverInterruptedReplacement) recoverInterruptedDatabaseReplacement(dbPath, backupDir);
+  if (recoverInterruptedReplacement) {
+    cleanupStaleDatabaseStageDirectories([path.dirname(dbPath), backupDir]);
+    recoverInterruptedDatabaseReplacement(dbPath, backupDir);
+  }
 
   // Startup guard: prevent silent recreation of missing database if previously initialized.
   const isProductionStartup =
@@ -3739,7 +3740,11 @@ function evaluateDowngradeBackupCandidate(
     let inspection: DowngradeBackupSnapshotInspection;
     if (headerInfo.headerVersion > maxSupportedSchemaVersion) {
       inspection = headerInfo.isLegacyRollbackFormat
-        ? inspectNewerHeaderBackupFastPath(fullPath, headerInfo.headerVersion, maxSupportedSchemaVersion)
+        ? inspectNewerHeaderBackupFastPath(
+            fullPath,
+            headerInfo.headerVersion,
+            maxSupportedSchemaVersion,
+          )
         : {
             status: 'incompatible_newer',
             schemaVersion: headerInfo.headerVersion,
@@ -3888,6 +3893,8 @@ export function discoverDowngradeBackups(): DowngradeBackupDiscovery {
 export async function discoverDowngradeBackupsAsync(options?: {
   signal?: AbortSignal;
 }): Promise<DowngradeBackupDiscovery> {
+  const signal = getMaintenanceSignal(options?.signal);
+  throwIfDatabaseMaintenanceAborted(signal);
   const backupDir = getBackupDir();
   const maxSupportedSchemaVersion = getLatestSupportedSchemaVersion();
   const compatible: CompatibleDowngradeBackup[] = [];
@@ -3897,9 +3904,9 @@ export async function discoverDowngradeBackupsAsync(options?: {
 
   const candidates = listDowngradeBackupCandidateEntries(backupDir, liveDbPath);
   for (const { fileName, fullPath } of candidates) {
-    if (options?.signal?.aborted) break;
+    throwIfDatabaseMaintenanceAborted(signal);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    if (options?.signal?.aborted) break;
+    throwIfDatabaseMaintenanceAborted(signal);
     evaluateDowngradeBackupCandidate(
       fileName,
       fullPath,
@@ -3909,6 +3916,7 @@ export async function discoverDowngradeBackupsAsync(options?: {
       corruptOrInvalid,
     );
   }
+  throwIfDatabaseMaintenanceAborted(signal);
   sortCompatibleDowngradeBackups(compatible);
 
   return {
@@ -5812,10 +5820,48 @@ function materializeRestoreSource(
     ) {
       throw new Error('Restore source acquired SQLite sidecars while it was being read');
     }
-    snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-restore-source-'));
-    const snapshotPath = path.join(snapshotDir, 'source.db');
-    fs.writeFileSync(snapshotPath, sourceBytes, { flag: 'wx', mode: 0o600 });
-    return { snapshotPath, cleanup };
+    const writeStagedRestoreSnapshot = (
+      parentDir: string,
+      dirPrefix: string,
+    ): { dir: string; filePath: string } => {
+      let dir: string | null = null;
+      try {
+        dir = fs.mkdtempSync(path.join(parentDir, dirPrefix));
+        const filePath = path.join(dir, 'source.db');
+        fs.writeFileSync(filePath, sourceBytes, { flag: 'wx', mode: 0o600 });
+        return { dir, filePath };
+      } catch (writeError) {
+        if (dir) {
+          try {
+            fs.rmSync(dir, { recursive: true, force: true });
+          } catch {}
+        }
+        throw writeError;
+      }
+    };
+    let staged: { dir: string; filePath: string };
+    try {
+      staged = writeStagedRestoreSnapshot(os.tmpdir(), 'flo-restore-source-');
+    } catch (primaryError) {
+      const fallbackParentDir = path.dirname(path.resolve(livePath));
+      try {
+        staged = writeStagedRestoreSnapshot(
+          fallbackParentDir,
+          `${INTERNAL_DB_STAGE_DIR_PREFIX}restore-source-`,
+        );
+      } catch (fallbackError) {
+        const primaryMessage =
+          primaryError instanceof Error ? primaryError.message : 'unknown error';
+        const fallbackMessage =
+          fallbackError instanceof Error ? fallbackError.message : 'unknown error';
+        throw new Error(
+          `Could not stage restore source in system temp (${primaryMessage}) or on the database volume at ${fallbackParentDir} (${fallbackMessage}). Free disk space and try again.`,
+          { cause: fallbackError },
+        );
+      }
+    }
+    snapshotDir = staged.dir;
+    return { snapshotPath: staged.filePath, cleanup };
   } catch (error) {
     cleanup();
     throw error;

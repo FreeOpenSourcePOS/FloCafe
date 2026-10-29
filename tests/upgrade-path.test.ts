@@ -1015,7 +1015,7 @@ function main() {
   const preOutbound2 = preAttemptsDb
     .prepare(`
       INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, external_message_id, queued_at, typing_at)
-      VALUES ('+15550009002', 'outbound', 'manual_reply', 'failed', 'Timed out v120', 'ext-v120-typing-2', '2026-10-28 09:05:00', '2026-10-28 09:05:03')
+      VALUES ('+15550009002', 'outbound', 'manual_reply', 'failed', 'Timed out v120', '  ext-v120-typing-2  ', '2026-10-28 09:05:00', '2026-10-28 09:05:03')
     `)
     .run();
   preAttemptsDb

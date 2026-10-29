@@ -904,7 +904,7 @@ export function recordMessageAttemptExternalId(
   `).run(messageId, trimmed, now());
   db.prepare(`
     UPDATE whatsapp_messages
-    SET external_message_id = COALESCE(?, external_message_id)
+    SET external_message_id = COALESCE(external_message_id, ?)
     WHERE id = ? AND direction = 'outbound'
   `).run(trimmed, messageId);
 }
@@ -2048,6 +2048,15 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
     ? AbortSignal.any([whatsappAbortController.signal, getOfflineModeAbortSignal(), req.signal])
     : AbortSignal.any([whatsappAbortController.signal, getOfflineModeAbortSignal()]);
   const previous = sendLocks.get(req.phoneE164) ?? Promise.resolve();
+  let previousSettled = false;
+  void previous.then(
+    () => {
+      previousSettled = true;
+    },
+    () => {
+      previousSettled = true;
+    },
+  );
   let releaseOwn!: () => void;
   const ownDone = new Promise<void>((resolve) => {
     releaseOwn = resolve;
@@ -2119,11 +2128,17 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
     throw error;
   } finally {
     releaseOwn();
-    void current.finally(() => {
+    if (previousSettled) {
       if (sendLocks.get(req.phoneE164) === current) {
         sendLocks.delete(req.phoneE164);
       }
-    });
+    } else {
+      void current.finally(() => {
+        if (sendLocks.get(req.phoneE164) === current) {
+          sendLocks.delete(req.phoneE164);
+        }
+      });
+    }
   }
 }
 
@@ -2460,9 +2475,6 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
     const sentExternalId = sent?.key?.id ?? null;
     const trimmedSentExternalId = typeof sentExternalId === 'string' ? sentExternalId.trim() : '';
-    if (trimmedSentExternalId) {
-      recordMessageAttemptExternalId(messageId, trimmedSentExternalId);
-    }
     inProcessSubmittedIds.add(messageId);
     // Do not mark 'sent' immediately; wait for server ACK (status=2) in messages.update.
     // Refresh typing_at on submission completion so ACK_TIMEOUT_MS starts from here.

@@ -4338,6 +4338,12 @@ function dataOnlyRestore(
       console.log(`[DB] Restored ${tableName}: ${commonColumns.length} columns`);
     }
 
+    if (commonTables.includes('whatsapp_messages')) {
+      backfillWhatsAppMessageAttempts(currentDb, {
+        reset: !commonTables.includes('whatsapp_message_attempts'),
+      });
+    }
+
     mergeUserSecurityState(currentDb, preservedUserSecurity);
     mergeUserStationSecurityState(
       currentDb,
@@ -7790,29 +7796,6 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 121,
     name: 'add_whatsapp_message_attempts',
     up: () => {
-      const existingSql = (
-        db
-          .prepare(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'whatsapp_message_attempts'",
-          )
-          .get() as { sql?: string } | undefined
-      )?.sql;
-      if (existingSql && existingSql.includes('whatsapp_messages_v95')) {
-        db.exec(`
-          ALTER TABLE whatsapp_message_attempts RENAME TO whatsapp_message_attempts_v120;
-          CREATE TABLE whatsapp_message_attempts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            message_id INTEGER NOT NULL REFERENCES whatsapp_messages(id) ON DELETE CASCADE,
-            external_message_id TEXT NOT NULL UNIQUE,
-            created_at TEXT NOT NULL
-          );
-          INSERT OR IGNORE INTO whatsapp_message_attempts (id, message_id, external_message_id, created_at)
-          SELECT id, message_id, external_message_id, created_at
-          FROM whatsapp_message_attempts_v120
-          WHERE message_id IN (SELECT id FROM whatsapp_messages);
-          DROP TABLE whatsapp_message_attempts_v120;
-        `);
-      }
       db.exec(`
         CREATE TABLE IF NOT EXISTS whatsapp_message_attempts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -7822,16 +7805,30 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         );
         CREATE INDEX IF NOT EXISTS idx_whatsapp_message_attempts_message_id
           ON whatsapp_message_attempts(message_id);
-        INSERT OR IGNORE INTO whatsapp_message_attempts (message_id, external_message_id, created_at)
-        SELECT id, external_message_id, COALESCE(sent_at, typing_at, queued_at, CURRENT_TIMESTAMP)
-        FROM whatsapp_messages
-        WHERE direction = 'outbound'
-          AND external_message_id IS NOT NULL
-          AND TRIM(external_message_id) != '';
       `);
+      backfillWhatsAppMessageAttempts(db);
     },
   },
 ];
+
+export function backfillWhatsAppMessageAttempts(
+  targetDb: Database.Database = db,
+  options?: { reset?: boolean },
+): void {
+  if (!getTables(targetDb).includes('whatsapp_message_attempts')) return;
+  if (options?.reset) {
+    targetDb.exec('DELETE FROM whatsapp_message_attempts');
+  }
+  if (!getTables(targetDb).includes('whatsapp_messages')) return;
+  targetDb.exec(`
+    INSERT OR IGNORE INTO whatsapp_message_attempts (message_id, external_message_id, created_at)
+    SELECT id, TRIM(external_message_id), COALESCE(sent_at, typing_at, queued_at, CURRENT_TIMESTAMP)
+    FROM whatsapp_messages
+    WHERE direction = 'outbound'
+      AND external_message_id IS NOT NULL
+      AND TRIM(external_message_id) != ''
+  `);
+}
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
   if (buildingIdealSchema) return;
@@ -8552,16 +8549,6 @@ function createWhatsAppSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_inbound_unread
       ON whatsapp_messages(direction, status, queued_at DESC)
       WHERE direction = 'inbound' AND status NOT IN ('read','failed');
-
-    CREATE TABLE IF NOT EXISTS whatsapp_message_attempts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      message_id INTEGER NOT NULL REFERENCES whatsapp_messages(id) ON DELETE CASCADE,
-      external_message_id TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_whatsapp_message_attempts_message_id
-      ON whatsapp_message_attempts(message_id);
 
     CREATE TABLE IF NOT EXISTS whatsapp_blocklist (
       phone_e164 TEXT PRIMARY KEY,

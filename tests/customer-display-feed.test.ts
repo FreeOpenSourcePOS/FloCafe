@@ -20,6 +20,7 @@ const expressRateLimit = require('express-rate-limit');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { settingsRoutes } = require('../main/routes/settings');
 const { customerDisplayFeedRoutes } = require('../main/routes/customer-display-feed');
+const { orderRoutes } = require('../main/routes/orders');
 const { requireAuth } = require('../main/server');
 const { getJWTSecret } = require('../main/routes/auth');
 
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
   app.use(requireAuth);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/customer-display', customerDisplayFeedRoutes);
+  app.use('/api/orders', orderRoutes);
 
   const created = await request(app).post(TOKENS).set(owner).send({ label: 'Queue TV' });
   assert.equal(created.status, 201);
@@ -403,6 +405,86 @@ async function main(): Promise<void> {
   assert.ok(
     activeKdsPlanText.includes('idx_order_items_active_kds'),
     `prepaid feed query uses idx_order_items_active_kds (got: ${activeKdsPlanText})`,
+  );
+
+  const zeroQtyOrderId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, customer_id, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+         VALUES ('ZERO-QTY-001', 'feed-customer', 'feed-owner', 'takeaway', 'completed', 0, 0, ?, ?, ?)`,
+      )
+      .run(prepaidStamp, prepaidStamp, prepaidStamp).lastInsertRowid,
+  );
+  db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+     VALUES (?, 'feed-prod-1', 'Espresso', 5, 0, 0, 0, 0, 'pending', ?, ?)`,
+  ).run(zeroQtyOrderId, prepaidStamp, prepaidStamp);
+
+  let capturedActiveViewSql = '';
+  let capturedActiveViewParams: unknown[] = [];
+  db.prepare = (sql: string) => {
+    const stmt = origPrepare(sql);
+    if (sql.includes('SELECT orders.* FROM orders')) {
+      const origAll = stmt.all.bind(stmt);
+      stmt.all = (...params: unknown[]) => {
+        if (!capturedActiveViewSql) {
+          capturedActiveViewSql = sql;
+          capturedActiveViewParams = params;
+        }
+        return origAll(...params);
+      };
+    }
+    return stmt;
+  };
+  const authActiveIds: number[] = [];
+  let beforeId: number | string | null = null;
+  do {
+    const qs =
+      beforeId !== null
+        ? `view=active&per_page=100&before_id=${beforeId}`
+        : 'view=active&per_page=100';
+    const res = await request(app)
+      .get(`/api/orders?${qs}`)
+      .set({ ...owner, 'X-Forwarded-For': '127.0.0.3' });
+    assert.equal(res.status, 200);
+    for (const o of res.body.orders) authActiveIds.push(o.id);
+    beforeId = res.body.nextCursor ?? null;
+  } while (beforeId !== null);
+  db.prepare = origPrepare;
+
+  assert.equal(
+    authActiveIds.length,
+    501,
+    'authenticated view=active drains 500 active + 1 prepaid order',
+  );
+  assert.equal(
+    new Set(authActiveIds).size,
+    501,
+    'authenticated view=active returns unique order IDs',
+  );
+  assert.equal(
+    authActiveIds.includes(zeroQtyOrderId),
+    false,
+    'completed order with 0-quantity pending item is excluded from view=active',
+  );
+  const statusActiveRes = await request(app)
+    .get('/api/orders?status=active&per_page=100')
+    .set({ ...owner, 'X-Forwarded-For': '127.0.0.3' });
+  assert.equal(statusActiveRes.status, 200);
+  assert.equal(
+    statusActiveRes.body.orders.some((o: any) => o.id === zeroQtyOrderId),
+    false,
+    'completed order with 0-quantity pending item is excluded from status=active',
+  );
+  const activeViewPlan = db
+    .prepare(`EXPLAIN QUERY PLAN ${capturedActiveViewSql}`)
+    .all(...capturedActiveViewParams) as Array<{ detail: string }>;
+  const activeViewPlanText = activeViewPlan.map((r) => r.detail).join(' | ');
+  assert.ok(
+    activeViewPlanText.includes('idx_orders_status') &&
+      activeViewPlanText.includes('idx_order_items_active_kds') &&
+      !activeViewPlanText.includes('idx_orders_created'),
+    `authenticated view=active query uses idx_orders_status + idx_order_items_active_kds without scanning idx_orders_created (got: ${activeViewPlanText})`,
   );
 
   // KDS disabled excludes completed orders even if items are still ready/pending

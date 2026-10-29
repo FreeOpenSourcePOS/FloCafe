@@ -33,6 +33,7 @@ const { getJWTSecret } = require('../main/routes/auth');
 const { kdsRoutes } = require('../main/routes/kds');
 const { orderItemRoutes } = require('../main/routes/order-items');
 const { orderRoutes } = require('../main/routes/orders');
+const { refundRoutes } = require('../main/routes/refunds');
 
 async function main() {
   const db = initTestDb();
@@ -172,6 +173,7 @@ async function main() {
     '/api/kds': kdsRoutes,
     '/api/order-items': orderItemRoutes,
     '/api/orders': orderRoutes,
+    '/api/refunds': refundRoutes,
   });
   try {
     const orders = await request(app).get('/api/kds/orders').set(authHeader);
@@ -1075,6 +1077,79 @@ async function main() {
       readOrderState(mutOrderId).ready_at,
       null,
       'quantity-increase edit clears ready_at',
+    );
+
+    const refundActiveOrderId = Number(
+      db
+        .prepare(
+          `INSERT INTO orders (order_number, type, status, subtotal, total, cooking_started_at, created_at, updated_at)
+           VALUES ('KDS-PARTIAL-REFUND', 'takeaway', 'preparing', 22, 22, ?, ?, ?)`,
+        )
+        .run(now(), now(), now()).lastInsertRowid,
+    );
+    const refundBlockerItemId = Number(
+      db
+        .prepare(
+          `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+           VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'preparing', ?, ?)`,
+        )
+        .run(refundActiveOrderId, now(), now()).lastInsertRowid,
+    );
+    db.prepare(
+      `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+       VALUES (?, 'kds-contract-bar-product', 'Contract bar', 12, 1, 12, 0, 12, 'ready', ?, ?)`,
+    ).run(refundActiveOrderId, now(), now());
+    const partialBillId = Number(
+      db
+        .prepare(
+          `INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
+           VALUES ('BILL-KDS-PARTIAL-REFUND', ?, 22, 0, 22, 10, 12, 'partial', ?, ?)`,
+        )
+        .run(refundActiveOrderId, now(), now()).lastInsertRowid,
+    );
+    const blockedCancelRes = await request(app)
+      .patch(`/api/orders/${refundActiveOrderId}/items/${refundBlockerItemId}/cancel`)
+      .set(authHeader)
+      .send({ override_pin: '1234', reason: 'out of stock' });
+    assertEqualOrThrow(
+      blockedCancelRes.status,
+      409,
+      'partially paid active order blocks item cancel in favor of refund',
+    );
+    db.prepare('DELETE FROM cloud_sync_outbox').run();
+    const itemRefundRes = await request(app)
+      .post('/api/refunds')
+      .set(authHeader)
+      .send({
+        bill_id: partialBillId,
+        order_item_id: refundBlockerItemId,
+        method: 'card',
+        approver_id: 'mgr-test-001',
+        override_pin: '1234',
+        reason: 'out of stock',
+      });
+    assertEqualOrThrow(itemRefundRes.status, 201, 'item refund on active partial bill succeeds');
+    const afterRefundState = readOrderState(refundActiveOrderId);
+    assertEqualOrThrow(
+      afterRefundState.status,
+      'ready',
+      'refunding the last unready item promotes active order to ready',
+    );
+    assertOrThrow(afterRefundState.ready_at !== null, 'item refund promotion populates ready_at');
+    const refundAudits = readStatusAudits(refundActiveOrderId);
+    assertEqualOrThrow(refundAudits.length, 1, 'item refund records status_changed audit');
+    assertEqualOrThrow(
+      JSON.parse(refundAudits[0].details).to,
+      'ready',
+      'item refund status_changed audit records ready target',
+    );
+    const refundOutbox = db
+      .prepare('SELECT event_type FROM cloud_sync_outbox ORDER BY created_at DESC LIMIT 1')
+      .get() as { event_type: string } | undefined;
+    assertEqualOrThrow(
+      refundOutbox?.event_type,
+      'order.ready',
+      'item refund reconciliation emits order.ready cloud event',
     );
 
     // Completed parent order is never reopened/mutated by KDS item updates

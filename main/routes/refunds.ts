@@ -13,6 +13,7 @@ import {
 } from '../services/refund';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import { cloudSync } from '../services/cloud-sync';
+import { notifyKdsUpdate } from '../services/kds';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 
 const router = Router();
@@ -372,13 +373,43 @@ router.post('/', requirePermission('refunds.initiate'), async (req: Request, res
       preVerifiedApprover,
     };
 
+    let changedOrderEvent: { orderId: string; eventType: string } | null = null;
     const result = withTxn(() => {
+      const wasReplay = Boolean(checkIdempotencyReplay());
+      let beforeOrderStatus: string | null = null;
+      if (!wasReplay && orderItemId !== null) {
+        const beforeRow = db
+          .prepare(
+            'SELECT o.status FROM orders o JOIN bills b ON b.order_id = o.id WHERE b.id = ?',
+          )
+          .get(billId) as { status: string } | undefined;
+        beforeOrderStatus = beforeRow?.status ?? null;
+      }
       const refundResult = createRefund(db, refundRequest);
+      if (!wasReplay && orderItemId !== null && refundResult.bill?.order_id != null) {
+        const orderId = String(refundResult.bill.order_id);
+        const afterRow = db.prepare('SELECT status FROM orders WHERE id = ?').get(orderId) as
+          | { status: string }
+          | undefined;
+        const afterOrderStatus = afterRow?.status ?? null;
+        const eventType =
+          afterOrderStatus && afterOrderStatus !== beforeOrderStatus
+            ? `order.${afterOrderStatus}`
+            : 'order.item_refunded';
+        changedOrderEvent = { orderId, eventType };
+      }
       transactionBodyCompleted = true;
       return refundResult;
     });
     clearPinRateLimit(rateLimitKey);
     operationCommitted = true;
+    if (changedOrderEvent) {
+      const { orderId, eventType } = changedOrderEvent as { orderId: string; eventType: string };
+      try {
+        cloudSync.recordOrderChanged(orderId, eventType);
+      } catch {}
+      notifyKdsUpdate();
+    }
     res.status(201).json(result);
   } catch (error: any) {
     const status = error.statusCode || 500;

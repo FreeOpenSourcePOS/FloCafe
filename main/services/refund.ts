@@ -12,6 +12,7 @@ import {
 } from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
 import { adjustProductStock } from './inventory';
+import { reconcileActiveOrderStatusFromItems } from './orders';
 import {
   getOpenSession,
   NO_CASH_SESSION_ID,
@@ -535,6 +536,10 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
       reason: req.reason ?? null,
     },
   });
+
+  if (item) {
+    reconcileActiveOrderStatusFromItems(db, bill.order_id, req.createdByUserId);
+  }
 
   const refund = db.prepare('SELECT * FROM refunds WHERE id = ?').get(insertResult.lastInsertRowid);
   const freshBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.billId);

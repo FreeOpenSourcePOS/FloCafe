@@ -281,7 +281,7 @@ automatically reconciles active (`pending`, `preparing`, `ready`, `served`) pare
 inside the same transaction across all order types (`dine_in`, `takeaway`, `delivery`, `online`)
 whenever KDS item statuses change (`PATCH /api/order-items/:id/status`, embedded and standalone
 `PATCH /api/kds/items/:id/status`, and the KDS WebSocket `status_update` handler) or whenever active
-order items are appended, cancelled, edited, or restored:
+order items are appended, cancelled, edited, refunded, or restored:
 
 - Live items are non-terminal (`cancelled`, `voided`, `void_adjustment`, and `refunded` excluded)
   positive-quantity lines across the full order, unfiltered by caller station or category scope

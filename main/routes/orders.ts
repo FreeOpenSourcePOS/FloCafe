@@ -613,17 +613,15 @@ router.get(
       if (!['all', 'active', 'unpaid'].includes(view)) {
         return res.status(400).json({ error: 'Invalid view parameter.' });
       }
-      const activeOrderPredicate = `(
-        (orders.status NOT IN ('cancelled', 'completed'))
-        OR (
-          orders.status = 'completed'
-          AND ? = 1
-          AND EXISTS (
-            SELECT 1 FROM order_items AS active_item
-            WHERE active_item.order_id = orders.id
-              AND active_item.status IN ('pending', 'preparing', 'ready')
-          )
-        )
+      const activeOrderPredicate = `orders.id IN (
+        SELECT id FROM orders WHERE status IN ('pending', 'preparing', 'ready', 'served')
+        UNION
+        SELECT oi.order_id FROM order_items AS oi
+        CROSS JOIN orders AS co ON co.id = oi.order_id
+        WHERE ? = 1
+          AND oi.status IN ('pending', 'preparing', 'ready')
+          AND oi.quantity > 0
+          AND co.status = 'completed'
       )`;
       if (view === 'active') {
         wheres.push(activeOrderPredicate);

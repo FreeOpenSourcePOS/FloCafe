@@ -7,6 +7,7 @@ import {
   getDatabase,
   getSettingValue,
   localDateInTimezone,
+  now,
   parseDbTimestamp,
   tenantBusinessDayStartTime,
 } from '../db';
@@ -23,11 +24,20 @@ import {
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
-import { openSessionBlockingDayClose } from '../services/cash-day-close-guards';
+import {
+  openSessionsBlockingDayClose,
+  sessionBusinessDate,
+} from '../services/cash-day-close-guards';
+import type { CashSessionRow } from '../services/shift-session-gate';
+import type { AuthedRequest } from './cash-sessions';
 import {
   computeDayAggregates,
+  computePeriodAggregates,
   expectedCashFromAggregates,
+  listCashDrawerMovementsForSession,
   paymentMethodBreakdown,
+  sessionExpectedCash,
+  sessionFinancialTotals,
 } from './cash-closures';
 import { getCurrencyFractionDigits } from '../countries';
 import { roundCurrencyCost } from '../services/supplies';
@@ -1251,10 +1261,139 @@ router.get('/insights', requirePermission('reports.view'), (req: Request, res: R
 //   float.
 router.get('/x-report', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
-    const today = reportToday();
-    const date = reportDate(req.query.date, today);
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
+
+    if (req.query.session_id !== undefined && String(req.query.session_id).trim() !== '') {
+      const sessionId = Number(req.query.session_id);
+      if (!Number.isInteger(sessionId) || sessionId <= 0) {
+        return res.status(400).json({ error: 'Invalid session_id', code: 'session_id_invalid' });
+      }
+      const session = db
+        .prepare(
+          `SELECT id, opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by, closure_id
+           FROM cash_sessions WHERE id = ?`,
+        )
+        .get(sessionId) as CashSessionRow | undefined;
+      if (!session) {
+        return res.status(404).json({ error: 'Shift not found', code: 'session_unavailable' });
+      }
+      const actor = (req as AuthedRequest).user;
+      const actorRole = String(actor?.role || '');
+      const actorUserId = String(actor?.userId || '');
+      if (
+        actorRole !== 'owner' &&
+        actorRole !== 'manager' &&
+        String(session.opened_by) !== actorUserId
+      ) {
+        return res.status(403).json({
+          error: "Only owners and managers can view another staff member's shift report",
+          code: 'shift_access_forbidden',
+        });
+      }
+      const shiftDate = sessionBusinessDate(db, session);
+      const sessionClosedRow =
+        session.closure_id != null
+          ? (db
+              .prepare(
+                `SELECT z_number FROM cash_closures WHERE id = ? AND scope = 'session' LIMIT 1`,
+              )
+              .get(session.closure_id) as { z_number: number } | undefined)
+          : undefined;
+      const sessionPriorRow = db
+        .prepare(
+          `SELECT business_date, counted_cash_cents FROM cash_closures
+           WHERE business_date < ? AND scope = 'day'
+           ORDER BY business_date DESC LIMIT 1`,
+        )
+        .get(shiftDate) as { business_date: string; counted_cash_cents: number } | undefined;
+      const sessionBlockingSessions = openSessionsBlockingDayClose(db, shiftDate);
+      const sessionBlocking = sessionBlockingSessions[0];
+      const sessionOpenShifts = sessionBlockingSessions.map((s) => ({
+        id: s.id,
+        opened_by: s.opened_by,
+        opened_by_name: s.opened_by_name,
+        opened_at: s.opened_at,
+      }));
+      const sessionEnd = session.closed_at || now();
+      const sessionMovements = listCashDrawerMovementsForSession(
+        db,
+        session.id,
+        session.opened_at,
+        sessionEnd,
+        false,
+      );
+      const openingFloatCents = Number(session.opening_float_cents || 0);
+      const sessionAggregates = {
+        ...computePeriodAggregates(
+          db,
+          session.opened_at,
+          sessionEnd,
+          sessionMovements,
+          openingFloatCents,
+          session,
+        ),
+        ...sessionFinancialTotals(db, session, sessionEnd),
+      };
+      const totalExpectedCashCents = sessionExpectedCash(db, session, sessionEnd, sessionMovements);
+      return res.json({
+        xReport: {
+          businessDate: shiftDate,
+          periodStart: session.opened_at,
+          periodEnd: sessionEnd,
+          grossCollected: sessionAggregates.grossCollectedCents / minorFactor,
+          refunded: sessionAggregates.refundedCents / minorFactor,
+          netCollected: sessionAggregates.netCollectedCents / minorFactor,
+          billCount: sessionAggregates.billCount,
+          refundCount: sessionAggregates.refundCount,
+          paymentMethods: sessionAggregates.paymentMethods.map((row) => ({
+            method: row.method,
+            count: row.count,
+            total: row.total_cents / minorFactor,
+          })),
+          staffSales: sessionAggregates.staffSales.map((row) => ({
+            user_id: row.user_id,
+            name: row.name,
+            role: row.role,
+            revenue: row.revenue_cents / minorFactor,
+            orderCount: row.orderCount,
+          })),
+          taxComponents: sessionAggregates.taxComponents,
+          openingFloatCents,
+          payInCents: sessionAggregates.payInCents,
+          payOutCents: sessionAggregates.payOutCents,
+          safeDropCents: sessionAggregates.safeDropCents,
+          cashMovements: sessionAggregates.cashMovements,
+          expectedCashCents: totalExpectedCashCents - openingFloatCents,
+          priorClosedCashCents: sessionPriorRow?.counted_cash_cents ?? null,
+          priorBusinessDate: sessionPriorRow?.business_date ?? null,
+          alreadyClosed: session.status === 'closed' || !!sessionClosedRow,
+          zNumber: sessionClosedRow?.z_number,
+          session: {
+            id: session.id,
+            opened_by: session.opened_by,
+            opened_by_name: session.opened_by_name,
+            opened_at: session.opened_at,
+            closed_at: session.closed_at,
+            status: session.status,
+            closure_id: session.closure_id,
+            opening_float_cents: openingFloatCents,
+            expected_cash_cents: totalExpectedCashCents,
+          },
+          openShifts: sessionOpenShifts,
+          blockingOpenShift: sessionBlocking
+            ? {
+                id: sessionBlocking.id,
+                opened_by_name: sessionBlocking.opened_by_name,
+                opened_at: sessionBlocking.opened_at,
+              }
+            : null,
+        },
+      });
+    }
+
+    const today = reportToday();
+    const date = reportDate(req.query.date, today);
     const [periodStart, periodEnd] = reportDayBounds(date);
 
     const aggregates = computeDayAggregates(db, date);
@@ -1276,7 +1415,14 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
       )
       .get(date) as { business_date: string; counted_cash_cents: number } | undefined;
 
-    const blockingSession = openSessionBlockingDayClose(db, date);
+    const blockingSessions = openSessionsBlockingDayClose(db, date);
+    const blockingSession = blockingSessions[0];
+    const openShifts = blockingSessions.map((s) => ({
+      id: s.id,
+      opened_by: s.opened_by,
+      opened_by_name: s.opened_by_name,
+      opened_at: s.opened_at,
+    }));
 
     res.json({
       xReport: {
@@ -1321,6 +1467,8 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
         priorBusinessDate: priorRow?.business_date ?? null,
         alreadyClosed: !!closedRow,
         zNumber: closedRow?.z_number,
+        session: null,
+        openShifts,
         blockingOpenShift: blockingSession
           ? {
               id: blockingSession.id,

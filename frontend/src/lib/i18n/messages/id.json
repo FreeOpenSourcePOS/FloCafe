@@ -1211,7 +1211,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# pesanan terbuka akan dilanjutkan ke shift berikutnya} other {# pesanan terbuka akan dilanjutkan ke shift berikutnya}}",
     "shiftCloseUnpaidWarningHint": "Pesanan ini tetap terbuka untuk shift berikutnya. Menutup shift ini hanya mencocokkan pembayaran tunai yang sudah diterima selama shift ini.",
     "shiftCloseUnpaidMoreCount": "+{count} pesanan terbuka lainnya",
-    "lockTerminal": "Kunci Terminal"
+    "lockTerminal": "Kunci Terminal",
+    "selectOpenShift": "Shift yang akan ditutup",
+    "xReportShiftFilterLabel": "Cakupan shift",
+    "xReportAllShifts": "Semua shift (sehari penuh)"
   },
   "printTest": {
     "amt": "Jml",
@@ -2571,7 +2574,13 @@
     "autoLockLabel": "Kunci Otomatis Saat Idle",
     "autoLockHint": "Kunci terminal POS secara otomatis setelah tidak ada aktivitas",
     "autoLockOff": "Mati",
-    "autoLockMinutesOption": "{count} menit"
+    "autoLockMinutesOption": "{count} menit",
+    "requireOpenShift": "Wajibkan Shift Terbuka untuk Tunai",
+    "requireOpenShiftHint": "Blokir pembayaran tunai, pengembalian dana tunai, dan mutasi laci kecuali ada shift aktif yang terbuka.",
+    "oneShiftPerStaff": "Satu shift per staf",
+    "oneShiftPerStaffHint": "Izinkan setiap anggota staf untuk membuka dan menutup shift kasir mereka sendiri secara mandiri.",
+    "oneShiftPerStaffSharedDrawerWarning": "Catatan: Jika dua shift bersamaan berbagi satu laci uang fisik yang sama, perhitungan uang tunai per shift tidak terpisah secara fisik.",
+    "oneShiftPerStaffDisableBlocked": "Tidak dapat menonaktifkan satu shift per staf saat beberapa shift masih terbuka. Tutup shift tambahan terlebih dahulu."
   },
   "setup": {
     "alreadyCompleted": "Pengaturan awal sudah selesai dilakukan pada instalasi ini. Mengalihkan ke layar masuk…",

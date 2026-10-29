@@ -1211,7 +1211,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# pedido abierto pasará al siguiente turno} other {# pedidos abiertos pasarán al siguiente turno}}",
     "shiftCloseUnpaidWarningHint": "Estos pedidos permanecen abiertos para el siguiente turno. Al cerrar este turno solo se concilian los pagos en efectivo ya cobrados durante este turno.",
     "shiftCloseUnpaidMoreCount": "+{count} pedidos abiertos más",
-    "lockTerminal": "Bloquear terminal"
+    "lockTerminal": "Bloquear terminal",
+    "selectOpenShift": "Turno a cerrar",
+    "xReportShiftFilterLabel": "Alcance del turno",
+    "xReportAllShifts": "Todos los turnos (día completo)"
   },
   "printTest": {
     "amt": "Total",
@@ -2571,7 +2574,13 @@
     "autoLockLabel": "Bloqueo automático por inactividad",
     "autoLockHint": "Bloquear automáticamente el terminal TPV tras inactividad",
     "autoLockOff": "Desactivado",
-    "autoLockMinutesOption": "{count} min."
+    "autoLockMinutesOption": "{count} min.",
+    "requireOpenShift": "Exigir turno abierto para efectivo",
+    "requireOpenShiftHint": "Bloquear cobros en efectivo, reembolsos en efectivo y movimientos de caja si no hay un turno abierto.",
+    "oneShiftPerStaff": "Un turno por empleado",
+    "oneShiftPerStaffHint": "Permitir que cada empleado abra y cierre su propio turno de caja de forma independiente.",
+    "oneShiftPerStaffSharedDrawerWarning": "Nota: Si dos turnos simultáneos comparten un único cajón físico, los conteos individuales de efectivo no estarán separados físicamente.",
+    "oneShiftPerStaffDisableBlocked": "No se puede desactivar un turno por empleado mientras haya varios turnos abiertos. Cierra primero los turnos adicionales."
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",

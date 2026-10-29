@@ -1211,7 +1211,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# bukas na order ang ililipat sa susunod na shift} other {# bukas na mga order ang ililipat sa susunod na shift}}",
     "shiftCloseUnpaidWarningHint": "Mananatiling bukas ang mga order na ito para sa susunod na shift. Ang pagsasara ng shift na ito ay nagtutugma lamang sa mga bayad na cash na nakolekta na sa shift na ito.",
     "shiftCloseUnpaidMoreCount": "+{count} pang bukas na order",
-    "lockTerminal": "I-lock ang Terminal"
+    "lockTerminal": "I-lock ang Terminal",
+    "selectOpenShift": "Shift na isasara",
+    "xReportShiftFilterLabel": "Saklaw ng shift",
+    "xReportAllShifts": "Lahat ng shift (buong araw)"
   },
   "printTest": {
     "amt": "Halaga",
@@ -2571,7 +2574,13 @@
     "autoLockLabel": "Auto-Lock kapag Idle",
     "autoLockHint": "Awtomatikong i-lock ang POS terminal kapag walang aktibidad",
     "autoLockOff": "Naka-off",
-    "autoLockMinutesOption": "{count} minuto"
+    "autoLockMinutesOption": "{count} minuto",
+    "requireOpenShift": "Kailangan ng Bukas na Shift para sa Cash",
+    "requireOpenShiftHint": "Harangan ang mga bayad na cash, refund na cash, at galaw sa kaha maliban kung may bukas na shift.",
+    "oneShiftPerStaff": "Isang shift bawat kawani",
+    "oneShiftPerStaffHint": "Payagan ang bawat kawani na magbukas at magsara ng sarili nilang cash shift nang hiwalay.",
+    "oneShiftPerStaffSharedDrawerWarning": "Paalala: Kung ang dalawang magkasabay na shift ay gumagamit ng iisang pisikal na kaha, hindi pisikal na magkahiwalay ang bilang ng pera bawat shift.",
+    "oneShiftPerStaffDisableBlocked": "Hindi maaaring i-off ang isang shift bawat kawani habang maraming shift ang nakabukas. Isara muna ang mga karagdagang shift."
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

@@ -1211,7 +1211,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# ordine aperto verrà trasferito} other {# ordini aperti verranno trasferiti}}",
     "shiftCloseUnpaidWarningHint": "Questi ordini restano aperti per il turno successivo. La chiusura di questo turno riconcilia solo i pagamenti in contanti già incassati durante questo turno.",
     "shiftCloseUnpaidMoreCount": "+{count} altri ordini aperti",
-    "lockTerminal": "Blocca terminale"
+    "lockTerminal": "Blocca terminale",
+    "selectOpenShift": "Turno da chiudere",
+    "xReportShiftFilterLabel": "Ambito del turno",
+    "xReportAllShifts": "Tutti i turni (intera giornata)"
   },
   "printTest": {
     "amt": "Importo",
@@ -2571,7 +2574,13 @@
     "autoLockLabel": "Blocco automatico per inattività",
     "autoLockHint": "Blocca automaticamente il terminale POS dopo inattività",
     "autoLockOff": "Disattivato",
-    "autoLockMinutesOption": "{count} min."
+    "autoLockMinutesOption": "{count} min.",
+    "requireOpenShift": "Richiedi turno aperto per i contanti",
+    "requireOpenShiftHint": "Blocca pagamenti in contanti, rimborsi in contanti e movimenti di cassa se non c’è un turno attivo.",
+    "oneShiftPerStaff": "Un turno per dipendente",
+    "oneShiftPerStaffHint": "Consenti a ciascun dipendente di aprire e chiudere il proprio turno di cassa in modo indipendente.",
+    "oneShiftPerStaffSharedDrawerWarning": "Nota: Se due turni simultanei condividono un unico cassetto contanti fisico, i conteggi individuali non saranno isolati fisicamente.",
+    "oneShiftPerStaffDisableBlocked": "Impossibile disattivare un turno per dipendente mentre più turni sono aperti. Chiudi prima gli altri turni."
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",

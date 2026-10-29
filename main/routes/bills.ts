@@ -29,6 +29,7 @@ import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import {
   getOpenSession,
   isCashTender,
+  isPerStaffShiftsEnabled,
   NO_CASH_SESSION_ID,
   requireOpenSessionForCashTender,
 } from '../services/shift-session-gate';
@@ -3782,8 +3783,9 @@ function applyPaymentBatch(
   requireOpenSessionForCashTender(
     db,
     prepared.map((line) => line.payment),
+    idempotencyUserId,
   );
-  const activeSessionId = getOpenSession(db)?.id ?? NO_CASH_SESSION_ID;
+  const activeSessionId = getOpenSession(db, idempotencyUserId)?.id ?? NO_CASH_SESSION_ID;
   const currency = getTenantCurrency();
   const minorFactor = getCurrencyMinorUnitFactor(currency);
   const totalAppliedCents = prepared.reduce((sum, line) => sum + line.amountCents, 0);
@@ -5978,7 +5980,7 @@ router.patch(
         const session = db
           .prepare('SELECT id, status FROM cash_sessions WHERE id = ?')
           .get(rawTargetSessionId) as { id: number; status: string } | undefined;
-        const openSession = getOpenSession(db);
+        const openSession = isPerStaffShiftsEnabled(db) ? session : getOpenSession(db);
         if (
           !session ||
           session.status !== 'open' ||

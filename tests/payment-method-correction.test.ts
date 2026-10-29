@@ -1183,6 +1183,115 @@ async function main() {
       'correcting split check when sibling was settled in a closed shift returns 409',
     );
 
+    // ── 12b. Per-staff shifts (one_shift_per_staff = true): manager correcting Staff B payment keeps it in Staff B shift ─
+    db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('one_shift_per_staff', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'",
+    ).run();
+    const cashierBId = 'cashier-b-1337';
+    db.prepare(
+      `INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+       VALUES (?, 'Cashier B', 'cashier-b@test.local', ?, 'cashier', ?, 1, ?, ?)`,
+    ).run(
+      cashierBId,
+      bcrypt.hashSync('password123', 10),
+      bcrypt.hashSync('6666', 10),
+      now(),
+      now(),
+    );
+    const cashierBAuth = {
+      Authorization: `Bearer ${jwt.sign(
+        { userId: cashierBId, email: 'cashier-b@test.local', role: 'cashier' },
+        getJWTSecret(),
+        { expiresIn: '1h' },
+      )}`,
+    };
+    const openShiftARes = await api(baseUrl, '/api/cash-sessions/open', {
+      method: 'POST',
+      body: { opening_float_cents: 3000 },
+      headers: cashierAuth,
+    });
+    assertEqualOrThrow(openShiftARes.status, 200, 'Staff A opens own cash shift (200)');
+    const shiftAId = openShiftARes.data.id;
+
+    const openShiftBRes = await api(baseUrl, '/api/cash-sessions/open', {
+      method: 'POST',
+      body: { opening_float_cents: 4000 },
+      headers: cashierBAuth,
+    });
+    assertEqualOrThrow(openShiftBRes.status, 200, 'Staff B opens own cash shift (200)');
+    const shiftBId = openShiftBRes.data.id;
+
+    const { bill: staffBBill } = await createPaidBill('prod-80', 'cash', {}, cashierBAuth);
+    assertEqualOrThrow(
+      staffBBill.payment_details[0].cash_session_id,
+      shiftBId,
+      'Staff B cash payment is attributed to Staff B open shift',
+    );
+
+    const curShiftBBefore = await api(baseUrl, '/api/cash-sessions/current', {
+      headers: cashierBAuth,
+    });
+    const curShiftMgrBefore = await api(baseUrl, '/api/cash-sessions/current', {
+      headers: managerAuth,
+    });
+    assertEqualOrThrow(
+      curShiftBBefore.data.expected_cash_cents,
+      12000,
+      'Staff B shift expected cash is 4000 float + 8000 sale = 12000 before correction',
+    );
+
+    const mgrCorrectsStaffBBill = await api(
+      baseUrl,
+      `/api/bills/${staffBBill.id}/payments/0/method`,
+      {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: {
+          method: 'card',
+          transaction_id: 'TX-STAFF-B-CARD',
+          reason: 'Manager correcting Staff B payment method',
+          approver_id: managerId,
+          override_pin: '1234',
+        },
+      },
+    );
+    assertEqualOrThrow(
+      mgrCorrectsStaffBBill.status,
+      200,
+      'manager corrects Staff B cash payment to card while Staff A, Staff B, and manager shifts are open (200)',
+    );
+    assertEqualOrThrow(
+      mgrCorrectsStaffBBill.data.bill.payment_details[0].cash_session_id,
+      shiftBId,
+      'corrected payment stays in Staff B shift and does not move to manager shift',
+    );
+    const curShiftAAfter = await api(baseUrl, '/api/cash-sessions/current', {
+      headers: cashierAuth,
+    });
+    const curShiftBAfter = await api(baseUrl, '/api/cash-sessions/current', {
+      headers: cashierBAuth,
+    });
+    const curShiftMgrAfter = await api(baseUrl, '/api/cash-sessions/current', {
+      headers: managerAuth,
+    });
+    assertEqualOrThrow(
+      curShiftBAfter.data.expected_cash_cents,
+      4000,
+      'Staff B shift expected cash drops to 4000 (float only) after cash -> card correction',
+    );
+    assertEqualOrThrow(
+      curShiftAAfter.data.expected_cash_cents,
+      3000,
+      'Staff A shift expected cash remains untouched at 3000',
+    );
+    assertEqualOrThrow(
+      curShiftMgrAfter.data.expected_cash_cents,
+      curShiftMgrBefore.data.expected_cash_cents,
+      'Manager shift expected cash remains untouched',
+    );
+    db.prepare("UPDATE settings SET value = 'false' WHERE key = 'one_shift_per_staff'").run();
+    db.prepare('DELETE FROM cash_sessions WHERE id IN (?, ?)').run(shiftAId, shiftBId);
+
     // ── 13. Closed business day refusal (409) ─────────────────────────────
     const { bill: bill3 } = await createPaidBill('prod-80', 'cash');
     const businessDate = (

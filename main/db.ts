@@ -7774,6 +7774,18 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 120,
+    name: 'add_per_staff_cash_sessions',
+    up: () => {
+      db.exec(`
+        DROP INDEX IF EXISTS cash_sessions_one_open;
+        CREATE UNIQUE INDEX IF NOT EXISTS cash_sessions_one_open_per_user
+          ON cash_sessions(opened_by) WHERE status = 'open';
+      `);
+      insertSettingIfMissing('one_shift_per_staff', 'false');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -8551,6 +8563,7 @@ function seedInstallDefaults(): void {
   // Shift enforcement ships default-off (#279, approach A): sales work with
   // no open session unless the owner opts in. Stale auto-close threshold in days.
   insert('require_open_shift', 'false');
+  insert('one_shift_per_staff', 'false');
   insert('stale_session_days', '7');
   insert('address', '');
   insert('phone', '');

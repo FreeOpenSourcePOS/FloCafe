@@ -1211,7 +1211,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {#টি খোলা অর্ডার পরবর্তী শিফটে যাবে} other {#টি খোলা অর্ডার পরবর্তী শিফটে যাবে}}",
     "shiftCloseUnpaidWarningHint": "এই অর্ডারগুলো পরবর্তী শিফটের জন্য খোলা থাকবে। এই শিফট বন্ধ করলে শুধুমাত্র এই শিফটে ইতিমধ্যে সংগৃহীত নগদ পেমেন্টের হিসাব মেলানো হয়।",
     "shiftCloseUnpaidMoreCount": "+আরও {count}টি খোলা অর্ডার",
-    "lockTerminal": "টার্মিনাল লক করুন"
+    "lockTerminal": "টার্মিনাল লক করুন",
+    "selectOpenShift": "বন্ধ করার শিফট",
+    "xReportShiftFilterLabel": "শিফটের পরিধি",
+    "xReportAllShifts": "সব শিফট (সারাদিন)"
   },
   "printTest": {
     "amt": "এএমটি",
@@ -2571,7 +2574,13 @@
     "autoLockLabel": "নিষ্ক্রিয় অটো-লক",
     "autoLockHint": "নিষ্ক্রিয়তার পর স্বয়ংক্রিয়ভাবে পিওএস টার্মিনাল লক করুন",
     "autoLockOff": "বন্ধ",
-    "autoLockMinutesOption": "{count} মিনিট"
+    "autoLockMinutesOption": "{count} মিনিট",
+    "requireOpenShift": "নগদের জন্য খোলা শিফট আবশ্যক করুন",
+    "requireOpenShiftHint": "সক্রিয় শিফট খোলা না থাকলে নগদ পেমেন্ট, নগদ রিফান্ড এবং ড্রয়ার লেনদেন ব্লক করুন।",
+    "oneShiftPerStaff": "প্রতি কর্মী একটি শিফট",
+    "oneShiftPerStaffHint": "প্রতিটি কর্মীকে স্বাধীনভাবে তাদের নিজস্ব ক্যাশ শিফট খোলা ও বন্ধ করার অনুমতি দিন।",
+    "oneShiftPerStaffSharedDrawerWarning": "দ্রষ্টব্য: যদি দুটি সমসাময়িক শিফট একটি একক ফিজিক্যাল ক্যাশ ড্রয়ার ভাগ করে, তবে পৃথক ড্রয়ারের নগদ গণনা ভৌতভাবে আলাদা থাকবে না।",
+    "oneShiftPerStaffDisableBlocked": "একাধিক শিফট খোলা থাকা অবস্থায় প্রতি কর্মী একটি শিফট নিষ্ক্রিয় করা যাবে না। প্রথমে অতিরিক্ত শিফটগুলো বন্ধ করুন।"
   },
   "setup": {
     "alreadyCompleted": "এই ইনস্টলে সেটআপ ইতিমধ্যেই সম্পন্ন হয়েছে। লগইন করার জন্য পুনঃনির্দেশ করা হচ্ছে...",

@@ -1211,7 +1211,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# open bestelling wordt meegenomen} other {# open bestellingen worden meegenomen}}",
     "shiftCloseUnpaidWarningHint": "Deze bestellingen blijven open voor de volgende dienst. Bij het sluiten van deze dienst worden alleen de contante betalingen verrekend die tijdens deze dienst al zijn ontvangen.",
     "shiftCloseUnpaidMoreCount": "+{count} extra open bestellingen",
-    "lockTerminal": "Terminal vergrendelen"
+    "lockTerminal": "Terminal vergrendelen",
+    "selectOpenShift": "Te sluiten dienst",
+    "xReportShiftFilterLabel": "Dienstbereik",
+    "xReportAllShifts": "Alle diensten (hele dag)"
   },
   "printTest": {
     "amt": "Bedrag",
@@ -2571,7 +2574,13 @@
     "autoLockLabel": "Automatisch vergrendelen bij inactiviteit",
     "autoLockHint": "Vergrendel de kassa automatisch na inactiviteit",
     "autoLockOff": "Uit",
-    "autoLockMinutesOption": "{count} min."
+    "autoLockMinutesOption": "{count} min.",
+    "requireOpenShift": "Geopende dienst vereisen voor contant geld",
+    "requireOpenShiftHint": "Blokkeer contante betalingen, contante terugbetalingen en kassaladebewegingen tenzij er een dienst geopend is.",
+    "oneShiftPerStaff": "Één dienst per medewerker",
+    "oneShiftPerStaffHint": "Sta elke medewerker toe om zelfstandig een eigen kassadienst te openen en te sluiten.",
+    "oneShiftPerStaffSharedDrawerWarning": "Let op: Als twee gelijktijdige diensten één fysieke kassalade delen, zijn de individuele kastellingen niet fysiek gescheiden.",
+    "oneShiftPerStaffDisableBlocked": "Kan één dienst per medewerker niet uitschakelen terwijl er meerdere diensten geopend zijn. Sluit eerst de extra diensten."
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",

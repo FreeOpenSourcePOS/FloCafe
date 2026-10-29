@@ -173,6 +173,8 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   printer_trim_decimals: 'false',
   split_checks_enabled: 'false',
   card_transaction_id_required: 'false',
+  require_open_shift: 'false',
+  one_shift_per_staff: 'false',
   // Print language policies (#441) — inherit store language, no second
   // language. Defaults preserve pre-policy behavior for existing tenants.
   [BILL_LANGUAGE_POLICY_KEY]: defaultLanguagePolicySettingJson(),
@@ -1901,6 +1903,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'pos_category_sort',
   'pos_item_sort',
   'require_open_shift',
+  'one_shift_per_staff',
   'auto_lock_minutes',
 ]);
 
@@ -2187,6 +2190,7 @@ router.put(
       }
       if (
         req.params.key === 'require_open_shift' ||
+        req.params.key === 'one_shift_per_staff' ||
         req.params.key === 'card_transaction_id_required'
       ) {
         if (value !== true && value !== false && value !== 'true' && value !== 'false') {
@@ -2215,6 +2219,17 @@ router.put(
         valueToPersist = validation.stored;
       }
       const db = getDatabase();
+      if (req.params.key === 'one_shift_per_staff' && valueToPersist === 'false') {
+        const openCount = db
+          .prepare(`SELECT COUNT(*) AS n FROM cash_sessions WHERE status = 'open'`)
+          .get() as { n: number } | undefined;
+        if (Number(openCount?.n || 0) > 1) {
+          return res.status(409).json({
+            error: 'Cannot disable one shift per staff member while multiple shifts are open',
+            code: 'multiple_shifts_open',
+          });
+        }
+      }
       if (
         diagnosticsChoice &&
         valueToPersist === 'true' &&

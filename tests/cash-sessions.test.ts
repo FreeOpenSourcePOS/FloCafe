@@ -15,7 +15,13 @@ const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-cash-sessions-'));
 
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
-    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+    return {
+      app: {
+        isPackaged: true,
+        getPath: () => testDir,
+        getVersion: () => 'test',
+      },
+    };
   }
   return originalLoad.apply(this, arguments as any);
 };
@@ -129,17 +135,26 @@ async function main() {
   assert(cols.includes('opening_float_cents'), 'cash_sessions has opening_float_cents');
   assert(cols.includes('status'), 'cash_sessions has status');
   assert(cols.includes('closure_id'), 'cash_sessions has closure_id');
-  const oneOpen = db
+  const legacyOneOpen = db
     .prepare(`SELECT sql FROM sqlite_master WHERE name = 'cash_sessions_one_open'`)
     .get() as { sql: string } | undefined;
+  assert(!legacyOneOpen, 'legacy global cash_sessions_one_open index is dropped by migration 120');
+  const oneOpenPerUser = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE name = 'cash_sessions_one_open_per_user'`)
+    .get() as { sql: string } | undefined;
   assert(
-    !!oneOpen && oneOpen.sql.includes('WHERE'),
-    'partial unique index allows a single open session',
+    !!oneOpenPerUser &&
+      oneOpenPerUser.sql.includes('opened_by') &&
+      oneOpenPerUser.sql.includes('WHERE'),
+    'partial unique index allows one open session per user',
   );
   assert(getSettingValue('require_open_shift') === 'false', 'enforcement defaults to off');
+  assert(getSettingValue('one_shift_per_staff') === 'false', 'per-staff shifts default to off');
   assert(getSettingValue('stale_session_days') === '7', 'stale threshold defaults to 7 days');
   const movementOwnershipCols = (
-    db.prepare(`PRAGMA table_info(cash_drawer_movements)`).all() as { name: string }[]
+    db.prepare(`PRAGMA table_info(cash_drawer_movements)`).all() as {
+      name: string;
+    }[]
   ).map((c) => c.name);
   assert(movementOwnershipCols.includes('cash_session_id'), 'movements carry cash_session_id');
   const refundOwnershipCols = (
@@ -188,6 +203,9 @@ async function main() {
     app.use(express.json());
     app.use(expressRateLimit({ windowMs: 60 * 1000, limit: 1000 }));
     app.use((req: any, res: any, next: any) => {
+      if (req.path.startsWith('/api/auth') && !req.path.includes('/api/auth/me')) {
+        return next();
+      }
       const authHeader = req.headers.authorization;
       if (!authHeader?.startsWith('Bearer '))
         return res.status(401).json({ error: 'Authentication required' });
@@ -286,17 +304,17 @@ async function main() {
       sessionId,
     );
     const moment = past(1800_000);
-    db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-      VALUES ('ORD-SESS-1', 'cashier-sess', 'takeaway', 'completed', 100, 100, ?, ?, ?)`).run(
-      moment,
-      moment,
-      moment,
-    );
+    db.prepare(
+      `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+      VALUES ('ORD-SESS-1', 'cashier-sess', 'takeaway', 'completed', 100, 100, ?, ?, ?)`,
+    ).run(moment, moment, moment);
     const orderId = Number(
       (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-SESS-1'`).get() as any).id,
     );
-    db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-      VALUES ('SESS-1', ?, 100, 100, 100, 0, 'paid', ?, ?, ?, ?)`).run(
+    db.prepare(
+      `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+      VALUES ('SESS-1', ?, 100, 100, 100, 0, 'paid', ?, ?, ?, ?)`,
+    ).run(
       orderId,
       JSON.stringify([{ method: 'cash', amount: 100, timestamp: moment }]),
       moment,
@@ -404,17 +422,17 @@ async function main() {
 
   function seedUnpaidBill(tag: string): number {
     const m = past(600_000);
-    db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-      VALUES (?, 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?, NULL)`).run(
-      `ORD-ENF-${tag}`,
-      m,
-      m,
-    );
+    db.prepare(
+      `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+      VALUES (?, 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?, NULL)`,
+    ).run(`ORD-ENF-${tag}`, m, m);
     const oid = Number(
       (db.prepare(`SELECT id FROM orders WHERE order_number = ?`).get(`ORD-ENF-${tag}`) as any).id,
     );
-    db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-      VALUES (?, ?, 50, 50, 0, 50, 'unpaid', '[]', NULL, ?, ?)`).run(`ENF-${tag}`, oid, m, m);
+    db.prepare(
+      `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+      VALUES (?, ?, 50, 50, 0, 50, 'unpaid', '[]', NULL, ?, ?)`,
+    ).run(`ENF-${tag}`, oid, m, m);
     return Number(
       (db.prepare(`SELECT id FROM bills WHERE bill_number = ?`).get(`ENF-${tag}`) as any).id,
     );
@@ -807,38 +825,48 @@ async function main() {
   assert(typeof sessionExpectedCash === 'function', 'session expected-cash helper exists');
   const boundaryMoment = '2020-01-01 12:00:00';
   const firstBoundary = db
-    .prepare(`INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by)
-    VALUES ('cashier-sess', 'Cashier', ?, 0, 'closed', ?, 'cashier-sess')`)
+    .prepare(
+      `INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by)
+    VALUES ('cashier-sess', 'Cashier', ?, 0, 'closed', ?, 'cashier-sess')`,
+    )
     .run(boundaryMoment, boundaryMoment);
   const secondBoundary = db
-    .prepare(`INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by)
-    VALUES ('cashier-sess', 'Cashier', ?, 0, 'closed', ?, 'cashier-sess')`)
+    .prepare(
+      `INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by)
+    VALUES ('cashier-sess', 'Cashier', ?, 0, 'closed', ?, 'cashier-sess')`,
+    )
     .run(boundaryMoment, boundaryMoment);
   const firstBoundaryId = Number(firstBoundary.lastInsertRowid);
   const secondBoundaryId = Number(secondBoundary.lastInsertRowid);
-  db.prepare(`INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id)
-    VALUES ('2020-01-01', 'pay_in', 1000, 'boundary', 'cashier-sess', ?, ?)`).run(
-    boundaryMoment,
-    firstBoundaryId,
-  );
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-    VALUES ('ORD-BOUND-1', 'cashier-sess', 'takeaway', 'pending', 50, 50, '2019-12-31 12:00:00', '2019-12-31 12:00:00', NULL)`).run();
+  db.prepare(
+    `INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id)
+    VALUES ('2020-01-01', 'pay_in', 1000, 'boundary', 'cashier-sess', ?, ?)`,
+  ).run(boundaryMoment, firstBoundaryId);
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-BOUND-1', 'cashier-sess', 'takeaway', 'pending', 50, 50, '2019-12-31 12:00:00', '2019-12-31 12:00:00', NULL)`,
+  ).run();
   const boundaryOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-BOUND-1'`).get() as any).id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-    VALUES ('BOUND-1', ?, 50, 50, 20, 30, 'partial', ?, NULL, '2019-12-31 12:00:00', '2019-12-31 12:00:00')`).run(
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('BOUND-1', ?, 50, 50, 20, 30, 'partial', ?, NULL, '2019-12-31 12:00:00', '2019-12-31 12:00:00')`,
+  ).run(
     boundaryOrderId,
     JSON.stringify([
-      { method: 'cash', amount: 20, timestamp: boundaryMoment, cash_session_id: firstBoundaryId },
+      {
+        method: 'cash',
+        amount: 20,
+        timestamp: boundaryMoment,
+        cash_session_id: firstBoundaryId,
+      },
     ]),
   );
-  db.prepare(`INSERT INTO refunds (bill_id, amount_cents, method, approved_by, created_by, created_at, cash_session_id)
-    VALUES (?, 500, 'cash', 'owner-sess', 'cashier-sess', ?, ?)`).run(
-    boundaryOrderId,
-    boundaryMoment,
-    firstBoundaryId,
-  );
+  db.prepare(
+    `INSERT INTO refunds (bill_id, amount_cents, method, approved_by, created_by, created_at, cash_session_id)
+    VALUES (?, 500, 'cash', 'owner-sess', 'cashier-sess', ?, ?)`,
+  ).run(boundaryOrderId, boundaryMoment, firstBoundaryId);
   const firstBoundaryCash = sessionExpectedCash(
     db,
     { id: firstBoundaryId, opening_float_cents: 0 },
@@ -928,20 +956,17 @@ async function main() {
     'settled carry-over bill records cash_session_id of the shift that collected the payment',
   );
   const cancelledMoment = past(600_000);
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-    VALUES ('ORD-CANCELLED-SESS', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?, NULL)`).run(
-    cancelledMoment,
-    cancelledMoment,
-  );
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-CANCELLED-SESS', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?, NULL)`,
+  ).run(cancelledMoment, cancelledMoment);
   const cancelledOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-CANCELLED-SESS'`).get() as any).id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-    VALUES ('CANCELLED-SESS', ?, 50, 50, 0, 0, 'unpaid', '[]', NULL, ?, ?)`).run(
-    cancelledOrderId,
-    cancelledMoment,
-    cancelledMoment,
-  );
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('CANCELLED-SESS', ?, 50, 50, 0, 0, 'unpaid', '[]', NULL, ?, ?)`,
+  ).run(cancelledOrderId, cancelledMoment, cancelledMoment);
   db.prepare(`UPDATE cash_sessions SET opened_at = ? WHERE id = ?`).run(
     past(3600_000),
     cancelledSessionId,
@@ -969,37 +994,42 @@ async function main() {
     shift1Id = Number(res.body?.id);
   });
 
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
-    VALUES ('ORD-GUARD-SAME', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?)`).run(
-    tClose,
-    tClose,
-  );
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
+    VALUES ('ORD-GUARD-SAME', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?)`,
+  ).run(tClose, tClose);
   const sameOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-GUARD-SAME'`).get() as any).id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
-    VALUES ('BILL-GUARD-SAME', ?, 50, 50, 20, 30, 'partial', ?, ?, ?)`).run(
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
+    VALUES ('BILL-GUARD-SAME', ?, 50, 50, 20, 30, 'partial', ?, ?, ?)`,
+  ).run(
     sameOrderId,
-    JSON.stringify([{ method: 'cash', amount: 20, timestamp: tClose, cash_session_id: shift1Id }]),
+    JSON.stringify([
+      {
+        method: 'cash',
+        amount: 20,
+        timestamp: tClose,
+        cash_session_id: shift1Id,
+      },
+    ]),
     tClose,
     tClose,
   );
 
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
-    VALUES ('ORD-GUARD-CANCELLED', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?)`).run(
-    tClose,
-    tClose,
-  );
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
+    VALUES ('ORD-GUARD-CANCELLED', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?)`,
+  ).run(tClose, tClose);
   const cancelOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-GUARD-CANCELLED'`).get() as any)
       .id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
-    VALUES ('BILL-GUARD-CANCELLED', ?, 50, 50, 0, 50, 'unpaid', '[]', ?, ?)`).run(
-    cancelOrderId,
-    tClose,
-    tClose,
-  );
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
+    VALUES ('BILL-GUARD-CANCELLED', ?, 50, 50, 0, 50, 'unpaid', '[]', ?, ?)`,
+  ).run(cancelOrderId, tClose, tClose);
 
   await withFixedClock(tCloseIso, async () => {
     const previewRes = await request(app)
@@ -1069,10 +1099,10 @@ async function main() {
   db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(
     activeStaleId,
   );
-  db.prepare(`INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at)
-    VALUES (?, 'pay_in', 1000, 'recent activity', 'cashier-sess', datetime('now'))`).run(
-    todayLocal,
-  );
+  db.prepare(
+    `INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at)
+    VALUES (?, 'pay_in', 1000, 'recent activity', 'cashier-sess', datetime('now'))`,
+  ).run(todayLocal);
   const activeStaleBlocked = await request(app)
     .post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`)
@@ -1273,7 +1303,11 @@ async function main() {
     `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES ('chef-sess', 'Chef', 'chef-sess@test.local', ?, 'chef', 1, ?, ?)`,
   ).run(bcrypt.hashSync('pw', 10), now(), now());
   const managerToken = jwt.sign(
-    { userId: 'manager-sess', email: 'manager-sess@test.local', role: 'manager' },
+    {
+      userId: 'manager-sess',
+      email: 'manager-sess@test.local',
+      role: 'manager',
+    },
     getJWTSecret(),
     { expiresIn: '1h' },
   );
@@ -1375,7 +1409,11 @@ async function main() {
   const dayClose = await request(app)
     .post('/api/cash-closures')
     .set('Authorization', `Bearer ${ownerToken}`)
-    .send({ business_date: todayLocal, opening_float_cents: 5000, counted_cash_cents: 5000 });
+    .send({
+      business_date: todayLocal,
+      opening_float_cents: 5000,
+      counted_cash_cents: 5000,
+    });
   assert(dayClose.status === 201, 'owner day-close for gate test (201)');
   const managerDayPrint = await request(app)
     .post(`/api/cash-closures/${dayClose.body?.zReport?.id}/print`)
@@ -1393,7 +1431,11 @@ async function main() {
   const blockedDayClose = await request(app)
     .post('/api/cash-closures')
     .set('Authorization', `Bearer ${ownerToken}`)
-    .send({ business_date: todayLocal, opening_float_cents: 0, counted_cash_cents: 0 });
+    .send({
+      business_date: todayLocal,
+      opening_float_cents: 0,
+      counted_cash_cents: 0,
+    });
   assert(
     blockedDayClose.status === 409,
     `day close blocked while shift open (409, got ${blockedDayClose.status})`,
@@ -1453,20 +1495,17 @@ async function main() {
   assert(turnB.status === 200, 'phase1: second shift opens on same commercial day');
   const turnBId = Number(turnB.body?.id);
   const carryMoment = now();
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-    VALUES ('ORD-CARRY-PH1', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?, NULL)`).run(
-    carryMoment,
-    carryMoment,
-  );
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-CARRY-PH1', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?, NULL)`,
+  ).run(carryMoment, carryMoment);
   const carryOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-CARRY-PH1'`).get() as any).id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-    VALUES ('CARRY-PH1', ?, 50, 50, 0, 50, 'unpaid', '[]', NULL, ?, ?)`).run(
-    carryOrderId,
-    carryMoment,
-    carryMoment,
-  );
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('CARRY-PH1', ?, 50, 50, 0, 50, 'unpaid', '[]', NULL, ?, ?)`,
+  ).run(carryOrderId, carryMoment, carryMoment);
   const closeTurnB = await request(app)
     .post(`/api/cash-sessions/${turnBId}/close`)
     .set('Authorization', `Bearer ${cashierToken}`)
@@ -1504,23 +1543,17 @@ async function main() {
   );
   // Partial bill: 50 total, 20 paid, 30 outstanding.
   const pm = past(1800_000);
-  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
-    VALUES ('ORD-PART-1', 'cashier-sess', 'takeaway', 'completed', 50, 50, ?, ?, ?)`).run(
-    pm,
-    pm,
-    pm,
-  );
+  db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-PART-1', 'cashier-sess', 'takeaway', 'completed', 50, 50, ?, ?, ?)`,
+  ).run(pm, pm, pm);
   const partOrderId = Number(
     (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-PART-1'`).get() as any).id,
   );
-  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
-    VALUES ('PART-1', ?, 50, 50, 20, 30, 'partial', ?, ?, ?, ?)`).run(
-    partOrderId,
-    JSON.stringify([{ method: 'cash', amount: 20, timestamp: pm }]),
-    pm,
-    pm,
-    pm,
-  );
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('PART-1', ?, 50, 50, 20, 30, 'partial', ?, ?, ?, ?)`,
+  ).run(partOrderId, JSON.stringify([{ method: 'cash', amount: 20, timestamp: pm }]), pm, pm, pm);
   const partPreview = await request(app)
     .get('/api/cash-sessions/current/close-preview')
     .set('Authorization', `Bearer ${cashierToken}`);
@@ -1588,7 +1621,12 @@ async function main() {
   const rfBlocked = await request(app)
     .post('/api/refunds')
     .set('Authorization', `Bearer ${managerToken}`)
-    .send({ bill_id: rfBillId, amount: 10, method: 'cash', approver_id: 'manager-sess' });
+    .send({
+      bill_id: rfBillId,
+      amount: 10,
+      method: 'cash',
+      approver_id: 'manager-sess',
+    });
   assert(rfBlocked.status === 409, 'enforcement on: cash refund without a session is 409');
   assert(
     /shift/i.test(String(rfBlocked.body?.error || '')),
@@ -1615,7 +1653,9 @@ async function main() {
   const customPay = await request(app)
     .post(`/api/bills/${customBill}/payments`)
     .set('Authorization', `Bearer ${cashierToken}`)
-    .send({ payments: [{ method: 'custom', payment_method_id: customId, amount: 50 }] });
+    .send({
+      payments: [{ method: 'custom', payment_method_id: customId, amount: 50 }],
+    });
   assert(customPay.status === 200, 'configured Cash tender settles with an open session');
   const customCurrent = await request(app)
     .get('/api/cash-sessions/current')
@@ -1693,12 +1733,20 @@ async function main() {
       const closePriorDay = await request(app)
         .post('/api/cash-closures')
         .set('Authorization', `Bearer ${ownerToken}`)
-        .send({ business_date: '2026-06-13', opening_float_cents: 0, counted_cash_cents: 0 });
+        .send({
+          business_date: '2026-06-13',
+          opening_float_cents: 0,
+          counted_cash_cents: 0,
+        });
       assert(closePriorDay.status === 201, 'owner closes prior business day 2026-06-13 (201)');
       const closeCalendarDay = await request(app)
         .post('/api/cash-closures')
         .set('Authorization', `Bearer ${ownerToken}`)
-        .send({ business_date: '2026-06-15', opening_float_cents: 0, counted_cash_cents: 0 });
+        .send({
+          business_date: '2026-06-15',
+          opening_float_cents: 0,
+          counted_cash_cents: 0,
+        });
       assert(
         closeCalendarDay.status === 201,
         'owner closes calendar date 2026-06-15 before boundary test (201)',
@@ -1739,17 +1787,25 @@ async function main() {
       const closedEffectiveDayRes = await request(app)
         .post('/api/cash-closures')
         .set('Authorization', `Bearer ${ownerToken}`)
-        .send({ business_date: '2026-06-14', opening_float_cents: 2500, counted_cash_cents: 2500 });
+        .send({
+          business_date: '2026-06-14',
+          opening_float_cents: 2500,
+          counted_cash_cents: 2500,
+        });
       assert(
         closedEffectiveDayRes.status === 201,
         'owner closes effective business day 2026-06-14 (201)',
       );
 
       const sessionsBefore = (
-        db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions`).get() as { c: number }
+        db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions`).get() as {
+          c: number;
+        }
       ).c;
       const movementsBefore = (
-        db.prepare(`SELECT COUNT(*) AS c FROM cash_drawer_movements`).get() as { c: number }
+        db.prepare(`SELECT COUNT(*) AS c FROM cash_drawer_movements`).get() as {
+          c: number;
+        }
       ).c;
 
       const closedDayPositiveFloatOpen = await request(app)
@@ -1817,7 +1873,11 @@ async function main() {
     const { escPosToText } = require('../main/printers/thermal');
     const { computeDayAggregates } = require('../main/routes/cash-closures');
     const longLivedCashierToken = jwt.sign(
-      { userId: 'cashier-sess', email: 'cashier-sess@test.local', role: 'cashier' },
+      {
+        userId: 'cashier-sess',
+        email: 'cashier-sess@test.local',
+        role: 'cashier',
+      },
       getJWTSecret(),
     );
 
@@ -1952,7 +2012,11 @@ async function main() {
 
         const sessionRow = db
           .prepare(`SELECT opened_at, closed_at, status FROM cash_sessions WHERE id = ?`)
-          .get(sessionId) as { opened_at: string; closed_at: string; status: string };
+          .get(sessionId) as {
+          opened_at: string;
+          closed_at: string;
+          status: string;
+        };
         const closureRow = db
           .prepare(
             `SELECT scope, business_date, period_start, period_end, opening_float_cents, expected_cash_cents, counted_cash_cents, variance_cents, gross_collected_cents, net_collected_cents, bill_count, z_number FROM cash_closures WHERE id = ?`,
@@ -2265,6 +2329,1027 @@ async function main() {
     } finally {
       setTenantTimeConfig('UTC', '00:00');
       db.prepare(`DELETE FROM printers WHERE id = 'webusb-1360'`).run();
+    }
+
+    // ── Section 11: opt-in one cash shift per staff member (#1339) ──────────
+    console.log('Section 11: opt-in one cash shift per staff member (#1339)');
+    const { expenseRoutes } = require('../main/routes/expenses');
+    const { reportRoutes } = require('../main/routes/reports');
+    app.use('/api/expenses', expenseRoutes);
+    app.use('/api/reports', reportRoutes);
+    const s11CashierAToken = jwt.sign(
+      {
+        userId: 'cashier-sess',
+        email: 'cashier-sess@test.local',
+        role: 'cashier',
+      },
+      getJWTSecret(),
+      { expiresIn: '365d' },
+    );
+    const s11CashierBToken = jwt.sign(
+      {
+        userId: 'cashier2-sess',
+        email: 'cashier2-sess@test.local',
+        role: 'cashier',
+      },
+      getJWTSecret(),
+      { expiresIn: '365d' },
+    );
+    const s11ManagerToken = jwt.sign(
+      {
+        userId: 'manager-sess',
+        email: 'manager-sess@test.local',
+        role: 'manager',
+      },
+      getJWTSecret(),
+      { expiresIn: '365d' },
+    );
+    const s11OwnerToken = jwt.sign(
+      { userId: 'owner-sess', email: 'owner-sess@test.local', role: 'owner' },
+      getJWTSecret(),
+      { expiresIn: '365d' },
+    );
+
+    const seedBillOnDate = (tag: string, isoMoment: string, amountMajor = 50): number => {
+      const tsMoment = isoMoment.replace('T', ' ').replace(/\..*$/, '');
+      db.prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+         VALUES (?, 'cashier-sess', 'takeaway', 'pending', ?, ?, ?, ?, NULL)`,
+      ).run(`ORD-1339-${tag}`, amountMajor, amountMajor, tsMoment, tsMoment);
+      const oid = Number(
+        (db.prepare(`SELECT id FROM orders WHERE order_number = ?`).get(`ORD-1339-${tag}`) as any)
+          .id,
+      );
+      db.prepare(
+        `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 0, ?, 'unpaid', '[]', NULL, ?, ?)`,
+      ).run(`BILL-1339-${tag}`, oid, amountMajor, amountMajor, amountMajor, tsMoment, tsMoment);
+      return Number(
+        (db.prepare(`SELECT id FROM bills WHERE bill_number = ?`).get(`BILL-1339-${tag}`) as any)
+          .id,
+      );
+    };
+
+    try {
+      // 1) Setting off by default: second user opening a shift is refused with 409 session_already_open
+      assert(
+        getSettingValue('one_shift_per_staff') === 'false',
+        '#1339: one_shift_per_staff is off before per-staff test',
+      );
+      await withFixedClock('2026-11-10T09:00:00.000Z', async () => {
+        const s1 = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ opening_float_cents: 1000 });
+        assert(s1.status === 200, '#1339 (setting off): User A opens shift (200)');
+
+        const s2Blocked = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11CashierBToken}`)
+          .send({ opening_float_cents: 1000 });
+        assert(
+          s2Blocked.status === 409 && s2Blocked.body?.display_code === 'session_already_open',
+          '#1339 (setting off): User B opening second shift is refused with 409 session_already_open',
+        );
+
+        const s1Close = await request(app)
+          .post(`/api/cash-sessions/${s1.body?.id}/close`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ counted_cash_cents: 1000 });
+        assert(s1Close.status === 200, '#1339 (setting off): User A closes shift (200)');
+      });
+      db.prepare(
+        `DELETE FROM cash_drawer_movements WHERE business_date = '2026-11-10' AND movement_type = 'opening_float'`,
+      ).run();
+      db.prepare(`DELETE FROM cash_sessions WHERE opened_at LIKE '2026-11-10%'`).run();
+      db.prepare(`DELETE FROM cash_closures WHERE business_date = '2026-11-10'`).run();
+
+      // 2) Settings validation & toggle permissions
+      const unauthPerStaff = await request(app)
+        .put('/api/settings/one_shift_per_staff')
+        .set('Authorization', `Bearer ${s11CashierAToken}`)
+        .send({ value: true });
+      assert(
+        unauthPerStaff.status === 403 && getSettingValue('one_shift_per_staff') === 'false',
+        '#1339: cashier cannot toggle one_shift_per_staff (403)',
+      );
+
+      const invalidPerStaff = await request(app)
+        .put('/api/settings/one_shift_per_staff')
+        .set('Authorization', `Bearer ${s11OwnerToken}`)
+        .send({ value: 'invalid' });
+      assert(
+        invalidPerStaff.status === 400 && getSettingValue('one_shift_per_staff') === 'false',
+        '#1339: invalid non-boolean value for one_shift_per_staff returns 400',
+      );
+
+      const enablePerStaff = await request(app)
+        .put('/api/settings/one_shift_per_staff')
+        .set('Authorization', `Bearer ${s11OwnerToken}`)
+        .send({ value: true });
+      assert(
+        enablePerStaff.status === 200 && getSettingValue('one_shift_per_staff') === 'true',
+        '#1339: owner enables one_shift_per_staff (200)',
+      );
+
+      // 3) Concurrent shifts for User A and User B on 2026-11-10
+      let shiftAId = 0;
+      let shiftBId = 0;
+      await withFixedClock('2026-11-10T10:00:00.000Z', async () => {
+        const openA = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ opening_float_cents: 5000 });
+        assert(
+          openA.status === 200,
+          '#1339 (setting on): User A opens Shift A with 5000 float (200)',
+        );
+        shiftAId = Number(openA.body?.id);
+
+        const dupOpenA = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ opening_float_cents: 2000 });
+        assert(
+          dupOpenA.status === 409 && dupOpenA.body?.display_code === 'session_already_open',
+          '#1339 (setting on): User A cannot open a second concurrent shift for themselves (409)',
+        );
+
+        const openB = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11CashierBToken}`)
+          .send({ opening_float_cents: 3000 });
+        assert(
+          openB.status === 200 && Number(openB.body?.id) !== shiftAId,
+          '#1339 (setting on): User B concurrently opens Shift B with 3000 float (200)',
+        );
+        shiftBId = Number(openB.body?.id);
+      });
+
+      const dayFloatRow = db
+        .prepare(
+          `SELECT amount_cents FROM cash_drawer_movements
+           WHERE business_date = '2026-11-10' AND movement_type = 'opening_float' AND voided_at IS NULL`,
+        )
+        .get() as { amount_cents: number } | undefined;
+      assert(
+        dayFloatRow?.amount_cents === 8000,
+        `#1339: day opening_float aggregates across concurrent shifts (5000 + 3000 = 8000, got ${dayFloatRow?.amount_cents})`,
+      );
+
+      // 4) Refusing to turn one_shift_per_staff off while >1 shift is open
+      const disableWhileMultipleOpen = await request(app)
+        .put('/api/settings/one_shift_per_staff')
+        .set('Authorization', `Bearer ${s11OwnerToken}`)
+        .send({ value: false });
+      assert(
+        disableWhileMultipleOpen.status === 409 &&
+          disableWhileMultipleOpen.body?.code === 'multiple_shifts_open' &&
+          getSettingValue('one_shift_per_staff') === 'true',
+        '#1339: disabling one_shift_per_staff while 2 shifts are open is refused with 409 multiple_shifts_open',
+      );
+
+      // 5) Actor-scoped money routing: payments, drawer movements, refunds, and cash expenses
+      // Grant cashier1 refund initiation and cashier2 expense permissions so each staff member can exercise their own shift.
+      db.prepare(
+        `INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, updated_at)
+         VALUES ('cashier-sess', 'refunds.initiate', 'allow', 'owner-sess', ?)
+         ON CONFLICT(user_id, permission_id) DO UPDATE SET effect = 'allow', updated_at = excluded.updated_at`,
+      ).run(now());
+      for (const permId of ['expenses.view', 'expenses.manage', 'expenses.pay']) {
+        db.prepare(
+          `INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, updated_at)
+           VALUES ('cashier2-sess', ?, 'allow', 'owner-sess', ?)
+           ON CONFLICT(user_id, permission_id) DO UPDATE SET effect = 'allow', updated_at = excluded.updated_at`,
+        ).run(permId, now());
+      }
+
+      await withFixedClock('2026-11-10T11:00:00.000Z', async () => {
+        // User A takes 40.00 (4000c) cash payment
+        const billAId = seedBillOnDate('A', '2026-11-10T11:00:00.000Z', 40);
+        const payA = await request(app)
+          .post(`/api/bills/${billAId}/payment`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ method: 'cash', amount: 40 });
+        assert(payA.status === 200, '#1339: User A records 40.00 cash payment (200)');
+        const detailsA = JSON.parse(
+          (db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(billAId) as any)
+            .payment_details,
+        );
+        assert(
+          Number(detailsA[0]?.cash_session_id) === shiftAId,
+          '#1339: User A cash payment attaches to Shift A',
+        );
+
+        // User B takes 60.00 (6000c) cash payment
+        const billBId = seedBillOnDate('B', '2026-11-10T11:00:00.000Z', 60);
+        const payB = await request(app)
+          .post(`/api/bills/${billBId}/payment`)
+          .set('Authorization', `Bearer ${s11CashierBToken}`)
+          .send({ method: 'cash', amount: 60 });
+        assert(payB.status === 200, '#1339: User B records 60.00 cash payment (200)');
+        const detailsB = JSON.parse(
+          (db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(billBId) as any)
+            .payment_details,
+        );
+        assert(
+          Number(detailsB[0]?.cash_session_id) === shiftBId,
+          '#1339: User B cash payment attaches to Shift B',
+        );
+
+        // User A records 1000c pay_in movement
+        const movA = await request(app)
+          .post('/api/cash-closures/movements')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({
+            business_date: '2026-11-10',
+            movement_type: 'pay_in',
+            amount_cents: 1000,
+            reason: 'User A change',
+          });
+        assert(
+          movA.status === 201 && Number(movA.body?.movement?.cash_session_id) === shiftAId,
+          '#1339: User A drawer pay_in movement attaches to Shift A (201)',
+        );
+
+        // User B records 500c pay_out movement
+        const movB = await request(app)
+          .post('/api/cash-closures/movements')
+          .set('Authorization', `Bearer ${s11CashierBToken}`)
+          .send({
+            business_date: '2026-11-10',
+            movement_type: 'pay_out',
+            amount_cents: 500,
+            reason: 'User B supplies',
+          });
+        assert(
+          movB.status === 201 && Number(movB.body?.movement?.cash_session_id) === shiftBId,
+          '#1339: User B drawer pay_out movement attaches to Shift B (201)',
+        );
+
+        // User A records 10.00 (1000c) cash refund on Bill A
+        const refundA = await request(app)
+          .post('/api/refunds')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({
+            bill_id: billAId,
+            amount: 10,
+            method: 'cash',
+            approver_id: 'owner-sess',
+            override_pin: '1234',
+          });
+        assert(refundA.status === 201, '#1339: User A records 10.00 cash refund (201)');
+        const refundARow = db
+          .prepare('SELECT cash_session_id FROM refunds WHERE id = ?')
+          .get(refundA.body?.refund?.id) as { cash_session_id: number } | undefined;
+        assert(
+          Number(refundARow?.cash_session_id) === shiftAId,
+          '#1339: User A cash refund attaches to Shift A',
+        );
+
+        // User B creates and pays a 1500c cash expense
+        const catRes = await request(app)
+          .post('/api/expenses/categories')
+          .set('Authorization', `Bearer ${s11CashierBToken}`)
+          .set('Idempotency-Key', '1339-cat-1')
+          .send({ name: 'Shift B Supplies' });
+        assert(catRes.status === 201, '#1339: expense category created (201)');
+        const catId = catRes.body?.category?.id;
+
+        const expRes = await request(app)
+          .post('/api/expenses')
+          .set('Authorization', `Bearer ${s11CashierBToken}`)
+          .set('Idempotency-Key', '1339-exp-1')
+          .send({
+            category_id: catId,
+            description: 'Milk run',
+            amount_minor: 1500,
+            incurred_on: '2026-11-10',
+          });
+        assert(expRes.status === 201, '#1339: expense created (201)');
+        const expId = expRes.body?.expense?.id;
+
+        // Manager has no open shift -> cash expense payment by manager is refused with 409 cash_session_required
+        const managerExpCtx = await request(app)
+          .get('/api/expenses/context')
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        assert(
+          managerExpCtx.status === 200 && managerExpCtx.body?.cash_session_open === false,
+          '#1339: manager without own open shift sees cash_session_open=false in expense context',
+        );
+        const managerExpPayBlocked = await request(app)
+          .post(`/api/expenses/${expId}/payments`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`)
+          .set('Idempotency-Key', '1339-exp-pay-mgr')
+          .send({ method: 'cash', amount_minor: 1500 });
+        assert(
+          managerExpPayBlocked.status === 409 &&
+            managerExpPayBlocked.body?.code === 'cash_session_required',
+          '#1339: manager without own open shift cannot pay cash expense even when staff shifts are open (409)',
+        );
+
+        // User B pays the 1500c cash expense -> routes to Shift B
+        const expPayB = await request(app)
+          .post(`/api/expenses/${expId}/payments`)
+          .set('Authorization', `Bearer ${s11CashierBToken}`)
+          .set('Idempotency-Key', '1339-exp-pay-b')
+          .send({ method: 'cash', amount_minor: 1500 });
+        assert(expPayB.status === 201, '#1339: User B records 1500c cash expense payment (201)');
+        const expMovId = expPayB.body?.payment?.cash_movement_id;
+        const expMovRow = db
+          .prepare(
+            'SELECT cash_session_id, amount_cents, movement_type FROM cash_drawer_movements WHERE id = ?',
+          )
+          .get(expMovId) as
+          | {
+              cash_session_id: number;
+              amount_cents: number;
+              movement_type: string;
+            }
+          | undefined;
+        assert(
+          Number(expMovRow?.cash_session_id) === shiftBId &&
+            expMovRow?.amount_cents === 1500 &&
+            expMovRow?.movement_type === 'pay_out',
+          '#1339: User B cash expense payment writes a pay_out movement on Shift B',
+        );
+
+        // Manager without an open shift taking a cash bill payment:
+        // When require_open_shift is off -> NO_CASH_SESSION_ID (0)
+        // When require_open_shift is on -> 409 cash_session_required
+        db.prepare(`UPDATE settings SET value = 'true' WHERE key = 'require_open_shift'`).run();
+        const billMgrId = seedBillOnDate('MGR', '2026-11-10T11:00:00.000Z', 25);
+        const payMgrBlocked = await request(app)
+          .post(`/api/bills/${billMgrId}/payment`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`)
+          .send({ method: 'cash', amount: 25 });
+        assert(
+          payMgrBlocked.status === 409,
+          '#1339: with require_open_shift on, manager without own open shift is blocked from cash payment (409)',
+        );
+        db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'`).run();
+        const payMgrUnscoped = await request(app)
+          .post(`/api/bills/${billMgrId}/payment`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`)
+          .send({ method: 'cash', amount: 25 });
+        assert(
+          payMgrUnscoped.status === 200,
+          '#1339: with require_open_shift off, manager without own open shift records cash payment with NO_CASH_SESSION_ID (200)',
+        );
+        const detailsMgr = JSON.parse(
+          (db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(billMgrId) as any)
+            .payment_details,
+        );
+        assert(
+          Number(detailsMgr[0]?.cash_session_id) === 0,
+          '#1339: sessionless actor payment stores cash_session_id = 0 (NO_CASH_SESSION_ID) and does not leak into Shift A or B',
+        );
+        // If the manager subsequently opens a shift and attempts to correct that sessionless payment line (cash_session_id === 0),
+        // it must be rejected with 409 shift_closed rather than moving into the manager's open shift.
+        const openMgrShift = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11ManagerToken}`)
+          .send({ opening_float_cents: 0 });
+        assert(openMgrShift.status === 200, '#1339: manager opens a shift (200)');
+        const correctSessionless = await request(app)
+          .patch(`/api/bills/${billMgrId}/payments/0/method`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`)
+          .send({
+            method: 'card',
+            reason: 'Wrong button',
+            approver_id: 'owner-sess',
+            override_pin: '1234',
+          });
+        assert(
+          correctSessionless.status === 409 && correctSessionless.body?.reason === 'shift_closed',
+          `#1339: correcting a sessionless payment line (cash_session_id=0) is rejected with 409 shift_closed (got ${correctSessionless.status} ${correctSessionless.body?.reason})`,
+        );
+        db.prepare('DELETE FROM cash_sessions WHERE id = ?').run(openMgrShift.body?.id);
+        // Delete the unscoped manager test bill so day close compares purely Shift A + Shift B
+        db.prepare('DELETE FROM bills WHERE id = ?').run(billMgrId);
+        db.prepare(`DELETE FROM orders WHERE order_number = 'ORD-1339-MGR'`).run();
+      });
+
+      // Expected cash for Shift A: 5000 float + 4000 sale + 1000 pay_in - 1000 refund = 9000
+      // Expected cash for Shift B: 3000 float + 6000 sale - 500 pay_out - 1500 expense pay_out = 7000
+      await withFixedClock('2026-11-10T12:00:00.000Z', async () => {
+        const curA = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        assert(
+          curA.status === 200 &&
+            Number(curA.body?.id) === shiftAId &&
+            curA.body?.expected_cash_cents === 9000,
+          `#1339: User A GET /current returns Shift A with expected_cash_cents=9000 (got ${curA.body?.expected_cash_cents})`,
+        );
+
+        const curB = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${s11CashierBToken}`);
+        assert(
+          curB.status === 200 &&
+            Number(curB.body?.id) === shiftBId &&
+            curB.body?.expected_cash_cents === 7000,
+          `#1339: User B GET /current returns Shift B with expected_cash_cents=7000 (got ${curB.body?.expected_cash_cents})`,
+        );
+
+        // Manager listing all open shifts via GET /api/cash-sessions/open
+        const openListMgr = await request(app)
+          .get('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        assert(
+          openListMgr.status === 200 &&
+            Array.isArray(openListMgr.body?.sessions) &&
+            openListMgr.body.sessions.length === 2,
+          '#1339: manager GET /api/cash-sessions/open returns both open shifts',
+        );
+        // Cashier listing via GET /api/cash-sessions/open sees only their own shift
+        const openListCashierA = await request(app)
+          .get('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        assert(
+          openListCashierA.status === 200 &&
+            Array.isArray(openListCashierA.body?.sessions) &&
+            openListCashierA.body.sessions.length === 1 &&
+            Number(openListCashierA.body.sessions[0]?.id) === shiftAId,
+          '#1339: cashier GET /api/cash-sessions/open returns only their own open shift',
+        );
+
+        // 6) X Report: all open shifts vs single shift (?session_id=)
+        const xAll = await request(app)
+          .get('/api/reports/x-report?date=2026-11-10')
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        const xAllRep = xAll.body?.xReport;
+        assert(
+          xAll.status === 200 &&
+            Array.isArray(xAllRep?.openShifts) &&
+            xAllRep.openShifts.length === 2 &&
+            xAllRep?.openingFloatCents === 8000 &&
+            xAllRep?.expectedCashCents === 8000 &&
+            xAllRep?.grossCollected === 100 &&
+            xAllRep?.refunded === 10 &&
+            xAllRep?.netCollected === 90,
+          `#1339: unscoped X report covers all shifts (expectedCashCents=8000 net of float, openingFloatCents=8000, got ${xAllRep?.expectedCashCents})`,
+        );
+
+        const xShiftA = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-10&session_id=${shiftAId}`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        const xShiftARep = xShiftA.body?.xReport;
+        assert(
+          xShiftA.status === 200 &&
+            Number(xShiftARep?.session?.id) === shiftAId &&
+            xShiftARep?.openingFloatCents === 5000 &&
+            xShiftARep?.expectedCashCents === 4000 &&
+            xShiftARep?.session?.expected_cash_cents === 9000 &&
+            xShiftARep?.grossCollected === 40 &&
+            xShiftARep?.refunded === 10 &&
+            xShiftARep?.netCollected === 30 &&
+            Array.isArray(xShiftARep?.staffSales) &&
+            xShiftARep.staffSales.length === 1 &&
+            Number(xShiftARep.staffSales[0]?.revenue) === 40 &&
+            Number(xShiftARep.staffSales[0]?.orderCount) === 1,
+          `#1339: X report with ?session_id=${shiftAId} scopes totals and staffSales to Shift A (expected_cash_cents=9000, got ${xShiftARep?.session?.expected_cash_cents})`,
+        );
+
+        const xShiftB = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-10&session_id=${shiftBId}`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        const xShiftBRep = xShiftB.body?.xReport;
+        assert(
+          xShiftB.status === 200 &&
+            Number(xShiftBRep?.session?.id) === shiftBId &&
+            xShiftBRep?.openingFloatCents === 3000 &&
+            xShiftBRep?.expectedCashCents === 4000 &&
+            xShiftBRep?.session?.expected_cash_cents === 7000 &&
+            xShiftBRep?.grossCollected === 60 &&
+            xShiftBRep?.refunded === 0 &&
+            xShiftBRep?.netCollected === 60 &&
+            xShiftBRep?.payOutCents === 2000 &&
+            Array.isArray(xShiftBRep?.staffSales) &&
+            xShiftBRep.staffSales.length === 1 &&
+            Number(xShiftBRep.staffSales[0]?.revenue) === 60 &&
+            Number(xShiftBRep.staffSales[0]?.orderCount) === 1,
+          `#1339: X report with ?session_id=${shiftBId} scopes totals and staffSales to Shift B (expected_cash_cents=7000, payOut=2000, got ${xShiftBRep?.session?.expected_cash_cents})`,
+        );
+
+        // Cashier with reports.view can view their own shift X report (200) but is forbidden from another user's shift X report (403)
+        db.prepare(
+          `INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, updated_at)
+           VALUES ('cashier-sess', 'reports.view', 'allow', 'owner-sess', ?)
+           ON CONFLICT(user_id, permission_id) DO UPDATE SET effect = 'allow', updated_at = excluded.updated_at`,
+        ).run(now());
+        const xOwnCashier = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-10&session_id=${shiftAId}`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        assert(
+          xOwnCashier.status === 200 && Number(xOwnCashier.body?.xReport?.session?.id) === shiftAId,
+          '#1339: Cashier A with reports.view can view own shift X report (200)',
+        );
+        const xOtherCashier = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-10&session_id=${shiftBId}`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        assert(
+          xOtherCashier.status === 403 && xOtherCashier.body?.code === 'shift_access_forbidden',
+          `#1339: Cashier A cannot view Cashier B shift X report (403 shift_access_forbidden, got ${xOtherCashier.status})`,
+        );
+        db.prepare(
+          `DELETE FROM user_permission_overrides WHERE user_id = 'cashier-sess' AND permission_id = 'reports.view'`,
+        ).run();
+
+        // 7) Close authority & Day Close waiting until ALL shifts are closed
+        // Cashier A cannot preview or close Cashier B's shift
+        const crossPreview = await request(app)
+          .get(`/api/cash-sessions/current/close-preview?session_id=${shiftBId}`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        assert(
+          crossPreview.status === 403 &&
+            crossPreview.body?.display_code === 'session_owner_required',
+          '#1339: Cashier A cannot close-preview Cashier B shift (403 session_owner_required)',
+        );
+        const crossClose = await request(app)
+          .post(`/api/cash-sessions/${shiftBId}/close`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ counted_cash_cents: 7000 });
+        assert(
+          crossClose.status === 403 && crossClose.body?.display_code === 'session_owner_required',
+          '#1339: Cashier A cannot close Cashier B shift (403 session_owner_required)',
+        );
+
+        // Day close is blocked while both shifts are open
+        const dayBlockedBoth = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({
+            business_date: '2026-11-10',
+            opening_float_cents: 8000,
+            counted_cash_cents: 16000,
+          });
+        assert(
+          dayBlockedBoth.status === 409 &&
+            dayBlockedBoth.body?.display_code === 'open_shift_blocks_day_close' &&
+            Array.isArray(dayBlockedBoth.body?.blocking_shifts) &&
+            dayBlockedBoth.body.blocking_shifts.length === 2,
+          '#1339: day close is blocked (409) while both shifts are open and lists 2 blocking_shifts',
+        );
+
+        // Cashier A closes their own shift (Shift A)
+        const closeA = await request(app)
+          .post(`/api/cash-sessions/${shiftAId}/close`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ counted_cash_cents: 9000 });
+        assert(
+          closeA.status === 200 &&
+            closeA.body?.expected_cash_cents === 9000 &&
+            closeA.body?.variance_cents === 0,
+          '#1339: Cashier A closes Shift A with 9000c (200)',
+        );
+        const shiftAClosureRow = db
+          .prepare('SELECT z_number FROM cash_closures WHERE id = ?')
+          .get(closeA.body?.closure_id) as { z_number: number } | undefined;
+        const xShiftAClosed = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-09&session_id=${shiftAId}`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        const xShiftAClosedRep = xShiftAClosed.body?.xReport;
+        assert(
+          xShiftAClosed.status === 200 &&
+            xShiftAClosedRep?.businessDate === '2026-11-10' &&
+            xShiftAClosedRep?.alreadyClosed === true &&
+            xShiftAClosedRep?.zNumber === shiftAClosureRow?.z_number &&
+            xShiftAClosedRep?.session?.status === 'closed' &&
+            Number(xShiftAClosedRep?.session?.closure_id) === Number(closeA.body?.closure_id) &&
+            Array.isArray(xShiftAClosedRep?.openShifts) &&
+            xShiftAClosedRep.openShifts.length === 1 &&
+            Number(xShiftAClosedRep.openShifts[0]?.id) === shiftBId &&
+            Number(xShiftAClosedRep?.blockingOpenShift?.id) === shiftBId,
+          `#1339: closed Shift A X report reports shift-scoped alreadyClosed=true, zNumber=${shiftAClosureRow?.z_number}, and shiftDate openShifts even when day is still open`,
+        );
+
+        // Day close is STILL blocked while Shift B remains open
+        const dayBlockedOneLeft = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({
+            business_date: '2026-11-10',
+            opening_float_cents: 8000,
+            counted_cash_cents: 16000,
+          });
+        assert(
+          dayBlockedOneLeft.status === 409 &&
+            dayBlockedOneLeft.body?.display_code === 'open_shift_blocks_day_close' &&
+            Number(dayBlockedOneLeft.body?.blocking_shift?.id) === shiftBId,
+          '#1339: day close remains blocked (409) while Shift B is still open',
+        );
+
+        // Manager can preview and close Cashier B's shift (Shift B)
+        const mgrPreviewB = await request(app)
+          .get(`/api/cash-sessions/current/close-preview?session_id=${shiftBId}`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        assert(
+          mgrPreviewB.status === 200 && Number(mgrPreviewB.body?.session_id) === shiftBId,
+          '#1339: Manager can close-preview Cashier B shift (200)',
+        );
+        const mgrCloseB = await request(app)
+          .post(`/api/cash-sessions/${shiftBId}/close`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`)
+          .send({ counted_cash_cents: 7000 });
+        assert(
+          mgrCloseB.status === 200 &&
+            mgrCloseB.body?.expected_cash_cents === 7000 &&
+            mgrCloseB.body?.variance_cents === 0,
+          '#1339: Manager closes Cashier B shift with 7000c (200)',
+        );
+
+        // Once all shifts are closed, day close succeeds and sums Shift A + Shift B
+        const dayCloseSuccess = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({
+            business_date: '2026-11-10',
+            opening_float_cents: 8000,
+            counted_cash_cents: 16000,
+          });
+        assert(
+          dayCloseSuccess.status === 201,
+          `#1339: day close succeeds once both shifts are closed (201, got ${dayCloseSuccess.status})`,
+        );
+        const dayZ = dayCloseSuccess.body?.zReport;
+        assert(
+          dayZ?.scope === 'day' &&
+            dayZ?.opening_float_cents === 8000 &&
+            dayZ?.expected_cash_cents === 16000 &&
+            dayZ?.counted_cash_cents === 16000 &&
+            dayZ?.variance_cents === 0 &&
+            dayZ?.gross_collected_cents === 10000 &&
+            dayZ?.refunded_cents === 1000 &&
+            dayZ?.net_collected_cents === 9000 &&
+            dayZ?.pay_in_cents === 1000 &&
+            dayZ?.pay_out_cents === 2000 &&
+            dayZ?.bill_count === 2 &&
+            dayZ?.refund_count === 1,
+          `#1339: day Z report totals equal Shift A + Shift B (expected_cash=${dayZ?.expected_cash_cents}, net=${dayZ?.net_collected_cents})`,
+        );
+        const xShiftAAfterDayClose = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-10&session_id=${shiftAId}`)
+          .set('Authorization', `Bearer ${s11ManagerToken}`);
+        const xShiftAAfterDayCloseRep = xShiftAAfterDayClose.body?.xReport;
+        assert(
+          xShiftAAfterDayClose.status === 200 &&
+            xShiftAAfterDayCloseRep?.alreadyClosed === true &&
+            xShiftAAfterDayCloseRep?.zNumber === shiftAClosureRow?.z_number &&
+            xShiftAAfterDayCloseRep?.zNumber !== dayZ?.z_number,
+          `#1339: after day close, Shift A X report retains Shift A zNumber (${shiftAClosureRow?.z_number}) instead of day zNumber (${dayZ?.z_number})`,
+        );
+
+        // Turning one_shift_per_staff off now succeeds since <= 1 shift is open
+        const disableAfterClose = await request(app)
+          .put('/api/settings/one_shift_per_staff')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({ value: false });
+        assert(
+          disableAfterClose.status === 200 && getSettingValue('one_shift_per_staff') === 'false',
+          '#1339: owner disables one_shift_per_staff after concurrent shifts are closed (200)',
+        );
+      });
+
+      // 8) Combined v3.14.0 multi-feature acceptance (#1338 PIN quick-switch + #1337 payment method correction + #1339 per-staff shifts)
+      console.log(
+        'Section 12: combined v3.14.0 multi-feature acceptance (PIN switch + per-staff shifts + payment correction + X/Z export)',
+      );
+      const { authRoutes } = require('../main/routes/auth');
+      const { orderRoutes } = require('../main/routes/orders');
+      app.use('/api/auth', authRoutes);
+      app.use('/api/orders', orderRoutes);
+
+      db.prepare(
+        `INSERT OR IGNORE INTO categories (id, name, sort_order, is_active, created_at, updated_at)
+         VALUES ('cat-v314', 'Combo Menu', 1, 1, ?, ?)`,
+      ).run(now(), now());
+      db.prepare(
+        `INSERT OR IGNORE INTO products (id, category_id, name, price, tax_rate, tax_type, is_active, track_inventory, stock_quantity, low_stock_threshold, sort_order, created_at, updated_at)
+         VALUES ('prod-v314', 'cat-v314', 'Combo Platter', 75, 0, 'none', 1, 0, 0, 0, 1, ?, ?)`,
+      ).run(now(), now());
+
+      db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+        bcrypt.hashSync('1111', 10),
+        'cashier-sess',
+      );
+      db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+        bcrypt.hashSync('2222', 10),
+        'cashier2-sess',
+      );
+      db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+        bcrypt.hashSync('4321', 10),
+        'manager-sess',
+      );
+
+      await withFixedClock('2026-11-12T10:00:00.000Z', async () => {
+        // Step 1: Enable one_shift_per_staff = 'true'
+        const enableComboPerStaff = await request(app)
+          .put('/api/settings/one_shift_per_staff')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({ value: true });
+        assert(
+          enableComboPerStaff.status === 200 && getSettingValue('one_shift_per_staff') === 'true',
+          'v3.14.0 combo: enable one_shift_per_staff = true (200)',
+        );
+
+        // Step 2: Staff A (cashier) and Staff B (cashier) each open their own cash shift
+        const openComboA = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ opening_float_cents: 4000 });
+        const openComboB = await request(app)
+          .post('/api/cash-sessions/open')
+          .set('Authorization', `Bearer ${s11CashierBToken}`)
+          .send({ opening_float_cents: 6000 });
+        assert(
+          openComboA.status === 200 && openComboB.status === 200,
+          'v3.14.0 combo: Staff A (4000c float) and Staff B (6000c float) each open their own shift (200)',
+        );
+        const comboShiftAId = Number(openComboA.body?.id);
+        const comboShiftBId = Number(openComboB.body?.id);
+
+        // Step 3: Staff A builds a cart/order and generates bill, then locks POS and switches via POST /api/auth/pin-login to Staff B
+        const orderComboRes = await request(app)
+          .post('/api/orders')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({
+            type: 'takeaway',
+            items: [{ product_id: 'prod-v314', quantity: 1 }],
+          });
+        assert(
+          orderComboRes.status === 201 && orderComboRes.body?.order?.user_id === 'cashier-sess',
+          'v3.14.0 combo: Staff A creates order (201)',
+        );
+        const comboOrderId = Number(orderComboRes.body?.order?.id);
+
+        const billComboRes = await request(app)
+          .post('/api/bills/generate')
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ order_id: comboOrderId });
+        assert(billComboRes.status === 201, 'v3.14.0 combo: Staff A generates bill (201)');
+        const comboBillId = Number(billComboRes.body?.bill?.id);
+
+        const pinSwitchToB = await request(app)
+          .post('/api/auth/pin-login')
+          .send({ user_id: 'cashier2-sess', pin: '2222' });
+        assert(
+          pinSwitchToB.status === 200 &&
+            pinSwitchToB.body?.user?.id === 'cashier2-sess' &&
+            typeof pinSwitchToB.body?.access_token === 'string',
+          'v3.14.0 combo: POS quick-switches from Staff A to Staff B via POST /api/auth/pin-login (200)',
+        );
+        const staffBPinToken = String(pinSwitchToB.body.access_token);
+
+        // Step 4: Staff B takes a cash payment on that bill -> verify attributed to Staff B's open shift, not Staff A's
+        const payComboByB = await request(app)
+          .post(`/api/bills/${comboBillId}/payment`)
+          .set('Authorization', `Bearer ${staffBPinToken}`)
+          .send({ method: 'cash', amount: 75 });
+        assert(payComboByB.status === 200, 'v3.14.0 combo: Staff B takes 75.00 cash payment (200)');
+
+        const comboBillRowBefore = db
+          .prepare('SELECT payment_details FROM bills WHERE id = ?')
+          .get(comboBillId) as { payment_details: string };
+        const comboDetailsBefore = JSON.parse(comboBillRowBefore.payment_details);
+        assert(
+          Number(comboDetailsBefore[0]?.cash_session_id) === comboShiftBId &&
+            Number(comboDetailsBefore[0]?.cash_session_id) !== comboShiftAId,
+          `v3.14.0 combo: cash payment is attributed to Staff B shift (${comboShiftBId}), not Staff A shift (${comboShiftAId})`,
+        );
+
+        const curComboAAfterPay = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        const curComboBAfterPay = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${staffBPinToken}`);
+        assert(
+          curComboAAfterPay.body?.expected_cash_cents === 4000 &&
+            curComboBAfterPay.body?.expected_cash_cents === 13500,
+          `v3.14.0 combo: Staff B expected cash rises to 13500c (6000 + 7500) while Staff A stays at 4000c`,
+        );
+
+        // Step 5: Staff B (cashier) attempting PATCH /api/bills/:id/payments/0/method is rejected with 403 even with Manager M's override_pin
+        const cashierCorrectAttempt = await request(app)
+          .patch(`/api/bills/${comboBillId}/payments/0/method`)
+          .set('Authorization', `Bearer ${staffBPinToken}`)
+          .set('Idempotency-Key', 'v314-combo-cashier-blocked')
+          .send({
+            method: 'card',
+            transaction_id: 'TX-BLOCKED-B',
+            reason: 'Cashier attempting correction with manager PIN',
+            approver_id: 'manager-sess',
+            override_pin: '4321',
+          });
+        assert(
+          cashierCorrectAttempt.status === 403 &&
+            cashierCorrectAttempt.body?.reason === 'insufficient_role_permissions',
+          `v3.14.0 combo: Staff B (cashier) is rejected on PATCH payment method with 403 insufficient_role_permissions even with valid manager PIN`,
+        );
+        const comboAuditCountBlocked = (
+          db
+            .prepare(
+              `SELECT COUNT(*) AS c FROM order_audit_log WHERE order_id = ? AND action = 'bill.payment_method.corrected'`,
+            )
+            .get(comboOrderId) as { c: number }
+        ).c;
+        const comboIdemCountBlocked = (
+          db
+            .prepare(`SELECT COUNT(*) AS c FROM payment_idempotency WHERE bill_id = ?`)
+            .get(String(comboBillId)) as { c: number }
+        ).c;
+        assert(
+          comboAuditCountBlocked === 0 && comboIdemCountBlocked === 0,
+          'v3.14.0 combo: rejected cashier correction writes 0 audit rows and 0 idempotency rows',
+        );
+
+        // Step 6: Manager M signs in via PIN login and corrects tender from cash to card -> stays in Staff B's shift
+        const pinSwitchToMgr = await request(app)
+          .post('/api/auth/pin-login')
+          .send({ user_id: 'manager-sess', pin: '4321' });
+        assert(
+          pinSwitchToMgr.status === 200 &&
+            pinSwitchToMgr.body?.user?.id === 'manager-sess' &&
+            typeof pinSwitchToMgr.body?.access_token === 'string',
+          'v3.14.0 combo: Manager M signs in via POST /api/auth/pin-login (200)',
+        );
+        const managerPinToken = String(pinSwitchToMgr.body.access_token);
+
+        const mgrCorrectRes = await request(app)
+          .patch(`/api/bills/${comboBillId}/payments/0/method`)
+          .set('Authorization', `Bearer ${managerPinToken}`)
+          .set('Idempotency-Key', 'v314-combo-mgr-correct')
+          .send({
+            method: 'card',
+            transaction_id: 'TX-COMBO-1339',
+            reason: 'Customer paid by card terminal',
+            approver_id: 'manager-sess',
+            override_pin: '4321',
+          });
+        assert(
+          mgrCorrectRes.status === 200 &&
+            mgrCorrectRes.body?.bill?.payment_details?.[0]?.method === 'card' &&
+            Number(mgrCorrectRes.body?.bill?.payment_details?.[0]?.amount) === 75 &&
+            Number(mgrCorrectRes.body?.bill?.payment_details?.[0]?.cash_session_id) ===
+              comboShiftBId,
+          `v3.14.0 combo: Manager M corrects cash -> card (200), amount stays 75, and payment remains in Staff B shift (${comboShiftBId})`,
+        );
+
+        const curComboAAfterCorrect = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${s11CashierAToken}`);
+        const curComboBAfterCorrect = await request(app)
+          .get('/api/cash-sessions/current')
+          .set('Authorization', `Bearer ${staffBPinToken}`);
+        assert(
+          curComboBAfterCorrect.body?.expected_cash_cents === 6000 &&
+            curComboAAfterCorrect.body?.expected_cash_cents === 4000,
+          `v3.14.0 combo: after cash -> card correction, Staff B expected cash drops to 6000c (float only) and Staff A remains untouched at 4000c`,
+        );
+
+        const xComboShiftB = await request(app)
+          .get(`/api/reports/x-report?date=2026-11-12&session_id=${comboShiftBId}`)
+          .set('Authorization', `Bearer ${managerPinToken}`);
+        const xComboShiftBRep = xComboShiftB.body?.xReport;
+        assert(
+          xComboShiftB.status === 200 &&
+            xComboShiftBRep?.expectedCashCents === 0 &&
+            xComboShiftBRep?.session?.expected_cash_cents === 6000 &&
+            xComboShiftBRep?.grossCollected === 75 &&
+            Array.isArray(xComboShiftBRep?.paymentMethods) &&
+            xComboShiftBRep.paymentMethods.length === 1 &&
+            String(xComboShiftBRep.paymentMethods[0]?.method).toLowerCase() === 'card' &&
+            Number(xComboShiftBRep.paymentMethods[0]?.total) === 75,
+          'v3.14.0 combo: Staff B shift X-report reflects corrected Card method (75) and 0 net cash sales',
+        );
+
+        // Step 7: Day close is blocked with 409 while Staff A's or Staff B's shift is open, then succeeds once both close
+        const comboDayBlockedBoth = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({
+            business_date: '2026-11-12',
+            opening_float_cents: 10000,
+            counted_cash_cents: 10000,
+          });
+        assert(
+          comboDayBlockedBoth.status === 409 &&
+            comboDayBlockedBoth.body?.display_code === 'open_shift_blocks_day_close',
+          'v3.14.0 combo: day close blocked (409) while both Staff A and Staff B shifts are open',
+        );
+
+        const closeComboA = await request(app)
+          .post(`/api/cash-sessions/${comboShiftAId}/close`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({ counted_cash_cents: 4000 });
+        assert(
+          closeComboA.status === 200 && closeComboA.body?.variance_cents === 0,
+          'v3.14.0 combo: Staff A closes Shift A with 4000c (200)',
+        );
+
+        const comboDayBlockedBOpen = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({
+            business_date: '2026-11-12',
+            opening_float_cents: 10000,
+            counted_cash_cents: 10000,
+          });
+        assert(
+          comboDayBlockedBOpen.status === 409 &&
+            comboDayBlockedBOpen.body?.display_code === 'open_shift_blocks_day_close' &&
+            Number(comboDayBlockedBOpen.body?.blocking_shift?.id) === comboShiftBId,
+          'v3.14.0 combo: day close remains blocked (409) while Staff B shift is still open',
+        );
+
+        const closeComboB = await request(app)
+          .post(`/api/cash-sessions/${comboShiftBId}/close`)
+          .set('Authorization', `Bearer ${staffBPinToken}`)
+          .send({ counted_cash_cents: 6000 });
+        assert(
+          closeComboB.status === 200 && closeComboB.body?.variance_cents === 0,
+          'v3.14.0 combo: Staff B closes Shift B with 6000c (200)',
+        );
+
+        const comboDayClose = await request(app)
+          .post('/api/cash-closures')
+          .set('Authorization', `Bearer ${s11OwnerToken}`)
+          .send({
+            business_date: '2026-11-12',
+            opening_float_cents: 10000,
+            counted_cash_cents: 10000,
+          });
+        assert(
+          comboDayClose.status === 201 &&
+            comboDayClose.body?.zReport?.opening_float_cents === 10000 &&
+            comboDayClose.body?.zReport?.expected_cash_cents === 10000 &&
+            comboDayClose.body?.zReport?.counted_cash_cents === 10000 &&
+            comboDayClose.body?.zReport?.variance_cents === 0 &&
+            comboDayClose.body?.zReport?.gross_collected_cents === 7500 &&
+            comboDayClose.body?.zReport?.net_collected_cents === 7500 &&
+            comboDayClose.body?.zReport?.bill_count === 1,
+          'v3.14.0 combo: day close succeeds once both shifts are closed and reconciles totals (201)',
+        );
+
+        // Step 8: Verify X report and Z report JSON and CSV exports reconcile with the corrected payment method and totals
+        const xComboDay = await request(app)
+          .get('/api/reports/x-report?date=2026-11-12')
+          .set('Authorization', `Bearer ${managerPinToken}`);
+        const zComboDay = await request(app)
+          .get('/api/reports/z-report?date=2026-11-12')
+          .set('Authorization', `Bearer ${managerPinToken}`);
+        assert(
+          xComboDay.status === 200 &&
+            zComboDay.status === 200 &&
+            xComboDay.body?.xReport?.expectedCashCents === 0 &&
+            xComboDay.body?.xReport?.openingFloatCents === 10000 &&
+            xComboDay.body?.xReport?.grossCollected === 75 &&
+            zComboDay.body?.zReport?.expected_cash_cents === 10000 &&
+            zComboDay.body?.zReport?.gross_collected_cents === 7500 &&
+            Array.isArray(zComboDay.body?.zReport?.payment_methods) &&
+            zComboDay.body.zReport.payment_methods.length === 1 &&
+            String(zComboDay.body.zReport.payment_methods[0]?.method).toLowerCase() === 'card' &&
+            Number(zComboDay.body.zReport.payment_methods[0]?.total_cents) === 7500,
+          'v3.14.0 combo: day X-report and Z-report JSON reconcile with corrected Card payment and 0 cash sales',
+        );
+
+        const xCsvExport = await request(app)
+          .get('/api/reports/x-report/export?date=2026-11-12&format=csv')
+          .set('Authorization', `Bearer ${managerPinToken}`);
+        const zCsvExport = await request(app)
+          .get('/api/reports/z-report/export?date=2026-11-12&format=csv')
+          .set('Authorization', `Bearer ${managerPinToken}`);
+        assert(
+          xCsvExport.status === 200 &&
+            xCsvExport.text.includes('summary,Gross Sales,,,,75') &&
+            xCsvExport.text.includes('summary,Net Collections,,,,75') &&
+            xCsvExport.text.includes('summary,Opening Float,,,,100') &&
+            xCsvExport.text.includes('summary,Expected Cash in Drawer,,,,100') &&
+            /payment,,card,,1,75/i.test(xCsvExport.text) &&
+            !/payment,,cash,/i.test(xCsvExport.text),
+          'v3.14.0 combo: X-report CSV export reconciles with corrected Card payment and expected cash',
+        );
+        assert(
+          zCsvExport.status === 200 &&
+            zCsvExport.text.includes('summary,Gross Sales,,,,75') &&
+            zCsvExport.text.includes('summary,Net Collections,,,,75') &&
+            zCsvExport.text.includes('summary,Opening Float,,,,100') &&
+            zCsvExport.text.includes('summary,Expected Cash in Drawer,,,,100') &&
+            zCsvExport.text.includes('summary,Counted Cash,,,,100') &&
+            zCsvExport.text.includes('summary,Cash Variance,,,,0') &&
+            /payment,,card,,1,75/i.test(zCsvExport.text) &&
+            !/payment,,cash,/i.test(zCsvExport.text),
+          'v3.14.0 combo: Z-report CSV export reconciles with corrected Card payment and expected cash',
+        );
+      });
+    } finally {
+      db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'one_shift_per_staff'`).run();
+      db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'`).run();
+      db.prepare(
+        `DELETE FROM user_permission_overrides WHERE user_id IN ('cashier-sess', 'cashier2-sess')`,
+      ).run();
     }
   }
 

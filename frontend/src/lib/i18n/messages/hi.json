@@ -1211,7 +1211,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# खुला ऑर्डर अगली शिफ्ट में आगे जाएगा} other {# खुले ऑर्डर अगली शिफ्ट में आगे जाएंगे}}",
     "shiftCloseUnpaidWarningHint": "ये ऑर्डर अगली शिफ्ट के लिए खुले रहते हैं। इस शिफ्ट को बंद करने पर केवल इस शिफ्ट के दौरान पहले से प्राप्त नकद भुगतानों का मिलान होता है।",
     "shiftCloseUnpaidMoreCount": "+{count} और खुले ऑर्डर",
-    "lockTerminal": "टर्मिनल लॉक करें"
+    "lockTerminal": "टर्मिनल लॉक करें",
+    "selectOpenShift": "बंद करने के लिए शिफ्ट",
+    "xReportShiftFilterLabel": "शिफ्ट का दायरा",
+    "xReportAllShifts": "सभी शिफ्ट (पूरा दिन)"
   },
   "printTest": {
     "amt": "राशि",
@@ -2571,7 +2574,13 @@
     "autoLockLabel": "निष्क्रिय ऑटो-लॉक",
     "autoLockHint": "निष्क्रिय रहने पर पीओएस टर्मिनल को स्वतः लॉक करें",
     "autoLockOff": "बंद",
-    "autoLockMinutesOption": "{count} मिनट"
+    "autoLockMinutesOption": "{count} मिनट",
+    "requireOpenShift": "नकद के लिए खुली शिफ्ट आवश्यक करें",
+    "requireOpenShiftHint": "जब तक कोई सक्रिय शिफ्ट खुली न हो, नकद भुगतान, नकद रिफंड और ड्रॉअर गतिविधियों को रोकें।",
+    "oneShiftPerStaff": "प्रति स्टाफ सदस्य एक शिफ्ट",
+    "oneShiftPerStaffHint": "प्रत्येक स्टाफ सदस्य को अपनी कैश शिफ्ट स्वतंत्र रूप से खोलने और बंद करने की अनुमति दें।",
+    "oneShiftPerStaffSharedDrawerWarning": "नोट: यदि दो समवर्ती शिफ्ट एक ही भौतिक कैश ड्रॉअर साझा करती हैं, तो व्यक्तिगत नकद गणना भौतिक रूप से अलग नहीं होगी।",
+    "oneShiftPerStaffDisableBlocked": "एक से अधिक शिफ्ट खुली होने पर प्रति स्टाफ सदस्य एक शिफ्ट को अक्षम नहीं किया जा सकता। पहले अतिरिक्त शिफ्ट बंद करें।"
   },
   "setup": {
     "alreadyCompleted": "इस इंस्टाल पर सेटअप पहले ही पूरा हो चुका है. लॉगिन करने के लिए पुनः निर्देशित किया जा रहा है...",

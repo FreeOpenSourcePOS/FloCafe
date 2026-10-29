@@ -1211,7 +1211,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# खुला अर्डर अर्को सिफ्टमा सर्नेछ} other {# खुला अर्डरहरू अर्को सिफ्टमा सर्नेछन्}}",
     "shiftCloseUnpaidWarningHint": "यी अर्डरहरू अर्को सिफ्टका लागि खुला नै रहन्छन्। यो सिफ्ट बन्द गर्दा यस सिफ्टमा पहिले नै संकलन गरिएका नगद भुक्तानी मात्र मिलान गरिन्छ।",
     "shiftCloseUnpaidMoreCount": "+थप {count} खुला अर्डरहरू",
-    "lockTerminal": "टर्मिनल लक गर्नुहोस्"
+    "lockTerminal": "टर्मिनल लक गर्नुहोस्",
+    "selectOpenShift": "बन्द गर्ने सिफ्ट",
+    "xReportShiftFilterLabel": "सिफ्टको दायरा",
+    "xReportAllShifts": "सबै सिफ्टहरू (पूरा दिन)"
   },
   "printTest": {
     "amt": "रकम",
@@ -2571,7 +2574,13 @@
     "autoLockLabel": "निष्क्रिय अटो-लक",
     "autoLockHint": "निष्क्रिय रहँदा पीओएस टर्मिनल स्वतः लक गर्नुहोस्",
     "autoLockOff": "बन्द",
-    "autoLockMinutesOption": "{count} मिनेट"
+    "autoLockMinutesOption": "{count} मिनेट",
+    "requireOpenShift": "नगदका लागि खुला सिफ्ट अनिवार्य गर्नुहोस्",
+    "requireOpenShiftHint": "सक्रिय सिफ्ट नखुलेसम्म नगद भुक्तानी, नगद फिर्ता र ड्रअरका कारोबारहरू रोक्नुहोस्।",
+    "oneShiftPerStaff": "प्रति कर्मचारी एक सिफ्ट",
+    "oneShiftPerStaffHint": "प्रत्येक कर्मचारीलाई आफ्नो क्यास सिफ्ट स्वतन्त्र रूपमा खोल्न र बन्द गर्न अनुमति दिनुहोस्।",
+    "oneShiftPerStaffSharedDrawerWarning": "नोट: यदि दुई एकैसाथ चलेका सिफ्टहरूले एउटै भौतिक क्यास ड्रअर प्रयोग गर्छन् भने व्यक्तिगत नगद गणना भौतिक रूपमा अलग हुनेछैन।",
+    "oneShiftPerStaffDisableBlocked": "धेरै सिफ्टहरू खुला हुँदा प्रति कर्मचारी एक सिफ्ट बन्द गर्न सकिँदैन। पहिले अतिरिक्त सिफ्टहरू बन्द गर्नुहोस्।"
   },
   "setup": {
     "alreadyCompleted": "यस स्थापनामा सेटअप पहिले नै पूरा भइसकेको छ। लगइन गर्न रिडिरेक्ट गर्दै...",

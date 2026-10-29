@@ -25,7 +25,7 @@ export interface DowngradeRecoveryDeps {
   shell: Pick<typeof ElectronShell, 'openExternal' | 'openPath'>;
   log: DowngradeRecoveryLogger;
   isShutdownRequested: () => boolean;
-  discoverBackups: () => DowngradeBackupDiscovery | Promise<DowngradeBackupDiscovery>;
+  discoverBackups: () => Promise<DowngradeBackupDiscovery>;
   planPreservedArchivePath: (newerDbVersion: number) => string;
   restoreBackup: (
     backupPath: string,

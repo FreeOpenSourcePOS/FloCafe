@@ -46,7 +46,6 @@ import {
   buildIdealSchemaDb,
   closeDatabase,
   createBackup,
-  discoverDowngradeBackups,
   discoverDowngradeBackupsAsync,
   finalizeDatabaseReplacementJournal,
   getBackupDir,
@@ -578,7 +577,7 @@ async function run(): Promise<void> {
     );
     fs.copyFileSync(preV0TemplateCopy, preV0BackupPath);
 
-    const discovery = discoverDowngradeBackups();
+    const discovery = await discoverDowngradeBackupsAsync();
     assert.equal(discovery.maxSupportedSchemaVersion, maxSupported);
     assert.deepEqual(
       discovery.compatible.map((item) => ({
@@ -673,7 +672,7 @@ async function run(): Promise<void> {
       },
       log: { info() {}, warn() {}, error() {} },
       isShutdownRequested: () => false,
-      discoverBackups: () => ({
+      discoverBackups: async () => ({
         backupDir,
         maxSupportedSchemaVersion: maxSupported,
         compatible: [],
@@ -731,7 +730,7 @@ async function run(): Promise<void> {
       },
       log: { info() {}, warn() {}, error() {} },
       isShutdownRequested: () => false,
-      discoverBackups: discoverDowngradeBackups,
+      discoverBackups: () => discoverDowngradeBackupsAsync(),
       planPreservedArchivePath: planNewerDatabaseArchivePath,
       restoreBackup: restoreCompatibleBackupForDowngrade,
       getBackupDir,
@@ -804,7 +803,7 @@ async function run(): Promise<void> {
         },
         log: { info() {}, warn() {}, error() {} },
         isShutdownRequested: () => shutdownActive,
-        discoverBackups: discoverDowngradeBackups,
+        discoverBackups: () => discoverDowngradeBackupsAsync(),
         planPreservedArchivePath: planNewerDatabaseArchivePath,
         restoreBackup: async () => {
           shutdownActive = true;
@@ -890,7 +889,7 @@ async function run(): Promise<void> {
         shell: { openExternal: async () => {}, openPath: async () => '' },
         log: { info() {}, warn() {}, error() {} },
         isShutdownRequested: () => false,
-        discoverBackups: discoverDowngradeBackups,
+        discoverBackups: () => discoverDowngradeBackupsAsync(),
         planPreservedArchivePath: planNewerDatabaseArchivePath,
         restoreBackup: restoreCompatibleBackupForDowngrade,
         getBackupDir,
@@ -1013,7 +1012,7 @@ async function run(): Promise<void> {
       shell: { openExternal: async () => {}, openPath: async () => '' },
       log: { info() {}, warn() {}, error() {} },
       isShutdownRequested: () => false,
-      discoverBackups: discoverDowngradeBackups,
+      discoverBackups: () => discoverDowngradeBackupsAsync(),
       planPreservedArchivePath: planNewerDatabaseArchivePath,
       restoreBackup: restoreCompatibleBackupForDowngrade,
       getBackupDir,
@@ -1088,7 +1087,7 @@ async function run(): Promise<void> {
       shell: { openExternal: async () => {}, openPath: async () => '' },
       log: { info() {}, warn() {}, error() {} },
       isShutdownRequested: () => false,
-      discoverBackups: discoverDowngradeBackups,
+      discoverBackups: () => discoverDowngradeBackupsAsync(),
       planPreservedArchivePath: planNewerDatabaseArchivePath,
       restoreBackup: restoreCompatibleBackupForDowngrade,
       getBackupDir,
@@ -1422,7 +1421,7 @@ async function run(): Promise<void> {
       },
     });
 
-    const v84Discovery = discoverDowngradeBackups();
+    const v84Discovery = await discoverDowngradeBackupsAsync();
     assert.deepEqual(
       v84Discovery.compatible.map((item) => ({
         fileName: item.fileName,
@@ -1680,7 +1679,7 @@ async function run(): Promise<void> {
         fs.mkdirSync(strandedUserDataStage, { recursive: true });
         fs.mkdirSync(strandedBackupStage, { recursive: true });
         fs.writeFileSync(path.join(strandedBackupStage, 'probe.db'), 'stranded temp bytes');
-        const strandedDiscovery = discoverDowngradeBackups();
+        const strandedDiscovery = await discoverDowngradeBackupsAsync();
         assert.deepEqual(strandedDiscovery.compatible, []);
         assert.deepEqual(strandedDiscovery.corruptOrInvalid, []);
 

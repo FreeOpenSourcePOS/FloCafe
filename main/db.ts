@@ -3861,35 +3861,6 @@ function sortCompatibleDowngradeBackups(compatible: CompatibleDowngradeBackup[])
   });
 }
 
-export function discoverDowngradeBackups(): DowngradeBackupDiscovery {
-  const backupDir = getBackupDir();
-  const maxSupportedSchemaVersion = getLatestSupportedSchemaVersion();
-  const compatible: CompatibleDowngradeBackup[] = [];
-  const incompatibleNewer: RejectedDowngradeBackup[] = [];
-  const corruptOrInvalid: RejectedDowngradeBackup[] = [];
-  const liveDbPath = getDbPath();
-
-  for (const { fileName, fullPath } of listDowngradeBackupCandidateEntries(backupDir, liveDbPath)) {
-    evaluateDowngradeBackupCandidate(
-      fileName,
-      fullPath,
-      maxSupportedSchemaVersion,
-      compatible,
-      incompatibleNewer,
-      corruptOrInvalid,
-    );
-  }
-  sortCompatibleDowngradeBackups(compatible);
-
-  return {
-    backupDir,
-    maxSupportedSchemaVersion,
-    compatible,
-    incompatibleNewer,
-    corruptOrInvalid,
-  };
-}
-
 export async function discoverDowngradeBackupsAsync(options?: {
   signal?: AbortSignal;
 }): Promise<DowngradeBackupDiscovery> {

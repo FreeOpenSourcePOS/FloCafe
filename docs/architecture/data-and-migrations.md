@@ -105,21 +105,21 @@ data:
    - **Open Backups Folder** - opens `backups/` (or the database parent folder when `backups/` does
      not exist yet) in the file manager via `shell.openPath`, shows the path if opening fails, and
      returns to the recovery dialog.
-   - **Restore Compatible Backup** - calls `discoverDowngradeBackupsAsync()` (sharing its validation
-     contract with `discoverDowngradeBackups()`), which skips internal recovery, preserved-archive,
-     and `.flo-db-stage-*` entries (`flo-restore-recovery-*.db`, `flo-reset-recovery-*.db`,
-     `flo-preserved-newer-*.db`) and live-database aliases, prefilters non-SQLite, sidecar-bearing,
-     and header-newer standalone files via `readSqliteHeaderInfo` and filesystem metadata before
-     staging, yields to the event loop between candidates, validates candidate `.db` files by SQLite
-     content (`PRAGMA integrity_check`, `PRAGMA user_version`, `_flo_meta`, core tables, foreign
-     keys, and the inventory ledger or pre-v85 stock snapshot) rather than trusting filenames, and
-     lists all candidates with `schemaVersion <= getLatestSupportedSchemaVersion()`. When no
-     compatible valid backup exists, the dialog reports whether backups are missing, require a newer
-     FloCafe version, or failed validation, while keeping update, folder-open, and exit actions
-     available. Restoring a selected backup requires explicit confirmation warning that orders,
-     payments, inventory changes, and settings recorded after that backup are absent from the
-     restored database and stating the archive path
-     (`backups/flo-preserved-newer-v<version>-<timestamp>.db`, with `-<n>` appended on collision).
+   - **Restore Compatible Backup** - calls `discoverDowngradeBackupsAsync()`, which skips internal
+     recovery, preserved-archive, and `.flo-db-stage-*` entries (`flo-restore-recovery-*.db`,
+     `flo-reset-recovery-*.db`, `flo-preserved-newer-*.db`) and live-database aliases, prefilters
+     non-SQLite, sidecar-bearing, and header-newer standalone files via `readSqliteHeaderInfo` and
+     filesystem metadata before staging, yields to the event loop between candidates, validates
+     candidate `.db` files by SQLite content (`PRAGMA integrity_check`, `PRAGMA user_version`,
+     `_flo_meta`, core tables, foreign keys, and the inventory ledger or pre-v85 stock snapshot)
+     rather than trusting filenames, and lists all candidates with
+     `schemaVersion <= getLatestSupportedSchemaVersion()`. When no compatible valid backup exists,
+     the dialog reports whether backups are missing, require a newer FloCafe version, or failed
+     validation, while keeping update, folder-open, and exit actions available. Restoring a selected
+     backup requires explicit confirmation warning that orders, payments, inventory changes, and
+     settings recorded after that backup are absent from the restored database and stating the
+     archive path (`backups/flo-preserved-newer-v<version>-<timestamp>.db`, with `-<n>` appended on
+     collision).
      Cancelling aborts without touching any files. On confirmation,
      `restoreCompatibleBackupForDowngrade` refuses an active `flo.db-journal` rollback journal before
      archiving, writing a replacement journal, or modifying any files so uncommitted journal state is
@@ -185,7 +185,7 @@ After migrations and with `foreign_keys` re-enabled, startup runs:
 | --- | --- | --- |
 | Create a backup | `createBackup(targetPath?, signal?, options?)` | Runs under the database maintenance lock, so it cannot overlap another backup, restore, or wipe. Returns the path and the schema version. |
 | List backups | `listBackups(options?)` | Reports file name, path, size, creation time, `manual` or `auto` kind, and the schema version when readable. Supports cursor pagination (`limit`, `cursor`) via `listBackupsPage()`. |
-| Discover downgrade backups | `discoverDowngradeBackups()` / `discoverDowngradeBackupsAsync(options?)` | Prefilters SQLite headers and validates `.db` files in `backups/` by SQLite content and integrity (yielding between candidates in the async variant), classifying compatible (`<= getLatestSupportedSchemaVersion()`), newer-incompatible, and corrupt/invalid candidates. |
+| Discover downgrade backups | `discoverDowngradeBackupsAsync(options?)` | Prefilters SQLite headers and validates `.db` files in `backups/` by SQLite content and integrity (yielding to the event loop between candidates and honoring `options?.signal`), classifying compatible (`<= getLatestSupportedSchemaVersion()`), newer-incompatible, and corrupt/invalid candidates. |
 | Restore a backup | `restoreBackup(backupPath, forceDirect?, signal?)` | Also under the maintenance lock. |
 | Restore compatible backup on downgrade | `restoreCompatibleBackupForDowngrade(backupPath, options?)` | Under the maintenance lock; refuses an active `flo.db-journal` rollback journal without mutating files, otherwise preserves the newer database and `-wal`/`-shm` sidecars in `backups/` and replaces `flo.db` via the replacement journal. |
 

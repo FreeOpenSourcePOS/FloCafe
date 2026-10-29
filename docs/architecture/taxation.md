@@ -189,7 +189,8 @@ derives components item by item from stored snapshots and breakdowns so a bill m
 uncategorized lines cannot double-count the categorized portion against the bill-level
 `tax_breakdown`, and never recomputes historical tax from live tax settings. Whole-day X/Z reports
 aggregate paid bills in the day window through `aggregateTaxComponents()`. Session-scoped X/Z reports
-(`computeSessionAggregates()`) include partially paid and settled bills and allocate resolved
+(`computeSessionAggregates()`) include partially paid and settled bills: a bill settled wholly within
+one shift keeps `resolveTaxComponents()` as-is, while partial or cross-shift bills allocate resolved
 components sequentially across payment lines against the remaining bill total in minor units
 (`allocateSignedMinorUnits()`, `reconcileSnapshotAllocations()`, and `mergeDisplayTaxComponents()`),
 so a shift closed before settlement keeps its collected tax share in its immutable Z snapshot and

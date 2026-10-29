@@ -82,11 +82,12 @@ data:
    creating a fresh empty file. A silently recreated empty database would look like a working POS
    with no orders. The error tells the user to restore from a backup. A genuinely fresh install has
    no marker and proceeds normally.
-2. **A database newer than the build.** Before opening `flo.db` read-write, `initDatabase` inspects
-   `user_version` without mutating `flo.db` or its `-wal` and `-shm` sidecar files (replaying any
-   present sidecars in a temporary copy), and `runMigrations` enforces the same guard. When
-   `user_version` exceeds `getLatestSupportedSchemaVersion()`, `SchemaVersionMismatchError` is
-   thrown. An older build never reverse-migrates or opens a newer schema directly.
+2. **A database newer than the build.** Before opening `flo.db` read-write, `initDatabase` reads the
+   SQLite header and inspects `user_version` without mutating `flo.db` or creating sidecar files in
+   `userData` (staging WAL-mode databases and any `-wal`, `-shm`, or `-journal` sidecars in
+   `os.tmpdir()`), and `runMigrations` enforces the same guard. When `user_version` exceeds
+   `getLatestSupportedSchemaVersion()`, `SchemaVersionMismatchError` is thrown. An older build never
+   reverse-migrates or opens a newer schema directly.
 
    `initialize()` in [`main/index.ts`](../../main/index.ts) intercepts `SchemaVersionMismatchError`
    before the generic startup-error dialog, quiesces database access, and runs
@@ -95,25 +96,32 @@ data:
    against the running build and offers four actions:
 
    - **Get Latest Version** - opens `FLOCAFE_RELEASES_URL` in the system browser and exits with code
-     `0` without modifying any files.
-   - **Open Backups Folder** - opens `backups/` in the file manager via `shell.openPath` and returns
-     to the recovery dialog.
-   - **Restore Compatible Backup** - calls `discoverDowngradeBackups()`, which inspects candidate
-     `.db` files in `backups/` by SQLite content (`PRAGMA integrity_check`, `_flo_meta`,
-     `PRAGMA user_version`, foreign keys, core tables, and inventory ledger) rather than trusting
-     filenames, and lists candidates with `schemaVersion <= getLatestSupportedSchemaVersion()`. When
-     no compatible valid backup exists, the dialog reports whether backups are missing, require a
-     newer FloCafe version, or failed validation, while keeping update, folder-open, and exit
-     actions available. Restoring a selected backup requires explicit confirmation warning that
-     orders, payments, inventory changes, and settings recorded after that backup are absent from
-     the restored database and stating the archive path
-     (`backups/flo-preserved-newer-v<version>-<timestamp>.db`). Cancelling aborts without touching
-     any files. On confirmation, `restoreCompatibleBackupForDowngrade` preserves `flo.db` and any
-     `-wal` and `-shm` sidecars in `backups/`, records a replacement journal so an interrupted or
-     failed restore rolls `flo.db` and its sidecars back cleanly, migrates an older compatible
-     backup forward to the supported schema, rotates the JWT signing secret, clears pairing
-     tokens/codes and Google Drive bindings, repairs sequences, and resumes normal `initialize()`
-     startup.
+     `0` without modifying any files; if the browser cannot open, shows the URL in an error dialog
+     and stays in recovery.
+   - **Open Backups Folder** - opens `backups/` (or the database parent folder when `backups/` does
+     not exist yet) in the file manager via `shell.openPath`, shows the path if opening fails, and
+     returns to the recovery dialog.
+   - **Restore Compatible Backup** - calls `discoverDowngradeBackups()`, which skips internal
+     recovery and preserved-archive files (`flo-restore-recovery-*.db`, `flo-reset-recovery-*.db`,
+     `flo-preserved-newer-*.db`) and live-database aliases, stages candidate `.db` files in
+     `backups/`, validates SQLite content (`PRAGMA integrity_check`, `PRAGMA user_version`,
+     `_flo_meta`, core tables, foreign keys, and the inventory ledger or pre-v85 stock snapshot)
+     rather than trusting filenames, and lists candidates with
+     `schemaVersion <= getLatestSupportedSchemaVersion()`. When no compatible valid backup exists,
+     the dialog reports whether backups are missing, require a newer FloCafe version, or failed
+     validation, while keeping update, folder-open, and exit actions available. Restoring a selected
+     backup requires explicit confirmation warning that orders, payments, inventory changes, and
+     settings recorded after that backup are absent from the restored database and stating the
+     archive path (`backups/flo-preserved-newer-v<version>-<timestamp>.db`, with `-<n>` appended on
+     collision). Cancelling aborts without touching any files. On confirmation,
+     `restoreCompatibleBackupForDowngrade` re-validates the staged backup under the maintenance lock,
+     preserves `flo.db` and any `-wal` and `-shm` sidecars in `backups/`, records a replacement
+     journal, migrates an older compatible backup forward to the supported schema without writing a
+     duplicate pre-migration auto-backup, updates `_flo_meta`, rotates the JWT signing secret, clears
+     pairing tokens/codes, Google Drive bindings, and in-memory auth/JWT caches, repairs sequences,
+     and resumes normal `initialize()` startup. If validation or replacement fails, it rolls `flo.db`
+     and its sidecars back from the journal while keeping the preserved archive in `backups/` and
+     presents an error dialog returning to recovery options, opening `backups/`, or exiting.
    - **Exit** - runs cleanup and exits with code `0` without modifying any files.
 
 ## The automatic pre-migration backup
@@ -125,7 +133,8 @@ pre-migration version.
 
 The snapshot is a real SQLite file, not a raw copy alone. It is reopened, switched to
 `journal_mode = DELETE` so it is portable away from WAL, and given an `_flo_meta` table recording
-`schema_version` and `backup_created_at`, with `user_version` set to the pre-migration value.
+`schema_version`, `backup_created_at`, and `app_version`, with `user_version` set to the
+pre-migration value.
 
 `getBackupDir()` always points at `userData`, even in an unpackaged run, so backups never accumulate
 inside the repository.
@@ -227,10 +236,15 @@ channel preserve `local_backup_enabled` across the reset and copy their pre-rese
 
 Replacement is journalled, not best-effort. `writeReplacementJournal` writes a temporary file,
 `fsync`s it through a writable handle, renames it into place, and then `fsync`s the containing
-directory. The journal records a `prepared` or `committed` phase, and
-`recoverInterruptedDatabaseReplacement` replays it on the next start: an interrupted replacement
-either completes or is rolled back to a `.cleanup-<id>` copy. `isLiveDatabaseTarget` prevents a
-replacement from overwriting the live database or a hard link to it.
+directory. The journal records a `prepared` or `committed` phase (plus `downgradeRecovery` and
+`recoverySidecars` when replacing a newer database), and `recoverInterruptedDatabaseReplacement`
+replays it on the next start: an interrupted replacement either completes or restores the snapshot
+(with recorded `-wal`/`-shm` sidecars on a downgrade journal), using `.cleanup-<id>` copies during
+artifact removal. If a `committed` journal is retained for Google Drive invalidation while `flo.db`
+has a schema newer than the running build, replay leaves `flo.db` and the journal untouched so the
+preflight raises `SchemaVersionMismatchError` rather than rolling back the newer database.
+`isLiveDatabaseTarget` prevents a replacement from overwriting the live database or a hard link to
+it.
 
 `syncFile` uses `fs.openSync(path, 'r+')` plus `fs.fsyncSync` so the flush is portable to Windows.
 Directory syncing is skipped on Windows, which does not support it.
@@ -252,11 +266,13 @@ Directory syncing is skipped on Windows, which does not support it.
 | `npm run test:newer-db-recovery` | Newer-database startup interception, content-based backup discovery, sidecar preservation, journaled downgrade restore, and rollback. |
 
 `isHealthyDatabaseFile` is the predicate that decides whether a candidate file is usable at all. It
-requires a clean `integrity_check`, no foreign-key violations outside an explicit allowlist, a
-schema version above zero and within the supported range, an `_flo_meta` stamp that matches the
-pragma, and a table and column set, plus normalised `CREATE` definitions, that match the ideal
-schema built by running the whole migration pipeline in memory (cached across health checks and
-invalidated on migration registry changes; runtime-ensured indexes in
+probes legacy rollback-journal files read-only in place and stages WAL-mode or sidecar-accompanied
+files in `os.tmpdir()` so probing never leaves orphaned `-wal` or `-shm` files behind. It requires a
+clean `integrity_check`, no foreign-key violations outside an explicit allowlist, a schema version
+above zero and within the supported range, an `_flo_meta` stamp that matches the pragma, and a table
+and column set, plus normalised `CREATE` definitions, that match the ideal schema built by running
+the whole migration pipeline in memory (cached across health checks and invalidated on migration
+registry changes; runtime-ensured indexes in
 `RUNTIME_ENSURED_SCHEMA_OBJECTS` such as `idx_order_items_active_kds` at schema v121+ may be absent
 on an unopened file or direct-restore backup and are created on writable open by
 `ensureRuntimeIndexes()`, while mismatched definitions or unknown extra objects are still rejected).

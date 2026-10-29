@@ -551,9 +551,7 @@ async function run(): Promise<void> {
       ].sort(),
       'corrupt, metadata-mismatched, pre-v0, and non-Flo SQLite files are rejected as corrupt_or_invalid',
     );
-    const rejectedByName = new Map(
-      discovery.corruptOrInvalid.map((item) => [item.fileName, item]),
-    );
+    const rejectedByName = new Map(discovery.corruptOrInvalid.map((item) => [item.fileName, item]));
     assert.equal(
       rejectedByName.get(path.basename(preV0BackupPath))?.detail,
       'Backup does not contain an initialized Flo Cafe schema',
@@ -951,7 +949,11 @@ async function run(): Promise<void> {
       /Restored database table structure does not match schema v/,
       'post-migration tableColumns mismatch surfaces Backup Restore Failed instead of committing',
     );
-    assert.equal(sha256File(dbPath), walHashes.dbSha, 'post-migration schema failure rolls back flo.db');
+    assert.equal(
+      sha256File(dbPath),
+      walHashes.dbSha,
+      'post-migration schema failure rolls back flo.db',
+    );
     assert.equal(
       sha256File(`${dbPath}-wal`),
       walHashes.walSha,
@@ -1151,9 +1153,10 @@ async function run(): Promise<void> {
       false,
       'in-memory revoked token set is cleared on downgrade restore',
     );
-    const activeMetaRows = activeDb
-      .prepare('SELECT key, value FROM _flo_meta')
-      .all() as { key: string; value: string | null }[];
+    const activeMetaRows = activeDb.prepare('SELECT key, value FROM _flo_meta').all() as {
+      key: string;
+      value: string | null;
+    }[];
     const activeMeta = new Map(activeMetaRows.map((row) => [row.key, row.value]));
     assert.equal(activeMeta.get('schema_version'), String(maxSupported));
     assert.equal(

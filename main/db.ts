@@ -3227,9 +3227,10 @@ function validatePreLedgerBackupInventory(
     return 'Backup products table is missing stock_quantity';
   }
 
-  const products = dbInstance
-    .prepare('SELECT id, stock_quantity FROM products')
-    .all() as Record<string, unknown>[];
+  const products = dbInstance.prepare('SELECT id, stock_quantity FROM products').all() as Record<
+    string,
+    unknown
+  >[];
   let hasStockedProduct = false;
   for (const row of products) {
     const productId = row?.id == null ? '' : String(row.id);
@@ -3270,9 +3271,10 @@ function validatePreLedgerBackupInventory(
   }
 
   if (tables.has('addons') && getColumns(dbInstance, 'addons').includes('stock_quantity')) {
-    const addons = dbInstance
-      .prepare('SELECT id, stock_quantity FROM addons')
-      .all() as Record<string, unknown>[];
+    const addons = dbInstance.prepare('SELECT id, stock_quantity FROM addons').all() as Record<
+      string,
+      unknown
+    >[];
     for (const addon of addons) {
       const rawStock = addon.stock_quantity;
       if (
@@ -3360,10 +3362,7 @@ function inspectBackupSnapshotForDowngrade(
       }
     }
 
-    if (
-      hasMetaSchemaStamp &&
-      (parsedMetaVersion === null || parsedMetaVersion !== pragmaVersion)
-    ) {
+    if (hasMetaSchemaStamp && (parsedMetaVersion === null || parsedMetaVersion !== pragmaVersion)) {
       return {
         status: 'corrupt_or_invalid',
         schemaVersion:
@@ -3835,7 +3834,11 @@ export function restoreCompatibleBackupForDowngrade(
         const schemaError =
           restoredSchemaVersion < 1 || restoredSchemaVersion > maxSupported
             ? `Restored database schema v${restoredSchemaVersion} is outside supported range`
-            : validateDatabaseSchemaTableColumns(freshDb, restoredSchemaVersion, 'Restored database');
+            : validateDatabaseSchemaTableColumns(
+                freshDb,
+                restoredSchemaVersion,
+                'Restored database',
+              );
         const inventoryError =
           schemaError === null ? validateInventoryLedgerDatabase(freshDb) : null;
         if (

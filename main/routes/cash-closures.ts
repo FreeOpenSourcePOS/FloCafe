@@ -711,7 +711,7 @@ export function sessionExpectedCash(
   );
 }
 
-/** Sales and refunds attributed to a session for its immutable Z snapshot. */
+/** Sales and refunds attributed to a session for shift X/Z reports. */
 export function sessionFinancialTotals(
   db: ReturnType<typeof getDatabase>,
   session: { id: number; opened_at: string },
@@ -1012,10 +1012,8 @@ export function computePeriodAggregates(
         )
         .all(start, end) as StaffSalesRow[]);
 
-  // Tax components — keyed by paid_at window to stay reconciled with the
-  // rest of the Z. Bills are hydrated with their order items and then
-  // aggregated via the existing `aggregateTaxComponents` pipeline, unchanged.
-  // Unpaid bills drop out by the same logic as the staff query above.
+  // Day scope aggregates paid bills in [start, end); session scope allocates stored
+  // historical tax components across contributing shifts by collected payment share.
   type TaxBillRow = {
     id: number;
     order_id: number;

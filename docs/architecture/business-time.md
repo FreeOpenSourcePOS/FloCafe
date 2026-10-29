@@ -133,7 +133,8 @@ actor's open shift (`getOpenSession(db, userId)`). Day close (`POST /api/cash-cl
 closed, and reconciles the combined day totals across all shifts (summing per-staff shift opening
 floats into the day's `opening_float` drawer movement). Two concurrent shifts sharing a single
 physical cash drawer are permitted, though individual shift drawer counts cannot be physically
-isolated in a shared drawer.
+isolated in a shared drawer. For cross-shift bill tax attribution on shift X/Z reports, see
+[Taxation](taxation.md#where-the-amount-came-from).
 
 ### Refunds
 

@@ -182,10 +182,17 @@ reinterpreted as a per-line amount.
 Refunds read the snapshot. Recomputing tax at refund time would produce a different answer if the
 pack had been updated in between, which is the exact failure the snapshot exists to prevent.
 
-The reporting counterpart is `GET /api/reports/tax-components`, backed by
-[`main/services/tax-components.ts`](../../main/services/tax-components.ts). It derives components
-item by item so a bill that mixes categorized and uncategorized lines cannot double-count the
-categorized portion against the bill-level `tax_breakdown`.
+The reporting counterparts are `GET /api/reports/tax-components` and X/Z cash-closure reporting in
+[`main/routes/cash-closures.ts`](../../main/routes/cash-closures.ts), both backed by
+[`main/services/tax-components.ts`](../../main/services/tax-components.ts). `resolveTaxComponents()`
+derives components item by item from stored snapshots and breakdowns so a bill mixing categorized and
+uncategorized lines cannot double-count the categorized portion against the bill-level
+`tax_breakdown`, and never recomputes historical tax from live tax settings. Whole-day X/Z reports
+aggregate paid bills in the day window through `aggregateTaxComponents()`. Session-scoped X/Z reports
+(`computeSessionAggregates()`) allocate a cross-shift paid bill's resolved components across the
+contributing sessions proportionally to each session's collected payment share in minor units
+(`allocateSignedMinorUnits()` and `reconcileSnapshotAllocations()`), preserving the bill's exact tax
+total across shifts.
 
 ## Bundled packs
 

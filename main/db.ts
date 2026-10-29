@@ -989,17 +989,69 @@ export function finalizeDatabaseReplacementJournal(handle: DatabaseReplacementJo
   removeReplacementArtifactsDurably(handle.journalPath, handle.recoveryPath);
 }
 
+const SQLITE_HEADER_MAGIC = Buffer.from('SQLite format 3\0', 'utf8');
+const SQLITE_PROBE_SIDECAR_SUFFIXES = ['-wal', '-shm', '-journal'] as const;
+type SqliteProbeSidecar = (typeof SQLITE_PROBE_SIDECAR_SUFFIXES)[number];
+
+interface SqliteHeaderInfo {
+  headerVersion: number;
+  isLegacyRollbackFormat: boolean;
+}
+
+function readSqliteHeaderInfo(filePath: string, throwOnReadError = false): SqliteHeaderInfo | null {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(filePath);
+  } catch (statError) {
+    const code = (statError as NodeJS.ErrnoException | null)?.code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return null;
+    if (throwOnReadError) {
+      throw new Error(
+        `Could not inspect database file ${filePath}: ${statError instanceof Error ? statError.message : 'unknown error'}`,
+        { cause: statError },
+      );
+    }
+    return null;
+  }
+  if (stat.isSymbolicLink() || !stat.isFile() || stat.size < 100) return null;
+
+  const header = Buffer.alloc(100);
+  let headerBytesRead = 0;
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    headerBytesRead = fs.readSync(fd, header, 0, 100, 0);
+  } catch (readError) {
+    if (throwOnReadError) {
+      throw new Error(
+        `Could not read SQLite header from ${filePath}: ${readError instanceof Error ? readError.message : 'unknown error'}`,
+        { cause: readError },
+      );
+    }
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    }
+  }
+  if (headerBytesRead < 100 || !header.subarray(0, 16).equals(SQLITE_HEADER_MAGIC)) {
+    return null;
+  }
+  return {
+    headerVersion: header.readInt32BE(60),
+    isLegacyRollbackFormat: header[18] === 1 && header[19] === 1,
+  };
+}
+
 function isReadableRecoverySnapshotWithSidecars(
   recoveryPath: string,
   expectedSidecars: readonly ReplacementJournalSidecar[],
 ): boolean {
-  let recoveryStat: fs.Stats;
-  try {
-    recoveryStat = fs.lstatSync(recoveryPath);
-  } catch {
-    return false;
-  }
-  if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile()) return false;
+  const headerInfo = readSqliteHeaderInfo(recoveryPath);
+  if (!headerInfo) return false;
+  if (pathEntryExists(`${recoveryPath}-journal`)) return false;
   const expectedSet = new Set(expectedSidecars);
   for (const suffix of ['-wal', '-shm'] as const) {
     const sidecarPath = `${recoveryPath}${suffix}`;
@@ -1016,7 +1068,7 @@ function isReadableRecoverySnapshotWithSidecars(
     }
   }
 
-  if (expectedSidecars.length === 0) {
+  if (expectedSidecars.length === 0 && headerInfo.isLegacyRollbackFormat) {
     let probeDb: Database.Database | undefined;
     try {
       probeDb = new Database(recoveryPath, { readonly: true, fileMustExist: true });
@@ -1098,16 +1150,11 @@ function withProbedDatabaseFile<T>(
   fn: (candidate: Database.Database) => T,
   throwOnStagingError = false,
 ): T | null {
-  let fileStat: fs.Stats;
-  try {
-    fileStat = fs.lstatSync(filePath);
-  } catch {
-    return null;
-  }
-  if (fileStat.isSymbolicLink() || !fileStat.isFile()) return null;
+  const headerInfo = readSqliteHeaderInfo(filePath, throwOnStagingError);
+  if (!headerInfo) return null;
 
-  const presentSidecars: ReplacementJournalSidecar[] = [];
-  for (const suffix of ['-wal', '-shm'] as const) {
+  const presentSidecars: SqliteProbeSidecar[] = [];
+  for (const suffix of SQLITE_PROBE_SIDECAR_SUFFIXES) {
     const sidecarPath = `${filePath}${suffix}`;
     if (!pathEntryExists(sidecarPath)) continue;
     let sidecarStat: fs.Stats;
@@ -1131,7 +1178,7 @@ function withProbedDatabaseFile<T>(
     presentSidecars.push(suffix);
   }
 
-  if (presentSidecars.length === 0) {
+  if (presentSidecars.length === 0 && headerInfo.isLegacyRollbackFormat) {
     let candidate: Database.Database | undefined;
     try {
       candidate = new Database(filePath, { readonly: true, fileMustExist: true });
@@ -1260,7 +1307,8 @@ export function recoverDatabaseReplacementJournal(handle: DatabaseReplacementJou
       !recoveryStat.isFile() ||
       pathEntryExists(`${handle.recoveryPath}-wal`) ||
       pathEntryExists(`${handle.recoveryPath}-shm`) ||
-      !isHealthyDatabaseFile(handle.recoveryPath, undefined, false)
+      pathEntryExists(`${handle.recoveryPath}-journal`) ||
+      !checkHealthyDatabaseFile(handle.recoveryPath, undefined, false, true)
     ) {
       throw new Error('Database replacement recovery snapshot could not be validated');
     }
@@ -1664,12 +1712,14 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
       throw new Error('Interrupted database replacement snapshot is missing');
     }
     const recoverySidecars =
-      pathEntryExists(`${recoveryPath}-wal`) || pathEntryExists(`${recoveryPath}-shm`);
+      pathEntryExists(`${recoveryPath}-wal`) ||
+      pathEntryExists(`${recoveryPath}-shm`) ||
+      pathEntryExists(`${recoveryPath}-journal`);
     if (
       recoveryStat.isSymbolicLink() ||
       !recoveryStat.isFile() ||
       recoverySidecars ||
-      !isHealthyDatabaseFile(recoveryPath, allowedForeignKeyViolations, requireMetadata)
+      !checkHealthyDatabaseFile(recoveryPath, allowedForeignKeyViolations, requireMetadata, true)
     ) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
@@ -1747,8 +1797,6 @@ export function registerSettingsRevisionTriggers(dbInstance: Database.Database =
   }
 }
 
-const SQLITE_HEADER_MAGIC = Buffer.from('SQLite format 3\0', 'utf8');
-
 function readMatchingMetaAppVersion(
   probeDb: Database.Database,
   schemaVersion: number,
@@ -1774,38 +1822,13 @@ function readMatchingMetaAppVersion(
 function inspectDatabaseVersionNonMutating(
   dbPath: string,
 ): { schemaVersion: number; appVersion: string | null } | null {
-  if (!pathEntryExists(dbPath)) return null;
-  let stat: fs.Stats;
-  try {
-    stat = fs.lstatSync(dbPath);
-  } catch {
-    return null;
-  }
-  if (stat.isSymbolicLink() || !stat.isFile() || stat.size < 100) return null;
-
+  const headerInfo = readSqliteHeaderInfo(dbPath);
+  if (!headerInfo) return null;
+  const { headerVersion, isLegacyRollbackFormat } = headerInfo;
   const maxSupported = getLatestSupportedSchemaVersion();
-  const header = Buffer.alloc(100);
-  let headerBytesRead = 0;
-  let fd: number | null = null;
-  try {
-    fd = fs.openSync(dbPath, 'r');
-    headerBytesRead = fs.readSync(fd, header, 0, 100, 0);
-  } catch {
-    return null;
-  } finally {
-    if (fd !== null) {
-      try {
-        fs.closeSync(fd);
-      } catch {}
-    }
-  }
-  if (headerBytesRead < 100 || !header.subarray(0, 16).equals(SQLITE_HEADER_MAGIC)) {
-    return null;
-  }
-  const headerVersion = header.readInt32BE(60);
 
-  const presentSidecars: ReplacementJournalSidecar[] = [];
-  for (const suffix of ['-wal', '-shm'] as const) {
+  const presentSidecars: SqliteProbeSidecar[] = [];
+  for (const suffix of SQLITE_PROBE_SIDECAR_SUFFIXES) {
     const sidecarPath = `${dbPath}${suffix}`;
     if (!pathEntryExists(sidecarPath)) continue;
     let sidecarStat: fs.Stats;
@@ -1833,19 +1856,21 @@ function inspectDatabaseVersionNonMutating(
     if (headerVersion <= maxSupported) {
       return { schemaVersion: headerVersion, appVersion: null };
     }
-    let probeDb: Database.Database | undefined;
-    try {
-      probeDb = new Database(dbPath, { readonly: true, fileMustExist: true });
-      return {
-        schemaVersion: headerVersion,
-        appVersion: readMatchingMetaAppVersion(probeDb, headerVersion),
-      };
-    } catch {
-      return { schemaVersion: headerVersion, appVersion: null };
-    } finally {
+    if (isLegacyRollbackFormat) {
+      let probeDb: Database.Database | undefined;
       try {
-        probeDb?.close();
-      } catch {}
+        probeDb = new Database(dbPath, { readonly: true, fileMustExist: true });
+        return {
+          schemaVersion: headerVersion,
+          appVersion: readMatchingMetaAppVersion(probeDb, headerVersion),
+        };
+      } catch {
+        return { schemaVersion: headerVersion, appVersion: null };
+      } finally {
+        try {
+          probeDb?.close();
+        } catch {}
+      }
     }
   }
 

@@ -1401,11 +1401,105 @@ async function run(): Promise<void> {
     closeDatabase();
     const committedCleanSnapshot = path.join(testDir, 'committed-clean-snapshot.db');
     fs.copyFileSync(dbPath, committedCleanSnapshot);
+    const committedCleanHeader = fs.readFileSync(committedCleanSnapshot).subarray(0, 100);
+    assert.equal(committedCleanHeader[18], 2);
+    assert.equal(committedCleanHeader[19], 2);
+    const committedCleanSha = sha256File(committedCleanSnapshot);
 
     const walEnospcStageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-enospc-wal-live-'));
     let walLiveDbSha = '';
     let walLiveWalSha = '';
     try {
+      const committedDeleteModeSnapshot = path.join(
+        walEnospcStageDir,
+        'committed-delete-mode-snapshot.db',
+      );
+      fs.copyFileSync(committedCleanSnapshot, committedDeleteModeSnapshot);
+      const deleteModeSnapDb = new Database(committedDeleteModeSnapshot);
+      deleteModeSnapDb.pragma('journal_mode = DELETE');
+      deleteModeSnapDb.close();
+      const deleteSnapHeader = fs.readFileSync(committedDeleteModeSnapshot).subarray(0, 100);
+      assert.equal(deleteSnapHeader[18], 1);
+      assert.equal(deleteSnapHeader[19], 1);
+      assert.equal(fs.existsSync(`${committedDeleteModeSnapshot}-wal`), false);
+      assert.equal(fs.existsSync(`${committedDeleteModeSnapshot}-shm`), false);
+      assert.equal(fs.existsSync(`${committedDeleteModeSnapshot}-journal`), false);
+
+      const walClosedNewerPath = path.join(walEnospcStageDir, 'newer-wal-closed.db');
+      fs.copyFileSync(committedCleanSnapshot, walClosedNewerPath);
+      const walClosedNewerDb = new Database(walClosedNewerPath);
+      walClosedNewerDb.pragma('journal_mode = WAL');
+      walClosedNewerDb
+        .prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)')
+        .run('app_version', '4.5.0');
+      walClosedNewerDb
+        .prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)')
+        .run('schema_version', String(newerDbVersion));
+      walClosedNewerDb.pragma(`user_version = ${newerDbVersion}`);
+      walClosedNewerDb.pragma('wal_checkpoint(TRUNCATE)');
+      walClosedNewerDb.close();
+      const walClosedNewerHeader = fs.readFileSync(walClosedNewerPath).subarray(0, 100);
+      assert.equal(walClosedNewerHeader[18], 2);
+      assert.equal(walClosedNewerHeader[19], 2);
+      assert.equal(walClosedNewerHeader.readInt32BE(60), newerDbVersion);
+      assert.equal(fs.existsSync(`${walClosedNewerPath}-wal`), false);
+      assert.equal(fs.existsSync(`${walClosedNewerPath}-shm`), false);
+      const walClosedNewerSha = sha256File(walClosedNewerPath);
+
+      clearDirectory(backupDir);
+      removeDbSet(dbPath);
+      fs.copyFileSync(walClosedNewerPath, dbPath);
+      let walClosedMismatch: SchemaVersionMismatchError | null = null;
+      assert.throws(
+        () => initDatabase(),
+        (err: unknown) => {
+          if (err instanceof SchemaVersionMismatchError) {
+            walClosedMismatch = err;
+            return true;
+          }
+          return false;
+        },
+        'cleanly closed WAL-mode newer database throws SchemaVersionMismatchError',
+      );
+      assert.equal(walClosedMismatch!.dbVersion, newerDbVersion);
+      assert.equal(walClosedMismatch!.appVersion, maxSupported);
+      assert.equal(walClosedMismatch!.dbAppVersion, '4.5.0');
+      assert.equal(sha256File(dbPath), walClosedNewerSha);
+      assert.equal(
+        fs.existsSync(`${dbPath}-wal`),
+        false,
+        'preflight does not create flo.db-wal on cleanly closed WAL newer DB',
+      );
+      assert.equal(
+        fs.existsSync(`${dbPath}-shm`),
+        false,
+        'preflight does not create flo.db-shm on cleanly closed WAL newer DB',
+      );
+
+      const walClosedRestoreCandidate = path.join(
+        backupDir,
+        'flo-backup-2026-10-28T11-00-00-000Z-pre-v120-to-v121.db',
+      );
+      fs.copyFileSync(baseTemplateCopy, walClosedRestoreCandidate);
+      const walClosedRestoreResult = await restoreCompatibleBackupForDowngrade(
+        walClosedRestoreCandidate,
+        { newerDbVersion },
+      );
+      assert.deepEqual(
+        walClosedRestoreResult.preservedSidecarPaths,
+        [],
+        'downgrade restore of cleanly closed WAL newer DB does not archive fabricated sidecars',
+      );
+      assert.equal(sha256File(walClosedRestoreResult.preservedDbPath), walClosedNewerSha);
+      assert.equal(fs.existsSync(`${walClosedRestoreResult.preservedDbPath}-wal`), false);
+      assert.equal(fs.existsSync(`${walClosedRestoreResult.preservedDbPath}-shm`), false);
+      initDatabase();
+      finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+      closeDatabase();
+
+      clearDirectory(backupDir);
+      removeDbSet(dbPath);
+      fs.copyFileSync(committedCleanSnapshot, dbPath);
       initDatabase();
       const openWalDb = getDatabase();
       openWalDb.pragma('wal_autocheckpoint = 0');
@@ -1449,6 +1543,7 @@ async function run(): Promise<void> {
         return originalMkdtempSync.call(nativeFs, prefix, options);
       }) as typeof fs.mkdtempSync;
 
+      let preparedWalHeaderRetryBase = '';
       try {
         clearDirectory(backupDir);
         removeDbSet(dbPath);
@@ -1463,7 +1558,7 @@ async function run(): Promise<void> {
             }
             return false;
           },
-          'sidecar-free newer database throws SchemaVersionMismatchError without temp staging',
+          'legacy rollback-header newer database throws SchemaVersionMismatchError without temp staging',
         );
         assert.equal(enospcSidecarFreeMismatch!.dbVersion, newerDbVersion);
         assert.equal(enospcSidecarFreeMismatch!.dbAppVersion, '4.1.0');
@@ -1471,6 +1566,28 @@ async function run(): Promise<void> {
         assert.equal(fs.existsSync(`${dbPath}-wal`), false);
         assert.equal(fs.existsSync(`${dbPath}-shm`), false);
 
+        removeDbSet(dbPath);
+        fs.copyFileSync(walClosedNewerPath, dbPath);
+        let enospcWalClosedNewerMismatch: SchemaVersionMismatchError | null = null;
+        assert.throws(
+          () => initDatabase(),
+          (err: unknown) => {
+            if (err instanceof SchemaVersionMismatchError) {
+              enospcWalClosedNewerMismatch = err;
+              return true;
+            }
+            return false;
+          },
+          'WAL-header newer database falls back to header schemaVersion under temp ENOSPC without creating sidecars',
+        );
+        assert.equal(enospcWalClosedNewerMismatch!.dbVersion, newerDbVersion);
+        assert.equal(enospcWalClosedNewerMismatch!.dbAppVersion, null);
+        assert.equal(sha256File(dbPath), walClosedNewerSha);
+        assert.equal(fs.existsSync(`${dbPath}-wal`), false);
+        assert.equal(fs.existsSync(`${dbPath}-shm`), false);
+
+        removeDbSet(dbPath);
+        fs.copyFileSync(deleteModeNewerPath, dbPath);
         fs.writeFileSync(`${dbPath}-wal`, Buffer.alloc(0));
         let enospcHeaderNewerWithWalMismatch: SchemaVersionMismatchError | null = null;
         assert.throws(
@@ -1502,14 +1619,17 @@ async function run(): Promise<void> {
 
         clearDirectory(backupDir);
         removeDbSet(dbPath);
-        fs.copyFileSync(committedCleanSnapshot, dbPath);
-        const cleanCommittedJournalBase = path.join(backupDir, 'flo-restore-recovery-enospcclean');
-        fs.copyFileSync(baseTemplateCopy, `${cleanCommittedJournalBase}.db`);
+        fs.copyFileSync(committedDeleteModeSnapshot, dbPath);
+        const deleteModeCommittedJournalBase = path.join(
+          backupDir,
+          'flo-restore-recovery-enospcdel',
+        );
+        fs.copyFileSync(baseTemplateCopy, `${deleteModeCommittedJournalBase}.db`);
         fs.writeFileSync(
-          `${cleanCommittedJournalBase}.json`,
+          `${deleteModeCommittedJournalBase}.json`,
           JSON.stringify({
             phase: 'committed',
-            recoveryPath: `${cleanCommittedJournalBase}.db`,
+            recoveryPath: `${deleteModeCommittedJournalBase}.db`,
             dbPath,
             driveInvalidationRequired: true,
             downgradeRecovery: true,
@@ -1522,10 +1642,42 @@ async function run(): Promise<void> {
             .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
             .get(),
           { order_number: 'ORD-20261029-0091' },
-          'sidecar-free committed journal succeeds under temp ENOSPC without rolling back',
+          'DELETE-mode committed journal succeeds under temp ENOSPC without rolling back',
         );
         finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
         closeDatabase();
+
+        clearDirectory(backupDir);
+        removeDbSet(dbPath);
+        fs.copyFileSync(committedCleanSnapshot, dbPath);
+        const cleanWalCommittedJournalBase = path.join(
+          backupDir,
+          'flo-restore-recovery-enospcclean',
+        );
+        fs.copyFileSync(baseTemplateCopy, `${cleanWalCommittedJournalBase}.db`);
+        fs.writeFileSync(
+          `${cleanWalCommittedJournalBase}.json`,
+          JSON.stringify({
+            phase: 'committed',
+            recoveryPath: `${cleanWalCommittedJournalBase}.db`,
+            dbPath,
+            driveInvalidationRequired: true,
+            downgradeRecovery: true,
+            recoverySidecars: [],
+          }),
+        );
+        assert.equal(isHealthyDatabaseFile(dbPath, undefined, false), false);
+        assert.equal(fs.existsSync(`${dbPath}-wal`), false);
+        assert.equal(fs.existsSync(`${dbPath}-shm`), false);
+        assert.throws(
+          () => initDatabase(),
+          /ENOSPC/,
+          'cleanly closed WAL-header committed journal fails closed under temp ENOSPC without creating sidecars',
+        );
+        assert.equal(sha256File(dbPath), committedCleanSha);
+        assert.equal(fs.existsSync(`${dbPath}-wal`), false);
+        assert.equal(fs.existsSync(`${dbPath}-shm`), false);
+        assert.equal(getDatabaseReplacementJournal()?.phase, 'committed');
 
         for (const [index, isDowngradeJournal] of [true, false].entries()) {
           clearDirectory(backupDir);
@@ -1565,13 +1717,13 @@ async function run(): Promise<void> {
         }
 
         clearDirectory(backupDir);
-        const preparedNoSidecarBase = path.join(backupDir, 'flo-restore-recovery-enospcprep');
-        fs.copyFileSync(committedCleanSnapshot, `${preparedNoSidecarBase}.db`);
+        const preparedDeleteModeBase = path.join(backupDir, 'flo-restore-recovery-enospcprepdel');
+        fs.copyFileSync(committedDeleteModeSnapshot, `${preparedDeleteModeBase}.db`);
         fs.writeFileSync(
-          `${preparedNoSidecarBase}.json`,
+          `${preparedDeleteModeBase}.json`,
           JSON.stringify({
             phase: 'prepared',
-            recoveryPath: `${preparedNoSidecarBase}.db`,
+            recoveryPath: `${preparedDeleteModeBase}.db`,
             dbPath,
             driveInvalidationRequired: true,
             downgradeRecovery: true,
@@ -1585,12 +1737,90 @@ async function run(): Promise<void> {
             .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
             .get(),
           { order_number: 'ORD-20261029-0091' },
-          'prepared journal with sidecar-free snapshot recovers under temp ENOSPC without probing WAL dbPath',
+          'prepared journal with DELETE-mode snapshot recovers under temp ENOSPC without probing WAL dbPath',
         );
         closeDatabase();
+
+        for (const [index, isDowngradeJournal] of [false, true].entries()) {
+          clearDirectory(backupDir);
+          removeDbSet(dbPath);
+          fs.writeFileSync(dbPath, 'interrupted partial replacement');
+          const preparedWalBase = path.join(
+            backupDir,
+            `flo-restore-recovery-enospcprepwal0${index + 1}`,
+          );
+          preparedWalHeaderRetryBase = preparedWalBase;
+          fs.copyFileSync(committedCleanSnapshot, `${preparedWalBase}.db`);
+          fs.writeFileSync(
+            `${preparedWalBase}.json`,
+            JSON.stringify({
+              phase: 'prepared',
+              recoveryPath: `${preparedWalBase}.db`,
+              dbPath,
+              driveInvalidationRequired: true,
+              ...(isDowngradeJournal
+                ? { downgradeRecovery: true, recoverySidecars: [] }
+                : { baselineForeignKeyViolations: [] }),
+            }),
+          );
+          assert.throws(
+            () => initDatabase(),
+            /ENOSPC/,
+            `prepared journal with WAL-header snapshot (downgrade=${isDowngradeJournal}) fails closed under temp ENOSPC`,
+          );
+          assert.equal(
+            fs.existsSync(`${preparedWalBase}.db-wal`),
+            false,
+            'failed WAL-header snapshot verification does not orphan -wal sidecar',
+          );
+          assert.equal(
+            fs.existsSync(`${preparedWalBase}.db-shm`),
+            false,
+            'failed WAL-header snapshot verification does not orphan -shm sidecar',
+          );
+        }
       } finally {
         mutableFsMkdtemp.mkdtempSync = originalMkdtempSync;
       }
+
+      assert.ok(preparedWalHeaderRetryBase);
+      initDatabase();
+      assert.equal(getDatabaseReplacementJournal(), null);
+      assert.deepEqual(
+        getDatabase()
+          .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
+          .get(),
+        { order_number: 'ORD-20261029-0091' },
+        'prepared WAL-header snapshot recovers cleanly on retry once temp staging recovers',
+      );
+      closeDatabase();
+
+      clearDirectory(backupDir);
+      removeDbSet(dbPath);
+      fs.copyFileSync(committedCleanSnapshot, dbPath);
+      const recoveredCleanWalBase = path.join(backupDir, 'flo-restore-recovery-enospccleanok');
+      fs.copyFileSync(baseTemplateCopy, `${recoveredCleanWalBase}.db`);
+      fs.writeFileSync(
+        `${recoveredCleanWalBase}.json`,
+        JSON.stringify({
+          phase: 'committed',
+          recoveryPath: `${recoveredCleanWalBase}.db`,
+          dbPath,
+          driveInvalidationRequired: true,
+          downgradeRecovery: true,
+          recoverySidecars: [],
+        }),
+      );
+      initDatabase();
+      assert.deepEqual(
+        getDatabase()
+          .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
+          .get(),
+        { order_number: 'ORD-20261029-0091' },
+        'cleanly closed WAL-header committed database boots intact without sidecar leaks once temp staging works',
+      );
+      finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+      closeDatabase();
 
       clearDirectory(backupDir);
       removeDbSet(dbPath);

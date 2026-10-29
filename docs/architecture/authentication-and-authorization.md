@@ -35,8 +35,7 @@ list. `requireRole` (in `main/middleware/security.ts`) still exists, but a stati
 (`tests/authorization-static-audit.test.ts`) fails the build if a new call site under
 `main/routes/` uses it; the few remaining direct role checks are reviewed context policy, covered
 in their own sections below (KDS station/category scope, refund approver identity, the
-Staff Approval PIN holder for order-status, kitchen-delivery, charge-waiver, discount, and item cancel/void overrides, and the
-last-active-owner/staff-target rule).
+Staff Approval PIN holder, and the last-active-owner/staff-target rule).
 
 **Resolution.** For every permission id, `resolveEffectivePermissions(userId)` evaluates, in
 order: the protected-owner rule (for `authorization.manage` and `staff.privileged.manage` only,
@@ -137,7 +136,10 @@ permission check inside the `withTxn` callback, after the transaction opens, usi
 `hasPermission(actorId, id)` against state read in the same transaction.
 `PATCH /api/orders/:id/status`, `PATCH /api/orders/:orderId/items/:itemId/cancel`, the matching
 `.../restore` endpoint in `main/routes/orders.ts`, and the bill payment kitchen-delivery override
-and charge waiver override in `main/routes/bills.ts` do this, and their override-PIN paths additionally require the presenting
+and charge waiver override in `main/routes/bills.ts` do this, and their override-PIN paths
+(along with paid-bill payment-method correction on `PATCH /api/bills/:id/payments/:index/method`,
+which also requires the authenticated caller itself to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)`)
+additionally require the presenting
 user to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)` - a deliberate context-policy role check,
 not a permission, because the Staff Approval PIN belongs to a
 person acting in an owner/manager capacity regardless of what their individual permission grants
@@ -216,10 +218,10 @@ terminals, while approval authority stays restricted to active `owner` and `mana
    and charge waivers), cached override PINs, and open privileged modals are cleared and stale
    asynchronous responses from the previous session are ignored.
 4. **Approval boundary:** `GET /api/staff/approvers` and every Staff Approval PIN check (refunds,
-   item voids, order/item/bill discounts, order-status overrides, kitchen-delivery overrides, and
-   charge waivers) enforce active `owner` or `manager` role eligibility both outside and inside
-   write transactions. A valid `cashier`, `server`, or `chef` PIN is rejected with `403` on every
-   approval path.
+   item voids, order/item/bill discounts, order-status overrides, kitchen-delivery overrides,
+   charge waivers, and paid-bill payment-method corrections) enforce active `owner` or `manager`
+   role eligibility both outside and inside write transactions. A valid `cashier`, `server`, or
+   `chef` PIN is rejected with `403` on every approval path.
 
 ## Password policy
 

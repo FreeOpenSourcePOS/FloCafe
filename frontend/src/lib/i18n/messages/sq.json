@@ -842,7 +842,12 @@
     "overridePriceSaved": "Çmimi u përditësua",
     "overridePriceFailed": "Çmimi nuk mund të përditësohej",
     "priceOverriddenMenu": "Çmimi u ndryshua (menuja {price})",
-    "overridePriceClear": "Përdor çmimin e menusë"
+    "overridePriceClear": "Përdor çmimin e menusë",
+    "correctPaymentMethod": "Korrigjo mënyrën e pagesës",
+    "correctPaymentMethodHint": "Ndrysho mënyrën e regjistruar të pagesës ndërsa turni është i hapur. Shuma mbetet e pandryshuar.",
+    "paymentLineLabel": "Rreshti i pagesës",
+    "paymentMethodCorrected": "Mënyra e pagesës u përditësua",
+    "correctPaymentMethodFailed": "Mënyra e pagesës nuk mund të përditësohej"
   },
   "pos": {
     "addCustomer": "Shto klient",

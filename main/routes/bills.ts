@@ -6,10 +6,13 @@ import {
   generateBillNumber,
   getDatabase,
   getSettingValue,
+  localDateInTimezone,
   now,
+  parseDbTimestamp,
   parseItemJson,
   parseRowJson,
   recordOrderAudit,
+  tenantBusinessDayStartTime,
   utcTodayDate,
   verifyPin,
   verifyPinAsync,
@@ -29,6 +32,7 @@ import {
   NO_CASH_SESSION_ID,
   requireOpenSessionForCashTender,
 } from '../services/shift-session-gate';
+import { closedDayExists, tenantTimezone } from '../services/cash-drawer-movements';
 import {
   checkPinRateLimit,
   isPinRateLimited,
@@ -5578,5 +5582,893 @@ router.get('/:id/print-history', requirePermission('bills.read'), (req: Request,
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+function resolveBillBusinessDate(
+  db: ReturnType<typeof getDatabase>,
+  timestampRaw?: unknown,
+): string {
+  const tz = tenantTimezone();
+  const startTime = tenantBusinessDayStartTime(db);
+  if (typeof timestampRaw === 'string' && timestampRaw.trim()) {
+    const parsed = parseDbTimestamp(timestampRaw);
+    if (Number.isFinite(parsed.getTime())) {
+      return localDateInTimezone(parsed, tz, startTime);
+    }
+  }
+  return localDateInTimezone(new Date(), tz, startTime);
+}
+
+// PATCH /api/bills/:id/payments/:index/method - Correct payment method on a paid bill while its shift is open
+router.patch(
+  '/:id/payments/:index/method',
+  requirePermission('payments.take'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const callerUser = (
+        req as Request & { user?: { userId?: string; id?: string; role?: string } }
+      ).user;
+      const rawActorUserId = String(callerUser?.userId || callerUser?.id || '').trim();
+      const callerRow = rawActorUserId
+        ? (db
+            .prepare(
+              "SELECT id, role, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1",
+            )
+            .get(rawActorUserId) as { id: string; role: string; is_active: number } | undefined)
+        : undefined;
+      if (
+        !callerRow ||
+        callerRow.is_active !== 1 ||
+        !hasRole(callerRow.role, ROLE_ACCESS.ownerManager) ||
+        (callerUser?.role !== undefined && !hasRole(callerUser.role, ROLE_ACCESS.ownerManager))
+      ) {
+        return res.status(403).json({
+          error: 'Only owners and managers can correct payment methods',
+          reason: 'insufficient_role_permissions',
+          code: 'insufficient_role_permissions',
+        });
+      }
+
+      const billId = String(req.params.id);
+      const indexRaw = String(req.params.index ?? '').trim();
+      if (!/^\d+$/.test(indexRaw)) {
+        return res.status(400).json({
+          error: 'Invalid payment line index',
+          reason: 'invalid_payment_index',
+          code: 'invalid_payment_index',
+        });
+      }
+      const paymentIndex = Number(indexRaw);
+      if (!Number.isSafeInteger(paymentIndex) || paymentIndex < 0) {
+        return res.status(400).json({
+          error: 'Invalid payment line index',
+          reason: 'invalid_payment_index',
+          code: 'invalid_payment_index',
+        });
+      }
+
+      if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+        return res.status(400).json({
+          error: 'Request body must be a JSON object',
+          reason: 'payment_input_invalid',
+          code: 'payment_input_invalid',
+        });
+      }
+
+      const idempotencyKey = paymentIdempotencyKey(req);
+
+      const {
+        method,
+        payment_method_id,
+        transaction_id,
+        reason,
+        override_pin,
+        approver_id,
+        manager_id,
+        user_id,
+        amount: requestedAmount,
+      } = req.body;
+
+      const suppliedApproverIds = [approver_id, manager_id, user_id]
+        .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+        .map((val) => String(val).trim());
+      if (new Set(suppliedApproverIds).size > 1) {
+        return res.status(400).json({
+          error: 'Conflicting approver identifiers',
+          reason: 'conflicting_approver_ids',
+          code: 'conflicting_approver_ids',
+        });
+      }
+      const explicitApproverId = suppliedApproverIds[0];
+
+      if (reason !== undefined && reason !== null) {
+        if (typeof reason !== 'string' || reason.trim().length > 500) {
+          return res.status(400).json({
+            error: 'Reason must be a string up to 500 characters',
+            reason: 'invalid_reason',
+            code: 'invalid_reason',
+          });
+        }
+      }
+      const normalizedReason = typeof reason === 'string' && reason.trim() ? reason.trim() : null;
+
+      if (typeof override_pin !== 'string' || !/^\d{4,6}$/.test(override_pin)) {
+        return res.status(403).json({
+          error: 'Owner or manager approval PIN is required',
+          reason: 'pin_required',
+          code: 'pin_required',
+        });
+      }
+
+      const clientIp =
+        req.ip ||
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        'unknown';
+      const canonicalIp = normalizeIpForRateLimit(clientIp);
+      const rateLimitKey = `pin:${canonicalIp}:payment-method-correction`;
+      if (isPinRateLimited(rateLimitKey)) {
+        return res.status(429).json({
+          error: 'Too many PIN attempts. Try again in 15 minutes.',
+          reason: 'pin_rate_limited',
+          code: 'pin_rate_limited',
+        });
+      }
+
+      type ApproverRow = { id: string; role: string; pin_hash: string | null; is_active: number };
+      const preVerifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
+        if (isPinRateLimited(rateLimitKey)) {
+          return { rateLimited: true as const };
+        }
+
+        const candidates = explicitApproverId
+          ? (db
+              .prepare(
+                "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
+              )
+              .all(explicitApproverId) as ApproverRow[])
+          : (db
+              .prepare(
+                "SELECT id, role, pin_hash, is_active FROM users WHERE role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
+              )
+              .all() as ApproverRow[]);
+
+        for (const candidate of candidates) {
+          if (
+            candidate.is_active === 1 &&
+            hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+            candidate.pin_hash &&
+            (await verifyPinAsync(candidate.pin_hash, override_pin))
+          ) {
+            clearPinRateLimit(rateLimitKey);
+            return {
+              approver: { id: candidate.id, verifiedPinHash: candidate.pin_hash },
+            };
+          }
+        }
+
+        checkPinRateLimit(rateLimitKey);
+        return { approver: null };
+      });
+
+      if ('rateLimited' in preVerifiedResult && preVerifiedResult.rateLimited) {
+        return res.status(429).json({
+          error: 'Too many PIN attempts. Try again in 15 minutes.',
+          reason: 'pin_rate_limited',
+          code: 'pin_rate_limited',
+        });
+      }
+      if (!preVerifiedResult.approver) {
+        return res.status(403).json({
+          error: 'Invalid manager or owner approval PIN',
+          reason: 'invalid_pin',
+          code: 'invalid_pin',
+        });
+      }
+      const preVerifiedApprover = preVerifiedResult.approver;
+
+      const result = withTxn(() => {
+        const liveCaller = db
+          .prepare(
+            "SELECT id, role, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1",
+          )
+          .get(rawActorUserId) as { id: string; role: string; is_active: number } | undefined;
+        if (
+          !liveCaller ||
+          liveCaller.is_active !== 1 ||
+          !hasRole(liveCaller.role, ROLE_ACCESS.ownerManager)
+        ) {
+          throw paymentValidationError(
+            'Only owners and managers can correct payment methods',
+            'insufficient_role_permissions',
+            403,
+          );
+        }
+
+        const verifiedApprover = db
+          .prepare(
+            "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND is_active = 1 AND pin_hash IS NOT NULL",
+          )
+          .get(preVerifiedApprover.id) as ApproverRow | undefined;
+        if (
+          !verifiedApprover ||
+          verifiedApprover.is_active !== 1 ||
+          !hasRole(verifiedApprover.role, ROLE_ACCESS.ownerManager) ||
+          verifiedApprover.pin_hash !== preVerifiedApprover.verifiedPinHash
+        ) {
+          throw paymentValidationError('Invalid manager or owner approval PIN', 'invalid_pin', 403);
+        }
+
+        type BillCorrectionRow = Record<string, unknown> & {
+          id: string;
+          bill_number: string;
+          order_id: string;
+          payment_status: string;
+          payment_details: string | unknown[] | Record<string, unknown> | null;
+          paid_at?: string | null;
+          created_at?: string | null;
+          split_group_id?: string | null;
+        };
+        type PaymentLineRecord = Record<string, unknown> & {
+          method?: unknown;
+          payment_method_id?: unknown;
+          transaction_id?: unknown;
+          amount?: unknown;
+          refunded?: unknown;
+          status?: unknown;
+          timestamp?: unknown;
+          cash_session_id?: unknown;
+        };
+
+        const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as
+          | BillCorrectionRow
+          | undefined;
+        if (!bill) {
+          throw paymentValidationError('Bill not found', 'bill_not_found', 404);
+        }
+
+        const effectiveActorUserId = liveCaller.id;
+        const idempotencyUserId = liveCaller.id;
+        const normalizedReqMethod = typeof method === 'string' ? method.trim().toLowerCase() : '';
+        const normalizedReqPaymentMethodId =
+          payment_method_id !== undefined &&
+          payment_method_id !== null &&
+          Number.isSafeInteger(Number(payment_method_id))
+            ? Number(payment_method_id)
+            : null;
+        const normalizedReqTxId =
+          typeof transaction_id === 'string' && transaction_id.trim() !== ''
+            ? transaction_id.trim()
+            : null;
+        const requestHash = idempotencyKey
+          ? createHash('sha256')
+              .update(
+                canonicalizePaymentRequest({
+                  action: 'bill.payment_method.corrected',
+                  billId: String(bill.id),
+                  paymentIndex,
+                  method: normalizedReqMethod,
+                  payment_method_id: normalizedReqPaymentMethodId,
+                  transaction_id: normalizedReqTxId,
+                  reason: normalizedReason,
+                }),
+              )
+              .digest('hex')
+          : null;
+
+        if (idempotencyKey && requestHash) {
+          const existingIdem = db
+            .prepare(
+              'SELECT bill_id, request_hash, response_json FROM payment_idempotency WHERE user_id = ? AND idempotency_key = ?',
+            )
+            .get(idempotencyUserId, idempotencyKey) as
+            | { bill_id: string; request_hash: string; response_json: string }
+            | undefined;
+          if (existingIdem) {
+            if (
+              String(existingIdem.bill_id) !== String(bill.id) ||
+              existingIdem.request_hash !== requestHash
+            ) {
+              throw paymentValidationError(
+                'Idempotency-Key has already been used for a different payment request',
+                'idempotency_key_conflict',
+                409,
+              );
+            }
+            const cached = JSON.parse(existingIdem.response_json);
+            return { ...cached, idempotentReplay: true };
+          }
+        }
+
+        if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
+          throw paymentValidationError(
+            'Cannot correct payment method on a refunded bill',
+            'bill_refunded',
+            409,
+          );
+        }
+        const existingRefund = db
+          .prepare('SELECT 1 FROM refunds WHERE bill_id = ? LIMIT 1')
+          .get(bill.id);
+        if (existingRefund) {
+          throw paymentValidationError(
+            'Cannot correct payment method on a refunded bill',
+            'bill_refunded',
+            409,
+          );
+        }
+        if (bill.payment_status !== 'paid') {
+          throw paymentValidationError(
+            'Payment method can only be corrected on a paid bill',
+            'bill_not_paid',
+            409,
+          );
+        }
+
+        let existingPayments: PaymentLineRecord[] = [];
+        if (bill.payment_details) {
+          try {
+            const parsed =
+              typeof bill.payment_details === 'string'
+                ? JSON.parse(bill.payment_details)
+                : bill.payment_details;
+            existingPayments = (Array.isArray(parsed) ? parsed : [parsed]) as PaymentLineRecord[];
+          } catch {
+            existingPayments = [];
+          }
+        }
+        if (paymentIndex < 0 || paymentIndex >= existingPayments.length) {
+          throw paymentValidationError('Payment line not found', 'payment_line_not_found', 404);
+        }
+        const targetLine = existingPayments[paymentIndex];
+        if (!targetLine || typeof targetLine !== 'object') {
+          throw paymentValidationError('Payment line not found', 'payment_line_not_found', 404);
+        }
+        if (targetLine.refunded === true || targetLine.status === 'refunded') {
+          throw paymentValidationError(
+            'Cannot correct payment method on a refunded payment line',
+            'payment_line_refunded',
+            409,
+          );
+        }
+
+        if (requestedAmount !== undefined && requestedAmount !== null) {
+          const currency = getTenantCurrency();
+          const minorFactor = getCurrencyMinorUnitFactor(currency);
+          const reqNum = Number(requestedAmount);
+          const lineCents = Math.round(Number(targetLine.amount || 0) * minorFactor);
+          const reqCents = Math.round(reqNum * minorFactor);
+          if (!Number.isFinite(reqNum) || reqCents !== lineCents) {
+            throw paymentValidationError(
+              'Payment amount cannot be changed when correcting payment method',
+              'amount_immutable',
+              400,
+            );
+          }
+        }
+
+        const todayBusinessDate = resolveBillBusinessDate(db);
+        const billBusinessDate = resolveBillBusinessDate(
+          db,
+          targetLine.timestamp || bill.paid_at || bill.created_at,
+        );
+        if (closedDayExists(db, billBusinessDate) || closedDayExists(db, todayBusinessDate)) {
+          throw paymentValidationError(
+            'Cannot correct payment method: business day is already closed',
+            'day_closed',
+            409,
+          );
+        }
+
+        if (targetLine.cash_session_id === undefined || targetLine.cash_session_id === null) {
+          throw paymentValidationError(
+            'Cannot verify original cash shift for this payment',
+            'shift_closed',
+            409,
+          );
+        }
+        const rawTargetSessionId = Number(targetLine.cash_session_id);
+        if (!Number.isInteger(rawTargetSessionId) || rawTargetSessionId <= 0) {
+          throw paymentValidationError(
+            'Cannot correct payment method for a payment recorded without an open cash shift',
+            'shift_closed',
+            409,
+          );
+        }
+        const session = db
+          .prepare('SELECT id, status FROM cash_sessions WHERE id = ?')
+          .get(rawTargetSessionId) as { id: number; status: string } | undefined;
+        const openSession = getOpenSession(db);
+        if (
+          !session ||
+          session.status !== 'open' ||
+          !openSession ||
+          session.id !== openSession.id
+        ) {
+          throw paymentValidationError(
+            'Cannot correct payment method: the shift for this payment is closed',
+            'shift_closed',
+            409,
+          );
+        }
+        const effectiveSessionId = session.id;
+
+        if (bill.split_group_id) {
+          const siblings = db
+            .prepare('SELECT * FROM bills WHERE split_group_id = ? AND id != ?')
+            .all(bill.split_group_id, bill.id) as BillCorrectionRow[];
+          for (const sibling of siblings) {
+            if (
+              sibling.payment_status === 'refunded' ||
+              sibling.payment_status === 'partially_refunded' ||
+              db.prepare('SELECT 1 FROM refunds WHERE bill_id = ? LIMIT 1').get(sibling.id)
+            ) {
+              throw paymentValidationError(
+                'Cannot correct payment method: a split sibling check has been refunded',
+                'split_sibling_refunded',
+                409,
+              );
+            }
+            if (!sibling.payment_details) continue;
+            let siblingPayments: PaymentLineRecord[] = [];
+            try {
+              const parsedSib =
+                typeof sibling.payment_details === 'string'
+                  ? JSON.parse(sibling.payment_details)
+                  : sibling.payment_details;
+              siblingPayments = (
+                Array.isArray(parsedSib) ? parsedSib : [parsedSib]
+              ) as PaymentLineRecord[];
+            } catch {
+              siblingPayments = [];
+            }
+            for (const sibLine of siblingPayments) {
+              if (!sibLine || typeof sibLine !== 'object') continue;
+              if (sibLine.refunded === true || sibLine.status === 'refunded') {
+                throw paymentValidationError(
+                  'Cannot correct payment method: a split sibling check has been refunded',
+                  'split_sibling_refunded',
+                  409,
+                );
+              }
+              if (sibLine.cash_session_id === undefined || sibLine.cash_session_id === null) {
+                throw paymentValidationError(
+                  'Cannot correct payment method: a split sibling check has an unverifiable cash shift',
+                  'split_sibling_shift_closed',
+                  409,
+                );
+              }
+              const sibSessionId = Number(sibLine.cash_session_id);
+              if (!Number.isInteger(sibSessionId) || sibSessionId <= 0) {
+                throw paymentValidationError(
+                  'Cannot correct payment method: a split sibling check was settled outside an open shift',
+                  'split_sibling_shift_closed',
+                  409,
+                );
+              }
+              const sibSession = db
+                .prepare('SELECT id, status FROM cash_sessions WHERE id = ?')
+                .get(sibSessionId) as { id: number; status: string } | undefined;
+              if (
+                !sibSession ||
+                sibSession.status !== 'open' ||
+                sibSession.id !== effectiveSessionId
+              ) {
+                throw paymentValidationError(
+                  'Cannot correct payment method: a split sibling check was settled in a closed or different shift',
+                  'split_sibling_shift_closed',
+                  409,
+                );
+              }
+            }
+          }
+        }
+
+        if (String(targetLine.method || '').toLowerCase() === 'wallet') {
+          throw paymentValidationError(
+            'Cannot correct payment method on a wallet payment line',
+            'wallet_method_immutable',
+            409,
+          );
+        }
+
+        const rawMethod = typeof method === 'string' ? method.trim() : '';
+        if (!rawMethod || rawMethod.length > 60) {
+          throw paymentValidationError('Payment method is required', 'payment_input_invalid', 400);
+        }
+        if (rawMethod.toLowerCase() === 'wallet') {
+          throw paymentValidationError(
+            'Cannot change payment method to wallet',
+            'wallet_method_immutable',
+            400,
+          );
+        }
+
+        let resolvedMethod: string;
+        let resolvedPaymentMethodId: number | undefined;
+        if (
+          (rawMethod === 'cash' || rawMethod === 'card') &&
+          (payment_method_id === undefined || payment_method_id === null)
+        ) {
+          resolvedMethod = rawMethod;
+          resolvedPaymentMethodId = undefined;
+        } else if (rawMethod === 'custom') {
+          if (
+            payment_method_id === undefined ||
+            payment_method_id === null ||
+            !Number.isSafeInteger(Number(payment_method_id))
+          ) {
+            throw paymentValidationError(
+              'Custom payment method id is required',
+              'payment_method_unavailable',
+              400,
+            );
+          }
+          const configured = db
+            .prepare('SELECT id, name, is_active FROM payment_methods WHERE id = ?')
+            .get(Number(payment_method_id)) as
+            | { id: number; name: string; is_active: number }
+            | undefined;
+          if (!configured) {
+            throw paymentValidationError(
+              'Unsupported custom payment method',
+              'payment_method_unavailable',
+              400,
+            );
+          }
+          if (configured.is_active !== 1) {
+            throw paymentValidationError(
+              'Custom payment method is inactive',
+              'payment_method_inactive',
+              409,
+            );
+          }
+          resolvedMethod = configured.name;
+          resolvedPaymentMethodId = Number(configured.id);
+        } else if (payment_method_id !== undefined && payment_method_id !== null) {
+          if (!Number.isSafeInteger(Number(payment_method_id))) {
+            throw paymentValidationError(
+              'Invalid custom payment method id',
+              'payment_method_unavailable',
+              400,
+            );
+          }
+          const configured = db
+            .prepare('SELECT id, name, is_active FROM payment_methods WHERE id = ?')
+            .get(Number(payment_method_id)) as
+            | { id: number; name: string; is_active: number }
+            | undefined;
+          if (!configured || configured.name.toLowerCase() !== rawMethod.toLowerCase()) {
+            throw paymentValidationError(
+              'Unsupported custom payment method',
+              'payment_method_unavailable',
+              400,
+            );
+          }
+          if (configured.is_active !== 1) {
+            throw paymentValidationError(
+              'Custom payment method is inactive',
+              'payment_method_inactive',
+              409,
+            );
+          }
+          resolvedMethod = configured.name;
+          resolvedPaymentMethodId = Number(configured.id);
+        } else {
+          const configured = db
+            .prepare('SELECT id, name, is_active FROM payment_methods WHERE lower(name) = lower(?)')
+            .get(rawMethod) as { id: number; name: string; is_active: number } | undefined;
+          if (!configured) {
+            throw paymentValidationError(
+              'Unsupported payment method',
+              'payment_method_unavailable',
+              400,
+            );
+          }
+          if (configured.is_active !== 1) {
+            throw paymentValidationError(
+              'Custom payment method is inactive',
+              'payment_method_inactive',
+              409,
+            );
+          }
+          resolvedMethod = configured.name;
+          resolvedPaymentMethodId = Number(configured.id);
+        }
+
+        let newTxId: string | undefined;
+        if (transaction_id !== undefined && transaction_id !== null) {
+          if (typeof transaction_id !== 'string' || transaction_id.length > 256) {
+            throw paymentValidationError(
+              'transaction_id is invalid or too long',
+              'payment_input_invalid',
+              400,
+            );
+          }
+          const trimmed = transaction_id.trim();
+          if (trimmed.length > 0) {
+            newTxId = trimmed;
+          }
+        }
+        if (
+          resolvedMethod === 'card' &&
+          resolvedPaymentMethodId === undefined &&
+          getSettingValue('card_transaction_id_required') === 'true' &&
+          !newTxId
+        ) {
+          throw paymentValidationError(
+            'Card transaction_id is required',
+            'card_transaction_id_required',
+            400,
+          );
+        }
+
+        const oldMethod = String(targetLine.method || '');
+        const oldPaymentMethodId =
+          targetLine.payment_method_id !== undefined && targetLine.payment_method_id !== null
+            ? Number(targetLine.payment_method_id)
+            : undefined;
+        const oldTxId =
+          typeof targetLine.transaction_id === 'string' && targetLine.transaction_id.trim() !== ''
+            ? targetLine.transaction_id.trim()
+            : undefined;
+
+        const isSameMethod =
+          oldMethod === resolvedMethod &&
+          (oldPaymentMethodId ?? null) === (resolvedPaymentMethodId ?? null) &&
+          (oldTxId ?? null) === (newTxId ?? null);
+
+        if (isSameMethod) {
+          const latestAuditRow = db
+            .prepare(
+              `SELECT id, actor_user_id, action, details_json, created_at
+               FROM order_audit_log
+               WHERE order_id = ?
+                 AND action = 'bill.payment_method.corrected'
+                 AND json_extract(details_json, '$.bill_id') = ?
+                 AND json_extract(details_json, '$.payment_index') = ?
+               ORDER BY id DESC
+               LIMIT 1`,
+            )
+            .get(bill.order_id, bill.id, paymentIndex) as
+            | {
+                id: number;
+                actor_user_id: string;
+                action: string;
+                details_json: string | null;
+                created_at: string;
+              }
+            | undefined;
+          let parsedAuditDetails: Record<string, unknown> = {};
+          if (latestAuditRow?.details_json) {
+            try {
+              parsedAuditDetails = JSON.parse(latestAuditRow.details_json);
+            } catch {
+              parsedAuditDetails = {};
+            }
+          }
+          const replayPayload = {
+            bill: parseRowJson(bill),
+            audit: latestAuditRow
+              ? {
+                  id: latestAuditRow.id,
+                  order_id: bill.order_id,
+                  bill_id: bill.id,
+                  actor_user_id: latestAuditRow.actor_user_id,
+                  action: latestAuditRow.action,
+                  ...parsedAuditDetails,
+                  created_at: latestAuditRow.created_at,
+                }
+              : null,
+            idempotentReplay: true,
+          };
+          if (idempotencyKey && requestHash) {
+            db.prepare(
+              'INSERT INTO payment_idempotency (user_id, idempotency_key, bill_id, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            ).run(
+              idempotencyUserId,
+              idempotencyKey,
+              String(bill.id),
+              requestHash,
+              JSON.stringify(replayPayload),
+              now(),
+            );
+          }
+          return replayPayload;
+        }
+
+        const oldMethodKey =
+          oldPaymentMethodId === undefined ? oldMethod : `custom:${oldPaymentMethodId}`;
+        const newMethodKey =
+          resolvedPaymentMethodId === undefined
+            ? resolvedMethod
+            : `custom:${resolvedPaymentMethodId}`;
+
+        if (newTxId) {
+          const existingRef = db
+            .prepare(
+              'SELECT bill_id FROM payment_transaction_refs WHERE method = ? AND transaction_id = ?',
+            )
+            .get(newMethodKey, newTxId) as { bill_id: string } | undefined;
+          if (existingRef && String(existingRef.bill_id) !== String(bill.id)) {
+            throw paymentValidationError(
+              'Payment transaction_id has already been used for another bill',
+              'transaction_reference_used',
+              409,
+            );
+          }
+          const duplicateOnSameBill = existingPayments.some((line, idx) => {
+            if (idx === paymentIndex || !line || typeof line !== 'object') return false;
+            const lineMethodKey =
+              line.payment_method_id === undefined || line.payment_method_id === null
+                ? String(line.method || '')
+                : `custom:${Number(line.payment_method_id)}`;
+            return lineMethodKey === newMethodKey && line.transaction_id === newTxId;
+          });
+          if (duplicateOnSameBill) {
+            throw paymentValidationError(
+              'Payment transaction_id has already been used for this bill',
+              'transaction_reference_reused',
+              409,
+            );
+          }
+        }
+
+        const changedAt = now();
+        const updatedLine: Record<string, unknown> = {
+          ...targetLine,
+          method: resolvedMethod,
+          cash_session_id: effectiveSessionId,
+        };
+        if (resolvedPaymentMethodId !== undefined) {
+          updatedLine.payment_method_id = resolvedPaymentMethodId;
+        } else {
+          delete updatedLine.payment_method_id;
+        }
+        if (newTxId !== undefined) {
+          updatedLine.transaction_id = newTxId;
+        } else {
+          delete updatedLine.transaction_id;
+        }
+
+        const newIsCash = isCashTender(db, {
+          method: resolvedMethod,
+          payment_method_id: resolvedPaymentMethodId,
+        });
+        if (newIsCash) {
+          updatedLine.tendered_amount = Number(targetLine.amount);
+          updatedLine.change_amount = 0;
+          updatedLine.requested_amount = Number(targetLine.amount);
+        } else {
+          delete updatedLine.tendered_amount;
+          delete updatedLine.change_amount;
+          updatedLine.requested_amount = Number(targetLine.amount);
+        }
+
+        const updatedPayments = existingPayments.map((line, idx) =>
+          idx === paymentIndex ? updatedLine : line,
+        );
+
+        if (oldTxId) {
+          const stillUsedOnSameBill = updatedPayments.some((line, idx) => {
+            if (idx === paymentIndex || !line || typeof line !== 'object') return false;
+            const lineMethodKey =
+              line.payment_method_id === undefined || line.payment_method_id === null
+                ? String(line.method || '')
+                : `custom:${Number(line.payment_method_id)}`;
+            return lineMethodKey === oldMethodKey && line.transaction_id === oldTxId;
+          });
+          if (!stillUsedOnSameBill) {
+            db.prepare(
+              'DELETE FROM payment_transaction_refs WHERE method = ? AND transaction_id = ? AND bill_id = ?',
+            ).run(oldMethodKey, oldTxId, String(bill.id));
+          }
+        }
+
+        if (newTxId) {
+          db.prepare(
+            'INSERT OR REPLACE INTO payment_transaction_refs (method, transaction_id, bill_id, created_at) VALUES (?, ?, ?, ?)',
+          ).run(newMethodKey, newTxId, String(bill.id), changedAt);
+        }
+
+        db.prepare('UPDATE bills SET payment_details = ?, updated_at = ? WHERE id = ?').run(
+          JSON.stringify(updatedPayments),
+          changedAt,
+          bill.id,
+        );
+
+        const auditDetails = {
+          bill_id: bill.id,
+          bill_number: bill.bill_number,
+          order_id: bill.order_id,
+          payment_index: paymentIndex,
+          amount: Number(targetLine.amount),
+          old_method: oldMethod,
+          old_payment_method_id: oldPaymentMethodId ?? null,
+          old_transaction_id: oldTxId ?? null,
+          new_method: resolvedMethod,
+          new_payment_method_id: resolvedPaymentMethodId ?? null,
+          new_transaction_id: newTxId ?? null,
+          actor_id: rawActorUserId || effectiveActorUserId,
+          approver_id: verifiedApprover.id,
+          approved_by: verifiedApprover.id,
+          reason: normalizedReason,
+          cash_session_id: effectiveSessionId,
+          idempotency_key: idempotencyKey ?? null,
+          timestamp: changedAt,
+        };
+
+        recordOrderAudit(db, {
+          orderId: bill.order_id,
+          actorUserId: effectiveActorUserId,
+          action: 'bill.payment_method.corrected',
+          details: auditDetails,
+        });
+
+        const insertedAudit = db
+          .prepare(
+            `SELECT id, created_at FROM order_audit_log WHERE order_id = ? AND action = 'bill.payment_method.corrected' ORDER BY id DESC LIMIT 1`,
+          )
+          .get(bill.order_id) as { id: number; created_at: string } | undefined;
+
+        const updatedBill = parseRowJson(
+          db.prepare('SELECT * FROM bills WHERE id = ?').get(bill.id),
+        );
+        const responsePayload = {
+          bill: updatedBill,
+          audit: {
+            id: insertedAudit?.id ?? null,
+            actor_user_id: effectiveActorUserId,
+            action: 'bill.payment_method.corrected',
+            ...auditDetails,
+            created_at: insertedAudit?.created_at ?? changedAt,
+          },
+        };
+
+        if (idempotencyKey && requestHash) {
+          db.prepare(
+            'INSERT INTO payment_idempotency (user_id, idempotency_key, bill_id, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+          ).run(
+            idempotencyUserId,
+            idempotencyKey,
+            String(bill.id),
+            requestHash,
+            JSON.stringify(responsePayload),
+            changedAt,
+          );
+        }
+
+        return responsePayload;
+      });
+
+      notifyOrderUpdated();
+      return res.json(result);
+    } catch (error: unknown) {
+      const err = error as {
+        statusCode?: unknown;
+        displayCode?: unknown;
+        message?: unknown;
+      } | null;
+      const statusCode =
+        typeof err?.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 600
+          ? err.statusCode
+          : 500;
+      const reasonCode =
+        typeof err?.displayCode === 'string' && err.displayCode
+          ? err.displayCode
+          : statusCode >= 500
+            ? 'internal_error'
+            : 'validation_failed';
+      if (statusCode >= 500) {
+        console.error('[API] Payment method correction failed:', error);
+      }
+      return res.status(statusCode).json({
+        error: statusCode >= 500 ? 'Internal server error' : String(err?.message ?? ''),
+        reason: reasonCode,
+        code: reasonCode,
+      });
+    }
+  }),
+);
 
 export const billRoutes = router;

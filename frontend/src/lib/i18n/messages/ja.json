@@ -842,7 +842,12 @@
     "overridePriceSaved": "価格を更新しました",
     "overridePriceFailed": "価格を更新できませんでした",
     "priceOverriddenMenu": "価格変更済み（メニュー {price}）",
-    "overridePriceClear": "メニュー価格に戻す"
+    "overridePriceClear": "メニュー価格に戻す",
+    "correctPaymentMethod": "支払方法を修正",
+    "correctPaymentMethodHint": "シフトが開いている間に記録済みの支払方法を変更します。金額は変更されません。",
+    "paymentLineLabel": "支払明細",
+    "paymentMethodCorrected": "支払方法を更新しました",
+    "correctPaymentMethodFailed": "支払方法を更新できませんでした"
   },
   "pos": {
     "addCustomer": "顧客を追加",

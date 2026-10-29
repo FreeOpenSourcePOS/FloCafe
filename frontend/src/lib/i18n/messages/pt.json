@@ -842,7 +842,12 @@
     "overridePriceSaved": "Preço atualizado",
     "overridePriceFailed": "Não foi possível atualizar o preço",
     "priceOverriddenMenu": "Preço alterado (cardápio {price})",
-    "overridePriceClear": "Usar preço do cardápio"
+    "overridePriceClear": "Usar preço do cardápio",
+    "correctPaymentMethod": "Corrigir forma de pagamento",
+    "correctPaymentMethodHint": "Altere a forma de pagamento registrada enquanto o turno estiver aberto. O valor permanece inalterado.",
+    "paymentLineLabel": "Linha de pagamento",
+    "paymentMethodCorrected": "Forma de pagamento atualizada",
+    "correctPaymentMethodFailed": "Não foi possível atualizar a forma de pagamento"
   },
   "pos": {
     "addCustomer": "Adicionar Cliente",

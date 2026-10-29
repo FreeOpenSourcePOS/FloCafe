@@ -842,7 +842,12 @@
     "overridePriceSaved": "قیمت به‌روزرسانی شد",
     "overridePriceFailed": "به‌روزرسانی قیمت ممکن نشد",
     "priceOverriddenMenu": "قیمت تغییر کرد (منو {price})",
-    "overridePriceClear": "استفاده از قیمت منو"
+    "overridePriceClear": "استفاده از قیمت منو",
+    "correctPaymentMethod": "اصلاح روش پرداخت",
+    "correctPaymentMethodHint": "تا زمانی که شیفت باز است، روش پرداخت ثبت‌شده را تغییر دهید. مبلغ بدون تغییر می‌ماند.",
+    "paymentLineLabel": "ردیف پرداخت",
+    "paymentMethodCorrected": "روش پرداخت به‌روزرسانی شد",
+    "correctPaymentMethodFailed": "به‌روزرسانی روش پرداخت انجام نشد"
   },
   "pos": {
     "addCustomer": "افزودن مشتری",

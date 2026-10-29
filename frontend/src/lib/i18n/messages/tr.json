@@ -842,7 +842,12 @@
     "overridePriceSaved": "Fiyat güncellendi",
     "overridePriceFailed": "Fiyat güncellenemedi",
     "priceOverriddenMenu": "Fiyat değiştirildi (menü {price})",
-    "overridePriceClear": "Menü fiyatını kullan"
+    "overridePriceClear": "Menü fiyatını kullan",
+    "correctPaymentMethod": "Ödeme yöntemini düzelt",
+    "correctPaymentMethodHint": "Vardiya açıkken kaydedilen ödeme yöntemini değiştirin. Tutar değişmez.",
+    "paymentLineLabel": "Ödeme satırı",
+    "paymentMethodCorrected": "Ödeme yöntemi güncellendi",
+    "correctPaymentMethodFailed": "Ödeme yöntemi güncellenemedi"
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",

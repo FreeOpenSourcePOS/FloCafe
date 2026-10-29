@@ -171,6 +171,15 @@ manager PIN (with `payments.take` when overriding unsettled payment), even when 
 is already an owner or manager. Full safeguard, restock, and audit rules are in
 [the Orders API reference](api.md#orders).
 
+**Paid bill payment method correction.** Only an active `owner` or `manager` holding `payments.take`
+can correct the tender method on a recorded payment line of a `paid` bill
+(`PATCH /api/bills/:id/payments/:index/method`) while its cash shift and store business day remain
+open (`Yes (with Staff Approval PIN)` for Owner and Manager; `No` for Cashier, Server, and Chef).
+Every correction requires an active `owner` or `manager` Staff Approval PIN (`override_pin`,
+`approver_id`); a `cashier`, `server`, or `chef` caller or PIN never authorizes this action (`403`).
+Full shift, refund, split-sibling, amount-immutability, and audit rules are in
+[the Bills API reference](api.md#bills).
+
 **Owner visibility.** The permission editor itself is rendered only for an authenticated user
 holding `authorization.manage` — an active owner, always. The API enforces this independently;
 hiding a control in the interface is not a security boundary.

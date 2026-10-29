@@ -842,7 +842,12 @@
     "overridePriceSaved": "Цена обновлена",
     "overridePriceFailed": "Не удалось обновить цену",
     "priceOverriddenMenu": "Цена изменена (меню {price})",
-    "overridePriceClear": "Вернуть цену из меню"
+    "overridePriceClear": "Вернуть цену из меню",
+    "correctPaymentMethod": "Исправить способ оплаты",
+    "correctPaymentMethodHint": "Измените записанный способ оплаты, пока смена открыта. Сумма не меняется.",
+    "paymentLineLabel": "Строка оплаты",
+    "paymentMethodCorrected": "Способ оплаты обновлён",
+    "correctPaymentMethodFailed": "Не удалось обновить способ оплаты"
   },
   "pos": {
     "addCustomer": "Добавить клиента",

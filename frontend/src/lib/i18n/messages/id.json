@@ -842,7 +842,12 @@
     "overridePriceSaved": "Harga diperbarui",
     "overridePriceFailed": "Tidak dapat memperbarui harga",
     "priceOverriddenMenu": "Harga diubah (menu {price})",
-    "overridePriceClear": "Gunakan harga menu"
+    "overridePriceClear": "Gunakan harga menu",
+    "correctPaymentMethod": "Koreksi metode pembayaran",
+    "correctPaymentMethodHint": "Ubah metode pembayaran yang tercatat selama shift masih buka. Jumlah tetap tidak berubah.",
+    "paymentLineLabel": "Baris pembayaran",
+    "paymentMethodCorrected": "Metode pembayaran diperbarui",
+    "correctPaymentMethodFailed": "Tidak dapat memperbarui metode pembayaran"
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",

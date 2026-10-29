@@ -230,7 +230,9 @@ payment with `409`. A zero-balance payment retry on an already-settled bill retu
 idempotently without rejecting. The response carries the updated bill plus the wallet and loyalty
 effects; `bill.payment_details` is the
 settlement ledger, one entry per line with the applied amount, the requested amount, cash tendered
-and change, the `cash_session_id`, and the timestamp.
+and change, the `cash_session_id`, and the timestamp. While a `paid` bill's cash shift and business
+day remain open, the tender method on a recorded non-wallet line can be corrected without changing
+its amount via `PATCH /api/bills/:id/payments/:index/method` (see [the Bills API reference](../reference/api.md#bills)).
 
 ## Settlement and completion
 

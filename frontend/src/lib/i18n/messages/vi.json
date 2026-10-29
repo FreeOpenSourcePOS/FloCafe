@@ -842,7 +842,12 @@
     "overridePriceSaved": "Đã cập nhật giá",
     "overridePriceFailed": "Không thể cập nhật giá",
     "priceOverriddenMenu": "Giá đã đổi (thực đơn {price})",
-    "overridePriceClear": "Dùng giá thực đơn"
+    "overridePriceClear": "Dùng giá thực đơn",
+    "correctPaymentMethod": "Sửa phương thức thanh toán",
+    "correctPaymentMethodHint": "Thay đổi phương thức thanh toán đã ghi nhận khi ca làm việc đang mở. Số tiền giữ nguyên.",
+    "paymentLineLabel": "Dòng thanh toán",
+    "paymentMethodCorrected": "Đã cập nhật phương thức thanh toán",
+    "correctPaymentMethodFailed": "Không thể cập nhật phương thức thanh toán"
   },
   "pos": {
     "addCustomer": "Thêm khách hàng",

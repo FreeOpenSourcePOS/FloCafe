@@ -842,7 +842,12 @@
     "overridePriceSaved": "कीमत अपडेट हुई",
     "overridePriceFailed": "कीमत अपडेट नहीं हो सकी",
     "priceOverriddenMenu": "कीमत बदली गई (मेनू {price})",
-    "overridePriceClear": "मेनू कीमत का उपयोग करें"
+    "overridePriceClear": "मेनू कीमत का उपयोग करें",
+    "correctPaymentMethod": "भुगतान विधि सुधारें",
+    "correctPaymentMethodHint": "शिफ्ट खुली रहने के दौरान दर्ज भुगतान विधि बदलें। राशि अपरिवर्तित रहती है।",
+    "paymentLineLabel": "भुगतान पंक्ति",
+    "paymentMethodCorrected": "भुगतान विधि अपडेट की गई",
+    "correctPaymentMethodFailed": "भुगतान विधि अपडेट नहीं हो सकी"
   },
   "pos": {
     "addCustomer": "ग्राहक जोड़ें",

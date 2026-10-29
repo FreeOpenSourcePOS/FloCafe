@@ -842,7 +842,12 @@
     "overridePriceSaved": "Preis aktualisiert",
     "overridePriceFailed": "Preis konnte nicht aktualisiert werden",
     "priceOverriddenMenu": "Preis geändert (Karte {price})",
-    "overridePriceClear": "Kartenpreis verwenden"
+    "overridePriceClear": "Kartenpreis verwenden",
+    "correctPaymentMethod": "Zahlungsart korrigieren",
+    "correctPaymentMethodHint": "Ändern Sie die erfasste Zahlungsart, solange die Schicht geöffnet ist. Der Betrag bleibt unverändert.",
+    "paymentLineLabel": "Zahlungsposition",
+    "paymentMethodCorrected": "Zahlungsart aktualisiert",
+    "correctPaymentMethodFailed": "Zahlungsart konnte nicht aktualisiert werden"
   },
   "pos": {
     "addCustomer": "Kunde hinzufügen",

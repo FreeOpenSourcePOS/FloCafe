@@ -842,7 +842,12 @@
     "overridePriceSaved": "দাম আপডেট হয়েছে",
     "overridePriceFailed": "দাম আপডেট করা যায়নি",
     "priceOverriddenMenu": "দাম পরিবর্তিত (মেনু {price})",
-    "overridePriceClear": "মেনু দাম ব্যবহার করুন"
+    "overridePriceClear": "মেনু দাম ব্যবহার করুন",
+    "correctPaymentMethod": "পেমেন্ট পদ্ধতি সংশোধন করুন",
+    "correctPaymentMethodHint": "শিফট খোলা থাকাকালীন নথিভুক্ত পেমেন্ট পদ্ধতি পরিবর্তন করুন। টাকার পরিমাণ অপরিবর্তিত থাকবে।",
+    "paymentLineLabel": "পেমেন্ট লাইন",
+    "paymentMethodCorrected": "পেমেন্ট পদ্ধতি আপডেট হয়েছে",
+    "correctPaymentMethodFailed": "পেমেন্ট পদ্ধতি আপডেট করা যায়নি"
   },
   "pos": {
     "addCustomer": "গ্রাহক যোগ করুন",

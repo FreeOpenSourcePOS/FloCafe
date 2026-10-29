@@ -842,7 +842,12 @@
     "overridePriceSaved": "가격이 업데이트되었습니다",
     "overridePriceFailed": "가격을 업데이트할 수 없습니다",
     "priceOverriddenMenu": "가격 변경됨(메뉴 {price})",
-    "overridePriceClear": "메뉴 가격 사용"
+    "overridePriceClear": "메뉴 가격 사용",
+    "correctPaymentMethod": "결제 수단 정정",
+    "correctPaymentMethodHint": "근무 교대가 열려 있는 동안 기록된 결제 수단을 변경합니다. 금액은 변경되지 않습니다.",
+    "paymentLineLabel": "결제 항목",
+    "paymentMethodCorrected": "결제 수단이 업데이트되었습니다",
+    "correctPaymentMethodFailed": "결제 수단을 업데이트할 수 없습니다"
   },
   "pos": {
     "addCustomer": "고객 추가",

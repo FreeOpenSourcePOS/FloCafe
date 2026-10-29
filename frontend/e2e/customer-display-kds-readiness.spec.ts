@@ -71,6 +71,29 @@ async function ensurePickupCatalog(
   return { espressoId, croissantId };
 }
 
+async function cleanupPickupCatalog(request: APIRequestContext): Promise<void> {
+  const headers = ownerHeaders();
+  const prodRes = await request.get(`${BASE}/api/products`, { headers });
+  expect(prodRes.ok()).toBeTruthy();
+  const prodBody = (await prodRes.json()) as { products?: Array<{ id: string; name: string }> };
+  for (const product of prodBody.products ?? []) {
+    if (product.name === PRODUCT_ESPRESSO || product.name === PRODUCT_CROISSANT) {
+      const deleted = await request.delete(`${BASE}/api/products/${product.id}`, { headers });
+      expect(deleted.ok(), `deleting ${product.name} must succeed`).toBeTruthy();
+    }
+  }
+
+  const catRes = await request.get(`${BASE}/api/categories`, { headers });
+  expect(catRes.ok()).toBeTruthy();
+  const catBody = (await catRes.json()) as { categories?: Array<{ id: string; name: string }> };
+  for (const category of catBody.categories ?? []) {
+    if (category.name === PICKUP_CATEGORY_NAME) {
+      const deleted = await request.delete(`${BASE}/api/categories/${category.id}`, { headers });
+      expect(deleted.ok(), `deleting ${category.name} must succeed`).toBeTruthy();
+    }
+  }
+}
+
 async function loginAsOwner(page: Page): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${BASE}/auth/login`);
@@ -140,13 +163,20 @@ async function revokeAllDisplayTokens(request: APIRequestContext): Promise<void>
 }
 
 test.describe('Customer display KDS readiness across postpaid and prepaid takeaway orders', () => {
-  let settingsSnapshot: Map<string, string | undefined>;
+  let settingsSnapshot: Map<string, string | undefined> | undefined;
   let catalog: { espressoId: string; croissantId: string };
   const cleanupOrderIds: number[] = [];
 
   test.beforeAll(async ({ request }) => {
     settingsSnapshot = await captureSettings(request, TRACKED_SETTINGS);
     catalog = await ensurePickupCatalog(request);
+  });
+
+  test.afterAll(async ({ request }) => {
+    await cleanupPickupCatalog(request);
+    if (settingsSnapshot) {
+      await restoreSettings(request, settingsSnapshot);
+    }
   });
 
   test.beforeEach(async ({ request }) => {
@@ -189,7 +219,9 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
         data: CUSTOMER_DISPLAY_DEFAULTS,
       })
       .catch(() => {});
-    await restoreSettings(request, settingsSnapshot);
+    if (settingsSnapshot) {
+      await restoreSettings(request, settingsSnapshot);
+    }
   });
 
   test('postpaid takeaway order reconciles Preparing -> Ready for pickup -> append/cancel/restore -> auto-clear on Delivered across signed-in and paired boards without reload', async ({
@@ -498,15 +530,16 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
       const orderBody = (await (await orderResPromise).json()) as {
         order: { id: number; order_number: string };
       };
+      const orderId = orderBody.order.id;
+      const orderNumber = orderBody.order.order_number;
+      cleanupOrderIds.push(orderId);
+
       const billBody = (await (await billResPromise).json()) as {
         bill: { bill_number: string };
       };
       await paymentResPromise;
 
-      const orderId = orderBody.order.id;
-      const orderNumber = orderBody.order.order_number;
       const displayNumber = billBody.bill.bill_number;
-      cleanupOrderIds.push(orderId);
 
       const checkCompletedStatus = async () => {
         const storedRes = await request.get(`${BASE}/api/orders/${orderId}`, {

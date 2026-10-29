@@ -48,6 +48,7 @@ export interface CartStateForFingerprint {
   orderType: string;
   guestCount: number;
   orderNotes?: string | null;
+  scheduledFor?: string | null;
   onlinePlatform?: string | null;
   externalOrderId?: string | null;
   deliveryAddress?: string | null;
@@ -69,6 +70,10 @@ export function buildCartFingerprintFromState(
     type: cartState.orderType,
     guest_count: cartState.guestCount,
     special_instructions: cartState.orderNotes,
+    scheduled_for:
+      cartState.orderType === 'takeaway' || cartState.orderType === 'delivery'
+        ? cartState.scheduledFor?.trim() || undefined
+        : undefined,
     online_platform: cartState.orderType === 'online' ? cartState.onlinePlatform : undefined,
     external_order_id: cartState.orderType === 'online' ? cartState.externalOrderId : undefined,
     delivery_address:

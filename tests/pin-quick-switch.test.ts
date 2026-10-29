@@ -1236,6 +1236,8 @@ async function run() {
   };
   (globalThis as any).window = {
     dispatchEvent: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
     setTimeout,
     clearTimeout,
     localStorage: fakeStorage,
@@ -1507,9 +1509,92 @@ async function run() {
     'Cart cleared after committed cart marker blocked duplicate checkout',
   );
 
+  const { buildCartFingerprintFromState } = require('../frontend/src/lib/order-attempt');
+  const baseCartForFingerprint = {
+    tableId: null,
+    customerId: null,
+    orderType: 'takeaway',
+    guestCount: 1,
+    orderNotes: null,
+    items: [
+      {
+        product: { id: 'prod-latte', name: 'Latte', price: 120 },
+        quantity: 1,
+        addons: [],
+      },
+    ],
+    waivedChargeIds: new Set<string>(),
+    optedInChargeIds: new Set<string>(),
+  };
+  const fpImmediate = buildCartFingerprintFromState({
+    ...baseCartForFingerprint,
+    scheduledFor: '',
+  });
+  const fpScheduled1 = buildCartFingerprintFromState({
+    ...baseCartForFingerprint,
+    scheduledFor: '2026-10-30T10:00:00.000Z',
+  });
+  const fpScheduled2 = buildCartFingerprintFromState({
+    ...baseCartForFingerprint,
+    scheduledFor: '2026-10-30T11:00:00.000Z',
+  });
+  assertOrThrow(fpImmediate !== fpScheduled1, 'Immediate and scheduled order fingerprints differ');
+  assertOrThrow(fpScheduled1 !== fpScheduled2, 'Different scheduled times yield different fingerprints');
+
+  const fpDineIn1 = buildCartFingerprintFromState({
+    ...baseCartForFingerprint,
+    orderType: 'dine_in',
+    tableId: 't-1',
+    scheduledFor: '2026-10-30T10:00:00.000Z',
+  });
+  const fpDineIn2 = buildCartFingerprintFromState({
+    ...baseCartForFingerprint,
+    orderType: 'dine_in',
+    tableId: 't-1',
+    scheduledFor: '',
+  });
+  assertEqualOrThrow(fpDineIn1, fpDineIn2, 'Dine-in ignores scheduledFor in cart fingerprint');
+
+  useAuthStore.setState({
+    user: null,
+    token: null,
+    isLocked: true,
+  });
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  useCartStore.getState().clearCart();
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-latte',
+      name: 'Latte',
+      price: 120,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    1,
+  );
+  tree = renderPOSPage(POSPage);
+  p2CartPanel = findElement(tree, CartPanelStub);
+  p2CartPanel.props.onPlaceOrder();
+  tree = renderPOSPage(POSPage);
+  const recoveredModal = findElement(tree, PrepaidCheckoutModalStub);
+  assertOrThrow(
+    recoveredModal,
+    'Prepaid checkout modal opens for originating user with unpaid committed cart and matching attempt',
+  );
+  assertEqualOrThrow(
+    useCartStore.getState().items.length,
+    1,
+    'Cart is preserved rather than wiped during prepaid recovery',
+  );
+
   closeDatabase();
   fs.rmSync(testDir, { recursive: true, force: true });
   console.log('\n✅ All PIN Quick Switch & Approval Hardening tests passed!');
+  process.exit(0);
 }
 
 run().catch((err) => {

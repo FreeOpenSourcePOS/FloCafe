@@ -1475,8 +1475,26 @@ export default function POSPage() {
 
     const cartFingerprint = buildCurrentCartFingerprint();
     if (!pendingOrder) {
+      let matchingAttempt: PrepaidAttempt | null = null;
+      if (shouldTakePaymentNow) {
+        try {
+          const storedAttempt = readPrepaidAttempt();
+          if (
+            storedAttempt &&
+            storedAttempt.userId === activeUserId &&
+            storedAttempt.cartFingerprint === cartFingerprint &&
+            storedAttempt.orderIdempotencyKey &&
+            storedAttempt.paymentIdempotencyKey
+          ) {
+            matchingAttempt = storedAttempt;
+          }
+        } catch {
+          // Storage failures are reported when checkout is confirmed.
+        }
+      }
+
       const committedRecord = readCommittedCart(getAppendAttemptStorage(), cartFingerprint);
-      if (committedRecord) {
+      if (committedRecord && (committedRecord.isPaid || !matchingAttempt)) {
         reportOrderFailure({
           code: 'order.cart_already_committed',
           title: committedRecord.isPaid
@@ -1498,28 +1516,13 @@ export default function POSPage() {
         setSubmitting(false);
         return;
       }
-    }
 
-    // Prepaid stores collect payment before finishing the order.
-    if (shouldTakePaymentNow && !pendingOrder) {
-      let matchingAttempt: PrepaidAttempt | null = null;
-      try {
-        const storedAttempt = readPrepaidAttempt();
-        if (
-          storedAttempt &&
-          storedAttempt.userId === activeUserId &&
-          storedAttempt.cartFingerprint === cartFingerprint &&
-          storedAttempt.orderIdempotencyKey &&
-          storedAttempt.paymentIdempotencyKey
-        ) {
-          matchingAttempt = storedAttempt;
-        }
-      } catch {
-        // Storage failures are reported when checkout is confirmed.
+      // Prepaid stores collect payment before finishing the order.
+      if (shouldTakePaymentNow) {
+        setPrepaidModalAttempt(matchingAttempt);
+        setShowPrepaidCheckout(true);
+        return;
       }
-      setPrepaidModalAttempt(matchingAttempt);
-      setShowPrepaidCheckout(true);
-      return;
     }
 
     // Postpaid store / unpaid order → place order, kitchen gets the ticket, payment collected later

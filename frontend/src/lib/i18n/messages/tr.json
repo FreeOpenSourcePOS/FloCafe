@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Faturalar (PDF)",
     "exportCsvHint": "CSV beş dosya indirir: özet, günlük, vergiler, ürünler ve ödemeler.",
     "exportCsvStarted": "Özet, günlük, vergi, ürün ve ödeme CSV dosyaları indiriliyor…",
     "exportCustomerSales": "Müşteri satışları",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "Fiyat güncellendi",
     "overridePriceFailed": "Fiyat güncellenemedi",
     "priceOverriddenMenu": "Fiyat değiştirildi (menü {price})",
-    "overridePriceClear": "Menü fiyatını kullan"
+    "overridePriceClear": "Menü fiyatını kullan",
+    "correctPaymentMethod": "Ödeme yöntemini düzelt",
+    "correctPaymentMethodHint": "Vardiya açıkken kaydedilen ödeme yöntemini değiştirin. Tutar değişmez.",
+    "paymentLineLabel": "Ödeme satırı",
+    "paymentMethodCorrected": "Ödeme yöntemi güncellendi",
+    "correctPaymentMethodFailed": "Ödeme yöntemi güncellenemedi"
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# açık sipariş sonraki vardiyaya devredilecek} other {# açık sipariş sonraki vardiyaya devredilecek}}",
     "shiftCloseUnpaidWarningHint": "Bu siparişler bir sonraki vardiya için açık kalır. Bu vardiyayı kapatmak yalnızca bu vardiya sırasında tahsil edilmiş nakit ödemeleri mutabakatlandırır.",
     "shiftCloseUnpaidMoreCount": "+{count} açık sipariş daha",
-    "lockTerminal": "Terminali Kilitle"
+    "lockTerminal": "Terminali Kilitle",
+    "selectOpenShift": "Kapatılacak vardiya",
+    "xReportShiftFilterLabel": "Vardiya kapsamı",
+    "xReportAllShifts": "Tüm vardiyalar (tüm gün)"
   },
   "printTest": {
     "amt": "Tutar",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "Boşta Otomatik Kilitleme",
     "autoLockHint": "Hareketsizlik sonrasında POS terminalini otomatik kilitle",
     "autoLockOff": "Kapalı",
-    "autoLockMinutesOption": "{count} dk."
+    "autoLockMinutesOption": "{count} dk.",
+    "requireOpenShift": "Nakit için Açık Vardiya Zorunlu",
+    "requireOpenShiftHint": "Aktif bir vardiya açık olmadıkça nakit ödemeleri, nakit iadeleri ve kasa hareketlerini engelle.",
+    "oneShiftPerStaff": "Personel başına bir vardiya",
+    "oneShiftPerStaffHint": "Her personelin kendi kasa vardiyasını bağımsız olarak açıp kapatmasına izin ver.",
+    "oneShiftPerStaffSharedDrawerWarning": "Not: İki eşzamanlı vardiya tek bir fiziksel nakit çekmecesini paylaşıyorsa, bireysel çekmece nakit sayımları fiziksel olarak ayrılmaz.",
+    "oneShiftPerStaffDisableBlocked": "Birden fazla vardiya açıkken personel başına bir vardiya devre dışı bırakılamaz. Önce diğer vardiyaları kapatın."
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",

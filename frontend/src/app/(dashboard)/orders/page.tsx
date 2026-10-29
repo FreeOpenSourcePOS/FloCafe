@@ -59,6 +59,7 @@ import { classifyOrderRequestFailure } from '@/lib/order-attempt';
 import { OrderCard } from '@/components/orders/OrderCard';
 import { OrdersMasterList } from '@/components/orders/OrdersMasterList';
 import { OrderDetailPanel } from '@/components/orders/OrderDetailPanel';
+import CorrectPaymentMethodModal from '@/components/orders/CorrectPaymentMethodModal';
 import EditOrderItemModal from '@/components/orders/EditOrderItemModal';
 import { PriceOverrideModal } from '@/components/orders/PriceOverrideModal';
 import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
@@ -189,6 +190,10 @@ export default function OrdersPage() {
   const [tabFilter, setTabFilter] = useState<FilterType>('active');
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [refundModal, setRefundModal] = useState<{ order: Order; bills: Bill[] } | null>(null);
+  const [correctPaymentModal, setCorrectPaymentModal] = useState<{
+    order: Order;
+    bills: Bill[];
+  } | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
   // null until /settings/kds_enabled resolves; the WebSocket stays closed
   // until the feature is confirmed on, because a disabled KDS refuses the
@@ -1876,6 +1881,12 @@ export default function OrdersPage() {
               onPayBill={handlePayBill}
               onAddItems={openAddItemsModal}
               onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
+              onCorrectPaymentMethod={
+                (currentTenant?.role === 'owner' || currentTenant?.role === 'manager') &&
+                tenantCan(currentTenant, 'payments.take')
+                  ? (ord, bills) => setCorrectPaymentModal({ order: ord, bills })
+                  : undefined
+              }
               onConvertToTakeaway={handleConvertToTakeaway}
               onCancelOrder={(ord) =>
                 setCancelModal({
@@ -2043,6 +2054,19 @@ export default function OrdersPage() {
           onClose={() => setRefundModal(null)}
           onRefunded={() => {
             setRefundModal(null);
+            fetchOrders(undefined, { refreshLoadedPages: true });
+          }}
+        />
+      )}
+
+      {/* Correct Payment Method Modal */}
+      {correctPaymentModal && (
+        <CorrectPaymentMethodModal
+          order={correctPaymentModal.order}
+          bills={correctPaymentModal.bills}
+          onClose={() => setCorrectPaymentModal(null)}
+          onCorrected={() => {
+            setCorrectPaymentModal(null);
             fetchOrders(undefined, { refreshLoadedPages: true });
           }}
         />

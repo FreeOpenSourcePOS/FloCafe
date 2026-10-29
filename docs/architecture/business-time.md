@@ -89,8 +89,11 @@ function tenantTimezone(): string {
 
 - [`main/routes/reports.ts`](../../main/routes/reports.ts), `tenantTimezone`, guards
   `bucketByLocalHourAndWeekday` and `dayBoundsInTimezone` in reporting.
-- [`main/routes/cash-closures.ts`](../../main/routes/cash-closures.ts) exports `tenantTimezone` so
-  that `cash-sessions.ts` resolves the same window rather than a second, divergent one.
+- [`main/services/cash-drawer-movements.ts`](../../main/services/cash-drawer-movements.ts) defines
+  `tenantTimezone` (re-exported by [`main/routes/cash-closures.ts`](../../main/routes/cash-closures.ts)
+  for `cash-sessions.ts` and imported by [`main/routes/bills.ts`](../../main/routes/bills.ts)) so that
+  cash closures, shift sessions, and bill business-day checks resolve the same window rather than a
+  second, divergent one.
 - [`main/services/refund.ts`](../../main/services/refund.ts) resolves inline, because a wrong
   business-day end there can wrongly accept or reject a late refund.
 
@@ -120,6 +123,17 @@ the store timezone and `business_day_start_time` cutoff). A shift that crosses m
 business-day cutoff therefore stays filed under the business date on which it opened, while daily
 reporting and day-close aggregates continue to bound sales by each business day's `[start, end)`
 window.
+
+When the opt-in setting `one_shift_per_staff` is `'false'` (the default), at most one shift may be
+open across the store at a time. When `one_shift_per_staff` is `'true'`, each staff member can open
+and close at most one shift of their own (`cash_sessions_one_open_per_user` on `(opened_by) WHERE status = 'open'`).
+Cash payments, cash refunds, drawer movements, and cash expense entries attach to the authenticated
+actor's open shift (`getOpenSession(db, userId)`). Day close (`POST /api/cash-closures`) is blocked
+(`409 open_shift_blocks_day_close`) until all shifts opened on or before that business date are
+closed, and reconciles the combined day totals across all shifts (summing per-staff shift opening
+floats into the day's `opening_float` drawer movement). Two concurrent shifts sharing a single
+physical cash drawer are permitted, though individual shift drawer counts cannot be physically
+isolated in a shared drawer.
 
 ### Refunds
 

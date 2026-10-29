@@ -154,11 +154,17 @@ retains that user's exceptions; the editor shows their source (shipped default, 
 user override) so they can be reviewed or cleared. **Staff > Permission change history** lists
 every save.
 
-**Shift close.** Cashiers close only the shift they opened. An owner or manager can close any
-session, and the closing actor is recorded on the closure row. The route is
-`POST /api/cash-sessions/:id/close`; the own-session rule is enforced inside the close transaction,
-where the stored session and the actor are read together. This is a context policy, not a
-permission — see [the authentication and authorization page](../architecture/authentication-and-authorization.md).
+**Cash shifts.** Opening, viewing, and closing shifts are gated by `cash.shifts.open`,
+`cash.shifts.view`, and `cash.shifts.close`. Non-`owner`/`manager` roles (such as `cashier`) may
+only view, preview, close, attach explicit drawer movements to, or read the shift X-report for the
+shift they opened (`403 session_owner_required` on shift/movement routes and `403
+shift_access_forbidden` on `GET /api/reports/x-report?session_id=` when targeting another user's
+shift), whereas an `owner` or `manager` can inspect and close any staff member's shift, with the
+closing actor recorded on the closure row. On `POST /api/cash-sessions/:id/close` and
+`POST /api/cash-closures/movements`, the own-session rule is enforced inside the write transaction,
+where the stored session and the actor are read together. This is a context policy, not
+a permission — see [the authentication and authorization page](../architecture/authentication-and-authorization.md)
+and [business time](../architecture/business-time.md#cash-closures).
 
 **Order cancellation and completion overrides.** Staff holding `orders.status.update` can cancel a
 whole order without a PIN only while the order and all of its items are `pending` and no bill holds
@@ -170,6 +176,15 @@ unsettled payable bills, an unbilled positive total, or undelivered kitchen item
 manager PIN (with `payments.take` when overriding unsettled payment), even when the logged-in user
 is already an owner or manager. Full safeguard, restock, and audit rules are in
 [the Orders API reference](api.md#orders).
+
+**Paid bill payment method correction.** Only an active `owner` or `manager` holding `payments.take`
+can correct the tender method on a recorded payment line of a `paid` bill
+(`PATCH /api/bills/:id/payments/:index/method`) while its cash shift and store business day remain
+open (`Yes (with Staff Approval PIN)` for Owner and Manager; `No` for Cashier, Server, and Chef).
+Every correction requires an active `owner` or `manager` Staff Approval PIN (`override_pin`,
+`approver_id`); a `cashier`, `server`, or `chef` caller or PIN never authorizes this action (`403`).
+Full shift, refund, split-sibling, amount-immutability, and audit rules are in
+[the Bills API reference](api.md#bills).
 
 **Owner visibility.** The permission editor itself is rendered only for an authenticated user
 holding `authorization.manage` — an active owner, always. The API enforces this independently;

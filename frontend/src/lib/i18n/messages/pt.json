@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Faturas (PDF)",
     "exportCsvHint": "O CSV baixa cinco arquivos: resumo, diário, impostos, itens e pagamentos.",
     "exportCsvStarted": "Baixando arquivos CSV de resumo, diário, impostos, itens e pagamentos…",
     "exportCustomerSales": "Vendas por cliente",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "Preço atualizado",
     "overridePriceFailed": "Não foi possível atualizar o preço",
     "priceOverriddenMenu": "Preço alterado (cardápio {price})",
-    "overridePriceClear": "Usar preço do cardápio"
+    "overridePriceClear": "Usar preço do cardápio",
+    "correctPaymentMethod": "Corrigir forma de pagamento",
+    "correctPaymentMethodHint": "Altere a forma de pagamento registrada enquanto o turno estiver aberto. O valor permanece inalterado.",
+    "paymentLineLabel": "Linha de pagamento",
+    "paymentMethodCorrected": "Forma de pagamento atualizada",
+    "correctPaymentMethodFailed": "Não foi possível atualizar a forma de pagamento"
   },
   "pos": {
     "addCustomer": "Adicionar Cliente",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# pedido aberto será transferido} other {# pedidos abertos serão transferidos}}",
     "shiftCloseUnpaidWarningHint": "Estes pedidos permanecem abertos para o próximo turno. Fechar este turno concilia apenas os pagamentos em dinheiro já recebidos durante este turno.",
     "shiftCloseUnpaidMoreCount": "+{count} outros pedidos abertos",
-    "lockTerminal": "Bloquear terminal"
+    "lockTerminal": "Bloquear terminal",
+    "selectOpenShift": "Turno a fechar",
+    "xReportShiftFilterLabel": "Escopo do turno",
+    "xReportAllShifts": "Todos os turnos (dia inteiro)"
   },
   "printTest": {
     "amt": "Total",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "Bloqueio automático por inatividade",
     "autoLockHint": "Bloquear automaticamente o terminal PDV após inatividade",
     "autoLockOff": "Desativado",
-    "autoLockMinutesOption": "{count} min."
+    "autoLockMinutesOption": "{count} min.",
+    "requireOpenShift": "Exigir turno aberto para dinheiro",
+    "requireOpenShiftHint": "Bloquear pagamentos em dinheiro, reembolsos em dinheiro e movimentos de caixa sem um turno aberto.",
+    "oneShiftPerStaff": "Um turno por funcionário",
+    "oneShiftPerStaffHint": "Permitir que cada funcionário abra e feche o seu próprio turno de caixa de forma independente.",
+    "oneShiftPerStaffSharedDrawerWarning": "Nota: Se dois turnos simultâneos partilharem uma única gaveta física, as contagens individuais de dinheiro não estarão separadas fisicamente.",
+    "oneShiftPerStaffDisableBlocked": "Não é possível desativar um turno por funcionário enquanto vários turnos estiverem abertos. Feche primeiro os turnos adicionais."
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",

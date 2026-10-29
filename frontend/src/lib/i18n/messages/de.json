@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Rechnungen (PDF)",
     "exportCsvHint": "Der CSV-Download enthält fünf Dateien: Übersicht, Täglich, Steuern, Artikel und Zahlungen.",
     "exportCsvStarted": "Übersichts-, Tages-, Steuer-, Artikel- und Zahlungs-CSV-Dateien werden heruntergeladen…",
     "exportCustomerSales": "Kundenumsätze",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "Preis aktualisiert",
     "overridePriceFailed": "Preis konnte nicht aktualisiert werden",
     "priceOverriddenMenu": "Preis geändert (Karte {price})",
-    "overridePriceClear": "Kartenpreis verwenden"
+    "overridePriceClear": "Kartenpreis verwenden",
+    "correctPaymentMethod": "Zahlungsart korrigieren",
+    "correctPaymentMethodHint": "Ändern Sie die erfasste Zahlungsart, solange die Schicht geöffnet ist. Der Betrag bleibt unverändert.",
+    "paymentLineLabel": "Zahlungsposition",
+    "paymentMethodCorrected": "Zahlungsart aktualisiert",
+    "correctPaymentMethodFailed": "Zahlungsart konnte nicht aktualisiert werden"
   },
   "pos": {
     "addCustomer": "Kunde hinzufügen",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# offene Bestellung wird übertragen} other {# offene Bestellungen werden übertragen}}",
     "shiftCloseUnpaidWarningHint": "Diese Bestellungen bleiben für die nächste Schicht geöffnet. Beim Schließen dieser Schicht werden nur die in dieser Schicht bereits kassierten Barzahlungen abgestimmt.",
     "shiftCloseUnpaidMoreCount": "+{count} weitere offene Bestellungen",
-    "lockTerminal": "Kasse sperren"
+    "lockTerminal": "Kasse sperren",
+    "selectOpenShift": "Zu schließende Schicht",
+    "xReportShiftFilterLabel": "Schichtbereich",
+    "xReportAllShifts": "Alle Schichten (ganzer Tag)"
   },
   "printTest": {
     "amt": "Betrag",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "Automatische Sperre bei Inaktivität",
     "autoLockHint": "Kassenterminal nach Inaktivität automatisch sperren",
     "autoLockOff": "Aus",
-    "autoLockMinutesOption": "{count} Min."
+    "autoLockMinutesOption": "{count} Min.",
+    "requireOpenShift": "Offene Schicht für Bargeld erforderlich",
+    "requireOpenShiftHint": "Barzahlungen, Barrückerstattungen und Kassenbewegungen ohne geöffnete Schicht blockieren.",
+    "oneShiftPerStaff": "Eine Schicht pro Mitarbeiter",
+    "oneShiftPerStaffHint": "Jedem Mitarbeiter erlauben, seine eigene Kassenschicht unabhängig zu öffnen und zu schließen.",
+    "oneShiftPerStaffSharedDrawerWarning": "Hinweis: Wenn zwei gleichzeitige Schichten dieselbe physische Kassenschublade teilen, sind die einzelnen Bargeldbestände physisch nicht getrennt.",
+    "oneShiftPerStaffDisableBlocked": "Eine Schicht pro Mitarbeiter kann nicht deaktiviert werden, solange mehrere Schichten geöffnet sind. Schließen Sie zuerst die zusätzlichen Schichten."
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",

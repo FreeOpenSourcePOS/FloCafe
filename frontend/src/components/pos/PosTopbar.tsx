@@ -32,6 +32,7 @@ interface Props {
   onActionsMenuOpenChange: (open: boolean) => void;
   onShowCashMovement: () => void;
   onShowShift: () => void;
+  onShowCloseStaffShift?: () => void;
   shiftHasOpenSession: boolean;
   shiftLoading: boolean;
   shiftError: string | null;
@@ -51,6 +52,7 @@ export default function PosTopbar({
   onActionsMenuOpenChange,
   onShowCashMovement,
   onShowShift,
+  onShowCloseStaffShift,
   shiftHasOpenSession,
   shiftLoading,
   shiftError,
@@ -124,6 +126,16 @@ export default function PosTopbar({
                 >
                   {shiftHasOpenSession ? <Lock size={16} /> : <LockOpen size={16} />}
                   {shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
+                </DropdownMenuItem>
+              )}
+              {canUseShift && !shiftHasOpenSession && onShowCloseStaffShift && (
+                <DropdownMenuItem
+                  onSelect={onShowCloseStaffShift}
+                  disabled={shiftLoading}
+                  title={shiftError ?? undefined}
+                >
+                  <Lock size={16} />
+                  {tDashboard('closeShiftSession')}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onSelect={onShowPrintMenu}>

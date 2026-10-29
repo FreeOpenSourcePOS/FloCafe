@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Счета (PDF)",
     "exportCsvHint": "CSV загружает пять файлов: сводку, по дням, налоги, позиции и платежи.",
     "exportCsvStarted": "Загрузка CSV-файлов сводки, по дням, налогов, позиций и платежей…",
     "exportCustomerSales": "Продажи по клиентам",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "Цена обновлена",
     "overridePriceFailed": "Не удалось обновить цену",
     "priceOverriddenMenu": "Цена изменена (меню {price})",
-    "overridePriceClear": "Вернуть цену из меню"
+    "overridePriceClear": "Вернуть цену из меню",
+    "correctPaymentMethod": "Исправить способ оплаты",
+    "correctPaymentMethodHint": "Измените записанный способ оплаты, пока смена открыта. Сумма не меняется.",
+    "paymentLineLabel": "Строка оплаты",
+    "paymentMethodCorrected": "Способ оплаты обновлён",
+    "correctPaymentMethodFailed": "Не удалось обновить способ оплаты"
   },
   "pos": {
     "addCustomer": "Добавить клиента",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# открытый заказ перейдет в следующую смену} other {# открытых заказов перейдут в следующую смену}}",
     "shiftCloseUnpaidWarningHint": "Эти заказы остаются открытыми для следующей смены. Закрытие этой смены сверяет только наличные платежи, уже принятые в течение этой смены.",
     "shiftCloseUnpaidMoreCount": "+ещё {count} открытых заказов",
-    "lockTerminal": "Заблокировать терминал"
+    "lockTerminal": "Заблокировать терминал",
+    "selectOpenShift": "Смена для закрытия",
+    "xReportShiftFilterLabel": "Охват смены",
+    "xReportAllShifts": "Все смены (весь день)"
   },
   "printTest": {
     "amt": "Сумма",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "Автоблокировка при простое",
     "autoLockHint": "Автоматически блокировать POS-терминал при бездействии",
     "autoLockOff": "Выкл.",
-    "autoLockMinutesOption": "{count} мин."
+    "autoLockMinutesOption": "{count} мин.",
+    "requireOpenShift": "Требовать открытую смену для наличных",
+    "requireOpenShiftHint": "Блокировать оплату наличными, возвраты наличными и движения по кассе, если смена не открыта.",
+    "oneShiftPerStaff": "Одна смена на сотрудника",
+    "oneShiftPerStaffHint": "Разрешить каждому сотруднику самостоятельно открывать и закрывать собственную кассовую смену.",
+    "oneShiftPerStaffSharedDrawerWarning": "Примечание: Если две одновременные смены используют один физический денежный ящик, индивидуальный подсчет наличных не будет физически разделен.",
+    "oneShiftPerStaffDisableBlocked": "Нельзя отключить режим одной смены на сотрудника, пока открыто несколько смен. Сначала закройте лишние смены."
   },
   "setup": {
     "alreadyCompleted": "Настройка этой установки уже завершена. Перенаправление на вход…",

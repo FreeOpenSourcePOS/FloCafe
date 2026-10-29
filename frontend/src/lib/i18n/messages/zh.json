@@ -405,6 +405,7 @@
     "exportXlsx": "Excel（.xlsx）",
     "exportCsv": "CSV（.csv）",
     "exportPdf": "PDF（.pdf）",
+    "exportInvoicesPdf": "发票（PDF）",
     "exportCsvHint": "CSV会下载五个文件：汇总、每日、税项、明细和付款。",
     "exportCsvStarted": "正在下载汇总、每日、税项、明细和付款CSV文件…",
     "exportCustomerSales": "客户销售",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "价格已更新",
     "overridePriceFailed": "无法更新价格",
     "priceOverriddenMenu": "价格已修改（菜单价 {price}）",
-    "overridePriceClear": "使用菜单价"
+    "overridePriceClear": "使用菜单价",
+    "correctPaymentMethod": "更正付款方式",
+    "correctPaymentMethodHint": "在班次开启期间更改已记录的付款方式。金额保持不变。",
+    "paymentLineLabel": "付款明细",
+    "paymentMethodCorrected": "付款方式已更新",
+    "correctPaymentMethodFailed": "无法更新付款方式"
   },
   "pos": {
     "addCustomer": "添加顾客",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# 笔未结订单将结转至下一班次} other {# 笔未结订单将结转至下一班次}}",
     "shiftCloseUnpaidWarningHint": "这些订单将保持开启并交接给下一班次。关闭本班次仅核对本班次期间已收取的现金付款。",
     "shiftCloseUnpaidMoreCount": "另有 +{count} 笔未结订单",
-    "lockTerminal": "锁定终端"
+    "lockTerminal": "锁定终端",
+    "selectOpenShift": "要关闭的班次",
+    "xReportShiftFilterLabel": "班次范围",
+    "xReportAllShifts": "所有班次（全天）"
   },
   "printTest": {
     "amt": "金额",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "空闲自动锁定",
     "autoLockHint": "闲置一段时间后自动锁定 POS 终端",
     "autoLockOff": "关闭",
-    "autoLockMinutesOption": "{count} 分钟"
+    "autoLockMinutesOption": "{count} 分钟",
+    "requireOpenShift": "现金交易需开启班次",
+    "requireOpenShiftHint": "未开启活动班次时，禁止现金收款、现金退款和钱箱存取操作。",
+    "oneShiftPerStaff": "每位员工独立班次",
+    "oneShiftPerStaffHint": "允许每位员工独立开启和关闭自己的收银班次。",
+    "oneShiftPerStaffSharedDrawerWarning": "注意：如果两个并行班次共用同一个实体钱箱，各自的现金清点将无法在物理上分开。",
+    "oneShiftPerStaffDisableBlocked": "有多个班次处于开启状态时，无法关闭“每位员工独立班次”。请先关闭多余的班次。"
   },
   "setup": {
     "alreadyCompleted": "此安装已完成设置。正在跳转到登录…",

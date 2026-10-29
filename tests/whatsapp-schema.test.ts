@@ -30,7 +30,9 @@ function tableIndexes(db: Database, table: string): string[] {
 }
 
 function getSetting(db: Database, key: string): string | null {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string | null } | undefined;
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+    | { value: string | null }
+    | undefined;
   return row?.value ?? null;
 }
 
@@ -49,9 +51,23 @@ async function main() {
 
     const cols = tableColumns(db, 'whatsapp_messages');
     for (const c of [
-      'id', 'bill_id', 'customer_id', 'phone_e164', 'direction', 'kind',
-      'status', 'body', 'external_message_id', 'error',
-      'queued_at', 'seen_at', 'typing_at', 'sent_at', 'delivered_at', 'read_at', 'failed_at',
+      'id',
+      'bill_id',
+      'customer_id',
+      'phone_e164',
+      'direction',
+      'kind',
+      'status',
+      'body',
+      'external_message_id',
+      'error',
+      'queued_at',
+      'seen_at',
+      'typing_at',
+      'sent_at',
+      'delivered_at',
+      'read_at',
+      'failed_at',
       'created_by_user_id',
     ]) {
       assert(cols.includes(c), `whatsapp_messages has column ${c}`);
@@ -59,53 +75,130 @@ async function main() {
 
     let threw = false;
     try {
-      db.prepare(`INSERT INTO whatsapp_messages (phone_e164, direction, body) VALUES (?, ?, ?)`).run('+15555550100', 'sideways', 'x');
-    } catch { threw = true; }
+      db.prepare(
+        `INSERT INTO whatsapp_messages (phone_e164, direction, body) VALUES (?, ?, ?)`,
+      ).run('+15555550100', 'sideways', 'x');
+    } catch {
+      threw = true;
+    }
     assert(threw, 'whatsapp_messages direction CHECK rejects bad values');
 
     threw = false;
     try {
-      db.prepare(`INSERT INTO whatsapp_messages (phone_e164, direction, body) VALUES (?, ?, ?)`).run('+15555550110', 'outbound', 'bill_receipt');
-    } catch { threw = true; }
+      db.prepare(
+        `INSERT INTO whatsapp_messages (phone_e164, direction, body) VALUES (?, ?, ?)`,
+      ).run('+15555550110', 'outbound', 'bill_receipt');
+    } catch {
+      threw = true;
+    }
     assert(!threw, 'whatsapp_messages accepts kind=bill_receipt');
 
     threw = false;
     try {
-      db.prepare(`INSERT INTO whatsapp_messages (phone_e164, direction, kind, body) VALUES (?, ?, ?, ?)`).run('+15555550112', 'outbound', 'z_report', 'Daily close');
-    } catch { threw = true; }
+      db.prepare(
+        `INSERT INTO whatsapp_messages (phone_e164, direction, kind, body) VALUES (?, ?, ?, ?)`,
+      ).run('+15555550112', 'outbound', 'z_report', 'Daily close');
+    } catch {
+      threw = true;
+    }
     assert(!threw, 'whatsapp_messages accepts kind=z_report');
 
     threw = false;
     try {
-      db.prepare(`INSERT INTO whatsapp_messages (phone_e164, direction, kind, body) VALUES (?, ?, ?, ?)`).run('+15555550111', 'outbound', 'marketing', 'x');
-    } catch { threw = true; }
+      db.prepare(
+        `INSERT INTO whatsapp_messages (phone_e164, direction, kind, body) VALUES (?, ?, ?, ?)`,
+      ).run('+15555550111', 'outbound', 'marketing', 'x');
+    } catch {
+      threw = true;
+    }
     assert(threw, 'whatsapp_messages kind CHECK rejects bad values');
 
     threw = false;
     try {
       db.prepare(`INSERT INTO whatsapp_blocklist (phone_e164) VALUES (?)`).run('+15555550200');
-    } catch { threw = true; }
+    } catch {
+      threw = true;
+    }
     assert(!threw, 'whatsapp_blocklist accepts first insert');
     threw = false;
     try {
       db.prepare(`INSERT INTO whatsapp_blocklist (phone_e164) VALUES (?)`).run('+15555550200');
-    } catch { threw = true; }
+    } catch {
+      threw = true;
+    }
     assert(threw, 'whatsapp_blocklist PK rejects duplicate');
 
     const allIndexes = new Set<string>();
-    for (const t of ['whatsapp_messages', 'whatsapp_blocklist']) {
+    for (const t of ['whatsapp_messages', 'whatsapp_blocklist', 'whatsapp_message_attempts']) {
       for (const i of tableIndexes(db, t)) allIndexes.add(i);
     }
-    assert(allIndexes.has('idx_whatsapp_messages_phone'), 'index idx_whatsapp_messages_phone exists');
-    assert(allIndexes.has('idx_whatsapp_messages_status'), 'index idx_whatsapp_messages_status exists');
+    assert(
+      allIndexes.has('idx_whatsapp_messages_phone'),
+      'index idx_whatsapp_messages_phone exists',
+    );
+    assert(
+      allIndexes.has('idx_whatsapp_messages_status'),
+      'index idx_whatsapp_messages_status exists',
+    );
     assert(allIndexes.has('idx_whatsapp_messages_bill'), 'index idx_whatsapp_messages_bill exists');
+    assert(
+      allIndexes.has('idx_whatsapp_message_attempts_message_id'),
+      'index idx_whatsapp_message_attempts_message_id exists',
+    );
+
+    const attemptCols = tableColumns(db, 'whatsapp_message_attempts');
+    for (const c of ['id', 'message_id', 'external_message_id', 'created_at']) {
+      assert(attemptCols.includes(c), `whatsapp_message_attempts has column ${c}`);
+    }
+
+    const parentInsert = db
+      .prepare(
+        `INSERT INTO whatsapp_messages (phone_e164, direction, body) VALUES ('+15555550300', 'outbound', 'attempt fk test')`,
+      )
+      .run();
+    const parentId = Number(parentInsert.lastInsertRowid);
+    db.prepare(
+      `INSERT INTO whatsapp_message_attempts (message_id, external_message_id, created_at) VALUES (?, 'ext-unique-1', '2026-10-28 12:00:00')`,
+    ).run(parentId);
+    threw = false;
+    try {
+      db.prepare(
+        `INSERT INTO whatsapp_message_attempts (message_id, external_message_id, created_at) VALUES (?, 'ext-unique-1', '2026-10-28 12:01:00')`,
+      ).run(parentId);
+    } catch {
+      threw = true;
+    }
+    assert(threw, 'whatsapp_message_attempts external_message_id UNIQUE rejects duplicate');
+    db.prepare(`DELETE FROM whatsapp_messages WHERE id = ?`).run(parentId);
+    const cascadedAttempts = db
+      .prepare(`SELECT COUNT(*) AS c FROM whatsapp_message_attempts WHERE message_id = ?`)
+      .get(parentId) as { c: number };
+    assert(
+      cascadedAttempts.c === 0,
+      'whatsapp_message_attempts ON DELETE CASCADE deletes attempts when parent message is deleted',
+    );
 
     assert(getSetting(db, 'whatsapp_enabled') === 'false', 'whatsapp_enabled defaults to false');
-    assert(getSetting(db, 'whatsapp_activated_by_user_id') === '', 'whatsapp_activated_by_user_id defaults to empty');
-    assert(getSetting(db, 'whatsapp_activated_at') === '', 'whatsapp_activated_at defaults to empty');
-    assert(getSetting(db, 'whatsapp_disclosure_version_acknowledged') === '', 'whatsapp_disclosure_version_acknowledged defaults to empty');
-    assert(getSetting(db, 'whatsapp_connected_phone') === '', 'whatsapp_connected_phone defaults to empty');
-    assert(getSetting(db, 'whatsapp_disclosure_version') === '1', 'whatsapp_disclosure_version = 1');
+    assert(
+      getSetting(db, 'whatsapp_activated_by_user_id') === '',
+      'whatsapp_activated_by_user_id defaults to empty',
+    );
+    assert(
+      getSetting(db, 'whatsapp_activated_at') === '',
+      'whatsapp_activated_at defaults to empty',
+    );
+    assert(
+      getSetting(db, 'whatsapp_disclosure_version_acknowledged') === '',
+      'whatsapp_disclosure_version_acknowledged defaults to empty',
+    );
+    assert(
+      getSetting(db, 'whatsapp_connected_phone') === '',
+      'whatsapp_connected_phone defaults to empty',
+    );
+    assert(
+      getSetting(db, 'whatsapp_disclosure_version') === '1',
+      'whatsapp_disclosure_version = 1',
+    );
   } finally {
     db.close();
   }

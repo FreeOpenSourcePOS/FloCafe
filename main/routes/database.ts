@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
 import {
+  backfillWhatsAppMessageAttempts,
   captureKitchenStationSecurityState,
   captureKdsEnabledSetting,
   captureRestoreProtectedSettings,
@@ -423,6 +424,8 @@ router.post(
             throwIfDatabaseMaintenanceAborted(signal);
             db.exec('BEGIN IMMEDIATE');
             try {
+              let whatsappMessagesCleared = false;
+              let whatsappMessagesImported = false;
               for (const tableName of importedTables) {
                 throwIfDatabaseMaintenanceAborted(signal);
                 if (!allowedTables.has(tableName) || EXPORT_EXCLUDE_TABLES.has(tableName)) continue;
@@ -444,6 +447,9 @@ router.post(
                       );
                     } else {
                       db.exec(`DELETE FROM ${tableName}`);
+                      if (tableName === 'whatsapp_messages') {
+                        whatsappMessagesCleared = true;
+                      }
                     }
                   }
                   continue;
@@ -477,7 +483,13 @@ router.post(
                     );
                   } else {
                     db.exec(`DELETE FROM ${tableName}`);
+                    if (tableName === 'whatsapp_messages') {
+                      whatsappMessagesCleared = true;
+                    }
                   }
+                }
+                if (tableName === 'whatsapp_messages') {
+                  whatsappMessagesImported = true;
                 }
 
                 if (tableName === 'inventory_movements') {
@@ -595,6 +607,15 @@ router.post(
                 console.log(
                   `[DB Import] ${tableName}: ${rows.length} rows (${commonCols.length} columns)`,
                 );
+              }
+
+              if (whatsappMessagesCleared || whatsappMessagesImported) {
+                backfillWhatsAppMessageAttempts(db, {
+                  reset:
+                    whatsappMessagesCleared &&
+                    (!importedTables.includes('whatsapp_message_attempts') ||
+                      !Array.isArray(importData.whatsapp_message_attempts)),
+                });
               }
 
               const placeholderUsersCreated = restoreRedactedUserPlaceholders(

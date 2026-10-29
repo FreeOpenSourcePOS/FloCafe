@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Mga Invoice (PDF)",
     "exportCsvHint": "Ang CSV ay magda-download ng limang file: summary, daily, taxes, items at payments.",
     "exportCsvStarted": "Dina-download ang summary, daily, taxes, items at payments na CSV…",
     "exportCustomerSales": "Benta ng customer",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "Na-update ang presyo",
     "overridePriceFailed": "Hindi ma-update ang presyo",
     "priceOverriddenMenu": "Binago ang presyo (menu {price})",
-    "overridePriceClear": "Gamitin ang presyo sa menu"
+    "overridePriceClear": "Gamitin ang presyo sa menu",
+    "correctPaymentMethod": "Itama ang paraan ng bayad",
+    "correctPaymentMethodHint": "Palitan ang nakatalang paraan ng bayad habang bukas ang shift. Hindi mababago ang halaga.",
+    "paymentLineLabel": "Linya ng bayad",
+    "paymentMethodCorrected": "Na-update ang paraan ng bayad",
+    "correctPaymentMethodFailed": "Hindi ma-update ang paraan ng bayad"
   },
   "pos": {
     "addCustomer": "Magdagdag ng Customer",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# bukas na order ang ililipat sa susunod na shift} other {# bukas na mga order ang ililipat sa susunod na shift}}",
     "shiftCloseUnpaidWarningHint": "Mananatiling bukas ang mga order na ito para sa susunod na shift. Ang pagsasara ng shift na ito ay nagtutugma lamang sa mga bayad na cash na nakolekta na sa shift na ito.",
     "shiftCloseUnpaidMoreCount": "+{count} pang bukas na order",
-    "lockTerminal": "I-lock ang Terminal"
+    "lockTerminal": "I-lock ang Terminal",
+    "selectOpenShift": "Shift na isasara",
+    "xReportShiftFilterLabel": "Saklaw ng shift",
+    "xReportAllShifts": "Lahat ng shift (buong araw)"
   },
   "printTest": {
     "amt": "Halaga",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "Auto-Lock kapag Idle",
     "autoLockHint": "Awtomatikong i-lock ang POS terminal kapag walang aktibidad",
     "autoLockOff": "Naka-off",
-    "autoLockMinutesOption": "{count} minuto"
+    "autoLockMinutesOption": "{count} minuto",
+    "requireOpenShift": "Kailangan ng Bukas na Shift para sa Cash",
+    "requireOpenShiftHint": "Harangan ang mga bayad na cash, refund na cash, at galaw sa kaha maliban kung may bukas na shift.",
+    "oneShiftPerStaff": "Isang shift bawat kawani",
+    "oneShiftPerStaffHint": "Payagan ang bawat kawani na magbukas at magsara ng sarili nilang cash shift nang hiwalay.",
+    "oneShiftPerStaffSharedDrawerWarning": "Paalala: Kung ang dalawang magkasabay na shift ay gumagamit ng iisang pisikal na kaha, hindi pisikal na magkahiwalay ang bilang ng pera bawat shift.",
+    "oneShiftPerStaffDisableBlocked": "Hindi maaaring i-off ang isang shift bawat kawani habang maraming shift ang nakabukas. Isara muna ang mga karagdagang shift."
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

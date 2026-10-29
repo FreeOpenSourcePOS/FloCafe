@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Faturat (PDF)",
     "exportCsvHint": "Shkarkimi CSV jep pesë skedarë: përmbledhjen, ditoren, taksat, artikujt dhe pagesat.",
     "exportCsvStarted": "Po shkarkohen skedarët CSV të përmbledhjes, ditores, taksave, artikujve dhe pagesave...",
     "exportCustomerSales": "Shitjet sipas klientit",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "Çmimi u përditësua",
     "overridePriceFailed": "Çmimi nuk mund të përditësohej",
     "priceOverriddenMenu": "Çmimi u ndryshua (menuja {price})",
-    "overridePriceClear": "Përdor çmimin e menusë"
+    "overridePriceClear": "Përdor çmimin e menusë",
+    "correctPaymentMethod": "Korrigjo mënyrën e pagesës",
+    "correctPaymentMethodHint": "Ndrysho mënyrën e regjistruar të pagesës ndërsa turni është i hapur. Shuma mbetet e pandryshuar.",
+    "paymentLineLabel": "Rreshti i pagesës",
+    "paymentMethodCorrected": "Mënyra e pagesës u përditësua",
+    "correctPaymentMethodFailed": "Mënyra e pagesës nuk mund të përditësohej"
   },
   "pos": {
     "addCustomer": "Shto klient",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# porosi e hapur do të bartet} other {# porosi të hapura do të barten}}",
     "shiftCloseUnpaidWarningHint": "Këto porosi mbeten të hapura për turnin tjetër. Mbyllja e këtij turni rakordon vetëm pagesat me para në dorë të arkëtuara tashmë gjatë këtij turni.",
     "shiftCloseUnpaidMoreCount": "+{count} porosi të tjera të hapura",
-    "lockTerminal": "Kyç terminalin"
+    "lockTerminal": "Kyç terminalin",
+    "selectOpenShift": "Turni për t’u mbyllur",
+    "xReportShiftFilterLabel": "Fusha e turnit",
+    "xReportAllShifts": "Të gjitha turnet (gjithë dita)"
   },
   "printTest": {
     "amt": "Shuma",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "Kyçje automatike në pasivitet",
     "autoLockHint": "Kyç automatikisht terminalin POS pas mosaktivitetit",
     "autoLockOff": "Joaktiv",
-    "autoLockMinutesOption": "{count} min."
+    "autoLockMinutesOption": "{count} min.",
+    "requireOpenShift": "Kërko turn të hapur për para në dorë",
+    "requireOpenShiftHint": "Blloko pagesat me para në dorë, rimbursimet me para në dorë dhe lëvizjet e arkës nëse nuk ka një turn aktiv të hapur.",
+    "oneShiftPerStaff": "Një turn për çdo punonjës",
+    "oneShiftPerStaffHint": "Lejo çdo punonjës të hapë dhe të mbyllë në mënyrë të pavarur turnin e vet të arkës.",
+    "oneShiftPerStaffSharedDrawerWarning": "Shënim: Nëse dy turne të njëkohshme ndajnë të njëjtin sirtar fizik të arkës, numërimet individuale të parave nuk do të jenë të ndara fizikisht.",
+    "oneShiftPerStaffDisableBlocked": "Nuk mund të çaktivizohet një turn për punonjës ndërkohë që disa turne janë të hapura. Mbyllni fillimisht turnet shtesë."
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

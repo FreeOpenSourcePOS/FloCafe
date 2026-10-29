@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "انوائسز (PDF)",
     "exportCsvHint": "CSV پانچ فائلیں ڈاؤن لوڈ کرتا ہے: خلاصہ، روزانہ، ٹیکس، آئٹمز اور ادائیگیاں۔",
     "exportCsvStarted": "خلاصہ، روزانہ، ٹیکس، آئٹمز اور ادائیگیوں کی CSV فائلیں ڈاؤن لوڈ ہو رہی ہیں…",
     "exportCustomerSales": "کسٹمر سیلز",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "قیمت اپ ڈیٹ ہو گئی",
     "overridePriceFailed": "قیمت اپ ڈیٹ نہیں ہو سکی",
     "priceOverriddenMenu": "قیمت تبدیل کی گئی (مینو {price})",
-    "overridePriceClear": "مینو کی قیمت استعمال کریں"
+    "overridePriceClear": "مینو کی قیمت استعمال کریں",
+    "correctPaymentMethod": "ادائیگی کا طریقہ درست کریں",
+    "correctPaymentMethodHint": "شفٹ کھلی ہونے کے دوران درج شدہ ادائیگی کا طریقہ تبدیل کریں۔ رقم تبدیل نہیں ہوگی۔",
+    "paymentLineLabel": "ادائیگی کی سطر",
+    "paymentMethodCorrected": "ادائیگی کا طریقہ اپ ڈیٹ ہو گیا",
+    "correctPaymentMethodFailed": "ادائیگی کا طریقہ اپ ڈیٹ نہیں ہو سکا"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# کھلا آرڈر اگلی شفٹ میں منتقل ہوگا} other {# کھلے آرڈرز اگلی شفٹ میں منتقل ہوں گے}}",
     "shiftCloseUnpaidWarningHint": "یہ آرڈرز اگلی شفٹ کے لیے کھلے رہیں گے۔ اس شفٹ کو بند کرنے سے صرف وہ نقد ادائیگیاں ملائی جاتی ہیں جو اس شفٹ کے دوران وصول ہو چکی ہیں۔",
     "shiftCloseUnpaidMoreCount": "+{count} مزید کھلے آرڈرز",
-    "lockTerminal": "ٹرمینل لاک کریں"
+    "lockTerminal": "ٹرمینل لاک کریں",
+    "selectOpenShift": "بند کرنے کے لیے شفٹ",
+    "xReportShiftFilterLabel": "شفٹ کا دائرہ",
+    "xReportAllShifts": "تمام شفٹیں (پورا دن)"
   },
   "printTest": {
     "amt": "رقم",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "غیر فعالیت پر آٹو لاک",
     "autoLockHint": "غیر فعال رہنے پر پی او ایس ٹرمینل خودکار طور پر لاک کریں",
     "autoLockOff": "بند",
-    "autoLockMinutesOption": "{count} منٹ"
+    "autoLockMinutesOption": "{count} منٹ",
+    "requireOpenShift": "نقدی کے لیے کھلی شفٹ لازمی کریں",
+    "requireOpenShiftHint": "جب تک کوئی فعال شفٹ کھلی نہ ہو نقد ادائیگیوں، نقد واپسی اور دراز کی نقل و حرکت کو روکیں۔",
+    "oneShiftPerStaff": "فی اسٹاف ممبر ایک شفٹ",
+    "oneShiftPerStaffHint": "ہر اسٹاف ممبر کو اپنی کیش شفٹ آزادانہ طور پر کھولنے اور بند کرنے کی اجازت دیں۔",
+    "oneShiftPerStaffSharedDrawerWarning": "نوٹ: اگر دو بیک وقت شفٹیں ایک ہی فزیکل کیش دراز استعمال کرتی ہیں تو انفرادی نقد گنتی فزیکل طور پر الگ نہیں ہوگی۔",
+    "oneShiftPerStaffDisableBlocked": "جب ایک سے زیادہ شفٹیں کھلی ہوں تو فی اسٹاف ایک شفٹ کو غیر فعال نہیں کیا جا سکتا۔ پہلے اضافی شفٹیں بند کریں۔"
   },
   "setup": {
     "alreadyCompleted": "اس انسٹال کا سیٹ اپ پہلے ہی مکمل ہو چکا ہے۔ سائن ان پر بھیج رہا ہے…",

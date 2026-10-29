@@ -1757,6 +1757,214 @@ async function main(): Promise<void> {
           afterRuntimeInit.status === 'typing' && afterRuntimeInit.error === null,
           `runtime initFromDb after suspendForOfflineMode preserves recently submitted typing row (got ${JSON.stringify(afterRuntimeInit)})`,
         );
+
+        // 4j. F2: Persisted whatsapp_message_attempts resolves late ACK from Attempt 1 after Attempt 2 retry AND service restart
+        await whatsapp.connectWithQr();
+        eventHandlers.get('connection.update')?.({ connection: 'open' });
+        await new Promise((resolve) => setImmediate(resolve));
+        let f2AttemptSeq = 0;
+        fakeSocket.sendMessage = async () => ({
+          key: { id: `ext-attempt-${++f2AttemptSeq}` },
+          message: { conversation: 'f2' },
+        });
+        const f2InitialSend = await whatsapp.sendMessage({
+          phoneE164: '+14155550194',
+          body: 'F2 multi-attempt restart ACK test',
+          billId: null,
+          customerId: null,
+          kind: 'manual_reply',
+          userId: null,
+        });
+        assert(
+          f2InitialSend.ok === true && typeof f2InitialSend.messageId === 'number',
+          `F2 attempt 1 send succeeds (got ${JSON.stringify(f2InitialSend)})`,
+        );
+        const f2MsgId = f2InitialSend.messageId!;
+        whatsapp.sweepAckTimeouts(Date.now() + whatsapp.ACK_TIMEOUT_MS + 5_000);
+        const f2RetrySend = await whatsapp.retryMessage(f2MsgId);
+        assert(
+          f2RetrySend.ok === true,
+          `F2 attempt 2 retry succeeds (got ${JSON.stringify(f2RetrySend)})`,
+        );
+        const persistedAttempts = db
+          .prepare(
+            'SELECT external_message_id FROM whatsapp_message_attempts WHERE message_id = ? ORDER BY id ASC',
+          )
+          .all(f2MsgId) as Array<{ external_message_id: string }>;
+        assert(
+          persistedAttempts.length === 2 &&
+            persistedAttempts[0]?.external_message_id === 'ext-attempt-1' &&
+            persistedAttempts[1]?.external_message_id === 'ext-attempt-2',
+          `F2 persists both attempt external IDs in whatsapp_message_attempts (got ${JSON.stringify(persistedAttempts)})`,
+        );
+        // Simulate service restart clearing in-memory externalIdToMessageId
+        whatsapp.disconnect();
+        await whatsapp.enable('f2-restart-user');
+        whatsapp.initFromDb();
+        await whatsapp.connectWithQr();
+        eventHandlers.get('connection.update')?.({ connection: 'open' });
+        await new Promise((resolve) => setImmediate(resolve));
+        // Late ACK for Attempt 1 ('ext-attempt-1') arrives after restart
+        eventHandlers.get('messages.update')?.([
+          { key: { id: 'ext-attempt-1' }, update: { status: 3 } },
+        ]);
+        await new Promise((resolve) => setImmediate(resolve));
+        const f2AfterDelivered = db
+          .prepare(
+            'SELECT status, error, failed_at, delivered_at FROM whatsapp_messages WHERE id = ?',
+          )
+          .get(f2MsgId) as {
+          status: string;
+          error: string | null;
+          failed_at: string | null;
+          delivered_at: string | null;
+        };
+        assert(
+          f2AfterDelivered.status === 'delivered' &&
+            f2AfterDelivered.error === null &&
+            f2AfterDelivered.failed_at === null &&
+            f2AfterDelivered.delivered_at !== null,
+          `F2 late ACK for ext-attempt-1 after retry and restart promotes message to delivered (got ${JSON.stringify(f2AfterDelivered)})`,
+        );
+        eventHandlers.get('messages.update')?.([
+          { key: { id: 'ext-attempt-1' }, update: { status: 4 } },
+        ]);
+        await new Promise((resolve) => setImmediate(resolve));
+        const f2AfterRead = db
+          .prepare('SELECT status, read_at FROM whatsapp_messages WHERE id = ?')
+          .get(f2MsgId) as { status: string; read_at: string | null };
+        assert(
+          f2AfterRead.status === 'read' && f2AfterRead.read_at !== null,
+          `F2 late read ACK for ext-attempt-1 promotes message to read (got ${JSON.stringify(f2AfterRead)})`,
+        );
+
+        // 4k. F3: Retry enforces RATE_LIMIT_MIN_GAP_MS while still excluding its own row from the 1-hour count
+        const f3Phone = '+14155550195';
+        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000)
+          .toISOString()
+          .replace('T', ' ')
+          .replace(/\..*$/, '');
+        const fiveSecondsAgo = new Date(Date.now() - 5 * 1000)
+          .toISOString()
+          .replace('T', ' ')
+          .replace(/\..*$/, '');
+        for (let i = 1; i <= 3; i++) {
+          db.prepare(`
+            INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, queued_at, typing_at, sent_at)
+            VALUES (?, 'outbound', 'manual_reply', 'sent', ?, ?, ?, ?)
+          `).run(f3Phone, `F3 prior sent ${i}`, twoMinutesAgo, twoMinutesAgo, twoMinutesAgo);
+        }
+        const f3FailedInsert = db
+          .prepare(`
+            INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, error, body, queued_at, typing_at, failed_at)
+            VALUES (?, 'outbound', 'manual_reply', 'failed', 'ack_timeout', 'F3 retry target', ?, ?, ?)
+          `)
+          .run(f3Phone, twoMinutesAgo, fiveSecondsAgo, fiveSecondsAgo);
+        const f3FailedId = Number(f3FailedInsert.lastInsertRowid);
+        delete process.env.FLO_WHATSAPP_FAST_DELAY;
+        try {
+          const minGapBlockedRetry = await whatsapp.retryMessage(f3FailedId);
+          assert(
+            minGapBlockedRetry.ok === false && minGapBlockedRetry.reason === 'rate_limited',
+            `F3 retry within RATE_LIMIT_MIN_GAP_MS is blocked with rate_limited (got ${JSON.stringify(minGapBlockedRetry)})`,
+          );
+          // Move the typing_at timestamp outside RATE_LIMIT_MIN_GAP_MS (2 minutes ago);
+          // total outbound rows in the last hour is 4 (3 sent + 1 failed), so excluding f3FailedId leaves 3 < 4.
+          db.prepare('UPDATE whatsapp_messages SET typing_at = ? WHERE id = ?').run(
+            twoMinutesAgo,
+            f3FailedId,
+          );
+          const rateCheckAfterGap = whatsapp.isOverRateLimit(f3Phone, 4, false, f3FailedId);
+          assert(
+            rateCheckAfterGap.limited === false,
+            `F3 retry after RATE_LIMIT_MIN_GAP_MS is allowed and excludes its own row from 1h cap (got ${JSON.stringify(rateCheckAfterGap)})`,
+          );
+        } finally {
+          process.env.FLO_WHATSAPP_FAST_DELAY = '1';
+        }
+
+        // 4l. F4: Cancelled waiting send B preserves per-recipient lock ordering so send C waits for in-flight send A
+        const f4Phone = '+15550001111';
+        let releaseSendA!: () => void;
+        const sendAGate = new Promise<void>((resolve) => {
+          releaseSendA = resolve;
+        });
+        let sendAEnteredSocket!: () => void;
+        const sendAEnteredPromise = new Promise<void>((resolve) => {
+          sendAEnteredSocket = resolve;
+        });
+        const f4Events: string[] = [];
+        const prevPresenceSubscribe = fakeSocket.presenceSubscribe;
+        fakeSocket.presenceSubscribe = async (jid: string) => {
+          if (jid.startsWith('15550001111')) {
+            f4Events.push('presence_subscribe');
+          }
+        };
+        fakeSocket.sendMessage = async (_jid: string, content: { text: string }) => {
+          f4Events.push(`start:${content.text}`);
+          if (content.text === 'F4-Send-A') {
+            sendAEnteredSocket();
+            await sendAGate;
+          }
+          f4Events.push(`end:${content.text}`);
+          return { key: { id: `f4-${content.text}` }, message: { conversation: content.text } };
+        };
+        try {
+          const sendAPromise = whatsapp.sendMessage({
+            phoneE164: f4Phone,
+            body: 'F4-Send-A',
+            billId: null,
+            customerId: null,
+            kind: 'manual_reply',
+            userId: null,
+          });
+          await sendAEnteredPromise;
+          const abortB = new AbortController();
+          const sendBPromise = whatsapp.sendMessage({
+            phoneE164: f4Phone,
+            body: 'F4-Send-B',
+            billId: null,
+            customerId: null,
+            kind: 'manual_reply',
+            userId: null,
+            signal: abortB.signal,
+          });
+          await new Promise((resolve) => setImmediate(resolve));
+          abortB.abort();
+          const sendBResult = await sendBPromise;
+          assert(
+            sendBResult.ok === false,
+            `F4 waiting send B resolves ok=false when aborted (got ${JSON.stringify(sendBResult)})`,
+          );
+          const sendCPromise = whatsapp.sendMessage({
+            phoneE164: f4Phone,
+            body: 'F4-Send-C',
+            billId: null,
+            customerId: null,
+            kind: 'manual_reply',
+            userId: null,
+          });
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          assert(
+            f4Events.filter((e) => e === 'presence_subscribe').length === 1 &&
+              !f4Events.includes('start:F4-Send-C'),
+            `F4 send C does not enter sendMessageInternal while send A is still in flight after send B cancels (events=${JSON.stringify(f4Events)})`,
+          );
+          releaseSendA();
+          const [sendAResult, sendCResult] = await Promise.all([sendAPromise, sendCPromise]);
+          assert(
+            sendAResult.ok === true && sendCResult.ok === true,
+            `F4 send A and send C both succeed in order (got ${JSON.stringify([sendAResult, sendCResult])})`,
+          );
+          const endAIdx = f4Events.indexOf('end:F4-Send-A');
+          const startCIdx = f4Events.indexOf('start:F4-Send-C');
+          assert(
+            endAIdx !== -1 && startCIdx !== -1 && endAIdx < startCIdx,
+            `F4 send C starts only after send A finishes (events=${JSON.stringify(f4Events)})`,
+          );
+        } finally {
+          fakeSocket.presenceSubscribe = prevPresenceSubscribe;
+        }
       } finally {
         fakeSocket.sendMessage = prevSendMessage;
       }

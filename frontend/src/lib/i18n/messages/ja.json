@@ -405,6 +405,7 @@
     "exportXlsx": "Excel（.xlsx）",
     "exportCsv": "CSV（.csv）",
     "exportPdf": "PDF（.pdf）",
+    "exportInvoicesPdf": "請求書（PDF）",
     "exportCsvHint": "CSVでは概要、日次、税金、明細、支払いの5つのファイルをダウンロードします。",
     "exportCsvStarted": "概要、日次、税金、明細、支払いのCSVファイルをダウンロードしています…",
     "exportCustomerSales": "顧客別売上",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "価格を更新しました",
     "overridePriceFailed": "価格を更新できませんでした",
     "priceOverriddenMenu": "価格変更済み（メニュー {price}）",
-    "overridePriceClear": "メニュー価格に戻す"
+    "overridePriceClear": "メニュー価格に戻す",
+    "correctPaymentMethod": "支払方法を修正",
+    "correctPaymentMethodHint": "シフトが開いている間に記録済みの支払方法を変更します。金額は変更されません。",
+    "paymentLineLabel": "支払明細",
+    "paymentMethodCorrected": "支払方法を更新しました",
+    "correctPaymentMethodFailed": "支払方法を更新できませんでした"
   },
   "pos": {
     "addCustomer": "顧客を追加",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# 件の未会計注文が次のシフトに引き継がれます} other {# 件の未会計注文が次のシフトに引き継がれます}}",
     "shiftCloseUnpaidWarningHint": "これらの注文は次のシフトに引き継がれます。このシフトの精算では、このシフト中に受け取った現金支払いのみを集計します。",
     "shiftCloseUnpaidMoreCount": "他 +{count} 件の未会計注文",
-    "lockTerminal": "端末をロック"
+    "lockTerminal": "端末をロック",
+    "selectOpenShift": "閉じるシフト",
+    "xReportShiftFilterLabel": "シフト範囲",
+    "xReportAllShifts": "すべてのシフト（終日）"
   },
   "printTest": {
     "amt": "金額",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "アイドル自動ロック",
     "autoLockHint": "一定時間操作がない場合にPOS端末を自動ロックします",
     "autoLockOff": "オフ",
-    "autoLockMinutesOption": "{count} 分"
+    "autoLockMinutesOption": "{count} 分",
+    "requireOpenShift": "現金取引にシフト開始を必須にする",
+    "requireOpenShiftHint": "有効なシフトが開いていない限り、現金支払い、現金返金、ドロワー入出金をブロックします。",
+    "oneShiftPerStaff": "スタッフごとに1シフト",
+    "oneShiftPerStaffHint": "各スタッフが自分のレジシフトを個別に開始・終了できるようにします。",
+    "oneShiftPerStaffSharedDrawerWarning": "注意：2つの同時シフトが1つの物理キャッシュドロワーを共有する場合、個別の現金カウントは物理的に分離されません。",
+    "oneShiftPerStaffDisableBlocked": "複数のシフトが開いている間は、スタッフごとに1シフトを無効にできません。先に他のシフトを閉じてください。"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",

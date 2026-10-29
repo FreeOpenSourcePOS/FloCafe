@@ -47,8 +47,10 @@ import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { parseDbTimestamp } from '@/lib/utils';
+import { useAuthStore } from '@/store/auth';
 import { formatItemHeading } from '@/lib/printer/item-heading';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+import { ROLE_ACCESS, hasRole } from '../../../../shared/role-permissions';
 import PendingOrderItemEdits from './PendingOrderItemEdits';
 import {
   orderStatusBadge,
@@ -92,6 +94,7 @@ export interface OrderDetailPanelProps {
   onPayBill?: (bill: Bill) => void;
   onAddItems: (order: Order) => void;
   onRefund: (order: Order, bills: Bill[]) => void;
+  onCorrectPaymentMethod?: (order: Order, bills: Bill[]) => void;
   onConvertToTakeaway: (order: Order) => void;
   onCancelOrder: (order: Order) => void;
   onPrint: (billId: number) => void;
@@ -151,6 +154,7 @@ function OrderDetailContent({
   onPayBill,
   onAddItems,
   onRefund,
+  onCorrectPaymentMethod,
   onConvertToTakeaway,
   onCancelOrder,
   onPrint,
@@ -211,6 +215,24 @@ function OrderDetailContent({
   const paidBills = orderBills.filter(
     (b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded',
   );
+  const storeRole = useAuthStore(
+    (s) => s.currentTenant?.role ?? (s.user as { role?: string } | null)?.role,
+  );
+  const authRole =
+    storeRole ??
+    useAuthStore.getState?.()?.currentTenant?.role ??
+    (useAuthStore.getState?.()?.user as { role?: string } | null)?.role;
+  const correctablePaidBills = orderBills.filter(
+    (b) =>
+      b.payment_status === 'paid' &&
+      normalizeBillPaymentDetails(b.payment_details).some(
+        (line) => String(line.method || '').toLowerCase() !== 'wallet',
+      ),
+  );
+  const canCorrectPaymentMethod =
+    Boolean(onCorrectPaymentMethod) &&
+    hasRole(authRole, ROLE_ACCESS.ownerManager) &&
+    correctablePaidBills.length > 0;
   const hasEligibleRefund = paidBills.length > 0;
   const hasCollectedFunds = orderBills.some((candidate) => {
     const status = String(candidate.payment_status || '');
@@ -370,6 +392,15 @@ function OrderDetailContent({
                   <DropdownMenuItem onClick={() => onDownloadPrintPreview(bill.id)}>
                     <Download size={14} className="me-2" />
                     {tOrders('downloadPrintPreview')}
+                  </DropdownMenuItem>
+                )}
+                {canCorrectPaymentMethod && onCorrectPaymentMethod && (
+                  <DropdownMenuItem
+                    data-testid="correct-payment-method-menu-item"
+                    onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
+                  >
+                    <CreditCard size={14} className="me-2" />
+                    {tOrders('correctPaymentMethod')}
                   </DropdownMenuItem>
                 )}
                 {!['completed', 'cancelled'].includes(order.status) && (
@@ -929,6 +960,17 @@ function OrderDetailContent({
                   <Send size={15} className="me-1.5" />
                 )}
                 {tOrders('sendReceipt')}
+              </Button>
+            )}
+            {canCorrectPaymentMethod && onCorrectPaymentMethod && (
+              <Button
+                variant="outline"
+                data-testid="correct-payment-method-button"
+                onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
+                className="flex-1 h-10 border-border text-foreground hover:bg-muted font-semibold text-xs"
+              >
+                <CreditCard size={15} className="me-1.5 text-muted-foreground" />
+                {tOrders('correctPaymentMethod')}
               </Button>
             )}
             {canRefund && hasEligibleRefund && (

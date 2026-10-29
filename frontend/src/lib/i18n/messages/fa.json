@@ -342,6 +342,7 @@
     "exportXlsx": "اکسل (.xlsx)",
     "exportCsv": "CSV",
     "exportPdf": "PDF",
+    "exportInvoicesPdf": "فاکتورها (PDF)",
     "exportCsvHint": "CSV پنج فایل دانلود می‌کند: خلاصه، روزانه، مالیات‌ها، اقلام و پرداخت‌ها.",
     "exportCsvStarted": "در حال دانلود فایل‌های CSV خلاصه، روزانه، مالیات‌ها، اقلام و پرداخت‌ها…",
     "exportCustomerSales": "فروش مشتریان",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "قیمت به‌روزرسانی شد",
     "overridePriceFailed": "به‌روزرسانی قیمت ممکن نشد",
     "priceOverriddenMenu": "قیمت تغییر کرد (منو {price})",
-    "overridePriceClear": "استفاده از قیمت منو"
+    "overridePriceClear": "استفاده از قیمت منو",
+    "correctPaymentMethod": "اصلاح روش پرداخت",
+    "correctPaymentMethodHint": "تا زمانی که شیفت باز است، روش پرداخت ثبت‌شده را تغییر دهید. مبلغ بدون تغییر می‌ماند.",
+    "paymentLineLabel": "ردیف پرداخت",
+    "paymentMethodCorrected": "روش پرداخت به‌روزرسانی شد",
+    "correctPaymentMethodFailed": "به‌روزرسانی روش پرداخت انجام نشد"
   },
   "pos": {
     "addCustomer": "افزودن مشتری",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# سفارش باز به شیفت بعد منتقل می‌شود} other {# سفارش باز به شیفت بعد منتقل می‌شوند}}",
     "shiftCloseUnpaidWarningHint": "این سفارش‌ها برای شیفت بعدی باز می‌مانند. بستن این شیفت فقط پرداخت‌های نقدی دریافت‌شده در همین شیفت را تسویه می‌کند.",
     "shiftCloseUnpaidMoreCount": "+{count} سفارش باز دیگر",
-    "lockTerminal": "قفل پایانه"
+    "lockTerminal": "قفل پایانه",
+    "selectOpenShift": "شیفت مورد نظر برای بستن",
+    "xReportShiftFilterLabel": "محدوده شیفت",
+    "xReportAllShifts": "همه شیفت‌ها (کل روز)"
   },
   "printTest": {
     "amt": "مبلغ",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "قفل خودکار در زمان عدم فعالیت",
     "autoLockHint": "قفل خودکار پایانه فروش پس از مدتی عدم فعالیت",
     "autoLockOff": "خاموش",
-    "autoLockMinutesOption": "{count} دقیقه"
+    "autoLockMinutesOption": "{count} دقیقه",
+    "requireOpenShift": "الزام به باز بودن شیفت برای وجه نقد",
+    "requireOpenShiftHint": "مسدود کردن پرداخت‌های نقدی، استرداد نقدی و جابجایی‌های صندوق در صورت باز نبودن شیفت فعال.",
+    "oneShiftPerStaff": "یک شیفت برای هر کارمند",
+    "oneShiftPerStaffHint": "به هر یک از کارکنان اجازه دهید شیفت صندوق خود را به صورت مستقل باز و بسته کنند.",
+    "oneShiftPerStaffSharedDrawerWarning": "توجه: اگر دو شیفت هم‌زمان از یک کشوی پول فیزیکی مشترک استفاده کنند، شمارش نقدی هر شیفت به صورت فیزیکی تفکیک نخواهد شد.",
+    "oneShiftPerStaffDisableBlocked": "تا زمانی که چند شیفت باز است نمی‌توان گزینه یک شیفت برای هر کارمند را غیرفعال کرد. ابتدا شیفت‌های اضافی را ببندید."
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",

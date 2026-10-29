@@ -59,6 +59,15 @@ with `warning_acknowledgement_required`.
 **Revoke on disconnect.** Disconnecting revokes the grant at Google rather than only deleting the
 local token.
 
+**Two-step backup and retention pruning.** Each backup separates snapshot upload from retention
+cleanup: the upload step writes the database snapshot to Google Drive and immediately stamps
+`last_backup_status` as `'success'` (`last_backup_at` and `last_success_at`), while the retention
+step (`applyRetention`) moves older automatic backups beyond `retention_count` to Google Drive
+Trash. If a transient error interrupts retention pruning, the completed snapshot upload remains
+valid (`last_backup_status` stays `'success'`) and the service records `retention_pending`
+(`retention_status = 'pending'`) so automatic background retries finish pruning older backups
+without invalidating the backup.
+
 **Offline behaviour.** Every operation fails with a `driveError` code rather than hanging. The last
 error code is persisted so the settings screen can explain the failure after a restart.
 
@@ -364,23 +373,29 @@ never re-parsed as tokens. All five automated rules ship disabled (`enabled: fal
 `UNSUBSCRIBE`, `OPT OUT`, `OPTOUT`) automatically add the sender to `whatsapp_blocklist` when
 `autoOptOutEnabled` is on. Automated sends check store-timezone quiet hours (`quietHoursEnabled`,
 `quietHoursStart` to `quietHoursEnd`) and a per-customer 7-day automated message cap
-(`maxPerCustomerPerWeek`), returning `quiet_hours` or `weekly_cap` when blocked. All outbound sends
-enforce the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`), a 10-minute duplicate-body
-filter, simulated typing delay, and a content filter that rejects non-HTTPS URLs and URL shorteners.
+(`maxPerCustomerPerWeek`), returning `quiet_hours` or `weekly_cap` when blocked. Outbound sends to the
+same recipient are serialized through `sendLocks` (`sendMessageWithLock()`), keeping the lock tail
+chained onto the active send even when a waiting request cancels or aborts. All outbound sends enforce
+the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`, plus `RATE_LIMIT_MIN_GAP_MS`
+spacing between non-automated sends), a 10-minute duplicate-body filter, simulated typing delay, and a
+content filter that rejects non-HTTPS URLs and URL shorteners.
 
 **ACK timeout, late ACKs, and retry.** Outbound messages remain in `typing` (refreshing `typing_at` when
-`socket.sendMessage` completes) until a Baileys `messages.update` server ACK (`status = 2/3/4`) arrives.
-`sweepAckTimeouts()` runs every 60 seconds (`ACK_SWEEP_INTERVAL_MS`) while connected, on socket open,
-during scheduled automation sweeps, and on startup (`initFromDb()`) to mark non-in-flight outbound rows
-still in `queued`, `seen`, or `typing` past `ACK_TIMEOUT_MS` (5 minutes, or any unfinished pre-restart or
-unsubmitted rows on startup) as `failed` with `error = 'ack_timeout'`. If a late ACK arrives after a row
-was marked `failed`, `advanceStatus()` promotes the row to `sent`, `delivered`, or `read` by
-`external_message_id` (including prior retry-attempt IDs), clears `error` and `failed_at`, backfills
+`socket.sendMessage` completes) until a Baileys `messages.update` server ACK (`status = 2/3/4`) arrives,
+and every submitted attempt's external ID is persisted in `whatsapp_message_attempts`
+(`recordMessageAttemptExternalId()`). `sweepAckTimeouts()` runs every 60 seconds
+(`ACK_SWEEP_INTERVAL_MS`) while connected, on socket open, during scheduled automation sweeps, and on
+startup (`initFromDb()`) to mark non-in-flight outbound rows still in `queued`, `seen`, or `typing` past
+`ACK_TIMEOUT_MS` (5 minutes, or any unfinished pre-restart or unsubmitted rows on startup) as `failed`
+with `error = 'ack_timeout'`. If a late ACK arrives after a row was marked `failed`, `advanceStatus()`
+resolves the row by `external_message_id` or `whatsapp_message_attempts` (across retries and service
+restarts), promotes it to `sent`, `delivered`, or `read`, clears `error` and `failed_at`, backfills
 earlier timestamps via `COALESCE`, and ignores out-of-order lower-rank updates.
 `POST /api/whatsapp/messages/:messageId/retry` (`retryMessage()`) coalesces concurrent retry requests and
 atomically re-queues a `failed` row in place without creating duplicate rows, enforcing Offline mode
-(`offline_mode`) and all safety controls while excluding the retried row from self-blocking in rate,
-weekly-cap, and duplicate-body checks.
+(`offline_mode`), `RATE_LIMIT_MIN_GAP_MS`, and all safety controls while excluding the retried row from
+self-blocking in the 1-hour message count (`RATE_LIMIT_MAX_PER_HOUR`), weekly-cap, and duplicate-body
+checks.
 
 **Offline behaviour.** No work is started when the module is disabled, when Offline mode is on, when
 it is in a terminal shutdown state, or when the request signal is aborted. Work already in flight is

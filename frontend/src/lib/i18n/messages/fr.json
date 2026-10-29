@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Factures (PDF)",
     "exportCsvHint": "Le CSV télécharge cinq fichiers : résumé, quotidien, taxes, articles et paiements.",
     "exportCsvStarted": "Téléchargement des fichiers CSV résumé, quotidien, taxes, articles et paiements…",
     "exportCustomerSales": "Ventes par client",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "Prix mis à jour",
     "overridePriceFailed": "Impossible de mettre à jour le prix",
     "priceOverriddenMenu": "Prix modifié (carte {price})",
-    "overridePriceClear": "Utiliser le prix de la carte"
+    "overridePriceClear": "Utiliser le prix de la carte",
+    "correctPaymentMethod": "Corriger le mode de paiement",
+    "correctPaymentMethodHint": "Modifiez le mode de paiement enregistré tant que la caisse est ouverte. Le montant reste inchangé.",
+    "paymentLineLabel": "Ligne de paiement",
+    "paymentMethodCorrected": "Mode de paiement mis à jour",
+    "correctPaymentMethodFailed": "Impossible de mettre à jour le mode de paiement"
   },
   "pos": {
     "addCustomer": "Ajouter un client",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# commande ouverte sera reportée} other {# commandes ouvertes seront reportées}}",
     "shiftCloseUnpaidWarningHint": "Ces commandes restent ouvertes pour le service suivant. La clôture de ce service ne rapproche que les paiements en espèces déjà encaissés pendant ce service.",
     "shiftCloseUnpaidMoreCount": "+{count} autres commandes ouvertes",
-    "lockTerminal": "Verrouiller le terminal"
+    "lockTerminal": "Verrouiller le terminal",
+    "selectOpenShift": "Service à fermer",
+    "xReportShiftFilterLabel": "Portée du service",
+    "xReportAllShifts": "Tous les services (journée entière)"
   },
   "printTest": {
     "amt": "Montant",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "Verrouillage automatique",
     "autoLockHint": "Verrouiller automatiquement le terminal de caisse après inactivité",
     "autoLockOff": "Désactivé",
-    "autoLockMinutesOption": "{count} min."
+    "autoLockMinutesOption": "{count} min.",
+    "requireOpenShift": "Exiger un service ouvert pour les espèces",
+    "requireOpenShiftHint": "Bloquer les paiements en espèces, les remboursements en espèces et les mouvements de caisse sans service actif.",
+    "oneShiftPerStaff": "Un service par employé",
+    "oneShiftPerStaffHint": "Permettre à chaque employé d’ouvrir et de fermer son propre service de caisse de manière indépendante.",
+    "oneShiftPerStaffSharedDrawerWarning": "Remarque : Si deux services simultanés partagent un même tiroir-caisse physique, les comptages individuels ne seront pas physiquement isolés.",
+    "oneShiftPerStaffDisableBlocked": "Impossible de désactiver un service par employé lorsque plusieurs services sont ouverts. Fermez d’abord les services supplémentaires."
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",

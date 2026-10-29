@@ -103,6 +103,7 @@ Backend consumers of `resolveRegionalSnapshot()`:
 | `main/services/cash-close-export.ts` | Regional currency, locale, timezone, and formatting preferences when serializing X and Z report HTML without pre-resolved options. |
 | `main/services/refund.ts` | Refund minor units and the business timezone used for the refund window. |
 | `main/services/daily-sales-export.ts` | Currency minor-unit factor for the accounting export, and regional locale and formatting preferences for `serializeDailySalesExportHtml`. |
+| `main/services/daily-invoices-export.ts` | Regional locale and formatting preferences for `buildDailyInvoicesExportDataset` and `serializeDailyInvoicesExportHtml`. |
 | `main/services/expenses.ts` | Store currency and business timezone for expense business-date resolution. |
 | `main/services/whatsapp.ts` | Store regional snapshot for WhatsApp message formatting. |
 | `main/routes/menu-csv.ts` | Amount formatting and separators for menu and add-on CSV export. |

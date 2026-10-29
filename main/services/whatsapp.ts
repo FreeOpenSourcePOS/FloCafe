@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { WASocket as BaileysSocket, WAMessageKey } from '@whiskeysockets/baileys';
 import { parsePhoneNumber } from 'libphonenumber-js';
-import { getDatabase, getSettingValue, now } from '../db';
+import { getDatabase, getSettingValue, now, parseDbTimestamp } from '../db';
 import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
 import { getOfflineModeAbortSignal, isOfflineMode } from './offline-mode';
 import { resolveRegionalSnapshot, type RegionalSnapshot } from '../countries';
@@ -677,22 +677,37 @@ function isBlocked(phoneE164: string): boolean {
   return !!row;
 }
 
-function isOverRateLimit(
+export function isOverRateLimit(
   phoneE164: string,
   maxPerHour = RATE_LIMIT_MAX_PER_HOUR,
   skipMinGap = false,
   excludeMessageId?: number | null,
 ): { limited: boolean; retryAfterMs?: number } {
-  if (!skipMinGap && excludeMessageId == null && process.env.FLO_WHATSAPP_FAST_DELAY !== '1') {
-    const last = state.lastSendByPhone.get(phoneE164);
-    if (last) {
+  const db = getDatabase();
+  if (!skipMinGap && process.env.FLO_WHATSAPP_FAST_DELAY !== '1') {
+    let last = state.lastSendByPhone.get(phoneE164) ?? 0;
+    const lastRow = db
+      .prepare(`
+        SELECT MAX(COALESCE(sent_at, typing_at)) AS last_ts
+        FROM whatsapp_messages
+        WHERE phone_e164 = ?
+          AND direction = 'outbound'
+          AND (sent_at IS NOT NULL OR typing_at IS NOT NULL)
+      `)
+      .get(phoneE164) as { last_ts: string | null } | undefined;
+    if (lastRow?.last_ts) {
+      const parsedMs = parseDbTimestamp(lastRow.last_ts).getTime();
+      if (Number.isFinite(parsedMs) && parsedMs > last) {
+        last = parsedMs;
+      }
+    }
+    if (last > 0) {
       const gap = Date.now() - last;
       if (gap < RATE_LIMIT_MIN_GAP_MS) {
         return { limited: true, retryAfterMs: RATE_LIMIT_MIN_GAP_MS - gap };
       }
     }
   }
-  const db = getDatabase();
   // Space form, same as now()/queued_at — an ISO-Z bound would sort above
   // every space-form row of the same day and the rate limit would never fire.
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
@@ -779,7 +794,12 @@ function recordMessageRow(row: {
       tsField === 'failed_at' ? baseTs : null,
       row.created_by_user_id ?? null,
     );
-  return Number(result.lastInsertRowid);
+  const insertedId = Number(result.lastInsertRowid);
+  const extId = row.external_message_id ?? row.external_id ?? null;
+  if (row.direction === 'outbound' && extId) {
+    recordMessageAttemptExternalId(insertedId, extId);
+  }
+  return insertedId;
 }
 
 const ALLOWED_TIMESTAMP_FIELDS = new Set([
@@ -870,6 +890,25 @@ function rememberExternalMessageId(externalId: string | null | undefined, messag
   }
 }
 
+export function recordMessageAttemptExternalId(
+  messageId: number,
+  externalId: string | null | undefined,
+): void {
+  const trimmed = typeof externalId === 'string' ? externalId.trim() : '';
+  if (!trimmed) return;
+  rememberExternalMessageId(trimmed, messageId);
+  const db = getDatabase();
+  db.prepare(`
+    INSERT OR IGNORE INTO whatsapp_message_attempts (message_id, external_message_id, created_at)
+    VALUES (?, ?, ?)
+  `).run(messageId, trimmed, now());
+  db.prepare(`
+    UPDATE whatsapp_messages
+    SET external_message_id = COALESCE(external_message_id, ?)
+    WHERE id = ? AND direction = 'outbound'
+  `).run(trimmed, messageId);
+}
+
 /**
  * Sweeps outbound rows still in 'queued', 'seen', or 'typing' past ACK_TIMEOUT_MS
  * (or unfinished outbound rows from before startup / interrupted before socket submission
@@ -951,12 +990,24 @@ export function sweepAckTimeouts(
 }
 
 function findMessageByExternalId(externalId: string): { id: number; phone_e164: string } | null {
+  const trimmed = typeof externalId === 'string' ? externalId.trim() : '';
+  if (!trimmed) return null;
   const db = getDatabase();
   const row = db
     .prepare('SELECT id, phone_e164 FROM whatsapp_messages WHERE external_message_id = ?')
-    .get(externalId) as { id: number; phone_e164: string } | undefined;
+    .get(trimmed) as { id: number; phone_e164: string } | undefined;
   if (row) return row;
-  const mappedId = externalIdToMessageId.get(externalId);
+  const attemptRow = db
+    .prepare(`
+      SELECT m.id, m.phone_e164
+      FROM whatsapp_message_attempts a
+      JOIN whatsapp_messages m ON m.id = a.message_id
+      WHERE a.external_message_id = ?
+      LIMIT 1
+    `)
+    .get(trimmed) as { id: number; phone_e164: string } | undefined;
+  if (attemptRow) return attemptRow;
+  const mappedId = externalIdToMessageId.get(trimmed);
   if (mappedId !== undefined) {
     const mappedRow = db
       .prepare(
@@ -1956,7 +2007,7 @@ export function retryMessage(
     });
   }
   if (row.external_message_id) {
-    rememberExternalMessageId(row.external_message_id, row.id);
+    recordMessageAttemptExternalId(row.id, row.external_message_id);
   }
   const preservedUserId =
     typeof row.created_by_user_id === 'string' && row.created_by_user_id.startsWith('rule:')
@@ -1997,10 +2048,20 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
     ? AbortSignal.any([whatsappAbortController.signal, getOfflineModeAbortSignal(), req.signal])
     : AbortSignal.any([whatsappAbortController.signal, getOfflineModeAbortSignal()]);
   const previous = sendLocks.get(req.phoneE164) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
+  let previousSettled = false;
+  void previous.then(
+    () => {
+      previousSettled = true;
+    },
+    () => {
+      previousSettled = true;
+    },
+  );
+  let releaseOwn!: () => void;
+  const ownDone = new Promise<void>((resolve) => {
+    releaseOwn = resolve;
   });
+  const current = previous.catch(() => {}).then(() => ownDone);
   sendLocks.set(req.phoneE164, current);
   try {
     await abortable(() => previous, signal);
@@ -2066,8 +2127,18 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
     });
     throw error;
   } finally {
-    release();
-    if (sendLocks.get(req.phoneE164) === current) sendLocks.delete(req.phoneE164);
+    releaseOwn();
+    if (previousSettled) {
+      if (sendLocks.get(req.phoneE164) === current) {
+        sendLocks.delete(req.phoneE164);
+      }
+    } else {
+      void current.finally(() => {
+        if (sendLocks.get(req.phoneE164) === current) {
+          sendLocks.delete(req.phoneE164);
+        }
+      });
+    }
   }
 }
 
@@ -2109,7 +2180,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
       };
     }
     if (retryTarget.external_message_id) {
-      rememberExternalMessageId(retryTarget.external_message_id, req.retryMessageId);
+      recordMessageAttemptExternalId(req.retryMessageId, retryTarget.external_message_id);
     }
   }
   if (isBlocked(req.phoneE164)) {
@@ -2262,7 +2333,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
       .prepare('SELECT external_message_id FROM whatsapp_messages WHERE id = ? AND direction = ?')
       .get(req.retryMessageId, 'outbound') as { external_message_id: string | null } | undefined;
     if (priorRow?.external_message_id) {
-      rememberExternalMessageId(priorRow.external_message_id, req.retryMessageId);
+      recordMessageAttemptExternalId(req.retryMessageId, priorRow.external_message_id);
     }
     const queuedAt = now();
     const updated = db
@@ -2388,17 +2459,27 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
       };
     }
     submittedToSocket = true;
-    const sent = await abortable(() => socket.sendMessage(jid, { text: req.body }), signal);
+    const sent = await abortable(
+      () =>
+        Promise.resolve(socket.sendMessage(jid, { text: req.body })).then((res) => {
+          const extId = res?.key?.id ?? null;
+          if (extId) {
+            try {
+              recordMessageAttemptExternalId(messageId, extId);
+            } catch {}
+          }
+          return res;
+        }),
+      signal,
+    );
     if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
     const sentExternalId = sent?.key?.id ?? null;
-    if (sentExternalId) {
-      rememberExternalMessageId(sentExternalId, messageId);
-    }
+    const trimmedSentExternalId = typeof sentExternalId === 'string' ? sentExternalId.trim() : '';
     inProcessSubmittedIds.add(messageId);
     // Do not mark 'sent' immediately; wait for server ACK (status=2) in messages.update.
     // Refresh typing_at on submission completion so ACK_TIMEOUT_MS starts from here.
     updateMessageRow(messageId, {
-      ...(sentExternalId !== null ? { external_message_id: sentExternalId } : {}),
+      ...(trimmedSentExternalId ? { external_message_id: trimmedSentExternalId } : {}),
       timestamp_field: 'typing_at',
     });
     // Cache sent message payload for session restart re-encryption requests.

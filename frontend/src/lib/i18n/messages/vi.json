@@ -341,6 +341,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Hóa đơn (PDF)",
     "exportCsvHint": "Tải CSV gồm năm tệp: tổng hợp, theo ngày, thuế, chi tiết và thanh toán.",
     "exportCsvStarted": "Đang tải các tệp CSV tổng hợp, theo ngày, thuế, chi tiết và thanh toán…",
     "exportCustomerSales": "Doanh số theo khách hàng",
@@ -842,7 +843,12 @@
     "overridePriceSaved": "Đã cập nhật giá",
     "overridePriceFailed": "Không thể cập nhật giá",
     "priceOverriddenMenu": "Giá đã đổi (thực đơn {price})",
-    "overridePriceClear": "Dùng giá thực đơn"
+    "overridePriceClear": "Dùng giá thực đơn",
+    "correctPaymentMethod": "Sửa phương thức thanh toán",
+    "correctPaymentMethodHint": "Thay đổi phương thức thanh toán đã ghi nhận khi ca làm việc đang mở. Số tiền giữ nguyên.",
+    "paymentLineLabel": "Dòng thanh toán",
+    "paymentMethodCorrected": "Đã cập nhật phương thức thanh toán",
+    "correctPaymentMethodFailed": "Không thể cập nhật phương thức thanh toán"
   },
   "pos": {
     "addCustomer": "Thêm khách hàng",
@@ -1206,7 +1212,10 @@
     "shiftCloseUnpaidWarningTitle": "{count, plural, one {# đơn đang mở sẽ chuyển sang ca tiếp theo} other {# đơn đang mở sẽ chuyển sang ca tiếp theo}}",
     "shiftCloseUnpaidWarningHint": "Các đơn này vẫn mở cho ca tiếp theo. Việc đóng ca này chỉ đối soát các khoản tiền mặt đã thu trong ca này.",
     "shiftCloseUnpaidMoreCount": "+{count} đơn đang mở khác",
-    "lockTerminal": "Khóa máy POS"
+    "lockTerminal": "Khóa máy POS",
+    "selectOpenShift": "Ca cần đóng",
+    "xReportShiftFilterLabel": "Phạm vi ca",
+    "xReportAllShifts": "Tất cả các ca (cả ngày)"
   },
   "printTest": {
     "amt": "Số tiền",
@@ -2566,7 +2575,13 @@
     "autoLockLabel": "Tự động khóa khi nghỉ",
     "autoLockHint": "Tự động khóa máy POS sau thời gian không hoạt động",
     "autoLockOff": "Tắt",
-    "autoLockMinutesOption": "{count} phút"
+    "autoLockMinutesOption": "{count} phút",
+    "requireOpenShift": "Yêu cầu mở ca cho giao dịch tiền mặt",
+    "requireOpenShiftHint": "Chặn thanh toán tiền mặt, hoàn tiền mặt và thu chi két tiền trừ khi có ca đang mở.",
+    "oneShiftPerStaff": "Mỗi nhân viên một ca",
+    "oneShiftPerStaffHint": "Cho phép mỗi nhân viên tự mở và đóng ca thu ngân của riêng mình một cách độc lập.",
+    "oneShiftPerStaffSharedDrawerWarning": "Lưu ý: Nếu hai ca song song dùng chung một ngăn kéo tiền vật lý, số tiền đếm riêng của từng ca sẽ không tách biệt về mặt vật lý.",
+    "oneShiftPerStaffDisableBlocked": "Không thể tắt chế độ mỗi nhân viên một ca khi đang có nhiều ca mở. Vui lòng đóng các ca phụ trước."
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

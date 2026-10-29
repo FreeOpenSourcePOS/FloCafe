@@ -214,9 +214,10 @@ payments.
 Two gates sit between a valid request and the write:
 
 - **Shift gate.** When `require_open_shift` is on, a cash tender (including a custom method that
-  resolves to cash) needs an open shift, or the request is a `409`. The check runs after replay
-  detection, so a committed payment can be re-read with the same key after its shift closed. A cash
-  ledger line records the open `cash_session_id`.
+  resolves to cash) needs an open shift for the actor (see [business time](business-time.md#cash-closures)),
+  or the request is a `409`. The check runs after replay detection, so a committed payment can be
+  re-read with the same key after its shift closed. A cash ledger line records the open
+  `cash_session_id`.
 - **Kitchen-delivery gate.** When `require_kitchen_delivered_before_settlement` is on, `kds_enabled`
   is not `false`, and `billing_type` is not `prepaid`, paying while kitchen items are undelivered
   is a `409` with code `KITCHEN_ITEMS_UNDELIVERED` unless a manager PIN is supplied as `override_pin`.
@@ -230,7 +231,9 @@ payment with `409`. A zero-balance payment retry on an already-settled bill retu
 idempotently without rejecting. The response carries the updated bill plus the wallet and loyalty
 effects; `bill.payment_details` is the
 settlement ledger, one entry per line with the applied amount, the requested amount, cash tendered
-and change, the `cash_session_id`, and the timestamp.
+and change, the `cash_session_id`, and the timestamp. While a `paid` bill's cash shift and business
+day remain open, the tender method on a recorded non-wallet line can be corrected without changing
+its amount via `PATCH /api/bills/:id/payments/:index/method` (see [the Bills API reference](../reference/api.md#bills)).
 
 ## Settlement and completion
 

@@ -205,10 +205,11 @@ export function validateRefundPreconditions(
     method?: string;
     amountCents?: number;
     orderItemId?: number | null;
+    createdByUserId?: string;
   },
   nowMs: number = Date.now(),
 ): ValidatedRefundPreconditions {
-  requireOpenSessionForCashTender(db, [{ method: req.method }]);
+  requireOpenSessionForCashTender(db, [{ method: req.method }], req.createdByUserId);
 
   const { lateRefund, bill } = checkIsLateRefund(db, req.billId, nowMs);
 
@@ -476,7 +477,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     }
   }
 
-  const cashSessionId = getOpenSession(db)?.id ?? NO_CASH_SESSION_ID;
+  const cashSessionId = getOpenSession(db, req.createdByUserId)?.id ?? NO_CASH_SESSION_ID;
   const insertResult = db
     .prepare(`
     INSERT INTO refunds (bill_id, order_item_id, amount_cents, method, reason, shift_id, approved_by, created_by, created_at, cash_session_id)

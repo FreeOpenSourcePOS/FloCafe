@@ -4338,6 +4338,12 @@ function dataOnlyRestore(
       console.log(`[DB] Restored ${tableName}: ${commonColumns.length} columns`);
     }
 
+    if (commonTables.includes('whatsapp_messages')) {
+      backfillWhatsAppMessageAttempts(currentDb, {
+        reset: !commonTables.includes('whatsapp_message_attempts'),
+      });
+    }
+
     mergeUserSecurityState(currentDb, preservedUserSecurity);
     mergeUserStationSecurityState(
       currentDb,
@@ -7774,7 +7780,76 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 120,
+    name: 'add_per_staff_cash_sessions',
+    up: () => {
+      db.exec(`
+        DROP INDEX IF EXISTS cash_sessions_one_open;
+        CREATE UNIQUE INDEX IF NOT EXISTS cash_sessions_one_open_per_user
+          ON cash_sessions(opened_by) WHERE status = 'open';
+      `);
+      insertSettingIfMissing('one_shift_per_staff', 'false');
+    },
+  },
+  {
+    version: 121,
+    name: 'add_whatsapp_message_attempts',
+    up: () => {
+      if (getTables(db).includes('whatsapp_message_attempts')) {
+        const fks = db.prepare('PRAGMA foreign_key_list(whatsapp_message_attempts)').all() as {
+          table: string;
+        }[];
+        if (fks.some((fk) => fk.table !== 'whatsapp_messages')) {
+          db.exec(`
+            ALTER TABLE whatsapp_message_attempts RENAME TO whatsapp_message_attempts_recreate;
+            CREATE TABLE whatsapp_message_attempts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              message_id INTEGER NOT NULL REFERENCES whatsapp_messages(id) ON DELETE CASCADE,
+              external_message_id TEXT NOT NULL UNIQUE,
+              created_at TEXT NOT NULL
+            );
+            INSERT OR IGNORE INTO whatsapp_message_attempts (id, message_id, external_message_id, created_at)
+            SELECT a.id, a.message_id, a.external_message_id, a.created_at
+            FROM whatsapp_message_attempts_recreate a
+            JOIN whatsapp_messages m ON m.id = a.message_id;
+            DROP TABLE whatsapp_message_attempts_recreate;
+          `);
+        }
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS whatsapp_message_attempts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          message_id INTEGER NOT NULL REFERENCES whatsapp_messages(id) ON DELETE CASCADE,
+          external_message_id TEXT NOT NULL UNIQUE,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_message_attempts_message_id
+          ON whatsapp_message_attempts(message_id);
+      `);
+      backfillWhatsAppMessageAttempts(db);
+    },
+  },
 ];
+
+export function backfillWhatsAppMessageAttempts(
+  targetDb: Database.Database = db,
+  options?: { reset?: boolean },
+): void {
+  if (!getTables(targetDb).includes('whatsapp_message_attempts')) return;
+  if (options?.reset) {
+    targetDb.exec('DELETE FROM whatsapp_message_attempts');
+  }
+  if (!getTables(targetDb).includes('whatsapp_messages')) return;
+  targetDb.exec(`
+    INSERT OR IGNORE INTO whatsapp_message_attempts (message_id, external_message_id, created_at)
+    SELECT id, TRIM(external_message_id), COALESCE(sent_at, typing_at, queued_at, CURRENT_TIMESTAMP)
+    FROM whatsapp_messages
+    WHERE direction = 'outbound'
+      AND external_message_id IS NOT NULL
+      AND TRIM(external_message_id) != ''
+  `);
+}
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
   if (buildingIdealSchema) return;
@@ -8551,6 +8626,7 @@ function seedInstallDefaults(): void {
   // Shift enforcement ships default-off (#279, approach A): sales work with
   // no open session unless the owner opts in. Stale auto-close threshold in days.
   insert('require_open_shift', 'false');
+  insert('one_shift_per_staff', 'false');
   insert('stale_session_days', '7');
   insert('address', '');
   insert('phone', '');

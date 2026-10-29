@@ -342,6 +342,7 @@
     "exportXlsx": "এক্সেল (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "ইনভয়েস (PDF)",
     "exportCsvHint": "CSV পাঁচটি ফাইল ডাউনলোড করে: সারাংশ, দৈনিক, কর, আইটেম এবং পেমেন্ট।",
     "exportCsvStarted": "সারাংশ, দৈনিক, কর, আইটেম এবং পেমেন্ট CSV ফাইল ডাউনলোড করা হচ্ছে...",
     "exportCustomerSales": "গ্রাহক বিক্রয়",

@@ -2,7 +2,7 @@ import { BrowserWindow, app } from 'electron';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const MAX_PDF_HTML_BYTES = 15 * 1024 * 1024;
 
@@ -14,6 +14,57 @@ let rendererOverride: HtmlToPdfRenderer | null = null;
 
 export function setHtmlToPdfRendererForTests(renderer: HtmlToPdfRenderer | null): void {
   rendererOverride = renderer;
+}
+
+export function isAllowedPdfStagingRequestUrl(requestUrl: string, htmlPath: string): boolean {
+  if (typeof requestUrl !== 'string' || typeof htmlPath !== 'string' || !htmlPath) {
+    return false;
+  }
+  if (requestUrl.startsWith('data:image/')) {
+    return true;
+  }
+  if (!requestUrl.startsWith('file://')) {
+    return false;
+  }
+  const isWindowsPath = process.platform === 'win32' || /^[a-zA-Z]:[\\/]/.test(htmlPath);
+  if (isWindowsPath) {
+    try {
+      const parsed = new URL(requestUrl);
+      if (parsed.protocol !== 'file:' || parsed.search || parsed.hash) {
+        return false;
+      }
+      if (parsed.hostname !== '' && parsed.hostname !== 'localhost') {
+        return false;
+      }
+      const rawUrlPath =
+        process.platform === 'win32'
+          ? fileURLToPath(parsed)
+          : decodeURIComponent(parsed.pathname).replace(/^\/([a-zA-Z]:[\\/])/, '$1');
+      if (!/^[a-zA-Z]:[\\/]/.test(rawUrlPath)) {
+        return false;
+      }
+      return (
+        path.win32.resolve(rawUrlPath).toLowerCase() === path.win32.resolve(htmlPath).toLowerCase()
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  const resolvedHtmlPath = path.resolve(htmlPath);
+  const htmlUrl = pathToFileURL(resolvedHtmlPath).href;
+  if (requestUrl === htmlUrl) {
+    return true;
+  }
+  try {
+    const parsed = new URL(requestUrl);
+    if (parsed.protocol !== 'file:' || parsed.search || parsed.hash) {
+      return false;
+    }
+    return path.resolve(fileURLToPath(parsed)) === resolvedHtmlPath;
+  } catch {
+    return false;
+  }
 }
 
 export async function renderHtmlToPdfBuffer(input: {
@@ -32,7 +83,8 @@ export async function renderHtmlToPdfBuffer(input: {
   fs.mkdirSync(stagingDirectory, { recursive: true, mode: 0o700 });
   const htmlPath = path.join(stagingDirectory, `document-${crypto.randomUUID()}.html`);
   fs.writeFileSync(htmlPath, input.html, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-  const htmlUrl = pathToFileURL(htmlPath).href;
+  const resolvedHtmlPath = path.resolve(htmlPath);
+  const htmlUrl = pathToFileURL(resolvedHtmlPath).href;
 
   const pdfWindow = new BrowserWindow({
     show: false,
@@ -45,13 +97,14 @@ export async function renderHtmlToPdfBuffer(input: {
     },
   });
   pdfWindow.webContents.session.webRequest.onBeforeRequest((details, callback) => {
-    const allowed = details.url === htmlUrl || details.url.startsWith('data:image/');
+    const allowed =
+      details.url === htmlUrl || isAllowedPdfStagingRequestUrl(details.url, resolvedHtmlPath);
     callback({ cancel: !allowed });
   });
   pdfWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   pdfWindow.webContents.on('will-navigate', (event) => event.preventDefault());
   try {
-    await pdfWindow.loadFile(htmlPath);
+    await pdfWindow.loadFile(resolvedHtmlPath);
     return await pdfWindow.webContents.printToPDF({
       printBackground: true,
       pageSize,
@@ -59,7 +112,7 @@ export async function renderHtmlToPdfBuffer(input: {
     });
   } finally {
     try {
-      fs.unlinkSync(htmlPath);
+      fs.unlinkSync(resolvedHtmlPath);
     } catch {}
     if (!pdfWindow.isDestroyed()) pdfWindow.destroy();
   }

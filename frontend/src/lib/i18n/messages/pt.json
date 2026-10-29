@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Faturas (PDF)",
     "exportCsvHint": "O CSV baixa cinco arquivos: resumo, diário, impostos, itens e pagamentos.",
     "exportCsvStarted": "Baixando arquivos CSV de resumo, diário, impostos, itens e pagamentos…",
     "exportCustomerSales": "Vendas por cliente",

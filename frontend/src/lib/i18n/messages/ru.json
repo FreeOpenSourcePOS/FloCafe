@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Счета (PDF)",
     "exportCsvHint": "CSV загружает пять файлов: сводку, по дням, налоги, позиции и платежи.",
     "exportCsvStarted": "Загрузка CSV-файлов сводки, по дням, налогов, позиций и платежей…",
     "exportCustomerSales": "Продажи по клиентам",

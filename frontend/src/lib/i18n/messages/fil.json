@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Mga Invoice (PDF)",
     "exportCsvHint": "Ang CSV ay magda-download ng limang file: summary, daily, taxes, items at payments.",
     "exportCsvStarted": "Dina-download ang summary, daily, taxes, items at payments na CSV…",
     "exportCustomerSales": "Benta ng customer",

@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "청구서 (PDF)",
     "exportCsvHint": "CSV는 요약, 일별, 세금, 항목, 결제 다섯 파일을 다운로드합니다.",
     "exportCsvStarted": "요약, 일별, 세금, 항목 및 결제 CSV 파일을 다운로드하는 중…",
     "exportCustomerSales": "고객별 매출",

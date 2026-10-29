@@ -198,7 +198,11 @@ const { getJWTSecret } = require('../main/routes/auth');
 const jwt = require('jsonwebtoken');
 const { reportRoutes } = require('../main/routes/reports');
 const { cashClosureRoutes } = require('../main/routes/cash-closures');
-const { MAX_PDF_HTML_BYTES, renderHtmlToPdfBuffer } = require('../main/services/html-to-pdf');
+const {
+  isAllowedPdfStagingRequestUrl,
+  MAX_PDF_HTML_BYTES,
+  renderHtmlToPdfBuffer,
+} = require('../main/services/html-to-pdf');
 const { registerIpcHandlers } = require('../main/ipc');
 const request = require('supertest');
 const ExcelJS = require('exceljs');
@@ -312,14 +316,24 @@ function extractPdfInfo(buf: Buffer): ExtractedPdfInfo {
     }
     const bfrangeRe = /beginbfrange([\s\S]*?)endbfrange/g;
     while ((bm = bfrangeRe.exec(cmapStr)) !== null) {
-      const rangeRe = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g;
+      const entryRe = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(?:<([0-9A-Fa-f]+)>|\[([\s\S]*?)\])/g;
       let rm: RegExpExecArray | null;
-      while ((rm = rangeRe.exec(bm[1])) !== null) {
+      while ((rm = entryRe.exec(bm[1])) !== null) {
         const start = parseInt(rm[1], 16);
         const end = parseInt(rm[2], 16);
-        const baseUcs = parseInt(rm[3], 16);
-        for (let k = start; k <= end; k++) {
-          map.set(k, String.fromCharCode(baseUcs + (k - start)));
+        if (rm[3] !== undefined) {
+          const baseUcs = parseInt(rm[3], 16);
+          for (let k = start; k <= end; k++) {
+            map.set(k, String.fromCharCode(baseUcs + (k - start)));
+          }
+        } else if (rm[4] !== undefined) {
+          const itemRe = /<([0-9A-Fa-f]+)>/g;
+          let im: RegExpExecArray | null;
+          let k = start;
+          while ((im = itemRe.exec(rm[4])) !== null && k <= end) {
+            map.set(k, decodeHexUcs(im[1]));
+            k++;
+          }
         }
       }
     }
@@ -1141,6 +1155,52 @@ async function run(): Promise<void> {
       trackedBrowserWindows.length,
       0,
       'renderHtmlToPdfBuffer oversize check opens no BrowserWindow',
+    );
+
+    // Windows 8.3 short-path tilde vs %7E file:// URL allowlist check (issue #1397 / build-windows-x64)
+    const winStagedHtmlPath =
+      'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\flo-reports-export\\pdf-staging\\document-123.html';
+    assert.equal(
+      isAllowedPdfStagingRequestUrl(
+        'file:///C:/Users/RUNNER~1/AppData/Local/Temp/flo-reports-export/pdf-staging/document-123.html',
+        winStagedHtmlPath,
+      ),
+      true,
+      'unencoded tilde file:///C:/Users/RUNNER~1/... is allowed for staged HTML file',
+    );
+    assert.equal(
+      isAllowedPdfStagingRequestUrl(
+        'file:///C:/Users/RUNNER%7E1/AppData/Local/Temp/flo-reports-export/pdf-staging/document-123.html',
+        winStagedHtmlPath,
+      ),
+      true,
+      'percent-encoded tilde file:///C:/Users/RUNNER%7E1/... is allowed for staged HTML file',
+    );
+    assert.equal(
+      isAllowedPdfStagingRequestUrl('data:image/png;base64,iVBORw0KGgo=', winStagedHtmlPath),
+      true,
+      'inline data:image/ URL remains allowed',
+    );
+    assert.equal(
+      isAllowedPdfStagingRequestUrl(
+        'file:///C:/Users/RUNNER~1/AppData/Local/Temp/flo-reports-export/pdf-staging/other.html',
+        winStagedHtmlPath,
+      ),
+      false,
+      'different file:// URL in same directory is rejected',
+    );
+    assert.equal(
+      isAllowedPdfStagingRequestUrl(
+        'file:///C:/Users/RUNNER~1/AppData/Local/Temp/flo-reports-export/pdf-staging/document-123.html?exfil=1',
+        winStagedHtmlPath,
+      ),
+      false,
+      'file:// URL with query string is rejected',
+    );
+    assert.equal(
+      isAllowedPdfStagingRequestUrl('https://example.com/exfil.png', winStagedHtmlPath),
+      false,
+      'remote https:// URL is rejected',
     );
 
     // (3) Execute save-html-as-pdf on X report, Z report, and date-range daily-sales report

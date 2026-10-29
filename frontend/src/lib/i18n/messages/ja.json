@@ -405,6 +405,7 @@
     "exportXlsx": "Excel（.xlsx）",
     "exportCsv": "CSV（.csv）",
     "exportPdf": "PDF（.pdf）",
+    "exportInvoicesPdf": "請求書（PDF）",
     "exportCsvHint": "CSVでは概要、日次、税金、明細、支払いの5つのファイルをダウンロードします。",
     "exportCsvStarted": "概要、日次、税金、明細、支払いのCSVファイルをダウンロードしています…",
     "exportCustomerSales": "顧客別売上",

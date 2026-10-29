@@ -748,18 +748,24 @@ export function DatabaseSettingsTab({
                 </div>
               </div>
 
-              {googleDriveStatus.last_error && (
-                <p className="text-xs text-red-600">
-                  {t('googleDriveLastError', { code: googleDriveStatus.last_error })}
+              {googleDriveStatus.last_error &&
+                googleDriveStatus.last_error !== 'retention_pending' && (
+                  <p className="text-xs text-red-600">
+                    {t('googleDriveLastError', { code: googleDriveStatus.last_error })}
+                  </p>
+                )}
+              {(googleDriveStatus.job?.state === 'retention_pending' ||
+                googleDriveStatus.last_error === 'retention_pending' ||
+                googleDriveStatus.retention_status === 'pending') && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  {t('googleDriveRetentionPending')}
                 </p>
               )}
-              {googleDriveStatus.job && (
+              {googleDriveStatus.job && googleDriveStatus.job.state !== 'retention_pending' && (
                 <p className="text-xs text-muted-foreground">
                   {googleDriveStatus.job.state === 'offline_pending'
                     ? t('googleDriveBackupRetryPending')
-                    : googleDriveStatus.job.state === 'retention_pending'
-                      ? t('googleDriveRetentionPending')
-                      : t('googleDriveJobStatus', { state: googleDriveStatus.job.state })}
+                    : t('googleDriveJobStatus', { state: googleDriveStatus.job.state })}
                 </p>
               )}
 

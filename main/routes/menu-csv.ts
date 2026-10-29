@@ -609,7 +609,7 @@ router.post(
                   icon: decodeQuoteV1Field(rawRow.icon ?? ''),
                 }
               : rawRow;
-          if (!r.name) {
+          if (!r.name || !r.name.trim()) {
             failRow(i, `Row ${rowNum}: missing name`);
             continue;
           }
@@ -669,30 +669,40 @@ router.post(
         const csvReferencedParents = new Set<string>();
         for (const item of parsedRows) {
           if (item.parentNorm) {
-            const set = csvChildParentNorms.get(item.nameNorm) || new Set<string>();
-            set.add(item.parentNorm);
-            csvChildParentNorms.set(item.nameNorm, set);
-            if (!item.wantsDelete) csvReferencedParents.add(item.parentNorm);
+            if (!item.wantsDelete) {
+              const set = csvChildParentNorms.get(item.nameNorm) || new Set<string>();
+              set.add(item.parentNorm);
+              csvChildParentNorms.set(item.nameNorm, set);
+              csvReferencedParents.add(item.parentNorm);
+            }
           } else if (!item.wantsDelete && !item.wantsDeactivate) {
             csvRootNorms.add(item.nameNorm);
           }
         }
+
+        const isRootNorm = (norm: string): boolean =>
+          csvRootNorms.has(norm) ||
+          dbCategories.some((c) => c.parent_id === null && c.name.trim().toLowerCase() === norm);
 
         const hasCycleTo = (startParentNorm: string, targetNorm: string): boolean => {
           const queue = [startParentNorm];
           const visited = new Set<string>();
           while (queue.length > 0) {
             const current = queue.shift()!;
+            if (isRootNorm(current)) continue;
             if (current === targetNorm) return true;
             if (visited.has(current)) continue;
             visited.add(current);
             for (const next of csvChildParentNorms.get(current) || []) {
-              queue.push(next);
+              if (!isRootNorm(next)) queue.push(next);
             }
             for (const dbCat of dbCategories) {
               if (dbCat.name.trim().toLowerCase() === current && dbCat.parent_id) {
                 const parentCat = dbCategories.find((c) => c.id === dbCat.parent_id);
-                if (parentCat) queue.push(parentCat.name.trim().toLowerCase());
+                if (parentCat && parentCat.parent_id !== null) {
+                  const parentNorm = parentCat.name.trim().toLowerCase();
+                  if (!isRootNorm(parentNorm)) queue.push(parentNorm);
+                }
               }
             }
           }
@@ -700,7 +710,7 @@ router.post(
         };
 
         for (const item of parsedRows) {
-          if (!item.parentNorm) continue;
+          if (!item.parentNorm || isRootNorm(item.parentNorm)) continue;
           if (item.parentNorm === item.nameNorm) {
             failRow(
               item.index,
@@ -717,11 +727,7 @@ router.post(
             item.rejected = true;
             continue;
           }
-          const hasRootInDb = dbCategories.some(
-            (c) => c.parent_id === null && c.name.trim().toLowerCase() === item.parentNorm,
-          );
-          const hasRootInCsv = csvRootNorms.has(item.parentNorm);
-          if (!hasRootInDb && !hasRootInCsv && csvChildParentNorms.has(item.parentNorm)) {
+          if (csvChildParentNorms.has(item.parentNorm)) {
             failRow(
               item.index,
               `Row ${item.rowNum} (${item.r.name}): parent category "${item.parentRaw}" is a subcategory (maximum 2 levels supported)`,
@@ -802,7 +808,7 @@ router.post(
               seenSiblings.add(siblingKey);
               continue;
             }
-            if (item.wantsDeactivate) {
+            if (item.wantsDeactivate && existing.is_active) {
               if (hasChildren) {
                 failRow(
                   item.index,
@@ -908,15 +914,6 @@ router.post(
           }
 
           const parentCat = rootParents[0];
-          if (!parentCat.is_active) {
-            failRow(
-              item.index,
-              `Row ${item.rowNum} (${item.r.name}): parent category "${item.parentRaw}" is inactive`,
-            );
-            item.rejected = true;
-            continue;
-          }
-
           const siblingKey = `${parentCat.id}::${item.nameNorm}`;
           if (seenSiblings.has(siblingKey)) {
             failRow(
@@ -963,7 +960,7 @@ router.post(
               seenSiblings.add(siblingKey);
               continue;
             }
-            if (item.wantsDeactivate) {
+            if (item.wantsDeactivate && existingChild.is_active) {
               if (childGrandchildren > 0) {
                 failRow(
                   item.index,
@@ -995,25 +992,19 @@ router.post(
             continue;
           }
 
-          const existingRootWithChildren = dbCategories.find(
-            (c) =>
-              c.parent_id === null &&
-              c.name.trim().toLowerCase() === item.nameNorm &&
-              (childCountByParentId.get(c.id) ?? 0) > 0,
-          );
-          if (existingRootWithChildren) {
+          if (item.wantsDelete) {
             failRow(
               item.index,
-              `Row ${item.rowNum} (${item.r.name}): cannot assign a parent to category "${item.r.name}" because it has subcategories`,
+              `Row ${item.rowNum} (${item.r.name}): category "${item.r.name}" under "${item.parentRaw}" not found`,
             );
             item.rejected = true;
             continue;
           }
 
-          if (item.wantsDelete) {
+          if (!parentCat.is_active) {
             failRow(
               item.index,
-              `Row ${item.rowNum} (${item.r.name}): category "${item.r.name}" under "${item.parentRaw}" not found`,
+              `Row ${item.rowNum} (${item.r.name}): parent category "${item.parentRaw}" is inactive`,
             );
             item.rejected = true;
             continue;
@@ -1076,6 +1067,7 @@ router.post(
 
       const parsedCsv = parseCSV(csv);
       const headers = new Set((parsedCsv[0] || []).map((header) => header.trim().toLowerCase()));
+      const hasCategoryParentColumn = headers.has('category_parent');
       const hasTaxCategoryColumn = headers.has('tax_category');
       const hasTaxBehaviorColumn = headers.has('tax_behavior');
       const rows = toObjects(parsedCsv);
@@ -1186,7 +1178,7 @@ router.post(
             }
           }
 
-          if (!r.name) {
+          if (!r.name || !r.name.trim()) {
             failed++;
             errors.push(`Row ${i + 2}: missing name`);
             continue;
@@ -1271,22 +1263,35 @@ router.post(
               }
               categoryId = childMatches[0].id;
             } else {
-              const matches = catRows.filter((c) => c.name.trim().toLowerCase() === catNorm);
-              if (matches.length === 0) {
+              const rootMatches = hasCategoryParentColumn
+                ? catRows.filter(
+                    (c) => c.parent_id === null && c.name.trim().toLowerCase() === catNorm,
+                  )
+                : [];
+              if (rootMatches.length === 1) {
+                categoryId = rootMatches[0].id;
+              } else if (rootMatches.length > 1) {
                 failed++;
-                errors.push(
-                  `Row ${i + 2} (${r.name}): category "${r.category}" not found — import categories first`,
-                );
+                errors.push(`Row ${i + 2} (${r.name}): category "${r.category}" is ambiguous`);
                 continue;
+              } else {
+                const matches = catRows.filter((c) => c.name.trim().toLowerCase() === catNorm);
+                if (matches.length === 0) {
+                  failed++;
+                  errors.push(
+                    `Row ${i + 2} (${r.name}): category "${r.category}" not found — import categories first`,
+                  );
+                  continue;
+                }
+                if (matches.length > 1) {
+                  failed++;
+                  errors.push(
+                    `Row ${i + 2} (${r.name}): category "${r.category}" is ambiguous — specify category_parent`,
+                  );
+                  continue;
+                }
+                categoryId = matches[0].id;
               }
-              if (matches.length > 1) {
-                failed++;
-                errors.push(
-                  `Row ${i + 2} (${r.name}): category "${r.category}" is ambiguous — specify category_parent`,
-                );
-                continue;
-              }
-              categoryId = matches[0].id;
             }
           }
 
@@ -1548,7 +1553,7 @@ router.post(
 
       for (const { encodingError, row } of preparedRows) {
         if (encodingError) continue;
-        if (!row.group_name || !row.addon_name) continue;
+        if (!row.group_name?.trim() || !row.addon_name?.trim()) continue;
 
         const priceResult = parseNumericField(row.price, 'price', {
           min: 0,
@@ -1643,7 +1648,7 @@ router.post(
             continue;
           }
           let rowChanged = false;
-          if (!r.group_name || !r.addon_name) {
+          if (!r.group_name?.trim() || !r.addon_name?.trim()) {
             failed++;
             errors.push(`Row ${i + 2}: missing group_name or addon_name`);
             continue;

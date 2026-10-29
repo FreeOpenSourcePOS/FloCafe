@@ -1,9 +1,35 @@
 export type MenuTemplate = 'mobile-cafe' | 'classic-bistro' | 'standard';
 
 export interface MenuWebPrintSection {
+  rootCategoryId?: string | null;
   name: string | null;
   parentName?: string | null;
   products: Array<{ name: string; price: string; details?: string[]; imageUrl?: string | null }>;
+}
+
+export function isMenuCategoryVisible(
+  categoryById: ReadonlyMap<
+    string,
+    { is_active?: boolean | number | null; parent_id?: string | number | null }
+  >,
+  categoryId: string | number | null | undefined,
+  includeHidden = false,
+): boolean {
+  if (includeHidden || categoryId === null || categoryId === undefined || categoryId === '') {
+    return true;
+  }
+  let currentId: string | null = String(categoryId);
+  const seen = new Set<string>();
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId);
+    const category = categoryById.get(currentId);
+    if (!category || Boolean(category.is_active) !== true) return false;
+    currentId =
+      category.parent_id !== null && category.parent_id !== undefined && category.parent_id !== ''
+        ? String(category.parent_id)
+        : null;
+  }
+  return true;
 }
 
 export function buildHierarchicalMenuWebSections<
@@ -54,7 +80,12 @@ export function buildHierarchicalMenuWebSections<
       .filter((row) => String(row.product.category_id ?? '') === rootId)
       .map(mapRow);
     if (rootProducts.length > 0) {
-      sections.push({ name: root.name, parentName: null, products: rootProducts });
+      sections.push({
+        rootCategoryId: rootId,
+        name: root.name,
+        parentName: null,
+        products: rootProducts,
+      });
     }
     const children = sortSiblings(childrenByParent.get(rootId) || []);
     for (const child of children) {
@@ -63,7 +94,12 @@ export function buildHierarchicalMenuWebSections<
         .filter((row) => String(row.product.category_id ?? '') === childId)
         .map(mapRow);
       if (childProducts.length > 0) {
-        sections.push({ name: child.name, parentName: root.name, products: childProducts });
+        sections.push({
+          rootCategoryId: rootId,
+          name: child.name,
+          parentName: root.name,
+          products: childProducts,
+        });
       }
     }
   }
@@ -76,7 +112,7 @@ export function buildHierarchicalMenuWebSections<
     )
     .map(mapRow);
   if (uncategorized.length > 0) {
-    sections.push({ name: null, parentName: null, products: uncategorized });
+    sections.push({ rootCategoryId: null, name: null, parentName: null, products: uncategorized });
   }
   return sections;
 }
@@ -139,20 +175,27 @@ export function buildMenuWebPrintHtml(input: MenuWebPrintInput): string {
       : `${selectedPageSize} portrait`;
   const customerFacing = input.customerFacing === true;
   const logo = safeImageDataUrl(input.logoDataUrl);
-  let activeParentHeading: string | null = null;
+  let activeRootKey: string | null = null;
   const sections = input.sections
     .map((section) => {
       let headingHtml = '';
       if (section.parentName) {
-        if (activeParentHeading !== section.parentName) {
+        const rootKey = section.rootCategoryId
+          ? `id:${section.rootCategoryId}`
+          : `name:${section.parentName}`;
+        if (activeRootKey !== rootKey) {
           headingHtml += `<h2>${escapeHtml(section.parentName)}</h2>`;
-          activeParentHeading = section.parentName;
+          activeRootKey = rootKey;
         }
         if (section.name) {
           headingHtml += `<h3>${escapeHtml(section.name)}</h3>`;
         }
       } else {
-        activeParentHeading = section.name ?? null;
+        activeRootKey = section.name
+          ? section.rootCategoryId
+            ? `id:${section.rootCategoryId}`
+            : `name:${section.name}`
+          : null;
         if (section.name) {
           headingHtml = `<h2>${escapeHtml(section.name)}</h2>`;
         }

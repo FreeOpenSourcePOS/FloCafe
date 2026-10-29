@@ -112,6 +112,7 @@ function validateParentCategory(
   db: ReturnType<typeof getDatabase>,
   parentId: unknown,
   categoryId?: string,
+  retainedParentId?: string | null,
 ): { kind: 'reference_invalid' | 'cycle'; message: string } | null {
   if (parentId === null || parentId === undefined || parentId === '') return null;
   if (typeof parentId !== 'string')
@@ -122,11 +123,11 @@ function validateParentCategory(
     return { kind: 'cycle', message: 'Category cannot be its own parent' };
 
   const parent = db
-    .prepare(
-      'SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1',
-    )
-    .get(normalizedParentId) as { id: string; parent_id: string | null } | undefined;
-  if (!parent)
+    .prepare('SELECT id, parent_id, is_active FROM categories WHERE id = ? AND deleted_at IS NULL')
+    .get(normalizedParentId) as
+    | { id: string; parent_id: string | null; is_active: number }
+    | undefined;
+  if (!parent || (!parent.is_active && normalizedParentId !== retainedParentId))
     return { kind: 'reference_invalid', message: 'Parent category not found or inactive' };
 
   let current: { id: string; parent_id: string | null } | undefined = parent;
@@ -266,21 +267,23 @@ function serializeCategory(category: any): any {
 router.get('/', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    let query = 'SELECT * FROM categories WHERE deleted_at IS NULL';
+    const activeOnly = req.query.active === 'true' || req.query.active === '1';
+    let query =
+      'SELECT c.* FROM categories c LEFT JOIN categories p ON c.parent_id = p.id AND p.deleted_at IS NULL WHERE c.deleted_at IS NULL';
     const params: any[] = [];
 
-    if (req.query.active === 'true' || req.query.active === '1') {
-      query += ' AND is_active = 1';
+    if (activeOnly) {
+      query += ' AND c.is_active = 1 AND (c.parent_id IS NULL OR p.is_active = 1)';
     }
     if (req.query.root === 'true') {
-      query += ' AND parent_id IS NULL';
+      query += ' AND c.parent_id IS NULL';
     }
     if (req.query.parent_id) {
-      query += ' AND parent_id = ?';
+      query += ' AND c.parent_id = ?';
       params.push(req.query.parent_id);
     }
 
-    query += ' ORDER BY sort_order, name';
+    query += ' ORDER BY c.sort_order, c.name';
 
     const categories = db.prepare(query).all(...params) as any[];
 
@@ -290,7 +293,7 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
       const children = db
         .prepare(
           `SELECT * FROM categories
-         WHERE parent_id IN (${placeholders}) AND deleted_at IS NULL
+         WHERE parent_id IN (${placeholders}) AND deleted_at IS NULL${activeOnly ? ' AND is_active = 1' : ''}
          ORDER BY parent_id, sort_order, name`,
         )
         .all(...categories.map((cat) => cat.id)) as any[];
@@ -488,8 +491,9 @@ function updateCategory(req: Request, res: Response) {
       captureCategoryValidation('name_required');
       return res.status(400).json({ error: 'Name is required' });
     }
+    const currentParentId = normalizeOptionalString((category as any).parent_id);
     if (hasOwn(req.body, 'parent_id')) {
-      const parentError = validateParentCategory(db, parent_id, categoryId);
+      const parentError = validateParentCategory(db, parent_id, categoryId, currentParentId);
       if (parentError) {
         captureParentCategoryRejection(parentError.kind);
         return res.status(400).json({ error: parentError.message });
@@ -499,7 +503,7 @@ function updateCategory(req: Request, res: Response) {
     const effectiveName = hasName ? categoryName! : String((category as any).name);
     const effectiveParentId = hasOwn(req.body, 'parent_id')
       ? normalizeOptionalString(parent_id)
-      : normalizeOptionalString((category as any).parent_id);
+      : currentParentId;
     if (hasName || hasOwn(req.body, 'parent_id')) {
       if (findDuplicateSiblingCategory(db, effectiveName, effectiveParentId, categoryId)) {
         return res.status(400).json({
@@ -510,7 +514,7 @@ function updateCategory(req: Request, res: Response) {
       }
     }
 
-    if (hasOwn(req.body, 'is_active') && !is_active) {
+    if (hasOwn(req.body, 'is_active') && !is_active && Boolean((category as any).is_active)) {
       const { count: childCount } = db
         .prepare(
           'SELECT COUNT(*) as count FROM categories WHERE parent_id = ? AND deleted_at IS NULL',

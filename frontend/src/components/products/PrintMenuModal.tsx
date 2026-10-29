@@ -24,6 +24,7 @@ import { activeVariants, isVariantSoldOut } from '@/lib/product-variants';
 import {
   buildHierarchicalMenuWebSections,
   buildMenuWebPrintHtml,
+  isMenuCategoryVisible,
   MenuPopupBlockedError,
   printMenuInBrowser,
   reservePrintGesture,
@@ -148,25 +149,15 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
     ]);
     const products = (productResponse.data.products || []) as Product[];
     const categories = (categoryResponse.data.categories || []) as Category[];
-    const categoryById = new Map(categories.map((category) => [category.id, category]));
+    const categoryById = new Map(categories.map((category) => [String(category.id), category]));
     // A product with active variants prints one row per variant at the
     // variant's own price; the parent's unsellable price never reaches paper.
     // A product without active variants keeps its single parent row.
-    const isCategoryVisible = (categoryId: string | number | null | undefined): boolean => {
-      if (selectedFilters.includeHidden || !categoryId) return true;
-      const category = categoryById.get(String(categoryId));
-      if (category?.is_active !== true) return false;
-      if (category.parent_id) {
-        const parent = categoryById.get(String(category.parent_id));
-        if (parent && !parent.is_active) return false;
-      }
-      return true;
-    };
     const included = products
       .filter(
         (product) =>
           (selectedFilters.includeInactive || product.is_active) &&
-          isCategoryVisible(product.category_id),
+          isMenuCategoryVisible(categoryById, product.category_id, selectedFilters.includeHidden),
       )
       .flatMap((product) => {
         const variants = activeVariants(product.variants);

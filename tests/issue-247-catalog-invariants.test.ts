@@ -336,6 +336,93 @@ async function main() {
       'legacy duplicate sibling records are preserved on read without silent merging',
     );
 
+    console.log('\n─── Legacy inactive parent category consistency ───');
+    db.prepare(`
+      INSERT INTO categories (id, name, parent_id, sort_order, is_active, created_at, updated_at)
+      VALUES
+        ('cat-legacy-inactive-parent', 'Legacy Inactive Root', NULL, 40, 0, ?, ?),
+        ('cat-legacy-active-child', 'Legacy Active Child', 'cat-legacy-inactive-parent', 1, 1, ?, ?),
+        ('cat-sort-child-inactive', 'Sub Inactive', 'cat-sort-root-a', 3, 0, ?, ?)
+    `).run(now(), now(), now(), now(), now(), now());
+    seedProduct(db, 'prod-under-inactive-parent', 'cat-legacy-active-child', 'Hidden Child Tea', 9);
+
+    res = await api(baseUrl, '/api/categories?active=1', { headers: authHeader });
+    assertEqual(res.status, 200, 'GET /api/categories?active=1 succeeds');
+    const activeCatIds = res.data.categories.map((c: any) => c.id);
+    assert(
+      !activeCatIds.includes('cat-legacy-inactive-parent') &&
+        !activeCatIds.includes('cat-legacy-active-child'),
+      'GET /api/categories?active=1 excludes inactive parent and its active subcategory without flattening',
+    );
+    const activeRootA = res.data.categories.find((c: any) => c.id === 'cat-sort-root-a');
+    assert(
+      Boolean(activeRootA) &&
+        !activeRootA.children.some((child: any) => child.id === 'cat-sort-child-inactive'),
+      'GET /api/categories?active=1 excludes inactive subcategories from nested children',
+    );
+
+    res = await api(baseUrl, '/api/products?active=1', { headers: authHeader });
+    assertEqual(res.status, 200, 'GET /api/products?active=1 succeeds');
+    assert(
+      !res.data.products.some((p: any) => p.id === 'prod-under-inactive-parent'),
+      'GET /api/products?active=1 excludes products in subcategories under an inactive parent',
+    );
+
+    res = await api(baseUrl, '/api/categories/cat-legacy-active-child', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        name: 'Legacy Active Child Edited',
+        parent_id: 'cat-legacy-inactive-parent',
+        is_active: true,
+      },
+    });
+    assertEqual(
+      res.status,
+      200,
+      'editing a subcategory while retaining its unchanged inactive parent succeeds',
+    );
+
+    res = await api(baseUrl, '/api/categories/cat-sort-root-b', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { parent_id: 'cat-legacy-inactive-parent' },
+    });
+    assertEqual(
+      res.status,
+      400,
+      'moving a different category under an inactive parent is still rejected',
+    );
+
+    res = await api(baseUrl, '/api/categories/cat-legacy-inactive-parent', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { name: 'Legacy Inactive Root Edited', is_active: false },
+    });
+    assertEqual(
+      res.status,
+      200,
+      'editing an already-inactive parent category without activating it succeeds',
+    );
+
+    res = await api(baseUrl, '/api/categories/cat-legacy-inactive-parent', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { is_active: true },
+    });
+    assertEqual(res.status, 200, 'reactivating a legacy inactive parent succeeds');
+
+    res = await api(baseUrl, '/api/categories/cat-legacy-inactive-parent', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { is_active: false },
+    });
+    assertEqual(
+      res.status,
+      400,
+      'deactivating the reactivated parent while it still has subcategories is refused',
+    );
+
     console.log('\n─── Product nullable field updates ───');
     seedCategory(db, 'cat-247-products', 'Products');
     seedProduct(db, 'prod-247-clear', 'cat-247-products', 'Clearable Product', 20);

@@ -49,6 +49,7 @@ export interface MenuDocument {
   businessName: DirectionalText;
   printedAt: string;
   sections: Array<{
+    rootCategoryId?: string | null;
     name: DirectionalText | null;
     parentName?: DirectionalText | null;
     products: Array<{ name: DirectionalText; price: string; details: DirectionalText[] }>;
@@ -75,11 +76,13 @@ export function buildMenuDocument(
     )
     .filter((product) => {
       if (options.includeHidden === true || !product.categoryId) return true;
-      const category = categoryById.get(product.categoryId);
-      if (category?.isActive !== true) return false;
-      if (category.parentId) {
-        const parent = categoryById.get(category.parentId);
-        if (parent && !parent.isActive) return false;
+      let currentId: string | null | undefined = product.categoryId;
+      const seen = new Set<string>();
+      while (currentId && !seen.has(currentId)) {
+        seen.add(currentId);
+        const category = categoryById.get(currentId);
+        if (!category || !category.isActive) return false;
+        currentId = category.parentId;
       }
       return true;
     })
@@ -136,6 +139,7 @@ export function buildMenuDocument(
     );
     if (rootProducts.length > 0) {
       sections.push({
+        rootCategoryId: root.id,
         name: toDirectionalText(root.name),
         parentName: null,
         products: rootProducts,
@@ -148,6 +152,7 @@ export function buildMenuDocument(
       );
       if (childProducts.length > 0) {
         sections.push({
+          rootCategoryId: root.id,
           name: toDirectionalText(child.name),
           parentName: toDirectionalText(root.name),
           products: childProducts,
@@ -159,7 +164,12 @@ export function buildMenuDocument(
     (product) => !product.categoryId || !categoryById.has(product.categoryId),
   );
   if (uncategorized.length > 0)
-    sections.push({ name: null, parentName: null, products: toRows(uncategorized) });
+    sections.push({
+      rootCategoryId: null,
+      name: null,
+      parentName: null,
+      products: toRows(uncategorized),
+    });
 
   return {
     businessName: toDirectionalText(options.businessName),
@@ -198,10 +208,13 @@ export function renderMenuViaDocument(
     '',
   );
 
-  let activeParentHeading: string | null = null;
+  let activeRootKey: string | null = null;
   for (const section of document.sections) {
     if (section.parentName) {
-      if (activeParentHeading !== section.parentName.text) {
+      const rootKey = section.rootCategoryId
+        ? `id:${section.rootCategoryId}`
+        : `name:${section.parentName.text}`;
+      if (activeRootKey !== rootKey) {
         const parentTitle = truncateShapedLine(
           `--- ${section.parentName.text} ---`,
           options.columns,
@@ -210,7 +223,7 @@ export function renderMenuViaDocument(
           capabilities,
         );
         lines.push(`{BOLD}${parentTitle}{/BOLD}`);
-        activeParentHeading = section.parentName.text;
+        activeRootKey = rootKey;
       }
       if (section.name) {
         const subTitle = truncateShapedLine(
@@ -223,7 +236,11 @@ export function renderMenuViaDocument(
         lines.push(`{BOLD}${subTitle}{/BOLD}`);
       }
     } else {
-      activeParentHeading = section.name ? section.name.text : null;
+      activeRootKey = section.name
+        ? section.rootCategoryId
+          ? `id:${section.rootCategoryId}`
+          : `name:${section.name.text}`
+        : null;
       if (section.name) {
         const title = truncateShapedLine(
           `--- ${section.name.text} ---`,

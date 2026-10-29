@@ -1831,6 +1831,164 @@ async function main() {
       0,
       'exported products CSV round-trips without errors',
     );
+
+    const crossNamespaceCats = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,parent,description,color,icon,sort_order',
+          'Specials,,Root specials,,,30',
+          'Specials,CSV Drinks,Drinks specials child,,,3',
+          'CSV Drinks,Specials,Child sharing name with root that has subcategories,,,1',
+          'CSV Drinks,CSV Drinks,Child sharing name with its own root parent,,,4',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      crossNamespaceCats.data.failed,
+      0,
+      'cross-named roots and subcategories import without false cycle or root-reparenting errors',
+    );
+    assertEqualOrThrow(
+      crossNamespaceCats.data.created,
+      4,
+      'all 4 cross-namespace root/subcategory rows are created',
+    );
+
+    const mutualCycleCats = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,parent,description,color,icon,sort_order',
+          'CycleAlpha,CycleBeta,Mutual cycle A,,,1',
+          'CycleBeta,CycleAlpha,Mutual cycle B,,,2',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      mutualCycleCats.data.failed,
+      2,
+      'mutual non-root parent cycle rows are rejected',
+    );
+    assert(
+      mutualCycleCats.data.errors.every((e: string) => e.includes('creates a cycle')),
+      'mutual cycle rows report cycle error',
+    );
+
+    const blankCatName = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: ['name,parent,sort_order', '"   ",,1'].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(blankCatName.data.failed, 1, 'whitespace-only category name is rejected');
+    assert(
+      blankCatName.data.errors.some((e: string) => e.includes('missing name')),
+      'whitespace-only category name reports missing name',
+    );
+
+    const specialsRoot = db
+      .prepare(
+        'SELECT id FROM categories WHERE name = ? AND parent_id IS NULL AND deleted_at IS NULL',
+      )
+      .get('Specials') as { id: string } | undefined;
+    const specialsUnderDrinks = db
+      .prepare('SELECT id FROM categories WHERE name = ? AND parent_id = ? AND deleted_at IS NULL')
+      .get('Specials', csvDrinksRoot!.id) as { id: string } | undefined;
+    assert(
+      Boolean(specialsRoot?.id && specialsUnderDrinks?.id),
+      'both root Specials and CSV Drinks > Specials exist',
+    );
+
+    const rootSpecialsProdImport = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: [
+          'sku,name,category,category_parent,price,cost,is_active',
+          ',Chef Platter,Specials,,15.0,5,yes',
+          ',Drink Flight,Specials,CSV Drinks,12.0,4,yes',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      rootSpecialsProdImport.data.failed,
+      0,
+      'blank category_parent resolves to root Specials even when CSV Drinks > Specials exists',
+    );
+    const chefPlatter = db
+      .prepare('SELECT category_id FROM products WHERE name = ? AND deleted_at IS NULL')
+      .get('Chef Platter') as { category_id: string } | undefined;
+    assertEqualOrThrow(
+      chefPlatter?.category_id,
+      specialsRoot!.id,
+      'Chef Platter attaches to root Specials',
+    );
+
+    const flatAmbiguousSpecials = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: ['sku,name,category,price,cost,is_active', ',Flat Ambiguous,Specials,11.0,3,yes'].join(
+          '\n',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      flatAmbiguousSpecials.data.failed,
+      1,
+      'flat CSV without category_parent rejects Specials when both root and child Specials exist',
+    );
+
+    db.prepare(
+      `INSERT INTO categories (id, name, slug, parent_id, sort_order, is_active, created_at, updated_at)
+       VALUES ('legacy-inactive-root', 'Legacy Seasonal', 'legacy-seasonal', NULL, 50, 0, ?, ?),
+              ('legacy-inactive-child', 'Winter Specials', 'winter-specials', 'legacy-inactive-root', 1, 1, ?, ?)`,
+    ).run(now(), now(), now(), now());
+
+    const newChildUnderInactive = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: ['name,parent,sort_order', 'Spring Specials,Legacy Seasonal,2'].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      newChildUnderInactive.data.failed,
+      1,
+      'creating a new subcategory under an inactive parent via CSV is rejected',
+    );
+
+    const exportedCatsRound2 = await (
+      await fetch(`${baseUrl}/api/menu/csv/export/categories`, { headers: authHeader })
+    ).text();
+    const reimportCatsRound2 = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: { csv: exportedCatsRound2 },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      reimportCatsRound2.data.failed,
+      0,
+      'categories export with cross-named categories and legacy inactive parent round-trips with 0 errors',
+    );
+
+    const exportedProdsRound2 = await (
+      await fetch(`${baseUrl}/api/menu/csv/export/products`, { headers: authHeader })
+    ).text();
+    const reimportProdsRound2 = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: { csv: exportedProdsRound2 },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      reimportProdsRound2.data.failed,
+      0,
+      'products export with root Specials and CSV Drinks > Specials round-trips with 0 errors',
+    );
   } finally {
     server.close();
     closeDatabase();

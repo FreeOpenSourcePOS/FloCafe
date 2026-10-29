@@ -366,10 +366,10 @@ export default function ProductGrid({
   const rootCategories = useMemo(
     () =>
       categories
-        .filter((cat) => !cat.parent_id || !categoryById.has(String(cat.parent_id)))
+        .filter((cat) => cat.is_active !== false && !cat.parent_id)
         .slice()
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name)),
-    [categories, categoryById],
+    [categories],
   );
   const sortedCategories = useMemo(
     () => sortCategories(rootCategories, categorySort),

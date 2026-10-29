@@ -1221,4 +1221,95 @@ test('printed menus group subcategories beneath their parent categories in therm
   assert.match(webHtml, /<h3>Hot<\/h3>/);
   assert.match(webHtml, /<h3>Cold<\/h3>/);
   assert.match(webHtml, /<h2>Food<\/h2><h3>Hot<\/h3>/);
+
+  const { isMenuCategoryVisible } = require('../frontend/src/lib/printer/menu-web-print');
+  const visibilityMap = new Map(
+    treeCategories.map((c) => [c.id, { is_active: c.isActive, parent_id: c.parentId }]),
+  );
+  assert.equal(
+    isMenuCategoryVisible(visibilityMap, 'sub-under-inactive', false),
+    false,
+    'active subcategory under an inactive parent is hidden when includeHidden is false',
+  );
+  assert.equal(
+    isMenuCategoryVisible(visibilityMap, 'sub-under-inactive', true),
+    true,
+    'active subcategory under an inactive parent is shown when includeHidden is true',
+  );
+  assert.equal(
+    isMenuCategoryVisible(visibilityMap, 'sub-hot', false),
+    true,
+    'active subcategory under an active parent is visible',
+  );
+
+  const duplicateRootCategories = [
+    { id: 'dup-root-1', name: 'Specials', parentId: null, sortOrder: 1, isActive: true },
+    { id: 'dup-sub-1', name: 'Lunch', parentId: 'dup-root-1', sortOrder: 1, isActive: true },
+    { id: 'dup-root-2', name: 'Specials', parentId: null, sortOrder: 2, isActive: true },
+    { id: 'dup-sub-2', name: 'Dinner', parentId: 'dup-root-2', sortOrder: 1, isActive: true },
+  ];
+  const duplicateRootProducts = [
+    {
+      id: 'p-lunch',
+      name: 'Soup',
+      price: 7,
+      categoryId: 'dup-sub-1',
+      sortOrder: 1,
+      isActive: true,
+      trackInventory: false,
+      stockQuantity: 0,
+    },
+    {
+      id: 'p-dinner',
+      name: 'Steak',
+      price: 19,
+      categoryId: 'dup-sub-2',
+      sortOrder: 1,
+      isActive: true,
+      trackInventory: false,
+      stockQuantity: 0,
+    },
+  ];
+  const dupDoc = buildMenuDocument(duplicateRootCategories, duplicateRootProducts, {
+    businessName: 'FloCafe',
+    printedAt: '',
+    baseDirection: 'ltr',
+    formatPrice: (value: number) => `$${value.toFixed(2)}`,
+  });
+  const dupThermalText = escPosToText(
+    renderMenuViaDocument(dupDoc, { columns: 42, language: 'en' }).data,
+  );
+  assert.equal(
+    (dupThermalText.match(/--- Specials ---/g) || []).length,
+    2,
+    'thermal menu emits a separate heading for each legacy duplicate root category',
+  );
+
+  const dupWebSections = buildHierarchicalMenuWebSections(
+    duplicateRootCategories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      parent_id: c.parentId,
+      sort_order: c.sortOrder,
+    })),
+    [
+      { product: { category_id: 'dup-sub-1' }, item: { name: 'Soup', price: '$7.00' } },
+      { product: { category_id: 'dup-sub-2' }, item: { name: 'Steak', price: '$19.00' } },
+    ],
+    (row: { item: { name: string; price: string } }) => row.item,
+  );
+  const dupWebHtml = buildMenuWebPrintHtml({
+    businessName: 'FloCafe',
+    printedAt: '',
+    pageSize: 'A4',
+    menuTitle: 'Menu',
+    totalItemsLabel: 'Total items',
+    itemCount: 2,
+    sections: dupWebSections,
+  });
+  assert.equal(
+    (dupWebHtml.match(/<h2>Specials<\/h2>/g) || []).length,
+    2,
+    'HTML menu emits a separate h2 heading for each legacy duplicate root category',
+  );
 });

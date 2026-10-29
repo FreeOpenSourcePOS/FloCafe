@@ -161,11 +161,12 @@ export function getCustomerTopItems(
       t.total_quantity,
       t.order_count,
       CASE WHEN p.id IS NOT NULL AND p.deleted_at IS NULL AND p.is_active = 1
-        AND (c.id IS NULL OR c.is_active = 1) THEN 1 ELSE 0 END AS available
+        AND (c.id IS NULL OR (c.is_active = 1 AND (c.parent_id IS NULL OR cp.is_active = 1))) THEN 1 ELSE 0 END AS available
     FROM product_totals t
     JOIN order_items latest ON latest.id = t.latest_line_id
     LEFT JOIN products p ON p.id = t.product_id
     LEFT JOIN categories c ON c.id = p.category_id
+    LEFT JOIN categories cp ON cp.id = c.parent_id AND cp.deleted_at IS NULL
     ORDER BY t.total_quantity DESC,
       t.order_count DESC,
       COALESCE(p.name, latest.product_name) COLLATE NOCASE ASC,

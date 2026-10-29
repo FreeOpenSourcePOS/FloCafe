@@ -14,6 +14,7 @@ import {
   buildHierarchicalMenuWebSections,
   buildMenuWebPrintHtml,
   buildQrTableCardHtml,
+  isMenuCategoryVisible,
   printMenuInBrowser,
   type MenuTemplate,
 } from '@/lib/printer/menu-web-print';
@@ -105,14 +106,12 @@ export function QrMenuSettingsTab({
     ]);
     const products = (productResponse.data.products || []) as Product[];
     const categories = (categoryResponse.data.categories || []) as Category[];
-    const categoryById = new Map(categories.map((category) => [category.id, category]));
+    const categoryById = new Map(categories.map((category) => [String(category.id), category]));
     const included = products
       .filter(
         (product) =>
           (prefs.includeInactive || product.is_active) &&
-          (prefs.includeHidden ||
-            !product.category_id ||
-            categoryById.get(product.category_id)?.is_active === true),
+          isMenuCategoryVisible(categoryById, product.category_id, prefs.includeHidden),
       )
       .flatMap((product) => {
         const variants = activeVariants(product.variants);

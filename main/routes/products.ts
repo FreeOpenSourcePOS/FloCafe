@@ -1185,6 +1185,7 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
       CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
       FROM products p 
       LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN categories cp ON c.parent_id = cp.id AND cp.deleted_at IS NULL
       WHERE p.deleted_at IS NULL`;
     const params: any[] = [];
 
@@ -1193,7 +1194,8 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
       params.push(req.query.category_id);
     }
     if (req.query.active === 'true' || req.query.active === '1') {
-      query += ' AND p.is_active = 1 AND (c.id IS NULL OR c.is_active = 1)';
+      query +=
+        ' AND p.is_active = 1 AND (c.id IS NULL OR (c.is_active = 1 AND (c.parent_id IS NULL OR cp.is_active = 1)))';
     }
     if (req.query.search) {
       query += ' AND (p.name LIKE ? OR p.sku LIKE ?)';

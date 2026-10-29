@@ -87,6 +87,8 @@ import {
 import { hasPermission, requireAnyPermission, requirePermission } from '../services/authorization';
 import {
   assertScheduledOrderUnpaidForEdit,
+  decodeScheduledOrdersCursor,
+  encodeScheduledOrdersCursor,
   isScheduledOrderRow,
   isUnreleasedOrderRow,
   releaseScheduledOrder,
@@ -1442,24 +1444,85 @@ router.get(
   '/scheduled',
   scheduledOrderReadRateLimit,
   requirePermission('orders.read'),
-  (_req: Request, res: Response) => {
+  (req: Request, res: Response) => {
     try {
       const db = getDatabase();
-      const rows = (
-        db
-          .prepare(
-            `SELECT * FROM orders
-             WHERE release_status IN ('scheduled', 'blocked')
-               AND status NOT IN ('cancelled', 'completed')
-             ORDER BY CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END ASC,
-                      scheduled_for ASC,
-                      id ASC
-             LIMIT 200`,
+
+      let limit = 200;
+      const rawLimit = req.query.limit;
+      if (typeof rawLimit === 'string') {
+        const parsedLimit = parseInt(rawLimit, 10);
+        if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+          limit = Math.min(parsedLimit, 200);
+        }
+      }
+
+      let cursor: ReturnType<typeof decodeScheduledOrdersCursor> = null;
+      if (typeof req.query.cursor === 'string' && req.query.cursor.trim()) {
+        cursor = decodeScheduledOrdersCursor(req.query.cursor.trim());
+        if (!cursor) {
+          return res.status(400).json({ error: 'Invalid cursor', code: 'INVALID_CURSOR' });
+        }
+      }
+
+      const countRow = db
+        .prepare(
+          `SELECT
+             COUNT(CASE WHEN release_status = 'scheduled' THEN 1 END) AS scheduled_count,
+             COUNT(CASE WHEN release_status = 'blocked' THEN 1 END) AS blocked_count
+           FROM orders
+           WHERE release_status IN ('scheduled', 'blocked')
+             AND status NOT IN ('cancelled', 'completed')`,
+        )
+        .get() as { scheduled_count: number; blocked_count: number } | undefined;
+
+      const scheduled_count = countRow?.scheduled_count ?? 0;
+      const blocked_count = countRow?.blocked_count ?? 0;
+
+      let sql = `SELECT * FROM orders
+                 WHERE release_status IN ('scheduled', 'blocked')
+                   AND status NOT IN ('cancelled', 'completed')`;
+      const params: unknown[] = [];
+
+      if (cursor) {
+        sql += ` AND (
+          (CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END > ?)
+          OR (
+            (CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END = ?)
+            AND (
+              (COALESCE(scheduled_for, '') > ?)
+              OR (COALESCE(scheduled_for, '') = ? AND id > ?)
+            )
           )
-          .all() as Record<string, unknown>[]
-      ).map(parseRowJson);
-      const orders = batchHydrateOrders(db, rows);
-      res.json({ orders });
+        )`;
+        params.push(cursor.rank, cursor.rank, cursor.scheduled_for, cursor.scheduled_for, cursor.id);
+      }
+
+      sql += ` ORDER BY CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END ASC,
+                        scheduled_for ASC,
+                        id ASC
+               LIMIT ?`;
+      params.push(limit + 1);
+
+      const rows = (db.prepare(sql).all(...params) as Record<string, unknown>[]).map(parseRowJson);
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const next_cursor =
+        hasMore && pageRows.length > 0
+          ? encodeScheduledOrdersCursor({
+              rank: pageRows[pageRows.length - 1].release_status === 'blocked' ? 0 : 1,
+              scheduled_for: String(pageRows[pageRows.length - 1].scheduled_for || ''),
+              id: Number(pageRows[pageRows.length - 1].id),
+            })
+          : null;
+
+      const orders = batchHydrateOrders(db, pageRows);
+      res.json({
+        orders,
+        next_cursor,
+        scheduled_count,
+        blocked_count,
+      });
     } catch (error: unknown) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Failed to load scheduled orders' });
@@ -2379,14 +2442,24 @@ router.patch(
         }
 
         const changedAt = now();
-        db.prepare(
-          `UPDATE orders
-           SET scheduled_for = ?,
-               release_status = 'scheduled',
-               release_blocked_reason = NULL,
-               updated_at = ?
-           WHERE id = ?`,
-        ).run(scheduledMeta.scheduledForUtc, changedAt, currentOrder.id);
+        const isBlocked = currentOrder.release_status === 'blocked';
+        if (isBlocked) {
+          db.prepare(
+            `UPDATE orders
+             SET scheduled_for = ?,
+                 updated_at = ?
+             WHERE id = ?`,
+          ).run(scheduledMeta.scheduledForUtc, changedAt, currentOrder.id);
+        } else {
+          db.prepare(
+            `UPDATE orders
+             SET scheduled_for = ?,
+                 release_status = 'scheduled',
+                 release_blocked_reason = NULL,
+                 updated_at = ?
+             WHERE id = ?`,
+          ).run(scheduledMeta.scheduledForUtc, changedAt, currentOrder.id);
+        }
 
         recordOrderAudit(db, {
           orderId: String(currentOrder.id),
@@ -2396,6 +2469,7 @@ router.patch(
             previous_scheduled_for: currentOrder.scheduled_for,
             scheduled_for: scheduledMeta.scheduledForUtc,
             previous_release_status: currentOrder.release_status,
+            release_status: isBlocked ? 'blocked' : 'scheduled',
             timezone: scheduledMeta.timezone,
           },
         });

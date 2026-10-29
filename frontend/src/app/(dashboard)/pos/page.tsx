@@ -35,9 +35,8 @@ import PrepaidCheckoutModal, {
   type PrepaidDiscount,
 } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
-import ScheduledOrdersDrawer, {
-  canPayScheduledOrder,
-} from '@/components/pos/ScheduledOrdersDrawer';
+import ScheduledOrdersDrawer from '@/components/pos/ScheduledOrdersDrawer';
+import { canPayScheduledOrder, isPayableBill } from '@/lib/order-payment-state';
 import RefundModal from '@/components/orders/RefundModal';
 import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/scheduled-time';
 import dynamic from 'next/dynamic';
@@ -306,6 +305,10 @@ export default function POSPage() {
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const [storeTimezone, setStoreTimezone] = useState<string>(currentTenant?.timezone || 'UTC');
   const [scheduledOrders, setScheduledOrders] = useState<Order[]>([]);
+  const [nextScheduledCursor, setNextScheduledCursor] = useState<string | null>(null);
+  const [scheduledCount, setScheduledCount] = useState<number>(0);
+  const [blockedScheduledCount, setBlockedScheduledCount] = useState<number>(0);
+  const [loadingMoreScheduled, setLoadingMoreScheduled] = useState(false);
   const [showScheduledOrders, setShowScheduledOrders] = useState(false);
   const [refundModalTarget, setRefundModalTarget] = useState<{
     order: Order;
@@ -989,15 +992,56 @@ export default function POSPage() {
   const refreshScheduledOrders = useCallback(async () => {
     if (!canReadOrders) {
       setScheduledOrders([]);
+      setNextScheduledCursor(null);
+      setScheduledCount(0);
+      setBlockedScheduledCount(0);
       return;
     }
     try {
       const { data } = await api.get('/orders/scheduled');
-      setScheduledOrders((data.orders as Order[]) || []);
+      const loadedOrders = (data.orders as Order[]) || [];
+      setScheduledOrders(loadedOrders);
+      setNextScheduledCursor(data.next_cursor || null);
+      if (typeof data.scheduled_count === 'number') {
+        setScheduledCount(data.scheduled_count);
+      } else {
+        setScheduledCount(loadedOrders.filter((o) => o.release_status === 'scheduled').length);
+      }
+      if (typeof data.blocked_count === 'number') {
+        setBlockedScheduledCount(data.blocked_count);
+      } else {
+        setBlockedScheduledCount(loadedOrders.filter((o) => o.release_status === 'blocked').length);
+      }
     } catch {
       /* ignore background poll failures */
     }
   }, [canReadOrders]);
+
+  const handleLoadMoreScheduledOrders = async () => {
+    if (!nextScheduledCursor || loadingMoreScheduled) return;
+    setLoadingMoreScheduled(true);
+    try {
+      const { data } = await api.get('/orders/scheduled', {
+        params: { cursor: nextScheduledCursor },
+      });
+      const moreOrders = (data.orders as Order[]) || [];
+      setScheduledOrders((prev) => {
+        const seen = new Set(prev.map((o) => o.id));
+        return [...prev, ...moreOrders.filter((o) => !seen.has(o.id))];
+      });
+      setNextScheduledCursor(data.next_cursor || null);
+      if (typeof data.scheduled_count === 'number') {
+        setScheduledCount(data.scheduled_count);
+      }
+      if (typeof data.blocked_count === 'number') {
+        setBlockedScheduledCount(data.blocked_count);
+      }
+    } catch {
+      /* ignore load more failures */
+    } finally {
+      setLoadingMoreScheduled(false);
+    }
+  };
 
   useEffect(() => {
     void refreshScheduledOrders();
@@ -2478,9 +2522,7 @@ export default function POSPage() {
     try {
       const existingBills =
         order.bills && order.bills.length > 0 ? order.bills : order.bill ? [order.bill] : [];
-      const payableBill = existingBills.find(
-        (b) => b.payment_status === 'unpaid' || b.payment_status === 'partial',
-      );
+      const payableBill = existingBills.find(isPayableBill);
       let billToPay: Bill;
       if (payableBill) {
         billToPay = await fetchLatestBill(payableBill.id);
@@ -2488,7 +2530,7 @@ export default function POSPage() {
         const { data } = await api.post('/bills/generate', { order_id: order.id });
         billToPay = data.bill as Bill;
       }
-      if (billToPay.payment_status !== 'unpaid' && billToPay.payment_status !== 'partial') {
+      if (!isPayableBill(billToPay)) {
         await refreshScheduledOrders();
         return;
       }
@@ -2508,15 +2550,24 @@ export default function POSPage() {
     }
   };
 
-  const activeScheduledOrders = scheduledOrders.filter(
-    (o) =>
-      o.status !== 'cancelled' &&
-      o.status !== 'completed' &&
-      (o.release_status === 'scheduled' || o.release_status === 'blocked'),
+  const totalActiveScheduled = Math.max(
+    scheduledCount + blockedScheduledCount,
+    scheduledOrders.filter(
+      (o) =>
+        o.status !== 'cancelled' &&
+        o.status !== 'completed' &&
+        (o.release_status === 'scheduled' || o.release_status === 'blocked'),
+    ).length,
   );
-  const blockedScheduledCount = activeScheduledOrders.filter(
-    (o) => o.release_status === 'blocked',
-  ).length;
+  const totalBlockedScheduled = Math.max(
+    blockedScheduledCount,
+    scheduledOrders.filter(
+      (o) =>
+        o.status !== 'cancelled' &&
+        o.status !== 'completed' &&
+        o.release_status === 'blocked',
+    ).length,
+  );
 
   const cartPanelProps = {
     tables,
@@ -2894,8 +2945,8 @@ export default function POSPage() {
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
         onCustomerModalOpenChange={setTopbarCustomerModalOpen}
-        scheduledOrderCount={activeScheduledOrders.length}
-        blockedScheduledCount={blockedScheduledCount}
+        scheduledOrderCount={totalActiveScheduled}
+        blockedScheduledCount={totalBlockedScheduled}
         onShowScheduledOrders={() => {
           void refreshScheduledOrders();
           api
@@ -3062,6 +3113,10 @@ export default function POSPage() {
         onAddItemsToOrder={handleAddItemsToScheduledOrder}
         onPayOrder={handlePayScheduledOrder}
         onRefundOrder={(order, bills) => setRefundModalTarget({ order, bills })}
+        hasMore={Boolean(nextScheduledCursor)}
+        loadingMore={loadingMoreScheduled}
+        onLoadMore={handleLoadMoreScheduledOrders}
+        totalScheduledCount={totalActiveScheduled}
       />
 
       {paymentBill && (

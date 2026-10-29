@@ -32,7 +32,7 @@ import {
   parseScheduledForInput,
 } from '@/lib/scheduled-time';
 import {
-  getOrderBills,
+  canPayScheduledOrder,
   getRefundEligibleBills,
   isScheduledOrderEditLocked,
   orderHasCollectedFunds,
@@ -41,6 +41,8 @@ import {
 import type { Bill, Order, OrderItem } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+
+export { canPayScheduledOrder };
 
 interface Props {
   open: boolean;
@@ -52,18 +54,14 @@ interface Props {
   onAddItemsToOrder: (order: Order) => void;
   onPayOrder: (order: Order) => Promise<void> | void;
   onRefundOrder: (order: Order, bills: Bill[]) => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => Promise<void> | void;
+  totalScheduledCount?: number;
 }
 
 function getCurrentTime(): number {
   return Date.now();
-}
-
-export function canPayScheduledOrder(order: Order): boolean {
-  const bills = getOrderBills(order);
-  return (
-    bills.length === 0 ||
-    bills.some((b) => b.payment_status === 'unpaid' || b.payment_status === 'partial')
-  );
 }
 
 export default function ScheduledOrdersDrawer({
@@ -76,6 +74,10 @@ export default function ScheduledOrdersDrawer({
   onAddItemsToOrder,
   onPayOrder,
   onRefundOrder,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
+  totalScheduledCount,
 }: Props) {
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
@@ -670,7 +672,7 @@ export default function ScheduledOrdersDrawer({
             <CalendarClock size={18} className="text-brand" />
             <h2 className="text-base font-bold text-foreground">{t('scheduledOrdersTitle')}</h2>
             <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums text-muted-foreground">
-              {activeOrders.length}
+              {typeof totalScheduledCount === 'number' ? totalScheduledCount : activeOrders.length}
             </span>
           </div>
           <button
@@ -712,6 +714,28 @@ export default function ScheduledOrdersDrawer({
                   </h3>
                   <div className="space-y-3">{upcomingOrders.map(renderOrderCard)}</div>
                 </section>
+              )}
+
+              {hasMore && (
+                <div className="pt-2 pb-4 flex justify-center">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onLoadMore}
+                    disabled={loadingMore}
+                    className="w-full gap-2"
+                    data-testid="scheduled-orders-load-more"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        {tCommon('loading')}
+                      </>
+                    ) : (
+                      tCommon('loadMore')
+                    )}
+                  </Button>
+                </div>
               )}
             </>
           )}

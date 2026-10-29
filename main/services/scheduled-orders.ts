@@ -886,18 +886,62 @@ export async function sweepDueScheduledOrders(
   };
 
   for (const row of dueRows) {
-    const result = await releaseScheduledOrder(db, row.id, {
-      trigger,
-      nowDate,
-      autoPrintKot: options?.autoPrintKot,
-      checkPreconditions: options?.checkPreconditions,
-    });
-    if (result.outcome === 'released') {
-      summary.releasedIds.push(row.id);
-    } else if (result.outcome === 'blocked') {
-      summary.blockedIds.push(row.id);
-    } else {
-      summary.skippedIds.push(row.id);
+    try {
+      const result = await releaseScheduledOrder(db, row.id, {
+        trigger,
+        nowDate,
+        autoPrintKot: options?.autoPrintKot,
+        checkPreconditions: options?.checkPreconditions,
+      });
+      if (result.outcome === 'released') {
+        summary.releasedIds.push(row.id);
+      } else if (result.outcome === 'blocked') {
+        summary.blockedIds.push(row.id);
+      } else {
+        summary.skippedIds.push(row.id);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        message.includes('shutting down') ||
+        message.includes('maintenance') ||
+        message.includes('not initialized') ||
+        isDatabaseMaintenanceActive()
+      ) {
+        throw err;
+      }
+      console.error(
+        `[Scheduled Orders] Unexpected sweep release error for order ${row.id} (${trigger}):`,
+        err,
+      );
+      try {
+        const orderRow = db
+          .prepare('SELECT id, release_status FROM orders WHERE id = ?')
+          .get(row.id) as { id: number; release_status: string } | undefined;
+        if (orderRow && orderRow.release_status === 'scheduled') {
+          const reason =
+            'Automatic release failed due to an unexpected error. Staff can retry release manually.';
+          const nowDb = formatSqlUtcTimestamp(nowDate);
+          db.prepare(
+            `UPDATE orders
+             SET release_status = 'blocked',
+                 release_blocked_reason = ?,
+                 updated_at = ?
+             WHERE id = ? AND release_status = 'scheduled'`,
+          ).run(reason, nowDb, row.id);
+          notifyOrderUpdated();
+          cloudSync.recordOrderChanged(String(row.id), 'order.release_blocked');
+          summary.blockedIds.push(row.id);
+        } else {
+          summary.skippedIds.push(row.id);
+        }
+      } catch (innerErr) {
+        console.error(
+          `[Scheduled Orders] Failed to mark order ${row.id} as blocked after sweep failure:`,
+          innerErr,
+        );
+        summary.skippedIds.push(row.id);
+      }
     }
   }
 
@@ -959,5 +1003,36 @@ export function stopScheduledOrderSweep(): void {
   if (sweepIntervalHandle) {
     clearInterval(sweepIntervalHandle);
     sweepIntervalHandle = null;
+  }
+}
+
+export interface ScheduledOrdersCursor {
+  rank: number;
+  scheduled_for: string;
+  id: number;
+}
+
+export function encodeScheduledOrdersCursor(cursor: ScheduledOrdersCursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+export function decodeScheduledOrdersCursor(raw: string): ScheduledOrdersCursor | null {
+  if (typeof raw !== 'string' || raw.length === 0 || !/^[A-Za-z0-9_-]+$/.test(raw)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof (parsed as ScheduledOrdersCursor).rank === 'number' &&
+      typeof (parsed as ScheduledOrdersCursor).scheduled_for === 'string' &&
+      typeof (parsed as ScheduledOrdersCursor).id === 'number'
+    ) {
+      return parsed as ScheduledOrdersCursor;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }

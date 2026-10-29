@@ -285,7 +285,7 @@ export interface Bill {
   total: number;
   paid_amount: number;
   balance: number;
-  payment_status: 'unpaid' | 'partial' | 'paid' | 'refunded' | 'partially_refunded';
+  payment_status: 'unpaid' | 'partial' | 'partially_paid' | 'paid' | 'refunded' | 'partially_refunded';
   payment_details:
     | {
         method: string;

@@ -19,6 +19,20 @@ export function getRefundEligibleBills(order: Pick<Order, 'bill' | 'bills'>): Bi
   );
 }
 
+export function isPayableBillStatus(status: unknown): boolean {
+  return status === 'unpaid' || status === 'partial' || status === 'partially_paid';
+}
+
+export function isPayableBill(bill: Pick<Bill, 'payment_status'> | null | undefined): boolean {
+  if (!bill) return false;
+  return isPayableBillStatus(bill.payment_status);
+}
+
+export function canPayScheduledOrder(order: Pick<Order, 'bill' | 'bills'>): boolean {
+  const bills = getOrderBills(order);
+  return bills.length === 0 || bills.some(isPayableBill);
+}
+
 function hasNonEmptyPaymentDetails(raw: unknown): boolean {
   if (!raw) return false;
   if (Array.isArray(raw)) return raw.length > 0;

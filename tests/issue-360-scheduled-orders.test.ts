@@ -647,6 +647,75 @@ async function main() {
         dedicatedQueueRes.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
         'scheduled order returned by GET /api/orders/scheduled',
       );
+      assertEqualOrThrow(
+        typeof dedicatedQueueRes.data.scheduled_count,
+        'number',
+        'GET /api/orders/scheduled returns scheduled_count',
+      );
+      assertEqualOrThrow(
+        typeof dedicatedQueueRes.data.blocked_count,
+        'number',
+        'GET /api/orders/scheduled returns blocked_count',
+      );
+
+      // Create a second scheduled order so multiple pages can be exercised
+      const schedSecondOrderRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: futureWallClockInZone('America/New_York', 180),
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      assertEqualOrThrow(schedSecondOrderRes.status, 201, 'second scheduled order created for pagination test');
+
+      // Page 1 with limit = 1 returns next_cursor
+      const page1Res = await api(baseUrl, '/api/orders/scheduled?limit=1', {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(page1Res.status, 200, 'GET /api/orders/scheduled?limit=1 succeeds');
+      assertEqualOrThrow(page1Res.data.orders.length, 1, 'page 1 has length 1');
+      assertOrThrow(
+        typeof page1Res.data.next_cursor === 'string' && page1Res.data.next_cursor.length > 0,
+        'page 1 returns non-null next_cursor string',
+      );
+
+      // Page 2 using cursor returns the next item
+      const page2Res = await api(
+        baseUrl,
+        `/api/orders/scheduled?limit=1&cursor=${encodeURIComponent(page1Res.data.next_cursor)}`,
+        {
+          headers: owner.authHeader,
+        },
+      );
+      assertEqualOrThrow(page2Res.status, 200, 'GET /api/orders/scheduled with cursor succeeds');
+      assertEqualOrThrow(page2Res.data.orders.length, 1, 'page 2 has length 1');
+      assertOrThrow(
+        Number(page2Res.data.orders[0].id) !== Number(page1Res.data.orders[0].id),
+        'page 2 returns a distinct order from page 1',
+      );
+
+      // Invalid cursor returns 400 with INVALID_CURSOR
+      const invalidCursorRes = await api(baseUrl, '/api/orders/scheduled?cursor=not-a-valid-cursor-token', {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(invalidCursorRes.status, 400, 'invalid cursor rejected with 400');
+      assertEqualOrThrow(invalidCursorRes.data.code, 'INVALID_CURSOR', 'code is INVALID_CURSOR');
+
+      // Heartbeat active orders excludes unreleased scheduled orders
+      const { cloudSync } = require('../main/services/cloud-sync');
+      const heartbeatPayload = (cloudSync as any).buildHeartbeatPayload({ pos_hash: 'test_hash', pos_id: 'pos_1' });
+      const rawActiveOrdersCount = (db.prepare(`
+        SELECT COUNT(*) as count FROM orders
+        WHERE status IN ('pending', 'preparing', 'ready', 'served')
+          AND release_status = 'released'
+      `).get() as { count: number }).count;
+      assertEqualOrThrow(
+        heartbeatPayload.active_orders,
+        rawActiveOrdersCount,
+        'heartbeat active_orders matches released active orders and excludes unreleased scheduled orders',
+      );
     }
 
     // ── 3. Quote preservation + recipe-at-release + negative supply + due sweep + concurrent idempotency ─
@@ -966,6 +1035,42 @@ async function main() {
         standaloneMutateBlocked.status,
         409,
         'standalone PATCH /api/kds/items/:id/status rejected (409) while blocked',
+      );
+
+      // Rescheduling a blocked order preserves release_status = 'blocked' and release_blocked_reason
+      const newSchedWall = futureWallClockInZone('America/New_York', 120);
+      const reschedBlockedRes = await api(baseUrl, `/api/orders/${blockedOrderId}/schedule`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { scheduled_for: newSchedWall },
+      });
+      assertEqualOrThrow(
+        reschedBlockedRes.status,
+        200,
+        'PATCH /api/orders/:id/schedule succeeds on a blocked order',
+      );
+      assertEqualOrThrow(
+        reschedBlockedRes.data.order.release_status,
+        'blocked',
+        'rescheduling a blocked order preserves release_status = blocked',
+      );
+      assertIncludesOrThrow(
+        String(reschedBlockedRes.data.order.release_blocked_reason || ''),
+        'Blueberry Muffin',
+        'rescheduling a blocked order preserves release_blocked_reason',
+      );
+      const blockedAudit = db
+        .prepare(
+          `SELECT details_json FROM order_audit_log
+           WHERE order_id = ? AND action = 'schedule_updated'
+           ORDER BY id DESC LIMIT 1`,
+        )
+        .get(String(blockedOrderId)) as { details_json: string };
+      const parsedBlockedAudit = JSON.parse(blockedAudit.details_json);
+      assertEqualOrThrow(
+        parsedBlockedAudit.release_status,
+        'blocked',
+        'audit details records release_status: blocked',
       );
 
       // Restock prod-muffin (+5 -> total 7), verify automatic due sweep does NOT auto-release a blocked order!
@@ -1586,6 +1691,66 @@ async function main() {
         'Checkout counter unpaid',
         'checkPreconditions holdReason persisted',
       );
+
+      // Verify unexpected release errors in sweepDueScheduledOrders are caught,
+      // the offending order is marked blocked with a generic reason, and the sweep
+      // continues processing subsequent orders without aborting.
+      const poisonCreate = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: futureWallClockInZone('America/New_York', 60),
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      const poisonOrderId = Number(poisonCreate.data.order.id);
+
+      const healthyCreate = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: futureWallClockInZone('America/New_York', 60),
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      const healthyOrderId = Number(healthyCreate.data.order.id);
+
+      const sweepDueTime = new Date(Date.parse(poisonCreate.data.order.scheduled_for) + 5_000);
+      const isolatedSweepSummary = await sweepDueScheduledOrders(db, {
+        nowDate: sweepDueTime,
+        trigger: 'sweep',
+        checkPreconditions: (ctx) => {
+          if (Number(ctx.order.id) === poisonOrderId) {
+            throw new Error('Simulated unexpected driver fault during release');
+          }
+          return { allow: true };
+        },
+      });
+
+      assertOrThrow(
+        isolatedSweepSummary.blockedIds.includes(poisonOrderId),
+        'poison order with unexpected error marked blocked in sweep summary',
+      );
+      assertOrThrow(
+        isolatedSweepSummary.releasedIds.includes(healthyOrderId),
+        'healthy subsequent order successfully released despite prior poison order error',
+      );
+      const poisonDbOrder = db
+        .prepare('SELECT release_status, release_blocked_reason FROM orders WHERE id = ?')
+        .get(poisonOrderId) as { release_status: string; release_blocked_reason: string };
+      assertEqualOrThrow(
+        poisonDbOrder.release_status,
+        'blocked',
+        'poison order marked blocked in database',
+      );
+      assertIncludesOrThrow(
+        poisonDbOrder.release_blocked_reason,
+        'Automatic release failed due to an unexpected error',
+        'poison order has generic actionable blocked reason',
+      );
+
       assertLedgerReconciles(db, 'after checkPreconditions tests');
     }
 
@@ -2557,6 +2722,57 @@ async function main() {
           }),
           true,
           'scheduled edit lock error helper matches SCHEDULED_ORDER_PAID',
+        );
+
+        const {
+          canPayScheduledOrder,
+          isPayableBill,
+          isPayableBillStatus,
+        } = require('../frontend/src/lib/order-payment-state');
+        assertEqualOrThrow(
+          isPayableBillStatus('unpaid'),
+          true,
+          'isPayableBillStatus accepts unpaid',
+        );
+        assertEqualOrThrow(
+          isPayableBillStatus('partial'),
+          true,
+          'isPayableBillStatus accepts partial',
+        );
+        assertEqualOrThrow(
+          isPayableBillStatus('partially_paid'),
+          true,
+          'isPayableBillStatus accepts partially_paid',
+        );
+        assertEqualOrThrow(
+          isPayableBillStatus('paid'),
+          false,
+          'isPayableBillStatus rejects paid',
+        );
+        assertEqualOrThrow(
+          isPayableBillStatus('refunded'),
+          false,
+          'isPayableBillStatus rejects refunded',
+        );
+        assertEqualOrThrow(
+          isPayableBill({ payment_status: 'partially_paid' } as any),
+          true,
+          'isPayableBill accepts partially_paid bill',
+        );
+        assertEqualOrThrow(
+          isPayableBill({ payment_status: 'paid' } as any),
+          false,
+          'isPayableBill rejects paid bill',
+        );
+        assertEqualOrThrow(
+          canPayScheduledOrder({ bills: [{ payment_status: 'partially_paid' }] } as any),
+          true,
+          'canPayScheduledOrder accepts order with partially_paid bill',
+        );
+        assertEqualOrThrow(
+          canPayScheduledOrder({ bills: [{ payment_status: 'paid' }] } as any),
+          false,
+          'canPayScheduledOrder rejects order when all bills are paid',
         );
 
         // 11c. Partial refund ($30 of $80) -> Partially Refunded badge, Checkout suppressed, Refund still exposed!

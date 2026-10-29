@@ -135,9 +135,11 @@ a router, in [`main/routes/index.ts`](../../main/routes/index.ts). A static sear
 permission check inside the `withTxn` callback, after the transaction opens, using
 `hasPermission(actorId, id)` against state read in the same transaction.
 `PATCH /api/orders/:id/status`, `PATCH /api/orders/:orderId/items/:itemId/cancel`, the matching
-`.../restore` endpoint in `main/routes/orders.ts`, and the bill payment kitchen-delivery override,
-charge waiver override, and paid-bill payment-method correction (`PATCH /api/bills/:id/payments/:index/method`)
-in `main/routes/bills.ts` do this, and their override-PIN paths additionally require the presenting
+`.../restore` endpoint in `main/routes/orders.ts`, and the bill payment kitchen-delivery override
+and charge waiver override in `main/routes/bills.ts` do this, and their override-PIN paths
+(along with paid-bill payment-method correction on `PATCH /api/bills/:id/payments/:index/method`,
+which also requires the authenticated caller itself to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)`)
+additionally require the presenting
 user to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)` - a deliberate context-policy role check,
 not a permission, because the Staff Approval PIN belongs to a
 person acting in an owner/manager capacity regardless of what their individual permission grants

@@ -1948,10 +1948,10 @@ async function run(): Promise<void> {
             }
             return false;
           },
-          'WAL-header newer database falls back to header schemaVersion under temp ENOSPC without creating sidecars',
+          'WAL-header newer database probes in-place without sidecar staging under temp ENOSPC',
         );
         assert.equal(enospcWalClosedNewerMismatch!.dbVersion, newerDbVersion);
-        assert.equal(enospcWalClosedNewerMismatch!.dbAppVersion, null);
+        assert.equal(enospcWalClosedNewerMismatch!.dbAppVersion, '4.5.0');
         assert.equal(sha256File(dbPath), walClosedNewerSha);
         assert.equal(fs.existsSync(`${dbPath}-wal`), false);
         assert.equal(fs.existsSync(`${dbPath}-shm`), false);
@@ -2156,7 +2156,6 @@ async function run(): Promise<void> {
             backupDir,
             `flo-restore-recovery-enospcprepwal0${index + 1}`,
           );
-          preparedWalHeaderRetryBase = preparedWalBase;
           fs.copyFileSync(committedCleanSnapshot, `${preparedWalBase}.db`);
           fs.writeFileSync(
             `${preparedWalBase}.json`,
@@ -2170,37 +2169,30 @@ async function run(): Promise<void> {
                 : { baselineForeignKeyViolations: [] }),
             }),
           );
-          assert.throws(
-            () => initDatabase(),
-            /ENOSPC/,
-            `prepared journal with WAL-header snapshot (downgrade=${isDowngradeJournal}) fails closed under temp ENOSPC`,
+          initDatabase();
+          assert.equal(getDatabaseReplacementJournal(), null);
+          assert.deepEqual(
+            getDatabase()
+              .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
+              .get(),
+            { order_number: 'ORD-20261029-0091' },
+            `prepared journal with WAL-header snapshot (downgrade=${isDowngradeJournal}) recovers under temp ENOSPC`,
           );
           assert.equal(
             fs.existsSync(`${preparedWalBase}.db-wal`),
             false,
-            'failed WAL-header snapshot verification does not orphan -wal sidecar',
+            'WAL-header snapshot verification does not orphan -wal sidecar',
           );
           assert.equal(
             fs.existsSync(`${preparedWalBase}.db-shm`),
             false,
-            'failed WAL-header snapshot verification does not orphan -shm sidecar',
+            'WAL-header snapshot verification does not orphan -shm sidecar',
           );
+          closeDatabase();
         }
       } finally {
         mutableFsMkdtemp.mkdtempSync = originalMkdtempSync;
       }
-
-      assert.ok(preparedWalHeaderRetryBase);
-      initDatabase();
-      assert.equal(getDatabaseReplacementJournal(), null);
-      assert.deepEqual(
-        getDatabase()
-          .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
-          .get(),
-        { order_number: 'ORD-20261029-0091' },
-        'prepared WAL-header snapshot recovers cleanly on retry once temp staging recovers',
-      );
-      closeDatabase();
 
       clearDirectory(backupDir);
       removeDbSet(dbPath);
@@ -2546,7 +2538,7 @@ async function run(): Promise<void> {
         );
         assert.equal(sha256File(dbPath), walNewerEnospcHashes.dbSha);
 
-        // Prepared WAL-header journal fails closed and preserves journal on disk.
+        // Prepared WAL-header journal recovers cleanly when staging throws SQLITE_IOERR_SHMSIZE.
         clearDirectory(backupDir);
         removeDbSet(dbPath);
         fs.writeFileSync(dbPath, 'interrupted partial replacement');
@@ -2563,12 +2555,26 @@ async function run(): Promise<void> {
             recoverySidecars: [],
           }),
         );
-        assert.throws(
-          () => initDatabase(),
-          /Could not stage recovery snapshot for verification.*disk I\/O error/,
-          'prepared WAL-header journal fails closed when both volumes throw SQLITE_IOERR_SHMSIZE',
+        initDatabase();
+        assert.equal(getDatabaseReplacementJournal(), null);
+        assert.deepEqual(
+          getDatabase()
+            .prepare("SELECT order_number FROM orders WHERE order_number = 'ORD-20261029-0091'")
+            .get(),
+          { order_number: 'ORD-20261029-0091' },
+          'prepared WAL-header journal recovers cleanly when staging throws SQLITE_IOERR_SHMSIZE',
         );
-        assert.equal(getDatabaseReplacementJournal()?.phase, 'prepared');
+        assert.equal(
+          fs.existsSync(`${dualShmPreparedBase}.db-wal`),
+          false,
+          'WAL-header snapshot verification does not orphan -wal sidecar',
+        );
+        assert.equal(
+          fs.existsSync(`${dualShmPreparedBase}.db-shm`),
+          false,
+          'WAL-header snapshot verification does not orphan -shm sidecar',
+        );
+        closeDatabase();
       } finally {
         dbProto.prepare = originalDbPrepare;
         dbProto.pragma = originalDbPragma;

@@ -1435,23 +1435,68 @@ function isReadableRecoverySnapshotWithSidecars(
     }
   }
 
-  const probed = probeStagedDatabaseWithFallback(
-    recoveryPath,
-    expectedSidecars,
-    {
-      tmpPrefix: 'flo-recovery-verify-',
-      fallbackSubprefix: 'recovery-',
-      targetFileName: 'recovery.db',
-      purposeLabel: 'recovery snapshot for verification',
-    },
-    (probeDb) => {
-      const integrity = probeDb.prepare('PRAGMA integrity_check').all() as {
-        integrity_check: string;
-      }[];
-      return integrity.length > 0 && integrity.every((row) => row.integrity_check === 'ok');
-    },
-  );
-  return probed.kind === 'ok' ? probed.value : false;
+  try {
+    const probed = probeStagedDatabaseWithFallback(
+      recoveryPath,
+      expectedSidecars,
+      {
+        tmpPrefix: 'flo-recovery-verify-',
+        fallbackSubprefix: 'recovery-',
+        targetFileName: 'recovery.db',
+        purposeLabel: 'recovery snapshot for verification',
+      },
+      (probeDb) => {
+        const integrity = probeDb.prepare('PRAGMA integrity_check').all() as {
+          integrity_check: string;
+        }[];
+        return integrity.length > 0 && integrity.every((row) => row.integrity_check === 'ok');
+      },
+    );
+    return probed.kind === 'ok' ? probed.value : false;
+  } catch (stageError) {
+    if (isShutdownOrMaintenanceAbortError(stageError)) {
+      throw stageError;
+    }
+    if (isSqliteStorageOrOpenError(stageError)) {
+      const walExistedBefore = pathEntryExists(`${recoveryPath}-wal`);
+      const shmExistedBefore = pathEntryExists(`${recoveryPath}-shm`);
+      let probeDb: Database.Database | undefined;
+      try {
+        probeDb = new Database(recoveryPath, { readonly: true, fileMustExist: true });
+        probeDb.pragma('temp_store = MEMORY');
+        const integrity = probeDb.prepare('PRAGMA integrity_check').all() as {
+          integrity_check: string;
+        }[];
+        return integrity.length > 0 && integrity.every((row) => row.integrity_check === 'ok');
+      } catch (inPlaceError) {
+        if (
+          isShutdownOrMaintenanceAbortError(inPlaceError) ||
+          isSqliteStorageOrOpenError(inPlaceError)
+        ) {
+          throw inPlaceError;
+        }
+        return false;
+      } finally {
+        try {
+          probeDb?.close();
+        } catch {}
+        if (!walExistedBefore && pathEntryExists(`${recoveryPath}-wal`)) {
+          try {
+            const walStat = fs.lstatSync(`${recoveryPath}-wal`);
+            if (walStat.isFile() && walStat.size === 0) {
+              fs.unlinkSync(`${recoveryPath}-wal`);
+            }
+          } catch {}
+        }
+        if (!shmExistedBefore && pathEntryExists(`${recoveryPath}-shm`)) {
+          try {
+            fs.unlinkSync(`${recoveryPath}-shm`);
+          } catch {}
+        }
+      }
+    }
+    throw stageError;
+  }
 }
 
 function validateDatabaseSchemaTableColumns(
@@ -1549,9 +1594,8 @@ function withProbedDatabaseFile<T>(
     if (isShutdownOrMaintenanceAbortError(stageError)) {
       throw stageError;
     }
-    const isLiveDb = path.resolve(filePath) === path.resolve(getDbPath());
     if (
-      isLiveDb &&
+      !presentSidecars.includes('-journal') &&
       isSqliteStorageOrOpenError(stageError) &&
       effectiveHeaderVersion <= maxSupported
     ) {
@@ -2257,7 +2301,9 @@ function inspectDatabaseVersionNonMutating(
     presentSidecars.push(suffix);
   }
 
-  if (presentSidecars.length === 0 && isLegacyRollbackFormat) {
+  if (presentSidecars.length === 0) {
+    const walExistedBefore = pathEntryExists(`${dbPath}-wal`);
+    const shmExistedBefore = pathEntryExists(`${dbPath}-shm`);
     let probeDb: Database.Database | undefined;
     try {
       probeDb = new Database(dbPath, { readonly: true, fileMustExist: true });
@@ -2283,6 +2329,19 @@ function inspectDatabaseVersionNonMutating(
       try {
         probeDb?.close();
       } catch {}
+      if (!walExistedBefore && pathEntryExists(`${dbPath}-wal`)) {
+        try {
+          const walStat = fs.lstatSync(`${dbPath}-wal`);
+          if (walStat.isFile() && walStat.size === 0) {
+            fs.unlinkSync(`${dbPath}-wal`);
+          }
+        } catch {}
+      }
+      if (!shmExistedBefore && pathEntryExists(`${dbPath}-shm`)) {
+        try {
+          fs.unlinkSync(`${dbPath}-shm`);
+        } catch {}
+      }
     }
   }
 

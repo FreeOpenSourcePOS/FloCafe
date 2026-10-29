@@ -3674,6 +3674,462 @@ async function main() {
           }
         }
       });
+
+      // Section 13b: partial payment carry-over where Shift A closes before Shift B settles
+      {
+        const seedTaxBill = (
+          tag: string,
+          subtotal: number,
+          taxAmount: number,
+          total: number,
+          components: Array<{ label: string; rate: number; amount: number }>,
+          createdAt: string,
+        ): number => {
+          const orderIns = db
+            .prepare(
+              `INSERT INTO orders (order_number, type, status, user_id, subtotal, tax_amount, total, created_at, updated_at)
+               VALUES (?, 'takeaway', 'ready', 'cashier-sess', ?, ?, ?, ?, ?)`,
+            )
+            .run(`ORD-${tag}`, subtotal, taxAmount, total, createdAt, createdAt);
+          const orderId = Number(orderIns.lastInsertRowid);
+          const snap = JSON.stringify({
+            lines: [{ taxableBase: subtotal, components }],
+          });
+          db.prepare(
+            `INSERT INTO order_items (
+               order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total,
+               tax_snapshot, status, created_at, updated_at
+             ) VALUES (?, 'prod-v314', ?, 1, ?, ?, ?, ?, ?, 'ready', ?, ?)`,
+          ).run(
+            orderId,
+            `Item ${tag}`,
+            subtotal,
+            subtotal,
+            taxAmount,
+            total,
+            snap,
+            createdAt,
+            createdAt,
+          );
+          const billIns = db
+            .prepare(
+              `INSERT INTO bills (
+                 bill_number, order_id, subtotal, tax_amount, tax_snapshot, total,
+                 paid_amount, balance, payment_status, payment_details, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', '[]', ?, ?)`,
+            )
+            .run(
+              `B-${tag}`,
+              orderId,
+              subtotal,
+              taxAmount,
+              snap,
+              total,
+              total,
+              createdAt,
+              createdAt,
+            );
+          return Number(billIns.lastInsertRowid);
+        };
+
+        const findCompAmt = (
+          comps: Array<{ title: string; rate: number | null; amount: number }> | undefined,
+          title: string,
+          rate: number,
+        ): number => {
+          const match = (comps || []).find((c) => c.title === title && c.rate === rate);
+          return match ? Number(match.amount) : 0;
+        };
+        const sumCompAmts = (
+          comps: Array<{ title: string; rate: number | null; amount: number }> | undefined,
+        ): number =>
+          Math.round((comps || []).reduce((sum, c) => sum + Number(c.amount), 0) * 100) / 100;
+        const readStoredSessionTax = (closureId: number) => {
+          const row = db
+            .prepare(`SELECT tax_components_json FROM cash_closures WHERE id = ?`)
+            .get(closureId) as { tax_components_json: string };
+          return JSON.parse(row.tax_components_json) as Array<{
+            title: string;
+            rate: number | null;
+            amount: number;
+          }>;
+        };
+
+        const carryBill1 = seedTaxBill(
+          'CARRY-1',
+          100,
+          10,
+          110,
+          [{ label: 'VAT', rate: 10, amount: 10 }],
+          '2026-11-16 08:05:00',
+        );
+        const carryBill2 = seedTaxBill(
+          'CARRY-2',
+          90,
+          10,
+          100,
+          [
+            { label: 'CGST', rate: 5, amount: 5 },
+            { label: 'SGST', rate: 5, amount: 5 },
+          ],
+          '2026-11-16 08:05:00',
+        );
+
+        const carryShiftA = await withFixedClock('2026-11-16T08:00:00.000Z', async () => {
+          const res = await request(app)
+            .post('/api/cash-sessions/open')
+            .set('Authorization', `Bearer ${s11CashierAToken}`)
+            .send({ opening_float_cents: 0 });
+          assert(res.status === 200, 'Section 13b: Shift A opens on 2026-11-16 08:00');
+          return Number(res.body.id);
+        });
+
+        await withFixedClock('2026-11-16T09:00:00.000Z', async () => {
+          const p1 = await request(app)
+            .post(`/api/bills/${carryBill1}/payment`)
+            .set('Authorization', `Bearer ${s11CashierAToken}`)
+            .send({ method: 'cash', amount: 44 });
+          const p2 = await request(app)
+            .post(`/api/bills/${carryBill2}/payment`)
+            .set('Authorization', `Bearer ${s11CashierAToken}`)
+            .send({ method: 'cash', amount: 33.33 });
+          assert(
+            p1.status === 200 && p2.status === 200,
+            'Section 13b: Shift A records partial payments (44 of 110, 33.33 of 100) before closing',
+          );
+          const xBeforeClose = await request(app)
+            .get(`/api/reports/x-report?date=2026-11-16&session_id=${carryShiftA}`)
+            .set('Authorization', `Bearer ${s11ManagerToken}`);
+          const xTax = xBeforeClose.body?.xReport?.taxComponents;
+          assert(
+            xBeforeClose.status === 200 &&
+              findCompAmt(xTax, 'VAT', 10) === 4 &&
+              sumCompAmts(xTax) === 7.33,
+            `Section 13b: unsettled partial payments attribute proportional tax (7.33, VAT=4) to Shift A live X report before settlement (got ${JSON.stringify(xTax)})`,
+          );
+        });
+
+        const closeCarryA = await withFixedClock('2026-11-16T10:00:00.000Z', async () =>
+          request(app)
+            .post(`/api/cash-sessions/${carryShiftA}/close`)
+            .set('Authorization', `Bearer ${s11CashierAToken}`)
+            .send({ counted_cash_cents: 7733 }),
+        );
+        assert(
+          closeCarryA.status === 200 && closeCarryA.body?.variance_cents === 0,
+          'Section 13b: Shift A closes at 10:00 before bill settlement (200)',
+        );
+        const zCarryABeforeSettlement = readStoredSessionTax(closeCarryA.body.closure_id);
+
+        const carryShiftB = await withFixedClock('2026-11-16T11:00:00.000Z', async () => {
+          const res = await request(app)
+            .post('/api/cash-sessions/open')
+            .set('Authorization', `Bearer ${s11CashierBToken}`)
+            .send({ opening_float_cents: 0 });
+          assert(res.status === 200, 'Section 13b: Shift B opens on 2026-11-16 11:00');
+          return Number(res.body.id);
+        });
+
+        await withFixedClock('2026-11-16T12:00:00.000Z', async () => {
+          const p1 = await request(app)
+            .post(`/api/bills/${carryBill1}/payment`)
+            .set('Authorization', `Bearer ${s11CashierBToken}`)
+            .send({ method: 'cash', amount: 66 });
+          const p2 = await request(app)
+            .post(`/api/bills/${carryBill2}/payment`)
+            .set('Authorization', `Bearer ${s11CashierBToken}`)
+            .send({ method: 'cash', amount: 66.67 });
+          assert(
+            p1.status === 200 && p2.status === 200,
+            'Section 13b: Shift B settles remaining balances (66 and 66.67) after Shift A closed',
+          );
+        });
+
+        const { closeCarryB, closeCarryDay, xCarryARecomputed } = await withFixedClock(
+          '2026-11-16T13:00:00.000Z',
+          async () => {
+            const bClose = await request(app)
+              .post(`/api/cash-sessions/${carryShiftB}/close`)
+              .set('Authorization', `Bearer ${s11CashierBToken}`)
+              .send({ counted_cash_cents: 13267 });
+            const dClose = await request(app)
+              .post('/api/cash-closures')
+              .set('Authorization', `Bearer ${s11OwnerToken}`)
+              .send({
+                business_date: '2026-11-16',
+                opening_float_cents: 0,
+                counted_cash_cents: 21000,
+              });
+            const xRecomp = await request(app)
+              .get(`/api/reports/x-report?date=2026-11-16&session_id=${carryShiftA}`)
+              .set('Authorization', `Bearer ${s11ManagerToken}`);
+            return { closeCarryB: bClose, closeCarryDay: dClose, xCarryARecomputed: xRecomp };
+          },
+        );
+
+        const zCarryAAfterSettlement = readStoredSessionTax(closeCarryA.body.closure_id);
+        const zCarryB = readStoredSessionTax(closeCarryB.body.closure_id);
+        const zCarryDay = closeCarryDay.body?.zReport?.tax_components;
+        const xCarryATax = xCarryARecomputed.body?.xReport?.taxComponents;
+
+        assert(
+          closeCarryB.status === 200 &&
+            closeCarryDay.status === 201 &&
+            JSON.stringify(zCarryAAfterSettlement) === JSON.stringify(zCarryABeforeSettlement) &&
+            JSON.stringify(xCarryATax) === JSON.stringify(zCarryAAfterSettlement) &&
+            findCompAmt(zCarryAAfterSettlement, 'VAT', 10) === 4 &&
+            findCompAmt(zCarryB, 'VAT', 10) === 6 &&
+            findCompAmt(zCarryDay, 'VAT', 10) === 10 &&
+            Math.round(
+              (findCompAmt(zCarryAAfterSettlement, 'CGST', 5) + findCompAmt(zCarryB, 'CGST', 5)) *
+                100,
+            ) /
+              100 ===
+              findCompAmt(zCarryDay, 'CGST', 5) &&
+            Math.round(
+              (findCompAmt(zCarryAAfterSettlement, 'SGST', 5) + findCompAmt(zCarryB, 'SGST', 5)) *
+                100,
+            ) /
+              100 ===
+              findCompAmt(zCarryDay, 'SGST', 5) &&
+            sumCompAmts(zCarryAAfterSettlement) === 7.33 &&
+            sumCompAmts(zCarryB) === 12.67 &&
+            sumCompAmts(zCarryDay) === 20 &&
+            Math.round((sumCompAmts(zCarryAAfterSettlement) + sumCompAmts(zCarryB)) * 100) / 100 ===
+              sumCompAmts(zCarryDay),
+          `Section 13b: Shift A stored Z + Shift B stored Z conserves whole-bill/day tax when Shift A closes before settlement, and Shift A recomputed X matches stored Z (zA=${JSON.stringify(zCarryAAfterSettlement)}, zB=${JSON.stringify(zCarryB)}, day=${JSON.stringify(zCarryDay)})`,
+        );
+
+        // Section 13c (i): overlapping shifts with untagged legacy payment (cash_session_id: null) + explicit cash_session_id: 0
+        const overlapShiftA = await withFixedClock('2026-11-17T08:00:00.000Z', async () =>
+          Number(
+            (
+              await request(app)
+                .post('/api/cash-sessions/open')
+                .set('Authorization', `Bearer ${s11CashierAToken}`)
+                .send({ opening_float_cents: 0 })
+            ).body.id,
+          ),
+        );
+        const overlapShiftB = await withFixedClock('2026-11-17T09:00:00.000Z', async () =>
+          Number(
+            (
+              await request(app)
+                .post('/api/cash-sessions/open')
+                .set('Authorization', `Bearer ${s11CashierBToken}`)
+                .send({ opening_float_cents: 0 })
+            ).body.id,
+          ),
+        );
+        const legacyNullBill = seedTaxBill(
+          'LEGACY-NULL-1',
+          100,
+          10,
+          110,
+          [{ label: 'VAT', rate: 10, amount: 10 }],
+          '2026-11-17 09:30:00',
+        );
+        db.prepare(
+          `UPDATE bills
+           SET paid_amount = 110, balance = 0, payment_status = 'paid',
+               paid_at = '2026-11-17 10:00:00', payment_details = ?
+           WHERE id = ?`,
+        ).run(
+          JSON.stringify([
+            {
+              method: 'cash',
+              amount: 110,
+              timestamp: '2026-11-17 10:00:00',
+              cash_session_id: null,
+            },
+          ]),
+          legacyNullBill,
+        );
+        const explicitZeroBill = seedTaxBill(
+          'EXPLICIT-ZERO-1',
+          50,
+          5,
+          55,
+          [{ label: 'VAT', rate: 10, amount: 5 }],
+          '2026-11-17 09:45:00',
+        );
+        db.prepare(
+          `UPDATE bills
+           SET paid_amount = 55, balance = 0, payment_status = 'paid',
+               paid_at = '2026-11-17 10:15:00', payment_details = ?
+           WHERE id = ?`,
+        ).run(
+          JSON.stringify([
+            {
+              method: 'card',
+              amount: 55,
+              timestamp: '2026-11-17 10:15:00',
+              cash_session_id: 0,
+            },
+          ]),
+          explicitZeroBill,
+        );
+
+        const closeOverlapA = await withFixedClock('2026-11-17T11:00:00.000Z', async () =>
+          request(app)
+            .post(`/api/cash-sessions/${overlapShiftA}/close`)
+            .set('Authorization', `Bearer ${s11CashierAToken}`)
+            .send({ counted_cash_cents: 11000 }),
+        );
+        const closeOverlapB = await withFixedClock('2026-11-17T12:00:00.000Z', async () =>
+          request(app)
+            .post(`/api/cash-sessions/${overlapShiftB}/close`)
+            .set('Authorization', `Bearer ${s11CashierBToken}`)
+            .send({ counted_cash_cents: 11000 }),
+        );
+        assert(
+          closeOverlapA.status === 200 && closeOverlapB.status === 200,
+          'Section 13c (i): overlapping shifts close on 2026-11-17 (200)',
+        );
+        const zOverlapA = readStoredSessionTax(closeOverlapA.body.closure_id);
+        const zOverlapB = readStoredSessionTax(closeOverlapB.body.closure_id);
+        assert(
+          sumCompAmts(zOverlapA) === 0 &&
+            findCompAmt(zOverlapB, 'VAT', 10) === 10 &&
+            sumCompAmts(zOverlapA) + sumCompAmts(zOverlapB) === 10,
+          `Section 13c (i): untagged legacy payment resolves deterministically to one shift without overlap duplication and preserves explicit cash_session_id=0 (zA=${JSON.stringify(zOverlapA)}, zB=${JSON.stringify(zOverlapB)})`,
+        );
+
+        // Section 13c (ii): overlapping shifts settling a retained legacy partial installment via POST /api/bills/:id/payment
+        const legacyPartialBill = seedTaxBill(
+          'LEGACY-PARTIAL-1',
+          100,
+          10,
+          110,
+          [{ label: 'VAT', rate: 10, amount: 10 }],
+          '2026-01-01 10:00:00',
+        );
+        db.prepare(
+          `UPDATE bills
+           SET paid_amount = 44, balance = 66, payment_status = 'partial',
+               paid_at = NULL, created_at = '2026-01-01 10:00:00', payment_details = ?
+           WHERE id = ?`,
+        ).run(JSON.stringify([{ method: 'cash', amount: 44 }]), legacyPartialBill);
+
+        const migShiftA = await withFixedClock('2026-11-18T08:00:00.000Z', async () =>
+          Number(
+            (
+              await request(app)
+                .post('/api/cash-sessions/open')
+                .set('Authorization', `Bearer ${s11CashierAToken}`)
+                .send({ opening_float_cents: 0 })
+            ).body.id,
+          ),
+        );
+        const migShiftB = await withFixedClock('2026-11-18T09:00:00.000Z', async () =>
+          Number(
+            (
+              await request(app)
+                .post('/api/cash-sessions/open')
+                .set('Authorization', `Bearer ${s11CashierBToken}`)
+                .send({ opening_float_cents: 0 })
+            ).body.id,
+          ),
+        );
+        const migPay = await withFixedClock('2026-11-18T10:00:00.000Z', async () =>
+          request(app)
+            .post(`/api/bills/${legacyPartialBill}/payment`)
+            .set('Authorization', `Bearer ${s11CashierBToken}`)
+            .send({ method: 'cash', amount: 66 }),
+        );
+        const closeMigA = await withFixedClock('2026-11-18T11:00:00.000Z', async () =>
+          request(app)
+            .post(`/api/cash-sessions/${migShiftA}/close`)
+            .set('Authorization', `Bearer ${s11CashierAToken}`)
+            .send({ counted_cash_cents: 4400 }),
+        );
+        const closeMigB = await withFixedClock('2026-11-18T12:00:00.000Z', async () =>
+          request(app)
+            .post(`/api/cash-sessions/${migShiftB}/close`)
+            .set('Authorization', `Bearer ${s11CashierBToken}`)
+            .send({ counted_cash_cents: 11000 }),
+        );
+        const closeMigDay = await withFixedClock('2026-11-18T13:00:00.000Z', async () =>
+          request(app)
+            .post('/api/cash-closures')
+            .set('Authorization', `Bearer ${s11OwnerToken}`)
+            .send({
+              business_date: '2026-11-18',
+              opening_float_cents: 0,
+              counted_cash_cents: 11000,
+            }),
+        );
+        const zMigA = readStoredSessionTax(closeMigA.body.closure_id);
+        const zMigB = readStoredSessionTax(closeMigB.body.closure_id);
+        const zMigDay = closeMigDay.body?.zReport?.tax_components;
+        assert(
+          migPay.status === 200 &&
+            closeMigA.status === 200 &&
+            closeMigB.status === 200 &&
+            closeMigDay.status === 201 &&
+            sumCompAmts(zMigA) === 0 &&
+            findCompAmt(zMigB, 'VAT', 10) === 10 &&
+            sumCompAmts(zMigA) + sumCompAmts(zMigB) === sumCompAmts(zMigDay),
+          `Section 13c (ii): retained legacy partial installment settled via POST /api/bills/:id/payment conserves exact tax across overlapping shift Z snapshots without duplication (zA=${JSON.stringify(zMigA)}, zB=${JSON.stringify(zMigB)}, day=${JSON.stringify(zMigDay)})`,
+        );
+
+        // Section 13d: single-session paid bill preserves sub-cent historical tax precision
+        const subCentShift = await withFixedClock('2026-11-19T08:00:00.000Z', async () =>
+          Number(
+            (
+              await request(app)
+                .post('/api/cash-sessions/open')
+                .set('Authorization', `Bearer ${s11CashierAToken}`)
+                .send({ opening_float_cents: 0 })
+            ).body.id,
+          ),
+        );
+        const subCentBill = seedTaxBill(
+          'SUBCENT-1',
+          100,
+          0.005,
+          100,
+          [{ label: 'VAT', rate: 10, amount: 0.005 }],
+          '2026-11-19 08:30:00',
+        );
+        db.prepare(
+          `UPDATE bills
+           SET paid_amount = 100, balance = 0, payment_status = 'paid',
+               paid_at = '2026-11-19 09:00:00', payment_details = ?
+           WHERE id = ?`,
+        ).run(
+          JSON.stringify([
+            {
+              method: 'card',
+              amount: 100,
+              timestamp: '2026-11-19 09:00:00',
+              cash_session_id: subCentShift,
+            },
+          ]),
+          subCentBill,
+        );
+        const { xSubCent, closeSubCent } = await withFixedClock(
+          '2026-11-19T10:00:00.000Z',
+          async () => {
+            const xRes = await request(app)
+              .get(`/api/reports/x-report?date=2026-11-19&session_id=${subCentShift}`)
+              .set('Authorization', `Bearer ${s11ManagerToken}`);
+            const cRes = await request(app)
+              .post(`/api/cash-sessions/${subCentShift}/close`)
+              .set('Authorization', `Bearer ${s11CashierAToken}`)
+              .send({ counted_cash_cents: 0 });
+            return { xSubCent: xRes, closeSubCent: cRes };
+          },
+        );
+        const zSubCent = readStoredSessionTax(closeSubCent.body.closure_id);
+        assert(
+          xSubCent.status === 200 &&
+            closeSubCent.status === 200 &&
+            findCompAmt(xSubCent.body?.xReport?.taxComponents, 'VAT', 10) === 0.005 &&
+            findCompAmt(zSubCent, 'VAT', 10) === 0.005,
+          `Section 13d: single-session paid bill preserves exact sub-cent historical tax precision 0.005 (x=${JSON.stringify(xSubCent.body?.xReport?.taxComponents)}, z=${JSON.stringify(zSubCent)})`,
+        );
+      }
     } finally {
       db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'one_shift_per_staff'`).run();
       db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'`).run();

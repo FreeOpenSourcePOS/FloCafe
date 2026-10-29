@@ -70,6 +70,7 @@ import { getHttpRequestSignal } from '../shutdown';
 import {
   DisplayTaxComponent,
   aggregateTaxComponents,
+  mergeDisplayTaxComponents,
   resolveTaxComponents,
 } from '../services/tax-components';
 import {
@@ -828,31 +829,6 @@ function roundComponentsToMinorUnits(
   return { compMinors, totalMinor };
 }
 
-function mergeSessionTaxComponents(lists: DisplayTaxComponent[][]): DisplayTaxComponent[] {
-  const merged = new Map<string, { title: string; rate: number | null; amount: Decimal }>();
-  for (const list of lists) {
-    for (const comp of list) {
-      const rateKey = comp.rate === null ? '' : new Decimal(comp.rate).toString();
-      const key = `${comp.title}\u0000${rateKey}`;
-      const current = merged.get(key);
-      if (current) {
-        current.amount = current.amount.plus(comp.amount);
-      } else {
-        merged.set(key, {
-          title: comp.title,
-          rate: comp.rate === null ? null : new Decimal(comp.rate).toNumber(),
-          amount: new Decimal(comp.amount),
-        });
-      }
-    }
-  }
-  return Array.from(merged.values()).map((entry) => ({
-    title: entry.title,
-    rate: entry.rate,
-    amount: entry.amount.toDecimalPlaces(6).toNumber(),
-  }));
-}
-
 export function computeSessionAggregates(
   db: ReturnType<typeof getDatabase>,
   session: { id: number; opened_at: string; opening_float_cents: number },
@@ -1013,10 +989,12 @@ export function computePeriodAggregates(
         .all(start, end) as StaffSalesRow[]);
 
   // Day scope aggregates paid bills in [start, end); session scope allocates stored
-  // historical tax components across contributing shifts by collected payment share.
+  // historical tax components sequentially across payment lines in minor units.
   type TaxBillRow = {
     id: number;
     order_id: number;
+    total: number | null;
+    paid_at: string | null;
     tax_amount: number | null;
     tax_snapshot: string | null;
     tax_breakdown: string | null;
@@ -1025,9 +1003,9 @@ export function computePeriodAggregates(
     ? (db
         .prepare(
           `
-    SELECT b.*
+    SELECT b.id, b.order_id, b.total, b.paid_at, b.tax_amount, b.tax_snapshot, b.tax_breakdown
     FROM bills b
-    WHERE b.paid_at IS NOT NULL
+    WHERE b.payment_details IS NOT NULL
       AND EXISTS (
         SELECT 1
         FROM json_each(CASE
@@ -1036,30 +1014,52 @@ export function computePeriodAggregates(
           ELSE '[]' END) je
         WHERE json_type(je.value) = 'object'
           AND (
-            CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) = ?
+            CASE
+              WHEN NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NOT NULL
+                THEN CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER)
+              ELSE COALESCE(
+                (
+                  SELECT cs.id
+                  FROM cash_sessions cs
+                  WHERE COALESCE(
+                          datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+                          datetime(NULLIF(b.paid_at, '')),
+                          datetime(NULLIF(b.created_at, ''))
+                        ) >= datetime(cs.opened_at)
+                    AND (
+                      cs.closed_at IS NULL
+                      OR COALESCE(
+                           datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+                           datetime(NULLIF(b.paid_at, '')),
+                           datetime(NULLIF(b.created_at, ''))
+                         ) < datetime(cs.closed_at)
+                    )
+                  ORDER BY datetime(cs.opened_at) DESC, cs.id DESC
+                  LIMIT 1
+                ),
+                ?
+              )
+            END
+          ) = ?
+          AND (
+            datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')) IS NULL
             OR (
-              json_extract(je.value, '$.cash_session_id') IS NULL
-              AND COALESCE(
-                datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-                datetime(NULLIF(b.paid_at, '')),
-                datetime(NULLIF(b.created_at, ''))
-              ) >= datetime(?)
-              AND COALESCE(
-                datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
-                datetime(NULLIF(b.paid_at, '')),
-                datetime(NULLIF(b.created_at, ''))
-              ) < datetime(?)
+              CASE
+                WHEN NULLIF(json_extract(je.value, '$.cash_session_id'), '') IS NOT NULL
+                  THEN datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')) <= datetime(?)
+                ELSE datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')) < datetime(?)
+              END
             )
           )
       )
-    ORDER BY b.paid_at, b.id
+    ORDER BY COALESCE(b.paid_at, b.created_at), b.id
   `,
         )
-        .all(session.id, session.opened_at, end) as TaxBillRow[])
+        .all(NO_CASH_SESSION_ID, session.id, end, end) as TaxBillRow[])
     : (db
         .prepare(
           `
-    SELECT b.*
+    SELECT b.id, b.order_id, b.total, b.paid_at, b.tax_amount, b.tax_snapshot, b.tax_breakdown
     FROM bills b
     WHERE b.paid_at >= ? AND b.paid_at < ?
     ORDER BY b.paid_at, b.id
@@ -1083,7 +1083,8 @@ export function computePeriodAggregates(
         SELECT
           CAST(je.key AS INTEGER) AS line_index,
           json_extract(je.value, '$.amount') AS raw_amount,
-          json_extract(je.value, '$.cash_session_id') AS raw_session_id,
+          NULLIF(json_extract(je.value, '$.cash_session_id'), '') AS raw_session_id,
+          datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')) AS raw_ts,
           COALESCE(
             datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
             datetime(NULLIF(b.paid_at, '')),
@@ -1101,37 +1102,37 @@ export function computePeriodAggregates(
         raw_amount,
         CASE
           WHEN raw_session_id IS NOT NULL THEN CAST(raw_session_id AS INTEGER)
-          WHEN line_time >= datetime(?) AND line_time < datetime(?) THEN ?
           ELSE COALESCE(
             (
               SELECT cs.id
               FROM cash_sessions cs
-              WHERE cs.id != ?
-                AND line_time >= datetime(cs.opened_at)
+              WHERE line_time >= datetime(cs.opened_at)
                 AND (cs.closed_at IS NULL OR line_time < datetime(cs.closed_at))
-              ORDER BY cs.opened_at DESC, cs.id DESC
+              ORDER BY datetime(cs.opened_at) DESC, cs.id DESC
               LIMIT 1
             ),
             ?
           )
-        END AS resolved_session_id
+        END AS resolved_session_id,
+        CASE
+          WHEN raw_ts IS NULL THEN 1
+          WHEN raw_session_id IS NOT NULL AND raw_ts <= datetime(?) THEN 1
+          WHEN raw_session_id IS NULL AND raw_ts < datetime(?) THEN 1
+          ELSE 0
+        END AS within_end
       FROM lines
       ORDER BY line_index ASC
     `,
     );
     const perBillComponents = bills.map((bill, billIndex) => {
       const doc = taxDocuments[billIndex];
-      const paymentLines = billPaymentLinesStmt.all(
-        bill.id,
-        session.opened_at,
-        end,
-        session.id,
-        session.id,
-        NO_CASH_SESSION_ID,
-      ) as Array<{ raw_amount: unknown; resolved_session_id: number }>;
+      const rawLines = billPaymentLinesStmt.all(bill.id, NO_CASH_SESSION_ID, end, end) as Array<{
+        raw_amount: unknown;
+        resolved_session_id: number;
+        within_end: number;
+      }>;
 
-      const buckets = new Map<number, number>();
-      for (const line of paymentLines) {
+      const paymentLines = rawLines.map((line) => {
         let amountMinor = 0;
         if (typeof line.raw_amount === 'number' || typeof line.raw_amount === 'string') {
           try {
@@ -1146,31 +1147,91 @@ export function computePeriodAggregates(
             amountMinor = 0;
           }
         }
-        const sessionKey = Number(line.resolved_session_id);
-        buckets.set(sessionKey, (buckets.get(sessionKey) ?? 0) + amountMinor);
-      }
+        return {
+          amountMinor,
+          resolvedSessionId: Number(line.resolved_session_id),
+          withinEnd: Number(line.within_end) === 1,
+        };
+      });
 
-      if (!buckets.has(session.id)) return [];
-      if (buckets.size === 1) return resolveTaxComponents(doc);
+      const ownedWithinEndLines = paymentLines.filter(
+        (line) => line.resolvedSessionId === session.id && line.withinEnd,
+      );
+      if (ownedWithinEndLines.length === 0) return [];
+
+      const sumAllLineMinors = paymentLines.reduce((sum, line) => sum + line.amountMinor, 0);
+      let billTotalFromCol = 0;
+      if (bill.total !== null && bill.total !== undefined) {
+        try {
+          const totalDec = new Decimal(bill.total);
+          if (totalDec.isFinite() && totalDec.gt(0)) {
+            billTotalFromCol = totalDec
+              .times(minorFactor)
+              .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+              .toNumber();
+          }
+        } catch {
+          billTotalFromCol = 0;
+        }
+      }
+      const isSettled = bill.paid_at !== null && String(bill.paid_at).trim() !== '';
+      const billTotalMinor = isSettled
+        ? sumAllLineMinors
+        : Math.max(billTotalFromCol, sumAllLineMinors);
+      const ownedMinorSum = ownedWithinEndLines.reduce((sum, line) => sum + line.amountMinor, 0);
+
+      if (
+        paymentLines.length === 1 &&
+        ownedWithinEndLines.length === 1 &&
+        (isSettled || (billTotalMinor > 0 && ownedMinorSum >= billTotalMinor))
+      ) {
+        return resolveTaxComponents(doc);
+      }
 
       const docComponents = resolveTaxComponents(doc);
       if (docComponents.length === 0) return [];
 
-      const sessionIds = Array.from(buckets.keys());
-      const weights = Array.from(buckets.values());
-      const sessionIndex = sessionIds.indexOf(session.id);
       const { compMinors, totalMinor } = roundComponentsToMinorUnits(docComponents, minorFactor);
-      const entries = compMinors.map((minor) => ({
-        allocations: allocateSignedMinorUnits(minor, weights),
-      }));
-      if (entries.length > 1) {
-        const targetSessionMinors = allocateSignedMinorUnits(totalMinor, weights);
-        reconcileSnapshotAllocations(entries, targetSessionMinors);
+      let remainingPoolMinor = billTotalMinor;
+      let remainingCompMinors = [...compMinors];
+      let remainingTotalMinor = totalMinor;
+      const sessionCompMinors = new Array<number>(docComponents.length).fill(0);
+
+      for (const line of paymentLines) {
+        const lineMinor = line.amountMinor;
+        let lineShares: number[];
+        if (lineMinor <= 0 && remainingPoolMinor > 0) {
+          lineShares = new Array<number>(docComponents.length).fill(0);
+        } else if (remainingPoolMinor - lineMinor <= 0) {
+          lineShares = [...remainingCompMinors];
+          remainingCompMinors = new Array<number>(docComponents.length).fill(0);
+          remainingTotalMinor = 0;
+          remainingPoolMinor = 0;
+        } else {
+          const pairWeights = [lineMinor, remainingPoolMinor - lineMinor];
+          const entries = remainingCompMinors.map((minor) => ({
+            allocations: allocateSignedMinorUnits(minor, pairWeights),
+          }));
+          if (entries.length > 1) {
+            const targetPair = allocateSignedMinorUnits(remainingTotalMinor, pairWeights);
+            reconcileSnapshotAllocations(entries, targetPair);
+          }
+          lineShares = entries.map((entry) => entry.allocations[0]);
+          remainingCompMinors = entries.map((entry) => entry.allocations[1]);
+          remainingTotalMinor = remainingCompMinors.reduce((sum, minor) => sum + minor, 0);
+          remainingPoolMinor -= lineMinor;
+        }
+
+        if (line.resolvedSessionId === session.id && line.withinEnd) {
+          for (let i = 0; i < docComponents.length; i++) {
+            sessionCompMinors[i] += lineShares[i];
+          }
+        }
       }
 
       const allocated: DisplayTaxComponent[] = [];
       for (let i = 0; i < docComponents.length; i++) {
-        const minorShare = entries[i].allocations[sessionIndex];
+        const minorShare = sessionCompMinors[i];
         if (minorShare === 0 && compMinors[i] !== 0) continue;
         allocated.push({
           title: docComponents[i].title,
@@ -1180,7 +1241,7 @@ export function computePeriodAggregates(
       }
       return allocated;
     });
-    taxComponents = mergeSessionTaxComponents(perBillComponents);
+    taxComponents = mergeDisplayTaxComponents(perBillComponents);
   }
 
   const grossCollectedCents = Math.round(Number(billRow.gross_collected || 0) * minorFactor);

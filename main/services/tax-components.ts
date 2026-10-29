@@ -40,8 +40,7 @@ function hasSplitAllocatedSnapshot(value: unknown): boolean {
   if (Array.isArray(parsed)) return parsed.some(hasSplitAllocatedSnapshot);
   if (!parsed || typeof parsed !== 'object') return false;
   const snapshot = parsed as Record<string, unknown>;
-  return snapshot.splitAllocation === SPLIT_TAX_SNAPSHOT_VERSION
-    && Array.isArray(snapshot.lines);
+  return snapshot.splitAllocation === SPLIT_TAX_SNAPSHOT_VERSION && Array.isArray(snapshot.lines);
 }
 
 function decimalOrNull(value: unknown): Decimal | null {
@@ -145,15 +144,16 @@ function reconcileTotal(
   const target = decimalOrNull(targetValue);
   if (!target) return components;
   if (components.length === 0) {
-    return target.isZero() ? [] : [{ title: 'Tax', rate: null, amount: target.toDecimalPlaces(6).toNumber() }];
+    return target.isZero()
+      ? []
+      : [{ title: 'Tax', rate: null, amount: target.toDecimalPlaces(6).toNumber() }];
   }
-  const current = components.reduce(
-    (sum, component) => sum.plus(component.amount),
-    new Decimal(0),
-  );
+  const current = components.reduce((sum, component) => sum.plus(component.amount), new Decimal(0));
   if (current.equals(target)) return components;
   if (current.isZero()) {
-    return target.isZero() ? components : [{ title: 'Tax', rate: null, amount: target.toDecimalPlaces(6).toNumber() }];
+    return target.isZero()
+      ? components
+      : [{ title: 'Tax', rate: null, amount: target.toDecimalPlaces(6).toNumber() }];
   }
 
   const ratio = target.dividedBy(current);
@@ -165,19 +165,20 @@ function reconcileTotal(
     (sum, component) => sum.plus(component.amount),
     new Decimal(0),
   );
-  reconciled[reconciled.length - 1].amount = new Decimal(
-    reconciled[reconciled.length - 1].amount,
-  ).plus(target.minus(allocated)).toDecimalPlaces(6).toNumber();
+  reconciled[reconciled.length - 1].amount = new Decimal(reconciled[reconciled.length - 1].amount)
+    .plus(target.minus(allocated))
+    .toDecimalPlaces(6)
+    .toNumber();
   return reconciled;
 }
 
 function legacyItemComponents(document: TaxDocument): DecimalTaxComponent[] {
-  return (document.items || []).filter(
-    (item) => !isTerminalItemStatus(item.status),
-  ).flatMap((item) => {
-    const snapshot = flattenSnapshots(item.tax_snapshot);
-    return snapshot.present ? [] : flattenLegacyBreakdown(item.tax_breakdown);
-  });
+  return (document.items || [])
+    .filter((item) => !isTerminalItemStatus(item.status))
+    .flatMap((item) => {
+      const snapshot = flattenSnapshots(item.tax_snapshot);
+      return snapshot.present ? [] : flattenLegacyBreakdown(item.tax_breakdown);
+    });
 }
 
 function documentLegacyComponents(
@@ -192,10 +193,14 @@ function documentLegacyComponents(
   return flattenLegacyBreakdown(document.tax_breakdown).flatMap((component) => {
     const key = `${component.title}\u0000${component.rate ?? ''}`;
     const itemAmount = remainingItems.get(key) || new Decimal(0);
-    const sameSign = itemAmount.isZero() || component.amount.isZero()
-      || itemAmount.isPositive() === component.amount.isPositive();
+    const sameSign =
+      itemAmount.isZero() ||
+      component.amount.isZero() ||
+      itemAmount.isPositive() === component.amount.isPositive();
     const consumed = sameSign
-      ? Decimal.min(itemAmount.abs(), component.amount.abs()).mul(component.amount.isNegative() ? -1 : 1)
+      ? Decimal.min(itemAmount.abs(), component.amount.abs()).mul(
+          component.amount.isNegative() ? -1 : 1,
+        )
       : new Decimal(0);
     const residual = component.amount.minus(consumed);
     remainingItems.set(key, itemAmount.minus(consumed));
@@ -209,7 +214,9 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
   if (hasSplitAllocatedSnapshot(document.tax_snapshot)) {
     const splitSnapshot = flattenSnapshots(document.tax_snapshot);
     if (splitSnapshot.present) {
-      const hasItemSnapshot = (document.items || []).some((item) => flattenSnapshots(item.tax_snapshot).present);
+      const hasItemSnapshot = (document.items || []).some(
+        (item) => flattenSnapshots(item.tax_snapshot).present,
+      );
       const snapshotComponents = hasItemSnapshot
         ? splitSnapshot.components
         : splitSnapshot.components.filter((component) => !component.amount.isZero());
@@ -222,10 +229,12 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
         (sum, component) => sum.plus(component.amount),
         new Decimal(0),
       );
-      const needsDocumentResidual = !target
-        || (!target.isZero() && (target.isNegative()
-          ? representedTotal.comparedTo(target) > 0
-          : representedTotal.comparedTo(target) < 0));
+      const needsDocumentResidual =
+        !target ||
+        (!target.isZero() &&
+          (target.isNegative()
+            ? representedTotal.comparedTo(target) > 0
+            : representedTotal.comparedTo(target) < 0));
       return reconcileTotal(
         mergeComponents([
           ...represented.map((component) => ({
@@ -233,18 +242,14 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
             rate: component.rate === null ? null : new Decimal(component.rate).toString(),
             amount: new Decimal(component.amount),
           })),
-          ...(needsDocumentResidual
-            ? documentLegacyComponents(document, snapshotComponents)
-            : []),
+          ...(needsDocumentResidual ? documentLegacyComponents(document, snapshotComponents) : []),
         ]),
         document.tax_amount,
       );
     }
   }
 
-  const activeItems = document.items?.filter(
-    (item) => !isTerminalItemStatus(item.status),
-  );
+  const activeItems = document.items?.filter((item) => !isTerminalItemStatus(item.status));
 
   if (activeItems && activeItems.length > 0) {
     const components: DecimalTaxComponent[] = [];
@@ -273,35 +278,39 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
         );
         const documentTotal = decimalOrNull(document.tax_amount);
         const itemTarget = documentTotal ? documentTotal.minus(chargeTotal).toString() : undefined;
-        return mergeComponents([
-          ...reconcileTotal(mergeComponents(components), itemTarget),
-          ...chargeComponents,
-          ...documentLegacyComponents(document, [
-            ...itemSnapshotComponents,
-            ...chargeSnapshot.components,
-          ]),
-        ].map((component) => ({
-          title: component.title,
-          rate: component.rate === null ? null : new Decimal(component.rate).toString(),
-          amount: new Decimal(component.amount),
-        })));
+        return mergeComponents(
+          [
+            ...reconcileTotal(mergeComponents(components), itemTarget),
+            ...chargeComponents,
+            ...documentLegacyComponents(document, [
+              ...itemSnapshotComponents,
+              ...chargeSnapshot.components,
+            ]),
+          ].map((component) => ({
+            title: component.title,
+            rate: component.rate === null ? null : new Decimal(component.rate).toString(),
+            amount: new Decimal(component.amount),
+          })),
+        );
       }
       const legacyItems = legacyItemComponents(document);
-      const documentResidual = hasSnapshotEvidence
-        && ((document.tax_amount !== undefined && document.tax_amount !== null) || legacyItems.length > 0)
-        ? documentLegacyComponents(document, itemSnapshotComponents)
-        : [];
-      return reconcileTotal(mergeComponents([...components, ...documentResidual]), document.tax_amount);
+      const documentResidual =
+        hasSnapshotEvidence &&
+        ((document.tax_amount !== undefined && document.tax_amount !== null) ||
+          legacyItems.length > 0)
+          ? documentLegacyComponents(document, itemSnapshotComponents)
+          : [];
+      return reconcileTotal(
+        mergeComponents([...components, ...documentResidual]),
+        document.tax_amount,
+      );
     }
   }
 
   const snapshot = flattenSnapshots(document.tax_snapshot);
   const components = mergeComponents(
     snapshot.present
-      ? [
-        ...snapshot.components,
-        ...documentLegacyComponents(document, snapshot.components),
-      ]
+      ? [...snapshot.components, ...documentLegacyComponents(document, snapshot.components)]
       : flattenLegacyBreakdown(document.tax_breakdown),
   );
   return reconcileTotal(
@@ -310,12 +319,10 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
   );
 }
 
-export function aggregateTaxComponents(
-  documents: TaxDocument[],
-): DisplayTaxComponent[] {
+export function mergeDisplayTaxComponents(lists: DisplayTaxComponent[][]): DisplayTaxComponent[] {
   const components: DecimalTaxComponent[] = [];
-  for (const document of documents) {
-    for (const component of resolveTaxComponents(document)) {
+  for (const list of lists) {
+    for (const component of list) {
       components.push({
         title: component.title,
         rate: component.rate === null ? null : new Decimal(component.rate).toString(),
@@ -324,4 +331,8 @@ export function aggregateTaxComponents(
     }
   }
   return mergeComponents(components);
+}
+
+export function aggregateTaxComponents(documents: TaxDocument[]): DisplayTaxComponent[] {
+  return mergeDisplayTaxComponents(documents.map((document) => resolveTaxComponents(document)));
 }

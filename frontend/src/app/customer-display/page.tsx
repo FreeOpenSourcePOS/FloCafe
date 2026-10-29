@@ -21,6 +21,7 @@ import {
   consumeDisplayTokenFromUrl,
   readStoredDisplayToken,
 } from '@/lib/customer-display-token';
+import { projectBoardStatusFromItems } from '../../../../shared/order-item-status';
 
 type OrderGroup = 'priority' | 'ordinary';
 
@@ -527,11 +528,18 @@ function OrderBoardSection({
   );
 }
 
-function toBoardOrder(order: Order): BoardOrder {
+function resolveOrderBoardStatus(order: Order): string | null {
+  if (order.status === 'completed') {
+    return projectBoardStatusFromItems(order.items);
+  }
+  return order.status;
+}
+
+function toBoardOrder(order: Order, status: string): BoardOrder {
   return {
     id: order.id,
     number: order.bill?.bill_number || order.order_number,
-    status: order.status,
+    status,
   };
 }
 
@@ -725,7 +733,7 @@ export default function CustomerDisplayPage() {
           .catch(() => ({ data: null }));
         const validConfig = isCustomerDisplayConfig(latestConfig) ? latestConfig : null;
         const activeConfig: CustomerDisplayConfig = validConfig ?? configRef.current;
-        const seenById = new Map<string, Order>();
+        const seenById = new Map<string, { order: Order; projectedStatus: string }>();
         let beforeId: number | string | null = null;
 
         for (let pageIndex = 0; pageIndex < MAX_DISPLAY_FEED_PAGES; pageIndex += 1) {
@@ -735,7 +743,7 @@ export default function CustomerDisplayPage() {
             data?: { orders?: Order[]; nextCursor?: number | string | null };
           } = await api.get('/orders', {
             params: {
-              status: activeConfig.statuses.join(','),
+              view: 'active',
               per_page: 100,
               ...(beforeId !== null ? { before_id: beforeId } : {}),
             },
@@ -743,8 +751,9 @@ export default function CustomerDisplayPage() {
           });
           if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
           for (const order of response.data?.orders ?? []) {
-            if ((activeConfig.statuses as string[]).includes(order.status)) {
-              seenById.set(String(order.id), order);
+            const projectedStatus = resolveOrderBoardStatus(order);
+            if (projectedStatus && (activeConfig.statuses as string[]).includes(projectedStatus)) {
+              seenById.set(String(order.id), { order, projectedStatus });
             }
           }
           const nextCursor: number | string | null | undefined = response.data?.nextCursor;
@@ -755,13 +764,13 @@ export default function CustomerDisplayPage() {
 
         if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
         const nextOrders = [...seenById.values()]
-          .sort((a: Order, b: Order) => {
-            if (a.created_at !== b.created_at) {
-              return a.created_at < b.created_at ? -1 : 1;
+          .sort((a, b) => {
+            if (a.order.created_at !== b.order.created_at) {
+              return a.order.created_at < b.order.created_at ? -1 : 1;
             }
-            return compareOrderIds(a.id, b.id);
+            return compareOrderIds(a.order.id, b.order.id);
           })
-          .map(toBoardOrder);
+          .map(({ order, projectedStatus }) => toBoardOrder(order, projectedStatus));
         configRef.current = activeConfig;
         setConfig(activeConfig);
         acceptOrders(nextOrders);

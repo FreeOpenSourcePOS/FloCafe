@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { getDatabase, now } from '../db';
+import { getDatabase, isKdsEnabled, now, recordOrderAudit } from '../db';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import {
   allocateDocumentTaxRounding,
@@ -14,7 +14,11 @@ import {
   type TaxRollup,
   type TenantInfo,
 } from './tax';
-import { isTerminalItemStatus } from '../../shared/order-item-status';
+import {
+  deriveOrderStatusFromItems,
+  isTerminalItemStatus,
+  type DerivedOrderKdsStatus,
+} from '../../shared/order-item-status';
 import {
   ChargeValidationError,
   toStandardChargeColumns,
@@ -330,5 +334,96 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
           packaging_charge: chargeColumns.packaging_charge,
         }
       : null,
+  };
+}
+
+const RECONCILABLE_ORDER_STATUSES = new Set(['pending', 'preparing', 'ready', 'served']);
+const RECONCILABLE_ORDER_TYPES = new Set(['dine_in', 'takeaway', 'delivery', 'online']);
+
+export interface ReconciledOrderStatusResult {
+  changed: boolean;
+  previousStatus: string | null;
+  status: string | null;
+}
+
+export function reconcileActiveOrderStatusFromItems(
+  db: Database,
+  orderId: number | string,
+  actorUserId: string,
+): ReconciledOrderStatusResult {
+  const order = db
+    .prepare('SELECT id, type, status FROM orders WHERE id = ?')
+    .get(orderId) as { id: number | string; type: string; status: string } | undefined;
+  if (!order) {
+    return { changed: false, previousStatus: null, status: null };
+  }
+  if (
+    !isKdsEnabled() ||
+    !RECONCILABLE_ORDER_STATUSES.has(order.status) ||
+    !RECONCILABLE_ORDER_TYPES.has(order.type)
+  ) {
+    return { changed: false, previousStatus: order.status, status: order.status };
+  }
+
+  const items = db
+    .prepare('SELECT status, quantity FROM order_items WHERE order_id = ?')
+    .all(orderId) as Array<{ status: string | null; quantity: number | null }>;
+  const derived: DerivedOrderKdsStatus | null = deriveOrderStatusFromItems(items);
+  if (derived === null) {
+    return { changed: false, previousStatus: order.status, status: order.status };
+  }
+
+  const nowStr = now();
+  let nextStatus: DerivedOrderKdsStatus | null = null;
+
+  if (derived === 'served') {
+    if (order.status !== 'served') {
+      nextStatus = 'served';
+      db.prepare(
+        'UPDATE orders SET status = ?, served_at = COALESCE(served_at, ?), updated_at = ? WHERE id = ?',
+      ).run(nextStatus, nowStr, nowStr, orderId);
+    }
+  } else if (derived === 'ready') {
+    if (order.status !== 'ready') {
+      nextStatus = 'ready';
+      db.prepare(
+        'UPDATE orders SET status = ?, ready_at = ?, served_at = NULL, updated_at = ? WHERE id = ?',
+      ).run(nextStatus, nowStr, nowStr, orderId);
+    }
+  } else if (derived === 'preparing') {
+    if (order.status !== 'preparing') {
+      nextStatus = 'preparing';
+      db.prepare(
+        'UPDATE orders SET status = ?, cooking_started_at = COALESCE(cooking_started_at, ?), ready_at = NULL, served_at = NULL, updated_at = ? WHERE id = ?',
+      ).run(nextStatus, nowStr, nowStr, orderId);
+    }
+  } else if (derived === 'pending') {
+    if (order.status === 'ready' || order.status === 'served') {
+      nextStatus = 'preparing';
+      db.prepare(
+        'UPDATE orders SET status = ?, cooking_started_at = COALESCE(cooking_started_at, ?), ready_at = NULL, served_at = NULL, updated_at = ? WHERE id = ?',
+      ).run(nextStatus, nowStr, nowStr, orderId);
+    }
+  }
+
+  if (nextStatus === null) {
+    return { changed: false, previousStatus: order.status, status: order.status };
+  }
+
+  recordOrderAudit(db, {
+    orderId,
+    actorUserId,
+    action: 'status_changed',
+    details: {
+      from: order.status,
+      to: nextStatus,
+      source: 'kds_reconciliation',
+    },
+  });
+
+  return {
+    changed: true,
+    previousStatus: order.status,
+    status: nextStatus,
   };
 }

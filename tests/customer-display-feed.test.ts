@@ -261,6 +261,180 @@ async function main(): Promise<void> {
     assert.equal(pollOrders, 500, 'each 5-page poll returns all 500 eligible orders');
   }
 
+  // Regression for #1401: prepaid completed orders with active KDS items project board status without mutating orders.status or scanning closed history
+  app.set('trust proxy', 1);
+  const prepaidDisplay = { ...fivePageDisplay, 'X-Forwarded-For': '127.0.0.2' };
+  db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES ('feed-cat', 'Cafe', 1)`).run();
+  db.prepare(
+    `INSERT INTO products (id, category_id, name, price, is_active, sort_order)
+     VALUES ('feed-prod-1', 'feed-cat', 'Espresso', 5, 1, 1),
+            ('feed-prod-2', 'feed-cat', 'Muffin', 4, 1, 2)`,
+  ).run();
+
+  const prepaidStamp = '2026-02-02 09:00:00';
+  const prepaidInsert = db
+    .prepare(
+      `INSERT INTO orders (order_number, customer_id, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+       VALUES ('PREPAID-001', 'feed-customer', 'feed-owner', 'takeaway', 'completed', 9, 9, ?, ?, ?)`,
+    )
+    .run(prepaidStamp, prepaidStamp, prepaidStamp);
+  const prepaidOrderId = Number(prepaidInsert.lastInsertRowid);
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, paid_at, created_at, updated_at)
+     VALUES ('BILL-PREPAID-001', ?, 9, 0, 9, 9, 0, 'paid', ?, ?, ?)`,
+  ).run(prepaidOrderId, prepaidStamp, prepaidStamp, prepaidStamp);
+  const prepaidItem1 = Number(
+    db
+      .prepare(
+        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+         VALUES (?, 'feed-prod-1', 'Espresso', 5, 1, 5, 0, 5, 'pending', ?, ?)`,
+      )
+      .run(prepaidOrderId, prepaidStamp, prepaidStamp).lastInsertRowid,
+  );
+  const prepaidItem2 = Number(
+    db
+      .prepare(
+        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+         VALUES (?, 'feed-prod-2', 'Muffin', 4, 1, 4, 0, 4, 'pending', ?, ?)`,
+      )
+      .run(prepaidOrderId, prepaidStamp, prepaidStamp).lastInsertRowid,
+  );
+
+  // [pending, pending] -> projected 'pending' with bill number, orders.status untouched ('completed')
+  let prepaidFeed = await request(app).get(FEED).set(prepaidDisplay);
+  assert.equal(prepaidFeed.status, 200);
+  let prepaidEntry = prepaidFeed.body.orders.find((o: any) => o.id === prepaidOrderId);
+  assert.deepEqual(
+    prepaidEntry,
+    { id: prepaidOrderId, number: 'BILL-PREPAID-001', status: 'pending' },
+    'prepaid completed order with pending KDS items appears on feed with projected pending status and bill number',
+  );
+  assert.equal(
+    (db.prepare('SELECT status FROM orders WHERE id = ?').get(prepaidOrderId) as any).status,
+    'completed',
+    'orders.status remains completed',
+  );
+
+  // [ready, pending] -> projected 'preparing'
+  db.prepare("UPDATE order_items SET status = 'ready' WHERE id = ?").run(prepaidItem1);
+  prepaidFeed = await request(app).get(FEED).set(prepaidDisplay);
+  assert.equal(prepaidFeed.status, 200);
+  prepaidEntry = prepaidFeed.body.orders.find((o: any) => o.id === prepaidOrderId);
+  assert.deepEqual(
+    prepaidEntry,
+    { id: prepaidOrderId, number: 'BILL-PREPAID-001', status: 'preparing' },
+    'prepaid completed order with 1-of-2 ready projects preparing status',
+  );
+
+  // CustomerDisplayConfig.statuses = ['ready'] hides preparing prepaid order
+  const readyOnlyRes = await request(app)
+    .put('/api/settings/customer-display')
+    .set(owner)
+    .send({ statuses: ['ready'], refresh_seconds: 3, show_updated: true });
+  assert.equal(readyOnlyRes.status, 200);
+  prepaidFeed = await request(app).get(FEED).set(prepaidDisplay);
+  assert.equal(prepaidFeed.status, 200);
+  assert.equal(
+    prepaidFeed.body.orders.some((o: any) => o.id === prepaidOrderId),
+    false,
+    'ready-only CustomerDisplayConfig excludes preparing prepaid order',
+  );
+
+  // [ready, ready] -> projected 'ready', now included in ready-only config!
+  db.prepare("UPDATE order_items SET status = 'ready' WHERE id = ?").run(prepaidItem2);
+  prepaidFeed = await request(app).get(FEED).set(prepaidDisplay);
+  assert.equal(prepaidFeed.status, 200);
+  prepaidEntry = prepaidFeed.body.orders.find((o: any) => o.id === prepaidOrderId);
+  assert.deepEqual(
+    prepaidEntry,
+    { id: prepaidOrderId, number: 'BILL-PREPAID-001', status: 'ready' },
+    'prepaid completed order with 2-of-2 ready projects ready status and passes ready-only filter',
+  );
+
+  // Restore default display config
+  await request(app)
+    .put('/api/settings/customer-display')
+    .set(owner)
+    .send({ statuses: ['pending', 'preparing', 'ready'], refresh_seconds: 3, show_updated: true });
+
+  // Verify index usage on order_items active KDS query and zero closed-history scan across all pages
+  let capturedActiveKdsSql = '';
+  let capturedActiveKdsParams: unknown[] = [];
+  let closedScannedDuringMerge = 0;
+  db.function('track_scanned_status_merge', (status: string) => {
+    if (status === 'completed' || status === 'cancelled') closedScannedDuringMerge += 1;
+    return 1;
+  });
+  db.prepare = (sql: string) => {
+    if (sql.includes('FROM orders o')) {
+      return origPrepare(
+        sql.replace('WHERE o.status IN', 'WHERE track_scanned_status_merge(o.status) AND o.status IN'),
+      );
+    }
+    const stmt = origPrepare(sql);
+    if (sql.includes('FROM order_items oi') && sql.includes('orders co')) {
+      const origAll = stmt.all.bind(stmt);
+      stmt.all = (...params: unknown[]) => {
+        capturedActiveKdsSql = sql;
+        capturedActiveKdsParams = params;
+        return origAll(...params);
+      };
+    }
+    return stmt;
+  };
+  const drainIds: number[] = [];
+  let drainCursor: string | null = null;
+  do {
+    const url: string = drainCursor ? `${FEED}?cursor=${encodeURIComponent(drainCursor)}` : FEED;
+    const res = await request(app).get(url).set(prepaidDisplay);
+    assert.equal(res.status, 200);
+    for (const o of res.body.orders) drainIds.push(o.id);
+    drainCursor = res.body.has_more ? res.body.next_cursor : null;
+  } while (drainCursor);
+  db.prepare = origPrepare;
+  assert.equal(drainIds.length, 501, 'all 500 active + 1 prepaid order drain across cursor pages');
+  assert.equal(new Set(drainIds).size, 501, 'zero duplicate IDs across active + prepaid merge');
+  assert.equal(closedScannedDuringMerge, 0, 'zero closed sales history rows scanned on FROM orders o');
+  assert.ok(capturedActiveKdsSql.length > 0, 'captured active KDS completed-order query');
+  const activeKdsPlan = db
+    .prepare(`EXPLAIN QUERY PLAN ${capturedActiveKdsSql}`)
+    .all(...capturedActiveKdsParams) as Array<{ detail: string }>;
+  const activeKdsPlanText = activeKdsPlan.map((r) => r.detail).join(' | ');
+  assert.ok(
+    activeKdsPlanText.includes('idx_order_items_active_kds'),
+    `prepaid feed query uses idx_order_items_active_kds (got: ${activeKdsPlanText})`,
+  );
+
+  // KDS disabled excludes completed orders even if items are still ready/pending
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', ?)",
+  ).run(now());
+  prepaidFeed = await request(app).get(FEED).set(prepaidDisplay);
+  assert.equal(prepaidFeed.status, 200);
+  assert.equal(
+    prepaidFeed.body.orders.some((o: any) => o.id === prepaidOrderId),
+    false,
+    'KDS-disabled mode omits completed orders from customer display feed',
+  );
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)",
+  ).run(now());
+
+  // [served, served] -> exits customer display feed automatically while orders.status remains 'completed'
+  db.prepare("UPDATE order_items SET status = 'served' WHERE order_id = ?").run(prepaidOrderId);
+  prepaidFeed = await request(app).get(FEED).set(prepaidDisplay);
+  assert.equal(prepaidFeed.status, 200);
+  assert.equal(
+    prepaidFeed.body.orders.some((o: any) => o.id === prepaidOrderId),
+    false,
+    'prepaid completed order automatically leaves customer display feed once all live items are served',
+  );
+  assert.equal(
+    (db.prepare('SELECT status FROM orders WHERE id = ?').get(prepaidOrderId) as any).status,
+    'completed',
+    'orders.status stays completed after all items served',
+  );
+
   console.log('customer-display-feed: all assertions passed');
 }
 

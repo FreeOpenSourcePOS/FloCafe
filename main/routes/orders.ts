@@ -32,7 +32,11 @@ import {
   type Customer,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
-import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
+import {
+  calculateOrderTotals,
+  recomputeOrderTotals,
+  reconcileActiveOrderStatusFromItems,
+} from '../services/orders';
 import {
   buildAppliedCharges,
   ChargeValidationError,
@@ -2398,6 +2402,8 @@ router.post(
           action: 'items_added',
           details: { item_ids: insertedItemIds },
         });
+
+        reconcileActiveOrderStatusFromItems(db, req.params.id as string, idempotencyUserId);
 
         const updatedOrder = parseRowJson(
           db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id),
@@ -5414,6 +5420,10 @@ router.patch(
           details: { ...(approvedByUserId && { approved_by: approvedByUserId }) },
         });
 
+        if (!orderCancelled) {
+          reconcileActiveOrderStatusFromItems(db, orderId, actorId);
+        }
+
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(
           db,
@@ -5941,6 +5951,8 @@ router.patch(
           },
         });
 
+        reconcileActiveOrderStatusFromItems(db, orderId, actorId);
+
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<
           string,
           unknown
@@ -6191,6 +6203,8 @@ router.patch(
           actorUserId: actorId,
           action: 'item_restored',
         });
+
+        reconcileActiveOrderStatusFromItems(db, orderId, actorId);
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(

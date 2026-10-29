@@ -30,6 +30,8 @@ import {
   projectKdsOrder,
 } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
+import { reconcileActiveOrderStatusFromItems } from './services/orders';
+import { cloudSync } from './services/cloud-sync';
 import { getJWTSecret } from './security/jwt-secret';
 import { normalizeEmail, parseCategoryIds } from './routes/auth';
 import {
@@ -666,14 +668,35 @@ export function startKdsServer(): Promise<void> {
                 WHERE id = ? AND status = ?
               `)
                     .run(status, req.params.id, expectedStatus);
-            return updated.changes === 1
-              ? { statusCode: 200, error: null }
-              : { statusCode: 409, error: 'The order item changed before it could be updated' };
+            if (updated.changes !== 1) {
+              return {
+                statusCode: 409,
+                error: 'The order item changed before it could be updated',
+                reconciledEvent: null,
+              };
+            }
+            const reconcile = reconcileActiveOrderStatusFromItems(db, item.order_id, kdsUser.userId);
+            return {
+              statusCode: 200,
+              error: null,
+              reconciledEvent:
+                reconcile.changed && reconcile.status
+                  ? { orderId: String(item.order_id), status: reconcile.status }
+                  : null,
+            };
           })
           .immediate();
 
         if (updateResult.statusCode !== 200) {
           return res.status(updateResult.statusCode).json({ error: updateResult.error });
+        }
+        if (updateResult.reconciledEvent) {
+          try {
+            cloudSync.recordOrderChanged(
+              updateResult.reconciledEvent.orderId,
+              `order.${updateResult.reconciledEvent.status}`,
+            );
+          } catch {}
         }
         notifyKdsUpdate();
         res.json({ success: true });

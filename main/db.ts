@@ -7951,6 +7951,7 @@ function runMigrations(targetVersion?: number): void {
   }
 
   if (current === target) {
+    ensureRuntimeIndexes();
     if (!buildingIdealSchema) console.log(`[DB] Schema up to date (v${current})`);
     return;
   }
@@ -7978,6 +7979,19 @@ function runMigrations(targetVersion?: number): void {
       console.log(`[DB] Migration v${migration.version} complete`);
     }
   }
+
+  ensureRuntimeIndexes();
+}
+
+function ensureRuntimeIndexes(): void {
+  if (db.readonly) return;
+  const hasOrderItems = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'order_items'")
+    .get();
+  if (!hasOrderItems) return;
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_order_items_active_kds ON order_items(status, order_id) WHERE status IN ('pending', 'preparing', 'ready');",
+  );
 }
 
 // Initial schema definition for brand-new installs (migration v1).
@@ -8398,6 +8412,7 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_orders_created    ON orders(created_at);
     CREATE INDEX IF NOT EXISTS idx_orders_user       ON orders(user_id);
     CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+    CREATE INDEX IF NOT EXISTS idx_order_items_active_kds ON order_items(status, order_id) WHERE status IN ('pending', 'preparing', 'ready');
     CREATE INDEX IF NOT EXISTS idx_bills_order       ON bills(order_id);
     CREATE INDEX IF NOT EXISTS idx_country_pack_versions_pack ON country_pack_versions(pack_id);
     CREATE INDEX IF NOT EXISTS idx_tax_categories_pack_version ON tax_categories(pack_version_id);

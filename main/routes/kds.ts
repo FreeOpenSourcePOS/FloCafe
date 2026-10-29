@@ -6,6 +6,8 @@ import { requireKdsEnabled, requireKdsEnabledOr404, isTokenRevoked, isTokenStale
 import { hasPermission, requirePermission } from '../services/authorization';
 import { parseCategoryIds } from './auth';
 import { notifyKdsUpdate } from '../services/kds';
+import { reconcileActiveOrderStatusFromItems } from '../services/orders';
+import { cloudSync } from '../services/cloud-sync';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 
 const router = Router();
@@ -378,6 +380,7 @@ router.patch('/items/:id/status', requirePermission('kitchen.status.update'), re
     if (!stationCategoryIds || !stationScope) return res.status(403).json({ error: 'Could not load station permissions' });
     const stationRoutingCategoryIds = stationScope.tablelessCategoryIds;
     let restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
+    let reconciledEvent: { orderId: string; status: string } | null = null;
 
     const updatedItem = withTxn(() => {
       const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
@@ -438,6 +441,15 @@ router.patch('/items/:id/status', requirePermission('kitchen.status.update'), re
         : db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?').run(status, now(), req.params.id, expectedStatus);
       if (updateResult.changes !== 1) throw new Error('STATUS_CONFLICT');
 
+      const reconcile = reconcileActiveOrderStatusFromItems(
+        db,
+        item.order_id,
+        String((req as any).user.userId),
+      );
+      if (reconcile.changed && reconcile.status) {
+        reconciledEvent = { orderId: String(item.order_id), status: reconcile.status };
+      }
+
       return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id);
     });
 
@@ -445,6 +457,14 @@ router.patch('/items/:id/status', requirePermission('kitchen.status.update'), re
       return res.status(404).json({ error: 'Order item not found' });
     }
 
+    if (reconciledEvent) {
+      try {
+        cloudSync.recordOrderChanged(
+          (reconciledEvent as { orderId: string; status: string }).orderId,
+          `order.${(reconciledEvent as { orderId: string; status: string }).status}`,
+        );
+      } catch {}
+    }
     notifyKdsUpdate();
     res.json({ item: projectKdsItem(updatedItem, restrictedPayload) });  } catch (error: any) {
     if (error.message === 'VOIDED_ITEM') {

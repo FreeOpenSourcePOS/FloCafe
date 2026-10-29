@@ -235,6 +235,90 @@ async function run() {
     assert(statusRes.status === 200, 'KDS item status update succeeds');
     await updatePromise;
     assert((db.prepare('SELECT status FROM order_items WHERE id = ?').get(itemId) as any).status === 'ready', 'WebSocket broadcast follows item mutation');
+    const standaloneOrderAfterReady = db
+      .prepare('SELECT status, ready_at, served_at FROM orders WHERE id = ?')
+      .get(orderId) as { status: string; ready_at: string | null; served_at: string | null };
+    assert(
+      standaloneOrderAfterReady.status === 'ready' && standaloneOrderAfterReady.ready_at !== null,
+      'Standalone KDS REST item update reconciles active parent order to ready with ready_at',
+    );
+
+    // WebSocket status_update handler reconciles active parent order across pending -> preparing -> ready -> served
+    db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+      VALUES ('KDS-WS-RECONCILE-001', 'takeaway', 'pending', 20, 20, ?, ?)`).run(now(), now());
+    const wsOrderId = (
+      db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-WS-RECONCILE-001'").get() as any
+    ).id;
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-product', 'KDS Burger 1', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(
+      wsOrderId,
+      now(),
+      now(),
+    );
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-product', 'KDS Burger 2', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(
+      wsOrderId,
+      now(),
+      now(),
+    );
+    const wsItemIds = (
+      db
+        .prepare('SELECT id FROM order_items WHERE order_id = ? ORDER BY id ASC')
+        .all(wsOrderId) as Array<{ id: number }>
+    ).map((row) => row.id);
+
+    const sendWsStatusUpdate = async (targetItemId: number, nextStatus: string, expectedStatus?: string) => {
+      const ackPromise = nextMessage('status_updated');
+      const broadcastPromise = nextMessage('initial_data');
+      ws.send(
+        JSON.stringify({
+          type: 'status_update',
+          order_item_id: targetItemId,
+          status: nextStatus,
+          ...(expectedStatus ? { expected_status: expectedStatus } : {}),
+        }),
+      );
+      const ack = await ackPromise;
+      await broadcastPromise;
+      assert(ack.status === nextStatus, `WebSocket status_updated ack confirms ${nextStatus}`);
+    };
+
+    await sendWsStatusUpdate(wsItemIds[0], 'ready', 'pending');
+    assert(
+      (db.prepare('SELECT status FROM orders WHERE id = ?').get(wsOrderId) as any).status === 'preparing',
+      'WebSocket 1-of-2 ready promotes pending parent to preparing',
+    );
+    await sendWsStatusUpdate(wsItemIds[1], 'ready', 'pending');
+    const wsOrderReady = db
+      .prepare('SELECT status, ready_at FROM orders WHERE id = ?')
+      .get(wsOrderId) as { status: string; ready_at: string | null };
+    assert(
+      wsOrderReady.status === 'ready' && wsOrderReady.ready_at !== null,
+      'WebSocket 2-of-2 ready promotes parent to ready with ready_at',
+    );
+    await sendWsStatusUpdate(wsItemIds[0], 'served', 'ready');
+    assert(
+      (db.prepare('SELECT status FROM orders WHERE id = ?').get(wsOrderId) as any).status === 'ready',
+      'WebSocket 1-of-2 served keeps mixed served+ready parent in ready',
+    );
+    await sendWsStatusUpdate(wsItemIds[1], 'served', 'ready');
+    const wsOrderServed = db
+      .prepare('SELECT status, served_at FROM orders WHERE id = ?')
+      .get(wsOrderId) as { status: string; served_at: string | null };
+    assert(
+      wsOrderServed.status === 'served' && wsOrderServed.served_at !== null,
+      'WebSocket 2-of-2 served promotes parent to served with served_at',
+    );
+    const wsAudits = db
+      .prepare(
+        "SELECT actor_user_id FROM order_audit_log WHERE order_id = ? AND action = 'status_changed' ORDER BY id ASC",
+      )
+      .all(wsOrderId) as Array<{ actor_user_id: string }>;
+    assert(
+      wsAudits.length === 3 && wsAudits.every((a) => a.actor_user_id === 'user-chef-1'),
+      'WebSocket parent status transitions record actor-attributed audit entries for client.userId',
+    );
+
     db.prepare("UPDATE order_items SET status = 'voided', voided_at = ? WHERE id = ?").run(now(), itemId);
     const terminalStatusRes = await request(`http://127.0.0.1:${port}`)
       .patch(`/api/kds/items/${itemId}/status`)

@@ -16,6 +16,7 @@ import {
   withTxn,
 } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
+import { reconcileActiveOrderStatusFromItems } from '../services/orders';
 import { parseCategoryIds } from './auth';
 import { requireKdsEnabled, isTokenRevoked, isTokenStale } from '../middleware/security';
 import { hasPermission, requirePermission } from '../services/authorization';
@@ -190,6 +191,7 @@ router.patch(
       let stationRoutingCategoryIds = stationScope!.tablelessCategoryIds;
       let restrictedKdsPayload =
         currentUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
+      let reconciledEvent: { orderId: string; status: string } | null = null;
 
       const orderData = withTxn(() => {
         const liveUser = db
@@ -321,6 +323,11 @@ router.patch(
         if (updateResult.changes !== 1)
           throw Object.assign(new Error('STATUS_CONFLICT'), { diagnosticCode: 'status_conflict' });
 
+        const reconcile = reconcileActiveOrderStatusFromItems(db, item.order_id, userId);
+        if (reconcile.changed && reconcile.status) {
+          reconciledEvent = { orderId: String(item.order_id), status: reconcile.status };
+        }
+
         const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(item.order_id) as any;
 
         const rawItems = db
@@ -389,6 +396,14 @@ router.patch(
       }
 
       operationCommitted = true;
+      if (reconciledEvent) {
+        try {
+          cloudSync.recordOrderChanged(
+            (reconciledEvent as { orderId: string; status: string }).orderId,
+            `order.${(reconciledEvent as { orderId: string; status: string }).status}`,
+          );
+        } catch {}
+      }
       notifyKdsUpdate();
 
       res.json({ order: orderData });

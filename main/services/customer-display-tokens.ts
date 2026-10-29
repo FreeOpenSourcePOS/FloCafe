@@ -1,10 +1,11 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { getDatabase, now } from '../db';
+import { getDatabase, isKdsEnabled, now } from '../db';
 import {
   CUSTOMER_DISPLAY_KEY,
   readStoredCustomerDisplayConfig,
   type CustomerDisplayConfig,
 } from './customer-display-config';
+import { projectBoardStatusFromItems } from '../../shared/order-item-status';
 
 const TOKEN_PREFIX = 'cdt_';
 const MAX_LABEL_LENGTH = 60;
@@ -198,8 +199,108 @@ export function buildDisplayFeed(options?: CustomerDisplayFeedOptions): Customer
           .all(...config.statuses, FEED_ORDER_LIMIT + 1)
   ) as Array<{ id: number; number: string; status: string; created_at: string }>;
 
-  const hasMore = rows.length > FEED_ORDER_LIMIT;
-  const pageRows = hasMore ? rows.slice(0, FEED_ORDER_LIMIT) : rows;
+  const projectedCompletedRows: Array<{
+    id: number;
+    number: string;
+    status: string;
+    created_at: string;
+  }> = [];
+
+  if (isKdsEnabled()) {
+    const completedSelect = `SELECT DISTINCT co.id AS id,
+                COALESCE((SELECT b.bill_number FROM bills b WHERE b.order_id = co.id ORDER BY b.id DESC LIMIT 1), co.order_number) AS number,
+                co.created_at AS created_at
+         FROM order_items oi
+         CROSS JOIN orders co ON co.id = oi.order_id`;
+    const completedCandidates = (
+      decodedCursor
+        ? db
+            .prepare(
+              `${completedSelect}
+               WHERE oi.status IN ('pending', 'preparing', 'ready')
+                 AND oi.quantity > 0
+                 AND co.status = 'completed'
+                 AND co.created_at <= ?
+                 AND (co.created_at < ? OR (co.created_at = ? AND co.id < ?))
+               ORDER BY co.created_at DESC, co.id DESC`,
+            )
+            .all(
+              decodedCursor.created_at,
+              decodedCursor.created_at,
+              decodedCursor.created_at,
+              decodedCursor.id,
+            )
+        : db
+            .prepare(
+              `${completedSelect}
+               WHERE oi.status IN ('pending', 'preparing', 'ready')
+                 AND oi.quantity > 0
+                 AND co.status = 'completed'
+               ORDER BY co.created_at DESC, co.id DESC`,
+            )
+            .all()
+    ) as Array<{ id: number; number: string; created_at: string }>;
+
+    const allowedStatuses = new Set<string>(config.statuses);
+    const chunkSize = 200;
+    for (
+      let offset = 0;
+      offset < completedCandidates.length && projectedCompletedRows.length < FEED_ORDER_LIMIT + 1;
+      offset += chunkSize
+    ) {
+      const chunk = completedCandidates.slice(offset, offset + chunkSize);
+      const idPlaceholders = chunk.map(() => '?').join(', ');
+      const itemRows = db
+        .prepare(
+          `SELECT order_id, status, quantity
+           FROM order_items
+           WHERE order_id IN (${idPlaceholders})`,
+        )
+        .all(...chunk.map((row) => row.id)) as Array<{
+        order_id: number;
+        status: string | null;
+        quantity: number | null;
+      }>;
+      const itemsByOrderId = new Map<number, Array<{ status: string | null; quantity: number | null }>>();
+      for (const item of itemRows) {
+        let bucket = itemsByOrderId.get(item.order_id);
+        if (!bucket) {
+          bucket = [];
+          itemsByOrderId.set(item.order_id, bucket);
+        }
+        bucket.push(item);
+      }
+      for (const candidate of chunk) {
+        const projectedStatus = projectBoardStatusFromItems(itemsByOrderId.get(candidate.id));
+        if (projectedStatus && allowedStatuses.has(projectedStatus)) {
+          projectedCompletedRows.push({
+            id: candidate.id,
+            number: candidate.number,
+            status: projectedStatus,
+            created_at: candidate.created_at,
+          });
+          if (projectedCompletedRows.length >= FEED_ORDER_LIMIT + 1) break;
+        }
+      }
+    }
+  }
+
+  let mergedRows = rows;
+  if (projectedCompletedRows.length > 0) {
+    const combined = [...rows, ...projectedCompletedRows].sort((a, b) =>
+      a.created_at > b.created_at ? -1 : a.created_at < b.created_at ? 1 : b.id - a.id,
+    );
+    const seenIds = new Set<number>();
+    mergedRows = [];
+    for (const row of combined) {
+      if (seenIds.has(row.id)) continue;
+      seenIds.add(row.id);
+      mergedRows.push(row);
+    }
+  }
+
+  const hasMore = mergedRows.length > FEED_ORDER_LIMIT;
+  const pageRows = hasMore ? mergedRows.slice(0, FEED_ORDER_LIMIT) : mergedRows;
   const oldestRow = pageRows[pageRows.length - 1];
   const next_cursor =
     hasMore && oldestRow

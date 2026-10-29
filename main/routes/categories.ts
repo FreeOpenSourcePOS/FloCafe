@@ -192,25 +192,31 @@ function validateParentCategory(
   return null;
 }
 
+function normalizeCategoryIdentityName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
 function findDuplicateSiblingCategory(
   db: ReturnType<typeof getDatabase>,
   name: string,
   parentId: string | null,
   excludeCategoryId?: string,
 ): { id: string; name: string } | undefined {
-  const normalized = name.trim().toLowerCase();
-  return db
+  const normalized = normalizeCategoryIdentityName(name);
+  const siblings = db
     .prepare(
       `SELECT id, name FROM categories
        WHERE deleted_at IS NULL
-         AND COALESCE(parent_id, '') = COALESCE(?, '')
-         AND LOWER(TRIM(name)) = ?
-         AND (? IS NULL OR id != ?)
-       LIMIT 1`,
+         AND COALESCE(NULLIF(TRIM(parent_id), ''), '') = COALESCE(?, '')
+         AND (? IS NULL OR id != ?)`,
     )
-    .get(parentId, normalized, excludeCategoryId ?? null, excludeCategoryId ?? null) as
-    | { id: string; name: string }
-    | undefined;
+    .all(parentId, excludeCategoryId ?? null, excludeCategoryId ?? null) as {
+    id: string;
+    name: string;
+  }[];
+  return siblings.find(
+    (sibling) => normalizeCategoryIdentityName(String(sibling.name ?? '')) === normalized,
+  );
 }
 
 function captureParentCategoryRejection(kind: 'reference_invalid' | 'cycle'): void {
@@ -498,6 +504,110 @@ function createCategory(req: Request, res: Response) {
 
 router.post('/', categoryWriteRateLimit, requirePermission('catalog.manage'), createCategory);
 
+class CategoryReorderValidationError extends Error {}
+
+function reorderCategories(req: Request, res: Response) {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const { parent_id, category_ids } = body;
+
+    if (
+      hasOwn(body, 'parent_id') &&
+      parent_id !== null &&
+      parent_id !== undefined &&
+      typeof parent_id !== 'string'
+    ) {
+      return res.status(400).json({ error: 'parent_id must be a string or null' });
+    }
+    if (!Array.isArray(category_ids) || category_ids.length === 0) {
+      return res.status(400).json({ error: 'category_ids must be a non-empty array' });
+    }
+
+    const trimmedIds: string[] = [];
+    for (const rawId of category_ids) {
+      if (typeof rawId !== 'string' || !rawId.trim()) {
+        return res.status(400).json({ error: 'category_ids must contain non-empty string IDs' });
+      }
+      trimmedIds.push(rawId.trim());
+    }
+    if (new Set(trimmedIds).size !== trimmedIds.length) {
+      return res.status(400).json({ error: 'category_ids must not contain duplicates' });
+    }
+
+    const normalizedParentId = normalizeOptionalString(parent_id);
+    const db = getDatabase();
+
+    const applyReorder = db.transaction(() => {
+      const currentSiblings = db
+        .prepare(
+          `SELECT id, sort_order FROM categories
+           WHERE deleted_at IS NULL
+             AND COALESCE(NULLIF(TRIM(parent_id), ''), '') = COALESCE(?, '')`,
+        )
+        .all(normalizedParentId) as { id: string; sort_order: number | null }[];
+
+      const siblingById = new Map(currentSiblings.map((row) => [row.id, row]));
+      if (
+        currentSiblings.length !== trimmedIds.length ||
+        trimmedIds.some((id) => !siblingById.has(id))
+      ) {
+        throw new CategoryReorderValidationError(
+          'category_ids must match the complete non-deleted sibling set for the specified parent',
+        );
+      }
+
+      const timestamp = now();
+      const updateSortOrder = db.prepare(
+        'UPDATE categories SET sort_order = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL',
+      );
+      trimmedIds.forEach((id, index) => {
+        const existing = siblingById.get(id)!;
+        if (existing.sort_order !== index) {
+          updateSortOrder.run(index, timestamp, id);
+        }
+      });
+    });
+
+    try {
+      applyReorder();
+    } catch (error: unknown) {
+      if (error instanceof CategoryReorderValidationError) {
+        return res.status(400).json({ error: error.message });
+      }
+      throw error;
+    }
+
+    const reorderedRows = db
+      .prepare(
+        `SELECT * FROM categories
+         WHERE deleted_at IS NULL
+           AND COALESCE(NULLIF(TRIM(parent_id), ''), '') = COALESCE(?, '')
+         ORDER BY sort_order, name`,
+      )
+      .all(normalizedParentId) as ({ id: string } & Record<string, unknown>)[];
+    const addonGroupIdsByCategory = loadAddonGroupIdsByCategory(db, reorderedRows);
+
+    res.json({
+      categories: reorderedRows.map((cat) =>
+        serializeCategory({
+          ...cat,
+          addon_group_ids: addonGroupIdsByCategory.get(cat.id) || [],
+        }),
+      ),
+    });
+  } catch (error: unknown) {
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+router.post(
+  '/reorder',
+  categoryWriteRateLimit,
+  requirePermission('catalog.manage'),
+  reorderCategories,
+);
+
 function updateCategory(req: Request, res: Response) {
   try {
     const { name, description, parent_id, sort_order, is_active, color, icon, addon_group_ids } =
@@ -535,11 +645,15 @@ function updateCategory(req: Request, res: Response) {
       }
     }
 
-    const effectiveName = hasName ? categoryName! : String(category.name);
+    const currentName = String(category.name ?? '');
+    const effectiveName = hasName ? categoryName! : currentName;
     const effectiveParentId = hasOwn(req.body, 'parent_id')
       ? normalizeOptionalString(parent_id)
       : currentParentId;
-    if (hasName || hasOwn(req.body, 'parent_id')) {
+    const identityChanged =
+      normalizeCategoryIdentityName(effectiveName) !== normalizeCategoryIdentityName(currentName) ||
+      effectiveParentId !== currentParentId;
+    if (identityChanged) {
       if (findDuplicateSiblingCategory(db, effectiveName, effectiveParentId, categoryId)) {
         return res.status(400).json({
           error: effectiveParentId

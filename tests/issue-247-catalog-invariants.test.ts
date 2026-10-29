@@ -677,6 +677,354 @@ async function main() {
       null,
       'add-on tax_category_id cleared',
     );
+
+    console.log('\n─── F2: Legacy duplicate category Management edits ───');
+    db.prepare(`
+      INSERT INTO categories (id, name, parent_id, sort_order, is_active, created_at, updated_at)
+      VALUES
+        ('cat-legacy-child-dup-1', 'Legacy Sub Dup', 'cat-sort-root-a', 10, 1, ?, ?),
+        ('cat-legacy-child-dup-2', 'Legacy Sub Dup', 'cat-sort-root-a', 11, 1, ?, ?),
+        ('cat-legacy-parent-dup-child', 'Sub Under Dup Root', 'cat-legacy-dup-2', 1, 1, ?, ?)
+    `).run(now(), now(), now(), now(), now(), now());
+
+    res = await api(baseUrl, '/api/categories/cat-legacy-dup-1', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        name: 'Legacy Dup',
+        parent_id: null,
+        color: 'red',
+        sort_order: 35,
+        is_active: true,
+        description: 'updated legacy root',
+        addon_group_ids: [],
+      },
+    });
+    assertEqual(
+      res.status,
+      200,
+      'full Management payload edits unchanged legacy duplicate root category without collision error',
+    );
+    const updatedLegacyRoot = db
+      .prepare('SELECT name, color, sort_order, is_active FROM categories WHERE id = ?')
+      .get('cat-legacy-dup-1') as any;
+    assertEqual(updatedLegacyRoot.color, 'red', 'legacy duplicate root color updated');
+    assertEqual(updatedLegacyRoot.sort_order, 35, 'legacy duplicate root sort_order updated');
+
+    res = await api(baseUrl, '/api/categories/cat-legacy-dup-1', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        name: 'Legacy Dup',
+        parent_id: null,
+        color: 'red',
+        sort_order: 35,
+        is_active: false,
+        description: 'updated legacy root',
+        addon_group_ids: [],
+      },
+    });
+    assertEqual(
+      res.status,
+      200,
+      'full Management payload deactivates childless legacy duplicate root category',
+    );
+    assertEqual(
+      db.prepare('SELECT is_active FROM categories WHERE id = ?').get('cat-legacy-dup-1').is_active,
+      0,
+      'legacy duplicate root deactivated',
+    );
+
+    res = await api(baseUrl, '/api/categories/cat-legacy-dup-2', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        name: 'Legacy Dup',
+        parent_id: null,
+        color: null,
+        sort_order: 31,
+        is_active: false,
+        description: null,
+        addon_group_ids: [],
+      },
+    });
+    assertEqual(
+      res.status,
+      400,
+      'deactivating a legacy duplicate parent that has subcategories is still refused',
+    );
+
+    res = await api(baseUrl, '/api/categories/cat-legacy-child-dup-1', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        name: 'Legacy Sub Dup',
+        parent_id: 'cat-sort-root-a',
+        color: 'blue',
+        sort_order: 12,
+        is_active: true,
+        description: 'updated legacy child',
+        addon_group_ids: [],
+      },
+    });
+    assertEqual(
+      res.status,
+      200,
+      'full Management payload edits unchanged legacy duplicate child category',
+    );
+
+    res = await api(baseUrl, '/api/categories/cat-legacy-child-dup-1', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        name: 'Legacy Sub Dup',
+        parent_id: 'cat-sort-root-a',
+        color: 'blue',
+        sort_order: 12,
+        is_active: false,
+        description: 'updated legacy child',
+        addon_group_ids: [],
+      },
+    });
+    assertEqual(
+      res.status,
+      200,
+      'full Management payload deactivates legacy duplicate child category',
+    );
+
+    res = await api(baseUrl, '/api/categories/cat-sort-root-b', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        name: 'Legacy Dup',
+        parent_id: null,
+        color: null,
+        sort_order: 20,
+        is_active: true,
+        description: null,
+        addon_group_ids: [],
+      },
+    });
+    assertEqual(
+      res.status,
+      400,
+      'renaming a distinct category into an existing sibling name fails',
+    );
+
+    res = await api(baseUrl, '/api/categories/cat-legacy-dup-1', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        name: 'Sub A',
+        parent_id: 'cat-sort-root-a',
+        color: 'red',
+        sort_order: 35,
+        is_active: true,
+        description: null,
+        addon_group_ids: [],
+      },
+    });
+    assertEqual(res.status, 400, 'moving a category under a parent with a colliding child fails');
+
+    console.log('\n─── F4: Unicode / non-ASCII sibling name uniqueness ───');
+    res = await api(baseUrl, '/api/categories', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'Кофе' },
+    });
+    assertEqual(res.status, 201, 'first Cyrillic root category Кофе is created');
+
+    res = await api(baseUrl, '/api/categories', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'Кофе' },
+    });
+    assertEqual(res.status, 400, 'exact duplicate Cyrillic root category Кофе is rejected');
+
+    res = await api(baseUrl, '/api/categories', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'кофе' },
+    });
+    assertEqual(res.status, 400, 'case-variant Cyrillic root category кофе is rejected');
+
+    res = await api(baseUrl, '/api/categories', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'Érable' },
+    });
+    assertEqual(res.status, 201, 'first accented root category Érable is created');
+    const erableRootId = res.data?.category?.id;
+
+    res = await api(baseUrl, '/api/categories', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'Érable' },
+    });
+    assertEqual(res.status, 400, 'exact duplicate accented root category Érable is rejected');
+
+    res = await api(baseUrl, '/api/categories', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'érable' },
+    });
+    assertEqual(res.status, 400, 'case-variant accented root category érable is rejected');
+
+    res = await api(baseUrl, '/api/categories/cat-sort-root-b', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { name: 'КОФЕ' },
+    });
+    assertEqual(res.status, 400, 'updating an existing category to colliding uppercase КОФЕ fails');
+
+    if (erableRootId) {
+      await api(baseUrl, `/api/categories/${erableRootId}`, {
+        method: 'PUT',
+        headers: authHeader,
+        body: { is_active: false },
+      });
+      res = await api(baseUrl, '/api/categories', {
+        method: 'POST',
+        headers: authHeader,
+        body: { name: 'ÉRABLE' },
+      });
+      assertEqual(
+        res.status,
+        400,
+        'inactive non-deleted accented sibling still blocks duplicate creation',
+      );
+    }
+
+    res = await api(baseUrl, '/api/categories', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'Кофе', parent_id: 'cat-sort-root-a' },
+    });
+    assertEqual(res.status, 201, 'Cyrillic subcategory Кофе under Root A is allowed');
+
+    res = await api(baseUrl, '/api/categories', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'Кофе', parent_id: 'cat-sort-root-b' },
+    });
+    assertEqual(res.status, 201, 'identical Cyrillic subcategory Кофе under Root B is allowed');
+
+    res = await api(baseUrl, '/api/categories', {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'КОФЕ', parent_id: 'cat-sort-root-a' },
+    });
+    assertEqual(res.status, 400, 'duplicate Cyrillic subcategory КОФЕ under same Root A fails');
+
+    console.log('\n─── F3: Transactional sibling category reorder ───');
+    seedCategory(db, 'cat-reorder-parent', 'Reorder Parent');
+    const siblingIds: string[] = [];
+    const insertReorderChild = db.prepare(`
+      INSERT INTO categories (id, name, parent_id, sort_order, is_active, created_at, updated_at)
+      VALUES (?, ?, 'cat-reorder-parent', 0, 1, ?, ?)
+    `);
+    for (let i = 0; i < 65; i++) {
+      const id = `cat-s${String(i).padStart(2, '0')}`;
+      siblingIds.push(id);
+      insertReorderChild.run(id, `Sibling ${String(i).padStart(2, '0')}`, now(), now());
+    }
+
+    const intendedOrder = [siblingIds[1], siblingIds[0], ...siblingIds.slice(2)];
+    res = await api(baseUrl, '/api/categories/reorder', {
+      method: 'POST',
+      headers: authHeader,
+      body: { parent_id: 'cat-reorder-parent', category_ids: intendedOrder },
+    });
+    assertEqual(res.status, 200, '65-sibling reorder succeeds in a single transactional request');
+    const persistedOrder = (
+      db
+        .prepare(
+          'SELECT id FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY sort_order, name',
+        )
+        .all('cat-reorder-parent') as { id: string }[]
+    ).map((row) => row.id);
+    assertEqual(
+      JSON.stringify(persistedOrder),
+      JSON.stringify(intendedOrder),
+      'all 65 siblings persist in exact intended order without rate-limit scramble',
+    );
+
+    const snapshotBeforeInvalid = JSON.stringify(
+      db
+        .prepare(
+          'SELECT id, sort_order FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY id',
+        )
+        .all('cat-reorder-parent'),
+    );
+
+    res = await api(baseUrl, '/api/categories/reorder', {
+      method: 'POST',
+      headers: authHeader,
+      body: { parent_id: 'cat-reorder-parent', category_ids: intendedOrder.slice(0, 64) },
+    });
+    assertEqual(res.status, 400, 'incomplete sibling set is rejected');
+
+    res = await api(baseUrl, '/api/categories/reorder', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        parent_id: 'cat-reorder-parent',
+        category_ids: [intendedOrder[0], intendedOrder[0], ...intendedOrder.slice(2)],
+      },
+    });
+    assertEqual(res.status, 400, 'duplicate category IDs in reorder payload are rejected');
+
+    res = await api(baseUrl, '/api/categories/reorder', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        parent_id: 'cat-reorder-parent',
+        category_ids: [...intendedOrder.slice(0, 64), 'cat-sort-root-a'],
+      },
+    });
+    assertEqual(res.status, 400, 'non-sibling category ID in reorder payload is rejected');
+
+    const snapshotAfterInvalid = JSON.stringify(
+      db
+        .prepare(
+          'SELECT id, sort_order FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY id',
+        )
+        .all('cat-reorder-parent'),
+    );
+    assertEqual(
+      snapshotAfterInvalid,
+      snapshotBeforeInvalid,
+      'rejected reorder payloads commit zero partial updates',
+    );
+
+    db.exec(`
+      CREATE TEMPORARY TRIGGER fail_mid_category_reorder
+      BEFORE UPDATE ON categories
+      WHEN NEW.id = 'cat-s30'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced mid-reorder failure');
+      END;
+    `);
+    const reversedOrder = intendedOrder.slice().reverse();
+    res = await api(baseUrl, '/api/categories/reorder', {
+      method: 'POST',
+      headers: authHeader,
+      body: { parent_id: 'cat-reorder-parent', category_ids: reversedOrder },
+    });
+    db.exec('DROP TRIGGER fail_mid_category_reorder;');
+    assertEqual(res.status, 500, 'mid-transaction failure returns 500');
+    const snapshotAfterForcedFailure = JSON.stringify(
+      db
+        .prepare(
+          'SELECT id, sort_order FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY id',
+        )
+        .all('cat-reorder-parent'),
+    );
+    assertEqual(
+      snapshotAfterForcedFailure,
+      snapshotBeforeInvalid,
+      'forced mid-transaction failure rolls back all earlier sibling sort_order writes',
+    );
   } finally {
     server.close();
     closeDatabase();

@@ -213,6 +213,7 @@ test.describe('two-level category hierarchy UI', () => {
     const suffix = Math.random().toString(36).slice(2, 8);
     const parentName = `DrinksRoot ${suffix}`;
     const childName = `HotSub ${suffix}`;
+    const secondChildName = `ZebraSub ${suffix}`;
     const flatRootName = `BakeryFlat ${suffix}`;
     const parentProdName = `House Water ${suffix}`;
     const childProdName = `Cortado ${suffix}`;
@@ -248,20 +249,40 @@ test.describe('two-level category hierarchy UI', () => {
     await page.locator('#category-parent-select').selectOption(parentId);
     await page.getByRole('button', { name: 'Create', exact: true }).click();
 
+    await page.getByRole('button', { name: 'Add Category', exact: true }).click();
+    await page.locator('form input[type="text"]').first().fill(secondChildName);
+    await page.locator('#category-parent-select').selectOption(parentId);
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+
     const childRow = page.getByRole('row').filter({ hasText: childName });
     await expect(childRow).toBeVisible();
     await expect(childRow).toHaveAttribute('data-category-depth', '1');
 
+    const secondChildRow = page.getByRole('row').filter({ hasText: secondChildName });
+    await expect(secondChildRow).toBeVisible();
+    await expect(secondChildRow).toHaveAttribute('data-category-depth', '1');
+
+    const reorderResponsePromise = page.waitForResponse(
+      (res) => res.url().endsWith('/api/categories/reorder') && res.request().method() === 'POST',
+    );
+    await secondChildRow.getByRole('button', { name: 'Move up', exact: true }).click();
+    const reorderResponse = await reorderResponsePromise;
+    expect(reorderResponse.status()).toBe(200);
+
     const parentRow = page.getByRole('row').filter({ hasText: parentName }).first();
     await expect(parentRow).toHaveAttribute('data-category-depth', '0');
 
-    // Look up created child category id for cleanup and seeding products
+    // Look up created child category ids and verify persisted reordered sibling order
     const listRes = await page.request.get(`${BASE}/api/categories?parent_id=${parentId}`, {
       headers,
     });
     expect(listRes.status()).toBe(200);
-    const childId = (await listRes.json()).categories[0].id as string;
-    createdChildCategoryIds.push(childId);
+    const listedChildren = (await listRes.json()).categories as Array<{ id: string; name: string }>;
+    expect(listedChildren.map((c) => c.name)).toEqual([secondChildName, childName]);
+    const childId = listedChildren.find((c) => c.name === childName)!.id;
+    for (const c of listedChildren) {
+      createdChildCategoryIds.push(c.id);
+    }
 
     // Seed products under parent, child, and flat category
     for (const [name, catId, price] of [
@@ -293,6 +314,10 @@ test.describe('two-level category hierarchy UI', () => {
     // Selecting parent category shows its own direct products and subcategory chips
     await page.getByRole('button', { name: parentName, exact: true }).click();
     await expect(page.getByTestId('pos-subcategory-row')).toBeVisible();
+    await expect(page.getByTestId('pos-subcategory-row').getByRole('button')).toHaveText([
+      secondChildName,
+      childName,
+    ]);
     await expect(page.getByText(parentProdName)).toBeVisible();
     await expect(page.getByText(childProdName)).toHaveCount(0);
     await expect(page.getByText(flatProdName)).toHaveCount(0);

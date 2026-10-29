@@ -364,11 +364,7 @@ export default function ProductGrid({
     [categories],
   );
   const rootCategories = useMemo(
-    () =>
-      categories
-        .filter((cat) => cat.is_active !== false && !cat.parent_id)
-        .slice()
-        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name)),
+    () => categories.filter((cat) => cat.is_active !== false && !cat.parent_id),
     [categories],
   );
   const sortedCategories = useMemo(
@@ -388,10 +384,9 @@ export default function ProductGrid({
 
   const activeSubcategories = useMemo(() => {
     if (!activeRootId) return [];
-    const children = categories
-      .filter((cat) => cat.is_active !== false && String(cat.parent_id) === String(activeRootId))
-      .slice()
-      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name));
+    const children = categories.filter(
+      (cat) => cat.is_active !== false && String(cat.parent_id) === String(activeRootId),
+    );
     return sortCategories(children, categorySort);
   }, [categories, activeRootId, categorySort]);
 

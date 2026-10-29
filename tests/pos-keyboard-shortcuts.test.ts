@@ -665,6 +665,111 @@ try {
     [{ product: espressoProduct, quantity: 1 }],
     'subcategory selection displays subcategory product card',
   );
+
+  // F7: Preserve API sibling order when categorySort === 'saved', reserve locale sort for 'name'
+  function findNodeWithProp(
+    node: unknown,
+    propName: string,
+  ): { props: Record<string, unknown> } | null {
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = findNodeWithProp(child, propName);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (!node || typeof node !== 'object') return null;
+    const el = node as { props?: Record<string, unknown> };
+    if (el.props && propName in el.props) return el as { props: Record<string, unknown> };
+    if (el.props?.children) return findNodeWithProp(el.props.children, propName);
+    return null;
+  }
+
+  function collectChipNames(node: unknown, out: string[] = []): string[] {
+    if (Array.isArray(node)) {
+      for (const child of node) collectChipNames(child, out);
+      return out;
+    }
+    if (!node || typeof node !== 'object') return out;
+    const el = node as { props?: Record<string, unknown> };
+    if (typeof el.props?.categoryName === 'string') {
+      out.push(el.props.categoryName);
+    }
+    if (el.props?.children) collectChipNames(el.props.children, out);
+    return out;
+  }
+
+  const flatApiOrderedCategories = [
+    { id: 'cat-zebra', name: 'Zebra', parent_id: null, is_active: true, sort_order: 0 },
+    { id: 'cat-apple', name: 'apple', parent_id: null, is_active: true, sort_order: 0 },
+    { id: 'cat-eclair', name: 'Éclair', parent_id: null, is_active: true, sort_order: 0 },
+  ];
+
+  const savedFlatTree = ProductGrid({
+    categories: flatApiOrderedCategories,
+    products: [],
+    selectedCategory: null,
+    setSelectedCategory: () => undefined,
+    search: '',
+    setSearch: () => undefined,
+    currency: 'USD',
+    categorySort: 'saved',
+    onProductClick: () => undefined,
+    onScannedVariant: () => undefined,
+    onScaledProduct: () => undefined,
+  });
+  const savedCategoryRow = findNodeWithProp(savedFlatTree, 'allLabel');
+  assert.ok(savedCategoryRow, 'renders CategoryRow for flat saved-order menu');
+  assert.deepStrictEqual(
+    (savedCategoryRow.props.categories as Array<{ name: string }>).map((c) => c.name),
+    ['Zebra', 'apple', 'Éclair'],
+    'categorySort="saved" preserves API sibling order for equal-sort_order flat categories',
+  );
+
+  const nameSortedFlatTree = ProductGrid({
+    categories: flatApiOrderedCategories,
+    products: [],
+    selectedCategory: null,
+    setSelectedCategory: () => undefined,
+    search: '',
+    setSearch: () => undefined,
+    currency: 'USD',
+    categorySort: 'name',
+    onProductClick: () => undefined,
+    onScannedVariant: () => undefined,
+    onScaledProduct: () => undefined,
+  });
+  const nameSortedCategoryRow = findNodeWithProp(nameSortedFlatTree, 'allLabel');
+  assert.deepStrictEqual(
+    (nameSortedCategoryRow!.props.categories as Array<{ name: string }>).map((c) => c.name),
+    ['apple', 'Éclair', 'Zebra'],
+    'categorySort="name" sorts flat categories alphabetically with locale collation',
+  );
+
+  const subApiOrderedCategories = [
+    { id: 'cat-root', name: 'Drinks', parent_id: null, is_active: true, sort_order: 0 },
+    { id: 'sub-zebra', name: 'Zebra Sub', parent_id: 'cat-root', is_active: true, sort_order: 0 },
+    { id: 'sub-apple', name: 'apple sub', parent_id: 'cat-root', is_active: true, sort_order: 0 },
+    { id: 'sub-eclair', name: 'Éclair sub', parent_id: 'cat-root', is_active: true, sort_order: 0 },
+  ];
+  const savedSubTree = ProductGrid({
+    categories: subApiOrderedCategories,
+    products: [],
+    selectedCategory: 'cat-root',
+    setSelectedCategory: () => undefined,
+    search: '',
+    setSearch: () => undefined,
+    currency: 'USD',
+    categorySort: 'saved',
+    onProductClick: () => undefined,
+    onScannedVariant: () => undefined,
+    onScaledProduct: () => undefined,
+  });
+  assert.deepStrictEqual(
+    collectChipNames(findByTestId(savedSubTree, 'pos-subcategory-row')),
+    ['Zebra Sub', 'apple sub', 'Éclair sub'],
+    'categorySort="saved" preserves API sibling order for equal-sort_order subcategories',
+  );
 } finally {
   moduleApi._load = originalLoad;
   moduleApi._resolveFilename = originalResolveFilename;

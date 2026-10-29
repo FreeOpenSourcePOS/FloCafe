@@ -243,6 +243,8 @@ export default function ProductsPage() {
   const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
   const [savingAddonGroup, setSavingAddonGroup] = useState(false);
   const addonGroupSaveInFlight = useRef(false);
+  const [reorderingCategories, setReorderingCategories] = useState(false);
+  const categoryReorderInFlight = useRef(false);
 
   const router = useRouter();
   const currency = getCurrencySymbol(
@@ -966,6 +968,22 @@ export default function ProductsPage() {
   for (const [pid, list] of childrenByParentId.entries()) {
     childrenByParentId.set(pid, sortCategorySiblings(list));
   }
+  const getCategoryParentKey = (c: Category) => (c.parent_id ? String(c.parent_id).trim() : '');
+  const siblingsByParentKey = new Map<string, Category[]>();
+  for (const cat of categories) {
+    const key = getCategoryParentKey(cat);
+    const list = siblingsByParentKey.get(key) || [];
+    list.push(cat);
+    siblingsByParentKey.set(key, list);
+  }
+  for (const [key, list] of siblingsByParentKey.entries()) {
+    siblingsByParentKey.set(key, sortCategorySiblings(list));
+  }
+  const getSiblingPosition = (c: Category) => {
+    const list = siblingsByParentKey.get(getCategoryParentKey(c)) || [c];
+    const idx = list.findIndex((item) => String(item.id) === String(c.id));
+    return { siblingIndex: idx >= 0 ? idx : 0, siblingCount: list.length };
+  };
 
   const orderedCategoryTreeRows: Array<{
     category: Category;
@@ -977,39 +995,42 @@ export default function ProductsPage() {
   const visitedCategoryIds = new Set<string>();
   const visitCategoryDescendants = (parent: Category) => {
     const children = childrenByParentId.get(String(parent.id)) || [];
-    children.forEach((child, childIdx) => {
+    children.forEach((child) => {
       const childId = String(child.id);
       if (visitedCategoryIds.has(childId)) return;
       visitedCategoryIds.add(childId);
+      const { siblingIndex, siblingCount } = getSiblingPosition(child);
       orderedCategoryTreeRows.push({
         category: child,
         depth: 1,
         parentName: parent.name,
-        siblingIndex: childIdx,
-        siblingCount: children.length,
+        siblingIndex,
+        siblingCount,
       });
       visitCategoryDescendants(child);
     });
   };
-  rootCategories.forEach((root, rootIdx) => {
+  rootCategories.forEach((root) => {
     visitedCategoryIds.add(String(root.id));
+    const { siblingIndex, siblingCount } = getSiblingPosition(root);
     orderedCategoryTreeRows.push({
       category: root,
       depth: 0,
       parentName: null,
-      siblingIndex: rootIdx,
-      siblingCount: rootCategories.length,
+      siblingIndex,
+      siblingCount,
     });
     visitCategoryDescendants(root);
   });
   for (const cat of categories) {
     if (!visitedCategoryIds.has(String(cat.id))) {
+      const { siblingIndex, siblingCount } = getSiblingPosition(cat);
       orderedCategoryTreeRows.push({
         category: cat,
         depth: cat.parent_id ? 1 : 0,
         parentName: cat.parent_id ? (categoryById.get(String(cat.parent_id))?.name ?? null) : null,
-        siblingIndex: 0,
-        siblingCount: 1,
+        siblingIndex,
+        siblingCount,
       });
     }
   }
@@ -1031,28 +1052,30 @@ export default function ProductsPage() {
   );
 
   const handleMoveCategory = async (cat: Category, direction: -1 | 1) => {
-    const parentKey = cat.parent_id ? String(cat.parent_id) : '';
-    const siblings = sortCategorySiblings(
-      categories.filter((c) => (c.parent_id ? String(c.parent_id) : '') === parentKey),
-    );
+    if (categoryReorderInFlight.current) return;
+    const parentKey = getCategoryParentKey(cat);
+    const siblings = siblingsByParentKey.get(parentKey) || [];
     const index = siblings.findIndex((c) => String(c.id) === String(cat.id));
     const targetIndex = index + direction;
     if (index < 0 || targetIndex < 0 || targetIndex >= siblings.length) return;
     const reordered = siblings.slice();
     const [moved] = reordered.splice(index, 1);
     reordered.splice(targetIndex, 0, moved);
+    categoryReorderInFlight.current = true;
+    setReorderingCategories(true);
     try {
-      await Promise.all(
-        reordered.map((sibling, orderIndex) =>
-          Number(sibling.sort_order) === orderIndex
-            ? Promise.resolve()
-            : api.put(`/categories/${sibling.id}`, { sort_order: orderIndex }),
-        ),
-      );
+      await api.post('/categories/reorder', {
+        parent_id: parentKey || null,
+        category_ids: reordered.map((sibling) => String(sibling.id)),
+      });
       await fetchData();
     } catch (err: unknown) {
       const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       toast.error(message || t('failedToSaveCategory'));
+      await fetchData();
+    } finally {
+      categoryReorderInFlight.current = false;
+      setReorderingCategories(false);
     }
   };
 
@@ -2281,7 +2304,7 @@ export default function ProductsPage() {
                                 <>
                                   <button
                                     type="button"
-                                    disabled={siblingIndex === 0}
+                                    disabled={reorderingCategories || siblingIndex === 0}
                                     onClick={() => handleMoveCategory(cat, -1)}
                                     aria-label={t('variantMoveUp')}
                                     title={t('variantMoveUp')}
@@ -2291,7 +2314,9 @@ export default function ProductsPage() {
                                   </button>
                                   <button
                                     type="button"
-                                    disabled={siblingIndex === siblingCount - 1}
+                                    disabled={
+                                      reorderingCategories || siblingIndex === siblingCount - 1
+                                    }
                                     onClick={() => handleMoveCategory(cat, 1)}
                                     aria-label={t('variantMoveDown')}
                                     title={t('variantMoveDown')}

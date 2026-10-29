@@ -6,8 +6,17 @@ import { parsePhoneNumber } from 'libphonenumber-js';
 import { getDatabase, getSettingValue, now, parseDbTimestamp } from '../db';
 import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
 import { getOfflineModeAbortSignal, isOfflineMode } from './offline-mode';
-import { resolveRegionalSnapshot, type RegionalSnapshot } from '../countries';
+import {
+  formatMoney,
+  formatNumber,
+  getCurrencyMinorUnitFactor,
+  resolveRegionalSnapshot,
+  type LocalePreferences,
+  type RegionalSnapshot,
+} from '../countries';
 import { parsePhoneE164 } from '../lib/phone';
+import { printLabel } from '../print/print-labels.generated';
+import { getTenantCurrency } from './refund';
 import {
   WHATSAPP_AUTOMATION_SETTING_KEY,
   WHATSAPP_PLACEHOLDER_KEYS,
@@ -148,6 +157,7 @@ function makeBaileysLogger(): MinimalLogger {
 }
 
 const AUTH_DIR_NAME = 'whatsapp-auth';
+export const MAX_BODY_CHARS = 4096;
 const RATE_LIMIT_MAX_PER_HOUR = 4;
 const RATE_LIMIT_MIN_GAP_MS = 30 * 1000;
 const BODY_REPEAT_WINDOW_MS = 10 * 60 * 1000;
@@ -198,15 +208,29 @@ export interface WhatsAppStatus {
   pairingCode?: string;
 }
 
+export const REPORT_MESSAGE_KINDS = ['z_report', 'daily_sales_report'] as const;
+export type ReportMessageKind = (typeof REPORT_MESSAGE_KINDS)[number];
+export type MessageKind =
+  | 'bill_receipt'
+  | 'manual_reply'
+  | 'auto_followup'
+  | 'z_report'
+  | 'daily_sales_report';
+
+export function isReportMessageKind(kind: unknown): kind is ReportMessageKind {
+  return kind === 'z_report' || kind === 'daily_sales_report';
+}
+
 interface QueuedSend {
   phoneE164: string;
   body: string;
   billId: number | null;
   customerId: string | number | null;
-  kind: 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report';
+  kind: MessageKind;
   userId: string | null;
   signal?: AbortSignal;
   retryMessageId?: number | null;
+  preclaimedMessageId?: number | null;
 }
 
 const AUTOMATION_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
@@ -539,9 +563,21 @@ export function saveAutomationConfig(raw: unknown): WhatsAppAutomationConfig {
   const current = getAutomationConfig();
   const patch =
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  let mergedRules: unknown = current.rules;
+  if (Array.isArray(patch.rules)) {
+    const providedTriggers = new Set(
+      patch.rules
+        .filter((r): r is Record<string, unknown> => Boolean(r && typeof r === 'object'))
+        .map((r) => String(r.trigger ?? r.id ?? '')),
+    );
+    mergedRules = [
+      ...patch.rules,
+      ...current.rules.filter((r) => !providedTriggers.has(r.trigger)),
+    ];
+  }
   const merged = {
     templates: patch.templates !== undefined ? patch.templates : current.templates,
-    rules: patch.rules !== undefined ? patch.rules : current.rules,
+    rules: mergedRules,
     safety:
       patch.safety && typeof patch.safety === 'object' && !Array.isArray(patch.safety)
         ? { ...current.safety, ...(patch.safety as Record<string, unknown>) }
@@ -597,6 +633,7 @@ export function isOverWeeklyAutomatedCap(
       SELECT COUNT(*) AS c FROM whatsapp_messages
       WHERE phone_e164 = ?
         AND direction = 'outbound'
+        AND kind NOT IN ('z_report', 'daily_sales_report')
         AND (kind = 'auto_followup' OR created_by_user_id LIKE 'rule:%')
         AND queued_at >= ?
         AND (? IS NULL OR id != ?)
@@ -608,6 +645,7 @@ export function isOverWeeklyAutomatedCap(
 }
 
 function isAutomatedSend(req: QueuedSend): boolean {
+  if (isReportMessageKind(req.kind)) return false;
   return (
     req.kind === 'auto_followup' ||
     (typeof req.userId === 'string' && req.userId.startsWith('rule:'))
@@ -2035,11 +2073,13 @@ export function retryMessage(
 
 async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
   const startedAt = Date.now();
+  const existingMessageId = req.retryMessageId ?? req.preclaimedMessageId ?? null;
+  const idPart = existingMessageId != null ? { messageId: existingMessageId } : {};
   logWhatsApp('info', 'send_requested', { phone: maskPhone(req.phoneE164) });
   if (isOfflineMode()) {
     return {
       ok: false,
-      ...(req.retryMessageId != null ? { messageId: req.retryMessageId } : {}),
+      ...idPart,
       error: 'Offline mode is on.',
       reason: 'offline_mode',
     };
@@ -2068,7 +2108,7 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
     if (isOfflineMode() && !isWhatsAppTerminal()) {
       return {
         ok: false,
-        ...(req.retryMessageId != null ? { messageId: req.retryMessageId } : {}),
+        ...idPart,
         error: 'Offline mode is on.',
         reason: 'offline_mode',
       };
@@ -2076,6 +2116,7 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
     if (isWhatsAppTerminal()) {
       const result = {
         ok: false,
+        ...idPart,
         error: 'WhatsApp is shutting down.',
         reason: 'send_failed' as const,
       };
@@ -2099,7 +2140,7 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
     if (isOfflineMode() && !isWhatsAppTerminal()) {
       return {
         ok: false,
-        ...(req.retryMessageId != null ? { messageId: req.retryMessageId } : {}),
+        ...idPart,
         error: 'Offline mode is on.',
         reason: 'offline_mode',
       };
@@ -2107,6 +2148,7 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
     if (isWhatsAppTerminal() || signal.aborted) {
       const result = {
         ok: false,
+        ...idPart,
         error: 'WhatsApp is shutting down.',
         reason: 'send_failed' as const,
       };
@@ -2143,7 +2185,8 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
 }
 
 async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promise<SendResult> {
-  const retryIdPart = req.retryMessageId != null ? { messageId: req.retryMessageId } : {};
+  const existingMessageId = req.retryMessageId ?? req.preclaimedMessageId ?? null;
+  const retryIdPart = existingMessageId != null ? { messageId: existingMessageId } : {};
   if (isOfflineMode()) {
     return { ok: false, ...retryIdPart, error: 'Offline mode is on.', reason: 'offline_mode' };
   }
@@ -2151,6 +2194,14 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     return { ok: false, ...retryIdPart, error: 'WhatsApp is not enabled.', reason: 'feature_off' };
   if (!req.phoneE164)
     return { ok: false, ...retryIdPart, error: 'Phone number required.', reason: 'no_phone' };
+  if (typeof req.body !== 'string' || !req.body.trim() || req.body.length > MAX_BODY_CHARS) {
+    return {
+      ok: false,
+      ...retryIdPart,
+      error: `Message must be a non-empty string of at most ${MAX_BODY_CHARS} characters.`,
+      reason: 'content_blocked',
+    };
+  }
   const db = getDatabase();
   if (req.retryMessageId != null) {
     if (activeSendMessageIds.has(req.retryMessageId)) {
@@ -2209,7 +2260,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
       isOverWeeklyAutomatedCap(
         req.phoneE164,
         automationConfig.safety.maxPerCustomerPerWeek,
-        req.retryMessageId,
+        existingMessageId,
       )
     ) {
       return {
@@ -2263,7 +2314,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     req.phoneE164,
     RATE_LIMIT_MAX_PER_HOUR,
     automated,
-    req.retryMessageId,
+    existingMessageId,
   );
   if (rate.limited) {
     return {
@@ -2277,7 +2328,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   if (contentErr) {
     return { ok: false, ...retryIdPart, error: contentErr, reason: 'content_blocked' };
   }
-  if (hasDuplicateBody(req.phoneE164, req.body, req.retryMessageId)) {
+  if (hasDuplicateBody(req.phoneE164, req.body, existingMessageId)) {
     return {
       ok: false,
       ...retryIdPart,
@@ -2307,6 +2358,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     }
     if (
       req.kind !== 'auto_followup' &&
+      !isReportMessageKind(req.kind) &&
       bill.customer_id &&
       String(bill.customer_id) === String(bill.order_customer_id)
     ) {
@@ -2371,6 +2423,8 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
       };
     }
     messageId = req.retryMessageId;
+  } else if (req.preclaimedMessageId != null) {
+    messageId = req.preclaimedMessageId;
   } else {
     try {
       messageId = recordMessageRow({
@@ -2544,8 +2598,9 @@ export interface SentMessageRow {
   phone_e164: string;
   bill_id: number | null;
   customer_id: string | number | null;
+  cash_closure_id?: number | null;
   direction: 'inbound' | 'outbound';
-  kind: 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report';
+  kind: MessageKind;
   status: string;
   body: string;
   error: string | null;
@@ -2563,6 +2618,7 @@ export interface SentMessageRow {
 export function listMessages(opts: {
   direction?: 'inbound' | 'outbound';
   status?: string;
+  kind?: string;
   phone?: string;
   billId?: number;
   limit: number;
@@ -2579,6 +2635,10 @@ export function listMessages(opts: {
     where.push('status = ?');
     params.push(opts.status);
   }
+  if (opts.kind) {
+    where.push('kind = ?');
+    params.push(opts.kind);
+  }
   if (opts.phone) {
     where.push('phone_e164 = ?');
     params.push(opts.phone);
@@ -2587,12 +2647,14 @@ export function listMessages(opts: {
     where.push('bill_id = ?');
     params.push(opts.billId);
   }
-  if (!opts.canViewReports) where.push("kind != 'z_report'");
+  if (!opts.canViewReports) {
+    where.push("kind NOT IN ('z_report', 'daily_sales_report')");
+  }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   params.push(opts.limit, opts.offset ?? 0);
   const rows = getDatabase()
     .prepare(`
-    SELECT id, phone_e164, bill_id, customer_id, direction, kind, status,
+    SELECT id, phone_e164, bill_id, customer_id, cash_closure_id, direction, kind, status,
            body, error, queued_at, seen_at, typing_at, sent_at,
            delivered_at, read_at, failed_at, created_by_user_id
     FROM whatsapp_messages
@@ -3678,6 +3740,315 @@ export function handleSystemResume(): void {
         });
       });
     });
+}
+
+export interface StoredZReportClosureRow {
+  id: number;
+  scope?: string;
+  business_date: string;
+  period_start: string;
+  period_end: string;
+  z_number: number;
+  closed_by: string;
+  notes: string | null;
+  gross_collected_cents: number;
+  refunded_cents: number;
+  net_collected_cents: number;
+  bill_count: number;
+  opening_float_cents: number;
+  expected_cash_cents: number;
+  counted_cash_cents: number;
+  variance_cents: number;
+  payment_methods_json: string | null;
+}
+
+function truncateWhatsAppText(value: string, maxUnits: number): string {
+  if (maxUnits <= 0) return '';
+  if (value.length <= maxUnits) return value;
+  const suffix = maxUnits > 3 ? '...' : '';
+  let cut = maxUnits - suffix.length;
+  if (cut > 0) {
+    const code = value.charCodeAt(cut - 1);
+    if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  }
+  return `${value.slice(0, Math.max(0, cut)).trimEnd()}${suffix}`;
+}
+
+function localizeZPaymentMethod(language: string, method: string): string {
+  const key = String(method || '')
+    .trim()
+    .toLowerCase();
+  if (key === 'cash') return printLabel(language, 'pos.methodCash');
+  if (key === 'card') return printLabel(language, 'pos.methodCard');
+  if (key === 'wallet') return printLabel(language, 'pos.methodWallet');
+  if (!method) return printLabel(language, 'common.unknown');
+  return method.charAt(0).toUpperCase() + method.slice(1);
+}
+
+function formatZReportDateTime(value: string, locale: string, timeZone: string): string {
+  try {
+    const parsed = parseDbTimestamp(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone,
+    }).format(parsed);
+  } catch {
+    return value;
+  }
+}
+
+export function formatStoredZReportWhatsAppMessage(
+  closure: StoredZReportClosureRow,
+  options?: {
+    language?: string;
+    locale?: string;
+    preferences?: LocalePreferences;
+    currency?: string;
+    timezone?: string;
+    businessName?: string;
+    closedByName?: string;
+    maxChars?: number;
+  },
+): string {
+  const db = getDatabase();
+  const maxChars = Math.max(256, Math.min(MAX_BODY_CHARS, options?.maxChars ?? MAX_BODY_CHARS));
+  const language = options?.language || getSettingValue('language') || 'en';
+  const snapshot = tenantRegionalSnapshot();
+  const locale = options?.locale || snapshot.locale || 'en-US';
+  const preferences: LocalePreferences = options?.preferences ?? snapshot.preferences;
+  const timezone = options?.timezone || snapshot.timezone || 'UTC';
+  const currency = options?.currency || getTenantCurrency(db) || 'USD';
+  const minorFactor = getCurrencyMinorUnitFactor(currency);
+  const numberingSystem = preferences.digits === 'latin' ? 'latn' : undefined;
+  const businessName =
+    (options?.businessName !== undefined
+      ? options.businessName
+      : (getSettingValue('business_name') ?? '')) || 'FloCafe';
+
+  let closedByName = options?.closedByName;
+  if (!closedByName) {
+    try {
+      const userRow = db.prepare('SELECT name FROM users WHERE id = ?').get(closure.closed_by) as
+        | { name: string }
+        | undefined;
+      closedByName = userRow?.name || closure.closed_by;
+    } catch {
+      closedByName = closure.closed_by;
+    }
+  }
+
+  const fmtMoney = (cents: number): string =>
+    formatMoney(Number(cents || 0) / minorFactor, currency, locale, preferences);
+  const fmtNum = (val: number): string => formatNumber(Number(val || 0), locale, numberingSystem);
+
+  let rawMethods: Array<{ method?: string; count?: number; total_cents?: number }> = [];
+  try {
+    const parsed = JSON.parse(closure.payment_methods_json || '[]');
+    if (Array.isArray(parsed)) rawMethods = parsed;
+  } catch {
+    rawMethods = [];
+  }
+
+  const period = `${formatZReportDateTime(closure.period_start, locale, timezone)} - ${formatZReportDateTime(closure.period_end, locale, timezone)}`;
+  const zTitle = printLabel(language, 'dashboard.zReport').replace(/:$/, '').trim();
+  const closedByLabel = printLabel(language, 'print.zReport.closedBy').replace(/:$/, '').trim();
+  const dateLabel = printLabel(language, 'dashboard.businessDateLabel').replace(/:$/, '').trim();
+  const notesLabel = printLabel(language, 'dashboard.closureNotes').replace(/:$/, '').trim();
+
+  const varianceIndicator =
+    closure.variance_cents === 0
+      ? `✅ ${printLabel(language, 'dashboard.varianceExact')}`
+      : closure.variance_cents < 0
+        ? `⚠️ ${printLabel(language, 'dashboard.varianceShort')}`
+        : `⚠️ ${printLabel(language, 'dashboard.varianceOver')}`;
+
+  const buildMessage = (notesCap?: number, storeCap?: number): string => {
+    const storeDisplay = storeCap
+      ? truncateWhatsAppText(businessName.trim(), storeCap)
+      : businessName.trim();
+    const paymentLines =
+      rawMethods.length > 0
+        ? rawMethods.map(
+            (pm) =>
+              `• ${localizeZPaymentMethod(language, String(pm.method || ''))}: ${fmtMoney(Number(pm.total_cents || 0))} (${fmtNum(Number(pm.count || 0))})`,
+          )
+        : [`• ${printLabel(language, 'print.zReport.none')}`];
+
+    const lines: string[] = [
+      `📊 *${zTitle} #${fmtNum(closure.z_number)} - ${storeDisplay}*`,
+      `📅 *${dateLabel}:* ${closure.business_date} (${period})`,
+      `👤 *${closedByLabel}:* ${truncateWhatsAppText(String(closedByName || ''), 80)}`,
+      '',
+      `💰 *${printLabel(language, 'dashboard.salesSummary')}*`,
+      `• ${printLabel(language, 'dashboard.grossCollections')}: ${fmtMoney(closure.gross_collected_cents)}`,
+      `• ${printLabel(language, 'dashboard.refunds')}: ${fmtMoney(closure.refunded_cents)}`,
+      `• ${printLabel(language, 'dashboard.netCollections')}: ${fmtMoney(closure.net_collected_cents)}`,
+      `• ${printLabel(language, 'dashboard.billsCount').replace('{count}', fmtNum(closure.bill_count))}`,
+      '',
+      `💳 *${printLabel(language, 'dashboard.paymentBreakdown')}*`,
+      ...paymentLines,
+      '',
+      `💵 *${printLabel(language, 'dashboard.drawerReconciliation')}*`,
+      `• ${printLabel(language, 'dashboard.openingFloat')}: ${fmtMoney(closure.opening_float_cents)}`,
+      `• ${printLabel(language, 'dashboard.expectedCash')}: ${fmtMoney(closure.expected_cash_cents)}`,
+      `• ${printLabel(language, 'dashboard.countedCash')}: ${fmtMoney(closure.counted_cash_cents)}`,
+      `• ${printLabel(language, 'dashboard.variance')}: ${fmtMoney(closure.variance_cents)} (${varianceIndicator})`,
+    ];
+
+    if (notesCap !== 0) {
+      const rawNotes = (closure.notes ?? '').trim();
+      const displayNotes = rawNotes
+        ? notesCap !== undefined
+          ? truncateWhatsAppText(rawNotes, notesCap)
+          : rawNotes
+        : printLabel(language, 'print.zReport.none');
+      lines.push('', `📝 *${notesLabel}:* ${displayNotes}`);
+    }
+    return lines.join('\n');
+  };
+
+  for (const [notesCap, storeCap] of [
+    [undefined, undefined],
+    [240, undefined],
+    [80, undefined],
+    [0, undefined],
+    [0, 48],
+  ] as Array<[number | undefined, number | undefined]>) {
+    const candidate = buildMessage(notesCap, storeCap);
+    if (candidate.length <= maxChars) return candidate;
+  }
+  return truncateWhatsAppText(buildMessage(0, 32), maxChars);
+}
+
+export interface TriggerDayCloseZReportResult {
+  ok: boolean;
+  skipped?: boolean;
+  messageId?: number;
+  reason?: string;
+  error?: string;
+}
+
+/**
+ * Fires at most one automatic Z-report WhatsApp attempt for a completed
+ * store-level day close (`scope = 'day'`). Suppresses cleanly with no queued
+ * send when Offline mode or disabled WhatsApp is active, and persists failures
+ * in `whatsapp_messages` for manual retry without ever auto-retrying on reconnect.
+ */
+export async function triggerDayCloseZReport(
+  closureId: number,
+): Promise<TriggerDayCloseZReportResult> {
+  try {
+    if (!Number.isInteger(closureId) || closureId <= 0) {
+      return { ok: false, skipped: true, reason: 'invalid_closure' };
+    }
+    if (isOfflineMode()) {
+      return { ok: false, skipped: true, reason: 'offline_mode' };
+    }
+    if (!state.enabled || isWhatsAppTerminal()) {
+      return { ok: false, skipped: true, reason: 'feature_off' };
+    }
+    const config = getAutomationConfig();
+    const rule = config.rules.find((r) => r.trigger === 'z_report_day_close');
+    if (!rule?.enabled) {
+      return { ok: false, skipped: true, reason: 'rule_disabled' };
+    }
+    const rawRecipient = typeof rule.recipientPhone === 'string' ? rule.recipientPhone.trim() : '';
+    if (!rawRecipient) {
+      return { ok: false, skipped: true, reason: 'phone_required' };
+    }
+    const parsedPhone = parsePhoneE164(rawRecipient, getSettingValue('country') || '');
+    if (!parsedPhone) {
+      return { ok: false, skipped: true, reason: 'invalid_phone' };
+    }
+
+    const db = getDatabase();
+    const closure = db
+      .prepare("SELECT * FROM cash_closures WHERE id = ? AND scope = 'day'")
+      .get(closureId) as StoredZReportClosureRow | undefined;
+    if (!closure) {
+      return { ok: false, skipped: true, reason: 'not_day_close' };
+    }
+
+    const body = formatStoredZReportWhatsAppMessage(closure);
+    const queuedAt = now();
+    const claim = db
+      .prepare(`
+        INSERT OR IGNORE INTO whatsapp_messages (
+          phone_e164, direction, kind, status, body, queued_at,
+          created_by_user_id, cash_closure_id
+        ) VALUES (?, 'outbound', 'z_report', 'queued', ?, ?, 'rule:z_report_day_close', ?)
+      `)
+      .run(parsedPhone.e164, body, queuedAt, closureId);
+
+    if (claim.changes === 0) {
+      return { ok: false, skipped: true, reason: 'duplicate_closure' };
+    }
+    const messageId = Number(claim.lastInsertRowid);
+    activeSendMessageIds.add(messageId);
+
+    const ensureFailedIfUnfinished = (fallbackError: string) => {
+      try {
+        const cur = db
+          .prepare('SELECT status FROM whatsapp_messages WHERE id = ?')
+          .get(messageId) as { status: string } | undefined;
+        if (cur && cur.status !== 'failed' && (STATUS_RANK[cur.status] ?? -1) < STATUS_RANK.sent) {
+          updateMessageRow(messageId, {
+            status: 'failed',
+            error: fallbackError,
+            timestamp_field: 'failed_at',
+          });
+        }
+      } catch {
+        /* best-effort */
+      }
+    };
+
+    try {
+      const result = await trackWhatsAppWork(
+        sendMessageWithLock({
+          phoneE164: parsedPhone.e164,
+          body,
+          billId: null,
+          customerId: null,
+          kind: 'z_report',
+          userId: 'rule:z_report_day_close',
+          preclaimedMessageId: messageId,
+        }),
+      );
+      if (!result.ok) {
+        ensureFailedIfUnfinished(result.error || result.reason || 'Send failed');
+      }
+      return {
+        ok: result.ok,
+        messageId,
+        reason: result.reason,
+        error: result.error,
+      };
+    } catch (sendErr: any) {
+      const errMsg = sendErr?.message || 'Send failed';
+      ensureFailedIfUnfinished(errMsg);
+      logWhatsApp('warn', 'day_close_z_report_send_error', {
+        closureId,
+        messageId,
+        error: sanitizeLogText(sendErr),
+      });
+      return { ok: false, messageId, reason: 'send_failed', error: errMsg };
+    } finally {
+      activeSendMessageIds.delete(messageId);
+    }
+  } catch (err: any) {
+    logWhatsApp('error', 'day_close_z_report_error', {
+      closureId,
+      error: sanitizeLogText(err),
+    });
+    return {
+      ok: false,
+      reason: 'send_failed',
+      error: err?.message || 'Failed to dispatch day-close Z report',
+    };
+  }
 }
 
 export function shutdown(): Promise<void> {

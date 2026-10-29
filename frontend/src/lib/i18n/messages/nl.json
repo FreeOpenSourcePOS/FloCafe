@@ -446,7 +446,8 @@
     "costUnknown": "Kostprijs onbekend",
     "partialCost": "Gedeeltelijke kostprijs",
     "ingredientCostLabel": "Kostprijs: {amount}",
-    "profitMarginLabel": "Winst: {profit} ({margin})"
+    "profitMarginLabel": "Winst: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Dagelijks verkooprapport"
   },
   "expenses": {
     "addTitle": "Onkost toevoegen",
@@ -3289,7 +3290,9 @@
       "no_qr": "Geen QR beschikbaar. Start eerst een koppelingssessie.",
       "phone_not_in_blocklist": "Telefoon staat niet in de blokkeerlijst",
       "phone_required": "Telefoonnummer vereist",
-      "phone_required_pairing": "Telefoon vereist voor koppelingscode"
+      "phone_required_pairing": "Telefoon vereist voor koppelingscode",
+      "invalid_phone": "Voer een geldig telefoonnummer in internationaal formaat in",
+      "owner_required": "Alleen de winkeleigenaar kan automatische verzending van het Z-rapport instellen"
     },
     "automation": {
       "autoOptOutLabel": "Automatisch afmelden bij STOP / UNSUBSCRIBE (voegt afzender toe aan blokkeerlijst)",
@@ -3330,7 +3333,10 @@
       "thresholdDays": "Inactieve dagen",
       "thresholdHours": "Wachturen",
       "thresholdPoints": "Puntendrempel",
-      "thresholdVisits": "Elke N bezoeken"
+      "thresholdVisits": "Elke N bezoeken",
+      "ruleZReportDayCloseHint": "Verstuur het Z-rapport na dagafsluiting automatisch naar een door de eigenaar ingesteld telefoonnummer.",
+      "zReportOwnerOnlyHint": "Alleen de winkeleigenaar kan deze regel wijzigen.",
+      "zReportRecipientLabel": "Telefoon ontvanger (E.164)"
     },
     "blocklist": {
       "addCta": "Toevoegen",
@@ -3416,7 +3422,8 @@
       "auto_followup": "Automatische opvolging",
       "bill_receipt": "Bon",
       "manual_reply": "Handmatig antwoord",
-      "z_report": "Z-rapport"
+      "z_report": "Z-rapport",
+      "daily_sales_report": "Dagelijks verkooprapport"
     },
     "lastError": {
       "cooldown": "Het verzenden is tijdelijk onderbroken.",
@@ -3431,7 +3438,8 @@
       "feedback_delay": "Feedback-opvolging",
       "nth_visit": "Bezoekmijlpaal",
       "points_threshold": "Puntenmijlpaal",
-      "winback": "Inactieve klant terugwinnen"
+      "winback": "Inactieve klant terugwinnen",
+      "z_report_day_close": "Z-rapport bij dagafsluiting"
     },
     "send": {
       "customerPhoneRequired": "Voeg het telefoonnummer van deze klant toe voordat u het verzendt.",

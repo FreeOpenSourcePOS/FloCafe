@@ -446,7 +446,8 @@
     "costUnknown": "التكلفة غير معروفة",
     "partialCost": "تكلفة جزئية",
     "ingredientCostLabel": "التكلفة: {amount}",
-    "profitMarginLabel": "الربح: {profit} ({margin})"
+    "profitMarginLabel": "الربح: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "تقرير المبيعات اليومية"
   },
   "expenses": {
     "addTitle": "إضافة مصروف",
@@ -3289,7 +3290,9 @@
       "no_qr": "لا يوجد رمز QR. يرجى بدء جلسة إقران أولاً.",
       "phone_not_in_blocklist": "الهاتف غير مدرج في قائمة الحظر",
       "phone_required": "رقم الهاتف مطلوب",
-      "phone_required_pairing": "يلزم وجود هاتف للحصول على رمز الاقتران"
+      "phone_required_pairing": "يلزم وجود هاتف للحصول على رمز الاقتران",
+      "invalid_phone": "أدخل رقم هاتف صالحاً بالصيغة الدولية",
+      "owner_required": "يمكن لمالك المتجر فقط إعداد الإرسال التلقائي لتقرير Z"
     },
     "automation": {
       "autoOptOutLabel": "إلغاء اشتراك تلقائي عند استلام STOP / UNSUBSCRIBE (إضافة لقائمة الحظر)",
@@ -3330,7 +3333,10 @@
       "thresholdDays": "أيام عدم النشاط",
       "thresholdHours": "ساعات الانتظار",
       "thresholdPoints": "حد النقاط",
-      "thresholdVisits": "كل N زيارات"
+      "thresholdVisits": "كل N زيارات",
+      "ruleZReportDayCloseHint": "إرسال تقرير Z تلقائياً إلى رقم هاتف يحدده المالك بعد إغلاق اليوم.",
+      "zReportOwnerOnlyHint": "يمكن لمالك المتجر فقط تعديل هذه القاعدة.",
+      "zReportRecipientLabel": "هاتف المستلم (E.164)"
     },
     "blocklist": {
       "addCta": "إضافة",
@@ -3416,7 +3422,8 @@
       "auto_followup": "المتابعة التلقائية",
       "bill_receipt": "إيصال الدفع",
       "manual_reply": "الرد اليدوي",
-      "z_report": "تقرير Z"
+      "z_report": "تقرير Z",
+      "daily_sales_report": "تقرير المبيعات اليومية"
     },
     "lastError": {
       "cooldown": "تم إيقاف ميزة «الإرسال» مؤقتًا.",
@@ -3431,7 +3438,8 @@
       "feedback_delay": "متابعة تقييم الخدمة",
       "nth_visit": "إنجاز عدد الزيارات",
       "points_threshold": "إنجاز نقاط الولاء",
-      "winback": "استعادة العملاء غير النشطين"
+      "winback": "استعادة العملاء غير النشطين",
+      "z_report_day_close": "تقرير Z عند إغلاق اليوم"
     },
     "send": {
       "customerPhoneRequired": "أضف رقم هاتف هذا العميل قبل الإرسال.",

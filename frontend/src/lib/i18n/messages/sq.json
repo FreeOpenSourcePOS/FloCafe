@@ -446,7 +446,8 @@
     "costUnknown": "Kosto e panjohur",
     "partialCost": "Kosto e pjesshme",
     "ingredientCostLabel": "Kosto: {amount}",
-    "profitMarginLabel": "Fitimi: {profit} ({margin})"
+    "profitMarginLabel": "Fitimi: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Raporti i shitjeve ditore"
   },
   "expenses": {
     "addTitle": "Shto shpenzim",
@@ -3289,7 +3290,9 @@
       "no_qr": "Nuk disponohet QR. Filloni fillimisht një seancë çiftimi.",
       "phone_not_in_blocklist": "Telefoni nuk është në listën e bllokimit",
       "phone_required": "Kërkohet numri i telefonit",
-      "phone_required_pairing": "Kërkohet telefon për kodin e çiftimit"
+      "phone_required_pairing": "Kërkohet telefon për kodin e çiftimit",
+      "invalid_phone": "Vendosni një numër telefoni të vlefshëm në format ndërkombëtar",
+      "owner_required": "Vetëm pronari i dyqanit mund të konfigurojë dërgimin automatik të Raportit Z"
     },
     "automation": {
       "autoOptOutLabel": "Çregjistrim automatik kur vjen STOP / UNSUBSCRIBE (shton në listën e bllokimit)",
@@ -3330,7 +3333,10 @@
       "thresholdDays": "Ditë joaktive",
       "thresholdHours": "Orë vonese",
       "thresholdPoints": "Pragu i pikëve",
-      "thresholdVisits": "Çdo N vizita"
+      "thresholdVisits": "Çdo N vizita",
+      "ruleZReportDayCloseHint": "Dërgo automatikisht Raportin Z në një numër telefoni të caktuar nga pronari pas mbylljes së ditës.",
+      "zReportOwnerOnlyHint": "Vetëm pronari i dyqanit mund ta ndryshojë këtë rregull.",
+      "zReportRecipientLabel": "Telefoni i marrësit (E.164)"
     },
     "blocklist": {
       "addCta": "Shtoni",
@@ -3416,7 +3422,8 @@
       "auto_followup": "Ndjekja automatike",
       "bill_receipt": "Dëftesë",
       "manual_reply": "Përgjigje manuale",
-      "z_report": "Raporti Z"
+      "z_report": "Raporti Z",
+      "daily_sales_report": "Raporti i shitjeve ditore"
     },
     "lastError": {
       "cooldown": "Dërgimi është ndërprerë përkohësisht.",
@@ -3431,7 +3438,8 @@
       "feedback_delay": "Kërkesë për vlerësim",
       "nth_visit": "Arritje e numrit të vizitave",
       "points_threshold": "Pragu i pikëve të besnikërisë",
-      "winback": "Rikthim i klientëve joaktivë"
+      "winback": "Rikthim i klientëve joaktivë",
+      "z_report_day_close": "Raporti Z në mbyllje të ditës"
     },
     "send": {
       "customerPhoneRequired": "Shto numrin e telefonit të këtij klienti përpara se ta dërgosh.",

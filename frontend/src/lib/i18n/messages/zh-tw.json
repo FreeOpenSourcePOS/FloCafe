@@ -446,7 +446,8 @@
     "costUnknown": "成本未知",
     "partialCost": "部分已知成本",
     "ingredientCostLabel": "成本: {amount}",
-    "profitMarginLabel": "利潤: {profit} ({margin})"
+    "profitMarginLabel": "利潤: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "每日銷售報表"
   },
   "expenses": {
     "addTitle": "新增支出",
@@ -3289,7 +3290,9 @@
       "no_qr": "沒有可用二維碼。請先開始配對會話。",
       "phone_not_in_blocklist": "電話不在黑名單中",
       "phone_required": "需要電話號碼",
-      "phone_required_pairing": "配對碼需要電話號碼"
+      "phone_required_pairing": "配對碼需要電話號碼",
+      "invalid_phone": "請輸入有效的國際格式電話號碼",
+      "owner_required": "僅店鋪擁有者可設定自動傳送 Z 報表"
     },
     "automation": {
       "autoOptOutLabel": "收到 STOP / UNSUBSCRIBE 時自動退訂（加入封鎖名單）",
@@ -3330,7 +3333,10 @@
       "thresholdDays": "未造訪天數",
       "thresholdHours": "延遲小時數",
       "thresholdPoints": "點數門檻",
-      "thresholdVisits": "每 N 次造訪"
+      "thresholdVisits": "每 N 次造訪",
+      "ruleZReportDayCloseHint": "營業日日結後，自動將 Z 報表傳送至店主設定的電話號碼。",
+      "zReportOwnerOnlyHint": "僅店鋪擁有者可修改此規則。",
+      "zReportRecipientLabel": "收件人電話 (E.164)"
     },
     "blocklist": {
       "addCta": "新增",
@@ -3416,7 +3422,8 @@
       "auto_followup": "自動跟進",
       "bill_receipt": "帳單收據",
       "manual_reply": "手動回覆",
-      "z_report": "Z 報表"
+      "z_report": "Z 報表",
+      "daily_sales_report": "每日銷售報表"
     },
     "lastError": {
       "cooldown": "傳送已暫停。",
@@ -3431,7 +3438,8 @@
       "feedback_delay": "顧客評價回訪",
       "nth_visit": "造訪次數里程碑",
       "points_threshold": "點數達標通知",
-      "winback": "沉睡顧客喚回"
+      "winback": "沉睡顧客喚回",
+      "z_report_day_close": "日結後傳送 Z 報表"
     },
     "send": {
       "customerPhoneRequired": "傳送前請先新增此顧客的電話號碼。",

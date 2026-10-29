@@ -446,7 +446,8 @@
     "costUnknown": "Coût inconnu",
     "partialCost": "Coût partiel",
     "ingredientCostLabel": "Coût : {amount}",
-    "profitMarginLabel": "Bénéfice : {profit} ({margin})"
+    "profitMarginLabel": "Bénéfice : {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Rapport des ventes quotidiennes"
   },
   "expenses": {
     "addTitle": "Ajouter une dépense",
@@ -3289,7 +3290,9 @@
       "no_qr": "Aucun code QR disponible. Démarrez d’abord une session d’association.",
       "phone_not_in_blocklist": "Le téléphone ne figure pas dans la liste de blocage",
       "phone_required": "Le numéro de téléphone est requis",
-      "phone_required_pairing": "Le téléphone est requis pour le code d’association"
+      "phone_required_pairing": "Le téléphone est requis pour le code d’association",
+      "invalid_phone": "Saisissez un numéro de téléphone valide au format international",
+      "owner_required": "Seul le propriétaire de la boutique peut configurer l’envoi automatique du Rapport Z"
     },
     "automation": {
       "autoOptOutLabel": "Désinscription auto sur réception de STOP / UNSUBSCRIBE (ajout à la liste noire)",
@@ -3330,7 +3333,10 @@
       "thresholdDays": "Jours d’inactivité",
       "thresholdHours": "Heures de délai",
       "thresholdPoints": "Seuil de points",
-      "thresholdVisits": "Toutes les N visites"
+      "thresholdVisits": "Toutes les N visites",
+      "ruleZReportDayCloseHint": "Envoyer automatiquement le Rapport Z au numéro configuré par le propriétaire après la clôture de la journée.",
+      "zReportOwnerOnlyHint": "Seul le propriétaire de la boutique peut modifier cette règle.",
+      "zReportRecipientLabel": "Téléphone du destinataire (E.164)"
     },
     "blocklist": {
       "addCta": "Ajouter",
@@ -3416,7 +3422,8 @@
       "auto_followup": "Suivi automatique",
       "bill_receipt": "Reçu de facture",
       "manual_reply": "Réponse manuelle",
-      "z_report": "Rapport Z"
+      "z_report": "Rapport Z",
+      "daily_sales_report": "Rapport des ventes quotidiennes"
     },
     "lastError": {
       "cooldown": "L’envoi est temporairement suspendu.",
@@ -3431,7 +3438,8 @@
       "feedback_delay": "Suivi d’avis client",
       "nth_visit": "Palier de visites",
       "points_threshold": "Palier de points fidélité",
-      "winback": "Relance client inactif"
+      "winback": "Relance client inactif",
+      "z_report_day_close": "Rapport Z à la clôture de journée"
     },
     "send": {
       "customerPhoneRequired": "Ajoutez le numéro de téléphone de ce client avant l’envoi.",

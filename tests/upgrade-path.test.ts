@@ -1071,6 +1071,139 @@ function main() {
   );
   closeDatabase();
 
+  // ── v122: whatsapp_messages daily_sales_report kind + day-close idempotency ─
+  const dailySalesWaMigrationIndex = MIGRATIONS.findIndex(
+    (migration: any) => migration.name === 'add_whatsapp_daily_sales_and_day_close_dispatch',
+  );
+  assert.ok(
+    dailySalesWaMigrationIndex > 0,
+    'the add_whatsapp_daily_sales_and_day_close_dispatch migration is registered',
+  );
+  assert.equal(
+    MIGRATIONS[dailySalesWaMigrationIndex].version,
+    122,
+    'the add_whatsapp_daily_sales_and_day_close_dispatch migration is v122',
+  );
+  initDatabase();
+  const preV122Db = getDatabase();
+  // Simulate a v121 database before v122 widened kind CHECK and added cash_closure_id.
+  preV122Db.exec(`
+    DROP TABLE IF EXISTS whatsapp_message_attempts;
+    DROP TABLE IF EXISTS whatsapp_messages_pre122;
+    CREATE TABLE whatsapp_messages_pre122 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bill_id INTEGER REFERENCES bills(id),
+      customer_id TEXT REFERENCES customers(id),
+      phone_e164 TEXT NOT NULL,
+      direction TEXT NOT NULL CHECK (direction IN ('outbound','inbound')),
+      kind TEXT NOT NULL DEFAULT 'manual_reply'
+        CHECK (kind IN ('bill_receipt','manual_reply','auto_followup','z_report')),
+      status TEXT NOT NULL DEFAULT 'queued'
+        CHECK (status IN ('queued','seen','typing','sent','delivered','read','failed')),
+      body TEXT NOT NULL,
+      external_message_id TEXT,
+      error TEXT,
+      queued_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      seen_at TEXT,
+      typing_at TEXT,
+      sent_at TEXT,
+      delivered_at TEXT,
+      read_at TEXT,
+      failed_at TEXT,
+      created_by_user_id TEXT
+    );
+    INSERT INTO whatsapp_messages_pre122 (
+      id, bill_id, customer_id, phone_e164, direction, kind, status, body,
+      external_message_id, error, queued_at, seen_at, typing_at, sent_at,
+      delivered_at, read_at, failed_at, created_by_user_id
+    )
+    SELECT
+      id, bill_id, customer_id, phone_e164, direction, kind, status, body,
+      external_message_id, error, queued_at, seen_at, typing_at, sent_at,
+      delivered_at, read_at, failed_at, created_by_user_id
+    FROM whatsapp_messages;
+    DROP TABLE whatsapp_messages;
+    ALTER TABLE whatsapp_messages_pre122 RENAME TO whatsapp_messages;
+    CREATE TABLE whatsapp_message_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id INTEGER NOT NULL REFERENCES whatsapp_messages(id) ON DELETE CASCADE,
+      external_message_id TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    );
+  `);
+  const preV122Msg = preV122Db
+    .prepare(`
+      INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, external_message_id, queued_at, sent_at)
+      VALUES ('+15550009121', 'outbound', 'z_report', 'sent', 'Pre-v122 Z report', 'ext-v121-z-1', '2026-10-28 10:00:00', '2026-10-28 10:00:02')
+    `)
+    .run();
+  const preV122MsgId = Number(preV122Msg.lastInsertRowid);
+  preV122Db
+    .prepare(`
+      INSERT INTO whatsapp_message_attempts (message_id, external_message_id, created_at)
+      VALUES (?, 'ext-v121-z-1', '2026-10-28 10:00:02')
+    `)
+    .run(preV122MsgId);
+  preV122Db.pragma('user_version = 121');
+  closeDatabase();
+
+  initDatabase();
+  const postV122Db = getDatabase();
+  assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
+  const preservedV121Msg = postV122Db
+    .prepare(`SELECT id, kind, body, cash_closure_id FROM whatsapp_messages WHERE id = ?`)
+    .get(preV122MsgId) as {
+    id: number;
+    kind: string;
+    body: string;
+    cash_closure_id: number | null;
+  };
+  assert.deepEqual(
+    preservedV121Msg,
+    {
+      id: preV122MsgId,
+      kind: 'z_report',
+      body: 'Pre-v122 Z report',
+      cash_closure_id: null,
+    },
+    'v122 preserves existing whatsapp_messages rows with cash_closure_id = null',
+  );
+  const preservedAttempt = postV122Db
+    .prepare(
+      `SELECT message_id, external_message_id FROM whatsapp_message_attempts WHERE external_message_id = 'ext-v121-z-1'`,
+    )
+    .get() as { message_id: number; external_message_id: string } | undefined;
+  assert.deepEqual(
+    preservedAttempt,
+    { message_id: preV122MsgId, external_message_id: 'ext-v121-z-1' },
+    'v122 preserves whatsapp_message_attempts rows without cascade-deleting them during table rebuild',
+  );
+  const postV122AttemptFks = postV122Db
+    .prepare(`PRAGMA foreign_key_list(whatsapp_message_attempts)`)
+    .all() as Array<{ table: string }>;
+  assert.deepEqual(
+    postV122AttemptFks.map((fk) => fk.table),
+    ['whatsapp_messages'],
+    'whatsapp_message_attempts foreign key points cleanly to whatsapp_messages after v122',
+  );
+  const dailySalesInsert = postV122Db
+    .prepare(`
+      INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body)
+      VALUES ('+15550009122', 'outbound', 'daily_sales_report', 'sent', 'Daily sales v122')
+    `)
+    .run();
+  assert.ok(Number(dailySalesInsert.lastInsertRowid) > 0, 'v122 allows kind=daily_sales_report');
+  assert.equal(
+    runHealthCheck().findings.length,
+    0,
+    'runHealthCheck() reports zero drift after v122',
+  );
+  postV122Db.prepare(`DELETE FROM whatsapp_messages WHERE phone_e164 LIKE '+1555000912%'`).run();
+  console.log(
+    '   ✓ v122 widens whatsapp_messages.kind, adds cash_closure_id + auto-Z unique index, and preserves whatsapp_message_attempts',
+  );
+  closeDatabase();
+
   console.log('='.repeat(60));
   console.log('✅ Upgrade-path regression test passed');
 }

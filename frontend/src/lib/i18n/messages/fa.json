@@ -446,7 +446,8 @@
     "costUnknown": "هزینه نامشخص",
     "partialCost": "هزینه جزئی",
     "ingredientCostLabel": "هزینه: {amount}",
-    "profitMarginLabel": "سود: {profit} ({margin})"
+    "profitMarginLabel": "سود: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "گزارش فروش روزانه"
   },
   "expenses": {
     "addTitle": "افزودن هزینه",
@@ -3289,7 +3290,9 @@
       "no_qr": "QR در دسترس نیست. نخست یک نشست جفت‌سازی شروع کنید.",
       "phone_not_in_blocklist": "تلفن در فهرست مسدود نیست",
       "phone_required": "شماره تلفن لازم است",
-      "phone_required_pairing": "برای کد جفت‌سازی، تلفن لازم است"
+      "phone_required_pairing": "برای کد جفت‌سازی، تلفن لازم است",
+      "invalid_phone": "یک شماره تلفن معتبر در قالب بین‌المللی وارد کنید",
+      "owner_required": "فقط مالک فروشگاه می‌تواند ارسال خودکار گزارش Z را تنظیم کند"
     },
     "automation": {
       "autoOptOutLabel": "لغو عضویت خودکار با دریافت STOP / UNSUBSCRIBE (افزودن به لیست مسدود)",
@@ -3330,7 +3333,10 @@
       "thresholdDays": "روزهای عدم مراجعه",
       "thresholdHours": "ساعت تاخیر",
       "thresholdPoints": "حد نصاب امتیاز",
-      "thresholdVisits": "هر N مراجعه"
+      "thresholdVisits": "هر N مراجعه",
+      "ruleZReportDayCloseHint": "پس از بستن روز، گزارش Z به‌صورت خودکار به شماره تلفن تعیین‌شده توسط مالک ارسال شود.",
+      "zReportOwnerOnlyHint": "فقط مالک فروشگاه می‌تواند این قانون را تغییر دهد.",
+      "zReportRecipientLabel": "تلفن گیرنده (E.164)"
     },
     "blocklist": {
       "addCta": "افزودن",
@@ -3416,7 +3422,8 @@
       "auto_followup": "پیگیری خودکار",
       "bill_receipt": "رسید صورت‌حساب",
       "manual_reply": "پاسخ دستی",
-      "z_report": "گزارش Z"
+      "z_report": "گزارش Z",
+      "daily_sales_report": "گزارش فروش روزانه"
     },
     "lastError": {
       "cooldown": "ارسال به‌طور موقت متوقف است.",
@@ -3431,7 +3438,8 @@
       "feedback_delay": "پیگیری نظرسنجی",
       "nth_visit": "حد نصاب تعداد مراجعه",
       "points_threshold": "حد نصاب امتیاز وفاداری",
-      "winback": "بازگشت مشتری غیرفعال"
+      "winback": "بازگشت مشتری غیرفعال",
+      "z_report_day_close": "گزارش Z هنگام بستن روز"
     },
     "send": {
       "customerPhoneRequired": "پیش از ارسال، شماره تلفن این مشتری را بیفزایید.",

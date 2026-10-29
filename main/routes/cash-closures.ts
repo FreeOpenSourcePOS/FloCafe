@@ -42,6 +42,7 @@ import {
   tenantBusinessDayStartTime,
 } from '../db';
 import { requirePermission } from '../services/authorization';
+import * as whatsapp from '../services/whatsapp';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
 import { openSessionsBlockingDayClose } from '../services/cash-day-close-guards';
@@ -1701,6 +1702,14 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
     operationCommitted = true;
 
     res.status(201).json({ zReport: result });
+
+    try {
+      void whatsapp.triggerDayCloseZReport(result.id).catch((err) => {
+        console.warn('[CashClosures] Automatic Z-report WhatsApp dispatch error:', err);
+      });
+    } catch (err) {
+      console.warn('[CashClosures] Automatic Z-report WhatsApp dispatch error:', err);
+    }
   } catch (error: any) {
     const status = error.statusCode || 500;
     if (status === 500) console.error('[CashClosures] Internal error:', error);

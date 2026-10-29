@@ -446,7 +446,8 @@
     "costUnknown": "Себестоимость неизвестна",
     "partialCost": "Частичная себестоимость",
     "ingredientCostLabel": "Себестоимость: {amount}",
-    "profitMarginLabel": "Прибыль: {profit} ({margin})"
+    "profitMarginLabel": "Прибыль: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Отчёт о ежедневных продажах"
   },
   "expenses": {
     "addTitle": "Добавить расход",
@@ -3289,7 +3290,9 @@
       "no_qr": "QR-код недоступен. Сначала запустите сеанс сопряжения.",
       "phone_not_in_blocklist": "Телефон не в черном списке",
       "phone_required": "Требуется номер телефона",
-      "phone_required_pairing": "Для кода сопряжения требуется телефон"
+      "phone_required_pairing": "Для кода сопряжения требуется телефон",
+      "invalid_phone": "Введите корректный номер телефона в международном формате",
+      "owner_required": "Только владелец заведения может настроить автоматическую отправку Z-отчёта"
     },
     "automation": {
       "autoOptOutLabel": "Авто-отписка при входящем STOP / UNSUBSCRIBE (добавляет номер в черный список)",
@@ -3330,7 +3333,10 @@
       "thresholdDays": "Дней без визитов",
       "thresholdHours": "Задержка (часов)",
       "thresholdPoints": "Порог баллов",
-      "thresholdVisits": "Каждые N визитов"
+      "thresholdVisits": "Каждые N визитов",
+      "ruleZReportDayCloseHint": "Автоматически отправлять Z-отчёт на номер, указанный владельцем, после закрытия дня.",
+      "zReportOwnerOnlyHint": "Изменить это правило может только владелец заведения.",
+      "zReportRecipientLabel": "Телефон получателя (E.164)"
     },
     "blocklist": {
       "addCta": "Добавить",
@@ -3416,7 +3422,8 @@
       "auto_followup": "Автоматическое отслеживание",
       "bill_receipt": "Чек",
       "manual_reply": "Ответ вручную",
-      "z_report": "Z-отчёт"
+      "z_report": "Z-отчёт",
+      "daily_sales_report": "Отчёт о ежедневных продажах"
     },
     "lastError": {
       "cooldown": "Отправка временно приостановлена.",
@@ -3431,7 +3438,8 @@
       "feedback_delay": "Запрос отзыва",
       "nth_visit": "Юбилейный визит",
       "points_threshold": "Порог бонусных баллов",
-      "winback": "Возврат неактивных клиентов"
+      "winback": "Возврат неактивных клиентов",
+      "z_report_day_close": "Z-отчёт при закрытии дня"
     },
     "send": {
       "customerPhoneRequired": "Перед отправкой добавьте номер телефона этого клиента.",

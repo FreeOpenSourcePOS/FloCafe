@@ -34,7 +34,8 @@ export type WhatsAppTriggerType =
   | 'feedback_delay'
   | 'winback'
   | 'points_threshold'
-  | 'nth_visit';
+  | 'nth_visit'
+  | 'z_report_day_close';
 
 export type WhatsAppRuleAttribution = WhatsAppTriggerType | 'broadcast';
 
@@ -57,6 +58,8 @@ export interface WhatsAppAutomationRule {
   pointsThreshold?: number;
   /** Paid visit milestone count (`nth_visit`). */
   nthVisit?: number;
+  /** Explicit owner-configured E.164 recipient phone (`z_report_day_close`). */
+  recipientPhone?: string;
 }
 
 export interface WhatsAppSafetyConfig {
@@ -170,6 +173,13 @@ export const DEFAULT_WHATSAPP_RULES: readonly WhatsAppAutomationRule[] = [
     enabled: false,
     templateId: 'visit_milestone',
     nthVisit: 5,
+  },
+  {
+    id: 'z_report_day_close',
+    trigger: 'z_report_day_close',
+    enabled: false,
+    templateId: 'receipt',
+    recipientPhone: '',
   },
 ];
 
@@ -473,6 +483,11 @@ export function normalizeWhatsAppAutomationConfig(raw: unknown): WhatsAppAutomat
       );
     } else if (def.trigger === 'nth_visit') {
       rule.nthVisit = clampInt(custom?.nthVisit, def.nthVisit ?? 5, 1, 1000);
+    } else if (def.trigger === 'z_report_day_close') {
+      rule.recipientPhone =
+        typeof custom?.recipientPhone === 'string'
+          ? custom.recipientPhone.trim().slice(0, 32)
+          : (def.recipientPhone ?? '');
     }
     return rule;
   });
@@ -567,6 +582,7 @@ export function extractTriggerRule(
     rule === 'winback' ||
     rule === 'points_threshold' ||
     rule === 'nth_visit' ||
+    rule === 'z_report_day_close' ||
     rule === 'broadcast'
   ) {
     return rule;

@@ -446,7 +446,8 @@
     "costUnknown": "Custo desconhecido",
     "partialCost": "Custo parcial",
     "ingredientCostLabel": "Custo: {amount}",
-    "profitMarginLabel": "Lucro: {profit} ({margin})"
+    "profitMarginLabel": "Lucro: {profit} ({margin})",
+    "dailySalesWhatsAppTitle": "Relatório de vendas diárias"
   },
   "expenses": {
     "addTitle": "Adicionar despesa",
@@ -3289,7 +3290,9 @@
       "no_qr": "Nenhum QR disponível. Inicie uma sessão de pareamento primeiro.",
       "phone_not_in_blocklist": "O telefone não está na lista de bloqueio",
       "phone_required": "Número de telefone obrigatório",
-      "phone_required_pairing": "Telefone obrigatório para o código de pareamento"
+      "phone_required_pairing": "Telefone obrigatório para o código de pareamento",
+      "invalid_phone": "Insira um número de telefone válido no formato internacional",
+      "owner_required": "Apenas o proprietário da loja pode configurar o envio automático do Relatório Z"
     },
     "automation": {
       "autoOptOutLabel": "Descadastro automático ao receber STOP / UNSUBSCRIBE (adiciona à lista de bloqueio)",
@@ -3330,7 +3333,10 @@
       "thresholdDays": "Dias inativos",
       "thresholdHours": "Horas de espera",
       "thresholdPoints": "Limite de pontos",
-      "thresholdVisits": "A cada N visitas"
+      "thresholdVisits": "A cada N visitas",
+      "ruleZReportDayCloseHint": "Enviar o Relatório Z automaticamente para um número definido pelo proprietário após o fecho do dia.",
+      "zReportOwnerOnlyHint": "Apenas o proprietário da loja pode alterar esta regra.",
+      "zReportRecipientLabel": "Telefone do destinatário (E.164)"
     },
     "blocklist": {
       "addCta": "Adicionar",
@@ -3416,7 +3422,8 @@
       "auto_followup": "Acompanhamento automático",
       "bill_receipt": "Comprovante de conta",
       "manual_reply": "Resposta manual",
-      "z_report": "Relatório Z"
+      "z_report": "Relatório Z",
+      "daily_sales_report": "Relatório de vendas diárias"
     },
     "lastError": {
       "cooldown": "O envio foi pausado temporariamente.",
@@ -3431,7 +3438,8 @@
       "feedback_delay": "Pedido de avaliação",
       "nth_visit": "Marco de visitas",
       "points_threshold": "Marco de pontos de fidelidade",
-      "winback": "Recuperação de cliente inativo"
+      "winback": "Recuperação de cliente inativo",
+      "z_report_day_close": "Relatório Z no fecho do dia"
     },
     "send": {
       "customerPhoneRequired": "Adicione o número de telefone do cliente antes de enviar.",

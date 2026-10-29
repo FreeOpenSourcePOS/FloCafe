@@ -151,7 +151,27 @@ router.post(
       res.status(400).json({ error: 'body required', reason: 'body_required' });
       return;
     }
-    const userId = (req as any).user?.userId ?? null;
+    const userId = String((req as any).user?.userId ?? '');
+    const requestedKind = (kind as string) || 'manual_reply';
+    if (whatsapp.isReportMessageKind(requestedKind) && !hasPermission(userId, 'reports.view')) {
+      res.status(403).json({
+        error: 'Insufficient permissions',
+        required: 'reports.view',
+        code: 'PERMISSION_DENIED',
+      });
+      return;
+    }
+    if (
+      requestedKind === 'daily_sales_report' &&
+      !hasPermission(userId, 'reports.daily-sales.export')
+    ) {
+      res.status(403).json({
+        error: 'Insufficient permissions',
+        required: 'reports.daily-sales.export',
+        code: 'PERMISSION_DENIED',
+      });
+      return;
+    }
     const result = await trackHttpRequestWork(
       req,
       whatsapp.sendMessage({
@@ -159,8 +179,8 @@ router.post(
         body: String(body),
         billId: bill_id != null ? Number(bill_id) : null,
         customerId: null,
-        kind: (kind as any) || 'manual_reply',
-        userId,
+        kind: requestedKind as whatsapp.MessageKind,
+        userId: userId || null,
         signal: getHttpRequestSignal(req),
       }),
     );
@@ -203,10 +223,18 @@ router.post(
       res.status(404).json({ error: 'Message not found.', reason: 'not_found' });
       return;
     }
-    if (row.kind === 'z_report' && !hasPermission(userId, 'reports.view')) {
+    if (whatsapp.isReportMessageKind(row.kind) && !hasPermission(userId, 'reports.view')) {
       res.status(403).json({
         error: 'Insufficient permissions',
         required: 'reports.view',
+        code: 'PERMISSION_DENIED',
+      });
+      return;
+    }
+    if (row.kind === 'daily_sales_report' && !hasPermission(userId, 'reports.daily-sales.export')) {
+      res.status(403).json({
+        error: 'Insufficient permissions',
+        required: 'reports.daily-sales.export',
         code: 'PERMISSION_DENIED',
       });
       return;
@@ -244,7 +272,77 @@ router.get('/automation', requirePermission('whatsapp.use'), (_req: Request, res
 });
 
 router.put('/automation', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {
-  const config = whatsapp.saveAutomationConfig(req.body ?? {});
+  const bodyObj =
+    req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? (req.body as Record<string, unknown>)
+      : {};
+  const current = whatsapp.getAutomationConfig();
+  const currentZRule = current.rules.find((r) => r.trigger === 'z_report_day_close');
+  const prevEnabled = Boolean(currentZRule?.enabled);
+  const prevPhone = (currentZRule?.recipientPhone ?? '').trim();
+
+  if (Array.isArray(bodyObj.rules)) {
+    const incomingZRule = bodyObj.rules.find((r): r is Record<string, unknown> =>
+      Boolean(
+        r &&
+        typeof r === 'object' &&
+        ((r as Record<string, unknown>).trigger === 'z_report_day_close' ||
+          (r as Record<string, unknown>).id === 'z_report_day_close'),
+      ),
+    );
+    if (incomingZRule) {
+      const nextEnabled =
+        typeof incomingZRule.enabled === 'boolean' ? incomingZRule.enabled : prevEnabled;
+      const rawPhone =
+        typeof incomingZRule.recipientPhone === 'string'
+          ? incomingZRule.recipientPhone.trim()
+          : prevPhone;
+      let normalizedPhone = '';
+      if (rawPhone) {
+        const parsed = parsePhoneE164(rawPhone, getSettingValue('country') || '');
+        if (!parsed) {
+          res.status(400).json({
+            error: 'Valid recipient phone in E.164 format is required',
+            reason: 'invalid_phone',
+          });
+          return;
+        }
+        normalizedPhone = parsed.e164;
+      }
+      if (nextEnabled && !normalizedPhone) {
+        res.status(400).json({
+          error: 'Recipient phone is required when automatic Z-report delivery is enabled',
+          reason: 'phone_required',
+        });
+        return;
+      }
+      const role = (req as Request & { user?: { role?: string } }).user?.role;
+      if ((nextEnabled !== prevEnabled || normalizedPhone !== prevPhone) && role !== 'owner') {
+        res.status(403).json({
+          error: 'Only the store owner can configure automatic Z-report delivery',
+          reason: 'owner_required',
+          code: 'PERMISSION_DENIED',
+        });
+        return;
+      }
+      bodyObj.rules = bodyObj.rules.map((r) => {
+        if (!r || typeof r !== 'object') return r;
+        const rec = r as Record<string, unknown>;
+        if (rec.trigger === 'z_report_day_close' || rec.id === 'z_report_day_close') {
+          return {
+            ...rec,
+            trigger: 'z_report_day_close',
+            id: 'z_report_day_close',
+            enabled: nextEnabled,
+            recipientPhone: normalizedPhone,
+          };
+        }
+        return r;
+      });
+    }
+  }
+
+  const config = whatsapp.saveAutomationConfig(bodyObj);
   res.json({ ok: true, config });
 });
 
@@ -298,6 +396,7 @@ router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: R
       ? req.query.direction
       : undefined;
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  const kind = typeof req.query.kind === 'string' ? req.query.kind : undefined;
   const phone = typeof req.query.phone === 'string' ? req.query.phone : undefined;
   const billId = req.query.bill_id != null ? parsePaginationParam(req.query.bill_id, 0) : undefined;
   if (billId === null) {
@@ -309,6 +408,7 @@ router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: R
     messages: whatsapp.listMessages({
       direction,
       status,
+      kind,
       phone,
       billId,
       limit,

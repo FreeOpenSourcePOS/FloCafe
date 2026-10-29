@@ -990,6 +990,246 @@ async function main() {
       await verifyBrowserPrintFallback(compiledHtml, `invoices-${businessDate}.pdf`);
     }
     console.log('  ✓ save-html-as-pdf desktop IPC and verifyBrowserPrintFallback verified');
+
+    console.log(
+      '\n─── 6. Qodo review invariants: refund scope reconciliation, locale/lang, active tax pack label, cover pagination, item total vs subtotal, >9999 sequence & prefix changes, and invoice count cap ───',
+    );
+    {
+      const {
+        buildDailyInvoicesExportDataset,
+        serializeDailyInvoicesExportHtml,
+      } = require('../main/services/daily-invoices-export');
+      const { DailySalesExportValidationError } = require('../main/services/daily-sales-export');
+
+      // (a) HTML lang attribute, locale-aware money formatting, item subtotal vs total, and bounded cover page
+      assert.ok(
+        compiledHtml.includes('<html lang="en-IN">'),
+        'HTML lang attribute uses resolved regional locale (en-IN) instead of hardcoded en',
+      );
+      assert.ok(
+        compiledHtml.includes('₹105.00') && compiledHtml.includes('₹212.40'),
+        'invoice amounts use locale-aware formatMoney with currency symbol',
+      );
+      assert.ok(
+        compiledHtml.includes('data-item-subtotal="100" data-item-total="105"') &&
+          compiledHtml.includes('<td class="num" data-col="item-subtotal">₹100.00</td>') &&
+          compiledHtml.includes('<td class="num" data-col="item-total">₹105.00</td>'),
+        'invoice line item table renders both pre-tax Subtotal (₹100.00) and after-tax Total (₹105.00) matching receipts',
+      );
+      const coverEndIdx = compiledHtml.indexOf('</section>');
+      const invoicesSectionIdx = compiledHtml.indexOf('data-section="invoices"');
+      const appendixSectionIdx = compiledHtml.indexOf('data-section="daily-tax-appendix"');
+      const dailyTaxesTableIdx = compiledHtml.indexOf('<table data-section="taxes">');
+      assert.ok(
+        coverEndIdx > 0 &&
+          invoicesSectionIdx > coverEndIdx &&
+          appendixSectionIdx > invoicesSectionIdx &&
+          dailyTaxesTableIdx > appendixSectionIdx,
+        'per-day tax breakdown table is placed in the post-invoices appendix so the cover page remains bounded to page 1',
+      );
+
+      // (b) Custom active tax pack registrationNumberLabel overrides static country taxIdLabel
+      const customPackPayload = JSON.stringify({
+        country: 'IN',
+        name: 'India Custom Pack',
+        version: '1.0.0',
+        registrationNumberLabel: 'Custom-TRN',
+        rules: [],
+      });
+      db.prepare(
+        `INSERT OR REPLACE INTO country_packs (
+           id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at
+         ) VALUES ('pack-in-custom', 'local', 'IN', '*', 'ver-in-custom-1', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      ).run();
+      db.prepare(
+        `INSERT OR REPLACE INTO country_pack_versions (
+           id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
+           effective_from, effective_to, min_flo_version, published_at, status, created_at
+         ) VALUES (
+           'ver-in-custom-1', 'pack-in-custom', '1.0.0', 1, '{}', ?, 'sha256:test', NULL,
+           '2026-01-01', NULL, '2.4.0', '2026-01-01', 'active', CURRENT_TIMESTAMP
+         )`,
+      ).run(customPackPayload);
+      const customPackDataset = buildDailyInvoicesExportDataset({ date: businessDate }, db);
+      assert.equal(
+        customPackDataset.store.tax_id_label,
+        'Custom-TRN',
+        'active tax pack registrationNumberLabel overrides static country taxIdLabel',
+      );
+      const customPackHtml = serializeDailyInvoicesExportHtml(customPackDataset, {
+        locale: 'de-DE',
+      });
+      assert.ok(
+        customPackHtml.includes('<html lang="de-DE">') &&
+          customPackHtml.includes('Custom-TRN: 29ABCDE1234F1Z5'),
+        'custom locale option and active tax pack registrationNumberLabel render in HTML',
+      );
+      db.prepare(`DELETE FROM country_pack_versions WHERE id = 'ver-in-custom-1'`).run();
+      db.prepare(`DELETE FROM country_packs WHERE id = 'pack-in-custom'`).run();
+
+      // (c) Refund scope reconciliation across period boundaries (prior-bill refund in window + post-window refund on window bill)
+      const priorBill = insertBillWithOrder({
+        billNumber: 'INV-PRIOR-0001',
+        orderNumber: 'ORD-PRIOR-0001',
+        paidAt: '2026-09-10 11:00:00',
+        paymentStatus: 'partially_refunded',
+        subtotal: 100,
+        taxAmount: 5,
+        taxRate: 5,
+        taxTitle: 'GST 5%',
+        total: 105,
+        method: 'cash',
+        items: [
+          {
+            productId: 'prod-latte',
+            productName: 'Cappuccino',
+            qty: 1,
+            unitPrice: 100,
+            subtotal: 100,
+            taxAmount: 5,
+            total: 105,
+          },
+        ],
+      });
+      // In-window refund on 2026-09-15 against the older 2026-09-10 bill (50.00 INR)
+      db.prepare(
+        `INSERT INTO refunds (bill_id, order_item_id, amount_cents, method, reason, shift_id, approved_by, created_by, created_at)
+         VALUES (?, ?, 5000, 'cash', 'Prior bill goodwill adjustment', NULL, 'owner-test-001', 'owner-test-001', ?)`,
+      ).run(priorBill.billId, priorBill.itemIds[0], `${businessDate} 16:00:00`);
+
+      // Post-window refund on 2026-09-16 against INV-0002 (paid on 2026-09-15, 25.00 INR)
+      db.prepare(
+        `INSERT INTO refunds (bill_id, order_item_id, amount_cents, method, reason, shift_id, approved_by, created_by, created_at)
+         VALUES (?, ?, 2500, 'cash', 'Next-day partial adjustment', NULL, 'owner-test-001', 'owner-test-001', '2026-09-16 09:00:00')`,
+      ).run(b2.billId, b2.itemIds[0]);
+
+      const reconciledDataset = buildDailyInvoicesExportDataset({ date: businessDate }, db);
+      assert.equal(
+        reconciledDataset.in_window_refunds_on_included_bills,
+        304.4,
+        'in-window refunds on included bills equals 94.40 + 210.00',
+      );
+      assert.equal(
+        reconciledDataset.in_window_refunds_on_prior_bills,
+        50,
+        'in-window refunds on prior-period bills equals 50.00',
+      );
+      assert.equal(
+        reconciledDataset.total_refunds,
+        354.4,
+        'cover total_refunds equals in_window_refunds_on_included_bills (304.40) + in_window_refunds_on_prior_bills (50.00)',
+      );
+      assert.equal(
+        reconciledDataset.post_window_refunds_on_included_bills,
+        25,
+        'post-window refunds on included bills equals 25.00',
+      );
+      assert.equal(
+        reconciledDataset.lifetime_refunds_on_included_bills,
+        329.4,
+        'lifetime refunds on included bills equals in-window (304.40) + post-window (25.00)',
+      );
+      const reconciledHtml = serializeDailyInvoicesExportHtml(reconciledDataset);
+      assert.ok(
+        reconciledHtml.includes('data-scope="in_window_refunds_on_prior_bills" data-value="50"') &&
+          reconciledHtml.includes(
+            'data-scope="post_window_refunds_on_included_bills" data-value="25"',
+          ) &&
+          reconciledHtml.includes('data-bill-number="INV-PRIOR-0001"') &&
+          reconciledHtml.includes('[Outside Period]') &&
+          reconciledHtml.includes('[In Period]'),
+        'HTML explicitly reconciles in-period, prior-bill, and outside-period refund scopes',
+      );
+
+      // (d) Sequence ordering across 9999 -> 10000 and mid-range prefix change
+      const seqDate = '2026-09-25';
+      insertBillWithOrder({
+        billNumber: 'INV-10000',
+        orderNumber: 'ORD-10000',
+        paidAt: `${seqDate} 11:00:00`,
+        paymentStatus: 'paid',
+        subtotal: 100,
+        taxAmount: 5,
+        taxRate: 5,
+        taxTitle: 'GST 5%',
+        total: 105,
+        method: 'cash',
+        items: [
+          {
+            productId: 'prod-latte',
+            productName: 'Cappuccino',
+            qty: 1,
+            unitPrice: 100,
+            subtotal: 100,
+            taxAmount: 5,
+            total: 105,
+          },
+        ],
+      });
+      insertBillWithOrder({
+        billNumber: 'INV-9999',
+        orderNumber: 'ORD-9999',
+        paidAt: `${seqDate} 10:00:00`,
+        paymentStatus: 'paid',
+        subtotal: 100,
+        taxAmount: 5,
+        taxRate: 5,
+        taxTitle: 'GST 5%',
+        total: 105,
+        method: 'cash',
+        items: [
+          {
+            productId: 'prod-latte',
+            productName: 'Cappuccino',
+            qty: 1,
+            unitPrice: 100,
+            subtotal: 100,
+            taxAmount: 5,
+            total: 105,
+          },
+        ],
+      });
+      insertBillWithOrder({
+        billNumber: 'BILL-10001',
+        orderNumber: 'ORD-10001',
+        paidAt: `${seqDate} 12:00:00`,
+        paymentStatus: 'paid',
+        subtotal: 100,
+        taxAmount: 5,
+        taxRate: 5,
+        taxTitle: 'GST 5%',
+        total: 105,
+        method: 'cash',
+        items: [
+          {
+            productId: 'prod-latte',
+            productName: 'Cappuccino',
+            qty: 1,
+            unitPrice: 100,
+            subtotal: 100,
+            taxAmount: 5,
+            total: 105,
+          },
+        ],
+      });
+      const seqDataset = buildDailyInvoicesExportDataset({ date: seqDate }, db);
+      assert.deepEqual(
+        seqDataset.invoices.map((i: any) => i.bill_number),
+        ['INV-9999', 'INV-10000', 'BILL-10001'],
+        'numeric sequence ordering places INV-9999 before INV-10000 and preserves sequence across mid-range prefix change (BILL-10001)',
+      );
+
+      // (e) Pre-hydration invoice count cap throws DailySalesExportValidationError before hydrating
+      assert.throws(
+        () => buildDailyInvoicesExportDataset({ date: seqDate }, db, { maxInvoicesCount: 2 }),
+        (err: unknown) =>
+          err instanceof DailySalesExportValidationError &&
+          err.statusCode === 400 &&
+          /maximum invoice count \(2\)/.test(err.message),
+        'exceeding maxInvoicesCount throws DailySalesExportValidationError (400) before hydration',
+      );
+    }
+    console.log('  ✓ All 7 Qodo review invariants verified');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     closeDatabase();

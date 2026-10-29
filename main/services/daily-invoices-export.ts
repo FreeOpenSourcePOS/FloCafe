@@ -8,12 +8,16 @@ import {
   tenantBusinessDayStartTime,
 } from '../db';
 import {
+  formatMoney,
+  formatNumber,
   getCountryByCode,
-  getCurrencyFractionDigits,
   getCurrencyMinorUnitFactor,
+  resolveRegionalSnapshot,
+  type LocalePreferences,
 } from '../countries';
 import { getOrdersWithItemsForBills } from '../routes/bills';
 import { getTenantCurrency } from './refund';
+import { getActiveCountryPack } from './tax';
 import { resolveTaxComponents, type DisplayTaxComponent } from './tax-components';
 import {
   buildDailySalesExportDataset,
@@ -28,6 +32,8 @@ import {
 import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 
 export const DAILY_INVOICES_EXPORT_MAX_RANGE_DAYS = 366;
+export const MAX_DAILY_INVOICES_COUNT = 5000;
+const SQLITE_IN_CHUNK_SIZE = 500;
 
 export function dailyInvoicesExportFilename(
   range: { fromDate: string; toDate: string } | string,
@@ -70,6 +76,22 @@ export type DailyInvoiceRefundLine = {
   method: string;
   reason: string;
   created_at_local: string;
+  in_window: boolean;
+  scope_label: 'In Period' | 'Outside Period';
+  item_name: string | null;
+  item_quantity: number | null;
+  item_variant: string;
+};
+
+export type DailyInvoicePriorBillRefundLine = {
+  id: number;
+  bill_id: number;
+  bill_number: string;
+  bill_paid_at_local: string;
+  amount: number;
+  method: string;
+  reason: string;
+  created_at_local: string;
   item_name: string | null;
   item_quantity: number | null;
   item_variant: string;
@@ -106,6 +128,8 @@ export type DailyInvoiceCard = {
   payments: DailyInvoicePaymentLine[];
   refunds: DailyInvoiceRefundLine[];
   refund_total: number;
+  refund_in_window_total: number;
+  refund_out_of_window_total: number;
 };
 
 export type DailyInvoicesVatSummaryRow = {
@@ -128,6 +152,8 @@ export type DailyInvoicesExportDataset = {
     country: string;
   };
   currency: string;
+  locale: string;
+  locale_preferences: LocalePreferences;
   timezone: string;
   business_day_start: string;
   business_date: string;
@@ -139,10 +165,24 @@ export type DailyInvoicesExportDataset = {
   net_base: number;
   tax_collected: number;
   total_refunds: number;
+  in_window_refunds_on_included_bills: number;
+  in_window_refunds_on_prior_bills: number;
+  post_window_refunds_on_included_bills: number;
+  lifetime_refunds_on_included_bills: number;
+  prior_bill_refunds: DailyInvoicePriorBillRefundLine[];
   net_revenue: number;
   vat_summary: DailyInvoicesVatSummaryRow[];
   sales: DailySalesExportDataset;
   invoices: DailyInvoiceCard[];
+};
+
+export type DailyInvoicesExportOptions = {
+  maxInvoicesCount?: number;
+};
+
+export type DailyInvoicesHtmlOptions = {
+  locale?: string;
+  preferences?: LocalePreferences;
 };
 
 const REPORT_FONT_STACK = [
@@ -197,6 +237,73 @@ function readDbSetting(db: Database, key: string): string {
   } catch {}
   const fallback = getSettingValue(key);
   return typeof fallback === 'string' ? fallback.trim() : '';
+}
+
+function resolveTaxIdLabel(db: Database, storeCountry: string): string {
+  const normalizedCountry = storeCountry.trim().toUpperCase();
+  try {
+    const row = db
+      .prepare(
+        `
+        SELECT pack.id AS pack_id, pack.country AS pack_country, version.pack_json
+        FROM country_packs AS pack
+        JOIN country_pack_versions AS version ON version.id = pack.active_version_id
+        WHERE pack.country IN (?, '*') AND pack.status = 'active'
+        ORDER BY CASE WHEN pack.country = ? THEN 0 ELSE 1 END, pack.updated_at DESC
+        LIMIT 1
+      `,
+      )
+      .get(normalizedCountry, normalizedCountry) as
+      | { pack_id?: string; pack_country?: string; pack_json?: string }
+      | undefined;
+    if (
+      row?.pack_json &&
+      (row.pack_country === normalizedCountry ||
+        (row.pack_country !== '*' && row.pack_id !== 'local-generic'))
+    ) {
+      const parsed = JSON.parse(row.pack_json) as { registrationNumberLabel?: unknown };
+      if (
+        typeof parsed?.registrationNumberLabel === 'string' &&
+        parsed.registrationNumberLabel.trim()
+      ) {
+        return parsed.registrationNumberLabel.trim();
+      }
+    }
+  } catch {}
+
+  try {
+    const activePack = getActiveCountryPack(normalizedCountry);
+    if (
+      activePack &&
+      (activePack.country === normalizedCountry ||
+        (activePack.country !== '*' && activePack.id !== 'local-generic')) &&
+      typeof activePack.registrationNumberLabel === 'string' &&
+      activePack.registrationNumberLabel.trim()
+    ) {
+      return activePack.registrationNumberLabel.trim();
+    }
+  } catch {}
+
+  return getCountryByCode(normalizedCountry)?.taxIdLabel || 'Tax ID';
+}
+
+function extractBillSequenceNumber(billNumber: string): number | null {
+  const match = /(?:^|[^0-9])(\d{1,12})$/.exec(String(billNumber ?? '').trim());
+  if (!match) return null;
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function resolveBusinessDateForTimestamp(
+  paidAtUtc: string,
+  dayWindows: Array<{ businessDate: string; start: string; end: string }>,
+): string {
+  for (const w of dayWindows) {
+    if (paidAtUtc >= w.start && paidAtUtc < w.end) {
+      return w.businessDate;
+    }
+  }
+  return dayWindows[0]?.businessDate ?? '';
 }
 
 function storeLocalTimestamp(stored: string | null | undefined, timezone: string): string {
@@ -380,6 +487,7 @@ function isDatabaseInstance(value: unknown): value is Database {
 export function buildDailyInvoicesExportDataset(
   inputOrDb: DailySalesExportQueryInput | Database,
   dbOrInput?: Database | DailySalesExportQueryInput,
+  options?: DailyInvoicesExportOptions,
 ): DailyInvoicesExportDataset {
   const db: Database = isDatabaseInstance(inputOrDb)
     ? inputOrDb
@@ -406,14 +514,42 @@ export function buildDailyInvoicesExportDataset(
     undefined,
     DAILY_INVOICES_EXPORT_MAX_RANGE_DAYS,
   );
+
+  const prelimTimezone = readDbSetting(db, 'timezone') || resolveExportTimezone();
+  const prelimBusinessDayStart = tenantBusinessDayStartTime(db);
+  const prelimDayWindows = range.dates.map((businessDate) => {
+    const [start, end] = dayBoundsInTimezone(businessDate, prelimTimezone, prelimBusinessDayStart);
+    return { businessDate, start, end };
+  });
+  const prelimStartUtc = prelimDayWindows[0].start;
+  const prelimEndUtc = prelimDayWindows[prelimDayWindows.length - 1].end;
+
+  const maxInvoicesCount = options?.maxInvoicesCount ?? MAX_DAILY_INVOICES_COUNT;
+  const countRow = db
+    .prepare(
+      `
+      SELECT COUNT(*) AS count
+      FROM bills b
+      WHERE b.paid_at >= ? AND b.paid_at < ?
+        AND b.payment_status IN ('paid', 'partially_refunded', 'refunded')
+    `,
+    )
+    .get(prelimStartUtc, prelimEndUtc) as { count?: number } | undefined;
+  const totalMatchingBills = Number(countRow?.count ?? 0);
+  if (totalMatchingBills > maxInvoicesCount) {
+    throw new DailySalesExportValidationError(
+      `Export exceeds maximum invoice count (${maxInvoicesCount}); please narrow the date range`,
+    );
+  }
+
   const sales = buildDailySalesExportDataset(
     range.isSingleDay ? { date: range.fromDate } : { from: range.fromDate, to: range.toDate },
     db,
     { maxRangeDays: DAILY_INVOICES_EXPORT_MAX_RANGE_DAYS },
   );
 
-  const timezone = sales.summary.timezone || resolveExportTimezone();
-  const businessDayStart = sales.summary.business_day_start || tenantBusinessDayStartTime(db);
+  const timezone = sales.summary.timezone || prelimTimezone;
+  const businessDayStart = sales.summary.business_day_start || prelimBusinessDayStart;
   const currency = sales.summary.currency || getTenantCurrency(db);
   const minorFactor = getCurrencyMinorUnitFactor(currency);
 
@@ -421,7 +557,26 @@ export function buildDailyInvoicesExportDataset(
   const storeAddress = readDbSetting(db, 'business_address');
   const storeTaxId = readDbSetting(db, 'tax_registration_number');
   const storeCountry = readDbSetting(db, 'country');
-  const taxIdLabel = getCountryByCode(storeCountry)?.taxIdLabel || 'Tax ID';
+  const taxIdLabel = resolveTaxIdLabel(db, storeCountry);
+
+  let resolvedLocale = 'en-US';
+  let resolvedPreferences: LocalePreferences = {
+    currencyDisplay: 'rial',
+    digits: 'locale',
+    calendar: 'locale',
+  };
+  try {
+    const regionalSnapshot = resolveRegionalSnapshot({
+      country: storeCountry || undefined,
+      currency: currency || undefined,
+      timezone: timezone || undefined,
+      currency_display: readDbSetting(db, 'currency_display') || undefined,
+      number_digits: readDbSetting(db, 'number_digits') || undefined,
+      calendar: readDbSetting(db, 'calendar') || undefined,
+    });
+    resolvedLocale = regionalSnapshot.locale || 'en-US';
+    resolvedPreferences = regionalSnapshot.preferences;
+  } catch {}
 
   const dayWindows = range.dates.map((businessDate) => {
     const [start, end] = dayBoundsInTimezone(businessDate, timezone, businessDayStart);
@@ -460,7 +615,7 @@ export function buildDailyInvoicesExportDataset(
     customer_email: string | null;
   };
 
-  const billRows = db
+  const rawBillRows = db
     .prepare(
       `
       SELECT
@@ -498,10 +653,36 @@ export function buildDailyInvoicesExportDataset(
       LEFT JOIN customers c ON c.id = COALESCE(b.customer_id, o.customer_id)
       WHERE b.paid_at >= ? AND b.paid_at < ?
         AND b.payment_status IN ('paid', 'partially_refunded', 'refunded')
-      ORDER BY b.bill_number ASC, b.id ASC
+      ORDER BY b.paid_at ASC, b.id ASC
     `,
     )
     .all(windowStartUtc, windowEndUtc) as BillQueryRow[];
+
+  const billSortMeta = new Map<number, { businessDate: string; seq: number | null }>();
+  for (const row of rawBillRows) {
+    billSortMeta.set(Number(row.id), {
+      businessDate: resolveBusinessDateForTimestamp(row.paid_at, dayWindows),
+      seq: extractBillSequenceNumber(row.bill_number),
+    });
+  }
+
+  const billRows = [...rawBillRows].sort((a, b) => {
+    const metaA = billSortMeta.get(Number(a.id))!;
+    const metaB = billSortMeta.get(Number(b.id))!;
+    if (metaA.businessDate !== metaB.businessDate) {
+      return metaA.businessDate < metaB.businessDate ? -1 : 1;
+    }
+    if (metaA.seq !== null && metaB.seq !== null && metaA.seq !== metaB.seq) {
+      return metaA.seq - metaB.seq;
+    }
+    if (a.paid_at !== b.paid_at) {
+      return a.paid_at < b.paid_at ? -1 : 1;
+    }
+    if (Number(a.id) !== Number(b.id)) {
+      return Number(a.id) - Number(b.id);
+    }
+    return String(a.bill_number).localeCompare(String(b.bill_number));
+  });
 
   const paymentMethodMap = new Map<number, string>();
   try {
@@ -516,23 +697,110 @@ export function buildDailyInvoicesExportDataset(
 
   const ordersByBillId = getOrdersWithItemsForBills(db, billRows);
 
-  const refundStmt = db.prepare(`
-    SELECT
-      r.id,
-      r.bill_id,
-      r.order_item_id,
-      r.amount_cents,
-      r.method,
-      r.reason,
-      r.created_at,
-      oi.product_name AS item_name,
-      oi.quantity AS item_quantity,
-      oi.variant_selection AS item_variant
-    FROM refunds r
-    LEFT JOIN order_items oi ON oi.id = r.order_item_id
-    WHERE r.bill_id = ?
-    ORDER BY r.created_at ASC, r.id ASC
-  `);
+  type RawRefundRow = {
+    id: number;
+    bill_id: number;
+    order_item_id: number | null;
+    amount_cents: number;
+    method: string | null;
+    reason: string | null;
+    created_at: string;
+    item_name: string | null;
+    item_quantity: number | null;
+    item_variant: string | null;
+  };
+
+  const refundsByBillId = new Map<number, RawRefundRow[]>();
+  const includedBillIds = billRows.map((b) => Number(b.id));
+  const includedBillIdSet = new Set<number>(includedBillIds);
+
+  for (let i = 0; i < includedBillIds.length; i += SQLITE_IN_CHUNK_SIZE) {
+    const chunk = includedBillIds.slice(i, i + SQLITE_IN_CHUNK_SIZE);
+    const placeholders = chunk.map(() => '?').join(', ');
+    const rows = db
+      .prepare(
+        `
+        SELECT
+          r.id,
+          r.bill_id,
+          r.order_item_id,
+          r.amount_cents,
+          r.method,
+          r.reason,
+          r.created_at,
+          oi.product_name AS item_name,
+          oi.quantity AS item_quantity,
+          oi.variant_selection AS item_variant
+        FROM refunds r
+        LEFT JOIN order_items oi ON oi.id = r.order_item_id
+        WHERE r.bill_id IN (${placeholders})
+        ORDER BY r.created_at ASC, r.id ASC
+      `,
+      )
+      .all(...chunk) as RawRefundRow[];
+
+    for (const r of rows) {
+      const billId = Number(r.bill_id);
+      const list = refundsByBillId.get(billId) ?? [];
+      list.push(r);
+      refundsByBillId.set(billId, list);
+    }
+  }
+
+  type RawWindowRefundRow = RawRefundRow & {
+    bill_number: string | null;
+    bill_paid_at: string | null;
+  };
+
+  const windowRefundRows = db
+    .prepare(
+      `
+      SELECT
+        r.id,
+        r.bill_id,
+        b.bill_number,
+        b.paid_at AS bill_paid_at,
+        r.order_item_id,
+        r.amount_cents,
+        r.method,
+        r.reason,
+        r.created_at,
+        oi.product_name AS item_name,
+        oi.quantity AS item_quantity,
+        oi.variant_selection AS item_variant
+      FROM refunds r
+      LEFT JOIN bills b ON b.id = r.bill_id
+      LEFT JOIN order_items oi ON oi.id = r.order_item_id
+      WHERE r.created_at >= ? AND r.created_at < ?
+      ORDER BY r.created_at ASC, r.id ASC
+    `,
+    )
+    .all(windowStartUtc, windowEndUtc) as RawWindowRefundRow[];
+
+  let priorBillsRefundDec = new Decimal(0);
+  const priorBillRefunds: DailyInvoicePriorBillRefundLine[] = [];
+  for (const r of windowRefundRows) {
+    if (includedBillIdSet.has(Number(r.bill_id))) continue;
+    const amountDec = new Decimal(Number(r.amount_cents || 0)).div(minorFactor);
+    priorBillsRefundDec = priorBillsRefundDec.plus(amountDec);
+    priorBillRefunds.push({
+      id: Number(r.id),
+      bill_id: Number(r.bill_id),
+      bill_number: String(r.bill_number ?? `#${r.bill_id}`),
+      bill_paid_at_local: storeLocalTimestamp(r.bill_paid_at, timezone),
+      amount: amountDec.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber(),
+      method: String(r.method || 'cash'),
+      reason: String(r.reason || ''),
+      created_at_local: storeLocalTimestamp(r.created_at, timezone),
+      item_name: r.item_name ? String(r.item_name) : null,
+      item_quantity: r.item_quantity == null ? null : Number(r.item_quantity),
+      item_variant: formatVariantLabel(r.item_variant),
+    });
+  }
+
+  let includedInWindowRefundsDec = new Decimal(0);
+  let includedOutWindowRefundsDec = new Decimal(0);
+  let includedLifetimeRefundsDec = new Decimal(0);
 
   const invoices: DailyInvoiceCard[] = billRows.map((bill) => {
     const hydratedOrder = ordersByBillId.get(Number(bill.id)) as
@@ -620,34 +888,38 @@ export function buildDailyInvoicesExportDataset(
       } catch {}
     }
 
-    const rawRefunds = refundStmt.all(bill.id) as Array<{
-      id: number;
-      bill_id: number;
-      order_item_id: number | null;
-      amount_cents: number;
-      method: string | null;
-      reason: string | null;
-      created_at: string;
-      item_name: string | null;
-      item_quantity: number | null;
-      item_variant: string | null;
-    }>;
+    const rawRefunds = refundsByBillId.get(Number(bill.id)) ?? [];
 
     let refundTotalDec = new Decimal(0);
+    let refundInWindowDec = new Decimal(0);
+    let refundOutWindowDec = new Decimal(0);
+
     const refunds: DailyInvoiceRefundLine[] = rawRefunds.map((r) => {
       const amountDec = new Decimal(Number(r.amount_cents || 0)).div(minorFactor);
+      const inWindow = r.created_at >= windowStartUtc && r.created_at < windowEndUtc;
       refundTotalDec = refundTotalDec.plus(amountDec);
+      if (inWindow) {
+        refundInWindowDec = refundInWindowDec.plus(amountDec);
+      } else {
+        refundOutWindowDec = refundOutWindowDec.plus(amountDec);
+      }
       return {
         id: Number(r.id),
         amount: amountDec.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber(),
         method: String(r.method || 'cash'),
         reason: String(r.reason || ''),
         created_at_local: storeLocalTimestamp(r.created_at, timezone),
+        in_window: inWindow,
+        scope_label: inWindow ? 'In Period' : 'Outside Period',
         item_name: r.item_name ? String(r.item_name) : null,
         item_quantity: r.item_quantity == null ? null : Number(r.item_quantity),
         item_variant: formatVariantLabel(r.item_variant),
       };
     });
+
+    includedInWindowRefundsDec = includedInWindowRefundsDec.plus(refundInWindowDec);
+    includedOutWindowRefundsDec = includedOutWindowRefundsDec.plus(refundOutWindowDec);
+    includedLifetimeRefundsDec = includedLifetimeRefundsDec.plus(refundTotalDec);
 
     const { normalized, badge } = statusBadgeForPaymentStatus(bill.payment_status);
 
@@ -682,6 +954,12 @@ export function buildDailyInvoicesExportDataset(
       payments,
       refunds,
       refund_total: refundTotalDec.toDecimalPlaces(6, Decimal.ROUND_HALF_UP).toNumber(),
+      refund_in_window_total: refundInWindowDec
+        .toDecimalPlaces(6, Decimal.ROUND_HALF_UP)
+        .toNumber(),
+      refund_out_of_window_total: refundOutWindowDec
+        .toDecimalPlaces(6, Decimal.ROUND_HALF_UP)
+        .toNumber(),
     };
   });
 
@@ -701,6 +979,8 @@ export function buildDailyInvoicesExportDataset(
       country: storeCountry,
     },
     currency,
+    locale: resolvedLocale,
+    locale_preferences: resolvedPreferences,
     timezone,
     business_day_start: businessDayStart,
     business_date: sales.summary.business_date,
@@ -712,6 +992,19 @@ export function buildDailyInvoicesExportDataset(
     net_base: netBase,
     tax_collected: sales.summary.tax_total,
     total_refunds: sales.summary.refunds_issued,
+    in_window_refunds_on_included_bills: includedInWindowRefundsDec
+      .toDecimalPlaces(6, Decimal.ROUND_HALF_UP)
+      .toNumber(),
+    in_window_refunds_on_prior_bills: priorBillsRefundDec
+      .toDecimalPlaces(6, Decimal.ROUND_HALF_UP)
+      .toNumber(),
+    post_window_refunds_on_included_bills: includedOutWindowRefundsDec
+      .toDecimalPlaces(6, Decimal.ROUND_HALF_UP)
+      .toNumber(),
+    lifetime_refunds_on_included_bills: includedLifetimeRefundsDec
+      .toDecimalPlaces(6, Decimal.ROUND_HALF_UP)
+      .toNumber(),
+    prior_bill_refunds: priorBillRefunds,
     net_revenue: sales.summary.net_collected,
     vat_summary: vatSummary,
     sales,
@@ -719,10 +1012,49 @@ export function buildDailyInvoicesExportDataset(
   };
 }
 
-export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDataset): string {
-  const digits = getCurrencyFractionDigits(dataset.currency);
-  const fmtMoney = (n: number | null | undefined) =>
-    n === null || n === undefined || !Number.isFinite(Number(n)) ? '' : Number(n).toFixed(digits);
+export function serializeDailyInvoicesExportHtml(
+  dataset: DailyInvoicesExportDataset,
+  options?: DailyInvoicesHtmlOptions,
+): string {
+  let locale = options?.locale || dataset.locale || '';
+  let preferences = options?.preferences || dataset.locale_preferences;
+
+  if (!locale || !preferences) {
+    try {
+      const snapshot = resolveRegionalSnapshot({
+        country: dataset.store?.country || (getSettingValue('country') ?? undefined),
+        currency: dataset.currency || (getSettingValue('currency') ?? undefined),
+        timezone: dataset.timezone || (getSettingValue('timezone') ?? undefined),
+        currency_display: getSettingValue('currency_display') ?? undefined,
+        number_digits: getSettingValue('number_digits') ?? undefined,
+        calendar: getSettingValue('calendar') ?? undefined,
+      });
+      if (!locale) locale = snapshot.locale;
+      if (!preferences) preferences = snapshot.preferences;
+    } catch {
+      if (!locale) locale = 'en-US';
+    }
+  }
+
+  const resolvedLocale = locale || 'en-US';
+  const resolvedPrefs: LocalePreferences = preferences ?? {
+    currencyDisplay: 'rial',
+    digits: 'locale',
+    calendar: 'locale',
+  };
+  const currency = dataset.currency || 'USD';
+  const numberingSystem = resolvedPrefs.digits === 'latin' ? 'latn' : undefined;
+
+  const fmtMoney = (n: number | null | undefined): string =>
+    n === null || n === undefined || !Number.isFinite(Number(n))
+      ? ''
+      : formatMoney(Number(n), currency, resolvedLocale, resolvedPrefs);
+
+  const fmtNum = (n: number | null | undefined): string =>
+    n === null || n === undefined || !Number.isFinite(Number(n))
+      ? ''
+      : formatNumber(Number(n), resolvedLocale, numberingSystem);
+
   const fmtRate = (n: number | null | undefined) =>
     n === null || n === undefined || !Number.isFinite(Number(n)) ? '-' : `${Number(n).toFixed(2)}%`;
 
@@ -730,13 +1062,86 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
     .map(({ metric, value }) => {
       const rawVal = value === null || value === undefined ? '' : String(value);
       const displayVal =
-        typeof value === 'number' && !metric.endsWith('_count') && !metric.endsWith('_percent')
-          ? fmtMoney(value)
+        typeof value === 'number'
+          ? metric.endsWith('_count')
+            ? fmtNum(value)
+            : metric.endsWith('_percent')
+              ? `${Number(value).toFixed(2)}%`
+              : fmtMoney(value)
           : rawVal;
       const valueClass = typeof value === 'number' ? 'num' : 'mono';
       return `<tr data-section="summary" data-metric="${escapeHtml(metric)}" data-value="${escapeHtml(rawVal)}"><td class="mono">${escapeHtml(metric)}</td><td class="${valueClass}">${escapeHtml(displayVal)}</td></tr>`;
     })
     .join('\n');
+
+  const refundReconciliationRows = [
+    {
+      scope: 'in_window_refunds_total',
+      label: 'In-Period Refunds (Cover Total)',
+      value: dataset.total_refunds,
+    },
+    {
+      scope: 'in_window_refunds_on_included_bills',
+      label: 'In-Period Refunds on Window Invoices',
+      value: dataset.in_window_refunds_on_included_bills ?? 0,
+    },
+    {
+      scope: 'in_window_refunds_on_prior_bills',
+      label: 'In-Period Refunds on Prior-Period Invoices',
+      value: dataset.in_window_refunds_on_prior_bills ?? 0,
+    },
+    {
+      scope: 'post_window_refunds_on_included_bills',
+      label: 'Outside-Period Refunds on Window Invoices',
+      value: dataset.post_window_refunds_on_included_bills ?? 0,
+    },
+    {
+      scope: 'lifetime_refunds_on_included_bills',
+      label: 'Lifetime Refunds on Window Invoices',
+      value: dataset.lifetime_refunds_on_included_bills ?? 0,
+    },
+  ]
+    .map(
+      (row) =>
+        `<tr data-section="refund-reconciliation" data-scope="${escapeHtml(row.scope)}" data-value="${escapeHtml(row.value)}"><td>${escapeHtml(row.label)}</td><td class="num">${escapeHtml(fmtMoney(row.value))}</td></tr>`,
+    )
+    .join('\n');
+
+  const priorBillRefundsHtml =
+    Array.isArray(dataset.prior_bill_refunds) && dataset.prior_bill_refunds.length > 0
+      ? `<h2>Prior-Period Invoices Refunded in Selected Period</h2>
+        <table data-section="prior-bill-refunds">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Original Paid At</th>
+              <th>Refunded At</th>
+              <th>Method / Reason / Item</th>
+              <th class="num">Refund Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${dataset.prior_bill_refunds
+              .map((ref) => {
+                const details: string[] = [ref.method];
+                if (ref.reason) details.push(`Reason: ${ref.reason}`);
+                if (ref.item_name) {
+                  details.push(
+                    `Item: ${ref.item_name}${ref.item_quantity != null ? ` (x${ref.item_quantity})` : ''}${ref.item_variant ? ` [${ref.item_variant}]` : ''}`,
+                  );
+                }
+                return `<tr data-section="prior-bill-refund" data-refund-id="${escapeHtml(ref.id)}" data-bill-number="${escapeHtml(ref.bill_number)}" data-amount="${escapeHtml(ref.amount)}">
+                  <td class="mono">${escapeHtml(ref.bill_number)}</td>
+                  <td class="mono">${escapeHtml(ref.bill_paid_at_local)}</td>
+                  <td class="mono">${escapeHtml(ref.created_at_local)}</td>
+                  <td>${escapeHtml(details.join(' · '))}</td>
+                  <td class="num">${escapeHtml(fmtMoney(ref.amount))}</td>
+                </tr>`;
+              })
+              .join('\n')}
+          </tbody>
+        </table>`
+      : '';
 
   const vatRateRowsHtml =
     dataset.vat_summary.length === 0
@@ -802,14 +1207,15 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
                   details.length > 0
                     ? `<div class="item-meta">${escapeHtml(details.join(' | '))}</div>`
                     : '';
-                return `<tr class="invoice-item-row">
-                  <td class="num">${escapeHtml(item.quantity)}</td>
+                return `<tr class="invoice-item-row" data-item-subtotal="${escapeHtml(item.subtotal)}" data-item-total="${escapeHtml(item.total)}">
+                  <td class="num">${escapeHtml(fmtNum(item.quantity))}</td>
                   <td>
                     <span class="item-name">${escapeHtml(item.product_name)}</span>
                     ${detailLine}
                   </td>
                   <td class="num">${escapeHtml(fmtMoney(item.unit_price))}</td>
-                  <td class="num">${escapeHtml(fmtMoney(item.subtotal))}</td>
+                  <td class="num" data-col="item-subtotal">${escapeHtml(fmtMoney(item.subtotal))}</td>
+                  <td class="num" data-col="item-total">${escapeHtml(fmtMoney(item.total))}</td>
                 </tr>`;
               })
               .join('\n');
@@ -842,11 +1248,14 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
               inv.status === 'partially_refunded' ||
               inv.refunds.length > 0;
 
+            const inWindowRefTotal = inv.refund_in_window_total ?? inv.refund_total;
+            const outOfWindowRefTotal = inv.refund_out_of_window_total ?? 0;
+
             const refundBlockHtml = hasRefundBlock
-              ? `<div class="refund-box" data-section="invoice-refunds">
+              ? `<div class="refund-box" data-section="invoice-refunds" data-lifetime-refunded="${escapeHtml(inv.refund_total)}" data-in-window-refunded="${escapeHtml(inWindowRefTotal)}" data-out-of-window-refunded="${escapeHtml(outOfWindowRefTotal)}">
                   <div class="refund-box-header">
                     <strong>Refund Details (${escapeHtml(inv.status_badge)})</strong>
-                    <span class="mono">Total Refunded: ${escapeHtml(dataset.currency)} ${escapeHtml(fmtMoney(inv.refund_total))}</span>
+                    <span class="mono">Lifetime Refunded: ${escapeHtml(fmtMoney(inv.refund_total))} · In Selected Period: ${escapeHtml(fmtMoney(inWindowRefTotal))}${outOfWindowRefTotal > 0 ? ` · Outside Period: ${escapeHtml(fmtMoney(outOfWindowRefTotal))}` : ''}</span>
                   </div>
                   ${
                     inv.refunds.length > 0
@@ -857,9 +1266,14 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
                                 ? ` · Item: ${ref.item_name}${ref.item_quantity != null ? ` (x${ref.item_quantity})` : ''}${ref.item_variant ? ` [${ref.item_variant}]` : ''}`
                                 : '';
                               const reasonDesc = ref.reason ? ` · Reason: ${ref.reason}` : '';
-                              return `<li class="refund-entry" data-refund-id="${escapeHtml(ref.id)}">
-                                <span class="mono">${escapeHtml(ref.created_at_local)}</span> —
-                                <strong>${escapeHtml(dataset.currency)} ${escapeHtml(fmtMoney(ref.amount))}</strong>
+                              const scopeAttr =
+                                ref.in_window !== false ? 'in-window' : 'out-of-window';
+                              const scopeBadge =
+                                ref.scope_label ||
+                                (ref.in_window !== false ? 'In Period' : 'Outside Period');
+                              return `<li class="refund-entry" data-refund-id="${escapeHtml(ref.id)}" data-refund-scope="${escapeHtml(scopeAttr)}">
+                                <span class="mono">[${escapeHtml(scopeBadge)}] ${escapeHtml(ref.created_at_local)}</span> —
+                                <strong>${escapeHtml(fmtMoney(ref.amount))}</strong>
                                 (${escapeHtml(ref.method)})${escapeHtml(reasonDesc)}${escapeHtml(itemDesc)}
                               </li>`;
                             })
@@ -895,10 +1309,11 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
               <table class="invoice-items-table">
                 <thead>
                   <tr>
-                    <th class="num" style="width: 10%;">Qty</th>
-                    <th style="width: 54%;">Item</th>
-                    <th class="num" style="width: 18%;">Unit (${escapeHtml(dataset.currency)})</th>
-                    <th class="num" style="width: 18%;">Total (${escapeHtml(dataset.currency)})</th>
+                    <th class="num" style="width: 8%;">Qty</th>
+                    <th style="width: 44%;">Item</th>
+                    <th class="num" style="width: 16%;">Unit (${escapeHtml(currency)})</th>
+                    <th class="num" style="width: 16%;">Subtotal (${escapeHtml(currency)})</th>
+                    <th class="num" style="width: 16%;">Total (${escapeHtml(currency)})</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -919,7 +1334,7 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
                   ${taxComponentLines}
                   ${inv.tip_amount > 0 ? `<div class="totals-line"><span>Tip</span><span class="mono">${escapeHtml(fmtMoney(inv.tip_amount))}</span></div>` : ''}
                   ${inv.round_off !== 0 ? `<div class="totals-line"><span>Round-off</span><span class="mono">${escapeHtml(fmtMoney(inv.round_off))}</span></div>` : ''}
-                  <div class="totals-line totals-grand"><span>Total (${escapeHtml(dataset.currency)})</span><span class="mono">${escapeHtml(fmtMoney(inv.total))}</span></div>
+                  <div class="totals-line totals-grand"><span>Total (${escapeHtml(currency)})</span><span class="mono">${escapeHtml(fmtMoney(inv.total))}</span></div>
                 </div>
               </div>
 
@@ -929,7 +1344,7 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
           .join('\n');
 
   const html = `<!doctype html>
-<html lang="en">
+<html lang="${escapeHtml(resolvedLocale)}">
 <head>
 <meta charset="utf-8">
 <title>Compiled Daily Invoices — ${escapeHtml(dataset.business_date)}</title>
@@ -940,14 +1355,14 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
     font-family: ${REPORT_FONT_STACK};
     color: #0f172a;
     margin: 0;
-    padding: 12px;
-    font-size: 10px;
-    line-height: 1.35;
+    padding: 10px;
+    font-size: 9.5px;
+    line-height: 1.3;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
   .cover-page {
-    padding: 4px 0 8px;
+    padding: 2px 0 6px;
   }
   .cover-page.has-invoices {
     page-break-after: always;
@@ -955,62 +1370,62 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
   }
   .cover-header {
     border-bottom: 2px solid #0f172a;
-    padding-bottom: 8px;
-    margin-bottom: 10px;
+    padding-bottom: 6px;
+    margin-bottom: 8px;
   }
   .cover-header h1 {
-    font-size: 16px;
-    margin: 0 0 4px;
+    font-size: 15px;
+    margin: 0 0 3px;
   }
   .cover-store-details {
-    font-size: 11px;
+    font-size: 10.5px;
     color: #1e293b;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
   }
   .cover-meta {
-    font-size: 10px;
+    font-size: 9.5px;
     color: #475569;
   }
   .kpi-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin: 10px 0 12px;
+    gap: 6px;
+    margin: 8px 0 10px;
   }
   .kpi-card {
     border: 1px solid #cbd5e1;
     border-radius: 4px;
-    padding: 6px 8px;
+    padding: 5px 7px;
     background: #f8fafc;
   }
   .kpi-label {
-    font-size: 9px;
+    font-size: 8.5px;
     text-transform: uppercase;
     color: #475569;
     letter-spacing: 0.03em;
   }
   .kpi-value {
     font-family: ${REPORT_MONO_STACK};
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     color: #0f172a;
     margin-top: 2px;
   }
   h2 {
-    font-size: 12px;
-    margin: 12px 0 6px;
+    font-size: 11px;
+    margin: 8px 0 4px;
     border-bottom: 1px solid #cbd5e1;
-    padding-bottom: 3px;
+    padding-bottom: 2px;
   }
   table {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     table-layout: fixed;
   }
   th, td {
     border: 1px solid #cbd5e1;
-    padding: 3px 5px;
+    padding: 2px 5px;
     text-align: left;
     vertical-align: top;
     overflow-wrap: anywhere;
@@ -1033,6 +1448,11 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
   }
   .invoices-flow {
     display: block;
+  }
+  .appendix-section {
+    page-break-before: always;
+    break-before: page;
+    padding-top: 4px;
   }
   .invoice-card {
     border: 1px solid #94a3b8;
@@ -1183,33 +1603,33 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
         Business Date: <strong>${escapeHtml(dataset.business_date)}</strong>
         · Timezone: ${escapeHtml(dataset.timezone)}
         · Day Start: ${escapeHtml(dataset.business_day_start)}
-        · Currency: ${escapeHtml(dataset.currency)}
+        · Currency: ${escapeHtml(currency)}
       </div>
     </header>
 
     <div class="kpi-grid" data-section="cover-kpis">
       <div class="kpi-card" data-kpi="total_invoices_count" data-value="${escapeHtml(dataset.total_invoices_count)}">
         <div class="kpi-label">Total Invoices Count</div>
-        <div class="kpi-value">${escapeHtml(dataset.total_invoices_count)}</div>
+        <div class="kpi-value">${escapeHtml(fmtNum(dataset.total_invoices_count))}</div>
       </div>
       <div class="kpi-card" data-kpi="total_gross_sales" data-value="${escapeHtml(dataset.total_gross_sales)}">
-        <div class="kpi-label">Total Gross Sales (${escapeHtml(dataset.currency)})</div>
+        <div class="kpi-label">Total Gross Sales (${escapeHtml(currency)})</div>
         <div class="kpi-value">${escapeHtml(fmtMoney(dataset.total_gross_sales))}</div>
       </div>
       <div class="kpi-card" data-kpi="net_base" data-value="${escapeHtml(dataset.net_base)}">
-        <div class="kpi-label">Net Base (${escapeHtml(dataset.currency)})</div>
+        <div class="kpi-label">Net Base (${escapeHtml(currency)})</div>
         <div class="kpi-value">${escapeHtml(fmtMoney(dataset.net_base))}</div>
       </div>
       <div class="kpi-card" data-kpi="tax_collected" data-value="${escapeHtml(dataset.tax_collected)}">
-        <div class="kpi-label">Tax Collected (${escapeHtml(dataset.currency)})</div>
+        <div class="kpi-label">Tax Collected (${escapeHtml(currency)})</div>
         <div class="kpi-value">${escapeHtml(fmtMoney(dataset.tax_collected))}</div>
       </div>
       <div class="kpi-card" data-kpi="total_refunds" data-value="${escapeHtml(dataset.total_refunds)}">
-        <div class="kpi-label">Total Refunds (${escapeHtml(dataset.currency)})</div>
+        <div class="kpi-label">Total Refunds (In Period, ${escapeHtml(currency)})</div>
         <div class="kpi-value">${escapeHtml(fmtMoney(dataset.total_refunds))}</div>
       </div>
       <div class="kpi-card" data-kpi="net_revenue" data-value="${escapeHtml(dataset.net_revenue)}">
-        <div class="kpi-label">Net Revenue (${escapeHtml(dataset.currency)})</div>
+        <div class="kpi-label">Net Revenue (${escapeHtml(currency)})</div>
         <div class="kpi-value">${escapeHtml(fmtMoney(dataset.net_revenue))}</div>
       </div>
     </div>
@@ -1220,13 +1640,21 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
         <tr>
           <th>Tax Name</th>
           <th class="num">Rate</th>
-          <th class="num">Taxable Base (${escapeHtml(dataset.currency)})</th>
-          <th class="num">Tax Amount (${escapeHtml(dataset.currency)})</th>
-          <th class="num">Gross Amount (${escapeHtml(dataset.currency)})</th>
+          <th class="num">Taxable Base (${escapeHtml(currency)})</th>
+          <th class="num">Tax Amount (${escapeHtml(currency)})</th>
+          <th class="num">Gross Amount (${escapeHtml(currency)})</th>
         </tr>
       </thead>
       <tbody>
         ${vatRateRowsHtml}
+      </tbody>
+    </table>
+
+    <h2>Refund Scope Reconciliation</h2>
+    <table data-section="refund-reconciliation">
+      <thead><tr><th>Scope</th><th class="num">Amount (${escapeHtml(currency)})</th></tr></thead>
+      <tbody>
+        ${refundReconciliationRows}
       </tbody>
     </table>
 
@@ -1237,8 +1665,15 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
         ${summaryRowsHtml}
       </tbody>
     </table>
+  </section>
 
-    <h2>Daily Tax Breakdown</h2>
+  <section class="invoices-flow" data-section="invoices">
+    <h2>Issued Invoices (${escapeHtml(fmtNum(dataset.invoices.length))})</h2>
+    ${invoiceCardsHtml}
+  </section>
+
+  <section class="appendix-section" data-section="daily-tax-appendix">
+    <h2>Daily Tax Breakdown Appendix</h2>
     <table data-section="taxes">
       <thead>
         <tr>
@@ -1254,11 +1689,7 @@ export function serializeDailyInvoicesExportHtml(dataset: DailyInvoicesExportDat
         ${dailyTaxRowsHtml}
       </tbody>
     </table>
-  </section>
-
-  <section class="invoices-flow" data-section="invoices">
-    <h2>Issued Invoices (${escapeHtml(dataset.invoices.length)})</h2>
-    ${invoiceCardsHtml}
+    ${priorBillRefundsHtml}
   </section>
 </body>
 </html>

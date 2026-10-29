@@ -906,15 +906,16 @@ omitted) used by `exportReportAsPdf` for desktop PDF export (`invoices-YYYY-MM-D
 
 Page 1 renders a fiscal summary cover page (store legal name, tax registration ID and country label,
 address, business date/range, total invoices count, gross sales, net base, tax collected, total
-refunds, net revenue, summary reconciliation metrics, and the VAT/tax summary table by rate) reused
-from `buildDailySalesExportDataset`. Page 2+ renders all issued invoices in the business-day window
-(`payment_status IN ('paid', 'partially_refunded', 'refunded')`) in strict ascending `bill_number`
-order (`page-break-inside: avoid; break-inside: avoid;` on each `.invoice-card`) with `[PAID]`,
-`[PARTIALLY REFUNDED]`, and `[REFUNDED]` status badges, line items, tax components, payment details,
-and refund history.
+refunds, net revenue, the VAT/tax summary table by rate, summary reconciliation metrics, and the
+daily tax breakdown) reused from `buildDailySalesExportDataset` (see
+[daily sales export](daily-sales-export.md)). Page 2+ renders all issued invoices in the
+business-day window (`payment_status IN ('paid', 'partially_refunded', 'refunded')`) in strict
+ascending `bill_number` order (`page-break-inside: avoid; break-inside: avoid;` on each
+`.invoice-card`) with `[PAID]`, `[PARTIALLY REFUNDED]`, and `[REFUNDED]` status badges, line items,
+tax components, payment details, and refund history.
 
 - Returns `200` with `Content-Type: text/html; charset=utf-8` and `Content-Disposition: attachment; filename="invoices-YYYY-MM-DD.html"` (or `invoices-YYYY-MM-DD_to_YYYY-MM-DD.html`).
-- Errors: `400` for an unsupported `format`, mixed `date` and `from`/`to` arguments, an incomplete or reversed range, an invalid calendar date, a range exceeding 366 days, or an HTML export exceeding the 15 MB PDF size limit; `401` unauthenticated; `403` non-owner.
+- Errors: `400` for an unsupported `format`, mixed `date` and `from`/`to` arguments, an incomplete or reversed range, an invalid calendar date, a range exceeding 366 days, or an HTML export exceeding the 15 MB PDF size limit; `401` unauthenticated; `403` non-owner; `409` for a concurrent-write conflict; `500` otherwise.
 
 ### Inline endpoints (registered outside a router)
 

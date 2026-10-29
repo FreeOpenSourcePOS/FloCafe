@@ -1497,6 +1497,17 @@ export default function SettingsPage() {
           ? { primary: zReportPrimary, additional: [zReportSecond] as const }
           : { primary: zReportPrimary, additional: [] as const };
       const printingPayload = {
+        ...(formSnapshot.autoPrintKot !== posSettings.autoPrintKot || formSnapshot.autoPrintKot
+          ? { auto_print_kot: formSnapshot.autoPrintKot }
+          : {}),
+        ...(formSnapshot.printerUseUnicode !== posSettings.printerUseUnicode ||
+        formSnapshot.printerUseUnicode
+          ? { printer_use_unicode: formSnapshot.printerUseUnicode }
+          : {}),
+        ...(formSnapshot.printerArabicShaping !== posSettings.printerArabicShaping ||
+        formSnapshot.printerArabicShaping
+          ? { printer_arabic_shaping: formSnapshot.printerArabicShaping }
+          : {}),
         printer_trim_decimals: formSnapshot.printerTrimDecimals,
         bill_language_policy: billLanguagePolicy,
         kot_language_policy: kotLanguagePolicy,

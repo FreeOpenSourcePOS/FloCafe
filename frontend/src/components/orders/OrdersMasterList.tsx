@@ -11,10 +11,14 @@ import { orderStatusBadge, ORDER_TYPE_KEYS } from './OrderCard';
 function OrderTypeIcon({ type }: { type: Order['type'] }) {
   const cls = 'shrink-0 text-muted-foreground';
   switch (type) {
-    case 'dine_in': return <Utensils size={13} className={cls} />;
-    case 'delivery': return <Truck size={13} className={cls} />;
-    case 'online': return <Globe size={13} className={cls} />;
-    default: return <ShoppingBag size={13} className={cls} />;
+    case 'dine_in':
+      return <Utensils size={13} className={cls} />;
+    case 'delivery':
+      return <Truck size={13} className={cls} />;
+    case 'online':
+      return <Globe size={13} className={cls} />;
+    default:
+      return <ShoppingBag size={13} className={cls} />;
   }
 }
 
@@ -68,10 +72,27 @@ export function OrdersMasterList({
                 <span className="font-bold text-sm text-foreground tracking-tight">
                   #<Ltr>{order.order_number}</Ltr>
                 </span>
-                {badge && (
-                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0 ${badge.bg} ${badge.text}`}>
-                    {tOrders(badge.labelKey)}
+                {order.status !== 'cancelled' &&
+                (order.release_status === 'scheduled' || order.release_status === 'blocked') ? (
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0 ${
+                      order.release_status === 'blocked'
+                        ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300'
+                        : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'
+                    }`}
+                  >
+                    {order.release_status === 'blocked'
+                      ? tOrders('releaseBlocked')
+                      : tOrders('releaseScheduled')}
                   </span>
+                ) : (
+                  badge && (
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0 ${badge.bg} ${badge.text}`}
+                    >
+                      {tOrders(badge.labelKey)}
+                    </span>
+                  )
                 )}
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">

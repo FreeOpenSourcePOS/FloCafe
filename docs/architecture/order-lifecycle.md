@@ -68,6 +68,60 @@ Order numbers are allocated inside the transaction. Request replay follows the
 The order starts `pending` with its totals snapshotted, and a `dine_in` order with a table marks the
 table `occupied`.
 
+## Scheduled orders and kitchen release
+
+Takeaway and delivery orders in the main POS (desktop and browser) can defer kitchen release by
+supplying `scheduled_for` ("Send to kitchen at"). Scheduling is rejected (`400`) on `dine_in` and
+`online` orders.
+
+Scheduling separates kitchen release from order status via four columns on `orders`:
+
+- `scheduled_for`: canonical UTC ISO instant (`YYYY-MM-DDTHH:MM:SS.sssZ`), or `NULL` for immediate
+  orders; see [scheduled kitchen release](business-time.md#scheduled-kitchen-release) for store
+  timezone entry and daylight-saving rules.
+- `release_status`: `'scheduled'`, `'blocked'`, or `'released'` (default `'released'` for immediate
+  orders).
+- `released_at`: timestamp recorded when the order is released to the kitchen.
+- `release_blocked_reason`: actionable message recorded when a release attempt fails validation.
+
+Lifecycle rules before and at release:
+
+- **Creation without early side effects.** Creating an order with `scheduled_for` snapshots all
+  quoted items, unit prices, discounts, charges, taxes, and totals immediately, sets
+  `release_status = 'scheduled'`, leaves product, variant, add-on, and recipe supply stock
+  untouched, suppresses KDS notifications and automatic KOT printing, and excludes the order from
+  KDS endpoints, kitchen feeds, customer-display tokens, and `POST /api/printers/print-kot` (`409`).
+- **Due sweep and manual release.** [`main/services/scheduled-orders.ts`](../../main/services/scheduled-orders.ts)
+  runs a server-owned due sweep every 10 seconds, on server startup, and after system resume
+  (`powerMonitor` `resume`). The sweep releases due orders where `release_status = 'scheduled'` and
+  `scheduled_for <= now`. Orders in `release_status = 'blocked'` are skipped by automatic sweeps and
+  must be retried explicitly via `POST /api/orders/:id/release` after resolving the stock or catalog
+  problem.
+- **Shared transactional release (`releaseScheduledOrder`).** Both automatic sweeps and manual
+  release execute the same SQLite transaction with an atomic compare-and-check on `release_status`
+  so concurrent sweeps and retries never deduct stock twice, plus an optional `checkPreconditions`
+  hook for gating release on payment stage. At release time, every non-terminal item re-validates
+  required catalog entries (active product, variant, add-on group rules, and add-ons) and deducts
+  product, variant, and add-on stock plus the recipe then in effect (preserving negative recipe
+  supply stock) while saving actual `inventory_deducted_quantity` and `recipe_snapshot` values on
+  each line. Saved prices, discounts, charges, taxes, and totals are never repriced. If any tracked
+  product, variant, or add-on stock is insufficient or a catalog entry is unusable, an inner
+  savepoint rolls back partial deductions and atomically sets `release_status = 'blocked'` with
+  `release_blocked_reason` (`release_blocked` in `order_audit_log`). On release, `release_status`
+  becomes `'released'`, `released_at` is set, KDS updates are broadcast, and configured backend
+  automatic KOT printing runs.
+- **Prepayment, edit lock, rescheduling, and cancellation.** Full or partial payment is allowed
+  before release without triggering early release, without kitchen-delivery blocking, and without
+  marking `orders.status = 'completed'`. Item additions, edits, removals, customer changes, manual
+  price overrides, discounts, and bill charge mutations are permitted on a scheduled order only
+  before the first payment is recorded (`409` with `SCHEDULED_ORDER_PAID` once paid). Timing-only
+  changes (`PATCH /api/orders/:id/schedule` or `POST /api/orders/:id/release`) remain allowed until
+  release even after payment and record `schedule_updated` or `order_released` in `order_audit_log`.
+  Cancelling a scheduled order before release never restores inventory because none was deducted;
+  cancelling a scheduled order with collected funds requires refunding the collected amount in full
+  through `/api/refunds` first (`409` with `REFUND_REQUIRED_BEFORE_CANCEL`), preserving bills and
+  audit history.
+
 ## Discounts
 
 Three surfaces apply discounts, all gated by the discount permission for their scope and by the same
@@ -238,9 +292,10 @@ its amount via `PATCH /api/bills/:id/payments/:index/method` (see [the Bills API
 ## Settlement and completion
 
 A bill moves `unpaid` to `partial` to `paid`; refunds move it to `partially_refunded` or `refunded`.
-When a payment settles the last unpaid bill of an order, the order becomes `completed` (unless it was
-already completed or cancelled) and its dine-in table is released to `available`. A payment never
-resurrects a terminal order.
+When a payment settles the last unpaid bill of an order, an immediate or already-released order
+becomes `completed` (unless it was already completed or cancelled) and its dine-in table is released
+to `available`; an unreleased scheduled order remains `pending` until released and fulfilled. A
+payment never resurrects a terminal order.
 
 When a discount, an order mutation (`syncUnpaidBillsForOrder`), or a `POST /api/bills/generate`
 re-sync reduces the remaining balance of a partially paid bill to exactly zero (where collected funds
@@ -345,4 +400,5 @@ npm run test:cash-sessions                    # shift gate
 npm run test:refunds                          # refund window and approvals
 npm run test:kds-contract                     # KDS item-to-order status reconciliation across write paths
 npm run test:customer-display-feed            # pickup board projection and board_status pagination
+npm run test:scheduled-orders                 # scheduled orders, DST, sweep, stock hold, prepay/refund rules
 ```

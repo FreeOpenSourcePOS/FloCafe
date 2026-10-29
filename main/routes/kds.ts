@@ -136,11 +136,11 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     // Include active orders and completed orders with items still being prepared.
     let query = `
       WITH active_ids AS (
-        SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
+        SELECT id FROM orders WHERE release_status = 'released' AND status IN ('pending','preparing','ready','served')
         UNION
         SELECT o.id FROM orders o
         JOIN order_items oi ON oi.order_id = o.id AND oi.status NOT IN ('served','cancelled')
-        WHERE o.status NOT IN ('pending','preparing','ready','served','cancelled')
+        WHERE o.release_status = 'released' AND o.status NOT IN ('pending','preparing','ready','served','cancelled')
       )
       SELECT o.*, t.number as table_name, t.floor, t.section, t.kitchen_station_id
       FROM orders o
@@ -409,6 +409,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       WHERE oi.status NOT IN ('completed', 'cancelled', 'served', 'void_adjustment', 'refunded')
         AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         AND o.status != 'cancelled'
+        AND o.release_status = 'released'
     `;
 
     const params: any[] = [voidedCutoff];
@@ -571,8 +572,14 @@ router.patch(
             throw new Error('CATEGORY_FORBIDDEN');
           }
         }
-        if (!db.prepare('SELECT id FROM orders WHERE id = ?').get(item.order_id)) {
+        const parentOrder = db
+          .prepare('SELECT id, release_status FROM orders WHERE id = ?')
+          .get(item.order_id) as { id: number; release_status?: string | null } | undefined;
+        if (!parentOrder) {
           throw new Error('ORPHANED_ORDER_ITEM');
+        }
+        if (parentOrder.release_status && parentOrder.release_status !== 'released') {
+          throw new Error('UNRELEASED_ORDER_ITEM');
         }
         if (currentStationIds.length > 0) {
           const station = db
@@ -620,7 +627,6 @@ router.patch(
         if (reconcile.changed && reconcile.status) {
           reconciledEvent = { orderId: String(item.order_id), status: reconcile.status };
         }
-
         return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id);
       });
 
@@ -658,6 +664,11 @@ router.patch(
       }
       if (error.message === 'ORPHANED_ORDER_ITEM') {
         return res.status(404).json({ error: 'Order item is not attached to an order' });
+      }
+      if (error.message === 'UNRELEASED_ORDER_ITEM') {
+        return res
+          .status(409)
+          .json({ error: 'Scheduled order has not been released to the kitchen yet' });
       }
       if (error.message === 'STATUS_CONFLICT') {
         return res.status(409).json({ error: 'Item status changed; refresh and try again' });

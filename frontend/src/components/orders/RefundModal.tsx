@@ -41,6 +41,12 @@ function getCurrentTime(): number {
   return Date.now();
 }
 
+function isOrderLikelyLateForRefund(order: Order, nowMs: number): boolean {
+  if (order.release_status && order.release_status !== 'released') return false;
+  const anchor = order.released_at || order.created_at;
+  return nowMs - parseDbTimestamp(anchor).getTime() > REFUND_IN_PROGRESS_WINDOW_MS;
+}
+
 function getConfiguredApprovers(staff: Staff[]): Staff[] {
   return staff.filter(
     (member) =>
@@ -77,8 +83,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     const interval = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(interval);
   }, []);
-  const isLikelyLate =
-    now - parseDbTimestamp(order.created_at).getTime() > REFUND_IN_PROGRESS_WINDOW_MS;
+  const isLikelyLate = isOrderLikelyLateForRefund(order, now);
 
   // Split checks mean an order can have several paid bills, each with its own allocated
   // items; a fully refunded bill has nothing left, so exclude it from selection.
@@ -256,8 +261,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     try {
       const staffResponse = await api.get('/staff/approvers');
       const submissionNow = getCurrentTime();
-      const submissionIsLate =
-        submissionNow - parseDbTimestamp(order.created_at).getTime() > REFUND_IN_PROGRESS_WINDOW_MS;
+      const submissionIsLate = isOrderLikelyLateForRefund(order, submissionNow);
       const configuredApprovers = getConfiguredApprovers(
         staffResponse.data?.approvers ?? staffResponse.data?.staff ?? [],
       );

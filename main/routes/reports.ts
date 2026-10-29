@@ -222,13 +222,15 @@ router.get('/daily-stats', requirePermission('reports.view'), (req: Request, res
 
     const runningOrders = db
       .prepare(`
-      SELECT COUNT(*) as count FROM orders WHERE status IN ('pending', 'preparing')
+      SELECT COUNT(*) as count FROM orders
+      WHERE release_status = 'released' AND status IN ('pending', 'preparing')
     `)
       .get() as { count: number };
 
     const pendingOrders = db
       .prepare(`
-      SELECT COUNT(*) as count FROM orders WHERE status = 'pending'
+      SELECT COUNT(*) as count FROM orders
+      WHERE release_status = 'released' AND status = 'pending'
     `)
       .get() as { count: number };
 

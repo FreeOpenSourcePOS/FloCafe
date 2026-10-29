@@ -505,6 +505,13 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
         return { error: 'This terminal item cannot be updated from KDS' };
       }
 
+      const parentOrder = db
+        .prepare('SELECT id, release_status FROM orders WHERE id = ?')
+        .get(existingItem.order_id) as { id: number; release_status?: string | null } | undefined;
+      if (parentOrder?.release_status && parentOrder.release_status !== 'released') {
+        return { error: 'Scheduled order has not been released to the kitchen yet' };
+      }
+
       if (client.stationIds.length > 0) {
         const station = db
           .prepare(`
@@ -597,14 +604,15 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
 
 /** Returns SQL condition for orders needing kitchen attention or unserved items. */
 function activeOrdersCondition(): string {
-  if (!isKdsEnabled()) return `o.status NOT IN ('completed', 'cancelled')`;
+  if (!isKdsEnabled())
+    return `o.release_status = 'released' AND o.status NOT IN ('completed', 'cancelled')`;
   // Fast indexed CTE query matching active orders or unserved items.
   return `o.id IN (
-    SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
+    SELECT id FROM orders WHERE release_status = 'released' AND status IN ('pending','preparing','ready','served')
     UNION
     SELECT o2.id FROM orders o2
     JOIN order_items oi2 ON oi2.order_id = o2.id AND oi2.status NOT IN ('served','cancelled')
-    WHERE o2.status NOT IN ('pending','preparing','ready','served','cancelled')
+    WHERE o2.release_status = 'released' AND o2.status NOT IN ('pending','preparing','ready','served','cancelled')
   )`;
 }
 

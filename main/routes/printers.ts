@@ -1264,6 +1264,15 @@ router.post(
       }
 
       const db = getDatabase();
+      const preCheckOrder = db
+        .prepare('SELECT id, release_status FROM orders WHERE id = ?')
+        .get(orderId) as { id: number; release_status?: string | null } | undefined;
+      if (preCheckOrder?.release_status && preCheckOrder.release_status !== 'released') {
+        return res.status(409).json({
+          error: 'Cannot print KOT for a scheduled order before it is released to the kitchen',
+        });
+      }
+
       const printer = db
         .prepare(
           `SELECT * FROM printers
@@ -1567,4 +1576,82 @@ function resolveTenantKotLanguage(db: ReturnType<typeof getDatabase>): string {
     tenantSettingValue(db, KOT_LANGUAGE_POLICY_KEY),
   ) as KotLanguagePolicy;
   return resolveKotLanguage(policy, tenantLanguage(db));
+}
+
+/**
+ * Automatically prints KOT tickets via configured backend printers when a
+ * scheduled order is released to the kitchen and `auto_print_kot` is enabled.
+ */
+export async function autoPrintReleasedOrderKot(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number,
+): Promise<boolean> {
+  try {
+    if (!isKotPrintingEnabled()) return false;
+    if (tenantSettingValue(db, 'auto_print_kot') !== 'true') return false;
+
+    const printer = db
+      .prepare(
+        `SELECT * FROM printers
+         WHERE connection_type != 'webusb'
+         ORDER BY is_default DESC, name
+         LIMIT 1`,
+      )
+      .get();
+    if (!printer) return false;
+
+    const order = db
+      .prepare("SELECT * FROM orders WHERE id = ? AND release_status = 'released'")
+      .get(orderId) as
+      | (Record<string, unknown> & {
+          table_id?: string | number | null;
+          customer_id?: string | number | null;
+        })
+      | undefined;
+    if (!order) return false;
+
+    if (order.table_id) {
+      const table = db.prepare('SELECT number FROM tables WHERE id = ?').get(order.table_id) as
+        | { number: string }
+        | undefined;
+      if (table) order.table = { name: table.number };
+    }
+    if (order.customer_id) {
+      const customer = db
+        .prepare('SELECT name FROM customers WHERE id = ?')
+        .get(order.customer_id) as { name: string } | undefined;
+      if (customer) order.customer = { name: customer.name };
+    }
+
+    const kotLanguage = resolveTenantKotLanguage(db);
+    const useUnicode = tenantSettingValue(db, 'printer_use_unicode') === 'true';
+    const arabicShapingSetting = tenantSettingValue(db, 'printer_arabic_shaping');
+    const arabicShapingOverride =
+      arabicShapingSetting !== undefined ? arabicShapingSetting === 'true' : undefined;
+
+    const kotSourceItems = getEffectiveOrderItems(db, String(orderId)).filter(
+      (item: { status?: string | null }) => isKotItemPending(item?.status),
+    );
+    if (kotSourceItems.length === 0) return false;
+
+    const groups = routeItemsToStations(db, kotSourceItems).filter((g) => g.items.length > 0);
+    let anyPrinted = false;
+    for (const group of groups) {
+      const result = await printKOTDetailed(
+        order as Parameters<typeof printKOTDetailed>[0],
+        group.items,
+        group.stationName,
+        useUnicode,
+        group.printer || undefined,
+        undefined,
+        arabicShapingOverride,
+        kotLanguage,
+      );
+      if (result.ok) anyPrinted = true;
+    }
+    return anyPrinted;
+  } catch (error) {
+    console.error('[Scheduled Release KOT] Automatic KOT print failed:', error);
+    return false;
+  }
 }

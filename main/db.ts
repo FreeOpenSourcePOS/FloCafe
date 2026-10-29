@@ -7943,6 +7943,30 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 123,
+    name: 'add_scheduled_orders',
+    up: () => {
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('scheduled_for')) {
+        db.exec('ALTER TABLE orders ADD COLUMN scheduled_for TEXT DEFAULT NULL');
+      }
+      if (!orderColumns.includes('release_status')) {
+        db.exec(
+          "ALTER TABLE orders ADD COLUMN release_status TEXT NOT NULL DEFAULT 'released' CHECK (release_status IN ('scheduled', 'released', 'blocked'))",
+        );
+      }
+      if (!orderColumns.includes('released_at')) {
+        db.exec('ALTER TABLE orders ADD COLUMN released_at TEXT DEFAULT NULL');
+      }
+      if (!orderColumns.includes('release_blocked_reason')) {
+        db.exec('ALTER TABLE orders ADD COLUMN release_blocked_reason TEXT DEFAULT NULL');
+      }
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_orders_release_due ON orders(release_status, scheduled_for) WHERE release_status IN ('scheduled', 'blocked')",
+      );
+    },
+  },
 ];
 
 export function backfillWhatsAppMessageAttempts(

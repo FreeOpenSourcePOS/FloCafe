@@ -228,6 +228,10 @@ export interface Order {
   external_order_id?: string | null;
   created_by: number;
   created_at: string;
+  scheduled_for?: string | null;
+  release_status?: 'scheduled' | 'released' | 'blocked';
+  released_at?: string | null;
+  release_blocked_reason?: string | null;
   cancelled_at?: string | null;
   cancellation_reason?: string | null;
   items?: OrderItem[];

@@ -26,6 +26,7 @@ interface CartState {
   onlinePlatform: string;
   externalOrderId: string;
   orderNotes: string;
+  scheduledFor: string;
 
   addItem: (
     product: Product,
@@ -72,6 +73,7 @@ interface CartState {
   setOnlinePlatform: (platform: string) => void;
   setExternalOrderId: (id: string) => void;
   setOrderNotes: (notes: string) => void;
+  setScheduledFor: (value: string) => void;
   /** Charge ids the cashier has waived in this cart. */
   waivedChargeIds: Set<string>;
   /** Opt-in (not default-active) charges the cashier has added to this cart. */
@@ -100,6 +102,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   onlinePlatform: '',
   externalOrderId: '',
   orderNotes: '',
+  scheduledFor: '',
   waivedChargeIds: new Set<string>(),
   optedInChargeIds: new Set<string>(),
 
@@ -290,6 +293,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       onlinePlatform: '',
       externalOrderId: '',
       orderNotes: '',
+      scheduledFor: '',
       waivedChargeIds: new Set<string>(),
       optedInChargeIds: new Set<string>(),
     });
@@ -313,6 +317,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       customerSource: customerId == null ? null : 'explicit',
       guestCount,
       orderNotes: orderNotes || '',
+      scheduledFor: '',
       // Independent Sets: a resumed cart must not alias the arrays it came from.
       waivedChargeIds: new Set(waivedChargeIds ?? []),
       optedInChargeIds: new Set(optedInChargeIds ?? []),
@@ -328,6 +333,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       deliveryNote: type !== 'delivery' ? '' : state.deliveryNote,
       onlinePlatform: type !== 'online' ? '' : state.onlinePlatform,
       externalOrderId: type !== 'online' ? '' : state.externalOrderId,
+      scheduledFor: type === 'takeaway' || type === 'delivery' ? state.scheduledFor : '',
       // Only a real change of order type resets charges: re-selecting the type the
       // cart already has must not silently un-waive a fee the cashier removed.
       ...(state.orderType === type
@@ -356,6 +362,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOnlinePlatform: (platform) => set({ onlinePlatform: platform }),
   setExternalOrderId: (id) => set({ externalOrderId: id }),
   setOrderNotes: (notes) => set({ orderNotes: notes }),
+  setScheduledFor: (value) => set({ scheduledFor: value }),
 
   subtotal: () => {
     const state = get();

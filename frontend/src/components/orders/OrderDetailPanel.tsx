@@ -331,6 +331,20 @@ function OrderDetailContent({
                 {tOrders(statusBadgeInfo.labelKey)}
               </span>
             )}
+            {order.status !== 'cancelled' &&
+              (order.release_status === 'scheduled' || order.release_status === 'blocked') && (
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    order.release_status === 'blocked'
+                      ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300'
+                      : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'
+                  }`}
+                >
+                  {order.release_status === 'blocked'
+                    ? tOrders('releaseBlocked')
+                    : tOrders('releaseScheduled')}
+                </span>
+              )}
             {payBadge && (
               <span
                 className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${payBadge.bg} ${payBadge.text}`}

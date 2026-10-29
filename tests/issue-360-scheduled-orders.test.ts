@@ -1,0 +1,1423 @@
+/**
+ * Scheduled orders with release semantics: store-timezone/DST validation,
+ * deferred stock/KDS/KOT side effects, 10s/startup/resume due sweep,
+ * concurrent idempotency, atomic blocked-stock holds with explicit retry,
+ * saved quote preservation, prepay/edit-lock/audited reschedule rules,
+ * refund-before-cancel enforcement, and shared transactional release hooks.
+ *
+ * Usage: node tests/run-electron-node-test.cjs tests/issue-360-scheduled-orders.test.ts
+ */
+
+const Module = require('module');
+const originalLoad = Module._load;
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-scheduled-orders-360-'));
+
+let kotPrintCalls: Array<{ orderId: unknown; stationName: string; itemCount: number }> = [];
+
+Module._load = function (request: string, parent: unknown, isMain: boolean) {
+  if (request === 'electron') {
+    return {
+      app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' },
+      powerMonitor: { on: () => {} },
+    };
+  }
+  const loaded = originalLoad.apply(this, arguments as any);
+  if (
+    typeof request === 'string' &&
+    (request.endsWith('/printers/thermal') || request.endsWith('\\printers\\thermal')) &&
+    loaded &&
+    typeof loaded.printKOTDetailed === 'function' &&
+    !(loaded as any).__scheduledKotWrapped
+  ) {
+    const origPrintKot = loaded.printKOTDetailed;
+    loaded.printKOTDetailed = async function (
+      order: any,
+      items: any[],
+      stationName: string,
+      ...rest: any[]
+    ) {
+      kotPrintCalls.push({
+        orderId: order?.id,
+        stationName,
+        itemCount: Array.isArray(items) ? items.length : 0,
+      });
+      return { ok: true, warnings: [] };
+    };
+    (loaded as any).__scheduledKotWrapped = true;
+    void origPrintKot;
+  }
+  return loaded;
+};
+
+process.env.JWT_SECRET = 'test-secret-scheduled-orders-360';
+
+const bcrypt = require('bcryptjs');
+const {
+  initTestDb,
+  createApp,
+  startServer,
+  seedOwnerUser,
+  seedManagerUser,
+  seedCategory,
+  seedProduct,
+  seedTable,
+  seedCustomer,
+  api,
+  assertOrThrow,
+  assertEqualOrThrow,
+  assertIncludesOrThrow,
+  getResults,
+  resetCounters,
+  closeDatabase,
+  now,
+} = require('./helpers/test-setup');
+const { validateInventoryLedgerDatabase, withTxn } = require('../main/db');
+const { adjustProductStock } = require('../main/services/inventory');
+const { createSupply, getSupply } = require('../main/services/supplies');
+const { saveRecipe } = require('../main/services/recipes');
+const { buildDisplayFeed } = require('../main/services/customer-display-tokens');
+const {
+  releaseScheduledOrder,
+  sweepDueScheduledOrders,
+  startScheduledOrderSweep,
+  stopScheduledOrderSweep,
+  triggerScheduledOrderSweep,
+} = require('../main/services/scheduled-orders');
+const {
+  parseScheduledForInput,
+  formatScheduledInstantForDisplay,
+} = require('../shared/scheduled-time');
+const { resetPinRateLimitForTests } = require('../main/routes/orders');
+const { registerRoutes } = require('../main/routes/index');
+
+function setStoreSetting(db: any, key: string, value: string) {
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(key, value, now());
+}
+
+function productStock(db: any, id: string): number {
+  const row = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(id) as any;
+  return Number(row?.stock_quantity ?? 0);
+}
+
+function variantStock(db: any, id: string): number {
+  const row = db.prepare('SELECT stock_quantity FROM product_variants WHERE id = ?').get(id) as any;
+  return Number(row?.stock_quantity ?? 0);
+}
+
+function addonStock(db: any, id: string): number {
+  const row = db.prepare('SELECT stock_quantity FROM addons WHERE id = ?').get(id) as any;
+  return Number(row?.stock_quantity ?? 0);
+}
+
+function supplyStock(db: any, id: string): number {
+  return Number(getSupply(db, id).stock_quantity);
+}
+
+function assertLedgerReconciles(db: any, label: string) {
+  assertEqualOrThrow(
+    validateInventoryLedgerDatabase(db),
+    null,
+    `inventory ledger reconciles (${label})`,
+  );
+}
+
+function futureWallClockInZone(timezone: string, offsetMinutes: number): string {
+  const target = new Date(Date.now() + offsetMinutes * 60 * 1000);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour12: false,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(target);
+  const byType: Record<string, string> = {};
+  for (const p of parts) byType[p.type] = p.value;
+  return `${byType.year}-${byType.month}-${byType.day}T${byType.hour === '24' ? '00' : byType.hour}:${byType.minute}`;
+}
+
+async function main() {
+  console.log('Scheduled orders with release semantics (#360)');
+  console.log('='.repeat(66));
+  resetCounters();
+  resetPinRateLimitForTests();
+
+  const db = initTestDb();
+  const owner = seedOwnerUser(db);
+  const manager = seedManagerUser(db);
+  db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
+    bcrypt.hashSync('9999', 10),
+    owner.userId,
+  );
+
+  // Configure store regional snapshot & printing/KDS settings
+  setStoreSetting(db, 'country', 'US');
+  setStoreSetting(db, 'currency', 'USD');
+  setStoreSetting(db, 'timezone', 'America/New_York');
+  setStoreSetting(db, 'kds_enabled', 'true');
+  setStoreSetting(db, 'kot_printing_enabled', 'true');
+  setStoreSetting(db, 'auto_print_kot', 'true');
+  setStoreSetting(db, 'require_kitchen_delivered_before_settlement', 'true');
+  setStoreSetting(db, 'discount_mode', 'percentage');
+  setStoreSetting(db, 'discount_max_percentage', '50');
+  setStoreSetting(db, 'discount_requires_approval', 'false');
+
+  // Seed default backend printer so autoPrintReleasedOrderKot exercises KOT routing
+  db.prepare(
+    `INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, text_size, is_default, cash_drawer_pulse_enabled, created_at, updated_at)
+     VALUES ('prn-kot-1', 'Kitchen Thermal', 'network', '127.0.0.1', 9100, 'cols-42', 'normal', 1, 0, ?, ?)`,
+  ).run(now(), now());
+
+  seedCategory(db, 'cat-sched', 'Scheduled Menu');
+  db.prepare(
+    `INSERT INTO kitchen_stations (id, name, category_ids, is_active, sort_order, created_at, updated_at)
+     VALUES ('stn-sched-1', 'Main Line', ?, 1, 1, ?, ?)`,
+  ).run(JSON.stringify(['cat-sched']), now(), now());
+  seedTable(db, 'tbl-sched-1', 1, 4);
+  seedCustomer(db, 'cust-sched-1', 'Alex Customer', '+15550101234');
+  seedCustomer(db, 'cust-sched-2', 'Sam Customer', '+15550105678');
+
+  // Seed tracked product (stock = 10 via adjustProductStock so ledger reconciles)
+  seedProduct(db, 'prod-latte', 'cat-sched', 'Scheduled Latte', 200, {
+    track_inventory: true,
+    stock_quantity: 0,
+  });
+  seedProduct(db, 'prod-muffin', 'cat-sched', 'Blueberry Muffin', 80, {
+    track_inventory: true,
+    stock_quantity: 0,
+  });
+  seedProduct(db, 'prod-sized-tea', 'cat-sched', 'Iced Tea', 120, {
+    track_inventory: false,
+    stock_quantity: 0,
+  });
+
+  // Seed tracked variant on prod-sized-tea
+  db.prepare(
+    `INSERT INTO product_variants (id, product_id, name, price, track_inventory, stock_quantity, is_active, sort_order, created_at, updated_at)
+     VALUES ('var-tea-large', 'prod-sized-tea', 'Large', 150, 1, 0, 1, 1, ?, ?)`,
+  ).run(now(), now());
+
+  // Seed tracked add-on group + add-on
+  db.prepare(
+    `INSERT INTO addon_groups (id, name, min_selection, max_selection, allow_multiple_quantities, is_required, is_active, created_at, updated_at)
+     VALUES ('grp-extras', 'Extras', 0, NULL, 1, 0, 1, ?, ?)`,
+  ).run(now(), now());
+  db.prepare(
+    `INSERT INTO addons (id, addon_group_id, name, price, is_active, track_inventory, stock_quantity, low_stock_threshold, created_at, updated_at)
+     VALUES ('addon-syrup', 'grp-extras', 'Vanilla Syrup', 20, 1, 1, 0, 2, ?, ?)`,
+  ).run(now(), now());
+  db.prepare(
+    `INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('prod-latte', 'grp-extras')`,
+  ).run();
+
+  withTxn(() => {
+    adjustProductStock(db, {
+      productId: 'prod-latte',
+      quantityDelta: 10,
+      movementType: 'adjustment',
+      referenceType: 'opening_balance',
+      reason: 'Initial stock',
+      actorUserId: owner.userId,
+    });
+    adjustProductStock(db, {
+      productId: 'prod-muffin',
+      quantityDelta: 2,
+      movementType: 'adjustment',
+      referenceType: 'opening_balance',
+      reason: 'Initial stock',
+      actorUserId: owner.userId,
+    });
+    adjustProductStock(db, {
+      productId: 'prod-sized-tea',
+      variantId: 'var-tea-large',
+      quantityDelta: 8,
+      movementType: 'adjustment',
+      referenceType: 'opening_balance',
+      reason: 'Initial variant stock',
+      actorUserId: owner.userId,
+    });
+    adjustProductStock(db, {
+      productId: null,
+      addonId: 'addon-syrup',
+      quantityDelta: 10,
+      movementType: 'adjustment',
+      referenceType: 'opening_balance',
+      reason: 'Initial addon stock',
+      actorUserId: owner.userId,
+    });
+  });
+
+  // Seed recipe supplies (beans = 500g, milk = 100ml so we also test negative supply stock allowance!)
+  const beans = createSupply(db, {
+    name: 'Espresso Beans',
+    baseUnit: 'g',
+    stockQuantity: 500,
+    lowStockThreshold: 50,
+    actorUserId: owner.userId,
+  });
+  const oatSupply = createSupply(db, {
+    name: 'Barista Milk Supply',
+    baseUnit: 'ml',
+    stockQuantity: 100,
+    lowStockThreshold: 50,
+    actorUserId: owner.userId,
+  });
+
+  saveRecipe(db, {
+    productId: 'prod-latte',
+    yieldQuantity: 1,
+    items: [
+      { supply_id: beans.id, quantity: 18, unit: 'g' },
+      { supply_id: oatSupply.id, quantity: 120, unit: 'ml' },
+    ],
+  });
+
+  assertLedgerReconciles(db, 'initial seed');
+
+  const app = createApp({});
+  registerRoutes(app);
+  const { baseUrl, server } = await startServer(app);
+
+  try {
+    // ── 1. Order type gating & Timezone / DST validation ─────────────────────
+    console.log('\n--- 1. Order type gating, store timezone & DST validation ---');
+    {
+      const validFuture = futureWallClockInZone('America/New_York', 90);
+
+      const dineInRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'dine_in',
+          table_id: 'tbl-sched-1',
+          scheduled_for: validFuture,
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      assertEqualOrThrow(dineInRes.status, 400, 'dine_in rejects scheduled_for with 400');
+
+      const onlineRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'online',
+          online_platform: 'UberEats',
+          scheduled_for: validFuture,
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      assertEqualOrThrow(onlineRes.status, 400, 'online rejects scheduled_for with 400');
+
+      // Past time rejection
+      const pastRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: '2020-01-15T10:00',
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      assertEqualOrThrow(pastRes.status, 400, 'past scheduled_for is rejected with 400');
+
+      // Nonexistent spring-forward DST local time in America/New_York (2027-03-14 02:30 jumps 02:00 -> 03:00)
+      const springRefMs = Date.parse('2027-03-14T00:00:00Z');
+      const springParsed = parseScheduledForInput({
+        input: '2027-03-14T02:30',
+        timezone: 'America/New_York',
+        nowMs: springRefMs,
+      });
+      assertEqualOrThrow(springParsed.ok, false, 'spring-forward nonexistent time rejected');
+      if (!springParsed.ok) {
+        assertEqualOrThrow(
+          springParsed.code,
+          'DST_NONEXISTENT_TIME',
+          'spring-forward returns DST_NONEXISTENT_TIME',
+        );
+        assertIncludesOrThrow(
+          springParsed.message,
+          'America/New_York',
+          'spring-forward message names store timezone',
+        );
+      }
+
+      // Repeated fall-back DST local time in America/New_York (2027-11-07 01:30 occurs twice)
+      const fallRefMs = Date.parse('2027-11-07T00:00:00Z');
+      const fallParsed = parseScheduledForInput({
+        input: '2027-11-07T01:30',
+        timezone: 'America/New_York',
+        nowMs: fallRefMs,
+      });
+      assertEqualOrThrow(fallParsed.ok, false, 'fall-back ambiguous time rejected');
+      if (!fallParsed.ok) {
+        assertEqualOrThrow(
+          fallParsed.code,
+          'DST_AMBIGUOUS_TIME',
+          'fall-back returns DST_AMBIGUOUS_TIME',
+        );
+        assertIncludesOrThrow(
+          fallParsed.message,
+          'occurs twice',
+          'fall-back message explains repeated DST clock',
+        );
+      }
+
+      // HTTP endpoint also rejects future spring-forward DST time (2028-03-12T02:30 in America/New_York)
+      const httpDstRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: '2028-03-12T02:30',
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      assertEqualOrThrow(
+        httpDstRes.status,
+        400,
+        'POST /api/orders rejects nonexistent spring-forward DST local time with 400',
+      );
+      assertIncludesOrThrow(
+        String(httpDstRes.data?.error || ''),
+        'daylight saving',
+        'HTTP 400 explains daylight-saving rejection',
+      );
+    }
+
+    // ── 2. No early stock, KDS, or KOT side effects + timezone preservation ──
+    console.log('\n--- 2. No early stock, KDS, or KOT effects & UTC instant preservation ---');
+    let scheduledOrder1Id = 0;
+    let scheduledOrder1ItemId = 0;
+    let scheduledOrder1SavedUtc = '';
+    {
+      kotPrintCalls = [];
+      const futureWall = futureWallClockInZone('America/New_York', 120);
+      const createRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'delivery',
+          customer_id: 'cust-sched-1',
+          delivery_address: '742 Evergreen Terrace',
+          scheduled_for: futureWall,
+          items: [
+            {
+              product_id: 'prod-latte',
+              quantity: 2,
+              addons: [{ id: 'addon-syrup', quantity: 1 }],
+            },
+            {
+              product_id: 'prod-sized-tea',
+              variant_id: 'var-tea-large',
+              quantity: 1,
+            },
+          ],
+        },
+      });
+      assertEqualOrThrow(createRes.status, 201, 'delivery scheduled order created (201)');
+      const created = createRes.data.order;
+      scheduledOrder1Id = Number(created.id);
+      scheduledOrder1ItemId = Number(created.items[0].id);
+      scheduledOrder1SavedUtc = String(created.scheduled_for);
+
+      assertEqualOrThrow(created.release_status, 'scheduled', 'release_status is scheduled');
+      assertEqualOrThrow(created.released_at, null, 'released_at is null before release');
+      assertEqualOrThrow(
+        created.release_blocked_reason,
+        null,
+        'release_blocked_reason is null before release',
+      );
+      assertOrThrow(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(scheduledOrder1SavedUtc),
+        'scheduled_for persisted as canonical UTC ISO instant',
+      );
+
+      // Stock & supply untouched on scheduled creation
+      assertEqualOrThrow(productStock(db, 'prod-latte'), 10, 'product stock untouched pre-release');
+      assertEqualOrThrow(
+        variantStock(db, 'var-tea-large'),
+        8,
+        'variant stock untouched pre-release',
+      );
+      assertEqualOrThrow(addonStock(db, 'addon-syrup'), 10, 'add-on stock untouched pre-release');
+      assertEqualOrThrow(supplyStock(db, beans.id), 500, 'beans supply untouched pre-release');
+      assertEqualOrThrow(supplyStock(db, oatSupply.id), 100, 'milk supply untouched pre-release');
+      assertEqualOrThrow(kotPrintCalls.length, 0, 'no automatic KOT printed at scheduled creation');
+      assertLedgerReconciles(db, 'after scheduled order creation');
+
+      // Changing store timezone setting preserves exact saved UTC instant
+      setStoreSetting(db, 'timezone', 'Asia/Kolkata');
+      const reReadRes = await api(baseUrl, `/api/orders/${scheduledOrder1Id}`, {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(
+        reReadRes.data.order.scheduled_for,
+        scheduledOrder1SavedUtc,
+        'saved scheduled_for UTC instant preserved after store timezone change',
+      );
+      const nyDisplay = formatScheduledInstantForDisplay(
+        scheduledOrder1SavedUtc,
+        'America/New_York',
+        'en-US',
+      );
+      const inDisplay = formatScheduledInstantForDisplay(
+        scheduledOrder1SavedUtc,
+        'Asia/Kolkata',
+        'en-US',
+      );
+      assertOrThrow(
+        nyDisplay !== inDisplay,
+        'display presentation reflects updated store timezone without mutating stored UTC instant',
+      );
+      setStoreSetting(db, 'timezone', 'America/New_York');
+
+      // Excluded from KDS, kitchen, customer display, and KOT print endpoints
+      const kdsOrdersRes = await api(baseUrl, '/api/kds/orders', { headers: owner.authHeader });
+      assertEqualOrThrow(kdsOrdersRes.status, 200, 'GET /api/kds/orders succeeds');
+      assertOrThrow(
+        !kdsOrdersRes.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
+        'unreleased order excluded from /api/kds/orders',
+      );
+
+      const kdsDisplayRes = await api(baseUrl, '/api/kds/display?station_id=stn-sched-1', {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(kdsDisplayRes.status, 200, 'GET /api/kds/display succeeds');
+      assertOrThrow(
+        !kdsDisplayRes.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
+        'unreleased order excluded from /api/kds/display',
+      );
+
+      const kitchenRes = await api(baseUrl, '/api/kitchen/orders', { headers: owner.authHeader });
+      assertEqualOrThrow(kitchenRes.status, 200, 'GET /api/kitchen/orders succeeds');
+      assertOrThrow(
+        !kitchenRes.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
+        'unreleased order excluded from /api/kitchen/orders',
+      );
+
+      const displayFeed = buildDisplayFeed();
+      assertOrThrow(
+        !displayFeed.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
+        'unreleased order excluded from customer display feed',
+      );
+
+      const manualKotRes = await api(baseUrl, '/api/printers/print-kot', {
+        method: 'POST',
+        headers: manager.authHeader,
+        body: { orderId: scheduledOrder1Id },
+      });
+      assertEqualOrThrow(
+        manualKotRes.status,
+        409,
+        'POST /api/printers/print-kot rejected (409) before release even from another staff client',
+      );
+
+      const kdsItemMutateRes = await api(
+        baseUrl,
+        `/api/kds/items/${scheduledOrder1ItemId}/status`,
+        {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'preparing' },
+        },
+      );
+      assertEqualOrThrow(
+        kdsItemMutateRes.status,
+        409,
+        'PATCH /api/kds/items/:id/status rejected (409) before release',
+      );
+
+      const orderItemMutateRes = await api(
+        baseUrl,
+        `/api/order-items/${scheduledOrder1ItemId}/status`,
+        {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'preparing' },
+        },
+      );
+      assertEqualOrThrow(
+        orderItemMutateRes.status,
+        409,
+        'PATCH /api/order-items/:id/status rejected (409) before release',
+      );
+
+      const orderStatusMutateRes = await api(baseUrl, `/api/orders/${scheduledOrder1Id}/status`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { status: 'preparing' },
+      });
+      assertEqualOrThrow(
+        orderStatusMutateRes.status,
+        409,
+        'PATCH /api/orders/:id/status (preparing) rejected (409) before release',
+      );
+
+      // Visible in scheduled queue endpoint
+      const queueRes = await api(baseUrl, '/api/orders?release_status=scheduled,blocked', {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(queueRes.status, 200, 'scheduled queue query succeeds');
+      assertOrThrow(
+        queueRes.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
+        'scheduled order returned in scheduled queue filter',
+      );
+      const dedicatedQueueRes = await api(baseUrl, '/api/orders/scheduled', {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(dedicatedQueueRes.status, 200, 'GET /api/orders/scheduled succeeds');
+      assertOrThrow(
+        dedicatedQueueRes.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
+        'scheduled order returned by GET /api/orders/scheduled',
+      );
+    }
+
+    // ── 3. Quote preservation + recipe-at-release + negative supply + due sweep + concurrent idempotency ─
+    console.log(
+      '\n--- 3. Quote preservation, current recipe at release, negative supply, due sweep & concurrency ---',
+    );
+    {
+      // Record saved financial quote before mutating catalog & recipe
+      const beforeQuote = await api(baseUrl, `/api/orders/${scheduledOrder1Id}`, {
+        headers: owner.authHeader,
+      });
+      const savedTotal = Number(beforeQuote.data.order.total);
+      const savedSubtotal = Number(beforeQuote.data.order.subtotal);
+      assertEqualOrThrow(
+        savedSubtotal,
+        2 * 200 + 2 * 20 + 1 * 150,
+        'quoted subtotal = 2*(200+20) + 150 = 590',
+      );
+
+      // Mutate catalog prices AND update recipe BEFORE release!
+      db.prepare("UPDATE products SET price = 350 WHERE id = 'prod-latte'").run();
+      db.prepare("UPDATE addons SET price = 50 WHERE id = 'addon-syrup'").run();
+      saveRecipe(db, {
+        productId: 'prod-latte',
+        yieldQuantity: 1,
+        items: [
+          { supply_id: beans.id, quantity: 25, unit: 'g' }, // was 18g, now 25g -> 2 lattes = 50g
+          { supply_id: oatSupply.id, quantity: 120, unit: 'ml' }, // 2 lattes = 240ml (supply has 100ml -> goes to -140ml!)
+        ],
+      });
+
+      // Fire concurrent due sweep + manual release + sweep at/after scheduled_for!
+      const afterDueDate = new Date(Date.parse(scheduledOrder1SavedUtc) + 5_000);
+      const [sweepRes, manualRes, secondSweepRes] = await Promise.all([
+        sweepDueScheduledOrders(db, { nowDate: afterDueDate, trigger: 'sweep' }),
+        releaseScheduledOrder(db, scheduledOrder1Id, {
+          trigger: 'manual',
+          actorUserId: owner.userId,
+          nowDate: afterDueDate,
+        }),
+        releaseScheduledOrder(db, scheduledOrder1Id, {
+          trigger: 'sweep',
+          nowDate: afterDueDate,
+        }),
+      ]);
+
+      const releasedCount =
+        (sweepRes.releasedIds.includes(scheduledOrder1Id) ? 1 : 0) +
+        (manualRes.outcome === 'released' ? 1 : 0) +
+        (secondSweepRes.outcome === 'released' ? 1 : 0);
+      assertEqualOrThrow(
+        releasedCount,
+        1,
+        'concurrent sweep and manual retry release the order exactly once',
+      );
+
+      // Verify stock deducted ONCE, using updated recipe (50g beans) and allowing negative supply (-140ml milk)
+      assertEqualOrThrow(productStock(db, 'prod-latte'), 8, 'prod-latte deducted once (10 -> 8)');
+      assertEqualOrThrow(
+        variantStock(db, 'var-tea-large'),
+        7,
+        'var-tea-large deducted once (8 -> 7)',
+      );
+      assertEqualOrThrow(
+        addonStock(db, 'addon-syrup'),
+        8,
+        'addon-syrup deducted once (10 -> 8 for 2x1)',
+      );
+      assertEqualOrThrow(
+        supplyStock(db, beans.id),
+        450,
+        'beans supply deducted using recipe in effect at release (500 - 2*25 = 450)',
+      );
+      assertEqualOrThrow(
+        supplyStock(db, oatSupply.id),
+        -140,
+        'negative recipe-supply stock remains allowed at release (100 - 240 = -140)',
+      );
+      assertEqualOrThrow(
+        kotPrintCalls.length,
+        1,
+        'automatic KOT printed once when scheduled order released',
+      );
+      assertLedgerReconciles(db, 'after concurrent scheduled release');
+
+      // Verify saved prices/totals preserved (no automatic repricing!)
+      const afterQuote = await api(baseUrl, `/api/orders/${scheduledOrder1Id}`, {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(afterQuote.data.order.release_status, 'released', 'order is now released');
+      assertOrThrow(Boolean(afterQuote.data.order.released_at), 'released_at populated');
+      assertEqualOrThrow(
+        Number(afterQuote.data.order.subtotal),
+        savedSubtotal,
+        'saved subtotal preserved across catalog price changes',
+      );
+      assertEqualOrThrow(
+        Number(afterQuote.data.order.total),
+        savedTotal,
+        'saved total preserved across catalog price changes',
+      );
+      assertEqualOrThrow(
+        Number(afterQuote.data.order.items[0].unit_price),
+        200,
+        'saved item unit_price preserved (200, not repriced to 350)',
+      );
+      assertEqualOrThrow(
+        Number(afterQuote.data.order.items[0].inventory_deducted_quantity),
+        2,
+        'actual depletion snapshot saved on released order item',
+      );
+
+      // Now visible in KDS & customer display!
+      const kdsAfter = await api(baseUrl, '/api/kds/orders', { headers: owner.authHeader });
+      assertOrThrow(
+        kdsAfter.data.orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
+        'released order now appears on KDS',
+      );
+      assertOrThrow(
+        buildDisplayFeed().orders.some((o: any) => Number(o.id) === scheduledOrder1Id),
+        'released order now appears on customer display feed',
+      );
+
+      // Restore catalog prices for subsequent tests
+      db.prepare("UPDATE products SET price = 200 WHERE id = 'prod-latte'").run();
+      db.prepare("UPDATE addons SET price = 20 WHERE id = 'addon-syrup'").run();
+    }
+
+    // ── 4. Startup & resume overdue sweep ────────────────────────────────────
+    console.log('\n--- 4. Startup and resume overdue release ---');
+    {
+      const dueSoonWall = futureWallClockInZone('America/New_York', 30);
+      const createRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: dueSoonWall,
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      assertEqualOrThrow(createRes.status, 201, 'overdue candidate created');
+      const overdueId = Number(createRes.data.order.id);
+
+      // Backdate scheduled_for to 2 minutes ago to simulate an order that became overdue while asleep/offline
+      const pastIso = new Date(Date.now() - 120_000).toISOString();
+      db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(pastIso, overdueId);
+
+      startScheduledOrderSweep(40);
+      // Allow startup sweep promise to settle
+      await new Promise((r) => setTimeout(r, 80));
+
+      const afterStartup = db
+        .prepare('SELECT release_status, released_at FROM orders WHERE id = ?')
+        .get(overdueId) as any;
+      assertEqualOrThrow(
+        afterStartup.release_status,
+        'released',
+        'startup sweep automatically releases overdue scheduled order',
+      );
+      assertOrThrow(Boolean(afterStartup.released_at), 'startup sweep sets released_at');
+
+      // Verify subsequent periodic interval tick ALSO runs after startup sweep settles
+      const periodicCreate = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: dueSoonWall,
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      const periodicOrderId = Number(periodicCreate.data.order.id);
+      db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(pastIso, periodicOrderId);
+      await new Promise((r) => setTimeout(r, 100));
+      stopScheduledOrderSweep();
+
+      const afterPeriodic = db
+        .prepare('SELECT release_status FROM orders WHERE id = ?')
+        .get(periodicOrderId) as any;
+      assertEqualOrThrow(
+        afterPeriodic.release_status,
+        'released',
+        'periodic due sweep interval releases subsequent due scheduled orders',
+      );
+
+      // Also test resume sweep directly
+      const resumeCreate = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: dueSoonWall,
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      const resumeOrderId = Number(resumeCreate.data.order.id);
+      db.prepare('UPDATE orders SET scheduled_for = ? WHERE id = ?').run(pastIso, resumeOrderId);
+      const resumeSummary = await triggerScheduledOrderSweep('resume');
+      assertOrThrow(
+        resumeSummary.releasedIds.includes(resumeOrderId),
+        'resume trigger releases overdue scheduled order',
+      );
+      assertLedgerReconciles(db, 'after startup and resume sweeps');
+    }
+
+    // ── 5. Blocked release holds whole order atomically + explicit retry ─────
+    console.log('\n--- 5. Atomic whole-order hold on blocked stock/catalog & explicit retry ---');
+    {
+      // prod-latte currently has stock = 6 (10 - 2 - 1 - 1). prod-muffin has stock = 2.
+      // Create a scheduled order needing 1 prod-latte (available!) AND 5 prod-muffin (only 2 available -> short!).
+      const schedWall = futureWallClockInZone('America/New_York', 45);
+      const createRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: schedWall,
+          items: [
+            { product_id: 'prod-latte', quantity: 1 },
+            { product_id: 'prod-muffin', quantity: 5 },
+          ],
+        },
+      });
+      assertEqualOrThrow(
+        createRes.status,
+        201,
+        'scheduled order accepted even when future stock must be replenished before release',
+      );
+      const blockedOrderId = Number(createRes.data.order.id);
+      const latteBefore = productStock(db, 'prod-latte');
+      const muffinBefore = productStock(db, 'prod-muffin');
+
+      // Due sweep runs when order becomes due -> must hold WHOLE order atomically!
+      const futureNow = new Date(Date.parse(createRes.data.order.scheduled_for) + 10_000);
+      const sweepBlocked = await sweepDueScheduledOrders(db, {
+        nowDate: futureNow,
+        trigger: 'sweep',
+      });
+      assertOrThrow(
+        sweepBlocked.blockedIds.includes(blockedOrderId),
+        'due sweep marks insufficient-stock order as blocked',
+      );
+
+      // Neither prod-latte nor prod-muffin may have been partially deducted!
+      assertEqualOrThrow(
+        productStock(db, 'prod-latte'),
+        latteBefore,
+        'atomic rollback: available line (prod-latte) NOT partially deducted when sibling line fails',
+      );
+      assertEqualOrThrow(
+        productStock(db, 'prod-muffin'),
+        muffinBefore,
+        'short line (prod-muffin) NOT deducted',
+      );
+      assertLedgerReconciles(db, 'after blocked release rollback');
+
+      const blockedOrderRes = await api(baseUrl, `/api/orders/${blockedOrderId}`, {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(
+        blockedOrderRes.data.order.release_status,
+        'blocked',
+        'release_status is blocked',
+      );
+      assertIncludesOrThrow(
+        String(blockedOrderRes.data.order.release_blocked_reason || ''),
+        'Blueberry Muffin',
+        'release_blocked_reason names the offending item',
+      );
+
+      // Still excluded from KDS!
+      const kdsWhileBlocked = await api(baseUrl, '/api/kds/orders', { headers: owner.authHeader });
+      assertOrThrow(
+        !kdsWhileBlocked.data.orders.some((o: any) => Number(o.id) === blockedOrderId),
+        'blocked order remains excluded from KDS',
+      );
+
+      // Restock prod-muffin (+5 -> total 7), verify automatic due sweep does NOT auto-release a blocked order!
+      withTxn(() => {
+        adjustProductStock(db, {
+          productId: 'prod-muffin',
+          quantityDelta: 5,
+          movementType: 'adjustment',
+          referenceType: 'restock',
+          reason: 'Restocked muffins',
+          actorUserId: owner.userId,
+        });
+      });
+
+      const sweepAfterRestock = await sweepDueScheduledOrders(db, {
+        nowDate: new Date(futureNow.getTime() + 20_000),
+        trigger: 'sweep',
+      });
+      assertOrThrow(
+        !sweepAfterRestock.releasedIds.includes(blockedOrderId),
+        'automatic due sweep skips already-blocked order until staff explicitly retries',
+      );
+
+      // Also test catalog unavailability block before final retry: deactivate prod-muffin
+      db.prepare("UPDATE products SET is_active = 0 WHERE id = 'prod-muffin'").run();
+      const retryWhileInactive = await api(baseUrl, `/api/orders/${blockedOrderId}/release`, {
+        method: 'POST',
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(
+        retryWhileInactive.status,
+        409,
+        'manual retry returns 409 RELEASE_BLOCKED while product is inactive',
+      );
+      assertEqualOrThrow(
+        retryWhileInactive.data.code,
+        'RELEASE_BLOCKED',
+        'code is RELEASE_BLOCKED',
+      );
+
+      // Re-activate prod-muffin and explicitly retry via POST /api/orders/:id/release
+      db.prepare("UPDATE products SET is_active = 1 WHERE id = 'prod-muffin'").run();
+      const retrySuccess = await api(baseUrl, `/api/orders/${blockedOrderId}/release`, {
+        method: 'POST',
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(retrySuccess.status, 200, 'explicit retry after resolving issue succeeds');
+      assertEqualOrThrow(
+        retrySuccess.data.order.release_status,
+        'released',
+        'retried order transitions to released',
+      );
+      assertEqualOrThrow(
+        retrySuccess.data.order.release_blocked_reason,
+        null,
+        'release_blocked_reason cleared on successful release',
+      );
+      assertEqualOrThrow(
+        productStock(db, 'prod-latte'),
+        latteBefore - 1,
+        'prod-latte deducted on successful retry',
+      );
+      assertEqualOrThrow(
+        productStock(db, 'prod-muffin'),
+        2,
+        'prod-muffin deducted 5 from restocked 7 -> 2',
+      );
+      assertLedgerReconciles(db, 'after explicit retry release');
+    }
+
+    // ── 6. Pre-payment edits, prepay without early release/completion, edit-lock, audited reschedule ─
+    console.log(
+      '\n--- 6. Edits before payment, prepay without early release/completion, edit lock & audited reschedule ---',
+    );
+    let paidScheduledOrderId = 0;
+    let paidScheduledBillId = '';
+    {
+      const schedWall = futureWallClockInZone('America/New_York', 90);
+      const createRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          customer_id: 'cust-sched-1',
+          scheduled_for: schedWall,
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      assertEqualOrThrow(createRes.status, 201, 'scheduled takeaway order created');
+      paidScheduledOrderId = Number(createRes.data.order.id);
+      const initialItemId = Number(createRes.data.order.items[0].id);
+      const initialEditVersion = Number(createRes.data.order.items[0].edit_version || 0);
+      const stockBeforeEdits = productStock(db, 'prod-latte');
+
+      // Before payment: item edit, item append, customer change, and discount ARE allowed and do NOT deduct stock early!
+      const editRes = await api(
+        baseUrl,
+        `/api/orders/${paidScheduledOrderId}/items/${initialItemId}/edit`,
+        {
+          method: 'PATCH',
+          headers: { ...owner.authHeader, 'Idempotency-Key': 'edit-sched-item-1' },
+          body: { expected_edit_version: initialEditVersion, quantity: 2 },
+        },
+      );
+      assertEqualOrThrow(editRes.status, 200, 'item quantity edit allowed before payment');
+      assertEqualOrThrow(
+        productStock(db, 'prod-latte'),
+        stockBeforeEdits,
+        'item edit on unreleased order does not deduct stock early',
+      );
+
+      const appendRes = await api(baseUrl, `/api/orders/${paidScheduledOrderId}/items`, {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: { items: [{ product_id: 'prod-muffin', quantity: 1 }] },
+      });
+      assertEqualOrThrow(appendRes.status, 200, 'item append allowed before payment');
+
+      const custRes = await api(baseUrl, `/api/orders/${paidScheduledOrderId}/customer`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { customer_id: 'cust-sched-2' },
+      });
+      assertEqualOrThrow(custRes.status, 200, 'customer update allowed before payment');
+
+      const discRes = await api(baseUrl, `/api/orders/${paidScheduledOrderId}/discount`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { discount_type: 'percentage', discount_value: 10 },
+      });
+      assertEqualOrThrow(discRes.status, 200, 'order discount allowed before payment');
+
+      // Generate bill & take partial payment, then remaining payment BEFORE release
+      const genBillRes = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: { order_id: String(paidScheduledOrderId) },
+      });
+      assertEqualOrThrow(genBillRes.status, 201, 'bill generated for scheduled order');
+      paidScheduledBillId = String(genBillRes.data.bill.id);
+      const payableTotal = Number(genBillRes.data.bill.total);
+
+      const partialPayRes = await api(baseUrl, `/api/bills/${paidScheduledBillId}/payment`, {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: { method: 'card', amount: 100, transaction_id: 'TXN-SCHED-PART-1' },
+      });
+      assertEqualOrThrow(
+        partialPayRes.status,
+        200,
+        'partial payment succeeds before release without kitchen-delivery block',
+      );
+      assertEqualOrThrow(partialPayRes.data.bill.payment_status, 'partial', 'bill is partial');
+
+      // Even after partial payment, item and financial edits MUST be blocked!
+      const activeItemAfterPartial = appendRes.data.order.items.find(
+        (i: any) => i.status === 'pending',
+      );
+      const blockedAppend = await api(baseUrl, `/api/orders/${paidScheduledOrderId}/items`, {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: { items: [{ product_id: 'prod-muffin', quantity: 1 }] },
+      });
+      assertEqualOrThrow(blockedAppend.status, 409, 'item append blocked after partial payment');
+
+      const blockedEditAfterPartial = await api(
+        baseUrl,
+        `/api/orders/${paidScheduledOrderId}/items/${activeItemAfterPartial.id}/edit`,
+        {
+          method: 'PATCH',
+          headers: { ...owner.authHeader, 'Idempotency-Key': 'edit-sched-item-blocked' },
+          body: {
+            expected_edit_version: Number(activeItemAfterPartial.edit_version || 0),
+            quantity: 3,
+          },
+        },
+      );
+      assertEqualOrThrow(
+        blockedEditAfterPartial.status,
+        409,
+        'item quantity edit blocked after partial payment',
+      );
+
+      const blockedDisc = await api(baseUrl, `/api/orders/${paidScheduledOrderId}/discount`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { discount_type: 'percentage', discount_value: 5 },
+      });
+      assertEqualOrThrow(blockedDisc.status, 409, 'order discount blocked after partial payment');
+      assertEqualOrThrow(
+        blockedDisc.data.code,
+        'SCHEDULED_ORDER_PAID',
+        'returns SCHEDULED_ORDER_PAID code',
+      );
+
+      const blockedBillDisc = await api(
+        baseUrl,
+        `/api/bills/${paidScheduledBillId}/applyDiscount`,
+        {
+          method: 'POST',
+          headers: owner.authHeader,
+          body: { type: 'percentage', value: 5 },
+        },
+      );
+      assertEqualOrThrow(
+        blockedBillDisc.status,
+        409,
+        'bill discount blocked after partial payment',
+      );
+
+      const blockedItemCancel = await api(
+        baseUrl,
+        `/api/orders/${paidScheduledOrderId}/items/${activeItemAfterPartial.id}/cancel`,
+        {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { reason: 'Changed mind' },
+        },
+      );
+      assertEqualOrThrow(
+        blockedItemCancel.status,
+        409,
+        'item cancellation blocked after partial payment',
+      );
+
+      const blockedPriceOverride = await api(
+        baseUrl,
+        `/api/orders/${paidScheduledOrderId}/items/${activeItemAfterPartial.id}/price`,
+        {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { price: 150, reason: 'VIP' },
+        },
+      );
+      assertEqualOrThrow(
+        blockedPriceOverride.status,
+        409,
+        'manual price override blocked after partial payment',
+      );
+
+      // Settle remaining balance in full BEFORE release
+      const remaining = Number((payableTotal - 100).toFixed(2));
+      const fullPayRes = await api(baseUrl, `/api/bills/${paidScheduledBillId}/payment`, {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: { method: 'card', amount: remaining, transaction_id: 'TXN-SCHED-FULL-2' },
+      });
+      assertEqualOrThrow(fullPayRes.status, 200, 'full payment succeeds before release');
+      assertEqualOrThrow(fullPayRes.data.bill.payment_status, 'paid', 'bill is fully paid');
+
+      // Full payment MUST NOT release early or mark kitchen order completed!
+      const afterFullPayOrder = await api(baseUrl, `/api/orders/${paidScheduledOrderId}`, {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(
+        afterFullPayOrder.data.order.release_status,
+        'scheduled',
+        'full payment does NOT release future order early',
+      );
+      assertEqualOrThrow(
+        afterFullPayOrder.data.order.status,
+        'pending',
+        'full payment does NOT mark unreleased order completed',
+      );
+
+      // Audited timing-only reschedule IS allowed after full payment until release!
+      const rescheduledWall = futureWallClockInZone('America/New_York', 150);
+      const reschedRes = await api(baseUrl, `/api/orders/${paidScheduledOrderId}/schedule`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { scheduled_for: rescheduledWall },
+      });
+      assertEqualOrThrow(
+        reschedRes.status,
+        200,
+        'timing-only reschedule succeeds even after full payment',
+      );
+      const scheduleAudit = db
+        .prepare(
+          `SELECT action, actor_user_id, details_json FROM order_audit_log
+           WHERE order_id = ? AND action = 'schedule_updated' ORDER BY id DESC LIMIT 1`,
+        )
+        .get(String(paidScheduledOrderId)) as any;
+      assertOrThrow(Boolean(scheduleAudit), 'schedule_updated recorded in order_audit_log');
+      assertEqualOrThrow(
+        scheduleAudit.actor_user_id,
+        owner.userId,
+        'schedule_updated attributes authenticated actor',
+      );
+    }
+
+    // ── 7. Cancellation rules (refund required after payment; no restock before release; restock after release) ─
+    console.log('\n--- 7. Cancellation rules before release, after payment, and after release ---');
+    {
+      // Paid scheduled order CANNOT be cancelled until collected funds are refunded in full (even with manager PIN!)
+      const cancelWhilePaidRes = await api(baseUrl, `/api/orders/${paidScheduledOrderId}/status`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { status: 'cancelled', reason: 'Customer called', override_pin: '1234' },
+      });
+      assertEqualOrThrow(
+        cancelWhilePaidRes.status,
+        409,
+        'cancelling paid scheduled order before full refund is rejected with 409',
+      );
+      assertEqualOrThrow(
+        cancelWhilePaidRes.data.code,
+        'REFUND_REQUIRED_BEFORE_CANCEL',
+        'returns REFUND_REQUIRED_BEFORE_CANCEL',
+      );
+
+      // Simulate order created 2 days ago while still unreleased -> refund must NOT fail late-refund cutoff!
+      db.prepare("UPDATE orders SET created_at = '2026-01-01 10:00:00' WHERE id = ?").run(
+        paidScheduledOrderId,
+      );
+      const billRow = db
+        .prepare('SELECT total FROM bills WHERE id = ?')
+        .get(paidScheduledBillId) as any;
+
+      // Partial refund still blocks cancellation!
+      const partialRefundRes = await api(baseUrl, '/api/refunds', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          bill_id: paidScheduledBillId,
+          amount: 50,
+          method: 'card',
+          reason: 'Partial test',
+          approver_id: manager.userId,
+          override_pin: '1234',
+        },
+      });
+      assertEqualOrThrow(
+        partialRefundRes.status,
+        201,
+        'manager PIN (not late owner-only) authorizes refund on unreleased scheduled order regardless of created_at age',
+      );
+
+      const cancelAfterPartialRefund = await api(
+        baseUrl,
+        `/api/orders/${paidScheduledOrderId}/status`,
+        {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'cancelled', reason: 'Still has net funds', override_pin: '1234' },
+        },
+      );
+      assertEqualOrThrow(
+        cancelAfterPartialRefund.status,
+        409,
+        'cancellation still blocked while unrefunded funds remain',
+      );
+
+      // Refund remaining collected balance in full
+      const remainingRefund = Number((Number(billRow.total) - 50).toFixed(2));
+      const finalRefundRes = await api(baseUrl, '/api/refunds', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          bill_id: paidScheduledBillId,
+          amount: remainingRefund,
+          method: 'card',
+          reason: 'Full refund before cancel',
+          approver_id: manager.userId,
+          override_pin: '1234',
+        },
+      });
+      assertEqualOrThrow(finalRefundRes.status, 201, 'remaining balance refunded in full');
+
+      const latteBeforeCancel = productStock(db, 'prod-latte');
+      const muffinBeforeCancel = productStock(db, 'prod-muffin');
+      const beansBeforeCancel = supplyStock(db, beans.id);
+
+      // Now cancel unreleased order -> succeeds, preserves bill & audit history, and restores ZERO stock!
+      const cancelAfterFullRefund = await api(
+        baseUrl,
+        `/api/orders/${paidScheduledOrderId}/status`,
+        {
+          method: 'PATCH',
+          headers: owner.authHeader,
+          body: { status: 'cancelled', reason: 'Refunded and cancelled' },
+        },
+      );
+      assertEqualOrThrow(
+        cancelAfterFullRefund.status,
+        200,
+        'scheduled order cancels cleanly once collected funds are fully refunded',
+      );
+      assertEqualOrThrow(
+        productStock(db, 'prod-latte'),
+        latteBeforeCancel,
+        'cancelling before release does NOT restore product stock that was never deducted',
+      );
+      assertEqualOrThrow(
+        productStock(db, 'prod-muffin'),
+        muffinBeforeCancel,
+        'cancelling before release does NOT restore muffin stock that was never deducted',
+      );
+      assertEqualOrThrow(
+        supplyStock(db, beans.id),
+        beansBeforeCancel,
+        'cancelling before release does NOT restore recipe supply stock that was never deducted',
+      );
+      const preservedBill = db
+        .prepare('SELECT payment_status FROM bills WHERE id = ?')
+        .get(paidScheduledBillId) as any;
+      assertEqualOrThrow(
+        preservedBill?.payment_status,
+        'refunded',
+        'bill record preserved with refunded status after cancellation',
+      );
+      const auditCount = (
+        db
+          .prepare('SELECT COUNT(*) AS c FROM order_audit_log WHERE order_id = ?')
+          .get(String(paidScheduledOrderId)) as any
+      ).c;
+      assertOrThrow(auditCount >= 3, 'audit log history preserved on cancelled scheduled order');
+      assertLedgerReconciles(db, 'after pre-release cancellation');
+
+      // Cancelling AFTER release (while pending) DOES restore recorded snapshots, and rescheduling after release is 409!
+      const postRelCreate = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: futureWallClockInZone('America/New_York', 60),
+          items: [
+            {
+              product_id: 'prod-latte',
+              quantity: 1,
+              addons: [{ id: 'addon-syrup', quantity: 1 }],
+            },
+          ],
+        },
+      });
+      const postRelId = Number(postRelCreate.data.order.id);
+      const latteStockPreRel = productStock(db, 'prod-latte');
+      const syrupStockPreRel = addonStock(db, 'addon-syrup');
+      const beansStockPreRel = supplyStock(db, beans.id);
+
+      const relNowRes = await api(baseUrl, `/api/orders/${postRelId}/release`, {
+        method: 'POST',
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(relNowRes.status, 200, 'Release now succeeds');
+      assertEqualOrThrow(
+        productStock(db, 'prod-latte'),
+        latteStockPreRel - 1,
+        'stock deducted on release',
+      );
+
+      // Reschedule after release must fail with 409 ALREADY_RELEASED
+      const reschedAfterRel = await api(baseUrl, `/api/orders/${postRelId}/schedule`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { scheduled_for: futureWallClockInZone('America/New_York', 120) },
+      });
+      assertEqualOrThrow(
+        reschedAfterRel.status,
+        409,
+        'reschedule rejected with 409 once order is released',
+      );
+      assertEqualOrThrow(reschedAfterRel.data.code, 'ALREADY_RELEASED', 'code is ALREADY_RELEASED');
+
+      // Cancel released pending order -> restores product, add-on, and recipe snapshots!
+      const cancelRelRes = await api(baseUrl, `/api/orders/${postRelId}/status`, {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: { status: 'cancelled', reason: 'Cancel after release' },
+      });
+      assertEqualOrThrow(cancelRelRes.status, 200, 'released pending order cancels cleanly');
+      assertEqualOrThrow(
+        productStock(db, 'prod-latte'),
+        latteStockPreRel,
+        'cancelling after release restores deducted product stock',
+      );
+      assertEqualOrThrow(
+        addonStock(db, 'addon-syrup'),
+        syrupStockPreRel,
+        'cancelling after release restores deducted add-on stock',
+      );
+      assertEqualOrThrow(
+        supplyStock(db, beans.id),
+        beansStockPreRel,
+        'cancelling after release restores deducted recipe snapshot',
+      );
+      assertLedgerReconciles(db, 'after post-release cancellation');
+    }
+
+    // ── 8. Shared transactional release checkPreconditions hook ──────────────
+    console.log('\n--- 8. Shared releaseScheduledOrder checkPreconditions hook ---');
+    {
+      const hookCreate = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: futureWallClockInZone('America/New_York', 60),
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      const hookOrderId = Number(hookCreate.data.order.id);
+      const stockBeforeHook = productStock(db, 'prod-latte');
+
+      const skippedOutcome = await releaseScheduledOrder(db, hookOrderId, {
+        trigger: 'sweep',
+        checkPreconditions: () => ({
+          allow: false,
+          markBlocked: false,
+          holdReason: 'Awaiting counter settlement',
+        }),
+      });
+      assertEqualOrThrow(
+        skippedOutcome.outcome,
+        'skipped',
+        'checkPreconditions(markBlocked: false) skips release cleanly',
+      );
+      assertEqualOrThrow(
+        skippedOutcome.order.release_status,
+        'scheduled',
+        'skipped order stays scheduled',
+      );
+      assertEqualOrThrow(
+        productStock(db, 'prod-latte'),
+        stockBeforeHook,
+        'skipped precondition check deducts nothing',
+      );
+
+      const blockedOutcome = await releaseScheduledOrder(db, hookOrderId, {
+        trigger: 'manual',
+        actorUserId: owner.userId,
+        checkPreconditions: () => ({
+          allow: false,
+          markBlocked: true,
+          holdReason: 'Checkout counter unpaid',
+        }),
+      });
+      assertEqualOrThrow(
+        blockedOutcome.outcome,
+        'blocked',
+        'checkPreconditions(markBlocked: true) atomically blocks release',
+      );
+      assertEqualOrThrow(
+        blockedOutcome.order.release_blocked_reason,
+        'Checkout counter unpaid',
+        'checkPreconditions holdReason persisted',
+      );
+      assertLedgerReconciles(db, 'after checkPreconditions tests');
+    }
+
+    const results = getResults();
+    console.log('\n' + '='.repeat(66));
+    console.log(`Passed: ${results.passed}/${results.total}`);
+    assertEqualOrThrow(results.failed, 0, 'zero failed assertions');
+  } finally {
+    stopScheduledOrderSweep();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    closeDatabase();
+    Module._load = originalLoad;
+    fs.rmSync(testDir, { recursive: true, force: true });
+  }
+}
+
+main().catch((err) => {
+  console.error('Scheduled orders test failed:', err);
+  process.exit(1);
+});

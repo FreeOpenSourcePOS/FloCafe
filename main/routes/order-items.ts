@@ -275,10 +275,16 @@ router.patch(
             diagnosticCode: 'category_scope_denied',
           });
         }
-        const parentOrder = db.prepare('SELECT id FROM orders WHERE id = ?').get(item.order_id);
+        const parentOrder = db
+          .prepare('SELECT id, release_status FROM orders WHERE id = ?')
+          .get(item.order_id) as { id: number; release_status?: string | null } | undefined;
         if (!parentOrder)
           throw Object.assign(new Error('ORPHANED_ORDER_ITEM'), {
             diagnosticCode: 'orphaned_order',
+          });
+        if (parentOrder.release_status && parentOrder.release_status !== 'released')
+          throw Object.assign(new Error('UNRELEASED_ORDER_ITEM'), {
+            diagnosticCode: 'order_unreleased',
           });
         let orderStationId: string | null | undefined;
         if (stationIds.length > 0) {
@@ -453,6 +459,11 @@ router.patch(
           return res
             .status(404)
             .json({ error: 'Order item is not attached to an order', ...diagnostic });
+        if (error.message === 'UNRELEASED_ORDER_ITEM')
+          return res.status(409).json({
+            error: 'Scheduled order has not been released to the kitchen yet',
+            ...diagnostic,
+          });
         if (error.message === 'STATUS_CONFLICT')
           return res
             .status(409)
@@ -477,6 +488,11 @@ router.patch(
       }
       if (error.message === 'ORPHANED_ORDER_ITEM') {
         return res.status(404).json({ error: 'Order item is not attached to an order' });
+      }
+      if (error.message === 'UNRELEASED_ORDER_ITEM') {
+        return res
+          .status(409)
+          .json({ error: 'Scheduled order has not been released to the kitchen yet' });
       }
       if (error.message === 'STATUS_CONFLICT') {
         return res.status(409).json({ error: 'Item status changed; refresh and try again' });

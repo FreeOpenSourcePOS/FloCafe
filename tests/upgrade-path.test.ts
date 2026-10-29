@@ -1204,6 +1204,86 @@ function main() {
   );
   closeDatabase();
 
+  // ── v123: scheduled order release columns and due-sweep index ─────────────
+  const scheduledMigrationIndex = MIGRATIONS.findIndex(
+    (migration: any) => migration.name === 'add_scheduled_orders',
+  );
+  assert.ok(scheduledMigrationIndex > 0, 'the add_scheduled_orders migration is registered');
+  assert.equal(
+    MIGRATIONS[scheduledMigrationIndex].version,
+    123,
+    'the add_scheduled_orders migration is v123',
+  );
+  const v122SnapDb = buildIdealSchemaDb(122);
+  try {
+    v122SnapDb
+      .prepare(
+        `INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
+         VALUES ('ORD-PRE-V123', 'takeaway', 120, 0, 120, 'pending', '2026-10-29 08:00:00', '2026-10-29 08:00:00')`,
+      )
+      .run();
+    fs.writeFileSync(upgradeDbPath, v122SnapDb.serialize());
+  } finally {
+    v122SnapDb.close();
+  }
+
+  initDatabase();
+  const postScheduledDb = getDatabase();
+  assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
+  const scheduledOrderCols = (
+    postScheduledDb.prepare('PRAGMA table_info(orders)').all() as Array<{ name: string }>
+  ).map((col) => col.name);
+  for (const colName of [
+    'scheduled_for',
+    'release_status',
+    'released_at',
+    'release_blocked_reason',
+  ]) {
+    assert.ok(
+      scheduledOrderCols.includes(colName),
+      `v123 adds orders.${colName} during upgrade from v122`,
+    );
+  }
+  const scheduledOrderIndexes = (
+    postScheduledDb.prepare('PRAGMA index_list(orders)').all() as Array<{ name: string }>
+  ).map((idx) => idx.name);
+  assert.ok(
+    scheduledOrderIndexes.includes('idx_orders_release_due'),
+    'v123 creates idx_orders_release_due index on orders(release_status, scheduled_for)',
+  );
+  const migratedPreV123Order = postScheduledDb
+    .prepare(
+      `SELECT scheduled_for, release_status, released_at, release_blocked_reason
+       FROM orders WHERE order_number = 'ORD-PRE-V123'`,
+    )
+    .get() as
+    | {
+        scheduled_for: string | null;
+        release_status: string;
+        released_at: string | null;
+        release_blocked_reason: string | null;
+      }
+    | undefined;
+  assert.deepEqual(
+    migratedPreV123Order,
+    {
+      scheduled_for: null,
+      release_status: 'released',
+      released_at: null,
+      release_blocked_reason: null,
+    },
+    'existing pre-v123 orders default to release_status = released without scheduled metadata',
+  );
+  assert.equal(
+    runHealthCheck().findings.length,
+    0,
+    'runHealthCheck() reports zero drift after v123',
+  );
+  console.log(
+    '   ✓ v123 adds scheduled order release columns, due-sweep index, and preserves existing orders as released',
+  );
+  closeDatabase();
+
   console.log('='.repeat(60));
   console.log('✅ Upgrade-path regression test passed');
 }

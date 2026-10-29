@@ -18,6 +18,8 @@ import {
   Users,
   Wallet,
   StickyNote,
+  CalendarClock,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
@@ -38,6 +40,11 @@ import { calculateAppliedCharges } from '@/lib/charges';
 import { chargesForOrderType, useChargesStore } from '@/store/charges';
 import { getCurrencyFractionDigits } from '@countries';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+import {
+  formatScheduledInstantForDisplay,
+  parseScheduledForInput,
+  suggestFutureScheduleWallClock,
+} from '@/lib/scheduled-time';
 
 interface Props {
   tables: Table[];
@@ -48,6 +55,8 @@ interface Props {
   onModalOpenChange?: (open: boolean) => void;
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
+  storeTimezone?: string;
+  onCancelExistingOrderMode?: () => void;
 }
 
 const orderTypeIcons = {
@@ -164,6 +173,8 @@ export default function CartPanel({
   onModalOpenChange,
   variant = 'sidebar',
   existingOrder,
+  storeTimezone,
+  onCancelExistingOrderMode,
 }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
@@ -195,6 +206,32 @@ export default function CartPanel({
   const tSettings = useTranslations('settings');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const fmt = useFormatCurrency();
+  const effectiveTimezone = storeTimezone || currentTenant?.timezone || 'UTC';
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNowMs(Date.now()), 15000);
+    return () => clearInterval(interval);
+  }, []);
+  const canScheduleCart =
+    !existingOrder && (cart.orderType === 'takeaway' || cart.orderType === 'delivery');
+  const scheduleValidation =
+    canScheduleCart && cart.scheduledFor.trim().length > 0
+      ? parseScheduledForInput({
+          input: cart.scheduledFor,
+          timezone: effectiveTimezone,
+          nowMs,
+        })
+      : null;
+  const scheduleErrorMessage =
+    scheduleValidation && !scheduleValidation.ok
+      ? scheduleValidation.code === 'PAST_SCHEDULED_TIME'
+        ? t('scheduledPastTimeError', { timezone: effectiveTimezone })
+        : scheduleValidation.code === 'DST_NONEXISTENT_TIME'
+          ? t('scheduledDstSkippedError', { timezone: effectiveTimezone })
+          : scheduleValidation.code === 'DST_AMBIGUOUS_TIME'
+            ? t('scheduledDstAmbiguousError', { timezone: effectiveTimezone })
+            : t('scheduledInvalidTimeError', { timezone: effectiveTimezone })
+      : null;
   const canHold =
     isRestaurant &&
     cart.orderType === 'dine_in' &&
@@ -205,12 +242,12 @@ export default function CartPanel({
   const isDeliveryOrder = cart.orderType === 'delivery';
   const [customPaymentMethods, setCustomPaymentMethods] = useState<CustomPaymentMethod[]>([]);
   useEffect(() => {
-    if (!isDeliveryOrder) return;
+    if (!isDeliveryOrder || existingOrder) return;
     api
       .get('/payment-methods')
       .then((res) => setCustomPaymentMethods(res.data.payment_methods || []))
       .catch(() => setCustomPaymentMethods([]));
-  }, [isDeliveryOrder]);
+  }, [isDeliveryOrder, existingOrder]);
 
   const charges = useChargesStore((s) => s.charges);
   const loadCharges = useChargesStore((s) => s.load);
@@ -279,6 +316,40 @@ export default function CartPanel({
     >
       {/* Order Type */}
       <div className="p-4 border-b border-border dark:border-border space-y-2">
+        {existingOrder &&
+          existingOrder.release_status &&
+          existingOrder.release_status !== 'released' && (
+            <div
+              data-testid="cart-scheduled-existing-banner"
+              className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-2 text-xs text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200"
+            >
+              <span className="inline-flex items-center gap-1.5 min-w-0">
+                <CalendarClock size={14} className="shrink-0" />
+                <span className="truncate font-medium">
+                  {t('scheduledAddingToBanner', {
+                    number: existingOrder.order_number,
+                    time: existingOrder.scheduled_for
+                      ? formatScheduledInstantForDisplay(
+                          existingOrder.scheduled_for,
+                          effectiveTimezone,
+                        )
+                      : '',
+                  })}
+                </span>
+              </span>
+              {onCancelExistingOrderMode && (
+                <button
+                  type="button"
+                  onClick={onCancelExistingOrderMode}
+                  aria-label={t('close')}
+                  className="rounded p-0.5 hover:bg-blue-100 dark:hover:bg-blue-900/50 shrink-0"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          )}
+
         <div className="flex gap-1 bg-muted rounded-lg p-1">
           {(['dine_in', 'takeaway', 'delivery', 'online'] as const)
             .filter((type) => isRestaurant || type !== 'dine_in')
@@ -296,8 +367,10 @@ export default function CartPanel({
               return (
                 <button
                   key={type}
+                  type="button"
+                  disabled={Boolean(existingOrder && existingOrder.type !== type)}
                   onClick={() => cart.setOrderType(type)}
-                  className={`touch-target flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors ${showIcon ? '' : 'whitespace-nowrap'} ${
+                  className={`touch-target flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${showIcon ? '' : 'whitespace-nowrap'} ${
                     cart.orderType === type
                       ? 'bg-card text-brand shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -352,7 +425,7 @@ export default function CartPanel({
         )}
 
         {/* Delivery address — shown inline when delivery is selected */}
-        {cart.orderType === 'delivery' && (
+        {!existingOrder && cart.orderType === 'delivery' && (
           <div className="flex items-center gap-2">
             <MapPin size={14} className="text-muted-foreground shrink-0" />
             <input
@@ -366,7 +439,7 @@ export default function CartPanel({
         )}
 
         {/* Expected collection and courier note: recorded with the order, never a payment */}
-        {isDeliveryOrder && (
+        {!existingOrder && isDeliveryOrder && (
           <>
             <label className="flex items-center gap-2">
               <Wallet size={14} className="text-muted-foreground shrink-0" />
@@ -436,7 +509,7 @@ export default function CartPanel({
         )}
 
         {/* Online platform + external order id — shown inline when online is selected */}
-        {cart.orderType === 'online' && (
+        {!existingOrder && cart.orderType === 'online' && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <Globe size={14} className="text-muted-foreground shrink-0" />
@@ -455,6 +528,66 @@ export default function CartPanel({
               placeholder={t('externalOrderIdPlaceholder')}
               className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
             />
+          </div>
+        )}
+
+        {canScheduleCart && (
+          <div
+            data-testid="pos-schedule-section"
+            className="rounded-lg border border-border bg-muted/30 p-2.5 space-y-1.5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <label
+                htmlFor={`pos-send-to-kitchen-at-${variant}`}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground"
+              >
+                <CalendarClock size={14} className="text-muted-foreground shrink-0" />
+                {t('sendToKitchenAt')}
+              </label>
+              {cart.scheduledFor ? (
+                <button
+                  type="button"
+                  data-testid="pos-schedule-clear-btn"
+                  onClick={() => cart.setScheduledFor('')}
+                  className="text-xs font-medium text-brand hover:underline"
+                >
+                  {t('sendImmediately')}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  data-testid="pos-schedule-suggest-btn"
+                  onClick={() =>
+                    cart.setScheduledFor(suggestFutureScheduleWallClock(effectiveTimezone))
+                  }
+                  className="text-xs font-medium text-brand hover:underline"
+                >
+                  {t('scheduleOrderToggle')}
+                </button>
+              )}
+            </div>
+            <input
+              id={`pos-send-to-kitchen-at-${variant}`}
+              data-testid="pos-send-to-kitchen-input"
+              type="datetime-local"
+              value={cart.scheduledFor}
+              onChange={(e) => cart.setScheduledFor(e.target.value)}
+              className={`w-full min-h-10 px-2.5 py-1.5 text-sm border bg-card rounded-lg outline-none focus:ring-2 focus:ring-brand focus:border-brand ${
+                scheduleErrorMessage ? 'border-red-500' : 'border-border'
+              }`}
+            />
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              {t('sendToKitchenHint', { timezone: effectiveTimezone })}
+            </p>
+            {scheduleErrorMessage && (
+              <p
+                role="alert"
+                data-testid="pos-schedule-error"
+                className="text-xs text-red-600 dark:text-red-400 font-medium leading-snug"
+              >
+                {scheduleErrorMessage}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -699,7 +832,7 @@ export default function CartPanel({
           )}
           <Button
             onClick={onPlaceOrder}
-            disabled={submitting || cart.items.length === 0}
+            disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
             className="flex-1"
             size="lg"
           >

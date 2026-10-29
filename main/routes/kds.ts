@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import {
+  ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
+  completeSettledReleasedOrderIfServed,
   getDatabase,
+  getKdsItemParentOrderState,
   getKdsStationCategoryIds,
   getKdsStationRoutingScope,
   getUserKdsStationIds,
@@ -13,6 +16,7 @@ import {
   projectKdsItem,
   projectKdsOrder,
   projectKdsStation,
+  UNRELEASED_KDS_ORDER_ITEM_ERROR,
   withTxn,
 } from '../db';
 import * as crypto from 'crypto';
@@ -135,13 +139,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     }
     // Include active orders and completed orders with items still being prepared.
     let query = `
-      WITH active_ids AS (
-        SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
-        UNION
-        SELECT o.id FROM orders o
-        JOIN order_items oi ON oi.order_id = o.id AND oi.status NOT IN ('served','cancelled')
-        WHERE o.status NOT IN ('pending','preparing','ready','served','cancelled')
-      )
+      WITH active_ids AS (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})
       SELECT o.*, t.number as table_name, t.floor, t.section, t.kitchen_station_id
       FROM orders o
       LEFT JOIN tables t ON o.table_id = t.id
@@ -409,6 +407,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       WHERE oi.status NOT IN ('completed', 'cancelled', 'served', 'void_adjustment', 'refunded')
         AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         AND o.status != 'cancelled'
+        AND o.release_status = 'released'
     `;
 
     const params: any[] = [voidedCutoff];
@@ -504,6 +503,7 @@ router.patch(
       const stationRoutingCategoryIds = stationScope.tablelessCategoryIds;
       let restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
       let reconciledEvent: { orderId: string; status: string } | null = null;
+      let autoCompletedOrderId: string | null = null;
 
       const updatedItem = withTxn(() => {
         const token = req.headers.authorization?.startsWith('Bearer ')
@@ -571,8 +571,12 @@ router.patch(
             throw new Error('CATEGORY_FORBIDDEN');
           }
         }
-        if (!db.prepare('SELECT id FROM orders WHERE id = ?').get(item.order_id)) {
+        const parentOrderState = getKdsItemParentOrderState(db, item.order_id);
+        if (parentOrderState === 'missing') {
           throw new Error('ORPHANED_ORDER_ITEM');
+        }
+        if (parentOrderState === 'unreleased') {
+          throw new Error('UNRELEASED_ORDER_ITEM');
         }
         if (currentStationIds.length > 0) {
           const station = db
@@ -598,18 +602,19 @@ router.patch(
           }
         }
 
+        const updatedAt = now();
         const updateResult =
           expectedStatus === undefined
             ? db
                 .prepare(
                   "UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled', 'refunded')",
                 )
-                .run(status, now(), req.params.id)
+                .run(status, updatedAt, req.params.id)
             : db
                 .prepare(
                   'UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?',
                 )
-                .run(status, now(), req.params.id, expectedStatus);
+                .run(status, updatedAt, req.params.id, expectedStatus);
         if (updateResult.changes !== 1) throw new Error('STATUS_CONFLICT');
 
         const reconcile = reconcileActiveOrderStatusFromItems(
@@ -620,7 +625,12 @@ router.patch(
         if (reconcile.changed && reconcile.status) {
           reconciledEvent = { orderId: String(item.order_id), status: reconcile.status };
         }
-
+        if (
+          status === 'served' &&
+          completeSettledReleasedOrderIfServed(db, item.order_id, updatedAt)
+        ) {
+          autoCompletedOrderId = String(item.order_id);
+        }
         return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id);
       });
 
@@ -637,6 +647,9 @@ router.patch(
         } catch {}
       }
       notifyKdsUpdate();
+      if (autoCompletedOrderId) {
+        cloudSync.recordOrderChanged(autoCompletedOrderId, 'order.completed');
+      }
       res.json({ item: projectKdsItem(updatedItem, restrictedPayload) });
     } catch (error: any) {
       if (error.message === 'VOIDED_ITEM') {
@@ -659,8 +672,14 @@ router.patch(
       if (error.message === 'ORPHANED_ORDER_ITEM') {
         return res.status(404).json({ error: 'Order item is not attached to an order' });
       }
+      if (error.message === 'UNRELEASED_ORDER_ITEM') {
+        return res.status(409).json({ error: UNRELEASED_KDS_ORDER_ITEM_ERROR });
+      }
       if (error.message === 'STATUS_CONFLICT') {
         return res.status(409).json({ error: 'Item status changed; refresh and try again' });
+      }
+      if (error?.statusCode === 409) {
+        return res.status(409).json({ error: error.message });
       }
       console.error('[API] KDS item status update error:', error);
       res.status(500).json({ error: 'Could not update item status' });

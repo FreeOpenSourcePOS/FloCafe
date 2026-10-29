@@ -1497,6 +1497,9 @@ export default function SettingsPage() {
           ? { primary: zReportPrimary, additional: [zReportSecond] as const }
           : { primary: zReportPrimary, additional: [] as const };
       const printingPayload = {
+        auto_print_kot: formSnapshot.autoPrintKot,
+        printer_use_unicode: formSnapshot.printerUseUnicode,
+        printer_arabic_shaping: formSnapshot.printerArabicShaping,
         printer_trim_decimals: formSnapshot.printerTrimDecimals,
         bill_language_policy: billLanguagePolicy,
         kot_language_policy: kotLanguagePolicy,
@@ -2354,12 +2357,18 @@ export default function SettingsPage() {
       billFormAtHydrationStart: BillTemplateForm,
     ) => {
       const [
+        autoPrintKotResponse,
+        useUnicodeResponse,
+        arabicShapingResponse,
         trimResponse,
         cashEnabledResponse,
         cashMethodsResponse,
         billLanguageResponse,
         kotLanguageResponse,
       ] = await Promise.all([
+        readOptional('/settings/auto_print_kot'),
+        readOptional('/settings/printer_use_unicode'),
+        readOptional('/settings/printer_arabic_shaping'),
         readOptional('/settings/printer_trim_decimals'),
         readOptional('/settings/cash_drawer_pulse_enabled'),
         readOptional('/settings/cash_drawer_pulse_methods'),
@@ -2367,6 +2376,49 @@ export default function SettingsPage() {
         readOptional('/settings/kot_language_policy'),
       ]);
       if (!active()) return;
+
+      const autoPrintKotSetting = autoPrintKotResponse?.data?.setting;
+      if (
+        autoPrintKotSetting?.updated_at != null &&
+        (autoPrintKotSetting.value === 'true' || autoPrintKotSetting.value === 'false')
+      ) {
+        const enabled = autoPrintKotSetting.value === 'true';
+        posSettings.setAutoPrintKot(enabled);
+        mergeHydratedPrinting(
+          { autoPrintKot: enabled },
+          printingAtHydrationStart,
+          hydrationTouchSnapshot,
+        );
+        setSavedPrinting((p) => ({ ...p, autoPrintKot: enabled }));
+      }
+      const useUnicodeSetting = useUnicodeResponse?.data?.setting;
+      if (
+        useUnicodeSetting?.updated_at != null &&
+        (useUnicodeSetting.value === 'true' || useUnicodeSetting.value === 'false')
+      ) {
+        const enabled = useUnicodeSetting.value === 'true';
+        posSettings.setPrinterUseUnicode(enabled);
+        mergeHydratedPrinting(
+          { printerUseUnicode: enabled },
+          printingAtHydrationStart,
+          hydrationTouchSnapshot,
+        );
+        setSavedPrinting((p) => ({ ...p, printerUseUnicode: enabled }));
+      }
+      const arabicShapingSetting = arabicShapingResponse?.data?.setting;
+      if (
+        arabicShapingSetting?.updated_at != null &&
+        (arabicShapingSetting.value === 'true' || arabicShapingSetting.value === 'false')
+      ) {
+        const enabled = arabicShapingSetting.value === 'true';
+        posSettings.setPrinterArabicShaping(enabled);
+        mergeHydratedPrinting(
+          { printerArabicShaping: enabled },
+          printingAtHydrationStart,
+          hydrationTouchSnapshot,
+        );
+        setSavedPrinting((p) => ({ ...p, printerArabicShaping: enabled }));
+      }
 
       if (trimResponse) {
         const enabled = trimResponse.data.setting?.value === 'true';

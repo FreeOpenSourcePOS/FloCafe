@@ -460,7 +460,8 @@ router.post(
                 const importCols =
                   tableName === 'product_variants' ||
                   tableName === 'addons' ||
-                  tableName === 'order_item_addons'
+                  tableName === 'order_item_addons' ||
+                  tableName === 'orders'
                     ? Array.from(
                         new Set(rows.flatMap((row) => Object.keys(row).filter(isSafeIdentifier))),
                       )
@@ -585,11 +586,17 @@ router.post(
                   const rowCols =
                     tableName === 'product_variants' ||
                     tableName === 'addons' ||
-                    tableName === 'order_item_addons'
+                    tableName === 'order_item_addons' ||
+                    tableName === 'orders'
                       ? commonCols.filter(
                           (column) =>
                             Object.prototype.hasOwnProperty.call(row, column) &&
-                            row[column] !== undefined,
+                            row[column] !== undefined &&
+                            !(
+                              tableName === 'orders' &&
+                              column === 'release_status' &&
+                              row[column] === null
+                            ),
                         )
                       : commonCols;
                   const rowColumnKey = rowCols.join(', ');

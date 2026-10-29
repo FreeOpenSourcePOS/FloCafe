@@ -1,6 +1,9 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import {
+  ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
+  completeSettledReleasedOrderIfServed,
   getDatabase,
+  getKdsItemParentOrderState,
   getKdsStationCategoryIds,
   getKdsStationRoutingScope,
   getUserKdsStationIds,
@@ -16,6 +19,7 @@ import {
   projectKdsItem,
   projectKdsOrder,
   registerDatabaseMaintenanceStartListener,
+  UNRELEASED_KDS_ORDER_ITEM_ERROR,
   withTxn,
 } from '../db';
 import * as jwt from 'jsonwebtoken';
@@ -476,6 +480,7 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
 
   try {
     const db = getDatabase();
+    let autoCompletedOrderId: string | null = null;
 
     const result = withTxn(() => {
       const existingItem = db
@@ -503,6 +508,14 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
         existingItem.status === 'refunded'
       ) {
         return { error: 'This terminal item cannot be updated from KDS' };
+      }
+
+      const parentOrderState = getKdsItemParentOrderState(db, existingItem.order_id);
+      if (parentOrderState === 'missing') {
+        return { error: 'Order item is not attached to an order' };
+      }
+      if (parentOrderState === 'unreleased') {
+        return { error: UNRELEASED_KDS_ORDER_ITEM_ERROR };
       }
 
       if (client.stationIds.length > 0) {
@@ -539,23 +552,30 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
         return { error: 'Not authorized to update this item' };
       }
 
+      const updatedAt = now();
       const updateResult =
         expectedStatus === undefined
           ? db
               .prepare(
                 "UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled', 'refunded')",
               )
-              .run(status, now(), order_item_id)
+              .run(status, updatedAt, order_item_id)
           : db
               .prepare(
                 'UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?',
               )
-              .run(status, now(), order_item_id, expectedStatus);
+              .run(status, updatedAt, order_item_id, expectedStatus);
       if (updateResult.changes !== 1) {
         return { error: 'Item status changed; refresh and try again' };
       }
 
       const reconcile = reconcileActiveOrderStatusFromItems(db, existingItem.order_id, actorUserId);
+      if (
+        status === 'served' &&
+        completeSettledReleasedOrderIfServed(db, existingItem.order_id, updatedAt)
+      ) {
+        autoCompletedOrderId = String(existingItem.order_id);
+      }
 
       return {
         success: true,
@@ -581,6 +601,9 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
     }
 
     broadcastOrderUpdate();
+    if (autoCompletedOrderId) {
+      cloudSync.recordOrderChanged(autoCompletedOrderId, 'order.completed');
+    }
 
     client.ws.send(
       JSON.stringify({
@@ -591,21 +614,21 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
     );
   } catch (error: any) {
     console.error('[KDS] Status update error:', error);
-    client.ws.send(JSON.stringify({ type: 'error', message: 'Could not update item status' }));
+    client.ws.send(
+      JSON.stringify({
+        type: 'error',
+        message: error?.statusCode === 409 ? error.message : 'Could not update item status',
+      }),
+    );
   }
 }
 
 /** Returns SQL condition for orders needing kitchen attention or unserved items. */
 function activeOrdersCondition(): string {
-  if (!isKdsEnabled()) return `o.status NOT IN ('completed', 'cancelled')`;
+  if (!isKdsEnabled())
+    return `o.release_status = 'released' AND o.status NOT IN ('completed', 'cancelled')`;
   // Fast indexed CTE query matching active orders or unserved items.
-  return `o.id IN (
-    SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
-    UNION
-    SELECT o2.id FROM orders o2
-    JOIN order_items oi2 ON oi2.order_id = o2.id AND oi2.status NOT IN ('served','cancelled')
-    WHERE o2.status NOT IN ('pending','preparing','ready','served','cancelled')
-  )`;
+  return `o.id IN (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})`;
 }
 
 function sendActiveOrders(

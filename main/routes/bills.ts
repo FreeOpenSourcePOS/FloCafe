@@ -27,6 +27,11 @@ import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import {
+  hasRecordedOrderPayment,
+  isScheduledOrderRow,
+  isUnreleasedOrderRow,
+} from '../services/scheduled-orders';
+import {
   getOpenSession,
   isCashTender,
   isPerStaffShiftsEnabled,
@@ -108,6 +113,8 @@ interface ChargeOrderRow {
   service_charge: number | null;
   packaging_charge: number | null;
   charges_breakdown: string | null;
+  scheduled_for?: string | null;
+  release_status?: string | null;
 }
 import { sendEvent } from '../services/telemetry';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
@@ -269,6 +276,13 @@ export function checkKitchenDeliveryStatus(
     kdsEnabled?.value === 'false' ||
     billingType?.value === 'prepaid'
   ) {
+    return { allowed: true, count: 0, items: [] };
+  }
+
+  const orderReleaseRow = db
+    .prepare('SELECT release_status FROM orders WHERE id = ?')
+    .get(orderId) as { release_status?: string | null } | undefined;
+  if (isUnreleasedOrderRow(orderReleaseRow)) {
     return { allowed: true, count: 0, items: [] };
   }
 
@@ -3516,9 +3530,12 @@ export function completeExactBalanceSettlement(
   let orderRow: any = null;
   if (orderFullyPaid) {
     orderRow = db
-      .prepare('SELECT status, table_id, customer_id FROM orders WHERE id = ?')
+      .prepare('SELECT status, table_id, customer_id, release_status FROM orders WHERE id = ?')
       .get(bill.order_id) as any;
-    const canComplete = orderRow && !['cancelled', 'completed'].includes(orderRow.status);
+    const canComplete =
+      orderRow &&
+      !['cancelled', 'completed'].includes(orderRow.status) &&
+      !isUnreleasedOrderRow(orderRow);
     if (canComplete) {
       db.prepare(
         "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
@@ -3707,9 +3724,13 @@ function applyPaymentBatch(
       .get(bill.order_id, bill.id);
     if (!unpaidSibling) {
       const order = db
-        .prepare('SELECT status, table_id, customer_id FROM orders WHERE id = ?')
+        .prepare('SELECT status, table_id, customer_id, release_status FROM orders WHERE id = ?')
         .get(bill.order_id) as any;
-      if (order && !['cancelled', 'completed'].includes(order.status)) {
+      if (
+        order &&
+        !['cancelled', 'completed'].includes(order.status) &&
+        !isUnreleasedOrderRow(order)
+      ) {
         db.prepare(
           "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
         ).run(changedAt, changedAt, bill.order_id);
@@ -3867,9 +3888,10 @@ function applyPaymentBatch(
     if (orderFullyPaid) {
       // Payment must not resurrect terminal orders (VALID_TRANSITIONS.cancelled = []).
       const order = db
-        .prepare('SELECT status, table_id FROM orders WHERE id = ?')
+        .prepare('SELECT status, table_id, release_status FROM orders WHERE id = ?')
         .get(bill.order_id) as any;
-      const canComplete = order && !['cancelled', 'completed'].includes(order.status);
+      const canComplete =
+        order && !['cancelled', 'completed'].includes(order.status) && !isUnreleasedOrderRow(order);
       if (canComplete) {
         db.prepare(
           "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
@@ -4498,6 +4520,25 @@ router.post(
         return res.status(404).json({ error: 'Bill not found' });
       }
 
+      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as
+        | ChargeOrderRow
+        | undefined;
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (isScheduledOrderRow(order) && hasRecordedOrderPayment(db, order.id)) {
+        return res.status(409).json({
+          ...structuredBillFailure(
+            req,
+            'fc.backend.bill.discount.validation',
+            'Item and financial edits are locked after payment is recorded on a scheduled order. Use the refund or payment correction flow instead.',
+            'paid',
+          ),
+          code: 'SCHEDULED_ORDER_PAID',
+        });
+      }
+
       if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
         return res
           .status(409)
@@ -4533,12 +4574,6 @@ router.post(
               'split_check',
             ),
           );
-      }
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as
-        | ChargeOrderRow
-        | undefined;
-      if (!order) {
-        return res.status(404).json({ error: 'Order not found' });
       }
 
       if (['completed', 'cancelled'].includes(order.status)) {
@@ -4761,6 +4796,24 @@ router.post(
         if (!currentBill) {
           throw Object.assign(new Error('Bill not found'), { statusCode: 404 });
         }
+        const currentOrder = db
+          .prepare('SELECT * FROM orders WHERE id = ?')
+          .get(currentBill.order_id) as ChargeOrderRow | undefined;
+        if (!currentOrder) {
+          throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+        }
+        if (isScheduledOrderRow(currentOrder) && hasRecordedOrderPayment(db, currentOrder.id)) {
+          throw Object.assign(
+            new Error(
+              'Item and financial edits are locked after payment is recorded on a scheduled order. Use the refund or payment correction flow instead.',
+            ),
+            {
+              statusCode: 409,
+              diagnosticCode: 'paid',
+              code: 'SCHEDULED_ORDER_PAID',
+            },
+          );
+        }
         if (
           currentBill.payment_status === 'refunded' ||
           currentBill.payment_status === 'partially_refunded'
@@ -4781,12 +4834,6 @@ router.post(
             statusCode: 409,
             diagnosticCode: 'split_check',
           });
-        }
-        const currentOrder = db
-          .prepare('SELECT * FROM orders WHERE id = ?')
-          .get(currentBill.order_id) as ChargeOrderRow | undefined;
-        if (!currentOrder) {
-          throw Object.assign(new Error('Order not found'), { statusCode: 404 });
         }
         if (['completed', 'cancelled'].includes(currentOrder.status)) {
           throw Object.assign(
@@ -4984,17 +5031,16 @@ router.post(
         : statusCode >= 500
           ? 'fc.backend.bill.discount.persistence'
           : 'fc.backend.bill.discount.validation';
-      return res
-        .status(statusCode)
-        .json(
-          structuredBillFailure(
-            req,
-            point,
-            message,
-            operationCommitted ? undefined : error.diagnosticCode,
-            operationCommitted ? 'applied' : 'not_applied',
-          ),
-        );
+      return res.status(statusCode).json({
+        ...structuredBillFailure(
+          req,
+          point,
+          message,
+          operationCommitted ? undefined : error.diagnosticCode,
+          operationCommitted ? 'applied' : 'not_applied',
+        ),
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   }),
 );
@@ -5047,6 +5093,34 @@ router.patch(
             ),
           );
       }
+      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as
+        | ChargeOrderRow
+        | undefined;
+      if (!order) {
+        return res
+          .status(404)
+          .json(
+            structuredBillFailure(
+              req,
+              'fc.backend.bill.charge.validation',
+              'Order not found',
+              'order_not_found',
+            ),
+          );
+      }
+
+      if (isScheduledOrderRow(order) && hasRecordedOrderPayment(db, order.id)) {
+        return res.status(409).json({
+          ...structuredBillFailure(
+            req,
+            'fc.backend.bill.charge.validation',
+            'Item and financial edits are locked after payment is recorded on a scheduled order. Use the refund or payment correction flow instead.',
+            'bill_paid',
+          ),
+          code: 'SCHEDULED_ORDER_PAID',
+        });
+      }
+
       if (bill.split_group_id) {
         return res
           .status(409)
@@ -5080,22 +5154,6 @@ router.patch(
               'fc.backend.bill.charge.validation',
               'Charges cannot be changed on a refunded bill',
               'bill_refunded',
-            ),
-          );
-      }
-
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as
-        | ChargeOrderRow
-        | undefined;
-      if (!order) {
-        return res
-          .status(404)
-          .json(
-            structuredBillFailure(
-              req,
-              'fc.backend.bill.charge.validation',
-              'Order not found',
-              'order_not_found',
             ),
           );
       }
@@ -5319,6 +5377,27 @@ router.patch(
             diagnosticCode: 'bill_not_found',
           });
         }
+        const currentOrder = db
+          .prepare('SELECT * FROM orders WHERE id = ?')
+          .get(currentBill.order_id) as ChargeOrderRow | undefined;
+        if (!currentOrder) {
+          throw Object.assign(new Error('Order not found'), {
+            statusCode: 404,
+            diagnosticCode: 'order_not_found',
+          });
+        }
+        if (isScheduledOrderRow(currentOrder) && hasRecordedOrderPayment(db, currentOrder.id)) {
+          throw Object.assign(
+            new Error(
+              'Item and financial edits are locked after payment is recorded on a scheduled order. Use the refund or payment correction flow instead.',
+            ),
+            {
+              statusCode: 409,
+              diagnosticCode: 'bill_paid',
+              code: 'SCHEDULED_ORDER_PAID',
+            },
+          );
+        }
         if (currentBill.split_group_id) {
           throw Object.assign(new Error('Charges on a split check cannot be changed'), {
             statusCode: 409,
@@ -5338,16 +5417,6 @@ router.patch(
           throw Object.assign(new Error('Charges cannot be changed on a refunded bill'), {
             statusCode: 409,
             diagnosticCode: 'bill_refunded',
-          });
-        }
-
-        const currentOrder = db
-          .prepare('SELECT * FROM orders WHERE id = ?')
-          .get(currentBill.order_id) as ChargeOrderRow | undefined;
-        if (!currentOrder) {
-          throw Object.assign(new Error('Order not found'), {
-            statusCode: 404,
-            diagnosticCode: 'order_not_found',
           });
         }
         if (currentOrder.status === 'cancelled') {
@@ -5497,17 +5566,16 @@ router.patch(
         : operationCommitted
           ? 'fc.backend.bill.charge.completion'
           : 'fc.backend.bill.charge.persistence';
-      res
-        .status(statusCode)
-        .json(
-          structuredBillFailure(
-            req,
-            capturePoint,
-            statusCode >= 500 ? 'Internal server error' : (error as Error).message,
-            diagnosticCode,
-            outcome,
-          ),
-        );
+      res.status(statusCode).json({
+        ...structuredBillFailure(
+          req,
+          capturePoint,
+          statusCode >= 500 ? 'Internal server error' : (error as Error).message,
+          diagnosticCode,
+          outcome,
+        ),
+        ...((error as { code?: string })?.code ? { code: (error as { code?: string }).code } : {}),
+      });
     }
   }),
 );

@@ -160,15 +160,18 @@ refund can be paid back in a different method than the customer used, or issued 
 2. **Ceiling.** A refund can never exceed `paid_amount` minus the sum of prior refunds for that
    bill, not the order's gross total, so a partly refunded bill cannot be refunded past what is
    outstanding. Enforced by `getRefundableBalance()` in `main/services/refund.ts`.
-3. **Approval tiers**, keyed off the order's `created_at` and the store's business day. The
-   in-progress window is `REFUND_WINDOW_MS`, one hour.
-   - Within the window: the selected active owner's or manager's Staff Approval PIN.
-   - After the window but inside the same business day, computed by `dayBoundsInTimezone()` in
-     `main/db.ts` from the tenant's configured timezone and `business_day_start_time`: the selected
-     active owner's PIN only. A manager PIN is rejected outright. Once an order is effectively
-     closed there is no kitchen or service context left to sanity-check the request, so the bar is
-     raised rather than reused.
-   - After the business day ends: refused with HTTP 409, regardless of who approves. Reversing an
+3. **Approval tiers**, keyed off `released_at || created_at` for released orders and the store's
+   business day (while an unreleased scheduled order in `release_status` `scheduled` or `blocked` is
+   exempt from the late-refund cutoffs so multi-day prepaid scheduled orders can be refunded before
+   cancellation). The in-progress window is `REFUND_WINDOW_MS`, one hour.
+   - Unreleased scheduled order, or within the window of `released_at || created_at`: the selected
+     active owner's or manager's Staff Approval PIN.
+   - After the window but inside the anchor timestamp's business day, computed by
+     `dayBoundsInTimezone()` in `main/db.ts` from the tenant's configured timezone and
+     `business_day_start_time`: the selected active owner's PIN only. A manager PIN is rejected
+     outright. Once an order is effectively closed there is no kitchen or service context left to
+     sanity-check the request, so the bar is raised rather than reused.
+   - After that business day ends: refused with HTTP 409, regardless of who approves. Reversing an
      older transaction happens outside the system.
 4. **Item eligibility** for a single-item refund is `REFUND_ITEM_ELIGIBLE_STATUSES`: `preparing`,
    `ready`, `served`, `completed`.

@@ -171,6 +171,9 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   receipt_logo: '',
   receipt_logo_raster: '',
   printer_trim_decimals: 'false',
+  auto_print_kot: 'false',
+  printer_use_unicode: 'false',
+  printer_arabic_shaping: 'false',
   split_checks_enabled: 'false',
   card_transaction_id_required: 'false',
   require_open_shift: 'false',
@@ -1993,7 +1996,12 @@ const PRINTING_BOOLEAN_KEYS = [
   'bill_delivery_show_customer_phone_always',
 ] as const;
 
-const OPTIONAL_PRINTING_BOOLEAN_KEYS = ['bill_show_logo'] as const;
+const OPTIONAL_PRINTING_BOOLEAN_KEYS = [
+  'bill_show_logo',
+  'auto_print_kot',
+  'printer_use_unicode',
+  'printer_arabic_shaping',
+] as const;
 
 const PRINTING_BATCH_KEYS = new Set<string>([
   ...PRINTING_BOOLEAN_KEYS,

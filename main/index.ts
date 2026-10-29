@@ -48,6 +48,7 @@ import {
   requestShutdown as requestWhatsAppShutdown,
   shutdown as shutdownWhatsApp,
 } from './services/whatsapp';
+import { triggerScheduledOrderSweep } from './services/scheduled-orders';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { CancellationToken } from 'builder-util-runtime';
@@ -1072,6 +1073,7 @@ function registerPowerMonitorRecovery(): void {
   powerMonitor.on('resume', () => {
     console.log('[Window] System resumed from sleep, forcing repaint');
     handleWhatsAppSystemResume();
+    void triggerScheduledOrderSweep('resume');
     // Allow display pipeline to wake before nudging.
     setTimeout(() => {
       if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;

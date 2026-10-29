@@ -35,6 +35,10 @@ import PrepaidCheckoutModal, {
   type PrepaidDiscount,
 } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
+import ScheduledOrdersDrawer from '@/components/pos/ScheduledOrdersDrawer';
+import { canPayScheduledOrder, isPayableBill } from '@/lib/order-payment-state';
+import RefundModal from '@/components/orders/RefundModal';
+import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/scheduled-time';
 import dynamic from 'next/dynamic';
 import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
 import { ShiftCloseModal } from '@/components/dashboard/ShiftCloseModal';
@@ -250,6 +254,9 @@ export default function POSPage() {
     setBillingType,
     setTablesRequired,
     setKotPrintingEnabled,
+    setAutoPrintKot,
+    setPrinterUseUnicode,
+    setPrinterArabicShaping,
   } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
@@ -296,6 +303,22 @@ export default function POSPage() {
   const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(false);
   const [showKeyboardShortcutsModal, setShowKeyboardShortcutsModal] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [storeTimezone, setStoreTimezone] = useState<string>(currentTenant?.timezone || 'UTC');
+  const [scheduledOrders, setScheduledOrders] = useState<Order[]>([]);
+  const [nextScheduledCursor, setNextScheduledCursor] = useState<string | null>(null);
+  const [scheduledCount, setScheduledCount] = useState<number>(0);
+  const [blockedScheduledCount, setBlockedScheduledCount] = useState<number>(0);
+  const [loadingMoreScheduled, setLoadingMoreScheduled] = useState(false);
+  const [showScheduledOrders, setShowScheduledOrders] = useState(false);
+  const [refundModalTarget, setRefundModalTarget] = useState<{
+    order: Order;
+    bills: Bill[];
+  } | null>(null);
+  useEffect(() => {
+    if (currentTenant?.timezone) {
+      setStoreTimezone(currentTenant.timezone);
+    }
+  }, [currentTenant?.timezone]);
   const [supportError, setSupportError] = useState<{
     title: string;
     subject: string;
@@ -327,6 +350,8 @@ export default function POSPage() {
     setCheckoutTable(null);
     setShowPrepaidCheckout(false);
     setPrepaidModalAttempt(null);
+    setShowScheduledOrders(false);
+    setRefundModalTarget(null);
     cashDrawer.setOpen(false);
     shift.setOpenModalOpen(false);
     shift.setCloseModalOpen(false);
@@ -836,6 +861,7 @@ export default function POSPage() {
   const shouldTakePaymentNow = billingIsPrepaid;
 
   const printKotIfEnabled = async (order: Order) => {
+    if (order.release_status && order.release_status !== 'released') return;
     // Master kot_printing_enabled check gates both manual and automatic prints.
     if (!kotPrintingEnabled) return;
     if (!autoPrintKot) return;
@@ -962,6 +988,76 @@ export default function POSPage() {
     }
   };
 
+  const canReadOrders = tenantCan(currentTenant, 'orders.read');
+  const refreshScheduledOrders = useCallback(async () => {
+    if (!canReadOrders) {
+      setScheduledOrders([]);
+      setNextScheduledCursor(null);
+      setScheduledCount(0);
+      setBlockedScheduledCount(0);
+      return;
+    }
+    try {
+      const { data } = await api.get('/orders/scheduled');
+      const loadedOrders = (data.orders as Order[]) || [];
+      setScheduledOrders(loadedOrders);
+      setNextScheduledCursor(data.next_cursor || null);
+      if (typeof data.scheduled_count === 'number') {
+        setScheduledCount(data.scheduled_count);
+      } else {
+        setScheduledCount(loadedOrders.filter((o) => o.release_status === 'scheduled').length);
+      }
+      if (typeof data.blocked_count === 'number') {
+        setBlockedScheduledCount(data.blocked_count);
+      } else {
+        setBlockedScheduledCount(loadedOrders.filter((o) => o.release_status === 'blocked').length);
+      }
+    } catch {
+      /* ignore background poll failures */
+    }
+  }, [canReadOrders]);
+
+  const handleLoadMoreScheduledOrders = async () => {
+    if (!nextScheduledCursor || loadingMoreScheduled) return;
+    setLoadingMoreScheduled(true);
+    try {
+      const { data } = await api.get('/orders/scheduled', {
+        params: { cursor: nextScheduledCursor },
+      });
+      const moreOrders = (data.orders as Order[]) || [];
+      setScheduledOrders((prev) => {
+        const seen = new Set(prev.map((o) => o.id));
+        return [...prev, ...moreOrders.filter((o) => !seen.has(o.id))];
+      });
+      setNextScheduledCursor(data.next_cursor || null);
+      if (typeof data.scheduled_count === 'number') {
+        setScheduledCount(data.scheduled_count);
+      }
+      if (typeof data.blocked_count === 'number') {
+        setBlockedScheduledCount(data.blocked_count);
+      }
+    } catch {
+      /* ignore load more failures */
+    } finally {
+      setLoadingMoreScheduled(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshScheduledOrders();
+    const interval = setInterval(() => {
+      void refreshScheduledOrders();
+    }, 10000);
+    const onFocus = () => {
+      void refreshScheduledOrders();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [refreshScheduledOrders]);
+
   // Replay persisted append attempt on reload to recover lost in-flight responses.
   useEffect(() => {
     if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;
@@ -1065,6 +1161,9 @@ export default function POSPage() {
         // 1. Fetch business settings first
         const settingsRes = await api.get('/settings/business');
         const d = settingsRes.data;
+        if (typeof d.timezone === 'string' && d.timezone.trim()) {
+          setStoreTimezone(d.timezone.trim());
+        }
         setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
         const isTablesRequired = typeof d.tables_required === 'boolean' ? d.tables_required : true;
         setTablesRequired(isTablesRequired);
@@ -1072,6 +1171,42 @@ export default function POSPage() {
         api
           .get('/settings/kot_printing_enabled')
           .then((res) => setKotPrintingEnabled(res.data.setting?.value !== 'false'))
+          .catch(() => {});
+        api
+          .get('/settings/auto_print_kot')
+          .then((res) => {
+            const setting = res.data.setting;
+            if (
+              setting?.updated_at != null &&
+              (setting.value === 'true' || setting.value === 'false')
+            ) {
+              setAutoPrintKot(setting.value === 'true');
+            }
+          })
+          .catch(() => {});
+        api
+          .get('/settings/printer_use_unicode')
+          .then((res) => {
+            const setting = res.data.setting;
+            if (
+              setting?.updated_at != null &&
+              (setting.value === 'true' || setting.value === 'false')
+            ) {
+              setPrinterUseUnicode(setting.value === 'true');
+            }
+          })
+          .catch(() => {});
+        api
+          .get('/settings/printer_arabic_shaping')
+          .then((res) => {
+            const setting = res.data.setting;
+            if (
+              setting?.updated_at != null &&
+              (setting.value === 'true' || setting.value === 'false')
+            ) {
+              setPrinterArabicShaping(setting.value === 'true');
+            }
+          })
           .catch(() => {});
 
         // 2. Fetch other menu data
@@ -1104,7 +1239,15 @@ export default function POSPage() {
     };
     fetchData();
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
+  }, [
+    isRestaurant,
+    setBillingType,
+    setTablesRequired,
+    setKotPrintingEnabled,
+    setAutoPrintKot,
+    setPrinterUseUnicode,
+    setPrinterArabicShaping,
+  ]);
 
   const handleProductClick = (product: Product, quantity = 1) => {
     if (!productNeedsCustomizer(product)) {
@@ -1163,6 +1306,8 @@ export default function POSPage() {
     shift.closeModalOpen ||
     showPrintMenuModal ||
     showKeyboardShortcutsModal ||
+    showScheduledOrders ||
+    !!refundModalTarget ||
     actionsMenuOpen ||
     isConfirmOpen;
   const anyModalOpen = showTablePicker || anyOtherModalOpen;
@@ -1214,13 +1359,43 @@ export default function POSPage() {
       toast.error(t('cartEmpty'));
       return false;
     }
-    if (customerMandatory && !cart.customerId) {
+    if (!pendingOrder && customerMandatory && !cart.customerId) {
       setShowCustomerPrompt(true);
       return false;
     }
-    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId) {
+    if (
+      !pendingOrder &&
+      isRestaurant &&
+      cart.orderType === 'dine_in' &&
+      tablesRequired &&
+      !cart.tableId
+    ) {
       setShowTablePicker(true);
       return false;
+    }
+    if (
+      !pendingOrder &&
+      (cart.orderType === 'takeaway' || cart.orderType === 'delivery') &&
+      cart.scheduledFor.trim().length > 0
+    ) {
+      const check = parseScheduledForInput({
+        input: cart.scheduledFor,
+        timezone: storeTimezone || currentTenant?.timezone || 'UTC',
+        nowMs: Date.now(),
+      });
+      if (!check.ok) {
+        const tz = storeTimezone || currentTenant?.timezone || 'UTC';
+        const msg =
+          check.code === 'PAST_SCHEDULED_TIME'
+            ? t('scheduledPastTimeError', { timezone: tz })
+            : check.code === 'DST_NONEXISTENT_TIME'
+              ? t('scheduledDstSkippedError', { timezone: tz })
+              : check.code === 'DST_AMBIGUOUS_TIME'
+                ? t('scheduledDstAmbiguousError', { timezone: tz })
+                : t('scheduledInvalidTimeError', { timezone: tz });
+        toast.error(msg);
+        return false;
+      }
     }
     return true;
   };
@@ -1232,6 +1407,10 @@ export default function POSPage() {
       type: cart.orderType,
       guest_count: cart.guestCount,
       special_instructions: cart.orderNotes,
+      scheduled_for:
+        cart.orderType === 'takeaway' || cart.orderType === 'delivery'
+          ? cart.scheduledFor.trim() || undefined
+          : undefined,
       online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
       external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
       delivery_address:
@@ -1250,7 +1429,7 @@ export default function POSPage() {
     if (!validateOrderPreflight()) return;
 
     // Prepaid stores collect payment before finishing the order.
-    if (shouldTakePaymentNow) {
+    if (shouldTakePaymentNow && !pendingOrder) {
       let matchingAttempt: PrepaidAttempt | null = null;
       try {
         const storedAttempt = readPrepaidAttempt();
@@ -1378,6 +1557,10 @@ export default function POSPage() {
           expected_payment_method_id:
             cart.orderType === 'delivery' ? (cart.expectedPaymentMethodId ?? undefined) : undefined,
           delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
+          scheduled_for:
+            cart.orderType === 'takeaway' || cart.orderType === 'delivery'
+              ? cart.scheduledFor.trim() || undefined
+              : undefined,
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
           items: cart.items.map(cartItemToOrderItem),
@@ -1450,7 +1633,19 @@ export default function POSPage() {
               correlationId: operationId,
             });
         }
-        toast.success(t('orderPlaced', { number: data.order.order_number }));
+        if (data.order.release_status === 'scheduled' && data.order.scheduled_for) {
+          toast.success(
+            t('scheduledOrderPlaced', {
+              number: data.order.order_number,
+              time: formatScheduledInstantForDisplay(
+                data.order.scheduled_for,
+                storeTimezone || currentTenant?.timezone || 'UTC',
+              ),
+            }),
+          );
+        } else {
+          toast.success(t('orderPlaced', { number: data.order.order_number }));
+        }
         orderForKot = data.order as Order;
         if (!clearPostpaidAttempt()) {
           if (operationId)
@@ -1522,6 +1717,7 @@ export default function POSPage() {
       cart.clearCart();
       setMobileCartOpen(false);
       await refreshTables();
+      void refreshScheduledOrders();
 
       await printKotIfEnabled(orderForKot);
     } catch (error) {
@@ -1728,6 +1924,10 @@ export default function POSPage() {
                 : undefined,
             delivery_note:
               cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
+            scheduled_for:
+              cart.orderType === 'takeaway' || cart.orderType === 'delivery'
+                ? cart.scheduledFor.trim() || undefined
+                : undefined,
             waived_charge_ids: Array.from(cart.waivedChargeIds),
             opted_in_charge_ids: Array.from(cart.optedInChargeIds),
             items: orderItems,
@@ -1978,6 +2178,7 @@ export default function POSPage() {
       }
       setMobileCartOpen(false);
       await refreshTables();
+      void refreshScheduledOrders();
 
       await printKotIfEnabled(order);
 
@@ -2289,6 +2490,7 @@ export default function POSPage() {
     setCheckoutOverridePin(undefined);
     setCheckoutTable(null);
     refreshTables();
+    void refreshScheduledOrders();
 
     if (bill) {
       try {
@@ -2299,6 +2501,71 @@ export default function POSPage() {
     }
   };
 
+  const handleAddItemsToScheduledOrder = (order: Order) => {
+    setShowScheduledOrders(false);
+    setCheckoutTable(null);
+    cart.setTableId(null);
+    cart.setOrderType(order.type);
+    cart.setScheduledFor('');
+    cart.setDeliveryAddress('');
+    cart.setExpectedPaymentMethod('', null);
+    cart.setDeliveryNote('');
+    cart.setOrderNotes(order.special_instructions || '');
+    setPendingOrder(order);
+    toast(`${t('addingItemsToOrder', { number: order.order_number })} ${t('placeOrderReady')}`, {
+      icon: 'ℹ️',
+    });
+  };
+
+  const handlePayScheduledOrder = async (order: Order) => {
+    if (!canPayScheduledOrder(order)) return;
+    try {
+      const existingBills =
+        order.bills && order.bills.length > 0 ? order.bills : order.bill ? [order.bill] : [];
+      const payableBill = existingBills.find(isPayableBill);
+      let billToPay: Bill;
+      if (payableBill) {
+        billToPay = await fetchLatestBill(payableBill.id);
+      } else {
+        const { data } = await api.post('/bills/generate', { order_id: order.id });
+        billToPay = data.bill as Bill;
+      }
+      if (!isPayableBill(billToPay)) {
+        await refreshScheduledOrders();
+        return;
+      }
+      setCheckoutOverridePin(undefined);
+      setPaymentBill(billToPay);
+      void refreshScheduledOrders();
+    } catch (err: unknown) {
+      const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
+      toast.error(errData?.error || t('billOutcomeUnknown'));
+    }
+  };
+
+  const handleScheduledOrderReleased = async (releasedOrder: Order, kotAutoPrinted: boolean) => {
+    await refreshScheduledOrders();
+    if (!kotAutoPrinted) {
+      await printKotIfEnabled({ ...releasedOrder, release_status: 'released' });
+    }
+  };
+
+  const totalActiveScheduled = Math.max(
+    scheduledCount + blockedScheduledCount,
+    scheduledOrders.filter(
+      (o) =>
+        o.status !== 'cancelled' &&
+        o.status !== 'completed' &&
+        (o.release_status === 'scheduled' || o.release_status === 'blocked'),
+    ).length,
+  );
+  const totalBlockedScheduled = Math.max(
+    blockedScheduledCount,
+    scheduledOrders.filter(
+      (o) => o.status !== 'cancelled' && o.status !== 'completed' && o.release_status === 'blocked',
+    ).length,
+  );
+
   const cartPanelProps = {
     tables,
     currency,
@@ -2307,6 +2574,11 @@ export default function POSPage() {
     onEditItem: setEditingCartItem,
     onModalOpenChange: setCartPanelModalOpen,
     existingOrder: pendingOrder,
+    storeTimezone,
+    onCancelExistingOrderMode: () => {
+      setPendingOrder(null);
+      cart.clearCart();
+    },
   };
 
   const itemCount = cart.itemCount();
@@ -2432,6 +2704,14 @@ export default function POSPage() {
         }
         if (paymentBill) {
           setPaymentBill(null);
+          return true;
+        }
+        if (refundModalTarget) {
+          setRefundModalTarget(null);
+          return true;
+        }
+        if (showScheduledOrders) {
+          setShowScheduledOrders(false);
           return true;
         }
         if (cashDrawer.open) {
@@ -2662,6 +2942,20 @@ export default function POSPage() {
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
         onCustomerModalOpenChange={setTopbarCustomerModalOpen}
+        scheduledOrderCount={totalActiveScheduled}
+        blockedScheduledCount={totalBlockedScheduled}
+        onShowScheduledOrders={() => {
+          void refreshScheduledOrders();
+          api
+            .get('/settings/business')
+            .then((res) => {
+              if (typeof res.data?.timezone === 'string' && res.data.timezone.trim()) {
+                setStoreTimezone(res.data.timezone.trim());
+              }
+            })
+            .catch(() => {});
+          setShowScheduledOrders(true);
+        }}
       />
 
       {/* Main content area */}
@@ -2806,6 +3100,22 @@ export default function POSPage() {
         />
       )}
 
+      <ScheduledOrdersDrawer
+        open={showScheduledOrders}
+        orders={scheduledOrders}
+        storeTimezone={storeTimezone}
+        onClose={() => setShowScheduledOrders(false)}
+        onRefresh={refreshScheduledOrders}
+        onOrderReleased={handleScheduledOrderReleased}
+        onAddItemsToOrder={handleAddItemsToScheduledOrder}
+        onPayOrder={handlePayScheduledOrder}
+        onRefundOrder={(order, bills) => setRefundModalTarget({ order, bills })}
+        hasMore={Boolean(nextScheduledCursor)}
+        loadingMore={loadingMoreScheduled}
+        onLoadMore={handleLoadMoreScheduledOrders}
+        totalScheduledCount={totalActiveScheduled}
+      />
+
       {paymentBill && (
         <PaymentModal
           key={paymentBill.id}
@@ -2833,6 +3143,18 @@ export default function POSPage() {
               setCheckoutOverridePin(undefined);
             }
             refreshTables();
+          }}
+        />
+      )}
+
+      {refundModalTarget && (
+        <RefundModal
+          order={refundModalTarget.order}
+          bills={refundModalTarget.bills}
+          onClose={() => setRefundModalTarget(null)}
+          onRefunded={() => {
+            setRefundModalTarget(null);
+            void refreshScheduledOrders();
           }}
         />
       )}

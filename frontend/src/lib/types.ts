@@ -228,6 +228,10 @@ export interface Order {
   external_order_id?: string | null;
   created_by: number;
   created_at: string;
+  scheduled_for?: string | null;
+  release_status?: 'scheduled' | 'released' | 'blocked';
+  released_at?: string | null;
+  release_blocked_reason?: string | null;
   cancelled_at?: string | null;
   cancellation_reason?: string | null;
   items?: OrderItem[];
@@ -281,7 +285,13 @@ export interface Bill {
   total: number;
   paid_amount: number;
   balance: number;
-  payment_status: 'unpaid' | 'partial' | 'paid' | 'refunded' | 'partially_refunded';
+  payment_status:
+    | 'unpaid'
+    | 'partial'
+    | 'partially_paid'
+    | 'paid'
+    | 'refunded'
+    | 'partially_refunded';
   payment_details:
     | {
         method: string;

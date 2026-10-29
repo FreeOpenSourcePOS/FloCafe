@@ -84,7 +84,17 @@ import {
   resolveExpectedPaymentMethod,
   resolveExpectedPaymentMethodIdentity,
 } from './orders-validation';
-import { hasPermission, requirePermission } from '../services/authorization';
+import { hasPermission, requireAnyPermission, requirePermission } from '../services/authorization';
+import {
+  assertScheduledOrderUnpaidForEdit,
+  decodeScheduledOrdersCursor,
+  encodeScheduledOrdersCursor,
+  isScheduledOrderRow,
+  isUnreleasedOrderRow,
+  releaseScheduledOrder,
+  ScheduledOrderError,
+  validateScheduledOrderRequest,
+} from '../services/scheduled-orders';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { isTerminalItemStatus } from '../../shared/order-item-status';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
@@ -164,6 +174,13 @@ const orderReadRateLimit = expressRateLimit({
   limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
+});
+const scheduledOrderReadRateLimit = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: ORDER_WRITE_RATE_LIMIT_ERROR,
 });
 const orderWriteRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
@@ -459,6 +476,7 @@ function resolveItemAddons(
   productId: string,
   addons: any[] | null | undefined,
   itemQuantity: unknown,
+  options?: { deferStockDeduction?: boolean },
 ): {
   id: string;
   name: string;
@@ -543,7 +561,7 @@ function resolveItemAddons(
     const unitCount = Number(itemQuantity);
     const requirement = Number.isFinite(unitCount) && unitCount > 0 ? unitCount * quantity : 0;
     let inventoryDeductedQuantity = 0;
-    if (Number(catalog.track_inventory) === 1) {
+    if (Number(catalog.track_inventory) === 1 && !options?.deferStockDeduction) {
       const available = Number(catalog.stock_quantity ?? 0);
       // Refusing is the point: a tracked add-on with nothing left must not be
       // silently substituted, so there is no variant-style fallback here.
@@ -937,6 +955,8 @@ function insertOrderItems(
     canOverridePrice?: boolean;
     /** Quantity reductions keep the stored variant/add-on selections verbatim. */
     preserveSelections?: boolean;
+    /** Scheduled orders defer product/add-on/recipe stock depletion until release. */
+    deferStockDeduction?: boolean;
   },
 ): (number | bigint)[] {
   const { tenantInfo, customer, isOnlineOrder, actorUserId } = context;
@@ -998,8 +1018,9 @@ function insertOrderItems(
       );
       unitPrice = priceOverride.price;
     }
-    const deduction =
-      context.preserveSelections && typeof item.inventory_deducted_quantity === 'number'
+    const deduction = context.deferStockDeduction
+      ? null
+      : context.preserveSelections && typeof item.inventory_deducted_quantity === 'number'
         ? item.inventory_deducted_quantity > 0
           ? {
               productId: item.inventory_target_product_id ?? product.id,
@@ -1050,8 +1071,9 @@ function insertOrderItems(
       : null;
 
     const itemCreatedAt = now();
-    const recipeSnapshot =
-      context.preserveSelections && item.recipe_snapshot !== undefined
+    const recipeSnapshot = context.deferStockDeduction
+      ? null
+      : context.preserveSelections && item.recipe_snapshot !== undefined
         ? (item.recipe_snapshot as ReturnType<typeof buildRecipeSnapshot>)
         : buildRecipeSnapshot(db, product.id, quantity, variant?.recipe_multiplier ?? 1);
     const { ingredientCost, ingredientCostKnown } =
@@ -1110,32 +1132,34 @@ function insertOrderItems(
       });
     }
 
-    if (deduction) {
-      adjustProductStock(db, {
-        productId: deduction.productId,
-        variantId: deduction.variantId ?? null,
-        quantityDelta: -deduction.deductedQuantity,
-        movementType: 'sale',
-        referenceType: 'order_item',
-        referenceId: String(insertItemResult.lastInsertRowid),
-        actorUserId: actorUserId,
-        createdAt: itemCreatedAt,
-      });
-    }
-    moveOrderItemAddonStock(db, (item.addons ?? []) as AddonStockLine[], {
-      direction: 'deplete',
-      actorUserId: actorUserId,
-      referenceId: String(insertItemResult.lastInsertRowid),
-      createdAt: itemCreatedAt,
-    });
-
-    if (recipeSnapshot) {
-      applyRecipeSnapshot(db, recipeSnapshot, {
+    if (!context.deferStockDeduction) {
+      if (deduction) {
+        adjustProductStock(db, {
+          productId: deduction.productId,
+          variantId: deduction.variantId ?? null,
+          quantityDelta: -deduction.deductedQuantity,
+          movementType: 'sale',
+          referenceType: 'order_item',
+          referenceId: String(insertItemResult.lastInsertRowid),
+          actorUserId: actorUserId,
+          createdAt: itemCreatedAt,
+        });
+      }
+      moveOrderItemAddonStock(db, (item.addons ?? []) as AddonStockLine[], {
         direction: 'deplete',
         actorUserId: actorUserId,
         referenceId: String(insertItemResult.lastInsertRowid),
         createdAt: itemCreatedAt,
       });
+
+      if (recipeSnapshot) {
+        applyRecipeSnapshot(db, recipeSnapshot, {
+          direction: 'deplete',
+          actorUserId: actorUserId,
+          referenceId: String(insertItemResult.lastInsertRowid),
+          createdAt: itemCreatedAt,
+        });
+      }
     }
   }
   return insertedItemIds;
@@ -1150,6 +1174,10 @@ interface EditableOrderRow extends EngineChargeOrderRow {
   discount_type: string | null;
   discount_value: number | null;
   delivery_charge: number | null;
+  scheduled_for?: string | null;
+  release_status?: string | null;
+  released_at?: string | null;
+  release_blocked_reason?: string | null;
 }
 
 function resolveOrderLevelDiscountAmount(
@@ -1207,12 +1235,16 @@ function cancelOrderItemAndRestoreStock(
   currentItem: OrderItemRow,
   actorId: string,
   reason: string | undefined,
+  options?: { skipStockRestore?: boolean },
 ): void {
   // Cancel the item and restore the inventory quantity recorded when it was added.
   db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?").run(
     now(),
     currentItem.id,
   );
+  if (options?.skipStockRestore) {
+    return;
+  }
 
   const inventoryTarget =
     currentItem.inventory_deducted_quantity > 0 ? orderItemInventoryTarget(db, currentItem) : null;
@@ -1407,6 +1439,102 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
     };
   });
 }
+
+router.get(
+  '/scheduled',
+  scheduledOrderReadRateLimit,
+  requirePermission('orders.read'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+
+      let limit = 200;
+      const rawLimit = req.query.limit;
+      if (typeof rawLimit === 'string') {
+        const parsedLimit = parseInt(rawLimit, 10);
+        if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+          limit = Math.min(parsedLimit, 200);
+        }
+      }
+
+      let cursor: ReturnType<typeof decodeScheduledOrdersCursor> = null;
+      if (typeof req.query.cursor === 'string' && req.query.cursor.trim()) {
+        cursor = decodeScheduledOrdersCursor(req.query.cursor.trim());
+        if (!cursor) {
+          return res.status(400).json({ error: 'Invalid cursor', code: 'INVALID_CURSOR' });
+        }
+      }
+
+      const countRow = db
+        .prepare(
+          `SELECT
+             COUNT(CASE WHEN release_status = 'scheduled' THEN 1 END) AS scheduled_count,
+             COUNT(CASE WHEN release_status = 'blocked' THEN 1 END) AS blocked_count
+           FROM orders
+           WHERE release_status IN ('scheduled', 'blocked')
+             AND status NOT IN ('cancelled', 'completed')`,
+        )
+        .get() as { scheduled_count: number; blocked_count: number } | undefined;
+
+      const scheduled_count = countRow?.scheduled_count ?? 0;
+      const blocked_count = countRow?.blocked_count ?? 0;
+
+      let sql = `SELECT * FROM orders
+                 WHERE release_status IN ('scheduled', 'blocked')
+                   AND status NOT IN ('cancelled', 'completed')`;
+      const params: unknown[] = [];
+
+      if (cursor) {
+        sql += ` AND (
+          (CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END > ?)
+          OR (
+            (CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END = ?)
+            AND (
+              (COALESCE(scheduled_for, '') > ?)
+              OR (COALESCE(scheduled_for, '') = ? AND id > ?)
+            )
+          )
+        )`;
+        params.push(
+          cursor.rank,
+          cursor.rank,
+          cursor.scheduled_for,
+          cursor.scheduled_for,
+          cursor.id,
+        );
+      }
+
+      sql += ` ORDER BY CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END ASC,
+                        scheduled_for ASC,
+                        id ASC
+               LIMIT ?`;
+      params.push(limit + 1);
+
+      const rows = (db.prepare(sql).all(...params) as Record<string, unknown>[]).map(parseRowJson);
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const next_cursor =
+        hasMore && pageRows.length > 0
+          ? encodeScheduledOrdersCursor({
+              rank: pageRows[pageRows.length - 1].release_status === 'blocked' ? 0 : 1,
+              scheduled_for: String(pageRows[pageRows.length - 1].scheduled_for || ''),
+              id: Number(pageRows[pageRows.length - 1].id),
+            })
+          : null;
+
+      const orders = batchHydrateOrders(db, pageRows);
+      res.json({
+        orders,
+        next_cursor,
+        scheduled_count,
+        blocked_count,
+      });
+    } catch (error: unknown) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Failed to load scheduled orders' });
+    }
+  },
+);
 
 router.get(
   '/:id',
@@ -1664,6 +1792,29 @@ router.post(
         }
       }
 
+      let scheduledOrderMeta: { scheduledForUtc: string; timezone: string } | null = null;
+      try {
+        scheduledOrderMeta = validateScheduledOrderRequest(db, {
+          orderType: type,
+          scheduledForInput: body.scheduled_for,
+        });
+      } catch (err: unknown) {
+        const statusCode = err instanceof ScheduledOrderError ? err.statusCode : 400;
+        const message =
+          err instanceof Error ? err.message : 'Invalid scheduled kitchen release time';
+        const code = err instanceof ScheduledOrderError ? err.code : undefined;
+        return res.status(statusCode).json({
+          ...structuredOperationFailure(
+            req,
+            'fc.backend.order.create.other_validation',
+            'not_applied',
+            message,
+          ),
+          ...(code ? { code } : {}),
+        });
+      }
+      const isScheduledCreation = Boolean(scheduledOrderMeta);
+
       // Free text that ends up printed on a courier slip, so it is capped and
       // validated the same way order notes are, at this boundary.
       let expectedPaymentMethod: string | null;
@@ -1707,7 +1858,9 @@ router.post(
         validateOrderNotes(db, special_instructions);
         for (const item of items) {
           validateItemNotes(db, item.special_instructions);
-          item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity);
+          item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity, {
+            deferStockDeduction: isScheduledCreation,
+          });
         }
       } catch (err: any) {
         const msg = err?.message || 'Item validation failed';
@@ -1806,8 +1959,10 @@ router.post(
           .prepare(`
         INSERT INTO orders (order_number, table_id, customer_id, user_id, type, delivery_address, expected_payment_method, expected_payment_method_id, delivery_note, guest_count, special_instructions,
           packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
-          service_charge, service_charge_tax_category_id, online_platform, external_order_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          service_charge, service_charge_tax_category_id, online_platform, external_order_id,
+          scheduled_for, release_status, released_at, release_blocked_reason,
+          status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'pending', ?, ?)
       `)
           .run(
             orderNumber,
@@ -1829,6 +1984,8 @@ router.post(
             chargeContext.service_charge_tax_category_id,
             onlinePlatform || null,
             externalOrderId || null,
+            scheduledOrderMeta ? scheduledOrderMeta.scheduledForUtc : null,
+            isScheduledCreation ? 'scheduled' : 'released',
             now(),
             now(),
           );
@@ -1899,7 +2056,9 @@ router.post(
             );
             unitPrice = priceOverride.price;
           }
-          const deduction = resolveInventoryDeduction(product, quantity, variant);
+          const deduction = isScheduledCreation
+            ? null
+            : resolveInventoryDeduction(product, quantity, variant);
           if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
             throw Object.assign(
               new Error(`Invalid price for ${product.name}: must be a non-negative number`),
@@ -2018,12 +2177,9 @@ router.post(
           subtotal += itemSubtotal;
 
           const itemCreatedAt = now();
-          const recipeSnapshot = buildRecipeSnapshot(
-            db,
-            product.id,
-            quantity,
-            variant?.recipe_multiplier ?? 1,
-          );
+          const recipeSnapshot = isScheduledCreation
+            ? null
+            : buildRecipeSnapshot(db, product.id, quantity, variant?.recipe_multiplier ?? 1);
           const { ingredientCost, ingredientCostKnown } =
             extractOrderItemCostFromSnapshot(recipeSnapshot);
           const insertItemResult = insertItem.run(
@@ -2076,32 +2232,34 @@ router.post(
             });
           }
 
-          if (deduction) {
-            adjustProductStock(db, {
-              productId: deduction.productId,
-              variantId: deduction.variantId ?? null,
-              quantityDelta: -deduction.deductedQuantity,
-              movementType: 'sale',
-              referenceType: 'order_item',
-              referenceId: String(insertItemResult.lastInsertRowid),
-              actorUserId: authenticatedUserId,
-              createdAt: itemCreatedAt,
-            });
-          }
-          moveOrderItemAddonStock(db, item.addons, {
-            direction: 'deplete',
-            actorUserId: authenticatedUserId,
-            referenceId: String(insertItemResult.lastInsertRowid),
-            createdAt: itemCreatedAt,
-          });
-
-          if (recipeSnapshot) {
-            applyRecipeSnapshot(db, recipeSnapshot, {
+          if (!isScheduledCreation) {
+            if (deduction) {
+              adjustProductStock(db, {
+                productId: deduction.productId,
+                variantId: deduction.variantId ?? null,
+                quantityDelta: -deduction.deductedQuantity,
+                movementType: 'sale',
+                referenceType: 'order_item',
+                referenceId: String(insertItemResult.lastInsertRowid),
+                actorUserId: authenticatedUserId,
+                createdAt: itemCreatedAt,
+              });
+            }
+            moveOrderItemAddonStock(db, item.addons, {
               direction: 'deplete',
               actorUserId: authenticatedUserId,
               referenceId: String(insertItemResult.lastInsertRowid),
               createdAt: itemCreatedAt,
             });
+
+            if (recipeSnapshot) {
+              applyRecipeSnapshot(db, recipeSnapshot, {
+                direction: 'deplete',
+                actorUserId: authenticatedUserId,
+                referenceId: String(insertItemResult.lastInsertRowid),
+                createdAt: itemCreatedAt,
+              });
+            }
           }
         }
 
@@ -2151,6 +2309,18 @@ router.post(
           );
         }
 
+        if (isScheduledCreation && scheduledOrderMeta) {
+          recordOrderAudit(db, {
+            orderId: Number(orderId),
+            actorUserId: authenticatedUserId,
+            action: 'order_scheduled',
+            details: {
+              scheduled_for: scheduledOrderMeta.scheduledForUtc,
+              timezone: scheduledOrderMeta.timezone,
+            },
+          });
+        }
+
         const order = parseRowJson(
           db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId),
         ) as any;
@@ -2172,8 +2342,15 @@ router.post(
       operationCommitted = true;
 
       if (!result.idempotentReplay) {
-        notifyKdsUpdate();
-        cloudSync.recordOrderChanged(result.order.id, 'order.created');
+        if (isScheduledCreation) {
+          notifyOrderUpdated();
+        } else {
+          notifyKdsUpdate();
+        }
+        cloudSync.recordOrderChanged(
+          result.order.id,
+          isScheduledCreation ? 'order.scheduled' : 'order.created',
+        );
 
         if (result.order.customer_id) {
           try {
@@ -2212,6 +2389,153 @@ router.post(
         );
     }
   },
+);
+
+router.patch(
+  '/:id/schedule',
+  orderWriteRateLimit,
+  requireAnyPermission('orders.create', 'orders.status.update'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+      if (!actorId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      const rawScheduledFor = req.body?.scheduled_for;
+      if (rawScheduledFor === undefined || rawScheduledFor === null || rawScheduledFor === '') {
+        return res.status(400).json({
+          error:
+            'scheduled_for is required. Use Release now to send the order to the kitchen immediately.',
+          code: 'INVALID_FORMAT',
+        });
+      }
+
+      const updatedOrderRow = withTxn(() => {
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+          | {
+              id: number | string;
+              status: string;
+              type: string;
+              scheduled_for: string | null;
+              release_status: string | null;
+            }
+          | undefined;
+        if (!currentOrder) {
+          throw new ScheduledOrderError(404, 'Order not found', 'ORDER_NOT_FOUND');
+        }
+        if (['completed', 'cancelled'].includes(currentOrder.status)) {
+          throw new ScheduledOrderError(
+            409,
+            `Cannot reschedule a ${currentOrder.status} order`,
+            'INVALID_ORDER_STATUS',
+          );
+        }
+        if (!currentOrder.release_status || currentOrder.release_status === 'released') {
+          throw new ScheduledOrderError(
+            409,
+            'Order has already been released to the kitchen and can no longer be rescheduled.',
+            'ALREADY_RELEASED',
+          );
+        }
+
+        const scheduledMeta = validateScheduledOrderRequest(db, {
+          orderType: currentOrder.type,
+          scheduledForInput: rawScheduledFor,
+        });
+        if (!scheduledMeta) {
+          throw new ScheduledOrderError(400, 'scheduled_for is required.', 'INVALID_FORMAT');
+        }
+
+        const changedAt = now();
+        const isBlocked = currentOrder.release_status === 'blocked';
+        if (isBlocked) {
+          db.prepare(
+            `UPDATE orders
+             SET scheduled_for = ?,
+                 updated_at = ?
+             WHERE id = ?`,
+          ).run(scheduledMeta.scheduledForUtc, changedAt, currentOrder.id);
+        } else {
+          db.prepare(
+            `UPDATE orders
+             SET scheduled_for = ?,
+                 release_status = 'scheduled',
+                 release_blocked_reason = NULL,
+                 updated_at = ?
+             WHERE id = ?`,
+          ).run(scheduledMeta.scheduledForUtc, changedAt, currentOrder.id);
+        }
+
+        recordOrderAudit(db, {
+          orderId: String(currentOrder.id),
+          actorUserId: actorId,
+          action: 'schedule_updated',
+          details: {
+            previous_scheduled_for: currentOrder.scheduled_for,
+            scheduled_for: scheduledMeta.scheduledForUtc,
+            previous_release_status: currentOrder.release_status,
+            release_status: isBlocked ? 'blocked' : 'scheduled',
+            timezone: scheduledMeta.timezone,
+          },
+        });
+
+        return db.prepare('SELECT * FROM orders WHERE id = ?').get(currentOrder.id);
+      });
+
+      const [hydrated] = batchHydrateOrders(db, [updatedOrderRow]);
+      notifyOrderUpdated();
+      cloudSync.recordOrderChanged(String(req.params.id), 'order.schedule_updated');
+      return res.json({ order: hydrated });
+    } catch (error: unknown) {
+      if (error instanceof ScheduledOrderError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
+      const errObj = error as { statusCode?: number; message?: string };
+      console.error('[Orders] Schedule update error:', error);
+      return res
+        .status(errObj.statusCode || 500)
+        .json({ error: errObj.statusCode ? errObj.message : 'Internal server error' });
+    }
+  },
+);
+
+router.post(
+  '/:id/release',
+  orderWriteRateLimit,
+  requireAnyPermission('orders.create', 'orders.status.update'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+      const result = await releaseScheduledOrder(db, String(req.params.id), {
+        trigger: 'manual',
+        actorUserId: actorId || null,
+      });
+      const [hydrated] = batchHydrateOrders(db, [result.order]);
+      if (result.outcome === 'blocked') {
+        return res.status(409).json({
+          error: result.reason || 'Order release blocked due to stock or catalog availability.',
+          code: 'RELEASE_BLOCKED',
+          order: hydrated,
+        });
+      }
+      return res.json({
+        order: hydrated,
+        already_released: result.outcome === 'already_released',
+        kot_auto_printed: result.kotAutoPrinted,
+      });
+    } catch (error: unknown) {
+      if (error instanceof ScheduledOrderError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
+      const errObj = error as { statusCode?: number; message?: string };
+      console.error('[Orders] Release error:', error);
+      return res
+        .status(errObj.statusCode || 500)
+        .json({ error: errObj.statusCode ? errObj.message : 'Internal server error' });
+    }
+  }),
 );
 
 router.post(
@@ -2309,6 +2633,8 @@ router.post(
           if (replayResponse) return { replayResponse };
         }
 
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+
         if (
           db
             .prepare(
@@ -2335,11 +2661,14 @@ router.post(
             statusCode: 409,
           });
         }
+        const deferUnreleased = isUnreleasedOrderRow(currentOrder);
 
         try {
           for (const item of items) {
             validateItemNotes(db, item.special_instructions);
-            item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity);
+            item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity, {
+              deferStockDeduction: deferUnreleased,
+            });
           }
           if (special_instructions !== undefined) {
             validateOrderNotes(db, special_instructions);
@@ -2364,6 +2693,7 @@ router.post(
           isOnlineOrder,
           actorUserId: idempotencyUserId,
           canOverridePrice: hasPermission(idempotencyUserId, ITEM_PRICE_OVERRIDE_PERMISSION),
+          deferStockDeduction: deferUnreleased,
         });
 
         // BUG #3 FIX: Filter out terminal items from total recalculation.
@@ -2497,7 +2827,11 @@ router.post(
 
       if (result.replayResponse) return res.json(result.replayResponse);
       cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
-      notifyKdsUpdate();
+      if (isUnreleasedOrderRow(result.updatedOrder)) {
+        notifyOrderUpdated();
+      } else {
+        notifyKdsUpdate();
+      }
 
       res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
     } catch (error: any) {
@@ -2511,16 +2845,15 @@ router.post(
         : statusCode >= 500
           ? 'fc.backend.order.append.persistence'
           : 'fc.backend.order.append.validation';
-      return res
-        .status(statusCode)
-        .json(
-          structuredOperationFailure(
-            req,
-            point,
-            operationCommitted ? 'applied' : 'not_applied',
-            message,
-          ),
-        );
+      return res.status(statusCode).json({
+        ...structuredOperationFailure(
+          req,
+          point,
+          operationCommitted ? 'applied' : 'not_applied',
+          message,
+        ),
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   },
 );
@@ -2702,9 +3035,36 @@ router.patch(
 
       const db = getDatabase();
       // Validate order existence before beginning authoritative transaction.
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+        | {
+            total?: number | null;
+            round_off?: number | null;
+            scheduled_for?: string | null;
+            release_status?: string | null;
+          }
+        | undefined;
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
+      }
+      if (isUnreleasedOrderRow(order) && status !== 'cancelled') {
+        return res.status(409).json({
+          error: 'Scheduled order must be released to the kitchen before updating kitchen status.',
+          code: 'ORDER_NOT_RELEASED',
+        });
+      }
+      if (status === 'cancelled' && isScheduledOrderRow(order)) {
+        const preCancelPaymentCheck = evaluateOrderStatusPaymentBlock(
+          db,
+          req.params.id,
+          order.total,
+          order.round_off,
+        );
+        if (preCancelPaymentCheck.evaluatedBills.some((b) => b.hasCollectedFunds)) {
+          return res.status(409).json({
+            error: 'Collected payment must be fully refunded before cancelling a scheduled order.',
+            code: 'REFUND_REQUIRED_BEFORE_CANCEL',
+          });
+        }
       }
 
       let preVerifiedStatusApprover: { id: string; verifiedPinHash: string } | null = null;
@@ -2729,12 +3089,8 @@ router.patch(
 
         const preVerificationRequiresPayment =
           status === 'completed' &&
-          evaluateOrderStatusPaymentBlock(
-            db,
-            req.params.id,
-            (order as any).total,
-            (order as any).round_off,
-          ).paymentBlocksCompletion;
+          evaluateOrderStatusPaymentBlock(db, req.params.id, order.total, order.round_off)
+            .paymentBlocksCompletion;
 
         const explicitApproverId = req.body.approver_id || req.body.manager_id || req.body.user_id;
         const candidateUsers = explicitApproverId
@@ -2838,6 +3194,14 @@ router.patch(
             { statusCode: 400 },
           );
         }
+        if (isUnreleasedOrderRow(currentOrder) && status !== 'cancelled') {
+          throw Object.assign(
+            new Error(
+              'Scheduled order must be released to the kitchen before updating kitchen status.',
+            ),
+            { statusCode: 409, code: 'ORDER_NOT_RELEASED' },
+          );
+        }
 
         // Evaluate item progress, kitchen delivery policy, and bill/payment state
         // inside the authoritative transaction.
@@ -2898,6 +3262,18 @@ router.patch(
 
         const orderInProgressForCancel = currentStatusIndex > 0 || hasItemsInProgress;
         const hasCollectedFundsOnOrder = evaluatedBills.some((b) => b.hasCollectedFunds);
+        if (
+          status === 'cancelled' &&
+          isScheduledOrderRow(currentOrder) &&
+          hasCollectedFundsOnOrder
+        ) {
+          throw Object.assign(
+            new Error(
+              'Collected payment must be fully refunded before cancelling a scheduled order.',
+            ),
+            { statusCode: 409, code: 'REFUND_REQUIRED_BEFORE_CANCEL' },
+          );
+        }
         const requiresCancelOverride =
           status === 'cancelled' && (orderInProgressForCancel || hasCollectedFundsOnOrder);
         const requiresCompleteOverride =
@@ -3015,13 +3391,25 @@ router.patch(
             break;
 
           case 'cancelled': {
-            // Restore stock only for items still pending; prepared/in-progress items use void/waste semantics.
-            const eligibleItems = db
-              .prepare(`
+            // Never restore stock on unreleased scheduled orders since stock was never deducted.
+            const eligibleItems = isUnreleasedOrderRow(currentOrder)
+              ? []
+              : (db
+                  .prepare(`
             SELECT * FROM order_items
             WHERE order_id = ? AND status = 'pending'
           `)
-              .all(req.params.id) as any[];
+                  .all(req.params.id) as Array<{
+                  id: number;
+                  product_id: string;
+                  variant_id: string | null;
+                  quantity?: number;
+                  inventory_product_id: string | null;
+                  inventory_variant_id: string | null;
+                  inventory_deducted_quantity: number;
+                  recipe_snapshot: string | null;
+                  updated_at: string;
+                }>);
 
             for (const item of eligibleItems) {
               const inventoryTarget =
@@ -3119,15 +3507,20 @@ router.patch(
 
       if (changed) {
         cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
-        notifyKdsUpdate();
+        if (isUnreleasedOrderRow(updatedOrder)) {
+          notifyOrderUpdated();
+        } else {
+          notifyKdsUpdate();
+        }
       }
 
       res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table }) });
     } catch (error: any) {
       console.error('[API] Internal error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   }),
 );
@@ -3169,6 +3562,8 @@ router.patch(
             { statusCode: 400 },
           );
         }
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+
         const blockingBill = db
           .prepare(
             `SELECT id FROM bills
@@ -3444,11 +3839,12 @@ router.patch(
 
       res.json({ order: { ...updatedOrder, customer } });
     } catch (error: unknown) {
-      const err = error as { statusCode?: number; message?: string };
+      const err = error as { statusCode?: number; message?: string; code?: string };
       console.error('[API] Internal error:', err);
-      res
-        .status(err.statusCode || 500)
-        .json({ error: err.statusCode ? err.message : 'Internal server error' });
+      res.status(err.statusCode || 500).json({
+        error: err.statusCode ? err.message : 'Internal server error',
+        ...(err.code ? { code: err.code } : {}),
+      });
     }
   },
 );
@@ -3654,6 +4050,21 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+    try {
+      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, order);
+    } catch (err: unknown) {
+      const typedErr = err as { statusCode?: number; message?: string };
+      return res.status(typedErr.statusCode || 409).json({
+        ...structuredOperationFailure(
+          req,
+          'fc.backend.order.discount.validation',
+          'not_applied',
+          typedErr.message || 'Scheduled order edit locked after payment',
+          'paid',
+        ),
+        code: 'SCHEDULED_ORDER_PAID',
+      });
     }
     if (
       db
@@ -3951,6 +4362,19 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       }
+      try {
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+      } catch (err: unknown) {
+        const typedErr = err as { statusCode?: number; message?: string };
+        throw Object.assign(
+          new Error(typedErr.message || 'Scheduled order edit locked after payment'),
+          {
+            statusCode: typedErr.statusCode || 409,
+            diagnosticCode: 'paid',
+            code: 'SCHEDULED_ORDER_PAID',
+          },
+        );
+      }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), {
           statusCode: 400,
@@ -4165,17 +4589,16 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
       : statusCode >= 500
         ? 'fc.backend.order.discount.persistence'
         : 'fc.backend.order.discount.validation';
-    return res
-      .status(statusCode)
-      .json(
-        structuredOperationFailure(
-          req,
-          point,
-          operationCommitted ? 'applied' : 'not_applied',
-          message,
-          operationCommitted ? undefined : error.diagnosticCode,
-        ),
-      );
+    return res.status(statusCode).json({
+      ...structuredOperationFailure(
+        req,
+        point,
+        operationCommitted ? 'applied' : 'not_applied',
+        message,
+        operationCommitted ? undefined : error.diagnosticCode,
+      ),
+      ...(error.code ? { code: error.code } : {}),
+    });
   }
 });
 
@@ -4198,6 +4621,17 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+    try {
+      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, order);
+    } catch (err: unknown) {
+      const typedErr = err as { statusCode?: number; message?: string; code?: string };
+      return res.status(typedErr.statusCode || 409).json({
+        error:
+          typedErr.message ||
+          'Item and financial edits are locked after payment is recorded on a scheduled order.',
+        code: typedErr.code || 'SCHEDULED_ORDER_PAID',
+      });
     }
     if (
       db
@@ -4410,6 +4844,18 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
         | undefined;
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      try {
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+      } catch (err: unknown) {
+        const typedErr = err as { statusCode?: number; message?: string; code?: string };
+        throw Object.assign(
+          new Error(typedErr.message || 'Scheduled order edit locked after payment'),
+          {
+            statusCode: typedErr.statusCode || 409,
+            code: typedErr.code || 'SCHEDULED_ORDER_PAID',
+          },
+        );
       }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), {
@@ -4688,9 +5134,10 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     res.json({ item: updatedItem });
   } catch (error: any) {
     console.error('[API] Internal error:', error);
-    res
-      .status(error.statusCode || 500)
-      .json({ error: error.statusCode ? error.message : 'Internal server error' });
+    res.status(error.statusCode || 500).json({
+      error: error.statusCode ? error.message : 'Internal server error',
+      ...(error.code ? { code: error.code } : {}),
+    });
   }
 });
 
@@ -4727,6 +5174,8 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
           statusCode: 400,
         });
       }
+      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+
       const blockingBill = db
         .prepare(
           `SELECT payment_status, split_group_id, COALESCE(paid_amount, 0) AS paid_amount
@@ -4949,10 +5398,11 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
     res.json({ item: updatedItem });
   } catch (error: unknown) {
     console.error('[API] Internal error:', error);
-    const failure = error as { statusCode?: number; message?: string };
-    res
-      .status(failure.statusCode || 500)
-      .json({ error: failure.statusCode ? failure.message : 'Internal server error' });
+    const failure = error as { statusCode?: number; message?: string; code?: string };
+    res.status(failure.statusCode || 500).json({
+      error: failure.statusCode ? failure.message : 'Internal server error',
+      ...(failure.code ? { code: failure.code } : {}),
+    });
   }
 });
 
@@ -5242,6 +5692,8 @@ router.patch(
           };
         }
 
+        assertScheduledOrderUnpaidForEdit(db, orderId, currentOrder);
+
         if (
           db
             .prepare(`
@@ -5355,7 +5807,9 @@ router.patch(
             "UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?",
           ).run(now(), now(), itemId);
         } else {
-          cancelOrderItemAndRestoreStock(db, currentItem, actorId, reason);
+          cancelOrderItemAndRestoreStock(db, currentItem, actorId, reason, {
+            skipStockRestore: isUnreleasedOrderRow(currentOrder),
+          });
         }
 
         // Recalculate order totals excluding terminal items.
@@ -5516,15 +5970,20 @@ router.patch(
 
       if (result.eventType) {
         cloudSync.recordOrderChanged(orderId, result.eventType);
-        notifyKdsUpdate();
+        if (isUnreleasedOrderRow(result.updatedOrder)) {
+          notifyOrderUpdated();
+        } else {
+          notifyKdsUpdate();
+        }
       }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Cancel item error:', error);
       console.error('[API] Internal error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   }),
 );
@@ -5629,6 +6088,8 @@ router.patch(
             statusCode: 400,
           });
         }
+        assertScheduledOrderUnpaidForEdit(db, orderId, currentOrder);
+
         const bills = db.prepare('SELECT * FROM bills WHERE order_id = ?').all(orderId) as {
           split_group_id: string | null;
           payment_status: string;
@@ -5648,6 +6109,7 @@ router.patch(
             statusCode: 409,
           });
         }
+        const deferUnreleased = isUnreleasedOrderRow(currentOrder);
 
         const tenantInfo = {
           country: getSettingValue('country') || '',
@@ -5824,7 +6286,9 @@ router.patch(
           if (isStartedQuantityIncrease) {
             superseded = false;
           } else if (isPendingLine) {
-            cancelOrderItemAndRestoreStock(db, oldItem, actorId, reason);
+            cancelOrderItemAndRestoreStock(db, oldItem, actorId, reason, {
+              skipStockRestore: deferUnreleased,
+            });
             superseded = true;
           } else {
             // Started replacement: void original line without restoring stock.
@@ -5867,6 +6331,7 @@ router.patch(
                 newItem.product_id,
                 newItem.addons,
                 newItem.quantity,
+                { deferStockDeduction: deferUnreleased },
               );
               if (preserveUnitPrice && Array.isArray(resolved)) {
                 const originalPrice = new Map(oldAddons.map((a) => [a.addon_id, a.price]));
@@ -5912,6 +6377,7 @@ router.patch(
             initialStatus: 'pending',
             preserveUnitPrice,
             preserveSelections: preserveStoredSelections,
+            deferStockDeduction: deferUnreleased,
           });
           newItemId = insertedId;
           if (preserveUnitPrice) carryPriceOverride(db, oldItem.id, insertedId);
@@ -6043,15 +6509,20 @@ router.patch(
 
       if (!result.idempotentReplay) {
         cloudSync.recordOrderChanged(orderId, 'order.item_edited');
-        notifyKdsUpdate();
+        if (isUnreleasedOrderRow(result.order as { release_status?: unknown })) {
+          notifyOrderUpdated();
+        } else {
+          notifyKdsUpdate();
+        }
       }
       res.json({ order: result.order });
     } catch (err) {
-      const error = err as { statusCode?: number; message?: string };
+      const error = err as { statusCode?: number; message?: string; code?: string };
       console.error('[Orders] Edit item error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   },
 );
@@ -6108,6 +6579,7 @@ router.patch(
             statusCode: 400,
           });
         }
+        assertScheduledOrderUnpaidForEdit(db, orderId, currentOrder);
         if (
           db
             .prepare(
@@ -6148,38 +6620,40 @@ router.patch(
           return { updatedOrder: currentOrder, items, changed: false };
         }
 
-        // Re-deduct the inventory quantity originally consumed by the item
-        const inventoryTarget =
-          currentItem.inventory_deducted_quantity > 0
-            ? orderItemInventoryTarget(db, currentItem)
-            : null;
-        if (inventoryTarget) {
-          adjustProductStock(db, {
-            productId: inventoryTarget.productId,
-            variantId: inventoryTarget.variantId,
-            quantityDelta: -currentItem.inventory_deducted_quantity,
-            movementType: 'cancel_restore',
-            referenceType: 'order_item',
-            referenceId: `${currentItem.id}:${currentItem.updated_at}`,
-            reason: 'Cancelled item restored',
-            actorUserId: actorId,
-          });
-        }
-        // The add-on snapshot, not a recomputation from the current catalog: the
-        // merchant may have changed the add-on since the order was placed.
-        moveOrderItemAddonStock(db, orderItemAddonStockLines(db, currentItem.id), {
-          direction: 'deplete',
-          actorUserId: actorId,
-          referenceId: `${currentItem.id}:${currentItem.updated_at}`,
-          reason: 'Cancelled item restored',
-        });
-        const recipeSnapshot = parseRecipeSnapshot(currentItem.recipe_snapshot);
-        if (recipeSnapshot) {
-          applyRecipeSnapshot(db, recipeSnapshot, {
+        if (!isUnreleasedOrderRow(currentOrder)) {
+          // Re-deduct the inventory quantity originally consumed by the item
+          const inventoryTarget =
+            currentItem.inventory_deducted_quantity > 0
+              ? orderItemInventoryTarget(db, currentItem)
+              : null;
+          if (inventoryTarget) {
+            adjustProductStock(db, {
+              productId: inventoryTarget.productId,
+              variantId: inventoryTarget.variantId,
+              quantityDelta: -currentItem.inventory_deducted_quantity,
+              movementType: 'cancel_restore',
+              referenceType: 'order_item',
+              referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+              reason: 'Cancelled item restored',
+              actorUserId: actorId,
+            });
+          }
+          // The add-on snapshot, not a recomputation from the current catalog: the
+          // merchant may have changed the add-on since the order was placed.
+          moveOrderItemAddonStock(db, orderItemAddonStockLines(db, currentItem.id), {
             direction: 'deplete',
             actorUserId: actorId,
             referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+            reason: 'Cancelled item restored',
           });
+          const recipeSnapshot = parseRecipeSnapshot(currentItem.recipe_snapshot);
+          if (recipeSnapshot) {
+            applyRecipeSnapshot(db, recipeSnapshot, {
+              direction: 'deplete',
+              actorUserId: actorId,
+              referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+            });
+          }
         }
 
         // Restore - mark as pending
@@ -6289,15 +6763,20 @@ router.patch(
 
       if (result.changed) {
         cloudSync.recordOrderChanged(orderId, 'order.item_restored');
-        notifyKdsUpdate();
+        if (isUnreleasedOrderRow(result.updatedOrder)) {
+          notifyOrderUpdated();
+        } else {
+          notifyKdsUpdate();
+        }
       }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Restore item error:', error);
       console.error('[API] Internal error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   },
 );

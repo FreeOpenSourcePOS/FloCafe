@@ -316,14 +316,24 @@ function extractPdfInfo(buf: Buffer): ExtractedPdfInfo {
     }
     const bfrangeRe = /beginbfrange([\s\S]*?)endbfrange/g;
     while ((bm = bfrangeRe.exec(cmapStr)) !== null) {
-      const rangeRe = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g;
+      const entryRe = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(?:<([0-9A-Fa-f]+)>|\[([\s\S]*?)\])/g;
       let rm: RegExpExecArray | null;
-      while ((rm = rangeRe.exec(bm[1])) !== null) {
+      while ((rm = entryRe.exec(bm[1])) !== null) {
         const start = parseInt(rm[1], 16);
         const end = parseInt(rm[2], 16);
-        const baseUcs = parseInt(rm[3], 16);
-        for (let k = start; k <= end; k++) {
-          map.set(k, String.fromCharCode(baseUcs + (k - start)));
+        if (rm[3] !== undefined) {
+          const baseUcs = parseInt(rm[3], 16);
+          for (let k = start; k <= end; k++) {
+            map.set(k, String.fromCharCode(baseUcs + (k - start)));
+          }
+        } else if (rm[4] !== undefined) {
+          const itemRe = /<([0-9A-Fa-f]+)>/g;
+          let im: RegExpExecArray | null;
+          let k = start;
+          while ((im = itemRe.exec(rm[4])) !== null && k <= end) {
+            map.set(k, decodeHexUcs(im[1]));
+            k++;
+          }
         }
       }
     }

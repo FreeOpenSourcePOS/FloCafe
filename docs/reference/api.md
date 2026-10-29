@@ -868,7 +868,7 @@ day-boundary rules.
 | `GET`  | `/z-report/export`          | `reports.view` (`ROLE_ACCESS.ownerManager` by default) | query: `?date`, `?format` (required: `csv`, `xlsx`, or `html`)     | Exports the stored Z-report snapshot for a closed business date (or print-styled HTML for PDF/browser print when `format=html`). Returns `400` with `{ error: "format must be xlsx, csv, or html" }` when `format` is missing or invalid, and `404` with `{ error: "Day not closed" }` when the day has not been closed. Sets `Content-Disposition` to `attachment; filename="z-report-Z<z_number>-<date>.<format>"`.                                                                                                         |
 | `POST` | `/cash-closes/:id/whatsapp` | `reports.view` + `whatsapp.use`                        | path: `id`; body: `phone_e164`, `body` (non-empty, max 4096 chars) | Sends the submitted report body and returns `{ success: true, messageId }`; when WhatsApp is disconnected, returns `{ fallback: true, reason: "not_connected" }` so the client can open WhatsApp for sharing. Invalid input returns `400`; an unknown day close returns `404`.                                                                                                                                                                                                                                              |
 | `GET`  | `/daily-sales/export`       | `reports.daily-sales.export` (owner by default)        | query: `?date`, `?from`, `?to`, `?format`, `?part`                 | See [GET `/api/reports/daily-sales/export`](#get-apireportsdaily-salesexport).                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `GET`  | `/daily-invoices/export`    | `reports.daily-sales.export` (owner by default)        | query: `?date`, `?from`, `?to`, `?format`                          | Compiled A4 print-styled HTML of all issued invoices (`paid`, `partially_refunded`, `refunded`) in strict ascending `bill_number` order with a fiscal summary cover page. See [GET `/api/reports/daily-invoices/export`](#get-apireportsdaily-invoicesexport).                                                                                                                                                                                                                                                               |
+| `GET`  | `/daily-invoices/export`    | `reports.daily-sales.export` (owner by default)        | query: `?date`, `?from`, `?to`, `?format`                          | See [GET `/api/reports/daily-invoices/export`](#get-apireportsdaily-invoicesexport).                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `GET`  | `/customer-sales/export`    | `reports.customer-sales.export` (owner by default)     | query: `?start_date`, `?end_date`, `?format`                       | One row per item sold with customer details, for a business-date range of at most 366 days. `format` is `xlsx` or `csv`; invalid format, reversed range, or oversized range returns `400`. See [customer sales export](daily-sales-export.md#customer-sales-export). |
 
 ### GET `/api/reports/daily-sales/export`
@@ -898,24 +898,31 @@ Errors: `400` for an invalid `format`, a CSV without `part`, mixed `date` and `f
 
 ### GET `/api/reports/daily-invoices/export`
 
-Owner-only compiled daily invoices export for one tenant business date (`?date=YYYY-MM-DD`, defaults
-to the current business date) or an inclusive business-date range (`?from=YYYY-MM-DD&to=YYYY-MM-DD`,
-up to 366 calendar days). Returns a print-styled A4 HTML document (`format=html`, default when
-omitted) used by `exportReportAsPdf` for desktop PDF export (`invoices-YYYY-MM-DD.pdf` or
-`invoices-YYYY-MM-DD_to_YYYY-MM-DD.pdf`) and browser print fallback.
+Compiled daily invoices export (`reports.daily-sales.export`, owner by default) for one tenant
+business date (`?date=YYYY-MM-DD`, defaults to the current business date) or an inclusive
+business-date range (`?from=YYYY-MM-DD&to=YYYY-MM-DD`, up to 366 calendar days). Returns a
+print-styled A4 portrait HTML document (`format=html`, default when omitted) formatted with the
+store's regional locale and preferences (`resolveRegionalSnapshot`), used by `exportReportAsPdf` for
+desktop PDF export (`invoices-YYYY-MM-DD.pdf` or `invoices-YYYY-MM-DD_to_YYYY-MM-DD.pdf`) and
+browser print fallback.
 
-Page 1 renders a fiscal summary cover page (store legal name, tax registration ID and country label,
-address, business date/range, total invoices count, gross sales, net base, tax collected, total
-refunds, net revenue, the VAT/tax summary table by rate, summary reconciliation metrics, and the
-daily tax breakdown) reused from `buildDailySalesExportDataset` (see
-[daily sales export](daily-sales-export.md)). Page 2+ renders all issued invoices in the
-business-day window (`payment_status IN ('paid', 'partially_refunded', 'refunded')`) in strict
-ascending `bill_number` order (`page-break-inside: avoid; break-inside: avoid;` on each
-`.invoice-card`) with `[PAID]`, `[PARTIALLY REFUNDED]`, and `[REFUNDED]` status badges, line items,
-tax components, payment details, and refund history.
+Page 1 renders a bounded fiscal summary cover page (store legal name, tax registration ID with the
+active country tax pack's `registrationNumberLabel` or country profile `taxIdLabel`, address,
+business date/range, timezone, business-day start, currency, total invoices count, gross sales, net
+base, tax collected, in-period refunds, net revenue, the VAT/tax summary table by rate, refund scope
+reconciliation across in-period, prior-bill, outside-period, and lifetime totals, and summary
+reconciliation metrics) reused from `buildDailySalesExportDataset` (see
+[daily sales export](daily-sales-export.md)). When the window has issued invoices, page 2+ renders
+all bills paid in the business-day window (`payment_status IN ('paid', 'partially_refunded',
+'refunded')`) ordered by ascending business date and numeric `bill_number` sequence (`paid_at`,
+`id`, and `bill_number` tie-breakers), with `page-break-inside: avoid; break-inside: avoid;` on each
+`.invoice-card`, `[PAID]`, `[PARTIALLY REFUNDED]`, and `[REFUNDED]` status badges, non-excluded line
+items (unit price, pre-tax subtotal, and after-tax total), tax components, payment details, and
+`[In Period]` / `[Outside Period]` refund details. A trailing page-broken appendix renders the
+per-day tax breakdown table and any prior-period invoices refunded during the selected period.
 
 - Returns `200` with `Content-Type: text/html; charset=utf-8` and `Content-Disposition: attachment; filename="invoices-YYYY-MM-DD.html"` (or `invoices-YYYY-MM-DD_to_YYYY-MM-DD.html`).
-- Errors: `400` for an unsupported `format`, mixed `date` and `from`/`to` arguments, an incomplete or reversed range, an invalid calendar date, a range exceeding 366 days, or an HTML export exceeding the 15 MB PDF size limit; `401` unauthenticated; `403` non-owner; `409` for a concurrent-write conflict; `500` otherwise.
+- Errors: `400` for an unsupported `format`, mixed `date` and `from`/`to` arguments, an incomplete or reversed range, an invalid calendar date, a range exceeding 366 days, more than 5,000 matching invoices (`MAX_DAILY_INVOICES_COUNT`), or an HTML export exceeding the 15 MB PDF size limit; `401` unauthenticated; `403` when lacking `reports.daily-sales.export`; `409` for unconfigured regional settings or a concurrent-write conflict; `500` otherwise.
 
 ### Inline endpoints (registered outside a router)
 

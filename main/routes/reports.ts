@@ -1919,14 +1919,20 @@ router.post(
         typeof error === 'object' && error !== null
           ? (error as { statusCode?: number }).statusCode
           : undefined;
+      const message = error instanceof Error ? error.message : 'Internal server error';
       if (statusCode === 400) {
         return res.status(400).json({
           error: error instanceof Error ? error.message : 'Invalid export request',
           reason: 'invalid_range',
         });
       }
+      if (statusCode === 409) {
+        return res.status(409).json({ error: message });
+      }
       console.error('[API] Daily sales WhatsApp send error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
+      return res
+        .status(statusCode || 500)
+        .json({ error: statusCode ? message : 'Internal server error' });
     }
   },
 );

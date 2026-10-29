@@ -996,6 +996,26 @@ async function main(): Promise<void> {
     assert.equal(over93RangeRes.status, 400, '>93-business-date range is rejected');
     assert.equal(over93RangeRes.body.reason, 'invalid_range');
 
+    db.prepare(`DELETE FROM settings WHERE key IN ('country', 'currency')`).run();
+    try {
+      const missingRegionalDefaultRes = await request(app)
+        .post('/api/reports/daily-sales/whatsapp')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .send({ phone_e164: '+14165551234' });
+      assert.equal(missingRegionalDefaultRes.status, 409);
+      assert.match(missingRegionalDefaultRes.body.error, /Regional settings are not configured/);
+
+      const missingRegionalExplicitRes = await request(app)
+        .post('/api/reports/daily-sales/whatsapp')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .send({ date: '2026-10-05', phone_e164: '+14165551234' });
+      assert.equal(missingRegionalExplicitRes.status, 409);
+      assert.match(missingRegionalExplicitRes.body.error, /Regional settings are not configured/);
+    } finally {
+      setSetting.run('country', 'US');
+      setSetting.run('currency', 'USD');
+    }
+
     // 3. Disconnected fallback vs confirmed transport send on client helper
     sendResult = { ok: false, reason: 'not_connected', error: 'WhatsApp not connected' };
     const dailyFallbackRes = await request(app)
@@ -1409,6 +1429,58 @@ async function main(): Promise<void> {
     assert.match(autoZRowsAfterClose[0].body, /Z report #/);
     assert.match(autoZRowsAfterClose[0].body, /2026-10-05/);
     assert.match(autoZRowsAfterClose[0].body, /\$237\.30/); // canonical day net collections
+
+    const sampleIrClosure = {
+      id: 901,
+      scope: 'day',
+      business_date: '2026-10-05',
+      period_start: '2026-10-05 08:00:00',
+      period_end: '2026-10-05 20:00:00',
+      z_number: 12,
+      closed_by: owner.userId,
+      notes: null,
+      gross_collected_cents: 25000000,
+      refunded_cents: 0,
+      net_collected_cents: 25000000,
+      bill_count: 4,
+      opening_float_cents: 0,
+      expected_cash_cents: 25000000,
+      counted_cash_cents: 25000000,
+      variance_cents: 0,
+      payment_methods_json: JSON.stringify([{ method: 'cash', count: 4, total_cents: 25000000 }]),
+    };
+    try {
+      setSetting.run('country', 'IR');
+      setSetting.run('currency', 'IRR');
+      setSetting.run('timezone', 'Asia/Tehran');
+      setSetting.run('calendar', 'gregorian');
+      setSetting.run('number_digits', 'latin');
+      const irGregorianLatinZ = whatsappService.formatStoredZReportWhatsAppMessage(sampleIrClosure);
+      const irPeriodLine =
+        irGregorianLatinZ.split('\n').find((line: string) => line.includes('2026-10-05 (')) ?? '';
+      assert.match(irPeriodLine, /\(.*2026.*-.*2026.*\)/);
+      assert.doesNotMatch(irPeriodLine, /[\u06F0-\u06F9]/);
+      assert.doesNotMatch(irPeriodLine, /1405/);
+
+      setSetting.run('calendar', 'locale');
+      setSetting.run('number_digits', 'locale');
+      const irPersianLocaleZ = whatsappService.formatStoredZReportWhatsAppMessage(sampleIrClosure);
+      const irPersianLine =
+        irPersianLocaleZ.split('\n').find((line: string) => line.includes('2026-10-05 (')) ?? '';
+      assert.match(irPersianLine, /\u06F1\u06F4\u06F0\u06F5/);
+    } finally {
+      setSetting.run('country', 'US');
+      setSetting.run('currency', 'USD');
+      setSetting.run('timezone', 'America/Toronto');
+      db.prepare(`DELETE FROM settings WHERE key IN ('calendar', 'number_digits')`).run();
+    }
+    const enPersianCalendarZ = whatsappService.formatStoredZReportWhatsAppMessage(sampleIrClosure, {
+      locale: 'en-US',
+      timezone: 'America/Toronto',
+      currency: 'USD',
+      preferences: { currencyDisplay: 'rial', digits: 'locale', calendar: 'persian' },
+    });
+    assert.match(enPersianCalendarZ, /1405/);
 
     // Duplicate close request (409) + repeated triggerDayCloseZReport + simulated restart never send a duplicate
     const sentCountAfterFirstAutoZ = sentSocketMessages.length;

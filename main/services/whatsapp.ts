@@ -3785,14 +3785,28 @@ function localizeZPaymentMethod(language: string, method: string): string {
   return method.charAt(0).toUpperCase() + method.slice(1);
 }
 
-function formatZReportDateTime(value: string, locale: string, timeZone: string): string {
+function formatZReportDateTime(
+  value: string,
+  locale: string,
+  timeZone: string,
+  preferences?: LocalePreferences,
+): string {
   try {
     const parsed = parseDbTimestamp(value);
     if (Number.isNaN(parsed.getTime())) return value;
+    const numberingSystem = preferences?.digits === 'latin' ? 'latn' : undefined;
+    const calendar =
+      preferences?.calendar === 'gregorian'
+        ? 'gregory'
+        : preferences?.calendar === 'persian'
+          ? 'persian'
+          : undefined;
     return new Intl.DateTimeFormat(locale, {
       dateStyle: 'short',
       timeStyle: 'short',
       timeZone,
+      ...(numberingSystem ? { numberingSystem } : {}),
+      ...(calendar ? { calendar } : {}),
     }).format(parsed);
   } catch {
     return value;
@@ -3851,7 +3865,9 @@ export function formatStoredZReportWhatsAppMessage(
     rawMethods = [];
   }
 
-  const period = `${formatZReportDateTime(closure.period_start, locale, timezone)} - ${formatZReportDateTime(closure.period_end, locale, timezone)}`;
+  const periodStart = formatZReportDateTime(closure.period_start, locale, timezone, preferences);
+  const periodEnd = formatZReportDateTime(closure.period_end, locale, timezone, preferences);
+  const period = `${periodStart} - ${periodEnd}`;
   const zTitle = printLabel(language, 'dashboard.zReport').replace(/:$/, '').trim();
   const closedByLabel = printLabel(language, 'print.zReport.closedBy').replace(/:$/, '').trim();
   const dateLabel = printLabel(language, 'dashboard.businessDateLabel').replace(/:$/, '').trim();

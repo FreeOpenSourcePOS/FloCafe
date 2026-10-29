@@ -32,7 +32,18 @@ import {
   type Customer,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
-import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
+import {
+  calculateOrderTotals,
+  completedKdsProjectionCutoff,
+  recomputeOrderTotals,
+  reconcileActiveOrderStatusFromItems,
+} from '../services/orders';
+import {
+  collectProjectedCompletedOrderIds,
+  parseBoardStatuses,
+  selectBoardEligibleOrderPage,
+  type DisplayFeedCursor,
+} from '../services/customer-display-tokens';
 import {
   buildAppliedCharges,
   ChargeValidationError,
@@ -609,22 +620,33 @@ router.get(
       if (!['all', 'active', 'unpaid'].includes(view)) {
         return res.status(400).json({ error: 'Invalid view parameter.' });
       }
-      const activeOrderPredicate = `(
-        (orders.status NOT IN ('cancelled', 'completed'))
-        OR (
-          orders.status = 'completed'
-          AND ? = 1
-          AND EXISTS (
-            SELECT 1 FROM order_items AS active_item
-            WHERE active_item.order_id = orders.id
-              AND active_item.status IN ('pending', 'preparing', 'ready')
-          )
-        )
-      )`;
-      if (view === 'active') {
-        wheres.push(activeOrderPredicate);
-        params.push(isKdsEnabled() ? 1 : 0);
-      } else if (view === 'unpaid') {
+      const boardStatuses =
+        req.query.board_status !== undefined ? parseBoardStatuses(req.query.board_status) : null;
+      if (req.query.board_status !== undefined && boardStatuses === null) {
+        return res.status(400).json({ error: 'Invalid board_status parameter.' });
+      }
+      const statusQuery = typeof req.query.status === 'string' ? req.query.status : '';
+      const statuses = statusQuery ? statusQuery.split(',') : [];
+      const statusIsActive = statuses.length === 1 && statuses[0] === 'active';
+      if (boardStatuses === null && (view === 'active' || statusIsActive)) {
+        wheres.push(`orders.id IN (
+          SELECT ao.id FROM orders AS ao
+          WHERE ao.status IN ('pending', 'preparing', 'ready', 'served')
+          UNION ALL
+          SELECT co.id FROM orders AS co
+          WHERE ? = 1
+            AND +co.status = 'completed'
+            AND co.created_at >= ?
+            AND EXISTS (
+              SELECT 1 FROM order_items AS active_item
+              WHERE active_item.order_id = co.id
+                AND active_item.status IN ('pending', 'preparing', 'ready')
+                AND active_item.quantity > 0
+            )
+        )`);
+        params.push(isKdsEnabled() ? 1 : 0, completedKdsProjectionCutoff());
+      }
+      if (view === 'unpaid') {
         wheres.push("orders.status != 'cancelled'");
         wheres.push(`(
           NOT EXISTS (SELECT 1 FROM bills AS existing_bill WHERE existing_bill.order_id = orders.id)
@@ -637,12 +659,8 @@ router.get(
         )`);
       }
 
-      if (typeof req.query.status === 'string' && req.query.status) {
-        const statuses = req.query.status.split(',');
-        if (statuses.length === 1 && statuses[0] === 'active') {
-          wheres.push(activeOrderPredicate);
-          params.push(isKdsEnabled() ? 1 : 0);
-        } else if (statuses.length === 1) {
+      if (statuses.length > 0 && !statusIsActive) {
+        if (statuses.length === 1) {
           wheres.push('orders.status = ?');
           params.push(statuses[0]);
         } else {
@@ -748,6 +766,7 @@ router.get(
       }
       // Cursor pagination: `before` / `after` are ORDER BY keys (created_at),
       // composed with `id` to break ties when many orders share a second.
+      let beforeCursor: DisplayFeedCursor | null = null;
       if (typeof req.query.before_id === 'string' && /^\d+$/.test(req.query.before_id)) {
         const oid = parseInt(req.query.before_id, 10);
         if (Number.isSafeInteger(oid) && oid > 0) {
@@ -755,13 +774,11 @@ router.get(
             | { created_at: string }
             | undefined;
           if (ref) {
-            wheres.push('(orders.created_at, orders.id) < (?, ?)');
-            params.push(ref.created_at, oid);
+            beforeCursor = { created_at: ref.created_at, id: oid };
           }
         }
       }
 
-      const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
       // Limit per-page items with default 50 and maximum 500.
       const requestedPerPage = req.query.per_page
         ? parseInt(req.query.per_page as string, 10)
@@ -770,6 +787,63 @@ router.get(
         Number.isInteger(requestedPerPage) && requestedPerPage > 0
           ? Math.min(requestedPerPage, 500)
           : 50;
+
+      if (boardStatuses !== null && wheres.length === 0) {
+        const { pageRows, hasMore } = selectBoardEligibleOrderPage(db, {
+          statuses: boardStatuses,
+          cursor: beforeCursor,
+          limit: perPage,
+        });
+        if (pageRows.length === 0) {
+          return res.json({ orders: [] });
+        }
+        const idPlaceholders = pageRows.map(() => '?').join(',');
+        type OrderRow = { id: number } & Record<string, unknown>;
+        const fetchedOrders = db
+          .prepare(`SELECT orders.* FROM orders WHERE orders.id IN (${idPlaceholders})`)
+          .all(...pageRows.map((row) => row.id)) as OrderRow[];
+        const orderById = new Map(fetchedOrders.map((order) => [Number(order.id), order]));
+        const pageOrders = pageRows
+          .map((row) => orderById.get(row.id))
+          .filter((order): order is OrderRow => order !== undefined);
+        const nextCursor =
+          hasMore && pageOrders.length > 0 ? pageOrders[pageOrders.length - 1].id : null;
+        const ordersWithRelations = batchHydrateOrders(db, pageOrders);
+        return res.json({
+          orders: ordersWithRelations,
+          ...(nextCursor !== null && { nextCursor }),
+        });
+      }
+
+      if (boardStatuses !== null) {
+        const boardPlaceholders = boardStatuses.map(() => '?').join(',');
+        const projectedCompletedIds = collectProjectedCompletedOrderIds(
+          db,
+          boardStatuses,
+          beforeCursor,
+        );
+        if (projectedCompletedIds.length > 0) {
+          wheres.push(`orders.id IN (
+            SELECT ao.id FROM orders AS ao
+            WHERE ao.status IN (${boardPlaceholders})
+            UNION ALL
+            SELECT CAST(value AS INTEGER) FROM json_each(?)
+          )`);
+          params.push(...boardStatuses, JSON.stringify(projectedCompletedIds));
+        } else {
+          wheres.push(`orders.id IN (
+            SELECT ao.id FROM orders AS ao
+            WHERE ao.status IN (${boardPlaceholders})
+          )`);
+          params.push(...boardStatuses);
+        }
+      }
+      if (beforeCursor) {
+        wheres.push('(orders.created_at, orders.id) < (?, ?)');
+        params.push(beforeCursor.created_at, beforeCursor.id);
+      }
+
+      const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
       const perPagePlusOne = perPage + 1;
 
       const orders = db
@@ -2398,6 +2472,8 @@ router.post(
           action: 'items_added',
           details: { item_ids: insertedItemIds },
         });
+
+        reconcileActiveOrderStatusFromItems(db, req.params.id as string, idempotencyUserId);
 
         const updatedOrder = parseRowJson(
           db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id),
@@ -5414,6 +5490,10 @@ router.patch(
           details: { ...(approvedByUserId && { approved_by: approvedByUserId }) },
         });
 
+        if (!orderCancelled) {
+          reconcileActiveOrderStatusFromItems(db, orderId, actorId);
+        }
+
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(
           db,
@@ -5941,6 +6021,8 @@ router.patch(
           },
         });
 
+        reconcileActiveOrderStatusFromItems(db, orderId, actorId);
+
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<
           string,
           unknown
@@ -6191,6 +6273,8 @@ router.patch(
           actorUserId: actorId,
           action: 'item_restored',
         });
+
+        reconcileActiveOrderStatusFromItems(db, orderId, actorId);
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(

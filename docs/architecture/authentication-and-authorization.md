@@ -182,7 +182,7 @@ That divergence is a correctness risk, not a style preference. A change to the o
 to the status codes, or to the role gate has to be made in three places, and the three are free to
 drift apart without any test failing. Treat them as a set. Note also that `:3002` re-checks
 `is_active`, revocation, and staleness a second time inside its status-update transaction
-(`main/kds-server.ts:410`), which is a defence in depth rather than a duplicate bug.
+(`PATCH /api/kds/items/:id/status` in `main/kds-server.ts`), which is a defence in depth rather than a duplicate bug.
 
 ### Shared login attempt rate limiting across servers
 

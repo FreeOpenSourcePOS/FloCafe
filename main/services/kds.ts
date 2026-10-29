@@ -24,6 +24,8 @@ import { parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { hasPermission } from './authorization';
+import { reconcileActiveOrderStatusFromItems } from './orders';
+import { cloudSync } from './cloud-sync';
 
 interface KdsClient {
   ws: WebSocket;
@@ -442,6 +444,7 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
     client.ws.send(JSON.stringify({ type: 'error', message: 'Insufficient permissions' }));
     return;
   }
+  const actorUserId = client.userId;
 
   const { order_item_id, status, expected_status: expectedStatus } = message;
 
@@ -552,12 +555,29 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
         return { error: 'Item status changed; refresh and try again' };
       }
 
-      return { success: true };
+      const reconcile = reconcileActiveOrderStatusFromItems(db, existingItem.order_id, actorUserId);
+
+      return {
+        success: true,
+        reconciledEvent:
+          reconcile.changed && reconcile.status
+            ? { orderId: String(existingItem.order_id), status: reconcile.status }
+            : null,
+      };
     });
 
     if (result.error) {
       client.ws.send(JSON.stringify({ type: 'error', message: result.error }));
       return;
+    }
+
+    if (result.reconciledEvent) {
+      try {
+        cloudSync.recordOrderChanged(
+          result.reconciledEvent.orderId,
+          `order.${result.reconciledEvent.status}`,
+        );
+      } catch {}
     }
 
     broadcastOrderUpdate();

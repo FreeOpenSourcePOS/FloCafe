@@ -273,8 +273,44 @@ enabled, excluding the share funded by wallet points.
 `PATCH /api/orders/:id/status` advances the order through preparation, service, and terminal
 statuses inside a single transaction. Its allowed transitions, terminal completion and cancellation
 safeguards, `override_pin` approval rules, pending-only restock rule, and audit fields are in the
-[API reference](../reference/api.md#orders). Kitchen item status is a separate surface
-(`/api/order-items`); see [order-item status](../reference/api.md#order-item-status).
+[API reference](../reference/api.md#orders). Kitchen item status endpoints are documented under
+[order-item status](../reference/api.md#order-item-status).
+
+When KDS is enabled (`kds_enabled` not `false`), [`reconcileActiveOrderStatusFromItems`](../../main/services/orders.ts)
+automatically reconciles active (`pending`, `preparing`, `ready`, `served`) parent `orders.status`
+inside the same transaction across all order types (`dine_in`, `takeaway`, `delivery`, `online`)
+whenever KDS item statuses change (`PATCH /api/order-items/:id/status`, embedded and standalone
+`PATCH /api/kds/items/:id/status`, and the KDS WebSocket `status_update` handler) or whenever active
+order items are appended, cancelled, edited, refunded, or restored:
+
+- Live items are non-terminal (`cancelled`, `voided`, `void_adjustment`, and `refunded` excluded)
+  positive-quantity lines across the full order, unfiltered by caller station or category scope
+  ([`shared/order-item-status.ts`](../../shared/order-item-status.ts)).
+- Starting kitchen work (`preparing`, `ready`, `served`, or `completed` on any live item while
+  unfinished items remain) promotes `pending` to `preparing` and sets `cooking_started_at`.
+- Once every live item is `ready` (or mixed `ready` with already `served` or `completed` lines), the
+  order transitions to `ready`, records `ready_at`, and clears `served_at`.
+- Once every live item is `served` or `completed`, the order promotes to `served` and records
+  `served_at`, removing handed-over active orders from `/customer-display`.
+- Appending, restoring, editing to add pending work, or requeuing items to `pending` or `preparing`
+  on a `ready` or `served` order demotes it back to `preparing` and clears stale `ready_at` and
+  `served_at` timestamps; `preparing` never regresses to `pending` when a started item is voided
+  while pending items remain.
+- Each resulting parent status change records an actor-attributed `status_changed` entry
+  (`source: 'kds_reconciliation'`) in `order_audit_log`.
+
+Terminal `completed` and `cancelled` orders are never reopened or mutated by item-status
+reconciliation. When KDS is enabled, upfront-paid orders created within the rolling 24-hour
+`orders.created_at` window that settle to `completed` before kitchen fulfillment finishes remain in
+`GET /api/orders?view=active` and `GET /api/orders?status=active` while positive-quantity live items
+stay in `pending`, `preparing`, or `ready` (non-`completed` active orders are not age-bounded). Both
+`/customer-display` surfaces (`GET /api/orders?board_status=...` and
+`GET /api/customer-display/feed`) project such an order's effective board status (`pending`,
+`preparing`, or `ready`) from live item statuses via `projectBoardStatusFromItems` and filter by
+configured statuses before pagination, omitting the order once no live item remains unfinished
+(for example once every remaining live item is `served` or `completed`). When KDS is disabled,
+automatic item-to-order reconciliation stands down and manual `PATCH /api/orders/:id/status`
+transitions govern preparation and service.
 
 ## Refunds
 
@@ -307,4 +343,6 @@ npm run test:integration-tax                  # tax extraction and rounding
 npm run test:held-orders                      # held-cart API and store
 npm run test:cash-sessions                    # shift gate
 npm run test:refunds                          # refund window and approvals
+npm run test:kds-contract                     # KDS item-to-order status reconciliation across write paths
+npm run test:customer-display-feed            # pickup board projection and board_status pagination
 ```

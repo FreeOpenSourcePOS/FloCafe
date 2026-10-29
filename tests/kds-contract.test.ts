@@ -20,8 +20,11 @@ const {
   initTestDb,
   createApp,
   seedOwnerUser,
+  seedManagerUser,
   assert,
   assertEqual,
+  assertOrThrow,
+  assertEqualOrThrow,
   getResults,
   closeDatabase,
   now,
@@ -29,6 +32,8 @@ const {
 const { getJWTSecret } = require('../main/routes/auth');
 const { kdsRoutes } = require('../main/routes/kds');
 const { orderItemRoutes } = require('../main/routes/order-items');
+const { orderRoutes } = require('../main/routes/orders');
+const { refundRoutes } = require('../main/routes/refunds');
 
 async function main() {
   const db = initTestDb();
@@ -163,7 +168,13 @@ async function main() {
     Authorization: `Bearer ${jwt.sign({ userId: inactiveChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}`,
   };
 
-  const app = createApp({ '/api/kds': kdsRoutes, '/api/order-items': orderItemRoutes });
+  seedManagerUser(db);
+  const app = createApp({
+    '/api/kds': kdsRoutes,
+    '/api/order-items': orderItemRoutes,
+    '/api/orders': orderRoutes,
+    '/api/refunds': refundRoutes,
+  });
   try {
     const orders = await request(app).get('/api/kds/orders').set(authHeader);
     assertEqual(orders.status, 200, 'embedded KDS orders request succeeds');
@@ -718,6 +729,512 @@ async function main() {
       0,
       'buildActiveOrdersSnapshot indexes orders by ID in a Map instead of calling orders.find per item',
     );
+
+    // Regression for #1401: KDS item transitions and item-set mutations reconcile active parent order status across all order types.
+    const readOrderState = (id: number | string) =>
+      db
+        .prepare(
+          'SELECT status, cooking_started_at, ready_at, served_at, updated_at FROM orders WHERE id = ?',
+        )
+        .get(id) as {
+        status: string;
+        cooking_started_at: string | null;
+        ready_at: string | null;
+        served_at: string | null;
+        updated_at: string;
+      };
+    const readStatusAudits = (id: number | string) =>
+      db
+        .prepare(
+          "SELECT actor_user_id, details_json FROM order_audit_log WHERE order_id = ? AND action = 'status_changed' ORDER BY id ASC",
+        )
+        .all(id) as Array<{ actor_user_id: string; details_json: string }>;
+
+    db.prepare(`INSERT INTO tables (id, number, created_at, updated_at)
+      VALUES ('kds-reconcile-table', '88', ?, ?)`).run(now(), now());
+
+    for (const orderType of ['takeaway', 'dine_in', 'delivery', 'online'] as const) {
+      const writerPath =
+        orderType === 'takeaway' || orderType === 'delivery'
+          ? ('order-items' as const)
+          : ('kds-items' as const);
+      const createdRes = await request(app)
+        .post('/api/orders')
+        .set(authHeader)
+        .send({
+          type: orderType,
+          ...(orderType === 'dine_in' ? { table_id: 'kds-reconcile-table' } : {}),
+          ...(orderType === 'delivery' ? { delivery_address: '123 Pickup St' } : {}),
+          ...(orderType === 'online'
+            ? { online_platform: 'ubereats', external_order_id: `ext-1401-${orderType}` }
+            : {}),
+          items: [
+            { product_id: 'kds-contract-product', quantity: 1 },
+            { product_id: 'kds-contract-bar-product', quantity: 1 },
+          ],
+        });
+      assertEqualOrThrow(createdRes.status, 201, `${orderType} order placement succeeds`);
+      const recOrderId = createdRes.body.order.id;
+      const [firstItem, secondItem] = createdRes.body.order.items;
+      const patchItem = (itemId: number | string, status: string) =>
+        request(app)
+          .patch(
+            writerPath === 'order-items'
+              ? `/api/order-items/${itemId}/status`
+              : `/api/kds/items/${itemId}/status`,
+          )
+          .set(authHeader)
+          .send({ status });
+
+      assertEqualOrThrow(
+        (await patchItem(firstItem.id, 'preparing')).status,
+        200,
+        `${orderType}: first item preparing succeeds`,
+      );
+      const afterPrep = readOrderState(recOrderId);
+      assertEqualOrThrow(
+        afterPrep.status,
+        'preparing',
+        `${orderType}: starting kitchen work promotes pending parent to preparing`,
+      );
+      assertOrThrow(
+        afterPrep.cooking_started_at !== null,
+        `${orderType}: cooking_started_at is populated on preparing promotion`,
+      );
+      assertEqualOrThrow(afterPrep.ready_at, null, `${orderType}: ready_at remains null`);
+
+      assertEqualOrThrow(
+        (await patchItem(firstItem.id, 'ready')).status,
+        200,
+        `${orderType}: 1-of-2 ready succeeds`,
+      );
+      assertEqualOrThrow(
+        readOrderState(recOrderId).status,
+        'preparing',
+        `${orderType}: 1-of-2 ready keeps parent in preparing while unfinished items remain`,
+      );
+
+      assertEqualOrThrow(
+        (await patchItem(secondItem.id, 'ready')).status,
+        200,
+        `${orderType}: 2-of-2 ready succeeds`,
+      );
+      const afterAllReady = readOrderState(recOrderId);
+      assertEqualOrThrow(
+        afterAllReady.status,
+        'ready',
+        `${orderType}: 2-of-2 ready promotes parent to ready`,
+      );
+      assertOrThrow(
+        afterAllReady.ready_at !== null,
+        `${orderType}: ready_at is populated on ready promotion`,
+      );
+
+      // Mixed ready + served stays ready
+      assertEqualOrThrow(
+        (await patchItem(firstItem.id, 'served')).status,
+        200,
+        `${orderType}: 1-of-2 served succeeds`,
+      );
+      assertEqualOrThrow(
+        readOrderState(recOrderId).status,
+        'ready',
+        `${orderType}: mixed served + ready keeps parent ready`,
+      );
+
+      // All live items served promotes parent to served
+      assertEqualOrThrow(
+        (await patchItem(secondItem.id, 'served')).status,
+        200,
+        `${orderType}: 2-of-2 served succeeds`,
+      );
+      const afterAllServed = readOrderState(recOrderId);
+      assertEqualOrThrow(
+        afterAllServed.status,
+        'served',
+        `${orderType}: all live items served promotes parent to served`,
+      );
+      assertOrThrow(
+        afterAllServed.served_at !== null,
+        `${orderType}: served_at is populated on served promotion`,
+      );
+
+      if (orderType === 'dine_in') {
+        db.prepare("UPDATE tables SET status = 'available' WHERE id = 'kds-reconcile-table'").run();
+      }
+    }
+
+    // Multi-station two-chef partial visibility on splitOrderId (food + bar across separate stations)
+    const splitItems = db
+      .prepare('SELECT id, product_id FROM order_items WHERE order_id = ? ORDER BY id ASC')
+      .all(splitOrderId) as Array<{ id: number; product_id: string }>;
+    const splitFoodItem = splitItems.find((i) => i.product_id === 'kds-contract-product')!;
+    const splitBarItem = splitItems.find((i) => i.product_id === 'kds-contract-bar-product')!;
+    const firstChefReady = await request(app)
+      .patch(`/api/order-items/${splitFoodItem.id}/status`)
+      .set(splitKitchenAuth)
+      .send({ status: 'ready' });
+    assertEqualOrThrow(firstChefReady.status, 200, 'first station chef marks food item ready');
+    assertEqualOrThrow(
+      readOrderState(splitOrderId).status,
+      'preparing',
+      'first station chef finishing only its visible subset promotes pending -> preparing, not ready',
+    );
+    const secondChefReady = await request(app)
+      .patch(`/api/kds/items/${splitBarItem.id}/status`)
+      .set(splitCounterAuth)
+      .send({ status: 'ready' });
+    assertEqualOrThrow(secondChefReady.status, 200, 'second station chef marks bar item ready');
+    assertEqualOrThrow(
+      readOrderState(splitOrderId).status,
+      'ready',
+      'second station chef finishing the last live item promotes parent to ready',
+    );
+    const splitAudits = readStatusAudits(splitOrderId);
+    assertEqualOrThrow(
+      splitAudits.length,
+      2,
+      'two distinct parent transitions record two status_changed audit entries',
+    );
+    assertEqualOrThrow(
+      splitAudits[0].actor_user_id,
+      splitKitchenChefId,
+      'first transition audit attributes kitchen station chef',
+    );
+    assertEqualOrThrow(
+      splitAudits[1].actor_user_id,
+      splitCounterChefId,
+      'second transition audit attributes counter station chef',
+    );
+
+    // Item-set mutations: append, cancel, void (no preparing->pending regression), restore, edit, and requeue
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('cloud_orders_enabled', '1', ?)",
+    ).run(now());
+    db.prepare('DELETE FROM cloud_sync_outbox').run();
+    const mutOrderRes = await request(app)
+      .post('/api/orders')
+      .set(authHeader)
+      .send({
+        type: 'takeaway',
+        items: [{ product_id: 'kds-contract-product', quantity: 1 }],
+      });
+    assertEqualOrThrow(mutOrderRes.status, 201, 'mutation test takeaway created');
+    const mutOrderId = mutOrderRes.body.order.id;
+    const mutItem1Id = mutOrderRes.body.order.items[0].id;
+    db.prepare('DELETE FROM cloud_sync_outbox').run();
+
+    // Mark single item ready -> parent ready + cloud outbox event emitted
+    const singleReadyRes = await request(app)
+      .patch(`/api/order-items/${mutItem1Id}/status`)
+      .set(authHeader)
+      .send({ status: 'ready' });
+    assertEqualOrThrow(singleReadyRes.status, 200, 'single item ready succeeds');
+    assertEqualOrThrow(
+      singleReadyRes.body.order.status,
+      'ready',
+      'order-items response reflects reconciled ready parent status immediately',
+    );
+    assertEqualOrThrow(readOrderState(mutOrderId).status, 'ready', 'DB parent status is ready');
+    const readyOutbox = db
+      .prepare('SELECT event_type FROM cloud_sync_outbox ORDER BY created_at DESC LIMIT 1')
+      .get() as { event_type: string } | undefined;
+    assertEqualOrThrow(
+      readyOutbox?.event_type,
+      'order.ready',
+      'KDS parent reconciliation emits order.ready cloud event',
+    );
+
+    // Requeue single ready item back to pending -> demotes ready parent to preparing (never pending) and clears ready_at
+    const requeuePendingRes = await request(app)
+      .patch(`/api/order-items/${mutItem1Id}/status`)
+      .set(authHeader)
+      .send({ status: 'pending' });
+    assertEqualOrThrow(requeuePendingRes.status, 200, 'requeue ready -> pending succeeds');
+    const afterRequeue = readOrderState(mutOrderId);
+    assertEqualOrThrow(
+      afterRequeue.status,
+      'preparing',
+      'requeuing ready item to pending demotes parent from ready to preparing',
+    );
+    assertEqualOrThrow(afterRequeue.ready_at, null, 'requeue clears stale ready_at');
+
+    // Re-promote to ready, then append a new pending item -> demotes ready -> preparing
+    await request(app)
+      .patch(`/api/order-items/${mutItem1Id}/status`)
+      .set(authHeader)
+      .send({ status: 'ready' });
+    assertEqualOrThrow(readOrderState(mutOrderId).status, 'ready', 'parent ready again');
+
+    const appendRes = await request(app)
+      .post(`/api/orders/${mutOrderId}/items`)
+      .set(authHeader)
+      .send({ items: [{ product_id: 'kds-contract-bar-product', quantity: 1 }] });
+    assertEqualOrThrow(appendRes.status, 200, 'append pending item succeeds');
+    assertEqualOrThrow(
+      appendRes.body.order.status,
+      'preparing',
+      'append response reflects demoted preparing status',
+    );
+    assertEqualOrThrow(
+      readOrderState(mutOrderId).ready_at,
+      null,
+      'appending pending item clears ready_at',
+    );
+    const appendedItem = appendRes.body.order.items.find(
+      (i: any) => i.product_id === 'kds-contract-bar-product',
+    );
+
+    // Cancel the appended pending blocker -> surviving item is ready -> parent promotes back to ready!
+    const cancelBlockerRes = await request(app)
+      .patch(`/api/orders/${mutOrderId}/items/${appendedItem.id}/cancel`)
+      .set(authHeader)
+      .send({ reason: 'mistake' });
+    assertEqualOrThrow(cancelBlockerRes.status, 200, 'cancel pending blocker succeeds');
+    assertEqualOrThrow(
+      cancelBlockerRes.body.order.status,
+      'ready',
+      'cancelling last pending blocker promotes surviving ready order to ready',
+    );
+    assertOrThrow(
+      readOrderState(mutOrderId).ready_at !== null,
+      'cancelling blocker populates ready_at',
+    );
+
+    // Restore cancelled item back to pending -> demotes ready -> preparing and clears ready_at
+    const restoreRes = await request(app)
+      .patch(`/api/orders/${mutOrderId}/items/${appendedItem.id}/restore`)
+      .set(authHeader)
+      .send({});
+    assertEqualOrThrow(restoreRes.status, 200, 'restore cancelled item succeeds');
+    assertEqualOrThrow(
+      restoreRes.body.order.status,
+      'preparing',
+      'restoring pending item demotes ready parent back to preparing',
+    );
+    assertEqualOrThrow(readOrderState(mutOrderId).ready_at, null, 'restore clears ready_at');
+
+    // Voiding started item (mutItem1Id is ready) while restored item is pending:
+    // remaining live item is pending, parent is already preparing -> must NOT regress preparing -> pending!
+    const auditsBeforeVoid = readStatusAudits(mutOrderId).length;
+    const cookingStartedBeforeVoid = readOrderState(mutOrderId).cooking_started_at;
+    const voidStartedRes = await request(app)
+      .patch(`/api/orders/${mutOrderId}/items/${mutItem1Id}/cancel`)
+      .set(authHeader)
+      .send({ override_pin: '1234', reason: 'dropped' });
+    assertEqualOrThrow(
+      voidStartedRes.status,
+      200,
+      'voiding started item with manager PIN succeeds',
+    );
+    const afterVoid = readOrderState(mutOrderId);
+    assertEqualOrThrow(
+      afterVoid.status,
+      'preparing',
+      'voiding started item while pending items remain does NOT regress preparing -> pending',
+    );
+    assertEqualOrThrow(
+      afterVoid.cooking_started_at,
+      cookingStartedBeforeVoid,
+      'void non-regression avoids cooking_started_at churn',
+    );
+    assertEqualOrThrow(
+      readStatusAudits(mutOrderId).length,
+      auditsBeforeVoid,
+      'void non-regression avoids status_changed audit churn',
+    );
+
+    // Mark surviving restored item ready (voided + void_adjustment excluded) -> promotes to ready!
+    const readyAfterVoidRes = await request(app)
+      .patch(`/api/order-items/${appendedItem.id}/status`)
+      .set(authHeader)
+      .send({ status: 'ready' });
+    assertEqualOrThrow(readyAfterVoidRes.status, 200, 'marking remaining item ready succeeds');
+    assertEqualOrThrow(
+      readOrderState(mutOrderId).status,
+      'ready',
+      'voided and void_adjustment rows are excluded when computing readiness',
+    );
+
+    // Edit ready item to increase quantity (adds new pending line) -> demotes ready -> preparing
+    const fetchedMutOrder = await request(app).get(`/api/orders/${mutOrderId}`).set(authHeader);
+    const currentAppendedItem = fetchedMutOrder.body.order.items.find(
+      (i: any) => i.id === appendedItem.id,
+    );
+    const editIncreaseRes = await request(app)
+      .patch(`/api/orders/${mutOrderId}/items/${appendedItem.id}/edit`)
+      .set({ ...authHeader, 'Idempotency-Key': 'idem-1401-edit-inc' })
+      .send({
+        quantity: 2,
+        expected_edit_version: currentAppendedItem.edit_version,
+        reason: 'add one more',
+      });
+    assertEqualOrThrow(
+      editIncreaseRes.status,
+      200,
+      'quantity-increase edit on ready item succeeds',
+    );
+    assertEqualOrThrow(
+      editIncreaseRes.body.order.status,
+      'preparing',
+      'quantity-increase edit adding pending work demotes ready parent to preparing',
+    );
+    assertEqualOrThrow(
+      readOrderState(mutOrderId).ready_at,
+      null,
+      'quantity-increase edit clears ready_at',
+    );
+
+    const refundActiveOrderId = Number(
+      db
+        .prepare(
+          `INSERT INTO orders (order_number, type, status, subtotal, total, cooking_started_at, created_at, updated_at)
+           VALUES ('KDS-PARTIAL-REFUND', 'takeaway', 'preparing', 22, 22, ?, ?, ?)`,
+        )
+        .run(now(), now(), now()).lastInsertRowid,
+    );
+    const refundBlockerItemId = Number(
+      db
+        .prepare(
+          `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+           VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'preparing', ?, ?)`,
+        )
+        .run(refundActiveOrderId, now(), now()).lastInsertRowid,
+    );
+    db.prepare(
+      `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+       VALUES (?, 'kds-contract-bar-product', 'Contract bar', 12, 1, 12, 0, 12, 'ready', ?, ?)`,
+    ).run(refundActiveOrderId, now(), now());
+    const partialBillId = Number(
+      db
+        .prepare(
+          `INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
+           VALUES ('BILL-KDS-PARTIAL-REFUND', ?, 22, 0, 22, 10, 12, 'partial', ?, ?)`,
+        )
+        .run(refundActiveOrderId, now(), now()).lastInsertRowid,
+    );
+    const blockedCancelRes = await request(app)
+      .patch(`/api/orders/${refundActiveOrderId}/items/${refundBlockerItemId}/cancel`)
+      .set(authHeader)
+      .send({ override_pin: '1234', reason: 'out of stock' });
+    assertEqualOrThrow(
+      blockedCancelRes.status,
+      409,
+      'partially paid active order blocks item cancel in favor of refund',
+    );
+    db.prepare('DELETE FROM cloud_sync_outbox').run();
+    const itemRefundRes = await request(app).post('/api/refunds').set(authHeader).send({
+      bill_id: partialBillId,
+      order_item_id: refundBlockerItemId,
+      method: 'card',
+      approver_id: 'mgr-test-001',
+      override_pin: '1234',
+      reason: 'out of stock',
+    });
+    assertEqualOrThrow(itemRefundRes.status, 201, 'item refund on active partial bill succeeds');
+    const afterRefundState = readOrderState(refundActiveOrderId);
+    assertEqualOrThrow(
+      afterRefundState.status,
+      'ready',
+      'refunding the last unready item promotes active order to ready',
+    );
+    assertOrThrow(afterRefundState.ready_at !== null, 'item refund promotion populates ready_at');
+    const refundAudits = readStatusAudits(refundActiveOrderId);
+    assertEqualOrThrow(refundAudits.length, 1, 'item refund records status_changed audit');
+    assertEqualOrThrow(
+      JSON.parse(refundAudits[0].details_json).to,
+      'ready',
+      'item refund status_changed audit records ready target',
+    );
+    const refundOutbox = db
+      .prepare('SELECT event_type FROM cloud_sync_outbox ORDER BY created_at DESC LIMIT 1')
+      .get() as { event_type: string } | undefined;
+    assertEqualOrThrow(
+      refundOutbox?.event_type,
+      'order.ready',
+      'item refund reconciliation emits order.ready cloud event',
+    );
+
+    // Completed parent order is never reopened/mutated by KDS item updates
+    db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, completed_at, created_at, updated_at)
+      VALUES ('KDS-PREPAID-COMPLETED', 'takeaway', 'completed', 10, 10, ?, ?, ?)`).run(
+      now(),
+      now(),
+      now(),
+    );
+    const prepaidCompletedOrderId = (
+      db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-PREPAID-COMPLETED'").get() as any
+    ).id;
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(
+      prepaidCompletedOrderId,
+      now(),
+      now(),
+    );
+    const prepaidItemId = (
+      db
+        .prepare('SELECT id FROM order_items WHERE order_id = ?')
+        .get(prepaidCompletedOrderId) as any
+    ).id;
+    for (const st of ['preparing', 'ready', 'served']) {
+      const prepRes = await request(app)
+        .patch(`/api/order-items/${prepaidItemId}/status`)
+        .set(authHeader)
+        .send({ status: st });
+      assertEqualOrThrow(prepRes.status, 200, `prepaid completed item -> ${st} succeeds`);
+      assertEqualOrThrow(
+        readOrderState(prepaidCompletedOrderId).status,
+        'completed',
+        `completed order status is never mutated when item moves to ${st}`,
+      );
+    }
+
+    // KDS disabled preserves manual parent-status workflow without automatic item reconciliation
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', ?)",
+    ).run(now());
+    try {
+      const manualOrderRes = await request(app)
+        .post('/api/orders')
+        .set(authHeader)
+        .send({
+          type: 'takeaway',
+          items: [{ product_id: 'kds-contract-product', quantity: 1 }],
+        });
+      assertEqualOrThrow(manualOrderRes.status, 201, 'KDS-disabled takeaway created');
+      const manualOrderId = manualOrderRes.body.order.id;
+      const manualReadyRes = await request(app)
+        .patch(`/api/orders/${manualOrderId}/status`)
+        .set(authHeader)
+        .send({ status: 'ready' });
+      assertEqualOrThrow(
+        manualReadyRes.status,
+        200,
+        'manual parent ready succeeds with KDS disabled',
+      );
+      assertEqualOrThrow(
+        readOrderState(manualOrderId).status,
+        'ready',
+        'manual parent status is ready with KDS disabled',
+      );
+      const manualAppendRes = await request(app)
+        .post(`/api/orders/${manualOrderId}/items`)
+        .set(authHeader)
+        .send({ items: [{ product_id: 'kds-contract-bar-product', quantity: 1 }] });
+      assertEqualOrThrow(manualAppendRes.status, 200, 'append succeeds with KDS disabled');
+      assertEqualOrThrow(
+        readOrderState(manualOrderId).status,
+        'ready',
+        'KDS-disabled mode preserves manual parent status without auto-reconciliation',
+      );
+    } finally {
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)",
+      ).run(now());
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('cloud_orders_enabled', '0', ?)",
+      ).run(now());
+    }
 
     db.exec('PRAGMA foreign_keys = OFF');
     db.prepare('UPDATE order_items SET order_id = ? WHERE id = ?').run('missing-order', barItemId);

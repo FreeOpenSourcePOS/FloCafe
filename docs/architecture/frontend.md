@@ -569,9 +569,13 @@ against `en.json`, the derived print-label table, and a `tsc` pass over the fron
 
 ## Customer display
 
-`/customer-display` is a signed-in order-status board. It pages through `GET /orders` via
-`before_id` cursor pagination (100 orders per page, up to 50 pages) filtered by configured statuses
-and shows active orders in a Preparing column (`pending`, `preparing`) and a Ready column (`ready`).
+`/customer-display` is a signed-in order-status board. It pages through `GET /orders` with
+`view=active` and `board_status` set to the configured statuses via `before_id` cursor pagination
+(100 orders per page, up to 50 pages) so effective board eligibility applies before pagination,
+projects effective board status from `order.items` for settled `completed` orders via
+`projectBoardStatusFromItems` in [`shared/order-item-status.ts`](../../shared/order-item-status.ts)
+(see [Order lifecycle](order-lifecycle.md#order-status)), and shows eligible orders in a Preparing
+column (`pending`, `preparing`) and a Ready column (`ready`).
 It re-reads `GET /settings/customer-display` on every poll cycle, so changes made in Settings >
 Kitchen Display apply without reloading the board. The tenant-wide config sets which statuses show,
 the refresh interval, and whether the last-updated time is shown. Deduplicated orders are sorted
@@ -592,8 +596,9 @@ clearly labelled local preview can be selected before pairing. Switching address
 one-time link without creating another token. If no LAN address is available, the card says so and
 offers only the local preview; if address lookup fails, it shows an error and retry action. The board
 moves the token from the URL fragment into `localStorage` and polls
-`GET /api/customer-display/feed` with it instead of using a staff session, so it needs no login and
-can read nothing but order numbers and statuses. It follows `next_cursor` across pages (100 orders
+`GET /api/customer-display/feed` ([API reference](../reference/api.md#customer-display-feed)) with
+it instead of using a staff session, so it needs no login and can read nothing but order numbers and
+statuses. It follows `next_cursor` across pages (100 orders
 per page, up to 50 pages) to display the complete eligible queue, deduplicating orders and updating
 the board state atomically per poll cycle. When the feed answers `401` (the token was revoked),
 in-flight requests abort immediately, the board clears the stored token and orders, and shows an

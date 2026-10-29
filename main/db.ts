@@ -1008,6 +1008,8 @@ interface SchemaRecoveryReference {
 }
 
 const cachedSchemaRecoveryReferences = new Map<number, SchemaRecoveryReference>();
+const RUNTIME_KDS_INDEX_MIN_SCHEMA_VERSION = 121;
+const RUNTIME_ENSURED_SCHEMA_OBJECTS = new Set(['index:idx_order_items_active_kds']);
 let buildingIdealSchema = false;
 
 let recoverySchemaBuildCount = 0;
@@ -1103,9 +1105,14 @@ export function isHealthyDatabaseFile(
       return columns.every((column) => available.has(column));
     });
     const actualDefinitions = normalizedSchemaDefinitions(candidate);
+    const requiredDefinitionsValid = [...schemaRef.definitions].every(([key, sql]) =>
+      actualDefinitions.has(key)
+        ? actualDefinitions.get(key) === sql
+        : RUNTIME_ENSURED_SCHEMA_OBJECTS.has(key),
+    );
     const definitionsValid =
-      schemaRef.definitions.size === actualDefinitions.size &&
-      [...schemaRef.definitions].every(([key, sql]) => actualDefinitions.get(key) === sql);
+      requiredDefinitionsValid &&
+      [...actualDefinitions.keys()].every((key) => schemaRef.definitions.has(key));
     candidate.close();
     return (
       integrity &&
@@ -3063,6 +3070,9 @@ function validateDirectBackup(
     const currentSchema = getSchemaDefinitions(currentDb);
     const backupSchema = getSchemaDefinitions(backupDb);
     for (const [key, definition] of currentSchema) {
+      if (!backupSchema.has(key) && RUNTIME_ENSURED_SCHEMA_OBJECTS.has(key)) {
+        continue;
+      }
       if (backupSchema.get(key) !== definition) {
         return `Backup schema object ${key} is missing or differs from the current definition`;
       }
@@ -7951,6 +7961,7 @@ function runMigrations(targetVersion?: number): void {
   }
 
   if (current === target) {
+    if (target >= RUNTIME_KDS_INDEX_MIN_SCHEMA_VERSION) ensureRuntimeIndexes();
     if (!buildingIdealSchema) console.log(`[DB] Schema up to date (v${current})`);
     return;
   }
@@ -7978,6 +7989,19 @@ function runMigrations(targetVersion?: number): void {
       console.log(`[DB] Migration v${migration.version} complete`);
     }
   }
+
+  if (target >= RUNTIME_KDS_INDEX_MIN_SCHEMA_VERSION) ensureRuntimeIndexes();
+}
+
+function ensureRuntimeIndexes(): void {
+  if (db.readonly) return;
+  const hasOrderItems = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'order_items'")
+    .get();
+  if (!hasOrderItems) return;
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_order_items_active_kds ON order_items(status, order_id) WHERE status IN ('pending', 'preparing', 'ready');",
+  );
 }
 
 // Initial schema definition for brand-new installs (migration v1).

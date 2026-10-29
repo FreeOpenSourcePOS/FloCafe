@@ -365,6 +365,7 @@ export default function POSPage() {
     setCheckoutOverridePin(undefined);
     setPaymentBill(null);
     setCheckoutTable(null);
+    setPendingOrder(null);
     setShowPrepaidCheckout(false);
     setPrepaidModalAttempt(null);
     setShowScheduledOrders(false);
@@ -1566,6 +1567,9 @@ export default function POSPage() {
         );
         if (!isSessionCurrent()) {
           // Item append succeeded on server while session changed. Stop before mutating state.
+          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+            useCartStore.getState().clearCart();
+          }
           return;
         }
         toast.success(t('itemsAddedToOrder', { number: pendingOrder.order_number }));
@@ -2584,6 +2588,7 @@ export default function POSPage() {
 
     const operationId = createOperationReference();
     try {
+      const cartFingerprint = buildCurrentCartFingerprint();
       const items = cart.items.map(cartItemToOrderItem);
       const specialInstructions = order.special_instructions || undefined;
       const fingerprint = buildAppendItemsFingerprint(order.id, items, specialInstructions);
@@ -2617,6 +2622,9 @@ export default function POSPage() {
       );
       if (!isSessionCurrent()) {
         // Items append succeeded on server while session changed. Stop before mutating state.
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
         return;
       }
       // A resolved response is the confirmation boundary. Keep the durable
@@ -2652,7 +2660,12 @@ export default function POSPage() {
       await printKotIfEnabled(
         appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder,
       );
-      if (!isSessionCurrent()) return;
+      if (!isSessionCurrent()) {
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
+        return;
+      }
       cart.clearCart();
       setCheckoutTable(null);
       refreshTables();

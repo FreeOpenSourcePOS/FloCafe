@@ -144,10 +144,14 @@ function resetPOSHooks() {
   hookStateIndex = 0;
   hookRefIndex = 0;
   hookEffectIndex = 0;
+  capturedTopbarProps = null;
+  capturedScheduledDrawerProps = null;
 }
 
 let capturedCartPanelProps: any = null;
 let capturedPrepaidModalProps: any = null;
+let capturedTopbarProps: any = null;
+let capturedScheduledDrawerProps: any = null;
 
 const CartPanelStub = (props: any) => {
   capturedCartPanelProps = props;
@@ -155,6 +159,14 @@ const CartPanelStub = (props: any) => {
 };
 const PrepaidCheckoutModalStub = (props: any) => {
   capturedPrepaidModalProps = props;
+  return null;
+};
+const PosTopbarStub = (props: any) => {
+  capturedTopbarProps = props;
+  return null;
+};
+const ScheduledOrdersDrawerStub = (props: any) => {
+  capturedScheduledDrawerProps = props;
   return null;
 };
 const toastStub = Object.assign(() => {}, {
@@ -239,6 +251,12 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   }
   if (reqName === '@/components/pos/CartPanel') {
     return { __esModule: true, default: CartPanelStub };
+  }
+  if (reqName === '@/components/pos/PosTopbar') {
+    return { __esModule: true, default: PosTopbarStub };
+  }
+  if (reqName === '@/components/pos/ScheduledOrdersDrawer') {
+    return { __esModule: true, default: ScheduledOrdersDrawerStub };
   }
   if (reqName.startsWith('@/components/')) return () => null;
   if (reqName === '@/lib/cart-identity') {
@@ -1243,10 +1261,31 @@ async function run() {
     localStorage: fakeStorage,
     sessionStorage: fakeStorage,
   };
+  const documentCookieMap = new Map<string, string>();
   (globalThis as any).document = {
     fullscreenElement: null,
     addEventListener: () => {},
     removeEventListener: () => {},
+    get cookie() {
+      return Array.from(documentCookieMap.entries())
+        .map(([k, v]) => `${k}=${v}`)
+        .join('; ');
+    },
+    set cookie(str: string) {
+      if (!str) return;
+      const [pair, ...directives] = str.split(';');
+      const eqIdx = pair.indexOf('=');
+      if (eqIdx !== -1) {
+        const k = pair.slice(0, eqIdx).trim();
+        const v = pair.slice(eqIdx + 1).trim();
+        const maxAgeDirective = directives.find((d) => d.trim().toLowerCase().startsWith('max-age='));
+        if (maxAgeDirective && maxAgeDirective.split('=')[1].trim() === '0') {
+          documentCookieMap.delete(k);
+        } else {
+          documentCookieMap.set(k, v);
+        }
+      }
+    },
   };
   (globalThis as any).localStorage = fakeStorage;
   (globalThis as any).sessionStorage = fakeStorage;
@@ -1586,6 +1625,115 @@ async function run() {
     useCartStore.getState().items.length,
     1,
     'Cart is preserved rather than wiped during prepaid recovery',
+  );
+
+  // ── 10. Append continuation and pendingOrder isolation across session switches ──
+  console.log(
+    '\n10. Append continuation: session switch clears pendingOrder and in-flight append continuation clears cart',
+  );
+
+  // 1. Sign in as owner and open scheduled orders drawer
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  renderPOSPage(POSPage);
+  tree = renderPOSPage(POSPage);
+  const topbarEl = findElement(tree, PosTopbarStub);
+  assertOrThrow(topbarEl, 'PosTopbar element found in render tree');
+  topbarEl.props.onShowScheduledOrders();
+  tree = renderPOSPage(POSPage);
+
+  const scheduledDrawerEl = findElement(tree, ScheduledOrdersDrawerStub);
+  assertOrThrow(scheduledDrawerEl, 'ScheduledOrdersDrawer element found in render tree');
+  scheduledDrawerEl.props.onAddItemsToOrder({
+    id: 'ord-append-1',
+    order_number: 'ORD-APP-001',
+    type: 'takeaway',
+    status: 'in_progress',
+    items: [],
+  });
+  tree = renderPOSPage(POSPage);
+  p2CartPanel = findElement(tree, CartPanelStub);
+
+  // CartPanel now has existingOrder set to the target order
+  assertEqualOrThrow(
+    p2CartPanel?.props?.existingOrder?.id,
+    'ord-append-1',
+    'pendingOrder is set on CartPanel before session switch',
+  );
+
+  // Add items to append
+  useCartStore.getState().clearCart();
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-latte',
+      name: 'Latte',
+      price: 120,
+      category_id: 'cat-1',
+      is_available: 1,
+      addons: [],
+    } as any,
+    1,
+  );
+  tree = renderPOSPage(POSPage);
+  p2CartPanel = findElement(tree, CartPanelStub);
+
+  let appendDeferredResolve!: (val: any) => void;
+  const appendPromise = new Promise((resolve) => {
+    appendDeferredResolve = resolve;
+  });
+  mockApiHandler = {
+    post: async (url: string, body?: any) => {
+      if (url.includes('/items')) return appendPromise;
+      return { data: {} };
+    },
+    get: async () => ({ data: {} }),
+  };
+
+  const appendCallPromise = p2CartPanel.props.onPlaceOrder();
+  await new Promise((r) => setTimeout(r, 15));
+
+  // 2. Switch to manager while append request is in-flight
+  useAuthStore.setState({
+    user: null,
+    token: null,
+    isLocked: true,
+  });
+  useAuthStore.setState({
+    user: { id: 'mgr-1', name: 'Bob Manager', email: 'manager@test.local', role: 'manager' },
+    token: 'token-for-mgr-1',
+    isLocked: false,
+  });
+  renderPOSPage(POSPage);
+  tree = renderPOSPage(POSPage);
+  p2CartPanel = findElement(tree, CartPanelStub);
+
+  // Verify: pendingOrder was cleared upon session switch
+  assertEqualOrThrow(
+    p2CartPanel?.props?.existingOrder,
+    null,
+    'pendingOrder is cleared when switching session',
+  );
+
+  // 3. Resolve the in-flight append call
+  appendDeferredResolve({
+    data: {
+      order: {
+        id: 'ord-append-1',
+        order_number: 'ORD-APP-001',
+        items: [{ id: 1, product_id: 'prod-latte', quantity: 1 }],
+      },
+    },
+  });
+  await appendCallPromise;
+
+  // Stale append continuation must have safely cleared the matching cart so new session doesn't double-order
+  assertEqualOrThrow(
+    useCartStore.getState().items.length,
+    0,
+    'Stale append continuation safely cleared matching cart after session switch',
   );
 
   closeDatabase();

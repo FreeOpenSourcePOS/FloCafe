@@ -2618,12 +2618,12 @@ export interface SentMessageRow {
 export function listMessages(opts: {
   direction?: 'inbound' | 'outbound';
   status?: string;
-  kind?: string;
   phone?: string;
   billId?: number;
   limit: number;
   offset?: number;
   canViewReports?: boolean;
+  canExportDailySales?: boolean;
 }): SentMessageRow[] {
   const where: string[] = [];
   const params: any[] = [];
@@ -2635,10 +2635,6 @@ export function listMessages(opts: {
     where.push('status = ?');
     params.push(opts.status);
   }
-  if (opts.kind) {
-    where.push('kind = ?');
-    params.push(opts.kind);
-  }
   if (opts.phone) {
     where.push('phone_e164 = ?');
     params.push(opts.phone);
@@ -2649,6 +2645,8 @@ export function listMessages(opts: {
   }
   if (!opts.canViewReports) {
     where.push("kind NOT IN ('z_report', 'daily_sales_report')");
+  } else if (!opts.canExportDailySales) {
+    where.push("kind != 'daily_sales_report'");
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   params.push(opts.limit, opts.offset ?? 0);

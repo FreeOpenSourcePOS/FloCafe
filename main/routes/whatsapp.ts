@@ -396,7 +396,6 @@ router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: R
       ? req.query.direction
       : undefined;
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
-  const kind = typeof req.query.kind === 'string' ? req.query.kind : undefined;
   const phone = typeof req.query.phone === 'string' ? req.query.phone : undefined;
   const billId = req.query.bill_id != null ? parsePaginationParam(req.query.bill_id, 0) : undefined;
   if (billId === null) {
@@ -404,16 +403,17 @@ router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: R
   }
   const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
   const canViewReports = hasPermission(userId, 'reports.view');
+  const canExportDailySales = hasPermission(userId, 'reports.daily-sales.export');
   res.json({
     messages: whatsapp.listMessages({
       direction,
       status,
-      kind,
       phone,
       billId,
       limit,
       offset,
       canViewReports,
+      canExportDailySales,
     }),
   });
 });

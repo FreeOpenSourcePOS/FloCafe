@@ -377,9 +377,9 @@ never re-parsed as tokens. All six automated rules ship disabled (`enabled: fals
 - `POST /api/whatsapp/automation/broadcast` sends a selected template to up to 50 active customers
   matching visit, inactivity, and loyalty-point filters.
 - Automated sends record `created_by_user_id` as `rule:<trigger>` (or `rule:broadcast`), which
-  `GET /api/whatsapp/messages` exposes as `trigger_rule`. Report message kinds (`z_report` and
-  `daily_sales_report`) are hidden from callers without `reports.view` and require `reports.view`
-  (plus `reports.daily-sales.export` for `daily_sales_report`) to send or retry.
+  `GET /api/whatsapp/messages` exposes as `trigger_rule`. Report message kinds require
+  `reports.view` for `z_report` and both `reports.view` and `reports.daily-sales.export` for
+  `daily_sales_report` across history visibility, sending, and retry.
 
 **Safety and anti-ban controls.** Inbound non-group DMs matching opt-out keywords (`STOP`,
 `UNSUBSCRIBE`, `OPT OUT`, `OPTOUT`) automatically add the sender to `whatsapp_blocklist` when

@@ -512,12 +512,10 @@ async function main(): Promise<void> {
       .set('Authorization', `Bearer ${cashierToken}`);
     assert.equal(cashierHistoryNextPage.body.messages[0]?.body, 'Ordinary WhatsApp reply');
 
-    const cashierExplicitReportKind = await request(whatsappApp)
-      .get('/api/whatsapp/messages?direction=outbound&kind=z_report')
-      .set('Authorization', `Bearer ${cashierToken}`);
-    assert.ok(
-      cashierExplicitReportKind.body.messages.every((message: any) => message.kind !== 'z_report'),
-      'requesting report-kind history does not bypass the report permission filter',
+    assert.equal(
+      cashierHistory.body.messages.filter((message: any) => message.kind === 'z_report').length,
+      0,
+      'stored z_report rows are excluded from history without reports.view',
     );
 
     const managerHistory = await request(whatsappApp)
@@ -996,6 +994,13 @@ async function main(): Promise<void> {
     assert.equal(over93RangeRes.status, 400, '>93-business-date range is rejected');
     assert.equal(over93RangeRes.body.reason, 'invalid_range');
 
+    const ignoredQueryRangeRes = await request(app)
+      .post('/api/reports/daily-sales/whatsapp?from=2026-07-05&to=2026-10-06')
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ date: '2026-10-05', phone_e164: '+14165551234' });
+    assert.equal(ignoredQueryRangeRes.status, 200);
+    assert.equal(ignoredQueryRangeRes.body.success, true);
+
     db.prepare(`DELETE FROM settings WHERE key IN ('country', 'currency')`).run();
     try {
       const missingRegionalDefaultRes = await request(app)
@@ -1099,10 +1104,64 @@ async function main(): Promise<void> {
       ),
       'both z_report and daily_sales_report are hidden from users without reports.view',
     );
-    const noReportsExplicitDailyKind = await request(whatsappApp)
-      .get('/api/whatsapp/messages?direction=outbound&kind=daily_sales_report')
-      .set('Authorization', `Bearer ${noReportsCashierToken}`);
-    assert.equal(noReportsExplicitDailyKind.body.messages.length, 0);
+    assert.equal(
+      noReportsHistory.body.messages.filter((m: any) => m.kind === 'daily_sales_report').length,
+      0,
+    );
+
+    const managerReportHistory = await request(whatsappApp)
+      .get('/api/whatsapp/messages?direction=outbound&limit=50')
+      .set('Authorization', `Bearer ${manager.token}`);
+    assert.equal(managerReportHistory.status, 200);
+    assert.ok(
+      managerReportHistory.body.messages.some((m: any) => m.id === failedZMsgId),
+      'manager with reports.view can read z_report history rows',
+    );
+    assert.equal(
+      managerReportHistory.body.messages.filter((m: any) => m.kind === 'daily_sales_report').length,
+      0,
+      'manager without reports.daily-sales.export cannot read daily_sales_report history rows',
+    );
+
+    const managerReportTopPage = await request(whatsappApp)
+      .get('/api/whatsapp/messages?direction=outbound&limit=1')
+      .set('Authorization', `Bearer ${manager.token}`);
+    assert.equal(
+      managerReportTopPage.body.messages[0]?.id,
+      failedZMsgId,
+      'daily_sales_report filtering happens before SQL limit and pagination',
+    );
+
+    const ownerReportHistory = await request(whatsappApp)
+      .get('/api/whatsapp/messages?direction=outbound&limit=50')
+      .set('Authorization', `Bearer ${owner.token}`);
+    assert.equal(ownerReportHistory.status, 200);
+    assert.ok(
+      ownerReportHistory.body.messages.some((m: any) => m.id === failedDailyMsgId),
+      'owner with export permission can read daily_sales_report history rows',
+    );
+
+    db.prepare(`
+      INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES (?, 'reports.daily-sales.export', 'allow', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(noReportsCashierId, owner.userId);
+    try {
+      const exportWithoutViewHistory = await request(whatsappApp)
+        .get('/api/whatsapp/messages?direction=outbound&limit=50')
+        .set('Authorization', `Bearer ${noReportsCashierToken}`);
+      assert.equal(
+        exportWithoutViewHistory.body.messages.filter(
+          (m: any) => m.kind === 'z_report' || m.kind === 'daily_sales_report',
+        ).length,
+        0,
+        'daily_sales_report stays hidden without reports.view',
+      );
+    } finally {
+      const deleteOverride = db.prepare(
+        'DELETE FROM user_permission_overrides WHERE user_id = ? AND permission_id = ?',
+      );
+      deleteOverride.run(noReportsCashierId, 'reports.daily-sales.export');
+    }
 
     const cashierRetryZ = await request(whatsappApp)
       .post(`/api/whatsapp/messages/${failedZMsgId}/retry`)

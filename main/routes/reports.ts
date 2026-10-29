@@ -1872,9 +1872,9 @@ router.post(
 
       const range = resolveDailySalesExportRange(
         {
-          date: payload.date ?? req.query.date,
-          from: payload.from ?? req.query.from,
-          to: payload.to ?? req.query.to,
+          date: payload.date,
+          from: payload.from,
+          to: payload.to,
           defaultDate: reportToday(),
         },
         reportToday(),

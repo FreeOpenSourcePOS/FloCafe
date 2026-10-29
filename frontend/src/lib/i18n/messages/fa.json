@@ -342,6 +342,7 @@
     "exportXlsx": "اکسل (.xlsx)",
     "exportCsv": "CSV",
     "exportPdf": "PDF",
+    "exportInvoicesPdf": "فاکتورها (PDF)",
     "exportCsvHint": "CSV پنج فایل دانلود می‌کند: خلاصه، روزانه، مالیات‌ها، اقلام و پرداخت‌ها.",
     "exportCsvStarted": "در حال دانلود فایل‌های CSV خلاصه، روزانه، مالیات‌ها، اقلام و پرداخت‌ها…",
     "exportCustomerSales": "فروش مشتریان",

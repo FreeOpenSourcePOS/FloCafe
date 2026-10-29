@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Rechnungen (PDF)",
     "exportCsvHint": "Der CSV-Download enthält fünf Dateien: Übersicht, Täglich, Steuern, Artikel und Zahlungen.",
     "exportCsvStarted": "Übersichts-, Tages-, Steuer-, Artikel- und Zahlungs-CSV-Dateien werden heruntergeladen…",
     "exportCustomerSales": "Kundenumsätze",

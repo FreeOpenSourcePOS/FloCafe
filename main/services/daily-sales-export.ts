@@ -180,6 +180,7 @@ export function parseValidBusinessDate(value: unknown): Date | null {
 export function resolveDailySalesExportRange(
   input: DailySalesExportQueryInput,
   fallbackDate?: string,
+  maxRangeDays: number = DAILY_SALES_EXPORT_MAX_RANGE_DAYS,
 ): ResolvedDailySalesExportRange {
   if (typeof input === 'string') {
     const trimmed = input.trim();
@@ -233,9 +234,9 @@ export function resolveDailySalesExportRange(
       );
     }
     const dayCount = Math.round((toUtc.getTime() - fromUtc.getTime()) / DAY_MS) + 1;
-    if (dayCount > DAILY_SALES_EXPORT_MAX_RANGE_DAYS) {
+    if (dayCount > maxRangeDays) {
       throw new DailySalesExportValidationError(
-        `Date range exceeds maximum of ${DAILY_SALES_EXPORT_MAX_RANGE_DAYS} days (requested ${dayCount} days)`,
+        `Date range exceeds maximum of ${maxRangeDays} days (requested ${dayCount} days)`,
       );
     }
     const dates: string[] = [];
@@ -1236,8 +1237,9 @@ function getDatabaseStateToken(db: Database): string {
 export function buildDailySalesExportDataset(
   input: DailySalesExportQueryInput,
   db: Database = getDatabase(),
+  options?: { maxRangeDays?: number },
 ): DailySalesExportDataset {
-  const range = resolveDailySalesExportRange(input);
+  const range = resolveDailySalesExportRange(input, undefined, options?.maxRangeDays);
   const timezone = resolveExportTimezone();
   const businessDayStart = tenantBusinessDayStartTime(db);
   const currency = getTenantCurrency(db);

@@ -519,6 +519,36 @@ export default function DashboardPage() {
     }
   };
 
+  const exportDailyInvoices = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const dateParams =
+        periodMode === 'day'
+          ? { date: selectedDate }
+          : { from: range.startDate, to: range.endDate };
+      const span =
+        periodMode === 'day' || range.startDate === range.endDate
+          ? range.startDate
+          : `${range.startDate}_to_${range.endDate}`;
+
+      await exportReportAsPdf({
+        endpoint: '/reports/daily-invoices/export',
+        params: dateParams,
+        filename: `invoices-${span}.pdf`,
+        pageSize: 'A4',
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof MenuPopupBlockedError
+          ? tProducts('menuPopupBlocked')
+          : tCommon('downloadFailed'),
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const exportCustomerSales = async (format: 'xlsx' | 'csv') => {
     if (isExporting) return;
     setIsExporting(true);
@@ -899,6 +929,10 @@ export default function DashboardPage() {
               <DropdownMenuItem onSelect={() => exportDailySales('pdf')}>
                 <FileText size={14} />
                 {t('exportPdf')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportDailyInvoices()}>
+                <FileText size={14} />
+                {t('exportInvoicesPdf')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel>{t('exportCustomerSales')}</DropdownMenuLabel>

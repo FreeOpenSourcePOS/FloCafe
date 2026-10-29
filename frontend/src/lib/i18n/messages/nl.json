@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Facturen (PDF)",
     "exportCsvHint": "CSV downloadt vijf bestanden: samenvatting, dagelijks, belastingen, artikelen en betalingen.",
     "exportCsvStarted": "Samenvatting, dagelijks, belastingen, artikelen en betalingen CSV-bestanden downloaden…",
     "exportCustomerSales": "Klantverkoop",

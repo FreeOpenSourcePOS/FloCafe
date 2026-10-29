@@ -342,6 +342,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Faturat (PDF)",
     "exportCsvHint": "Shkarkimi CSV jep pesë skedarë: përmbledhjen, ditoren, taksat, artikujt dhe pagesat.",
     "exportCsvStarted": "Po shkarkohen skedarët CSV të përmbledhjes, ditores, taksave, artikujve dhe pagesave...",
     "exportCustomerSales": "Shitjet sipas klientit",

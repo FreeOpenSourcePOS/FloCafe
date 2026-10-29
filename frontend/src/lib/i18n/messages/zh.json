@@ -405,6 +405,7 @@
     "exportXlsx": "Excel（.xlsx）",
     "exportCsv": "CSV（.csv）",
     "exportPdf": "PDF（.pdf）",
+    "exportInvoicesPdf": "发票（PDF）",
     "exportCsvHint": "CSV会下载五个文件：汇总、每日、税项、明细和付款。",
     "exportCsvStarted": "正在下载汇总、每日、税项、明细和付款CSV文件…",
     "exportCustomerSales": "客户销售",

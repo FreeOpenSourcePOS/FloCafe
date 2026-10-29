@@ -868,6 +868,7 @@ day-boundary rules.
 | `GET`  | `/z-report/export`          | `reports.view` (`ROLE_ACCESS.ownerManager` by default) | query: `?date`, `?format` (required: `csv`, `xlsx`, or `html`)     | Exports the stored Z-report snapshot for a closed business date (or print-styled HTML for PDF/browser print when `format=html`). Returns `400` with `{ error: "format must be xlsx, csv, or html" }` when `format` is missing or invalid, and `404` with `{ error: "Day not closed" }` when the day has not been closed. Sets `Content-Disposition` to `attachment; filename="z-report-Z<z_number>-<date>.<format>"`.                                                                                                         |
 | `POST` | `/cash-closes/:id/whatsapp` | `reports.view` + `whatsapp.use`                        | path: `id`; body: `phone_e164`, `body` (non-empty, max 4096 chars) | Sends the submitted report body and returns `{ success: true, messageId }`; when WhatsApp is disconnected, returns `{ fallback: true, reason: "not_connected" }` so the client can open WhatsApp for sharing. Invalid input returns `400`; an unknown day close returns `404`.                                                                                                                                                                                                                                              |
 | `GET`  | `/daily-sales/export`       | `reports.daily-sales.export` (owner by default)        | query: `?date`, `?from`, `?to`, `?format`, `?part`                 | See [GET `/api/reports/daily-sales/export`](#get-apireportsdaily-salesexport).                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `GET`  | `/daily-invoices/export`    | `reports.daily-sales.export` (owner by default)        | query: `?date`, `?from`, `?to`, `?format`                          | Compiled A4 print-styled HTML of all issued invoices (`paid`, `partially_refunded`, `refunded`) in strict ascending `bill_number` order with a fiscal summary cover page. See [GET `/api/reports/daily-invoices/export`](#get-apireportsdaily-invoicesexport).                                                                                                                                                                                                                                                               |
 | `GET`  | `/customer-sales/export`    | `reports.customer-sales.export` (owner by default)     | query: `?start_date`, `?end_date`, `?format`                       | One row per item sold with customer details, for a business-date range of at most 366 days. `format` is `xlsx` or `csv`; invalid format, reversed range, or oversized range returns `400`. See [customer sales export](daily-sales-export.md#customer-sales-export). |
 
 ### GET `/api/reports/daily-sales/export`
@@ -894,6 +895,26 @@ reconciliation contract, the summary metric field order, and the worksheet/CSV c
 - `format=html` returns `200` with `Content-Type: text/html; charset=utf-8` and `Content-Disposition: attachment; filename="daily-sales-YYYY-MM-DD.html"` (or `daily-sales-YYYY-MM-DD_to_YYYY-MM-DD.html`); see [daily sales export](daily-sales-export.md#file-formats).
 
 Errors: `400` for an invalid `format`, a CSV without `part`, mixed `date` and `from`/`to` arguments, an incomplete range, an invalid calendar date, `to < from`, a range exceeding 93 days, or an `html` export exceeding the 15 MB PDF size limit; `401` unauthenticated; `403` non-owner; `409` for a concurrent-write conflict; `500` otherwise.
+
+### GET `/api/reports/daily-invoices/export`
+
+Owner-only compiled daily invoices export for one tenant business date (`?date=YYYY-MM-DD`, defaults
+to the current business date) or an inclusive business-date range (`?from=YYYY-MM-DD&to=YYYY-MM-DD`,
+up to 366 calendar days). Returns a print-styled A4 HTML document (`format=html`, default when
+omitted) used by `exportReportAsPdf` for desktop PDF export (`invoices-YYYY-MM-DD.pdf` or
+`invoices-YYYY-MM-DD_to_YYYY-MM-DD.pdf`) and browser print fallback.
+
+Page 1 renders a fiscal summary cover page (store legal name, tax registration ID and country label,
+address, business date/range, total invoices count, gross sales, net base, tax collected, total
+refunds, net revenue, summary reconciliation metrics, and the VAT/tax summary table by rate) reused
+from `buildDailySalesExportDataset`. Page 2+ renders all issued invoices in the business-day window
+(`payment_status IN ('paid', 'partially_refunded', 'refunded')`) in strict ascending `bill_number`
+order (`page-break-inside: avoid; break-inside: avoid;` on each `.invoice-card`) with `[PAID]`,
+`[PARTIALLY REFUNDED]`, and `[REFUNDED]` status badges, line items, tax components, payment details,
+and refund history.
+
+- Returns `200` with `Content-Type: text/html; charset=utf-8` and `Content-Disposition: attachment; filename="invoices-YYYY-MM-DD.html"` (or `invoices-YYYY-MM-DD_to_YYYY-MM-DD.html`).
+- Errors: `400` for an unsupported `format`, mixed `date` and `from`/`to` arguments, an incomplete or reversed range, an invalid calendar date, a range exceeding 366 days, or an HTML export exceeding the 15 MB PDF size limit; `401` unauthenticated; `403` non-owner.
 
 ### Inline endpoints (registered outside a router)
 
@@ -1169,17 +1190,17 @@ documents only the two routes.
 
 ## Coverage
 
-This page lists 310 HTTP route registrations across 309 distinct rows, and one WebSocket contract:
+This page lists 311 HTTP route registrations across 310 distinct rows, and one WebSocket contract:
 
-- `281` on the main API: 273 router registrations, 7 inline registrations in `main/routes/index.ts`,
+- `282` on the main API: 274 router registrations, 7 inline registrations in `main/routes/index.ts`,
   and `GET /api/health` in `main/server.ts`.
 - `8` REST routes on the KDS server, plus 3 static handlers.
 - `21` route registrations on the Server App, of which 13 forward to the main API. Two of those 21
   are mutually exclusive `GET /` handlers under one path, which is why 21 registrations render as 20
   rows.
 
-Every one of the 309 rows is listed with its method, path, authorization gate, and the parameters
-its handler reads. The **Response** column carries a note for 173 of them: 145 main-API endpoints,
+Every one of the 310 rows is listed with its method, path, authorization gate, and the parameters
+its handler reads. The **Response** column carries a note for 174 of them: 146 main-API endpoints,
 all 8 KDS-server routes, and the 20 Server App routes. The remaining 146 main-API endpoints are
 listed with method, path, gate, and parameters only, and this page asserts nothing about what they
 return. Those rows are complete as a route inventory and silent as a contract; the handler in

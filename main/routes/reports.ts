@@ -56,6 +56,12 @@ import {
   type DailySalesExportCsvPart,
 } from '../services/daily-sales-export-files';
 import {
+  buildDailyInvoicesExportDataset,
+  DAILY_INVOICES_EXPORT_MAX_RANGE_DAYS,
+  dailyInvoicesExportFilename,
+  serializeDailyInvoicesExportHtml,
+} from '../services/daily-invoices-export';
+import {
   buildCustomerSalesDataset,
   customerSalesExportFilename,
   CustomerSalesRangeError,
@@ -1881,6 +1887,60 @@ router.get(
         return res.status(409).json({ error: message });
       }
       console.error('[API] Daily sales export error:', error);
+      res.status(statusCode || 500).json({ error: statusCode ? message : 'Internal server error' });
+    }
+  },
+);
+
+// Owner-only compiled daily invoices export (print-styled A4 HTML for PDF/browser print across 1..366 business days).
+router.get(
+  '/daily-invoices/export',
+  requirePermission('reports.daily-sales.export'),
+  async (req: Request, res: Response) => {
+    try {
+      const rawFormat =
+        req.query.format === undefined || req.query.format === '' ? 'html' : req.query.format;
+      if (rawFormat !== 'html') {
+        return res.status(400).json({ error: 'format must be html' });
+      }
+      const range = resolveDailySalesExportRange(
+        {
+          date: req.query.date,
+          from: req.query.from,
+          to: req.query.to,
+          defaultDate: reportToday(),
+        },
+        reportToday(),
+        DAILY_INVOICES_EXPORT_MAX_RANGE_DAYS,
+      );
+      const dataset = buildDailyInvoicesExportDataset({
+        from: range.fromDate,
+        to: range.toDate,
+      });
+      const html = serializeDailyInvoicesExportHtml(dataset);
+      const filename = dailyInvoicesExportFilename(
+        { fromDate: range.fromDate, toDate: range.toDate },
+        'html',
+      );
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(html);
+    } catch (error: unknown) {
+      if (error instanceof DailySalesExportValidationError) {
+        return res.status(400).json({ error: error.message });
+      }
+      const statusCode =
+        typeof error === 'object' && error !== null
+          ? (error as { statusCode?: number }).statusCode
+          : undefined;
+      const message = error instanceof Error ? error.message : 'Internal server error';
+      if (statusCode === 400) {
+        return res.status(400).json({ error: message });
+      }
+      if (statusCode === 409) {
+        return res.status(409).json({ error: message });
+      }
+      console.error('[API] Daily invoices export error:', error);
       res.status(statusCode || 500).json({ error: statusCode ? message : 'Internal server error' });
     }
   },

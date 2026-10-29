@@ -341,6 +341,7 @@
     "exportXlsx": "Excel (.xlsx)",
     "exportCsv": "CSV (.csv)",
     "exportPdf": "PDF (.pdf)",
+    "exportInvoicesPdf": "Hóa đơn (PDF)",
     "exportCsvHint": "Tải CSV gồm năm tệp: tổng hợp, theo ngày, thuế, chi tiết và thanh toán.",
     "exportCsvStarted": "Đang tải các tệp CSV tổng hợp, theo ngày, thuế, chi tiết và thanh toán…",
     "exportCustomerSales": "Doanh số theo khách hàng",

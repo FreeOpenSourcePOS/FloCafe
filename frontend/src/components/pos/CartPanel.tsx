@@ -839,7 +839,25 @@ export default function CartPanel({
               </span>
             </Button>
           )}
-          {multiCounterEnabled && counterRole === 'payment' ? (
+          {existingOrder ? (
+            <Button
+              onClick={onPlaceOrder}
+              disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
+              className="flex-1"
+              size="lg"
+              data-testid="pos-append-existing-order-btn"
+            >
+              {submitting ? t('placing') : t('placeOrderButton')}
+              {!submitting && (
+                <span
+                  aria-hidden="true"
+                  className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
+                >
+                  Space
+                </span>
+              )}
+            </Button>
+          ) : multiCounterEnabled && counterRole === 'payment' ? (
             cart.items.length === 0 ? (
               <Button
                 type="button"

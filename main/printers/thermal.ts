@@ -127,6 +127,7 @@ import {
   pushCenteredWrapped,
   appendPoweredByFooter,
   normalizeThermalText,
+  safePrinterText,
   resolveCurrencyPrefix,
   appendCashDrawerPulse,
   buildEscPos,
@@ -1413,7 +1414,7 @@ export async function printPaymentTicket(
     }
 
     const { profile, columns: cols } = resolvePrinterContext(printer || { paper_width: '80mm' });
-    const storeName = getSettingValue('restaurant_name') || 'FloCafe';
+    const storeName = getSettingValue('business_name') || 'FloCafe';
 
     let snapshot: RegionalSnapshot;
     try {
@@ -1448,17 +1449,15 @@ export async function printPaymentTicket(
     };
 
     const balance = options.balance ?? order.total;
-
-    const padLine = (left: string, right: string) => {
-      const space = cols - left.length - right.length;
-      return space > 0 ? left + ' '.repeat(space) + right : left + ' ' + right;
-    };
+    const storeNameLines = wrapText(safePrinterText(storeName), cols).map(
+      (line) => `{CENTER}{BOLD}${line}{/BOLD}{/CENTER}`,
+    );
 
     const lines: string[] = [
       '{INIT}',
-      `{C}{B}${storeName}`,
-      '{C}{B}PAYMENT TICKET',
-      `{C}Ticket #: ${order.order_number}`,
+      ...storeNameLines,
+      '{CENTER}{BOLD}PAYMENT TICKET{/BOLD}{/CENTER}',
+      `{CENTER}Ticket #: ${order.order_number}{/CENTER}`,
       '-'.repeat(cols),
       `Type: ${order.type === 'dine_in' ? 'Dine In' : 'Takeaway'}`,
     ];
@@ -1475,22 +1474,51 @@ export async function printPaymentTicket(
 
     lines.push('-'.repeat(cols));
     for (const item of items) {
-      const left = `${item.quantity}x ${item.product_name}`;
-      const right = item.total !== undefined ? formatAmount(Number(item.total)) : '';
-      lines.push(padLine(left, right));
+      const quantity = `${item.quantity}x `;
+      const amount = item.total !== undefined ? formatAmount(Number(item.total)) : '';
+      const quantityWidth = displayCellWidth(quantity);
+      const amountWidth = displayCellWidth(amount);
+      assertFinancialValueFitsColumns(quantity, cols, 'payment ticket item quantity');
+      if (amount) assertFinancialValueFitsColumns(amount, cols, 'payment ticket item amount');
+      const inlineAmount = !amount || quantityWidth + amountWidth + 1 <= cols;
+      const nameWidth = Math.max(
+        1,
+        cols - quantityWidth - (amount && inlineAmount ? amountWidth + 1 : 0),
+      );
+      const nameLines = wrapText(safePrinterText(item.product_name), nameWidth);
+      const firstLine = quantity + (nameLines.shift() || '');
+      if (amount && inlineAmount) {
+        lines.push(firstLine + rightAlign(amount, cols - displayCellWidth(firstLine)));
+      } else {
+        lines.push(firstLine);
+      }
+      lines.push(...nameLines.map((line) => ' '.repeat(quantityWidth) + line));
+      if (amount && !inlineAmount) lines.push(padToDisplayCells(amount, cols, 'right'));
     }
 
     lines.push('-'.repeat(cols));
-    lines.push(padLine('Total:', formatAmount(Number(order.total))));
-    lines.push(padLine('Balance Due:', formatAmount(Number(balance))));
+    const totalAmount = formatAmount(Number(order.total));
+    const balanceAmount = formatAmount(Number(balance));
+    const pushSummaryAmount = (label: string, amount: string, field: string) => {
+      assertFinancialValueFitsColumns(amount, cols, field);
+      const labelWidth = displayCellWidth(label);
+      if (labelWidth + 1 + displayCellWidth(amount) <= cols) {
+        lines.push(`${label}${rightAlign(amount, cols - labelWidth)}`);
+      } else {
+        lines.push(...wrapText(label, cols).map((line) => padToDisplayCells(line, cols)));
+        lines.push(padToDisplayCells(amount, cols, 'right'));
+      }
+    };
+    pushSummaryAmount('Total:', totalAmount, 'payment ticket total');
+    pushSummaryAmount('Balance Due:', balanceAmount, 'payment ticket balance');
     lines.push('-'.repeat(cols));
-    lines.push('{C}Please pay at the payment counter');
-    lines.push('{C}Scan or enter ticket number to pay:');
+    lines.push('{CENTER}Please pay at the payment counter{/CENTER}');
+    lines.push('{CENTER}Scan or enter ticket number to pay:{/CENTER}');
 
     const qrPayload = `FLOCAFE-TICKET:${order.order_number}`;
     const qrBytes = buildEscPosQrCode(qrPayload);
     lines.push(`{RAW_BYTES:${qrBytes.toString('base64')}}`);
-    lines.push(`{C}${qrPayload}`);
+    lines.push(`{CENTER}${qrPayload}{/CENTER}`);
     lines.push('');
     lines.push('{CUT}');
 

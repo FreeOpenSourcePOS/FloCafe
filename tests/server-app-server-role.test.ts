@@ -393,9 +393,10 @@ async function main() {
     assert.equal(serverMove.body.targetTable.status, 'occupied');
 
     // Protected forwarded routes must rate-limit LAN clients before auth or downstream work.
-    const customerResponses = await Promise.all(
-      Array.from({ length: 151 }, () => postJson(baseUrl, '/api/customers', {})),
-    );
+    const customerResponses = [];
+    for (let i = 0; i < 151; i += 1) {
+      customerResponses.push(await postJson(baseUrl, '/api/customers', {}));
+    }
     assert.equal(
       customerResponses.filter(({ status }) => status === 401).length,
       150,
@@ -407,9 +408,10 @@ async function main() {
       'customer requests over the limit are throttled on localhost',
     );
 
-    const printKotResponses = await Promise.all(
-      Array.from({ length: 29 }, () => postJson(baseUrl, '/api/printers/print-kot', {})),
-    );
+    const printKotResponses = [];
+    for (let i = 0; i < 29; i += 1) {
+      printKotResponses.push(await postJson(baseUrl, '/api/printers/print-kot', {}));
+    }
     assert(
       printKotResponses.every(({ status }) => status === 401),
       'KOT requests below the shared print limit reach authentication',

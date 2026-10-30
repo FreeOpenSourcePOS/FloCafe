@@ -64,8 +64,20 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
   let dineInOrderId: number = 0;
   let limitedProduct: { id: string; name?: string } = { id: '' };
   const createdOrderIds = new Set<number>();
+  let previousBillingType: string | undefined;
+  let previousTablesRequired: boolean | undefined;
   let previousMultiCounterEnabled: string | undefined;
   let previousTimezone: string | undefined;
+  const cleanupErrors: string[] = [];
+  let primaryTestError: unknown;
+  let hasPrimaryTestError = false;
+  const attemptCleanup = async (label: string, cleanup: () => Promise<void>) => {
+    try {
+      await cleanup();
+    } catch (error) {
+      cleanupErrors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
 
   try {
     // -------------------------------------------------------------------------
@@ -343,6 +355,140 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       await expect(page.getByTestId('cart-item')).toHaveCount(0);
     });
 
+    await test.step('A lost send response cannot be submitted through normal checkout', async () => {
+      const businessRes = await request.get(`${BASE}/api/settings/business`, {
+        headers: ownerHeaders,
+      });
+      expect(businessRes.ok(), 'read billing settings before retry test').toBeTruthy();
+      const businessSettings = await businessRes.json();
+      previousBillingType = businessSettings.billing_type;
+      previousTablesRequired = businessSettings.tables_required;
+      const postpaidRes = await request.put(`${BASE}/api/settings/business`, {
+        headers: ownerHeaders,
+        data: { billing_type: 'postpaid', tables_required: previousTablesRequired },
+      });
+      expect(postpaidRes.ok(), 'use postpaid checkout for retry test').toBeTruthy();
+
+      await page.goto(`${BASE}/pos`);
+      const counterSelect = page.getByTestId('pos-counter-selector-btn');
+      await counterSelect.click();
+      await page.getByTestId(`pos-counter-option-${combinedCounter.id}`).click();
+      await page.getByTestId('pos-product-card').first().click();
+
+      const orderPosts: string[] = [];
+      let resolveFirstAborted!: () => void;
+      const firstAborted = new Promise<void>((resolve) => {
+        resolveFirstAborted = resolve;
+      });
+      await page.route('**/api/orders', async (route) => {
+        const url = new URL(route.request().url());
+        if (route.request().method() !== 'POST' || url.pathname !== '/api/orders') {
+          await route.continue();
+          return;
+        }
+        orderPosts.push(route.request().headers()['idempotency-key'] || '');
+        const response = await route.fetch();
+        const payload = await response.json();
+        expect(response.status()).toBe(201);
+        createdOrderIds.add(Number(payload.order.id));
+        if (orderPosts.length === 1) {
+          await route.abort();
+          resolveFirstAborted();
+        } else {
+          await route.fulfill({ response });
+        }
+      });
+
+      await page.getByTestId('pos-send-to-payment-btn').click();
+      await firstAborted;
+      await expect(page.getByTestId('cart-item')).toHaveCount(1);
+
+      await page.getByRole('button', { name: 'Place Order' }).click();
+      await expect(
+        page.getByText('FloCafe could not confirm whether the order or payment was saved.').last(),
+      ).toBeVisible();
+      expect(orderPosts, 'changing checkout mode does not submit a second order').toHaveLength(1);
+
+      await page.unroute('**/api/orders');
+      await page.getByTestId('cart-shell').locator('button[aria-label="Remove"]').first().click();
+      await expect(page.getByTestId('cart-item')).toHaveCount(0);
+      await page.evaluate(() => {
+        localStorage.removeItem('flo.postpaid.order.attempt.user.e2e-owner');
+        sessionStorage.removeItem('flo.postpaid.order.attempt.user.e2e-owner');
+      });
+
+      const restoreBusinessRes = await request.put(`${BASE}/api/settings/business`, {
+        headers: ownerHeaders,
+        data: { billing_type: previousBillingType, tables_required: previousTablesRequired },
+      });
+      expect(restoreBusinessRes.ok(), 'restore billing settings after retry test').toBeTruthy();
+      previousBillingType = undefined;
+      previousTablesRequired = undefined;
+    });
+
+    await test.step('A committed send response after reauthentication clears only its submitted cart', async () => {
+      await page.goto(`${BASE}/pos`);
+      const counterSelect = page.getByTestId('pos-counter-selector-btn');
+      await counterSelect.click();
+      await page.getByTestId(`pos-counter-option-${orderingCounter.id}`).click();
+      await page.getByTestId('pos-product-card').first().click();
+
+      let releaseResponse!: () => void;
+      let resolveCaptured!: (order: { id: number }) => void;
+      let resolveDelivered!: () => void;
+      const responseGate = new Promise<void>((resolve) => {
+        releaseResponse = resolve;
+      });
+      const capturedOrder = new Promise<{ id: number }>((resolve) => {
+        resolveCaptured = resolve;
+      });
+      const responseDelivered = new Promise<void>((resolve) => {
+        resolveDelivered = resolve;
+      });
+      await page.route('**/api/orders', async (route) => {
+        const url = new URL(route.request().url());
+        if (route.request().method() !== 'POST' || url.pathname !== '/api/orders') {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        const payload = await response.json();
+        expect(response.status()).toBe(201);
+        const order = { id: Number(payload.order.id) };
+        createdOrderIds.add(order.id);
+        resolveCaptured(order);
+        await responseGate;
+        await route.fulfill({ response });
+        resolveDelivered();
+      });
+
+      await page.getByTestId('pos-send-to-payment-btn').click();
+      const committedOrder = await capturedOrder;
+      await page.getByTestId('pos-lock-button').click();
+      await page.waitForURL('**/auth/login**', { timeout: 20_000 });
+      await page.locator('#email').fill('owner@flo.local');
+      await page.locator('#password').fill(E2E_PASSWORD);
+      await page.locator('button[type="submit"]').click();
+      await page.waitForURL('**/pos/**', { timeout: 20_000 });
+      await setLanguage(page, 'en');
+      await expect(page.getByTestId('cart-item')).toHaveCount(1);
+
+      releaseResponse();
+      await responseDelivered;
+      await expect(page.getByTestId('cart-item')).toHaveCount(0);
+      const attemptKey = 'flo.postpaid.order.attempt.user.e2e-owner';
+      const persistedAttempt = await page.evaluate((key) => {
+        const value = localStorage.getItem(key);
+        return value ? JSON.parse(value) : null;
+      }, attemptKey);
+      expect(persistedAttempt?.order?.id).toBe(committedOrder.id);
+      await page.evaluate((key) => {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      }, attemptKey);
+      await page.unroute('**/api/orders');
+    });
+
     await test.step('A delayed send response cannot replace a newer same-user attempt after lock and reauthentication', async () => {
       await page.goto(`${BASE}/pos`);
       const counterSelect = page.getByTestId('pos-counter-selector-btn');
@@ -495,6 +641,100 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       });
       await page.getByTestId('cart-shell').locator('button[aria-label="Remove"]').first().click();
       await expect(page.getByTestId('cart-item')).toHaveCount(0);
+    });
+
+    await test.step('A confirmed ticket with failed retry cleanup is not replayed as a new ticket', async () => {
+      await page.goto(`${BASE}/pos`);
+      const counterSelect = page.getByTestId('pos-counter-selector-btn');
+      await counterSelect.click();
+      await page.getByTestId(`pos-counter-option-${orderingCounter.id}`).click();
+      await page.evaluate(() => {
+        const storageWindow = window as typeof window & {
+          __originalStorageSetItem?: typeof Storage.prototype.setItem;
+          __originalStorageRemoveItem?: typeof Storage.prototype.removeItem;
+        };
+        const originalSetItem = Storage.prototype.setItem;
+        const originalRemoveItem = Storage.prototype.removeItem;
+        storageWindow.__originalStorageSetItem = originalSetItem;
+        storageWindow.__originalStorageRemoveItem = originalRemoveItem;
+        Storage.prototype.setItem = function (key: string, value: string) {
+          if (key.startsWith('flo.postpaid.order.attempt.') && value.includes('"completed":true')) {
+            throw new DOMException(
+              'The completion marker could not be stored.',
+              'QuotaExceededError',
+            );
+          }
+          return originalSetItem.call(this, key, value);
+        };
+        Storage.prototype.removeItem = function (key: string) {
+          if (key.startsWith('flo.postpaid.order.attempt.')) {
+            throw new DOMException('The order attempt could not be removed.', 'QuotaExceededError');
+          }
+          return originalRemoveItem.call(this, key);
+        };
+      });
+
+      const orderPosts: string[] = [];
+      await page.route('**/api/orders', async (route) => {
+        const url = new URL(route.request().url());
+        if (route.request().method() !== 'POST' || url.pathname !== '/api/orders') {
+          await route.continue();
+          return;
+        }
+        orderPosts.push(route.request().headers()['idempotency-key'] || '');
+        const response = await route.fetch();
+        const payload = await response.json();
+        expect(response.status()).toBe(201);
+        createdOrderIds.add(Number(payload.order.id));
+        await route.fulfill({ response });
+      });
+
+      await page.getByTestId('pos-product-card').first().click();
+      await page.getByTestId('pos-send-to-payment-btn').click();
+      await expect(page.getByTestId('payment-ticket-confirmation-modal')).toBeVisible();
+      const attemptKey = 'flo.postpaid.order.attempt.user.e2e-owner';
+      const persistedAttempt = await page.evaluate((key) => {
+        const value = localStorage.getItem(key);
+        return value ? JSON.parse(value) : null;
+      }, attemptKey);
+      expect(persistedAttempt?.order?.id).toBeTruthy();
+      expect(orderPosts).toHaveLength(1);
+
+      await page.evaluate(() => {
+        const storageWindow = window as typeof window & {
+          __originalStorageSetItem?: typeof Storage.prototype.setItem;
+          __originalStorageRemoveItem?: typeof Storage.prototype.removeItem;
+        };
+        if (storageWindow.__originalStorageSetItem) {
+          Storage.prototype.setItem = storageWindow.__originalStorageSetItem;
+          delete storageWindow.__originalStorageSetItem;
+        }
+        if (storageWindow.__originalStorageRemoveItem) {
+          Storage.prototype.removeItem = storageWindow.__originalStorageRemoveItem;
+          delete storageWindow.__originalStorageRemoveItem;
+        }
+      });
+      await page.goto(`${BASE}/pos`);
+      const reloadedCounterSelect = page.getByTestId('pos-counter-selector-btn');
+      await reloadedCounterSelect.click();
+      await page.getByTestId(`pos-counter-option-${orderingCounter.id}`).click();
+      await page.getByTestId('pos-product-card').first().click();
+      await page.getByTestId('pos-send-to-payment-btn').click();
+      await expect(
+        page
+          .getByText(
+            'The sale is complete, but this device could not clear local retry or held-order state.',
+          )
+          .last(),
+      ).toBeVisible();
+      expect(orderPosts, 'a confirmed attempt is never submitted a second time').toHaveLength(1);
+
+      await page.unroute('**/api/orders');
+      await page.getByTestId('cart-shell').locator('button[aria-label="Remove"]').first().click();
+      await page.evaluate((key) => {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      }, attemptKey);
     });
 
     await test.step('Existing scheduled orders append on ordering and combined counters', async () => {
@@ -848,146 +1088,185 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
         await closeDrawerBtn.click();
       }
     });
+  } catch (error) {
+    primaryTestError = error;
+    hasPrimaryTestError = true;
   } finally {
     for (const orderId of createdOrderIds) {
-      const orderRes = await request.get(`${BASE}/api/orders/${orderId}`, {
-        headers: ownerHeaders,
-      });
-      expect(orderRes.ok(), `read order ${orderId} during cleanup`).toBeTruthy();
-      let order = (await orderRes.json()).order;
-      if (order.status === 'completed' || order.status === 'cancelled') continue;
-
-      const billsRes = await request.get(`${BASE}/api/bills/order/${orderId}`, {
-        headers: ownerHeaders,
-      });
-      expect(billsRes.ok(), `read bills for order ${orderId} during cleanup`).toBeTruthy();
-      const billsBody = await billsRes.json();
-      const bills = billsBody.bills || (billsBody.bill ? [billsBody.bill] : []);
-      expect(bills.length, `order ${orderId} has cleanup bills`).toBeGreaterThan(0);
-
-      let hasCollectedPayment = false;
-      for (const billSummary of bills) {
-        const billRes = await request.get(`${BASE}/api/bills/${billSummary.id}`, {
+      await attemptCleanup(`clean up order ${orderId}`, async () => {
+        const orderRes = await request.get(`${BASE}/api/orders/${orderId}`, {
           headers: ownerHeaders,
         });
-        expect(billRes.ok(), `read bill ${billSummary.id} during cleanup`).toBeTruthy();
-        const bill = (await billRes.json()).bill;
-        if (Number(bill.paid_amount) > 0 || bill.payment_status === 'paid') {
-          hasCollectedPayment = true;
-        }
-      }
+        expect(orderRes.ok(), `read order ${orderId} during cleanup`).toBeTruthy();
+        let order = (await orderRes.json()).order;
+        if (order.status === 'completed' || order.status === 'cancelled') return;
 
-      if (!hasCollectedPayment) {
-        const cancelRes = await request.patch(`${BASE}/api/orders/${orderId}/status`, {
-          headers: ownerHeaders,
-          data: { status: 'cancelled' },
-        });
-        expect(cancelRes.ok(), `cancel unpaid order ${orderId} during cleanup`).toBeTruthy();
-        continue;
-      }
-
-      for (const billSummary of bills) {
-        const billRes = await request.get(`${BASE}/api/bills/${billSummary.id}`, {
+        const billsRes = await request.get(`${BASE}/api/bills/order/${orderId}`, {
           headers: ownerHeaders,
         });
-        expect(billRes.ok(), `re-read bill ${billSummary.id} during cleanup`).toBeTruthy();
-        const bill = (await billRes.json()).bill;
-        if (Number(bill.balance) > 0) {
-          const payRes = await request.post(`${BASE}/api/bills/${bill.id}/payment`, {
+        expect(billsRes.ok(), `read bills for order ${orderId} during cleanup`).toBeTruthy();
+        const billsBody = await billsRes.json();
+        const bills = billsBody.bills || (billsBody.bill ? [billsBody.bill] : []);
+        expect(bills.length, `order ${orderId} has cleanup bills`).toBeGreaterThan(0);
+
+        let hasCollectedPayment = false;
+        for (const billSummary of bills) {
+          const billRes = await request.get(`${BASE}/api/bills/${billSummary.id}`, {
             headers: ownerHeaders,
-            data: { method: 'cash', amount: Number(bill.balance) },
           });
-          expect(payRes.ok(), `settle bill ${bill.id} during cleanup`).toBeTruthy();
+          expect(billRes.ok(), `read bill ${billSummary.id} during cleanup`).toBeTruthy();
+          const bill = (await billRes.json()).bill;
+          if (Number(bill.paid_amount) > 0 || bill.payment_status === 'paid') {
+            hasCollectedPayment = true;
+          }
         }
-      }
 
-      const refreshedOrderRes = await request.get(`${BASE}/api/orders/${orderId}`, {
-        headers: ownerHeaders,
-      });
-      expect(refreshedOrderRes.ok()).toBeTruthy();
-      order = (await refreshedOrderRes.json()).order;
-      if (order.release_status === 'blocked') {
-        expect(limitedProduct.id, 'blocked order has a tracked inventory fixture').toBeTruthy();
-        const restockRes = await request.post(`${BASE}/api/products/${limitedProduct.id}/stock`, {
-          headers: ownerHeaders,
-          data: {
-            action: 'set',
-            quantity: 5,
-            reason: 'Restore multi-counter test stock before cleanup',
-          },
-        });
-        expect(restockRes.ok(), 'restore blocked order stock during cleanup').toBeTruthy();
-      }
-      if (order.checkout_stage === 'paid' && order.release_status !== 'released') {
-        const releaseRes = await request.post(`${BASE}/api/orders/${orderId}/release`, {
-          headers: ownerHeaders,
-        });
-        expect(releaseRes.ok(), `release paid order ${orderId} during cleanup`).toBeTruthy();
-      }
+        if (!hasCollectedPayment) {
+          const cancelRes = await request.patch(`${BASE}/api/orders/${orderId}/status`, {
+            headers: ownerHeaders,
+            data: { status: 'cancelled' },
+          });
+          expect(cancelRes.ok(), `cancel unpaid order ${orderId} during cleanup`).toBeTruthy();
+          return;
+        }
 
-      const releasedOrderRes = await request.get(`${BASE}/api/orders/${orderId}`, {
-        headers: ownerHeaders,
-      });
-      expect(releasedOrderRes.ok()).toBeTruthy();
-      order = (await releasedOrderRes.json()).order;
-      for (const item of order.items || []) {
-        if (['served', 'completed', 'cancelled'].includes(item.status)) continue;
-        const servedRes = await request.patch(`${BASE}/api/order-items/${item.id}/status`, {
+        for (const billSummary of bills) {
+          const billRes = await request.get(`${BASE}/api/bills/${billSummary.id}`, {
+            headers: ownerHeaders,
+          });
+          expect(billRes.ok(), `re-read bill ${billSummary.id} during cleanup`).toBeTruthy();
+          const bill = (await billRes.json()).bill;
+          if (Number(bill.balance) > 0) {
+            const payRes = await request.post(`${BASE}/api/bills/${bill.id}/payment`, {
+              headers: ownerHeaders,
+              data: { method: 'cash', amount: Number(bill.balance) },
+            });
+            expect(payRes.ok(), `settle bill ${bill.id} during cleanup`).toBeTruthy();
+          }
+        }
+
+        const refreshedOrderRes = await request.get(`${BASE}/api/orders/${orderId}`, {
           headers: ownerHeaders,
-          data: { status: 'served' },
         });
-        expect(servedRes.ok(), `serve order item ${item.id} during cleanup`).toBeTruthy();
-      }
-      const completeRes = await request.patch(`${BASE}/api/orders/${orderId}/status`, {
-        headers: ownerHeaders,
-        data: { status: 'completed' },
+        expect(refreshedOrderRes.ok()).toBeTruthy();
+        order = (await refreshedOrderRes.json()).order;
+        if (order.release_status === 'blocked') {
+          expect(limitedProduct.id, 'blocked order has a tracked inventory fixture').toBeTruthy();
+          const restockRes = await request.post(`${BASE}/api/products/${limitedProduct.id}/stock`, {
+            headers: ownerHeaders,
+            data: {
+              action: 'set',
+              quantity: 5,
+              reason: 'Restore blocked order stock during cleanup',
+            },
+          });
+          expect(restockRes.ok(), 'restore blocked order stock during cleanup').toBeTruthy();
+        }
+        if (order.checkout_stage === 'paid' && order.release_status !== 'released') {
+          const releaseRes = await request.post(`${BASE}/api/orders/${orderId}/release`, {
+            headers: ownerHeaders,
+          });
+          expect(releaseRes.ok(), `release paid order ${orderId} during cleanup`).toBeTruthy();
+        }
+
+        const releasedOrderRes = await request.get(`${BASE}/api/orders/${orderId}`, {
+          headers: ownerHeaders,
+        });
+        expect(releasedOrderRes.ok()).toBeTruthy();
+        order = (await releasedOrderRes.json()).order;
+        for (const item of order.items || []) {
+          if (['served', 'completed', 'cancelled'].includes(item.status)) continue;
+          const servedRes = await request.patch(`${BASE}/api/order-items/${item.id}/status`, {
+            headers: ownerHeaders,
+            data: { status: 'served' },
+          });
+          expect(servedRes.ok(), `serve order item ${item.id} during cleanup`).toBeTruthy();
+        }
+        const completeRes = await request.patch(`${BASE}/api/orders/${orderId}/status`, {
+          headers: ownerHeaders,
+          data: { status: 'completed' },
+        });
+        expect(completeRes.ok(), `complete order ${orderId} during cleanup`).toBeTruthy();
       });
-      expect(completeRes.ok(), `complete order ${orderId} during cleanup`).toBeTruthy();
     }
 
     if (orderingCounter.id) {
-      const result = await request.delete(`${BASE}/api/counters/${orderingCounter.id}`, {
-        headers: ownerHeaders,
+      await attemptCleanup('delete ordering counter', async () => {
+        const result = await request.delete(`${BASE}/api/counters/${orderingCounter.id}`, {
+          headers: ownerHeaders,
+        });
+        expect(result.ok(), 'delete ordering counter during cleanup').toBeTruthy();
       });
-      expect(result.ok(), 'delete ordering counter during cleanup').toBeTruthy();
     }
     if (paymentCounter.id) {
-      const result = await request.delete(`${BASE}/api/counters/${paymentCounter.id}`, {
-        headers: ownerHeaders,
+      await attemptCleanup('delete payment counter', async () => {
+        const result = await request.delete(`${BASE}/api/counters/${paymentCounter.id}`, {
+          headers: ownerHeaders,
+        });
+        expect(result.ok(), 'delete payment counter during cleanup').toBeTruthy();
       });
-      expect(result.ok(), 'delete payment counter during cleanup').toBeTruthy();
     }
     if (combinedCounter.id) {
-      const result = await request.delete(`${BASE}/api/counters/${combinedCounter.id}`, {
-        headers: ownerHeaders,
+      await attemptCleanup('delete combined counter', async () => {
+        const result = await request.delete(`${BASE}/api/counters/${combinedCounter.id}`, {
+          headers: ownerHeaders,
+        });
+        expect(result.ok(), 'delete combined counter during cleanup').toBeTruthy();
       });
-      expect(result.ok(), 'delete combined counter during cleanup').toBeTruthy();
     }
     if (createdTable.id > 0) {
-      const result = await request.post(`${BASE}/api/tables/${createdTable.id}/deactivate`, {
-        headers: ownerHeaders,
+      await attemptCleanup('deactivate test table', async () => {
+        const result = await request.post(`${BASE}/api/tables/${createdTable.id}/deactivate`, {
+          headers: ownerHeaders,
+        });
+        expect(result.ok(), 'deactivate table during cleanup').toBeTruthy();
       });
-      expect(result.ok(), 'deactivate table during cleanup').toBeTruthy();
     }
     if (limitedProduct.id) {
-      const result = await request.delete(`${BASE}/api/products/${limitedProduct.id}`, {
-        headers: ownerHeaders,
+      await attemptCleanup('delete limited product', async () => {
+        const result = await request.delete(`${BASE}/api/products/${limitedProduct.id}`, {
+          headers: ownerHeaders,
+        });
+        expect(result.ok(), 'delete limited product during cleanup').toBeTruthy();
       });
-      expect(result.ok(), 'delete limited product during cleanup').toBeTruthy();
     }
     if (previousMultiCounterEnabled !== undefined) {
-      const result = await request.put(`${BASE}/api/settings/multi_counter_enabled`, {
-        headers: ownerHeaders,
-        data: { value: previousMultiCounterEnabled },
+      await attemptCleanup('restore prior multi-counter setting', async () => {
+        const result = await request.put(`${BASE}/api/settings/multi_counter_enabled`, {
+          headers: ownerHeaders,
+          data: { value: previousMultiCounterEnabled },
+        });
+        expect(result.ok(), 'restore prior multi-counter setting').toBeTruthy();
       });
-      expect(result.ok(), 'restore prior multi-counter setting').toBeTruthy();
     }
     if (previousTimezone !== undefined) {
-      const result = await request.put(`${BASE}/api/settings/timezone`, {
-        headers: ownerHeaders,
-        data: { value: previousTimezone },
+      await attemptCleanup('restore prior store timezone', async () => {
+        const result = await request.put(`${BASE}/api/settings/timezone`, {
+          headers: ownerHeaders,
+          data: { value: previousTimezone },
+        });
+        expect(result.ok(), 'restore prior store timezone').toBeTruthy();
       });
-      expect(result.ok(), 'restore prior store timezone').toBeTruthy();
+    }
+    if (previousBillingType !== undefined && previousTablesRequired !== undefined) {
+      await attemptCleanup('restore prior billing settings', async () => {
+        const result = await request.put(`${BASE}/api/settings/business`, {
+          headers: ownerHeaders,
+          data: {
+            billing_type: previousBillingType,
+            tables_required: previousTablesRequired,
+          },
+        });
+        expect(result.ok(), 'restore prior billing settings').toBeTruthy();
+      });
     }
   }
+
+  if (hasPrimaryTestError) {
+    if (cleanupErrors.length > 0) {
+      console.error('Test fixture cleanup also failed:', cleanupErrors);
+    }
+    throw primaryTestError;
+  }
+  expect(cleanupErrors, 'all multi-counter test fixtures and settings are restored').toEqual([]);
 });

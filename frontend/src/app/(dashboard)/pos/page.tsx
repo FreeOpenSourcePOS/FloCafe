@@ -431,6 +431,22 @@ export default function POSPage() {
     return appendAttemptStorageRef.current;
   };
 
+  const createFreshAppendAttemptStorage = (): AppendAttemptStorage => {
+    let browserStorage: AppendAttemptStorage | null = null;
+    let sessionStorage: AppendAttemptStorage | null = null;
+    try {
+      if (typeof window !== 'undefined') browserStorage = window.localStorage;
+    } catch {
+      // Private/restricted renderers may throw while reading localStorage.
+    }
+    try {
+      if (typeof window !== 'undefined') sessionStorage = window.sessionStorage;
+    } catch {
+      // Session storage may also be restricted.
+    }
+    return createSafeAppendAttemptStorage(browserStorage, sessionStorage);
+  };
+
   const readPostpaidAttempt = (targetUserId?: string | null) => {
     if (typeof window === 'undefined') return null;
     const effectiveUserId = targetUserId || activeUserId;
@@ -1771,6 +1787,34 @@ export default function POSPage() {
         const priorOrderAttempt = readPostpaidAttempt(originUserId);
         if (
           priorOrderAttempt?.userId === originUserId &&
+          priorOrderAttempt.fingerprint === cartFingerprint
+        ) {
+          const completedOrder = priorOrderAttempt.order;
+          reportOrderFailure({
+            code: completedOrder ? 'order.retry_state.cleanup_failed' : 'order.retry_state.pending',
+            title: completedOrder
+              ? t('orderPlaced', { number: completedOrder.order_number })
+              : t('placeOrderFailed'),
+            message: completedOrder ? t('saleCompleteCleanupFailed') : t('operationOutcomeUnknown'),
+            nextStep: completedOrder
+              ? t('saleCompleteCheckOrders')
+              : t('operationCheckBeforeRetry'),
+            detail: completedOrder
+              ? 'This matching order attempt already has a confirmed order and cannot be reused for a new sale'
+              : 'A send-to-payment attempt for this cart is unresolved and cannot be replaced with a different checkout request',
+            status: null,
+            operation: 'order.create',
+            stage: completedOrder ? 'cleanup' : 'retry_state',
+            outcome: completedOrder ? 'applied' : 'unknown',
+            reasonCode: completedOrder
+              ? 'order.retry_state.cleanup_failed'
+              : 'order.retry_state.pending',
+            correlationId: priorOrderAttempt.operationId,
+          });
+          return;
+        }
+        if (
+          priorOrderAttempt?.userId === originUserId &&
           priorOrderAttempt.fingerprint === orderFingerprint &&
           priorOrderAttempt.order
         ) {
@@ -2006,15 +2050,32 @@ export default function POSPage() {
       const cartFingerprint = buildCurrentCartFingerprint(orderItems);
       const storage = getAppendAttemptStorage();
       const storedAttempt = readPostpaidAttempt(originUserId);
-      const attempt =
-        storedAttempt?.userId === originUserId && storedAttempt.fingerprint === cartFingerprint
-          ? storedAttempt
-          : {
-              userId: originUserId,
-              fingerprint: cartFingerprint,
-              idempotencyKey: newIdempotencyKey(),
-              operationId: createOperationReference() || undefined,
-            };
+      const storedAttemptMatchesCart =
+        storedAttempt?.userId === originUserId && storedAttempt.fingerprint === cartFingerprint;
+      if (storedAttemptMatchesCart && storedAttempt.order) {
+        reportOrderFailure({
+          code: 'order.retry_state.cleanup_failed',
+          title: t('orderSentToPaymentSuccess', { number: storedAttempt.order.order_number }),
+          message: t('saleCompleteCleanupFailed'),
+          nextStep: t('saleCompleteCheckOrders'),
+          detail: 'This matching order attempt already has a confirmed ticket and cannot be reused',
+          status: null,
+          operation: 'order.create',
+          stage: 'cleanup',
+          outcome: 'applied',
+          reasonCode: 'order.retry_state.cleanup_failed',
+          correlationId: storedAttempt.operationId,
+        });
+        return;
+      }
+      const attempt = storedAttemptMatchesCart
+        ? storedAttempt
+        : {
+            userId: originUserId,
+            fingerprint: cartFingerprint,
+            idempotencyKey: newIdempotencyKey(),
+            operationId: createOperationReference() || undefined,
+          };
       const storageKey = getPostpaidOrderAttemptStorageKey(originUserId);
       if (!savePostpaidAttempt(attempt, originUserId)) throw new OrderAttemptStorageError();
 
@@ -2039,13 +2100,13 @@ export default function POSPage() {
           ...operationHeaders(attempt.operationId),
         },
       });
-      if (!isOriginSessionCurrent()) return;
+      const createdOrder = data.order as Order;
 
       let isLatestAttempt = false;
       let cleanupFailed = false;
       try {
         const currentAttempt = readOrderAttempt<PostpaidAttempt>(
-          storage,
+          createFreshAppendAttemptStorage(),
           storageKey,
           originUserId,
           { isValid: isUsablePostpaidAttempt },
@@ -2054,22 +2115,40 @@ export default function POSPage() {
           currentAttempt?.fingerprint === attempt.fingerprint &&
           currentAttempt.idempotencyKey === attempt.idempotencyKey &&
           currentAttempt.operationId === attempt.operationId;
-        if (isLatestAttempt && !clearOrderAttempt(storage, storageKey, attempt)) {
-          cleanupFailed = true;
-        } else if (
-          isLatestAttempt &&
-          postpaidAttemptRef.current?.idempotencyKey === attempt.idempotencyKey
-        ) {
-          postpaidAttemptRef.current = null;
-          postpaidAttemptKeyRef.current = null;
-          postpaidAttemptWasLegacyRef.current = false;
-        }
       } catch {
+        return;
+      }
+      if (!isLatestAttempt) return;
+
+      const confirmedAttempt = { ...attempt, order: createdOrder };
+      if (!savePostpaidAttempt(confirmedAttempt, originUserId)) {
+        if (originUserId === activeUserId) {
+          postpaidAttemptRef.current = confirmedAttempt;
+          postpaidAttemptKeyRef.current = storageKey;
+        }
+        if (attempt.operationId)
+          void captureClientOperationFailure({
+            operation: 'order.create',
+            phase: 'retry_state_update',
+            correlationId: attempt.operationId,
+          });
+      }
+      if (!isOriginSessionCurrent()) {
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
+        return;
+      }
+
+      if (!clearOrderAttempt(storage, storageKey, confirmedAttempt)) {
         cleanupFailed = true;
+      } else if (postpaidAttemptRef.current?.idempotencyKey === attempt.idempotencyKey) {
+        postpaidAttemptRef.current = null;
+        postpaidAttemptKeyRef.current = null;
+        postpaidAttemptWasLegacyRef.current = false;
       }
       if (!isLatestAttempt || !isOriginSessionCurrent()) return;
 
-      const createdOrder = data.order as Order;
       if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
         useCartStore.getState().clearCart();
       }

@@ -15,6 +15,7 @@ import {
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { printerService } from '@/lib/printer/PrinterService';
 import type { Order } from '@/lib/types';
 
 interface Props {
@@ -42,7 +43,10 @@ export function PaymentTicketConfirmationModal({
   const handlePrint = async () => {
     setPrinting(true);
     try {
-      await api.post('/printers/print-payment-ticket', { order_id: order.id });
+      const res = await api.post('/printers/print-payment-ticket', { order_id: order.id });
+      if (res.data?.webusb && Array.isArray(res.data.bytes)) {
+        await printerService.print(Uint8Array.from(res.data.bytes));
+      }
       toast.success(t('paymentTicketPrinted'));
     } catch (err: unknown) {
       const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;

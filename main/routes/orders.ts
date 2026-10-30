@@ -1579,9 +1579,9 @@ router.get(
         .prepare(
           `SELECT
              COUNT(CASE WHEN o.checkout_stage = 'awaiting_payment' THEN 1 END) AS awaiting_count,
-             COUNT(CASE WHEN o.release_status = 'blocked' THEN 1 END) AS blocked_count
+             COUNT(CASE WHEN o.release_status = 'blocked' AND o.dispatch_policy = 'on_payment' THEN 1 END) AS blocked_count
            FROM orders o
-           WHERE (o.checkout_stage = 'awaiting_payment' OR o.release_status = 'blocked')
+           WHERE (o.checkout_stage = 'awaiting_payment' OR (o.release_status = 'blocked' AND o.dispatch_policy = 'on_payment'))
              AND o.status NOT IN ('cancelled', 'completed')`,
         )
         .get() as { awaiting_count: number; blocked_count: number } | undefined;
@@ -1621,7 +1621,7 @@ router.get(
           (SELECT id FROM bills WHERE order_id = o.id AND payment_status NOT IN ('paid', 'refunded') ORDER BY id ASC LIMIT 1),
           (SELECT id FROM bills WHERE order_id = o.id ORDER BY id ASC LIMIT 1)
         )
-        WHERE (o.checkout_stage = 'awaiting_payment' OR o.release_status = 'blocked')
+        WHERE (o.checkout_stage = 'awaiting_payment' OR (o.release_status = 'blocked' AND o.dispatch_policy = 'on_payment'))
           AND o.status NOT IN ('cancelled', 'completed')
       `;
       const params: unknown[] = [];
@@ -1702,21 +1702,24 @@ router.get(
         return res.status(400).json({ error: 'Ticket number is required' });
       }
 
+      const byParam = String(req.query.by || '').trim();
+      const loadById = byParam === 'id' && /^\d+$/.test(cleanTicket);
+
       const orderRow = db
         .prepare(
           `SELECT * FROM orders
-           WHERE (order_number = ? OR id = ?)
+           WHERE ${loadById ? 'id = ?' : 'order_number = ?'}
              AND status NOT IN ('cancelled', 'completed')
              AND checkout_stage = 'awaiting_payment'`,
         )
-        .get(cleanTicket, cleanTicket) as any;
+        .get(loadById ? Number(cleanTicket) : cleanTicket) as any;
 
       if (!orderRow) {
         return res.status(404).json({ error: 'Ticket not found or already paid' });
       }
 
       const [hydrated] = batchHydrateOrders(db, [parseRowJson(orderRow)]);
-      let bills = (
+      const bills = (
         db
           .prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id ASC')
           .all(orderRow.id) as any[]
@@ -1725,11 +1728,7 @@ router.get(
       const payableBill = bills.find(
         (b: any) => b.payment_status !== 'paid' && Number(b.balance || 0) > 0,
       );
-      let primaryBill = payableBill || bills[0] || null;
-      if (!primaryBill && orderRow.dispatch_policy === 'on_payment') {
-        primaryBill = createOrSyncBillForOrder(db, orderRow.id);
-        bills = [primaryBill];
-      }
+      const primaryBill = payableBill || bills[0] || null;
 
       const allBillsSettled =
         bills.length > 0 &&
@@ -1891,6 +1890,25 @@ router.post(
             ),
           );
       }
+
+      const derivedCheckoutStage = isOnPayment ? 'awaiting_payment' : 'paid';
+      if (checkout_stage !== undefined && checkout_stage !== null) {
+        if (
+          !['building', 'awaiting_payment', 'paid'].includes(checkout_stage) ||
+          checkout_stage !== derivedCheckoutStage
+        ) {
+          return res
+            .status(400)
+            .json(
+              structuredOperationFailure(
+                req,
+                'fc.backend.order.create.other_validation',
+                'not_applied',
+                `Invalid checkout_stage: expected '${derivedCheckoutStage}' for dispatch_policy '${isOnPayment ? 'on_payment' : 'immediate'}'`,
+              ),
+            );
+        }
+      }
       if (
         guest_count !== undefined &&
         guest_count !== null &&
@@ -2044,9 +2062,25 @@ router.post(
           idempotencyUserId,
           idempotencyKey,
           requestHash,
-        ) as { order: any } | null;
+        ) as { order: any; qr_payload?: string | null; qr_data_url?: string | null } | null;
         if (replayed) {
-          return res.status(200).json({ order: replayed.order });
+          const replayedOrder = replayed.order;
+          const qrPayload =
+            replayed.qr_payload ??
+            (replayedOrder?.dispatch_policy === 'on_payment'
+              ? `FLOCAFE-TICKET:${replayedOrder.order_number}`
+              : null);
+          let qrDataUrl = replayed.qr_data_url ?? null;
+          if (qrPayload && !qrDataUrl) {
+            qrDataUrl = await QRCode.toDataURL(qrPayload, {
+              errorCorrectionLevel: 'M',
+              width: 256,
+            });
+          }
+          return res.status(200).json({
+            order: replayedOrder,
+            ...(qrPayload ? { qr_payload: qrPayload, qr_data_url: qrDataUrl } : {}),
+          });
         }
       }
 
@@ -2246,7 +2280,7 @@ router.post(
             externalOrderId || null,
             scheduledOrderMeta ? scheduledOrderMeta.scheduledForUtc : null,
             shouldDeferRelease ? 'scheduled' : 'released',
-            isOnPayment ? 'awaiting_payment' : checkout_stage || 'paid',
+            derivedCheckoutStage,
             isOnPayment ? 'on_payment' : dispatch_policy || 'immediate',
             now(),
             now(),
@@ -2650,6 +2684,24 @@ router.post(
           errorCorrectionLevel: 'M',
           width: 256,
         });
+      }
+
+      if (idempotencyKey && requestHash && qrPayload) {
+        try {
+          db.prepare(
+            'UPDATE order_idempotency SET response_json = ? WHERE user_id = ? AND idempotency_key = ?',
+          ).run(
+            JSON.stringify({
+              order: Object.assign({}, result.order, { items: result.orderItems }),
+              qr_payload: qrPayload,
+              qr_data_url: qrDataUrl,
+            }),
+            idempotencyUserId,
+            idempotencyKey,
+          );
+        } catch {
+          // ignore cache update error
+        }
       }
 
       res.status(result.idempotentReplay ? 200 : 201).json({

@@ -805,11 +805,11 @@ export async function releaseScheduledOrder(
       | { value?: string }
       | undefined;
     const kdsEnabled = kdsSetting?.value !== 'false';
-    const isMultiCounter = currentOrder.dispatch_policy === 'on_payment';
-    const shouldCompleteAtRelease =
-      !isMultiCounter &&
-      isOrderSettledAndNonRefunded(db, currentOrder.id) &&
-      (!kdsEnabled || !hasActiveUnservedOrderItems(db, currentOrder.id));
+    const isSettled = isOrderSettledAndNonRefunded(db, currentOrder.id);
+    const hasUnservedKitchenItems = kdsEnabled && hasActiveUnservedOrderItems(db, currentOrder.id);
+    const isDineInWithTable = currentOrder.type === 'dine_in' || Boolean(currentOrder.table_id);
+
+    const shouldCompleteAtRelease = isSettled && !hasUnservedKitchenItems && !isDineInWithTable;
 
     if (shouldCompleteAtRelease) {
       db.prepare(

@@ -6,6 +6,7 @@ import {
   generateBillNumber,
   getDatabase,
   getSettingValue,
+  isOrderSettledAndNonRefunded,
   localDateInTimezone,
   now,
   parseDbTimestamp,
@@ -2542,6 +2543,7 @@ export function syncUnpaidBillsForOrder(
         db.prepare(
           `UPDATE bills SET payment_status = 'paid', paid_at = ?, updated_at = ? WHERE id = ?`,
         ).run(now(), now(), bill.id);
+        reconcileOrderSettlement(db, bill.order_id, now());
       }
     } else if (zeroClosed) {
       db.prepare(
@@ -3548,6 +3550,119 @@ function queueExactBalanceAutomation(
   }
 }
 
+export async function handlePostPaymentRelease(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number,
+  actorUserId?: string | null,
+): Promise<void> {
+  const order = db
+    .prepare(
+      'SELECT id, release_status, dispatch_policy, checkout_stage, scheduled_for FROM orders WHERE id = ?',
+    )
+    .get(orderId) as any;
+  if (!order || order.dispatch_policy !== 'on_payment' || order.checkout_stage !== 'paid') {
+    return;
+  }
+  if (order.release_status !== 'scheduled') {
+    return;
+  }
+  if (order.scheduled_for) {
+    const scheduledTime = parseDbTimestamp(order.scheduled_for).getTime();
+    if (scheduledTime > Date.now()) {
+      return;
+    }
+  }
+  try {
+    await releaseScheduledOrder(db, order.id, {
+      trigger: 'payment',
+      actorUserId: actorUserId || null,
+    });
+  } catch (err) {
+    console.error(`[MultiCounter] Post-payment release failed for order ${order.id}:`, err);
+  }
+}
+
+export function queuePostPaymentRelease(
+  db: ReturnType<typeof getDatabase>,
+  orderId: number | string,
+  actorUserId?: string | null,
+): void {
+  if (!orderId) return;
+  if (!db.inTransaction) {
+    void handlePostPaymentRelease(db, orderId, actorUserId);
+    return;
+  }
+  queueMicrotask(() => {
+    try {
+      void handlePostPaymentRelease(db, orderId, actorUserId);
+    } catch (err) {
+      console.error(`[MultiCounter] Queued post-payment release failed for order ${orderId}:`, err);
+    }
+  });
+}
+
+export function reconcileOrderSettlement(
+  db: ReturnType<typeof getDatabase>,
+  orderId: number | string,
+  changedAt: string = now(),
+  actorUserId?: string | null,
+): { orderFullyPaid: boolean; orderRow: any } {
+  const orderRow = db
+    .prepare(
+      'SELECT id, status, table_id, customer_id, release_status, dispatch_policy, checkout_stage, scheduled_for FROM orders WHERE id = ?',
+    )
+    .get(orderId) as any;
+  if (!orderRow) return { orderFullyPaid: false, orderRow: null };
+
+  let orderFullyPaid = false;
+
+  if (orderRow.dispatch_policy === 'on_payment') {
+    if (isOrderSettledAndNonRefunded(db, orderRow.id)) {
+      orderFullyPaid = true;
+      if (orderRow.checkout_stage === 'awaiting_payment') {
+        db.prepare("UPDATE orders SET checkout_stage = 'paid', updated_at = ? WHERE id = ?").run(
+          changedAt,
+          orderRow.id,
+        );
+        orderRow.checkout_stage = 'paid';
+      }
+      queuePostPaymentRelease(db, orderRow.id, actorUserId);
+    }
+  } else {
+    const unpaidSibling = db
+      .prepare(
+        `SELECT 1 FROM bills WHERE order_id = ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`,
+      )
+      .get(orderRow.id);
+    orderFullyPaid = !unpaidSibling;
+    if (orderFullyPaid) {
+      if (orderRow.checkout_stage === 'awaiting_payment') {
+        db.prepare("UPDATE orders SET checkout_stage = 'paid', updated_at = ? WHERE id = ?").run(
+          changedAt,
+          orderRow.id,
+        );
+        orderRow.checkout_stage = 'paid';
+      }
+      const canComplete =
+        !['cancelled', 'completed'].includes(orderRow.status) &&
+        !isUnreleasedOrderRow(orderRow);
+      if (canComplete) {
+        db.prepare(
+          "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
+        ).run(changedAt, changedAt, orderRow.id);
+        if (orderRow.table_id) {
+          db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(
+            changedAt,
+            orderRow.table_id,
+          );
+        }
+      }
+    }
+  }
+
+  return { orderFullyPaid, orderRow };
+}
+
 export function completeExactBalanceSettlement(
   db: ReturnType<typeof getDatabase>,
   billId: string | number,
@@ -3587,42 +3702,12 @@ export function completeExactBalanceSettlement(
   const updatedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
   if (!updatedBill) return null;
 
-  const unpaidSibling = db
-    .prepare(
-      `SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`,
-    )
-    .get(bill.order_id, bill.id);
-  const orderFullyPaid = !unpaidSibling;
-  let orderRow: any = null;
-  if (orderFullyPaid) {
-    orderRow = db
-      .prepare(
-        'SELECT id, status, table_id, customer_id, release_status, dispatch_policy, checkout_stage, scheduled_for FROM orders WHERE id = ?',
-      )
-      .get(bill.order_id) as any;
-    if (orderRow && orderRow.checkout_stage === 'awaiting_payment') {
-      db.prepare("UPDATE orders SET checkout_stage = 'paid', updated_at = ? WHERE id = ?").run(
-        changedAt,
-        orderRow.id,
-      );
-    }
-    const canComplete =
-      orderRow &&
-      !['cancelled', 'completed'].includes(orderRow.status) &&
-      !isUnreleasedOrderRow(orderRow) &&
-      orderRow.dispatch_policy !== 'on_payment';
-    if (canComplete) {
-      db.prepare(
-        "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
-      ).run(changedAt, changedAt, bill.order_id);
-      if (orderRow.table_id) {
-        db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(
-          changedAt,
-          orderRow.table_id,
-        );
-      }
-    }
-  }
+  const { orderFullyPaid, orderRow } = reconcileOrderSettlement(
+    db,
+    bill.order_id,
+    changedAt,
+    approverId ? String(approverId) : undefined,
+  );
 
   const effectiveCustomerId = bill.customer_id || orderRow?.customer_id;
   const cashback = calculateCashback(db, bill, effectiveCustomerId);
@@ -3665,38 +3750,6 @@ export function completeExactBalanceSettlement(
   }
 
   return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId));
-}
-
-export async function handlePostPaymentRelease(
-  db: ReturnType<typeof getDatabase>,
-  orderId: string | number,
-  actorUserId?: string | null,
-): Promise<void> {
-  const order = db
-    .prepare(
-      'SELECT id, release_status, dispatch_policy, checkout_stage, scheduled_for FROM orders WHERE id = ?',
-    )
-    .get(orderId) as any;
-  if (!order || order.dispatch_policy !== 'on_payment' || order.checkout_stage !== 'paid') {
-    return;
-  }
-  if (order.release_status !== 'scheduled') {
-    return;
-  }
-  if (order.scheduled_for) {
-    const scheduledTime = parseDbTimestamp(order.scheduled_for).getTime();
-    if (scheduledTime > Date.now()) {
-      return;
-    }
-  }
-  try {
-    await releaseScheduledOrder(db, order.id, {
-      trigger: 'payment',
-      actorUserId: actorUserId || null,
-    });
-  } catch (err) {
-    console.error(`[MultiCounter] Post-payment release failed for order ${order.id}:`, err);
-  }
 }
 
 function applyPaymentBatch(
@@ -3825,41 +3878,13 @@ function applyPaymentBatch(
         `UPDATE bills SET payment_status = 'paid', paid_at = COALESCE(paid_at, ?), balance = 0, updated_at = ? WHERE id = ?`,
       ).run(changedAt, changedAt, billId);
     }
-    const unpaidSibling = db
-      .prepare(
-        `SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`,
-      )
-      .get(bill.order_id, bill.id);
-    const orderFullyPaid = !unpaidSibling;
-    if (orderFullyPaid) {
-      const order = db
-        .prepare(
-          'SELECT id, status, table_id, customer_id, release_status, dispatch_policy, checkout_stage, scheduled_for FROM orders WHERE id = ?',
-        )
-        .get(bill.order_id) as any;
-      if (order && order.checkout_stage === 'awaiting_payment') {
-        db.prepare("UPDATE orders SET checkout_stage = 'paid', updated_at = ? WHERE id = ?").run(
-          changedAt,
-          order.id,
-        );
-      }
-      if (
-        order &&
-        !['cancelled', 'completed'].includes(order.status) &&
-        !isUnreleasedOrderRow(order) &&
-        order.dispatch_policy !== 'on_payment'
-      ) {
-        db.prepare(
-          "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
-        ).run(changedAt, changedAt, bill.order_id);
-        if (order.table_id) {
-          db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(
-            changedAt,
-            order.table_id,
-          );
-        }
-      }
-    }
+    const settlementResult = reconcileOrderSettlement(
+      db,
+      bill.order_id,
+      changedAt,
+      idempotencyUserId,
+    );
+    const orderFullyPaid = settlementResult.orderFullyPaid;
     const freshBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
     const effectiveCustId = freshBill.customer_id;
     const cashback = calculateCashback(db, freshBill, effectiveCustId);
@@ -3999,41 +4024,13 @@ function applyPaymentBatch(
   let loyaltyPointsEarned = 0;
   let orderFullyPaid = false;
   if (paymentStatus === 'paid') {
-    const unpaidSibling = db
-      .prepare(
-        `SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`,
-      )
-      .get(bill.order_id, bill.id);
-    orderFullyPaid = !unpaidSibling;
-    if (orderFullyPaid) {
-      // Payment must not resurrect terminal orders (VALID_TRANSITIONS.cancelled = []).
-      const order = db
-        .prepare(
-          'SELECT id, status, table_id, release_status, dispatch_policy, checkout_stage, scheduled_for FROM orders WHERE id = ?',
-        )
-        .get(bill.order_id) as any;
-      if (order && order.checkout_stage === 'awaiting_payment') {
-        db.prepare("UPDATE orders SET checkout_stage = 'paid', updated_at = ? WHERE id = ?").run(
-          changedAt,
-          order.id,
-        );
-      }
-      const canComplete =
-        order &&
-        !['cancelled', 'completed'].includes(order.status) &&
-        !isUnreleasedOrderRow(order) &&
-        order.dispatch_policy !== 'on_payment';
-      if (canComplete) {
-        db.prepare(
-          "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
-        ).run(changedAt, changedAt, bill.order_id);
-        if (order.table_id)
-          db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(
-            changedAt,
-            order.table_id,
-          );
-      }
-    }
+    const settlementResult = reconcileOrderSettlement(
+      db,
+      bill.order_id,
+      changedAt,
+      idempotencyUserId,
+    );
+    orderFullyPaid = settlementResult.orderFullyPaid;
     const cashback = calculateCashback(db, bill, effectiveCustomerId);
     const alreadyCredited = db
       .prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`)

@@ -438,6 +438,77 @@ async function main() {
     });
     assertEqualOrThrow(invalidPolicyReject.status, 400, 'invalid dispatch_policy rejected 400');
 
+    // Reject invalid or mismatched checkout_stage (Item 1)
+    const invalidStageRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        checkout_stage: 'invalid_stage',
+        items: [{ product_id: 'prod-burger', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(invalidStageRes.status, 400, 'invalid checkout_stage rejected 400');
+
+    const mismatchedStageRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'immediate',
+        checkout_stage: 'awaiting_payment',
+        items: [{ product_id: 'prod-burger', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(mismatchedStageRes.status, 400, 'mismatched checkout_stage rejected 400');
+
+    // Idempotent POST /orders replay returns QR fields (Item 5)
+    const idemKeyOrder = `idem-order-test-${Date.now()}`;
+    const idemOrder1 = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: { ...serverUser.authHeader, 'Idempotency-Key': idemKeyOrder },
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-burger', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(idemOrder1.status, 201, 'idempotent initial order created 201');
+    assertOrThrow(!!idemOrder1.body?.qr_payload, 'initial response includes qr_payload');
+    assertOrThrow(!!idemOrder1.body?.qr_data_url, 'initial response includes qr_data_url');
+
+    const idemReplay = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: { ...serverUser.authHeader, 'Idempotency-Key': idemKeyOrder },
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-burger', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(idemReplay.status, 200, 'idempotent order replay 200');
+    assertEqualOrThrow(
+      idemReplay.body?.order?.order_number,
+      idemOrder1.body?.order?.order_number,
+      'replayed order number matches',
+    );
+    assertEqualOrThrow(
+      idemReplay.body?.qr_payload,
+      idemOrder1.body?.qr_payload,
+      'replayed qr_payload matches',
+    );
+    assertOrThrow(
+      typeof idemReplay.body?.qr_data_url === 'string' &&
+        idemReplay.body.qr_data_url.startsWith('data:image/png;base64,'),
+      'replayed qr_data_url is present',
+    );
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(idemOrder1.body.order.id);
+
     // Create valid takeaway order with dispatch_policy: 'on_payment'
     const initialBurgerStock = productStock(db, 'prod-burger');
     kotPrintCalls = [];
@@ -595,6 +666,92 @@ async function main() {
     });
     assertEqualOrThrow(lookupCancelled.status, 404, 'lookup cancelled ticket 404');
     db.prepare("UPDATE orders SET status = 'pending' WHERE id = ?").run(order1.id);
+
+    // Item 8: Non-multi-counter blocked scheduled order does NOT appear in awaiting-payment queue
+    const futureTimeImmediate = futureWallClockInZone('America/New_York', 15);
+    adjustStock(db, 'prod-limited', -productStock(db, 'prod-limited'), 'zero stock', owner.userId);
+    const nonMcBlockedOrder = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'immediate',
+        scheduled_for: futureTimeImmediate,
+        items: [{ product_id: 'prod-limited', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(nonMcBlockedOrder.status, 201, 'non-MC scheduled order created');
+    await req({
+      path: `/api/orders/${nonMcBlockedOrder.body.order.id}/release`,
+      method: 'POST',
+      headers: manager.authHeader,
+    });
+    const nonMcOrderBlockedRow = db
+      .prepare('SELECT release_status, dispatch_policy FROM orders WHERE id = ?')
+      .get(nonMcBlockedOrder.body.order.id) as any;
+    assertEqualOrThrow(nonMcOrderBlockedRow.release_status, 'blocked', 'non-MC order is blocked');
+    assertEqualOrThrow(nonMcOrderBlockedRow.dispatch_policy, 'immediate', 'dispatch_policy is immediate');
+
+    const queueCheckNonMc = await req({
+      path: '/api/orders/awaiting-payment',
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    const foundNonMcInQueue = queueCheckNonMc.body?.orders?.find(
+      (o: any) => o.id === nonMcBlockedOrder.body.order.id,
+    );
+    assertEqualOrThrow(foundNonMcInQueue, undefined, 'non-MC blocked order NOT in awaiting-payment queue');
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(nonMcBlockedOrder.body.order.id);
+    adjustStock(db, 'prod-limited', 1, 'restore stock', owner.userId);
+
+    // Item 10: Read-only ticket lookup never creates a bill
+    const orderWithoutBillRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-burger', quantity: 1 }],
+      },
+    });
+    const testOrderNoBill = orderWithoutBillRes.body.order;
+    db.prepare('DELETE FROM bills WHERE order_id = ?').run(testOrderNoBill.id);
+    const billsBeforeLookup = (
+      db.prepare('SELECT COUNT(*) as n FROM bills WHERE order_id = ?').get(testOrderNoBill.id) as any
+    ).n;
+    assertEqualOrThrow(billsBeforeLookup, 0, 'zero bills before read-only lookup');
+
+    const readOnlyLookupRes = await req({
+      path: `/api/orders/by-ticket/${testOrderNoBill.order_number}`,
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(readOnlyLookupRes.status, 200, 'lookup succeeds without bill');
+    assertEqualOrThrow(readOnlyLookupRes.body?.bill, null, 'bill is null when not generated');
+    const billsAfterLookup = (
+      db.prepare('SELECT COUNT(*) as n FROM bills WHERE order_id = ?').get(testOrderNoBill.id) as any
+    ).n;
+    assertEqualOrThrow(billsAfterLookup, 0, 'zero bills after read-only lookup (never created in GET)');
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(testOrderNoBill.id);
+
+    // Item 14: Ticket lookup by order_number vs id
+    const lookupByOrderNum = await req({
+      path: `/api/orders/by-ticket/${order1.order_number}`,
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(lookupByOrderNum.status, 200, 'lookup strictly by order_number 200');
+    assertEqualOrThrow(lookupByOrderNum.body?.order?.order_number, order1.order_number, 'matches order_number');
+
+    const lookupWithById = await req({
+      path: `/api/orders/by-ticket/${order1.id}?by=id`,
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(lookupWithById.status, 200, 'lookup with ?by=id matches order by internal id');
+    assertEqualOrThrow(lookupWithById.body?.order?.id, order1.id, 'matched order id');
 
     // -------------------------------------------------------------------------
     // 5. Prepayment Release Gates & Prepayment Lifecycle
@@ -875,6 +1032,166 @@ async function main() {
       'ticket lookup 404 after all split checks paid',
     );
 
+    // Item 9: Idempotent payment replay on POST /api/bills/:id/payments
+    const idemPayOrderRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-burger', quantity: 1 }],
+      },
+    });
+    const idemPayOrder = idemPayOrderRes.body.order;
+    const idemPayBill = db
+      .prepare('SELECT * FROM bills WHERE order_id = ?')
+      .get(idemPayOrder.id) as any;
+    const idemPayKey = `idem-pay-${Date.now()}`;
+
+    const idemPay1 = await req({
+      path: `/api/bills/${idemPayBill.id}/payments`,
+      method: 'POST',
+      headers: { ...cashier.authHeader, 'Idempotency-Key': idemPayKey },
+      body: {
+        payments: [{ method: 'cash', amount: Number(idemPayBill.total) }],
+      },
+    });
+    assertEqualOrThrow(idemPay1.status, 200, 'initial batch payment 200');
+    assertEqualOrThrow(idemPay1.body?.bill?.payment_status, 'paid', 'bill is paid');
+
+    const idemPayReplay = await req({
+      path: `/api/bills/${idemPayBill.id}/payments`,
+      method: 'POST',
+      headers: { ...cashier.authHeader, 'Idempotency-Key': idemPayKey },
+      body: {
+        payments: [{ method: 'cash', amount: Number(idemPayBill.total) }],
+      },
+    });
+    assertEqualOrThrow(idemPayReplay.status, 200, 'replayed batch payment 200');
+    assertEqualOrThrow(idemPayReplay.body?.bill?.payment_status, 'paid', 'replayed bill is still paid');
+    const billPaymentsRow = db
+      .prepare('SELECT payment_details FROM bills WHERE id = ?')
+      .get(idemPayBill.id) as any;
+    const recordedPayments = JSON.parse(billPaymentsRow.payment_details || '[]');
+    assertEqualOrThrow(recordedPayments.length, 1, 'exactly one payment recorded (no duplicate charge)');
+
+    // Item 9: Concurrent payment requests on same bill
+    const concurrentOrderRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-burger', quantity: 1 }],
+      },
+    });
+    const concurrentOrder = concurrentOrderRes.body.order;
+    const concurrentBill = db
+      .prepare('SELECT * FROM bills WHERE order_id = ?')
+      .get(concurrentOrder.id) as any;
+    const initialConcurrentStock = productStock(db, 'prod-burger');
+
+    const [payAttempt1, payAttempt2] = await Promise.all([
+      req({
+        path: `/api/bills/${concurrentBill.id}/payment`,
+        method: 'POST',
+        headers: cashier.authHeader,
+        body: { method: 'cash', amount: Number(concurrentBill.total) },
+      }),
+      req({
+        path: `/api/bills/${concurrentBill.id}/payment`,
+        method: 'POST',
+        headers: cashier.authHeader,
+        body: { method: 'cash', amount: Number(concurrentBill.total) },
+      }),
+    ]);
+    const successCount = [payAttempt1, payAttempt2].filter((r) => r.status === 200).length;
+    assertEqualOrThrow(successCount, 1, 'exactly one concurrent payment succeeds 200');
+    const rejectedStatus = [payAttempt1, payAttempt2].find((r) => r.status !== 200)?.status;
+    assertEqualOrThrow(rejectedStatus, 400, 'concurrent payment race rejected with 400');
+    assertEqualOrThrow(
+      productStock(db, 'prod-burger'),
+      initialConcurrentStock - 1,
+      'single stock deduction on concurrent payment',
+    );
+
+    // Item 4: Refunded split sibling keeps checkout_stage='awaiting_payment' and prevents release
+    const refundSiblingOrderRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'dine_in',
+        dispatch_policy: 'on_payment',
+        table_id: 'tbl-mc-1',
+        items: [
+          { product_id: 'prod-burger', quantity: 1 },
+          { product_id: 'prod-fries', quantity: 1 },
+        ],
+      },
+    });
+    const refundSiblingOrder = refundSiblingOrderRes.body.order;
+    const refundSourceBill = db
+      .prepare('SELECT * FROM bills WHERE order_id = ?')
+      .get(refundSiblingOrder.id) as any;
+    const refundItems = db
+      .prepare('SELECT * FROM order_items WHERE order_id = ?')
+      .all(refundSiblingOrder.id) as any[];
+
+    const refundSplitRes = await req({
+      path: `/api/bills/${refundSourceBill.id}/split-check`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: {
+        checks: [
+          { label: 'Guest A', items: [{ order_item_id: refundItems[0].id, quantity: 1 }] },
+          { label: 'Guest B', items: [{ order_item_id: refundItems[1].id, quantity: 1 }] },
+        ],
+      },
+    });
+    assertEqualOrThrow(refundSplitRes.status, 201, 'split into 2 checks');
+    const [rsBill1, rsBill2] = refundSplitRes.body.bills;
+
+    await req({
+      path: `/api/bills/${rsBill1.id}/payment`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: { method: 'cash', amount: Number(rsBill1.total) },
+    });
+    await req({
+      path: '/api/refunds',
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        bill_id: rsBill1.id,
+        amount: Number(rsBill1.total) / 100,
+        method: 'cash',
+        reason: 'Guest A left',
+        approver_id: owner.userId,
+        override_pin: '9999',
+      },
+    });
+
+    await req({
+      path: `/api/bills/${rsBill2.id}/payment`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: { method: 'cash', amount: Number(rsBill2.total) },
+    });
+
+    const refundSiblingOrderRow = db
+      .prepare('SELECT checkout_stage, release_status FROM orders WHERE id = ?')
+      .get(refundSiblingOrder.id) as any;
+    assertEqualOrThrow(
+      refundSiblingOrderRow.checkout_stage,
+      'awaiting_payment',
+      'checkout_stage stays awaiting_payment when sibling refunded',
+    );
+    assertEqualOrThrow(refundSiblingOrderRow.release_status, 'scheduled', 'order remains unreleased');
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(refundSiblingOrder.id);
+
     // -------------------------------------------------------------------------
     // 6. Scheduled + on_payment takeaway combination
     // -------------------------------------------------------------------------
@@ -934,6 +1251,49 @@ async function main() {
       'released',
       'order is released',
     );
+
+    // Item 15: Takeaway order completion when kds_enabled is false
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', datetime('now'))",
+    ).run();
+
+    const noKdsOrderRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-burger', quantity: 1 }],
+      },
+    });
+    const noKdsOrder = noKdsOrderRes.body.order;
+    const noKdsBill = db
+      .prepare('SELECT * FROM bills WHERE order_id = ?')
+      .get(noKdsOrder.id) as any;
+
+    await req({
+      path: `/api/bills/${noKdsBill.id}/payment`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: { method: 'cash', amount: Number(noKdsBill.total) },
+    });
+
+    const noKdsOrderRow = db
+      .prepare('SELECT status, release_status, checkout_stage FROM orders WHERE id = ?')
+      .get(noKdsOrder.id) as any;
+    assertEqualOrThrow(noKdsOrderRow.checkout_stage, 'paid', 'no-kds order checkout_stage is paid');
+    assertEqualOrThrow(noKdsOrderRow.release_status, 'released', 'no-kds order is released');
+    assertEqualOrThrow(
+      noKdsOrderRow.status,
+      'completed',
+      'takeaway order completed at release when kds is disabled',
+    );
+
+    // Restore kds_enabled = 'true'
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', datetime('now'))",
+    ).run();
 
     // -------------------------------------------------------------------------
     // 7. Paid-but-blocked on Stock Shortfall & Retry Release
@@ -1131,6 +1491,87 @@ async function main() {
       body: {},
     });
     assertEqualOrThrow(badPrintReq.status, 400, 'missing orderId rejected 400');
+
+    // Item 11: WebUSB printer returns webusb: true and bytes
+    const webusbPrinterId = 'printer-webusb-test';
+    db.prepare(
+      "INSERT OR REPLACE INTO printers (id, name, connection_type, paper_width, is_default) VALUES (?, 'WebUSB Thermal', 'webusb', '80mm', 0)",
+    ).run(webusbPrinterId);
+
+    const webusbPrintRes = await req({
+      path: '/api/printers/print-payment-ticket',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        orderId: order1.id,
+        printerId: webusbPrinterId,
+      },
+    });
+    assertEqualOrThrow(webusbPrintRes.status, 200, 'webusb print ticket 200');
+    assertEqualOrThrow(webusbPrintRes.body?.webusb, true, 'webusb is true');
+    assertOrThrow(Array.isArray(webusbPrintRes.body?.bytes), 'webusb bytes array returned');
+
+    // Item 13, 16, 17: Split-bill balance, currency and timezone formatting on payment ticket
+    const splitBalanceOrderRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'dine_in',
+        dispatch_policy: 'on_payment',
+        table_id: 'tbl-mc-1',
+        items: [
+          { product_id: 'prod-burger', quantity: 2 },
+          { product_id: 'prod-fries', quantity: 2 },
+        ],
+      },
+    });
+    const splitBalanceOrder = splitBalanceOrderRes.body.order;
+    const splitBalanceSourceBill = db
+      .prepare('SELECT * FROM bills WHERE order_id = ?')
+      .get(splitBalanceOrder.id) as any;
+    const sbItems = db
+      .prepare('SELECT * FROM order_items WHERE order_id = ?')
+      .all(splitBalanceOrder.id) as any[];
+
+    const splitBalanceSplitRes = await req({
+      path: `/api/bills/${splitBalanceSourceBill.id}/split-check`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: {
+        checks: [
+          { label: 'Check 1', items: [{ order_item_id: sbItems[0].id, quantity: 2 }] },
+          { label: 'Check 2', items: [{ order_item_id: sbItems[1].id, quantity: 2 }] },
+        ],
+      },
+    });
+    assertEqualOrThrow(splitBalanceSplitRes.status, 201, 'split into 2 checks for balance test');
+    const [sbCheck1] = splitBalanceSplitRes.body.bills;
+
+    // Pay Check 1 in full
+    await req({
+      path: `/api/bills/${sbCheck1.id}/payment`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: { method: 'cash', amount: Number(sbCheck1.total) },
+    });
+
+    // Check preview print for order - balance due should equal Check 2's balance
+    const sbPrintPreview = await req({
+      path: '/api/printers/print-payment-ticket',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        orderId: splitBalanceOrder.id,
+        preview: true,
+      },
+    });
+    assertEqualOrThrow(sbPrintPreview.status, 200, 'split balance print preview 200');
+    const previewBytes = Buffer.from(sbPrintPreview.body.bytes);
+    const previewText = previewBytes.toString('utf8');
+    assertOrThrow(previewText.includes('Balance Due:'), 'print ticket includes Balance Due');
+    assertOrThrow(previewText.includes('Date:'), 'print ticket includes localized Date');
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(splitBalanceOrder.id);
 
     // -------------------------------------------------------------------------
     // Summary

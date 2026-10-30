@@ -1545,14 +1545,22 @@ router.post(
       const db = getDatabase();
       let printer = printerId
         ? db.prepare('SELECT * FROM printers WHERE id = ?').get(printerId)
-        : db
+        : (db
             .prepare(
               `SELECT * FROM printers
                WHERE connection_type != 'webusb'
                ORDER BY is_default DESC, name
                LIMIT 1`,
             )
-            .get();
+            .get() ||
+           db
+            .prepare(
+              `SELECT * FROM printers
+               WHERE connection_type = 'webusb'
+               ORDER BY is_default DESC, name
+               LIMIT 1`,
+            )
+            .get());
 
       if (!printer && preview === true) {
         printer = { id: 0, name: 'Default 80mm Preview', paper_width: '80mm' };
@@ -1577,10 +1585,15 @@ router.post(
         tableName = tableRow?.number ?? null;
       }
 
-      const bills = db
-        .prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id ASC')
-        .all(order.id) as any[];
-      const balance = bills[0]?.balance ?? order.total;
+      const balanceRow = db
+        .prepare(
+          `SELECT COALESCE(SUM(balance), 0) AS total_balance, COUNT(*) AS bill_count
+           FROM bills
+           WHERE order_id = ? AND payment_status != 'refunded'`,
+        )
+        .get(order.id) as { total_balance: number; bill_count: number } | undefined;
+      const balance =
+        balanceRow && balanceRow.bill_count > 0 ? Number(balanceRow.total_balance) : order.total;
 
       const items = (order.items || []).map((item: any) => ({
         product_name: item.product_name,
@@ -1615,6 +1628,16 @@ router.post(
           success: true,
           preview: true,
           bytes: (result as any).bytes || [],
+          warnings: result.warnings || [],
+        });
+      }
+
+      if (result.ok && (result as any).connection_type === 'webusb') {
+        return res.json({
+          success: true,
+          webusb: true,
+          bytes: Array.from((result as any).bytes || []),
+          printerName: (printer as any).name,
           warnings: result.warnings || [],
         });
       }

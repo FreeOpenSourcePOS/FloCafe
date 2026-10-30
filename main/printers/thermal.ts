@@ -22,6 +22,7 @@ import {
   resolveTenantCurrency,
   type CurrencyDisplay,
   type DigitMode,
+  type RegionalSnapshot,
 } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import {
@@ -1410,10 +1411,39 @@ export async function printPaymentTicket(
 
     const { profile, columns: cols } = resolvePrinterContext(printer || { paper_width: '80mm' });
     const storeName = getSettingValue('restaurant_name') || 'FloCafe';
-    const currency = resolveTenantCurrency(
-      getSettingValue('currency') ?? '',
-      getSettingValue('country') ?? '',
-    );
+
+    let snapshot: RegionalSnapshot;
+    try {
+      snapshot = resolveRegionalSnapshot({
+        country: getSettingValue('country') || undefined,
+        currency: getSettingValue('currency') || undefined,
+        timezone: getSettingValue('timezone') || undefined,
+      });
+    } catch {
+      snapshot = resolveRegionalSnapshot({
+        country: 'US',
+        currency: 'USD',
+        timezone: 'UTC',
+      });
+    }
+    const currency = snapshot.currency;
+    const fractionDigits = snapshot.currencyFractionDigits;
+    const locale = snapshot.locale;
+    const tz = snapshot.timezone;
+    const prefix = resolveCurrencyPrefix(snapshot.currencySymbol || currency, false);
+    const formatAmount = (val: number): string =>
+      formatCurrency(val, prefix, locale, false, fractionDigits);
+
+    const localTime = (iso: string): string => {
+      try {
+        const d = parseDbTimestamp(iso);
+        if (isNaN(d.getTime())) return iso;
+        return d.toLocaleString('en-US-u-nu-latn', { timeZone: tz });
+      } catch {
+        return iso;
+      }
+    };
+
     const balance = options.balance ?? order.total;
 
     const padLine = (left: string, right: string) => {
@@ -1434,22 +1464,22 @@ export async function printPaymentTicket(
       lines.push(`Table: ${order.table_name}`);
     }
     if (order.created_at) {
-      lines.push(`Date: ${order.created_at}`);
+      lines.push(`Date: ${localTime(order.created_at)}`);
     }
     if (order.scheduled_for) {
-      lines.push(`Scheduled For: ${order.scheduled_for}`);
+      lines.push(`Scheduled For: ${localTime(order.scheduled_for)}`);
     }
 
     lines.push('-'.repeat(cols));
     for (const item of items) {
       const left = `${item.quantity}x ${item.product_name}`;
-      const right = item.total !== undefined ? `${currency} ${Number(item.total).toFixed(2)}` : '';
+      const right = item.total !== undefined ? formatAmount(Number(item.total)) : '';
       lines.push(padLine(left, right));
     }
 
     lines.push('-'.repeat(cols));
-    lines.push(padLine('Total:', `${currency} ${Number(order.total).toFixed(2)}`));
-    lines.push(padLine('Balance Due:', `${currency} ${Number(balance).toFixed(2)}`));
+    lines.push(padLine('Total:', formatAmount(Number(order.total))));
+    lines.push(padLine('Balance Due:', formatAmount(Number(balance))));
     lines.push('-'.repeat(cols));
     lines.push('{C}Please pay at the payment counter');
     lines.push('{C}Scan or enter ticket number to pay:');
@@ -1470,6 +1500,15 @@ export async function printPaymentTicket(
       return { ok: true, preview: true, bytes: Array.from(data), warnings: [] } as any;
     }
 
+    if (printer?.connection_type === 'webusb') {
+      return {
+        ok: true,
+        bytes: Array.from(data),
+        connection_type: 'webusb',
+        warnings: [],
+      } as any;
+    }
+
     return await dispatchPrint(printer, data, options.signal);
   } catch (error: unknown) {
     console.error('[Printer] Payment ticket print error:', error);
@@ -1483,7 +1522,7 @@ export async function printPaymentTicketDetailed(
   const id = correlationId();
   try {
     const dispatch = await printPaymentTicket(...args);
-    const result: PrintResult & { bytes?: number[]; preview?: boolean } = dispatch.ok
+    const result: PrintResult & { bytes?: number[]; preview?: boolean; connection_type?: string } = dispatch.ok
       ? {
           ok: true,
           correlationId: id,
@@ -1491,6 +1530,7 @@ export async function printPaymentTicketDetailed(
           warnings: dispatch.warnings,
           bytes: (dispatch as any).bytes,
           preview: (dispatch as any).preview,
+          connection_type: (dispatch as any).connection_type,
         }
       : {
           ok: false,

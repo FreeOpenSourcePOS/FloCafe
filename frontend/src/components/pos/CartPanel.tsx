@@ -899,6 +899,14 @@ export default function CartPanel({
               title={cart.orderType === 'delivery' ? t('sendToPaymentDeliveryError') : undefined}
             >
               {submitting ? t('placing') : t('sendToPayment')}
+              {!submitting && (
+                <span
+                  aria-hidden="true"
+                  className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
+                >
+                  Space
+                </span>
+              )}
             </Button>
           ) : multiCounterEnabled && onSendToPayment && counterRole === 'combined' ? (
             <>

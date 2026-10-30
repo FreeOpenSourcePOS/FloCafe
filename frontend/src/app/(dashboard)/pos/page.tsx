@@ -331,6 +331,8 @@ export default function POSPage() {
   const [ticketModalOrder, setTicketModalOrder] = useState<Order | null>(null);
   const [ticketModalQrDataUrl, setTicketModalQrDataUrl] = useState<string | null>(null);
   const [ticketModalQrPayload, setTicketModalQrPayload] = useState<string | null>(null);
+  const isSendingToPaymentRef = useRef(false);
+  const sendToPaymentIdempotencyRef = useRef<{ fingerprint: string; key: string } | null>(null);
   useEffect(() => {
     if (currentTenant?.timezone) {
       setStoreTimezone(currentTenant.timezone);
@@ -1291,37 +1293,6 @@ export default function POSPage() {
           })
           .catch(() => {});
 
-        api
-          .get('/settings/multi_counter_enabled')
-          .then((res) => {
-            const isEnabled = res.data.setting?.value === 'true';
-            setMultiCounterEnabled(isEnabled);
-            if (isEnabled) {
-              api
-                .get('/counters?is_active=true')
-                .then((cRes) => {
-                  const activeList: Counter[] = cRes.data.counters || [];
-                  setCounters(activeList);
-                  const tenantId = currentTenant?.id;
-                  const savedId =
-                    typeof window !== 'undefined'
-                      ? localStorage.getItem(`flocafe_active_counter_${tenantId}`)
-                      : null;
-                  if (savedId) {
-                    const matched = activeList.find((c) => c.id === savedId);
-                    if (matched) {
-                      setActiveCounter(matched);
-                      if (matched.role === 'payment') {
-                        setShowPaymentQueue(true);
-                      }
-                    }
-                  }
-                })
-                .catch(() => {});
-            }
-          })
-          .catch(() => {});
-
         // 2. Fetch other menu data
         const requests: Promise<{ data: Record<string, unknown> }>[] = [
           api.get('/categories?active=1'),
@@ -1362,17 +1333,76 @@ export default function POSPage() {
     setPrinterArabicShaping,
   ]);
 
+  const currentStoreId = currentTenant?.id || 'default';
+  useEffect(() => {
+    let cancelled = false;
+    setActiveCounter(null);
+    setShowPaymentQueue(false);
+    setCounters([]);
+
+    api
+      .get('/settings/multi_counter_enabled')
+      .then((res) => {
+        if (cancelled) return;
+        const isEnabled = res.data.setting?.value === 'true';
+        setMultiCounterEnabled(isEnabled);
+        if (isEnabled) {
+          api
+            .get('/counters?is_active=true')
+            .then((cRes) => {
+              if (cancelled) return;
+              const activeList: Counter[] = cRes.data.counters || [];
+              setCounters(activeList);
+              const savedId =
+                typeof window !== 'undefined'
+                  ? localStorage.getItem(`flocafe_active_counter_${currentStoreId}`)
+                  : null;
+              if (savedId) {
+                const matched = activeList.find((c) => c.id === savedId);
+                if (matched) {
+                  setActiveCounter(matched);
+                  if (matched.role === 'payment') {
+                    setShowPaymentQueue(true);
+                  }
+                } else {
+                  setActiveCounter(null);
+                  setShowPaymentQueue(false);
+                }
+              } else {
+                setActiveCounter(null);
+                setShowPaymentQueue(false);
+              }
+            })
+            .catch(() => {});
+        } else {
+          setActiveCounter(null);
+          setShowPaymentQueue(false);
+          setCounters([]);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMultiCounterEnabled(false);
+        setActiveCounter(null);
+        setShowPaymentQueue(false);
+        setCounters([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStoreId]);
+
   const handleSelectCounter = (counter: Counter | null) => {
     setActiveCounter(counter);
     if (multiCounterEnabled && counter?.role === 'payment') {
       setShowPaymentQueue(true);
     }
-    const tenantId = currentTenant?.id;
     if (typeof window !== 'undefined') {
       if (counter) {
-        localStorage.setItem(`flocafe_active_counter_${tenantId}`, counter.id);
+        localStorage.setItem(`flocafe_active_counter_${currentStoreId}`, counter.id);
       } else {
-        localStorage.removeItem(`flocafe_active_counter_${tenantId}`);
+        localStorage.removeItem(`flocafe_active_counter_${currentStoreId}`);
       }
     }
   };
@@ -1937,14 +1967,32 @@ export default function POSPage() {
   };
 
   const handleSendToPayment = async () => {
+    if (isSendingToPaymentRef.current) return;
     if (cart.orderType === 'delivery') {
       toast.error(t('sendToPaymentDeliveryError'));
       return;
     }
     if (!validateOrderPreflight()) return;
 
+    isSendingToPaymentRef.current = true;
     setSubmitting(true);
     try {
+      const orderItems = cart.items.map(cartItemToOrderItem);
+      const cartFingerprint = buildCurrentCartFingerprint(orderItems);
+      if (
+        !sendToPaymentIdempotencyRef.current ||
+        sendToPaymentIdempotencyRef.current.fingerprint !== cartFingerprint
+      ) {
+        sendToPaymentIdempotencyRef.current = {
+          fingerprint: cartFingerprint,
+          key:
+            typeof crypto !== 'undefined' && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `stp_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        };
+      }
+      const idempotencyKey = sendToPaymentIdempotencyRef.current.key;
+
       const orderPayload = {
         type: cart.orderType,
         table_id: cart.orderType === 'dine_in' ? cart.tableId : undefined,
@@ -1956,10 +2004,15 @@ export default function POSPage() {
         dispatch_policy: 'on_payment',
         waived_charge_ids: Array.from(cart.waivedChargeIds),
         opted_in_charge_ids: Array.from(cart.optedInChargeIds),
-        items: cart.items.map(cartItemToOrderItem),
+        items: orderItems,
       };
 
-      const { data } = await api.post('/orders', orderPayload);
+      const { data } = await api.post('/orders', orderPayload, {
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
+      });
+      sendToPaymentIdempotencyRef.current = null;
       const createdOrder = data.order as Order;
 
       setTicketModalOrder(createdOrder);
@@ -1975,6 +2028,7 @@ export default function POSPage() {
       const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
       toast.error(errData?.error || t('placeOrderFailed'));
     } finally {
+      isSendingToPaymentRef.current = false;
       setSubmitting(false);
     }
   };
@@ -2960,7 +3014,11 @@ export default function POSPage() {
       },
       onTender: () => {
         if (!submitting && cart.items.length > 0) {
-          void handlePlaceOrder();
+          if (multiCounterEnabled && activeCounter?.role === 'ordering') {
+            void handleSendToPayment();
+          } else {
+            void handlePlaceOrder();
+          }
         }
       },
       onToggleTables: () => {
@@ -2969,6 +3027,12 @@ export default function POSPage() {
         }
       },
       onOpenCheckout: () => {
+        if (multiCounterEnabled && activeCounter?.role === 'ordering') {
+          if (!submitting && cart.items.length > 0) {
+            void handleSendToPayment();
+          }
+          return;
+        }
         if (
           shouldTakePaymentNow ||
           !isRestaurant ||

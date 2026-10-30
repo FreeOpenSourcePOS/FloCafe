@@ -23,6 +23,7 @@ import api from '@/lib/api';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { tenantCan } from '@/lib/permissions';
 import { useAuthStore } from '@/store/auth';
+import { printerService } from '@/lib/printer/PrinterService';
 import type { Order, Bill } from '@/lib/types';
 
 export interface AwaitingPaymentOrder {
@@ -222,7 +223,10 @@ export function PaymentQueueDrawer({
   const handlePrintTicket = async (order: AwaitingPaymentOrder) => {
     setPrintingId(order.id);
     try {
-      await api.post('/printers/print-payment-ticket', { order_id: order.id });
+      const res = await api.post('/printers/print-payment-ticket', { order_id: order.id });
+      if (res.data?.webusb && Array.isArray(res.data.bytes)) {
+        await printerService.print(Uint8Array.from(res.data.bytes));
+      }
       toast.success(t('paymentTicketPrinted'));
     } catch (err: unknown) {
       const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;

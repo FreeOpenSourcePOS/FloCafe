@@ -201,7 +201,9 @@ category narrowing is re-evaluated inside the transaction that applies a status 
 create orders" row above — can view and act on every order, including ones other staff created.
 There is no per-order `user_id` check anywhere in the authorization model. Restriction is by
 permission and, for kitchen operations, by KDS stage, station, and category. Accountability comes
-from audit attribution, not from hiding orders between staff.
+from audit attribution, not from hiding orders between staff. Multi-counter ordering follows this
+invariant: counter roles (`ordering`, `payment`, `combined`) guide interface defaults, but staff
+permissions remain authoritative and orders are never ownership-gated across counters.
 
 **Expenses.** Expense records are store-wide: `expenses.view` reads them, and `expenses.manage`
 together with view writes, voids, and replaces them. There is no per-expense ownership check, and

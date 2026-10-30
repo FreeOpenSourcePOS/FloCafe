@@ -10133,6 +10133,37 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       );
     },
   },
+  {
+    version: 124,
+    name: 'multi_counter_ordering',
+    up: () => {
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('checkout_stage')) {
+        db.exec(
+          "ALTER TABLE orders ADD COLUMN checkout_stage TEXT NOT NULL DEFAULT 'paid' CHECK (checkout_stage IN ('building', 'awaiting_payment', 'paid'))",
+        );
+      }
+      if (!orderColumns.includes('dispatch_policy')) {
+        db.exec(
+          "ALTER TABLE orders ADD COLUMN dispatch_policy TEXT NOT NULL DEFAULT 'immediate' CHECK (dispatch_policy IN ('immediate', 'on_payment'))",
+        );
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS counters (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          role TEXT NOT NULL CHECK (role IN ('ordering', 'payment', 'combined')),
+          is_active INTEGER NOT NULL DEFAULT 1,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_counters_active ON counters(is_active, sort_order);
+        CREATE INDEX IF NOT EXISTS idx_orders_checkout_queue ON orders(checkout_stage, release_status) WHERE status NOT IN ('cancelled', 'completed');
+      `);
+      insertSettingIfMissing('multi_counter_enabled', 'false');
+    },
+  },
 ];
 
 export function backfillWhatsAppMessageAttempts(

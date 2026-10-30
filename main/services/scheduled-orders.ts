@@ -33,7 +33,9 @@ import { autoPrintReleasedOrderKot } from '../routes/printers';
 import { parseScheduledForInput } from '../../shared/scheduled-time';
 
 export type OrderReleaseStatus = 'scheduled' | 'released' | 'blocked';
-export type ReleaseTrigger = 'sweep' | 'startup' | 'resume' | 'manual';
+export type ReleaseTrigger = 'sweep' | 'startup' | 'resume' | 'manual' | 'payment';
+export type CheckoutStage = 'building' | 'awaiting_payment' | 'paid';
+export type DispatchPolicy = 'immediate' | 'on_payment';
 
 export const SCHEDULED_SWEEP_INTERVAL_MS = 10_000;
 export const ALLOWED_SCHEDULED_ORDER_TYPES = new Set(['takeaway', 'delivery']);
@@ -67,6 +69,8 @@ export interface ScheduledOrderDbRow {
   release_status: OrderReleaseStatus;
   released_at: string | null;
   release_blocked_reason: string | null;
+  checkout_stage?: CheckoutStage | null;
+  dispatch_policy?: DispatchPolicy | null;
   [key: string]: unknown;
 }
 
@@ -238,15 +242,21 @@ export function assertScheduledOrderUnpaidForEdit(
     | {
         scheduled_for?: string | null;
         release_status?: string | null;
+        dispatch_policy?: string | null;
+        checkout_stage?: string | null;
       }
     | null
     | undefined,
 ): void {
-  if (!isScheduledOrderRow(order)) return;
+  const isGuarded =
+    isScheduledOrderRow(order) ||
+    order?.dispatch_policy === 'on_payment' ||
+    order?.checkout_stage === 'awaiting_payment';
+  if (!isGuarded) return;
   if (hasRecordedOrderPayment(db, orderId)) {
     throw new ScheduledOrderError(
       409,
-      'Item and financial edits are locked after payment is recorded on a scheduled order. Use the refund or payment correction flow instead.',
+      'Item and financial edits are locked after payment is recorded on a scheduled or awaiting-payment order. Use the refund or payment correction flow instead.',
       'SCHEDULED_ORDER_PAID',
     );
   }
@@ -354,6 +364,26 @@ export async function releaseScheduledOrder(
       };
     }
 
+    // Gate 1: If dispatch_policy === 'on_payment', full payment across all applicable bills is required.
+    if (currentOrder.dispatch_policy === 'on_payment') {
+      const isPaid = isOrderSettledAndNonRefunded(db, currentOrder.id);
+      if (!isPaid) {
+        if (isAutoTrigger) {
+          return {
+            outcome: 'skipped',
+            reason: 'awaiting_payment',
+            order: currentOrder,
+          };
+        }
+        throw new ScheduledOrderError(
+          409,
+          'Multi-counter orders cannot be released to the kitchen before full payment is completed.',
+          'ORDER_NOT_PAID',
+        );
+      }
+    }
+
+    // Gate 2: If scheduled_for is set, scheduled_for must be due (unless staff explicitly triggered manual release after payment)
     if (isAutoTrigger) {
       if (currentOrder.release_status !== 'scheduled') {
         return {
@@ -362,20 +392,15 @@ export async function releaseScheduledOrder(
           order: currentOrder,
         };
       }
-      if (!currentOrder.scheduled_for) {
-        return {
-          outcome: 'skipped',
-          reason: 'missing_scheduled_for',
-          order: currentOrder,
-        };
-      }
-      const scheduledMs = parseDbTimestamp(currentOrder.scheduled_for).getTime();
-      if (!Number.isFinite(scheduledMs) || scheduledMs > nowDate.getTime()) {
-        return {
-          outcome: 'skipped',
-          reason: 'not_due',
-          order: currentOrder,
-        };
+      if (currentOrder.scheduled_for) {
+        const scheduledMs = parseDbTimestamp(currentOrder.scheduled_for).getTime();
+        if (!Number.isFinite(scheduledMs) || scheduledMs > nowDate.getTime()) {
+          return {
+            outcome: 'skipped',
+            reason: 'not_due',
+            order: currentOrder,
+          };
+        }
       }
     } else if (
       currentOrder.release_status !== 'scheduled' &&
@@ -780,9 +805,11 @@ export async function releaseScheduledOrder(
       | { value?: string }
       | undefined;
     const kdsEnabled = kdsSetting?.value !== 'false';
-    const shouldCompleteAtRelease =
-      isOrderSettledAndNonRefunded(db, currentOrder.id) &&
-      (!kdsEnabled || !hasActiveUnservedOrderItems(db, currentOrder.id));
+    const isSettled = isOrderSettledAndNonRefunded(db, currentOrder.id);
+    const hasUnservedKitchenItems = kdsEnabled && hasActiveUnservedOrderItems(db, currentOrder.id);
+    const isDineInWithTable = currentOrder.type === 'dine_in' || Boolean(currentOrder.table_id);
+
+    const shouldCompleteAtRelease = isSettled && !hasUnservedKitchenItems && !isDineInWithTable;
 
     if (shouldCompleteAtRelease) {
       db.prepare(
@@ -871,12 +898,15 @@ export async function sweepDueScheduledOrders(
       `SELECT id, scheduled_for
        FROM orders
        WHERE release_status = 'scheduled'
-         AND scheduled_for IS NOT NULL
-         AND scheduled_for <= ?
          AND status NOT IN ('cancelled', 'completed')
-       ORDER BY scheduled_for ASC, id ASC`,
+         AND (
+           (scheduled_for IS NOT NULL AND scheduled_for <= ?)
+           OR
+           (dispatch_policy = 'on_payment' AND checkout_stage = 'paid' AND (scheduled_for IS NULL OR scheduled_for <= ?))
+         )
+       ORDER BY COALESCE(scheduled_for, created_at) ASC, id ASC`,
     )
-    .all(nowIso) as Array<{ id: number; scheduled_for: string }>;
+    .all(nowIso, nowIso) as Array<{ id: number; scheduled_for: string }>;
 
   const summary: ScheduledSweepSummary = {
     checkedCount: dueRows.length,

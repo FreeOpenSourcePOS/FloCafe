@@ -232,6 +232,8 @@ export interface Order {
   release_status?: 'scheduled' | 'released' | 'blocked';
   released_at?: string | null;
   release_blocked_reason?: string | null;
+  checkout_stage?: 'building' | 'awaiting_payment' | 'paid';
+  dispatch_policy?: 'immediate' | 'on_payment';
   cancelled_at?: string | null;
   cancellation_reason?: string | null;
   items?: OrderItem[];
@@ -457,4 +459,14 @@ export interface CartItem {
   variant?: ProductVariant | null;
   /** Owner-set selling price for this line, sent to the server when the order is placed. */
   price_override?: { price: number; reason: string } | null;
+}
+
+export interface Counter {
+  id: string;
+  name: string;
+  role: 'ordering' | 'payment' | 'combined';
+  is_active: number | boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
 }

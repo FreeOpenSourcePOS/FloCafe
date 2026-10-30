@@ -22,6 +22,7 @@ import {
   resolveTenantCurrency,
   type CurrencyDisplay,
   type DigitMode,
+  type RegionalSnapshot,
 } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import {
@@ -181,6 +182,9 @@ export type DispatchResult = {
   driverName?: string;
   printerStatus?: number;
   warnings?: PrintWarning[];
+  bytes?: number[] | Buffer;
+  preview?: boolean;
+  connection_type?: string;
 };
 
 export type PrintFailureClass =
@@ -1354,10 +1358,228 @@ export async function printDeliverySlipDetailed(
   }
 }
 
+export function buildEscPosQrCode(payload: string): Buffer {
+  const payloadBytes = Buffer.from(payload, 'utf8');
+  const pL = (payloadBytes.length + 3) & 0xff;
+  const pH = ((payloadBytes.length + 3) >> 8) & 0xff;
+
+  return Buffer.concat([
+    Buffer.from([0x1b, 0x61, 0x01]),
+    Buffer.from([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]),
+    Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, 0x06]),
+    Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31]),
+    Buffer.from([0x1d, 0x28, 0x6b, pL, pH, 0x31, 0x50, 0x30]),
+    payloadBytes,
+    Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]),
+    Buffer.from([0x1b, 0x61, 0x00]),
+  ]);
+}
+
+export interface PaymentTicketOrder {
+  readonly id: number | string;
+  readonly order_number: string;
+  readonly type: string;
+  readonly table_id?: number | string | null;
+  readonly table_name?: string | null;
+  readonly customer_name?: string | null;
+  readonly total: number;
+  readonly created_at?: string;
+  readonly scheduled_for?: string | null;
+}
+
+export interface PaymentTicketItem {
+  readonly product_name: string;
+  readonly quantity: number;
+  readonly unit_price?: number;
+  readonly total?: number;
+}
+
+export async function printPaymentTicket(
+  order: PaymentTicketOrder,
+  items: readonly PaymentTicketItem[],
+  options: {
+    balance?: number;
+    useUnicode?: boolean;
+    targetPrinter?: any;
+    signal?: AbortSignal;
+    preview?: boolean;
+  } = {},
+): Promise<DispatchResult> {
+  try {
+    if (options.signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
+    const printer = options.targetPrinter || getPrinterConfig();
+    if (!printer && !options.preview) {
+      return { ok: false, detail: 'No printer configured' };
+    }
+
+    const { profile, columns: cols } = resolvePrinterContext(printer || { paper_width: '80mm' });
+    const storeName = getSettingValue('restaurant_name') || 'FloCafe';
+
+    let snapshot: RegionalSnapshot;
+    try {
+      snapshot = resolveRegionalSnapshot({
+        country: getSettingValue('country') || undefined,
+        currency: getSettingValue('currency') || undefined,
+        timezone: getSettingValue('timezone') || undefined,
+      });
+    } catch {
+      snapshot = resolveRegionalSnapshot({
+        country: 'US',
+        currency: 'USD',
+        timezone: 'UTC',
+      });
+    }
+    const currency = snapshot.currency;
+    const fractionDigits = snapshot.currencyFractionDigits;
+    const locale = snapshot.locale;
+    const tz = snapshot.timezone;
+    const prefix = resolveCurrencyPrefix(snapshot.currencySymbol || currency, false);
+    const formatAmount = (val: number): string =>
+      formatCurrency(val, prefix, locale, false, fractionDigits);
+
+    const localTime = (iso: string): string => {
+      try {
+        const d = parseDbTimestamp(iso);
+        if (isNaN(d.getTime())) return iso;
+        return d.toLocaleString('en-US-u-nu-latn', { timeZone: tz });
+      } catch {
+        return iso;
+      }
+    };
+
+    const balance = options.balance ?? order.total;
+
+    const padLine = (left: string, right: string) => {
+      const space = cols - left.length - right.length;
+      return space > 0 ? left + ' '.repeat(space) + right : left + ' ' + right;
+    };
+
+    const lines: string[] = [
+      '{INIT}',
+      `{C}{B}${storeName}`,
+      '{C}{B}PAYMENT TICKET',
+      `{C}Ticket #: ${order.order_number}`,
+      '-'.repeat(cols),
+      `Type: ${order.type === 'dine_in' ? 'Dine In' : 'Takeaway'}`,
+    ];
+
+    if (order.table_name) {
+      lines.push(`Table: ${order.table_name}`);
+    }
+    if (order.created_at) {
+      lines.push(`Date: ${localTime(order.created_at)}`);
+    }
+    if (order.scheduled_for) {
+      lines.push(`Scheduled For: ${localTime(order.scheduled_for)}`);
+    }
+
+    lines.push('-'.repeat(cols));
+    for (const item of items) {
+      const left = `${item.quantity}x ${item.product_name}`;
+      const right = item.total !== undefined ? formatAmount(Number(item.total)) : '';
+      lines.push(padLine(left, right));
+    }
+
+    lines.push('-'.repeat(cols));
+    lines.push(padLine('Total:', formatAmount(Number(order.total))));
+    lines.push(padLine('Balance Due:', formatAmount(Number(balance))));
+    lines.push('-'.repeat(cols));
+    lines.push('{C}Please pay at the payment counter');
+    lines.push('{C}Scan or enter ticket number to pay:');
+
+    const qrPayload = `FLOCAFE-TICKET:${order.order_number}`;
+    const qrBytes = buildEscPosQrCode(qrPayload);
+    lines.push(`{RAW_BYTES:${qrBytes.toString('base64')}}`);
+    lines.push(`{C}${qrPayload}`);
+    lines.push('');
+    lines.push('{CUT}');
+
+    const data = buildEscPos(lines, options.useUnicode ?? false, {
+      cutMode: profile.cutMode,
+      columns: cols,
+    });
+
+    if (options.preview) {
+      return { ok: true, preview: true, bytes: Array.from(data), warnings: [] };
+    }
+
+    if (printer?.connection_type === 'webusb') {
+      return {
+        ok: true,
+        bytes: Array.from(data),
+        connection_type: 'webusb',
+        warnings: [],
+      };
+    }
+
+    return await dispatchPrint(printer, data, options.signal);
+  } catch (error: unknown) {
+    console.error('[Printer] Payment ticket print error:', error);
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export type PaymentTicketPrintResult = PrintResult & {
+  bytes?: number[] | Buffer;
+  preview?: boolean;
+  connection_type?: string;
+};
+
+export async function printPaymentTicketDetailed(
+  ...args: Parameters<typeof printPaymentTicket>
+): Promise<PaymentTicketPrintResult> {
+  const id = correlationId();
+  try {
+    const dispatch = await printPaymentTicket(...args);
+    const result: PaymentTicketPrintResult = dispatch.ok
+      ? {
+          ok: true,
+          correlationId: id,
+          stage: 'dispatch',
+          warnings: dispatch.warnings,
+          bytes: dispatch.bytes,
+          preview: dispatch.preview,
+          connection_type: dispatch.connection_type,
+        }
+      : {
+          ok: false,
+          code: 'print.payment_ticket.failed',
+          correlationId: id,
+          stage: 'dispatch',
+          detail: dispatch.detail,
+          failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
+          platformErrorCode:
+            dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
+          jobId: dispatch.jobId,
+          driverName: dispatch.driverName,
+          printerStatus: dispatch.printerStatus,
+          warnings: dispatch.warnings,
+        };
+    if (!result.ok) reportPrintFailure('payment_ticket', result);
+    return result;
+  } catch (error) {
+    const detail = (error as Error).message;
+    const result: PrintResult = {
+      ok: false,
+      code: 'print.payment_ticket.failed',
+      correlationId: id,
+      stage: 'dispatch',
+      detail,
+      failureClass: classifyPrintFailure(detail),
+      platformErrorCode: extractPlatformErrorCode(detail),
+    };
+    reportPrintFailure('payment_ticket', result);
+    return result;
+  }
+}
+
 /**
  * Report print failure via telemetry tiers (best-effort, non-blocking).
  */
-function reportPrintFailure(kind: 'receipt' | 'kot' | 'delivery_slip', result: PrintResult): void {
+function reportPrintFailure(
+  kind: 'receipt' | 'kot' | 'delivery_slip' | 'payment_ticket',
+  result: PrintResult,
+): void {
   let connectionType = 'unknown';
   try {
     const configured = getPrinterConfig()?.connection_type;

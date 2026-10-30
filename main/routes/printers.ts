@@ -1571,9 +1571,9 @@ router.post(
 
       let tableName: string | null = null;
       if (order.table_id) {
-        const tableRow = db.prepare('SELECT number FROM tables WHERE id = ?').get(order.table_id) as
-          | { number: string }
-          | undefined;
+        const tableRow = db
+          .prepare('SELECT number FROM tables WHERE id = ?')
+          .get(order.table_id) as { number: string } | undefined;
         tableName = tableRow?.number ?? null;
       }
 

@@ -56,15 +56,16 @@ export function PaymentTicketConfirmationModal({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="sm:max-w-md text-center" data-testid="payment-ticket-confirmation-modal">
+      <DialogContent
+        className="sm:max-w-md text-center"
+        data-testid="payment-ticket-confirmation-modal"
+      >
         <DialogHeader>
           <DialogTitle className="text-xl font-bold flex items-center justify-center gap-2">
             <QrCode className="size-6 text-brand" />
             {t('paymentTicket')}
           </DialogTitle>
-          <DialogDescription>
-            {t('paymentTicketDesc')}
-          </DialogDescription>
+          <DialogDescription>{t('paymentTicketDesc')}</DialogDescription>
         </DialogHeader>
 
         <div className="my-4 flex flex-col items-center space-y-4">
@@ -72,7 +73,10 @@ export function PaymentTicketConfirmationModal({
             <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
               {t('ticketNumber')}
             </p>
-            <p className="text-4xl font-extrabold text-brand my-1" data-testid="payment-ticket-number">
+            <p
+              className="text-4xl font-extrabold text-brand my-1"
+              data-testid="payment-ticket-number"
+            >
               #{order.order_number}
             </p>
             <div className="flex justify-between items-center text-sm pt-2 border-t border-border mt-2">
@@ -81,9 +85,7 @@ export function PaymentTicketConfirmationModal({
                   ? `${t('orderTypeDineIn')}${order.table?.name ? ` (${order.table.name})` : ''}`
                   : t('orderTypeTakeaway')}
               </span>
-              <span className="font-bold text-foreground text-base">
-                {fmt(order.total)}
-              </span>
+              <span className="font-bold text-foreground text-base">{fmt(order.total)}</span>
             </div>
           </div>
 
@@ -103,9 +105,7 @@ export function PaymentTicketConfirmationModal({
             </div>
           )}
 
-          <p className="text-xs text-muted-foreground">
-            {t('paymentTicketInstruction')}
-          </p>
+          <p className="text-xs text-muted-foreground">{t('paymentTicketInstruction')}</p>
         </div>
 
         <DialogFooter className="flex sm:flex-row gap-2 justify-between">

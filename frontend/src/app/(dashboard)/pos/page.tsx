@@ -326,6 +326,7 @@ export default function POSPage() {
   const [showPaymentQueue, setShowPaymentQueue] = useState(false);
   const [paymentQueueCount, setPaymentQueueCount] = useState(0);
   const [paymentQueueBlockedCount, setPaymentQueueBlockedCount] = useState(0);
+  const [paymentQueueRefreshKey, setPaymentQueueRefreshKey] = useState(0);
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [ticketModalOrder, setTicketModalOrder] = useState<Order | null>(null);
   const [ticketModalQrDataUrl, setTicketModalQrDataUrl] = useState<string | null>(null);
@@ -2851,6 +2852,7 @@ export default function POSPage() {
     refreshTables();
     void refreshScheduledOrders();
     void refreshPaymentQueueCounts();
+    setPaymentQueueRefreshKey((k) => k + 1);
 
     if (bill) {
       try {
@@ -3499,6 +3501,7 @@ export default function POSPage() {
         open={showPaymentQueue}
         onClose={() => setShowPaymentQueue(false)}
         onPayOrder={handlePayScheduledOrder}
+        refreshKey={paymentQueueRefreshKey}
         onRefundOrder={(order, bills) => {
           setShowPaymentQueue(false);
           setRefundModalTarget({ order, bills });

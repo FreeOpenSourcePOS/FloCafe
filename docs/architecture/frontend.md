@@ -646,16 +646,17 @@ frontend/src/
 │   ├── kds/                    Kitchen display, login, tabs and kanban views
 │   ├── layout/                 Title bar, sidebar, status bar, auth guard, theme sync
 │   ├── orders/                 Order card, history grid, refund modal
-│   ├── pos/                    Cart, product grid, payment, number pad, checkout modals
+│   ├── pos/                    Cart, product grid, payment, number pad, checkout modals,
+│   │                           payment queue drawer, payment ticket modal
 │   ├── products/               Product image uploader
 │   ├── providers/              I18nProvider
 │   ├── settings/               The settings screen's building blocks:
-│   │   BetaChannelToggle, ChargesSettingsCard, CurrencyResetDialog, DatabaseSettingsTab,
-│   │   GeneralSettingsTab, HealthCheckDialog,
-│   │   InitializeDatabaseDialog, LocalePreferencesPanel, MasterPinPrompt,
-│   │   PaymentMethodsSettings, PermissionAuditLog, PermissionMatrix,
-│   │   PrintersSettingsTab, SettingsTabShell, TaxConfigurationPanel,
-│   │   Toggle, WhatsAppEnableCard
+│   │   BetaChannelToggle, ChargesSettingsCard, CountersSettingsTab,
+│   │   CurrencyResetDialog, DatabaseSettingsTab, GeneralSettingsTab,
+│   │   HealthCheckDialog, InitializeDatabaseDialog, LocalePreferencesPanel,
+│   │   MasterPinPrompt, PaymentMethodsSettings, PermissionAuditLog,
+│   │   PermissionMatrix, PrintersSettingsTab, SettingsTabShell,
+│   │   TaxConfigurationPanel, Toggle, WhatsAppEnableCard
 │   ├── support/                The support hub: SupportTicketForm, DiagnosticsPanel
 │   ├── tables/                 Floorplan editor, table move modal, table turnover badge
 │   ├── ui/                     shadcn/ui primitives

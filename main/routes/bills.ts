@@ -1319,11 +1319,7 @@ export function createOrSyncBillForOrder(
   const serviceCharge = order.service_charge || 0;
   const currency = getTenantCurrency();
   const pack = getActiveCountryPack(getSettingValue('country') || '');
-  const { total, adjustment: roundOff } = applyPayableRounding(
-    order.total || 0,
-    pack,
-    currency,
-  );
+  const { total, adjustment: roundOff } = applyPayableRounding(order.total || 0, pack, currency);
 
   const runResult = db
     .prepare(`

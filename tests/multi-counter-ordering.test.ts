@@ -121,7 +121,13 @@ const { resetPinRateLimitForTests } = require('../main/routes/orders');
 const { registerRoutes } = require('../main/routes/index');
 const { stopKdsServer } = require('../main/kds-server');
 
-function adjustStock(db: any, productId: string, quantityDelta: number, reason: string, actorUserId: string) {
+function adjustStock(
+  db: any,
+  productId: string,
+  quantityDelta: number,
+  reason: string,
+  actorUserId: string,
+) {
   adjustProductStock(db, {
     productId,
     quantityDelta,
@@ -244,16 +250,20 @@ async function main() {
     console.log('\n--- 1. Multi-counter Settings Toggle ---');
 
     // Non-owner cannot toggle multi_counter_enabled
-    const cashierToggle = await req( {
+    const cashierToggle = await req({
       path: '/api/settings/multi_counter_enabled',
       method: 'PUT',
       headers: cashier.authHeader,
       body: { value: 'true' },
     });
-    assertEqualOrThrow(cashierToggle.status, 403, 'non-owner toggle multi_counter_enabled rejected 403');
+    assertEqualOrThrow(
+      cashierToggle.status,
+      403,
+      'non-owner toggle multi_counter_enabled rejected 403',
+    );
 
     // Owner can toggle multi_counter_enabled
-    const ownerToggle = await req( {
+    const ownerToggle = await req({
       path: '/api/settings/multi_counter_enabled',
       method: 'PUT',
       headers: owner.authHeader,
@@ -261,7 +271,7 @@ async function main() {
     });
     assertEqualOrThrow(ownerToggle.status, 200, 'owner can enable multi_counter_enabled');
 
-    const checkSetting = await req( {
+    const checkSetting = await req({
       path: '/api/settings/multi_counter_enabled',
       method: 'GET',
       headers: cashier.authHeader,
@@ -275,7 +285,7 @@ async function main() {
     console.log('\n--- 2. Counters CRUD API ---');
 
     // Initial list is empty
-    const listInitial = await req( {
+    const listInitial = await req({
       path: '/api/counters',
       method: 'GET',
       headers: serverUser.authHeader,
@@ -284,7 +294,7 @@ async function main() {
     assertEqualOrThrow(listInitial.body?.counters?.length, 0, 'initial counters count is 0');
 
     // Non-owner cannot create counter
-    const serverCreate = await req( {
+    const serverCreate = await req({
       path: '/api/counters',
       method: 'POST',
       headers: serverUser.authHeader,
@@ -293,7 +303,7 @@ async function main() {
     assertEqualOrThrow(serverCreate.status, 403, 'non-owner cannot create counter');
 
     // Validation checks
-    const badRole = await req( {
+    const badRole = await req({
       path: '/api/counters',
       method: 'POST',
       headers: owner.authHeader,
@@ -301,7 +311,7 @@ async function main() {
     });
     assertEqualOrThrow(badRole.status, 400, 'invalid counter role rejected 400');
 
-    const emptyName = await req( {
+    const emptyName = await req({
       path: '/api/counters',
       method: 'POST',
       headers: owner.authHeader,
@@ -310,7 +320,7 @@ async function main() {
     assertEqualOrThrow(emptyName.status, 400, 'empty counter name rejected 400');
 
     // Create 3 counters with different roles
-    const c1Res = await req( {
+    const c1Res = await req({
       path: '/api/counters',
       method: 'POST',
       headers: owner.authHeader,
@@ -320,7 +330,7 @@ async function main() {
     const c1 = c1Res.body.counter;
     assertEqualOrThrow(c1.role, 'ordering', 'counter role is ordering');
 
-    const c2Res = await req( {
+    const c2Res = await req({
       path: '/api/counters',
       method: 'POST',
       headers: owner.authHeader,
@@ -329,7 +339,7 @@ async function main() {
     assertEqualOrThrow(c2Res.status, 201, 'create payment counter 201');
     const c2 = c2Res.body.counter;
 
-    const c3Res = await req( {
+    const c3Res = await req({
       path: '/api/counters',
       method: 'POST',
       headers: owner.authHeader,
@@ -339,7 +349,7 @@ async function main() {
     const c3 = c3Res.body.counter;
 
     // Check list ordering
-    const listRes = await req( {
+    const listRes = await req({
       path: '/api/counters',
       method: 'GET',
       headers: cashier.authHeader,
@@ -349,30 +359,43 @@ async function main() {
     assertEqualOrThrow(listRes.body.counters[1].id, c2.id, 'second counter sorted by sort_order');
 
     // Update counter
-    const updateRes = await req( {
+    const updateRes = await req({
       path: `/api/counters/${c3.id}`,
       method: 'PUT',
       headers: owner.authHeader,
-      body: { name: 'Express Combined Renamed', role: 'combined', is_active: false, sort_order: 10 },
+      body: {
+        name: 'Express Combined Renamed',
+        role: 'combined',
+        is_active: false,
+        sort_order: 10,
+      },
     });
     assertEqualOrThrow(updateRes.status, 200, 'update counter 200');
-    assertEqualOrThrow(updateRes.body.counter.name, 'Express Combined Renamed', 'counter name updated');
+    assertEqualOrThrow(
+      updateRes.body.counter.name,
+      'Express Combined Renamed',
+      'counter name updated',
+    );
     assertEqualOrThrow(updateRes.body.counter.is_active, 0, 'counter is_active is 0');
 
     // Delete counter
-    const deleteRes = await req( {
+    const deleteRes = await req({
       path: `/api/counters/${c3.id}`,
       method: 'DELETE',
       headers: owner.authHeader,
     });
     assertEqualOrThrow(deleteRes.status, 200, 'delete counter 200');
 
-    const listAfterDelete = await req( {
+    const listAfterDelete = await req({
       path: '/api/counters',
       method: 'GET',
       headers: cashier.authHeader,
     });
-    assertEqualOrThrow(listAfterDelete.body?.counters?.length, 2, 'counters count is 2 after deletion');
+    assertEqualOrThrow(
+      listAfterDelete.body?.counters?.length,
+      2,
+      'counters count is 2 after deletion',
+    );
 
     // -------------------------------------------------------------------------
     // 3. Order Creation with dispatch_policy: 'on_payment'
@@ -380,7 +403,7 @@ async function main() {
     console.log('\n--- 3. Order Creation & Deferred Release ---');
 
     // Reject delivery with on_payment
-    const deliveryReject = await req( {
+    const deliveryReject = await req({
       path: '/api/orders',
       method: 'POST',
       headers: cashier.authHeader,
@@ -391,7 +414,11 @@ async function main() {
         items: [{ product_id: 'prod-burger', quantity: 1 }],
       },
     });
-    assertEqualOrThrow(deliveryReject.status, 400, 'delivery with dispatch_policy on_payment rejected 400');
+    assertEqualOrThrow(
+      deliveryReject.status,
+      400,
+      'delivery with dispatch_policy on_payment rejected 400',
+    );
     assertIncludesOrThrow(
       deliveryReject.body?.error,
       'not supported for delivery orders',
@@ -399,7 +426,7 @@ async function main() {
     );
 
     // Reject invalid dispatch_policy
-    const invalidPolicyReject = await req( {
+    const invalidPolicyReject = await req({
       path: '/api/orders',
       method: 'POST',
       headers: cashier.authHeader,
@@ -415,7 +442,7 @@ async function main() {
     const initialBurgerStock = productStock(db, 'prod-burger');
     kotPrintCalls = [];
 
-    const orderRes = await req( {
+    const orderRes = await req({
       path: '/api/orders',
       method: 'POST',
       headers: serverUser.authHeader,
@@ -430,18 +457,33 @@ async function main() {
     const order1 = orderRes.body.order;
 
     assertEqualOrThrow(order1.dispatch_policy, 'on_payment', 'dispatch_policy is on_payment');
-    assertEqualOrThrow(order1.checkout_stage, 'awaiting_payment', 'checkout_stage is awaiting_payment');
-    assertEqualOrThrow(order1.release_status, 'scheduled', 'release_status is scheduled (unreleased)');
+    assertEqualOrThrow(
+      order1.checkout_stage,
+      'awaiting_payment',
+      'checkout_stage is awaiting_payment',
+    );
+    assertEqualOrThrow(
+      order1.release_status,
+      'scheduled',
+      'release_status is scheduled (unreleased)',
+    );
     assertEqualOrThrow(
       orderRes.body.qr_payload,
       `FLOCAFE-TICKET:${order1.order_number}`,
       'qr_payload carries FLOCAFE-TICKET prefix and order number',
     );
     assertOrThrow(typeof orderRes.body.qr_data_url === 'string', 'qr_data_url is provided');
-    assertOrThrow(orderRes.body.qr_data_url.startsWith('data:image/png;base64,'), 'qr_data_url is PNG data url');
+    assertOrThrow(
+      orderRes.body.qr_data_url.startsWith('data:image/png;base64,'),
+      'qr_data_url is PNG data url',
+    );
 
     // Verify stock was NOT deducted
-    assertEqualOrThrow(productStock(db, 'prod-burger'), initialBurgerStock, 'stock deferred on creation');
+    assertEqualOrThrow(
+      productStock(db, 'prod-burger'),
+      initialBurgerStock,
+      'stock deferred on creation',
+    );
     // Verify KOT print did NOT happen
     assertEqualOrThrow(kotPrintCalls.length, 0, 'kot print deferred on creation');
 
@@ -459,7 +501,7 @@ async function main() {
     console.log('\n--- 4. Queue and Ticket Lookup ---');
 
     // Create a dine-in on_payment order too
-    const dineInRes = await req( {
+    const dineInRes = await req({
       path: '/api/orders',
       method: 'POST',
       headers: serverUser.authHeader,
@@ -479,7 +521,7 @@ async function main() {
     assertEqualOrThrow(tblRow.status, 'occupied', 'dine_in table is occupied');
 
     // Query awaiting payment queue
-    const queueRes = await req( {
+    const queueRes = await req({
       path: '/api/orders/awaiting-payment',
       method: 'GET',
       headers: cashier.authHeader,
@@ -490,7 +532,7 @@ async function main() {
     assertEqualOrThrow(queueRes.body?.orders?.length, 2, 'queue returns 2 orders');
 
     // Pagination test (limit=1)
-    const page1Res = await req( {
+    const page1Res = await req({
       path: '/api/orders/awaiting-payment?limit=1',
       method: 'GET',
       headers: cashier.authHeader,
@@ -498,7 +540,7 @@ async function main() {
     assertEqualOrThrow(page1Res.body?.orders?.length, 1, 'page 1 returns 1 order');
     assertOrThrow(!!page1Res.body?.next_cursor, 'next_cursor returned for page 1');
 
-    const page2Res = await req( {
+    const page2Res = await req({
       path: `/api/orders/awaiting-payment?limit=1&cursor=${page1Res.body.next_cursor}`,
       method: 'GET',
       headers: cashier.authHeader,
@@ -510,7 +552,7 @@ async function main() {
     );
 
     // Search by customer name in queue
-    const searchRes = await req( {
+    const searchRes = await req({
       path: '/api/orders/awaiting-payment?search=Alex',
       method: 'GET',
       headers: cashier.authHeader,
@@ -519,7 +561,7 @@ async function main() {
     assertEqualOrThrow(searchRes.body.orders[0].id, order1.id, 'matches order1');
 
     // Ticket lookup: by raw order number
-    const lookupRaw = await req( {
+    const lookupRaw = await req({
       path: `/api/orders/by-ticket/${order1.order_number}`,
       method: 'GET',
       headers: cashier.authHeader,
@@ -529,7 +571,7 @@ async function main() {
     assertOrThrow(!!lookupRaw.body?.bill, 'bill hydrated in lookup');
 
     // Ticket lookup: by full QR payload
-    const lookupQr = await req( {
+    const lookupQr = await req({
       path: `/api/orders/by-ticket/${encodeURIComponent(`FLOCAFE-TICKET:${order1.order_number}`)}`,
       method: 'GET',
       headers: cashier.authHeader,
@@ -538,7 +580,7 @@ async function main() {
     assertEqualOrThrow(lookupQr.body?.order?.id, order1.id, 'order matches by QR payload');
 
     // Ticket lookup: non-existent
-    const lookup404 = await req( {
+    const lookup404 = await req({
       path: '/api/orders/by-ticket/NON-EXISTENT-TICKET-9999',
       method: 'GET',
       headers: cashier.authHeader,
@@ -560,16 +602,20 @@ async function main() {
     console.log('\n--- 5. Release Gates & Prepayment Lifecycle ---');
 
     // Manual release of unpaid order must fail with 409 ORDER_NOT_PAID
-    const unpaidReleaseAttempt = await req( {
+    const unpaidReleaseAttempt = await req({
       path: `/api/orders/${order1.id}/release`,
       method: 'POST',
       headers: serverUser.authHeader,
     });
-    assertEqualOrThrow(unpaidReleaseAttempt.status, 409, 'manual release before payment rejected 409');
+    assertEqualOrThrow(
+      unpaidReleaseAttempt.status,
+      409,
+      'manual release before payment rejected 409',
+    );
     assertEqualOrThrow(unpaidReleaseAttempt.body?.code, 'ORDER_NOT_PAID', 'code is ORDER_NOT_PAID');
 
     // Partial payment: pay $10 of $24 (1000 cents of 2400)
-    const partialPayRes = await req( {
+    const partialPayRes = await req({
       path: `/api/bills/${billRow.id}/payment`,
       method: 'POST',
       headers: cashier.authHeader,
@@ -583,13 +629,27 @@ async function main() {
     assertEqualOrThrow(Number(partialPayRes.body?.bill?.balance), 1400, 'bill balance is 1400');
 
     // Verify order still awaiting payment and scheduled
-    const order1AfterPartial = db.prepare('SELECT * FROM orders WHERE id = ?').get(order1.id) as any;
-    assertEqualOrThrow(order1AfterPartial.checkout_stage, 'awaiting_payment', 'stage still awaiting_payment');
-    assertEqualOrThrow(order1AfterPartial.release_status, 'scheduled', 'release_status still scheduled');
-    assertEqualOrThrow(productStock(db, 'prod-burger'), initialBurgerStock, 'stock still untouched');
+    const order1AfterPartial = db
+      .prepare('SELECT * FROM orders WHERE id = ?')
+      .get(order1.id) as any;
+    assertEqualOrThrow(
+      order1AfterPartial.checkout_stage,
+      'awaiting_payment',
+      'stage still awaiting_payment',
+    );
+    assertEqualOrThrow(
+      order1AfterPartial.release_status,
+      'scheduled',
+      'release_status still scheduled',
+    );
+    assertEqualOrThrow(
+      productStock(db, 'prod-burger'),
+      initialBurgerStock,
+      'stock still untouched',
+    );
 
     // Prepayment edit lock: cannot add items or discounts once payment is recorded
-    const editItemAttempt = await req( {
+    const editItemAttempt = await req({
       path: `/api/orders/${order1.id}/items`,
       method: 'POST',
       headers: serverUser.authHeader,
@@ -598,9 +658,13 @@ async function main() {
       },
     });
     assertEqualOrThrow(editItemAttempt.status, 409, 'item edit rejected 409 once payment recorded');
-    assertEqualOrThrow(editItemAttempt.body?.code, 'SCHEDULED_ORDER_PAID', 'code is SCHEDULED_ORDER_PAID');
+    assertEqualOrThrow(
+      editItemAttempt.body?.code,
+      'SCHEDULED_ORDER_PAID',
+      'code is SCHEDULED_ORDER_PAID',
+    );
 
-    const editDiscountAttempt = await req( {
+    const editDiscountAttempt = await req({
       path: `/api/orders/${order1.id}/discount`,
       method: 'PATCH',
       headers: manager.authHeader,
@@ -610,11 +674,15 @@ async function main() {
         discount_reason: 'Friend discount',
       },
     });
-    assertEqualOrThrow(editDiscountAttempt.status, 409, 'order discount rejected 409 once payment recorded');
+    assertEqualOrThrow(
+      editDiscountAttempt.status,
+      409,
+      'order discount rejected 409 once payment recorded',
+    );
 
     // Final payment: pay remaining $14 (1400 cents)
     kotPrintCalls = [];
-    const finalPayRes = await req( {
+    const finalPayRes = await req({
       path: `/api/bills/${billRow.id}/payment`,
       method: 'POST',
       headers: cashier.authHeader,
@@ -629,9 +697,17 @@ async function main() {
 
     // Verify order transitions
     const order1AfterFinal = db.prepare('SELECT * FROM orders WHERE id = ?').get(order1.id) as any;
-    assertEqualOrThrow(order1AfterFinal.checkout_stage, 'paid', 'checkout_stage transitioned to paid');
+    assertEqualOrThrow(
+      order1AfterFinal.checkout_stage,
+      'paid',
+      'checkout_stage transitioned to paid',
+    );
     assertEqualOrThrow(order1AfterFinal.release_status, 'released', 'order released to kitchen!');
-    assertEqualOrThrow(order1AfterFinal.status, 'pending', 'kitchen status remains pending, NOT completed!');
+    assertEqualOrThrow(
+      order1AfterFinal.status,
+      'pending',
+      'kitchen status remains pending, NOT completed!',
+    );
 
     const lookupPaid = await req({
       path: `/api/orders/by-ticket/${order1.order_number}`,
@@ -653,7 +729,7 @@ async function main() {
       .prepare('SELECT * FROM bills WHERE order_id = ?')
       .get(orderDineIn.id) as any;
 
-    const dineInPayRes = await req( {
+    const dineInPayRes = await req({
       path: `/api/bills/${dineInBill.id}/payment`,
       method: 'POST',
       headers: cashier.authHeader,
@@ -664,15 +740,23 @@ async function main() {
     });
     assertEqualOrThrow(dineInPayRes.status, 200, 'dine in payment 200');
 
-    const tblRowAfterPay = db.prepare('SELECT status FROM tables WHERE id = ?').get('tbl-mc-1') as any;
+    const tblRowAfterPay = db
+      .prepare('SELECT status FROM tables WHERE id = ?')
+      .get('tbl-mc-1') as any;
     assertEqualOrThrow(
       tblRowAfterPay.status,
       'occupied',
       'dine-in table remains OCCUPIED after prepayment!',
     );
 
-    const orderDineInAfterPay = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderDineIn.id) as any;
-    assertEqualOrThrow(orderDineInAfterPay.checkout_stage, 'paid', 'dine in checkout stage is paid');
+    const orderDineInAfterPay = db
+      .prepare('SELECT * FROM orders WHERE id = ?')
+      .get(orderDineIn.id) as any;
+    assertEqualOrThrow(
+      orderDineInAfterPay.checkout_stage,
+      'paid',
+      'dine in checkout stage is paid',
+    );
     assertEqualOrThrow(orderDineInAfterPay.status, 'pending', 'dine in status remains pending');
 
     const splitDineInRes = await req({
@@ -719,26 +803,46 @@ async function main() {
     });
     assertEqualOrThrow(payBill1Res.status, 200, 'first split bill paid');
 
-    const splitOrderAfterBill1 = db.prepare('SELECT checkout_stage FROM orders WHERE id = ?').get(splitOrder.id) as any;
-    assertEqualOrThrow(splitOrderAfterBill1.checkout_stage, 'awaiting_payment', 'stage remains awaiting_payment');
+    const splitOrderAfterBill1 = db
+      .prepare('SELECT checkout_stage FROM orders WHERE id = ?')
+      .get(splitOrder.id) as any;
+    assertEqualOrThrow(
+      splitOrderAfterBill1.checkout_stage,
+      'awaiting_payment',
+      'stage remains awaiting_payment',
+    );
 
     const queueAfterSplitBill1 = await req({
       path: '/api/orders/awaiting-payment',
       method: 'GET',
       headers: cashier.authHeader,
     });
-    const splitQueueRow = queueAfterSplitBill1.body?.orders?.find((o: any) => o.id === splitOrder.id);
+    const splitQueueRow = queueAfterSplitBill1.body?.orders?.find(
+      (o: any) => o.id === splitOrder.id,
+    );
     assertOrThrow(!!splitQueueRow, 'order present in awaiting-payment queue');
     assertEqualOrThrow(splitQueueRow.bill_id, splitBill2.id, 'queue row joins unpaid splitBill2');
-    assertEqualOrThrow(Number(splitQueueRow.balance), Number(splitBill2.balance), 'queue row shows splitBill2 balance');
+    assertEqualOrThrow(
+      Number(splitQueueRow.balance),
+      Number(splitBill2.balance),
+      'queue row shows splitBill2 balance',
+    );
 
     const lookupSplitTicket = await req({
       path: `/api/orders/by-ticket/${splitOrder.order_number}`,
       method: 'GET',
       headers: cashier.authHeader,
     });
-    assertEqualOrThrow(lookupSplitTicket.status, 200, 'ticket lookup succeeds while second check is unpaid');
-    assertEqualOrThrow(lookupSplitTicket.body?.bill?.id, splitBill2.id, 'primaryBill is splitBill2');
+    assertEqualOrThrow(
+      lookupSplitTicket.status,
+      200,
+      'ticket lookup succeeds while second check is unpaid',
+    );
+    assertEqualOrThrow(
+      lookupSplitTicket.body?.bill?.id,
+      splitBill2.id,
+      'primaryBill is splitBill2',
+    );
 
     const payBill2Res = await req({
       path: `/api/bills/${splitBill2.id}/payment`,
@@ -751,15 +855,25 @@ async function main() {
     });
     assertEqualOrThrow(payBill2Res.status, 200, 'second split bill paid');
 
-    const splitOrderAfterAllPaid = db.prepare('SELECT checkout_stage FROM orders WHERE id = ?').get(splitOrder.id) as any;
-    assertEqualOrThrow(splitOrderAfterAllPaid.checkout_stage, 'paid', 'stage transitions to paid when all checks settled');
+    const splitOrderAfterAllPaid = db
+      .prepare('SELECT checkout_stage FROM orders WHERE id = ?')
+      .get(splitOrder.id) as any;
+    assertEqualOrThrow(
+      splitOrderAfterAllPaid.checkout_stage,
+      'paid',
+      'stage transitions to paid when all checks settled',
+    );
 
     const lookupSplitTicketAllPaid = await req({
       path: `/api/orders/by-ticket/${splitOrder.order_number}`,
       method: 'GET',
       headers: cashier.authHeader,
     });
-    assertEqualOrThrow(lookupSplitTicketAllPaid.status, 404, 'ticket lookup 404 after all split checks paid');
+    assertEqualOrThrow(
+      lookupSplitTicketAllPaid.status,
+      404,
+      'ticket lookup 404 after all split checks paid',
+    );
 
     // -------------------------------------------------------------------------
     // 6. Scheduled + on_payment takeaway combination
@@ -767,7 +881,7 @@ async function main() {
     console.log('\n--- 6. Scheduled Takeaway on_payment ---');
 
     const futureTime = futureWallClockInZone('America/New_York', 45);
-    const schedOrderRes = await req( {
+    const schedOrderRes = await req({
       path: '/api/orders',
       method: 'POST',
       headers: serverUser.authHeader,
@@ -786,7 +900,7 @@ async function main() {
       .get(schedOrder.id) as any;
 
     // Pay scheduled order in full before scheduled_for
-    const schedPayRes = await req( {
+    const schedPayRes = await req({
       path: `/api/bills/${schedBill.id}/payment`,
       method: 'POST',
       headers: cashier.authHeader,
@@ -798,7 +912,9 @@ async function main() {
     assertEqualOrThrow(schedPayRes.status, 200, 'paid scheduled order 200');
 
     // Order must be checkout_stage = 'paid', but release_status = 'scheduled' because scheduled_for > now
-    const schedOrderAfterPay = db.prepare('SELECT * FROM orders WHERE id = ?').get(schedOrder.id) as any;
+    const schedOrderAfterPay = db
+      .prepare('SELECT * FROM orders WHERE id = ?')
+      .get(schedOrder.id) as any;
     assertEqualOrThrow(schedOrderAfterPay.checkout_stage, 'paid', 'checkout stage is paid');
     assertEqualOrThrow(
       schedOrderAfterPay.release_status,
@@ -807,13 +923,17 @@ async function main() {
     );
 
     // Explicit manual release after payment succeeds!
-    const manualReleaseRes = await req( {
+    const manualReleaseRes = await req({
       path: `/api/orders/${schedOrder.id}/release`,
       method: 'POST',
       headers: cashier.authHeader,
     });
     assertEqualOrThrow(manualReleaseRes.status, 200, 'manual release of paid scheduled order 200');
-    assertEqualOrThrow(manualReleaseRes.body?.order?.release_status, 'released', 'order is released');
+    assertEqualOrThrow(
+      manualReleaseRes.body?.order?.release_status,
+      'released',
+      'order is released',
+    );
 
     // -------------------------------------------------------------------------
     // 7. Paid-but-blocked on Stock Shortfall & Retry Release
@@ -822,7 +942,7 @@ async function main() {
 
     // Create on_payment order for prod-limited (currently 1 unit in stock)
     assertEqualOrThrow(productStock(db, 'prod-limited'), 1, 'prod-limited has 1 in stock');
-    const limitedOrderRes = await req( {
+    const limitedOrderRes = await req({
       path: '/api/orders',
       method: 'POST',
       headers: serverUser.authHeader,
@@ -844,7 +964,7 @@ async function main() {
     assertEqualOrThrow(productStock(db, 'prod-limited'), 0, 'prod-limited is now 0');
 
     // Settle payment in full
-    const limitedPayRes = await req( {
+    const limitedPayRes = await req({
       path: `/api/bills/${limitedBill.id}/payment`,
       method: 'POST',
       headers: cashier.authHeader,
@@ -858,9 +978,15 @@ async function main() {
     assertEqualOrThrow(limitedPayRes.body?.bill?.payment_status, 'paid', 'bill is marked paid');
 
     // Order must transition to release_status = 'blocked'
-    const limitedOrderAfterPay = db.prepare('SELECT * FROM orders WHERE id = ?').get(limitedOrder.id) as any;
+    const limitedOrderAfterPay = db
+      .prepare('SELECT * FROM orders WHERE id = ?')
+      .get(limitedOrder.id) as any;
     assertEqualOrThrow(limitedOrderAfterPay.checkout_stage, 'paid', 'stage is paid');
-    assertEqualOrThrow(limitedOrderAfterPay.release_status, 'blocked', 'release_status is blocked (paid-but-blocked)');
+    assertEqualOrThrow(
+      limitedOrderAfterPay.release_status,
+      'blocked',
+      'release_status is blocked (paid-but-blocked)',
+    );
     assertIncludesOrThrow(
       limitedOrderAfterPay.release_blocked_reason,
       'Insufficient stock',
@@ -868,7 +994,7 @@ async function main() {
     );
 
     // Blocked order is visible in awaiting-payment queue with blocked_count = 1
-    const queueWithBlocked = await req( {
+    const queueWithBlocked = await req({
       path: '/api/orders/awaiting-payment',
       method: 'GET',
       headers: cashier.authHeader,
@@ -876,10 +1002,14 @@ async function main() {
     assertEqualOrThrow(queueWithBlocked.body?.blocked_count, 1, 'queue reports blocked_count = 1');
     const foundBlocked = queueWithBlocked.body?.orders?.find((o: any) => o.id === limitedOrder.id);
     assertOrThrow(!!foundBlocked, 'blocked order found in queue');
-    assertEqualOrThrow(foundBlocked.release_status, 'blocked', 'queue order shows release_status blocked');
+    assertEqualOrThrow(
+      foundBlocked.release_status,
+      'blocked',
+      'queue order shows release_status blocked',
+    );
 
     // Manual release attempt fails while stock is still 0
-    const retryFail = await req( {
+    const retryFail = await req({
       path: `/api/orders/${limitedOrder.id}/release`,
       method: 'POST',
       headers: manager.authHeader,
@@ -892,17 +1022,27 @@ async function main() {
     assertEqualOrThrow(productStock(db, 'prod-limited'), 5, 'restocked to 5');
 
     // Manual release retry succeeds!
-    const retrySuccess = await req( {
+    const retrySuccess = await req({
       path: `/api/orders/${limitedOrder.id}/release`,
       method: 'POST',
       headers: manager.authHeader,
     });
     assertEqualOrThrow(retrySuccess.status, 200, 'release retry succeeds after restock');
     assertEqualOrThrow(retrySuccess.body?.order?.release_status, 'released', 'order is released');
-    assertEqualOrThrow(productStock(db, 'prod-limited'), 4, '1 unit deducted on successful release');
+    assertEqualOrThrow(
+      productStock(db, 'prod-limited'),
+      4,
+      '1 unit deducted on successful release',
+    );
     assertLedgerReconciles(db, 'after retry release');
 
-    adjustStock(db, 'prod-limited', -productStock(db, 'prod-limited'), 'clear stock for refund test', owner.userId);
+    adjustStock(
+      db,
+      'prod-limited',
+      -productStock(db, 'prod-limited'),
+      'clear stock for refund test',
+      owner.userId,
+    );
     const refundOrderRes = await req({
       path: '/api/orders',
       method: 'POST',
@@ -915,7 +1055,9 @@ async function main() {
     });
     assertEqualOrThrow(refundOrderRes.status, 201, 'refund test order created 201');
     const refundOrder = refundOrderRes.body.order;
-    const refundBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(refundOrder.id) as any;
+    const refundBill = db
+      .prepare('SELECT * FROM bills WHERE order_id = ?')
+      .get(refundOrder.id) as any;
 
     const refundPayRes = await req({
       path: `/api/bills/${refundBill.id}/payment`,
@@ -950,8 +1092,16 @@ async function main() {
       method: 'POST',
       headers: manager.authHeader,
     });
-    assertEqualOrThrow(releaseRefundedAttempt.status, 409, 'release of refunded order rejected 409');
-    assertEqualOrThrow(releaseRefundedAttempt.body?.code, 'ORDER_NOT_PAID', 'code is ORDER_NOT_PAID');
+    assertEqualOrThrow(
+      releaseRefundedAttempt.status,
+      409,
+      'release of refunded order rejected 409',
+    );
+    assertEqualOrThrow(
+      releaseRefundedAttempt.body?.code,
+      'ORDER_NOT_PAID',
+      'code is ORDER_NOT_PAID',
+    );
 
     // -------------------------------------------------------------------------
     // 8. Printer Route: Print Payment Ticket
@@ -959,7 +1109,7 @@ async function main() {
     console.log('\n--- 8. Printer Ticket Route ---');
 
     // Test print-payment-ticket preview
-    const printPreviewRes = await req( {
+    const printPreviewRes = await req({
       path: '/api/printers/print-payment-ticket',
       method: 'POST',
       headers: serverUser.authHeader,
@@ -974,7 +1124,7 @@ async function main() {
     assertOrThrow(printPreviewRes.body.bytes.length > 50, 'bytes length > 50');
 
     // Missing orderId
-    const badPrintReq = await req( {
+    const badPrintReq = await req({
       path: '/api/printers/print-payment-ticket',
       method: 'POST',
       headers: serverUser.authHeader,

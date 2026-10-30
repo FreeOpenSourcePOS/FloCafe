@@ -1717,7 +1717,9 @@ router.get(
 
       const [hydrated] = batchHydrateOrders(db, [parseRowJson(orderRow)]);
       let bills = (
-        db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id ASC').all(orderRow.id) as any[]
+        db
+          .prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id ASC')
+          .all(orderRow.id) as any[]
       ).map(parseRowJson);
 
       const payableBill = bills.find(
@@ -1731,9 +1733,7 @@ router.get(
 
       const allBillsSettled =
         bills.length > 0 &&
-        bills.every(
-          (b: any) => b.payment_status === 'paid' && Number(b.balance || 0) <= 0,
-        );
+        bills.every((b: any) => b.payment_status === 'paid' && Number(b.balance || 0) <= 0);
       if (allBillsSettled) {
         return res.status(404).json({ error: 'Ticket not found or already paid' });
       }
@@ -2246,8 +2246,8 @@ router.post(
             externalOrderId || null,
             scheduledOrderMeta ? scheduledOrderMeta.scheduledForUtc : null,
             shouldDeferRelease ? 'scheduled' : 'released',
-            isOnPayment ? 'awaiting_payment' : (checkout_stage || 'paid'),
-            isOnPayment ? 'on_payment' : (dispatch_policy || 'immediate'),
+            isOnPayment ? 'awaiting_payment' : checkout_stage || 'paid',
+            isOnPayment ? 'on_payment' : dispatch_policy || 'immediate',
             now(),
             now(),
           );
@@ -2652,12 +2652,10 @@ router.post(
         });
       }
 
-      res
-        .status(result.idempotentReplay ? 200 : 201)
-        .json({
-          order: Object.assign({}, result.order, { items: result.orderItems }),
-          ...(qrPayload ? { qr_payload: qrPayload, qr_data_url: qrDataUrl } : {}),
-        });
+      res.status(result.idempotentReplay ? 200 : 201).json({
+        order: Object.assign({}, result.order, { items: result.orderItems }),
+        ...(qrPayload ? { qr_payload: qrPayload, qr_data_url: qrDataUrl } : {}),
+      });
     } catch (error: any) {
       console.error('[Orders] Create error:', error);
       console.error('[API] Internal error:', error);

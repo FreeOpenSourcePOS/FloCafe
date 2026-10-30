@@ -201,6 +201,7 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
 - **Customer loyalty & CRM:** Customer directory, purchase histories, and point redemption.
 - **Cash drawer management:** Cash pulse on checkout and end-of-shift cash drawer reconciliations.
 - **Daily sales & accounting export:** Audit-ready CSV/Excel reporting with financial reconciliation identities.
+- **Multi-counter ordering:** Separate order capture, cashier payment, or combined counter terminals with shared LAN queue and QR ticket lookup.
 
 ## Project status
 

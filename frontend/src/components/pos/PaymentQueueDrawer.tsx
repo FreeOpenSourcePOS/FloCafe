@@ -56,6 +56,7 @@ interface Props {
   onPayOrder: (order: Order) => Promise<void> | void;
   onRefundOrder?: (order: Order, bills: Bill[]) => void;
   onCountsChanged?: (awaiting: number, blocked: number) => void;
+  refreshKey?: number;
 }
 
 export function PaymentQueueDrawer({
@@ -64,6 +65,7 @@ export function PaymentQueueDrawer({
   onPayOrder,
   onRefundOrder,
   onCountsChanged,
+  refreshKey,
 }: Props) {
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
@@ -136,7 +138,7 @@ export function PaymentQueueDrawer({
         setLoadingMore(false);
       }
     },
-    [onCountsChanged]
+    [onCountsChanged],
   );
 
   const onCountsChangedRef = useRef(onCountsChanged);
@@ -179,7 +181,15 @@ export function PaymentQueueDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, search]);
+  }, [open, search, refreshKey]);
+
+  useEffect(() => {
+    if (!open) return;
+    const interval = setInterval(() => {
+      void fetchQueue(null, search);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [open, search, fetchQueue]);
 
   const handleSearchChange = (value: string) => {
     setSearchInput(value);
@@ -299,7 +309,10 @@ export function PaymentQueueDrawer({
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border">
           <span className="text-xs text-muted-foreground">
-            {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {new Date(order.created_at).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
           </span>
 
           <div className="flex items-center gap-1.5">
@@ -344,27 +357,32 @@ export function PaymentQueueDrawer({
                 size="sm"
                 data-testid={`refund-blocked-btn-${order.id}`}
                 onClick={() => {
-                  const bills: Bill[] = order.bills && order.bills.length > 0
-                    ? order.bills
-                    : order.bill
-                      ? [order.bill]
-                      : order.bill_id
-                        ? [{
-                            id: Number(order.bill_id),
-                            bill_number: order.bill_number || '',
-                            order_id: Number(order.id),
-                            subtotal: Number(order.total_amount ?? order.total ?? 0),
-                            tax_amount: 0,
-                            discount_amount: 0,
-                            service_charge: 0,
-                            delivery_charge: 0,
-                            total: Number(order.total_amount ?? order.total ?? 0),
-                            paid_amount: Number(order.paid_amount || 0),
-                            balance: Number(order.balance || 0),
-                            payment_status: (order.bill_payment_status as any) || (Number(order.balance || 0) === 0 ? 'paid' : 'partial'),
-                            payment_details: [],
-                          } as unknown as Bill]
-                        : [];
+                  const bills: Bill[] =
+                    order.bills && order.bills.length > 0
+                      ? order.bills
+                      : order.bill
+                        ? [order.bill]
+                        : order.bill_id
+                          ? [
+                              {
+                                id: Number(order.bill_id),
+                                bill_number: order.bill_number || '',
+                                order_id: Number(order.id),
+                                subtotal: Number(order.total_amount ?? order.total ?? 0),
+                                tax_amount: 0,
+                                discount_amount: 0,
+                                service_charge: 0,
+                                delivery_charge: 0,
+                                total: Number(order.total_amount ?? order.total ?? 0),
+                                paid_amount: Number(order.paid_amount || 0),
+                                balance: Number(order.balance || 0),
+                                payment_status:
+                                  (order.bill_payment_status as Bill['payment_status']) ||
+                                  (Number(order.balance || 0) === 0 ? 'paid' : 'partial'),
+                                payment_details: [],
+                              } as unknown as Bill,
+                            ]
+                          : [];
                   onRefundOrder(order as unknown as Order, bills);
                 }}
                 className="gap-1 text-red-600 hover:text-red-700"
@@ -393,7 +411,8 @@ export function PaymentQueueDrawer({
                         total: Number(order.total_amount ?? order.total ?? 0),
                         paid_amount: Number(order.paid_amount || 0),
                         balance: Number(order.balance || 0),
-                        payment_status: (order.bill_payment_status as any) || 'unpaid',
+                        payment_status:
+                          (order.bill_payment_status as Bill['payment_status']) || 'unpaid',
                         payment_details: [],
                       } as unknown as Bill)
                     : null;
@@ -499,9 +518,7 @@ export function PaymentQueueDrawer({
             >
               <CreditCard size={36} className="mb-3 opacity-50" />
               <p className="text-sm font-medium">{t('paymentQueueEmpty')}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {t('paymentQueueEmptyDesc')}
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">{t('paymentQueueEmptyDesc')}</p>
             </div>
           ) : (
             <>

@@ -63,8 +63,12 @@ export function CountersSettingsTab({ isOwner }: Props) {
   const loadData = useCallback(async () => {
     try {
       const [settingRes, countersRes] = await Promise.all([
-        api.get('/settings/multi_counter_enabled').catch(() => ({ data: { setting: { value: 'false' } } })),
-        api.get('/counters', { params: { include_inactive: 'true' } }).catch(() => ({ data: { counters: [] } })),
+        api
+          .get('/settings/multi_counter_enabled')
+          .catch(() => ({ data: { setting: { value: 'false' } } })),
+        api
+          .get('/counters', { params: { include_inactive: 'true' } })
+          .catch(() => ({ data: { counters: [] } })),
       ]);
       setEnabled(settingRes.data?.setting?.value === 'true');
       setCounters(countersRes.data?.counters || []);
@@ -78,18 +82,24 @@ export function CountersSettingsTab({ isOwner }: Props) {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      api.get('/settings/multi_counter_enabled').catch(() => ({ data: { setting: { value: 'false' } } })),
-      api.get('/counters', { params: { include_inactive: 'true' } }).catch(() => ({ data: { counters: [] } })),
-    ]).then(([settingRes, countersRes]) => {
-      if (cancelled) return;
-      setEnabled(settingRes.data?.setting?.value === 'true');
-      setCounters(countersRes.data?.counters || []);
-      setLoading(false);
-    }).catch(() => {
-      if (cancelled) return;
-      toast.error('Failed to load counters');
-      setLoading(false);
-    });
+      api
+        .get('/settings/multi_counter_enabled')
+        .catch(() => ({ data: { setting: { value: 'false' } } })),
+      api
+        .get('/counters', { params: { include_inactive: 'true' } })
+        .catch(() => ({ data: { counters: [] } })),
+    ])
+      .then(([settingRes, countersRes]) => {
+        if (cancelled) return;
+        setEnabled(settingRes.data?.setting?.value === 'true');
+        setCounters(countersRes.data?.counters || []);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        toast.error('Failed to load counters');
+        setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -104,7 +114,11 @@ export function CountersSettingsTab({ isOwner }: Props) {
     try {
       await api.put('/settings/multi_counter_enabled', { value: String(val) });
       setEnabled(val);
-      toast.success(val ? t('multiCounterEnabled') || 'Multi-counter ordering enabled' : t('multiCounterDisabled') || 'Multi-counter ordering disabled');
+      toast.success(
+        val
+          ? t('multiCounterEnabled') || 'Multi-counter ordering enabled'
+          : t('multiCounterDisabled') || 'Multi-counter ordering disabled',
+      );
     } catch {
       toast.error('Failed to update multi-counter setting');
     } finally {
@@ -260,7 +274,9 @@ export function CountersSettingsTab({ isOwner }: Props) {
             ) : counters.length === 0 ? (
               <div className="text-center py-12 border border-dashed border-border rounded-lg text-muted-foreground">
                 <p className="font-medium">No counters configured yet</p>
-                <p className="text-sm mt-1">Add your first counter to start multi-counter ordering.</p>
+                <p className="text-sm mt-1">
+                  Add your first counter to start multi-counter ordering.
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -276,9 +292,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
                   <tbody className="divide-y divide-border">
                     {counters.map((counter) => (
                       <tr key={counter.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="py-3 font-medium text-foreground">
-                          {counter.name}
-                        </td>
+                        <td className="py-3 font-medium text-foreground">{counter.name}</td>
                         <td className="py-3">
                           <span
                             className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getRoleBadgeColor(
@@ -336,7 +350,9 @@ export function CountersSettingsTab({ isOwner }: Props) {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {editingCounter ? t('editCounter') || 'Edit Counter' : t('addCounter') || 'Add Counter'}
+              {editingCounter
+                ? t('editCounter') || 'Edit Counter'
+                : t('addCounter') || 'Add Counter'}
             </DialogTitle>
             <DialogDescription>
               {t('counterModalDesc') ||
@@ -369,14 +385,19 @@ export function CountersSettingsTab({ isOwner }: Props) {
                 onChange={(e) => setRole(e.target.value as 'ordering' | 'payment' | 'combined')}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-brand"
               >
-                <option value="ordering">{t('counterRoleOrdering') || 'Ordering (Create here)'}</option>
+                <option value="ordering">
+                  {t('counterRoleOrdering') || 'Ordering (Create here)'}
+                </option>
                 <option value="payment">{t('counterRolePayment') || 'Payment (Pay there)'}</option>
-                <option value="combined">{t('counterRoleCombined') || 'Combined (Order & Pay)'}</option>
+                <option value="combined">
+                  {t('counterRoleCombined') || 'Combined (Order & Pay)'}
+                </option>
               </select>
               <p className="text-xs text-muted-foreground mt-1">
                 {role === 'ordering' && 'Station builds orders and sends them to payment.'}
                 {role === 'payment' && 'Station opens shared queue and processes payments.'}
-                {role === 'combined' && 'Station supports both normal checkout and sending to payment.'}
+                {role === 'combined' &&
+                  'Station supports both normal checkout and sending to payment.'}
               </p>
             </div>
 

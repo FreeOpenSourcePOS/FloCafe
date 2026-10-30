@@ -159,10 +159,11 @@ four whitespace-separated tokens read as a sentence.
 | WebUSB | `frontend/src/lib/printer/PrinterService.ts` | Encoder output, sent over the browser's WebUSB API. |
 | Delivery slip | `frontend/src/lib/printer/delivery-slip-encoder.ts` and `delivery-slip-web-print.ts` | A `DeliverySlipDocument`'s contact facts, rendered as bytes or HTML. |
 | Tax bill | `frontend/src/lib/printer/tax-bill-encoder.ts` | A raw `Bill` and `Tenant`, not a document. |
+| Payment ticket slip | `printPaymentTicket` in `main/printers/thermal.ts` | Order metadata, item lines, balance due, and ESC/POS QR code (`FLOCAFE-TICKET:<order_number>`) for multi-counter ordering. |
 
-The tax bill encoder is the single exception to "renderers consume documents". It targets the
-detailed per-component tax receipt, a different receipt shape from `PrintDocument` v1, and reads
-the bill directly.
+The tax bill encoder and payment ticket slip generator are exceptions to "renderers consume
+documents": the tax bill encoder reads `Bill` directly for per-component tax detail, while
+`printPaymentTicket` formats a compact payment ticket slip and QR code from order items and totals.
 
 ### Browser HTML printing
 

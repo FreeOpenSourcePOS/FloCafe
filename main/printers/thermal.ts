@@ -1410,7 +1410,10 @@ export async function printPaymentTicket(
 
     const { profile, columns: cols } = resolvePrinterContext(printer || { paper_width: '80mm' });
     const storeName = getSettingValue('restaurant_name') || 'FloCafe';
-    const currency = resolveTenantCurrency(getSettingValue('currency') ?? '', getSettingValue('country') ?? '');
+    const currency = resolveTenantCurrency(
+      getSettingValue('currency') ?? '',
+      getSettingValue('country') ?? '',
+    );
     const balance = options.balance ?? order.total;
 
     const padLine = (left: string, right: string) => {
@@ -1524,7 +1527,10 @@ export async function printPaymentTicketDetailed(
 /**
  * Report print failure via telemetry tiers (best-effort, non-blocking).
  */
-function reportPrintFailure(kind: 'receipt' | 'kot' | 'delivery_slip' | 'payment_ticket', result: PrintResult): void {
+function reportPrintFailure(
+  kind: 'receipt' | 'kot' | 'delivery_slip' | 'payment_ticket',
+  result: PrintResult,
+): void {
   let connectionType = 'unknown';
   try {
     const configured = getPrinterConfig()?.connection_type;

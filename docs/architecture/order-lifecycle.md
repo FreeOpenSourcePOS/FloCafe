@@ -340,12 +340,16 @@ its amount via `PATCH /api/bills/:id/payments/:index/method` (see [the Bills API
 ## Settlement and completion
 
 A bill moves `unpaid` to `partial` to `paid`; refunds move it to `partially_refunded` or `refunded`.
-When a payment settles the last unpaid bill of an order, an immediate or already-released order
-becomes `completed` (unless it was already completed or cancelled) and its dine-in table is released
-to `available`; an unreleased scheduled order remains `pending` at payment time, then completes on
-release when KDS is disabled (or no active unserved items exist) or when its last active kitchen
-item transitions to `served` while KDS is enabled, provided the order remains settled and
-non-refunded. A payment never resurrects a terminal order.
+When a payment settles the last unpaid bill of an order with immediate dispatch
+(`dispatch_policy = 'immediate'`), an already-released order becomes `completed` (unless it was
+already completed or cancelled) and its dine-in table is released to `available`. Prepayment under
+multi-counter ordering (`dispatch_policy = 'on_payment'`) preserves `orders.status = 'pending'` and
+keeps occupied dine-in tables occupied: completing payment transitions `checkout_stage = 'paid'` and
+triggers release to the kitchen (if unscheduled or due), but the order completes only after food
+service concludes. An unreleased scheduled order remains `pending` at payment time, then completes on
+release when KDS is disabled (or no active unserved items exist) or when its last active kitchen item
+transitions to `served` while KDS is enabled, provided the order is not a multi-counter order and
+remains settled and non-refunded. A payment never resurrects a terminal order.
 
 When a discount, an order mutation (`syncUnpaidBillsForOrder`), or a `POST /api/bills/generate`
 re-sync reduces the remaining balance of a partially paid bill to exactly zero (where collected funds

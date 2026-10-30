@@ -643,6 +643,74 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       await expect(page.getByTestId('cart-item')).toHaveCount(0);
     });
 
+    await test.step('A successful ticket with unreadable retry state opens the payment queue', async () => {
+      await page.goto(`${BASE}/pos`);
+      const counterSelect = page.getByTestId('pos-counter-selector-btn');
+      await counterSelect.click();
+      await page.getByTestId(`pos-counter-option-${orderingCounter.id}`).click();
+      await setLanguage(page, 'en');
+
+      const attemptKey = 'flo.postpaid.order.attempt.user.e2e-owner';
+      let orderNumber = '';
+      await page.route('**/api/orders', async (route) => {
+        const url = new URL(route.request().url());
+        if (route.request().method() !== 'POST' || url.pathname !== '/api/orders') {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        const payload = await response.json();
+        expect(response.status()).toBe(201);
+        createdOrderIds.add(Number(payload.order.id));
+        orderNumber = String(payload.order.order_number);
+        await page.evaluate((key) => {
+          const storageWindow = window as typeof window & {
+            __originalStorageGetItem?: typeof Storage.prototype.getItem;
+          };
+          const original = Storage.prototype.getItem;
+          storageWindow.__originalStorageGetItem = original;
+          Storage.prototype.getItem = function (candidate: string) {
+            if (candidate === key) {
+              throw new DOMException('The order retry state cannot be read.', 'SecurityError');
+            }
+            return original.call(this, candidate);
+          };
+        }, attemptKey);
+        await route.fulfill({ response });
+      });
+
+      try {
+        await page.getByTestId('pos-product-card').first().click();
+        await page.getByTestId('pos-send-to-payment-btn').click();
+        await expect(page.getByTestId('payment-queue-drawer')).toBeVisible();
+        await expect(page.getByTestId(`queue-ticket-${orderNumber}`)).toBeVisible();
+        await expect(page.getByTestId('payment-ticket-confirmation-modal')).toHaveCount(0);
+        await expect(page.getByTestId('cart-item')).toHaveCount(1);
+        await expect(
+          page.getByText('Open Orders to confirm the sale. Do not create it again.'),
+        ).toBeVisible();
+      } finally {
+        await page.evaluate(() => {
+          const storageWindow = window as typeof window & {
+            __originalStorageGetItem?: typeof Storage.prototype.getItem;
+          };
+          if (storageWindow.__originalStorageGetItem) {
+            Storage.prototype.getItem = storageWindow.__originalStorageGetItem;
+            delete storageWindow.__originalStorageGetItem;
+          }
+        });
+        await page.unroute('**/api/orders');
+      }
+
+      await page.getByTestId('close-queue-drawer-btn').click();
+      await page.getByTestId('cart-shell').locator('button[aria-label="Remove"]').first().click();
+      await expect(page.getByTestId('cart-item')).toHaveCount(0);
+      await page.evaluate((key) => {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      }, attemptKey);
+    });
+
     await test.step('A confirmed ticket with failed retry cleanup is not replayed as a new ticket', async () => {
       await page.goto(`${BASE}/pos`);
       const counterSelect = page.getByTestId('pos-counter-selector-btn');

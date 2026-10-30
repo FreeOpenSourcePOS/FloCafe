@@ -1637,6 +1637,7 @@ async function main() {
     });
     assertEqualOrThrow(splitBalanceSplitRes.status, 201, 'split into 2 checks for balance test');
     const [sbCheck1] = splitBalanceSplitRes.body.bills;
+    const [, sbCheck2] = splitBalanceSplitRes.body.bills;
 
     // Pay Check 1 in full
     await req({
@@ -1669,7 +1670,8 @@ async function main() {
       splitBalanceOrder.id,
       sbItems[0].id,
     );
-    setStoreSetting(db, 'business_name', 'Cafe Ticket House');
+    const longBusinessName = 'Cafe Ticket House MerchantName HarborSide NorthShore CoffeeRoasters';
+    setStoreSetting(db, 'business_name', longBusinessName);
     const paymentTicketPrinters = [
       { id: 'prn-mc-payment-58', width: '58mm', columns: 32 },
       { id: 'prn-mc-payment-80', width: '80mm-42', columns: 42 },
@@ -1686,7 +1688,10 @@ async function main() {
       });
       assertEqualOrThrow(response.status, 200, `${target.width} payment ticket preview succeeds`);
       const text = escPosToText(Buffer.from(response.body.bytes));
-      assertOrThrow(text.includes('Cafe Ticket House'), `${target.width} uses business_name`);
+      assertOrThrow(
+        longBusinessName.split(' ').every((word: string) => text.includes(word)),
+        `${target.width} wraps the complete business_name`,
+      );
       assertOrThrow(
         text.includes('PAYMENT TICKET'),
         `${target.width} has a centered ticket heading`,
@@ -1709,6 +1714,79 @@ async function main() {
         `${target.width} emitted text fits its configured display columns (${overflowLines.join(' | ')})`,
       );
     }
+
+    const largeTicketAmount = 1_000_000_000_000_000_000;
+    db.prepare('UPDATE orders SET total = ? WHERE id = ?').run(
+      largeTicketAmount,
+      splitBalanceOrder.id,
+    );
+    db.prepare('UPDATE bills SET balance = ? WHERE id = ?').run(largeTicketAmount, sbCheck2.id);
+    const longTicketAmount = '$1,000,000,000,000,000,000.00';
+    for (const target of paymentTicketPrinters) {
+      const response = await req({
+        path: '/api/printers/print-payment-ticket',
+        method: 'POST',
+        headers: serverUser.authHeader,
+        body: { orderId: splitBalanceOrder.id, printerId: target.id, preview: true },
+      });
+      assertEqualOrThrow(
+        response.status,
+        200,
+        `${target.width} large-amount ticket preview succeeds`,
+      );
+      const text = escPosToText(Buffer.from(response.body.bytes));
+      const lines = text.split('\n');
+      for (const label of ['Total:', 'Balance Due:']) {
+        const labelIndex = lines.findIndex((line: string) => line.includes(label));
+        assertOrThrow(labelIndex >= 0, `${target.width} prints ${label}`);
+        if (target.columns === 32) {
+          assertOrThrow(
+            lines[labelIndex + 1]?.includes(longTicketAmount),
+            `${target.width} prints the complete ${label} on a following line`,
+          );
+        } else {
+          assertOrThrow(
+            lines
+              .slice(labelIndex, labelIndex + 2)
+              .some((line: string) => line.includes(longTicketAmount)),
+            `${target.width} keeps the complete amount beside ${label}`,
+          );
+        }
+      }
+      const printableLines = lines.filter((line: string) => !/[\x00-\x1f\x7f]/.test(line));
+      const overflowLines = printableLines.filter((line: string) => line.length > target.columns);
+      assertOrThrow(
+        overflowLines.length === 0,
+        `${target.width} large-amount lines fit the configured columns (${overflowLines.join(' | ')})`,
+      );
+    }
+
+    const unprintableAmount = 1e30;
+    db.prepare('UPDATE orders SET total = ? WHERE id = ?').run(
+      unprintableAmount,
+      splitBalanceOrder.id,
+    );
+    db.prepare('UPDATE bills SET balance = ? WHERE id = ?').run(unprintableAmount, sbCheck2.id);
+    const unprintableTicket = await req({
+      path: '/api/printers/print-payment-ticket',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        orderId: splitBalanceOrder.id,
+        printerId: paymentTicketPrinters[0].id,
+        preview: true,
+      },
+    });
+    assertEqualOrThrow(unprintableTicket.status, 502, 'amount wider than paper is rejected');
+    assertOrThrow(
+      String(unprintableTicket.body?.error).includes('overflows available line width'),
+      'rejected amount reports its width constraint',
+    );
+    db.prepare('UPDATE orders SET total = ? WHERE id = ?').run(
+      largeTicketAmount,
+      splitBalanceOrder.id,
+    );
+    db.prepare('UPDATE bills SET balance = ? WHERE id = ?').run(largeTicketAmount, sbCheck2.id);
 
     const controlTokenName = `${'X'.repeat(14)} {CUT} ${'Y'.repeat(23)}`;
     db.prepare('UPDATE order_items SET product_name = ? WHERE order_id = ? AND id = ?').run(

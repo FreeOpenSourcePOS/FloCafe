@@ -1449,10 +1449,13 @@ export async function printPaymentTicket(
     };
 
     const balance = options.balance ?? order.total;
+    const storeNameLines = wrapText(safePrinterText(storeName), cols).map(
+      (line) => `{CENTER}{BOLD}${line}{/BOLD}{/CENTER}`,
+    );
 
     const lines: string[] = [
       '{INIT}',
-      `{CENTER}{BOLD}${storeName}{/BOLD}{/CENTER}`,
+      ...storeNameLines,
       '{CENTER}{BOLD}PAYMENT TICKET{/BOLD}{/CENTER}',
       `{CENTER}Ticket #: ${order.order_number}{/CENTER}`,
       '-'.repeat(cols),
@@ -1496,8 +1499,18 @@ export async function printPaymentTicket(
     lines.push('-'.repeat(cols));
     const totalAmount = formatAmount(Number(order.total));
     const balanceAmount = formatAmount(Number(balance));
-    lines.push(`Total:${rightAlign(totalAmount, cols - displayCellWidth('Total:'))}`);
-    lines.push(`Balance Due:${rightAlign(balanceAmount, cols - displayCellWidth('Balance Due:'))}`);
+    const pushSummaryAmount = (label: string, amount: string, field: string) => {
+      assertFinancialValueFitsColumns(amount, cols, field);
+      const labelWidth = displayCellWidth(label);
+      if (labelWidth + 1 + displayCellWidth(amount) <= cols) {
+        lines.push(`${label}${rightAlign(amount, cols - labelWidth)}`);
+      } else {
+        lines.push(...wrapText(label, cols).map((line) => padToDisplayCells(line, cols)));
+        lines.push(padToDisplayCells(amount, cols, 'right'));
+      }
+    };
+    pushSummaryAmount('Total:', totalAmount, 'payment ticket total');
+    pushSummaryAmount('Balance Due:', balanceAmount, 'payment ticket balance');
     lines.push('-'.repeat(cols));
     lines.push('{CENTER}Please pay at the payment counter{/CENTER}');
     lines.push('{CENTER}Scan or enter ticket number to pay:{/CENTER}');

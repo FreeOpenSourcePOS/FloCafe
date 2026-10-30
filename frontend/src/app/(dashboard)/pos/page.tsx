@@ -2116,6 +2116,22 @@ export default function POSPage() {
           currentAttempt.idempotencyKey === attempt.idempotencyKey &&
           currentAttempt.operationId === attempt.operationId;
       } catch {
+        if (!isOriginSessionCurrent()) return;
+        setShowPaymentQueue(true);
+        reportOrderFailure({
+          code: 'order.retry_state.read_failed',
+          title: t('orderSentToPaymentSuccess', { number: createdOrder.order_number }),
+          message: t('saleCompleteCleanupFailed'),
+          nextStep: t('saleCompleteCheckOrders'),
+          detail:
+            'The order was created but local retry state could not be read; confirm it in the payment queue before retrying',
+          status: null,
+          operation: 'order.create',
+          stage: 'recovery',
+          outcome: 'applied',
+          reasonCode: 'order.retry_state.read_failed',
+          correlationId: attempt.operationId || null,
+        });
         return;
       }
       if (!isLatestAttempt) return;

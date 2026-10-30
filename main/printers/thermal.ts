@@ -1531,31 +1531,30 @@ export async function printPaymentTicketDetailed(
   const id = correlationId();
   try {
     const dispatch = await printPaymentTicket(...args);
-    const result: PaymentTicketPrintResult =
-      dispatch.ok
-        ? {
-            ok: true,
-            correlationId: id,
-            stage: 'dispatch',
-            warnings: dispatch.warnings,
-            bytes: dispatch.bytes,
-            preview: dispatch.preview,
-            connection_type: dispatch.connection_type,
-          }
-        : {
-            ok: false,
-            code: 'print.payment_ticket.failed',
-            correlationId: id,
-            stage: 'dispatch',
-            detail: dispatch.detail,
-            failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
-            platformErrorCode:
-              dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
-            jobId: dispatch.jobId,
-            driverName: dispatch.driverName,
-            printerStatus: dispatch.printerStatus,
-            warnings: dispatch.warnings,
-          };
+    const result: PaymentTicketPrintResult = dispatch.ok
+      ? {
+          ok: true,
+          correlationId: id,
+          stage: 'dispatch',
+          warnings: dispatch.warnings,
+          bytes: dispatch.bytes,
+          preview: dispatch.preview,
+          connection_type: dispatch.connection_type,
+        }
+      : {
+          ok: false,
+          code: 'print.payment_ticket.failed',
+          correlationId: id,
+          stage: 'dispatch',
+          detail: dispatch.detail,
+          failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
+          platformErrorCode:
+            dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
+          jobId: dispatch.jobId,
+          driverName: dispatch.driverName,
+          printerStatus: dispatch.printerStatus,
+          warnings: dispatch.warnings,
+        };
     if (!result.ok) reportPrintFailure('payment_ticket', result);
     return result;
   } catch (error) {

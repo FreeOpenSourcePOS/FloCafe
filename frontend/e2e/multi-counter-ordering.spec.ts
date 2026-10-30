@@ -37,11 +37,11 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
   };
 
   const runId = Math.random().toString(36).slice(2, 6);
-  let orderingCounter: { id: number; name?: string; role?: string } | null = null;
-  let paymentCounter: { id: number; name?: string; role?: string } | null = null;
-  let combinedCounter: { id: number; name?: string; role?: string } | null = null;
-  let createdTable: { id: number; name?: string } | null = null;
-  let limitedProduct: { id: number; name?: string } | null = null;
+  let orderingCounter: { id: number; name?: string; role?: string } = { id: 0 };
+  let paymentCounter: { id: number; name?: string; role?: string } = { id: 0 };
+  let combinedCounter: { id: number; name?: string; role?: string } = { id: 0 };
+  let createdTable: { id: number; name?: string } = { id: 0 };
+  let limitedProduct: { id: number; name?: string } = { id: 0 };
 
   try {
     // -------------------------------------------------------------------------
@@ -552,27 +552,27 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
     });
   } finally {
     // Teardown: clean up counters, table, and product
-    if (orderingCounter?.id) {
+    if (orderingCounter.id > 0) {
       await request
         .delete(`${BASE}/api/counters/${orderingCounter.id}`, { headers: ownerHeaders })
         .catch(() => {});
     }
-    if (paymentCounter?.id) {
+    if (paymentCounter.id > 0) {
       await request
         .delete(`${BASE}/api/counters/${paymentCounter.id}`, { headers: ownerHeaders })
         .catch(() => {});
     }
-    if (combinedCounter?.id) {
+    if (combinedCounter.id > 0) {
       await request
         .delete(`${BASE}/api/counters/${combinedCounter.id}`, { headers: ownerHeaders })
         .catch(() => {});
     }
-    if (createdTable?.id) {
+    if (createdTable.id > 0) {
       await request
         .delete(`${BASE}/api/tables/${createdTable.id}`, { headers: ownerHeaders })
         .catch(() => {});
     }
-    if (limitedProduct?.id) {
+    if (limitedProduct.id > 0) {
       await request
         .delete(`${BASE}/api/products/${limitedProduct.id}`, { headers: ownerHeaders })
         .catch(() => {});

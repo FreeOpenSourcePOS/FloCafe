@@ -1627,7 +1627,7 @@ router.get(
       const params: unknown[] = [];
 
       if (search) {
-        const searchPattern = `%${search.replace(/[%_]/g, '\\$&')}%`;
+        const searchPattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
         sql += ` AND (o.order_number LIKE ? ESCAPE '\\' OR t.number LIKE ? ESCAPE '\\' OR c.name LIKE ? ESCAPE '\\' OR c.phone LIKE ? ESCAPE '\\')`;
         params.push(searchPattern, searchPattern, searchPattern, searchPattern);
       }

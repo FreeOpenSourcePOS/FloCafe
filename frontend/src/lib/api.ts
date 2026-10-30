@@ -107,7 +107,15 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('token');
-    if (token) {
+    const headers = config.headers;
+    const existingAuth =
+      headers &&
+      (('Authorization' in headers && headers.Authorization) ||
+        ('authorization' in headers && headers.authorization) ||
+        (typeof (headers as { get?: (name: string) => unknown }).get === 'function'
+          ? (headers as { get: (name: string) => unknown }).get('Authorization')
+          : null));
+    if (token && !existingAuth) {
       config.headers.Authorization = `Bearer ${token}`;
     }
   }

@@ -444,6 +444,59 @@ async function main() {
       'rejected cashier/server/chef attempts perform zero payment_idempotency writes',
     );
 
+    // Revoking payments.take while PIN verification is in flight rejects in transaction (PR #1394)
+    const origCompare = bcrypt.compare;
+    let hookExecuted = false;
+    bcrypt.compare = async function (...args: any[]) {
+      if (!hookExecuted) {
+        hookExecuted = true;
+        db.prepare(`
+          INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+          VALUES (?, 'payments.take', 'deny', ?, ?, ?)
+        `).run(managerId, ownerId, now(), now());
+      }
+      return origCompare.apply(this, args);
+    };
+
+    try {
+      const revokedDuringPinAttempt = await api(
+        baseUrl,
+        `/api/bills/${bill1.id}/payments/0/method`,
+        {
+          method: 'PATCH',
+          headers: { ...managerAuth, 'Idempotency-Key': 'idem-manager-revoked-during-pin' },
+          body: {
+            method: 'card',
+            transaction_id: 'TX-REVOKED-DURING-PIN',
+            reason: 'Manager permission revoked during PIN verification',
+            approver_id: managerId,
+            override_pin: '1234',
+          },
+        },
+      );
+      assertEqualOrThrow(
+        revokedDuringPinAttempt.status,
+        403,
+        'revoking payments.take while PIN verification is in flight returns 403',
+      );
+      assertEqualOrThrow(
+        revokedDuringPinAttempt.data.reason,
+        'insufficient_role_permissions',
+        'revoking payments.take while PIN verification is in flight returns reason = insufficient_role_permissions',
+      );
+      const billAfterRevocation = await api(baseUrl, `/api/bills/${bill1.id}`, {
+        headers: ownerAuth,
+      });
+      assertEqualOrThrow(
+        billAfterRevocation.data.bill.payment_details[0].method,
+        'cash',
+        'bill payment method remains unchanged after revoked permission rejection',
+      );
+    } finally {
+      bcrypt.compare = origCompare;
+      db.prepare('DELETE FROM user_permission_overrides WHERE user_id = ?').run(managerId);
+    }
+
     // Now test PIN validation when called by an authorized manager actor
     const managerWithCashierPinAndId = await api(
       baseUrl,

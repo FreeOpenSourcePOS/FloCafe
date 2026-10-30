@@ -1752,20 +1752,31 @@ router.get(
   },
 );
 
+const requireAuthenticatedStaff: RequestHandler = (req, res, next) => {
+  const userId = String(
+    (req as Request & { user?: { userId?: string; id?: string } }).user?.userId ||
+      (req as any).user?.id ||
+      '',
+  );
+  if (!userId) {
+    return res
+      .status(401)
+      .json({ error: 'Authentication required', code: 'authentication_required' });
+  }
+  const db = getDatabase();
+  const user = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(userId) as
+    | { id: string; is_active: number }
+    | undefined;
+  if (!user || user.is_active !== 1) {
+    return res.status(401).json({ error: 'Invalid or expired token', code: 'invalid_token' });
+  }
+  next();
+};
+
 router.get(
   '/auto_lock_minutes',
   settingsReadRateLimit,
-  requireAnyPermission(
-    'settings.view',
-    'pos.use',
-    'orders.read',
-    'orders.create',
-    'orders.status.update',
-    'tables.view',
-    'catalog.view',
-    'kitchen.use',
-    'support.use',
-  ),
+  requireAuthenticatedStaff,
   (_req: Request, res: Response) => {
     try {
       const setting = getDatabase()

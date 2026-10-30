@@ -6,8 +6,8 @@
  * resolves and prices the variant from the database; only the id is sent.
  */
 
-import type { CartItem } from '@/lib/types';
-import { normalizeOverridePrice } from '@/lib/cart-price';
+import type { CartItem } from './types';
+import { normalizeOverridePrice } from './cart-price';
 
 export interface OrderItemAddonPayload {
   id: string;

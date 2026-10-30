@@ -5846,7 +5846,8 @@ router.patch(
         if (
           !liveCaller ||
           liveCaller.is_active !== 1 ||
-          !hasRole(liveCaller.role, ROLE_ACCESS.ownerManager)
+          !hasRole(liveCaller.role, ROLE_ACCESS.ownerManager) ||
+          !hasPermission(liveCaller.id, 'payments.take')
         ) {
           throw paymentValidationError(
             'Only owners and managers can correct payment methods',

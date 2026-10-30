@@ -12,17 +12,20 @@ const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-pin-quick-switch-'));
 
 let mockApiHandler: {
-  get?: (url: string) => Promise<any>;
+  get?: (url: string, config?: any) => Promise<any>;
   post?: (url: string, body?: any, config?: any) => Promise<any>;
+  patch?: (url: string, body?: any, config?: any) => Promise<any>;
 } = {};
 
 const mockPosSettingsStore = {
   state: {
     language: 'en',
+    billingType: 'prepaid',
     billTemplateSource: 'core' as 'core' | null,
     billLanguagePolicy: null as unknown,
     kotLanguagePolicy: null as unknown,
     autoLockMinutes: 0,
+    tablesRequired: false,
     setLanguage(language: string) {
       this.language = language;
     },
@@ -43,6 +46,134 @@ const mockPosSettingsStore = {
     return this.state;
   },
 };
+const mockPosSettingsStoreFn = Object.assign(
+  (selector?: (s: any) => any) =>
+    selector ? selector(mockPosSettingsStore.state) : mockPosSettingsStore.state,
+  mockPosSettingsStore,
+);
+
+const realReact = frontendRequire('react');
+const hookStates: any[] = [];
+const hookSetters: any[] = [];
+const hookRefs: any[] = [];
+const hookEffectEntries: any[] = [];
+const hookPendingEffects: Array<() => void> = [];
+
+let hookStateIndex = 0;
+let hookRefIndex = 0;
+let hookEffectIndex = 0;
+
+const reactHooks: Record<string, any> = {
+  ...realReact,
+  useSyncExternalStore: (subscribe: any, getSnapshot: () => any) => getSnapshot(),
+  useDebugValue: () => {},
+  useState: (initial: any) => {
+    const idx = hookStateIndex++;
+    if (idx >= hookStates.length) {
+      hookStates.push(typeof initial === 'function' ? initial() : initial);
+      hookSetters.push((next: any) => {
+        hookStates[idx] = typeof next === 'function' ? next(hookStates[idx]) : next;
+      });
+    }
+    return [hookStates[idx], hookSetters[idx]];
+  },
+  useRef: (initial: any) => {
+    const idx = hookRefIndex++;
+    if (idx >= hookRefs.length) {
+      hookRefs.push({ current: initial });
+    }
+    return hookRefs[idx];
+  },
+  useEffect: (effect: any, deps: any) => {
+    const idx = hookEffectIndex++;
+    const prev = hookEffectEntries[idx];
+    const changed =
+      !prev ||
+      !prev.initialized ||
+      deps === undefined ||
+      prev.deps === undefined ||
+      deps.length !== prev.deps.length ||
+      deps.some((d: any, i: number) => !Object.is(d, prev.deps[i]));
+    if (!prev) hookEffectEntries[idx] = { deps, initialized: false };
+    else prev.deps = deps;
+    if (changed) {
+      hookPendingEffects.push(() => {
+        if (typeof hookEffectEntries[idx].cleanup === 'function') hookEffectEntries[idx].cleanup();
+        hookEffectEntries[idx].cleanup = effect();
+        hookEffectEntries[idx].initialized = true;
+      });
+    }
+  },
+  useCallback: (fn: any) => fn,
+  useMemo: (fn: any) => fn(),
+};
+
+function findElement(node: any, type: any): any {
+  if (!node || typeof node !== 'object') return null;
+  if (node.type === type) return node;
+  const children = Array.isArray(node.props?.children)
+    ? node.props.children
+    : node.props?.children
+      ? [node.props.children]
+      : [];
+  for (const child of children) {
+    const found = findElement(child, type);
+    if (found) return found;
+  }
+  return null;
+}
+
+function renderPOSPage(POSPage: any) {
+  hookStateIndex = 0;
+  hookRefIndex = 0;
+  hookEffectIndex = 0;
+  const res = POSPage({});
+  while (hookPendingEffects.length > 0) {
+    const fn = hookPendingEffects.shift()!;
+    fn();
+  }
+  return res;
+}
+
+function resetPOSHooks() {
+  hookStates.length = 0;
+  hookSetters.length = 0;
+  hookRefs.length = 0;
+  hookEffectEntries.length = 0;
+  hookPendingEffects.length = 0;
+  hookStateIndex = 0;
+  hookRefIndex = 0;
+  hookEffectIndex = 0;
+  capturedTopbarProps = null;
+  capturedScheduledDrawerProps = null;
+}
+
+let capturedCartPanelProps: any = null;
+let capturedPrepaidModalProps: any = null;
+let capturedTopbarProps: any = null;
+let capturedScheduledDrawerProps: any = null;
+
+const CartPanelStub = (props: any) => {
+  capturedCartPanelProps = props;
+  return null;
+};
+const PrepaidCheckoutModalStub = (props: any) => {
+  capturedPrepaidModalProps = props;
+  return null;
+};
+const PosTopbarStub = (props: any) => {
+  capturedTopbarProps = props;
+  return null;
+};
+const ScheduledOrdersDrawerStub = (props: any) => {
+  capturedScheduledDrawerProps = props;
+  return null;
+};
+const toastStub = Object.assign(() => {}, {
+  success: () => {},
+  error: () => {},
+  custom: () => {},
+});
 
 Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   if (reqName === 'electron') {
@@ -54,15 +185,80 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
       },
     };
   }
+  if (reqName === 'react') return reactHooks;
+  if (reqName === 'react-hot-toast')
+    return { __esModule: true, default: toastStub, toast: toastStub };
+  if (reqName === 'lucide-react') return new Proxy({}, { get: () => () => null });
+  if (reqName === 'use-intl') return { useTranslations: () => (k: string) => k };
+  if (reqName === 'next/dynamic') return () => () => null;
+  if (reqName === '@/components/ui/sidebar') return { useSidebar: () => ({ isMobile: false }) };
+  if (reqName === '@/components/ui/drawer')
+    return { Drawer: () => null, DrawerContent: () => null, DrawerTrigger: () => null };
+  if (reqName === '@/hooks/use-confirm')
+    return { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: () => null }) };
+  if (reqName === '@/hooks/useCashSession')
+    return {
+      useCashSession: () => ({
+        isShiftOpen: true,
+        openSessions: [],
+        openModalOpen: false,
+        setOpenModalOpen: () => {},
+        closeModalOpen: false,
+        setCloseModalOpen: () => {},
+      }),
+    };
+  if (reqName === '@/hooks/usePosSort')
+    return { usePosSortPreference: () => ({ sortBy: 'name', sortDirection: 'asc' }) };
+  if (reqName === '@/hooks/useCashDrawerMovements')
+    return { useCashDrawerMovements: () => ({ open: false, setOpen: () => {} }) };
+  if (reqName === '@/hooks/usePrinter')
+    return {
+      usePrinterStore: () => ({ isConnected: false, status: 'disconnected' }),
+      isPrintCancelledOnTenantChangeError: () => false,
+    };
+  if (reqName === '@/hooks/useBarcodeScanner') return { useBarcodeScanner: () => {} };
+  if (reqName === '@/hooks/usePosKeyboardShortcuts') return { usePosKeyboardShortcuts: () => {} };
+  if (reqName === '@/hooks/useFormatCurrency')
+    return { useFormatCurrency: () => (v: number) => `$${v}` };
+  if (reqName === '@/hooks/useSupportTicketStatus')
+    return { useSupportTicketStatus: () => ({ errorCount: 0 }) };
+  if (reqName === '@/lib/countries')
+    return {
+      getCurrencySymbol: () => '$',
+      getCountryByCode: () => ({ code: 'US', currency: 'USD' }),
+    };
   if (reqName === '@/lib/api') {
     return {
-      get: (...args: [string]) => mockApiHandler.get?.(...args),
+      __esModule: true,
+      default: {
+        get: (...args: [string, any]) => mockApiHandler.get?.(...args),
+        post: (...args: [string, any, any]) => mockApiHandler.post?.(...args),
+        patch: (...args: [string, any, any]) => mockApiHandler.patch?.(...args),
+      },
+      get: (...args: [string, any]) => mockApiHandler.get?.(...args),
       post: (...args: [string, any, any]) => mockApiHandler.post?.(...args),
+      patch: (...args: [string, any, any]) => mockApiHandler.patch?.(...args),
+      operationHeaders: () => ({}),
+      createOperationReference: () => 'op-test',
+      captureClientOperationFailure: () => {},
     };
   }
   if (reqName === '@/store/pos-settings') {
-    return { usePosSettingsStore: mockPosSettingsStore };
+    return { usePosSettingsStore: mockPosSettingsStoreFn };
   }
+  if (reqName === '@/components/pos/PrepaidCheckoutModal') {
+    return { __esModule: true, default: PrepaidCheckoutModalStub };
+  }
+  if (reqName === '@/components/pos/CartPanel') {
+    return { __esModule: true, default: CartPanelStub };
+  }
+  if (reqName === '@/components/pos/PosTopbar') {
+    return { __esModule: true, default: PosTopbarStub };
+  }
+  if (reqName === '@/components/pos/ScheduledOrdersDrawer') {
+    return { __esModule: true, default: ScheduledOrdersDrawerStub };
+  }
+  if (reqName.startsWith('@/components/')) return () => null;
   if (reqName === '@/lib/cart-identity') {
     return originalLoad.call(
       this,
@@ -81,6 +277,18 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   }
   if (reqName === 'zustand') {
     return originalLoad.call(this, frontendRequire.resolve('zustand'), parent, isMain);
+  }
+  if (reqName.startsWith('@/')) {
+    try {
+      return originalLoad.call(
+        this,
+        path.join(process.cwd(), 'frontend/src', reqName.slice(2)),
+        parent,
+        isMain,
+      );
+    } catch {
+      return () => null;
+    }
   }
   return originalLoad.apply(this, arguments as any);
 };
@@ -816,6 +1024,51 @@ async function run() {
     'Invalid auto_lock_minutes value (10) is rejected with 400',
   );
 
+  // User with only reports.view / dashboard access can read auto_lock_minutes (PR #1392)
+  const reportsOnlyId = 'reports-only-user';
+  const reportsOnlyAuth = makeToken(reportsOnlyId, 'server', 'reports@test.local');
+  db.prepare(`
+    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES (?, 'Reports Staff', 'reports@test.local', ?, 'server', ?, 1, ?, ?)
+  `).run(reportsOnlyId, bcrypt.hashSync('Pass123!', 10), bcrypt.hashSync('8888', 10), ts, ts);
+
+  for (const perm of [
+    'pos.use',
+    'orders.read',
+    'orders.create',
+    'orders.status.update',
+    'tables.view',
+    'catalog.view',
+    'kitchen.use',
+    'support.use',
+    'settings.view',
+  ]) {
+    db.prepare(`
+      INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES (?, ?, 'deny', 'owner-1', ?, ?)
+    `).run(reportsOnlyId, perm, ts, ts);
+  }
+  db.prepare(`
+    INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+    VALUES (?, 'reports.view', 'allow', 'owner-1', ?, ?)
+  `).run(reportsOnlyId, ts, ts);
+
+  await request(app).put('/api/settings/auto_lock_minutes').set(ownerAuth).send({ value: '15' });
+
+  const reportsUserAutoLock = await request(app)
+    .get('/api/settings/auto_lock_minutes')
+    .set(reportsOnlyAuth);
+  assertEqualOrThrow(
+    reportsUserAutoLock.status,
+    200,
+    'Reports-only staff user can read /api/settings/auto_lock_minutes (200)',
+  );
+  assertEqualOrThrow(
+    reportsUserAutoLock.body.setting.value,
+    '15',
+    'Reports-only staff user receives configured non-zero idle-lock timeout (15)',
+  );
+
   // ── 7. Frontend auth + cart store lock & quick-switch behavior ──
   console.log(
     '\n7. Frontend auth & cart store: lock preserves cart, clears privileged state, ignores stale async callbacks',
@@ -982,9 +1235,524 @@ async function run() {
     'Stale /auth/me callback from previous session is ignored after user switch',
   );
 
+  // ── 8. POS checkout session-continuation guard ──
+  console.log(
+    '\n8. POS checkout session-continuation guard: switching session invalidates in-flight checkout and preserves recovery state',
+  );
+
+  const fakeStorage = {
+    values: new Map<string, string>(),
+    getItem(k: string) {
+      return this.values.get(k) ?? null;
+    },
+    setItem(k: string, v: string) {
+      this.values.set(k, String(v));
+    },
+    removeItem(k: string) {
+      this.values.delete(k);
+    },
+  };
+  (globalThis as any).window = {
+    dispatchEvent: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    setTimeout,
+    clearTimeout,
+    localStorage: fakeStorage,
+    sessionStorage: fakeStorage,
+  };
+  const documentCookieMap = new Map<string, string>();
+  (globalThis as any).document = {
+    fullscreenElement: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    get cookie() {
+      return Array.from(documentCookieMap.entries())
+        .map(([k, v]) => `${k}=${v}`)
+        .join('; ');
+    },
+    set cookie(str: string) {
+      if (!str) return;
+      const [pair, ...directives] = str.split(';');
+      const eqIdx = pair.indexOf('=');
+      if (eqIdx !== -1) {
+        const k = pair.slice(0, eqIdx).trim();
+        const v = pair.slice(eqIdx + 1).trim();
+        const maxAgeDirective = directives.find((d) =>
+          d.trim().toLowerCase().startsWith('max-age='),
+        );
+        if (maxAgeDirective && maxAgeDirective.split('=')[1].trim() === '0') {
+          documentCookieMap.delete(k);
+        } else {
+          documentCookieMap.set(k, v);
+        }
+      }
+    },
+  };
+  (globalThis as any).localStorage = fakeStorage;
+  (globalThis as any).sessionStorage = fakeStorage;
+
+  const { getPrepaidOrderAttemptStorageKey } = require('../frontend/src/lib/order-attempt');
+  const POSPage = require('../frontend/src/app/(dashboard)/pos/page').default;
+
+  resetPOSHooks();
+  capturedCartPanelProps = null;
+  capturedPrepaidModalProps = null;
+
+  // 1. Sign in as owner
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  useCartStore.getState().clearCart();
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-1',
+      name: 'Coffee',
+      price: 100,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    1,
+  );
+
+  let tree = renderPOSPage(POSPage);
+  const cartPanelEl = findElement(tree, CartPanelStub);
+  assertOrThrow(cartPanelEl, 'CartPanel element found in render tree');
+  assertOrThrow(
+    typeof cartPanelEl.props?.onPlaceOrder === 'function',
+    'CartPanel onPlaceOrder is a function',
+  );
+
+  // Trigger place order to open prepaid checkout modal
+  cartPanelEl.props.onPlaceOrder();
+  tree = renderPOSPage(POSPage);
+  const prepaidModalEl = findElement(tree, PrepaidCheckoutModalStub);
+  assertOrThrow(prepaidModalEl, 'PrepaidCheckoutModal element found in render tree');
+  assertOrThrow(
+    typeof prepaidModalEl.props?.onConfirm === 'function',
+    'PrepaidCheckoutModal onConfirm is a function',
+  );
+
+  const handlePrepaidCheckout = prepaidModalEl.props.onConfirm;
+
+  let ordersDeferredResolve!: (val: any) => void;
+  const ordersPromise = new Promise((resolve) => {
+    ordersDeferredResolve = resolve;
+  });
+  const checkoutCalls: Array<{ url: string; body?: any; headers?: any }> = [];
+  mockApiHandler = {
+    post: async (url: string, body?: any, config?: any) => {
+      checkoutCalls.push({ url, body, headers: config?.headers });
+      if (url === '/orders') {
+        return ordersPromise;
+      }
+      if (url === '/bills/generate') {
+        return { data: { bill: { id: 'bill-1', payment_status: 'unpaid' } } };
+      }
+      if (url.includes('/payments')) {
+        return { data: { bill: { id: 'bill-1', payment_status: 'paid' } } };
+      }
+      return { data: {} };
+    },
+    get: async () => ({ data: {} }),
+  };
+
+  // 2. Trigger prepaid checkout (starts /orders call and holds)
+  const checkoutPromise = handlePrepaidCheckout([{ method: 'cash', amount: 100 }], 0, null);
+
+  // Allow promise tick so api.post('/orders') executes
+  await new Promise((r) => setTimeout(r, 15));
+
+  // 3. While /orders is held, lock and switch to manager
+  useAuthStore.setState({
+    user: null,
+    token: null,
+    isLocked: true,
+  });
+  useAuthStore.setState({
+    user: { id: 'mgr-1', name: 'Bob Manager', email: 'manager@test.local', role: 'manager' },
+    token: 'token-for-mgr-1',
+    isLocked: false,
+  });
+  useCartStore.getState().clearCart();
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-2',
+      name: 'Tea',
+      price: 50,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    1,
+  );
+
+  // Re-render to propagate session switch
+  renderPOSPage(POSPage);
+
+  // 4. Release /orders response
+  ordersDeferredResolve({ data: { order: { id: 'order-123', order_number: 'ORD-123' } } });
+  await checkoutPromise;
+
+  // 5. Assertions under manager
+  const billOrPayCalls = checkoutCalls.filter(
+    (c) => c.url === '/bills/generate' || c.url.includes('/payments'),
+  );
+  assertEqualOrThrow(
+    billOrPayCalls.length,
+    0,
+    'No bill generation or payment calls executed under manager session',
+  );
+
+  const mgrCartItems = useCartStore.getState().items;
+  assertEqualOrThrow(mgrCartItems.length, 1, 'Manager cart has 1 item');
+  assertEqualOrThrow(mgrCartItems[0].product.id, 'prod-2', 'Manager cart item is Tea');
+
+  const ownerKey = getPrepaidOrderAttemptStorageKey('owner-1');
+  const ownerSavedRaw = fakeStorage.getItem(ownerKey);
+  assertOrThrow(ownerSavedRaw, 'Owner recovery state exists in storage under owner key');
+  const ownerSaved = JSON.parse(ownerSavedRaw!);
+  assertEqualOrThrow(
+    ownerSaved?.order?.id,
+    'order-123',
+    'Owner recovery state preserved with created order id',
+  );
+
+  // 6. Switch back to owner-1 and verify owner recovery state is preserved
+  useAuthStore.setState({
+    user: null,
+    token: null,
+    isLocked: true,
+  });
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  renderPOSPage(POSPage);
+
+  const ownerRestored = JSON.parse(fakeStorage.getItem(ownerKey)!);
+  assertEqualOrThrow(
+    ownerRestored?.order?.id,
+    'order-123',
+    'Owner recovery record preserved after switching back to owner',
+  );
+
+  // ── 9. Cart isolation across user switches ──
+  console.log(
+    '\n9. Cart isolation: in-flight response resolution under !isSessionCurrent() clears untouched cart while subsequent orders can be placed normally',
+  );
+
+  // Sign in as owner again
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  useCartStore.getState().clearCart();
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-latte',
+      name: 'Latte',
+      price: 120,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    1,
+  );
+
+  resetPOSHooks();
+  capturedCartPanelProps = null;
+  capturedPrepaidModalProps = null;
+  tree = renderPOSPage(POSPage);
+
+  let p2CartPanel = findElement(tree, CartPanelStub);
+  p2CartPanel.props.onPlaceOrder();
+  tree = renderPOSPage(POSPage);
+  const p2PrepaidModal = findElement(tree, PrepaidCheckoutModalStub);
+
+  let p2OrdersDeferredResolve!: (val: any) => void;
+  const p2OrdersPromise = new Promise((resolve) => {
+    p2OrdersDeferredResolve = resolve;
+  });
+  const p2Calls: Array<{ url: string; body?: any }> = [];
+  mockApiHandler = {
+    post: async (url: string, body?: any) => {
+      p2Calls.push({ url, body });
+      if (url === '/orders') return p2OrdersPromise;
+      if (url === '/bills/generate')
+        return { data: { bill: { id: 'bill-2', payment_status: 'unpaid' } } };
+      if (url.includes('/payments'))
+        return { data: { bill: { id: 'bill-2', payment_status: 'paid' } } };
+      return { data: {} };
+    },
+    get: async () => ({ data: {} }),
+  };
+
+  const p2CheckoutPromise = p2PrepaidModal.props.onConfirm(
+    [{ method: 'cash', amount: 120 }],
+    0,
+    null,
+  );
+  await new Promise((r) => setTimeout(r, 15));
+
+  // User switches to manager while in-flight, but manager DOES NOT touch the cart
+  useAuthStore.setState({
+    user: null,
+    token: null,
+    isLocked: true,
+  });
+  useAuthStore.setState({
+    user: { id: 'mgr-1', name: 'Bob Manager', email: 'manager@test.local', role: 'manager' },
+    token: 'token-for-mgr-1',
+    isLocked: false,
+  });
+  renderPOSPage(POSPage);
+
+  // Cart before release still has Latte
+  assertEqualOrThrow(useCartStore.getState().items.length, 1, 'Manager starts with untouched cart');
+
+  // Release the in-flight order
+  p2OrdersDeferredResolve({
+    data: { order: { id: 'order-latte-456', order_number: 'ORD-LATTE-456' } },
+  });
+  await p2CheckoutPromise;
+
+  // Stale continuation must have safely cleared the matching cart so manager cannot double-charge
+  assertEqualOrThrow(
+    useCartStore.getState().items.length,
+    0,
+    'Stale continuation safely cleared matching committed cart after switch',
+  );
+
+  // Now, suppose manager re-creates the exact same cart and attempts checkout
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-latte',
+      name: 'Latte',
+      price: 120,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    1,
+  );
+  renderPOSPage(POSPage);
+  tree = renderPOSPage(POSPage);
+  p2CartPanel = findElement(tree, CartPanelStub);
+
+  // Trigger onPlaceOrder() under manager: subsequent order with identical items can be placed normally
+  p2CartPanel.props.onPlaceOrder();
+  tree = renderPOSPage(POSPage);
+  const managerPrepaidModal = findElement(tree, PrepaidCheckoutModalStub);
+  assertOrThrow(
+    managerPrepaidModal,
+    'Prepaid checkout modal opens for subsequent order with identical items',
+  );
+  assertEqualOrThrow(
+    useCartStore.getState().items.length,
+    1,
+    'Cart preserved for checkout rather than blocked or cleared',
+  );
+
+  const { buildCartFingerprintFromState } = require('../frontend/src/lib/order-attempt');
+  const baseCartForFingerprint = {
+    tableId: null,
+    customerId: null,
+    orderType: 'takeaway',
+    guestCount: 1,
+    orderNotes: null,
+    items: [
+      {
+        product: { id: 'prod-latte', name: 'Latte', price: 120 },
+        quantity: 1,
+        addons: [],
+      },
+    ],
+    waivedChargeIds: new Set<string>(),
+    optedInChargeIds: new Set<string>(),
+  };
+  const fpImmediate = buildCartFingerprintFromState({
+    ...baseCartForFingerprint,
+    scheduledFor: '',
+  });
+  const fpScheduled1 = buildCartFingerprintFromState({
+    ...baseCartForFingerprint,
+    scheduledFor: '2026-10-30T10:00:00.000Z',
+  });
+  const fpScheduled2 = buildCartFingerprintFromState({
+    ...baseCartForFingerprint,
+    scheduledFor: '2026-10-30T11:00:00.000Z',
+  });
+  assertOrThrow(fpImmediate !== fpScheduled1, 'Immediate and scheduled order fingerprints differ');
+  assertOrThrow(
+    fpScheduled1 !== fpScheduled2,
+    'Different scheduled times yield different fingerprints',
+  );
+
+  const fpDineIn1 = buildCartFingerprintFromState({
+    ...baseCartForFingerprint,
+    orderType: 'dine_in',
+    tableId: 't-1',
+    scheduledFor: '2026-10-30T10:00:00.000Z',
+  });
+  const fpDineIn2 = buildCartFingerprintFromState({
+    ...baseCartForFingerprint,
+    orderType: 'dine_in',
+    tableId: 't-1',
+    scheduledFor: '',
+  });
+  assertEqualOrThrow(fpDineIn1, fpDineIn2, 'Dine-in ignores scheduledFor in cart fingerprint');
+
+  useAuthStore.setState({
+    user: null,
+    token: null,
+    isLocked: true,
+  });
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  useCartStore.getState().clearCart();
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-latte',
+      name: 'Latte',
+      price: 120,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    1,
+  );
+  tree = renderPOSPage(POSPage);
+  p2CartPanel = findElement(tree, CartPanelStub);
+  p2CartPanel.props.onPlaceOrder();
+  tree = renderPOSPage(POSPage);
+  const recoveredModal = findElement(tree, PrepaidCheckoutModalStub);
+  assertOrThrow(
+    recoveredModal,
+    'Prepaid checkout modal opens for originating user with matching attempt',
+  );
+  assertEqualOrThrow(
+    useCartStore.getState().items.length,
+    1,
+    'Cart is preserved rather than wiped during prepaid recovery',
+  );
+
+  // ── 10. Append continuation and pendingOrder isolation across session switches ──
+  console.log(
+    '\n10. Append continuation: session switch clears pendingOrder and in-flight append continuation clears cart',
+  );
+
+  // 1. Sign in as owner and open scheduled orders drawer
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  renderPOSPage(POSPage);
+  tree = renderPOSPage(POSPage);
+  const topbarEl = findElement(tree, PosTopbarStub);
+  assertOrThrow(topbarEl, 'PosTopbar element found in render tree');
+  topbarEl.props.onShowScheduledOrders();
+  tree = renderPOSPage(POSPage);
+
+  const scheduledDrawerEl = findElement(tree, ScheduledOrdersDrawerStub);
+  assertOrThrow(scheduledDrawerEl, 'ScheduledOrdersDrawer element found in render tree');
+  scheduledDrawerEl.props.onAddItemsToOrder({
+    id: 'ord-append-1',
+    order_number: 'ORD-APP-001',
+    type: 'takeaway',
+    status: 'in_progress',
+    items: [],
+  });
+  tree = renderPOSPage(POSPage);
+  p2CartPanel = findElement(tree, CartPanelStub);
+
+  // CartPanel now has existingOrder set to the target order
+  assertEqualOrThrow(
+    p2CartPanel?.props?.existingOrder?.id,
+    'ord-append-1',
+    'pendingOrder is set on CartPanel before session switch',
+  );
+
+  // Add items to append
+  useCartStore.getState().clearCart();
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-latte',
+      name: 'Latte',
+      price: 120,
+      category_id: 'cat-1',
+      is_available: 1,
+      addons: [],
+    } as any,
+    1,
+  );
+  tree = renderPOSPage(POSPage);
+  p2CartPanel = findElement(tree, CartPanelStub);
+
+  let appendDeferredResolve!: (val: any) => void;
+  const appendPromise = new Promise((resolve) => {
+    appendDeferredResolve = resolve;
+  });
+  mockApiHandler = {
+    post: async (url: string, body?: any) => {
+      if (url.includes('/items')) return appendPromise;
+      return { data: {} };
+    },
+    get: async () => ({ data: {} }),
+  };
+
+  const appendCallPromise = p2CartPanel.props.onPlaceOrder();
+  await new Promise((r) => setTimeout(r, 15));
+
+  // 2. Switch to manager while append request is in-flight
+  useAuthStore.setState({
+    user: null,
+    token: null,
+    isLocked: true,
+  });
+  useAuthStore.setState({
+    user: { id: 'mgr-1', name: 'Bob Manager', email: 'manager@test.local', role: 'manager' },
+    token: 'token-for-mgr-1',
+    isLocked: false,
+  });
+  renderPOSPage(POSPage);
+  tree = renderPOSPage(POSPage);
+  p2CartPanel = findElement(tree, CartPanelStub);
+
+  // Verify: pendingOrder was cleared upon session switch
+  assertEqualOrThrow(
+    p2CartPanel?.props?.existingOrder,
+    null,
+    'pendingOrder is cleared when switching session',
+  );
+
+  // 3. Resolve the in-flight append call
+  appendDeferredResolve({
+    data: {
+      order: {
+        id: 'ord-append-1',
+        order_number: 'ORD-APP-001',
+        items: [{ id: 1, product_id: 'prod-latte', quantity: 1 }],
+      },
+    },
+  });
+  await appendCallPromise;
+
+  // Stale append continuation must have safely cleared the matching cart so new session doesn't double-order
+  assertEqualOrThrow(
+    useCartStore.getState().items.length,
+    0,
+    'Stale append continuation safely cleared matching cart after session switch',
+  );
+
   closeDatabase();
   fs.rmSync(testDir, { recursive: true, force: true });
   console.log('\n✅ All PIN Quick Switch & Approval Hardening tests passed!');
+  process.exit(0);
 }
 
 run().catch((err) => {

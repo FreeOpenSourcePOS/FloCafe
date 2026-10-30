@@ -6,7 +6,7 @@
  * counter order. Kept dependency-free so the cart store stays loadable in tests.
  */
 
-import type { ProductVariant } from '@/lib/types';
+import type { ProductVariant } from './types';
 
 const NON_TWO_DECIMAL_COUNTRY_CURRENCIES: Record<string, string> = {
   AF: 'AFN',

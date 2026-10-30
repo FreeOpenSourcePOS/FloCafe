@@ -127,6 +127,7 @@ import {
   pushCenteredWrapped,
   appendPoweredByFooter,
   normalizeThermalText,
+  safePrinterText,
   resolveCurrencyPrefix,
   appendCashDrawerPulse,
   buildEscPos,
@@ -1481,7 +1482,7 @@ export async function printPaymentTicket(
         1,
         cols - quantityWidth - (amount && inlineAmount ? amountWidth + 1 : 0),
       );
-      const nameLines = wrapText(item.product_name, nameWidth);
+      const nameLines = wrapText(safePrinterText(item.product_name), nameWidth);
       const firstLine = quantity + (nameLines.shift() || '');
       if (amount && inlineAmount) {
         lines.push(firstLine + rightAlign(amount, cols - displayCellWidth(firstLine)));

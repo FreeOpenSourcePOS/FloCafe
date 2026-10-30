@@ -1709,6 +1709,35 @@ async function main() {
         `${target.width} emitted text fits its configured display columns (${overflowLines.join(' | ')})`,
       );
     }
+
+    const controlTokenName = `${'X'.repeat(14)} {CUT} ${'Y'.repeat(23)}`;
+    db.prepare('UPDATE order_items SET product_name = ? WHERE order_id = ? AND id = ?').run(
+      controlTokenName,
+      splitBalanceOrder.id,
+      sbItems[0].id,
+    );
+    const controlTokenPreview = await req({
+      path: '/api/printers/print-payment-ticket',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        orderId: splitBalanceOrder.id,
+        printerId: paymentTicketPrinters[0].id,
+        preview: true,
+      },
+    });
+    assertEqualOrThrow(controlTokenPreview.status, 200, 'hostile catalog name preview succeeds');
+    const controlTokenBytes = Buffer.from(controlTokenPreview.body.bytes);
+    const controlTokenCutCount = controlTokenBytes.reduce(
+      (count: number, byte: number, index: number, bytes: Buffer) =>
+        count + (byte === 0x1d && bytes[index + 1] === 0x56 ? 1 : 0),
+      0,
+    );
+    const controlTokenText = escPosToText(controlTokenBytes);
+    assertEqualOrThrow(controlTokenCutCount, 1, 'catalog text cannot inject a printer cut command');
+    assertOrThrow(controlTokenText.includes('Balance Due:'), 'ticket continues through balance');
+    assertOrThrow(controlTokenText.includes('FLOCAFE-TICKET:'), 'ticket continues through QR text');
+
     db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(splitBalanceOrder.id);
 
     // Queue amounts retain bill selection while aggregating all bills and refunds in tenant minor units.

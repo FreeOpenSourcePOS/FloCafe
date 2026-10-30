@@ -137,10 +137,12 @@ or combined stations:
 - **Named counters and roles.** The store owner defines counters with roles: `ordering` (create order
   and send to payment), `payment` (manage awaiting payment queue and take tender), or `combined`
   (both standard checkout and send to payment). Each POS terminal selects its active counter,
-  remembered locally on that device.
-- **Workflow guidance without ownership gating.** Counter roles guide UI defaults, while staff
-  permissions remain authoritative. Staff can view and act on any order across counters; orders are
-  never ownership-gated.
+  remembered locally on that device scoped to the active store.
+- **Workflow guidance without ownership gating.** Counter roles guide UI defaults without restricting
+  underlying staff permissions: ordering counters default to order building and 'Send to payment';
+  payment counters automatically open the shared payment queue and orient the cart CTA toward the
+  queue; combined counters retain standard direct checkout while allowing explicit 'Send to payment'.
+  Staff can view and act on any order across counters; orders are never ownership-gated.
 - **Real orders and bills.** "Send to payment" creates real `orders` and `bills` records, never
   transient held-order JSON. Orders record `dispatch_policy = 'on_payment'` and start in
   `checkout_stage = 'awaiting_payment'`.
@@ -157,8 +159,8 @@ or combined stations:
     triggered).
   - Manual release (`POST /api/orders/:id/release`) on an unpaid `on_payment` order fails with `409`
     (`ORDER_NOT_PAID`).
-  - Prepayment does not complete kitchen preparation (`orders.status` stays `'pending'`) and does
-    not clear occupied dine-in tables.
+  - Prepayment does not bypass kitchen preparation (orders with unserved kitchen items keep
+    `orders.status = 'pending'`) and does not clear occupied dine-in tables.
 - **Paid-but-blocked tickets.** If catalog preconditions or inventory levels fail at release time
   after payment, the transaction atomically transitions `release_status = 'blocked'` with
   `release_blocked_reason` without reverting the committed payment. The ticket remains clearly
@@ -346,10 +348,11 @@ already completed or cancelled) and its dine-in table is released to `available`
 multi-counter ordering (`dispatch_policy = 'on_payment'`) preserves `orders.status = 'pending'` and
 keeps occupied dine-in tables occupied: completing payment transitions `checkout_stage = 'paid'` and
 triggers release to the kitchen (if unscheduled or due), but the order completes only after food
-service concludes. An unreleased scheduled order remains `pending` at payment time, then completes on
-release when KDS is disabled (or no active unserved items exist) or when its last active kitchen item
-transitions to `served` while KDS is enabled, provided the order is not a multi-counter order and
-remains settled and non-refunded. A payment never resurrects a terminal order.
+service concludes. An unreleased scheduled or multi-counter order remains `pending` at payment time,
+then completes on release when KDS is disabled (or no active unserved items exist) or when its last
+active kitchen item transitions to `served` while KDS is enabled, provided the order is not a dine-in
+order with an active table and remains settled and non-refunded. A payment never resurrects a terminal
+order.
 
 When a discount, an order mutation (`syncUnpaidBillsForOrder`), or a `POST /api/bills/generate`
 re-sync reduces the remaining balance of a partially paid bill to exactly zero (where collected funds

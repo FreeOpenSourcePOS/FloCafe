@@ -691,7 +691,11 @@ async function main() {
       .prepare('SELECT release_status, dispatch_policy FROM orders WHERE id = ?')
       .get(nonMcBlockedOrder.body.order.id) as any;
     assertEqualOrThrow(nonMcOrderBlockedRow.release_status, 'blocked', 'non-MC order is blocked');
-    assertEqualOrThrow(nonMcOrderBlockedRow.dispatch_policy, 'immediate', 'dispatch_policy is immediate');
+    assertEqualOrThrow(
+      nonMcOrderBlockedRow.dispatch_policy,
+      'immediate',
+      'dispatch_policy is immediate',
+    );
 
     const queueCheckNonMc = await req({
       path: '/api/orders/awaiting-payment',
@@ -701,8 +705,14 @@ async function main() {
     const foundNonMcInQueue = queueCheckNonMc.body?.orders?.find(
       (o: any) => o.id === nonMcBlockedOrder.body.order.id,
     );
-    assertEqualOrThrow(foundNonMcInQueue, undefined, 'non-MC blocked order NOT in awaiting-payment queue');
-    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(nonMcBlockedOrder.body.order.id);
+    assertEqualOrThrow(
+      foundNonMcInQueue,
+      undefined,
+      'non-MC blocked order NOT in awaiting-payment queue',
+    );
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(
+      nonMcBlockedOrder.body.order.id,
+    );
     adjustStock(db, 'prod-limited', 1, 'restore stock', owner.userId);
 
     // Item 10: Read-only ticket lookup never creates a bill
@@ -719,7 +729,9 @@ async function main() {
     const testOrderNoBill = orderWithoutBillRes.body.order;
     db.prepare('DELETE FROM bills WHERE order_id = ?').run(testOrderNoBill.id);
     const billsBeforeLookup = (
-      db.prepare('SELECT COUNT(*) as n FROM bills WHERE order_id = ?').get(testOrderNoBill.id) as any
+      db
+        .prepare('SELECT COUNT(*) as n FROM bills WHERE order_id = ?')
+        .get(testOrderNoBill.id) as any
     ).n;
     assertEqualOrThrow(billsBeforeLookup, 0, 'zero bills before read-only lookup');
 
@@ -731,9 +743,15 @@ async function main() {
     assertEqualOrThrow(readOnlyLookupRes.status, 200, 'lookup succeeds without bill');
     assertEqualOrThrow(readOnlyLookupRes.body?.bill, null, 'bill is null when not generated');
     const billsAfterLookup = (
-      db.prepare('SELECT COUNT(*) as n FROM bills WHERE order_id = ?').get(testOrderNoBill.id) as any
+      db
+        .prepare('SELECT COUNT(*) as n FROM bills WHERE order_id = ?')
+        .get(testOrderNoBill.id) as any
     ).n;
-    assertEqualOrThrow(billsAfterLookup, 0, 'zero bills after read-only lookup (never created in GET)');
+    assertEqualOrThrow(
+      billsAfterLookup,
+      0,
+      'zero bills after read-only lookup (never created in GET)',
+    );
     db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(testOrderNoBill.id);
 
     // Item 14: Ticket lookup by order_number vs id
@@ -743,14 +761,22 @@ async function main() {
       headers: cashier.authHeader,
     });
     assertEqualOrThrow(lookupByOrderNum.status, 200, 'lookup strictly by order_number 200');
-    assertEqualOrThrow(lookupByOrderNum.body?.order?.order_number, order1.order_number, 'matches order_number');
+    assertEqualOrThrow(
+      lookupByOrderNum.body?.order?.order_number,
+      order1.order_number,
+      'matches order_number',
+    );
 
     const lookupWithById = await req({
       path: `/api/orders/by-ticket/${order1.id}?by=id`,
       method: 'GET',
       headers: cashier.authHeader,
     });
-    assertEqualOrThrow(lookupWithById.status, 200, 'lookup with ?by=id matches order by internal id');
+    assertEqualOrThrow(
+      lookupWithById.status,
+      200,
+      'lookup with ?by=id matches order by internal id',
+    );
     assertEqualOrThrow(lookupWithById.body?.order?.id, order1.id, 'matched order id');
 
     // -------------------------------------------------------------------------
@@ -1069,12 +1095,20 @@ async function main() {
       },
     });
     assertEqualOrThrow(idemPayReplay.status, 200, 'replayed batch payment 200');
-    assertEqualOrThrow(idemPayReplay.body?.bill?.payment_status, 'paid', 'replayed bill is still paid');
+    assertEqualOrThrow(
+      idemPayReplay.body?.bill?.payment_status,
+      'paid',
+      'replayed bill is still paid',
+    );
     const billPaymentsRow = db
       .prepare('SELECT payment_details FROM bills WHERE id = ?')
       .get(idemPayBill.id) as any;
     const recordedPayments = JSON.parse(billPaymentsRow.payment_details || '[]');
-    assertEqualOrThrow(recordedPayments.length, 1, 'exactly one payment recorded (no duplicate charge)');
+    assertEqualOrThrow(
+      recordedPayments.length,
+      1,
+      'exactly one payment recorded (no duplicate charge)',
+    );
 
     // Item 9: Concurrent payment requests on same bill
     const concurrentOrderRes = await req({
@@ -1189,7 +1223,11 @@ async function main() {
       'awaiting_payment',
       'checkout_stage stays awaiting_payment when sibling refunded',
     );
-    assertEqualOrThrow(refundSiblingOrderRow.release_status, 'scheduled', 'order remains unreleased');
+    assertEqualOrThrow(
+      refundSiblingOrderRow.release_status,
+      'scheduled',
+      'order remains unreleased',
+    );
     db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(refundSiblingOrder.id);
 
     // -------------------------------------------------------------------------

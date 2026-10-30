@@ -3644,8 +3644,7 @@ export function reconcileOrderSettlement(
         orderRow.checkout_stage = 'paid';
       }
       const canComplete =
-        !['cancelled', 'completed'].includes(orderRow.status) &&
-        !isUnreleasedOrderRow(orderRow);
+        !['cancelled', 'completed'].includes(orderRow.status) && !isUnreleasedOrderRow(orderRow);
       if (canComplete) {
         db.prepare(
           "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",

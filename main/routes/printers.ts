@@ -1545,7 +1545,7 @@ router.post(
       const db = getDatabase();
       let printer = printerId
         ? db.prepare('SELECT * FROM printers WHERE id = ?').get(printerId)
-        : (db
+        : db
             .prepare(
               `SELECT * FROM printers
                WHERE connection_type != 'webusb'
@@ -1553,14 +1553,14 @@ router.post(
                LIMIT 1`,
             )
             .get() ||
-           db
+          db
             .prepare(
               `SELECT * FROM printers
                WHERE connection_type = 'webusb'
                ORDER BY is_default DESC, name
                LIMIT 1`,
             )
-            .get());
+            .get();
 
       if (!printer && preview === true) {
         printer = { id: 0, name: 'Default 80mm Preview', paper_width: '80mm' };

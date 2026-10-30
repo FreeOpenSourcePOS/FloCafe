@@ -510,12 +510,13 @@ rename catalog items or create duplicate categories and add-ons during CSV impor
 
 **Rule:** Multi-counter ordering separates order capture ("Send to payment") from cashier settlement:
 
-1. **Prepayment never marks orders complete or frees dine-in tables:** Completing payment across all
-   applicable bills for an `on_payment` order transitions its `checkout_stage` to `'paid'` and
-   triggers release to the kitchen (if unscheduled or scheduled instant is reached), but leaves its
-   kitchen `status = 'pending'`. The order completes only when kitchen delivery is marked completed
-   or table settlement concludes; dine-in tables remain occupied (`occupied = 1`) until normal
-   service concludes.
+1. **Prepayment never prematurely marks kitchen work complete or frees dine-in tables:** Completing
+   payment across all applicable bills for an `on_payment` order transitions its `checkout_stage` to
+   `'paid'` and triggers release to the kitchen (if unscheduled or scheduled instant is reached), but
+   leaves its kitchen `status = 'pending'` while kitchen items remain to be prepared. The order
+   completes only when kitchen preparation concludes (or immediately upon release for takeaway orders
+   when KDS is disabled) and dine-in tables remain occupied (`occupied = 1`) until table service
+   concludes.
 2. **Orders and bills are real database entities, never held-order JSON:** An order sent to payment is
    stored immediately in `orders`, `order_items`, and `bills` with quoted pricing snapshots.
 3. **Multi-counter orders are never ownership-gated:** Any staff member at any payment or combined

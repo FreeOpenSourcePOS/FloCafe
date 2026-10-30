@@ -1522,30 +1522,31 @@ export async function printPaymentTicketDetailed(
   const id = correlationId();
   try {
     const dispatch = await printPaymentTicket(...args);
-    const result: PrintResult & { bytes?: number[]; preview?: boolean; connection_type?: string } = dispatch.ok
-      ? {
-          ok: true,
-          correlationId: id,
-          stage: 'dispatch',
-          warnings: dispatch.warnings,
-          bytes: (dispatch as any).bytes,
-          preview: (dispatch as any).preview,
-          connection_type: (dispatch as any).connection_type,
-        }
-      : {
-          ok: false,
-          code: 'print.payment_ticket.failed',
-          correlationId: id,
-          stage: 'dispatch',
-          detail: dispatch.detail,
-          failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
-          platformErrorCode:
-            dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
-          jobId: dispatch.jobId,
-          driverName: dispatch.driverName,
-          printerStatus: dispatch.printerStatus,
-          warnings: dispatch.warnings,
-        };
+    const result: PrintResult & { bytes?: number[]; preview?: boolean; connection_type?: string } =
+      dispatch.ok
+        ? {
+            ok: true,
+            correlationId: id,
+            stage: 'dispatch',
+            warnings: dispatch.warnings,
+            bytes: (dispatch as any).bytes,
+            preview: (dispatch as any).preview,
+            connection_type: (dispatch as any).connection_type,
+          }
+        : {
+            ok: false,
+            code: 'print.payment_ticket.failed',
+            correlationId: id,
+            stage: 'dispatch',
+            detail: dispatch.detail,
+            failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
+            platformErrorCode:
+              dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
+            jobId: dispatch.jobId,
+            driverName: dispatch.driverName,
+            printerStatus: dispatch.printerStatus,
+            warnings: dispatch.warnings,
+          };
     if (!result.ok) reportPrintFailure('payment_ticket', result);
     return result;
   } catch (error) {

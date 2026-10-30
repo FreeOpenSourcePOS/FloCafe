@@ -46,12 +46,14 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
   page,
 }) => {
   test.setTimeout(120_000);
+  await page.clock.install();
   const ownerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
   const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
   const runId = Math.random().toString(36).slice(2, 8);
   const createdOrderIds: number[] = [];
   let trackedProductId: string | null = null;
-  let managerPinSet = false;
+  let managerId: string | null = null;
+  let extraApproverId: string | null = null;
 
   try {
     await page.goto(`${BASE}/auth/login`);
@@ -187,12 +189,30 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
       paidCard.getByTestId(`scheduled-refund-required-msg-${prepaidOrderId}`),
     ).toBeVisible();
 
-    const setPinRes = await page.request.put(`${BASE}/api/staff/e2e-manager`, {
+    const managerRes = await page.request.post(`${BASE}/api/staff`, {
       headers: ownerHeaders,
-      data: { pin: '2468' },
+      data: {
+        name: 'Scheduled refund manager',
+        email: `scheduled-refund-${runId}@flo.local`,
+        password: 'Password123!',
+        role: 'manager',
+        pin: '2468',
+      },
     });
-    expect(setPinRes.ok()).toBeTruthy();
-    managerPinSet = true;
+    expect(managerRes.ok()).toBeTruthy();
+    managerId = (await managerRes.json()).staff.id;
+    const extraApproverRes = await page.request.post(`${BASE}/api/staff`, {
+      headers: ownerHeaders,
+      data: {
+        name: 'Scheduled test manager',
+        email: `scheduled-manager-${runId}@flo.local`,
+        password: 'Password123!',
+        role: 'manager',
+        pin: '1357',
+      },
+    });
+    expect(extraApproverRes.ok()).toBeTruthy();
+    extraApproverId = (await extraApproverRes.json()).staff.id;
 
     const billRes = await page.request.get(`${BASE}/api/bills/order/${prepaidOrderId}`, {
       headers: ownerHeaders,
@@ -206,7 +226,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
         bill_id: prepaidBill.id,
         amount: 10,
         method: 'cash',
-        approver_id: 'e2e-manager',
+        approver_id: managerId,
         override_pin: '2468',
       },
     });
@@ -228,7 +248,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
         bill_id: prepaidBill.id,
         amount: remainingRefund,
         method: 'cash',
-        approver_id: 'e2e-manager',
+        approver_id: managerId,
         override_pin: '2468',
       },
     });
@@ -439,7 +459,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
       cancelOverlay.getByText('Refund collected payment before cancelling this scheduled order.'),
     ).toBeVisible();
     if (await cancelOverlay.locator('#cancelApproverSelect').count()) {
-      await cancelOverlay.locator('#cancelApproverSelect').selectOption('e2e-manager');
+      await cancelOverlay.locator('#cancelApproverSelect').selectOption(managerId!);
     }
     await cancelOverlay.locator('#overridePin').fill('2468');
     const blockedCancelRespPromise = page.waitForResponse((res) => {
@@ -457,20 +477,134 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     ).toBeVisible();
     await cancelOverlay.getByRole('button', { name: 'Cancel', exact: true }).click();
 
-    // Partial refund via /orders Refund modal -> Partially Refunded badge, Checkout suppressed, Refund still exposed
+    let releaseStaleApprovers!: () => void;
+    let markStaleApproversStarted!: () => void;
+    const staleApproversGate = new Promise<void>((resolve) => {
+      releaseStaleApprovers = resolve;
+    });
+    const staleApproversStarted = new Promise<void>((resolve) => {
+      markStaleApproversStarted = resolve;
+    });
+    await page.route(
+      '**/api/staff/approvers',
+      async (route) => {
+        markStaleApproversStarted();
+        await staleApproversGate;
+        await route.continue();
+      },
+      { times: 1 },
+    );
     await detailPanel.getByRole('button', { name: 'Refund', exact: true }).click();
+    await staleApproversStarted;
+    const staleApproverOverlay = page.locator('.fixed.inset-0.z-50').last();
+    await staleApproverOverlay.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await detailPanel.getByRole('button', { name: 'Refund', exact: true }).click();
+    const freshApproverOverlay = page.locator('.fixed.inset-0.z-50').last();
+    await expect(freshApproverOverlay.locator('#refundApprover')).toBeVisible();
+    await freshApproverOverlay.locator('#refundApprover').selectOption(managerId!);
+    await freshApproverOverlay.locator('#refundPin').fill('2468');
+    const staleApproversResponse = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/staff/approvers',
+    );
+    releaseStaleApprovers();
+    await staleApproversResponse;
+    await expect(freshApproverOverlay.locator('#refundApprover')).toHaveValue(managerId!);
+    await expect(freshApproverOverlay.locator('#refundPin')).toHaveValue('2468');
+    await freshApproverOverlay.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+    await page.route(
+      '**/api/staff/approvers',
+      (route) => route.fulfill({ status: 503, json: {} }),
+      { times: 1 },
+    );
+    await detailPanel.getByRole('button', { name: 'Refund', exact: true }).click();
+    const failedApproverOverlay = page.locator('.fixed.inset-0.z-50').last();
+    await expect(
+      failedApproverOverlay.getByText('Could not load refund approvers. Try again.'),
+    ).toBeVisible();
+    await expect(failedApproverOverlay.locator('#refundPin')).toBeDisabled();
+    await expect(
+      failedApproverOverlay.getByRole('button', { name: /Issue refund/i }),
+    ).toBeDisabled();
+    await failedApproverOverlay.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+    await page.route(
+      '**/api/staff/approvers',
+      (route) => route.fulfill({ json: { approvers: [] } }),
+      { times: 1 },
+    );
+    await detailPanel.getByRole('button', { name: 'Refund', exact: true }).click();
+    const emptyApproverOverlay = page.locator('.fixed.inset-0.z-50').last();
+    await expect(
+      emptyApproverOverlay.getByText(
+        'Refund approval is not configured. Set an Approval PIN in Staff before issuing refunds.',
+      ),
+    ).toBeVisible();
+    await expect(emptyApproverOverlay.locator('#refundPin')).toBeDisabled();
+    await expect(
+      emptyApproverOverlay.getByRole('button', { name: /Issue refund/i }),
+    ).toBeDisabled();
+    await emptyApproverOverlay.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+    // Partial refund via /orders Refund modal -> Partially Refunded badge, Checkout suppressed, Refund still exposed
+    let releaseApprovers!: () => void;
+    const approversGate = new Promise<void>((resolve) => {
+      releaseApprovers = resolve;
+    });
+    await page.route(
+      '**/api/staff/approvers',
+      async (route) => {
+        await approversGate;
+        const response = await route.fetch();
+        const body = await response.json();
+        body.approvers = body.approvers.filter(
+          (member: { role: string }) => member.role !== 'owner',
+        );
+        body.approvers.push({
+          id: 'refund-test-owner',
+          name: 'Refund test owner',
+          role: 'owner',
+          is_active: 1,
+          has_pin: true,
+        });
+        await route.fulfill({ response, json: body });
+      },
+      { times: 1 },
+    );
+    await detailPanel.getByRole('button', { name: 'Refund', exact: true }).click();
+    await expect(page.locator('#refundPin')).toBeDisabled();
+    releaseApprovers();
     const refundOverlay1 = page.locator('.fixed.inset-0.z-50').last();
     await expect(refundOverlay1).toBeVisible();
     await refundOverlay1.locator('#refundAmount').fill('5');
-    await expect(async () => {
-      if (await refundOverlay1.locator('#refundApprover').count()) {
-        await refundOverlay1.locator('#refundApprover').selectOption('e2e-manager');
-      }
-      await refundOverlay1.locator('#refundPin').fill('2468');
-      await expect(refundOverlay1.getByRole('button', { name: /Issue refund/i })).toBeEnabled({
-        timeout: 500,
-      });
-    }).toPass({ timeout: 10_000 });
+    await expect(refundOverlay1.locator('#refundApprover')).toBeVisible();
+    await refundOverlay1.locator('#refundApprover').selectOption(managerId!);
+    await refundOverlay1.locator('#refundPin').fill('2468');
+    await page.clock.fastForward(30000);
+    await expect(refundOverlay1.locator('#refundApprover')).toHaveValue(managerId!);
+    await expect(refundOverlay1.locator('#refundPin')).toHaveValue('2468');
+    const earlyRefundTime = await page.evaluate(() => Date.now());
+    await refundOverlay1.locator('#refundApprover').selectOption('refund-test-owner');
+    await refundOverlay1.locator('#refundPin').fill('1357');
+    await page.clock.fastForward(61 * 60 * 1000);
+    await expect(refundOverlay1.getByText('Refund test owner')).toBeVisible();
+    await expect(refundOverlay1.locator('#refundPin')).toHaveValue('1357');
+    await page.clock.setSystemTime(earlyRefundTime);
+    await page.clock.fastForward(30000);
+    await refundOverlay1.locator('#refundApprover').selectOption(managerId!);
+    await refundOverlay1.locator('#refundPin').fill('2468');
+    await page.clock.fastForward(61 * 60 * 1000);
+    await expect(refundOverlay1.getByText('Refund test owner')).toBeVisible();
+    await expect(refundOverlay1.locator('#refundPin')).toHaveValue('');
+    await page.clock.setSystemTime(earlyRefundTime);
+    await page.clock.fastForward(30000);
+    await refundOverlay1.locator('#refundApprover').selectOption(managerId!);
+    await refundOverlay1.locator('#refundPin').fill('2468');
+    await refundOverlay1.locator('#refundApprover').selectOption(extraApproverId!);
+    await expect(refundOverlay1.locator('#refundPin')).toHaveValue('');
+    await refundOverlay1.locator('#refundApprover').selectOption(managerId!);
+    await refundOverlay1.locator('#refundPin').fill('2468');
+    await expect(refundOverlay1.getByRole('button', { name: /Issue refund/i })).toBeEnabled();
     await refundOverlay1.getByRole('button', { name: /Issue refund/i }).click();
     await expect(page.getByText(/Refund issued/i).first()).toBeVisible();
 
@@ -484,15 +618,10 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await detailPanel.getByRole('button', { name: 'Refund', exact: true }).click();
     const refundOverlay2 = page.locator('.fixed.inset-0.z-50').last();
     await expect(refundOverlay2).toBeVisible();
-    await expect(async () => {
-      if (await refundOverlay2.locator('#refundApprover').count()) {
-        await refundOverlay2.locator('#refundApprover').selectOption('e2e-manager');
-      }
-      await refundOverlay2.locator('#refundPin').fill('2468');
-      await expect(refundOverlay2.getByRole('button', { name: /Issue refund/i })).toBeEnabled({
-        timeout: 500,
-      });
-    }).toPass({ timeout: 10_000 });
+    await expect(refundOverlay2.locator('#refundApprover')).toBeVisible();
+    await refundOverlay2.locator('#refundApprover').selectOption(managerId!);
+    await refundOverlay2.locator('#refundPin').fill('2468');
+    await expect(refundOverlay2.getByRole('button', { name: /Issue refund/i })).toBeEnabled();
     await refundOverlay2.getByRole('button', { name: /Issue refund/i }).click();
     await expect(page.getByText(/Refund issued/i).first()).toBeVisible();
 
@@ -508,7 +637,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     const finalCancelOverlay = page.locator('.fixed.inset-0.z-50').last();
     await expect(finalCancelOverlay).toBeVisible();
     if (await finalCancelOverlay.locator('#cancelApproverSelect').count()) {
-      await finalCancelOverlay.locator('#cancelApproverSelect').selectOption('e2e-manager');
+      await finalCancelOverlay.locator('#cancelApproverSelect').selectOption(managerId!);
     }
     if (await finalCancelOverlay.locator('#overridePin').count()) {
       await finalCancelOverlay.locator('#overridePin').fill('2468');
@@ -550,13 +679,14 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
         .delete(`${BASE}/api/products/${trackedProductId}`, { headers: ownerHeaders })
         .catch(() => {});
     }
-    if (managerPinSet) {
-      await page.request
-        .put(`${BASE}/api/staff/e2e-manager`, {
-          headers: ownerHeaders,
-          data: { pin: null },
-        })
-        .catch(() => {});
+    const fixtureApprovers = [extraApproverId, managerId].filter((id): id is string => id !== null);
+    const deactivateResults = await Promise.all(
+      fixtureApprovers.map((id) =>
+        page.request.post(`${BASE}/api/staff/${id}/deactivate`, { headers: ownerHeaders }),
+      ),
+    );
+    for (const response of deactivateResults) {
+      expect(response.ok(), 'deactivate disposable refund approver').toBeTruthy();
     }
   }
 });

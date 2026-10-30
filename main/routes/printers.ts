@@ -1595,12 +1595,19 @@ router.post(
       const balance =
         balanceRow && balanceRow.bill_count > 0 ? Number(balanceRow.total_balance) : order.total;
 
-      const items = (order.items || []).map((item: any) => ({
-        product_name: item.product_name,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        total: item.total,
-      }));
+      const items = (order.items || []).map(
+        (item: {
+          product_name?: string;
+          quantity?: number;
+          unit_price?: number;
+          total?: number;
+        }) => ({
+          product_name: item.product_name || '',
+          quantity: item.quantity || 1,
+          unit_price: item.unit_price || 0,
+          total: item.total || 0,
+        }),
+      );
 
       const result = await printPaymentTicketDetailed(
         {
@@ -1627,17 +1634,17 @@ router.post(
         return res.json({
           success: true,
           preview: true,
-          bytes: (result as any).bytes || [],
+          bytes: result.bytes || [],
           warnings: result.warnings || [],
         });
       }
 
-      if (result.ok && (result as any).connection_type === 'webusb') {
+      if (result.ok && result.connection_type === 'webusb') {
         return res.json({
           success: true,
           webusb: true,
-          bytes: Array.from((result as any).bytes || []),
-          printerName: (printer as any).name,
+          bytes: Array.from(result.bytes || []),
+          printerName: (printer as { name?: string }).name,
           warnings: result.warnings || [],
         });
       }

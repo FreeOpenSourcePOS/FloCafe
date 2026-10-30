@@ -182,6 +182,9 @@ export type DispatchResult = {
   driverName?: string;
   printerStatus?: number;
   warnings?: PrintWarning[];
+  bytes?: number[] | Buffer;
+  preview?: boolean;
+  connection_type?: string;
 };
 
 export type PrintFailureClass =
@@ -1497,7 +1500,7 @@ export async function printPaymentTicket(
     });
 
     if (options.preview) {
-      return { ok: true, preview: true, bytes: Array.from(data), warnings: [] } as any;
+      return { ok: true, preview: true, bytes: Array.from(data), warnings: [] };
     }
 
     if (printer?.connection_type === 'webusb') {
@@ -1506,7 +1509,7 @@ export async function printPaymentTicket(
         bytes: Array.from(data),
         connection_type: 'webusb',
         warnings: [],
-      } as any;
+      };
     }
 
     return await dispatchPrint(printer, data, options.signal);
@@ -1516,22 +1519,28 @@ export async function printPaymentTicket(
   }
 }
 
+export type PaymentTicketPrintResult = PrintResult & {
+  bytes?: number[] | Buffer;
+  preview?: boolean;
+  connection_type?: string;
+};
+
 export async function printPaymentTicketDetailed(
   ...args: Parameters<typeof printPaymentTicket>
-): Promise<PrintResult> {
+): Promise<PaymentTicketPrintResult> {
   const id = correlationId();
   try {
     const dispatch = await printPaymentTicket(...args);
-    const result: PrintResult & { bytes?: number[]; preview?: boolean; connection_type?: string } =
+    const result: PaymentTicketPrintResult =
       dispatch.ok
         ? {
             ok: true,
             correlationId: id,
             stage: 'dispatch',
             warnings: dispatch.warnings,
-            bytes: (dispatch as any).bytes,
-            preview: (dispatch as any).preview,
-            connection_type: (dispatch as any).connection_type,
+            bytes: dispatch.bytes,
+            preview: dispatch.preview,
+            connection_type: dispatch.connection_type,
           }
         : {
             ok: false,

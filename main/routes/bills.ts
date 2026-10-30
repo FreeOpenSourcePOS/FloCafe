@@ -2543,7 +2543,6 @@ export function syncUnpaidBillsForOrder(
         db.prepare(
           `UPDATE bills SET payment_status = 'paid', paid_at = ?, updated_at = ? WHERE id = ?`,
         ).run(now(), now(), bill.id);
-        reconcileOrderSettlement(db, bill.order_id, now());
       }
     } else if (zeroClosed) {
       db.prepare(
@@ -3701,7 +3700,7 @@ export function completeExactBalanceSettlement(
   const updatedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
   if (!updatedBill) return null;
 
-  const { orderFullyPaid, orderRow } = reconcileOrderSettlement(
+  const { orderRow } = reconcileOrderSettlement(
     db,
     bill.order_id,
     changedAt,

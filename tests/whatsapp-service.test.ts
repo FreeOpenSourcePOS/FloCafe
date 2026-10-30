@@ -468,6 +468,13 @@ async function main(): Promise<void> {
       'isTimeWithinQuietHours handles overnight quiet-hours windows accurately',
     );
     assert(
+      whatsapp.isTimeWithinQuietHours('23:59', '00:00', '23:59') === true &&
+        whatsapp.isTimeWithinQuietHours('00:00', '00:00', '23:59') === true &&
+        whatsapp.isTimeWithinQuietHours('23:59', '22:00', '23:59') === true &&
+        whatsapp.isTimeWithinQuietHours('21:59', '22:00', '23:59') === false,
+      'isTimeWithinQuietHours includes 23:59 when quiet hours extend to end of day',
+    );
+    assert(
       whatsapp.isCurrentlyQuietHours(
         {
           autoOptOutEnabled: true,

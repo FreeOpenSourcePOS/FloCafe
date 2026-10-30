@@ -565,6 +565,7 @@ export function isAutoOptOutText(body: string): boolean {
 /**
  * Evaluates whether `currentHhMm` ('HH:MM') falls inside `[startHhMm, endHhMm)`.
  * Supports overnight windows (e.g. '22:00' to '09:00') and same-day windows.
+ * When `endHhMm` is '23:59', the window includes the final minute of the day.
  */
 export function isTimeWithinQuietHours(
   currentHhMm: string,
@@ -576,7 +577,7 @@ export function isTimeWithinQuietHours(
   const end = normalizeTimeHhMm(endHhMm, '09:00');
   if (start === end) return false;
   if (start < end) {
-    return currentHhMm >= start && currentHhMm < end;
+    return currentHhMm >= start && (end === '23:59' || currentHhMm < end);
   }
   // Overnight window (e.g. 22:00 -> 09:00)
   return currentHhMm >= start || currentHhMm < end;

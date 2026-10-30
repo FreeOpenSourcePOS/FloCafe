@@ -1603,6 +1603,7 @@ router.get(
           o.scheduled_for,
           o.total,
           o.total AS total_amount,
+          o.round_off,
           o.checkout_stage,
           o.dispatch_policy,
           o.release_status,
@@ -1666,10 +1667,23 @@ router.get(
               'utf8',
             ).toString('base64')
           : null;
+      const tickets = pageRows.map((order) => {
+        const paymentTotals = evaluateOrderStatusPaymentBlock(
+          db,
+          order.id,
+          order.total,
+          order.round_off,
+        );
+        return {
+          ...order,
+          ticket_balance: paymentTotals.totalOutstandingMinor / paymentTotals.minorFactor,
+          ticket_paid_amount: paymentTotals.totalCollectedMinor / paymentTotals.minorFactor,
+        };
+      });
 
       res.json({
-        orders: pageRows,
-        tickets: pageRows,
+        orders: tickets,
+        tickets,
         next_cursor,
         has_more: hasMore,
         awaiting_count,

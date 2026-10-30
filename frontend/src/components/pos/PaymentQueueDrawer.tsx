@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Ltr } from '@/components/layout/Ltr';
 import api from '@/lib/api';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { useFormatDate } from '@/hooks/useFormatDate';
 import { tenantCan } from '@/lib/permissions';
 import { useAuthStore } from '@/store/auth';
 import { printerService } from '@/lib/printer/PrinterService';
@@ -37,6 +38,8 @@ export interface AwaitingPaymentOrder {
   total?: number;
   total_amount?: number;
   paid_amount: number;
+  ticket_balance: number;
+  ticket_paid_amount: number;
   balance: number;
   checkout_stage: 'building' | 'awaiting_payment' | 'paid';
   release_status: 'scheduled' | 'released' | 'blocked' | 'cancelled';
@@ -72,6 +75,7 @@ export function PaymentQueueDrawer({
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
+  const { formatTime } = useFormatDate();
   const { currentTenant } = useAuthStore();
 
   const canPay =
@@ -291,11 +295,15 @@ export function PaymentQueueDrawer({
           </div>
           <div className="text-end shrink-0">
             <span className="text-base font-bold text-foreground">
-              {fmt(order.balance > 0 ? order.balance : (order.total_amount ?? order.total ?? 0))}
+              {fmt(
+                order.ticket_balance > 0
+                  ? order.ticket_balance
+                  : (order.total_amount ?? order.total ?? 0),
+              )}
             </span>
-            {order.paid_amount > 0 && order.balance > 0 && (
+            {order.ticket_paid_amount > 0 && order.ticket_balance > 0 && (
               <p className="text-xs text-muted-foreground">
-                {t('partialPaid', { paid: fmt(order.paid_amount) })}
+                {t('partialPaid', { paid: fmt(order.ticket_paid_amount) })}
               </p>
             )}
           </div>
@@ -312,12 +320,7 @@ export function PaymentQueueDrawer({
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border">
-          <span className="text-xs text-muted-foreground">
-            {new Date(order.created_at).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </span>
+          <span className="text-xs text-muted-foreground">{formatTime(order.created_at)}</span>
 
           <div className="flex items-center gap-1.5">
             <Button

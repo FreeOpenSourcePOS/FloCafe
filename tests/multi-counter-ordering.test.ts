@@ -120,6 +120,7 @@ const { stopScheduledOrderSweep } = require('../main/services/scheduled-orders')
 const { resetPinRateLimitForTests } = require('../main/routes/orders');
 const { registerRoutes } = require('../main/routes/index');
 const { stopKdsServer } = require('../main/kds-server');
+const { escPosToText } = require('../main/printers/thermal');
 
 function adjustStock(
   db: any,
@@ -942,6 +943,47 @@ async function main() {
     );
     assertEqualOrThrow(orderDineInAfterPay.status, 'pending', 'dine in status remains pending');
 
+    const dineInItem = orderDineIn.items[0];
+    const dineInServedRes = await req({
+      path: `/api/order-items/${dineInItem.id}/status`,
+      method: 'PATCH',
+      headers: owner.authHeader,
+      body: { status: 'served' },
+    });
+    assertEqualOrThrow(dineInServedRes.status, 200, 'served dine-in item after payment');
+    const orderDineInAfterServed = db
+      .prepare('SELECT status FROM orders WHERE id = ?')
+      .get(orderDineIn.id) as any;
+    assertEqualOrThrow(
+      orderDineInAfterServed.status,
+      'served',
+      'dine-in order remains served instead of auto-completing',
+    );
+    const tblRowAfterServed = db
+      .prepare('SELECT status FROM tables WHERE id = ?')
+      .get('tbl-mc-1') as any;
+    assertEqualOrThrow(
+      tblRowAfterServed.status,
+      'occupied',
+      'dine-in table remains occupied after the last item is served',
+    );
+
+    const completeDineInRes = await req({
+      path: `/api/orders/${orderDineIn.id}/status`,
+      method: 'PATCH',
+      headers: owner.authHeader,
+      body: { status: 'completed' },
+    });
+    assertEqualOrThrow(completeDineInRes.status, 200, 'complete settled dine-in order');
+    const tblRowAfterComplete = db
+      .prepare('SELECT status FROM tables WHERE id = ?')
+      .get('tbl-mc-1') as any;
+    assertEqualOrThrow(
+      tblRowAfterComplete.status,
+      'available',
+      'explicit completion releases the dine-in table',
+    );
+
     const splitDineInRes = await req({
       path: '/api/orders',
       method: 'POST',
@@ -1009,6 +1051,16 @@ async function main() {
       Number(splitQueueRow.balance),
       Number(splitBill2.balance),
       'queue row shows splitBill2 balance',
+    );
+    assertEqualOrThrow(
+      Number(splitQueueRow.ticket_balance),
+      Number(splitBill2.balance),
+      'queue ticket balance covers all split bills',
+    );
+    assertEqualOrThrow(
+      Number(splitQueueRow.ticket_paid_amount),
+      Number(splitBill1.total),
+      'queue ticket paid amount includes settled split bills',
     );
 
     const lookupSplitTicket = await req({
@@ -1609,7 +1661,120 @@ async function main() {
     const previewText = previewBytes.toString('utf8');
     assertOrThrow(previewText.includes('Balance Due:'), 'print ticket includes Balance Due');
     assertOrThrow(previewText.includes('Date:'), 'print ticket includes localized Date');
+
+    const longTicketName =
+      'Extraordinarily long product name with several words reserved amount column';
+    db.prepare('UPDATE order_items SET product_name = ? WHERE order_id = ? AND id = ?').run(
+      longTicketName,
+      splitBalanceOrder.id,
+      sbItems[0].id,
+    );
+    setStoreSetting(db, 'business_name', 'Cafe Ticket House');
+    const paymentTicketPrinters = [
+      { id: 'prn-mc-payment-58', width: '58mm', columns: 32 },
+      { id: 'prn-mc-payment-80', width: '80mm-42', columns: 42 },
+    ];
+    for (const target of paymentTicketPrinters) {
+      db.prepare(
+        'INSERT OR REPLACE INTO printers (id, name, connection_type, paper_width, is_default) VALUES (?, ?, ?, ?, 0)',
+      ).run(target.id, `Payment ${target.width}`, 'network', target.width);
+      const response = await req({
+        path: '/api/printers/print-payment-ticket',
+        method: 'POST',
+        headers: serverUser.authHeader,
+        body: { orderId: splitBalanceOrder.id, printerId: target.id, preview: true },
+      });
+      assertEqualOrThrow(response.status, 200, `${target.width} payment ticket preview succeeds`);
+      const text = escPosToText(Buffer.from(response.body.bytes));
+      assertOrThrow(text.includes('Cafe Ticket House'), `${target.width} uses business_name`);
+      assertOrThrow(
+        text.includes('PAYMENT TICKET'),
+        `${target.width} has a centered ticket heading`,
+      );
+      assertOrThrow(text.includes('Balance Due:'), `${target.width} prints balance due`);
+      assertOrThrow(
+        longTicketName.split(' ').every((word: string) => text.includes(word)),
+        `${target.width} wraps the complete long product name`,
+      );
+      assertOrThrow(
+        !/[{](?:CENTER|BOLD|\/(?:CENTER|BOLD))[}]/.test(text),
+        `${target.width} does not emit unsupported formatting tokens`,
+      );
+      const printableLines = text
+        .split('\n')
+        .filter((line: string) => !/[\x00-\x1f\x7f]/.test(line));
+      const overflowLines = printableLines.filter((line: string) => line.length > target.columns);
+      assertOrThrow(
+        overflowLines.length === 0,
+        `${target.width} emitted text fits its configured display columns (${overflowLines.join(' | ')})`,
+      );
+    }
     db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(splitBalanceOrder.id);
+
+    // Queue amounts retain bill selection while aggregating all bills and refunds in tenant minor units.
+    setStoreSetting(db, 'country', 'BH');
+    setStoreSetting(db, 'timezone', 'Asia/Bahrain');
+    db.prepare("DELETE FROM settings WHERE key = 'currency'").run();
+    seedProduct(db, 'prod-mc-bhd-queue', 'cat-mc', 'Bahraini Queue Item', 1, {
+      track_inventory: false,
+      stock_quantity: 0,
+    });
+    const bhdQueueOrderRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-mc-bhd-queue', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(bhdQueueOrderRes.status, 201, 'create BHD payment queue order');
+    const bhdQueueOrder = bhdQueueOrderRes.body.order;
+    const bhdQueueBill = db
+      .prepare('SELECT * FROM bills WHERE order_id = ?')
+      .get(bhdQueueOrder.id) as any;
+    db.prepare(
+      "UPDATE bills SET paid_amount = 0.996, balance = 0.004, payment_status = 'partial', payment_details = ? WHERE id = ?",
+    ).run(JSON.stringify([{ method: 'card', amount: 0.996 }]), bhdQueueBill.id);
+    db.prepare(
+      `INSERT INTO refunds (bill_id, amount_cents, method, approved_by, created_by, created_at)
+       VALUES (?, ?, 'cash', ?, ?, ?)`,
+    ).run(bhdQueueBill.id, 100, owner.userId, owner.userId, now());
+    const bhdQueueRes = await req({
+      path: '/api/orders/awaiting-payment',
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(bhdQueueRes.status, 200, 'fetch BHD queue ticket aggregate');
+    const bhdQueueTicket = bhdQueueRes.body.orders.find(
+      (order: any) => order.id === bhdQueueOrder.id,
+    );
+    assertOrThrow(!!bhdQueueTicket, 'BHD order appears in payment queue');
+    assertEqualOrThrow(bhdQueueTicket.bill_id, bhdQueueBill.id, 'BHD ticket retains selected bill');
+    assertEqualOrThrow(
+      Number(bhdQueueTicket.balance).toFixed(3),
+      '0.004',
+      'selected bill balance stays precise',
+    );
+    assertEqualOrThrow(
+      Number(bhdQueueTicket.paid_amount).toFixed(3),
+      '0.996',
+      'selected bill paid amount stays precise',
+    );
+    assertEqualOrThrow(
+      Number(bhdQueueTicket.ticket_balance).toFixed(3),
+      '0.004',
+      'aggregate balance stays precise',
+    );
+    assertEqualOrThrow(
+      Number(bhdQueueTicket.ticket_paid_amount).toFixed(3),
+      '0.896',
+      'aggregate paid amount accounts for refund',
+    );
+    setStoreSetting(db, 'country', 'US');
+    setStoreSetting(db, 'currency', 'USD');
+    setStoreSetting(db, 'timezone', 'America/New_York');
 
     // -------------------------------------------------------------------------
     // Summary

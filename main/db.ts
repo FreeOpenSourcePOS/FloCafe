@@ -11560,13 +11560,20 @@ export function completeSettledReleasedOrderIfServed(
   changedAt: string = now(),
 ): boolean {
   const orderRow = dbInstance
-    .prepare('SELECT id, status, release_status, table_id FROM orders WHERE id = ?')
+    .prepare('SELECT id, status, release_status, table_id, type FROM orders WHERE id = ?')
     .get(orderId) as
-    | { id: number; status: string; release_status?: string | null; table_id?: string | null }
+    | {
+        id: number;
+        status: string;
+        release_status?: string | null;
+        table_id?: string | null;
+        type?: string | null;
+      }
     | undefined;
   if (!orderRow) return false;
   if (orderRow.status === 'completed' || orderRow.status === 'cancelled') return false;
   if (orderRow.release_status && orderRow.release_status !== 'released') return false;
+  if (orderRow.type === 'dine_in' && orderRow.table_id) return false;
   if (hasActiveUnservedOrderItems(dbInstance, orderId)) return false;
 
   const hasServedItem = dbInstance

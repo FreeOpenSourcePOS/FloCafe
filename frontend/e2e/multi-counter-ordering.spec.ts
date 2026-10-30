@@ -4,6 +4,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
 
+test.use({ timezoneId: 'UTC' });
+
 const DEFAULT_LOCAL_EVIDENCE =
   '/Users/gurkiratkhaira/.no-mistakes/evidence/01M64ZVACDJJ8WG82NMYQVDPS5';
 const EVIDENCE_DIR =
@@ -11,6 +13,24 @@ const EVIDENCE_DIR =
   (fs.existsSync(DEFAULT_LOCAL_EVIDENCE)
     ? DEFAULT_LOCAL_EVIDENCE
     : path.join('/tmp', 'no-mistakes-evidence', '01M64ZVACDJJ8WG82NMYQVDPS5'));
+
+function futureBangkokWallClock(minutesAhead: number): string {
+  const target = new Date(Date.now() + minutesAhead * 60 * 1000);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Bangkok',
+    hour12: false,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(target);
+  const values: Record<string, string> = {};
+  for (const part of parts) values[part.type] = part.value;
+  const hour = values.hour === '24' ? '00' : values.hour;
+  return `${values.year}-${values.month}-${values.day}T${hour}:${values.minute}`;
+}
 
 async function captureScreenshot(page: Page, filename: string): Promise<void> {
   try {
@@ -43,12 +63,31 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
   let createdTable: { id: number; name?: string } = { id: 0 };
   let dineInOrderId: number = 0;
   let limitedProduct: { id: string; name?: string } = { id: '' };
+  const createdOrderIds = new Set<number>();
+  let previousMultiCounterEnabled: string | undefined;
+  let previousTimezone: string | undefined;
 
   try {
     // -------------------------------------------------------------------------
     // Scenario 1: Owner configures multi-counter mode and manages named counters
     // -------------------------------------------------------------------------
     await test.step('Scenario 1: Owner configures multi-counter mode and manages named counters in settings', async () => {
+      const previousSettingRes = await request.get(`${BASE}/api/settings/multi_counter_enabled`, {
+        headers: ownerHeaders,
+      });
+      expect(previousSettingRes.ok(), 'read prior multi-counter setting').toBeTruthy();
+      previousMultiCounterEnabled = (await previousSettingRes.json()).setting?.value;
+      const previousTimezoneRes = await request.get(`${BASE}/api/settings/timezone`, {
+        headers: ownerHeaders,
+      });
+      expect(previousTimezoneRes.ok(), 'read prior store timezone').toBeTruthy();
+      previousTimezone = (await previousTimezoneRes.json()).setting?.value;
+      const timezoneRes = await request.put(`${BASE}/api/settings/timezone`, {
+        headers: ownerHeaders,
+        data: { value: 'Asia/Bangkok' },
+      });
+      expect(timezoneRes.ok(), 'set store timezone for queue display check').toBeTruthy();
+
       // Enable multi_counter_enabled
       const settingRes = await request.put(`${BASE}/api/settings/multi_counter_enabled`, {
         headers: ownerHeaders,
@@ -140,8 +179,17 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
 
       await captureScreenshot(page, '02-pos-ordering-counter-view.png');
 
+      const orderCreationResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === 'POST' && url.pathname === '/api/orders';
+      });
       // Click "Send to payment"
       await sendToPaymentBtn.click();
+      const createdOrderResponse = await orderCreationResponse;
+      expect(createdOrderResponse.ok(), 'ordering counter creates a payment ticket').toBeTruthy();
+      const createdOrderPayload = await createdOrderResponse.json();
+      createdOrderId = Number(createdOrderPayload.order.id);
+      createdOrderIds.add(createdOrderId);
 
       // Payment ticket confirmation modal displays
       const ticketModal = page.getByTestId('payment-ticket-confirmation-modal');
@@ -182,7 +230,7 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       expect(ticketData.order.dispatch_policy).toBe('on_payment');
       expect(ticketData.order.checkout_stage).toBe('awaiting_payment');
       expect(ticketData.order.release_status).toBe('scheduled');
-      createdOrderId = ticketData.order.id;
+      expect(ticketData.order.id).toBe(createdOrderId);
 
       // Verify order is NOT released to KDS prematurely
       const kdsRes = await request.get(`${BASE}/api/kds/orders`, { headers: ownerHeaders });
@@ -205,6 +253,18 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       // Ticket is visible in queue
       const ticketRow = page.getByTestId(`queue-ticket-${createdOrderNumber}`);
       await expect(ticketRow).toBeVisible();
+      const createdOrderRes = await request.get(`${BASE}/api/orders/${createdOrderId}`, {
+        headers: ownerHeaders,
+      });
+      expect(createdOrderRes.ok()).toBeTruthy();
+      const createdAt = (await createdOrderRes.json()).order.created_at as string;
+      const utcCreatedAt = createdAt.includes('T') ? createdAt : `${createdAt.replace(' ', 'T')}Z`;
+      const expectedTicketTime = new Intl.DateTimeFormat('en', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Asia/Bangkok',
+      }).format(new Date(utcCreatedAt));
+      await expect(ticketRow.getByText(expectedTicketTime, { exact: true })).toBeVisible();
 
       await captureScreenshot(page, '04-payment-queue-drawer-auto-opened.png');
 
@@ -283,6 +343,223 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       await expect(page.getByTestId('cart-item')).toHaveCount(0);
     });
 
+    await test.step('A delayed send response cannot replace a newer same-user attempt after lock and reauthentication', async () => {
+      await page.goto(`${BASE}/pos`);
+      const counterSelect = page.getByTestId('pos-counter-selector-btn');
+      await counterSelect.click();
+      await page.getByTestId(`pos-counter-option-${orderingCounter.id}`).click();
+      await page.getByTestId('pos-product-card').first().click();
+
+      type CapturedOrder = {
+        id: number;
+        idempotencyKey: string | undefined;
+        deliver: () => void;
+      };
+      let releaseFirst!: () => void;
+      let releaseSecond!: () => void;
+      let resolveFirstCaptured!: (order: CapturedOrder) => void;
+      let resolveSecondCaptured!: (order: CapturedOrder) => void;
+      let resolveFirstDelivered!: () => void;
+      let resolveSecondDelivered!: () => void;
+      const firstGate = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const secondGate = new Promise<void>((resolve) => {
+        releaseSecond = resolve;
+      });
+      const firstCaptured = new Promise<CapturedOrder>((resolve) => {
+        resolveFirstCaptured = resolve;
+      });
+      const secondCaptured = new Promise<CapturedOrder>((resolve) => {
+        resolveSecondCaptured = resolve;
+      });
+      const firstDelivered = new Promise<void>((resolve) => {
+        resolveFirstDelivered = resolve;
+      });
+      const secondDelivered = new Promise<void>((resolve) => {
+        resolveSecondDelivered = resolve;
+      });
+      let captureCount = 0;
+
+      await page.route('**/api/orders', async (route) => {
+        const url = new URL(route.request().url());
+        if (route.request().method() !== 'POST' || url.pathname !== '/api/orders') {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        const payload = await response.json();
+        expect(response.status()).toBe(201);
+        const index = captureCount++;
+        const capture: CapturedOrder = {
+          id: Number(payload.order.id),
+          idempotencyKey: route.request().headers()['idempotency-key'],
+          deliver: index === 0 ? releaseFirst : releaseSecond,
+        };
+        createdOrderIds.add(capture.id);
+        if (index === 0) resolveFirstCaptured(capture);
+        else if (index === 1) resolveSecondCaptured(capture);
+        await (index === 0 ? firstGate : secondGate);
+        await route.fulfill({ response });
+        if (index === 0) resolveFirstDelivered();
+        else if (index === 1) resolveSecondDelivered();
+      });
+
+      await page.getByTestId('pos-send-to-payment-btn').click();
+      const firstOrder = await firstCaptured;
+      expect(firstOrder.idempotencyKey).toBeTruthy();
+
+      await page.getByTestId('pos-lock-button').click();
+      await page.waitForURL('**/auth/login**', { timeout: 20_000 });
+      await page.locator('#email').fill('owner@flo.local');
+      await page.locator('#password').fill(E2E_PASSWORD);
+      await page.locator('button[type="submit"]').click();
+      await page.waitForURL('**/pos/**', { timeout: 20_000 });
+      await setLanguage(page, 'en');
+      await expect(page.getByTestId('cart-item')).toHaveCount(1);
+
+      const reauthenticatedCounterSelect = page.getByTestId('pos-counter-selector-btn');
+      await reauthenticatedCounterSelect.click();
+      await page.getByTestId(`pos-counter-option-${orderingCounter.id}`).click();
+      await page.getByTestId('pos-product-card').first().click();
+      await page.getByTestId('pos-send-to-payment-btn').click();
+      const secondOrder = await secondCaptured;
+      expect(secondOrder.idempotencyKey).toBeTruthy();
+      expect(secondOrder.idempotencyKey).not.toBe(firstOrder.idempotencyKey);
+
+      const attemptKey = 'flo.postpaid.order.attempt.user.e2e-owner';
+      const persistedAttempt = await page.evaluate((key) => {
+        const value = localStorage.getItem(key);
+        return value ? JSON.parse(value) : null;
+      }, attemptKey);
+      expect(persistedAttempt?.idempotencyKey).toBe(secondOrder.idempotencyKey);
+
+      firstOrder.deliver();
+      await firstDelivered;
+      await expect(page.getByTestId('payment-ticket-confirmation-modal')).toHaveCount(0);
+      await expect(page.getByTestId('cart-item')).toHaveCount(1);
+      const stillPendingAttempt = await page.evaluate((key) => {
+        const value = localStorage.getItem(key);
+        return value ? JSON.parse(value) : null;
+      }, attemptKey);
+      expect(stillPendingAttempt?.idempotencyKey).toBe(secondOrder.idempotencyKey);
+
+      secondOrder.deliver();
+      await secondDelivered;
+      await expect(page.getByTestId('payment-ticket-confirmation-modal')).toBeVisible();
+      await expect(page.getByTestId('cart-item')).toHaveCount(0);
+      await page.unroute('**/api/orders');
+    });
+
+    await test.step('Send to payment stops before the request when both retry stores reject writes', async () => {
+      await page.goto(`${BASE}/pos`);
+      const counterSelect = page.getByTestId('pos-counter-selector-btn');
+      await counterSelect.click();
+      await page.getByTestId(`pos-counter-option-${orderingCounter.id}`).click();
+      await page.evaluate(() => {
+        const storageWindow = window as typeof window & {
+          __originalStorageSetItem?: typeof Storage.prototype.setItem;
+        };
+        const original = Storage.prototype.setItem;
+        storageWindow.__originalStorageSetItem = original;
+        Storage.prototype.setItem = function (key: string, value: string) {
+          if (key.startsWith('flo.postpaid.order.attempt.')) {
+            throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+          }
+          return original.call(this, key, value);
+        };
+      });
+      const orderPosts: string[] = [];
+      const onOrderRequest = (request: import('@playwright/test').Request) => {
+        if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/orders') {
+          orderPosts.push(request.url());
+        }
+      };
+      page.on('request', onOrderRequest);
+      await page.getByTestId('pos-product-card').first().click();
+      await page.getByTestId('pos-send-to-payment-btn').click();
+      await expect(page.getByRole('status')).toContainText(
+        'Order not saved because this device is blocking local storage.',
+      );
+      await expect(page.getByTestId('cart-item')).toHaveCount(1);
+      expect(orderPosts, 'storage failure prevents an unretryable order request').toHaveLength(0);
+      page.off('request', onOrderRequest);
+      await page.evaluate(() => {
+        const storageWindow = window as typeof window & {
+          __originalStorageSetItem?: typeof Storage.prototype.setItem;
+        };
+        if (storageWindow.__originalStorageSetItem) {
+          Storage.prototype.setItem = storageWindow.__originalStorageSetItem;
+          delete storageWindow.__originalStorageSetItem;
+        }
+      });
+      await page.getByTestId('cart-shell').locator('button[aria-label="Remove"]').first().click();
+      await expect(page.getByTestId('cart-item')).toHaveCount(0);
+    });
+
+    await test.step('Existing scheduled orders append on ordering and combined counters', async () => {
+      const scheduledFor = futureBangkokWallClock(60);
+      const createAppendTarget = async () => {
+        const response = await request.post(`${BASE}/api/orders`, {
+          headers: ownerHeaders,
+          data: {
+            type: 'takeaway',
+            dispatch_policy: 'on_payment',
+            scheduled_for: scheduledFor,
+            items: [{ product_id: 'e2e-product', quantity: 1 }],
+          },
+        });
+        const responseBody = await response.json();
+        expect(response.status(), JSON.stringify(responseBody)).toBe(201);
+        const order = responseBody.order;
+        createdOrderIds.add(Number(order.id));
+        return order;
+      };
+
+      const appendWithCounter = async (counterId: string, useKeyboard: boolean) => {
+        const order = await createAppendTarget();
+        await page.goto(`${BASE}/pos`);
+        const counterSelect = page.getByTestId('pos-counter-selector-btn');
+        await counterSelect.click();
+        await page.getByTestId(`pos-counter-option-${counterId}`).click();
+        await page.getByTestId('pos-scheduled-orders-btn').click();
+        const drawer = page.getByTestId('scheduled-orders-drawer');
+        await expect(drawer).toBeVisible();
+        await drawer
+          .getByTestId(`scheduled-order-card-${order.id}`)
+          .getByTestId(`scheduled-add-items-btn-${order.id}`)
+          .click();
+        await page.getByTestId('pos-product-card').first().click();
+        const appendResponse = page.waitForResponse((response) => {
+          const url = new URL(response.url());
+          return (
+            response.request().method() === 'POST' &&
+            url.pathname === `/api/orders/${order.id}/items`
+          );
+        });
+        await expect(page.getByTestId('pos-append-existing-order-btn')).toBeVisible();
+        if (useKeyboard) {
+          await page.locator('body').click({ position: { x: 8, y: 8 } });
+          await page.keyboard.press('Space');
+        } else {
+          await page.getByTestId('pos-append-existing-order-btn').click();
+        }
+        const response = await appendResponse;
+        expect(response.status()).toBe(200);
+        const appendedOrder = (await response.json()).order;
+        expect(Number(appendedOrder.id)).toBe(Number(order.id));
+        expect(appendedOrder.order_number).toBe(order.order_number);
+        expect(appendedOrder.dispatch_policy).toBe('on_payment');
+        expect(new Date(appendedOrder.scheduled_for).toISOString()).toBe(
+          new Date(order.scheduled_for).toISOString(),
+        );
+        expect(appendedOrder.items).toHaveLength(2);
+      };
+
+      await appendWithCounter(orderingCounter.id, false);
+      await appendWithCounter(combinedCounter.id, true);
+    });
+
     // -------------------------------------------------------------------------
     // Scenario 5: Dine-in table occupancy preserved through prepayment lifecycle
     // -------------------------------------------------------------------------
@@ -311,6 +588,7 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       expect(dineInOrderRes.ok()).toBeTruthy();
       const dineInOrder = (await dineInOrderRes.json()).order;
       dineInOrderId = dineInOrder.id;
+      createdOrderIds.add(Number(dineInOrderId));
 
       // Table is occupied
       const tableAfterOrderRes = await request.get(`${BASE}/api/tables/${createdTable.id}`, {
@@ -350,6 +628,22 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       });
       const tableAfterPay = (await tableAfterPayRes.json()).table;
       expect(tableAfterPay.status).toBe('occupied');
+
+      const servedRes = await request.patch(
+        `${BASE}/api/order-items/${dineInOrder.items[0].id}/status`,
+        { headers: ownerHeaders, data: { status: 'served' } },
+      );
+      expect(servedRes.ok(), 'serve the settled dine-in order item').toBeTruthy();
+      const orderAfterServedRes = await request.get(`${BASE}/api/orders/${dineInOrder.id}`, {
+        headers: ownerHeaders,
+      });
+      expect(orderAfterServedRes.ok()).toBeTruthy();
+      expect((await orderAfterServedRes.json()).order.status).toBe('served');
+      const tableAfterServedRes = await request.get(`${BASE}/api/tables/${createdTable.id}`, {
+        headers: ownerHeaders,
+      });
+      expect(tableAfterServedRes.ok()).toBeTruthy();
+      expect((await tableAfterServedRes.json()).table.status).toBe('occupied');
     });
 
     // -------------------------------------------------------------------------
@@ -378,6 +672,7 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       });
       expect(advOrderRes.ok()).toBeTruthy();
       const advOrder = (await advOrderRes.json()).order;
+      createdOrderIds.add(Number(advOrder.id));
 
       const manualReleaseRes = await request.post(`${BASE}/api/orders/${advOrder.id}/release`, {
         headers: ownerHeaders,
@@ -455,6 +750,7 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       });
       expect(stockOrderRes.ok()).toBeTruthy();
       const stockOrder = (await stockOrderRes.json()).order;
+      createdOrderIds.add(Number(stockOrder.id));
 
       // 3. Stock depleted to 0 before customer pays
       const adjustRes = await request.post(`${BASE}/api/products/${limitedProduct.id}/stock`, {
@@ -553,45 +849,145 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       }
     });
   } finally {
-    // Teardown: clean up counters, table, product, and restore multi_counter_enabled setting
+    for (const orderId of createdOrderIds) {
+      const orderRes = await request.get(`${BASE}/api/orders/${orderId}`, {
+        headers: ownerHeaders,
+      });
+      expect(orderRes.ok(), `read order ${orderId} during cleanup`).toBeTruthy();
+      let order = (await orderRes.json()).order;
+      if (order.status === 'completed' || order.status === 'cancelled') continue;
+
+      const billsRes = await request.get(`${BASE}/api/bills/order/${orderId}`, {
+        headers: ownerHeaders,
+      });
+      expect(billsRes.ok(), `read bills for order ${orderId} during cleanup`).toBeTruthy();
+      const billsBody = await billsRes.json();
+      const bills = billsBody.bills || (billsBody.bill ? [billsBody.bill] : []);
+      expect(bills.length, `order ${orderId} has cleanup bills`).toBeGreaterThan(0);
+
+      let hasCollectedPayment = false;
+      for (const billSummary of bills) {
+        const billRes = await request.get(`${BASE}/api/bills/${billSummary.id}`, {
+          headers: ownerHeaders,
+        });
+        expect(billRes.ok(), `read bill ${billSummary.id} during cleanup`).toBeTruthy();
+        const bill = (await billRes.json()).bill;
+        if (Number(bill.paid_amount) > 0 || bill.payment_status === 'paid') {
+          hasCollectedPayment = true;
+        }
+      }
+
+      if (!hasCollectedPayment) {
+        const cancelRes = await request.patch(`${BASE}/api/orders/${orderId}/status`, {
+          headers: ownerHeaders,
+          data: { status: 'cancelled' },
+        });
+        expect(cancelRes.ok(), `cancel unpaid order ${orderId} during cleanup`).toBeTruthy();
+        continue;
+      }
+
+      for (const billSummary of bills) {
+        const billRes = await request.get(`${BASE}/api/bills/${billSummary.id}`, {
+          headers: ownerHeaders,
+        });
+        expect(billRes.ok(), `re-read bill ${billSummary.id} during cleanup`).toBeTruthy();
+        const bill = (await billRes.json()).bill;
+        if (Number(bill.balance) > 0) {
+          const payRes = await request.post(`${BASE}/api/bills/${bill.id}/payment`, {
+            headers: ownerHeaders,
+            data: { method: 'cash', amount: Number(bill.balance) },
+          });
+          expect(payRes.ok(), `settle bill ${bill.id} during cleanup`).toBeTruthy();
+        }
+      }
+
+      const refreshedOrderRes = await request.get(`${BASE}/api/orders/${orderId}`, {
+        headers: ownerHeaders,
+      });
+      expect(refreshedOrderRes.ok()).toBeTruthy();
+      order = (await refreshedOrderRes.json()).order;
+      if (order.release_status === 'blocked') {
+        expect(limitedProduct.id, 'blocked order has a tracked inventory fixture').toBeTruthy();
+        const restockRes = await request.post(`${BASE}/api/products/${limitedProduct.id}/stock`, {
+          headers: ownerHeaders,
+          data: {
+            action: 'set',
+            quantity: 5,
+            reason: 'Restore multi-counter test stock before cleanup',
+          },
+        });
+        expect(restockRes.ok(), 'restore blocked order stock during cleanup').toBeTruthy();
+      }
+      if (order.checkout_stage === 'paid' && order.release_status !== 'released') {
+        const releaseRes = await request.post(`${BASE}/api/orders/${orderId}/release`, {
+          headers: ownerHeaders,
+        });
+        expect(releaseRes.ok(), `release paid order ${orderId} during cleanup`).toBeTruthy();
+      }
+
+      const releasedOrderRes = await request.get(`${BASE}/api/orders/${orderId}`, {
+        headers: ownerHeaders,
+      });
+      expect(releasedOrderRes.ok()).toBeTruthy();
+      order = (await releasedOrderRes.json()).order;
+      for (const item of order.items || []) {
+        if (['served', 'completed', 'cancelled'].includes(item.status)) continue;
+        const servedRes = await request.patch(`${BASE}/api/order-items/${item.id}/status`, {
+          headers: ownerHeaders,
+          data: { status: 'served' },
+        });
+        expect(servedRes.ok(), `serve order item ${item.id} during cleanup`).toBeTruthy();
+      }
+      const completeRes = await request.patch(`${BASE}/api/orders/${orderId}/status`, {
+        headers: ownerHeaders,
+        data: { status: 'completed' },
+      });
+      expect(completeRes.ok(), `complete order ${orderId} during cleanup`).toBeTruthy();
+    }
+
     if (orderingCounter.id) {
-      await request
-        .delete(`${BASE}/api/counters/${orderingCounter.id}`, { headers: ownerHeaders })
-        .catch(() => {});
+      const result = await request.delete(`${BASE}/api/counters/${orderingCounter.id}`, {
+        headers: ownerHeaders,
+      });
+      expect(result.ok(), 'delete ordering counter during cleanup').toBeTruthy();
     }
     if (paymentCounter.id) {
-      await request
-        .delete(`${BASE}/api/counters/${paymentCounter.id}`, { headers: ownerHeaders })
-        .catch(() => {});
+      const result = await request.delete(`${BASE}/api/counters/${paymentCounter.id}`, {
+        headers: ownerHeaders,
+      });
+      expect(result.ok(), 'delete payment counter during cleanup').toBeTruthy();
     }
     if (combinedCounter.id) {
-      await request
-        .delete(`${BASE}/api/counters/${combinedCounter.id}`, { headers: ownerHeaders })
-        .catch(() => {});
-    }
-    if (dineInOrderId > 0) {
-      await request
-        .patch(`${BASE}/api/orders/${dineInOrderId}/status`, {
-          headers: ownerHeaders,
-          data: { status: 'completed' },
-        })
-        .catch(() => {});
+      const result = await request.delete(`${BASE}/api/counters/${combinedCounter.id}`, {
+        headers: ownerHeaders,
+      });
+      expect(result.ok(), 'delete combined counter during cleanup').toBeTruthy();
     }
     if (createdTable.id > 0) {
-      await request
-        .post(`${BASE}/api/tables/${createdTable.id}/deactivate`, { headers: ownerHeaders })
-        .catch(() => {});
+      const result = await request.post(`${BASE}/api/tables/${createdTable.id}/deactivate`, {
+        headers: ownerHeaders,
+      });
+      expect(result.ok(), 'deactivate table during cleanup').toBeTruthy();
     }
     if (limitedProduct.id) {
-      await request
-        .delete(`${BASE}/api/products/${limitedProduct.id}`, { headers: ownerHeaders })
-        .catch(() => {});
-    }
-    await request
-      .put(`${BASE}/api/settings/multi_counter_enabled`, {
+      const result = await request.delete(`${BASE}/api/products/${limitedProduct.id}`, {
         headers: ownerHeaders,
-        data: { value: 'false' },
-      })
-      .catch(() => {});
+      });
+      expect(result.ok(), 'delete limited product during cleanup').toBeTruthy();
+    }
+    if (previousMultiCounterEnabled !== undefined) {
+      const result = await request.put(`${BASE}/api/settings/multi_counter_enabled`, {
+        headers: ownerHeaders,
+        data: { value: previousMultiCounterEnabled },
+      });
+      expect(result.ok(), 'restore prior multi-counter setting').toBeTruthy();
+    }
+    if (previousTimezone !== undefined) {
+      const result = await request.put(`${BASE}/api/settings/timezone`, {
+        headers: ownerHeaders,
+        data: { value: previousTimezone },
+      });
+      expect(result.ok(), 'restore prior store timezone').toBeTruthy();
+    }
   }
 });

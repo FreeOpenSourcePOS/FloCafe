@@ -332,7 +332,6 @@ export default function POSPage() {
   const [ticketModalQrDataUrl, setTicketModalQrDataUrl] = useState<string | null>(null);
   const [ticketModalQrPayload, setTicketModalQrPayload] = useState<string | null>(null);
   const isSendingToPaymentRef = useRef(false);
-  const sendToPaymentIdempotencyRef = useRef<{ fingerprint: string; key: string } | null>(null);
   useEffect(() => {
     if (currentTenant?.timezone) {
       setStoreTimezone(currentTenant.timezone);
@@ -378,6 +377,7 @@ export default function POSPage() {
     lastActiveSessionRef.current = { userId: activeUserId, token: activeToken };
     sessionEpochRef.current += 1;
     activeSubmissionTokenRef.current = null;
+    isSendingToPaymentRef.current = false;
     setSubmitting(false);
 
     setCheckoutOverridePin(undefined);
@@ -1967,6 +1967,10 @@ export default function POSPage() {
   };
 
   const handleSendToPayment = async () => {
+    if (pendingOrder) {
+      void handlePlaceOrder();
+      return;
+    }
     if (isSendingToPaymentRef.current) return;
     if (cart.orderType === 'delivery') {
       toast.error(t('sendToPaymentDeliveryError'));
@@ -1976,22 +1980,43 @@ export default function POSPage() {
 
     isSendingToPaymentRef.current = true;
     setSubmitting(true);
+    const originEpoch = sessionEpochRef.current;
+    const originUserId = activeUserId;
+    const originToken =
+      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const originTenantId = currentTenant?.id == null ? null : String(currentTenant.id);
+    const submissionToken = Symbol('pos-send-to-payment');
+    activeSubmissionTokenRef.current = submissionToken;
+    const isOriginSessionCurrent = () => {
+      const session = useAuthStore.getState();
+      const userId = session.user?.id == null ? null : String(session.user.id);
+      const tenantId = session.currentTenant?.id == null ? null : String(session.currentTenant.id);
+      return (
+        sessionEpochRef.current === originEpoch &&
+        userId === originUserId &&
+        session.token === originToken &&
+        tenantId === originTenantId
+      );
+    };
+
     try {
+      if (!originUserId) throw new OrderAttemptStorageError();
+
       const orderItems = cart.items.map(cartItemToOrderItem);
       const cartFingerprint = buildCurrentCartFingerprint(orderItems);
-      if (
-        !sendToPaymentIdempotencyRef.current ||
-        sendToPaymentIdempotencyRef.current.fingerprint !== cartFingerprint
-      ) {
-        sendToPaymentIdempotencyRef.current = {
-          fingerprint: cartFingerprint,
-          key:
-            typeof crypto !== 'undefined' && crypto.randomUUID
-              ? crypto.randomUUID()
-              : `stp_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        };
-      }
-      const idempotencyKey = sendToPaymentIdempotencyRef.current.key;
+      const storage = getAppendAttemptStorage();
+      const storedAttempt = readPostpaidAttempt(originUserId);
+      const attempt =
+        storedAttempt?.userId === originUserId && storedAttempt.fingerprint === cartFingerprint
+          ? storedAttempt
+          : {
+              userId: originUserId,
+              fingerprint: cartFingerprint,
+              idempotencyKey: newIdempotencyKey(),
+              operationId: createOperationReference() || undefined,
+            };
+      const storageKey = getPostpaidOrderAttemptStorageKey(originUserId);
+      if (!savePostpaidAttempt(attempt, originUserId)) throw new OrderAttemptStorageError();
 
       const orderPayload = {
         type: cart.orderType,
@@ -2009,27 +2034,82 @@ export default function POSPage() {
 
       const { data } = await api.post('/orders', orderPayload, {
         headers: {
-          'Idempotency-Key': idempotencyKey,
+          ...pinnedAuthHeaders(originToken),
+          'Idempotency-Key': attempt.idempotencyKey,
+          ...operationHeaders(attempt.operationId),
         },
       });
-      sendToPaymentIdempotencyRef.current = null;
-      const createdOrder = data.order as Order;
+      if (!isOriginSessionCurrent()) return;
 
+      let isLatestAttempt = false;
+      let cleanupFailed = false;
+      try {
+        const currentAttempt = readOrderAttempt<PostpaidAttempt>(
+          storage,
+          storageKey,
+          originUserId,
+          { isValid: isUsablePostpaidAttempt },
+        );
+        isLatestAttempt =
+          currentAttempt?.fingerprint === attempt.fingerprint &&
+          currentAttempt.idempotencyKey === attempt.idempotencyKey &&
+          currentAttempt.operationId === attempt.operationId;
+        if (isLatestAttempt && !clearOrderAttempt(storage, storageKey, attempt)) {
+          cleanupFailed = true;
+        } else if (
+          isLatestAttempt &&
+          postpaidAttemptRef.current?.idempotencyKey === attempt.idempotencyKey
+        ) {
+          postpaidAttemptRef.current = null;
+          postpaidAttemptKeyRef.current = null;
+          postpaidAttemptWasLegacyRef.current = false;
+        }
+      } catch {
+        cleanupFailed = true;
+      }
+      if (!isLatestAttempt || !isOriginSessionCurrent()) return;
+
+      const createdOrder = data.order as Order;
+      if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        useCartStore.getState().clearCart();
+      }
       setTicketModalOrder(createdOrder);
       setTicketModalQrDataUrl(data.qr_data_url || null);
       setTicketModalQrPayload(data.qr_payload || null);
       setShowTicketModal(true);
-
-      cart.clearCart();
-      refreshTables();
+      void refreshTables();
       void refreshPaymentQueueCounts();
-      toast.success(t('orderSentToPaymentSuccess', { number: createdOrder.order_number }));
+      if (cleanupFailed) {
+        reportOrderFailure({
+          code: 'order.retry_state.cleanup_failed',
+          title: t('orderSentToPaymentSuccess', { number: createdOrder.order_number }),
+          message: t('saleCompleteCleanupFailed'),
+          nextStep: t('saleCompleteCheckOrders'),
+          detail: 'The order was created but local retry state could not be cleared',
+          status: null,
+          operation: 'order.create',
+          stage: 'cleanup',
+          outcome: 'applied',
+          reasonCode: 'order.retry_state.cleanup_failed',
+          correlationId: attempt.operationId || null,
+        });
+      } else {
+        toast.success(t('orderSentToPaymentSuccess', { number: createdOrder.order_number }));
+      }
     } catch (err: unknown) {
-      const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
-      toast.error(errData?.error || t('placeOrderFailed'));
+      if (!isOriginSessionCurrent()) return;
+      if (err instanceof OrderAttemptStorageError) {
+        reportOrderStorageFailure(t('placeOrderFailed'), 'order.create');
+      } else {
+        const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
+        toast.error(errData?.error || t('placeOrderFailed'));
+      }
     } finally {
-      isSendingToPaymentRef.current = false;
-      setSubmitting(false);
+      if (isOriginSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
+        isSendingToPaymentRef.current = false;
+        setSubmitting(false);
+        activeSubmissionTokenRef.current = null;
+      }
     }
   };
 
@@ -3014,7 +3094,9 @@ export default function POSPage() {
       },
       onTender: () => {
         if (!submitting && cart.items.length > 0) {
-          if (multiCounterEnabled && activeCounter?.role === 'ordering') {
+          if (pendingOrder) {
+            void handlePlaceOrder();
+          } else if (multiCounterEnabled && activeCounter?.role === 'ordering') {
             void handleSendToPayment();
           } else {
             void handlePlaceOrder();
@@ -3027,6 +3109,10 @@ export default function POSPage() {
         }
       },
       onOpenCheckout: () => {
+        if (pendingOrder) {
+          if (!submitting && cart.items.length > 0) void handlePlaceOrder();
+          return;
+        }
         if (multiCounterEnabled && activeCounter?.role === 'ordering') {
           if (!submitting && cart.items.length > 0) {
             void handleSendToPayment();

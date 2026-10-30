@@ -42,6 +42,7 @@ interface Props {
 
 export function CountersSettingsTab({ isOwner }: Props) {
   const t = useTranslations('settings');
+  const tCommon = useTranslations('common');
 
   const [enabled, setEnabled] = useState(false);
   const [savingEnabled, setSavingEnabled] = useState(false);
@@ -73,11 +74,11 @@ export function CountersSettingsTab({ isOwner }: Props) {
       setEnabled(settingRes.data?.setting?.value === 'true');
       setCounters(countersRes.data?.counters || []);
     } catch {
-      toast.error('Failed to load counters');
+      toast.error(t('counterLoadFailed'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,30 +98,26 @@ export function CountersSettingsTab({ isOwner }: Props) {
       })
       .catch(() => {
         if (cancelled) return;
-        toast.error('Failed to load counters');
+        toast.error(t('counterLoadFailed'));
         setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   const handleToggleEnabled = async (val: boolean) => {
     if (!isOwner) {
-      toast.error(t('ownerPermissionRequired') || 'Owner permission required');
+      toast.error(t('ownerPermissionRequired'));
       return;
     }
     setSavingEnabled(true);
     try {
       await api.put('/settings/multi_counter_enabled', { value: String(val) });
       setEnabled(val);
-      toast.success(
-        val
-          ? t('multiCounterEnabled') || 'Multi-counter ordering enabled'
-          : t('multiCounterDisabled') || 'Multi-counter ordering disabled',
-      );
+      toast.success(val ? t('multiCounterEnabled') : t('multiCounterDisabled'));
     } catch {
-      toast.error('Failed to update multi-counter setting');
+      toast.error(t('allSaveFailed'));
     } finally {
       setSavingEnabled(false);
     }
@@ -147,7 +144,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
   const handleSaveCounter = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      toast.error('Counter name is required');
+      toast.error(t('counterNameRequired'));
       return;
     }
     setSavingCounter(true);
@@ -159,7 +156,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
           is_active: isActive,
           sort_order: Number(sortOrder) || 0,
         });
-        toast.success(t('counterUpdated') || 'Counter updated');
+        toast.success(t('counterUpdated'));
       } else {
         await api.post('/counters', {
           name: name.trim(),
@@ -167,13 +164,13 @@ export function CountersSettingsTab({ isOwner }: Props) {
           is_active: isActive,
           sort_order: Number(sortOrder) || 0,
         });
-        toast.success(t('counterCreated') || 'Counter created');
+        toast.success(t('counterCreated'));
       }
       setModalOpen(false);
       void loadData();
     } catch (err: unknown) {
       const errorObj = err as { response?: { data?: { error?: string } } };
-      toast.error(errorObj.response?.data?.error || 'Failed to save counter');
+      toast.error(errorObj.response?.data?.error || tCommon('failedToSave'));
     } finally {
       setSavingCounter(false);
     }
@@ -182,23 +179,23 @@ export function CountersSettingsTab({ isOwner }: Props) {
   const handleDeleteCounter = async (id: string) => {
     try {
       await api.delete(`/counters/${id}`);
-      toast.success(t('counterDeleted') || 'Counter deleted');
+      toast.success(t('counterDeleted'));
       setDeletingId(null);
       void loadData();
     } catch (err: unknown) {
       const errorObj = err as { response?: { data?: { error?: string } } };
-      toast.error(errorObj.response?.data?.error || 'Failed to delete counter');
+      toast.error(errorObj.response?.data?.error || tCommon('failedToDelete'));
     }
   };
 
   const getRoleLabel = (r: 'ordering' | 'payment' | 'combined') => {
     switch (r) {
       case 'ordering':
-        return t('counterRoleOrdering') || 'Ordering (Create here)';
+        return t('counterRoleOrdering');
       case 'payment':
-        return t('counterRolePayment') || 'Payment (Pay there)';
+        return t('counterRolePayment');
       case 'combined':
-        return t('counterRoleCombined') || 'Combined (Order & Pay)';
+        return t('counterRoleCombined');
     }
   };
 
@@ -224,19 +221,14 @@ export function CountersSettingsTab({ isOwner }: Props) {
                 <Layers size={22} />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-foreground">
-                  {t('multiCounterTitle') || 'Multi-Counter Ordering'}
-                </h2>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  {t('multiCounterDesc') ||
-                    'Configure separate ordering and payment counters (create order at one counter, pay at another).'}
-                </p>
+                <h2 className="text-lg font-semibold text-foreground">{t('multiCounterTitle')}</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">{t('multiCounterDesc')}</p>
               </div>
             </div>
             <Toggle
               value={enabled}
               disabled={savingEnabled || !isOwner}
-              label={t('multiCounterTitle') || 'Multi-Counter Ordering'}
+              label={t('multiCounterTitle')}
               onChange={handleToggleEnabled}
             />
           </div>
@@ -247,13 +239,8 @@ export function CountersSettingsTab({ isOwner }: Props) {
           <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-foreground text-base">
-                  {t('namedCounters') || 'Configured Counters'}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {t('namedCountersHint') ||
-                    'Each POS station selects its active counter to adapt its workflow.'}
-                </p>
+                <h3 className="font-semibold text-foreground text-base">{t('namedCounters')}</h3>
+                <p className="text-sm text-muted-foreground">{t('namedCountersHint')}</p>
               </div>
               <Button
                 onClick={handleOpenAddModal}
@@ -262,31 +249,29 @@ export function CountersSettingsTab({ isOwner }: Props) {
                 className="gap-1.5"
               >
                 <Plus size={16} />
-                {t('addCounter') || 'Add Counter'}
+                {t('addCounter')}
               </Button>
             </div>
 
             {loading ? (
               <div className="flex justify-center items-center py-12 text-muted-foreground gap-2">
                 <Loader2 size={18} className="animate-spin" />
-                <span>Loading counters...</span>
+                <span>{tCommon('loading')}</span>
               </div>
             ) : counters.length === 0 ? (
               <div className="text-center py-12 border border-dashed border-border rounded-lg text-muted-foreground">
-                <p className="font-medium">No counters configured yet</p>
-                <p className="text-sm mt-1">
-                  Add your first counter to start multi-counter ordering.
-                </p>
+                <p className="font-medium">{t('noCountersConfigured')}</p>
+                <p className="text-sm mt-1">{t('addFirstCounter')}</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground">
-                      <th className="pb-3 font-medium">Name</th>
-                      <th className="pb-3 font-medium">Role</th>
-                      <th className="pb-3 font-medium">Status</th>
-                      <th className="pb-3 font-medium text-right">Actions</th>
+                      <th className="pb-3 font-medium">{t('name')}</th>
+                      <th className="pb-3 font-medium">{t('role')}</th>
+                      <th className="pb-3 font-medium">{t('status')}</th>
+                      <th className="pb-3 font-medium text-right">{t('actions')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -305,11 +290,11 @@ export function CountersSettingsTab({ isOwner }: Props) {
                         <td className="py-3">
                           {counter.is_active ? (
                             <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                              <CheckCircle2 size={14} /> Active
+                              <CheckCircle2 size={14} /> {tCommon('active')}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                              <XCircle size={14} /> Inactive
+                              <XCircle size={14} /> {tCommon('inactive')}
                             </span>
                           )}
                         </td>
@@ -320,7 +305,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
                             disabled={!isOwner}
                             onClick={() => handleOpenEditModal(counter)}
                             className="h-8 w-8 p-0"
-                            title="Edit"
+                            title={tCommon('edit')}
                           >
                             <Edit2 size={14} />
                           </Button>
@@ -330,7 +315,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
                             disabled={!isOwner}
                             onClick={() => setDeletingId(counter.id)}
                             className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40"
-                            title="Delete"
+                            title={tCommon('delete')}
                           >
                             <Trash2 size={14} />
                           </Button>
@@ -349,21 +334,14 @@ export function CountersSettingsTab({ isOwner }: Props) {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {editingCounter
-                ? t('editCounter') || 'Edit Counter'
-                : t('addCounter') || 'Add Counter'}
-            </DialogTitle>
-            <DialogDescription>
-              {t('counterModalDesc') ||
-                'Configure the name and functional role for this POS counter station.'}
-            </DialogDescription>
+            <DialogTitle>{editingCounter ? t('editCounter') : t('addCounter')}</DialogTitle>
+            <DialogDescription>{t('counterModalDesc')}</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSaveCounter} className="space-y-4 pt-2">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">
-                {t('counterName') || 'Counter Name'}
+                {t('counterName')}
               </label>
               <input
                 type="text"
@@ -371,33 +349,28 @@ export function CountersSettingsTab({ isOwner }: Props) {
                 maxLength={100}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Counter 1, Bar, Express Order"
+                placeholder={t('stationNamePlaceholder')}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-brand"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">
-                {t('counterRole') || 'Counter Role'}
+                {t('counterRole')}
               </label>
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as 'ordering' | 'payment' | 'combined')}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-brand"
               >
-                <option value="ordering">
-                  {t('counterRoleOrdering') || 'Ordering (Create here)'}
-                </option>
-                <option value="payment">{t('counterRolePayment') || 'Payment (Pay there)'}</option>
-                <option value="combined">
-                  {t('counterRoleCombined') || 'Combined (Order & Pay)'}
-                </option>
+                <option value="ordering">{t('counterRoleOrdering')}</option>
+                <option value="payment">{t('counterRolePayment')}</option>
+                <option value="combined">{t('counterRoleCombined')}</option>
               </select>
               <p className="text-xs text-muted-foreground mt-1">
-                {role === 'ordering' && 'Station builds orders and sends them to payment.'}
-                {role === 'payment' && 'Station opens shared queue and processes payments.'}
-                {role === 'combined' &&
-                  'Station supports both normal checkout and sending to payment.'}
+                {role === 'ordering' && t('counterRoleOrderingHint')}
+                {role === 'payment' && t('counterRolePaymentHint')}
+                {role === 'combined' && t('counterRoleCombinedHint')}
               </p>
             </div>
 
@@ -410,7 +383,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
                 className="rounded border-border text-brand focus:ring-brand"
               />
               <label htmlFor="counterActive" className="text-sm font-medium text-foreground">
-                {t('counterIsActive') || 'Active (Available for device selection)'}
+                {t('counterIsActive')} ({t('counterIsActiveHint')})
               </label>
             </div>
 
@@ -421,10 +394,10 @@ export function CountersSettingsTab({ isOwner }: Props) {
                 onClick={() => setModalOpen(false)}
                 disabled={savingCounter}
               >
-                Cancel
+                {tCommon('cancel')}
               </Button>
               <Button type="submit" disabled={savingCounter || !name.trim()}>
-                {savingCounter ? 'Saving...' : 'Save'}
+                {savingCounter ? tCommon('saving') : tCommon('save')}
               </Button>
             </DialogFooter>
           </form>
@@ -437,22 +410,19 @@ export function CountersSettingsTab({ isOwner }: Props) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <AlertCircle size={20} />
-              {t('confirmDeleteCounter') || 'Delete Counter?'}
+              {t('confirmDeleteCounter')}
             </DialogTitle>
-            <DialogDescription>
-              {t('confirmDeleteCounterDesc') ||
-                'Are you sure you want to delete this counter? Active orders will remain unaffected.'}
-            </DialogDescription>
+            <DialogDescription>{t('confirmDeleteCounterDesc')}</DialogDescription>
           </DialogHeader>
           <DialogFooter className="pt-2">
             <Button variant="outline" onClick={() => setDeletingId(null)}>
-              Cancel
+              {tCommon('cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={() => deletingId && handleDeleteCounter(deletingId)}
             >
-              Delete
+              {tCommon('delete')}
             </Button>
           </DialogFooter>
         </DialogContent>

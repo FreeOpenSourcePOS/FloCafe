@@ -37,11 +37,12 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
   };
 
   const runId = Math.random().toString(36).slice(2, 6);
-  let orderingCounter: { id: number; name?: string; role?: string } = { id: 0 };
-  let paymentCounter: { id: number; name?: string; role?: string } = { id: 0 };
-  let combinedCounter: { id: number; name?: string; role?: string } = { id: 0 };
+  let orderingCounter: { id: string; name?: string; role?: string } = { id: '' };
+  let paymentCounter: { id: string; name?: string; role?: string } = { id: '' };
+  let combinedCounter: { id: string; name?: string; role?: string } = { id: '' };
   let createdTable: { id: number; name?: string } = { id: 0 };
-  let limitedProduct: { id: number; name?: string } = { id: 0 };
+  let dineInOrderId: number = 0;
+  let limitedProduct: { id: string; name?: string } = { id: '' };
 
   try {
     // -------------------------------------------------------------------------
@@ -309,6 +310,7 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       });
       expect(dineInOrderRes.ok()).toBeTruthy();
       const dineInOrder = (await dineInOrderRes.json()).order;
+      dineInOrderId = dineInOrder.id;
 
       // Table is occupied
       const tableAfterOrderRes = await request.get(`${BASE}/api/tables/${createdTable.id}`, {
@@ -551,31 +553,45 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       }
     });
   } finally {
-    // Teardown: clean up counters, table, and product
-    if (orderingCounter.id > 0) {
+    // Teardown: clean up counters, table, product, and restore multi_counter_enabled setting
+    if (orderingCounter.id) {
       await request
         .delete(`${BASE}/api/counters/${orderingCounter.id}`, { headers: ownerHeaders })
         .catch(() => {});
     }
-    if (paymentCounter.id > 0) {
+    if (paymentCounter.id) {
       await request
         .delete(`${BASE}/api/counters/${paymentCounter.id}`, { headers: ownerHeaders })
         .catch(() => {});
     }
-    if (combinedCounter.id > 0) {
+    if (combinedCounter.id) {
       await request
         .delete(`${BASE}/api/counters/${combinedCounter.id}`, { headers: ownerHeaders })
         .catch(() => {});
     }
-    if (createdTable.id > 0) {
+    if (dineInOrderId > 0) {
       await request
-        .delete(`${BASE}/api/tables/${createdTable.id}`, { headers: ownerHeaders })
+        .patch(`${BASE}/api/orders/${dineInOrderId}/status`, {
+          headers: ownerHeaders,
+          data: { status: 'completed' },
+        })
         .catch(() => {});
     }
-    if (limitedProduct.id > 0) {
+    if (createdTable.id > 0) {
+      await request
+        .post(`${BASE}/api/tables/${createdTable.id}/deactivate`, { headers: ownerHeaders })
+        .catch(() => {});
+    }
+    if (limitedProduct.id) {
       await request
         .delete(`${BASE}/api/products/${limitedProduct.id}`, { headers: ownerHeaders })
         .catch(() => {});
     }
+    await request
+      .put(`${BASE}/api/settings/multi_counter_enabled`, {
+        headers: ownerHeaders,
+        data: { value: 'false' },
+      })
+      .catch(() => {});
   }
 });

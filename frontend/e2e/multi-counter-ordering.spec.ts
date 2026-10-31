@@ -1112,6 +1112,34 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
 
       await captureScreenshot(page, '08-paid-but-blocked-queue-view.png');
 
+      const queuePattern = '**/api/orders/awaiting-payment*';
+      const releasePattern = `**/api/orders/${blockedOrder.id}/release`;
+      await page.route(queuePattern, async (route) => {
+        const response = await route.fetch();
+        const body = await response.json();
+        body.orders = body.orders.map((order: { id: number; release_blocked_reason?: string }) =>
+          order.id === blockedOrder.id ? { ...order, release_blocked_reason: 'refunded' } : order,
+        );
+        await route.fulfill({ response, json: body });
+      });
+      await page.route(releasePattern, async (route) => {
+        await route.fulfill({ status: 409, json: { code: 'RELEASE_BLOCKED', error: 'refunded' } });
+      });
+      await page.reload();
+      await queueBtn.click();
+      await expect(
+        page.getByTestId(`payment-queue-blocked-reason-${blockedOrder.id}`),
+      ).toContainText('Refunded. Cancel Order.');
+      await page.getByTestId(`retry-release-btn-${blockedOrder.id}`).click();
+      await expect(page.getByText('Refunded. Cancel Order.', { exact: true })).toHaveCount(2);
+      await page.unroute(queuePattern);
+      await page.unroute(releasePattern);
+      await page.getByTestId('close-queue-drawer-btn').click();
+      await queueBtn.click();
+      await expect(
+        page.getByTestId(`payment-queue-blocked-reason-${blockedOrder.id}`),
+      ).toContainText('Insufficient stock');
+
       // 7. Manual retry fails while stock is still 0
       const retryFailRes = await request.post(`${BASE}/api/orders/${blockedOrder.id}/release`, {
         headers: ownerHeaders,

@@ -218,7 +218,11 @@ export function PaymentQueueDrawer({
       void fetchQueue(null, search);
     } catch (err: unknown) {
       const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
-      toast.error(errData?.error || t('placeOrderFailed'));
+      toast.error(
+        errData?.error === 'refunded'
+          ? `${tOrders('refunded')}. ${tOrders('cancel')}.`
+          : errData?.error || t('placeOrderFailed'),
+      );
     } finally {
       setReleasingId(null);
     }
@@ -315,7 +319,11 @@ export function PaymentQueueDrawer({
             className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30 p-2.5 text-xs text-red-700 dark:text-red-300"
           >
             <p className="font-semibold mb-0.5">{t('releaseBlockedTitle')}:</p>
-            <p>{order.release_blocked_reason}</p>
+            <p>
+              {order.release_blocked_reason === 'refunded'
+                ? `${tOrders('refunded')}. ${tOrders('cancel')}.`
+                : order.release_blocked_reason}
+            </p>
           </div>
         )}
 

@@ -263,6 +263,22 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await expect(paidCard.getByTestId(`scheduled-pay-btn-${prepaidOrderId}`)).toHaveCount(0);
     await expect(paidCard.getByTestId(`scheduled-refund-btn-${prepaidOrderId}`)).toHaveCount(0);
 
+    const refundedReleaseResponse = page.waitForResponse((res) => {
+      const url = new URL(res.url());
+      return (
+        res.request().method() === 'POST' &&
+        url.pathname === `/api/orders/${prepaidOrderId}/release`
+      );
+    });
+    await paidCard.getByTestId(`scheduled-release-btn-${prepaidOrderId}`).click();
+    expect((await refundedReleaseResponse).status()).toBe(409);
+    await expect(paidCard.getByTestId(`scheduled-blocked-reason-${prepaidOrderId}`)).toContainText(
+      'Refunded',
+    );
+    await expect(paidCard.getByTestId(`scheduled-blocked-reason-${prepaidOrderId}`)).toContainText(
+      'Cancel Order',
+    );
+
     // 4. Blocked release -> Needs Attention -> Restock -> Retry release
     const createProdRes = await page.request.post(`${BASE}/api/products`, {
       headers: ownerHeaders,
@@ -353,7 +369,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     try {
       await page.goto(`${BASE}/pos`);
       await expect(page.getByTestId('pos-product-grid')).toBeVisible();
-      await expect(page.getByTestId('pos-scheduled-count-badge')).toHaveText('2');
+      await expect(page.getByTestId('pos-scheduled-blocked-badge')).toHaveText('2');
 
       await page.getByTestId('pos-scheduled-orders-btn').click();
       const appendDrawer = page.getByTestId('scheduled-orders-drawer');

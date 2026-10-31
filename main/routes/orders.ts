@@ -1474,6 +1474,7 @@ router.get(
              COUNT(CASE WHEN release_status = 'blocked' THEN 1 END) AS blocked_count
            FROM orders
            WHERE release_status IN ('scheduled', 'blocked')
+             AND scheduled_for IS NOT NULL
              AND status NOT IN ('cancelled', 'completed')`,
         )
         .get() as { scheduled_count: number; blocked_count: number } | undefined;
@@ -1483,6 +1484,7 @@ router.get(
 
       let sql = `SELECT * FROM orders
                  WHERE release_status IN ('scheduled', 'blocked')
+                   AND scheduled_for IS NOT NULL
                    AND status NOT IN ('cancelled', 'completed')`;
       const params: unknown[] = [];
 

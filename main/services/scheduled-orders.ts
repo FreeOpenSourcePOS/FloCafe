@@ -364,6 +364,49 @@ export async function releaseScheduledOrder(
       };
     }
 
+    const billCounts = db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                COUNT(CASE WHEN payment_status = 'refunded' THEN 1 END) AS refunded
+         FROM bills WHERE order_id = ?`,
+      )
+      .get(currentOrder.id) as { total: number; refunded: number };
+    if (billCounts.total > 0 && billCounts.total === billCounts.refunded) {
+      if (
+        currentOrder.release_status !== 'blocked' ||
+        currentOrder.release_blocked_reason !== 'refunded'
+      ) {
+        db.prepare(
+          `UPDATE orders SET release_status = 'blocked', release_blocked_reason = 'refunded', updated_at = ?
+           WHERE id = ?`,
+        ).run(nowDb, currentOrder.id);
+        const actorUserId = resolveReleaseActorUserId(
+          db,
+          options.actorUserId,
+          currentOrder.user_id,
+        );
+        if (actorUserId) {
+          recordOrderAudit(db, {
+            orderId: String(currentOrder.id),
+            actorUserId,
+            action: 'release_blocked',
+            details: {
+              trigger: options.trigger,
+              initiated_by: options.actorUserId ? 'staff' : 'server_sweep',
+              reason: 'refunded',
+            },
+          });
+        }
+      }
+      return {
+        outcome: 'blocked',
+        reason: 'refunded',
+        order: db
+          .prepare('SELECT * FROM orders WHERE id = ?')
+          .get(currentOrder.id) as ScheduledOrderDbRow,
+      };
+    }
+
     // Gate 1: If dispatch_policy === 'on_payment', full payment across all applicable bills is required.
     if (currentOrder.dispatch_policy === 'on_payment') {
       const isPaid = isOrderSettledAndNonRefunded(db, currentOrder.id);

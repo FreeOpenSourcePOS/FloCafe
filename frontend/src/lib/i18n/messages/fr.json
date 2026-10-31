@@ -1716,6 +1716,7 @@
     "disabledHint": "Demandez à un propriétaire ou à un responsable de réactiver la prise de commande à table dans les paramètres.",
     "disabledTitle": "L’application serveur est désactivée",
     "draftTotal": "Total provisoire",
+    "draftDiscardedOnUserChange": "Le brouillon du membre du personnel précédent a été supprimé.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Touchez les articles du menu pour les ajouter ici.",
     "guestFallbackName": "Client {last4}",

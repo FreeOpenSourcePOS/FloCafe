@@ -1716,6 +1716,7 @@
     "disabledHint": "Hãy nhờ chủ cửa hàng hoặc quản lý bật lại Đặt hàng tại bàn trong Cài đặt.",
     "disabledTitle": "Server App đã bị tắt",
     "draftTotal": "Tổng tạm tính",
+    "draftDiscardedOnUserChange": "Bản nháp của nhân viên trước đã bị xóa.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Chạm vào món trong thực đơn để thêm vào đây.",
     "guestFallbackName": "Khách {last4}",

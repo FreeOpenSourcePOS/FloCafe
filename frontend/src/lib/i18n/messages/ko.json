@@ -1716,6 +1716,7 @@
     "disabledHint": "테이블 주문을 다시 활성화하려면 설정에서 사장님 또는 관리자에게 요청하세요.",
     "disabledTitle": "서버 앱이 비활성화됨",
     "draftTotal": "임시 합계",
+    "draftDiscardedOnUserChange": "이전 직원의 임시 주문이 삭제되었습니다.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "메뉴 항목을 눌러 여기에 추가하세요.",
     "guestFallbackName": "게스트 {last4}",

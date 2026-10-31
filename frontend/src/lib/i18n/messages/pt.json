@@ -1716,6 +1716,7 @@
     "disabledHint": "Peça ao proprietário ou gerente para reativar os pedidos à mesa nas Definições.",
     "disabledTitle": "O App do Garçom está desativado",
     "draftTotal": "Total do rascunho",
+    "draftDiscardedOnUserChange": "O rascunho do funcionário anterior foi descartado.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Toque nos itens do menu para adicioná-los aqui.",
     "guestFallbackName": "Convidado {last4}",

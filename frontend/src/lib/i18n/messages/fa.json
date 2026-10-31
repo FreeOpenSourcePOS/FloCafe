@@ -1716,6 +1716,7 @@
     "disabledHint": "از دارنده یا سرپرست بخواهید ثبت سفارش کنار میز را از تنظیمات دوباره فعال کند.",
     "disabledTitle": "برنامه سرور غیرفعال است",
     "draftTotal": "جمع پیش‌نویس",
+    "draftDiscardedOnUserChange": "پیش‌نویس کارمند قبلی حذف شد.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "برای افزودن کالاها، روی کالاهای منو بزنید.",
     "guestFallbackName": "میهمان {last4}",

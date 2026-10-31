@@ -194,6 +194,19 @@ async function main() {
       assert.equal(me.body.user.role, role, `/api/auth/me returns ${role} role`);
     }
 
+    setSetting('auto_lock_minutes', '1');
+    const unauthIdleSetting = await fetch(`${baseUrl}/api/settings/auto_lock_minutes`);
+    assert.equal(unauthIdleSetting.status, 401, 'Server App idle setting requires authentication');
+    for (const role of ['server', 'manager', 'owner']) {
+      const setting = await getJson(baseUrl, '/api/settings/auto_lock_minutes', roleTokens[role]);
+      assert.equal(setting.status, 200, `${role} can read the idle timeout`);
+      assert.equal(setting.body.setting.value, '1', `${role} receives the configured timeout`);
+    }
+    const otherSetting = await fetch(`${baseUrl}/api/settings/country`, {
+      headers: { Authorization: `Bearer ${roleTokens.server}` },
+    });
+    assert.equal(otherSetting.status, 404, 'Server App does not proxy general settings');
+
     const liveServerLogin = await postJson(baseUrl, '/api/auth/login', {
       email: 'server@server-app.test',
       password: 'ServerPass123!',

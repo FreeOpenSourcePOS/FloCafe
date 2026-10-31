@@ -1716,6 +1716,7 @@
     "disabledHint": "Ask an owner or manager to re-enable Tableside Ordering from Mga Setting.",
     "disabledTitle": "Naka-disable ang Server App",
     "draftTotal": "Draft na kabuuan",
+    "draftDiscardedOnUserChange": "Tinanggal ang draft ng nakaraang kawani.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "I-tap ang mga item sa menu upang idagdag ang mga ito dito.",
     "guestFallbackName": "Bisita {last4}",

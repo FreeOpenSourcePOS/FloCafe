@@ -1716,6 +1716,7 @@
     "disabledHint": "โปรดขอให้เจ้าของหรือผู้จัดการเปิดใช้งานการสั่งซื้อที่โต๊ะอีกครั้งในการตั้งค่า",
     "disabledTitle": "ปิดใช้งาน Server App",
     "draftTotal": "ยอดรวมร่าง",
+    "draftDiscardedOnUserChange": "ลบร่างของพนักงานคนก่อนแล้ว",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "แตะรายการเมนูเพื่อเพิ่มที่นี่",
     "guestFallbackName": "ลูกค้า {last4}",

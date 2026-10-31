@@ -1716,6 +1716,7 @@
     "disabledHint": "সেটিংস থেকে টেবিলসাইড অর্ডারিং পুনরায় সক্ষম করতে মালিক বা পরিচালককে বলুন।",
     "disabledTitle": "সার্ভার অ্যাপ অক্ষম করা হয়েছে",
     "draftTotal": "খসড়া মোট",
+    "draftDiscardedOnUserChange": "আগের কর্মীর খসড়া বাতিল করা হয়েছে।",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "মেনু আইটেমগুলিকে এখানে যোগ করতে আলতো চাপুন।",
     "guestFallbackName": "অতিথি {last4}",

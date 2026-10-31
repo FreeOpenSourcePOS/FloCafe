@@ -1716,6 +1716,7 @@
     "disabledHint": "किसी स्वामी या प्रबंधक से सेटिंग्स से टेबलसाइड ऑर्डरिंग को पुनः सक्षम करने के लिए कहें।",
     "disabledTitle": "सर्वर ऐप अक्षम है",
     "draftTotal": "कुल ड्राफ्ट",
+    "draftDiscardedOnUserChange": "पिछले कर्मचारी का ड्राफ्ट हटा दिया गया।",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "मेनू आइटम को यहां जोड़ने के लिए उन पर टैप करें।",
     "guestFallbackName": "अतिथि {last4}",

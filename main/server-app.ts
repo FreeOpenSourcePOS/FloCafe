@@ -371,6 +371,12 @@ export function startServerApp(): Promise<void> {
       },
     );
 
+    app.get(
+      '/api/settings/auto_lock_minutes',
+      serverAppApiRateLimit,
+      requireServerAppAuth,
+      (req, res) => forwardToMainApi(req, res, '/settings/auto_lock_minutes'),
+    );
     app.get('/api/categories', serverAppApiRateLimit, requireServerAppAuth, (req, res) =>
       forwardToMainApi(req, res, '/categories'),
     );

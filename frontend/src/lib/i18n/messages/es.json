@@ -1716,6 +1716,7 @@
     "disabledHint": "Pedile al propietario o encargado que reactive los pedidos desde la mesa desde Ajustes.",
     "disabledTitle": "La App de mesero está desactivada",
     "draftTotal": "Total del borrador",
+    "draftDiscardedOnUserChange": "Se descartó el borrador del empleado anterior.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Tocá los ítems del menú para agregarlos acá.",
     "guestFallbackName": "Invitado {last4}",

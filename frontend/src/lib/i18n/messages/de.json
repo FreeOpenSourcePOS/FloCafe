@@ -1716,6 +1716,7 @@
     "disabledHint": "Bitten Sie einen Inhaber oder Manager, die Tischbestellung in den Einstellungen wieder zu aktivieren.",
     "disabledTitle": "Server-App ist deaktiviert",
     "draftTotal": "Zwischensumme Entwurf",
+    "draftDiscardedOnUserChange": "Der Entwurf der vorherigen Person wurde verworfen.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Tippen Sie auf Menüartikel, um sie hier hinzuzufügen.",
     "guestFallbackName": "Gast {last4}",

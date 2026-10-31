@@ -90,6 +90,7 @@ const {
 } = require('./helpers/test-setup');
 const { getJWTSecret } = require('../main/routes/auth');
 const { validateInventoryLedgerDatabase } = require('../main/db');
+const { sweepDueScheduledOrders } = require('../main/services/scheduled-orders');
 
 function seedStaffUser(db: any, id: string, role: string, pin?: string) {
   const email = `${id}@test.local`;
@@ -550,6 +551,39 @@ async function main() {
       'qr_data_url is PNG data url',
     );
 
+    const scheduledOnly = await req({
+      path: '/api/orders/scheduled',
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(scheduledOnly.status, 200, 'scheduled queue loads');
+    assertOrThrow(
+      !scheduledOnly.body.orders.some((order: any) => order.id === order1.id),
+      'unscheduled deferred order is excluded from scheduled queue',
+    );
+    assertEqualOrThrow(
+      scheduledOnly.body.scheduled_count,
+      0,
+      'unscheduled deferred order is excluded from scheduled count',
+    );
+    db.prepare("UPDATE orders SET release_status = 'blocked' WHERE id = ?").run(order1.id);
+    const blockedScheduledOnly = await req({
+      path: '/api/orders/scheduled?limit=1',
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(
+      blockedScheduledOnly.body.blocked_count,
+      0,
+      'unscheduled blocked order is excluded from blocked count',
+    );
+    assertEqualOrThrow(
+      blockedScheduledOnly.body.orders.length,
+      0,
+      'unscheduled blocked order is excluded from scheduled pages',
+    );
+    db.prepare("UPDATE orders SET release_status = 'scheduled' WHERE id = ?").run(order1.id);
+
     // Verify stock was NOT deducted
     assertEqualOrThrow(
       productStock(db, 'prod-burger'),
@@ -710,6 +744,64 @@ async function main() {
       foundNonMcInQueue,
       undefined,
       'non-MC blocked order NOT in awaiting-payment queue',
+    );
+    const scheduledPageControl = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        scheduled_for: futureWallClockInZone('America/New_York', 30),
+        items: [{ product_id: 'prod-fries', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(scheduledPageControl.status, 201, 'scheduled pagination control created');
+    db.prepare("UPDATE orders SET release_status = 'blocked' WHERE id = ?").run(order1.id);
+    const scheduledFirst = await req({
+      path: '/api/orders/scheduled?limit=1',
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(
+      scheduledFirst.status,
+      200,
+      'scheduled first page loads with unscheduled blocked ticket',
+    );
+    assertEqualOrThrow(
+      scheduledFirst.body.scheduled_count,
+      1,
+      'scheduled count excludes undated tickets',
+    );
+    assertEqualOrThrow(
+      scheduledFirst.body.blocked_count,
+      1,
+      'blocked count excludes undated tickets',
+    );
+    assertEqualOrThrow(
+      scheduledFirst.body.orders[0].id,
+      nonMcBlockedOrder.body.order.id,
+      'dated blocked order appears first',
+    );
+    assertOrThrow(!!scheduledFirst.body.next_cursor, 'scheduled first page supplies a cursor');
+    const scheduledSecond = await req({
+      path: `/api/orders/scheduled?limit=1&cursor=${encodeURIComponent(scheduledFirst.body.next_cursor)}`,
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(scheduledSecond.status, 200, 'scheduled second page loads');
+    assertEqualOrThrow(
+      scheduledSecond.body.orders[0].id,
+      scheduledPageControl.body.order.id,
+      'dated scheduled order appears on second page',
+    );
+    assertEqualOrThrow(
+      scheduledSecond.body.next_cursor,
+      null,
+      'undated tickets do not create extra scheduled pages',
+    );
+    db.prepare("UPDATE orders SET release_status = 'scheduled' WHERE id = ?").run(order1.id);
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(
+      scheduledPageControl.body.order.id,
     );
     db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(
       nonMcBlockedOrder.body.order.id,
@@ -1246,19 +1338,21 @@ async function main() {
       headers: cashier.authHeader,
       body: { method: 'cash', amount: Number(rsBill1.total) },
     });
-    await req({
+    const siblingRefund = await req({
       path: '/api/refunds',
       method: 'POST',
       headers: owner.authHeader,
       body: {
         bill_id: rsBill1.id,
-        amount: Number(rsBill1.total) / 100,
+        amount: Number(rsBill1.total),
         method: 'cash',
         reason: 'Guest A left',
         approver_id: owner.userId,
         override_pin: '9999',
       },
     });
+
+    assertEqualOrThrow(siblingRefund.status, 201, 'split sibling fully refunded');
 
     await req({
       path: `/api/bills/${rsBill2.id}/payment`,
@@ -1279,6 +1373,28 @@ async function main() {
       refundSiblingOrderRow.release_status,
       'scheduled',
       'order remains unreleased',
+    );
+    const siblingStatuses = db
+      .prepare('SELECT payment_status FROM bills WHERE id IN (?, ?) ORDER BY id')
+      .all(rsBill1.id, rsBill2.id) as Array<{ payment_status: string }>;
+    assertOrThrow(
+      siblingStatuses.some((bill) => bill.payment_status === 'refunded'),
+      'one split bill is fully refunded',
+    );
+    assertOrThrow(
+      siblingStatuses.some((bill) => bill.payment_status === 'paid'),
+      'the other split bill remains paid',
+    );
+    const mixedRelease = await req({
+      path: `/api/orders/${refundSiblingOrder.id}/release`,
+      method: 'POST',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(mixedRelease.status, 409, 'mixed split bills cannot bypass payment gate');
+    assertEqualOrThrow(
+      mixedRelease.body.code,
+      'ORDER_NOT_PAID',
+      'mixed split bills do not trigger full-refund hold',
     );
     db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(refundSiblingOrder.id);
 
@@ -1301,6 +1417,21 @@ async function main() {
     });
     assertEqualOrThrow(schedOrderRes.status, 201, 'scheduled on_payment takeaway created 201');
     const schedOrder = schedOrderRes.body.order;
+
+    const scheduledPage = await req({
+      path: '/api/orders/scheduled?limit=1',
+      method: 'GET',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(scheduledPage.status, 200, 'scheduled queue with deferred tickets loads');
+    assertOrThrow(
+      scheduledPage.body.orders.every((order: any) => order.scheduled_for),
+      'scheduled page contains only dated orders',
+    );
+    assertOrThrow(
+      scheduledPage.body.orders.some((order: any) => order.id === schedOrder.id),
+      'scheduled deferred ticket appears in scheduled queue',
+    );
 
     const schedBill = db
       .prepare('SELECT * FROM bills WHERE order_id = ?')
@@ -1340,6 +1471,130 @@ async function main() {
       manualReleaseRes.body?.order?.release_status,
       'released',
       'order is released',
+    );
+
+    const refundScheduledRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        scheduled_for: futureTime,
+        items: [{ product_id: 'prod-fries', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(refundScheduledRes.status, 201, 'scheduled deferred refund order created');
+    const refundScheduledId = refundScheduledRes.body.order.id;
+    const refundScheduledBill = db
+      .prepare('SELECT * FROM bills WHERE order_id = ?')
+      .get(refundScheduledId) as any;
+    const refundScheduledPay = await req({
+      path: `/api/bills/${refundScheduledBill.id}/payment`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: { method: 'cash', amount: Number(refundScheduledBill.total) },
+    });
+    assertEqualOrThrow(refundScheduledPay.status, 200, 'scheduled deferred order paid');
+    const refundScheduled = await req({
+      path: '/api/refunds',
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        bill_id: refundScheduledBill.id,
+        amount: Number(refundScheduledBill.total),
+        method: 'cash',
+        reason: 'Customer cancelled',
+        approver_id: owner.userId,
+        override_pin: '9999',
+      },
+    });
+    assertEqualOrThrow(refundScheduled.status, 201, 'scheduled deferred order fully refunded');
+    const refundScheduledStock = productStock(db, 'prod-fries');
+    const refundScheduledPrints = kotPrintCalls.length;
+    db.prepare("UPDATE orders SET scheduled_for = '2000-01-01T00:00:00.000Z' WHERE id = ?").run(
+      refundScheduledId,
+    );
+    const refundScheduledSweep = await sweepDueScheduledOrders(db, { trigger: 'sweep' });
+    assertOrThrow(
+      refundScheduledSweep.blockedIds.includes(refundScheduledId),
+      'sweep blocks refunded deferred order',
+    );
+    const refundScheduledRelease = await req({
+      path: `/api/orders/${refundScheduledId}/release`,
+      method: 'POST',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(
+      refundScheduledRelease.status,
+      409,
+      'refunded scheduled deferred release rejected',
+    );
+    assertEqualOrThrow(
+      refundScheduledRelease.body.code,
+      'RELEASE_BLOCKED',
+      'refunded deferred order reports release hold',
+    );
+    assertEqualOrThrow(
+      refundScheduledRelease.body.order.release_blocked_reason,
+      'refunded',
+      'refunded deferred order carries hold reason',
+    );
+    const repeatedRefundSweep = await sweepDueScheduledOrders(db, { trigger: 'sweep' });
+    assertOrThrow(
+      !repeatedRefundSweep.releasedIds.includes(refundScheduledId),
+      'repeated sweep does not release refunded deferred order',
+    );
+    const repeatedRefundRelease = await req({
+      path: `/api/orders/${refundScheduledId}/release`,
+      method: 'POST',
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(
+      repeatedRefundRelease.status,
+      409,
+      'repeated manual release keeps refund hold',
+    );
+    assertEqualOrThrow(
+      productStock(db, 'prod-fries'),
+      refundScheduledStock,
+      'refund hold leaves deferred product stock unchanged',
+    );
+    assertEqualOrThrow(
+      kotPrintCalls.length,
+      refundScheduledPrints,
+      'refund hold does not print a deferred KOT',
+    );
+    const refundHoldAudit = db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM order_audit_log WHERE order_id = ? AND action = 'release_blocked'",
+      )
+      .get(String(refundScheduledId)) as { count: number };
+    assertEqualOrThrow(
+      refundHoldAudit.count,
+      1,
+      'repeated deferred refund holds record one audit entry',
+    );
+    const refundKds = await req({
+      path: '/api/kds/orders',
+      method: 'GET',
+      headers: owner.authHeader,
+    });
+    assertEqualOrThrow(refundKds.status, 200, 'KDS orders load after refund hold');
+    assertOrThrow(
+      !refundKds.body.orders.some((order: any) => order.id === refundScheduledId),
+      'refunded deferred order is absent from KDS',
+    );
+    const cancelRefundScheduled = await req({
+      path: `/api/orders/${refundScheduledId}/status`,
+      method: 'PATCH',
+      headers: owner.authHeader,
+      body: { status: 'cancelled', reason: 'Customer cancelled' },
+    });
+    assertEqualOrThrow(
+      cancelRefundScheduled.status,
+      200,
+      'refunded deferred order can be cancelled',
     );
 
     // Item 15: Takeaway order completion when kds_enabled is false

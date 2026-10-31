@@ -139,7 +139,11 @@ export default function ScheduledOrdersDrawer({
       await onOrderReleased(releasedOrder, Boolean(data.kot_auto_printed));
     } catch (err: unknown) {
       const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
-      toast.error(errData?.error || t('operationNotSaved'));
+      toast.error(
+        errData?.error === 'refunded'
+          ? `${tOrders('refunded')}. ${tOrders('cancel')}.`
+          : errData?.error || t('operationNotSaved'),
+      );
       await onRefresh();
     } finally {
       setReleasingId(null);
@@ -341,7 +345,9 @@ export default function ScheduledOrdersDrawer({
             data-testid={`scheduled-blocked-reason-${order.id}`}
             className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
           >
-            {order.release_blocked_reason}
+            {order.release_blocked_reason === 'refunded'
+              ? `${tOrders('refunded')}. ${tOrders('cancel')}.`
+              : order.release_blocked_reason}
           </div>
         )}
 

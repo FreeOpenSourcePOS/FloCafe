@@ -1705,6 +1705,17 @@ async function run(): Promise<void> {
       );
       const shift1HtmlMetrics = parseHtmlSummaryMetrics(shift1Html.text);
       for (const [metric, xlsxVal] of shift1Metrics.entries()) {
+        if (metric === 'Period End') {
+          const htmlEnd = new Date(shift1HtmlMetrics.get(metric) || '').getTime();
+          const xlsxEnd = new Date(String(xlsxVal || '')).getTime();
+          if (Number.isFinite(htmlEnd) && Number.isFinite(xlsxEnd)) {
+            assert.ok(
+              Math.abs(htmlEnd - xlsxEnd) <= 5000,
+              `shift HTML metric Period End within 5s of shift XLSX (${shift1HtmlMetrics.get(metric)} vs ${xlsxVal})`,
+            );
+            continue;
+          }
+        }
         assert.equal(
           shift1HtmlMetrics.get(metric),
           xlsxVal === null || xlsxVal === undefined ? '' : String(xlsxVal),

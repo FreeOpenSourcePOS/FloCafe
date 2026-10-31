@@ -430,6 +430,11 @@ transitions govern preparation and service.
 cash payments. Refund approval tiers, cutoff, and store-credit requirements are in
 [product invariants](../reference/product-invariants.md#refunds-and-staff-approval-pins).
 
+The refund modal loads eligible staff before enabling PIN entry and submission. It retains an
+eligible approver and entered PIN while the modal remains open; when the time tier makes the
+selected approver ineligible, it clears the PIN and selects an eligible default when one is
+available. The backend rechecks the approver and approval tier when the refund is submitted.
+
 ## Failure behaviour
 
 All of the stages above run against the local SQLite database, so the whole lifecycle works offline.

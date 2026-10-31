@@ -264,6 +264,7 @@ export default function POSPage() {
   } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
+  const tSettings = useTranslations('settings');
   const tExpenses = useTranslations('expenses');
   const tCommon = useTranslations('common');
   const tSupport = useTranslations('support');
@@ -2016,8 +2017,10 @@ export default function POSPage() {
       return;
     }
     if (isSendingToPaymentRef.current) return;
-    if (cart.orderType === 'delivery') {
-      toast.error(t('sendToPaymentDeliveryError'));
+    if (cart.orderType !== 'takeaway' && cart.orderType !== 'dine_in') {
+      toast.error(
+        cart.orderType === 'delivery' ? t('sendToPaymentDeliveryError') : t('placeOrderFailed'),
+      );
       return;
     }
     if (!validateOrderPreflight()) return;
@@ -2196,8 +2199,13 @@ export default function POSPage() {
       if (err instanceof OrderAttemptStorageError) {
         reportOrderStorageFailure(t('placeOrderFailed'), 'order.create');
       } else {
-        const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
-        toast.error(errData?.error || t('placeOrderFailed'));
+        const errData = (err as { response?: { data?: { error?: string; code?: string } } })
+          ?.response?.data;
+        toast.error(
+          errData?.code === 'MULTI_COUNTER_DISABLED'
+            ? tSettings('multiCounterDisabled')
+            : errData?.error || t('placeOrderFailed'),
+        );
       }
     } finally {
       if (isOriginSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
@@ -3191,7 +3199,11 @@ export default function POSPage() {
         if (!submitting && cart.items.length > 0) {
           if (pendingOrder) {
             void handlePlaceOrder();
-          } else if (multiCounterEnabled && activeCounter?.role === 'ordering') {
+          } else if (
+            multiCounterEnabled &&
+            activeCounter?.role === 'ordering' &&
+            (cart.orderType === 'takeaway' || cart.orderType === 'dine_in')
+          ) {
             void handleSendToPayment();
           } else {
             void handlePlaceOrder();
@@ -3208,7 +3220,11 @@ export default function POSPage() {
           if (!submitting && cart.items.length > 0) void handlePlaceOrder();
           return;
         }
-        if (multiCounterEnabled && activeCounter?.role === 'ordering') {
+        if (
+          multiCounterEnabled &&
+          activeCounter?.role === 'ordering' &&
+          (cart.orderType === 'takeaway' || cart.orderType === 'dine_in')
+        ) {
           if (!submitting && cart.items.length > 0) {
             void handleSendToPayment();
           }

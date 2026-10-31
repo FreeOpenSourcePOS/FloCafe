@@ -251,6 +251,89 @@ async function main() {
     // -------------------------------------------------------------------------
     console.log('\n--- 1. Multi-counter Settings Toggle ---');
 
+    const disabledSetting = await req({
+      path: '/api/settings/multi_counter_enabled',
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { value: 'false' },
+    });
+    assertEqualOrThrow(disabledSetting.status, 200, 'multi-counter disabled for creation check');
+    const beforeDisabled = {
+      orders: (db.prepare('SELECT COUNT(*) AS count FROM orders').get() as any).count,
+      bills: (db.prepare('SELECT COUNT(*) AS count FROM bills').get() as any).count,
+      attempts: (db.prepare('SELECT COUNT(*) AS count FROM order_idempotency').get() as any).count,
+      stock: productStock(db, 'prod-burger'),
+      sequences: JSON.stringify(db.prepare('SELECT * FROM sequences ORDER BY name, date').all()),
+    };
+    const disabledCreation = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: { ...serverUser.authHeader, 'Idempotency-Key': 'disabled-create-test' },
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-burger', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(
+      disabledCreation.status,
+      409,
+      'disabled multi-counter rejects new deferred ticket',
+    );
+    assertEqualOrThrow(
+      disabledCreation.body.code,
+      'MULTI_COUNTER_DISABLED',
+      'disabled error has stable code',
+    );
+    assertEqualOrThrow(
+      disabledCreation.body.outcome,
+      'not_applied',
+      'disabled error reports no mutation',
+    );
+    assertEqualOrThrow(
+      (db.prepare('SELECT COUNT(*) AS count FROM orders').get() as any).count,
+      beforeDisabled.orders,
+      'disabled creation leaves no order',
+    );
+    assertEqualOrThrow(
+      (db.prepare('SELECT COUNT(*) AS count FROM bills').get() as any).count,
+      beforeDisabled.bills,
+      'disabled creation leaves no bill',
+    );
+    assertEqualOrThrow(
+      (db.prepare('SELECT COUNT(*) AS count FROM order_idempotency').get() as any).count,
+      beforeDisabled.attempts,
+      'disabled creation leaves no idempotency record',
+    );
+    assertEqualOrThrow(
+      productStock(db, 'prod-burger'),
+      beforeDisabled.stock,
+      'disabled creation leaves stock unchanged',
+    );
+    assertEqualOrThrow(
+      JSON.stringify(db.prepare('SELECT * FROM sequences ORDER BY name, date').all()),
+      beforeDisabled.sequences,
+      'disabled creation does not allocate an order number',
+    );
+    const ordinaryDisabled = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-burger', quantity: 1 }] },
+    });
+    assertEqualOrThrow(
+      ordinaryDisabled.status,
+      201,
+      'ordinary order remains available when multi-counter is disabled',
+    );
+    const cancelOrdinary = await req({
+      path: `/api/orders/${ordinaryDisabled.body.order.id}/status`,
+      method: 'PATCH',
+      headers: owner.authHeader,
+      body: { status: 'cancelled' },
+    });
+    assertEqualOrThrow(cancelOrdinary.status, 200, 'ordinary test order cancels normally');
+
     // Non-owner cannot toggle multi_counter_enabled
     const cashierToggle = await req({
       path: '/api/settings/multi_counter_enabled',
@@ -483,6 +566,68 @@ async function main() {
     assertOrThrow(!!idemOrder1.body?.qr_payload, 'initial response includes qr_payload');
     assertOrThrow(!!idemOrder1.body?.qr_data_url, 'initial response includes qr_data_url');
 
+    const payableAfterDisable = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        scheduled_for: futureWallClockInZone('America/New_York', 45),
+        items: [{ product_id: 'prod-burger', quantity: 1 }],
+      },
+    });
+    assertEqualOrThrow(payableAfterDisable.status, 201, 'deferred ticket created before disabling');
+    const payableBill = db
+      .prepare('SELECT * FROM bills WHERE order_id = ?')
+      .get(payableAfterDisable.body.order.id) as any;
+    const disabledAfterCommit = await req({
+      path: '/api/settings/multi_counter_enabled',
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { value: 'false' },
+    });
+    assertEqualOrThrow(disabledAfterCommit.status, 200, 'feature disabled after committed ticket');
+    const paidAfterDisable = await req({
+      path: `/api/bills/${payableBill.id}/payment`,
+      method: 'POST',
+      headers: cashier.authHeader,
+      body: { method: 'cash', amount: Number(payableBill.total) },
+    });
+    assertEqualOrThrow(
+      paidAfterDisable.status,
+      200,
+      'existing deferred ticket remains payable after disabling',
+    );
+    const refundedAfterDisable = await req({
+      path: '/api/refunds',
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        bill_id: payableBill.id,
+        amount: Number(payableBill.total),
+        method: 'cash',
+        reason: 'Fixture cleanup',
+        approver_id: owner.userId,
+        override_pin: '9999',
+      },
+    });
+    assertEqualOrThrow(
+      refundedAfterDisable.status,
+      201,
+      'existing deferred ticket remains refundable after disabling',
+    );
+    const cancelledAfterDisable = await req({
+      path: `/api/orders/${payableAfterDisable.body.order.id}/status`,
+      method: 'PATCH',
+      headers: owner.authHeader,
+      body: { status: 'cancelled', reason: 'Fixture cleanup' },
+    });
+    assertEqualOrThrow(
+      cancelledAfterDisable.status,
+      200,
+      'existing deferred ticket remains cancellable after disabling',
+    );
     const idemReplay = await req({
       path: '/api/orders',
       method: 'POST',
@@ -509,6 +654,33 @@ async function main() {
         idemReplay.body.qr_data_url.startsWith('data:image/png;base64,'),
       'replayed qr_data_url is present',
     );
+    const idemConflictAfterDisable = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: { ...serverUser.authHeader, 'Idempotency-Key': idemKeyOrder },
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [{ product_id: 'prod-burger', quantity: 2 }],
+      },
+    });
+    assertEqualOrThrow(
+      idemConflictAfterDisable.status,
+      409,
+      'changed replay remains a conflict after disabling',
+    );
+    assertIncludesOrThrow(
+      idemConflictAfterDisable.body.error,
+      'Idempotency-Key',
+      'changed replay reports the existing request-hash conflict',
+    );
+    const reenabledSetting = await req({
+      path: '/api/settings/multi_counter_enabled',
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { value: 'true' },
+    });
+    assertEqualOrThrow(reenabledSetting.status, 200, 'feature re-enabled for remaining scenarios');
     db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(idemOrder1.body.order.id);
 
     // Create valid takeaway order with dispatch_policy: 'on_payment'

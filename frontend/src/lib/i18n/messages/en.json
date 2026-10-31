@@ -850,6 +850,7 @@
     "overridePriceClear": "Use menu price",
     "correctPaymentMethod": "Correct payment method",
     "correctPaymentMethodHint": "Change the recorded payment method while the shift is open. The amount stays unchanged.",
+    "correctPaymentUnavailable": "Unavailable: check refunds, wallet payments, the business day and shifts for all split bills.",
     "paymentLineLabel": "Payment line",
     "paymentMethodCorrected": "Payment method updated",
     "correctPaymentMethodFailed": "Could not update payment method",

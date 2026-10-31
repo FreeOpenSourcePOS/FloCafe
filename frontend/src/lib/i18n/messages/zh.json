@@ -850,6 +850,7 @@
     "overridePriceClear": "使用菜单价",
     "correctPaymentMethod": "更正付款方式",
     "correctPaymentMethodHint": "在班次开启期间更改已记录的付款方式。金额保持不变。",
+    "correctPaymentUnavailable": "不可用：请检查所有拆分账单的退款、钱包付款、营业日和班次。",
     "paymentLineLabel": "付款明细",
     "paymentMethodCorrected": "付款方式已更新",
     "correctPaymentMethodFailed": "无法更新付款方式",

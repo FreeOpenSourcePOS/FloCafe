@@ -850,6 +850,7 @@
     "overridePriceClear": "मेनू कीमत का उपयोग करें",
     "correctPaymentMethod": "भुगतान विधि सुधारें",
     "correctPaymentMethodHint": "शिफ्ट खुली रहने के दौरान दर्ज भुगतान विधि बदलें। राशि अपरिवर्तित रहती है।",
+    "correctPaymentUnavailable": "उपलब्ध नहीं: सभी विभाजित बिलों के रिफंड, वॉलेट भुगतान, कारोबारी दिन और शिफ्ट जाँचें।",
     "paymentLineLabel": "भुगतान पंक्ति",
     "paymentMethodCorrected": "भुगतान विधि अपडेट की गई",
     "correctPaymentMethodFailed": "भुगतान विधि अपडेट नहीं हो सकी",

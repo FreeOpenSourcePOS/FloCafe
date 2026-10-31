@@ -10,7 +10,6 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import api from '@/lib/api';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
-import { normalizeBillPaymentDetails } from '@/components/orders/OrderDetailPanel';
 import type { Bill, Order } from '@/lib/types';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
@@ -23,11 +22,6 @@ const BUILT_IN_PAYMENT_KEYS = {
 function extractErrorMessage(error: unknown): string | null {
   const data = (error as { response?: { data?: { error?: unknown } } } | undefined)?.response?.data;
   return typeof data?.error === 'string' && data.error.trim() ? data.error.trim() : null;
-}
-
-function firstCorrectableLineIndex(lines: Array<{ method?: string }>): number {
-  const idx = lines.findIndex((line) => String(line?.method || '').toLowerCase() !== 'wallet');
-  return idx >= 0 ? idx : 0;
 }
 
 interface Props {
@@ -43,13 +37,18 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
 
-  const [selectedBillId, setSelectedBillId] = useState<number>(() => bills[0]?.id ?? 0);
-  const effectiveBill = bills.find((b) => b.id === selectedBillId) ?? bills[0] ?? null;
-
-  const paymentLines = normalizeBillPaymentDetails(effectiveBill?.payment_details);
-  const initialLineIndex = firstCorrectableLineIndex(paymentLines);
-  const initialLine = paymentLines[initialLineIndex] ?? paymentLines[0] ?? null;
-  const [selectedIndex, setSelectedIndex] = useState<number>(initialLineIndex);
+  const [selectedBillId, setSelectedBillId] = useState<number>(
+    () =>
+      bills.find((bill) => bill.payment_method_correction?.correctable)?.id ?? bills[0]?.id ?? 0,
+  );
+  const [loadedBill, setLoadedBill] = useState<Bill | null>(null);
+  const [eligibilityFailed, setEligibilityFailed] = useState(false);
+  const [eligibilityRevision, setEligibilityRevision] = useState(0);
+  const effectiveBill = loadedBill?.id === selectedBillId ? loadedBill : null;
+  const rawLines = effectiveBill?.payment_details;
+  const paymentLines = Array.isArray(rawLines) ? rawLines : rawLines ? [rawLines] : [];
+  const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const initialLine = paymentLines[0] ?? null;
 
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
   const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState<boolean>(false);
@@ -75,6 +74,40 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
     setTransactionId(line?.transaction_id ? String(line.transaction_id) : '');
     setIdempotencyKey(createPaymentIdempotencyKey());
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get(`/bills/${selectedBillId}`)
+      .then((response) => {
+        if (cancelled) return;
+        const bill = response.data?.bill as Bill | undefined;
+        if (!bill?.payment_method_correction) {
+          setEligibilityFailed(true);
+          return;
+        }
+        const index =
+          bill.payment_method_correction.lines.find((line) => line.correctable)?.index ?? 0;
+        const lines = Array.isArray(bill.payment_details)
+          ? bill.payment_details
+          : bill.payment_details
+            ? [bill.payment_details]
+            : [];
+        setLoadedBill(bill);
+        setSelectedIndex(index);
+        setOverridePin('');
+        const line = lines[index];
+        setMethodSelection(String(line?.method || '').toLowerCase() === 'cash' ? 'card' : 'cash');
+        setTransactionId(line?.transaction_id ? String(line.transaction_id) : '');
+        setEligibilityFailed(false);
+      })
+      .catch(() => {
+        if (!cancelled) setEligibilityFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBillId, eligibilityRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,7 +160,8 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
   const canSubmit =
     Boolean(effectiveBill) &&
     Boolean(currentLine) &&
-    String(currentLine?.method || '').toLowerCase() !== 'wallet' &&
+    effectiveBill?.payment_method_correction?.lines.find((line) => line.index === selectedIndex)
+      ?.correctable === true &&
     !missingRequiredCardTxId &&
     !submitting &&
     !managerApprovers.loading &&
@@ -166,6 +200,9 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
       const msg = extractErrorMessage(error) || tOrders('correctPaymentMethodFailed');
       toast.error(msg);
       setIdempotencyKey(createPaymentIdempotencyKey());
+      setLoadedBill(null);
+      setOverridePin('');
+      setEligibilityRevision((revision) => revision + 1);
     } finally {
       setSubmitting(false);
     }
@@ -182,6 +219,16 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
         </h2>
         <p className="text-xs text-muted-foreground mb-4">{tOrders('correctPaymentMethodHint')}</p>
 
+        {!effectiveBill && (
+          <p role="status" className="text-xs text-muted-foreground mb-4">
+            {eligibilityFailed ? tOrders('correctPaymentMethodFailed') : tCommon('loading')}
+          </p>
+        )}
+        {effectiveBill && !effectiveBill.payment_method_correction?.correctable && (
+          <p role="status" className="text-xs text-muted-foreground mb-4">
+            {tOrders('correctPaymentUnavailable')}
+          </p>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           {bills.length > 1 && (
             <div>
@@ -193,20 +240,22 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
               </label>
               <select
                 id="correctPaymentBillSelect"
-                value={effectiveBill?.id ?? ''}
+                value={selectedBillId}
                 onChange={(e) => {
                   const nextBillId = Number(e.target.value);
                   setSelectedBillId(nextBillId);
-                  const nextBill = bills.find((b) => b.id === nextBillId) ?? bills[0] ?? null;
-                  const nextLines = normalizeBillPaymentDetails(nextBill?.payment_details);
-                  const nextIdx = firstCorrectableLineIndex(nextLines);
-                  setSelectedIndex(nextIdx);
-                  syncLineDefaults(nextLines[nextIdx]);
+                  setLoadedBill(null);
+                  setEligibilityFailed(false);
+                  setOverridePin('');
                 }}
                 className="w-full px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground"
               >
                 {bills.map((b) => (
-                  <option key={b.id} value={b.id}>
+                  <option
+                    key={b.id}
+                    value={b.id}
+                    disabled={!b.payment_method_correction?.correctable}
+                  >
                     {b.split_label || `#${b.bill_number}`} · {fmt(Number(b.total))}
                   </option>
                 ))}
@@ -232,15 +281,24 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
                 }}
                 className="w-full px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground"
               >
-                {paymentLines.map((line, idx) => (
-                  <option
-                    key={`${line.method}-${idx}`}
-                    value={idx}
-                    disabled={String(line.method || '').toLowerCase() === 'wallet'}
-                  >
-                    #{idx + 1} · {formatLineMethod(line.method)} · {fmt(Number(line.amount))}
-                  </option>
-                ))}
+                {paymentLines.map((line, idx) =>
+                  line && typeof line === 'object' ? (
+                    <option
+                      key={`${line.method}-${idx}`}
+                      value={idx}
+                      disabled={
+                        !effectiveBill?.payment_method_correction?.lines.find(
+                          (item) => item.index === idx,
+                        )?.correctable
+                      }
+                    >
+                      #{idx + 1} · {formatLineMethod(line.method)} · {fmt(Number(line.amount))}
+                      {!effectiveBill?.payment_method_correction?.lines.find(
+                        (item) => item.index === idx,
+                      )?.correctable && ` · ${tOrders('correctPaymentUnavailable')}`}
+                    </option>
+                  ) : null,
+                )}
               </select>
             ) : currentLine ? (
               <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-border bg-muted/40 text-sm">
@@ -332,7 +390,12 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
               }}
               loading={managerApprovers.loading}
               loadFailed={managerApprovers.loadFailed}
-              disabled={submitting}
+              disabled={
+                submitting ||
+                !effectiveBill?.payment_method_correction?.lines.find(
+                  (line) => line.index === selectedIndex,
+                )?.correctable
+              }
             />
             <div>
               <label
@@ -347,6 +410,11 @@ export default function CorrectPaymentMethodModal({ order, bills, onClose, onCor
                 type="password"
                 inputMode="numeric"
                 maxLength={6}
+                disabled={
+                  !effectiveBill?.payment_method_correction?.lines.find(
+                    (line) => line.index === selectedIndex,
+                  )?.correctable
+                }
                 value={overridePin}
                 onChange={(e) => setOverridePin(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder={tOrders('managerPin')}

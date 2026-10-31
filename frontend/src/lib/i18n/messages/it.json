@@ -850,6 +850,7 @@
     "overridePriceClear": "Usa prezzo di menu",
     "correctPaymentMethod": "Correggi metodo di pagamento",
     "correctPaymentMethodHint": "Modifica il metodo di pagamento registrato mentre il turno è aperto. L’importo resta invariato.",
+    "correctPaymentUnavailable": "Non disponibile: controlla rimborsi, pagamenti wallet, giornata lavorativa e turni di tutti i conti separati.",
     "paymentLineLabel": "Riga di pagamento",
     "paymentMethodCorrected": "Metodo di pagamento aggiornato",
     "correctPaymentMethodFailed": "Impossibile aggiornare il metodo di pagamento",

@@ -1852,3 +1852,115 @@ test.describe('owner order item editing on an online platform quotes platform pr
     }
   });
 });
+
+test('payment correction waits for fresh eligibility and preserves mixed line indices', async ({
+  page,
+}) => {
+  const order = await createTakeaway(page, 'Correction eligibility');
+  await login(page, 'owner@flo.local');
+  const bill = {
+    id: 987654,
+    bill_number: 'ELIGIBILITY',
+    order_id: order.id,
+    total: 64.2,
+    payment_status: 'paid',
+    paid_amount: 64.2,
+    balance: 0,
+    payment_details: [
+      { method: 'wallet', amount: 30 },
+      { method: 'cash', amount: 34.2 },
+    ],
+    payment_method_correction: {
+      correctable: true,
+      reason: null,
+      lines: [
+        { index: 0, correctable: false, reason: 'wallet_method_immutable' },
+        { index: 1, correctable: true, reason: null },
+      ],
+    },
+  };
+  await page.route('**/api/orders**', async (route) => {
+    const req = route.request();
+    if (req.method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    if (!response.ok()) return route.fulfill({ response });
+    const body = await response.json();
+    const attachBill = (candidate: { id: number; bill?: unknown; bills?: unknown[] }) => {
+      if (candidate?.id === order.id) {
+        candidate.bill = bill;
+        candidate.bills = [bill];
+      }
+    };
+    if (body.order) attachBill(body.order);
+    if (Array.isArray(body.orders)) body.orders.forEach(attachBill);
+    await route.fulfill({ response, json: body });
+  });
+  let releaseBill!: () => void;
+  let billRequested!: () => void;
+  const billGate = new Promise<void>((resolve) => {
+    releaseBill = resolve;
+  });
+  const requested = new Promise<void>((resolve) => {
+    billRequested = resolve;
+  });
+  let billReads = 0;
+  await page.route(`**/api/bills/${bill.id}`, async (route) => {
+    billReads += 1;
+    billRequested();
+    await billGate;
+    const currentBill =
+      billReads === 1
+        ? bill
+        : {
+            ...bill,
+            payment_method_correction: {
+              correctable: false,
+              reason: 'shift_closed',
+              lines: [
+                { index: 0, correctable: false, reason: 'shift_closed' },
+                { index: 1, correctable: false, reason: 'shift_closed' },
+              ],
+            },
+          };
+    await route.fulfill({ json: { bill: currentBill } });
+  });
+  let correctionPath = '';
+  await page.route(`**/api/bills/${bill.id}/payments/*/method`, (route) => {
+    correctionPath = new URL(route.request().url()).pathname;
+    return route.fulfill({ status: 409, json: { error: 'Shift closed', reason: 'shift_closed' } });
+  });
+  await page.route('**/api/settings/card_transaction_id_required', (route) =>
+    route.fulfill({ json: { setting: { value: 'false' } } }),
+  );
+  await page.route('**/api/staff/approvers', (route) =>
+    route.fulfill({
+      json: {
+        approvers: [{ id: 'e2e-owner', name: 'Owner', role: 'owner', is_active: 1, has_pin: true }],
+      },
+    }),
+  );
+  try {
+    await page.goto(`${BASE}/orders`);
+    await page
+      .getByRole('button')
+      .filter({ hasText: `#${order.order_number}` })
+      .click();
+    await page.getByTestId('correct-payment-method-button').click();
+    await requested;
+    await expect(page.getByTestId('correct-payment-pin-input')).toBeDisabled();
+    await expect(page.getByTestId('correct-payment-submit-button')).toBeDisabled();
+    releaseBill();
+    await expect(page.locator('#correctPaymentLineSelect')).toHaveValue('1');
+    await expect(page.locator('#correctPaymentLineSelect option[value="0"]')).toBeDisabled();
+    await expect(page.getByTestId('correct-payment-pin-input')).toBeEnabled();
+    await page.getByTestId('correct-payment-pin-input').fill('1234');
+    await page.getByTestId('correct-payment-submit-button').click();
+    await expect.poll(() => correctionPath).toBe(`/api/bills/${bill.id}/payments/1/method`);
+    await expect(page.getByText('Shift closed', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('correct-payment-pin-input')).toBeDisabled();
+    await expect(page.getByTestId('correct-payment-submit-button')).toBeDisabled();
+    await expect.poll(() => billReads).toBe(2);
+  } finally {
+    releaseBill();
+  }
+});

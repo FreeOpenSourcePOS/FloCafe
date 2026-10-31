@@ -1261,6 +1261,7 @@
     "printTicket": "پرچی پرنٹ کریں",
     "payTicket": "ادائیگی کریں",
     "paymentQueue": "ادائیگی کی قطار",
+    "paymentQueueRefreshPaused": "پرانے ٹکٹ دیکھتے وقت خودکار ریفریش موقوف ہے۔",
     "scanOrEnterTicket": "ٹکٹ کیو آر اسکین کریں یا نمبر درج کریں...",
     "paymentQueueEmpty": "کوئی منتظر ٹکٹ نہیں",
     "paymentQueueEmptyDesc": "ادائیگی کے لیے بھیجے گئے آرڈرز یہاں ظاہر ہوں گے۔",

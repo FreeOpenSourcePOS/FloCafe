@@ -1261,6 +1261,7 @@
     "printTicket": "Imprimer le ticket",
     "payTicket": "Régler",
     "paymentQueue": "File des paiements",
+    "paymentQueueRefreshPaused": "L’actualisation automatique est suspendue pendant la consultation des tickets plus anciens.",
     "scanOrEnterTicket": "Scanner le QR ou saisir le numéro...",
     "paymentQueueEmpty": "Aucun ticket en attente",
     "paymentQueueEmptyDesc": "Les commandes envoyées au paiement apparaîtront ici.",

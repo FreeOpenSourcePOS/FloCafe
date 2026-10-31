@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/auth';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { useFormatDate } from '@/hooks/useFormatDate';
 import type { Category, Product, ProductVariant } from '@/lib/types';
 import { activeVariants, isVariantSoldOut } from '@/lib/product-variants';
 import {
@@ -67,6 +68,7 @@ export function QrMenuSettingsTab({
   const t = useTranslations('qrMenu');
   const tenant = useAuthStore((state) => state.currentTenant);
   const formatCurrency = useFormatCurrency();
+  const { formatDateTime } = useFormatDate();
   const uploadRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<QrMenuStatus | null>(null);
   const [prefs, setPrefs] = useState<Preferences | null>(null);
@@ -310,7 +312,7 @@ export function QrMenuSettingsTab({
                 <p className="mt-1 truncate text-sm text-muted-foreground">{status.file_name}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {status.source === 'uploaded' ? t('customPdf') : t('generatedMenu')} ·{' '}
-                  {status.updated_at ? new Date(status.updated_at).toLocaleString() : ''}
+                  {status.updated_at ? formatDateTime(status.updated_at) : ''}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button

@@ -1261,6 +1261,7 @@
     "printTicket": "टिकट प्रिन्ट गर्नुहोस्",
     "payTicket": "भुक्तानी गर्नुहोस्",
     "paymentQueue": "भुक्तानी लाम",
+    "paymentQueueRefreshPaused": "पुराना टिकट हेर्दा स्वचालित रिफ्रेस रोकिएको छ।",
     "scanOrEnterTicket": "टिकट QR स्क्यान गर्नुहोस् वा नम्बर प्रविष्ट गर्नुहोस्...",
     "paymentQueueEmpty": "कुनै प्रतीक्षा टिकट छैन",
     "paymentQueueEmptyDesc": "भुक्तानीका लागि पठाइएका अर्डरहरू यहाँ देखिनेछन्।",

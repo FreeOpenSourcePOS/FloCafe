@@ -1261,6 +1261,7 @@
     "printTicket": "Print Ticket",
     "payTicket": "Pay",
     "paymentQueue": "Payment Queue",
+    "paymentQueueRefreshPaused": "Automatic refresh is paused while viewing older tickets.",
     "scanOrEnterTicket": "Scan ticket QR or enter number...",
     "paymentQueueEmpty": "No waiting tickets",
     "paymentQueueEmptyDesc": "Orders sent to payment will appear here.",

@@ -1445,3 +1445,59 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
   }
   expect(cleanupErrors, 'all multi-counter test fixtures and settings are restored').toEqual([]);
 });
+
+test('payment queue keeps loaded pages during automatic refresh', async ({ page, request }) => {
+  await page.clock.install();
+  const ownerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
+  const headers = { Authorization: `Bearer ${ownerToken}` };
+  const previousRes = await request.get(`${BASE}/api/settings/multi_counter_enabled`, { headers });
+  const previousValue = (await previousRes.json()).setting.value;
+  try {
+    const enabled = await request.put(`${BASE}/api/settings/multi_counter_enabled`, {
+      headers,
+      data: { value: 'true' },
+    });
+    expect(enabled.ok()).toBeTruthy();
+    await page.route('**/api/orders/awaiting-payment*', async (route) => {
+      const cursor = new URL(route.request().url()).searchParams.get('cursor');
+      const ids = cursor ? [51] : Array.from({ length: 50 }, (_, index) => index + 1);
+      await route.fulfill({
+        json: {
+          orders: ids.map((id) => ({
+            id,
+            order_number: `QUEUE-${id}`,
+            type: 'takeaway',
+            checkout_stage: 'awaiting_payment',
+            release_status: 'scheduled',
+            ticket_balance: 100,
+            ticket_paid_amount: 0,
+            created_at: '2026-01-01 12:00:00',
+          })),
+          next_cursor: cursor ? null : 'next',
+          has_more: !cursor,
+          awaiting_count: 51,
+          blocked_count: 0,
+        },
+      });
+    });
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**');
+    await setLanguage(page, 'en');
+    await page.getByTestId('pos-payment-queue-btn').click();
+    await expect(page.getByTestId('queue-ticket-QUEUE-50')).toBeVisible();
+    await page.getByTestId('payment-queue-load-more').click();
+    await expect(page.getByTestId('queue-ticket-QUEUE-51')).toBeVisible();
+    await page.clock.fastForward(11000);
+    await page.clock.runFor(100);
+    await expect(page.getByTestId('queue-ticket-QUEUE-51')).toBeVisible();
+  } finally {
+    const restored = await request.put(`${BASE}/api/settings/multi_counter_enabled`, {
+      headers,
+      data: { value: previousValue },
+    });
+    expect(restored.ok()).toBeTruthy();
+  }
+});

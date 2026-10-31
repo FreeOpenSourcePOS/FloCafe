@@ -1261,6 +1261,7 @@
     "printTicket": "티켓 출력",
     "payTicket": "결제",
     "paymentQueue": "결제 대기 목록",
+    "paymentQueueRefreshPaused": "이전 티켓을 보는 동안 자동 새로고침이 일시 중지됩니다.",
     "scanOrEnterTicket": "티켓 QR 스캔 또는 번호 입력...",
     "paymentQueueEmpty": "대기 중인 티켓이 없습니다",
     "paymentQueueEmptyDesc": "결제로 전송된 주문이 여기에 표시됩니다.",

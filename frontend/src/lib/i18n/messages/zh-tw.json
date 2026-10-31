@@ -1261,6 +1261,7 @@
     "printTicket": "列印單據",
     "payTicket": "結帳",
     "paymentQueue": "待結帳佇列",
+    "paymentQueueRefreshPaused": "檢視較早的票據時，自動重新整理已暫停。",
     "scanOrEnterTicket": "掃描單據 QR 碼或輸入號碼...",
     "paymentQueueEmpty": "目前沒有待結帳的單據",
     "paymentQueueEmptyDesc": "送至結帳的訂單將顯示於此處。",

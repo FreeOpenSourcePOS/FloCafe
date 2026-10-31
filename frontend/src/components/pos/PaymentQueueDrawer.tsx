@@ -74,6 +74,7 @@ export function PaymentQueueDrawer({
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
+  const tSettings = useTranslations('settings');
   const fmt = useFormatCurrency();
   const { formatTime } = useFormatDate();
   const { currentTenant } = useAuthStore();
@@ -85,7 +86,7 @@ export function PaymentQueueDrawer({
   const canRefund = tenantCan(currentTenant, 'refunds.initiate');
 
   const [orders, setOrders] = useState<AwaitingPaymentOrder[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -95,79 +96,53 @@ export function PaymentQueueDrawer({
   const [printingId, setPrintingId] = useState<string | number | null>(null);
   const [awaitingCount, setAwaitingCount] = useState(0);
   const [blockedCount, setBlockedCount] = useState(0);
+  const [pollingPaused, setPollingPaused] = useState(false);
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const fetchQueue = useCallback(
-    async (cursor?: string | null, searchQuery?: string, append = false) => {
-      if (append) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
-      }
-
-      try {
-        const params: Record<string, string> = { limit: '50' };
-        if (cursor) params.cursor = cursor;
-        if (searchQuery && searchQuery.trim().length > 0) {
-          // If scanner pasted prefix FLOCAFE-TICKET:, strip it
-          let cleanSearch = searchQuery.trim();
-          if (cleanSearch.startsWith('FLOCAFE-TICKET:')) {
-            cleanSearch = cleanSearch.replace('FLOCAFE-TICKET:', '').trim();
-          }
-          params.search = cleanSearch;
-        }
-
-        const { data } = await api.get('/orders/awaiting-payment', { params });
-        const fetchedOrders: AwaitingPaymentOrder[] = data.orders || [];
-
-        if (append) {
-          setOrders((prev) => [...prev, ...fetchedOrders]);
-        } else {
-          setOrders(fetchedOrders);
-        }
-
-        setNextCursor(data.next_cursor || null);
-        setHasMore(Boolean(data.has_more));
-        const awaiting = Number(data.awaiting_count) || 0;
-        const blocked = Number(data.blocked_count) || 0;
-        setAwaitingCount(awaiting);
-        setBlockedCount(blocked);
-        if (onCountsChanged) {
-          onCountsChanged(awaiting, blocked);
-        }
-      } catch (err: unknown) {
-        console.error('Failed to fetch awaiting payment queue:', err);
-      } finally {
-        setLoading(false);
-        setLoadingMore(false);
-      }
-    },
-    [onCountsChanged],
-  );
-
+  const requestSequenceRef = useRef(0);
+  const pausedRef = useRef(false);
+  const appendInFlightRef = useRef(false);
+  const searchPendingRef = useRef(false);
+  const requestInFlightRef = useRef<number | null>(null);
+  const lastRefreshKeyRef = useRef(refreshKey);
   const onCountsChangedRef = useRef(onCountsChanged);
   useEffect(() => {
     onCountsChangedRef.current = onCountsChanged;
   }, [onCountsChanged]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (open) {
+  const fetchQueue = useCallback(
+    (cursor: string | null, searchQuery: string, append = false, poll = false) => {
+      if (poll && requestInFlightRef.current !== null) return;
+      const sequence = ++requestSequenceRef.current;
+      requestInFlightRef.current = sequence;
       const params: Record<string, string> = { limit: '50' };
-      if (search.trim().length > 0) {
-        let clean = search.trim();
-        if (clean.startsWith('FLOCAFE-TICKET:')) {
-          clean = clean.replace('FLOCAFE-TICKET:', '').trim();
+      if (cursor) params.cursor = cursor;
+      if (searchQuery.trim()) {
+        let cleanSearch = searchQuery.trim();
+        if (cleanSearch.startsWith('FLOCAFE-TICKET:')) {
+          cleanSearch = cleanSearch.replace('FLOCAFE-TICKET:', '').trim();
         }
-        params.search = clean;
+        params.search = cleanSearch;
       }
       api
         .get('/orders/awaiting-payment', { params })
         .then(({ data }) => {
-          if (cancelled) return;
+          if (sequence !== requestSequenceRef.current) return;
           const fetchedOrders: AwaitingPaymentOrder[] = data.orders || [];
-          setOrders(fetchedOrders);
+          if (append) {
+            setOrders((previous) => {
+              const existing = new Set(previous.map((order) => String(order.id)));
+              const unique = fetchedOrders.filter((order) => {
+                const id = String(order.id);
+                if (existing.has(id)) return false;
+                existing.add(id);
+                return true;
+              });
+              return [...previous, ...unique];
+            });
+          } else {
+            setOrders(fetchedOrders);
+          }
           setNextCursor(data.next_cursor || null);
           setHasMore(Boolean(data.has_more));
           const awaiting = Number(data.awaiting_count) || 0;
@@ -175,39 +150,112 @@ export function PaymentQueueDrawer({
           setAwaitingCount(awaiting);
           setBlockedCount(blocked);
           onCountsChangedRef.current?.(awaiting, blocked);
-          setLoading(false);
         })
         .catch((err: unknown) => {
-          if (cancelled) return;
-          console.error('Failed to fetch awaiting payment queue:', err);
-          setLoading(false);
+          if (sequence === requestSequenceRef.current) {
+            console.error('Failed to fetch awaiting payment queue:', err);
+            if (append) {
+              pausedRef.current = false;
+              setPollingPaused(false);
+            }
+          }
+        })
+        .finally(() => {
+          if (sequence === requestSequenceRef.current) {
+            appendInFlightRef.current = false;
+            requestInFlightRef.current = null;
+            if (!append) setPollingPaused(false);
+            setLoading(false);
+            setLoadingMore(false);
+          }
         });
-    }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    pausedRef.current = false;
+    void fetchQueue(null, search);
     return () => {
-      cancelled = true;
+      requestSequenceRef.current += 1;
+      appendInFlightRef.current = false;
+      requestInFlightRef.current = null;
+      searchPendingRef.current = false;
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
-  }, [open, search, refreshKey]);
+  }, [open, search, fetchQueue]);
+
+  useEffect(() => {
+    const changed = lastRefreshKeyRef.current !== refreshKey;
+    lastRefreshKeyRef.current = refreshKey;
+    if (open && changed && !searchPendingRef.current) {
+      pausedRef.current = false;
+      setPollingPaused(false);
+      void fetchQueue(null, search);
+    }
+  }, [open, refreshKey, search, fetchQueue]);
 
   useEffect(() => {
     if (!open) return;
     const interval = setInterval(() => {
-      void fetchQueue(null, search);
+      if (!pausedRef.current && !searchPendingRef.current)
+        void fetchQueue(null, search, false, true);
     }, 5000);
     return () => clearInterval(interval);
   }, [open, search, fetchQueue]);
 
   const handleSearchChange = (value: string) => {
     setSearchInput(value);
+    requestSequenceRef.current += 1;
+    requestInFlightRef.current = null;
+    appendInFlightRef.current = false;
+    searchPendingRef.current = true;
+    pausedRef.current = false;
+    setPollingPaused(false);
+    setLoading(false);
+    setLoadingMore(false);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     searchDebounceRef.current = setTimeout(() => {
-      setSearch(value);
+      searchPendingRef.current = false;
+      setLoading(true);
+      if (value === search) void fetchQueue(null, value);
+      else setSearch(value);
     }, 300);
   };
 
   const handleLoadMore = () => {
-    if (hasMore && nextCursor && !loadingMore) {
+    if (hasMore && nextCursor && !appendInFlightRef.current) {
+      appendInFlightRef.current = true;
+      pausedRef.current = true;
+      setPollingPaused(true);
+      setLoading(false);
+      setLoadingMore(true);
       void fetchQueue(nextCursor, search, true);
     }
+  };
+
+  const handleRefresh = () => {
+    requestSequenceRef.current += 1;
+    requestInFlightRef.current = null;
+    pausedRef.current = false;
+    appendInFlightRef.current = false;
+    searchPendingRef.current = false;
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    setPollingPaused(false);
+    setLoading(true);
+    setLoadingMore(false);
+    if (searchInput === search) void fetchQueue(null, search);
+    else setSearch(searchInput);
+  };
+
+  const handleClose = () => {
+    requestSequenceRef.current += 1;
+    appendInFlightRef.current = false;
+    requestInFlightRef.current = null;
+    searchPendingRef.current = false;
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    onClose();
   };
 
   const handleRetryRelease = async (order: AwaitingPaymentOrder) => {
@@ -215,6 +263,8 @@ export function PaymentQueueDrawer({
     try {
       await api.post(`/orders/${order.id}/release`);
       toast.success(t('scheduledReleasedSuccess', { number: order.order_number }));
+      pausedRef.current = false;
+      setPollingPaused(false);
       void fetchQueue(null, search);
     } catch (err: unknown) {
       const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
@@ -456,7 +506,7 @@ export function PaymentQueueDrawer({
       data-testid="payment-queue-drawer"
       className="fixed inset-0 z-50 flex justify-end bg-black/50"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) handleClose();
       }}
     >
       <div className="flex h-full w-full max-w-lg flex-col bg-card shadow-2xl border-s border-border">
@@ -477,15 +527,16 @@ export function PaymentQueueDrawer({
               type="button"
               variant="ghost"
               size="icon"
-              onClick={() => void fetchQueue(null, search)}
+              onClick={handleRefresh}
               className="size-8 rounded-full"
-              title="Refresh"
+              title={tSettings('refresh')}
+              aria-label={tSettings('refresh')}
             >
               <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
             </Button>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               data-testid="close-queue-drawer-btn"
               aria-label={tCommon('close')}
               className="touch-target rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -498,26 +549,33 @@ export function PaymentQueueDrawer({
         {/* Search */}
         <div className="p-3 border-b border-border bg-muted/30">
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+            <Search className="absolute start-3 top-2.5 size-4 text-muted-foreground" />
             <input
               type="text"
               data-testid="payment-queue-search"
               value={searchInput}
               onChange={(e) => handleSearchChange(e.target.value)}
               placeholder={t('scanOrEnterTicket')}
-              className="w-full pl-9 pr-4 py-2 text-sm bg-card border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+              className="w-full ps-9 pe-9 py-2 text-sm bg-card border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
             />
             {searchInput && (
               <button
                 type="button"
                 onClick={() => handleSearchChange('')}
-                className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                aria-label={`${tCommon('clear')}: ${tCommon('search')}`}
+                className="absolute end-3 top-2.5 text-muted-foreground hover:text-foreground"
               >
                 <X size={14} />
               </button>
             )}
           </div>
         </div>
+
+        {pollingPaused && (
+          <p className="px-4 pt-3 text-xs text-muted-foreground">
+            {t('paymentQueueRefreshPaused')}
+          </p>
+        )}
 
         {/* Content list */}
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">

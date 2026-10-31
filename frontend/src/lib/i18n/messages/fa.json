@@ -1261,6 +1261,7 @@
     "printTicket": "چاپ قبض",
     "payTicket": "پرداخت",
     "paymentQueue": "صف پرداخت",
+    "paymentQueueRefreshPaused": "هنگام مشاهده رسیدهای قدیمی، تازه‌سازی خودکار متوقف است.",
     "scanOrEnterTicket": "اسکن کد یا ورود شماره قبض...",
     "paymentQueueEmpty": "هیچ قبضی در انتظار نیست",
     "paymentQueueEmptyDesc": "سفارش‌های ارسال‌شده به پرداخت در اینجا نمایش داده می‌شوند.",

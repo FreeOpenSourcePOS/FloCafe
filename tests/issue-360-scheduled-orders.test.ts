@@ -738,6 +738,10 @@ async function main() {
       '\n--- 3. Quote preservation, current recipe at release, negative supply, due sweep & concurrency ---',
     );
     {
+      const noBillCount = db
+        .prepare('SELECT COUNT(*) AS count FROM bills WHERE order_id = ?')
+        .get(scheduledOrder1Id) as { count: number };
+      assertEqualOrThrow(noBillCount.count, 0, 'unpaid scheduled release control has no bills');
       // Record saved financial quote before mutating catalog & recipe
       const beforeQuote = await api(baseUrl, `/api/orders/${scheduledOrder1Id}`, {
         headers: owner.authHeader,
@@ -1171,7 +1175,10 @@ async function main() {
           type: 'takeaway',
           customer_id: 'cust-sched-1',
           scheduled_for: schedWall,
-          items: [{ product_id: 'prod-latte', quantity: 1 }],
+          items: [
+            { product_id: 'prod-latte', quantity: 1, addons: [{ id: 'addon-syrup', quantity: 1 }] },
+            { product_id: 'prod-sized-tea', variant_id: 'var-tea-large', quantity: 1 },
+          ],
         },
       });
       assertEqualOrThrow(createRes.status, 201, 'scheduled takeaway order created');
@@ -1527,6 +1534,141 @@ async function main() {
         },
       });
       assertEqualOrThrow(finalRefundRes.status, 201, 'remaining balance refunded in full');
+
+      const refundVariantCount = db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM order_items WHERE order_id = ? AND variant_id = 'var-tea-large'",
+        )
+        .get(paidScheduledOrderId) as { count: number };
+      const refundAddonCount = db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM order_item_addons WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id = ? AND status != 'cancelled') AND addon_id = 'addon-syrup'",
+        )
+        .get(paidScheduledOrderId) as { count: number };
+      assertEqualOrThrow(
+        refundVariantCount.count,
+        1,
+        'refund hold fixture contains tracked variant',
+      );
+      assertOrThrow(refundAddonCount.count > 0, 'refund hold fixture contains tracked add-on');
+      const quoteBeforeRefundHold = db
+        .prepare('SELECT total, subtotal, checkout_stage FROM orders WHERE id = ?')
+        .get(paidScheduledOrderId) as { total: number; subtotal: number; checkout_stage: string };
+      const stockBeforeRefundHold = productStock(db, 'prod-latte');
+      const supplyBeforeRefundHold = supplyStock(db, beans.id);
+      const variantBeforeRefundHold = variantStock(db, 'var-tea-large');
+      const addonBeforeRefundHold = addonStock(db, 'addon-syrup');
+      const printsBeforeRefundHold = kotPrintCalls.length;
+      db.prepare("UPDATE orders SET scheduled_for = '2000-01-01T00:00:00.000Z' WHERE id = ?").run(
+        paidScheduledOrderId,
+      );
+      const refundedSweep = await sweepDueScheduledOrders(db, { trigger: 'sweep' });
+      assertOrThrow(
+        refundedSweep.blockedIds.includes(paidScheduledOrderId),
+        'sweep blocks fully refunded order',
+      );
+      const refundedRelease = db
+        .prepare('SELECT release_status, release_blocked_reason FROM orders WHERE id = ?')
+        .get(paidScheduledOrderId) as { release_status: string; release_blocked_reason: string };
+      assertEqualOrThrow(
+        refundedRelease.release_status,
+        'blocked',
+        'fully refunded scheduled order cannot release',
+      );
+      assertEqualOrThrow(
+        refundedRelease.release_blocked_reason,
+        'refunded',
+        'refund hold identifies its reason',
+      );
+      const retryRefundedRelease = await api(
+        baseUrl,
+        `/api/orders/${paidScheduledOrderId}/release`,
+        {
+          method: 'POST',
+          headers: owner.authHeader,
+        },
+      );
+      assertEqualOrThrow(
+        retryRefundedRelease.status,
+        409,
+        'manual retry of refund hold returns 409',
+      );
+      assertEqualOrThrow(
+        retryRefundedRelease.data.code,
+        'RELEASE_BLOCKED',
+        'manual retry reports release hold',
+      );
+      assertEqualOrThrow(
+        retryRefundedRelease.data.order.release_blocked_reason,
+        'refunded',
+        'manual retry returns hydrated hold',
+      );
+      assertEqualOrThrow(
+        retryRefundedRelease.data.order.status,
+        'pending',
+        'refund hold preserves order status',
+      );
+      const heldBill = db
+        .prepare('SELECT payment_status FROM bills WHERE id = ?')
+        .get(paidScheduledBillId) as { payment_status: string };
+      assertEqualOrThrow(
+        heldBill.payment_status,
+        'refunded',
+        'refund hold preserves payment status',
+      );
+      const quoteAfterRefundHold = db
+        .prepare('SELECT total, subtotal, checkout_stage FROM orders WHERE id = ?')
+        .get(paidScheduledOrderId) as { total: number; subtotal: number; checkout_stage: string };
+      assertEqualOrThrow(
+        quoteAfterRefundHold.total,
+        quoteBeforeRefundHold.total,
+        'refund hold preserves total',
+      );
+      assertEqualOrThrow(
+        quoteAfterRefundHold.subtotal,
+        quoteBeforeRefundHold.subtotal,
+        'refund hold preserves subtotal',
+      );
+      assertEqualOrThrow(
+        quoteAfterRefundHold.checkout_stage,
+        quoteBeforeRefundHold.checkout_stage,
+        'refund hold preserves checkout stage',
+      );
+      assertEqualOrThrow(
+        productStock(db, 'prod-latte'),
+        stockBeforeRefundHold,
+        'refund hold does not deduct product stock',
+      );
+      assertEqualOrThrow(
+        supplyStock(db, beans.id),
+        supplyBeforeRefundHold,
+        'refund hold does not deduct recipe stock',
+      );
+      assertEqualOrThrow(
+        variantStock(db, 'var-tea-large'),
+        variantBeforeRefundHold,
+        'refund hold does not deduct variant stock',
+      );
+      assertEqualOrThrow(
+        addonStock(db, 'addon-syrup'),
+        addonBeforeRefundHold,
+        'refund hold does not deduct add-on stock',
+      );
+      assertEqualOrThrow(
+        kotPrintCalls.length,
+        printsBeforeRefundHold,
+        'refund hold does not print a KOT',
+      );
+      const refundHoldAudits = db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM order_audit_log WHERE order_id = ? AND action = 'release_blocked'",
+        )
+        .get(String(paidScheduledOrderId)) as { count: number };
+      assertEqualOrThrow(
+        refundHoldAudits.count,
+        1,
+        'repeated refund holds do not duplicate audit entries',
+      );
 
       const latteBeforeCancel = productStock(db, 'prod-latte');
       const muffinBeforeCancel = productStock(db, 'prod-muffin');

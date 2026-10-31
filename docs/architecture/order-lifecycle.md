@@ -97,8 +97,9 @@ Lifecycle rules before and at release:
   (`powerMonitor` `resume`). The sweep releases due orders where `release_status = 'scheduled'` and
   `scheduled_for <= now`. Orders in `release_status = 'blocked'` are skipped by automatic sweeps and
   must be retried explicitly via `POST /api/orders/:id/release` after resolving the stock or catalog
-  problem. Unexpected release errors during a sweep are isolated and transition that order to
-  `release_status = 'blocked'` with an actionable message so sweeps do not stall.
+  problem. If all existing bills are refunded, release is blocked with reason `refunded`; cancel the
+  order and create a replacement if needed. Unexpected release errors during a sweep are isolated
+  and transition that order to `release_status = 'blocked'` with an actionable message so sweeps do not stall.
 - **Shared transactional release (`releaseScheduledOrder`).** Both automatic sweeps and manual
   release execute the same SQLite transaction with an atomic compare-and-check on `release_status`
   so concurrent sweeps and retries never deduct stock twice, plus an optional `checkPreconditions`

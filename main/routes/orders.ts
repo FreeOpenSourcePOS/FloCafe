@@ -104,6 +104,7 @@ import {
   completeExactBalanceSettlement,
   createOrSyncBillForOrder,
   getTenantCurrency,
+  paymentMethodCorrectionEligibility,
   preVerifyKitchenDeliveryPin,
   syncUnpaidBillsForOrder,
 } from './bills';
@@ -1321,6 +1322,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
     .all(...ids) as any[];
   for (const b of billRows) {
     const parsed = parseRowJson(b);
+    parsed.payment_method_correction = paymentMethodCorrectionEligibility(db, parsed);
     const siblings = billsByOrderId.get(parsed.order_id) || [];
     siblings.push(parsed);
     billsByOrderId.set(parsed.order_id, siblings);

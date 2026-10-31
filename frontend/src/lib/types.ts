@@ -305,6 +305,11 @@ export interface Bill {
         transaction_id?: string;
       }[]
     | null;
+  payment_method_correction?: {
+    correctable: boolean;
+    reason: string | null;
+    lines: Array<{ index: number; correctable: boolean; reason: string | null }>;
+  };
   split_group_id?: string | null;
   split_label?: string | null;
   /** Itemised unified engine charges; null on bills created before the engine. */

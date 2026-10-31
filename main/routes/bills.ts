@@ -42,6 +42,7 @@ import {
   requireOpenSessionForCashTender,
 } from '../services/shift-session-gate';
 import { closedDayExists, tenantTimezone } from '../services/cash-drawer-movements';
+import { RegionalNotConfiguredError } from '../countries';
 import {
   checkPinRateLimit,
   isPinRateLimited,
@@ -1046,7 +1047,17 @@ router.get('/:id', requirePermission('bills.read'), (req: Request, res: Response
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get((bill as any).customer_id)
       : null;
 
-    res.json({ bill: { ...bill, order, customer } });
+    res.json({
+      bill: {
+        ...bill,
+        order,
+        customer,
+        payment_method_correction: paymentMethodCorrectionEligibility(
+          db,
+          bill as unknown as CorrectionBill,
+        ),
+      },
+    });
   } catch (error: any) {
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1074,7 +1085,17 @@ router.get('/order/:orderId', requirePermission('bills.read'), (req: Request, re
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get((bill as any).customer_id)
       : null;
 
-    res.json({ bill: { ...bill, order, customer } });
+    res.json({
+      bill: {
+        ...bill,
+        order,
+        customer,
+        payment_method_correction: paymentMethodCorrectionEligibility(
+          db,
+          bill as unknown as CorrectionBill,
+        ),
+      },
+    });
   } catch (error: any) {
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -5793,7 +5814,16 @@ function resolveBillBusinessDate(
   db: ReturnType<typeof getDatabase>,
   timestampRaw?: unknown,
 ): string {
-  const tz = tenantTimezone();
+  let tz = 'UTC';
+  try {
+    tz = tenantTimezone();
+  } catch (error) {
+    if (error instanceof RegionalNotConfiguredError) {
+      tz = getSettingValue('timezone') || 'UTC';
+    } else {
+      throw error;
+    }
+  }
   const startTime = tenantBusinessDayStartTime(db);
   if (typeof timestampRaw === 'string' && timestampRaw.trim()) {
     const parsed = parseDbTimestamp(timestampRaw);
@@ -5802,6 +5832,162 @@ function resolveBillBusinessDate(
     }
   }
   return localDateInTimezone(new Date(), tz, startTime);
+}
+
+type CorrectionLine = Record<string, unknown> & {
+  method?: unknown;
+  amount?: unknown;
+  refunded?: unknown;
+  status?: unknown;
+  timestamp?: unknown;
+  cash_session_id?: unknown;
+};
+type CorrectionBill = Record<string, unknown> & {
+  id: string;
+  payment_status: string;
+  payment_details: string | unknown[] | Record<string, unknown> | null;
+  paid_at?: string | null;
+  created_at?: string | null;
+  split_group_id?: string | null;
+};
+
+function correctionPayments(value: CorrectionBill['payment_details']): CorrectionLine[] {
+  if (!value) return [];
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return (Array.isArray(parsed) ? parsed : [parsed]) as CorrectionLine[];
+  } catch {
+    return [];
+  }
+}
+
+export function paymentMethodCorrectionEligibility(
+  db: ReturnType<typeof getDatabase>,
+  bill: CorrectionBill,
+) {
+  const payments = correctionPayments(bill.payment_details);
+  if (bill.payment_status !== 'paid') {
+    const reason =
+      bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded'
+        ? 'bill_refunded'
+        : 'bill_not_paid';
+    return {
+      correctable: false,
+      reason,
+      lines: payments.map((_, index) => ({ index, correctable: false, reason })),
+    };
+  }
+  const hasRefund = Boolean(
+    db.prepare('SELECT 1 FROM refunds WHERE bill_id = ? LIMIT 1').get(bill.id),
+  );
+  if (hasRefund) {
+    return {
+      correctable: false,
+      reason: 'bill_refunded',
+      lines: payments.map((_, index) => ({ index, correctable: false, reason: 'bill_refunded' })),
+    };
+  }
+  const siblings = bill.split_group_id
+    ? (db
+        .prepare(
+          `SELECT bills.*, EXISTS(SELECT 1 FROM refunds WHERE refunds.bill_id = bills.id) AS has_refund
+                  FROM bills WHERE split_group_id = ? AND id != ?`,
+        )
+        .all(bill.split_group_id, bill.id) as Array<CorrectionBill & { has_refund: number }>)
+    : [];
+  const siblingLines = siblings.map((sibling) => ({
+    sibling,
+    lines: correctionPayments(sibling.payment_details),
+  }));
+  const sessionIds = Array.from(
+    new Set(
+      [...payments, ...siblingLines.flatMap((entry) => entry.lines)]
+        .filter((line) => line && typeof line === 'object')
+        .map((line) => Number(line.cash_session_id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  );
+  const sessions = sessionIds.length
+    ? (db
+        .prepare(
+          `SELECT id, status FROM cash_sessions WHERE id IN (${sessionIds.map(() => '?').join(',')})`,
+        )
+        .all(...sessionIds) as Array<{ id: number; status: string }>)
+    : [];
+  const sessionsById = new Map(sessions.map((session) => [session.id, session]));
+  const perStaff = isPerStaffShiftsEnabled(db);
+  const openSession = perStaff ? undefined : getOpenSession(db);
+  const today = resolveBillBusinessDate(db);
+  const closedDates = new Map<string, boolean>();
+  const isClosed = (date: string) => {
+    if (!closedDates.has(date)) closedDates.set(date, closedDayExists(db, date));
+    return closedDates.get(date);
+  };
+  const lines = payments.map((line, index) => {
+    if (!line || typeof line !== 'object') {
+      return { index, correctable: false, reason: 'payment_line_not_found' };
+    }
+    let reason: string | null = null;
+    if (line.refunded === true || line.status === 'refunded') reason = 'payment_line_refunded';
+    if (
+      !reason &&
+      (isClosed(resolveBillBusinessDate(db, line.timestamp || bill.paid_at || bill.created_at)) ||
+        isClosed(today))
+    )
+      reason = 'day_closed';
+    const sessionId = Number(line?.cash_session_id);
+    const session = sessionsById.get(sessionId);
+    if (
+      !reason &&
+      (!Number.isInteger(sessionId) ||
+        sessionId <= 0 ||
+        !session ||
+        session.status !== 'open' ||
+        (!perStaff && session.id !== openSession?.id))
+    )
+      reason = 'shift_closed';
+    if (!reason) {
+      for (const entry of siblingLines) {
+        if (
+          entry.sibling.payment_status === 'refunded' ||
+          entry.sibling.payment_status === 'partially_refunded' ||
+          entry.sibling.has_refund
+        ) {
+          reason = 'split_sibling_refunded';
+          break;
+        }
+        for (const item of entry.lines) {
+          if (!item || typeof item !== 'object') continue;
+          if (item.refunded === true || item.status === 'refunded') {
+            reason = 'split_sibling_refunded';
+            break;
+          }
+          const id = Number(item.cash_session_id);
+          const siblingSession = sessionsById.get(id);
+          if (
+            !Number.isInteger(id) ||
+            id <= 0 ||
+            !siblingSession ||
+            siblingSession.status !== 'open' ||
+            id !== sessionId
+          ) {
+            reason = 'split_sibling_shift_closed';
+            break;
+          }
+        }
+        if (reason) break;
+      }
+    }
+    if (!reason && String(line.method || '').toLowerCase() === 'wallet')
+      reason = 'wallet_method_immutable';
+    return { index, correctable: !reason, reason };
+  });
+  const correctable = lines.some((line) => line.correctable);
+  return {
+    correctable,
+    reason: correctable ? null : lines[0]?.reason || 'payment_line_not_found',
+    lines,
+  };
 }
 
 // PATCH /api/bills/:id/payments/:index/method - Correct payment method on a paid bill while its shift is open
@@ -6087,58 +6273,44 @@ router.patch(
           }
         }
 
-        if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
-          throw paymentValidationError(
-            'Cannot correct payment method on a refunded bill',
-            'bill_refunded',
+        const existingPayments = correctionPayments(bill.payment_details);
+        const eligibility = paymentMethodCorrectionEligibility(db, bill);
+        const lineEligibility = eligibility.lines[paymentIndex];
+        const earlyReason =
+          eligibility.reason === 'bill_refunded' || eligibility.reason === 'bill_not_paid'
+            ? eligibility.reason
+            : !lineEligibility
+              ? 'payment_line_not_found'
+              : lineEligibility.reason === 'payment_line_refunded' ||
+                  lineEligibility.reason === 'payment_line_not_found'
+                ? lineEligibility.reason
+                : null;
+        const correctionErrors: Record<string, [string, number]> = {
+          bill_refunded: ['Cannot correct payment method on a refunded bill', 409],
+          bill_not_paid: ['Payment method can only be corrected on a paid bill', 409],
+          payment_line_not_found: ['Payment line not found', 404],
+          payment_line_refunded: ['Cannot correct payment method on a refunded payment line', 409],
+          day_closed: ['Cannot correct payment method: business day is already closed', 409],
+          shift_closed: [
+            'Cannot correct payment method: the shift for this payment is closed',
             409,
-          );
-        }
-        const existingRefund = db
-          .prepare('SELECT 1 FROM refunds WHERE bill_id = ? LIMIT 1')
-          .get(bill.id);
-        if (existingRefund) {
-          throw paymentValidationError(
-            'Cannot correct payment method on a refunded bill',
-            'bill_refunded',
+          ],
+          split_sibling_refunded: [
+            'Cannot correct payment method: a split sibling check has been refunded',
             409,
-          );
-        }
-        if (bill.payment_status !== 'paid') {
-          throw paymentValidationError(
-            'Payment method can only be corrected on a paid bill',
-            'bill_not_paid',
+          ],
+          split_sibling_shift_closed: [
+            'Cannot correct payment method: a split sibling check was settled in a closed or different shift',
             409,
-          );
-        }
-
-        let existingPayments: PaymentLineRecord[] = [];
-        if (bill.payment_details) {
-          try {
-            const parsed =
-              typeof bill.payment_details === 'string'
-                ? JSON.parse(bill.payment_details)
-                : bill.payment_details;
-            existingPayments = (Array.isArray(parsed) ? parsed : [parsed]) as PaymentLineRecord[];
-          } catch {
-            existingPayments = [];
-          }
-        }
-        if (paymentIndex < 0 || paymentIndex >= existingPayments.length) {
-          throw paymentValidationError('Payment line not found', 'payment_line_not_found', 404);
-        }
+          ],
+          wallet_method_immutable: ['Cannot correct payment method on a wallet payment line', 409],
+        };
+        const rejectCorrection = (reason: string) => {
+          const [message, status] = correctionErrors[reason];
+          throw paymentValidationError(message, reason, status);
+        };
+        if (earlyReason) rejectCorrection(earlyReason);
         const targetLine = existingPayments[paymentIndex];
-        if (!targetLine || typeof targetLine !== 'object') {
-          throw paymentValidationError('Payment line not found', 'payment_line_not_found', 404);
-        }
-        if (targetLine.refunded === true || targetLine.status === 'refunded') {
-          throw paymentValidationError(
-            'Cannot correct payment method on a refunded payment line',
-            'payment_line_refunded',
-            409,
-          );
-        }
-
         if (requestedAmount !== undefined && requestedAmount !== null) {
           const currency = getTenantCurrency();
           const minorFactor = getCurrencyMinorUnitFactor(currency);
@@ -6153,131 +6325,8 @@ router.patch(
             );
           }
         }
-
-        const todayBusinessDate = resolveBillBusinessDate(db);
-        const billBusinessDate = resolveBillBusinessDate(
-          db,
-          targetLine.timestamp || bill.paid_at || bill.created_at,
-        );
-        if (closedDayExists(db, billBusinessDate) || closedDayExists(db, todayBusinessDate)) {
-          throw paymentValidationError(
-            'Cannot correct payment method: business day is already closed',
-            'day_closed',
-            409,
-          );
-        }
-
-        if (targetLine.cash_session_id === undefined || targetLine.cash_session_id === null) {
-          throw paymentValidationError(
-            'Cannot verify original cash shift for this payment',
-            'shift_closed',
-            409,
-          );
-        }
-        const rawTargetSessionId = Number(targetLine.cash_session_id);
-        if (!Number.isInteger(rawTargetSessionId) || rawTargetSessionId <= 0) {
-          throw paymentValidationError(
-            'Cannot correct payment method for a payment recorded without an open cash shift',
-            'shift_closed',
-            409,
-          );
-        }
-        const session = db
-          .prepare('SELECT id, status FROM cash_sessions WHERE id = ?')
-          .get(rawTargetSessionId) as { id: number; status: string } | undefined;
-        const openSession = isPerStaffShiftsEnabled(db) ? session : getOpenSession(db);
-        if (
-          !session ||
-          session.status !== 'open' ||
-          !openSession ||
-          session.id !== openSession.id
-        ) {
-          throw paymentValidationError(
-            'Cannot correct payment method: the shift for this payment is closed',
-            'shift_closed',
-            409,
-          );
-        }
-        const effectiveSessionId = session.id;
-
-        if (bill.split_group_id) {
-          const siblings = db
-            .prepare('SELECT * FROM bills WHERE split_group_id = ? AND id != ?')
-            .all(bill.split_group_id, bill.id) as BillCorrectionRow[];
-          for (const sibling of siblings) {
-            if (
-              sibling.payment_status === 'refunded' ||
-              sibling.payment_status === 'partially_refunded' ||
-              db.prepare('SELECT 1 FROM refunds WHERE bill_id = ? LIMIT 1').get(sibling.id)
-            ) {
-              throw paymentValidationError(
-                'Cannot correct payment method: a split sibling check has been refunded',
-                'split_sibling_refunded',
-                409,
-              );
-            }
-            if (!sibling.payment_details) continue;
-            let siblingPayments: PaymentLineRecord[] = [];
-            try {
-              const parsedSib =
-                typeof sibling.payment_details === 'string'
-                  ? JSON.parse(sibling.payment_details)
-                  : sibling.payment_details;
-              siblingPayments = (
-                Array.isArray(parsedSib) ? parsedSib : [parsedSib]
-              ) as PaymentLineRecord[];
-            } catch {
-              siblingPayments = [];
-            }
-            for (const sibLine of siblingPayments) {
-              if (!sibLine || typeof sibLine !== 'object') continue;
-              if (sibLine.refunded === true || sibLine.status === 'refunded') {
-                throw paymentValidationError(
-                  'Cannot correct payment method: a split sibling check has been refunded',
-                  'split_sibling_refunded',
-                  409,
-                );
-              }
-              if (sibLine.cash_session_id === undefined || sibLine.cash_session_id === null) {
-                throw paymentValidationError(
-                  'Cannot correct payment method: a split sibling check has an unverifiable cash shift',
-                  'split_sibling_shift_closed',
-                  409,
-                );
-              }
-              const sibSessionId = Number(sibLine.cash_session_id);
-              if (!Number.isInteger(sibSessionId) || sibSessionId <= 0) {
-                throw paymentValidationError(
-                  'Cannot correct payment method: a split sibling check was settled outside an open shift',
-                  'split_sibling_shift_closed',
-                  409,
-                );
-              }
-              const sibSession = db
-                .prepare('SELECT id, status FROM cash_sessions WHERE id = ?')
-                .get(sibSessionId) as { id: number; status: string } | undefined;
-              if (
-                !sibSession ||
-                sibSession.status !== 'open' ||
-                sibSession.id !== effectiveSessionId
-              ) {
-                throw paymentValidationError(
-                  'Cannot correct payment method: a split sibling check was settled in a closed or different shift',
-                  'split_sibling_shift_closed',
-                  409,
-                );
-              }
-            }
-          }
-        }
-
-        if (String(targetLine.method || '').toLowerCase() === 'wallet') {
-          throw paymentValidationError(
-            'Cannot correct payment method on a wallet payment line',
-            'wallet_method_immutable',
-            409,
-          );
-        }
+        if (lineEligibility.reason) rejectCorrection(lineEligibility.reason);
+        const effectiveSessionId = Number(targetLine.cash_session_id);
 
         const rawMethod = typeof method === 'string' ? method.trim() : '';
         if (!rawMethod || rawMethod.length > 60) {

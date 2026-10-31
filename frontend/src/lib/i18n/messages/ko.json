@@ -850,6 +850,7 @@
     "overridePriceClear": "메뉴 가격 사용",
     "correctPaymentMethod": "결제 수단 정정",
     "correctPaymentMethodHint": "근무 교대가 열려 있는 동안 기록된 결제 수단을 변경합니다. 금액은 변경되지 않습니다.",
+    "correctPaymentUnavailable": "사용할 수 없습니다. 분할된 모든 청구서의 환불, 지갑 결제, 영업일 및 근무조를 확인하세요.",
     "paymentLineLabel": "결제 항목",
     "paymentMethodCorrected": "결제 수단이 업데이트되었습니다",
     "correctPaymentMethodFailed": "결제 수단을 업데이트할 수 없습니다",

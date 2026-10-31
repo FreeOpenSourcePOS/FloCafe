@@ -850,6 +850,7 @@
     "overridePriceClear": "Kartenpreis verwenden",
     "correctPaymentMethod": "Zahlungsart korrigieren",
     "correctPaymentMethodHint": "Ändern Sie die erfasste Zahlungsart, solange die Schicht geöffnet ist. Der Betrag bleibt unverändert.",
+    "correctPaymentUnavailable": "Nicht verfügbar: Erstattungen, Wallet-Zahlungen, Geschäftstag und Schichten aller Teilrechnungen prüfen.",
     "paymentLineLabel": "Zahlungsposition",
     "paymentMethodCorrected": "Zahlungsart aktualisiert",
     "correctPaymentMethodFailed": "Zahlungsart konnte nicht aktualisiert werden",

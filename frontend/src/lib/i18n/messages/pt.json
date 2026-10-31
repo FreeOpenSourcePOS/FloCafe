@@ -850,6 +850,7 @@
     "overridePriceClear": "Usar preço do cardápio",
     "correctPaymentMethod": "Corrigir forma de pagamento",
     "correctPaymentMethodHint": "Altere a forma de pagamento registrada enquanto o turno estiver aberto. O valor permanece inalterado.",
+    "correctPaymentUnavailable": "Indisponível: verifique reembolsos, pagamentos por carteira, dia comercial e turnos de todas as contas divididas.",
     "paymentLineLabel": "Linha de pagamento",
     "paymentMethodCorrected": "Forma de pagamento atualizada",
     "correctPaymentMethodFailed": "Não foi possível atualizar a forma de pagamento",

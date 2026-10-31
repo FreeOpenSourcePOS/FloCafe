@@ -1261,6 +1261,7 @@
     "printTicket": "Imprimir ticket",
     "payTicket": "Pagar",
     "paymentQueue": "Cola de pagos",
+    "paymentQueueRefreshPaused": "La actualización automática está en pausa al ver tickets anteriores.",
     "scanOrEnterTicket": "Escanear QR o ingresar número...",
     "paymentQueueEmpty": "No hay tickets en espera",
     "paymentQueueEmptyDesc": "Los pedidos enviados a pago aparecerán aquí.",

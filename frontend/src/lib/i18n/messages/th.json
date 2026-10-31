@@ -1261,6 +1261,7 @@
     "printTicket": "พิมพ์ตั๋ว",
     "payTicket": "ชำระเงิน",
     "paymentQueue": "คิวรอชำระเงิน",
+    "paymentQueueRefreshPaused": "หยุดรีเฟรชอัตโนมัติขณะดูตั๋วเก่า",
     "scanOrEnterTicket": "สแกน QR หรือกรอกหมายเลขตั๋ว...",
     "paymentQueueEmpty": "ไม่มีตั๋วที่รอชำระเงิน",
     "paymentQueueEmptyDesc": "ออเดอร์ที่ส่งไปชำระเงินจะปรากฏที่นี่",

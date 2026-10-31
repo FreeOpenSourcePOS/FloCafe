@@ -1261,6 +1261,7 @@
     "printTicket": "टिकट प्रिंट करें",
     "payTicket": "भुगतान करें",
     "paymentQueue": "भुगतान कतार",
+    "paymentQueueRefreshPaused": "पुराने टिकट देखते समय अपने आप रिफ़्रेश होना रुका है।",
     "scanOrEnterTicket": "टिकट क्यूआर स्कैन करें या नंबर दर्ज करें...",
     "paymentQueueEmpty": "कोई प्रतीक्षारत टिकट नहीं",
     "paymentQueueEmptyDesc": "भुगतान के लिए भेजे गए ऑर्डर यहां दिखाई देंगे।",

@@ -1261,6 +1261,7 @@
     "printTicket": "Ticket drucken",
     "payTicket": "Bezahlen",
     "paymentQueue": "Zahlungswarteschlange",
+    "paymentQueueRefreshPaused": "Die automatische Aktualisierung ist beim Anzeigen älterer Tickets pausiert.",
     "scanOrEnterTicket": "Ticket-QR scannen oder Nummer eingeben...",
     "paymentQueueEmpty": "Keine wartenden Tickets",
     "paymentQueueEmptyDesc": "Bestellungen zur Zahlung erscheinen hier.",

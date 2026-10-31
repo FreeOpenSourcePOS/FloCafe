@@ -1261,6 +1261,7 @@
     "printTicket": "Fişi yazdır",
     "payTicket": "Öde",
     "paymentQueue": "Ödeme kuyruğu",
+    "paymentQueueRefreshPaused": "Eski fişler görüntülenirken otomatik yenileme duraklatılır.",
     "scanOrEnterTicket": "Karekod okutun veya numara girin...",
     "paymentQueueEmpty": "Bekleyen fiş yok",
     "paymentQueueEmptyDesc": "Ödemeye gönderilen siparişler burada görünür.",

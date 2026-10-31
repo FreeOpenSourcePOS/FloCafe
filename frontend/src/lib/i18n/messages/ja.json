@@ -1261,6 +1261,7 @@
     "printTicket": "伝票を印刷",
     "payTicket": "会計",
     "paymentQueue": "会計待ち一覧",
+    "paymentQueueRefreshPaused": "古いチケットを表示している間、自動更新は一時停止します。",
     "scanOrEnterTicket": "QRコードをスキャンするか番号を入力...",
     "paymentQueueEmpty": "会計待ちの伝票はありません",
     "paymentQueueEmptyDesc": "会計へ送信された注文がここに表示されます。",

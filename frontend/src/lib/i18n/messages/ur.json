@@ -850,6 +850,7 @@
     "overridePriceClear": "مینو کی قیمت استعمال کریں",
     "correctPaymentMethod": "ادائیگی کا طریقہ درست کریں",
     "correctPaymentMethodHint": "شفٹ کھلی ہونے کے دوران درج شدہ ادائیگی کا طریقہ تبدیل کریں۔ رقم تبدیل نہیں ہوگی۔",
+    "correctPaymentUnavailable": "دستیاب نہیں: تمام تقسیم شدہ بلوں کے ریفنڈ، والیٹ ادائیگیاں، کاروباری دن اور شفٹیں چیک کریں۔",
     "paymentLineLabel": "ادائیگی کی سطر",
     "paymentMethodCorrected": "ادائیگی کا طریقہ اپ ڈیٹ ہو گیا",
     "correctPaymentMethodFailed": "ادائیگی کا طریقہ اپ ڈیٹ نہیں ہو سکا",

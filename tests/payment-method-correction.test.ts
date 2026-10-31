@@ -62,7 +62,7 @@ const {
   now,
 } = require('./helpers/test-setup');
 const { orderRoutes, resetPinRateLimitForTests } = require('../main/routes/orders');
-const { billRoutes } = require('../main/routes/bills');
+const { billRoutes, paymentMethodCorrectionEligibility } = require('../main/routes/bills');
 const { refundRoutes } = require('../main/routes/refunds');
 const { reportRoutes } = require('../main/routes/reports');
 const { cashSessionRoutes } = require('../main/routes/cash-sessions');
@@ -249,6 +249,11 @@ async function main() {
       headers: managerAuth,
     });
     assertEqualOrThrow(
+      unchangedSessionless.data.bill.payment_method_correction?.reason,
+      'shift_closed',
+      'sessionless read reports shift_closed',
+    );
+    assertEqualOrThrow(
       unchangedSessionless.data.bill.payment_details[0].cash_session_id,
       0,
       'sessionless payment cash_session_id remains 0',
@@ -315,6 +320,88 @@ async function main() {
 
     // ── 2. Cash -> Card on open shift updates shift expected cash & X-report ─
     const { order: order1, bill: bill1 } = await createPaidBill('prod-100', 'cash');
+
+    const eligibleBillRead = await api(baseUrl, `/api/bills/${bill1.id}`, {
+      headers: managerAuth,
+    });
+    assertEqualOrThrow(
+      eligibleBillRead.data.bill.payment_method_correction?.correctable,
+      true,
+      'bill detail exposes correction eligibility for a payment in an open shift',
+    );
+    assertEqualOrThrow(
+      eligibleBillRead.data.bill.payment_method_correction?.lines[0]?.index,
+      0,
+      'correction eligibility preserves the original payment line index',
+    );
+
+    const originalDetails = (
+      db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(bill1.id) as {
+        payment_details: string;
+      }
+    ).payment_details;
+    const originalLines = JSON.parse(originalDetails);
+    for (const sessionId of [null, 0, 99999999]) {
+      const modifiedLines = JSON.parse(originalDetails);
+      modifiedLines[0].cash_session_id = sessionId;
+      db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?').run(
+        JSON.stringify(modifiedLines),
+        bill1.id,
+      );
+      const read = await api(baseUrl, `/api/bills/${bill1.id}`, { headers: managerAuth });
+      assertEqualOrThrow(
+        read.data.bill.payment_method_correction?.reason,
+        'shift_closed',
+        `original shift ${sessionId} is ineligible`,
+      );
+    }
+    const refundedLine = JSON.parse(originalDetails);
+    refundedLine[0].refunded = true;
+    db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?').run(
+      JSON.stringify(refundedLine),
+      bill1.id,
+    );
+    const refundedLineRead = await api(baseUrl, `/api/bills/${bill1.id}`, { headers: managerAuth });
+    assertEqualOrThrow(
+      refundedLineRead.data.bill.payment_method_correction?.reason,
+      'payment_line_refunded',
+      'refunded line is ineligible',
+    );
+    db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?').run('[]', bill1.id);
+    const emptyRead = await api(baseUrl, `/api/bills/${bill1.id}`, { headers: managerAuth });
+    assertEqualOrThrow(
+      emptyRead.data.bill.payment_method_correction?.reason,
+      'payment_line_not_found',
+      'empty payment list is ineligible',
+    );
+    db.prepare('UPDATE bills SET payment_details = ?, payment_status = ? WHERE id = ?').run(
+      JSON.stringify(originalLines),
+      'unpaid',
+      bill1.id,
+    );
+    const unpaidRead = await api(baseUrl, `/api/bills/${bill1.id}`, { headers: managerAuth });
+    assertEqualOrThrow(
+      unpaidRead.data.bill.payment_method_correction?.reason,
+      'bill_not_paid',
+      'unpaid bill is ineligible',
+    );
+    db.prepare('UPDATE bills SET payment_details = ?, payment_status = ? WHERE id = ?').run(
+      originalDetails,
+      'paid',
+      bill1.id,
+    );
+
+    const orderRead = await api(baseUrl, `/api/orders/${order1.id}`, { headers: managerAuth });
+    assertEqualOrThrow(
+      orderRead.data.order.bill?.payment_method_correction?.correctable,
+      true,
+      'order primary bill exposes correction eligibility',
+    );
+    assertEqualOrThrow(
+      orderRead.data.order.bills?.[0]?.payment_method_correction?.correctable,
+      true,
+      'order bill list exposes correction eligibility',
+    );
 
     const currentBefore1 = await api(baseUrl, '/api/cash-sessions/current', {
       headers: managerAuth,
@@ -999,6 +1086,14 @@ async function main() {
       },
     });
     assertEqualOrThrow(refundRes.status, 201, 'refund issued on refundBill');
+    const refundedRead = await api(baseUrl, `/api/bills/${refundBill.id}`, {
+      headers: managerAuth,
+    });
+    assertEqualOrThrow(
+      refundedRead.data.bill.payment_method_correction?.reason,
+      'bill_refunded',
+      'refunded bill read reports bill_refunded',
+    );
 
     const correctRefundedBill = await api(
       baseUrl,
@@ -1065,6 +1160,12 @@ async function main() {
       body: { counted_cash_cents: 13000 },
     });
     assertEqualOrThrow(closeSession1.status, 200, 'cash session 1 closed');
+    const closedShiftRead = await api(baseUrl, `/api/bills/${bill1.id}`, { headers: managerAuth });
+    assertEqualOrThrow(
+      closedShiftRead.data.bill.payment_method_correction?.reason,
+      'shift_closed',
+      'closed shift read reports shift_closed',
+    );
 
     const closedShiftAttempt = await api(baseUrl, `/api/bills/${bill1.id}/payments/0/method`, {
       method: 'PATCH',
@@ -1156,6 +1257,41 @@ async function main() {
     );
     assertEqualOrThrow(multiLinePayRes.status, 200, 'multi-line bill paid with 2 lines');
     const multiLineBillId = multiLinePayRes.data.bill.id;
+
+    const originalMultiLineDetails = db
+      .prepare('SELECT payment_details FROM bills WHERE id = ?')
+      .get(multiLineBillId) as { payment_details: string };
+    const mixedDetails = JSON.parse(originalMultiLineDetails.payment_details);
+    mixedDetails[0].method = 'wallet';
+    db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?').run(
+      JSON.stringify(mixedDetails),
+      multiLineBillId,
+    );
+    const mixedRead = await api(baseUrl, `/api/bills/${multiLineBillId}`, { headers: managerAuth });
+    assertEqualOrThrow(
+      mixedRead.data.bill.payment_method_correction?.correctable,
+      true,
+      'a bill with an eligible second line remains correctable',
+    );
+    assertEqualOrThrow(
+      mixedRead.data.bill.payment_method_correction?.lines[0]?.reason,
+      'wallet_method_immutable',
+      'wallet line is ineligible',
+    );
+    assertEqualOrThrow(
+      mixedRead.data.bill.payment_method_correction?.lines[1]?.index,
+      1,
+      'eligible second line retains its original index',
+    );
+    assertEqualOrThrow(
+      mixedRead.data.bill.payment_method_correction?.lines[1]?.correctable,
+      true,
+      'non-wallet line is eligible',
+    );
+    db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?').run(
+      originalMultiLineDetails.payment_details,
+      multiLineBillId,
+    );
 
     const correctLine0Res = await api(baseUrl, `/api/bills/${multiLineBillId}/payments/0/method`, {
       method: 'PATCH',
@@ -1361,6 +1497,13 @@ async function main() {
       ) VALUES (?, 'day', ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, '[]', '[]', '[]', 0, 0, 0, '[]', 999, ?, null, ?)`,
     ).run(businessDate, now(), now(), ownerId, now());
 
+    const closedDayRead = await api(baseUrl, `/api/bills/${bill3.id}`, { headers: managerAuth });
+    assertEqualOrThrow(
+      closedDayRead.data.bill.payment_method_correction?.reason,
+      'day_closed',
+      'closed day read reports day_closed',
+    );
+
     const closedDayAttempt = await api(baseUrl, `/api/bills/${bill3.id}/payments/0/method`, {
       method: 'PATCH',
       headers: managerAuth,
@@ -1522,6 +1665,15 @@ async function main() {
         assertOrThrow(
           !renderPanel('chef').includes('data-testid="correct-payment-method-button"'),
           'OrderDetailPanel hides Correct Payment Method button for chef role',
+        );
+
+        db.prepare("DELETE FROM settings WHERE key = 'country'").run();
+        const eligibility = paymentMethodCorrectionEligibility(db, bill1 as any);
+        assertOrThrow(eligibility !== undefined, 'eligibility succeeds without country setting');
+        assertEqualOrThrow(
+          eligibility.reason,
+          'day_closed',
+          'resolves day closure without throwing when country setting is missing',
         );
       } finally {
         Module._resolveFilename = origResolveFilename;

@@ -850,6 +850,7 @@
     "overridePriceClear": "استفاده از قیمت منو",
     "correctPaymentMethod": "اصلاح روش پرداخت",
     "correctPaymentMethodHint": "تا زمانی که شیفت باز است، روش پرداخت ثبت‌شده را تغییر دهید. مبلغ بدون تغییر می‌ماند.",
+    "correctPaymentUnavailable": "در دسترس نیست: بازپرداخت‌ها، پرداخت‌های کیف پول، روز کاری و شیفت‌های همه صورتحساب‌های تفکیکی را بررسی کنید.",
     "paymentLineLabel": "ردیف پرداخت",
     "paymentMethodCorrected": "روش پرداخت به‌روزرسانی شد",
     "correctPaymentMethodFailed": "به‌روزرسانی روش پرداخت انجام نشد",

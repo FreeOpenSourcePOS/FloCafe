@@ -850,6 +850,7 @@
     "overridePriceClear": "Përdor çmimin e menusë",
     "correctPaymentMethod": "Korrigjo mënyrën e pagesës",
     "correctPaymentMethodHint": "Ndrysho mënyrën e regjistruar të pagesës ndërsa turni është i hapur. Shuma mbetet e pandryshuar.",
+    "correctPaymentUnavailable": "Nuk disponohet: kontrolloni rimbursimet, pagesat me portofol, ditën e punës dhe turnet për të gjitha faturat e ndara.",
     "paymentLineLabel": "Rreshti i pagesës",
     "paymentMethodCorrected": "Mënyra e pagesës u përditësua",
     "correctPaymentMethodFailed": "Mënyra e pagesës nuk mund të përditësohej",

@@ -850,6 +850,7 @@
     "overridePriceClear": "Вернуть цену из меню",
     "correctPaymentMethod": "Исправить способ оплаты",
     "correctPaymentMethodHint": "Измените записанный способ оплаты, пока смена открыта. Сумма не меняется.",
+    "correctPaymentUnavailable": "Недоступно: проверьте возвраты, оплату кошельком, рабочий день и смены всех разделённых счетов.",
     "paymentLineLabel": "Строка оплаты",
     "paymentMethodCorrected": "Способ оплаты обновлён",
     "correctPaymentMethodFailed": "Не удалось обновить способ оплаты",

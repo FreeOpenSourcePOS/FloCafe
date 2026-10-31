@@ -850,6 +850,7 @@
     "overridePriceClear": "ใช้ราคาตามเมนู",
     "correctPaymentMethod": "แก้ไขวิธีการชำระเงิน",
     "correctPaymentMethodHint": "เปลี่ยนวิธีการชำระเงินที่บันทึกไว้ขณะที่กะยังเปิดอยู่ โดยยอดเงินจะไม่เปลี่ยนแปลง",
+    "correctPaymentUnavailable": "ไม่พร้อมใช้งาน: ตรวจสอบการคืนเงิน การชำระด้วยกระเป๋าเงิน วันทำการ และกะของบิลที่แยกทั้งหมด",
     "paymentLineLabel": "รายการชำระเงิน",
     "paymentMethodCorrected": "อัปเดตวิธีการชำระเงินแล้ว",
     "correctPaymentMethodFailed": "ไม่สามารถอัปเดตวิธีการชำระเงินได้",

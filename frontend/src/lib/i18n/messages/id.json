@@ -1716,6 +1716,7 @@
     "disabledHint": "Minta pemilik atau manajer untuk mengaktifkan kembali Pemesanan di Meja dari Pengaturan.",
     "disabledTitle": "Server App dinonaktifkan",
     "draftTotal": "Total draf",
+    "draftDiscardedOnUserChange": "Draf staf sebelumnya telah dibuang.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Ketuk item menu untuk menambahkannya di sini.",
     "guestFallbackName": "Tamu {last4}",

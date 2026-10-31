@@ -1716,6 +1716,7 @@
     "disabledHint": "Kërkoni nga pronari ose menaxheri të riaktivizojë Porositë në tavolinë nga Cilësimet.",
     "disabledTitle": "Server App është i çaktivizuar",
     "draftTotal": "Totali i draftit",
+    "draftDiscardedOnUserChange": "Drafti i punonjësit të mëparshëm u hoq.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Prekni artikujt e menusë për t’i shtuar këtu.",
     "guestFallbackName": "I ftuar {last4}",

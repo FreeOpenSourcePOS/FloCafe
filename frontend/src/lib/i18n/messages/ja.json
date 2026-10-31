@@ -1716,6 +1716,7 @@
     "disabledHint": "設定からテーブルサイド注文を再有効化するよう、オーナーまたはマネージャーに依頼してください。",
     "disabledTitle": "サーバーアプリは無効です",
     "draftTotal": "下書き合計",
+    "draftDiscardedOnUserChange": "前のスタッフの下書きは破棄されました。",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "メニュー項目をタップしてここに追加します。",
     "guestFallbackName": "お客様 {last4}",

@@ -1716,6 +1716,7 @@
     "disabledHint": "Ask an owner or manager to re-enable Tableside Ordering from Settings.",
     "disabledTitle": "Server App is disabled",
     "draftTotal": "Draft total",
+    "draftDiscardedOnUserChange": "The previous staff member’s draft was discarded.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Tap menu items to add them here.",
     "guestFallbackName": "Guest {last4}",

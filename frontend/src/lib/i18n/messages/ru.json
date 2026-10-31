@@ -1716,6 +1716,7 @@
     "disabledHint": "Попросите владельца или менеджера снова включить функцию заказа у стола в настройках.",
     "disabledTitle": "Серверное приложение отключено",
     "draftTotal": "Итого черновика",
+    "draftDiscardedOnUserChange": "Черновик предыдущего сотрудника удалён.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Нажмите на пункты меню, чтобы добавить их сюда.",
     "guestFallbackName": "Гость {last4}",

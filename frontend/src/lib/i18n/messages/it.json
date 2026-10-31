@@ -1716,6 +1716,7 @@
     "disabledHint": "Chiedi a un proprietario o a un gestore di riattivare l'ordinazione al tavolo dalle Impostazioni.",
     "disabledTitle": "Server App disabilitata",
     "draftTotal": "Totale bozza",
+    "draftDiscardedOnUserChange": "La bozza del precedente membro dello staff è stata eliminata.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Tocca gli articoli del menu per aggiungerli qui.",
     "guestFallbackName": "Ospite {last4}",

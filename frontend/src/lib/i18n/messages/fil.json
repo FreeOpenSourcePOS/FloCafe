@@ -1261,6 +1261,7 @@
     "printTicket": "I-print ang Ticket",
     "payTicket": "Magbayad",
     "paymentQueue": "Pila ng Pagbabayad",
+    "paymentQueueRefreshPaused": "Naka-pause ang awtomatikong pag-refresh habang tinitingnan ang mas lumang mga tiket.",
     "scanOrEnterTicket": "I-scan ang ticket QR o ilagay ang numero...",
     "paymentQueueEmpty": "Walang naghihintay na ticket",
     "paymentQueueEmptyDesc": "Lalabas dito ang mga order na ipinadala sa pagbabayad.",

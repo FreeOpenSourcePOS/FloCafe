@@ -1261,6 +1261,7 @@
     "printTicket": "打印小票",
     "payTicket": "结账",
     "paymentQueue": "待结账队列",
+    "paymentQueueRefreshPaused": "查看较早的票据时，自动刷新已暂停。",
     "scanOrEnterTicket": "扫描小票二维码或输入编号...",
     "paymentQueueEmpty": "暂无等待结账的票据",
     "paymentQueueEmptyDesc": "发送至结账的订单将显示在此处。",

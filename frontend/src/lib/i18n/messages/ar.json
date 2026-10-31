@@ -1261,6 +1261,7 @@
     "printTicket": "طباعة التذكرة",
     "payTicket": "دفع",
     "paymentQueue": "قائمة انتظار الدفع",
+    "paymentQueueRefreshPaused": "التحديث التلقائي متوقف أثناء عرض التذاكر الأقدم.",
     "scanOrEnterTicket": "امسح رمز التذكرة أو أدخل الرقم...",
     "paymentQueueEmpty": "لا توجد تذاكر بالانتظار",
     "paymentQueueEmptyDesc": "ستظهر هنا الطلبات المرسلة للدفع.",

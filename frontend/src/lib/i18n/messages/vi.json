@@ -1261,6 +1261,7 @@
     "printTicket": "In phiếu",
     "payTicket": "Thanh toán",
     "paymentQueue": "Hàng đợi thanh toán",
+    "paymentQueueRefreshPaused": "Tự động làm mới tạm dừng khi xem phiếu cũ hơn.",
     "scanOrEnterTicket": "Quét mã QR hoặc nhập số phiếu...",
     "paymentQueueEmpty": "Không có phiếu nào đang chờ",
     "paymentQueueEmptyDesc": "Các đơn hàng được gửi sang thanh toán sẽ xuất hiện tại đây.",

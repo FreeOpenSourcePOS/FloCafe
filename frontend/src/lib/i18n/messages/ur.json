@@ -1716,6 +1716,7 @@
     "disabledHint": "مالک یا منیجر سے ترتیبات میں ٹیبل سائیڈ آرڈرنگ دوبارہ فعال کرنے کو کہیں۔",
     "disabledTitle": "Server App غیر فعال ہے",
     "draftTotal": "مسودے کی کل رقم",
+    "draftDiscardedOnUserChange": "پچھلے ملازم کا مسودہ حذف کر دیا گیا۔",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "مینو آئٹمز پر کلک کر کے انہیں یہاں شامل کریں۔",
     "guestFallbackName": "مہمان {last4}",

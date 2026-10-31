@@ -1716,6 +1716,7 @@
     "disabledHint": "Vraag een eigenaar of manager om bestellen aan tafel opnieuw in te schakelen via Instellingen.",
     "disabledTitle": "Server-app is uitgeschakeld",
     "draftTotal": "Concept totaal",
+    "draftDiscardedOnUserChange": "Het concept van de vorige medewerker is verwijderd.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "Tik op menu-artikelen om ze hier toe te voegen.",
     "guestFallbackName": "Gast {last4}",

@@ -1716,6 +1716,7 @@
     "disabledHint": "Bir işletme sahibi veya müdürden Ayarlar'dan Masadan Sipariş Alma özelliğini yeniden etkinleştirmesini isteyin.",
     "disabledTitle": "Garson Uygulaması Devre Dışı",
     "draftTotal": "Taslak Toplamı",
+    "draftDiscardedOnUserChange": "Önceki personelin taslağı silindi.",
     "emailPlaceholder": "garson@restoran.com",
     "emptyDraft": "Buraya eklemek için menü ürünlerine dokunun.",
     "guestFallbackName": "Misafir {last4}",

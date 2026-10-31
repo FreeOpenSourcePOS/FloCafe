@@ -1716,6 +1716,7 @@
     "disabledHint": "請讓店主或經理在設定中重新啟用桌邊點餐。",
     "disabledTitle": "服務員應用程式已禁用",
     "draftTotal": "草稿合計",
+    "draftDiscardedOnUserChange": "已捨棄上一位員工的草稿。",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "點按菜單商品將其新增到這裡。",
     "guestFallbackName": "客人 {last4}",

@@ -1716,6 +1716,7 @@
     "disabledHint": "اطلب من المالك أو المدير إعادة تفعيل ميزة «الطلب من الطاولة» من قسم «الإعدادات».",
     "disabledTitle": "تطبيق الخادم معطل",
     "draftTotal": "المجموع المبدئي",
+    "draftDiscardedOnUserChange": "تم تجاهل مسودة الموظف السابق.",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "انقر على عناصر القائمة لإضافتها هنا.",
     "guestFallbackName": "ضيف {last4}",

@@ -1716,6 +1716,7 @@
     "disabledHint": "मालिक वा प्रबन्धकलाई सेटिङहरूबाट टेबलसाइड अर्डरिङ पुनः सक्षम गर्न सोध्नुहोस्।",
     "disabledTitle": "सर्भर एप असक्षम गरिएको छ",
     "draftTotal": "मस्यौदा कुल",
+    "draftDiscardedOnUserChange": "अघिल्लो कर्मचारीको ड्राफ्ट हटाइयो।",
     "emailPlaceholder": "server@flo.local",
     "emptyDraft": "मेनु वस्तुहरूलाई यहाँ थप्न ट्याप गर्नुहोस्।",
     "guestFallbackName": "अतिथि {last4}",

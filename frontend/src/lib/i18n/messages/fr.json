@@ -850,6 +850,7 @@
     "overridePriceClear": "Utiliser le prix de la carte",
     "correctPaymentMethod": "Corriger le mode de paiement",
     "correctPaymentMethodHint": "Modifiez le mode de paiement enregistré tant que la caisse est ouverte. Le montant reste inchangé.",
+    "correctPaymentUnavailable": "Indisponible : vérifiez les remboursements, paiements par portefeuille, journée commerciale et services de toutes les notes séparées.",
     "paymentLineLabel": "Ligne de paiement",
     "paymentMethodCorrected": "Mode de paiement mis à jour",
     "correctPaymentMethodFailed": "Impossible de mettre à jour le mode de paiement",

@@ -850,6 +850,7 @@
     "overridePriceClear": "Dùng giá thực đơn",
     "correctPaymentMethod": "Sửa phương thức thanh toán",
     "correctPaymentMethodHint": "Thay đổi phương thức thanh toán đã ghi nhận khi ca làm việc đang mở. Số tiền giữ nguyên.",
+    "correctPaymentUnavailable": "Không khả dụng: kiểm tra hoàn tiền, thanh toán ví, ngày kinh doanh và ca của mọi hóa đơn tách.",
     "paymentLineLabel": "Dòng thanh toán",
     "paymentMethodCorrected": "Đã cập nhật phương thức thanh toán",
     "correctPaymentMethodFailed": "Không thể cập nhật phương thức thanh toán",

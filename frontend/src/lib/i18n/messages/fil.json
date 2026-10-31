@@ -850,6 +850,7 @@
     "overridePriceClear": "Gamitin ang presyo sa menu",
     "correctPaymentMethod": "Itama ang paraan ng bayad",
     "correctPaymentMethodHint": "Palitan ang nakatalang paraan ng bayad habang bukas ang shift. Hindi mababago ang halaga.",
+    "correctPaymentUnavailable": "Hindi available: suriin ang mga refund, wallet payment, araw ng negosyo at shift ng lahat ng split bill.",
     "paymentLineLabel": "Linya ng bayad",
     "paymentMethodCorrected": "Na-update ang paraan ng bayad",
     "correctPaymentMethodFailed": "Hindi ma-update ang paraan ng bayad",

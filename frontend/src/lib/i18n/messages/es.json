@@ -850,6 +850,7 @@
     "overridePriceClear": "Usar precio de menú",
     "correctPaymentMethod": "Corregir método de pago",
     "correctPaymentMethodHint": "Cambie el método de pago registrado mientras el turno esté abierto. El importe no cambia.",
+    "correctPaymentUnavailable": "No disponible: revise los reembolsos, pagos con monedero, día comercial y turnos de todas las cuentas divididas.",
     "paymentLineLabel": "Línea de pago",
     "paymentMethodCorrected": "Método de pago actualizado",
     "correctPaymentMethodFailed": "No se pudo actualizar el método de pago",

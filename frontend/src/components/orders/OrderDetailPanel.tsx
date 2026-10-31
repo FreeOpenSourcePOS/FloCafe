@@ -224,17 +224,14 @@ function OrderDetailContent({
     storeRole ??
     useAuthStore.getState?.()?.currentTenant?.role ??
     (useAuthStore.getState?.()?.user as { role?: string } | null)?.role;
-  const correctablePaidBills = orderBills.filter(
-    (b) =>
-      b.payment_status === 'paid' &&
-      normalizeBillPaymentDetails(b.payment_details).some(
-        (line) => String(line.method || '').toLowerCase() !== 'wallet',
-      ),
-  );
+  const correctablePaidBills = orderBills.filter((b) => b.payment_status === 'paid');
   const canCorrectPaymentMethod =
     Boolean(onCorrectPaymentMethod) &&
     hasRole(authRole, ROLE_ACCESS.ownerManager) &&
     correctablePaidBills.length > 0;
+  const hasCorrectablePayment = correctablePaidBills.some(
+    (b) => b.payment_method_correction?.correctable === true,
+  );
   const hasEligibleRefund = paidBills.length > 0;
   const hasCollectedFunds = orderHasCollectedFunds(order);
   const customerEditLocked = isOrderCustomerEditLocked(order);
@@ -406,10 +403,21 @@ function OrderDetailContent({
                 {canCorrectPaymentMethod && onCorrectPaymentMethod && (
                   <DropdownMenuItem
                     data-testid="correct-payment-method-menu-item"
+                    disabled={!hasCorrectablePayment}
+                    title={
+                      !hasCorrectablePayment ? tOrders('correctPaymentUnavailable') : undefined
+                    }
                     onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
                   >
                     <CreditCard size={14} className="me-2" />
-                    {tOrders('correctPaymentMethod')}
+                    <span>
+                      {tOrders('correctPaymentMethod')}
+                      {!hasCorrectablePayment && (
+                        <span className="block text-xs">
+                          {tOrders('correctPaymentUnavailable')}
+                        </span>
+                      )}
+                    </span>
                   </DropdownMenuItem>
                 )}
                 {!['completed', 'cancelled'].includes(order.status) && (
@@ -976,15 +984,24 @@ function OrderDetailContent({
               </Button>
             )}
             {canCorrectPaymentMethod && onCorrectPaymentMethod && (
-              <Button
-                variant="outline"
-                data-testid="correct-payment-method-button"
-                onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
-                className="flex-1 h-10 border-border text-foreground hover:bg-muted font-semibold text-xs"
-              >
-                <CreditCard size={15} className="me-1.5 text-muted-foreground" />
-                {tOrders('correctPaymentMethod')}
-              </Button>
+              <div className="flex-1">
+                <Button
+                  variant="outline"
+                  data-testid="correct-payment-method-button"
+                  disabled={!hasCorrectablePayment}
+                  title={!hasCorrectablePayment ? tOrders('correctPaymentUnavailable') : undefined}
+                  onClick={() => onCorrectPaymentMethod(order, correctablePaidBills)}
+                  className="flex-1 h-10 border-border text-foreground hover:bg-muted font-semibold text-xs"
+                >
+                  <CreditCard size={15} className="me-1.5 text-muted-foreground" />
+                  {tOrders('correctPaymentMethod')}
+                </Button>
+                {!hasCorrectablePayment && (
+                  <p className="text-xs text-muted-foreground">
+                    {tOrders('correctPaymentUnavailable')}
+                  </p>
+                )}
+              </div>
             )}
             {canRefund && hasEligibleRefund && (
               <Button

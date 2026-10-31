@@ -850,6 +850,7 @@
     "overridePriceClear": "Menü fiyatını kullan",
     "correctPaymentMethod": "Ödeme yöntemini düzelt",
     "correctPaymentMethodHint": "Vardiya açıkken kaydedilen ödeme yöntemini değiştirin. Tutar değişmez.",
+    "correctPaymentUnavailable": "Kullanılamıyor: tüm bölünmüş hesapların iadelerini, cüzdan ödemelerini, iş gününü ve vardiyalarını kontrol edin.",
     "paymentLineLabel": "Ödeme satırı",
     "paymentMethodCorrected": "Ödeme yöntemi güncellendi",
     "correctPaymentMethodFailed": "Ödeme yöntemi güncellenemedi",

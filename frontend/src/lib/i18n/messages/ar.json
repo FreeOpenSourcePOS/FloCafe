@@ -850,6 +850,7 @@
     "overridePriceClear": "استخدام سعر القائمة",
     "correctPaymentMethod": "تصحيح طريقة الدفع",
     "correctPaymentMethodHint": "غيّر طريقة الدفع المسجلة طالما أن الوردية مفتوحة. يبقى المبلغ دون تغيير.",
+    "correctPaymentUnavailable": "غير متاح: تحقق من المبالغ المستردة ومدفوعات المحفظة ويوم العمل والورديات لجميع الفواتير المقسمة.",
     "paymentLineLabel": "سطر الدفع",
     "paymentMethodCorrected": "تم تحديث طريقة الدفع",
     "correctPaymentMethodFailed": "تعذر تحديث طريقة الدفع",

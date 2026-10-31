@@ -850,6 +850,7 @@
     "overridePriceClear": "メニュー価格に戻す",
     "correctPaymentMethod": "支払方法を修正",
     "correctPaymentMethodHint": "シフトが開いている間に記録済みの支払方法を変更します。金額は変更されません。",
+    "correctPaymentUnavailable": "利用できません。分割された全伝票の返金、ウォレット決済、営業日、シフトを確認してください。",
     "paymentLineLabel": "支払明細",
     "paymentMethodCorrected": "支払方法を更新しました",
     "correctPaymentMethodFailed": "支払方法を更新できませんでした",

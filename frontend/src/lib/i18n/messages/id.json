@@ -1261,6 +1261,7 @@
     "printTicket": "Cetak tiket",
     "payTicket": "Bayar",
     "paymentQueue": "Antrean pembayaran",
+    "paymentQueueRefreshPaused": "Pembaruan otomatis dijeda saat melihat tiket lama.",
     "scanOrEnterTicket": "Pindai QR tiket atau masukkan nomor...",
     "paymentQueueEmpty": "Tidak ada tiket menunggu",
     "paymentQueueEmptyDesc": "Pesanan yang dikirim ke pembayaran akan muncul di sini.",

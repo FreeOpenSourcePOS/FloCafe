@@ -1261,6 +1261,7 @@
     "printTicket": "Bon afdrukken",
     "payTicket": "Betalen",
     "paymentQueue": "Betaalwachtrij",
+    "paymentQueueRefreshPaused": "Automatisch vernieuwen is gepauzeerd tijdens het bekijken van oudere tickets.",
     "scanOrEnterTicket": "Scan QR-code of voer nummer in...",
     "paymentQueueEmpty": "Geen wachtende bonnen",
     "paymentQueueEmptyDesc": "Bestellingen die naar betaling zijn gestuurd, verschijnen hier.",

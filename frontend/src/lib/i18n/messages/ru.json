@@ -1261,6 +1261,7 @@
     "printTicket": "Печать талона",
     "payTicket": "Оплатить",
     "paymentQueue": "Очередь оплаты",
+    "paymentQueueRefreshPaused": "Автообновление приостановлено при просмотре старых заказов.",
     "scanOrEnterTicket": "Сканируйте QR или введите номер...",
     "paymentQueueEmpty": "Нет ожидающих талонов",
     "paymentQueueEmptyDesc": "Заказы, отправленные на оплату, появятся здесь.",

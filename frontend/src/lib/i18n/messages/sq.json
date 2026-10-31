@@ -1261,6 +1261,7 @@
     "printTicket": "Printo biletën",
     "payTicket": "Paguaj",
     "paymentQueue": "Radha e pagesave",
+    "paymentQueueRefreshPaused": "Përditësimi automatik është ndalur gjatë shikimit të biletave më të vjetra.",
     "scanOrEnterTicket": "Skano kodin QR ose shkruaj numrin...",
     "paymentQueueEmpty": "Nuk ka bileta në pritje",
     "paymentQueueEmptyDesc": "Porositë e dërguara për pagesë do të shfaqen këtu.",

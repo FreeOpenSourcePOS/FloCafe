@@ -1261,6 +1261,7 @@
     "printTicket": "Stampa ticket",
     "payTicket": "Paga",
     "paymentQueue": "Coda pagamenti",
+    "paymentQueueRefreshPaused": "L’aggiornamento automatico è sospeso durante la visualizzazione dei ticket precedenti.",
     "scanOrEnterTicket": "Scansiona QR o inserisci numero...",
     "paymentQueueEmpty": "Nessun ticket in attesa",
     "paymentQueueEmptyDesc": "Gli ordini inviati al pagamento appariranno qui.",

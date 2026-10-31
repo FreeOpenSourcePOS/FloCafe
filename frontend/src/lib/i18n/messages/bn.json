@@ -1261,6 +1261,7 @@
     "printTicket": "টিকিট প্রিন্ট করুন",
     "payTicket": "পরিশোধ করুন",
     "paymentQueue": "পেমেন্ট সারি",
+    "paymentQueueRefreshPaused": "পুরোনো টিকিট দেখার সময় স্বয়ংক্রিয় রিফ্রেশ বন্ধ থাকে।",
     "scanOrEnterTicket": "টিকিট কিউআর স্ক্যান করুন বা নম্বর লিখুন...",
     "paymentQueueEmpty": "কোন অপেক্ষমাণ টিকিট নেই",
     "paymentQueueEmptyDesc": "পেমেন্টের জন্য পাঠানো অর্ডার এখানে প্রদর্শিত হবে।",

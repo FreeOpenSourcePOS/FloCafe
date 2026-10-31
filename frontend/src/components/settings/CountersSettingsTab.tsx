@@ -265,13 +265,13 @@ export function CountersSettingsTab({ isOwner }: Props) {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-start text-sm">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground">
                       <th className="pb-3 font-medium">{t('name')}</th>
                       <th className="pb-3 font-medium">{t('role')}</th>
                       <th className="pb-3 font-medium">{t('status')}</th>
-                      <th className="pb-3 font-medium text-right">{t('actions')}</th>
+                      <th className="pb-3 font-medium text-end">{t('actions')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -298,27 +298,29 @@ export function CountersSettingsTab({ isOwner }: Props) {
                             </span>
                           )}
                         </td>
-                        <td className="py-3 text-right space-x-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={!isOwner}
-                            onClick={() => handleOpenEditModal(counter)}
-                            className="h-8 w-8 p-0"
-                            title={tCommon('edit')}
-                          >
-                            <Edit2 size={14} />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={!isOwner}
-                            onClick={() => setDeletingId(counter.id)}
-                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40"
-                            title={tCommon('delete')}
-                          >
-                            <Trash2 size={14} />
-                          </Button>
+                        <td className="py-3 text-end">
+                          <div className="inline-flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={!isOwner}
+                              onClick={() => handleOpenEditModal(counter)}
+                              className="h-8 w-8 p-0"
+                              title={tCommon('edit')}
+                            >
+                              <Edit2 size={14} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={!isOwner}
+                              onClick={() => setDeletingId(counter.id)}
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40"
+                              title={tCommon('delete')}
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}

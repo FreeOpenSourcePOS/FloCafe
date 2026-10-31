@@ -101,6 +101,21 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       expect(timezoneRes.ok(), 'set store timezone for queue display check').toBeTruthy();
 
       // Enable multi_counter_enabled
+      const businessRes = await request.get(`${BASE}/api/settings/business`, {
+        headers: ownerHeaders,
+      });
+      expect(businessRes.ok(), 'read prior business settings').toBeTruthy();
+      const businessSettings = await businessRes.json();
+      previousBillingType = businessSettings.billing_type;
+      previousTablesRequired = businessSettings.tables_required;
+      if (previousBillingType !== 'prepaid') {
+        const prepaidRes = await request.put(`${BASE}/api/settings/business`, {
+          headers: ownerHeaders,
+          data: { billing_type: 'prepaid', tables_required: previousTablesRequired },
+        });
+        expect(prepaidRes.ok(), 'set prepaid billing for multi-counter test').toBeTruthy();
+      }
+
       const settingRes = await request.put(`${BASE}/api/settings/multi_counter_enabled`, {
         headers: ownerHeaders,
         data: { value: 'true' },
@@ -185,9 +200,33 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
 
       const cartShell = page.getByTestId('cart-shell');
 
+      for (const type of ['Delivery', 'Online']) {
+        await cartShell.getByRole('button', { name: type, exact: true }).click();
+        await expect(cartShell.getByTestId('pos-send-to-payment-btn')).toHaveCount(0);
+        await expect(cartShell.getByRole('button', { name: 'Place Order' })).toBeVisible();
+      }
+      await cartShell.getByRole('button', { name: 'Takeaway', exact: true }).click();
+
       // Primary checkout button should be "Send to payment"
       const sendToPaymentBtn = cartShell.getByTestId('pos-send-to-payment-btn');
       await expect(sendToPaymentBtn).toBeVisible();
+      await page.route(
+        '**/api/orders',
+        async (route) => {
+          expect(route.request().postDataJSON().dispatch_policy).toBe('on_payment');
+          await route.fulfill({
+            status: 409,
+            json: { code: 'MULTI_COUNTER_DISABLED', error: 'Multi-counter ordering is disabled.' },
+          });
+        },
+        { times: 1 },
+      );
+      await sendToPaymentBtn.click();
+      await expect(
+        page.getByText('Multi-counter ordering disabled', { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByTestId('cart-item')).toHaveCount(1);
+      await expect(sendToPaymentBtn).toBeEnabled();
 
       await captureScreenshot(page, '02-pos-ordering-counter-view.png');
 
@@ -248,6 +287,55 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       const kdsRes = await request.get(`${BASE}/api/kds/orders`, { headers: ownerHeaders });
       const kdsBody = await kdsRes.json();
       expect(kdsBody.orders?.some((o: { id: number }) => o.id === createdOrderId)).toBeFalsy();
+    });
+
+    await test.step('Ordering and combined counters use normal checkout for delivery and online', async () => {
+      const cartShell = page.getByTestId('cart-shell');
+      for (const { type, action } of [
+        { type: 'Delivery', action: 'click' },
+        { type: 'Online', action: 'F4' },
+        { type: 'Delivery', action: 'Space' },
+      ]) {
+        await cartShell.getByRole('button', { name: type, exact: true }).click();
+        await page.getByTestId('pos-product-card').first().click();
+        if (type === 'Delivery') {
+          await cartShell.getByPlaceholder('Delivery address').fill('123 Test Street');
+        } else {
+          await cartShell.getByPlaceholder('Platform (e.g. Swiggy, Zomato)').fill('Test platform');
+        }
+        await expect(cartShell.getByTestId('pos-send-to-payment-btn')).toHaveCount(0);
+        const placeOrder = cartShell.getByRole('button', { name: 'Place Order' });
+        await expect(placeOrder).toBeEnabled();
+        if (action === 'click') {
+          await placeOrder.click();
+        } else {
+          await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+          await page.keyboard.press(action);
+        }
+        await expect(page.getByRole('button', { name: /Confirm Payment/ })).toBeVisible();
+        const createResponse = page.waitForResponse(
+          (response) =>
+            response.request().method() === 'POST' &&
+            new URL(response.url()).pathname === '/api/orders',
+        );
+        await page.getByRole('button', { name: 'Cash', exact: true }).click();
+        await page.getByRole('button', { name: /Confirm Payment/ }).click();
+        const createdResponse = await createResponse;
+        expect(createdResponse.status()).toBe(201);
+        const createdOrder = (await createdResponse.json()).order;
+        createdOrderIds.add(Number(createdOrder.id));
+        expect(createdOrder.type).toBe(type.toLowerCase());
+        expect(createdOrder.dispatch_policy).toBe('immediate');
+        await expect(page.getByTestId('cart-item')).toHaveCount(0);
+      }
+      await page.getByTestId('pos-counter-selector-btn').click();
+      await page.getByTestId(`pos-counter-option-${combinedCounter.id}`).click();
+      for (const type of ['Delivery', 'Online']) {
+        await cartShell.getByRole('button', { name: type, exact: true }).click();
+        await expect(cartShell.getByTestId('pos-send-to-payment-btn')).toHaveCount(0);
+        await expect(cartShell.getByRole('button', { name: 'Place Order' })).toBeVisible();
+      }
+      await cartShell.getByRole('button', { name: 'Takeaway', exact: true }).click();
     });
 
     // -------------------------------------------------------------------------
@@ -356,13 +444,6 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
     });
 
     await test.step('A lost send response cannot be submitted through normal checkout', async () => {
-      const businessRes = await request.get(`${BASE}/api/settings/business`, {
-        headers: ownerHeaders,
-      });
-      expect(businessRes.ok(), 'read billing settings before retry test').toBeTruthy();
-      const businessSettings = await businessRes.json();
-      previousBillingType = businessSettings.billing_type;
-      previousTablesRequired = businessSettings.tables_required;
       const postpaidRes = await request.put(`${BASE}/api/settings/business`, {
         headers: ownerHeaders,
         data: { billing_type: 'postpaid', tables_required: previousTablesRequired },
@@ -419,11 +500,9 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
 
       const restoreBusinessRes = await request.put(`${BASE}/api/settings/business`, {
         headers: ownerHeaders,
-        data: { billing_type: previousBillingType, tables_required: previousTablesRequired },
+        data: { billing_type: 'prepaid', tables_required: previousTablesRequired },
       });
-      expect(restoreBusinessRes.ok(), 'restore billing settings after retry test').toBeTruthy();
-      previousBillingType = undefined;
-      previousTablesRequired = undefined;
+      expect(restoreBusinessRes.ok(), 'restore prepaid billing after retry test').toBeTruthy();
     });
 
     await test.step('A committed send response after reauthentication clears only its submitted cart', async () => {

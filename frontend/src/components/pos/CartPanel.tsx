@@ -902,19 +902,16 @@ export default function CartPanel({
                 </Button>
               </>
             )
-          ) : multiCounterEnabled && onSendToPayment && counterRole === 'ordering' ? (
+          ) : multiCounterEnabled &&
+            onSendToPayment &&
+            counterRole === 'ordering' &&
+            (cart.orderType === 'takeaway' || cart.orderType === 'dine_in') ? (
             <Button
               onClick={onSendToPayment}
-              disabled={
-                submitting ||
-                cart.items.length === 0 ||
-                cart.orderType === 'delivery' ||
-                Boolean(scheduleErrorMessage)
-              }
+              disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
               className="flex-1"
               size="lg"
               data-testid="pos-send-to-payment-btn"
-              title={cart.orderType === 'delivery' ? t('sendToPaymentDeliveryError') : undefined}
             >
               {submitting ? t('placing') : t('sendToPayment')}
               {!submitting && (
@@ -926,21 +923,18 @@ export default function CartPanel({
                 </span>
               )}
             </Button>
-          ) : multiCounterEnabled && onSendToPayment && counterRole === 'combined' ? (
+          ) : multiCounterEnabled &&
+            onSendToPayment &&
+            counterRole === 'combined' &&
+            (cart.orderType === 'takeaway' || cart.orderType === 'dine_in') ? (
             <>
               <Button
                 variant="outline"
                 onClick={onSendToPayment}
-                disabled={
-                  submitting ||
-                  cart.items.length === 0 ||
-                  cart.orderType === 'delivery' ||
-                  Boolean(scheduleErrorMessage)
-                }
+                disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
                 className="flex-1"
                 size="lg"
                 data-testid="pos-send-to-payment-btn"
-                title={cart.orderType === 'delivery' ? t('sendToPaymentDeliveryError') : undefined}
               >
                 {t('sendToPayment')}
               </Button>

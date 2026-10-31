@@ -2224,6 +2224,17 @@ router.post(
             }
           }
         }
+        if (isOnPayment) {
+          const setting = db
+            .prepare("SELECT value FROM settings WHERE key = 'multi_counter_enabled'")
+            .get() as { value: string } | undefined;
+          if (setting?.value !== 'true') {
+            throw Object.assign(new Error('Multi-counter ordering is disabled.'), {
+              statusCode: 409,
+              code: 'MULTI_COUNTER_DISABLED',
+            });
+          }
+        }
         // Generate order number inside transaction to prevent race conditions
         const orderNumber = generateOrderNumber();
 
@@ -2737,16 +2748,15 @@ router.post(
             : statusCode >= 500
               ? 'fc.backend.order.create.persistence'
               : 'fc.backend.order.create.other_validation';
-      return res
-        .status(statusCode)
-        .json(
-          structuredOperationFailure(
-            req,
-            point,
-            operationCommitted ? 'applied' : 'not_applied',
-            error.statusCode ? error.message : 'Internal server error',
-          ),
-        );
+      return res.status(statusCode).json({
+        ...structuredOperationFailure(
+          req,
+          point,
+          operationCommitted ? 'applied' : 'not_applied',
+          error.statusCode ? error.message : 'Internal server error',
+        ),
+        ...(error.code === 'MULTI_COUNTER_DISABLED' ? { code: error.code } : {}),
+      });
     }
   }),
 );

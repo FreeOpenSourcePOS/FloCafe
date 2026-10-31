@@ -148,8 +148,12 @@ or combined stations:
   transient held-order JSON. Orders record `dispatch_policy = 'on_payment'` and start in
   `checkout_stage = 'awaiting_payment'`.
 - **Supported order types.** Multi-counter checkout is supported for **takeaway and dine-in** orders.
-  Delivery orders cannot use "Send to payment" (`400`). Takeaway is the order type that can combine
-  both multi-counter checkout and scheduled kitchen release.
+  Delivery and online orders use normal checkout on ordering and combined counters and cannot use
+  "Send to payment" (`400`). Takeaway can combine multi-counter checkout and scheduled kitchen
+  release.
+- **Feature availability.** New deferred tickets require `multi_counter_enabled = 'true'`; otherwise
+  creation returns `409` with `MULTI_COUNTER_DISABLED`. Replays of committed requests and actions on
+  existing deferred tickets remain available after the feature is disabled.
 - **Kitchen suppression prior to release.** Orders with `dispatch_policy = 'on_payment'` set
   `release_status = 'scheduled'` and defer stock deduction, KDS display, active-order heartbeats, and
   automatic KOT printing until full payment is collected.

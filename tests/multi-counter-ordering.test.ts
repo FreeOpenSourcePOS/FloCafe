@@ -173,7 +173,14 @@ function getTimezoneOffsetMs(date: Date, timezone: string): number {
   }).formatToParts(date);
   const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
   const hour = get('hour') === 24 ? 0 : get('hour');
-  const local = Date.UTC(get('year'), get('month') - 1, get('day'), hour, get('minute'), get('second'));
+  const local = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    hour,
+    get('minute'),
+    get('second'),
+  );
   return local - date.getTime();
 }
 

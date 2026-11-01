@@ -130,29 +130,54 @@ function assertLedgerReconciles(db: any, label: string) {
   );
 }
 
-function futureWallClockInZone(timezone: string, offsetMinutes: number): string {
-  const baseMs = Date.now() + offsetMinutes * 60 * 1000;
-  for (let dayStep = 0; dayStep < 7; dayStep++) {
-    const target = new Date(baseMs + dayStep * 24 * 60 * 60 * 1000);
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      hour12: false,
-      hourCycle: 'h23',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).formatToParts(target);
-    const byType: Record<string, string> = {};
-    for (const p of parts) byType[p.type] = p.value;
-    const formatted = `${byType.year}-${byType.month}-${byType.day}T${byType.hour === '24' ? '00' : byType.hour}:${byType.minute}`;
-    const check = parseScheduledForInput({ input: formatted, timezone, nowMs: Date.now() });
-    if (check.ok) {
-      return formatted;
-    }
+function getTimezoneOffsetMs(date: Date, timezone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  const hour = get('hour') === 24 ? 0 : get('hour');
+  const local = Date.UTC(get('year'), get('month') - 1, get('day'), hour, get('minute'), get('second'));
+  return local - date.getTime();
+}
+
+function hasDstTransitionInWindow(timezone: string, startMs: number, windowMs: number): boolean {
+  try {
+    return (
+      getTimezoneOffsetMs(new Date(startMs), timezone) !==
+      getTimezoneOffsetMs(new Date(startMs + windowMs), timezone)
+    );
+  } catch {
+    return false;
   }
-  throw new Error(`Failed to find valid future wall clock for timezone ${timezone}`);
+}
+
+function futureWallClockInZone(timezone: string, offsetMinutes: number): string {
+  const nowMs = Date.now();
+  let baseMs = nowMs;
+  if (hasDstTransitionInWindow(timezone, nowMs, 24 * 60 * 60 * 1000)) {
+    baseMs += 24 * 60 * 60 * 1000;
+  }
+  const target = new Date(baseMs + offsetMinutes * 60 * 1000);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour12: false,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(target);
+  const byType: Record<string, string> = {};
+  for (const p of parts) byType[p.type] = p.value;
+  return `${byType.year}-${byType.month}-${byType.day}T${byType.hour === '24' ? '00' : byType.hour}:${byType.minute}`;
 }
 
 async function main() {

@@ -91,6 +91,7 @@ const {
 const { getJWTSecret } = require('../main/routes/auth');
 const { validateInventoryLedgerDatabase } = require('../main/db');
 const { sweepDueScheduledOrders } = require('../main/services/scheduled-orders');
+const { parseScheduledForInput } = require('../shared/scheduled-time');
 
 function seedStaffUser(db: any, id: string, role: string, pin?: string) {
   const email = `${id}@test.local`;
@@ -161,20 +162,28 @@ function assertLedgerReconciles(db: any, label: string) {
 }
 
 function futureWallClockInZone(timezone: string, offsetMinutes: number): string {
-  const target = new Date(Date.now() + offsetMinutes * 60 * 1000);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour12: false,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).formatToParts(target);
-  const byType: Record<string, string> = {};
-  for (const p of parts) byType[p.type] = p.value;
-  return `${byType.year}-${byType.month}-${byType.day}T${byType.hour === '24' ? '00' : byType.hour}:${byType.minute}`;
+  const baseMs = Date.now() + offsetMinutes * 60 * 1000;
+  for (let dayStep = 0; dayStep < 7; dayStep++) {
+    const target = new Date(baseMs + dayStep * 24 * 60 * 60 * 1000);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour12: false,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).formatToParts(target);
+    const byType: Record<string, string> = {};
+    for (const p of parts) byType[p.type] = p.value;
+    const formatted = `${byType.year}-${byType.month}-${byType.day}T${byType.hour === '24' ? '00' : byType.hour}:${byType.minute}`;
+    const check = parseScheduledForInput({ input: formatted, timezone, nowMs: Date.now() });
+    if (check.ok) {
+      return formatted;
+    }
+  }
+  throw new Error(`Failed to find valid future wall clock for timezone ${timezone}`);
 }
 
 async function main() {

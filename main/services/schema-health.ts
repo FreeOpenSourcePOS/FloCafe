@@ -39,8 +39,15 @@ export interface TableSchema {
   foreignKeys: ForeignKeyDef[];
 }
 
+export interface TriggerDef {
+  name: string;
+  table: string;
+  createSql: string | null;
+}
+
 export interface DbSchemaSnapshot {
   tables: Record<string, TableSchema>;
+  triggers: Record<string, TriggerDef>;
   schemaVersion: number;
 }
 
@@ -48,6 +55,7 @@ export type FindingKind =
   | 'missing_table'
   | 'missing_column'
   | 'missing_index'
+  | 'missing_trigger'
   | 'extra_table'
   | 'extra_column'
   | 'extra_index'
@@ -61,6 +69,7 @@ export interface HealthFinding {
   table: string;
   column?: string;
   index?: string;
+  trigger?: string;
   kind: FindingKind;
   risk: 'safe' | 'manual_review';
   autoApplicable: boolean;
@@ -128,7 +137,19 @@ function snapshotSchema(dbInstance: Database.Database): DbSchemaSnapshot {
     tables[name] = { name, createSql: createRow?.sql ?? null, columns, indexes, foreignKeys };
   }
 
-  return { tables, schemaVersion: dbInstance.pragma('user_version', { simple: true }) as number };
+  const triggers: Record<string, TriggerDef> = {};
+  const triggerRows = dbInstance
+    .prepare(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger'`)
+    .all() as { name: string; tbl_name: string; sql: string | null }[];
+  for (const row of triggerRows) {
+    triggers[row.name] = { name: row.name, table: row.tbl_name, createSql: row.sql };
+  }
+
+  return {
+    tables,
+    triggers,
+    schemaVersion: dbInstance.pragma('user_version', { simple: true }) as number,
+  };
 }
 
 function normalizeType(type: string): string {
@@ -141,9 +162,16 @@ function normalizeType(type: string): string {
 function normalizeCreateIfNotExists(sql: string): string {
   if (/\bIF\s+NOT\s+EXISTS\b/i.test(sql)) return sql;
   return sql.replace(
-    /^\s*CREATE\s+(UNIQUE\s+)?(TABLE|INDEX)\s+/i,
+    /^\s*CREATE\s+(UNIQUE\s+)?(TABLE|INDEX|TRIGGER)\s+/i,
     (m, unique = '') => `CREATE ${unique}${m.trim().split(/\s+/).pop()} IF NOT EXISTS `,
   );
+}
+
+function referenceClause(table: TableSchema, column: string): string {
+  const fk = table.foreignKeys.find((f) => f.from === column);
+  if (!fk || !isSafeIdentifier(fk.table) || !isSafeIdentifier(fk.to)) return '';
+  const action = (value: string) => (value && value !== 'NO ACTION' ? ` ${value}` : '');
+  return ` REFERENCES ${fk.table}(${fk.to})${fk.onDelete !== 'NO ACTION' ? ` ON DELETE${action(fk.onDelete)}` : ''}${fk.onUpdate !== 'NO ACTION' ? ` ON UPDATE${action(fk.onUpdate)}` : ''}`;
 }
 
 function sameColumnList(a: string[], b: string[]): boolean {
@@ -221,7 +249,7 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
             ? `Column "${idealCol.name}" is missing from "${tableName}".`
             : `Column "${idealCol.name}" is missing from "${tableName}" and is NOT NULL with no default — cannot be added automatically on a non-empty table.`,
           suggestedDdl: canAutoAdd
-            ? `ALTER TABLE ${tableName} ADD COLUMN ${idealCol.name} ${idealCol.type}${idealCol.dfltValue !== null ? ` DEFAULT ${idealCol.dfltValue}` : ''}`
+            ? `ALTER TABLE ${tableName} ADD COLUMN ${idealCol.name} ${idealCol.type}${idealCol.dfltValue !== null ? ` DEFAULT ${idealCol.dfltValue}` : ''}${referenceClause(idealTable, idealCol.name)}`
             : undefined,
           idealState: `${idealCol.type}${idealCol.notnull ? ' NOT NULL' : ''}${idealCol.dfltValue !== null ? ` DEFAULT ${idealCol.dfltValue}` : ''}`,
         });
@@ -344,6 +372,20 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
     }
   }
 
+  for (const trigger of Object.values(ideal.triggers)) {
+    if (live.triggers[trigger.name] || !live.tables[trigger.table]) continue;
+    findings.push({
+      id: `missing_trigger:${trigger.name}`,
+      table: trigger.table,
+      trigger: trigger.name,
+      kind: 'missing_trigger',
+      risk: 'safe',
+      autoApplicable: !!trigger.createSql,
+      description: `Trigger "${trigger.name}" is missing on "${trigger.table}".`,
+      suggestedDdl: trigger.createSql ? normalizeCreateIfNotExists(trigger.createSql) : undefined,
+    });
+  }
+
   for (const tableName of Object.keys(live.tables)) {
     if (!ideal.tables[tableName]) {
       findings.push({
@@ -382,8 +424,7 @@ function getIdealSchemaSnapshot(): DbSchemaSnapshot {
   }
 }
 
-export function runHealthCheck(): HealthCheckReport {
-  const liveDb = getDatabase();
+export function runHealthCheck(liveDb: Database.Database = getDatabase()): HealthCheckReport {
   const live = snapshotSchema(liveDb);
   const ideal = getIdealSchemaSnapshot();
   const findings = diffSchemas(live, ideal);
@@ -406,9 +447,11 @@ export interface ApplySafeFixesResult {
 }
 
 /** Re-derives report before applying fixes so clients cannot inject arbitrary SQL. */
-export function applySafeFixes(findingIds?: string[]): ApplySafeFixesResult {
-  const report = runHealthCheck();
-  const db = getDatabase();
+export function applySafeFixes(
+  findingIds?: string[],
+  db: Database.Database = getDatabase(),
+): ApplySafeFixesResult {
+  const report = runHealthCheck(db);
   const result: ApplySafeFixesResult = { applied: [], skipped: [], errors: [] };
 
   const targets = report.findings.filter(
@@ -424,7 +467,8 @@ export function applySafeFixes(findingIds?: string[]): ApplySafeFixesResult {
       const identifiersSafe =
         isSafeIdentifier(finding.table) &&
         (!finding.column || isSafeIdentifier(finding.column)) &&
-        (!finding.index || isSafeIdentifier(finding.index));
+        (!finding.index || isSafeIdentifier(finding.index)) &&
+        (!finding.trigger || isSafeIdentifier(finding.trigger));
 
       if (!identifiersSafe || !finding.suggestedDdl) {
         result.skipped.push(finding.id);

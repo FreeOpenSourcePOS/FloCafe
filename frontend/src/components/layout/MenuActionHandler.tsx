@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { dispatchQuickSearchRequest } from '@/lib/quick-search';
+import { useAuthStore } from '@/store/auth';
+import api from '@/lib/api';
 
 type PendingPinAction = 'backup' | 'restore' | null;
 
@@ -13,7 +15,11 @@ export default function MenuActionHandler() {
   const tCommon = useTranslations('common');
   const tBackup = useTranslations('backup');
   const tSettings = useTranslations('settings');
+  const tAuth = useTranslations('auth');
   const router = useRouter();
+  const hasSession = useAuthStore((s) => Boolean(s.user));
+  const hasSessionRef = useRef(hasSession);
+  hasSessionRef.current = hasSession;
   const [pendingPinAction, setPendingPinAction] = useState<PendingPinAction>(null);
 
   async function runBackup(pin: string) {
@@ -143,6 +149,23 @@ export default function MenuActionHandler() {
           beginPinGatedAction('backup');
           break;
         case 'menu-restore-from-file':
+          if (!hasSessionRef.current) {
+            void api
+              .get('/auth/setup/status')
+              .then(({ data }) => {
+                if (data?.needsSetup) {
+                  router.push('/setup?action=restore-from-file');
+                  return;
+                }
+                toast.error(tAuth('signInTitle'));
+                router.push('/auth/login');
+              })
+              .catch(() => {
+                toast.error(tAuth('signInTitle'));
+                router.push('/auth/login');
+              });
+            break;
+          }
           router.push('/settings?tab=data&action=restore-from-file');
           break;
         case 'menu-db-health-check':

@@ -86,10 +86,9 @@ function main() {
   );
   assert.equal(report.summary.safeCount, 0);
   assert.equal(report.summary.manualReviewCount, 0);
-  assert.equal(
-    memoryDbOpenCount - memoryDbBeforeCold,
-    1,
-    'cold runHealthCheck() builds the ideal schema snapshot once',
+  assert.ok(
+    memoryDbOpenCount - memoryDbBeforeCold <= 1,
+    'runHealthCheck() builds the ideal schema snapshot at most once (startup repair may have built it)',
   );
   const memoryDbBeforeWarm = memoryDbOpenCount;
   const warmReport = runHealthCheck();
@@ -253,6 +252,30 @@ function main() {
     'ideal state surfaces the expected ON DELETE action',
   );
   console.log('   ✓ foreign-key ON DELETE/ON UPDATE actions are compared');
+
+  // ── a skipped migration's column (with its foreign key) and trigger are restored ──
+  db.exec('DROP TRIGGER clear_table_reservation_customer_on_status_change');
+  db.exec('ALTER TABLE tables DROP COLUMN reservation_customer_id');
+  report = runHealthCheck();
+  assert.ok(
+    report.findings.some((f: any) => f.id === 'missing_column:tables.reservation_customer_id'),
+    'a missing column is reported',
+  );
+  assert.ok(
+    report.findings.some(
+      (f: any) => f.id === 'missing_trigger:clear_table_reservation_customer_on_status_change',
+    ),
+    'a missing trigger is reported as safe to restore',
+  );
+  const triggerFix = applySafeFixes();
+  assert.equal(triggerFix.errors.length, 0, 'restoring the column and trigger raises no errors');
+  report = runHealthCheck();
+  assert.equal(
+    report.findings.filter((f: any) => f.table === 'tables').length,
+    0,
+    'the restored column keeps its foreign key, so no drift remains on tables',
+  );
+  console.log('   ✓ missing columns (with foreign keys) and triggers are restored');
 
   // ── applySafeFixes is atomic: a failed fix rolls back the whole batch ──
   db.exec('DROP TABLE IF EXISTS held_orders');

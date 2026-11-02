@@ -38,6 +38,7 @@ const EXPECTED_MAINTENANCE_HANDLERS = [
   'POST /api/db/import',
   'POST /api/db/backup',
   'POST /api/db/restore',
+  'POST /api/auth/setup/restore',
   'GET /api/db/download',
   'POST /api/db-tools/initialize',
   'POST /api/db-tools/currency-reset',

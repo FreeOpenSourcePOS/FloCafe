@@ -234,6 +234,23 @@ async function main(): Promise<void> {
   );
   assert.ok(fs.existsSync(firstCopy as string) && fs.existsSync(secondCopy as string));
 
+  // Startup and shutdown backups: skipped while a recent backup exists, taken once it is stale.
+  const countBeforeSession = listLocalBackups(backupDir).length;
+  assert.equal(localBackup.isSessionBackupWanted(), false, 'a backup under an hour old is enough');
+  assert.equal(await localBackup.backupForSession(), false, 'no session backup is taken');
+  assert.equal(listLocalBackups(backupDir).length, countBeforeSession);
+  for (const name of listLocalBackups(backupDir)) fs.unlinkSync(path.join(backupDir, name));
+  const staleName = localBackupFileName(new Date(Date.now() - 2 * HOUR));
+  fs.writeFileSync(path.join(backupDir, staleName), 'stale');
+  assert.equal(localBackup.isSessionBackupWanted(), true, 'a backup over an hour old is stale');
+  assert.equal(await localBackup.backupForSession(), true, 'a session backup is taken');
+  assert.ok(listLocalBackups(backupDir)[0] > staleName, 'the session backup is the newest');
+  assert.equal(
+    localBackup.isSessionBackupWanted(),
+    false,
+    'a second start right after does not add another',
+  );
+
   for (const name of listLocalBackups(backupDir)) fs.unlinkSync(path.join(backupDir, name));
   for (let day = 1; day <= LOCAL_BACKUP_RETENTION; day++) {
     const name = localBackupFileName(new Date(Date.UTC(2026, 0, day, 3, 0, 0)));

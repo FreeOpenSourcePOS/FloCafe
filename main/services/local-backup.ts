@@ -8,6 +8,8 @@ import { createBackup, getDatabase, getSettingValue, upsertSettings } from '../d
 
 export const LOCAL_BACKUP_SETTING_KEY = 'local_backup_enabled';
 export const LOCAL_BACKUP_RETENTION = 5;
+/** Startup and shutdown backups are skipped when the newest backup is younger than this. */
+export const SESSION_BACKUP_MIN_AGE_MS = 60 * 60_000;
 
 const DAY_MS = 24 * 60 * 60_000;
 const CHECK_INTERVAL_MS = 60 * 60_000;
@@ -222,21 +224,60 @@ class LocalBackupService {
     return this.running;
   }
 
+  /** True when a startup/shutdown backup would actually be written. */
+  isSessionBackupWanted(minAgeMs: number = SESSION_BACKUP_MIN_AGE_MS): boolean {
+    try {
+      if (!isLocalBackupEnabled()) return false;
+      const newest = listLocalBackups(getLocalBackupDir())[0];
+      const last = newest ? parseLocalBackupTime(newest) : null;
+      const age = last === null ? Infinity : currentNowMs() - last;
+      return (age < 0 || age >= minAgeMs) && hasBusinessData();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Backs up now unless the newest backup is younger than `minAgeMs`. Never throws, and gives up
+   * after `timeoutMs` so a slow disk cannot hold startup or shutdown open.
+   */
+  async backupForSession(
+    minAgeMs: number = SESSION_BACKUP_MIN_AGE_MS,
+    timeoutMs = 15_000,
+  ): Promise<boolean> {
+    if (!this.isSessionBackupWanted(minAgeMs)) return false;
+    await this.running?.catch(() => {});
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await this.writeBackup(controller.signal, () => controller.signal.aborted);
+    } catch (error) {
+      console.warn('[LocalBackup] Session backup skipped:', error);
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private async backupIfDue(): Promise<void> {
     if (!isLocalBackupEnabled()) return;
-    const dir = getLocalBackupDir();
-    if (!isLocalBackupDue(listLocalBackups(dir)[0])) return;
+    if (!isLocalBackupDue(listLocalBackups(getLocalBackupDir())[0])) return;
     if (!hasBusinessData()) return;
-
-    fs.mkdirSync(dir, { recursive: true });
     this.abortController = new AbortController();
+    const controller = this.abortController;
+    await this.writeBackup(controller.signal, () => this.stopping || controller.signal.aborted);
+  }
+
+  private async writeBackup(signal: AbortSignal, isCancelled: () => boolean): Promise<boolean> {
+    const dir = getLocalBackupDir();
+    fs.mkdirSync(dir, { recursive: true });
     const staged = stagingPath(dir);
     let name: string;
     try {
-      await createBackup(staged, this.abortController.signal);
-      if (this.stopping || this.abortController?.signal.aborted || !isLocalBackupEnabled()) {
+      await createBackup(staged, signal);
+      if (isCancelled() || !isLocalBackupEnabled()) {
         removeQuietly(staged);
-        return;
+        return false;
       }
       name = publishBackup(staged, dir);
     } catch (error) {
@@ -244,6 +285,7 @@ class LocalBackupService {
       throw error;
     }
     pruneLocalBackups(dir, LOCAL_BACKUP_RETENTION, name);
+    return true;
   }
 }
 

@@ -18,6 +18,8 @@ import { Bonjour } from 'bonjour-service';
 import {
   getDatabase,
   initDatabase,
+  autoRepairSchemaDrift,
+  getSettingValue,
   closeDatabase,
   waitForDatabaseRequests,
   beginDatabaseShutdown,
@@ -36,7 +38,8 @@ import { isOfflineMode, onOfflineModeEnabled } from './services/offline-mode';
 import { telemetry } from './services/telemetry';
 import { capturePostHogException, startPostHog, stopPostHog } from './services/posthog';
 import { googleDrive } from './services/google-drive';
-import { localBackup } from './services/local-backup';
+import { localBackup, SESSION_BACKUP_MIN_AGE_MS } from './services/local-backup';
+import { closeStatus, setStatusLanguage, showStatus, waitForPaint } from './status-window';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
 import { initPrinter } from './printers/thermal';
@@ -583,6 +586,7 @@ function showMainWindow(expectedWindow?: BrowserWindow): boolean {
   mainWindow.show();
   mainWindow.focus();
   mainWindow.webContents.focus();
+  closeStatus();
   return true;
 }
 
@@ -1544,9 +1548,21 @@ async function initialize(): Promise<void> {
     if (isShutdownRequested()) return;
     console.log('[Flo] Initializing...');
 
+    await showStatus('starting');
+    await showStatus('checking');
+    await waitForPaint();
     console.log('[Flo] Initializing database...');
     initDatabase();
+    autoRepairSchemaDrift();
+    setStatusLanguage(getSettingValue('language'));
     if (isShutdownRequested()) return;
+
+    if (localBackup.isSessionBackupWanted()) {
+      await showStatus('backingUp');
+      await localBackup.backupForSession(SESSION_BACKUP_MIN_AGE_MS);
+      if (isShutdownRequested()) return;
+    }
+    await showStatus('services');
 
     console.log('[Flo] Starting local server...');
     await startServer();
@@ -1633,6 +1649,7 @@ async function initialize(): Promise<void> {
     relaunchAttemptGuard.markRuntimeRecovered();
     log.info('[Lifecycle] Runtime is ready');
     console.log('[Flo] Creating window...');
+    void showStatus('welcome');
     createWindow();
     registerPowerMonitorRecovery();
     registerChildProcessCrashTelemetry();
@@ -1677,6 +1694,7 @@ async function initialize(): Promise<void> {
       }
       return;
     }
+    closeStatus();
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
 
     // Capture only a safe classification; exception text can contain business data.
@@ -1738,6 +1756,17 @@ if (process.env.NODE_ENV === 'test' && process.env.FLO_E2E_PID_FILE) {
   }
 }
 
+function shouldShowShutdownStatus(): boolean {
+  return !isInstallingUpdate && !startupFailure && !runtimeRelaunchRequested;
+}
+
+async function backupOnShutdown(): Promise<void> {
+  if (!shouldShowShutdownStatus() || !localBackup.isSessionBackupWanted()) return;
+  await showStatus('shutdownBackup', true);
+  await localBackup.backupForSession(SESSION_BACKUP_MIN_AGE_MS, 8_000);
+  await showStatus('saved', true);
+}
+
 // --- Cleanup function (idempotent — safe to call from every entrypoint) ---
 const cleanupCoordinator = createShutdownCoordinator(
   () => [
@@ -1760,6 +1789,7 @@ const cleanupCoordinator = createShutdownCoordinator(
     { name: 'Google Drive', run: () => googleDrive.stop(), blocksDatabase: true },
     { name: 'local backup', run: () => localBackup.stop(), blocksDatabase: true },
     { name: 'WhatsApp', run: () => shutdownWhatsApp(), blocksDatabase: true },
+    { name: 'shutdown backup', run: () => backupOnShutdown(), blocksDatabase: true },
     { name: 'Bonjour', run: () => stopMdns() },
     { name: 'HTTP handler cleanup', run: () => waitForHttpShutdownWork(), blocksDatabase: true },
     { name: 'database admission', run: () => beginDatabaseShutdown(), blocksDatabase: true },
@@ -1783,6 +1813,10 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   cleanup: async () => {
     log.info('[Lifecycle] Cleanup started');
     console.log('[Flo] Running cleanup...');
+    if (shouldShowShutdownStatus()) {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+      void showStatus('closing', true);
+    }
     try {
       await cleanupCoordinator();
       log.info('[Lifecycle] Cleanup completed');

@@ -24,6 +24,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 import Database from 'better-sqlite3';
 import {
+  autoRepairSchemaDrift,
   closeDatabase,
   createBackup,
   beginDatabaseReplacementJournal,
@@ -580,6 +581,102 @@ async function run() {
       ).name,
       'Restore Category',
       'live data remains unchanged after incomplete-schema rejection',
+    );
+
+    // Upgraded installs carry rebuilt/ALTERed tables whose CREATE text differs
+    // from a fresh install while the structure is identical.
+    const rebuiltTextBackup = path.join(testDir, 'rebuilt-text-schema.db');
+    copyAndStamp(sameSchemaBackup, rebuiltTextBackup, currentVersion);
+    const rebuiltTextDb = new Database(rebuiltTextBackup);
+    rebuiltTextDb.pragma('foreign_keys = OFF');
+    rebuiltTextDb.exec(
+      'ALTER TABLE categories RENAME TO categories_rebuilt; ALTER TABLE categories_rebuilt RENAME TO categories;',
+    );
+    rebuiltTextDb.close();
+    const rebuiltText = restoreBackup(rebuiltTextBackup, true);
+    assert.equal(
+      rebuiltText.success,
+      true,
+      `direct restore accepts a structurally identical backup with different CREATE text: ${rebuiltText.error}`,
+    );
+
+    // A backup stamped with the current version but missing pieces a skipped
+    // migration should have added is repaired in the staged copy and restores.
+    const driftedBackup = path.join(testDir, 'drifted-schema.db');
+    copyAndStamp(sameSchemaBackup, driftedBackup, currentVersion);
+    const driftedDb = new Database(driftedBackup);
+    driftedDb.pragma('foreign_keys = OFF');
+    driftedDb.exec(
+      'DROP TRIGGER clear_table_reservation_customer_on_status_change; ALTER TABLE tables DROP COLUMN reservation_customer_id;',
+    );
+    driftedDb.close();
+    const drifted = restoreBackup(driftedBackup, true);
+    assert.equal(
+      drifted.success,
+      true,
+      `direct restore repairs a drifted same-version backup: ${drifted.error}`,
+    );
+    const repairedDb = getDatabase();
+    assert.ok(
+      (repairedDb.prepare('PRAGMA table_info(tables)').all() as { name: string }[]).some(
+        (column) => column.name === 'reservation_customer_id',
+      ),
+      'the missing column was added back',
+    );
+    assert.ok(
+      repairedDb
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?")
+        .get('clear_table_reservation_customer_on_status_change'),
+      'the missing trigger was added back',
+    );
+    assert.equal(
+      (
+        repairedDb.prepare('SELECT name FROM categories WHERE id = ?').get('restore-category') as {
+          name: string;
+        }
+      ).name,
+      'Restore Category',
+      'repair kept the backup data',
+    );
+
+    // A drifted live database yields clean backups, and is healed silently on the next start.
+    const liveDriftDb = getDatabase();
+    liveDriftDb.pragma('foreign_keys = OFF');
+    liveDriftDb.exec(
+      'DROP TRIGGER IF EXISTS clear_table_reservation_customer_on_status_change; ALTER TABLE tables DROP COLUMN reservation_customer_id;',
+    );
+    const cleanBackup = await createBackup();
+    const cleanBackupDb = new Database(cleanBackup.path, { readonly: true });
+    assert.ok(
+      (cleanBackupDb.prepare('PRAGMA table_info(tables)').all() as { name: string }[]).some(
+        (column) => column.name === 'reservation_customer_id',
+      ),
+      'a backup of a drifted database carries the repaired column',
+    );
+    cleanBackupDb.close();
+    autoRepairSchemaDrift();
+    assert.ok(
+      (getDatabase().prepare('PRAGMA table_info(tables)').all() as { name: string }[]).some(
+        (column) => column.name === 'reservation_customer_id',
+      ),
+      'startup silently restores the missing column',
+    );
+    assert.ok(
+      fs
+        .readdirSync(path.join(testDir, 'backups'))
+        .some((name) => name.endsWith('-schema-repair.db')),
+      'startup repair keeps a snapshot of what it started from',
+    );
+
+    const extraColumnBackup = path.join(testDir, 'extra-column-schema.db');
+    copyAndStamp(sameSchemaBackup, extraColumnBackup, currentVersion);
+    const extraColumnDb = new Database(extraColumnBackup);
+    extraColumnDb.exec('ALTER TABLE categories ADD COLUMN unexpected_column TEXT');
+    extraColumnDb.close();
+    assert.equal(
+      restoreBackup(extraColumnBackup, true).success,
+      false,
+      'direct restore rejects a backup whose table structure differs',
     );
 
     // forceDirect must reject a newer backup before closing or replacing the live DB.

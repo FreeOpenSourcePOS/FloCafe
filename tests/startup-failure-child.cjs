@@ -87,6 +87,8 @@ Module._load = function (request, parent, isMain) {
         events.push('database.init');
         if (!startupRace && !startupFailureRace) throw new Error('simulated startup failure');
       },
+      autoRepairSchemaDrift: () => {},
+      getSettingValue: () => null,
       beginDatabaseShutdown: () => {
         events.push('database.admission');
       },

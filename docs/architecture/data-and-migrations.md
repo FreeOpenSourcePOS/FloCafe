@@ -144,13 +144,24 @@ validate inventory ledger movement chains in durable append order (`id` ASC), ex
 `executeSequenceRepair` to re-align sequence counters with restored orders and bills, and mark repair
 complete.
 
+A direct restore validates the backup against the schema the current version defines (built from
+the migrations in memory), not against the live file, and compares tables by structure rather than
+`CREATE` text, so an upgraded database and a fresh install of the same version compare equal. Before
+validating, it repairs the staged copy, never the operator's file, with the schema-health safe fixes:
+missing tables, columns (with their foreign keys), indexes, and triggers are added; nothing is
+dropped or rewritten. The same fixes run silently on the live database at every startup
+(`autoRepairSchemaDrift`, which keeps a `-schema-repair` snapshot first) and on every backup file
+as `createBackup` writes it, so drift neither lingers nor travels into backups. The Database Health
+Check remains available for manual review.
+
 ### Entry points
 
-Two routes reach `restoreBackup`, and they differ only in how the operator is authorised:
+Three entry points reach `restoreBackup`, and they differ only in how the operator is authorised:
 
 | Route | Authorisation | Use |
 | --- | --- | --- |
 | `POST /api/db/restore` | Session holding `database.manage`, the typed phrase `RESTORE BACKUP`, and a file the operator picked in the native dialog | Restore from a backup file anywhere on disk. The settings screen and the application menu both land here. |
+| `POST /api/auth/setup/restore` | Request from the POS computer, the typed phrase, a picked file, and no user account in the database yet | Restore onto a brand-new install before the first sign-in. Refused with 403 as soon as any account exists. Reached from the first setup screen and from File → Restore Backup when nobody is signed in. |
 | `restore-backup` IPC | Master PIN, and for a caller-supplied path a managed-backup check | Restore a managed backup from Backup History. |
 
 The HTTP route never accepts a path the renderer invented. `pick-restore-file` shows the native
@@ -176,6 +187,9 @@ loss. Retention failure is logged and never fails the committed restore.
 `local_backup_enabled` is `'false'`. A check runs two minutes after startup and then hourly; it calls
 `createBackup()` when the newest file is at least 24 hours old, and skips a database with
 no orders, products, or customers so an empty install cannot push real backups out of retention.
+The app also takes one at startup (after the database check) and one during shutdown, each skipped when
+the newest file is under `SESSION_BACKUP_MIN_AGE_MS` (one hour) old, bounded by a timeout, and never
+fatal. The startup and shutdown windows tell the operator what is happening.
 Files are named `flo-backup-<UTC timestamp with milliseconds>Z.db`; names from older releases
 without milliseconds are still recognized. Each file is staged and then hard-linked in under the
 first free millisecond name, so a snapshot never replaces an existing backup. Only names matching that pattern are listed or pruned. Files dated

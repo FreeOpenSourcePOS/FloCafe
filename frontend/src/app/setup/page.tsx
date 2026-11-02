@@ -202,18 +202,18 @@ export default function SetupPage() {
       toast.error(tCommon('notAvailable'));
       return;
     }
-    const picked = await window.electronAPI.pickRestoreFile();
-    if (picked.canceled || !picked.path || !picked.token) return;
-
-    const fileName = picked.path.split(/[\\/]/).pop() || picked.path;
-    const ok = await confirm(tSettings('restoreConfirm', { fileName }), {
-      title: tSettings('confirmRestoreTitle'),
-      confirmLabel: tSettings('restoreFromFile'),
-      destructive: true,
-    });
-    if (!ok) return;
-
     try {
+      const picked = await window.electronAPI.pickRestoreFile();
+      if (picked.canceled || !picked.path || !picked.token) return;
+
+      const fileName = picked.path.split(/[\\/]/).pop() || picked.path;
+      const ok = await confirm(tSettings('restoreConfirm', { fileName }), {
+        title: tSettings('confirmRestoreTitle'),
+        confirmLabel: tSettings('restoreFromFile'),
+        destructive: true,
+      });
+      if (!ok) return;
+
       await api.post('/auth/setup/restore', {
         confirmation: 'RESTORE BACKUP',
         selection_token: picked.token,

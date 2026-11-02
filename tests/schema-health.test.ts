@@ -302,6 +302,23 @@ function main() {
   );
   console.log('   ✓ recreated tables get their indexes in one repair');
 
+  // ── a search trigger is not restored while its FTS table is missing ──
+  const ftsTriggers = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_orders_search_%'",
+    )
+    .all()
+    .map((row: any) => row.name);
+  assert.ok(ftsTriggers.length > 0, 'fixture has orders search triggers');
+  for (const name of ftsTriggers) db.exec(`DROP TRIGGER ${name}`);
+  db.exec('DROP TABLE orders_search_fts');
+  const ftsReport = runHealthCheck();
+  assert.ok(
+    !ftsReport.findings.some((f: any) => f.id.startsWith('missing_trigger:trg_orders_search_')),
+    'no search trigger is offered while orders_search_fts is missing',
+  );
+  console.log('   ✓ triggers that depend on a missing FTS table are not restored');
+
   // ── applySafeFixes is atomic: a failed fix rolls back the whole batch ──
   db.exec('DROP TABLE IF EXISTS held_orders');
   db.exec('DROP INDEX IF EXISTS idx_customers_phone_digits_unique');

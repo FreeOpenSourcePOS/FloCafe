@@ -268,9 +268,13 @@ async function run() {
       `fresh-install restore needs no session (got ${fresh.status}: ${JSON.stringify(fresh.body)})`,
     );
     assert.equal(
-      (getDatabase().prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n > 0,
+      (
+        getDatabase()
+          .prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'owner' AND is_active = 1")
+          .get() as { n: number }
+      ).n > 0,
       true,
-      'the backup accounts are back after the fresh-install restore',
+      'an active owner can sign in after the fresh-install restore',
     );
 
     console.log('✅ Restore-from-file API and authorisation tests passed');

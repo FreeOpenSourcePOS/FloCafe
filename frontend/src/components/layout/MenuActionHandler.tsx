@@ -80,24 +80,29 @@ export default function MenuActionHandler() {
     }
   }
 
-  async function waitForAuthHydration(): Promise<boolean> {
-    const state = useAuthStore.getState();
-    if (!state.loading) return Boolean(state.user);
+  type AuthOutcome = 'signed-in' | 'signed-out' | 'unknown';
+
+  async function waitForAuthHydration(): Promise<AuthOutcome> {
+    const outcome = (): AuthOutcome => (useAuthStore.getState().user ? 'signed-in' : 'signed-out');
+    if (!useAuthStore.getState().loading) return outcome();
     return new Promise((resolve) => {
-      const finish = () => {
+      const unsubscribe = useAuthStore.subscribe((next) => {
+        if (next.loading) return;
         unsubscribe();
         clearTimeout(timer);
-        resolve(Boolean(useAuthStore.getState().user));
-      };
-      const unsubscribe = useAuthStore.subscribe((next) => {
-        if (!next.loading) finish();
+        resolve(outcome());
       });
-      const timer = setTimeout(finish, 3000);
+      // A slow session check is not proof of a signed-out session.
+      const timer = setTimeout(() => {
+        unsubscribe();
+        resolve('unknown');
+      }, 3000);
     });
   }
 
   async function routeRestoreRequest() {
-    if (await waitForAuthHydration()) {
+    const auth = await waitForAuthHydration();
+    if (auth !== 'signed-out') {
       router.push('/settings?tab=data&action=restore-from-file');
       return;
     }

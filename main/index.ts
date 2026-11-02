@@ -1689,7 +1689,8 @@ async function initialize(): Promise<void> {
       console.log('[Flo] Ready!');
       return;
     } catch (error) {
-      closeStatus();
+      // The status window may be the only window; closing it must not quit mid-recovery.
+      failedWindowRecovery.suppressAllClosedQuit(() => closeStatus());
       let fatalStartupError: unknown = error;
       if (isSchemaVersionMismatchError(error)) {
         try {

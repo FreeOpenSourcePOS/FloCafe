@@ -47,6 +47,8 @@ export interface TriggerDef {
 
 export interface DbSchemaSnapshot {
   tables: Record<string, TableSchema>;
+  /** Every table name, including FTS virtual tables that `tables` leaves out. */
+  objectNames: string[];
   triggers: Record<string, TriggerDef>;
   schemaVersion: number;
 }
@@ -145,8 +147,15 @@ function snapshotSchema(dbInstance: Database.Database): DbSchemaSnapshot {
     triggers[row.name] = { name: row.name, table: row.tbl_name, createSql: row.sql };
   }
 
+  const objectNames = (
+    dbInstance.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as {
+      name: string;
+    }[]
+  ).map((row) => row.name);
+
   return {
     tables,
+    objectNames,
     triggers,
     schemaVersion: dbInstance.pragma('user_version', { simple: true }) as number,
   };
@@ -374,6 +383,9 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
 
   for (const trigger of Object.values(ideal.triggers)) {
     if (live.triggers[trigger.name] || !live.tables[trigger.table]) continue;
+    // A trigger that writes to an FTS table must not come back before that table does.
+    const referencedFts = (trigger.createSql ?? '').match(/\b[a-z_]+_fts\b/gi) ?? [];
+    if (referencedFts.some((name) => !live.objectNames.includes(name))) continue;
     findings.push({
       id: `missing_trigger:${trigger.name}`,
       table: trigger.table,

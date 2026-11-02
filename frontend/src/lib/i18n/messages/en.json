@@ -1808,7 +1808,7 @@
     "counterRoleOrderingHint": "Build orders here and send them to the payment counter.",
     "counterRolePaymentHint": "Open the shared queue here and take payment.",
     "localBackupTitle": "Automatic daily backup",
-    "localBackupHint": "Saves a copy of your data when Flo Cafe starts and closes, and at least daily, to {folder} and keeps the newest {count}. These files stay on this computer even if you uninstall Flo Cafe, and they are not encrypted.",
+    "localBackupHint": "Checks for a backup when Flo Cafe starts and closes (skipped if one was taken in the last hour), and saves at least one copy a day, to {folder} and keeps the newest {count}. These files stay on this computer even if you uninstall Flo Cafe, and they are not encrypted.",
     "localBackupLast": "Last backup: {time}",
     "localBackupNone": "No backup yet",
     "localBackupUpdateFailed": "Could not update the backup setting",

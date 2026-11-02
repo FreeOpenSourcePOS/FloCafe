@@ -2819,10 +2819,8 @@ export function autoRepairSchemaDrift(): void {
     }
     pruneSchemaRepairSnapshots(backupDir);
 
-    const result = applySafeFixes(
-      fixable.map((f) => f.id),
-      db,
-    );
+    // No explicit ids: the multi-pass default also picks up indexes and triggers of a recreated table.
+    const result = applySafeFixes(undefined, db);
     upsertSettings({ [SCHEMA_REPAIR_FAILED_KEY]: result.errors.length > 0 ? signature : '' });
     console.log(
       `[DB] schema self-repair applied ${result.applied.length} fix(es), ${result.errors.length} error(s)`,
@@ -5987,6 +5985,10 @@ export function mergeUserSecurityState(
         row.id,
       );
   }
+
+  // A database with no accounts of its own (a fresh install restoring its store) has nothing
+  // to protect, and disabling every restored account would lock the operator out.
+  if (rows.length === 0) return;
 
   // Accounts introduced only by an older snapshot must not become a new
   // login path without an explicit owner reactivation.

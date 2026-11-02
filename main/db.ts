@@ -4896,7 +4896,7 @@ function getSchemaDefinitions(dbInstance: Database.Database): Map<string, string
   );
 }
 
-function getColumns(dbInstance: Database.Database, tableName: string): string[] {
+export function getColumns(dbInstance: Database.Database, tableName: string): string[] {
   try {
     const columns = dbInstance.prepare(`PRAGMA table_info(${tableName})`).all() as {
       name: string;

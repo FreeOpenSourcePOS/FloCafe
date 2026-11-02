@@ -378,7 +378,10 @@ Module._load = function (request, parent, isMain) {
           events.push('local-backup.start');
         },
         stop: () => {},
+        isSessionBackupWanted: () => false,
+        backupForSession: async () => false,
       },
+      SESSION_BACKUP_MIN_AGE_MS: 0,
     };
   if (newerDbMode === 'restore' && request === './services/posthog')
     return {

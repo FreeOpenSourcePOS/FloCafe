@@ -8,8 +8,8 @@ import {
 
 function buildPage(title: string, detail: string, dir: string): string {
   return `<!doctype html><html dir="${dir}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>
-:root{color-scheme:light dark;--bg:#fff;--fg:#1c1917;--muted:#78716c;--accent:#d97706}
-@media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#fafaf9;--muted:#a8a29e;--accent:#f59e0b}}
+:root{color-scheme:light dark;--bg:#fff;--fg:#1c1917;--muted:#78716c;--accent:#3646f5}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#fafaf9;--muted:#a8a29e;--accent:#7a86ff}}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}
 body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;box-sizing:border-box;border:1px solid rgba(120,113,108,.35)}
 .spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(120,113,108,.3);border-top-color:var(--accent);animation:spin 0.9s linear infinite}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
@@ -8,6 +8,8 @@ import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { dispatchQuickSearchRequest } from '@/lib/quick-search';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
+
+export const RESTORE_FROM_FILE_EVENT = 'flo-restore-from-file';
 
 type PendingPinAction = 'backup' | 'restore' | null;
 
@@ -17,9 +19,6 @@ export default function MenuActionHandler() {
   const tSettings = useTranslations('settings');
   const tAuth = useTranslations('auth');
   const router = useRouter();
-  const hasSession = useAuthStore((s) => Boolean(s.user));
-  const hasSessionRef = useRef(hasSession);
-  hasSessionRef.current = hasSession;
   const [pendingPinAction, setPendingPinAction] = useState<PendingPinAction>(null);
 
   async function runBackup(pin: string) {
@@ -79,6 +78,44 @@ export default function MenuActionHandler() {
       const message = tCommon('somethingWrong');
       toast.error(tBackup('failedWith', { error: message }));
     }
+  }
+
+  async function waitForAuthHydration(): Promise<boolean> {
+    const state = useAuthStore.getState();
+    if (!state.loading) return Boolean(state.user);
+    return new Promise((resolve) => {
+      const finish = () => {
+        unsubscribe();
+        clearTimeout(timer);
+        resolve(Boolean(useAuthStore.getState().user));
+      };
+      const unsubscribe = useAuthStore.subscribe((next) => {
+        if (!next.loading) finish();
+      });
+      const timer = setTimeout(finish, 3000);
+    });
+  }
+
+  async function routeRestoreRequest() {
+    if (await waitForAuthHydration()) {
+      router.push('/settings?tab=data&action=restore-from-file');
+      return;
+    }
+    try {
+      const { data } = await api.get('/auth/setup/status');
+      if (data?.needsSetup) {
+        if (window.location.pathname.startsWith('/setup')) {
+          window.dispatchEvent(new CustomEvent(RESTORE_FROM_FILE_EVENT));
+        } else {
+          router.push('/setup?action=restore-from-file');
+        }
+        return;
+      }
+    } catch {
+      // Fall through to sign-in.
+    }
+    toast.error(tAuth('signInTitle'));
+    router.push('/auth/login');
   }
 
   useEffect(() => {
@@ -149,24 +186,7 @@ export default function MenuActionHandler() {
           beginPinGatedAction('backup');
           break;
         case 'menu-restore-from-file':
-          if (!hasSessionRef.current) {
-            void api
-              .get('/auth/setup/status')
-              .then(({ data }) => {
-                if (data?.needsSetup) {
-                  router.push('/setup?action=restore-from-file');
-                  return;
-                }
-                toast.error(tAuth('signInTitle'));
-                router.push('/auth/login');
-              })
-              .catch(() => {
-                toast.error(tAuth('signInTitle'));
-                router.push('/auth/login');
-              });
-            break;
-          }
-          router.push('/settings?tab=data&action=restore-from-file');
+          void routeRestoreRequest();
           break;
         case 'menu-db-health-check':
           router.push('/settings?tab=data&action=health-check');

@@ -277,6 +277,31 @@ function main() {
   );
   console.log('   ✓ missing columns (with foreign keys) and triggers are restored');
 
+  // ── a recreated table also gets its indexes in the same repair ──
+  db.exec('DROP TABLE product_variants');
+  report = runHealthCheck();
+  assert.ok(
+    report.findings.some((f: any) => f.id === 'missing_table:product_variants'),
+    'a missing table is reported',
+  );
+  const tableFix = applySafeFixes();
+  assert.equal(tableFix.errors.length, 0, 'recreating the table raises no errors');
+  assert.ok(
+    tableFix.applied.some((id: string) => id.startsWith('missing_index:')) ||
+      db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_product_variants_product'",
+        )
+        .get(),
+    'the table indexes are restored in the same repair',
+  );
+  assert.equal(
+    runHealthCheck().findings.filter((f: any) => f.table === 'product_variants').length,
+    0,
+    'no drift remains on the recreated table after one repair',
+  );
+  console.log('   ✓ recreated tables get their indexes in one repair');
+
   // ── applySafeFixes is atomic: a failed fix rolls back the whole batch ──
   db.exec('DROP TABLE IF EXISTS held_orders');
   db.exec('DROP INDEX IF EXISTS idx_customers_phone_digits_unique');

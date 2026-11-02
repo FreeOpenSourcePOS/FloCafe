@@ -2789,7 +2789,19 @@ export function autoRepairSchemaDrift(): void {
     const fixable = runHealthCheck(db).findings.filter(
       (f) => f.autoApplicable && f.risk === 'safe',
     );
-    if (fixable.length === 0) return;
+    if (fixable.length === 0) {
+      if (getSettingValue(SCHEMA_REPAIR_FAILED_KEY))
+        upsertSettings({ [SCHEMA_REPAIR_FAILED_KEY]: '' });
+      return;
+    }
+
+    // A set of fixes that already failed on a previous start is not retried (or re-snapshotted)
+    // until the set of findings changes.
+    const signature = fixable
+      .map((f) => f.id)
+      .sort()
+      .join('|');
+    if (getSettingValue(SCHEMA_REPAIR_FAILED_KEY) === signature) return;
 
     const version = getCurrentSchemaVersion();
     const backupDir = getBackupDir();
@@ -2798,17 +2810,68 @@ export function autoRepairSchemaDrift(): void {
       backupDir,
       `flo-backup-${new Date().toISOString().replace(/[:.]/g, '-')}-pre-v${version}-schema-repair.db`,
     );
-    db.exec(`VACUUM INTO '${snapshotPath.replace(/'/g, "''")}'`);
+    try {
+      db.exec(`VACUUM INTO '${snapshotPath.replace(/'/g, "''")}'`);
+      stampSchemaRepairSnapshot(snapshotPath, version);
+    } catch (error) {
+      removeQuietlySync(snapshotPath);
+      throw error;
+    }
+    pruneSchemaRepairSnapshots(backupDir);
 
     const result = applySafeFixes(
       fixable.map((f) => f.id),
       db,
     );
+    upsertSettings({ [SCHEMA_REPAIR_FAILED_KEY]: result.errors.length > 0 ? signature : '' });
     console.log(
       `[DB] schema self-repair applied ${result.applied.length} fix(es), ${result.errors.length} error(s)`,
     );
   } catch (err: any) {
     console.warn('[DB] schema self-repair skipped:', err?.message || err);
+  }
+}
+
+const SCHEMA_REPAIR_FAILED_KEY = 'schema_repair_failed_signature';
+const SCHEMA_REPAIR_SNAPSHOT_RETENTION = 3;
+
+function removeQuietlySync(filePath: string): void {
+  try {
+    fs.unlinkSync(filePath);
+  } catch {
+    // best effort
+  }
+}
+
+/** Makes the snapshot a self-contained, restorable backup (same stamp as every other backup). */
+function stampSchemaRepairSnapshot(snapshotPath: string, version: number): void {
+  const snapshotDb = new Database(snapshotPath);
+  try {
+    snapshotDb.pragma('journal_mode = DELETE');
+    snapshotDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+    snapshotDb.pragma(`user_version = ${version}`);
+    const put = snapshotDb.prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)');
+    put.run('schema_version', String(version));
+    put.run('backup_created_at', new Date().toISOString());
+    put.run('app_version', app.getVersion());
+  } finally {
+    snapshotDb.close();
+  }
+  syncFile(snapshotPath);
+}
+
+function pruneSchemaRepairSnapshots(backupDir: string): void {
+  try {
+    const snapshots = fs
+      .readdirSync(backupDir)
+      .filter((name) => name.endsWith('-schema-repair.db'))
+      .sort()
+      .reverse();
+    for (const name of snapshots.slice(SCHEMA_REPAIR_SNAPSHOT_RETENTION)) {
+      removeQuietlySync(path.join(backupDir, name));
+    }
+  } catch {
+    // best effort
   }
 }
 
@@ -4781,7 +4844,30 @@ function describeTableStructure(dbInstance: Database.Database, tableName: string
     .map((fk) => `${fk.from}->${fk.table}.${fk.to}:${fk.on_delete}:${fk.on_update}`)
     .sort();
   const normalizedSql = normalizeSchemaSql(sql);
+  // Implicit UNIQUE / PRIMARY KEY indexes carry the uniqueness rules ON CONFLICT relies on.
+  const uniqueConstraints = (
+    dbInstance.prepare(`PRAGMA index_list(${tableName})`).all() as {
+      name: string;
+      unique: number;
+      origin: string;
+    }[]
+  )
+    .filter((index) => index.origin === 'u' || index.origin === 'pk')
+    .filter((index) => isSafeIdentifier(index.name))
+    .map((index) => {
+      const columns = (
+        dbInstance.prepare(`PRAGMA index_info(${index.name})`).all() as { name: string }[]
+      ).map((column) => column.name);
+      return `${index.origin}:${index.unique}:${columns.join(',')}`;
+    })
+    .sort();
   return JSON.stringify({
+    uniqueConstraints,
+    autoincrement: /\bAUTOINCREMENT\b/i.test(normalizedSql),
+    withoutRowid: /\bWITHOUT ROWID\b/i.test(normalizedSql),
+    collations: [...normalizedSql.matchAll(/\bCOLLATE\s+([A-Za-z_]+)/gi)]
+      .map((match) => match[1].toUpperCase())
+      .sort(),
     columns,
     foreignKeys,
     checks: extractParenthesizedClauses(normalizedSql, /\bCHECK\s*(?=\()/),

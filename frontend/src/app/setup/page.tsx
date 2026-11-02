@@ -38,6 +38,7 @@ import { CurrencySelect } from '@/components/CurrencySelect';
 import { useLocale, useTranslations, type AppConfig } from 'use-intl';
 import { LANGUAGES, getBrowserLanguage, type Language } from '@/lib/i18n';
 import { useConfirm } from '@/hooks/use-confirm';
+import { RESTORE_FROM_FILE_EVENT } from '@/components/layout/MenuActionHandler';
 
 type SetupProfile = 'empty' | 'express' | 'demo';
 type ServiceModel = 'qsr' | 'finedine';
@@ -228,9 +229,13 @@ export default function SetupPage() {
   }, [confirm, tCommon, tRestore, tSettings]);
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('action') !== 'restore-from-file') return;
-    window.history.replaceState(null, '', '/setup');
-    void handleRestoreBackup();
+    if (new URLSearchParams(window.location.search).get('action') === 'restore-from-file') {
+      window.history.replaceState(null, '', '/setup');
+      void handleRestoreBackup();
+    }
+    const onRestoreRequested = () => void handleRestoreBackup();
+    window.addEventListener(RESTORE_FROM_FILE_EVENT, onRestoreRequested);
+    return () => window.removeEventListener(RESTORE_FROM_FILE_EVENT, onRestoreRequested);
   }, [handleRestoreBackup]);
 
   const selectedCountry: Country | undefined = getCountryByCode(country);

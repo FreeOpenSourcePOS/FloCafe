@@ -187,6 +187,8 @@ class LocalBackupService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private startupTimer: ReturnType<typeof setTimeout> | null = null;
   private running: Promise<void> | null = null;
+  private sessionRun: Promise<boolean> | null = null;
+  private sessionController: AbortController | null = null;
   private abortController: AbortController | null = null;
   private stopping = false;
 
@@ -206,7 +208,9 @@ class LocalBackupService {
     this.timer = null;
     this.startupTimer = null;
     this.abortController?.abort();
+    this.sessionController?.abort();
     await this.running?.catch(() => {});
+    await this.sessionRun?.catch(() => {});
   }
 
   cancel(): void {
@@ -245,18 +249,25 @@ class LocalBackupService {
     minAgeMs: number = SESSION_BACKUP_MIN_AGE_MS,
     timeoutMs = 15_000,
   ): Promise<boolean> {
-    if (!this.isSessionBackupWanted(minAgeMs)) return false;
+    // Wait out any backup already in flight (including a startup one) before deciding.
+    await this.sessionRun?.catch(() => {});
     await this.running?.catch(() => {});
+    if (!this.isSessionBackupWanted(minAgeMs)) return false;
     const controller = new AbortController();
+    this.sessionController = controller;
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await this.writeBackup(controller.signal, () => controller.signal.aborted);
-    } catch (error) {
-      console.warn('[LocalBackup] Session backup skipped:', error);
-      return false;
-    } finally {
-      clearTimeout(timer);
-    }
+    const run = this.writeBackup(controller.signal, () => controller.signal.aborted)
+      .catch((error) => {
+        console.warn('[LocalBackup] Session backup skipped:', error);
+        return false;
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        if (this.sessionController === controller) this.sessionController = null;
+        if (this.sessionRun === run) this.sessionRun = null;
+      });
+    this.sessionRun = run;
+    return run;
   }
 
   private async backupIfDue(): Promise<void> {

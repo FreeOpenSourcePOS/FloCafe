@@ -25,6 +25,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 import Database from 'better-sqlite3';
 import {
   autoRepairSchemaDrift,
+  getSchemaVersionFromBackup,
   closeDatabase,
   createBackup,
   beginDatabaseReplacementJournal,
@@ -661,11 +662,43 @@ async function run() {
       ),
       'startup silently restores the missing column',
     );
+    const repairSnapshots = fs
+      .readdirSync(path.join(testDir, 'backups'))
+      .filter((name) => name.endsWith('-schema-repair.db'));
     assert.ok(
-      fs
-        .readdirSync(path.join(testDir, 'backups'))
-        .some((name) => name.endsWith('-schema-repair.db')),
+      repairSnapshots.length > 0,
       'startup repair keeps a snapshot of what it started from',
+    );
+    assert.equal(
+      getSchemaVersionFromBackup(path.join(testDir, 'backups', repairSnapshots[0])),
+      currentVersion,
+      'the repair snapshot is stamped, so it can be restored',
+    );
+
+    // A backup that lost a UNIQUE constraint must not pass as the same structure.
+    const looseUniqueBackup = path.join(testDir, 'loose-unique-schema.db');
+    copyAndStamp(sameSchemaBackup, looseUniqueBackup, currentVersion);
+    const looseUniqueDb = new Database(looseUniqueBackup);
+    looseUniqueDb.pragma('foreign_keys = OFF');
+    const tablesSql = (
+      looseUniqueDb.prepare("SELECT sql FROM sqlite_master WHERE name = 'tables'").get() as {
+        sql: string;
+      }
+    ).sql;
+    assert.ok(tablesSql.includes('number TEXT NOT NULL UNIQUE'), 'fixture has the UNIQUE column');
+    looseUniqueDb.exec(
+      tablesSql
+        .replace('number TEXT NOT NULL UNIQUE', 'number TEXT NOT NULL')
+        .replace(/CREATE TABLE\s+"?tables"?/, 'CREATE TABLE tables_rebuilt'),
+    );
+    looseUniqueDb.exec(
+      'INSERT INTO tables_rebuilt SELECT * FROM tables; DROP TABLE tables; ALTER TABLE tables_rebuilt RENAME TO tables;',
+    );
+    looseUniqueDb.close();
+    assert.equal(
+      restoreBackup(looseUniqueBackup, true).success,
+      false,
+      'direct restore rejects a backup that dropped a UNIQUE constraint',
     );
 
     const extraColumnBackup = path.join(testDir, 'extra-column-schema.db');

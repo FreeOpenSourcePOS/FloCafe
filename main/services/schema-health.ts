@@ -451,36 +451,43 @@ export function applySafeFixes(
   findingIds?: string[],
   db: Database.Database = getDatabase(),
 ): ApplySafeFixesResult {
-  const report = runHealthCheck(db);
   const result: ApplySafeFixesResult = { applied: [], skipped: [], errors: [] };
+  const isFixable = (f: HealthFinding) =>
+    f.autoApplicable && f.risk === 'safe' && (!findingIds || findingIds.includes(f.id));
 
-  const targets = report.findings.filter(
-    (f) => f.autoApplicable && f.risk === 'safe' && (!findingIds || findingIds.includes(f.id)),
-  );
-
+  let targets = runHealthCheck(db).findings.filter(isFixable);
   if (targets.length === 0) return result;
 
   // Run batch inside a transaction so failed DDL rolls back cleanly.
   db.exec('BEGIN IMMEDIATE');
   try {
-    for (const finding of targets) {
-      const identifiersSafe =
-        isSafeIdentifier(finding.table) &&
-        (!finding.column || isSafeIdentifier(finding.column)) &&
-        (!finding.index || isSafeIdentifier(finding.index)) &&
-        (!finding.trigger || isSafeIdentifier(finding.trigger));
+    const attempted = new Set<string>();
+    // A recreated table has indexes and triggers that only show up on the next pass.
+    // An explicit selection is applied exactly as requested.
+    const maxPasses = findingIds ? 1 : 3;
+    for (let pass = 0; pass < maxPasses && targets.length > 0; pass++) {
+      for (const finding of targets) {
+        attempted.add(finding.id);
+        const identifiersSafe =
+          isSafeIdentifier(finding.table) &&
+          (!finding.column || isSafeIdentifier(finding.column)) &&
+          (!finding.index || isSafeIdentifier(finding.index)) &&
+          (!finding.trigger || isSafeIdentifier(finding.trigger));
 
-      if (!identifiersSafe || !finding.suggestedDdl) {
-        result.skipped.push(finding.id);
-        continue;
-      }
+        if (!identifiersSafe || !finding.suggestedDdl) {
+          result.skipped.push(finding.id);
+          continue;
+        }
 
-      try {
-        db.exec(finding.suggestedDdl);
-        result.applied.push(finding.id);
-      } catch (error: any) {
-        result.errors.push({ id: finding.id, error: error.message });
+        try {
+          db.exec(finding.suggestedDdl);
+          result.applied.push(finding.id);
+        } catch (error: any) {
+          result.errors.push({ id: finding.id, error: error.message });
+        }
       }
+      if (result.errors.length > 0) break;
+      targets = runHealthCheck(db).findings.filter((f) => isFixable(f) && !attempted.has(f.id));
     }
 
     if (result.errors.length > 0) {

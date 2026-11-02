@@ -2548,7 +2548,7 @@
     "restoreFromFile": "파일에서 백업 복원…",
     "restoreFromFileHint": "이 컴퓨터에 이미 백업 파일이 있나요? 데이터베이스에 직접 복사하지 말고 여기서 선택하세요.",
     "restoreReplacesDetail": "복원하면 이 백업이 만들어진 이후 추가된 모든 주문, 전표, 상품, 고객 기록이 대체됩니다.",
-    "restoreKeepsDetail": "직원 계정, PIN, 프린터, 세금 설정, 이 컴퓨터의 클라우드 계정은 그대로 유지됩니다.",
+    "restoreKeepsDetail": "직원 계정, PIN, 프린터 및 설정도 백업에서 가져옵니다. 모든 사용자가 로그아웃되며, 페어링된 디스플레이와 기기는 다시 페어링해야 합니다.",
     "restoreSafetyCopyDetail": "무언가 바뀌기 전에 Flo가 현재 데이터의 복사본을 보관하므로 이 복원을 되돌릴 수 있습니다.",
     "diagnosticsConsentSyncPending": "개인정보 보호 설정 동기화를 기다리는 중입니다. 확인될 때까지 보고서는 전송되지 않습니다.",
     "diagnosticsTransportState": "보고 경로: {transport}.",

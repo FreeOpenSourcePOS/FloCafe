@@ -39,8 +39,17 @@ export interface TableSchema {
   foreignKeys: ForeignKeyDef[];
 }
 
+export interface TriggerDef {
+  name: string;
+  table: string;
+  createSql: string | null;
+}
+
 export interface DbSchemaSnapshot {
   tables: Record<string, TableSchema>;
+  /** Every table name, including FTS virtual tables that `tables` leaves out. */
+  objectNames: string[];
+  triggers: Record<string, TriggerDef>;
   schemaVersion: number;
 }
 
@@ -48,6 +57,7 @@ export type FindingKind =
   | 'missing_table'
   | 'missing_column'
   | 'missing_index'
+  | 'missing_trigger'
   | 'extra_table'
   | 'extra_column'
   | 'extra_index'
@@ -61,6 +71,7 @@ export interface HealthFinding {
   table: string;
   column?: string;
   index?: string;
+  trigger?: string;
   kind: FindingKind;
   risk: 'safe' | 'manual_review';
   autoApplicable: boolean;
@@ -128,7 +139,26 @@ function snapshotSchema(dbInstance: Database.Database): DbSchemaSnapshot {
     tables[name] = { name, createSql: createRow?.sql ?? null, columns, indexes, foreignKeys };
   }
 
-  return { tables, schemaVersion: dbInstance.pragma('user_version', { simple: true }) as number };
+  const triggers: Record<string, TriggerDef> = {};
+  const triggerRows = dbInstance
+    .prepare(`SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger'`)
+    .all() as { name: string; tbl_name: string; sql: string | null }[];
+  for (const row of triggerRows) {
+    triggers[row.name] = { name: row.name, table: row.tbl_name, createSql: row.sql };
+  }
+
+  const objectNames = (
+    dbInstance.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all() as {
+      name: string;
+    }[]
+  ).map((row) => row.name);
+
+  return {
+    tables,
+    objectNames,
+    triggers,
+    schemaVersion: dbInstance.pragma('user_version', { simple: true }) as number,
+  };
 }
 
 function normalizeType(type: string): string {
@@ -141,9 +171,16 @@ function normalizeType(type: string): string {
 function normalizeCreateIfNotExists(sql: string): string {
   if (/\bIF\s+NOT\s+EXISTS\b/i.test(sql)) return sql;
   return sql.replace(
-    /^\s*CREATE\s+(UNIQUE\s+)?(TABLE|INDEX)\s+/i,
+    /^\s*CREATE\s+(UNIQUE\s+)?(TABLE|INDEX|TRIGGER)\s+/i,
     (m, unique = '') => `CREATE ${unique}${m.trim().split(/\s+/).pop()} IF NOT EXISTS `,
   );
+}
+
+function referenceClause(table: TableSchema, column: string): string {
+  const fk = table.foreignKeys.find((f) => f.from === column);
+  if (!fk || !isSafeIdentifier(fk.table) || !isSafeIdentifier(fk.to)) return '';
+  const action = (value: string) => (value && value !== 'NO ACTION' ? ` ${value}` : '');
+  return ` REFERENCES ${fk.table}(${fk.to})${fk.onDelete !== 'NO ACTION' ? ` ON DELETE${action(fk.onDelete)}` : ''}${fk.onUpdate !== 'NO ACTION' ? ` ON UPDATE${action(fk.onUpdate)}` : ''}`;
 }
 
 function sameColumnList(a: string[], b: string[]): boolean {
@@ -221,7 +258,7 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
             ? `Column "${idealCol.name}" is missing from "${tableName}".`
             : `Column "${idealCol.name}" is missing from "${tableName}" and is NOT NULL with no default — cannot be added automatically on a non-empty table.`,
           suggestedDdl: canAutoAdd
-            ? `ALTER TABLE ${tableName} ADD COLUMN ${idealCol.name} ${idealCol.type}${idealCol.dfltValue !== null ? ` DEFAULT ${idealCol.dfltValue}` : ''}`
+            ? `ALTER TABLE ${tableName} ADD COLUMN ${idealCol.name} ${idealCol.type}${idealCol.dfltValue !== null ? ` DEFAULT ${idealCol.dfltValue}` : ''}${referenceClause(idealTable, idealCol.name)}`
             : undefined,
           idealState: `${idealCol.type}${idealCol.notnull ? ' NOT NULL' : ''}${idealCol.dfltValue !== null ? ` DEFAULT ${idealCol.dfltValue}` : ''}`,
         });
@@ -344,6 +381,23 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
     }
   }
 
+  for (const trigger of Object.values(ideal.triggers)) {
+    if (live.triggers[trigger.name] || !live.tables[trigger.table]) continue;
+    // A trigger that writes to an FTS table must not come back before that table does.
+    const referencedFts = (trigger.createSql ?? '').match(/\b[a-z_]+_fts\b/gi) ?? [];
+    if (referencedFts.some((name) => !live.objectNames.includes(name))) continue;
+    findings.push({
+      id: `missing_trigger:${trigger.name}`,
+      table: trigger.table,
+      trigger: trigger.name,
+      kind: 'missing_trigger',
+      risk: 'safe',
+      autoApplicable: !!trigger.createSql,
+      description: `Trigger "${trigger.name}" is missing on "${trigger.table}".`,
+      suggestedDdl: trigger.createSql ? normalizeCreateIfNotExists(trigger.createSql) : undefined,
+    });
+  }
+
   for (const tableName of Object.keys(live.tables)) {
     if (!ideal.tables[tableName]) {
       findings.push({
@@ -382,8 +436,7 @@ function getIdealSchemaSnapshot(): DbSchemaSnapshot {
   }
 }
 
-export function runHealthCheck(): HealthCheckReport {
-  const liveDb = getDatabase();
+export function runHealthCheck(liveDb: Database.Database = getDatabase()): HealthCheckReport {
   const live = snapshotSchema(liveDb);
   const ideal = getIdealSchemaSnapshot();
   const findings = diffSchemas(live, ideal);
@@ -406,37 +459,47 @@ export interface ApplySafeFixesResult {
 }
 
 /** Re-derives report before applying fixes so clients cannot inject arbitrary SQL. */
-export function applySafeFixes(findingIds?: string[]): ApplySafeFixesResult {
-  const report = runHealthCheck();
-  const db = getDatabase();
+export function applySafeFixes(
+  findingIds?: string[],
+  db: Database.Database = getDatabase(),
+): ApplySafeFixesResult {
   const result: ApplySafeFixesResult = { applied: [], skipped: [], errors: [] };
+  const isFixable = (f: HealthFinding) =>
+    f.autoApplicable && f.risk === 'safe' && (!findingIds || findingIds.includes(f.id));
 
-  const targets = report.findings.filter(
-    (f) => f.autoApplicable && f.risk === 'safe' && (!findingIds || findingIds.includes(f.id)),
-  );
-
+  let targets = runHealthCheck(db).findings.filter(isFixable);
   if (targets.length === 0) return result;
 
   // Run batch inside a transaction so failed DDL rolls back cleanly.
   db.exec('BEGIN IMMEDIATE');
   try {
-    for (const finding of targets) {
-      const identifiersSafe =
-        isSafeIdentifier(finding.table) &&
-        (!finding.column || isSafeIdentifier(finding.column)) &&
-        (!finding.index || isSafeIdentifier(finding.index));
+    const attempted = new Set<string>();
+    // A recreated table has indexes and triggers that only show up on the next pass.
+    // An explicit selection is applied exactly as requested.
+    const maxPasses = findingIds ? 1 : 3;
+    for (let pass = 0; pass < maxPasses && targets.length > 0; pass++) {
+      for (const finding of targets) {
+        attempted.add(finding.id);
+        const identifiersSafe =
+          isSafeIdentifier(finding.table) &&
+          (!finding.column || isSafeIdentifier(finding.column)) &&
+          (!finding.index || isSafeIdentifier(finding.index)) &&
+          (!finding.trigger || isSafeIdentifier(finding.trigger));
 
-      if (!identifiersSafe || !finding.suggestedDdl) {
-        result.skipped.push(finding.id);
-        continue;
-      }
+        if (!identifiersSafe || !finding.suggestedDdl) {
+          result.skipped.push(finding.id);
+          continue;
+        }
 
-      try {
-        db.exec(finding.suggestedDdl);
-        result.applied.push(finding.id);
-      } catch (error: any) {
-        result.errors.push({ id: finding.id, error: error.message });
+        try {
+          db.exec(finding.suggestedDdl);
+          result.applied.push(finding.id);
+        } catch (error: any) {
+          result.errors.push({ id: finding.id, error: error.message });
+        }
       }
+      if (result.errors.length > 0) break;
+      targets = runHealthCheck(db).findings.filter((f) => isFixable(f) && !attempted.has(f.id));
     }
 
     if (result.errors.length > 0) {

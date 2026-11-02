@@ -20,6 +20,8 @@ import {
   getBackupDir,
   getDbPath,
   initDatabase,
+  autoRepairSchemaDrift,
+  getSettingValue,
   closeDatabase,
   waitForDatabaseRequests,
   beginDatabaseShutdown,
@@ -43,7 +45,15 @@ import { isOfflineMode, onOfflineModeEnabled } from './services/offline-mode';
 import { telemetry } from './services/telemetry';
 import { capturePostHogException, startPostHog, stopPostHog } from './services/posthog';
 import { googleDrive } from './services/google-drive';
-import { localBackup } from './services/local-backup';
+import { localBackup, SESSION_BACKUP_MIN_AGE_MS } from './services/local-backup';
+import {
+  closeStatus,
+  closeStatusWhenSeen,
+  holdStatus,
+  setStatusLanguage,
+  showStatus,
+  waitForPaint,
+} from './status-window';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
 import { initPrinter } from './printers/thermal';
@@ -591,6 +601,7 @@ function showMainWindow(expectedWindow?: BrowserWindow): boolean {
   mainWindow.show();
   mainWindow.focus();
   mainWindow.webContents.focus();
+  void closeStatusWhenSeen(WELCOME_VISIBLE_MS);
   return true;
 }
 
@@ -1555,9 +1566,21 @@ async function initialize(): Promise<void> {
       if (isShutdownRequested()) return;
       console.log('[Flo] Initializing...');
 
+      await showStatus('starting');
+      await showStatus('checking');
+      await waitForPaint();
       console.log('[Flo] Initializing database...');
       initDatabase();
+      autoRepairSchemaDrift();
+      setStatusLanguage(getSettingValue('language'));
       if (isShutdownRequested()) return;
+
+      if (localBackup.isSessionBackupWanted()) {
+        await showStatus('backingUp');
+        await localBackup.backupForSession(SESSION_BACKUP_MIN_AGE_MS);
+        if (isShutdownRequested()) return;
+      }
+      await showStatus('services');
 
       console.log('[Flo] Starting local server...');
       await startServer();
@@ -1644,6 +1667,7 @@ async function initialize(): Promise<void> {
       relaunchAttemptGuard.markRuntimeRecovered();
       log.info('[Lifecycle] Runtime is ready');
       console.log('[Flo] Creating window...');
+      void showStatus('welcome');
       createWindow();
       registerPowerMonitorRecovery();
       registerChildProcessCrashTelemetry();
@@ -1672,6 +1696,8 @@ async function initialize(): Promise<void> {
       console.log('[Flo] Ready!');
       return;
     } catch (error) {
+      // The status window may be the only window; closing it must not quit mid-recovery.
+      failedWindowRecovery.suppressAllClosedQuit(() => closeStatus());
       let fatalStartupError: unknown = error;
       if (isSchemaVersionMismatchError(error)) {
         try {
@@ -1833,6 +1859,25 @@ if (process.env.NODE_ENV === 'test' && process.env.FLO_E2E_PID_FILE) {
   }
 }
 
+function shouldShowShutdownStatus(): boolean {
+  return !isInstallingUpdate && !startupFailure && !runtimeRelaunchRequested;
+}
+
+async function backupOnShutdown(): Promise<void> {
+  if (!shouldShowShutdownStatus() || !localBackup.isSessionBackupWanted()) return;
+  // Stay well inside the coordinator's per-step timeout, which force-exits the app.
+  const deadline = new Promise<void>((resolve) => {
+    setTimeout(resolve, SHUTDOWN_BACKUP_DEADLINE_MS).unref?.();
+  });
+  void showStatus('shutdownBackup', true);
+  await Promise.race([localBackup.backupForSession(SESSION_BACKUP_MIN_AGE_MS, 5_000), deadline]);
+  void showStatus('saved', true);
+}
+
+const SHUTDOWN_BACKUP_DEADLINE_MS = 7_000;
+const WELCOME_VISIBLE_MS = 900;
+const SHUTDOWN_MESSAGE_VISIBLE_MS = 1_500;
+
 // --- Cleanup function (idempotent — safe to call from every entrypoint) ---
 const cleanupCoordinator = createShutdownCoordinator(
   () => [
@@ -1855,6 +1900,7 @@ const cleanupCoordinator = createShutdownCoordinator(
     { name: 'Google Drive', run: () => googleDrive.stop(), blocksDatabase: true },
     { name: 'local backup', run: () => localBackup.stop(), blocksDatabase: true },
     { name: 'WhatsApp', run: () => shutdownWhatsApp(), blocksDatabase: true },
+    { name: 'shutdown backup', run: () => backupOnShutdown(), blocksDatabase: true },
     { name: 'Bonjour', run: () => stopMdns() },
     { name: 'HTTP handler cleanup', run: () => waitForHttpShutdownWork(), blocksDatabase: true },
     { name: 'database admission', run: () => beginDatabaseShutdown(), blocksDatabase: true },
@@ -1878,8 +1924,13 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   cleanup: async () => {
     log.info('[Lifecycle] Cleanup started');
     console.log('[Flo] Running cleanup...');
+    if (shouldShowShutdownStatus()) {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+      void showStatus('closing', true);
+    }
     try {
       await cleanupCoordinator();
+      await holdStatus(SHUTDOWN_MESSAGE_VISIBLE_MS);
       log.info('[Lifecycle] Cleanup completed');
       console.log('[Flo] Goodbye!');
     } catch (error) {

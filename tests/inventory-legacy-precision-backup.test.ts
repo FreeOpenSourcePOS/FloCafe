@@ -782,6 +782,13 @@ async function run() {
 
     // Part B: Database native direct backup/restore round-trip with backward clock movements
     const liveDbDirect = getDatabase();
+    // A restore replaces the store with the backup, so the owner this test seeded earlier is gone.
+    liveDbDirect
+      .prepare(
+        `INSERT OR IGNORE INTO users (id, name, email, password, role, pin, created_at, updated_at)
+         VALUES ('u-owner', 'Owner', 'owner@example.com', 'hash', 'owner', '1234', ?, ?)`,
+      )
+      .run(now(), now());
     liveDbDirect.exec(`
       DELETE FROM order_item_addons;
       DELETE FROM order_items;

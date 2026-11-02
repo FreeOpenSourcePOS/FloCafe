@@ -2559,7 +2559,7 @@
     "restoreFromFile": "Pulihkan cadangan dari file...",
     "restoreFromFileHint": "Sudah punya file cadangan di komputer ini? Pilih di sini, bukan menyalinnya manual ke atas basis data.",
     "restoreReplacesDetail": "Pemulihan menggantikan semua pesanan, tagihan, produk, dan data pelanggan yang ditambahkan sejak cadangan ini dibuat.",
-    "restoreKeepsDetail": "Akun staf, PIN, printer, pengaturan pajak, dan akun cloud komputer ini tetap dipertahankan.",
+    "restoreKeepsDetail": "Akun staf, PIN, printer, dan pengaturan juga berasal dari cadangan. Semua orang akan keluar, dan layar serta perangkat yang dipasangkan harus dipasangkan ulang.",
     "restoreSafetyCopyDetail": "Sebelum ada yang berubah, Flo menyimpan salinan data Anda saat ini sehingga Anda bisa membatalkan pemulihan ini.",
     "diagnosticsConsentSyncPending": "Pengaturan privasi menunggu sinkronisasi. Laporan tidak akan dikirim sampai dikonfirmasi.",
     "diagnosticsTransportState": "Jalur pelaporan: {transport}.",

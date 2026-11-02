@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import api from '@/lib/api';
 import { validatePassword } from '@shared/password-policy';
 import { useAuthStore } from '@/store/auth';
@@ -36,6 +37,8 @@ import type { ProductAnalyticsLevel } from '@/components/analytics/ProductAnalyt
 import { CurrencySelect } from '@/components/CurrencySelect';
 import { useLocale, useTranslations, type AppConfig } from 'use-intl';
 import { LANGUAGES, getBrowserLanguage, type Language } from '@/lib/i18n';
+import { useConfirm } from '@/hooks/use-confirm';
+import { RESTORE_FROM_FILE_EVENT } from '@/components/layout/MenuActionHandler';
 
 type SetupProfile = 'empty' | 'express' | 'demo';
 type ServiceModel = 'qsr' | 'finedine';
@@ -147,6 +150,9 @@ export default function SetupPage() {
   const t = useTranslations('setup');
   const tAnalytics = useTranslations('productAnalytics');
   const tSettings = useTranslations('settings');
+  const tRestore = useTranslations('restore');
+  const tCommon = useTranslations('common');
+  const { confirm, ConfirmDialog } = useConfirm();
   const locale = useLocale();
   const [mounted, setMounted] = useState(false);
 
@@ -190,6 +196,47 @@ export default function SetupPage() {
     // One-time mount check — the toast uses the initial language selection.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleRestoreBackup = useCallback(async () => {
+    if (!window.electronAPI?.pickRestoreFile) {
+      toast.error(tCommon('notAvailable'));
+      return;
+    }
+    try {
+      const picked = await window.electronAPI.pickRestoreFile();
+      if (picked.canceled || !picked.path || !picked.token) return;
+
+      const fileName = picked.path.split(/[\\/]/).pop() || picked.path;
+      const ok = await confirm(tSettings('restoreConfirm', { fileName }), {
+        title: tSettings('confirmRestoreTitle'),
+        confirmLabel: tSettings('restoreFromFile'),
+        destructive: true,
+      });
+      if (!ok) return;
+
+      await api.post('/auth/setup/restore', {
+        confirmation: 'RESTORE BACKUP',
+        selection_token: picked.token,
+      });
+      toast.success(tRestore('success'));
+      setTimeout(() => window.location.replace('/auth/login'), 1500);
+    } catch (error) {
+      const detail = axios.isAxiosError(error)
+        ? (error.response?.data as { error?: string } | undefined)?.error
+        : undefined;
+      toast.error(detail || tSettings('restoreFailedGeneric'));
+    }
+  }, [confirm, tCommon, tRestore, tSettings]);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('action') === 'restore-from-file') {
+      window.history.replaceState(null, '', '/setup');
+      void handleRestoreBackup();
+    }
+    const onRestoreRequested = () => void handleRestoreBackup();
+    window.addEventListener(RESTORE_FROM_FILE_EVENT, onRestoreRequested);
+    return () => window.removeEventListener(RESTORE_FROM_FILE_EVENT, onRestoreRequested);
+  }, [handleRestoreBackup]);
 
   const selectedCountry: Country | undefined = getCountryByCode(country);
   const languageOptions: Language[] = SELECTABLE_LANGUAGES.includes(browserLanguage)
@@ -1113,7 +1160,15 @@ export default function SetupPage() {
             )}
           </CardContent>
         </Card>
+        {step === 1 && (
+          <div className="mt-4 text-center">
+            <Button variant="link" onClick={() => void handleRestoreBackup()}>
+              {tSettings('restoreFromFile')}
+            </Button>
+          </div>
+        )}
       </div>
+      {ConfirmDialog}
     </div>
   );
 }

@@ -237,6 +237,7 @@ const DATABASE_MAINTENANCE_ROUTES = new Set([
   'POST /api/db/import',
   'POST /api/db/backup',
   'POST /api/db/restore',
+  'POST /api/auth/setup/restore',
   'GET /api/db/download',
   'POST /api/db-tools/initialize',
   'POST /api/db-tools/currency-reset',
@@ -2775,6 +2776,103 @@ function autoRepairPaymentDetails(): void {
   }
 }
 
+/**
+ * Silently restores anything a skipped or interrupted migration should have added (columns,
+ * indexes, triggers, tables). Additive only; a snapshot is taken first and the repair is skipped
+ * if it cannot be made.
+ */
+export function autoRepairSchemaDrift(): void {
+  if (buildingIdealSchema) return;
+  try {
+    const { runHealthCheck, applySafeFixes } =
+      require('./services/schema-health') as typeof import('./services/schema-health');
+    const fixable = runHealthCheck(db).findings.filter(
+      (f) => f.autoApplicable && f.risk === 'safe',
+    );
+    if (fixable.length === 0) {
+      if (getSettingValue(SCHEMA_REPAIR_FAILED_KEY))
+        upsertSettings({ [SCHEMA_REPAIR_FAILED_KEY]: '' });
+      return;
+    }
+
+    // A set of fixes that already failed on a previous start is not retried (or re-snapshotted)
+    // until the set of findings changes.
+    const signature = fixable
+      .map((f) => f.id)
+      .sort()
+      .join('|');
+    if (getSettingValue(SCHEMA_REPAIR_FAILED_KEY) === signature) return;
+
+    const version = getCurrentSchemaVersion();
+    const backupDir = getBackupDir();
+    fs.mkdirSync(backupDir, { recursive: true });
+    const snapshotPath = path.join(
+      backupDir,
+      `flo-backup-${new Date().toISOString().replace(/[:.]/g, '-')}-pre-v${version}-schema-repair.db`,
+    );
+    try {
+      db.exec(`VACUUM INTO '${snapshotPath.replace(/'/g, "''")}'`);
+      stampSchemaRepairSnapshot(snapshotPath, version);
+    } catch (error) {
+      removeQuietlySync(snapshotPath);
+      throw error;
+    }
+    pruneSchemaRepairSnapshots(backupDir);
+
+    // No explicit ids: the multi-pass default also picks up indexes and triggers of a recreated table.
+    const result = applySafeFixes(undefined, db);
+    upsertSettings({ [SCHEMA_REPAIR_FAILED_KEY]: result.errors.length > 0 ? signature : '' });
+    console.log(
+      `[DB] schema self-repair applied ${result.applied.length} fix(es), ${result.errors.length} error(s)`,
+    );
+  } catch (err: any) {
+    console.warn('[DB] schema self-repair skipped:', err?.message || err);
+  }
+}
+
+const SCHEMA_REPAIR_FAILED_KEY = 'schema_repair_failed_signature';
+const SCHEMA_REPAIR_SNAPSHOT_RETENTION = 3;
+
+function removeQuietlySync(filePath: string): void {
+  try {
+    fs.unlinkSync(filePath);
+  } catch {
+    // best effort
+  }
+}
+
+/** Makes the snapshot a self-contained, restorable backup (same stamp as every other backup). */
+function stampSchemaRepairSnapshot(snapshotPath: string, version: number): void {
+  const snapshotDb = new Database(snapshotPath);
+  try {
+    snapshotDb.pragma('journal_mode = DELETE');
+    snapshotDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+    snapshotDb.pragma(`user_version = ${version}`);
+    const put = snapshotDb.prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)');
+    put.run('schema_version', String(version));
+    put.run('backup_created_at', new Date().toISOString());
+    put.run('app_version', app.getVersion());
+  } finally {
+    snapshotDb.close();
+  }
+  syncFile(snapshotPath);
+}
+
+function pruneSchemaRepairSnapshots(backupDir: string): void {
+  try {
+    const snapshots = fs
+      .readdirSync(backupDir)
+      .filter((name) => name.endsWith('-schema-repair.db'))
+      .sort()
+      .reverse();
+    for (const name of snapshots.slice(SCHEMA_REPAIR_SNAPSHOT_RETENTION)) {
+      removeQuietlySync(path.join(backupDir, name));
+    }
+  } catch {
+    // best effort
+  }
+}
+
 /** Keep printer selection deterministic if an older install ended up with multiple defaults. */
 function autoRepairDefaultPrinter(): void {
   try {
@@ -2852,6 +2950,23 @@ export function closeDatabase(): void {
 
 type BackupOptions = { stagingDirectory?: string };
 
+/** Backups are never allowed to carry schema drift, whatever state the live file was in. */
+function repairBackupSchemaDrift(backupDb: Database.Database): void {
+  try {
+    if (Number(backupDb.pragma('user_version', { simple: true })) !== getCurrentSchemaVersion()) {
+      return;
+    }
+    const { applySafeFixes } =
+      require('./services/schema-health') as typeof import('./services/schema-health');
+    const result = applySafeFixes(undefined, backupDb);
+    if (result.applied.length > 0) {
+      console.log(`[DB] createBackup: repaired ${result.applied.length} schema difference(s)`);
+    }
+  } catch (err: any) {
+    console.warn('[DB] createBackup: schema repair skipped:', err?.message || err);
+  }
+}
+
 export async function createBackupUnlocked(
   targetPath?: string,
   signal?: AbortSignal,
@@ -2906,6 +3021,7 @@ export async function createBackupUnlocked(
       // Switch to DELETE journal mode: checkpoints WAL and removes
       // .db-wal/.db-shm so the final file is self-contained.
       backupDb.pragma('journal_mode = DELETE');
+      repairBackupSchemaDrift(backupDb);
       backupDb.exec(`
         CREATE TABLE IF NOT EXISTS _flo_meta (
           key TEXT PRIMARY KEY,
@@ -4665,6 +4781,99 @@ export function restoreCompatibleBackupForDowngrade(
   }, options?.signal);
 }
 
+function normalizeSchemaSql(sql: string | null): string {
+  return (sql || '')
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, '$1')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([(),])\s*/g, '$1')
+    .trim();
+}
+
+function extractParenthesizedClauses(sql: string, keywordPattern: RegExp): string[] {
+  const clauses: string[] = [];
+  const matcher = new RegExp(keywordPattern.source, 'gi');
+  let match: RegExpExecArray | null;
+  while ((match = matcher.exec(sql)) !== null) {
+    let depth = 0;
+    let inQuote = false;
+    for (let i = match.index + match[0].length; i < sql.length; i++) {
+      const ch = sql[i];
+      if (ch === "'") inQuote = !inQuote;
+      if (inQuote) continue;
+      if (ch === '(') depth++;
+      else if (ch === ')' && --depth === 0) {
+        clauses.push(sql.slice(match.index, i + 1));
+        break;
+      }
+    }
+  }
+  return clauses.sort();
+}
+
+// Upgraded databases (ALTER ADD COLUMN, table rebuilds) and fresh installs yield identical
+// structure with different CREATE TABLE text and column order, so tables compare structurally.
+function describeTableStructure(dbInstance: Database.Database, tableName: string, sql: string) {
+  const columns = (
+    dbInstance.prepare(`PRAGMA table_xinfo(${tableName})`).all() as {
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+      pk: number;
+      hidden: number;
+    }[]
+  )
+    .map(
+      (c) =>
+        `${c.name}|${String(c.type).toUpperCase()}|${c.notnull}|${c.dflt_value}|${c.pk}|${c.hidden}`,
+    )
+    .sort();
+  const foreignKeys = (
+    dbInstance.prepare(`PRAGMA foreign_key_list(${tableName})`).all() as {
+      from: string;
+      table: string;
+      to: string;
+      on_update: string;
+      on_delete: string;
+    }[]
+  )
+    .map((fk) => `${fk.from}->${fk.table}.${fk.to}:${fk.on_delete}:${fk.on_update}`)
+    .sort();
+  const normalizedSql = normalizeSchemaSql(sql);
+  // Implicit UNIQUE / PRIMARY KEY indexes carry the uniqueness rules ON CONFLICT relies on.
+  const uniqueConstraints = (
+    dbInstance.prepare(`PRAGMA index_list(${tableName})`).all() as {
+      name: string;
+      unique: number;
+      origin: string;
+    }[]
+  )
+    .filter((index) => index.origin === 'u' || index.origin === 'pk')
+    .filter((index) => isSafeIdentifier(index.name))
+    .map((index) => {
+      const columns = (
+        dbInstance.prepare(`PRAGMA index_info(${index.name})`).all() as { name: string }[]
+      ).map((column) => column.name);
+      return `${index.origin}:${index.unique}:${columns.join(',')}`;
+    })
+    .sort();
+  return JSON.stringify({
+    uniqueConstraints,
+    autoincrement: /\bAUTOINCREMENT\b/i.test(normalizedSql),
+    withoutRowid: /\bWITHOUT ROWID\b/i.test(normalizedSql),
+    collations: [...normalizedSql.matchAll(/\bCOLLATE\s+([A-Za-z_]+)/gi)]
+      .map((match) => match[1].toUpperCase())
+      .sort(),
+    columns,
+    foreignKeys,
+    checks: extractParenthesizedClauses(normalizedSql, /\bCHECK\s*(?=\()/),
+    generated: extractParenthesizedClauses(normalizedSql, /\bAS\s*(?=\()/),
+    virtual: /^CREATE VIRTUAL TABLE/i.test(normalizedSql) ? normalizedSql : null,
+  });
+}
+
 function getSchemaDefinitions(dbInstance: Database.Database): Map<string, string> {
   const rows = dbInstance
     .prepare(`
@@ -4676,7 +4885,12 @@ function getSchemaDefinitions(dbInstance: Database.Database): Map<string, string
   `)
     .all() as { type: string; name: string; sql: string | null }[];
   return new Map(
-    rows.map((row) => [`${row.type}:${row.name}`, (row.sql || '').replace(/\s+/g, ' ').trim()]),
+    rows.map((row) => [
+      `${row.type}:${row.name}`,
+      row.type === 'table' && isSafeIdentifier(row.name)
+        ? describeTableStructure(dbInstance, row.name, row.sql || '')
+        : normalizeSchemaSql(row.sql),
+    ]),
   );
 }
 
@@ -5034,6 +5248,31 @@ export function validateInventoryLedgerReplacement(
   return null;
 }
 
+// Adds only what a same-version backup is missing (columns, indexes, triggers, tables).
+// Runs on the staged copy, never on the operator's file, and never removes or rewrites data.
+function repairStagedBackupSchema(stagedPath: string, currentVersion: number): void {
+  let stagedDb: Database.Database | undefined;
+  try {
+    stagedDb = new Database(stagedPath, { fileMustExist: true });
+    if (Number(stagedDb.pragma('user_version', { simple: true })) !== currentVersion) return;
+    const { applySafeFixes } =
+      require('./services/schema-health') as typeof import('./services/schema-health');
+    const result = applySafeFixes(undefined, stagedDb);
+    if (result.applied.length > 0) {
+      console.log(
+        `[DB] restoreBackup: repaired ${result.applied.length} schema difference(s) in the staged backup`,
+      );
+    }
+    for (const failure of result.errors) {
+      console.warn(`[DB] restoreBackup: could not repair ${failure.id}: ${failure.error}`);
+    }
+  } catch (error) {
+    console.warn('[DB] restoreBackup: staged backup schema repair skipped:', error);
+  } finally {
+    stagedDb?.close();
+  }
+}
+
 export interface RestoreResult {
   success: boolean;
   mode: 'direct' | 'data_only' | 'full';
@@ -5046,12 +5285,7 @@ export interface RestoreResult {
   error?: string;
 }
 
-function validateDirectBackup(
-  backupPath: string,
-  currentDb: Database.Database,
-  currentVersion: number,
-  baselineForeignKeyViolations: Set<string> = new Set(),
-): string | null {
+function validateDirectBackup(backupPath: string, currentVersion: number): string | null {
   let backupDb: Database.Database | undefined;
   try {
     const sourceStat = fs.lstatSync(backupPath);
@@ -5075,15 +5309,19 @@ function validateDirectBackup(
     if (integrity.some((row) => row.integrity_check !== 'ok')) {
       return `Backup integrity check failed: ${integrity.map((row) => row.integrity_check).join('; ')}`;
     }
-    const backupForeignKeyViolations = getForeignKeyViolationKeys(backupDb);
-    const newForeignKeyViolations = [...backupForeignKeyViolations].filter(
-      (key) => !baselineForeignKeyViolations.has(key),
-    );
-    if (newForeignKeyViolations.length > 0) {
-      return `Backup contains ${newForeignKeyViolations.length} new foreign-key violation(s)`;
+    // The backup replaces the live database, so it must match the schema this
+    // version defines, not whatever the live file happens to look like.
+    const expectedDb = buildIdealSchemaDb(currentVersion);
+    let currentTables: string[];
+    let expectedColumns: Map<string, string[]>;
+    let currentSchema: Map<string, string>;
+    try {
+      currentTables = getTables(expectedDb);
+      expectedColumns = new Map(currentTables.map((name) => [name, getColumns(expectedDb, name)]));
+      currentSchema = getSchemaDefinitions(expectedDb);
+    } finally {
+      expectedDb.close();
     }
-
-    const currentTables = getTables(currentDb);
     const backupTables = new Set(getTables(backupDb));
     const missingTables = currentTables.filter((tableName) => !backupTables.has(tableName));
     if (missingTables.length > 0) {
@@ -5092,7 +5330,7 @@ function validateDirectBackup(
 
     for (const tableName of currentTables) {
       const backupColumns = new Set(getColumns(backupDb, tableName));
-      const missingColumns = getColumns(currentDb, tableName).filter(
+      const missingColumns = (expectedColumns.get(tableName) ?? []).filter(
         (column) => !backupColumns.has(column),
       );
       if (missingColumns.length > 0) {
@@ -5103,21 +5341,6 @@ function validateDirectBackup(
     const inventoryValidationError = validateInventoryLedgerDatabase(backupDb);
     if (inventoryValidationError) return inventoryValidationError;
 
-    const inventoryReplacementError = validateInventoryLedgerReplacement(
-      currentDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<
-        string,
-        unknown
-      >[],
-      getInventoryMovementRows(currentDb),
-      backupDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<
-        string,
-        unknown
-      >[],
-      getInventoryMovementRows(backupDb),
-    );
-    if (inventoryReplacementError) return inventoryReplacementError;
-
-    const currentSchema = getSchemaDefinitions(currentDb);
     const backupSchema = getSchemaDefinitions(backupDb);
     for (const [key, definition] of currentSchema) {
       if (!backupSchema.has(key) && RUNTIME_ENSURED_SCHEMA_OBJECTS.has(key)) {
@@ -5736,6 +5959,10 @@ export function mergeUserSecurityState(
       );
   }
 
+  // A database with no accounts of its own (a fresh install restoring its store) has nothing
+  // to protect, and disabling every restored account would lock the operator out.
+  if (rows.length === 0) return;
+
   // Accounts introduced only by an older snapshot must not become a new
   // login path without an explicit owner reactivation.
   const preservedIds = new Set(rows.map((row) => row.id));
@@ -5875,14 +6102,6 @@ export function restoreBackup(
       Number.isFinite(metadataVersion) && metadataVersion > 0 ? metadataVersion : pragmaVersion;
     const currentDb = getDatabase();
     const currentVersion = getCurrentSchemaVersion();
-    // Preserve revocations from live database so restored older snapshot cannot unrevoke tokens.
-    const preservedRevocations = readRevocations(currentDb);
-    const preservedUserSecurity = captureUserSecurityState(currentDb);
-    const preservedUserStations = captureUserStationSecurityState(currentDb);
-    const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
-    const preservedKdsEnabled = captureKdsEnabledSetting(currentDb);
-    const preservedProtectedSettings = captureRestoreProtectedSettings(currentDb);
-    const preservedOutboxes = captureRestoreOutboxState(currentDb);
 
     console.log(
       `[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`,
@@ -5899,7 +6118,7 @@ export function restoreBackup(
       };
     }
 
-    if (forceDirect && pragmaVersion > currentVersion) {
+    if (pragmaVersion > currentVersion) {
       return {
         success: false,
         mode: 'direct',
@@ -5910,27 +6129,81 @@ export function restoreBackup(
       };
     }
 
-    if (forceDirect || backupSchemaVersion === currentVersion) {
+    if (backupSchemaVersion < 1) {
+      return {
+        success: false,
+        mode: 'direct',
+        backupSchemaVersion,
+        currentSchemaVersion: currentVersion,
+        tablesRestored: 0,
+        error: 'Backup does not contain an initialized Flo Cafe schema',
+      };
+    }
+
+    if (backupSchemaVersion <= currentVersion) {
       throwIfDatabaseMaintenanceAborted(signal);
-      const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
-      const validationError = validateDirectBackup(
-        backupPath,
-        currentDb,
-        currentVersion,
-        baselineForeignKeyViolations,
-      );
-      if (validationError) {
-        return {
-          success: false,
-          mode: 'direct',
-          backupSchemaVersion,
-          currentSchemaVersion: currentVersion,
-          tablesRestored: 0,
-          error: validationError,
-        };
+      const liveForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
+      let backupForeignKeyViolations = new Set<string>();
+      let stagedDb: Database.Database | undefined;
+      try {
+        stagedDb = new Database(backupPath, { readonly: true, fileMustExist: true });
+        const integrity = stagedDb.prepare('PRAGMA integrity_check').all() as {
+          integrity_check: string;
+        }[];
+        if (integrity.some((row) => row.integrity_check !== 'ok')) {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: `Backup integrity check failed: ${integrity.map((row) => row.integrity_check).join('; ')}`,
+          };
+        }
+        backupForeignKeyViolations = getForeignKeyViolationKeys(stagedDb);
+        if (backupForeignKeyViolations.size > 0) {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: `Backup contains ${backupForeignKeyViolations.size} foreign-key violation(s)`,
+          };
+        }
+        const inventoryError = validateInventoryLedgerDatabase(stagedDb);
+        if (inventoryError) {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: inventoryError,
+          };
+        }
+      } finally {
+        stagedDb?.close();
       }
 
-      console.log('[DB] restoreBackup: Direct restore (same schema version)');
+      if (backupSchemaVersion === currentVersion) {
+        repairStagedBackupSchema(backupPath, currentVersion);
+        const validationError = validateDirectBackup(backupPath, currentVersion);
+        if (validationError) {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: validationError,
+          };
+        }
+      }
+
+      console.log(
+        `[DB] restoreBackup: Authoritative restore (schema v${backupSchemaVersion} → v${currentVersion})`,
+      );
       const dbPath = getDbPath();
       let recoveryPath = '';
       let journalPath = '';
@@ -5948,7 +6221,7 @@ export function restoreBackup(
           phase: 'prepared',
           recoveryPath,
           dbPath,
-          baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+          baselineForeignKeyViolations: [...liveForeignKeyViolations],
           driveInvalidationRequired: true,
         });
         throwIfDatabaseMaintenanceAborted(signal);
@@ -5960,22 +6233,28 @@ export function restoreBackup(
         }
         throwIfDatabaseMaintenanceAborted(signal);
         fs.copyFileSync(backupPath, dbPath);
-        initDatabase(false, true);
+        initializeDatabase(false, true, true);
 
         const freshDb = getDatabase();
-        mergeUserSecurityState(freshDb, preservedUserSecurity);
-        mergeUserStationSecurityState(
-          freshDb,
-          preservedUserStations,
-          preservedUserSecurity.map((row) => row.id),
-          preservedStationSecurity,
+        freshDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+        const restoredSchemaVersion = getCurrentSchemaVersion();
+        const putMeta = freshDb.prepare(
+          'INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)',
         );
-        mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
-        mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
+        putMeta.run('schema_version', String(restoredSchemaVersion));
+        putMeta.run('app_version', app.getVersion());
+        freshDb.prepare("DELETE FROM _flo_meta WHERE key = 'backup_created_at'").run();
+
+        const credentialTimestamp = now();
+        freshDb
+          .prepare('UPDATE users SET tokens_valid_after = ?, updated_at = ?')
+          .run(credentialTimestamp, credentialTimestamp);
         freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
         freshDb.prepare('DELETE FROM customer_display_tokens').run();
-        mergeRestoreOutboxState(freshDb, preservedOutboxes);
-        mergeRevocations(freshDb, preservedRevocations);
+        freshDb
+          .prepare("DELETE FROM settings WHERE key LIKE 'mobile\\_pairing\\_code%' ESCAPE '\\'")
+          .run();
+        clearGoogleDriveRestoreBinding(freshDb);
         executeSequenceRepair(freshDb);
         freshDb
           .prepare(`
@@ -5993,13 +6272,25 @@ export function restoreBackup(
           integrity_check: string;
         }[];
         const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)].filter(
-          (key) => !baselineForeignKeyViolations.has(key),
+          (key) => !backupForeignKeyViolations.has(key),
         );
+        const schemaError = validateDatabaseSchemaTableColumns(
+          freshDb,
+          restoredSchemaVersion,
+          'Restored database',
+        );
+        const inventoryError = validateInventoryLedgerDatabase(freshDb);
         if (
           integrity.some((row) => row.integrity_check !== 'ok') ||
-          newForeignKeyViolations.length > 0
+          newForeignKeyViolations.length > 0 ||
+          schemaError !== null ||
+          inventoryError !== null
         ) {
-          throw new Error('Restored database failed integrity validation');
+          const validationError = new Error(
+            schemaError || inventoryError || 'Restored database failed integrity validation',
+          );
+          Object.assign(validationError, { code: 'ERR_RESTORE_VALIDATION' });
+          throw validationError;
         }
         throwIfDatabaseMaintenanceAborted(signal);
         freshDb.pragma('wal_checkpoint(TRUNCATE)');
@@ -6008,14 +6299,16 @@ export function restoreBackup(
           throw new Error('Could not durably commit restored database');
         }
         throwIfDatabaseMaintenanceAborted(signal);
-        clearGoogleDriveRestoreBinding(freshDb);
         writeReplacementJournal(journalPath, {
           phase: 'committed',
           recoveryPath,
           dbPath,
-          baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+          baselineForeignKeyViolations: [...liveForeignKeyViolations],
           driveInvalidationRequired: true,
         });
+        clearUserAuthCache();
+        clearInMemoryRevokedTokens();
+        clearJWTSecretCache();
         // The replacement is durable; keep the snapshot of what it replaced so a
         // customer who restores the wrong file can undo it.
         retainRestoreSafetyCopy(recoveryPath, currentVersion);
@@ -6069,14 +6362,24 @@ export function restoreBackup(
             { cause: recoveryError },
           );
         }
+        if (error?.code === 'ERR_RESTORE_VALIDATION') {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: error.message,
+          };
+        }
         throw error;
       } finally {
         if (recoveryCompleted) {
           removeReplacementArtifactsDurably(journalPath, recoveryPath);
         } else if (
           recoveryCopyReady &&
-          isHealthyDatabaseFile(dbPath, baselineForeignKeyViolations, false) &&
-          isHealthyDatabaseFile(recoveryPath, baselineForeignKeyViolations, false)
+          isHealthyDatabaseFile(dbPath, liveForeignKeyViolations, false) &&
+          isHealthyDatabaseFile(recoveryPath, liveForeignKeyViolations, false)
         ) {
           // A committed journal is finalized here; an uncommitted journal is
           // intentionally retained if recovery itself failed.
@@ -6089,20 +6392,14 @@ export function restoreBackup(
       }
     }
 
-    console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-    return dataOnlyRestore(
-      backupPath,
+    return {
+      success: false,
+      mode: 'direct',
       backupSchemaVersion,
-      currentVersion,
-      preservedRevocations,
-      preservedUserSecurity,
-      preservedUserStations,
-      preservedStationSecurity,
-      preservedKdsEnabled,
-      preservedProtectedSettings,
-      preservedOutboxes,
-      signal,
-    );
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: `Backup schema v${backupSchemaVersion} is not supported`,
+    };
   } finally {
     stagedSource?.cleanup();
   }

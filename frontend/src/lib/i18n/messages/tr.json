@@ -2559,7 +2559,7 @@
     "restoreFromFile": "Dosyadan Yedek Geri Yükle...",
     "restoreFromFileHint": "Bu bilgisayarda bir yedek dosyanız zaten var mı? Veritabanının üzerine elle kopyalamak yerine buradan seçin.",
     "restoreReplacesDetail": "Geri yükleme, bu yedek alındığından beri eklenen tüm sipariş, fatura, ürün ve müşteri kayıtlarını değiştirir.",
-    "restoreKeepsDetail": "Personel hesaplarınız, PIN kodlarınız, yazıcılarınız, vergi ayarlarınız ve bu bilgisayarın bulut hesabı korunur.",
+    "restoreKeepsDetail": "Personel hesapları, PIN'ler, yazıcılar ve ayarlar da yedekten gelir. Herkesin oturumu kapatılır; eşleştirilmiş ekranlar ve cihazlar yeniden eşleştirilmelidir.",
     "restoreSafetyCopyDetail": "Hiçbir şey değişmeden önce Flo, bu geri yüklemeyi geri alabilmeniz için mevcut verilerinizin bir kopyasını saklar.",
     "diagnosticsConsentSyncPending": "Gizlilik ayarının eşitlenmesi bekleniyor. Doğrulanana kadar raporlar gönderilmez.",
     "diagnosticsTransportState": "Raporlama yolu: {transport}.",

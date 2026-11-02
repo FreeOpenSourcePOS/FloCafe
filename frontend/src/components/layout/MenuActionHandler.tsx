@@ -7,6 +7,9 @@ import { useTranslations } from 'use-intl';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { dispatchQuickSearchRequest } from '@/lib/quick-search';
 import { useAuthStore } from '@/store/auth';
+import api from '@/lib/api';
+
+export const RESTORE_FROM_FILE_EVENT = 'flo-restore-from-file';
 
 type PendingPinAction = 'backup' | 'restore' | null;
 
@@ -14,6 +17,7 @@ export default function MenuActionHandler() {
   const tCommon = useTranslations('common');
   const tBackup = useTranslations('backup');
   const tSettings = useTranslations('settings');
+  const tAuth = useTranslations('auth');
   const router = useRouter();
   const [pendingPinAction, setPendingPinAction] = useState<PendingPinAction>(null);
 
@@ -74,6 +78,49 @@ export default function MenuActionHandler() {
       const message = tCommon('somethingWrong');
       toast.error(tBackup('failedWith', { error: message }));
     }
+  }
+
+  type AuthOutcome = 'signed-in' | 'signed-out' | 'unknown';
+
+  async function waitForAuthHydration(): Promise<AuthOutcome> {
+    const outcome = (): AuthOutcome => (useAuthStore.getState().user ? 'signed-in' : 'signed-out');
+    if (!useAuthStore.getState().loading) return outcome();
+    return new Promise((resolve) => {
+      const unsubscribe = useAuthStore.subscribe((next) => {
+        if (next.loading) return;
+        unsubscribe();
+        clearTimeout(timer);
+        resolve(outcome());
+      });
+      // A slow session check is not proof of a signed-out session.
+      const timer = setTimeout(() => {
+        unsubscribe();
+        resolve('unknown');
+      }, 3000);
+    });
+  }
+
+  async function routeRestoreRequest() {
+    const auth = await waitForAuthHydration();
+    if (auth !== 'signed-out') {
+      router.push('/settings?tab=data&action=restore-from-file');
+      return;
+    }
+    try {
+      const { data } = await api.get('/auth/setup/status');
+      if (data?.needsSetup) {
+        if (window.location.pathname.startsWith('/setup')) {
+          window.dispatchEvent(new CustomEvent(RESTORE_FROM_FILE_EVENT));
+        } else {
+          router.push('/setup?action=restore-from-file');
+        }
+        return;
+      }
+    } catch {
+      // Fall through to sign-in.
+    }
+    toast.error(tAuth('signInTitle'));
+    router.push('/auth/login');
   }
 
   useEffect(() => {
@@ -144,7 +191,7 @@ export default function MenuActionHandler() {
           beginPinGatedAction('backup');
           break;
         case 'menu-restore-from-file':
-          router.push('/settings?tab=data&action=restore-from-file');
+          void routeRestoreRequest();
           break;
         case 'menu-db-health-check':
           router.push('/settings?tab=data&action=health-check');

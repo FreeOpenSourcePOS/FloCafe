@@ -1,3 +1,5 @@
+// The startup/shutdown status window is suppressed under test.
+process.env.NODE_ENV = 'test';
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -205,6 +207,8 @@ Module._load = function (request, parent, isMain) {
       }
     }
     return {
+      autoRepairSchemaDrift: () => {},
+      getSettingValue: () => null,
       initDatabase: () => {
         initDatabaseCalls += 1;
         events.push('database.init');
@@ -374,7 +378,10 @@ Module._load = function (request, parent, isMain) {
           events.push('local-backup.start');
         },
         stop: () => {},
+        isSessionBackupWanted: () => false,
+        backupForSession: async () => false,
       },
+      SESSION_BACKUP_MIN_AGE_MS: 0,
     };
   if (newerDbMode === 'restore' && request === './services/posthog')
     return {

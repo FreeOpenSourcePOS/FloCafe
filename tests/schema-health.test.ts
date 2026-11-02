@@ -86,10 +86,9 @@ function main() {
   );
   assert.equal(report.summary.safeCount, 0);
   assert.equal(report.summary.manualReviewCount, 0);
-  assert.equal(
-    memoryDbOpenCount - memoryDbBeforeCold,
-    1,
-    'cold runHealthCheck() builds the ideal schema snapshot once',
+  assert.ok(
+    memoryDbOpenCount - memoryDbBeforeCold <= 1,
+    'runHealthCheck() builds the ideal schema snapshot at most once (startup repair may have built it)',
   );
   const memoryDbBeforeWarm = memoryDbOpenCount;
   const warmReport = runHealthCheck();
@@ -253,6 +252,72 @@ function main() {
     'ideal state surfaces the expected ON DELETE action',
   );
   console.log('   ✓ foreign-key ON DELETE/ON UPDATE actions are compared');
+
+  // ── a skipped migration's column (with its foreign key) and trigger are restored ──
+  db.exec('DROP TRIGGER clear_table_reservation_customer_on_status_change');
+  db.exec('ALTER TABLE tables DROP COLUMN reservation_customer_id');
+  report = runHealthCheck();
+  assert.ok(
+    report.findings.some((f: any) => f.id === 'missing_column:tables.reservation_customer_id'),
+    'a missing column is reported',
+  );
+  assert.ok(
+    report.findings.some(
+      (f: any) => f.id === 'missing_trigger:clear_table_reservation_customer_on_status_change',
+    ),
+    'a missing trigger is reported as safe to restore',
+  );
+  const triggerFix = applySafeFixes();
+  assert.equal(triggerFix.errors.length, 0, 'restoring the column and trigger raises no errors');
+  report = runHealthCheck();
+  assert.equal(
+    report.findings.filter((f: any) => f.table === 'tables').length,
+    0,
+    'the restored column keeps its foreign key, so no drift remains on tables',
+  );
+  console.log('   ✓ missing columns (with foreign keys) and triggers are restored');
+
+  // ── a recreated table also gets its indexes in the same repair ──
+  db.exec('DROP TABLE product_variants');
+  report = runHealthCheck();
+  assert.ok(
+    report.findings.some((f: any) => f.id === 'missing_table:product_variants'),
+    'a missing table is reported',
+  );
+  const tableFix = applySafeFixes();
+  assert.equal(tableFix.errors.length, 0, 'recreating the table raises no errors');
+  assert.ok(
+    tableFix.applied.some((id: string) => id.startsWith('missing_index:')) ||
+      db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_product_variants_product'",
+        )
+        .get(),
+    'the table indexes are restored in the same repair',
+  );
+  assert.equal(
+    runHealthCheck().findings.filter((f: any) => f.table === 'product_variants').length,
+    0,
+    'no drift remains on the recreated table after one repair',
+  );
+  console.log('   ✓ recreated tables get their indexes in one repair');
+
+  // ── a search trigger is not restored while its FTS table is missing ──
+  const ftsTriggers = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_orders_search_%'",
+    )
+    .all()
+    .map((row: any) => row.name);
+  assert.ok(ftsTriggers.length > 0, 'fixture has orders search triggers');
+  for (const name of ftsTriggers) db.exec(`DROP TRIGGER ${name}`);
+  db.exec('DROP TABLE orders_search_fts');
+  const ftsReport = runHealthCheck();
+  assert.ok(
+    !ftsReport.findings.some((f: any) => f.id.startsWith('missing_trigger:trg_orders_search_')),
+    'no search trigger is offered while orders_search_fts is missing',
+  );
+  console.log('   ✓ triggers that depend on a missing FTS table are not restored');
 
   // ── applySafeFixes is atomic: a failed fix rolls back the whole batch ──
   db.exec('DROP TABLE IF EXISTS held_orders');

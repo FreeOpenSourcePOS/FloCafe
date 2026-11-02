@@ -192,16 +192,16 @@ async function run() {
           value: string;
         }
       ).value,
-      'false',
-      'direct restore preserves the current disabled KDS setting',
+      'true',
+      'direct restore uses the KDS setting from the selected backup',
     );
     for (const [key, expected] of [
-      ['jwt_secret', 'current-jwt'],
-      ['cloud_api_key', 'current-cloud-key'],
-      ['cloud_device_secret', 'current-device-secret'],
-      ['cloud_pos_hash', 'current-pos-hash'],
-      ['telemetry_enabled', 'false'],
-      ['diagnostics_consent', 'false'],
+      ['jwt_secret', 'backup-jwt'],
+      ['cloud_api_key', 'backup-cloud-key'],
+      ['cloud_device_secret', 'backup-device-secret'],
+      ['cloud_pos_hash', 'backup-pos-hash'],
+      ['telemetry_enabled', 'true'],
+      ['diagnostics_consent', 'true'],
     ]) {
       assert.equal(
         (
@@ -210,7 +210,7 @@ async function run() {
           }
         ).value,
         expected,
-        `direct restore preserves current ${key}`,
+        `direct restore uses backup ${key}`,
       );
     }
 
@@ -235,13 +235,11 @@ async function run() {
     const currentOnlyRestore = restoreBackup(enabledKdsBackup, true);
     assert.equal(currentOnlyRestore.success, true, 'restore succeeds with a current-only user');
     assert.equal(
-      (
-        getDatabase()
-          .prepare('SELECT is_active FROM users WHERE id = ?')
-          .get('restore-current-only-user') as { is_active: number }
-      ).is_active,
-      1,
-      'current-only users survive restore',
+      getDatabase()
+        .prepare('SELECT is_active FROM users WHERE id = ?')
+        .get('restore-current-only-user'),
+      undefined,
+      'current-only users do not override the selected backup',
     );
 
     const missingStationBackup = path.join(testDir, 'missing-current-station.db');
@@ -255,19 +253,25 @@ async function run() {
       .prepare('DELETE FROM kitchen_stations WHERE id = ?')
       .run('restore-station-current');
     missingStationDb.close();
-    assert.throws(
-      () => restoreBackup(missingStationBackup, true),
-      /cannot preserve current (?:kitchen )?station/i,
-      'restore rejects a backup that cannot preserve current station assignments',
+    const missingStationRestore = restoreBackup(missingStationBackup, true);
+    assert.equal(
+      missingStationRestore.success,
+      true,
+      'restore accepts a valid backup without the current kitchen station',
     );
     assert.equal(
-      (
-        getDatabase()
-          .prepare('SELECT station_id FROM station_users WHERE user_id = ?')
-          .get('restore-station-chef') as { station_id: string }
-      ).station_id,
-      'restore-station-current',
-      'failed station-assignment restore leaves the current restriction intact',
+      getDatabase()
+        .prepare('SELECT station_id FROM station_users WHERE user_id = ?')
+        .get('restore-station-chef'),
+      undefined,
+      'station assignments absent from the backup remain absent',
+    );
+    assert.equal(
+      getDatabase()
+        .prepare('SELECT id FROM kitchen_stations WHERE id = ?')
+        .get('restore-station-current'),
+      undefined,
+      'kitchen stations absent from the backup remain absent',
     );
 
     const changedStationBackup = path.join(testDir, 'changed-station-security.db');
@@ -282,20 +286,20 @@ async function run() {
     assert.equal(
       changedStationRestore.success,
       true,
-      'restore preserves current station security configuration',
+      'restore accepts the station security configuration from the backup',
     );
     const restoredStationSecurity = getDatabase()
       .prepare('SELECT is_active, category_ids FROM kitchen_stations WHERE id = ?')
       .get('restore-station-current') as { is_active: number; category_ids: string };
     assert.equal(
       restoredStationSecurity.is_active,
-      1,
-      'restore preserves the current station active state',
+      0,
+      'restore uses the station active state from the backup',
     );
     assert.equal(
       restoredStationSecurity.category_ids,
-      '[]',
-      'restore preserves the current station categories',
+      '["different-category"]',
+      'restore uses the station categories from the backup',
     );
 
     const backupOnlyUserBackup = path.join(testDir, 'backup-only-user.db');
@@ -317,8 +321,44 @@ async function run() {
           .prepare('SELECT is_active FROM users WHERE id = ?')
           .get('restore-backup-only-chef') as { is_active: number }
       ).is_active,
-      0,
-      'backup-only users remain disabled after restore',
+      1,
+      'backup-only users keep their backed-up active state',
+    );
+
+    // An older-schema (data-only) restore must not abort because the live database has a
+    // kitchen station, or a station assignment, that the backup never knew about.
+    const liveOnlyStationBackup = path.join(testDir, 'older-without-live-station.db');
+    copyAndStamp(sameSchemaBackup, liveOnlyStationBackup, currentVersion - 1);
+    getDatabase()
+      .prepare(
+        `INSERT OR REPLACE INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+         VALUES ('restore-station-live-only', 'Live Only Station', '[]', 1, datetime('now'), datetime('now'))`,
+      )
+      .run();
+    getDatabase()
+      .prepare(
+        "INSERT OR REPLACE INTO station_users (user_id, station_id, created_at) VALUES ('restore-station-chef', 'restore-station-live-only', datetime('now'))",
+      )
+      .run();
+    const liveOnlyStationRestore = restoreBackup(liveOnlyStationBackup, false);
+    assert.equal(
+      liveOnlyStationRestore.success,
+      true,
+      `data-only restore accepts a backup without a live-only station: ${liveOnlyStationRestore.error}`,
+    );
+    assert.equal(
+      getDatabase()
+        .prepare('SELECT id FROM kitchen_stations WHERE id = ?')
+        .get('restore-station-live-only'),
+      undefined,
+      'a station absent from the backup stays absent',
+    );
+    assert.equal(
+      getDatabase()
+        .prepare('SELECT 1 FROM station_users WHERE station_id = ?')
+        .get('restore-station-live-only'),
+      undefined,
+      'assignments to an absent station are dropped',
     );
 
     // Make the backup appear to be an older schema while retaining real linked data.
@@ -370,8 +410,8 @@ async function run() {
     const zeroResetRestore = restoreBackup(olderBackup, false);
     assert.equal(
       zeroResetRestore.success,
-      false,
-      'data-only restore rejects an unaudited stock reset',
+      true,
+      'restore accepts the internally consistent inventory state from the selected backup',
     );
     assert.equal(
       (
@@ -379,8 +419,8 @@ async function run() {
           .prepare('SELECT stock_quantity FROM products WHERE id = ?')
           .get('restore-product') as { stock_quantity: number }
       ).stock_quantity,
-      5,
-      'rejected stock-reset restore leaves the live stock cache unchanged',
+      0,
+      'restore uses the stock quantity from the selected backup',
     );
     assert.equal(
       (
@@ -388,8 +428,8 @@ async function run() {
           .prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?')
           .get('restore-product') as { count: number }
       ).count,
-      1,
-      'rejected stock-reset restore leaves movement history unchanged',
+      0,
+      'restore removes movement history that is absent from the selected backup',
     );
 
     getDatabase()
@@ -437,7 +477,7 @@ async function run() {
           .prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?')
           .get('restore-product') as { count: number }
       ).count,
-      2,
+      1,
       'rejected partial restore preserves zero-ending movement history',
     );
     getDatabase()
@@ -471,12 +511,10 @@ async function run() {
     assert.equal(
       (
         getDatabase()
-          .prepare(
-            'SELECT stock_after FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1',
-          )
-          .get('restore-product') as { stock_after: number }
-      ).stock_after,
-      5,
+          .prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?')
+          .get('restore-product') as { count: number }
+      ).count,
+      0,
       'rejected merged-state restore leaves the live movement history unchanged',
     );
 
@@ -529,7 +567,7 @@ async function run() {
         }
       ).value,
       'false',
-      'data-only restore preserves the current disabled KDS setting',
+      'older-backup restore uses the backed-up KDS setting',
     );
     assertNoRestoreAttachment();
 

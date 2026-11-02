@@ -540,7 +540,7 @@ async function main(): Promise<void> {
     fs.unlinkSync(path.join(backupDir, name));
   }
 
-  // Backup restore (direct and data-only) preserves local_backup_enabled = 'false'
+  // Backup restore applies local_backup_enabled from the selected backup.
   getDatabase()
     .prepare('INSERT INTO categories (id, name) VALUES (?, ?)')
     .run('c-restore', 'Drinks');
@@ -556,14 +556,8 @@ async function main(): Promise<void> {
   assert.equal(directRestoreRes.mode, 'direct');
   assert.equal(
     isLocalBackupEnabled(),
-    false,
-    'local_backup_enabled remains false after direct restoreBackup of an enabled backup',
-  );
-  await localBackup.runIfDue();
-  assert.deepEqual(
-    listLocalBackups(backupDir),
-    [],
-    'runIfDue does not write a backup after direct restoreBackup when opted out',
+    true,
+    'direct restore applies local_backup_enabled=true from the backup',
   );
 
   const snapshotWithoutRowPath = path.join(testDir, 'snapshot-no-row.db');
@@ -582,8 +576,8 @@ async function main(): Promise<void> {
   );
   assert.equal(
     isLocalBackupEnabled(),
-    false,
-    'local_backup_enabled remains false after restoring a backup that had no local_backup_enabled row',
+    true,
+    'a backup without local_backup_enabled uses the install default',
   );
 
   const olderSnapshotPath = path.join(testDir, 'snapshot-older.db');
@@ -600,14 +594,12 @@ async function main(): Promise<void> {
   }
   const dataOnlyRestoreRes = restoreBackup(olderSnapshotPath, false);
   assert.equal(dataOnlyRestoreRes.success, true, 'data-only restore succeeds');
-  assert.equal(dataOnlyRestoreRes.mode, 'data_only');
+  assert.equal(dataOnlyRestoreRes.mode, 'direct');
   assert.equal(
     isLocalBackupEnabled(),
-    false,
-    'local_backup_enabled remains false after data-only restoreBackup of an enabled backup',
+    true,
+    'older-backup restore applies local_backup_enabled=true from the backup',
   );
-  await localBackup.runIfDue();
-  assert.deepEqual(listLocalBackups(backupDir), []);
 
   // Controlled delayed createBackup: disabling local backups while createBackup is in flight
   // cancels active work, cleans up the staged file, does not publish to the backup directory,

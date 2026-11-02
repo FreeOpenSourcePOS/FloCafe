@@ -193,19 +193,21 @@ After migrations and with `foreign_keys` re-enabled, startup runs:
 Backup, restore, and wipe are serialised by one lock. Two of them running at once is the failure
 mode that corrupts a database, so any new entry point in this area must take the same lock.
 
-`restoreBackup` reads the `_flo_meta` stamp and the `user_version` pragma from the backup and
-decides between a direct file replacement and a data-only restore from the metadata. An unreadable
-source returns a structured failure with both versions rather than throwing. Both restore paths
-validate inventory ledger movement chains in durable append order (`id` ASC), execute
-`executeSequenceRepair` to re-align sequence counters with restored orders and bills, and mark repair
-complete.
+`restoreBackup` reads the `_flo_meta` stamp and the `user_version` pragma from the backup. A
+supported backup replaces the live database as the authoritative store state; an older backup is
+migrated forward through the normal migration registry after replacement. Restore does not merge
+staff, kitchen stations, assignments, settings, inventory history, or other operational state from
+the database being replaced. An unreadable or newer source returns a structured failure with both
+versions rather than changing the live database.
 
-A direct restore validates the backup against the schema the current version defines (built from
-the migrations in memory), not against the live file, and compares tables by structure rather than
-`CREATE` text, so an upgraded database and a fresh install of the same version compare equal. Before
-validating, it repairs the staged copy, never the operator's file, with the schema-health safe fixes:
-missing tables, columns (with their foreign keys), indexes, and triggers are added; nothing is
-dropped or rewritten. The same fixes run silently on the live database at every startup
+Restore validates SQLite integrity, foreign keys, inventory ledger consistency, and the resulting
+current schema. It invalidates user sessions and temporary KDS, customer-display, and mobile pairing
+credentials, clears the Google Drive device binding, runs `executeSequenceRepair` to re-align
+sequence counters with restored orders and bills, and marks repair complete. A same-version restore
+also compares tables structurally against the schema the current version defines and repairs the
+staged copy, never the operator's file, with the schema-health safe fixes: missing tables, columns
+(with their foreign keys), indexes, and triggers are added; nothing is dropped or rewritten. The
+same fixes run silently on the live database at every startup
 (`autoRepairSchemaDrift`, which keeps a `-schema-repair` snapshot first) and on every backup file
 as `createBackup` writes it, so drift neither lingers nor travels into backups. The Database Health
 Check remains available for manual review.
@@ -255,8 +257,8 @@ logged and retried on the next check. These files are plain SQLite and unencrypt
 of `listBackups()`; restore one through `POST /api/db/restore` with the file picker.
 `POST /api/db-tools/initialize`, `POST /api/db-tools/currency-reset`, and the `db-initialize` IPC
 channel preserve `local_backup_enabled` across the reset and copy their pre-reset backup here
-(`retainBackupLocally`) when the setting is on; `restoreBackup()` likewise preserves the live
-`local_backup_enabled` setting across a restore.
+(`retainBackupLocally`) when the setting is on. A database restore uses the setting stored in the
+selected backup.
 
 ### Durability
 

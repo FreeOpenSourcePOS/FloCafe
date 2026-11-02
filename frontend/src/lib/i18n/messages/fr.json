@@ -2548,7 +2548,7 @@
     "restoreFromFile": "Restaurer une sauvegarde depuis un fichier...",
     "restoreFromFileHint": "Vous avez déjà un fichier de sauvegarde sur cet ordinateur ? Sélectionnez-le ici au lieu de le copier manuellement sur la base de données.",
     "restoreReplacesDetail": "La restauration remplace toutes les commandes, factures, produits et fiches clients ajoutés depuis la création de cette sauvegarde.",
-    "restoreKeepsDetail": "Vos comptes du personnel, vos codes PIN, vos imprimantes, votre configuration fiscale et le compte cloud de cet ordinateur sont conservés.",
+    "restoreKeepsDetail": "Les comptes du personnel, les codes PIN, les imprimantes et les paramètres proviennent aussi de la sauvegarde. Tout le monde est déconnecté et les écrans et appareils associés doivent être réassociés.",
     "restoreSafetyCopyDetail": "Avant toute modification, Flo conserve une copie de vos données actuelles afin que vous puissiez annuler cette restauration.",
     "diagnosticsConsentSyncPending": "Le réglage de confidentialité attend la synchronisation. Aucun rapport ne sera envoyé avant sa confirmation.",
     "diagnosticsTransportState": "Route de signalement : {transport}.",

@@ -2559,7 +2559,7 @@
     "restoreFromFile": "Rikupero kopje rezerve nga një skedar...",
     "restoreFromFileHint": "Keni një skedar kopjeje rezerve tashmë në këtë kompjuter? Zgjidheni këtu, në vend që ta kopjoni me dorë mbi bazën e të dhënave.",
     "restoreReplacesDetail": "Rikuperimi zëvendëson çdo porosi, faturë, produkt dhe regjistër klienti shtuar që nga koha e krijimit të kësaj kopjeje rezerve.",
-    "restoreKeepsDetail": "Llogaritë e stafit, kodet PIN, printerët, cilësimet e taksës dhe llogaria cloud e këtij kompjuteri ruhen.",
+    "restoreKeepsDetail": "Llogaritë e stafit, PIN-et, printerët dhe cilësimet vijnë gjithashtu nga kopja rezervë. Të gjithë do të dalin nga sistemi dhe ekranet e pajisjet e çiftuara duhet të çiftohen përsëri.",
     "restoreSafetyCopyDetail": "Para se të ndryshojë diçka, Flo mban një kopje të të dhënave tuaja aktuale që të mund ta ktheni këtë rikuperim.",
     "diagnosticsConsentSyncPending": "Cilësimi i privatësisë pret sinkronizimin. Raportet nuk dërgohen para konfirmimit.",
     "diagnosticsTransportState": "Rruga e raportimit: {transport}.",

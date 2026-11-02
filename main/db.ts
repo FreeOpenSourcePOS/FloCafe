@@ -5285,12 +5285,7 @@ export interface RestoreResult {
   error?: string;
 }
 
-function validateDirectBackup(
-  backupPath: string,
-  currentDb: Database.Database,
-  currentVersion: number,
-  baselineForeignKeyViolations: Set<string> = new Set(),
-): string | null {
+function validateDirectBackup(backupPath: string, currentVersion: number): string | null {
   let backupDb: Database.Database | undefined;
   try {
     const sourceStat = fs.lstatSync(backupPath);
@@ -5314,14 +5309,6 @@ function validateDirectBackup(
     if (integrity.some((row) => row.integrity_check !== 'ok')) {
       return `Backup integrity check failed: ${integrity.map((row) => row.integrity_check).join('; ')}`;
     }
-    const backupForeignKeyViolations = getForeignKeyViolationKeys(backupDb);
-    const newForeignKeyViolations = [...backupForeignKeyViolations].filter(
-      (key) => !baselineForeignKeyViolations.has(key),
-    );
-    if (newForeignKeyViolations.length > 0) {
-      return `Backup contains ${newForeignKeyViolations.length} new foreign-key violation(s)`;
-    }
-
     // The backup replaces the live database, so it must match the schema this
     // version defines, not whatever the live file happens to look like.
     const expectedDb = buildIdealSchemaDb(currentVersion);
@@ -5353,20 +5340,6 @@ function validateDirectBackup(
 
     const inventoryValidationError = validateInventoryLedgerDatabase(backupDb);
     if (inventoryValidationError) return inventoryValidationError;
-
-    const inventoryReplacementError = validateInventoryLedgerReplacement(
-      currentDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<
-        string,
-        unknown
-      >[],
-      getInventoryMovementRows(currentDb),
-      backupDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<
-        string,
-        unknown
-      >[],
-      getInventoryMovementRows(backupDb),
-    );
-    if (inventoryReplacementError) return inventoryReplacementError;
 
     const backupSchema = getSchemaDefinitions(backupDb);
     for (const [key, definition] of currentSchema) {
@@ -6129,14 +6102,6 @@ export function restoreBackup(
       Number.isFinite(metadataVersion) && metadataVersion > 0 ? metadataVersion : pragmaVersion;
     const currentDb = getDatabase();
     const currentVersion = getCurrentSchemaVersion();
-    // Preserve revocations from live database so restored older snapshot cannot unrevoke tokens.
-    const preservedRevocations = readRevocations(currentDb);
-    const preservedUserSecurity = captureUserSecurityState(currentDb);
-    const preservedUserStations = captureUserStationSecurityState(currentDb);
-    const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
-    const preservedKdsEnabled = captureKdsEnabledSetting(currentDb);
-    const preservedProtectedSettings = captureRestoreProtectedSettings(currentDb);
-    const preservedOutboxes = captureRestoreOutboxState(currentDb);
 
     console.log(
       `[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`,
@@ -6153,7 +6118,7 @@ export function restoreBackup(
       };
     }
 
-    if (forceDirect && pragmaVersion > currentVersion) {
+    if (pragmaVersion > currentVersion) {
       return {
         success: false,
         mode: 'direct',
@@ -6164,28 +6129,70 @@ export function restoreBackup(
       };
     }
 
-    if (forceDirect || backupSchemaVersion === currentVersion) {
+    if (backupSchemaVersion <= currentVersion) {
       throwIfDatabaseMaintenanceAborted(signal);
-      const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
-      repairStagedBackupSchema(backupPath, currentVersion);
-      const validationError = validateDirectBackup(
-        backupPath,
-        currentDb,
-        currentVersion,
-        baselineForeignKeyViolations,
-      );
-      if (validationError) {
-        return {
-          success: false,
-          mode: 'direct',
-          backupSchemaVersion,
-          currentSchemaVersion: currentVersion,
-          tablesRestored: 0,
-          error: validationError,
-        };
+      const liveForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
+      let backupForeignKeyViolations = new Set<string>();
+      let stagedDb: Database.Database | undefined;
+      try {
+        stagedDb = new Database(backupPath, { readonly: true, fileMustExist: true });
+        const integrity = stagedDb.prepare('PRAGMA integrity_check').all() as {
+          integrity_check: string;
+        }[];
+        if (integrity.some((row) => row.integrity_check !== 'ok')) {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: `Backup integrity check failed: ${integrity.map((row) => row.integrity_check).join('; ')}`,
+          };
+        }
+        backupForeignKeyViolations = getForeignKeyViolationKeys(stagedDb);
+        if (backupForeignKeyViolations.size > 0) {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: `Backup contains ${backupForeignKeyViolations.size} foreign-key violation(s)`,
+          };
+        }
+        const inventoryError = validateInventoryLedgerDatabase(stagedDb);
+        if (inventoryError) {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: inventoryError,
+          };
+        }
+      } finally {
+        stagedDb?.close();
       }
 
-      console.log('[DB] restoreBackup: Direct restore (same schema version)');
+      if (backupSchemaVersion === currentVersion) {
+        repairStagedBackupSchema(backupPath, currentVersion);
+        const validationError = validateDirectBackup(backupPath, currentVersion);
+        if (validationError) {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: validationError,
+          };
+        }
+      }
+
+      console.log(
+        `[DB] restoreBackup: Authoritative restore (schema v${backupSchemaVersion} → v${currentVersion})`,
+      );
       const dbPath = getDbPath();
       let recoveryPath = '';
       let journalPath = '';
@@ -6203,7 +6210,7 @@ export function restoreBackup(
           phase: 'prepared',
           recoveryPath,
           dbPath,
-          baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+          baselineForeignKeyViolations: [...liveForeignKeyViolations],
           driveInvalidationRequired: true,
         });
         throwIfDatabaseMaintenanceAborted(signal);
@@ -6215,22 +6222,28 @@ export function restoreBackup(
         }
         throwIfDatabaseMaintenanceAborted(signal);
         fs.copyFileSync(backupPath, dbPath);
-        initDatabase(false, true);
+        initializeDatabase(false, true, true);
 
         const freshDb = getDatabase();
-        mergeUserSecurityState(freshDb, preservedUserSecurity);
-        mergeUserStationSecurityState(
-          freshDb,
-          preservedUserStations,
-          preservedUserSecurity.map((row) => row.id),
-          preservedStationSecurity,
+        freshDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+        const restoredSchemaVersion = getCurrentSchemaVersion();
+        const putMeta = freshDb.prepare(
+          'INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)',
         );
-        mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
-        mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
+        putMeta.run('schema_version', String(restoredSchemaVersion));
+        putMeta.run('app_version', app.getVersion());
+        freshDb.prepare("DELETE FROM _flo_meta WHERE key = 'backup_created_at'").run();
+
+        const credentialTimestamp = now();
+        freshDb
+          .prepare('UPDATE users SET tokens_valid_after = ?, updated_at = ?')
+          .run(credentialTimestamp, credentialTimestamp);
         freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
         freshDb.prepare('DELETE FROM customer_display_tokens').run();
-        mergeRestoreOutboxState(freshDb, preservedOutboxes);
-        mergeRevocations(freshDb, preservedRevocations);
+        freshDb
+          .prepare("DELETE FROM settings WHERE key LIKE 'mobile\\_pairing\\_code%' ESCAPE '\\'")
+          .run();
+        clearGoogleDriveRestoreBinding(freshDb);
         executeSequenceRepair(freshDb);
         freshDb
           .prepare(`
@@ -6248,13 +6261,25 @@ export function restoreBackup(
           integrity_check: string;
         }[];
         const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)].filter(
-          (key) => !baselineForeignKeyViolations.has(key),
+          (key) => !backupForeignKeyViolations.has(key),
         );
+        const schemaError = validateDatabaseSchemaTableColumns(
+          freshDb,
+          restoredSchemaVersion,
+          'Restored database',
+        );
+        const inventoryError = validateInventoryLedgerDatabase(freshDb);
         if (
           integrity.some((row) => row.integrity_check !== 'ok') ||
-          newForeignKeyViolations.length > 0
+          newForeignKeyViolations.length > 0 ||
+          schemaError !== null ||
+          inventoryError !== null
         ) {
-          throw new Error('Restored database failed integrity validation');
+          const validationError = new Error(
+            schemaError || inventoryError || 'Restored database failed integrity validation',
+          );
+          Object.assign(validationError, { code: 'ERR_RESTORE_VALIDATION' });
+          throw validationError;
         }
         throwIfDatabaseMaintenanceAborted(signal);
         freshDb.pragma('wal_checkpoint(TRUNCATE)');
@@ -6263,14 +6288,16 @@ export function restoreBackup(
           throw new Error('Could not durably commit restored database');
         }
         throwIfDatabaseMaintenanceAborted(signal);
-        clearGoogleDriveRestoreBinding(freshDb);
         writeReplacementJournal(journalPath, {
           phase: 'committed',
           recoveryPath,
           dbPath,
-          baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+          baselineForeignKeyViolations: [...liveForeignKeyViolations],
           driveInvalidationRequired: true,
         });
+        clearUserAuthCache();
+        clearInMemoryRevokedTokens();
+        clearJWTSecretCache();
         // The replacement is durable; keep the snapshot of what it replaced so a
         // customer who restores the wrong file can undo it.
         retainRestoreSafetyCopy(recoveryPath, currentVersion);
@@ -6324,14 +6351,24 @@ export function restoreBackup(
             { cause: recoveryError },
           );
         }
+        if (error?.code === 'ERR_RESTORE_VALIDATION') {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: error.message,
+          };
+        }
         throw error;
       } finally {
         if (recoveryCompleted) {
           removeReplacementArtifactsDurably(journalPath, recoveryPath);
         } else if (
           recoveryCopyReady &&
-          isHealthyDatabaseFile(dbPath, baselineForeignKeyViolations, false) &&
-          isHealthyDatabaseFile(recoveryPath, baselineForeignKeyViolations, false)
+          isHealthyDatabaseFile(dbPath, liveForeignKeyViolations, false) &&
+          isHealthyDatabaseFile(recoveryPath, liveForeignKeyViolations, false)
         ) {
           // A committed journal is finalized here; an uncommitted journal is
           // intentionally retained if recovery itself failed.
@@ -6344,20 +6381,14 @@ export function restoreBackup(
       }
     }
 
-    console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-    return dataOnlyRestore(
-      backupPath,
+    return {
+      success: false,
+      mode: 'direct',
       backupSchemaVersion,
-      currentVersion,
-      preservedRevocations,
-      preservedUserSecurity,
-      preservedUserStations,
-      preservedStationSecurity,
-      preservedKdsEnabled,
-      preservedProtectedSettings,
-      preservedOutboxes,
-      signal,
-    );
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: `Backup schema v${backupSchemaVersion} is not supported`,
+    };
   } finally {
     stagedSource?.cleanup();
   }

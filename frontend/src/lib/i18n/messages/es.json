@@ -2549,7 +2549,7 @@
     "restoreFromFile": "Restaurar copia de seguridad desde un archivo...",
     "restoreFromFileHint": "¿Ya tienes un archivo de copia de seguridad en este equipo? Selecciónalo aquí en lugar de copiarlo sobre la base de datos a mano.",
     "restoreReplacesDetail": "Restaurar reemplaza todos los pedidos, facturas, productos y fichas de clientes añadidos desde que se creó esta copia de seguridad.",
-    "restoreKeepsDetail": "Se conservan las cuentas del personal, los PIN, las impresoras, la configuración de impuestos y la cuenta en la nube de este equipo.",
+    "restoreKeepsDetail": "Las cuentas del personal, los PIN, las impresoras y los ajustes también provienen de la copia de seguridad. Todos cerrarán sesión y las pantallas y dispositivos emparejados deberán emparejarse de nuevo.",
     "restoreSafetyCopyDetail": "Antes de cambiar nada, Flo guarda una copia de tus datos actuales para que puedas deshacer esta restauración.",
     "diagnosticsConsentSyncPending": "El permiso de privacidad está pendiente de sincronización. No se enviarán informes hasta confirmarlo.",
     "diagnosticsTransportState": "Ruta de informes: {transport}.",

@@ -187,7 +187,7 @@ async function main() {
       'image import is reachable again',
     );
 
-    console.log('\n--- 1. Backup restore and import preserve offline_mode ---');
+    console.log('\n--- 1. Backup restore uses the backed-up offline_mode ---');
     {
       await api(baseUrl, '/api/settings/offline-mode', {
         method: 'PUT',
@@ -208,8 +208,8 @@ async function main() {
       assertEqualOrThrow(directRestore.success, true, 'direct restore succeeds');
       assertEqualOrThrow(
         isOfflineMode(),
-        true,
-        'direct restore preserves offline_mode=true from current device',
+        false,
+        'direct restore applies offline_mode=false from the backup',
       );
 
       const dataOnlyBackupPath = path.join(testDir, 'pre-offline-older-schema.db');
@@ -225,12 +225,22 @@ async function main() {
 
       const dataOnlyRestore = await restoreBackup(dataOnlyBackupPath, false);
       assertEqualOrThrow(dataOnlyRestore.success, true, 'data-only restore succeeds');
-      assertEqualOrThrow(dataOnlyRestore.mode, 'data_only', 'older backup uses data-only restore');
+      assertEqualOrThrow(
+        dataOnlyRestore.mode,
+        'direct',
+        'older backup is migrated and restored directly',
+      );
       assertEqualOrThrow(
         isOfflineMode(),
-        true,
-        'data-only restore preserves offline_mode=true from current device',
+        false,
+        'older-backup restore applies offline_mode=false from the backup',
       );
+
+      await api(baseUrl, '/api/settings/offline-mode', {
+        method: 'PUT',
+        body: { offline_mode: true },
+        headers: ownerAuth,
+      });
 
       resetMasterPin('1234');
       const importPayload = {

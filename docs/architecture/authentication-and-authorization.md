@@ -253,8 +253,9 @@ both ending in the same write (`applyOwnerRecovery` in
   is the official FloAdmin endpoint in both SQLite and active runtime state, and an active owner
   account matches the registered owner email (`cloudSync.isEmailRecoveryAvailable()`, advertised as
   `cloudRecoveryAvailable` by `GET /api/auth/setup/status`). Updating an active owner's email in
-  staff management keeps `settings.email` in sync, and database backup restore and import preserve
-  and resync `settings.email` from the preserved active owner account. If FloAdmin has not verified that
+  staff management keeps `settings.email` in sync. Structured database imports preserve and resync
+  `settings.email` from the active owner account; full backup restore is authoritative and instead
+  applies the backed-up owner and settings state. If FloAdmin has not verified that
   email, the request first sends the verification email (`step: 'verify_email'`) and the recover
   page polls `GET /api/auth/recover-password/cloud/verification`; once verified it requests the
   reset automatically. FloAdmin then emails the registered owner a link, the POS polls the

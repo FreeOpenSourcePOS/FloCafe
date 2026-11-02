@@ -44,6 +44,7 @@ import {
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
+  taxBreakdownRows,
   truncate,
   truncateShapedLine,
   type PrintWarning,
@@ -862,7 +863,6 @@ export function renderBillDocumentToClassicLines(
         for (const line of block.lines) {
           const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
           const rawLabel = labelOf(line.label) + rateSuffix;
-          const label = truncate(rawLabel, cols - 12, options.language, options.capabilities);
           const value = formatCurrency(
             line.amount,
             prefix,
@@ -872,7 +872,14 @@ export function renderBillDocumentToClassicLines(
           );
           appendFinancial(
             segment,
-            financialRows(label, value, cols, options.language, options.capabilities),
+            taxBreakdownRows(
+              labelOf(line.label),
+              line.rate,
+              value,
+              cols,
+              options.language,
+              options.capabilities,
+            ),
             false,
             rawLabel,
             value,

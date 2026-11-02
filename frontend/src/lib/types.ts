@@ -228,6 +228,12 @@ export interface Order {
   external_order_id?: string | null;
   created_by: number;
   created_at: string;
+  scheduled_for?: string | null;
+  release_status?: 'scheduled' | 'released' | 'blocked';
+  released_at?: string | null;
+  release_blocked_reason?: string | null;
+  checkout_stage?: 'building' | 'awaiting_payment' | 'paid';
+  dispatch_policy?: 'immediate' | 'on_payment';
   cancelled_at?: string | null;
   cancellation_reason?: string | null;
   items?: OrderItem[];
@@ -281,7 +287,13 @@ export interface Bill {
   total: number;
   paid_amount: number;
   balance: number;
-  payment_status: 'unpaid' | 'partial' | 'paid' | 'refunded' | 'partially_refunded';
+  payment_status:
+    | 'unpaid'
+    | 'partial'
+    | 'partially_paid'
+    | 'paid'
+    | 'refunded'
+    | 'partially_refunded';
   payment_details:
     | {
         method: string;
@@ -293,6 +305,11 @@ export interface Bill {
         transaction_id?: string;
       }[]
     | null;
+  payment_method_correction?: {
+    correctable: boolean;
+    reason: string | null;
+    lines: Array<{ index: number; correctable: boolean; reason: string | null }>;
+  };
   split_group_id?: string | null;
   split_label?: string | null;
   /** Itemised unified engine charges; null on bills created before the engine. */
@@ -447,4 +464,14 @@ export interface CartItem {
   variant?: ProductVariant | null;
   /** Owner-set selling price for this line, sent to the server when the order is placed. */
   price_override?: { price: number; reason: string } | null;
+}
+
+export interface Counter {
+  id: string;
+  name: string;
+  role: 'ordering' | 'payment' | 'combined';
+  is_active: number | boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
 }

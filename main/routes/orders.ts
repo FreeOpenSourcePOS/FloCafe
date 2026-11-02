@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
+import QRCode from 'qrcode';
 import {
   getDatabase,
   generateOrderNumber,
@@ -32,7 +33,18 @@ import {
   type Customer,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
-import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
+import {
+  calculateOrderTotals,
+  completedKdsProjectionCutoff,
+  recomputeOrderTotals,
+  reconcileActiveOrderStatusFromItems,
+} from '../services/orders';
+import {
+  collectProjectedCompletedOrderIds,
+  parseBoardStatuses,
+  selectBoardEligibleOrderPage,
+  type DisplayFeedCursor,
+} from '../services/customer-display-tokens';
 import {
   buildAppliedCharges,
   ChargeValidationError,
@@ -73,14 +85,26 @@ import {
   resolveExpectedPaymentMethod,
   resolveExpectedPaymentMethodIdentity,
 } from './orders-validation';
-import { hasPermission, requirePermission } from '../services/authorization';
+import { hasPermission, requireAnyPermission, requirePermission } from '../services/authorization';
+import {
+  assertScheduledOrderUnpaidForEdit,
+  decodeScheduledOrdersCursor,
+  encodeScheduledOrdersCursor,
+  isScheduledOrderRow,
+  isUnreleasedOrderRow,
+  releaseScheduledOrder,
+  ScheduledOrderError,
+  validateScheduledOrderRequest,
+} from '../services/scheduled-orders';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { isTerminalItemStatus } from '../../shared/order-item-status';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import {
   checkKitchenDeliveryStatus,
   completeExactBalanceSettlement,
+  createOrSyncBillForOrder,
   getTenantCurrency,
+  paymentMethodCorrectionEligibility,
   preVerifyKitchenDeliveryPin,
   syncUnpaidBillsForOrder,
 } from './bills';
@@ -153,6 +177,13 @@ const orderReadRateLimit = expressRateLimit({
   limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
+});
+const scheduledOrderReadRateLimit = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: ORDER_WRITE_RATE_LIMIT_ERROR,
 });
 const orderWriteRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
@@ -448,6 +479,7 @@ function resolveItemAddons(
   productId: string,
   addons: any[] | null | undefined,
   itemQuantity: unknown,
+  options?: { deferStockDeduction?: boolean },
 ): {
   id: string;
   name: string;
@@ -532,7 +564,7 @@ function resolveItemAddons(
     const unitCount = Number(itemQuantity);
     const requirement = Number.isFinite(unitCount) && unitCount > 0 ? unitCount * quantity : 0;
     let inventoryDeductedQuantity = 0;
-    if (Number(catalog.track_inventory) === 1) {
+    if (Number(catalog.track_inventory) === 1 && !options?.deferStockDeduction) {
       const available = Number(catalog.stock_quantity ?? 0);
       // Refusing is the point: a tracked add-on with nothing left must not be
       // silently substituted, so there is no variant-style fallback here.
@@ -609,22 +641,33 @@ router.get(
       if (!['all', 'active', 'unpaid'].includes(view)) {
         return res.status(400).json({ error: 'Invalid view parameter.' });
       }
-      const activeOrderPredicate = `(
-        (orders.status NOT IN ('cancelled', 'completed'))
-        OR (
-          orders.status = 'completed'
-          AND ? = 1
-          AND EXISTS (
-            SELECT 1 FROM order_items AS active_item
-            WHERE active_item.order_id = orders.id
-              AND active_item.status IN ('pending', 'preparing', 'ready')
-          )
-        )
-      )`;
-      if (view === 'active') {
-        wheres.push(activeOrderPredicate);
-        params.push(isKdsEnabled() ? 1 : 0);
-      } else if (view === 'unpaid') {
+      const boardStatuses =
+        req.query.board_status !== undefined ? parseBoardStatuses(req.query.board_status) : null;
+      if (req.query.board_status !== undefined && boardStatuses === null) {
+        return res.status(400).json({ error: 'Invalid board_status parameter.' });
+      }
+      const statusQuery = typeof req.query.status === 'string' ? req.query.status : '';
+      const statuses = statusQuery ? statusQuery.split(',') : [];
+      const statusIsActive = statuses.length === 1 && statuses[0] === 'active';
+      if (boardStatuses === null && (view === 'active' || statusIsActive)) {
+        wheres.push(`orders.id IN (
+          SELECT ao.id FROM orders AS ao
+          WHERE ao.status IN ('pending', 'preparing', 'ready', 'served')
+          UNION ALL
+          SELECT co.id FROM orders AS co
+          WHERE ? = 1
+            AND +co.status = 'completed'
+            AND co.created_at >= ?
+            AND EXISTS (
+              SELECT 1 FROM order_items AS active_item
+              WHERE active_item.order_id = co.id
+                AND active_item.status IN ('pending', 'preparing', 'ready')
+                AND active_item.quantity > 0
+            )
+        )`);
+        params.push(isKdsEnabled() ? 1 : 0, completedKdsProjectionCutoff());
+      }
+      if (view === 'unpaid') {
         wheres.push("orders.status != 'cancelled'");
         wheres.push(`(
           NOT EXISTS (SELECT 1 FROM bills AS existing_bill WHERE existing_bill.order_id = orders.id)
@@ -637,12 +680,8 @@ router.get(
         )`);
       }
 
-      if (typeof req.query.status === 'string' && req.query.status) {
-        const statuses = req.query.status.split(',');
-        if (statuses.length === 1 && statuses[0] === 'active') {
-          wheres.push(activeOrderPredicate);
-          params.push(isKdsEnabled() ? 1 : 0);
-        } else if (statuses.length === 1) {
+      if (statuses.length > 0 && !statusIsActive) {
+        if (statuses.length === 1) {
           wheres.push('orders.status = ?');
           params.push(statuses[0]);
         } else {
@@ -748,6 +787,7 @@ router.get(
       }
       // Cursor pagination: `before` / `after` are ORDER BY keys (created_at),
       // composed with `id` to break ties when many orders share a second.
+      let beforeCursor: DisplayFeedCursor | null = null;
       if (typeof req.query.before_id === 'string' && /^\d+$/.test(req.query.before_id)) {
         const oid = parseInt(req.query.before_id, 10);
         if (Number.isSafeInteger(oid) && oid > 0) {
@@ -755,13 +795,11 @@ router.get(
             | { created_at: string }
             | undefined;
           if (ref) {
-            wheres.push('(orders.created_at, orders.id) < (?, ?)');
-            params.push(ref.created_at, oid);
+            beforeCursor = { created_at: ref.created_at, id: oid };
           }
         }
       }
 
-      const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
       // Limit per-page items with default 50 and maximum 500.
       const requestedPerPage = req.query.per_page
         ? parseInt(req.query.per_page as string, 10)
@@ -770,6 +808,63 @@ router.get(
         Number.isInteger(requestedPerPage) && requestedPerPage > 0
           ? Math.min(requestedPerPage, 500)
           : 50;
+
+      if (boardStatuses !== null && wheres.length === 0) {
+        const { pageRows, hasMore } = selectBoardEligibleOrderPage(db, {
+          statuses: boardStatuses,
+          cursor: beforeCursor,
+          limit: perPage,
+        });
+        if (pageRows.length === 0) {
+          return res.json({ orders: [] });
+        }
+        const idPlaceholders = pageRows.map(() => '?').join(',');
+        type OrderRow = { id: number } & Record<string, unknown>;
+        const fetchedOrders = db
+          .prepare(`SELECT orders.* FROM orders WHERE orders.id IN (${idPlaceholders})`)
+          .all(...pageRows.map((row) => row.id)) as OrderRow[];
+        const orderById = new Map(fetchedOrders.map((order) => [Number(order.id), order]));
+        const pageOrders = pageRows
+          .map((row) => orderById.get(row.id))
+          .filter((order): order is OrderRow => order !== undefined);
+        const nextCursor =
+          hasMore && pageOrders.length > 0 ? pageOrders[pageOrders.length - 1].id : null;
+        const ordersWithRelations = batchHydrateOrders(db, pageOrders);
+        return res.json({
+          orders: ordersWithRelations,
+          ...(nextCursor !== null && { nextCursor }),
+        });
+      }
+
+      if (boardStatuses !== null) {
+        const boardPlaceholders = boardStatuses.map(() => '?').join(',');
+        const projectedCompletedIds = collectProjectedCompletedOrderIds(
+          db,
+          boardStatuses,
+          beforeCursor,
+        );
+        if (projectedCompletedIds.length > 0) {
+          wheres.push(`orders.id IN (
+            SELECT ao.id FROM orders AS ao
+            WHERE ao.status IN (${boardPlaceholders})
+            UNION ALL
+            SELECT CAST(value AS INTEGER) FROM json_each(?)
+          )`);
+          params.push(...boardStatuses, JSON.stringify(projectedCompletedIds));
+        } else {
+          wheres.push(`orders.id IN (
+            SELECT ao.id FROM orders AS ao
+            WHERE ao.status IN (${boardPlaceholders})
+          )`);
+          params.push(...boardStatuses);
+        }
+      }
+      if (beforeCursor) {
+        wheres.push('(orders.created_at, orders.id) < (?, ?)');
+        params.push(beforeCursor.created_at, beforeCursor.id);
+      }
+
+      const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
       const perPagePlusOne = perPage + 1;
 
       const orders = db
@@ -863,6 +958,8 @@ function insertOrderItems(
     canOverridePrice?: boolean;
     /** Quantity reductions keep the stored variant/add-on selections verbatim. */
     preserveSelections?: boolean;
+    /** Scheduled orders defer product/add-on/recipe stock depletion until release. */
+    deferStockDeduction?: boolean;
   },
 ): (number | bigint)[] {
   const { tenantInfo, customer, isOnlineOrder, actorUserId } = context;
@@ -924,8 +1021,9 @@ function insertOrderItems(
       );
       unitPrice = priceOverride.price;
     }
-    const deduction =
-      context.preserveSelections && typeof item.inventory_deducted_quantity === 'number'
+    const deduction = context.deferStockDeduction
+      ? null
+      : context.preserveSelections && typeof item.inventory_deducted_quantity === 'number'
         ? item.inventory_deducted_quantity > 0
           ? {
               productId: item.inventory_target_product_id ?? product.id,
@@ -976,8 +1074,9 @@ function insertOrderItems(
       : null;
 
     const itemCreatedAt = now();
-    const recipeSnapshot =
-      context.preserveSelections && item.recipe_snapshot !== undefined
+    const recipeSnapshot = context.deferStockDeduction
+      ? null
+      : context.preserveSelections && item.recipe_snapshot !== undefined
         ? (item.recipe_snapshot as ReturnType<typeof buildRecipeSnapshot>)
         : buildRecipeSnapshot(db, product.id, quantity, variant?.recipe_multiplier ?? 1);
     const { ingredientCost, ingredientCostKnown } =
@@ -1036,32 +1135,34 @@ function insertOrderItems(
       });
     }
 
-    if (deduction) {
-      adjustProductStock(db, {
-        productId: deduction.productId,
-        variantId: deduction.variantId ?? null,
-        quantityDelta: -deduction.deductedQuantity,
-        movementType: 'sale',
-        referenceType: 'order_item',
-        referenceId: String(insertItemResult.lastInsertRowid),
-        actorUserId: actorUserId,
-        createdAt: itemCreatedAt,
-      });
-    }
-    moveOrderItemAddonStock(db, (item.addons ?? []) as AddonStockLine[], {
-      direction: 'deplete',
-      actorUserId: actorUserId,
-      referenceId: String(insertItemResult.lastInsertRowid),
-      createdAt: itemCreatedAt,
-    });
-
-    if (recipeSnapshot) {
-      applyRecipeSnapshot(db, recipeSnapshot, {
+    if (!context.deferStockDeduction) {
+      if (deduction) {
+        adjustProductStock(db, {
+          productId: deduction.productId,
+          variantId: deduction.variantId ?? null,
+          quantityDelta: -deduction.deductedQuantity,
+          movementType: 'sale',
+          referenceType: 'order_item',
+          referenceId: String(insertItemResult.lastInsertRowid),
+          actorUserId: actorUserId,
+          createdAt: itemCreatedAt,
+        });
+      }
+      moveOrderItemAddonStock(db, (item.addons ?? []) as AddonStockLine[], {
         direction: 'deplete',
         actorUserId: actorUserId,
         referenceId: String(insertItemResult.lastInsertRowid),
         createdAt: itemCreatedAt,
       });
+
+      if (recipeSnapshot) {
+        applyRecipeSnapshot(db, recipeSnapshot, {
+          direction: 'deplete',
+          actorUserId: actorUserId,
+          referenceId: String(insertItemResult.lastInsertRowid),
+          createdAt: itemCreatedAt,
+        });
+      }
     }
   }
   return insertedItemIds;
@@ -1076,6 +1177,10 @@ interface EditableOrderRow extends EngineChargeOrderRow {
   discount_type: string | null;
   discount_value: number | null;
   delivery_charge: number | null;
+  scheduled_for?: string | null;
+  release_status?: string | null;
+  released_at?: string | null;
+  release_blocked_reason?: string | null;
 }
 
 function resolveOrderLevelDiscountAmount(
@@ -1133,12 +1238,16 @@ function cancelOrderItemAndRestoreStock(
   currentItem: OrderItemRow,
   actorId: string,
   reason: string | undefined,
+  options?: { skipStockRestore?: boolean },
 ): void {
   // Cancel the item and restore the inventory quantity recorded when it was added.
   db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?").run(
     now(),
     currentItem.id,
   );
+  if (options?.skipStockRestore) {
+    return;
+  }
 
   const inventoryTarget =
     currentItem.inventory_deducted_quantity > 0 ? orderItemInventoryTarget(db, currentItem) : null;
@@ -1213,6 +1322,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
     .all(...ids) as any[];
   for (const b of billRows) {
     const parsed = parseRowJson(b);
+    parsed.payment_method_correction = paymentMethodCorrectionEligibility(db, parsed);
     const siblings = billsByOrderId.get(parsed.order_id) || [];
     siblings.push(parsed);
     billsByOrderId.set(parsed.order_id, siblings);
@@ -1335,6 +1445,329 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
 }
 
 router.get(
+  '/scheduled',
+  scheduledOrderReadRateLimit,
+  requirePermission('orders.read'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+
+      let limit = 200;
+      const rawLimit = req.query.limit;
+      if (typeof rawLimit === 'string') {
+        const parsedLimit = parseInt(rawLimit, 10);
+        if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+          limit = Math.min(parsedLimit, 200);
+        }
+      }
+
+      let cursor: ReturnType<typeof decodeScheduledOrdersCursor> = null;
+      if (typeof req.query.cursor === 'string' && req.query.cursor.trim()) {
+        cursor = decodeScheduledOrdersCursor(req.query.cursor.trim());
+        if (!cursor) {
+          return res.status(400).json({ error: 'Invalid cursor', code: 'INVALID_CURSOR' });
+        }
+      }
+
+      const countRow = db
+        .prepare(
+          `SELECT
+             COUNT(CASE WHEN release_status = 'scheduled' THEN 1 END) AS scheduled_count,
+             COUNT(CASE WHEN release_status = 'blocked' THEN 1 END) AS blocked_count
+           FROM orders
+           WHERE release_status IN ('scheduled', 'blocked')
+             AND scheduled_for IS NOT NULL
+             AND status NOT IN ('cancelled', 'completed')`,
+        )
+        .get() as { scheduled_count: number; blocked_count: number } | undefined;
+
+      const scheduled_count = countRow?.scheduled_count ?? 0;
+      const blocked_count = countRow?.blocked_count ?? 0;
+
+      let sql = `SELECT * FROM orders
+                 WHERE release_status IN ('scheduled', 'blocked')
+                   AND scheduled_for IS NOT NULL
+                   AND status NOT IN ('cancelled', 'completed')`;
+      const params: unknown[] = [];
+
+      if (cursor) {
+        sql += ` AND (
+          (CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END > ?)
+          OR (
+            (CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END = ?)
+            AND (
+              (COALESCE(scheduled_for, '') > ?)
+              OR (COALESCE(scheduled_for, '') = ? AND id > ?)
+            )
+          )
+        )`;
+        params.push(
+          cursor.rank,
+          cursor.rank,
+          cursor.scheduled_for,
+          cursor.scheduled_for,
+          cursor.id,
+        );
+      }
+
+      sql += ` ORDER BY CASE WHEN release_status = 'blocked' THEN 0 ELSE 1 END ASC,
+                        scheduled_for ASC,
+                        id ASC
+               LIMIT ?`;
+      params.push(limit + 1);
+
+      const rows = (db.prepare(sql).all(...params) as Record<string, unknown>[]).map(parseRowJson);
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const next_cursor =
+        hasMore && pageRows.length > 0
+          ? encodeScheduledOrdersCursor({
+              rank: pageRows[pageRows.length - 1].release_status === 'blocked' ? 0 : 1,
+              scheduled_for: String(pageRows[pageRows.length - 1].scheduled_for || ''),
+              id: Number(pageRows[pageRows.length - 1].id),
+            })
+          : null;
+
+      const orders = batchHydrateOrders(db, pageRows);
+      res.json({
+        orders,
+        next_cursor,
+        scheduled_count,
+        blocked_count,
+      });
+    } catch (error: unknown) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Failed to load scheduled orders' });
+    }
+  },
+);
+
+router.get(
+  '/awaiting-payment',
+  orderReadRateLimit,
+  requirePermission('orders.read'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+
+      let limit = 50;
+      const rawLimit = req.query.limit;
+      if (typeof rawLimit === 'string') {
+        const parsedLimit = parseInt(rawLimit, 10);
+        if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+          limit = Math.min(parsedLimit, 200);
+        }
+      }
+
+      const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+      let cursor: { rank: number; created_at: string; id: number } | null = null;
+      if (typeof req.query.cursor === 'string' && req.query.cursor.trim()) {
+        try {
+          const decoded = JSON.parse(
+            Buffer.from(req.query.cursor.trim(), 'base64').toString('utf8'),
+          );
+          if (
+            typeof decoded.rank === 'number' &&
+            typeof decoded.created_at === 'string' &&
+            typeof decoded.id === 'number'
+          ) {
+            cursor = decoded;
+          }
+        } catch {
+          return res.status(400).json({ error: 'Invalid cursor', code: 'INVALID_CURSOR' });
+        }
+      }
+
+      const countRow = db
+        .prepare(
+          `SELECT
+             COUNT(CASE WHEN o.checkout_stage = 'awaiting_payment' THEN 1 END) AS awaiting_count,
+             COUNT(CASE WHEN o.release_status = 'blocked' AND o.dispatch_policy = 'on_payment' THEN 1 END) AS blocked_count
+           FROM orders o
+           WHERE (o.checkout_stage = 'awaiting_payment' OR (o.release_status = 'blocked' AND o.dispatch_policy = 'on_payment'))
+             AND o.status NOT IN ('cancelled', 'completed')`,
+        )
+        .get() as { awaiting_count: number; blocked_count: number } | undefined;
+
+      const awaiting_count = countRow?.awaiting_count ?? 0;
+      const blocked_count = countRow?.blocked_count ?? 0;
+      const total_count = awaiting_count + blocked_count;
+
+      let sql = `
+        SELECT
+          o.id,
+          o.order_number,
+          o.type,
+          o.table_id,
+          t.number AS table_name,
+          o.customer_id,
+          c.name AS customer_name,
+          c.phone AS customer_phone,
+          o.scheduled_for,
+          o.total,
+          o.total AS total_amount,
+          o.round_off,
+          o.checkout_stage,
+          o.dispatch_policy,
+          o.release_status,
+          o.release_blocked_reason,
+          o.created_at,
+          o.updated_at,
+          b.id AS bill_id,
+          b.bill_number,
+          COALESCE(b.paid_amount, 0) AS paid_amount,
+          COALESCE(b.balance, o.total) AS balance,
+          COALESCE(b.payment_status, 'unpaid') AS bill_payment_status
+        FROM orders o
+        LEFT JOIN tables t ON t.id = o.table_id
+        LEFT JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN bills b ON b.id = COALESCE(
+          (SELECT id FROM bills WHERE order_id = o.id AND payment_status NOT IN ('paid', 'refunded') ORDER BY id ASC LIMIT 1),
+          (SELECT id FROM bills WHERE order_id = o.id ORDER BY id ASC LIMIT 1)
+        )
+        WHERE (o.checkout_stage = 'awaiting_payment' OR (o.release_status = 'blocked' AND o.dispatch_policy = 'on_payment'))
+          AND o.status NOT IN ('cancelled', 'completed')
+      `;
+      const params: unknown[] = [];
+
+      if (search) {
+        const searchPattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
+        sql += ` AND (o.order_number LIKE ? ESCAPE '\\' OR t.number LIKE ? ESCAPE '\\' OR c.name LIKE ? ESCAPE '\\' OR c.phone LIKE ? ESCAPE '\\')`;
+        params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+      }
+
+      if (cursor) {
+        sql += ` AND (
+          (CASE WHEN o.release_status = 'blocked' THEN 0 ELSE 1 END > ?)
+          OR (
+            (CASE WHEN o.release_status = 'blocked' THEN 0 ELSE 1 END = ?)
+            AND (
+              (o.created_at > ?)
+              OR (o.created_at = ? AND o.id > ?)
+            )
+          )
+        )`;
+        params.push(cursor.rank, cursor.rank, cursor.created_at, cursor.created_at, cursor.id);
+      }
+
+      sql += ` ORDER BY CASE WHEN o.release_status = 'blocked' THEN 0 ELSE 1 END ASC,
+                        o.created_at ASC,
+                        o.id ASC
+               LIMIT ?`;
+      params.push(limit + 1);
+
+      const rows = (db.prepare(sql).all(...params) as Record<string, unknown>[]).map(parseRowJson);
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const next_cursor =
+        hasMore && pageRows.length > 0
+          ? Buffer.from(
+              JSON.stringify({
+                rank: pageRows[pageRows.length - 1].release_status === 'blocked' ? 0 : 1,
+                created_at: String(pageRows[pageRows.length - 1].created_at || ''),
+                id: Number(pageRows[pageRows.length - 1].id),
+              }),
+              'utf8',
+            ).toString('base64')
+          : null;
+      const tickets = pageRows.map((order) => {
+        const paymentTotals = evaluateOrderStatusPaymentBlock(
+          db,
+          order.id,
+          order.total,
+          order.round_off,
+        );
+        return {
+          ...order,
+          ticket_balance: paymentTotals.totalOutstandingMinor / paymentTotals.minorFactor,
+          ticket_paid_amount: paymentTotals.totalCollectedMinor / paymentTotals.minorFactor,
+        };
+      });
+
+      res.json({
+        orders: tickets,
+        tickets,
+        next_cursor,
+        has_more: hasMore,
+        awaiting_count,
+        blocked_count,
+        total_count,
+        counts: {
+          awaiting_count,
+          blocked_count,
+          total_count,
+        },
+      });
+    } catch (error: unknown) {
+      console.error('[API] Awaiting payment queue error:', error);
+      res.status(500).json({ error: 'Failed to load awaiting payment queue' });
+    }
+  },
+);
+
+router.get(
+  '/by-ticket/:ticket',
+  orderReadRateLimit,
+  requirePermission('orders.read'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const rawTicket = String(req.params.ticket || '').trim();
+      const cleanTicket = rawTicket.replace(/^FLOCAFE-TICKET:/i, '').trim();
+
+      if (!cleanTicket) {
+        return res.status(400).json({ error: 'Ticket number is required' });
+      }
+
+      const byParam = String(req.query.by || '').trim();
+      const loadById = byParam === 'id' && /^\d+$/.test(cleanTicket);
+
+      const orderRow = db
+        .prepare(
+          `SELECT * FROM orders
+           WHERE ${loadById ? 'id = ?' : 'order_number = ?'}
+             AND status NOT IN ('cancelled', 'completed')
+             AND checkout_stage = 'awaiting_payment'`,
+        )
+        .get(loadById ? Number(cleanTicket) : cleanTicket) as any;
+
+      if (!orderRow) {
+        return res.status(404).json({ error: 'Ticket not found or already paid' });
+      }
+
+      const [hydrated] = batchHydrateOrders(db, [parseRowJson(orderRow)]);
+      const bills = (
+        db
+          .prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id ASC')
+          .all(orderRow.id) as any[]
+      ).map(parseRowJson);
+
+      const payableBill = bills.find(
+        (b: any) => b.payment_status !== 'paid' && Number(b.balance || 0) > 0,
+      );
+      const primaryBill = payableBill || bills[0] || null;
+
+      const allBillsSettled =
+        bills.length > 0 &&
+        bills.every((b: any) => b.payment_status === 'paid' && Number(b.balance || 0) <= 0);
+      if (allBillsSettled) {
+        return res.status(404).json({ error: 'Ticket not found or already paid' });
+      }
+
+      res.json({
+        order: hydrated,
+        bill: primaryBill,
+        bills,
+      });
+    } catch (error: unknown) {
+      console.error('[API] Ticket lookup error:', error);
+      res.status(500).json({ error: 'Failed to lookup ticket' });
+    }
+  },
+);
+
+router.get(
   '/:id',
   orderReadRateLimit,
   requirePermission('orders.read'),
@@ -1362,7 +1795,7 @@ router.post(
   '/',
   orderWriteRateLimit,
   requirePermission('orders.create'),
-  (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     let operationCommitted = false;
     try {
       const body = req.body || {};
@@ -1384,6 +1817,8 @@ router.post(
         delivery_note,
         waived_charge_ids,
         opted_in_charge_ids,
+        dispatch_policy,
+        checkout_stage,
       } = body;
       // Carries optional service charge without automatic calculation policy.
       const idempotencyKey = orderIdempotencyKey(req);
@@ -1430,6 +1865,67 @@ router.post(
               'Valid type is required (dine_in, takeaway, delivery, online)',
             ),
           );
+      }
+
+      if (
+        dispatch_policy !== undefined &&
+        dispatch_policy !== null &&
+        !['immediate', 'on_payment'].includes(dispatch_policy)
+      ) {
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.create.other_validation',
+              'not_applied',
+              'Valid dispatch_policy is required (immediate, on_payment)',
+            ),
+          );
+      }
+      const isOnPayment = dispatch_policy === 'on_payment';
+      if (isOnPayment && type === 'delivery') {
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.create.other_validation',
+              'not_applied',
+              'Multi-counter payment flow is not supported for delivery orders',
+            ),
+          );
+      }
+      if (isOnPayment && !['takeaway', 'dine_in'].includes(type)) {
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.create.other_validation',
+              'not_applied',
+              'Multi-counter payment flow is only supported for takeaway and dine-in orders',
+            ),
+          );
+      }
+
+      const derivedCheckoutStage = isOnPayment ? 'awaiting_payment' : 'paid';
+      if (checkout_stage !== undefined && checkout_stage !== null) {
+        if (
+          !['building', 'awaiting_payment', 'paid'].includes(checkout_stage) ||
+          checkout_stage !== derivedCheckoutStage
+        ) {
+          return res
+            .status(400)
+            .json(
+              structuredOperationFailure(
+                req,
+                'fc.backend.order.create.other_validation',
+                'not_applied',
+                `Invalid checkout_stage: expected '${derivedCheckoutStage}' for dispatch_policy '${isOnPayment ? 'on_payment' : 'immediate'}'`,
+              ),
+            );
+        }
       }
       if (
         guest_count !== undefined &&
@@ -1584,11 +2080,51 @@ router.post(
           idempotencyUserId,
           idempotencyKey,
           requestHash,
-        ) as { order: any } | null;
+        ) as { order: any; qr_payload?: string | null; qr_data_url?: string | null } | null;
         if (replayed) {
-          return res.status(200).json({ order: replayed.order });
+          const replayedOrder = replayed.order;
+          const qrPayload =
+            replayed.qr_payload ??
+            (replayedOrder?.dispatch_policy === 'on_payment'
+              ? `FLOCAFE-TICKET:${replayedOrder.order_number}`
+              : null);
+          let qrDataUrl = replayed.qr_data_url ?? null;
+          if (qrPayload && !qrDataUrl) {
+            qrDataUrl = await QRCode.toDataURL(qrPayload, {
+              errorCorrectionLevel: 'M',
+              width: 256,
+            });
+          }
+          return res.status(200).json({
+            order: replayedOrder,
+            ...(qrPayload ? { qr_payload: qrPayload, qr_data_url: qrDataUrl } : {}),
+          });
         }
       }
+
+      let scheduledOrderMeta: { scheduledForUtc: string; timezone: string } | null = null;
+      try {
+        scheduledOrderMeta = validateScheduledOrderRequest(db, {
+          orderType: type,
+          scheduledForInput: body.scheduled_for,
+        });
+      } catch (err: unknown) {
+        const statusCode = err instanceof ScheduledOrderError ? err.statusCode : 400;
+        const message =
+          err instanceof Error ? err.message : 'Invalid scheduled kitchen release time';
+        const code = err instanceof ScheduledOrderError ? err.code : undefined;
+        return res.status(statusCode).json({
+          ...structuredOperationFailure(
+            req,
+            'fc.backend.order.create.other_validation',
+            'not_applied',
+            message,
+          ),
+          ...(code ? { code } : {}),
+        });
+      }
+      const isScheduledCreation = Boolean(scheduledOrderMeta);
+      const shouldDeferRelease = isScheduledCreation || isOnPayment;
 
       // Free text that ends up printed on a courier slip, so it is capped and
       // validated the same way order notes are, at this boundary.
@@ -1633,7 +2169,9 @@ router.post(
         validateOrderNotes(db, special_instructions);
         for (const item of items) {
           validateItemNotes(db, item.special_instructions);
-          item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity);
+          item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity, {
+            deferStockDeduction: shouldDeferRelease,
+          });
         }
       } catch (err: any) {
         const msg = err?.message || 'Item validation failed';
@@ -1688,6 +2226,17 @@ router.post(
             }
           }
         }
+        if (isOnPayment) {
+          const setting = db
+            .prepare("SELECT value FROM settings WHERE key = 'multi_counter_enabled'")
+            .get() as { value: string } | undefined;
+          if (setting?.value !== 'true') {
+            throw Object.assign(new Error('Multi-counter ordering is disabled.'), {
+              statusCode: 409,
+              code: 'MULTI_COUNTER_DISABLED',
+            });
+          }
+        }
         // Generate order number inside transaction to prevent race conditions
         const orderNumber = generateOrderNumber();
 
@@ -1732,8 +2281,11 @@ router.post(
           .prepare(`
         INSERT INTO orders (order_number, table_id, customer_id, user_id, type, delivery_address, expected_payment_method, expected_payment_method_id, delivery_note, guest_count, special_instructions,
           packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
-          service_charge, service_charge_tax_category_id, online_platform, external_order_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          service_charge, service_charge_tax_category_id, online_platform, external_order_id,
+          scheduled_for, release_status, released_at, release_blocked_reason,
+          checkout_stage, dispatch_policy,
+          status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, 'pending', ?, ?)
       `)
           .run(
             orderNumber,
@@ -1755,6 +2307,10 @@ router.post(
             chargeContext.service_charge_tax_category_id,
             onlinePlatform || null,
             externalOrderId || null,
+            scheduledOrderMeta ? scheduledOrderMeta.scheduledForUtc : null,
+            shouldDeferRelease ? 'scheduled' : 'released',
+            derivedCheckoutStage,
+            isOnPayment ? 'on_payment' : dispatch_policy || 'immediate',
             now(),
             now(),
           );
@@ -1825,7 +2381,9 @@ router.post(
             );
             unitPrice = priceOverride.price;
           }
-          const deduction = resolveInventoryDeduction(product, quantity, variant);
+          const deduction = shouldDeferRelease
+            ? null
+            : resolveInventoryDeduction(product, quantity, variant);
           if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
             throw Object.assign(
               new Error(`Invalid price for ${product.name}: must be a non-negative number`),
@@ -1944,12 +2502,9 @@ router.post(
           subtotal += itemSubtotal;
 
           const itemCreatedAt = now();
-          const recipeSnapshot = buildRecipeSnapshot(
-            db,
-            product.id,
-            quantity,
-            variant?.recipe_multiplier ?? 1,
-          );
+          const recipeSnapshot = shouldDeferRelease
+            ? null
+            : buildRecipeSnapshot(db, product.id, quantity, variant?.recipe_multiplier ?? 1);
           const { ingredientCost, ingredientCostKnown } =
             extractOrderItemCostFromSnapshot(recipeSnapshot);
           const insertItemResult = insertItem.run(
@@ -2002,32 +2557,34 @@ router.post(
             });
           }
 
-          if (deduction) {
-            adjustProductStock(db, {
-              productId: deduction.productId,
-              variantId: deduction.variantId ?? null,
-              quantityDelta: -deduction.deductedQuantity,
-              movementType: 'sale',
-              referenceType: 'order_item',
-              referenceId: String(insertItemResult.lastInsertRowid),
-              actorUserId: authenticatedUserId,
-              createdAt: itemCreatedAt,
-            });
-          }
-          moveOrderItemAddonStock(db, item.addons, {
-            direction: 'deplete',
-            actorUserId: authenticatedUserId,
-            referenceId: String(insertItemResult.lastInsertRowid),
-            createdAt: itemCreatedAt,
-          });
-
-          if (recipeSnapshot) {
-            applyRecipeSnapshot(db, recipeSnapshot, {
+          if (!shouldDeferRelease) {
+            if (deduction) {
+              adjustProductStock(db, {
+                productId: deduction.productId,
+                variantId: deduction.variantId ?? null,
+                quantityDelta: -deduction.deductedQuantity,
+                movementType: 'sale',
+                referenceType: 'order_item',
+                referenceId: String(insertItemResult.lastInsertRowid),
+                actorUserId: authenticatedUserId,
+                createdAt: itemCreatedAt,
+              });
+            }
+            moveOrderItemAddonStock(db, item.addons, {
               direction: 'deplete',
               actorUserId: authenticatedUserId,
               referenceId: String(insertItemResult.lastInsertRowid),
               createdAt: itemCreatedAt,
             });
+
+            if (recipeSnapshot) {
+              applyRecipeSnapshot(db, recipeSnapshot, {
+                direction: 'deplete',
+                actorUserId: authenticatedUserId,
+                referenceId: String(insertItemResult.lastInsertRowid),
+                createdAt: itemCreatedAt,
+              });
+            }
           }
         }
 
@@ -2077,6 +2634,31 @@ router.post(
           );
         }
 
+        if (isScheduledCreation && scheduledOrderMeta) {
+          recordOrderAudit(db, {
+            orderId: Number(orderId),
+            actorUserId: authenticatedUserId,
+            action: 'order_scheduled',
+            details: {
+              scheduled_for: scheduledOrderMeta.scheduledForUtc,
+              timezone: scheduledOrderMeta.timezone,
+            },
+          });
+        }
+
+        if (isOnPayment) {
+          createOrSyncBillForOrder(db, Number(orderId));
+          recordOrderAudit(db, {
+            orderId: Number(orderId),
+            actorUserId: authenticatedUserId,
+            action: 'order_sent_to_payment',
+            details: {
+              dispatch_policy: 'on_payment',
+              checkout_stage: 'awaiting_payment',
+            },
+          });
+        }
+
         const order = parseRowJson(
           db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId),
         ) as any;
@@ -2098,8 +2680,19 @@ router.post(
       operationCommitted = true;
 
       if (!result.idempotentReplay) {
-        notifyKdsUpdate();
-        cloudSync.recordOrderChanged(result.order.id, 'order.created');
+        if (shouldDeferRelease) {
+          notifyOrderUpdated();
+        } else {
+          notifyKdsUpdate();
+        }
+        cloudSync.recordOrderChanged(
+          result.order.id,
+          isOnPayment
+            ? 'order.sent_to_payment'
+            : isScheduledCreation
+              ? 'order.scheduled'
+              : 'order.created',
+        );
 
         if (result.order.customer_id) {
           try {
@@ -2110,9 +2703,40 @@ router.post(
         }
       }
 
-      res
-        .status(result.idempotentReplay ? 200 : 201)
-        .json({ order: Object.assign({}, result.order, { items: result.orderItems }) });
+      const qrPayload =
+        result.order?.dispatch_policy === 'on_payment'
+          ? `FLOCAFE-TICKET:${result.order.order_number}`
+          : null;
+      let qrDataUrl: string | null = null;
+      if (qrPayload) {
+        qrDataUrl = await QRCode.toDataURL(qrPayload, {
+          errorCorrectionLevel: 'M',
+          width: 256,
+        });
+      }
+
+      if (idempotencyKey && requestHash && qrPayload) {
+        try {
+          db.prepare(
+            'UPDATE order_idempotency SET response_json = ? WHERE user_id = ? AND idempotency_key = ?',
+          ).run(
+            JSON.stringify({
+              order: Object.assign({}, result.order, { items: result.orderItems }),
+              qr_payload: qrPayload,
+              qr_data_url: qrDataUrl,
+            }),
+            idempotencyUserId,
+            idempotencyKey,
+          );
+        } catch {
+          // ignore cache update error
+        }
+      }
+
+      res.status(result.idempotentReplay ? 200 : 201).json({
+        order: Object.assign({}, result.order, { items: result.orderItems }),
+        ...(qrPayload ? { qr_payload: qrPayload, qr_data_url: qrDataUrl } : {}),
+      });
     } catch (error: any) {
       console.error('[Orders] Create error:', error);
       console.error('[API] Internal error:', error);
@@ -2126,18 +2750,164 @@ router.post(
             : statusCode >= 500
               ? 'fc.backend.order.create.persistence'
               : 'fc.backend.order.create.other_validation';
+      return res.status(statusCode).json({
+        ...structuredOperationFailure(
+          req,
+          point,
+          operationCommitted ? 'applied' : 'not_applied',
+          error.statusCode ? error.message : 'Internal server error',
+        ),
+        ...(error.code === 'MULTI_COUNTER_DISABLED' ? { code: error.code } : {}),
+      });
+    }
+  }),
+);
+
+router.patch(
+  '/:id/schedule',
+  orderWriteRateLimit,
+  requireAnyPermission('orders.create', 'orders.status.update'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+      if (!actorId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      const rawScheduledFor = req.body?.scheduled_for;
+      if (rawScheduledFor === undefined || rawScheduledFor === null || rawScheduledFor === '') {
+        return res.status(400).json({
+          error:
+            'scheduled_for is required. Use Release now to send the order to the kitchen immediately.',
+          code: 'INVALID_FORMAT',
+        });
+      }
+
+      const updatedOrderRow = withTxn(() => {
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+          | {
+              id: number | string;
+              status: string;
+              type: string;
+              scheduled_for: string | null;
+              release_status: string | null;
+            }
+          | undefined;
+        if (!currentOrder) {
+          throw new ScheduledOrderError(404, 'Order not found', 'ORDER_NOT_FOUND');
+        }
+        if (['completed', 'cancelled'].includes(currentOrder.status)) {
+          throw new ScheduledOrderError(
+            409,
+            `Cannot reschedule a ${currentOrder.status} order`,
+            'INVALID_ORDER_STATUS',
+          );
+        }
+        if (!currentOrder.release_status || currentOrder.release_status === 'released') {
+          throw new ScheduledOrderError(
+            409,
+            'Order has already been released to the kitchen and can no longer be rescheduled.',
+            'ALREADY_RELEASED',
+          );
+        }
+
+        const scheduledMeta = validateScheduledOrderRequest(db, {
+          orderType: currentOrder.type,
+          scheduledForInput: rawScheduledFor,
+        });
+        if (!scheduledMeta) {
+          throw new ScheduledOrderError(400, 'scheduled_for is required.', 'INVALID_FORMAT');
+        }
+
+        const changedAt = now();
+        const isBlocked = currentOrder.release_status === 'blocked';
+        if (isBlocked) {
+          db.prepare(
+            `UPDATE orders
+             SET scheduled_for = ?,
+                 updated_at = ?
+             WHERE id = ?`,
+          ).run(scheduledMeta.scheduledForUtc, changedAt, currentOrder.id);
+        } else {
+          db.prepare(
+            `UPDATE orders
+             SET scheduled_for = ?,
+                 release_status = 'scheduled',
+                 release_blocked_reason = NULL,
+                 updated_at = ?
+             WHERE id = ?`,
+          ).run(scheduledMeta.scheduledForUtc, changedAt, currentOrder.id);
+        }
+
+        recordOrderAudit(db, {
+          orderId: String(currentOrder.id),
+          actorUserId: actorId,
+          action: 'schedule_updated',
+          details: {
+            previous_scheduled_for: currentOrder.scheduled_for,
+            scheduled_for: scheduledMeta.scheduledForUtc,
+            previous_release_status: currentOrder.release_status,
+            release_status: isBlocked ? 'blocked' : 'scheduled',
+            timezone: scheduledMeta.timezone,
+          },
+        });
+
+        return db.prepare('SELECT * FROM orders WHERE id = ?').get(currentOrder.id);
+      });
+
+      const [hydrated] = batchHydrateOrders(db, [updatedOrderRow]);
+      notifyOrderUpdated();
+      cloudSync.recordOrderChanged(String(req.params.id), 'order.schedule_updated');
+      return res.json({ order: hydrated });
+    } catch (error: unknown) {
+      if (error instanceof ScheduledOrderError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
+      const errObj = error as { statusCode?: number; message?: string };
+      console.error('[Orders] Schedule update error:', error);
       return res
-        .status(statusCode)
-        .json(
-          structuredOperationFailure(
-            req,
-            point,
-            operationCommitted ? 'applied' : 'not_applied',
-            error.statusCode ? error.message : 'Internal server error',
-          ),
-        );
+        .status(errObj.statusCode || 500)
+        .json({ error: errObj.statusCode ? errObj.message : 'Internal server error' });
     }
   },
+);
+
+router.post(
+  '/:id/release',
+  orderWriteRateLimit,
+  requireAnyPermission('orders.create', 'orders.status.update'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+      const result = await releaseScheduledOrder(db, String(req.params.id), {
+        trigger: 'manual',
+        actorUserId: actorId || null,
+      });
+      const [hydrated] = batchHydrateOrders(db, [result.order]);
+      if (result.outcome === 'blocked') {
+        return res.status(409).json({
+          error: result.reason || 'Order release blocked due to stock or catalog availability.',
+          code: 'RELEASE_BLOCKED',
+          order: hydrated,
+        });
+      }
+      return res.json({
+        order: hydrated,
+        already_released: result.outcome === 'already_released',
+        kot_auto_printed: result.kotAutoPrinted,
+      });
+    } catch (error: unknown) {
+      if (error instanceof ScheduledOrderError) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
+      const errObj = error as { statusCode?: number; message?: string };
+      console.error('[Orders] Release error:', error);
+      return res
+        .status(errObj.statusCode || 500)
+        .json({ error: errObj.statusCode ? errObj.message : 'Internal server error' });
+    }
+  }),
 );
 
 router.post(
@@ -2235,6 +3005,8 @@ router.post(
           if (replayResponse) return { replayResponse };
         }
 
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+
         if (
           db
             .prepare(
@@ -2261,11 +3033,14 @@ router.post(
             statusCode: 409,
           });
         }
+        const deferUnreleased = isUnreleasedOrderRow(currentOrder);
 
         try {
           for (const item of items) {
             validateItemNotes(db, item.special_instructions);
-            item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity);
+            item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity, {
+              deferStockDeduction: deferUnreleased,
+            });
           }
           if (special_instructions !== undefined) {
             validateOrderNotes(db, special_instructions);
@@ -2290,6 +3065,7 @@ router.post(
           isOnlineOrder,
           actorUserId: idempotencyUserId,
           canOverridePrice: hasPermission(idempotencyUserId, ITEM_PRICE_OVERRIDE_PERMISSION),
+          deferStockDeduction: deferUnreleased,
         });
 
         // BUG #3 FIX: Filter out terminal items from total recalculation.
@@ -2399,6 +3175,8 @@ router.post(
           details: { item_ids: insertedItemIds },
         });
 
+        reconcileActiveOrderStatusFromItems(db, req.params.id as string, idempotencyUserId);
+
         const updatedOrder = parseRowJson(
           db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id),
         ) as any;
@@ -2421,7 +3199,11 @@ router.post(
 
       if (result.replayResponse) return res.json(result.replayResponse);
       cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
-      notifyKdsUpdate();
+      if (isUnreleasedOrderRow(result.updatedOrder)) {
+        notifyOrderUpdated();
+      } else {
+        notifyKdsUpdate();
+      }
 
       res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
     } catch (error: any) {
@@ -2435,16 +3217,15 @@ router.post(
         : statusCode >= 500
           ? 'fc.backend.order.append.persistence'
           : 'fc.backend.order.append.validation';
-      return res
-        .status(statusCode)
-        .json(
-          structuredOperationFailure(
-            req,
-            point,
-            operationCommitted ? 'applied' : 'not_applied',
-            message,
-          ),
-        );
+      return res.status(statusCode).json({
+        ...structuredOperationFailure(
+          req,
+          point,
+          operationCommitted ? 'applied' : 'not_applied',
+          message,
+        ),
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   },
 );
@@ -2626,9 +3407,36 @@ router.patch(
 
       const db = getDatabase();
       // Validate order existence before beginning authoritative transaction.
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+        | {
+            total?: number | null;
+            round_off?: number | null;
+            scheduled_for?: string | null;
+            release_status?: string | null;
+          }
+        | undefined;
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
+      }
+      if (isUnreleasedOrderRow(order) && status !== 'cancelled') {
+        return res.status(409).json({
+          error: 'Scheduled order must be released to the kitchen before updating kitchen status.',
+          code: 'ORDER_NOT_RELEASED',
+        });
+      }
+      if (status === 'cancelled' && isScheduledOrderRow(order)) {
+        const preCancelPaymentCheck = evaluateOrderStatusPaymentBlock(
+          db,
+          req.params.id,
+          order.total,
+          order.round_off,
+        );
+        if (preCancelPaymentCheck.evaluatedBills.some((b) => b.hasCollectedFunds)) {
+          return res.status(409).json({
+            error: 'Collected payment must be fully refunded before cancelling a scheduled order.',
+            code: 'REFUND_REQUIRED_BEFORE_CANCEL',
+          });
+        }
       }
 
       let preVerifiedStatusApprover: { id: string; verifiedPinHash: string } | null = null;
@@ -2653,23 +3461,19 @@ router.patch(
 
         const preVerificationRequiresPayment =
           status === 'completed' &&
-          evaluateOrderStatusPaymentBlock(
-            db,
-            req.params.id,
-            (order as any).total,
-            (order as any).round_off,
-          ).paymentBlocksCompletion;
+          evaluateOrderStatusPaymentBlock(db, req.params.id, order.total, order.round_off)
+            .paymentBlocksCompletion;
 
         const explicitApproverId = req.body.approver_id || req.body.manager_id || req.body.user_id;
         const candidateUsers = explicitApproverId
           ? (db
               .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+                "SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
               )
               .all(explicitApproverId) as PinApproverCandidate[])
           : (db
               .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+                "SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
               )
               .all() as PinApproverCandidate[]);
 
@@ -2762,6 +3566,14 @@ router.patch(
             { statusCode: 400 },
           );
         }
+        if (isUnreleasedOrderRow(currentOrder) && status !== 'cancelled') {
+          throw Object.assign(
+            new Error(
+              'Scheduled order must be released to the kitchen before updating kitchen status.',
+            ),
+            { statusCode: 409, code: 'ORDER_NOT_RELEASED' },
+          );
+        }
 
         // Evaluate item progress, kitchen delivery policy, and bill/payment state
         // inside the authoritative transaction.
@@ -2822,6 +3634,18 @@ router.patch(
 
         const orderInProgressForCancel = currentStatusIndex > 0 || hasItemsInProgress;
         const hasCollectedFundsOnOrder = evaluatedBills.some((b) => b.hasCollectedFunds);
+        if (
+          status === 'cancelled' &&
+          isScheduledOrderRow(currentOrder) &&
+          hasCollectedFundsOnOrder
+        ) {
+          throw Object.assign(
+            new Error(
+              'Collected payment must be fully refunded before cancelling a scheduled order.',
+            ),
+            { statusCode: 409, code: 'REFUND_REQUIRED_BEFORE_CANCEL' },
+          );
+        }
         const requiresCancelOverride =
           status === 'cancelled' && (orderInProgressForCancel || hasCollectedFundsOnOrder);
         const requiresCompleteOverride =
@@ -2875,7 +3699,9 @@ router.patch(
           let user: PinApproverCandidate | undefined;
           if (preVerifiedStatusApprover) {
             const candidate = db
-              .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+              .prepare(
+                "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
+              )
               .get(preVerifiedStatusApprover.id) as
               | { id: string; role: string; pin_hash: string | null; is_active: number }
               | undefined;
@@ -2937,13 +3763,25 @@ router.patch(
             break;
 
           case 'cancelled': {
-            // Restore stock only for items still pending; prepared/in-progress items use void/waste semantics.
-            const eligibleItems = db
-              .prepare(`
+            // Never restore stock on unreleased scheduled orders since stock was never deducted.
+            const eligibleItems = isUnreleasedOrderRow(currentOrder)
+              ? []
+              : (db
+                  .prepare(`
             SELECT * FROM order_items
             WHERE order_id = ? AND status = 'pending'
           `)
-              .all(req.params.id) as any[];
+                  .all(req.params.id) as Array<{
+                  id: number;
+                  product_id: string;
+                  variant_id: string | null;
+                  quantity?: number;
+                  inventory_product_id: string | null;
+                  inventory_variant_id: string | null;
+                  inventory_deducted_quantity: number;
+                  recipe_snapshot: string | null;
+                  updated_at: string;
+                }>);
 
             for (const item of eligibleItems) {
               const inventoryTarget =
@@ -3041,15 +3879,20 @@ router.patch(
 
       if (changed) {
         cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
-        notifyKdsUpdate();
+        if (isUnreleasedOrderRow(updatedOrder)) {
+          notifyOrderUpdated();
+        } else {
+          notifyKdsUpdate();
+        }
       }
 
       res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table }) });
     } catch (error: any) {
       console.error('[API] Internal error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   }),
 );
@@ -3091,6 +3934,8 @@ router.patch(
             { statusCode: 400 },
           );
         }
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+
         const blockingBill = db
           .prepare(
             `SELECT id FROM bills
@@ -3366,11 +4211,12 @@ router.patch(
 
       res.json({ order: { ...updatedOrder, customer } });
     } catch (error: unknown) {
-      const err = error as { statusCode?: number; message?: string };
+      const err = error as { statusCode?: number; message?: string; code?: string };
       console.error('[API] Internal error:', err);
-      res
-        .status(err.statusCode || 500)
-        .json({ error: err.statusCode ? err.message : 'Internal server error' });
+      res.status(err.statusCode || 500).json({
+        error: err.statusCode ? err.message : 'Internal server error',
+        ...(err.code ? { code: err.code } : {}),
+      });
     }
   },
 );
@@ -3577,6 +4423,21 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
+    try {
+      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, order);
+    } catch (err: unknown) {
+      const typedErr = err as { statusCode?: number; message?: string };
+      return res.status(typedErr.statusCode || 409).json({
+        ...structuredOperationFailure(
+          req,
+          'fc.backend.order.discount.validation',
+          'not_applied',
+          typedErr.message || 'Scheduled order edit locked after payment',
+          'paid',
+        ),
+        code: 'SCHEDULED_ORDER_PAID',
+      });
+    }
     if (
       db
         .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
@@ -3690,12 +4551,12 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
         const candidateUsers = explicitApproverId
           ? (db
               .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+                "SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
               )
               .all(explicitApproverId) as PinApproverCandidate[])
           : (db
               .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+                "SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
               )
               .all() as PinApproverCandidate[]);
 
@@ -3849,7 +4710,9 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
     const result = withTxn(() => {
       if (approvedByUserId && preVerifiedOrderDiscountPinHash) {
         const approver = db
-          .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+          .prepare(
+            "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
+          )
           .get(approvedByUserId) as
           | { id: string; role: string; pin_hash: string | null; is_active: number }
           | undefined;
@@ -3870,6 +4733,19 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
         | undefined;
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      try {
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+      } catch (err: unknown) {
+        const typedErr = err as { statusCode?: number; message?: string };
+        throw Object.assign(
+          new Error(typedErr.message || 'Scheduled order edit locked after payment'),
+          {
+            statusCode: typedErr.statusCode || 409,
+            diagnosticCode: 'paid',
+            code: 'SCHEDULED_ORDER_PAID',
+          },
+        );
       }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), {
@@ -4085,17 +4961,16 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
       : statusCode >= 500
         ? 'fc.backend.order.discount.persistence'
         : 'fc.backend.order.discount.validation';
-    return res
-      .status(statusCode)
-      .json(
-        structuredOperationFailure(
-          req,
-          point,
-          operationCommitted ? 'applied' : 'not_applied',
-          message,
-          operationCommitted ? undefined : error.diagnosticCode,
-        ),
-      );
+    return res.status(statusCode).json({
+      ...structuredOperationFailure(
+        req,
+        point,
+        operationCommitted ? 'applied' : 'not_applied',
+        message,
+        operationCommitted ? undefined : error.diagnosticCode,
+      ),
+      ...(error.code ? { code: error.code } : {}),
+    });
   }
 });
 
@@ -4118,6 +4993,17 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+    try {
+      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, order);
+    } catch (err: unknown) {
+      const typedErr = err as { statusCode?: number; message?: string; code?: string };
+      return res.status(typedErr.statusCode || 409).json({
+        error:
+          typedErr.message ||
+          'Item and financial edits are locked after payment is recorded on a scheduled order.',
+        code: typedErr.code || 'SCHEDULED_ORDER_PAID',
+      });
     }
     if (
       db
@@ -4203,12 +5089,12 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
       const candidateUsers = explicitApproverId
         ? (db
             .prepare(
-              'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+              "SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
             )
             .all(explicitApproverId) as PinApproverCandidate[])
         : (db
             .prepare(
-              'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+              "SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL",
             )
             .all() as PinApproverCandidate[]);
 
@@ -4307,7 +5193,9 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     const updatedItem = withTxn(() => {
       if (approvedByUserId && preVerifiedItemDiscountPinHash) {
         const approver = db
-          .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+          .prepare(
+            "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
+          )
           .get(approvedByUserId) as
           | { id: string; role: string; pin_hash: string | null; is_active: number }
           | undefined;
@@ -4328,6 +5216,18 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
         | undefined;
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      try {
+        assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+      } catch (err: unknown) {
+        const typedErr = err as { statusCode?: number; message?: string; code?: string };
+        throw Object.assign(
+          new Error(typedErr.message || 'Scheduled order edit locked after payment'),
+          {
+            statusCode: typedErr.statusCode || 409,
+            code: typedErr.code || 'SCHEDULED_ORDER_PAID',
+          },
+        );
       }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), {
@@ -4606,9 +5506,10 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     res.json({ item: updatedItem });
   } catch (error: any) {
     console.error('[API] Internal error:', error);
-    res
-      .status(error.statusCode || 500)
-      .json({ error: error.statusCode ? error.message : 'Internal server error' });
+    res.status(error.statusCode || 500).json({
+      error: error.statusCode ? error.message : 'Internal server error',
+      ...(error.code ? { code: error.code } : {}),
+    });
   }
 });
 
@@ -4645,6 +5546,8 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
           statusCode: 400,
         });
       }
+      assertScheduledOrderUnpaidForEdit(db, req.params.id as string, currentOrder);
+
       const blockingBill = db
         .prepare(
           `SELECT payment_status, split_group_id, COALESCE(paid_amount, 0) AS paid_amount
@@ -4867,10 +5770,11 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
     res.json({ item: updatedItem });
   } catch (error: unknown) {
     console.error('[API] Internal error:', error);
-    const failure = error as { statusCode?: number; message?: string };
-    res
-      .status(failure.statusCode || 500)
-      .json({ error: failure.statusCode ? failure.message : 'Internal server error' });
+    const failure = error as { statusCode?: number; message?: string; code?: string };
+    res.status(failure.statusCode || 500).json({
+      error: failure.statusCode ? failure.message : 'Internal server error',
+      ...(failure.code ? { code: failure.code } : {}),
+    });
   }
 });
 
@@ -5055,6 +5959,10 @@ router.patch(
       }
 
       const isItemVoidInProgress = ['preparing', 'ready'].includes(item.status);
+      const suppliedApproverIds = [req.body.approver_id, req.body.manager_id, req.body.user_id]
+        .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+        .map((val) => String(val).trim());
+      const managerId = suppliedApproverIds[0];
       let preVerifiedVoidApprover: { id: string; verifiedPinHash: string } | null = null;
       if (isItemVoidInProgress && override_pin && typeof override_pin === 'string') {
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
@@ -5067,11 +5975,13 @@ router.patch(
           checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
-        const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
+        if (new Set(suppliedApproverIds).size > 1) {
+          return res.status(400).json({ error: 'Conflicting approver identifiers' });
+        }
         const candidateUsers = managerId
           ? (db
               .prepare(
-                'SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
+                "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager') AND pin_hash IS NOT NULL AND is_active = 1",
               )
               .all(managerId) as {
               id: string;
@@ -5081,7 +5991,7 @@ router.patch(
             }[])
           : (db
               .prepare(
-                'SELECT id, role, pin_hash, is_active FROM users WHERE pin_hash IS NOT NULL AND is_active = 1',
+                "SELECT id, role, pin_hash, is_active FROM users WHERE role IN ('owner', 'manager') AND pin_hash IS NOT NULL AND is_active = 1",
               )
               .all() as { id: string; role: string; pin_hash: string; is_active: number }[]);
 
@@ -5154,6 +6064,8 @@ router.patch(
           };
         }
 
+        assertScheduledOrderUnpaidForEdit(db, orderId, currentOrder);
+
         if (
           db
             .prepare(`
@@ -5209,11 +6121,12 @@ router.patch(
             });
           }
 
-          const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
           let pinUser: any = null;
           if (preVerifiedVoidApprover) {
             const candidate = db
-              .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+              .prepare(
+                "SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND role IN ('owner', 'manager')",
+              )
               .get(preVerifiedVoidApprover.id) as any;
             if (
               candidate &&
@@ -5266,7 +6179,9 @@ router.patch(
             "UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?",
           ).run(now(), now(), itemId);
         } else {
-          cancelOrderItemAndRestoreStock(db, currentItem, actorId, reason);
+          cancelOrderItemAndRestoreStock(db, currentItem, actorId, reason, {
+            skipStockRestore: isUnreleasedOrderRow(currentOrder),
+          });
         }
 
         // Recalculate order totals excluding terminal items.
@@ -5401,6 +6316,10 @@ router.patch(
           details: { ...(approvedByUserId && { approved_by: approvedByUserId }) },
         });
 
+        if (!orderCancelled) {
+          reconcileActiveOrderStatusFromItems(db, orderId, actorId);
+        }
+
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(
           db,
@@ -5423,15 +6342,20 @@ router.patch(
 
       if (result.eventType) {
         cloudSync.recordOrderChanged(orderId, result.eventType);
-        notifyKdsUpdate();
+        if (isUnreleasedOrderRow(result.updatedOrder)) {
+          notifyOrderUpdated();
+        } else {
+          notifyKdsUpdate();
+        }
       }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Cancel item error:', error);
       console.error('[API] Internal error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   }),
 );
@@ -5536,6 +6460,8 @@ router.patch(
             statusCode: 400,
           });
         }
+        assertScheduledOrderUnpaidForEdit(db, orderId, currentOrder);
+
         const bills = db.prepare('SELECT * FROM bills WHERE order_id = ?').all(orderId) as {
           split_group_id: string | null;
           payment_status: string;
@@ -5555,6 +6481,7 @@ router.patch(
             statusCode: 409,
           });
         }
+        const deferUnreleased = isUnreleasedOrderRow(currentOrder);
 
         const tenantInfo = {
           country: getSettingValue('country') || '',
@@ -5731,7 +6658,9 @@ router.patch(
           if (isStartedQuantityIncrease) {
             superseded = false;
           } else if (isPendingLine) {
-            cancelOrderItemAndRestoreStock(db, oldItem, actorId, reason);
+            cancelOrderItemAndRestoreStock(db, oldItem, actorId, reason, {
+              skipStockRestore: deferUnreleased,
+            });
             superseded = true;
           } else {
             // Started replacement: void original line without restoring stock.
@@ -5774,6 +6703,7 @@ router.patch(
                 newItem.product_id,
                 newItem.addons,
                 newItem.quantity,
+                { deferStockDeduction: deferUnreleased },
               );
               if (preserveUnitPrice && Array.isArray(resolved)) {
                 const originalPrice = new Map(oldAddons.map((a) => [a.addon_id, a.price]));
@@ -5819,6 +6749,7 @@ router.patch(
             initialStatus: 'pending',
             preserveUnitPrice,
             preserveSelections: preserveStoredSelections,
+            deferStockDeduction: deferUnreleased,
           });
           newItemId = insertedId;
           if (preserveUnitPrice) carryPriceOverride(db, oldItem.id, insertedId);
@@ -5928,6 +6859,8 @@ router.patch(
           },
         });
 
+        reconcileActiveOrderStatusFromItems(db, orderId, actorId);
+
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<
           string,
           unknown
@@ -5948,15 +6881,20 @@ router.patch(
 
       if (!result.idempotentReplay) {
         cloudSync.recordOrderChanged(orderId, 'order.item_edited');
-        notifyKdsUpdate();
+        if (isUnreleasedOrderRow(result.order as { release_status?: unknown })) {
+          notifyOrderUpdated();
+        } else {
+          notifyKdsUpdate();
+        }
       }
       res.json({ order: result.order });
     } catch (err) {
-      const error = err as { statusCode?: number; message?: string };
+      const error = err as { statusCode?: number; message?: string; code?: string };
       console.error('[Orders] Edit item error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   },
 );
@@ -6013,6 +6951,7 @@ router.patch(
             statusCode: 400,
           });
         }
+        assertScheduledOrderUnpaidForEdit(db, orderId, currentOrder);
         if (
           db
             .prepare(
@@ -6053,38 +6992,40 @@ router.patch(
           return { updatedOrder: currentOrder, items, changed: false };
         }
 
-        // Re-deduct the inventory quantity originally consumed by the item
-        const inventoryTarget =
-          currentItem.inventory_deducted_quantity > 0
-            ? orderItemInventoryTarget(db, currentItem)
-            : null;
-        if (inventoryTarget) {
-          adjustProductStock(db, {
-            productId: inventoryTarget.productId,
-            variantId: inventoryTarget.variantId,
-            quantityDelta: -currentItem.inventory_deducted_quantity,
-            movementType: 'cancel_restore',
-            referenceType: 'order_item',
-            referenceId: `${currentItem.id}:${currentItem.updated_at}`,
-            reason: 'Cancelled item restored',
-            actorUserId: actorId,
-          });
-        }
-        // The add-on snapshot, not a recomputation from the current catalog: the
-        // merchant may have changed the add-on since the order was placed.
-        moveOrderItemAddonStock(db, orderItemAddonStockLines(db, currentItem.id), {
-          direction: 'deplete',
-          actorUserId: actorId,
-          referenceId: `${currentItem.id}:${currentItem.updated_at}`,
-          reason: 'Cancelled item restored',
-        });
-        const recipeSnapshot = parseRecipeSnapshot(currentItem.recipe_snapshot);
-        if (recipeSnapshot) {
-          applyRecipeSnapshot(db, recipeSnapshot, {
+        if (!isUnreleasedOrderRow(currentOrder)) {
+          // Re-deduct the inventory quantity originally consumed by the item
+          const inventoryTarget =
+            currentItem.inventory_deducted_quantity > 0
+              ? orderItemInventoryTarget(db, currentItem)
+              : null;
+          if (inventoryTarget) {
+            adjustProductStock(db, {
+              productId: inventoryTarget.productId,
+              variantId: inventoryTarget.variantId,
+              quantityDelta: -currentItem.inventory_deducted_quantity,
+              movementType: 'cancel_restore',
+              referenceType: 'order_item',
+              referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+              reason: 'Cancelled item restored',
+              actorUserId: actorId,
+            });
+          }
+          // The add-on snapshot, not a recomputation from the current catalog: the
+          // merchant may have changed the add-on since the order was placed.
+          moveOrderItemAddonStock(db, orderItemAddonStockLines(db, currentItem.id), {
             direction: 'deplete',
             actorUserId: actorId,
             referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+            reason: 'Cancelled item restored',
           });
+          const recipeSnapshot = parseRecipeSnapshot(currentItem.recipe_snapshot);
+          if (recipeSnapshot) {
+            applyRecipeSnapshot(db, recipeSnapshot, {
+              direction: 'deplete',
+              actorUserId: actorId,
+              referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+            });
+          }
         }
 
         // Restore - mark as pending
@@ -6179,6 +7120,8 @@ router.patch(
           action: 'item_restored',
         });
 
+        reconcileActiveOrderStatusFromItems(db, orderId, actorId);
+
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(
           db,
@@ -6192,15 +7135,20 @@ router.patch(
 
       if (result.changed) {
         cloudSync.recordOrderChanged(orderId, 'order.item_restored');
-        notifyKdsUpdate();
+        if (isUnreleasedOrderRow(result.updatedOrder)) {
+          notifyOrderUpdated();
+        } else {
+          notifyKdsUpdate();
+        }
       }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Restore item error:', error);
       console.error('[API] Internal error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+      res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Internal server error',
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   },
 );

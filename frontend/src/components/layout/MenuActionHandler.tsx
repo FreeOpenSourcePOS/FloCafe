@@ -177,6 +177,10 @@ export default function MenuActionHandler() {
         case 'menu-master-pin':
           router.push('/settings?tab=data&action=master-pin');
           break;
+        case 'lock':
+        case 'lock-terminal':
+          void useAuthStore.getState().lock();
+          break;
         default:
           console.log('[Menu] Unknown action:', action);
       }

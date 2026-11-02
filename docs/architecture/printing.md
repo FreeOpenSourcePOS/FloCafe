@@ -159,10 +159,11 @@ four whitespace-separated tokens read as a sentence.
 | WebUSB | `frontend/src/lib/printer/PrinterService.ts` | Encoder output, sent over the browser's WebUSB API. |
 | Delivery slip | `frontend/src/lib/printer/delivery-slip-encoder.ts` and `delivery-slip-web-print.ts` | A `DeliverySlipDocument`'s contact facts, rendered as bytes or HTML. |
 | Tax bill | `frontend/src/lib/printer/tax-bill-encoder.ts` | A raw `Bill` and `Tenant`, not a document. |
+| Payment ticket slip | `printPaymentTicket` in `main/printers/thermal.ts` | Order metadata, item lines, balance due, and ESC/POS QR code (`FLOCAFE-TICKET:<order_number>`) for multi-counter ordering. |
 
-The tax bill encoder is the single exception to "renderers consume documents". It targets the
-detailed per-component tax receipt, a different receipt shape from `PrintDocument` v1, and reads
-the bill directly.
+The tax bill encoder and payment ticket slip generator are exceptions to "renderers consume
+documents": the tax bill encoder reads `Bill` directly for per-component tax detail, while
+`printPaymentTicket` formats a compact payment ticket slip and QR code from order items and totals.
 
 ### Browser HTML printing
 
@@ -265,7 +266,12 @@ read. `shared/print/text-size.ts` owns the rules:
 - Tax-pack width profiles are selected against the physical column count, then laid out at the
   text-size-adjusted columns; when `extra_large` narrows the column count,
   `selectTemplateRenderProfile()` reflows the profile's `lineItems` and `taxSummary` column widths
-  to fit the halved width.
+  to fit the halved width. When formatted financial values (`quantity`, `rate`, `taxRate`, `amount`,
+  addon prices, tax breakdown `@rate%` tokens, or summary amounts) across standard, compliance-pack,
+  or raster receipt rows still cannot fit on a single row after borrowing spare column width, the
+  renderer stacks the label and right-aligned financial continuation lines within the line budget
+  instead of truncating or ellipsizing digits, and fails before sending bytes with an explicit
+  overflow error if an unbreakable financial value is wider than the full line width.
 
 The enlargement is idempotent. The raster path applies it to the lines and to each group's
 `sourceControlLines` before `renderUnsupportedRasterLines()`, so rasterized rows render with the
@@ -315,6 +321,13 @@ parent's unsellable price. A product with no active variants keeps its single pa
 variant that links to a recipe ingredient is not gated by its own pool, and `includeOutOfStock`
 decides whether a sold-out variant row is emitted; the printed item count counts emitted rows on
 every destination.
+
+Unless `includeHidden` is set, products in an inactive category or with a missing or inactive
+ancestor category are omitted. Both renderers order root categories by sibling `sort_order, name`
+and group each root's subcategories immediately beneath it in sibling `sort_order, name` order,
+followed by uncategorized items. A root category with no direct visible products of its own emits
+its root heading once before its first visible subcategory section, while flat catalogs without
+subcategories emit only root headings.
 
 Products and POS expose a filtered menu print dialog with optional descriptions and effective
 add-on groups. The dialog can send ESC/POS to a selected receipt printer and roll width, open the

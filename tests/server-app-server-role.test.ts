@@ -194,6 +194,19 @@ async function main() {
       assert.equal(me.body.user.role, role, `/api/auth/me returns ${role} role`);
     }
 
+    setSetting('auto_lock_minutes', '1');
+    const unauthIdleSetting = await fetch(`${baseUrl}/api/settings/auto_lock_minutes`);
+    assert.equal(unauthIdleSetting.status, 401, 'Server App idle setting requires authentication');
+    for (const role of ['server', 'manager', 'owner']) {
+      const setting = await getJson(baseUrl, '/api/settings/auto_lock_minutes', roleTokens[role]);
+      assert.equal(setting.status, 200, `${role} can read the idle timeout`);
+      assert.equal(setting.body.setting.value, '1', `${role} receives the configured timeout`);
+    }
+    const otherSetting = await fetch(`${baseUrl}/api/settings/country`, {
+      headers: { Authorization: `Bearer ${roleTokens.server}` },
+    });
+    assert.equal(otherSetting.status, 404, 'Server App does not proxy general settings');
+
     const liveServerLogin = await postJson(baseUrl, '/api/auth/login', {
       email: 'server@server-app.test',
       password: 'ServerPass123!',
@@ -393,9 +406,10 @@ async function main() {
     assert.equal(serverMove.body.targetTable.status, 'occupied');
 
     // Protected forwarded routes must rate-limit LAN clients before auth or downstream work.
-    const customerResponses = await Promise.all(
-      Array.from({ length: 151 }, () => postJson(baseUrl, '/api/customers', {})),
-    );
+    const customerResponses = [];
+    for (let i = 0; i < 151; i += 1) {
+      customerResponses.push(await postJson(baseUrl, '/api/customers', {}));
+    }
     assert.equal(
       customerResponses.filter(({ status }) => status === 401).length,
       150,
@@ -407,9 +421,10 @@ async function main() {
       'customer requests over the limit are throttled on localhost',
     );
 
-    const printKotResponses = await Promise.all(
-      Array.from({ length: 29 }, () => postJson(baseUrl, '/api/printers/print-kot', {})),
-    );
+    const printKotResponses = [];
+    for (let i = 0; i < 29; i += 1) {
+      printKotResponses.push(await postJson(baseUrl, '/api/printers/print-kot', {}));
+    }
     assert(
       printKotResponses.every(({ status }) => status === 401),
       'KOT requests below the shared print limit reach authentication',

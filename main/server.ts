@@ -29,6 +29,7 @@ import {
   isTokenStale,
 } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
+import { startScheduledOrderSweep, stopScheduledOrderSweep } from './services/scheduled-orders';
 import { postHogApiFailureMiddleware } from './services/posthog';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
@@ -405,6 +406,8 @@ export function startServer(): Promise<void> {
           console.error('[Server] WhatsApp startup initialization failed:', error);
         }
 
+        startScheduledOrderSweep();
+
         resolve();
       };
 
@@ -440,6 +443,7 @@ export function stopServer(): Promise<void> {
   if (stopPromise) return stopPromise;
 
   stopping = true;
+  stopScheduledOrderSweep();
   const rejectStart = startReject;
   startReject = null;
   rejectStart?.(createShutdownCancellationError('Main server'));

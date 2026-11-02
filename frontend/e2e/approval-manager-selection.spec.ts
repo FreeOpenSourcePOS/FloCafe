@@ -267,7 +267,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     expect(rejectedBody.error).toBe('Invalid manager PIN');
 
     // Error alert should be visible in the modal
-    await expect(page.getByText('Invalid manager PIN')).toBeVisible();
+    await expect(page.getByText('Invalid Staff Approval PIN')).toBeVisible();
     await page.screenshot({
       path: path.join(EVIDENCE_DIR, 'scenario-2-mismatched-manager-pin-rejected.png'),
     });

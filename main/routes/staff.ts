@@ -311,10 +311,6 @@ router.post('/', requireStaffWrite, authRateLimit(), (req: Request, res: Respons
       });
     }
 
-    if (isOperationalRole(role) && hasNonEmptyPin(pin)) {
-      captureStaffValidation('fc.backend.staff.create.validation', 'pin_role_mismatch');
-      return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
-    }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       captureStaffValidation('fc.backend.staff.create.validation', 'pin_invalid');
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
@@ -434,10 +430,6 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
     }
 
     const targetRole = role ?? member.role;
-    if (isOperationalRole(targetRole) && hasNonEmptyPin(pin)) {
-      captureStaffValidation('fc.backend.staff.update.validation', 'pin_role_mismatch');
-      return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
-    }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       captureStaffValidation('fc.backend.staff.update.validation', 'pin_invalid');
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
@@ -481,16 +473,14 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
     );
     const hashedPassword = passwordChanged ? bcrypt.hashSync(password, 10) : member.password;
 
-    const pinChanged = isOperationalRole(targetRole)
-      ? Boolean(member.pin_hash)
-      : pin !== undefined &&
-        (hasNonEmptyPin(pin)
-          ? !member.pin_hash || !bcrypt.compareSync(String(pin), member.pin_hash)
-          : Boolean(member.pin_hash));
+    const pinChanged =
+      pin !== undefined &&
+      (hasNonEmptyPin(pin)
+        ? !member.pin_hash || !bcrypt.compareSync(String(pin), member.pin_hash)
+        : Boolean(member.pin_hash));
 
-    const hashedPin = isOperationalRole(targetRole)
-      ? null
-      : pin !== undefined
+    const hashedPin =
+      pin !== undefined
         ? hasNonEmptyPin(pin)
           ? pinChanged
             ? bcrypt.hashSync(String(pin), 10)

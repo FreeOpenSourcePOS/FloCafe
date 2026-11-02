@@ -38,9 +38,11 @@ interface AuthedRequest extends Request {
 
 function sendError(res: Response, error: unknown): void {
   const details = error as { statusCode?: unknown; message?: unknown; code?: unknown };
-  const statusCode = Number.isInteger(details.statusCode) ? details.statusCode as number : 500;
+  const statusCode = Number.isInteger(details.statusCode) ? (details.statusCode as number) : 500;
   if (statusCode >= 500) console.error('[API] Internal error:', error);
-  const body: Record<string, unknown> = { error: statusCode >= 500 ? 'Internal server error' : details.message };
+  const body: Record<string, unknown> = {
+    error: statusCode >= 500 ? 'Internal server error' : details.message,
+  };
   if (typeof details.code === 'string' && details.code) body.code = details.code;
   res.status(statusCode).json(body);
 }
@@ -101,7 +103,10 @@ function queryString(value: unknown, field: string): string | undefined {
 function listFiltersFromQuery(query: Request['query']): ExpenseListFilters {
   const status = queryString(query.status, 'status');
   if (status !== undefined && !(EXPENSE_STATUS_FILTERS as readonly string[]).includes(status)) {
-    throw new ExpenseServiceError(400, `status must be one of: ${EXPENSE_STATUS_FILTERS.join(', ')}`);
+    throw new ExpenseServiceError(
+      400,
+      `status must be one of: ${EXPENSE_STATUS_FILTERS.join(', ')}`,
+    );
   }
   return {
     from: queryString(query.from, 'from') ?? null,
@@ -117,13 +122,19 @@ function listFiltersFromQuery(query: Request['query']): ExpenseListFilters {
 /** Client mutations must carry the header: a retry without it is a new expense. */
 function requireIdempotencyKey(req: Request): string {
   const key = normalizeIdempotencyKey(req.get('Idempotency-Key'));
-  if (!key) throw new ExpenseServiceError(400, 'Idempotency-Key header is required for this operation', 'idempotency_key_required');
+  if (!key)
+    throw new ExpenseServiceError(
+      400,
+      'Idempotency-Key header is required for this operation',
+      'idempotency_key_required',
+    );
   return key;
 }
 
 router.get('/categories', requirePermission('expenses.view'), (req: Request, res: Response) => {
   try {
-    const includeInactive = req.query.include_inactive === 'true' || req.query.include_inactive === '1';
+    const includeInactive =
+      req.query.include_inactive === 'true' || req.query.include_inactive === '1';
     const page = listExpenseCategories(getDatabase(), { includeInactive });
     res.json({ categories: page.categories, truncated: page.truncated });
   } catch (error: unknown) {
@@ -163,9 +174,9 @@ router.patch('/categories/:id', requireExpenseWrite, (req: Request, res: Respons
   }
 });
 
-router.get('/context', requirePermission('expenses.view'), (_req: Request, res: Response) => {
+router.get('/context', requirePermission('expenses.view'), (req: Request, res: Response) => {
   try {
-    res.json(getExpenseContext(getDatabase()));
+    res.json(getExpenseContext(getDatabase(), String((req as AuthedRequest).user?.userId || '')));
   } catch (error: unknown) {
     sendError(res, error);
   }
@@ -258,39 +269,50 @@ router.post('/:id/replace', requireExpenseWrite, (req: Request, res: Response) =
 });
 
 /** Amounts settle against the immutable ledger; a cash entry also writes a linked Pay Out. */
-router.post('/:id/payments', requireExpenseAuthority('expenses.pay'), (req: Request, res: Response) => {
-  try {
-    const body = req.body || {};
-    requireCashDrawerAuthority(req, normalizeExpensePaymentMethod(body.method) === 'cash');
-    const outcome = recordExpensePayment(getDatabase(), String(req.params.id), {
-      ...body,
-      actorUserId: actorId(req as AuthedRequest),
-      idempotencyKey: requireIdempotencyKey(req),
-    });
-    if (outcome.replayed) res.set('Idempotent-Replay', 'true');
-    res.status(outcome.status).json(outcome.body);
-  } catch (error: unknown) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/:id/payments',
+  requireExpenseAuthority('expenses.pay'),
+  (req: Request, res: Response) => {
+    try {
+      const body = req.body || {};
+      requireCashDrawerAuthority(req, normalizeExpensePaymentMethod(body.method) === 'cash');
+      const outcome = recordExpensePayment(getDatabase(), String(req.params.id), {
+        ...body,
+        actorUserId: actorId(req as AuthedRequest),
+        idempotencyKey: requireIdempotencyKey(req),
+      });
+      if (outcome.replayed) res.set('Idempotent-Replay', 'true');
+      res.status(outcome.status).json(outcome.body);
+    } catch (error: unknown) {
+      sendError(res, error);
+    }
+  },
+);
 
 /** Reversals copy the committed payment; a correction is never an in-place edit. */
-router.post('/:id/payments/:paymentId/reverse', requireExpenseAuthority('expenses.reverse'), (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const expenseId = String(req.params.id);
-    const paymentId = String(req.params.paymentId);
-    requireCashDrawerAuthority(req, getExpensePayment(db, expenseId, paymentId).method === 'cash');
-    const outcome = reverseExpensePayment(db, expenseId, paymentId, {
-      reason: (req.body || {}).reason,
-      actorUserId: actorId(req as AuthedRequest),
-      idempotencyKey: requireIdempotencyKey(req),
-    });
-    if (outcome.replayed) res.set('Idempotent-Replay', 'true');
-    res.status(outcome.status).json(outcome.body);
-  } catch (error: unknown) {
-    sendError(res, error);
-  }
-});
+router.post(
+  '/:id/payments/:paymentId/reverse',
+  requireExpenseAuthority('expenses.reverse'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const expenseId = String(req.params.id);
+      const paymentId = String(req.params.paymentId);
+      requireCashDrawerAuthority(
+        req,
+        getExpensePayment(db, expenseId, paymentId).method === 'cash',
+      );
+      const outcome = reverseExpensePayment(db, expenseId, paymentId, {
+        reason: (req.body || {}).reason,
+        actorUserId: actorId(req as AuthedRequest),
+        idempotencyKey: requireIdempotencyKey(req),
+      });
+      if (outcome.replayed) res.set('Idempotent-Replay', 'true');
+      res.status(outcome.status).json(outcome.body);
+    } catch (error: unknown) {
+      sendError(res, error);
+    }
+  },
+);
 
 export const expenseRoutes = router;

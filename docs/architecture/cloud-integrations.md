@@ -59,6 +59,15 @@ with `warning_acknowledgement_required`.
 **Revoke on disconnect.** Disconnecting revokes the grant at Google rather than only deleting the
 local token.
 
+**Two-step backup and retention pruning.** Each backup separates snapshot upload from retention
+cleanup: the upload step writes the database snapshot to Google Drive and immediately stamps
+`last_backup_status` as `'success'` (`last_backup_at` and `last_success_at`), while the retention
+step (`applyRetention`) moves older automatic backups beyond `retention_count` to Google Drive
+Trash. If a transient error interrupts retention pruning, the completed snapshot upload remains
+valid (`last_backup_status` stays `'success'`) and the service records `retention_pending`
+(`retention_status = 'pending'`) so automatic background retries finish pruning older backups
+without invalidating the backup.
+
 **Offline behaviour.** Every operation fails with a `driveError` code rather than hanging. The last
 error code is persisted so the settings screen can explain the failure after a restart.
 
@@ -330,7 +339,7 @@ channel and their outbox is unaffected by diagnostics preferences.
 
 ## WhatsApp receipt delivery
 
-Sends receipts and automated customer follow-ups over WhatsApp ([`main/services/whatsapp.ts`](../../main/services/whatsapp.ts),
+Sends receipts, owner reports, and automated customer follow-ups over WhatsApp ([`main/services/whatsapp.ts`](../../main/services/whatsapp.ts),
 [`shared/whatsapp-automation.ts`](../../shared/whatsapp-automation.ts)).
 
 **Enabled by** the merchant through the WhatsApp settings route, which calls `enable()`. The module
@@ -340,11 +349,11 @@ Receipt outcome is summarised on the order as `whatsapp_receipt_status`, which `
 returns per order.
 
 **Templates and automated rules.** `whatsapp_automation_config` in `settings` stores customizable
-templates (`receipt`, `feedback`, `loyalty_milestone`, `visit_milestone`, `winback`), five trigger
+templates (`receipt`, `feedback`, `loyalty_milestone`, `visit_milestone`, `winback`), six trigger
 rules, and safety settings. `renderWhatsAppTemplate()` performs single-pass `{...}` placeholder
 substitution across customer, order, loyalty, and store fields (formatting monetary amounts and
 rounding loyalty points to the tenant currency's `currencyFractionDigits`) so substituted values are
-never re-parsed as tokens. All five automated rules ship disabled (`enabled: false`):
+never re-parsed as tokens. All six automated rules ship disabled (`enabled: false`):
 
 - When a bill transitions to `paid` (through `POST /api/bills/:id/payment`,
   `POST /api/bills/:id/payments`, or committed exact-balance auto-settlement via
@@ -355,32 +364,58 @@ never re-parsed as tokens. All five automated rules ship disabled (`enabled: fal
   also callable on demand via `POST /api/whatsapp/automation/run-sweep`) evaluates `feedback_delay`
   (bills settled at least `delayHours` ago and within 7 days of becoming due) and `winback` (active
   customers whose last paid visit was at least `inactiveDays` ago).
+- When a store-level day close commits (`POST /api/cash-closures` with `scope = 'day'`; never on a
+  per-staff shift close), `claimDayCloseZReportAttempt()` claims the `queued` row inside a SQLite
+  savepoint in the close transaction and `triggerDayCloseZReport()` dispatches it after commit,
+  formatting the stored day-close Z-report snapshot via `formatStoredZReportWhatsAppMessage()` (using
+  the store `language`, regional formatting, and `timezone`, bounded to 4096 characters while preserving
+  financial and drawer-reconciliation totals) rather than rendering a customer template. Configuring
+  `z_report_day_close` requires role `owner` with `reports.view` and an explicit E.164 `recipientPhone`
+  (never inferred from `business_phone`). Each day close claims at most one row in `whatsapp_messages`
+  keyed by `cash_closure_id` (`idx_whatsapp_messages_auto_z_closure`) so repeated close requests or
+  restarts cannot send duplicates, and claim/send errors are isolated so closing never rolls back. When
+  WhatsApp is disabled or explicit Offline mode is on, automatic day-close dispatch is suppressed
+  without queuing a row or triggering a delayed send on reconnection. When WhatsApp is disconnected or
+  delivery fails, the single row is recorded as `failed` without automatic retry or opening a manual
+  share window, leaving manual retry available through `POST /api/whatsapp/messages/:messageId/retry`.
 - `POST /api/whatsapp/automation/broadcast` sends a selected template to up to 50 active customers
   matching visit, inactivity, and loyalty-point filters.
 - Automated sends record `created_by_user_id` as `rule:<trigger>` (or `rule:broadcast`), which
-  `GET /api/whatsapp/messages` exposes as `trigger_rule`.
+  `GET /api/whatsapp/messages` exposes as `trigger_rule`. Report message kinds require
+  `reports.view` for `z_report` and both `reports.view` and `reports.daily-sales.export` for
+  `daily_sales_report` across history visibility, sending, and retry.
 
 **Safety and anti-ban controls.** Inbound non-group DMs matching opt-out keywords (`STOP`,
 `UNSUBSCRIBE`, `OPT OUT`, `OPTOUT`) automatically add the sender to `whatsapp_blocklist` when
-`autoOptOutEnabled` is on. Automated sends check store-timezone quiet hours (`quietHoursEnabled`,
-`quietHoursStart` to `quietHoursEnd`) and a per-customer 7-day automated message cap
-(`maxPerCustomerPerWeek`), returning `quiet_hours` or `weekly_cap` when blocked. All outbound sends
-enforce the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`), a 10-minute duplicate-body
-filter, simulated typing delay, and a content filter that rejects non-HTTPS URLs and URL shorteners.
+`autoOptOutEnabled` is on. Customer-campaign automated sends check store-timezone quiet hours
+(`quietHoursEnabled`, `quietHoursStart` to `quietHoursEnd`) and a per-customer 7-day automated message
+cap (`maxPerCustomerPerWeek`), returning `quiet_hours` or `weekly_cap` when blocked; owner report sends
+(`z_report` and `daily_sales_report`, manual or `z_report_day_close`) bypass quiet hours and weekly
+customer caps and do not consume customer caps. Outbound sends to the
+same recipient are serialized through `sendLocks` (`sendMessageWithLock()`), keeping the lock tail
+chained onto the active send even when a waiting request cancels or aborts. All outbound sends enforce
+disabled WhatsApp (`whatsapp_enabled`), Offline mode, `MAX_BODY_CHARS` (4096 characters on report
+kinds `z_report` and `daily_sales_report`), transport
+cooldown (`isInCooldown()`), the blocklist, a per-recipient hourly cap (`RATE_LIMIT_MAX_PER_HOUR`,
+plus `RATE_LIMIT_MIN_GAP_MS` spacing on manual and report sends), a 10-minute duplicate-body filter,
+simulated typing delay, and a content filter that rejects non-HTTPS URLs and URL shorteners.
 
 **ACK timeout, late ACKs, and retry.** Outbound messages remain in `typing` (refreshing `typing_at` when
-`socket.sendMessage` completes) until a Baileys `messages.update` server ACK (`status = 2/3/4`) arrives.
-`sweepAckTimeouts()` runs every 60 seconds (`ACK_SWEEP_INTERVAL_MS`) while connected, on socket open,
-during scheduled automation sweeps, and on startup (`initFromDb()`) to mark non-in-flight outbound rows
-still in `queued`, `seen`, or `typing` past `ACK_TIMEOUT_MS` (5 minutes, or any unfinished pre-restart or
-unsubmitted rows on startup) as `failed` with `error = 'ack_timeout'`. If a late ACK arrives after a row
-was marked `failed`, `advanceStatus()` promotes the row to `sent`, `delivered`, or `read` by
-`external_message_id` (including prior retry-attempt IDs), clears `error` and `failed_at`, backfills
+`socket.sendMessage` completes) until a Baileys `messages.update` server ACK (`status = 2/3/4`) arrives,
+and every submitted attempt's external ID is persisted in `whatsapp_message_attempts`
+(`recordMessageAttemptExternalId()`). `sweepAckTimeouts()` runs every 60 seconds
+(`ACK_SWEEP_INTERVAL_MS`) while connected, on socket open, during scheduled automation sweeps, and on
+startup (`initFromDb()`) to mark non-in-flight outbound rows still in `queued`, `seen`, or `typing` past
+`ACK_TIMEOUT_MS` (5 minutes, or any unfinished pre-restart or unsubmitted rows on startup) as `failed`
+with `error = 'ack_timeout'`. If a late ACK arrives after a row was marked `failed`, `advanceStatus()`
+resolves the row by `external_message_id` or `whatsapp_message_attempts` (across retries and service
+restarts), promotes it to `sent`, `delivered`, or `read`, clears `error` and `failed_at`, backfills
 earlier timestamps via `COALESCE`, and ignores out-of-order lower-rank updates.
 `POST /api/whatsapp/messages/:messageId/retry` (`retryMessage()`) coalesces concurrent retry requests and
 atomically re-queues a `failed` row in place without creating duplicate rows, enforcing Offline mode
-(`offline_mode`) and all safety controls while excluding the retried row from self-blocking in rate,
-weekly-cap, and duplicate-body checks.
+(`offline_mode`), `RATE_LIMIT_MIN_GAP_MS`, and all safety controls while excluding the retried row from
+self-blocking in the 1-hour message count (`RATE_LIMIT_MAX_PER_HOUR`), weekly-cap, and duplicate-body
+checks.
 
 **Offline behaviour.** No work is started when the module is disabled, when Offline mode is on, when
 it is in a terminal shutdown state, or when the request signal is aborted. Work already in flight is

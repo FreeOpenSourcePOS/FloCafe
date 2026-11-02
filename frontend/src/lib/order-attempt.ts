@@ -1,4 +1,9 @@
 import type { AppendAttemptStorage } from './append-attempt';
+import {
+  cartItemToOrderItem,
+  type OrderItemPayload,
+  type OrderItemSource,
+} from './cart-order-item';
 
 /** Global key used by builds before prepaid attempts became user scoped. */
 export const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';
@@ -28,6 +33,56 @@ interface CompletedOrderAttempt {
  * request a fresh idempotency key. */
 export function getPrepaidOrderAttemptStorageKey(userId: string): string {
   return `${PREPAID_ATTEMPT_STORAGE_KEY}${ORDER_ATTEMPT_USER_SUFFIX}${encodeURIComponent(userId)}`;
+}
+
+export interface CartStateForFingerprint {
+  tableId: string | null;
+  customerId: number | string | null;
+  orderType: string;
+  guestCount: number;
+  orderNotes?: string | null;
+  scheduledFor?: string | null;
+  onlinePlatform?: string | null;
+  externalOrderId?: string | null;
+  deliveryAddress?: string | null;
+  expectedPaymentMethod?: string | null;
+  expectedPaymentMethodId?: number | string | null;
+  deliveryNote?: string | null;
+  items: OrderItemSource[];
+  waivedChargeIds: Set<string>;
+  optedInChargeIds: Set<string>;
+}
+
+export function buildCartFingerprintFromState(
+  cartState: CartStateForFingerprint,
+  orderItems: OrderItemPayload[] = cartState.items.map(cartItemToOrderItem),
+): string {
+  return JSON.stringify({
+    table_id: cartState.tableId,
+    customer_id: cartState.customerId,
+    type: cartState.orderType,
+    guest_count: cartState.guestCount,
+    special_instructions: cartState.orderNotes,
+    scheduled_for:
+      cartState.orderType === 'takeaway' || cartState.orderType === 'delivery'
+        ? cartState.scheduledFor?.trim() || undefined
+        : undefined,
+    online_platform: cartState.orderType === 'online' ? cartState.onlinePlatform : undefined,
+    external_order_id: cartState.orderType === 'online' ? cartState.externalOrderId : undefined,
+    delivery_address:
+      cartState.orderType === 'delivery' ? cartState.deliveryAddress || undefined : undefined,
+    expected_payment_method:
+      cartState.orderType === 'delivery' ? cartState.expectedPaymentMethod || undefined : undefined,
+    expected_payment_method_id:
+      cartState.orderType === 'delivery'
+        ? (cartState.expectedPaymentMethodId ?? undefined)
+        : undefined,
+    delivery_note:
+      cartState.orderType === 'delivery' ? cartState.deliveryNote || undefined : undefined,
+    items: orderItems,
+    waived_charge_ids: Array.from(cartState.waivedChargeIds),
+    opted_in_charge_ids: Array.from(cartState.optedInChargeIds),
+  });
 }
 
 function isCompletedAttempt(value: unknown): value is CompletedOrderAttempt {

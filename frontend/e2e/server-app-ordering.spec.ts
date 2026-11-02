@@ -732,3 +732,26 @@ test.describe('Server App tableside ordering', () => {
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
   });
 });
+
+test('Server App locks locally on configured inactivity even if logout fails', async ({ page }) => {
+  await page.clock.install();
+  await page.route('**/api/settings/auto_lock_minutes', (route) =>
+    route.fulfill({ json: { setting: { value: '1' } } }),
+  );
+  let logoutAttempts = 0;
+  await page.route('**/api/auth/logout', (route) => {
+    logoutAttempts += 1;
+    return route.fulfill({ status: 503, json: { error: 'offline' } });
+  });
+  const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
+  await openServerApp(page, serverToken);
+  await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+  await page.clock.fastForward('00:59');
+  await page.keyboard.press('Shift');
+  await page.clock.fastForward('00:59');
+  await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+  await page.clock.fastForward('00:02');
+  await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
+  expect(await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY)).toBeNull();
+  await expect.poll(() => logoutAttempts).toBe(1);
+});

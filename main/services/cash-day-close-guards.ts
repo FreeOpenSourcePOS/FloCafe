@@ -11,7 +11,7 @@ import {
 } from '../db';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
 import { getTenantCurrency } from './refund';
-import { getOpenSession, type CashSessionRow } from './shift-session-gate';
+import { listOpenSessions, type CashSessionRow } from './shift-session-gate';
 
 function tenantTimezone(): string {
   return resolveRegionalSnapshot({
@@ -33,15 +33,20 @@ export function sessionBusinessDate(
   );
 }
 
+/** All open shifts that must close before day-close for `businessDate`. */
+export function openSessionsBlockingDayClose(
+  db: ReturnType<typeof getDatabase>,
+  businessDate: string,
+): CashSessionRow[] {
+  return listOpenSessions(db).filter((session) => sessionBusinessDate(db, session) <= businessDate);
+}
+
 /** Open shift that must close before day-close for `businessDate`, if any. */
 export function openSessionBlockingDayClose(
   db: ReturnType<typeof getDatabase>,
   businessDate: string,
 ): CashSessionRow | undefined {
-  const session = getOpenSession(db);
-  if (!session) return undefined;
-  if (sessionBusinessDate(db, session) > businessDate) return undefined;
-  return session;
+  return openSessionsBlockingDayClose(db, businessDate)[0];
 }
 
 export interface ShiftUnpaidOrderSample {

@@ -2943,6 +2943,7 @@ export class CloudSyncService {
       .prepare(`
       SELECT COUNT(*) as count FROM orders
       WHERE status IN ('pending', 'preparing', 'ready', 'served')
+        AND release_status = 'released'
     `)
       .get() as { count: number };
     // #208: UTC "today" via the new idx_bills_paid_status_paid_at

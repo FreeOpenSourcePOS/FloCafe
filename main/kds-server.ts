@@ -13,14 +13,18 @@ import {
   installHttpShutdownTracking,
 } from './shutdown';
 import {
+  ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
+  completeSettledReleasedOrderIfServed,
   databaseMaintenanceMiddleware,
   getDatabase,
+  getKdsItemParentOrderState,
   getKdsStationCategoryIds,
   getKdsStationRoutingScope,
   getUserKdsStationIds,
   hasUserKdsStationAssignments,
   isDatabaseMaintenanceActive,
   isKdsStationItemAllowed,
+  now,
   parseItemJson,
   attachEffectiveAddons,
   isKdsEnabled,
@@ -28,8 +32,11 @@ import {
   KDS_VOIDED_ITEM_VISIBILITY_MS,
   projectKdsItem,
   projectKdsOrder,
+  UNRELEASED_KDS_ORDER_ITEM_ERROR,
 } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
+import { reconcileActiveOrderStatusFromItems } from './services/orders';
+import { cloudSync } from './services/cloud-sync';
 import { getJWTSecret } from './security/jwt-secret';
 import { normalizeEmail, parseCategoryIds } from './routes/auth';
 import {
@@ -394,14 +401,7 @@ export function startKdsServer(): Promise<void> {
           FROM orders o
           LEFT JOIN tables t ON o.table_id = t.id
           INNER JOIN order_items oi ON oi.order_id = o.id
-          WHERE o.id IN (
-            SELECT id FROM orders WHERE status IN ('pending', 'preparing', 'ready', 'served')
-            UNION
-            SELECT active_o.id FROM orders active_o
-            JOIN order_items active_oi ON active_oi.order_id = active_o.id
-              AND active_oi.status NOT IN ('served', 'cancelled')
-            WHERE active_o.status NOT IN ('pending', 'preparing', 'ready', 'served', 'cancelled')
-          )
+          WHERE o.id IN (${ACTIVE_RELEASED_KDS_ORDER_IDS_SQL})
           AND oi.status NOT IN ('completed', 'cancelled', 'void_adjustment', 'refunded')
           AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         `;
@@ -543,6 +543,7 @@ export function startKdsServer(): Promise<void> {
           return res
             .status(403)
             .json({ error: 'No active kitchen station is assigned to this user' });
+        let autoCompletedOrderId: string | null = null;
         const updateResult = db
           .transaction(() => {
             const currentUser = db
@@ -590,8 +591,12 @@ export function startKdsServer(): Promise<void> {
           `)
               .get(req.params.id) as any;
             if (!item) return { statusCode: 404, error: 'Order item not found' };
-            if (!db.prepare('SELECT id FROM orders WHERE id = ?').get(item.order_id)) {
+            const parentOrderState = getKdsItemParentOrderState(db, item.order_id);
+            if (parentOrderState === 'missing') {
               return { statusCode: 404, error: 'Order item is not attached to an order' };
+            }
+            if (parentOrderState === 'unreleased') {
+              return { statusCode: 409, error: UNRELEASED_KDS_ORDER_ITEM_ERROR };
             }
 
             // #150: locked once voided — see main/routes/order-items.ts for the same rule.
@@ -650,34 +655,72 @@ export function startKdsServer(): Promise<void> {
               return { statusCode: 403, error: 'Not authorized to update this item' };
             }
 
+            const updatedAt = now();
             const updated =
               expectedStatus === undefined
                 ? db
                     .prepare(`
                 UPDATE order_items
-                SET status = ?, updated_at = datetime('now')
+                SET status = ?, updated_at = ?
                 WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled', 'refunded')
               `)
-                    .run(status, req.params.id)
+                    .run(status, updatedAt, req.params.id)
                 : db
                     .prepare(`
                 UPDATE order_items
-                SET status = ?, updated_at = datetime('now')
+                SET status = ?, updated_at = ?
                 WHERE id = ? AND status = ?
               `)
-                    .run(status, req.params.id, expectedStatus);
-            return updated.changes === 1
-              ? { statusCode: 200, error: null }
-              : { statusCode: 409, error: 'The order item changed before it could be updated' };
+                    .run(status, updatedAt, req.params.id, expectedStatus);
+            if (updated.changes !== 1) {
+              return {
+                statusCode: 409,
+                error: 'The order item changed before it could be updated',
+                reconciledEvent: null,
+              };
+            }
+            const reconcile = reconcileActiveOrderStatusFromItems(
+              db,
+              item.order_id,
+              kdsUser.userId,
+            );
+            if (
+              status === 'served' &&
+              completeSettledReleasedOrderIfServed(db, item.order_id, updatedAt)
+            ) {
+              autoCompletedOrderId = String(item.order_id);
+            }
+            return {
+              statusCode: 200,
+              error: null,
+              reconciledEvent:
+                reconcile.changed && reconcile.status
+                  ? { orderId: String(item.order_id), status: reconcile.status }
+                  : null,
+            };
           })
           .immediate();
 
         if (updateResult.statusCode !== 200) {
           return res.status(updateResult.statusCode).json({ error: updateResult.error });
         }
+        if (updateResult.reconciledEvent) {
+          try {
+            cloudSync.recordOrderChanged(
+              updateResult.reconciledEvent.orderId,
+              `order.${updateResult.reconciledEvent.status}`,
+            );
+          } catch {}
+        }
         notifyKdsUpdate();
+        if (autoCompletedOrderId) {
+          cloudSync.recordOrderChanged(autoCompletedOrderId, 'order.completed');
+        }
         res.json({ success: true });
       } catch (error: any) {
+        if (error?.statusCode === 409) {
+          return res.status(409).json({ error: error.message });
+        }
         console.error('[KDS Server] PATCH item status error:', error);
         console.error('[API] Internal error:', error);
         res.status(500).json({ error: 'Internal server error' });

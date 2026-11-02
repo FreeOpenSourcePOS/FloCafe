@@ -116,6 +116,10 @@ async function main() {
     INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status)
     VALUES (?, 'orders-search-product', ?, 10, 1, 10, 10, ?)
   `);
+  const recentKitchenStamp = new Date(Date.now() - 60 * 60 * 1000)
+    .toISOString()
+    .replace('T', ' ')
+    .replace(/\..*$/, '');
   for (const [number, itemStatus] of [
     ['ORD-COMPLETED-KITCHEN-PENDING', 'pending'],
     ['ORD-COMPLETED-KITCHEN-PREPARING', 'preparing'],
@@ -124,9 +128,15 @@ async function main() {
     ['ORD-COMPLETED-KITCHEN-VOIDED', 'voided'],
     ['ORD-COMPLETED-KITCHEN-REFUNDED', 'refunded'],
   ] as const) {
-    const orderId = createViewOrder(number, 'completed', '2022-01-01 00:00:00');
+    const orderId = createViewOrder(number, 'completed', recentKitchenStamp);
     insertItem.run(orderId, number, itemStatus);
   }
+  const expiredKitchenOrderId = createViewOrder(
+    'ORD-COMPLETED-KITCHEN-EXPIRED',
+    'completed',
+    '2022-01-01 00:00:00',
+  );
+  insertItem.run(expiredKitchenOrderId, 'ORD-COMPLETED-KITCHEN-EXPIRED', 'pending');
 
   const insertBill = db.prepare(`
     INSERT INTO bills (bill_number, order_id, total, paid_amount, balance, payment_status, split_group_id, split_label)
@@ -628,6 +638,10 @@ async function main() {
         `completed orders with ${itemStatus.toLowerCase()} items are not active kitchen work`,
       );
     }
+    assertOrThrow(
+      !activeCompletedNumbers.includes('ORD-COMPLETED-KITCHEN-EXPIRED'),
+      'completed orders older than the 24-hour window are excluded from active kitchen work',
+    );
     db.prepare("UPDATE settings SET value = 'false' WHERE key = 'kds_enabled'").run();
     const activeWithoutKds = await api(
       baseUrl,

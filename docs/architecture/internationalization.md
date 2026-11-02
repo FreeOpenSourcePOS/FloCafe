@@ -1,13 +1,13 @@
 # Internationalization
 
-FloCafe supports 23 UI languages. This page describes how a language is declared, loaded, and
+FloCafe supports 24 UI languages. This page describes how a language is declared, loaded, and
 validated, and how the UI language stays separate from a store's regional settings.
 
 ## Source of truth and the parity rule
 
-`frontend/src/lib/i18n/messages/en.json` is the canonical message catalogue. It holds 30
-top-level namespaces and 2,639 non-empty string leaves. Every other catalogue under
-`frontend/src/lib/i18n/messages/` must match it exactly: zero missing keys and zero orphan keys.
+`frontend/src/lib/i18n/messages/en.json` is the canonical message catalogue. Every other catalogue
+under `frontend/src/lib/i18n/messages/` must match its top-level namespaces and non-empty string
+leaves exactly: zero missing keys and zero orphan keys.
 
 Exact parity is a hard gate rather than a fallback, because there is no per-key English fallback in
 the runtime. A missing key does not render the English string; it renders nothing, and the
@@ -15,8 +15,8 @@ translation test fails. `npm run i18n:check` runs `tests/translations.test.ts`, 
 registry and file consistency, key parity, ICU validity, placeholder and tag parity, per-language
 completeness, and frontend key safety.
 
-The 23 committed catalogues are: `ar`, `bn`, `de`, `en`, `es`, `fa`, `fil`, `fr`, `hi`, `id`, `it`,
-`ja`, `ko`, `nl`, `pt`, `ru`, `sq`, `th`, `tr`, `ur`, `vi`, `zh`, `zh-tw`.
+The 24 committed catalogues are: `ar`, `bn`, `de`, `en`, `es`, `fa`, `fil`, `fr`, `hi`, `id`, `it`,
+`ja`, `ko`, `ne`, `nl`, `pt`, `ru`, `sq`, `th`, `tr`, `ur`, `vi`, `zh`, `zh-tw`.
 
 ## The registry
 
@@ -132,8 +132,10 @@ Print output has its own language settings, separate from both; see
 ## Derived print labels
 
 The main process cannot import the frontend's message loaders, but it needs the same label text for
-thermal printing. `main/print/print-labels.generated.ts` is a committed, generated TypeScript view of
-the canonical catalogues for exactly that purpose. It is produced by
+thermal printing and backend plain-text WhatsApp reports (`formatDailySalesWhatsAppMessage` in
+`main/services/daily-sales-export.ts` and `formatStoredZReportWhatsAppMessage` in
+`main/services/whatsapp.ts`). `main/print/print-labels.generated.ts` is a committed, generated
+TypeScript view of the canonical catalogues for those main-process consumers. It is produced by
 `scripts/generate-print-labels.cjs`, which extracts the `print.*` namespace plus an explicit manifest
 of borrowed keys from other namespaces, for every committed language, in registry order.
 

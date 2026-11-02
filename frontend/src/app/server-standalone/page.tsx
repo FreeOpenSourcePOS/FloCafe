@@ -96,7 +96,7 @@ function createApi(): AxiosInstance {
   const api = axios.create({ baseURL: window.location.origin, timeout: 10000 });
   api.interceptors.request.use((config) => {
     const token = localStorage.getItem(TOKEN_KEY);
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+    if (token && !config.headers.Authorization) config.headers.Authorization = `Bearer ${token}`;
     return config;
   });
   api.interceptors.response.use(
@@ -247,6 +247,33 @@ export default function ServerStandalonePage() {
   const orderLookupFailedRef = useRef(false);
   const orderLoadSeqRef = useRef(0);
   const authSessionSeqRef = useRef(0);
+  const activeUserIdRef = useRef<string | null>(null);
+  const [autoLockMinutes, setAutoLockMinutes] = useState(0);
+  const lastActivityRef = useRef(0);
+  const liveDraftRef = useRef({
+    tableId: '',
+    draft: [] as DraftLine[],
+    customerName: '',
+    customerPhone: '',
+    orderNotes: '',
+  });
+  const suspendedDraftRef = useRef<
+    | (typeof liveDraftRef.current & {
+        ownerId: string;
+        attempt: typeof sendAttemptRef.current;
+      })
+    | null
+  >(null);
+
+  useEffect(() => {
+    liveDraftRef.current = {
+      tableId: selectedTableId,
+      draft,
+      customerName,
+      customerPhone,
+      orderNotes,
+    };
+  }, [selectedTableId, draft, customerName, customerPhone, orderNotes]);
 
   const loadUser = useCallback(async () => {
     if (!api || sendInFlightRef.current) return;
@@ -280,11 +307,14 @@ export default function ServerStandalonePage() {
   async function loadAll(options?: { allowWhileSending?: boolean }) {
     if (!api) return;
     if (sendInFlightRef.current && !options?.allowWhileSending) return;
+    const session = authSessionSeqRef.current;
+    const token = localStorage.getItem(TOKEN_KEY);
     const [categoriesRes, productsRes, tablesRes] = await Promise.all([
       api.get('/api/categories', { params: { active: 'true' } }),
       api.get('/api/products', { params: { active: 'true' } }),
       api.get('/api/tables', { params: { active: 'true' } }),
     ]);
+    if (session !== authSessionSeqRef.current || token !== localStorage.getItem(TOKEN_KEY)) return;
     if (sendInFlightRef.current && !options?.allowWhileSending) return;
     setCategories(categoriesRes.data.categories || []);
     setProducts(productsRes.data.products || []);
@@ -330,10 +360,13 @@ export default function ServerStandalonePage() {
       }
       const order = res.data.orders?.[0] || null;
       setCurrentOrder(order);
+      const suspended = suspendedDraftRef.current;
       const pendingAttempt =
         sendAttemptRef.current?.snapshot.tableId === tableId
           ? sendAttemptRef.current.snapshot
-          : null;
+          : suspended?.ownerId === activeUserIdRef.current && suspended.tableId === tableId
+            ? suspended
+            : null;
       if (pendingAttempt) {
         setCustomerName(pendingAttempt.customerName);
         setCustomerPhone(pendingAttempt.customerPhone);
@@ -344,6 +377,7 @@ export default function ServerStandalonePage() {
         setCustomerName('');
         setCustomerPhone('');
       }
+      if (suspended && !sendInFlightRef.current) suspendedDraftRef.current = null;
       setCustomerMatch(null);
       setCustomerSearched(false);
       orderLoadedTableIdRef.current = tableId;
@@ -388,6 +422,111 @@ export default function ServerStandalonePage() {
   }, [api]);
 
   const userId = user?.id;
+
+  useEffect(() => {
+    activeUserIdRef.current = userId ?? null;
+  }, [userId]);
+
+  useEffect(() => {
+    if (!api || !userId) return;
+    let cancelled = false;
+    const session = authSessionSeqRef.current;
+    const token = localStorage.getItem(TOKEN_KEY);
+    const refresh = () => {
+      api
+        .get('/api/settings/auto_lock_minutes')
+        .then((response) => {
+          if (
+            cancelled ||
+            session !== authSessionSeqRef.current ||
+            token !== localStorage.getItem(TOKEN_KEY)
+          )
+            return;
+          const minutes = Number(response.data?.setting?.value);
+          if ([0, 1, 5, 15, 30].includes(minutes)) setAutoLockMinutes(minutes);
+        })
+        .catch(() => {});
+    };
+    lastActivityRef.current = Date.now();
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refresh);
+    };
+  }, [api, userId]);
+
+  useEffect(() => {
+    if (!api || !userId || autoLockMinutes <= 0) return;
+    const timeout = autoLockMinutes * 60_000;
+    let timer: ReturnType<typeof setTimeout>;
+    let locked = false;
+    const lock = () => {
+      if (locked) return;
+      locked = true;
+      const token = localStorage.getItem(TOKEN_KEY);
+      suspendedDraftRef.current = {
+        ...liveDraftRef.current,
+        ownerId: userId,
+        attempt: sendAttemptRef.current,
+      };
+      authSessionSeqRef.current += 1;
+      orderLoadSeqRef.current += 1;
+      sendSeqRef.current += 1;
+      cancelPendingCustomerLookup();
+      localStorage.removeItem(TOKEN_KEY);
+      sendAttemptRef.current = null;
+      selectedTableIdRef.current = '';
+      orderLoadedTableIdRef.current = '';
+      activeUserIdRef.current = null;
+      setUser(null);
+      setEmail('');
+      setPassword('');
+      setDraft([]);
+      setOrderNotes('');
+      setCustomerName('');
+      setCustomerPhone('');
+      setCustomerMatch(null);
+      setCustomerSearched(false);
+      setSelectedTableId('');
+      setOrderLoadedTableId('');
+      setCurrentOrder(null);
+      setAddonModalProduct(null);
+      setEditingDraftLine(null);
+      setMoveTableModalOpen(false);
+      setMobileCartOpen(false);
+      setAutoLockMinutes(0);
+      if (token)
+        void api
+          .post('/api/auth/logout', {}, { headers: { Authorization: `Bearer ${token}` } })
+          .catch(() => {});
+    };
+    const check = () => {
+      const remaining = timeout - (Date.now() - lastActivityRef.current);
+      if (remaining <= 0) lock();
+      else timer = setTimeout(check, remaining);
+    };
+    const activity = () => {
+      lastActivityRef.current = Date.now();
+      clearTimeout(timer);
+      timer = setTimeout(check, timeout);
+    };
+    const visible = () => {
+      if (document.visibilityState === 'visible') {
+        clearTimeout(timer);
+        check();
+      }
+    };
+    const events = ['pointerdown', 'keydown', 'touchstart', 'wheel', 'mousemove'] as const;
+    events.forEach((event) => window.addEventListener(event, activity, { passive: true }));
+    document.addEventListener('visibilitychange', visible);
+    check();
+    return () => {
+      clearTimeout(timer);
+      events.forEach((event) => window.removeEventListener(event, activity));
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [api, userId, autoLockMinutes]);
 
   useEffect(() => {
     if (!userId || !api) return;
@@ -443,10 +582,13 @@ export default function ServerStandalonePage() {
         }
         const order = res.data.orders?.[0] || null;
         setCurrentOrder(order);
+        const suspended = suspendedDraftRef.current;
         const pendingAttempt =
           sendAttemptRef.current?.snapshot.tableId === targetTableId
             ? sendAttemptRef.current.snapshot
-            : null;
+            : suspended?.ownerId === activeUserIdRef.current && suspended.tableId === targetTableId
+              ? suspended
+              : null;
         if (pendingAttempt) {
           setCustomerName(pendingAttempt.customerName);
           setCustomerPhone(pendingAttempt.customerPhone);
@@ -457,6 +599,7 @@ export default function ServerStandalonePage() {
           setCustomerName('');
           setCustomerPhone('');
         }
+        if (suspended && !sendInFlightRef.current) suspendedDraftRef.current = null;
         setCustomerMatch(null);
         setCustomerSearched(false);
         orderLoadedTableIdRef.current = targetTableId;
@@ -617,6 +760,28 @@ export default function ServerStandalonePage() {
       });
       authSessionSeqRef.current += 1;
       localStorage.setItem(TOKEN_KEY, res.data.access_token);
+      const suspended = suspendedDraftRef.current;
+      if (suspended && suspended.ownerId === res.data.user.id) {
+        selectedTableIdRef.current = suspended.tableId;
+        setSelectedTableId(suspended.tableId);
+        setDraft(suspended.draft);
+        setCustomerName(suspended.customerName);
+        setCustomerPhone(suspended.customerPhone);
+        setOrderNotes(suspended.orderNotes);
+        sendAttemptRef.current = suspended.attempt;
+      } else if (suspended) {
+        const hadDraft =
+          suspended.draft.length > 0 ||
+          Boolean(suspended.attempt) ||
+          Boolean(suspended.orderNotes.trim()) ||
+          Boolean(suspended.customerName.trim()) ||
+          Boolean(suspended.customerPhone.trim());
+        suspendedDraftRef.current = null;
+        if (hadDraft) {
+          toast(t('draftDiscardedOnUserChange'));
+        }
+      }
+      activeUserIdRef.current = res.data.user.id;
       setUser(res.data.user);
     } catch (error: unknown) {
       toastApiError(error, t('signInFailed'), apiErrorT);
@@ -742,6 +907,8 @@ export default function ServerStandalonePage() {
   async function ensureCustomer(
     submittedName: string,
     submittedPhone: string,
+    token: string,
+    isCurrent: () => boolean,
   ): Promise<string | null> {
     if (!api) return null;
     const name = submittedName.trim();
@@ -754,28 +921,48 @@ export default function ServerStandalonePage() {
       try {
         const lookup = await api.get('/api/crm/lookup', {
           params: { phone: normalizedPhone },
+          headers: { Authorization: `Bearer ${token}` },
         });
+        if (!isCurrent()) throw new Error('Session changed');
         if (lookup.data.found && lookup.data.customer?.id) return lookup.data.customer.id;
-      } catch {}
+      } catch {
+        if (!isCurrent()) throw new Error('Session changed');
+      }
     }
+    if (!isCurrent()) throw new Error('Session changed');
     const fallbackName = name || t('guestFallbackName', { last4: rawPhone.slice(-4) });
-    const res = await api.post('/api/customers', {
-      name: fallbackName,
-      phone: normalizedPhone || undefined,
-    });
+    const res = await api.post(
+      '/api/customers',
+      {
+        name: fallbackName,
+        phone: normalizedPhone || undefined,
+      },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!isCurrent()) throw new Error('Session changed');
     return res.data.customer?.id || null;
   }
 
   // Falls back to this device's browser print dialog when no hardware printer is configured (400).
-  async function printKotForOrder(orderId: number, orderForPrint: Record<string, unknown>) {
-    if (!api) return;
+  async function printKotForOrder(
+    orderId: number,
+    orderForPrint: Record<string, unknown>,
+    token: string,
+    isCurrent: () => boolean,
+  ) {
+    if (!api || !isCurrent()) return;
     try {
-      await api.post('/api/printers/print-kot', {
-        orderId,
-        items: orderForPrint.items,
-      });
+      await api.post(
+        '/api/printers/print-kot',
+        {
+          orderId,
+          items: orderForPrint.items,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
       return;
     } catch (printError: unknown) {
+      if (!isCurrent()) return;
       const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
       if (status !== 400) {
         toastApiError(printError, t('kotPrintFailed'), apiErrorT);
@@ -785,6 +972,7 @@ export default function ServerStandalonePage() {
     try {
       const { generateKotHtml, resolveKotTicketLanguage } =
         await import('@/lib/printer/kot-web-print');
+      if (!isCurrent()) return;
       const html = generateKotHtml(orderForPrint as unknown as FullOrder, {
         paperWidth: 80,
         language: resolveKotTicketLanguage(),
@@ -797,12 +985,22 @@ export default function ServerStandalonePage() {
   }
 
   // Same browser-print fallback as KOT above on 400; stays quiet on 403 (owner hasn't enabled server bill printing).
-  async function printOrderSlip(orderId: number, orderForPrint: Record<string, unknown>) {
-    if (!api) return;
+  async function printOrderSlip(
+    orderId: number,
+    orderForPrint: Record<string, unknown>,
+    token: string,
+    isCurrent: () => boolean,
+  ) {
+    if (!api || !isCurrent()) return;
     try {
-      await api.post('/api/printers/print-bill', { orderId });
+      await api.post(
+        '/api/printers/print-bill',
+        { orderId },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
       return;
     } catch (printError: unknown) {
+      if (!isCurrent()) return;
       const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
       if (status === 403) return;
       if (status !== 400) {
@@ -812,6 +1010,7 @@ export default function ServerStandalonePage() {
     }
     try {
       const { generateOrderSlipHtml } = await import('@/lib/printer/order-slip-web-print');
+      if (!isCurrent()) return;
       const html = generateOrderSlipHtml(
         orderForPrint as unknown as FullOrder,
         {
@@ -848,6 +1047,13 @@ export default function ServerStandalonePage() {
     ) {
       return;
     }
+    const requestToken = localStorage.getItem(TOKEN_KEY);
+    const requestSession = authSessionSeqRef.current;
+    const requestOwner = user?.id;
+    if (!requestToken || !requestOwner) return;
+    const isCurrent = () =>
+      authSessionSeqRef.current === requestSession &&
+      localStorage.getItem(TOKEN_KEY) === requestToken;
     const snapshotTable = tables.find((table) => table.id === selectedTableId) || null;
     const candidateSnapshot: SendSnapshot = {
       tableId: selectedTableId,
@@ -888,7 +1094,13 @@ export default function ServerStandalonePage() {
     sendInFlightRef.current = true;
     setSending(true);
     try {
-      const customerId = await ensureCustomer(snapshot.customerName, snapshot.customerPhone);
+      const customerId = await ensureCustomer(
+        snapshot.customerName,
+        snapshot.customerPhone,
+        requestToken,
+        isCurrent,
+      );
+      if (!isCurrent()) return;
       const items = snapshot.draftLines.map((line) => cartItemToOrderItem(line));
       const specialInstructions = snapshot.orderNotes.trim() || undefined;
       let orderId: number;
@@ -899,7 +1111,7 @@ export default function ServerStandalonePage() {
           `/api/orders/${snapshot.orderId}/items`,
           { items, special_instructions: specialInstructions },
           {
-            headers: { 'Idempotency-Key': idempotencyKey },
+            headers: { 'Idempotency-Key': idempotencyKey, Authorization: `Bearer ${requestToken}` },
           },
         );
         orderId = data.order.id;
@@ -924,6 +1136,26 @@ export default function ServerStandalonePage() {
         rawOrder = data.order;
         newItems = data.order.items || [];
       }
+      if (!isCurrent()) {
+        const suspended = suspendedDraftRef.current;
+        if (suspended?.ownerId === requestOwner && suspended.attempt?.nonce === nonce) {
+          const submitted = new Map(snapshot.draftLines.map((line) => [line.id, line.quantity]));
+          const remaining = suspended.draft.flatMap((line) => {
+            const count = submitted.get(line.id);
+            if (count === undefined) return [line];
+            return line.quantity > count ? [{ ...line, quantity: line.quantity - count }] : [];
+          });
+          suspended.draft = remaining;
+          if (suspended.orderNotes === snapshot.orderNotes) suspended.orderNotes = '';
+          suspended.attempt = null;
+          if (activeUserIdRef.current === requestOwner) {
+            setDraft(remaining);
+            setOrderNotes(suspended.orderNotes);
+            if (sendAttemptRef.current?.nonce === nonce) sendAttemptRef.current = null;
+          }
+        }
+        return;
+      }
       if (sendAttemptRef.current?.signature === signature) {
         sendAttemptRef.current = null;
       }
@@ -947,6 +1179,7 @@ export default function ServerStandalonePage() {
         loadAll({ allowWhileSending: true }),
         loadOrder(snapshot.tableId, { allowWhileSending: true }),
       ]).catch(() => {});
+      if (!isCurrent()) return;
       toast.success(t('orderSent'));
       // rawOrder only has table_id/customer_id; the KOT/slip renderers need the nested table/customer for display.
       const enrichedOrder = {
@@ -959,11 +1192,16 @@ export default function ServerStandalonePage() {
       // Backgrounded so an unreachable printer can't block Send; sequenced (not concurrent)
       // since KOT and bill can share a default printer and race its socket connection.
       void (async () => {
-        await printKotForOrder(orderId, { ...enrichedOrder, items: newItems });
-        await printOrderSlip(orderId, enrichedOrder);
+        await printKotForOrder(
+          orderId,
+          { ...enrichedOrder, items: newItems },
+          requestToken,
+          isCurrent,
+        );
+        if (isCurrent()) await printOrderSlip(orderId, enrichedOrder, requestToken, isCurrent);
       })();
     } catch (error: unknown) {
-      toastApiError(error, t('couldNotSendOrder'), apiErrorT);
+      if (isCurrent()) toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {
       sendInFlightRef.current = false;
       setSending(false);

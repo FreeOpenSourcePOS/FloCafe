@@ -60,15 +60,20 @@ export interface CashSessionClosePreview {
 /** Result of a shift refresh. Superseded calls carry no session and must not
  *  trigger routing because a newer refresh owns the current UI state. */
 export type CashSessionRefreshResult =
-  | { status: 'ok'; session: CashSession | null; error: string | null }
+  | {
+      status: 'ok';
+      session: CashSession | null;
+      openSessions: CashSession[];
+      error: string | null;
+    }
   | { status: 'superseded' };
 
 /** Shift (cash session) controller for the POS terminal: owns the
  *  open/close modal state, current-session fetch, submit, and print.
  *  Mirrors useCashClose but without the date picker, prior-close prefill,
- *  or already-closed hydration — sessions have exactly one open row. */
+ *  or already-closed hydration. */
 export function useCashSession() {
-  const { currentTenant } = useAuthStore();
+  const { currentTenant, user } = useAuthStore();
   const t = useTranslations('dashboard');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
@@ -76,6 +81,8 @@ export function useCashSession() {
   const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
 
   const [session, setSession] = useState<CashSession | null>(null);
+  const [openSessions, setOpenSessions] = useState<CashSession[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openModalOpen, setOpenModalOpen] = useState(false);
@@ -87,6 +94,17 @@ export function useCashSession() {
   const [closedResult, setClosedResult] = useState<ShiftCloseResult | null>(null);
   const [printing, setPrinting] = useState(false);
   const [closePreview, setClosePreview] = useState<CashSessionClosePreview | null>(null);
+  const activeUserId = user?.id != null ? String(user.id) : null;
+  const [syncedUserId, setSyncedUserId] = useState<string | null>(activeUserId);
+  if (syncedUserId !== activeUserId) {
+    setSyncedUserId(activeUserId);
+    setSelectedSessionId(null);
+    setClosePreview(null);
+    setSubmitError(null);
+    setClosedResult(null);
+    setCountedInput('');
+    setFloatInput('');
+  }
 
   // Pure fetcher shared by the mount effect and refresh(): performs the
   // request, returns data-or-null, never touches state itself. (The mount
@@ -94,19 +112,33 @@ export function useCashSession() {
   // cascading-renders lint rule forbids effects from calling
   // setter-containing functions, even behind awaits.)
   /** Fetches the current shift without mutating hook state. */
-  const fetchState = async (): Promise<{ data: CashSession | null; error: string | null }> => {
+  const fetchState = useCallback(async (): Promise<{
+    data: CashSession | null;
+    allOpen: CashSession[];
+    error: string | null;
+  }> => {
     try {
-      const res = await api.get('/cash-sessions/current');
-      return { data: (res.data ?? null) as CashSession | null, error: null };
+      const [res, openRes] = await Promise.all([
+        api.get('/cash-sessions/current'),
+        api.get('/cash-sessions/open').catch(() => null),
+      ]);
+      const current = (res.data ?? null) as CashSession | null;
+      const allOpen: CashSession[] = Array.isArray(openRes?.data?.sessions)
+        ? (openRes.data.sessions as CashSession[])
+        : current
+          ? [current]
+          : [];
+      return { data: current, allOpen, error: null };
     } catch (err: unknown) {
       return {
         data: null,
+        allOpen: [],
         error: axios.isAxiosError(err)
           ? err.response?.data?.error || err.message
           : 'Failed to load shift',
       };
     }
-  };
+  }, []);
 
   // Sequence guard and explicit superseded result: a stale response must not
   // write state or route shift entry when a newer request owns the UI.
@@ -116,36 +148,51 @@ export function useCashSession() {
     const seq = ++refreshSeq.current;
     setLoading(true);
     setError(null);
-    const { data, error: loadError } = await fetchState();
+    const { data, allOpen, error: loadError } = await fetchState();
     if (seq !== refreshSeq.current) return { status: 'superseded' };
     setSession(data);
+    setOpenSessions(allOpen);
     setError(loadError);
     setLoading(false);
-    return { status: 'ok', session: data, error: loadError };
-  }, []);
+    return { status: 'ok', session: data, openSessions: allOpen, error: loadError };
+  }, [fetchState]);
 
-  // Mount fetch: loading starts true, so state settles only in async
-  // continuations (lint-clean by construction). It participates in the same
-  // generation sequence as refresh so late mount data cannot win.
+  // Mount and active-user change fetch: re-runs when the active user changes
+  // (e.g. after PIN quick-switch on a shared terminal).
   useEffect(() => {
     let cancelled = false;
     const seq = ++refreshSeq.current;
-    fetchState().then(({ data, error: loadError }) => {
+    fetchState().then(({ data, allOpen, error: loadError }) => {
       if (cancelled || seq !== refreshSeq.current) return;
       setSession(data);
+      setOpenSessions(allOpen);
+      setSelectedSessionId(null);
+      setClosePreview(null);
       setError(loadError);
       setLoading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchState, user?.id]);
+
+  const activeSession =
+    (selectedSessionId !== null
+      ? openSessions.find((s) => s.id === selectedSessionId)
+      : undefined) ??
+    session ??
+    openSessions[0] ??
+    null;
 
   useEffect(() => {
-    if (!closeModalOpen || !session) return;
+    if (!closeModalOpen || !activeSession) return;
     let cancelled = false;
+    const previewConfig =
+      session && activeSession.id === session.id
+        ? undefined
+        : { params: { session_id: activeSession.id } };
     api
-      .get('/cash-sessions/current/close-preview')
+      .get('/cash-sessions/current/close-preview', previewConfig)
       .then((res) => {
         if (!cancelled) setClosePreview((res.data ?? null) as CashSessionClosePreview | null);
       })
@@ -155,7 +202,7 @@ export function useCashSession() {
     return () => {
       cancelled = true;
     };
-  }, [closeModalOpen, session]);
+  }, [closeModalOpen, activeSession, session]);
 
   // Shared display→cents semantics with day close (lib/money.ts).
   const displayToCents = (raw: string): number | null =>
@@ -189,7 +236,7 @@ export function useCashSession() {
   /** Closes the open shift with the entered count, refreshes state, and
    *  retains the closure result for Z printing. */
   const closeShift = async () => {
-    if (!session) return;
+    if (!activeSession) return;
     const countedCents = displayToCents(countedInput);
     if (countedCents === null) {
       setSubmitError(t('movementAmountRequired'));
@@ -198,11 +245,13 @@ export function useCashSession() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const res = await api.post(`/cash-sessions/${session.id}/close`, {
+      const res = await api.post(`/cash-sessions/${activeSession.id}/close`, {
         counted_cash_cents: countedCents,
       });
       setClosedResult(res.data);
       setCountedInput('');
+      setSelectedSessionId(null);
+      setClosePreview(null);
       toast.success(t('shiftClosed'));
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flo-shift-changed'));
       await refresh();
@@ -249,12 +298,16 @@ export function useCashSession() {
   const countedCentsOrNull = displayToCents(countedInput);
   const shiftLoadFailedMessage = t('shiftLoadFailed');
   const variancePreviewCents =
-    session && countedCentsOrNull !== null
-      ? countedCentsOrNull - session.expected_cash_cents
+    activeSession && countedCentsOrNull !== null
+      ? countedCentsOrNull - activeSession.expected_cash_cents
       : null;
 
   return {
     session,
+    activeSession,
+    openSessions,
+    selectedSessionId,
+    setSelectedSessionId,
     loading,
     error,
     refresh,

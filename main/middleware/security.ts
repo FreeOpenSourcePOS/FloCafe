@@ -118,16 +118,35 @@ export function resetSharedLoginAuthRateLimiter(): void {
 }
 
 /** Stricter rate limiter for authentication endpoints; private/LAN IPs are not exempt. */
-export function authRateLimit(options: { max?: number } = {}) {
+export function authRateLimit(
+  options: {
+    max?: number;
+    skipSuccessfulRequests?: boolean;
+    onRateLimited?: (req: Request, res: Response) => void;
+  } = {},
+) {
   const envMax = process.env.FLO_AUTH_RATE_LIMIT_MAX
     ? parseInt(process.env.FLO_AUTH_RATE_LIMIT_MAX, 10)
     : undefined;
   return expressRateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     limit: options.max ?? (Number.isFinite(envMax) ? envMax : 10),
+    skipSuccessfulRequests: options.skipSuccessfulRequests ?? false,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many authentication attempts. Please try again later.' },
+    ...(options.onRateLimited
+      ? {
+          handler: (req: Request, res: Response, _next: NextFunction, rateLimitOptions) => {
+            try {
+              options.onRateLimited?.(req, res);
+            } catch {
+              // Ignore audit errors in rate-limit handler
+            }
+            res.status(rateLimitOptions.statusCode).send(rateLimitOptions.message);
+          },
+        }
+      : {}),
   });
 }
 
@@ -169,6 +188,10 @@ export function incrementFailedLogin(ip: string): number {
 export function resetSuccessfulLogin(ip: string): void {
   const canonicalIp = normalizeIpForRateLimit(ip);
   loginAttempts.delete(canonicalIp);
+  const pinIdx = canonicalIp.indexOf(':pin:');
+  if (pinIdx >= 0) {
+    loginAttempts.delete(`pin-user:${canonicalIp.slice(pinIdx + 5)}`);
+  }
 }
 
 export function clearLoginRateLimits(): void {

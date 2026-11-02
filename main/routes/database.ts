@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
 import {
+  backfillWhatsAppMessageAttempts,
   captureKitchenStationSecurityState,
   captureKdsEnabledSetting,
   captureRestoreProtectedSettings,
@@ -423,6 +424,8 @@ router.post(
             throwIfDatabaseMaintenanceAborted(signal);
             db.exec('BEGIN IMMEDIATE');
             try {
+              let whatsappMessagesCleared = false;
+              let whatsappMessagesImported = false;
               for (const tableName of importedTables) {
                 throwIfDatabaseMaintenanceAborted(signal);
                 if (!allowedTables.has(tableName) || EXPORT_EXCLUDE_TABLES.has(tableName)) continue;
@@ -444,6 +447,9 @@ router.post(
                       );
                     } else {
                       db.exec(`DELETE FROM ${tableName}`);
+                      if (tableName === 'whatsapp_messages') {
+                        whatsappMessagesCleared = true;
+                      }
                     }
                   }
                   continue;
@@ -454,7 +460,8 @@ router.post(
                 const importCols =
                   tableName === 'product_variants' ||
                   tableName === 'addons' ||
-                  tableName === 'order_item_addons'
+                  tableName === 'order_item_addons' ||
+                  tableName === 'orders'
                     ? Array.from(
                         new Set(rows.flatMap((row) => Object.keys(row).filter(isSafeIdentifier))),
                       )
@@ -477,7 +484,13 @@ router.post(
                     );
                   } else {
                     db.exec(`DELETE FROM ${tableName}`);
+                    if (tableName === 'whatsapp_messages') {
+                      whatsappMessagesCleared = true;
+                    }
                   }
+                }
+                if (tableName === 'whatsapp_messages') {
+                  whatsappMessagesImported = true;
                 }
 
                 if (tableName === 'inventory_movements') {
@@ -573,11 +586,19 @@ router.post(
                   const rowCols =
                     tableName === 'product_variants' ||
                     tableName === 'addons' ||
-                    tableName === 'order_item_addons'
+                    tableName === 'order_item_addons' ||
+                    tableName === 'orders'
                       ? commonCols.filter(
                           (column) =>
                             Object.prototype.hasOwnProperty.call(row, column) &&
-                            row[column] !== undefined,
+                            row[column] !== undefined &&
+                            !(
+                              tableName === 'orders' &&
+                              (column === 'release_status' ||
+                                column === 'checkout_stage' ||
+                                column === 'dispatch_policy') &&
+                              row[column] === null
+                            ),
                         )
                       : commonCols;
                   const rowColumnKey = rowCols.join(', ');
@@ -595,6 +616,15 @@ router.post(
                 console.log(
                   `[DB Import] ${tableName}: ${rows.length} rows (${commonCols.length} columns)`,
                 );
+              }
+
+              if (whatsappMessagesCleared || whatsappMessagesImported) {
+                backfillWhatsAppMessageAttempts(db, {
+                  reset:
+                    whatsappMessagesCleared &&
+                    (!importedTables.includes('whatsapp_message_attempts') ||
+                      !Array.isArray(importData.whatsapp_message_attempts)),
+                });
               }
 
               const placeholderUsersCreated = restoreRedactedUserPlaceholders(

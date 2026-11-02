@@ -141,10 +141,10 @@ async function main() {
         const id = `prod-ws-${whitespaceTriggers.findIndex((t) => t[0] === label)}`;
         const row = csvRecordStartingAt(csv, id);
         assert(row !== null, `a record carrying the leading-${label} tag is present`);
-        // 13 columns means 12 separators; quoting the cell must not add one.
+        // 14 columns means 13 separators; quoting the cell must not add one.
         assertEqual(
           (row!.match(/,/g) || []).length,
-          12,
+          13,
           `the leading-${label} tag did not shift the surrounding columns`,
         );
       }

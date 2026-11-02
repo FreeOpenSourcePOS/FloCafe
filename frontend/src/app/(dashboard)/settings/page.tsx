@@ -4,7 +4,11 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
-import { usePosSettingsStore, type BillTemplate } from '@/store/pos-settings';
+import {
+  usePosSettingsStore,
+  normalizeAutoLockMinutesValue,
+  type BillTemplate,
+} from '@/store/pos-settings';
 import { useThemeMode, type ThemeMode } from '@/store/theme';
 import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 import { usePosSortPreference } from '@/hooks/usePosSort';
@@ -99,6 +103,7 @@ import {
 import { Toggle } from '@/components/settings/Toggle';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import { QrMenuSettingsTab } from '@/components/settings/QrMenuSettingsTab';
+import { CountersSettingsTab } from '@/components/settings/CountersSettingsTab';
 import type { HealthCheckReport } from '@/types/electron';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -487,6 +492,7 @@ export default function SettingsPage() {
   const [savingAllSettings, setSavingAllSettings] = useState(false);
   const [saveAllHydrationRun, setSaveAllHydrationRun] = useState(0);
   const savingAllSettingsInFlight = useRef(false);
+  const autoLockSaveGenRef = useRef(0);
 
   const themeMode = useThemeMode((s) => s.mode);
   const { layout: ordersLayout, save: saveOrdersLayout } = useOrdersLayoutPreference();
@@ -1492,6 +1498,9 @@ export default function SettingsPage() {
           ? { primary: zReportPrimary, additional: [zReportSecond] as const }
           : { primary: zReportPrimary, additional: [] as const };
       const printingPayload = {
+        auto_print_kot: formSnapshot.autoPrintKot,
+        printer_use_unicode: formSnapshot.printerUseUnicode,
+        printer_arabic_shaping: formSnapshot.printerArabicShaping,
         printer_trim_decimals: formSnapshot.printerTrimDecimals,
         bill_language_policy: billLanguagePolicy,
         kot_language_policy: kotLanguagePolicy,
@@ -2349,12 +2358,18 @@ export default function SettingsPage() {
       billFormAtHydrationStart: BillTemplateForm,
     ) => {
       const [
+        autoPrintKotResponse,
+        useUnicodeResponse,
+        arabicShapingResponse,
         trimResponse,
         cashEnabledResponse,
         cashMethodsResponse,
         billLanguageResponse,
         kotLanguageResponse,
       ] = await Promise.all([
+        readOptional('/settings/auto_print_kot'),
+        readOptional('/settings/printer_use_unicode'),
+        readOptional('/settings/printer_arabic_shaping'),
         readOptional('/settings/printer_trim_decimals'),
         readOptional('/settings/cash_drawer_pulse_enabled'),
         readOptional('/settings/cash_drawer_pulse_methods'),
@@ -2362,6 +2377,49 @@ export default function SettingsPage() {
         readOptional('/settings/kot_language_policy'),
       ]);
       if (!active()) return;
+
+      const autoPrintKotSetting = autoPrintKotResponse?.data?.setting;
+      if (
+        autoPrintKotSetting?.updated_at != null &&
+        (autoPrintKotSetting.value === 'true' || autoPrintKotSetting.value === 'false')
+      ) {
+        const enabled = autoPrintKotSetting.value === 'true';
+        posSettings.setAutoPrintKot(enabled);
+        mergeHydratedPrinting(
+          { autoPrintKot: enabled },
+          printingAtHydrationStart,
+          hydrationTouchSnapshot,
+        );
+        setSavedPrinting((p) => ({ ...p, autoPrintKot: enabled }));
+      }
+      const useUnicodeSetting = useUnicodeResponse?.data?.setting;
+      if (
+        useUnicodeSetting?.updated_at != null &&
+        (useUnicodeSetting.value === 'true' || useUnicodeSetting.value === 'false')
+      ) {
+        const enabled = useUnicodeSetting.value === 'true';
+        posSettings.setPrinterUseUnicode(enabled);
+        mergeHydratedPrinting(
+          { printerUseUnicode: enabled },
+          printingAtHydrationStart,
+          hydrationTouchSnapshot,
+        );
+        setSavedPrinting((p) => ({ ...p, printerUseUnicode: enabled }));
+      }
+      const arabicShapingSetting = arabicShapingResponse?.data?.setting;
+      if (
+        arabicShapingSetting?.updated_at != null &&
+        (arabicShapingSetting.value === 'true' || arabicShapingSetting.value === 'false')
+      ) {
+        const enabled = arabicShapingSetting.value === 'true';
+        posSettings.setPrinterArabicShaping(enabled);
+        mergeHydratedPrinting(
+          { printerArabicShaping: enabled },
+          printingAtHydrationStart,
+          hydrationTouchSnapshot,
+        );
+        setSavedPrinting((p) => ({ ...p, printerArabicShaping: enabled }));
+      }
 
       if (trimResponse) {
         const enabled = trimResponse.data.setting?.value === 'true';
@@ -3163,7 +3221,7 @@ export default function SettingsPage() {
         setGoogleDriveStatus((previous) => ({ ...previous, job }));
         if (job.state === 'succeeded' || job.state === 'retention_pending') {
           await Promise.all([fetchGoogleDriveStatus(), fetchRemoteGoogleDriveBackups()]);
-          if (job.state === 'retention_pending') toast.error(t('googleDriveRetentionPending'));
+          if (job.state === 'retention_pending') toast(t('googleDriveRetentionPending'));
           else toast.success(t('googleDriveBackupSuccess'));
           return;
         }
@@ -3910,6 +3968,12 @@ export default function SettingsPage() {
                 onClick={handleSettingsTabChange}
               />
             )}
+            <SettingsNavItem
+              label={t('tabCounters')}
+              value="counters"
+              active={activeTab}
+              onClick={handleSettingsTabChange}
+            />
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
@@ -4271,6 +4335,40 @@ export default function SettingsPage() {
                         );
                       }}
                     />
+                  </div>
+                  <div className="flex items-center justify-between gap-4 pt-2 border-t border-border">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground">{t('autoLockLabel')}</p>
+                      <p className="text-sm text-muted-foreground">{t('autoLockHint')}</p>
+                    </div>
+                    <select
+                      data-testid="setting-auto-lock-minutes"
+                      aria-label={t('autoLockLabel')}
+                      value={String(posSettings.autoLockMinutes)}
+                      disabled={!isAdmin}
+                      onChange={(e) => {
+                        const prev = posSettings.autoLockMinutes;
+                        const next = normalizeAutoLockMinutesValue(e.target.value);
+                        const saveGen = ++autoLockSaveGenRef.current;
+                        posSettings.setAutoLockMinutes(next);
+                        void api
+                          .put('/settings/auto_lock_minutes', { value: String(next) })
+                          .catch(() => {
+                            if (autoLockSaveGenRef.current === saveGen) {
+                              posSettings.setAutoLockMinutes(prev);
+                            }
+                            toast.error(t('saveFailed'));
+                          });
+                      }}
+                      className="w-40 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand bg-card"
+                    >
+                      <option value="0">{t('autoLockOff')}</option>
+                      {([1, 5, 15, 30] as const).map((mins) => (
+                        <option key={mins} value={String(mins)}>
+                          {t('autoLockMinutesOption', { count: mins })}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
@@ -4767,6 +4865,10 @@ export default function SettingsPage() {
                 void connectGoogleDrive();
               }}
             />
+          </TabsContent>
+
+          <TabsContent value="counters">
+            <CountersSettingsTab isOwner={isOwner} />
           </TabsContent>
 
           <TabsContent value="kds">

@@ -171,8 +171,14 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   receipt_logo: '',
   receipt_logo_raster: '',
   printer_trim_decimals: 'false',
+  auto_print_kot: 'false',
+  printer_use_unicode: 'false',
+  printer_arabic_shaping: 'false',
   split_checks_enabled: 'false',
   card_transaction_id_required: 'false',
+  multi_counter_enabled: 'false',
+  require_open_shift: 'false',
+  one_shift_per_staff: 'false',
   // Print language policies (#441) — inherit store language, no second
   // language. Defaults preserve pre-policy behavior for existing tenants.
   [BILL_LANGUAGE_POLICY_KEY]: defaultLanguagePolicySettingJson(),
@@ -188,7 +194,20 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   // POS catalog ordering: 'saved' keeps the stored sort_order.
   pos_category_sort: 'saved',
   pos_item_sort: 'saved',
+  // Idle auto-lock timeout in minutes ('0' = off).
+  auto_lock_minutes: '0',
 };
+
+const VALID_AUTO_LOCK_MINUTES = new Set(['0', '1', '5', '15', '30']);
+
+function normalizeAutoLockMinutes(value: unknown): string | null {
+  if (value === 0 || value === '0' || value === 'off' || value === false || value === '') {
+    return '0';
+  }
+  const str =
+    typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
+  return VALID_AUTO_LOCK_MINUTES.has(str) ? str : null;
+}
 
 /** Single authority for the orders_layout enum; both write transports gate on it. */
 export function isOrdersLayout(value: unknown): value is 'split' | 'cards' {
@@ -274,6 +293,7 @@ function businessShape(s: Record<string, string>) {
     ),
     number_digits: resolveStoredLocalePreference('number_digits', s.number_digits, s.country || ''),
     calendar: resolveStoredLocalePreference('calendar', s.calendar, s.country || ''),
+    auto_lock_minutes: Number(normalizeAutoLockMinutes(s.auto_lock_minutes) || 0),
     // Non-blocking informational tax format description for the UI.
     tax_id_format: resolveTaxIdFormat(s.country || ''),
   };
@@ -1733,6 +1753,51 @@ router.get(
   },
 );
 
+const requireAuthenticatedStaff: RequestHandler = (req, res, next) => {
+  const userId = String(
+    (req as Request & { user?: { userId?: string; id?: string } }).user?.userId ||
+      (req as any).user?.id ||
+      '',
+  );
+  if (!userId) {
+    return res
+      .status(401)
+      .json({ error: 'Authentication required', code: 'authentication_required' });
+  }
+  const db = getDatabase();
+  const user = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(userId) as
+    | { id: string; is_active: number }
+    | undefined;
+  if (!user || user.is_active !== 1) {
+    return res.status(401).json({ error: 'Invalid or expired token', code: 'invalid_token' });
+  }
+  next();
+};
+
+router.get(
+  '/auto_lock_minutes',
+  settingsReadRateLimit,
+  requireAuthenticatedStaff,
+  (_req: Request, res: Response) => {
+    try {
+      const setting = getDatabase()
+        .prepare('SELECT * FROM settings WHERE key = ?')
+        .get('auto_lock_minutes');
+      if (setting) return res.json({ setting });
+      return res.json({
+        setting: {
+          key: 'auto_lock_minutes',
+          value: OPTIONAL_SETTING_DEFAULTS.auto_lock_minutes,
+          updated_at: null,
+        },
+      });
+    } catch (error) {
+      console.error('[API] Internal error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
 router.get('/offline-mode', requirePermission('settings.view'), (_req: Request, res: Response) => {
   res.json({ offline_mode: isOfflineMode() });
 });
@@ -1842,6 +1907,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'server_app_bill_printing_enabled',
   'split_checks_enabled',
   'card_transaction_id_required',
+  'multi_counter_enabled',
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
   Z_REPORT_LANGUAGE_POLICY_KEY,
@@ -1853,6 +1919,8 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'pos_category_sort',
   'pos_item_sort',
   'require_open_shift',
+  'one_shift_per_staff',
+  'auto_lock_minutes',
 ]);
 
 /**
@@ -1941,7 +2009,12 @@ const PRINTING_BOOLEAN_KEYS = [
   'bill_delivery_show_customer_phone_always',
 ] as const;
 
-const OPTIONAL_PRINTING_BOOLEAN_KEYS = ['bill_show_logo'] as const;
+const OPTIONAL_PRINTING_BOOLEAN_KEYS = [
+  'bill_show_logo',
+  'auto_print_kot',
+  'printer_use_unicode',
+  'printer_arabic_shaping',
+] as const;
 
 const PRINTING_BATCH_KEYS = new Set<string>([
   ...PRINTING_BOOLEAN_KEYS,
@@ -2129,10 +2202,27 @@ router.put(
         });
       }
       let valueToPersist: unknown = value;
+      if (req.params.key === 'auto_lock_minutes') {
+        const normalizedAutoLock = normalizeAutoLockMinutes(value);
+        if (!normalizedAutoLock) {
+          return res.status(400).json({ error: 'auto_lock_minutes must be 0, 1, 5, 15, or 30' });
+        }
+        valueToPersist = normalizedAutoLock;
+      }
       if (
         req.params.key === 'require_open_shift' ||
-        req.params.key === 'card_transaction_id_required'
+        req.params.key === 'one_shift_per_staff' ||
+        req.params.key === 'card_transaction_id_required' ||
+        req.params.key === 'multi_counter_enabled'
       ) {
+        if (req.params.key === 'multi_counter_enabled') {
+          const callerUser = (req as Request & { user?: { role?: string } }).user;
+          if (callerUser?.role !== 'owner') {
+            return res
+              .status(403)
+              .json({ error: 'Only the store owner can modify counter configuration' });
+          }
+        }
         if (value !== true && value !== false && value !== 'true' && value !== 'false') {
           return res.status(400).json({ error: `${req.params.key} must be a boolean` });
         }
@@ -2159,6 +2249,17 @@ router.put(
         valueToPersist = validation.stored;
       }
       const db = getDatabase();
+      if (req.params.key === 'one_shift_per_staff' && valueToPersist === 'false') {
+        const openCount = db
+          .prepare(`SELECT COUNT(*) AS n FROM cash_sessions WHERE status = 'open'`)
+          .get() as { n: number } | undefined;
+        if (Number(openCount?.n || 0) > 1) {
+          return res.status(409).json({
+            error: 'Cannot disable one shift per staff member while multiple shifts are open',
+            code: 'multiple_shifts_open',
+          });
+        }
+      }
       if (
         diagnosticsChoice &&
         valueToPersist === 'true' &&

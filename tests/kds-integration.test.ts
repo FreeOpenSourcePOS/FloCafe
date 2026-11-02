@@ -38,7 +38,10 @@ function createMessageQueue(ws: WebSocket) {
         if (index >= 0) servers.splice(index, 1);
         reject(new Error(`Timed out waiting for ${type}`));
       }, 5000);
-      server.resolve = (message: any) => { clearTimeout(timeout); resolve(message); };
+      server.resolve = (message: any) => {
+        clearTimeout(timeout);
+        resolve(message);
+      };
       servers.push(server);
     });
   };
@@ -46,7 +49,7 @@ function createMessageQueue(ws: WebSocket) {
 
 async function run() {
   console.log('Testing KDS Server API Integration & Role Contracts...');
-  
+
   const assert = (condition: boolean, msg: string) => {
     if (!condition) {
       throw new Error(`Assertion failed: ${msg}`);
@@ -68,47 +71,93 @@ async function run() {
       VALUES ('user-chef-1', 'Chef User', 'chef@flo.local', ?, 'chef', 1)
     `).run(hashedPass);
 
-    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)')
-      .run('kds-category', 'Kitchen', 1);
-    db.prepare('INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)')
-      .run('kds-product', 'kds-category', 'KDS Burger', 10);
-    db.prepare('UPDATE users SET category_ids = ? WHERE id = ?').run(JSON.stringify(['kds-category']), 'user-chef-1');
+    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)').run(
+      'kds-category',
+      'Kitchen',
+      1,
+    );
+    db.prepare(
+      'INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)',
+    ).run('kds-product', 'kds-category', 'KDS Burger', 10);
+    db.prepare('UPDATE users SET category_ids = ? WHERE id = ?').run(
+      JSON.stringify(['kds-category']),
+      'user-chef-1',
+    );
     db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
-      VALUES ('kds-integration-station', 'Integration Station', '[]', 1, ?, ?)`)
-      .run(now(), now());
-    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)')
-      .run('user-chef-1', 'kds-integration-station', now());
+      VALUES ('kds-integration-station', 'Integration Station', '[]', 1, ?, ?)`).run(now(), now());
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(
+      'user-chef-1',
+      'kds-integration-station',
+      now(),
+    );
     db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
-      VALUES (?, 'takeaway', 'pending', 10, 10, ?, ?)`)
-      .run('KDS-WS-001', now(), now());
-    const orderId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('KDS-WS-001') as any).id;
+      VALUES (?, 'takeaway', 'pending', 10, 10, ?, ?)`).run('KDS-WS-001', now(), now());
+    const orderId = (
+      db.prepare('SELECT id FROM orders WHERE order_number = ?').get('KDS-WS-001') as any
+    ).id;
     db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-      VALUES (?, 'kds-product', 'KDS Burger', 10, 1, 10, 0, 10, 'pending', ?, ?)`)
-      .run(orderId, now(), now());
-    const itemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any).id;
-    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)').run('kds-bar-category', 'Bar', 2);
-    db.prepare('INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)').run('kds-bar-product', 'kds-bar-category', 'KDS Bar', 12);
+      VALUES (?, 'kds-product', 'KDS Burger', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(
+      orderId,
+      now(),
+      now(),
+    );
+    const itemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any)
+      .id;
+    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)').run(
+      'kds-bar-category',
+      'Bar',
+      2,
+    );
+    db.prepare(
+      'INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)',
+    ).run('kds-bar-product', 'kds-bar-category', 'KDS Bar', 12);
     db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
       VALUES (?, 'takeaway', 'pending', 12, 12, ?, ?)`).run('KDS-WS-BAR', now(), now());
-    const barOrderId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('KDS-WS-BAR') as any).id;
+    const barOrderId = (
+      db.prepare('SELECT id FROM orders WHERE order_number = ?').get('KDS-WS-BAR') as any
+    ).id;
     db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-      VALUES (?, 'kds-bar-product', 'KDS Bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(barOrderId, now(), now());
+      VALUES (?, 'kds-bar-product', 'KDS Bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(
+      barOrderId,
+      now(),
+      now(),
+    );
 
     db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
-      VALUES ('kds-unrestricted-station', 'Unrestricted Station', NULL, 1, ?, ?)`).run(now(), now());
+      VALUES ('kds-unrestricted-station', 'Unrestricted Station', NULL, 1, ?, ?)`).run(
+      now(),
+      now(),
+    );
     db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, station_assignments_configured, created_at, updated_at)
-      VALUES ('user-unrestricted-manager', 'Unrestricted Manager', 'unrestricted@flo.local', ?, 'manager', 1, 1, ?, ?)`).run(hashedPass, now(), now());
-    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)')
-      .run('user-unrestricted-manager', 'kds-unrestricted-station', now());
-    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)')
-      .run('kds-unrestricted-category', 'Unrestricted food', 3);
-    db.prepare('INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)')
-      .run('kds-unrestricted-product', 'kds-unrestricted-category', 'Unrestricted food', 10);
+      VALUES ('user-unrestricted-manager', 'Unrestricted Manager', 'unrestricted@flo.local', ?, 'manager', 1, 1, ?, ?)`).run(
+      hashedPass,
+      now(),
+      now(),
+    );
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(
+      'user-unrestricted-manager',
+      'kds-unrestricted-station',
+      now(),
+    );
+    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)').run(
+      'kds-unrestricted-category',
+      'Unrestricted food',
+      3,
+    );
+    db.prepare(
+      'INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)',
+    ).run('kds-unrestricted-product', 'kds-unrestricted-category', 'Unrestricted food', 10);
     db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
       VALUES (?, 'takeaway', 'pending', 10, 10, ?, ?)`).run('KDS-UNRESTRICTED-001', now(), now());
-    const unrestrictedOrderId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('KDS-UNRESTRICTED-001') as any).id;
+    const unrestrictedOrderId = (
+      db.prepare('SELECT id FROM orders WHERE order_number = ?').get('KDS-UNRESTRICTED-001') as any
+    ).id;
     db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-      VALUES (?, 'kds-unrestricted-product', 'Unrestricted food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(unrestrictedOrderId, now(), now());
+      VALUES (?, 'kds-unrestricted-product', 'Unrestricted food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(
+      unrestrictedOrderId,
+      now(),
+      now(),
+    );
 
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active)
@@ -156,7 +205,10 @@ async function run() {
     token = relogin.body.access_token;
 
     // A credential cutoff must invalidate this token on every standalone KDS route.
-    db.prepare('UPDATE users SET tokens_valid_after = ? WHERE id = ?').run('2099-01-01 00:00:00', 'user-chef-1');
+    db.prepare('UPDATE users SET tokens_valid_after = ? WHERE id = ?').run(
+      '2099-01-01 00:00:00',
+      'user-chef-1',
+    );
     const staleMe = await request(`http://127.0.0.1:${port}`)
       .get('/api/auth/me')
       .set('Authorization', `Bearer ${token}`);
@@ -173,7 +225,10 @@ async function run() {
       .set('Authorization', `Bearer ${token}`);
     assert(authedOrders.status === 200, 'Authenticated KDS orders request returns 200');
     assert(Array.isArray(authedOrders.body.orders), 'KDS orders returns an orders array');
-    assert(!('unit_price' in (authedOrders.body.orders[0]?.items?.[0] || {})), 'Station-only standalone chef receives redacted item pricing');
+    assert(
+      !('unit_price' in (authedOrders.body.orders[0]?.items?.[0] || {})),
+      'Station-only standalone chef receives redacted item pricing',
+    );
 
     const unrestrictedLogin = await request(`http://127.0.0.1:${port}`)
       .post('/api/auth/login')
@@ -182,19 +237,29 @@ async function run() {
     const unrestrictedOrders = await request(`http://127.0.0.1:${port}`)
       .get('/api/kds/orders')
       .set('Authorization', `Bearer ${unrestrictedLogin.body.access_token}`);
-    assert(unrestrictedOrders.body.orders.some((order: any) => order.id === unrestrictedOrderId), 'Standalone unrestricted station receives tableless orders');
+    assert(
+      unrestrictedOrders.body.orders.some((order: any) => order.id === unrestrictedOrderId),
+      'Standalone unrestricted station receives tableless orders',
+    );
     const categoriesRes = await request(`http://127.0.0.1:${port}`)
       .get('/api/categories')
       .set('Authorization', `Bearer ${token}`);
     assert(categoriesRes.status === 200, 'Standalone categories request succeeds');
-    assert(categoriesRes.body.categories.every((category: any) => category.id === 'kds-category'), 'Station-only chef receives only permitted categories');
+    assert(
+      categoriesRes.body.categories.every((category: any) => category.id === 'kds-category'),
+      'Station-only chef receives only permitted categories',
+    );
 
     // Query-count regression (#226): the standalone poll must fetch order
     // items in a single IN(...) query, not one query per active order.
     const originalPrepare = db.prepare.bind(db) as typeof db.prepare;
     let batchedItemQueries = 0;
     (db as any).prepare = (sql: string, ...rest: unknown[]) => {
-      if (typeof sql === 'string' && /FROM order_items oi/.test(sql) && /oi\.order_id IN/.test(sql)) {
+      if (
+        typeof sql === 'string' &&
+        /FROM order_items oi/.test(sql) &&
+        /oi\.order_id IN/.test(sql)
+      ) {
         batchedItemQueries += 1;
       }
       return (originalPrepare as any)(sql, ...rest);
@@ -203,7 +268,10 @@ async function run() {
       .get('/api/kds/orders')
       .set('Authorization', `Bearer ${token}`);
     assert(qcOrders.status === 200, 'Query-count KDS orders request returns 200');
-    assert(batchedItemQueries === 1, `standalone KDS poll batches item lookups into one query (got ${batchedItemQueries})`);
+    assert(
+      batchedItemQueries === 1,
+      `standalone KDS poll batches item lookups into one query (got ${batchedItemQueries})`,
+    );
     (db as any).prepare = originalPrepare;
 
     // 7. The real WebSocket channel authenticates and receives mutation broadcasts.
@@ -214,16 +282,27 @@ async function run() {
     const authMessage = await nextMessage('auth_success');
     assert(authMessage.user.role === 'chef', 'WebSocket authenticates kitchen staff');
     const initialData = await nextMessage('initial_data');
-    assert(!('unit_price' in (initialData.orders[0]?.items?.[0] || {})), 'Station-only WebSocket chef receives redacted item pricing');
-    assert(initialData.counts.pending === 1, 'WebSocket counts exclude unauthorized station categories');
+    assert(
+      !('unit_price' in (initialData.orders[0]?.items?.[0] || {})),
+      'Station-only WebSocket chef receives redacted item pricing',
+    );
+    assert(
+      initialData.counts.pending === 1,
+      'WebSocket counts exclude unauthorized station categories',
+    );
 
     const unrestrictedWs = new WebSocket(`ws://127.0.0.1:${port}/kds`);
     const nextUnrestrictedMessage = createMessageQueue(unrestrictedWs);
     await once(unrestrictedWs, 'open');
-    unrestrictedWs.send(JSON.stringify({ type: 'auth', token: unrestrictedLogin.body.access_token }));
+    unrestrictedWs.send(
+      JSON.stringify({ type: 'auth', token: unrestrictedLogin.body.access_token }),
+    );
     await nextUnrestrictedMessage('auth_success');
     const unrestrictedInitialData = await nextUnrestrictedMessage('initial_data');
-    assert(unrestrictedInitialData.orders.some((order: any) => order.id === unrestrictedOrderId), 'WebSocket unrestricted station receives tableless orders');
+    assert(
+      unrestrictedInitialData.orders.some((order: any) => order.id === unrestrictedOrderId),
+      'WebSocket unrestricted station receives tableless orders',
+    );
     unrestrictedWs.close();
     await once(unrestrictedWs, 'close');
 
@@ -234,8 +313,105 @@ async function run() {
       .send({ status: 'ready' });
     assert(statusRes.status === 200, 'KDS item status update succeeds');
     await updatePromise;
-    assert((db.prepare('SELECT status FROM order_items WHERE id = ?').get(itemId) as any).status === 'ready', 'WebSocket broadcast follows item mutation');
-    db.prepare("UPDATE order_items SET status = 'voided', voided_at = ? WHERE id = ?").run(now(), itemId);
+    assert(
+      (db.prepare('SELECT status FROM order_items WHERE id = ?').get(itemId) as any).status ===
+        'ready',
+      'WebSocket broadcast follows item mutation',
+    );
+    const standaloneOrderAfterReady = db
+      .prepare('SELECT status, ready_at, served_at FROM orders WHERE id = ?')
+      .get(orderId) as { status: string; ready_at: string | null; served_at: string | null };
+    assert(
+      standaloneOrderAfterReady.status === 'ready' && standaloneOrderAfterReady.ready_at !== null,
+      'Standalone KDS REST item update reconciles active parent order to ready with ready_at',
+    );
+
+    // WebSocket status_update handler reconciles active parent order across pending -> preparing -> ready -> served
+    db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+      VALUES ('KDS-WS-RECONCILE-001', 'takeaway', 'pending', 20, 20, ?, ?)`).run(now(), now());
+    const wsOrderId = (
+      db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-WS-RECONCILE-001'").get() as any
+    ).id;
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-product', 'KDS Burger 1', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(
+      wsOrderId,
+      now(),
+      now(),
+    );
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-product', 'KDS Burger 2', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(
+      wsOrderId,
+      now(),
+      now(),
+    );
+    const wsItemIds = (
+      db
+        .prepare('SELECT id FROM order_items WHERE order_id = ? ORDER BY id ASC')
+        .all(wsOrderId) as Array<{ id: number }>
+    ).map((row) => row.id);
+
+    const sendWsStatusUpdate = async (
+      targetItemId: number,
+      nextStatus: string,
+      expectedStatus?: string,
+    ) => {
+      const ackPromise = nextMessage('status_updated');
+      const broadcastPromise = nextMessage('initial_data');
+      ws.send(
+        JSON.stringify({
+          type: 'status_update',
+          order_item_id: targetItemId,
+          status: nextStatus,
+          ...(expectedStatus ? { expected_status: expectedStatus } : {}),
+        }),
+      );
+      const ack = await ackPromise;
+      await broadcastPromise;
+      assert(ack.status === nextStatus, `WebSocket status_updated ack confirms ${nextStatus}`);
+    };
+
+    await sendWsStatusUpdate(wsItemIds[0], 'ready', 'pending');
+    assert(
+      (db.prepare('SELECT status FROM orders WHERE id = ?').get(wsOrderId) as any).status ===
+        'preparing',
+      'WebSocket 1-of-2 ready promotes pending parent to preparing',
+    );
+    await sendWsStatusUpdate(wsItemIds[1], 'ready', 'pending');
+    const wsOrderReady = db
+      .prepare('SELECT status, ready_at FROM orders WHERE id = ?')
+      .get(wsOrderId) as { status: string; ready_at: string | null };
+    assert(
+      wsOrderReady.status === 'ready' && wsOrderReady.ready_at !== null,
+      'WebSocket 2-of-2 ready promotes parent to ready with ready_at',
+    );
+    await sendWsStatusUpdate(wsItemIds[0], 'served', 'ready');
+    assert(
+      (db.prepare('SELECT status FROM orders WHERE id = ?').get(wsOrderId) as any).status ===
+        'ready',
+      'WebSocket 1-of-2 served keeps mixed served+ready parent in ready',
+    );
+    await sendWsStatusUpdate(wsItemIds[1], 'served', 'ready');
+    const wsOrderServed = db
+      .prepare('SELECT status, served_at FROM orders WHERE id = ?')
+      .get(wsOrderId) as { status: string; served_at: string | null };
+    assert(
+      wsOrderServed.status === 'served' && wsOrderServed.served_at !== null,
+      'WebSocket 2-of-2 served promotes parent to served with served_at',
+    );
+    const wsAudits = db
+      .prepare(
+        "SELECT actor_user_id FROM order_audit_log WHERE order_id = ? AND action = 'status_changed' ORDER BY id ASC",
+      )
+      .all(wsOrderId) as Array<{ actor_user_id: string }>;
+    assert(
+      wsAudits.length === 3 && wsAudits.every((a) => a.actor_user_id === 'user-chef-1'),
+      'WebSocket parent status transitions record actor-attributed audit entries for client.userId',
+    );
+
+    db.prepare("UPDATE order_items SET status = 'voided', voided_at = ? WHERE id = ?").run(
+      now(),
+      itemId,
+    );
     const terminalStatusRes = await request(`http://127.0.0.1:${port}`)
       .patch(`/api/kds/items/${itemId}/status`)
       .set('Authorization', `Bearer ${token}`)
@@ -246,12 +422,14 @@ async function run() {
 
     db.prepare(`INSERT INTO user_permission_overrides
       (user_id, permission_id, effect, updated_by, created_at, updated_at)
-      VALUES ('user-chef-1', 'kitchen.use', 'deny', 'user-chef-1', ?, ?)`)
-      .run(now(), now());
+      VALUES ('user-chef-1', 'kitchen.use', 'deny', 'user-chef-1', ?, ?)`).run(now(), now());
     const permissionRevoked = await request(`http://127.0.0.1:${port}`)
       .get('/api/auth/me')
       .set('Authorization', `Bearer ${token}`);
-    assert(permissionRevoked.status === 403, 'KDS permission denial applies to an existing session immediately');
+    assert(
+      permissionRevoked.status === 403,
+      'KDS permission denial applies to an existing session immediately',
+    );
 
     // 8. Public KDS info endpoint responds
     const infoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
@@ -260,10 +438,16 @@ async function run() {
     // The public endpoint must also throttle LAN clients before repeated database reads.
     for (let i = 1; i < 100; i += 1) {
       const allowedInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
-      assert(allowedInfoRes.status === 200, `Public info request ${i + 1} remains within the rate limit`);
+      assert(
+        allowedInfoRes.status === 200,
+        `Public info request ${i + 1} remains within the rate limit`,
+      );
     }
     const throttledInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
-    assert(throttledInfoRes.status === 429, 'Public info endpoint rate-limits repeated LAN requests');
+    assert(
+      throttledInfoRes.status === 429,
+      'Public info endpoint rate-limits repeated LAN requests',
+    );
 
     console.log('✅ KDS Integration & Auth Role Contract tests passed!');
   } finally {
@@ -271,11 +455,11 @@ async function run() {
     closeDatabase();
     try {
       fs.rmSync(testDir, { recursive: true, force: true });
-    } catch { }
+    } catch {}
   }
 }
 
-run().catch(err => {
+run().catch((err) => {
   console.error(err);
   process.exit(1);
 });

@@ -54,6 +54,7 @@ import { allocateEqualShares } from '@/lib/money';
 import { parseAppliedCharges, type AppliedCharge } from '@/lib/charges';
 import { useChargesStore, chargesForOrderType } from '@/store/charges';
 import { classifyOrderRequestFailure, type OperationFailureMetadata } from '@/lib/order-attempt';
+import { isScheduledOrderEditLocked } from '@/lib/order-payment-state';
 import { ApproverSelect } from '@/components/ApproverSelect';
 import { useManagerApprovers } from '@/hooks/useManagerApprovers';
 
@@ -280,10 +281,12 @@ export default function PaymentModal({
 
   const appliedCharges: AppliedCharge[] = parseAppliedCharges(bill.charges_breakdown);
   const applicableCharges = chargesForOrderType(charges, bill.order?.type || '');
+  const scheduledOrderEditLocked = isScheduledOrderEditLocked(bill.order, [bill]);
   // The backend rejects a waiver on a split check (its charges are already
   // allocated) and on a settled bill, so the toggle is not offered there.
   const canToggleCharges =
     !bill.split_group_id &&
+    !scheduledOrderEditLocked &&
     bill.payment_status !== 'paid' &&
     Number(bill.paid_amount || 0) === 0 &&
     bill.payment_status !== 'refunded' &&
@@ -1746,7 +1749,7 @@ export default function PaymentModal({
             )}
 
             {/* Discount */}
-            {!bill.split_group_id && discountMode !== 'none' && (
+            {!bill.split_group_id && !scheduledOrderEditLocked && discountMode !== 'none' && (
               <div className="rounded-xl border border-border overflow-hidden">
                 <button
                   type="button"

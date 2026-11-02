@@ -1597,6 +1597,718 @@ async function main() {
       ),
       'addon validation error reports unsupported flo_csv_encoding',
     );
+
+    console.log('\n─── Two-level category hierarchy CSV import/export ───');
+    const catTemplateRes = await fetch(`${baseUrl}/api/menu/csv/template/categories`, {
+      headers: authHeader,
+    });
+    const catTemplateText = await catTemplateRes.text();
+    assert(
+      catTemplateText.split('\n')[0].includes(',parent,'),
+      'categories CSV template header includes parent column',
+    );
+
+    const prodTemplateRes = await fetch(`${baseUrl}/api/menu/csv/template/products`, {
+      headers: authHeader,
+    });
+    const prodTemplateText = await prodTemplateRes.text();
+    assert(
+      prodTemplateText.split('\n')[0].includes(',category_parent,'),
+      'products CSV template header includes category_parent column',
+    );
+
+    // Import categories with child rows appearing BEFORE their root parent rows, and repeated child names under different parents.
+    const catHierarchyImport = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,parent,description,color,icon,sort_order',
+          'Hot,CSV Drinks,Hot beverages,red,☕,1',
+          'Cold,CSV Drinks,Cold beverages,blue,🧊,2',
+          'Hot,CSV Food,Hot meals,orange,🍲,1',
+          'CSV Drinks,,Beverages root,teal,🥤,10',
+          'CSV Food,,Food root,green,🍽️,20',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(catHierarchyImport.status, 200, 'hierarchical category CSV import succeeds');
+    assertEqualOrThrow(
+      catHierarchyImport.data.created,
+      5,
+      'all 5 hierarchical categories are created regardless of row order',
+    );
+    assertEqualOrThrow(
+      catHierarchyImport.data.failed,
+      0,
+      'no valid hierarchical category row fails',
+    );
+
+    const csvDrinksRoot = db
+      .prepare(
+        'SELECT id FROM categories WHERE name = ? AND parent_id IS NULL AND deleted_at IS NULL',
+      )
+      .get('CSV Drinks') as { id: string } | undefined;
+    const csvFoodRoot = db
+      .prepare(
+        'SELECT id FROM categories WHERE name = ? AND parent_id IS NULL AND deleted_at IS NULL',
+      )
+      .get('CSV Food') as { id: string } | undefined;
+    assert(
+      Boolean(csvDrinksRoot?.id && csvFoodRoot?.id),
+      'root categories are created with parent_id NULL',
+    );
+
+    const hotDrinksChild = db
+      .prepare('SELECT id FROM categories WHERE name = ? AND parent_id = ? AND deleted_at IS NULL')
+      .get('Hot', csvDrinksRoot!.id) as { id: string } | undefined;
+    const hotFoodChild = db
+      .prepare('SELECT id FROM categories WHERE name = ? AND parent_id = ? AND deleted_at IS NULL')
+      .get('Hot', csvFoodRoot!.id) as { id: string } | undefined;
+    assert(
+      Boolean(hotDrinksChild?.id && hotFoodChild?.id && hotDrinksChild!.id !== hotFoodChild!.id),
+      'identical child category names under different parents are created as distinct subcategories',
+    );
+
+    const catInvalidHierarchy = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,parent,description,color,icon,sort_order',
+          'CycleCat,CycleCat,Self parent,,,1',
+          'Grandchild,Hot,Grandchild of subcategory,,,1',
+          'csv drinks,,Case-differing duplicate root,,,10',
+          'hot,CSV Drinks,Case-differing duplicate child,,,2',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      catInvalidHierarchy.status,
+      200,
+      'invalid hierarchy rows return validation errors',
+    );
+    assertEqualOrThrow(
+      catInvalidHierarchy.data.failed,
+      4,
+      'cycle, grandchild, and duplicate sibling rows fail',
+    );
+    assert(
+      catInvalidHierarchy.data.errors.some((e: string) => e.includes('cannot be its own parent')),
+      'self-cycle row error is reported',
+    );
+    assert(
+      catInvalidHierarchy.data.errors.some((e: string) =>
+        e.includes('is a subcategory (maximum 2 levels supported)'),
+      ),
+      'grandchild parent row error is reported',
+    );
+    assertEqualOrThrow(
+      catInvalidHierarchy.data.errors.filter((e: string) =>
+        e.includes('duplicate sibling category name'),
+      ).length,
+      2,
+      'duplicate root and child sibling errors are reported',
+    );
+
+    const catAdditiveSkip = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,parent,sort_order,is_active,deleted,action',
+          'Cold,CSV Drinks,2,no,yes,delete',
+          'CSV Drinks,,10,no,yes,delete',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      catAdditiveSkip.data.skipped,
+      2,
+      'existing categories are skipped additively',
+    );
+    assertEqualOrThrow(catAdditiveSkip.data.updated, 0, 'category CSV import does not mutate rows');
+    const coldAfterSkip = db
+      .prepare('SELECT is_active, deleted_at FROM categories WHERE name = ? AND parent_id = ?')
+      .get('Cold', csvDrinksRoot!.id) as { is_active: number; deleted_at: string | null };
+    assert(
+      coldAfterSkip.is_active === 1 && coldAfterSkip.deleted_at === null,
+      'extra deleted/action/is_active columns do not delete or deactivate categories',
+    );
+
+    // Also test explicit grandchild rejection when parent is an unambiguous subcategory ('Cold' under 'CSV Drinks').
+    const catGrandchildExplicit = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,parent,description,color,icon,sort_order',
+          'Iced Tea,Cold,Grandchild under unambiguous subcategory,,,1',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      catGrandchildExplicit.data.failed,
+      1,
+      'grandchild under unambiguous subcategory fails',
+    );
+    assert(
+      catGrandchildExplicit.data.errors.some((e: string) =>
+        e.includes('is a subcategory (maximum 2 levels supported)'),
+      ),
+      'explicit grandchild error mentions maximum 2 levels supported',
+    );
+
+    // Product CSV import with category_parent disambiguates repeated child names; flat CSV without category_parent rejects ambiguous names and accepts unambiguous names.
+    const prodHierarchyImport = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: [
+          'sku,barcode,name,category,category_parent,price,description,cost,track_inventory,stock_qty,low_stock_alert,is_active',
+          ',,Hierarchy Espresso,Hot,CSV Drinks,4.5,Hot drink,1,no,0,5,yes',
+          ',,Hierarchy Soup,Hot,CSV Food,7.5,Hot food,2,no,0,5,yes',
+          ',,Unambiguous Cold Brew,Cold,,5.0,Unambiguous child without category_parent,1,no,0,5,yes',
+          ',,Ambiguous Hot Item,Hot,,6.0,Missing category_parent for repeated child name,1,no,0,5,yes',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      prodHierarchyImport.status,
+      200,
+      'product hierarchy CSV import returns results',
+    );
+    assertEqualOrThrow(
+      prodHierarchyImport.data.created,
+      3,
+      'disambiguated and unambiguous products are created',
+    );
+    assertEqualOrThrow(
+      prodHierarchyImport.data.failed,
+      1,
+      'ambiguous product row without category_parent is rejected',
+    );
+    assert(
+      prodHierarchyImport.data.errors.some((e: string) =>
+        e.includes('category "Hot" is ambiguous'),
+      ),
+      'ambiguous category error instructs user to specify category_parent',
+    );
+
+    const espressoProd = db
+      .prepare('SELECT category_id FROM products WHERE name = ? AND deleted_at IS NULL')
+      .get('Hierarchy Espresso') as { category_id: string } | undefined;
+    const soupProd = db
+      .prepare('SELECT category_id FROM products WHERE name = ? AND deleted_at IS NULL')
+      .get('Hierarchy Soup') as { category_id: string } | undefined;
+    assertEqualOrThrow(
+      espressoProd?.category_id,
+      hotDrinksChild!.id,
+      'Hierarchy Espresso is linked to Hot under CSV Drinks',
+    );
+    assertEqualOrThrow(
+      soupProd?.category_id,
+      hotFoodChild!.id,
+      'Hierarchy Soup is linked to Hot under CSV Food',
+    );
+
+    // Export categories and products and verify round-trip re-import
+    const exportedCatsRes = await fetch(`${baseUrl}/api/menu/csv/export/categories`, {
+      headers: authHeader,
+    });
+    const exportedCatsCsv = await exportedCatsRes.text();
+    assert(
+      exportedCatsCsv.split('\n')[0].includes(',parent,'),
+      'exported categories CSV header includes parent column',
+    );
+    const reimportCats = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: { csv: exportedCatsCsv },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      reimportCats.data.failed,
+      0,
+      'exported categories CSV round-trips without errors',
+    );
+
+    const exportedProdsRes = await fetch(`${baseUrl}/api/menu/csv/export/products`, {
+      headers: authHeader,
+    });
+    const exportedProdsCsv = await exportedProdsRes.text();
+    assert(
+      exportedProdsCsv.split('\n')[0].includes(',category_parent,'),
+      'exported products CSV header includes category_parent column',
+    );
+    const reimportProds = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: { csv: exportedProdsCsv },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      reimportProds.data.failed,
+      0,
+      'exported products CSV round-trips without errors',
+    );
+
+    const crossNamespaceCats = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,parent,description,color,icon,sort_order',
+          'Specials,,Root specials,,,30',
+          'Specials,CSV Drinks,Drinks specials child,,,3',
+          'CSV Drinks,Specials,Child sharing name with root that has subcategories,,,1',
+          'CSV Drinks,CSV Drinks,Child sharing name with its own root parent,,,4',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      crossNamespaceCats.data.failed,
+      0,
+      'cross-named roots and subcategories import without false cycle or root-reparenting errors',
+    );
+    assertEqualOrThrow(
+      crossNamespaceCats.data.created,
+      4,
+      'all 4 cross-namespace root/subcategory rows are created',
+    );
+
+    const mutualCycleCats = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,parent,description,color,icon,sort_order',
+          'CycleAlpha,CycleBeta,Mutual cycle A,,,1',
+          'CycleBeta,CycleAlpha,Mutual cycle B,,,2',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      mutualCycleCats.data.failed,
+      2,
+      'mutual non-root parent cycle rows are rejected',
+    );
+    assert(
+      mutualCycleCats.data.errors.every((e: string) => e.includes('creates a cycle')),
+      'mutual cycle rows report cycle error',
+    );
+
+    const blankCatName = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: ['name,parent,sort_order', '"   ",,1'].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(blankCatName.data.failed, 1, 'whitespace-only category name is rejected');
+    assert(
+      blankCatName.data.errors.some((e: string) => e.includes('missing name')),
+      'whitespace-only category name reports missing name',
+    );
+
+    const specialsRoot = db
+      .prepare(
+        'SELECT id FROM categories WHERE name = ? AND parent_id IS NULL AND deleted_at IS NULL',
+      )
+      .get('Specials') as { id: string } | undefined;
+    const specialsUnderDrinks = db
+      .prepare('SELECT id FROM categories WHERE name = ? AND parent_id = ? AND deleted_at IS NULL')
+      .get('Specials', csvDrinksRoot!.id) as { id: string } | undefined;
+    assert(
+      Boolean(specialsRoot?.id && specialsUnderDrinks?.id),
+      'both root Specials and CSV Drinks > Specials exist',
+    );
+
+    const rootSpecialsProdImport = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: [
+          'sku,name,category,category_parent,price,cost,is_active',
+          ',Chef Platter,Specials,,15.0,5,yes',
+          ',Drink Flight,Specials,CSV Drinks,12.0,4,yes',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      rootSpecialsProdImport.data.failed,
+      0,
+      'blank category_parent resolves to root Specials even when CSV Drinks > Specials exists',
+    );
+    const chefPlatter = db
+      .prepare('SELECT category_id FROM products WHERE name = ? AND deleted_at IS NULL')
+      .get('Chef Platter') as { category_id: string } | undefined;
+    assertEqualOrThrow(
+      chefPlatter?.category_id,
+      specialsRoot!.id,
+      'Chef Platter attaches to root Specials',
+    );
+
+    const flatAmbiguousSpecials = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: ['sku,name,category,price,cost,is_active', ',Flat Ambiguous,Specials,11.0,3,yes'].join(
+          '\n',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      flatAmbiguousSpecials.data.failed,
+      1,
+      'flat CSV without category_parent rejects Specials when both root and child Specials exist',
+    );
+
+    db.prepare(
+      `INSERT INTO categories (id, name, slug, parent_id, sort_order, is_active, created_at, updated_at)
+       VALUES ('legacy-inactive-root', 'Legacy Seasonal', 'legacy-seasonal', NULL, 50, 0, ?, ?),
+              ('legacy-inactive-child', 'Winter Specials', 'winter-specials', 'legacy-inactive-root', 1, 1, ?, ?)`,
+    ).run(now(), now(), now(), now());
+
+    const newChildUnderInactive = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: ['name,parent,sort_order', 'Spring Specials,Legacy Seasonal,2'].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      newChildUnderInactive.data.failed,
+      1,
+      'creating a new subcategory under an inactive parent via CSV is rejected',
+    );
+
+    const exportedCatsRound2 = await (
+      await fetch(`${baseUrl}/api/menu/csv/export/categories`, { headers: authHeader })
+    ).text();
+    const reimportCatsRound2 = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: { csv: exportedCatsRound2 },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      reimportCatsRound2.data.failed,
+      0,
+      'categories export with cross-named categories and legacy inactive parent round-trips with 0 errors',
+    );
+
+    const exportedProdsRound2 = await (
+      await fetch(`${baseUrl}/api/menu/csv/export/products`, { headers: authHeader })
+    ).text();
+    const reimportProdsRound2 = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: { csv: exportedProdsRound2 },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      reimportProdsRound2.data.failed,
+      0,
+      'products export with root Specials and CSV Drinks > Specials round-trips with 0 errors',
+    );
+
+    // F1: Orphan category (parent_id pointing to soft-deleted parent) export/re-import round-trip
+    db.prepare(
+      `INSERT INTO categories (id, name, slug, parent_id, sort_order, is_active, deleted_at, created_at, updated_at)
+       VALUES
+         ('deleted-parent-f1', 'Deleted Parent', 'deleted-parent', NULL, 60, 1, ?, ?, ?),
+         ('orphan-child-f1', 'Orphan Child', 'orphan-child', 'deleted-parent-f1', 61, 1, NULL, ?, ?),
+         ('live-sub-orphan-name', 'Orphan Child', 'orphan-child-sub', ?, 5, 1, NULL, ?, ?)`,
+    ).run(now(), now(), now(), now(), now(), csvDrinksRoot!.id, now(), now());
+    db.prepare(
+      `INSERT INTO products (id, name, category_id, price, cost, tax_type, tax_rate, tax_behavior, is_active, sort_order, created_at, updated_at)
+       VALUES ('orphan-product-f1', 'Orphan Product', 'orphan-child-f1', 12, 0, 'none', 0, 'country_default', 1, 0, ?, ?)`,
+    ).run(now(), now());
+
+    const orphanCatsExport = await (
+      await fetch(`${baseUrl}/api/menu/csv/export/categories`, { headers: authHeader })
+    ).text();
+    const orphanProdsExport = await (
+      await fetch(`${baseUrl}/api/menu/csv/export/products`, { headers: authHeader })
+    ).text();
+
+    const orphanCatsReimport = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: { csv: orphanCatsExport },
+      headers: authHeader,
+    });
+    assertEqual(
+      orphanCatsReimport.data.failed,
+      0,
+      'F1: unchanged category CSV export with orphan category imports without errors',
+    );
+    const duplicateOrphanRootCount = (
+      db
+        .prepare(
+          'SELECT COUNT(*) AS count FROM categories WHERE name = ? AND parent_id IS NULL AND deleted_at IS NULL',
+        )
+        .get('Orphan Child') as { count: number }
+    ).count;
+    assertEqual(
+      duplicateOrphanRootCount,
+      0,
+      'F1: category CSV import skips existing orphan category instead of inserting a duplicate root',
+    );
+    assertEqual(
+      (
+        db.prepare('SELECT parent_id FROM categories WHERE id = ?').get('orphan-child-f1') as {
+          parent_id: string | null;
+        }
+      ).parent_id,
+      'deleted-parent-f1',
+      'F1: orphan category stored parent_id is preserved without silent flattening',
+    );
+
+    const orphanProdsReimport = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: { csv: orphanProdsExport },
+      headers: authHeader,
+    });
+    assertEqual(
+      orphanProdsReimport.data.failed,
+      0,
+      'F1: unchanged product CSV export with orphan product imports without errors',
+    );
+    assertEqual(
+      (
+        db.prepare('SELECT category_id FROM products WHERE id = ?').get('orphan-product-f1') as {
+          category_id: string | null;
+        }
+      ).category_id,
+      'orphan-child-f1',
+      'F1: orphan product retains its original orphan-child category_id across CSV round-trip',
+    );
+
+    db.prepare(
+      `INSERT INTO categories (id, name, slug, parent_id, sort_order, is_active, created_at, updated_at)
+       VALUES ('real-root-orphan-dup', 'Orphan Child', 'orphan-child-root', NULL, 62, 1, ?, ?)`,
+    ).run(now(), now());
+    const ambiguousOrphanCatImport = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: { csv: ['name,parent,sort_order', 'Orphan Child,,62'].join('\n') },
+      headers: authHeader,
+    });
+    assertEqual(
+      ambiguousOrphanCatImport.data.failed,
+      1,
+      'F1: multiple effective-root categories with same name fail category CSV import as ambiguous',
+    );
+    assert(
+      ambiguousOrphanCatImport.data.errors.some((e: string) => e.includes('ambiguous')),
+      'F1: category CSV reports ambiguity when both true root and orphan root match',
+    );
+    const ambiguousOrphanProdImport = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: [
+          'sku,name,category,category_parent,price,cost,is_active',
+          ',Ambig Orphan Item,Orphan Child,,9,0,yes',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqual(
+      ambiguousOrphanProdImport.data.failed,
+      1,
+      'F1: multiple effective-root categories with same name fail product CSV import as ambiguous',
+    );
+    db.prepare('UPDATE categories SET deleted_at = ? WHERE id = ?').run(
+      now(),
+      'real-root-orphan-dup',
+    );
+
+    // F5: Legacy depth-3 product CSV export/re-import preservation and ambiguous non-root rejection
+    db.prepare(
+      `INSERT INTO categories (id, name, slug, parent_id, sort_order, is_active, created_at, updated_at)
+       VALUES
+         ('deep-root-f5', 'Deep Root', 'deep-root', NULL, 70, 1, ?, ?),
+         ('deep-mid-f5', 'Deep Mid', 'deep-mid', 'deep-root-f5', 1, 1, ?, ?),
+         ('deep-leaf-f5', 'Deep Leaf', 'deep-leaf', 'deep-mid-f5', 1, 1, ?, ?),
+         ('ambig-root-1-f5', 'Ambig Root 1', 'ambig-root-1', NULL, 71, 1, ?, ?),
+         ('ambig-mid-1-f5', 'Shared Mid', 'shared-mid-1', 'ambig-root-1-f5', 1, 1, ?, ?),
+         ('ambig-leaf-1-f5', 'Shared Leaf', 'shared-leaf-1', 'ambig-mid-1-f5', 1, 1, ?, ?),
+         ('ambig-root-2-f5', 'Ambig Root 2', 'ambig-root-2', NULL, 72, 1, ?, ?),
+         ('ambig-mid-2-f5', 'Shared Mid', 'shared-mid-2', 'ambig-root-2-f5', 1, 1, ?, ?),
+         ('ambig-leaf-2-f5', 'Shared Leaf', 'shared-leaf-2', 'ambig-mid-2-f5', 1, 1, ?, ?)`,
+    ).run(
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+      now(),
+    );
+    db.prepare(
+      `INSERT INTO products (id, name, category_id, price, cost, tax_type, tax_rate, tax_behavior, is_active, sort_order, created_at, updated_at)
+       VALUES ('deep-product-f5', 'Deep Product', 'deep-leaf-f5', 20, 0, 'none', 0, 'country_default', 1, 0, ?, ?)`,
+    ).run(now(), now());
+
+    const deepProdsExport = await (
+      await fetch(`${baseUrl}/api/menu/csv/export/products`, { headers: authHeader })
+    ).text();
+    assert(
+      deepProdsExport.includes('deep-product-f5,,Deep Product,Deep Leaf,Deep Mid,'),
+      'F5: exported depth-3 product includes immediate parent in category_parent',
+    );
+    const deepProdsReimport = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: deepProdsExport.replace(
+          'deep-product-f5,,Deep Product,Deep Leaf,Deep Mid,20',
+          'deep-product-f5,,Deep Product,Deep Leaf,Deep Mid,22',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqual(
+      deepProdsReimport.data.failed,
+      0,
+      'F5: exported legacy depth-3 product re-imports cleanly without flattening hierarchy',
+    );
+    const reloadedDeepProd = db
+      .prepare('SELECT id, category_id, price FROM products WHERE id = ?')
+      .get('deep-product-f5') as { id: string; category_id: string; price: number };
+    assertEqual(reloadedDeepProd.id, 'deep-product-f5', 'F5: depth-3 product ID is preserved');
+    assertEqual(
+      reloadedDeepProd.category_id,
+      'deep-leaf-f5',
+      'F5: depth-3 product category_id is preserved',
+    );
+    assertEqual(reloadedDeepProd.price, 22, 'F5: depth-3 product price update persisted');
+
+    const ambigLegacyPairImport = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: [
+          'sku,name,category,category_parent,price,cost,is_active',
+          ',Ambig Deep Product,Shared Leaf,Shared Mid,15,0,yes',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqual(
+      ambigLegacyPairImport.data.failed,
+      1,
+      'F5: ambiguous non-root parent/child pair is rejected',
+    );
+    assert(
+      ambigLegacyPairImport.data.errors.some((e: string) => e.includes('ambiguous')),
+      'F5: ambiguous non-root parent/child pair reports ambiguity',
+    );
+
+    // F6: CSV product creates and category-changing updates enforce active category & ancestor chain
+    db.prepare(
+      `INSERT INTO products (id, name, category_id, price, cost, tax_type, tax_rate, tax_behavior, is_active, sort_order, created_at, updated_at)
+       VALUES
+         ('retained-inactive-anc-f6', 'Retained Winter Cider', 'legacy-inactive-child', 8, 0, 'none', 0, 'country_default', 1, 0, ?, ?),
+         ('active-reassign-probe-f6', 'Active Reassign Probe', ?, 9, 0, 'none', 0, 'country_default', 1, 0, ?, ?)`,
+    ).run(now(), now(), specialsRoot!.id, now(), now());
+
+    const newProdInactiveAncestorCsv = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: [
+          'sku,name,category,category_parent,price',
+          'ina-1,Blocked Winter Mulled Wine,Winter Specials,Legacy Seasonal,10',
+          'ina-2,Blocked Seasonal Soup,Legacy Seasonal,,10',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqual(
+      newProdInactiveAncestorCsv.data.created,
+      0,
+      'F6: CSV refuses creating new products in an inactive category or under an inactive ancestor',
+    );
+    assertEqual(
+      newProdInactiveAncestorCsv.data.failed,
+      2,
+      'F6: both inactive-ancestor and inactive-category new product rows fail',
+    );
+
+    const flatNewProdInactiveAncestorCsv = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: [
+          'sku,name,category,price',
+          'ina-flat,Blocked Flat Winter Tea,Winter Specials,10',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqual(
+      flatNewProdInactiveAncestorCsv.data.failed,
+      1,
+      'F6: flat CSV also refuses creating a new product under an inactive ancestor',
+    );
+
+    const reassignToInactiveAncestorCsv = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: [
+          'id,sku,name,category,category_parent,price',
+          'active-reassign-probe-f6,,Active Reassign Probe,Winter Specials,Legacy Seasonal,9',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqual(
+      reassignToInactiveAncestorCsv.data.failed,
+      1,
+      'F6: CSV refuses moving an existing product into a subcategory under an inactive ancestor',
+    );
+    assertEqual(
+      (
+        db
+          .prepare('SELECT category_id FROM products WHERE id = ?')
+          .get('active-reassign-probe-f6') as { category_id: string }
+      ).category_id,
+      specialsRoot!.id,
+      'F6: rejected CSV category reassignment leaves existing product category_id untouched',
+    );
+
+    const retainInactiveAncestorCsv = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: [
+          'id,sku,name,category,category_parent,price',
+          'retained-inactive-anc-f6,,Retained Winter Cider,Winter Specials,Legacy Seasonal,9.5',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqual(
+      retainInactiveAncestorCsv.data.failed,
+      0,
+      'F6: CSV allows updating an existing product that retains its unchanged category under an inactive ancestor',
+    );
+    const retainedAfterUpdate = db
+      .prepare('SELECT category_id, price FROM products WHERE id = ?')
+      .get('retained-inactive-anc-f6') as { category_id: string; price: number };
+    assertEqual(
+      retainedAfterUpdate.category_id,
+      'legacy-inactive-child',
+      'F6: retained product preserves its category_id',
+    );
+    assertEqual(
+      retainedAfterUpdate.price,
+      9.5,
+      'F6: retained product price update commits cleanly',
+    );
   } finally {
     server.close();
     closeDatabase();

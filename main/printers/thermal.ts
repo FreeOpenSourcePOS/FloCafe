@@ -22,6 +22,7 @@ import {
   resolveTenantCurrency,
   type CurrencyDisplay,
   type DigitMode,
+  type RegionalSnapshot,
 } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import {
@@ -110,6 +111,7 @@ import {
 import {
   type PrintWarning,
   type RasterLineUnit,
+  assertFinancialValueFitsColumns,
   itemNameWidth,
   itemAmountWidth,
   itemRows,
@@ -125,6 +127,7 @@ import {
   pushCenteredWrapped,
   appendPoweredByFooter,
   normalizeThermalText,
+  safePrinterText,
   resolveCurrencyPrefix,
   appendCashDrawerPulse,
   buildEscPos,
@@ -180,6 +183,9 @@ export type DispatchResult = {
   driverName?: string;
   printerStatus?: number;
   warnings?: PrintWarning[];
+  bytes?: number[] | Buffer;
+  preview?: boolean;
+  connection_type?: string;
 };
 
 export type PrintFailureClass =
@@ -1353,10 +1359,255 @@ export async function printDeliverySlipDetailed(
   }
 }
 
+export function buildEscPosQrCode(payload: string): Buffer {
+  const payloadBytes = Buffer.from(payload, 'utf8');
+  const pL = (payloadBytes.length + 3) & 0xff;
+  const pH = ((payloadBytes.length + 3) >> 8) & 0xff;
+
+  return Buffer.concat([
+    Buffer.from([0x1b, 0x61, 0x01]),
+    Buffer.from([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]),
+    Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, 0x06]),
+    Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31]),
+    Buffer.from([0x1d, 0x28, 0x6b, pL, pH, 0x31, 0x50, 0x30]),
+    payloadBytes,
+    Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]),
+    Buffer.from([0x1b, 0x61, 0x00]),
+  ]);
+}
+
+export interface PaymentTicketOrder {
+  readonly id: number | string;
+  readonly order_number: string;
+  readonly type: string;
+  readonly table_id?: number | string | null;
+  readonly table_name?: string | null;
+  readonly customer_name?: string | null;
+  readonly total: number;
+  readonly created_at?: string;
+  readonly scheduled_for?: string | null;
+}
+
+export interface PaymentTicketItem {
+  readonly product_name: string;
+  readonly quantity: number;
+  readonly unit_price?: number;
+  readonly total?: number;
+}
+
+export async function printPaymentTicket(
+  order: PaymentTicketOrder,
+  items: readonly PaymentTicketItem[],
+  options: {
+    balance?: number;
+    useUnicode?: boolean;
+    targetPrinter?: any;
+    signal?: AbortSignal;
+    preview?: boolean;
+  } = {},
+): Promise<DispatchResult> {
+  try {
+    if (options.signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
+    const printer = options.targetPrinter || getPrinterConfig();
+    if (!printer && !options.preview) {
+      return { ok: false, detail: 'No printer configured' };
+    }
+
+    const { profile, columns: cols } = resolvePrinterContext(printer || { paper_width: '80mm' });
+    const storeName = getSettingValue('business_name') || 'FloCafe';
+
+    let snapshot: RegionalSnapshot;
+    try {
+      snapshot = resolveRegionalSnapshot({
+        country: getSettingValue('country') || undefined,
+        currency: getSettingValue('currency') || undefined,
+        timezone: getSettingValue('timezone') || undefined,
+      });
+    } catch {
+      snapshot = resolveRegionalSnapshot({
+        country: 'US',
+        currency: 'USD',
+        timezone: 'UTC',
+      });
+    }
+    const currency = snapshot.currency;
+    const fractionDigits = snapshot.currencyFractionDigits;
+    const locale = snapshot.locale;
+    const tz = snapshot.timezone;
+    const prefix = resolveCurrencyPrefix(snapshot.currencySymbol || currency, false);
+    const formatAmount = (val: number): string =>
+      formatCurrency(val, prefix, locale, false, fractionDigits);
+
+    const localTime = (iso: string): string => {
+      try {
+        const d = parseDbTimestamp(iso);
+        if (isNaN(d.getTime())) return iso;
+        return d.toLocaleString('en-US-u-nu-latn', { timeZone: tz });
+      } catch {
+        return iso;
+      }
+    };
+
+    const balance = options.balance ?? order.total;
+    const storeNameLines = wrapText(safePrinterText(storeName), cols).map(
+      (line) => `{CENTER}{BOLD}${line}{/BOLD}{/CENTER}`,
+    );
+
+    const lines: string[] = [
+      '{INIT}',
+      ...storeNameLines,
+      '{CENTER}{BOLD}PAYMENT TICKET{/BOLD}{/CENTER}',
+      `{CENTER}Ticket #: ${order.order_number}{/CENTER}`,
+      '-'.repeat(cols),
+      `Type: ${order.type === 'dine_in' ? 'Dine In' : 'Takeaway'}`,
+    ];
+
+    if (order.table_name) {
+      lines.push(`Table: ${order.table_name}`);
+    }
+    if (order.created_at) {
+      lines.push(`Date: ${localTime(order.created_at)}`);
+    }
+    if (order.scheduled_for) {
+      lines.push(`Scheduled For: ${localTime(order.scheduled_for)}`);
+    }
+
+    lines.push('-'.repeat(cols));
+    for (const item of items) {
+      const quantity = `${item.quantity}x `;
+      const amount = item.total !== undefined ? formatAmount(Number(item.total)) : '';
+      const quantityWidth = displayCellWidth(quantity);
+      const amountWidth = displayCellWidth(amount);
+      assertFinancialValueFitsColumns(quantity, cols, 'payment ticket item quantity');
+      if (amount) assertFinancialValueFitsColumns(amount, cols, 'payment ticket item amount');
+      const inlineAmount = !amount || quantityWidth + amountWidth + 1 <= cols;
+      const nameWidth = Math.max(
+        1,
+        cols - quantityWidth - (amount && inlineAmount ? amountWidth + 1 : 0),
+      );
+      const nameLines = wrapText(safePrinterText(item.product_name), nameWidth);
+      const firstLine = quantity + (nameLines.shift() || '');
+      if (amount && inlineAmount) {
+        lines.push(firstLine + rightAlign(amount, cols - displayCellWidth(firstLine)));
+      } else {
+        lines.push(firstLine);
+      }
+      lines.push(...nameLines.map((line) => ' '.repeat(quantityWidth) + line));
+      if (amount && !inlineAmount) lines.push(padToDisplayCells(amount, cols, 'right'));
+    }
+
+    lines.push('-'.repeat(cols));
+    const totalAmount = formatAmount(Number(order.total));
+    const balanceAmount = formatAmount(Number(balance));
+    const pushSummaryAmount = (label: string, amount: string, field: string) => {
+      assertFinancialValueFitsColumns(amount, cols, field);
+      const labelWidth = displayCellWidth(label);
+      if (labelWidth + 1 + displayCellWidth(amount) <= cols) {
+        lines.push(`${label}${rightAlign(amount, cols - labelWidth)}`);
+      } else {
+        lines.push(...wrapText(label, cols).map((line) => padToDisplayCells(line, cols)));
+        lines.push(padToDisplayCells(amount, cols, 'right'));
+      }
+    };
+    pushSummaryAmount('Total:', totalAmount, 'payment ticket total');
+    pushSummaryAmount('Balance Due:', balanceAmount, 'payment ticket balance');
+    lines.push('-'.repeat(cols));
+    lines.push('{CENTER}Please pay at the payment counter{/CENTER}');
+    lines.push('{CENTER}Scan or enter ticket number to pay:{/CENTER}');
+
+    const qrPayload = `FLOCAFE-TICKET:${order.order_number}`;
+    const qrBytes = buildEscPosQrCode(qrPayload);
+    lines.push(`{RAW_BYTES:${qrBytes.toString('base64')}}`);
+    lines.push(`{CENTER}${qrPayload}{/CENTER}`);
+    lines.push('');
+    lines.push('{CUT}');
+
+    const data = buildEscPos(lines, options.useUnicode ?? false, {
+      cutMode: profile.cutMode,
+      columns: cols,
+    });
+
+    if (options.preview) {
+      return { ok: true, preview: true, bytes: Array.from(data), warnings: [] };
+    }
+
+    if (printer?.connection_type === 'webusb') {
+      return {
+        ok: true,
+        bytes: Array.from(data),
+        connection_type: 'webusb',
+        warnings: [],
+      };
+    }
+
+    return await dispatchPrint(printer, data, options.signal);
+  } catch (error: unknown) {
+    console.error('[Printer] Payment ticket print error:', error);
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export type PaymentTicketPrintResult = PrintResult & {
+  bytes?: number[] | Buffer;
+  preview?: boolean;
+  connection_type?: string;
+};
+
+export async function printPaymentTicketDetailed(
+  ...args: Parameters<typeof printPaymentTicket>
+): Promise<PaymentTicketPrintResult> {
+  const id = correlationId();
+  try {
+    const dispatch = await printPaymentTicket(...args);
+    const result: PaymentTicketPrintResult = dispatch.ok
+      ? {
+          ok: true,
+          correlationId: id,
+          stage: 'dispatch',
+          warnings: dispatch.warnings,
+          bytes: dispatch.bytes,
+          preview: dispatch.preview,
+          connection_type: dispatch.connection_type,
+        }
+      : {
+          ok: false,
+          code: 'print.payment_ticket.failed',
+          correlationId: id,
+          stage: 'dispatch',
+          detail: dispatch.detail,
+          failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
+          platformErrorCode:
+            dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
+          jobId: dispatch.jobId,
+          driverName: dispatch.driverName,
+          printerStatus: dispatch.printerStatus,
+          warnings: dispatch.warnings,
+        };
+    if (!result.ok) reportPrintFailure('payment_ticket', result);
+    return result;
+  } catch (error) {
+    const detail = (error as Error).message;
+    const result: PrintResult = {
+      ok: false,
+      code: 'print.payment_ticket.failed',
+      correlationId: id,
+      stage: 'dispatch',
+      detail,
+      failureClass: classifyPrintFailure(detail),
+      platformErrorCode: extractPlatformErrorCode(detail),
+    };
+    reportPrintFailure('payment_ticket', result);
+    return result;
+  }
+}
+
 /**
  * Report print failure via telemetry tiers (best-effort, non-blocking).
  */
-function reportPrintFailure(kind: 'receipt' | 'kot' | 'delivery_slip', result: PrintResult): void {
+function reportPrintFailure(
+  kind: 'receipt' | 'kot' | 'delivery_slip' | 'payment_ticket',
+  result: PrintResult,
+): void {
   let connectionType = 'unknown';
   try {
     const configured = getPrinterConfig()?.connection_type;
@@ -2370,9 +2621,7 @@ function reflowPluginLineItems(
 
   if (sum < available) {
     let extra = available - sum;
-    const itemPos = validIndices.findIndex(
-      (index) => configured[index]?.key === 'item' || configured[index]?.wrap === true,
-    );
+    const itemPos = validIndices.findIndex((index) => isPluginItemColumn(configured[index]));
     const minItemShare =
       itemPos >= 0 ? Math.min(origWidths[itemPos], Math.ceil(available * 0.45)) : 0;
     if (itemPos >= 0 && widths[itemPos] < minItemShare) {
@@ -2403,7 +2652,7 @@ function reflowPluginLineItems(
   } else if (sum > available) {
     let deficit = sum - available;
     const shrinkOrder: Array<{ match: (col: PluginLineColumn) => boolean; minWidth: number }> = [
-      { match: (col) => col?.key === 'item' || col?.wrap === true, minWidth: 4 },
+      { match: (col) => isPluginItemColumn(col), minWidth: 4 },
       { match: (col) => col?.key === 'quantity', minWidth: 2 },
       { match: (col) => col?.key === 'rate' || col?.key === 'taxRate', minWidth: 4 },
       { match: (col) => col?.key !== 'amount', minWidth: 1 },
@@ -2430,6 +2679,7 @@ function reflowPluginLineItems(
     const nextWidth = widths[pos];
     col.width = nextWidth;
     if (
+      isPluginItemColumn(col) &&
       col.wrap === true &&
       nextWidth < origWidth &&
       typeof col.maxLines === 'number' &&
@@ -2705,6 +2955,8 @@ function escposLineTemplateV1Lines(
   lines.push(dash);
 
   if (order.items) {
+    const amtLen = itemAmountWidth(order, prefix, locale, trimDecimals, cols, fractionDigits);
+    const itemNameLen = itemNameWidth(cols, amtLen);
     for (const item of order.items) {
       if (isExcludedFromBillReceipt(item.status)) continue;
       pushFinancialLines(
@@ -2733,20 +2985,33 @@ function escposLineTemplateV1Lines(
       );
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
-          const addonLines: string[] = [];
-          const addonLabel = '  + ' + addon.name;
-          const addonAmount = addon.price
-            ? formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits)
-            : '';
-          pushWrapped(
-            addonLines,
-            addonLabel + (addon.price ? ' ' + addonAmount : ''),
-            cols,
-            lang,
-            capabilities,
-          );
-          if (addon.price) pushFinancialLines(addonLines, summaryLayout(addonLabel, addonAmount));
-          else lines.push(...addonLines);
+          const quantitySuffix =
+            typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
+          const addonLabel = '  + ' + addon.name + quantitySuffix;
+          if (addon.price) {
+            const addonAmount = formatCurrency(
+              addon.price,
+              prefix,
+              locale,
+              trimDecimals,
+              fractionDigits,
+            );
+            const addonLines = addonRows(
+              addon,
+              itemNameLen,
+              amtLen,
+              cols,
+              prefix,
+              locale,
+              trimDecimals,
+              lang,
+              fractionDigits,
+              capabilities,
+            );
+            pushFinancialLines(addonLines, summaryLayout(addonLabel, addonAmount));
+          } else {
+            pushWrapped(lines, addonLabel, cols, lang, capabilities);
+          }
         }
       }
       if (pluginDetailLines(layout).includes('specialInstructions') && item.special_instructions) {
@@ -2787,10 +3052,15 @@ function escposLineTemplateV1Lines(
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
-      const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
+      const hasRate = tax.rate !== null && tax.rate !== undefined && String(tax.rate).trim() !== '';
+      const rateToken = hasRate ? `@${String(tax.rate).trim()}%` : '';
+      if (hasRate) {
+        assertFinancialValueFitsColumns(rateToken, cols, 'tax rate');
+      }
+      const rawLabel = hasRate ? `${tax.title} ${rateToken}` : tax.title;
       const taxAmount = formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits);
       pushFinancialLines(
-        [pluginSummaryRow(rawLabel, taxAmount, layout, cols, lang, capabilities)],
+        pluginSummaryRow(rawLabel, taxAmount, layout, cols, lang, capabilities),
         summaryLayout(normalize(rawLabel), taxAmount),
       );
     }
@@ -3022,6 +3292,12 @@ type PluginLineColumn = {
   ellipsis?: boolean;
 };
 
+const PLUGIN_FINANCIAL_COLUMN_KEYS = new Set(['quantity', 'rate', 'taxRate', 'amount']);
+
+function isPluginFinancialColumn(column: PluginLineColumn | undefined): boolean {
+  return Boolean(column?.key && PLUGIN_FINANCIAL_COLUMN_KEYS.has(column.key));
+}
+
 function pluginLineItemColumns(
   layout: any,
   cols: number,
@@ -3031,19 +3307,25 @@ function pluginLineItemColumns(
   const configured = layout?.lineItems?.columns;
   if (Array.isArray(configured) && configured.length > 0) {
     const columns = configured
-      .map((column: any) => ({
-        key: typeof column?.key === 'string' ? column.key : undefined,
-        label:
-          typeof column?.label === 'string'
-            ? normalizeThermalText(column.label, capabilities)
-            : undefined,
-        width: Number(column?.width),
-        align: column?.align === 'right' || column?.align === 'center' ? column.align : 'left',
-        wrap: column?.wrap === true,
-        maxLines:
-          Number.isInteger(column?.maxLines) && column.maxLines > 0 ? column.maxLines : undefined,
-        ellipsis: column?.ellipsis !== false,
-      }))
+      .map((column: any) => {
+        const key = typeof column?.key === 'string' ? column.key : undefined;
+        const financial = Boolean(key && PLUGIN_FINANCIAL_COLUMN_KEYS.has(key));
+        return {
+          key,
+          label:
+            typeof column?.label === 'string'
+              ? normalizeThermalText(column.label, capabilities)
+              : undefined,
+          width: Number(column?.width),
+          align: (column?.align === 'right' || column?.align === 'center'
+            ? column.align
+            : 'left') as PluginColumnAlign,
+          wrap: !financial && column?.wrap === true,
+          maxLines:
+            Number.isInteger(column?.maxLines) && column.maxLines > 0 ? column.maxLines : undefined,
+          ellipsis: financial ? false : column?.ellipsis !== false,
+        };
+      })
       .filter(
         (column: PluginLineColumn) =>
           column.key && Number.isInteger(column.width) && Number(column.width) > 0,
@@ -3077,6 +3359,8 @@ function pluginLineItemColumns(
 }
 
 function pluginLineGap(layout: any): number {
+  const configured = layout?.lineItems?.columns;
+  if (!Array.isArray(configured) || configured.length === 0) return 1;
   const gap = Number(layout?.lineItems?.gap);
   return Number.isInteger(gap) && gap >= 0 && gap <= 4 ? gap : 0;
 }
@@ -3103,16 +3387,29 @@ function pluginItemHeader(
   );
 }
 
-function fitPluginRowColumns<T extends PluginLineColumn & { value: string }>(columns: T[]): T[] {
+function isPluginItemColumn(column: PluginLineColumn | undefined): boolean {
+  if (!column || isPluginFinancialColumn(column)) return false;
+  return column.wrap === true || column.key === 'item';
+}
+
+function fitPluginRowColumns<T extends PluginLineColumn & { value: string }>(
+  columns: T[],
+  gap: number = 1,
+): T[] {
   const widths = columns.map((column) => Number(column.width));
   for (let i = columns.length - 1; i >= 0; i -= 1) {
-    if (columns[i].wrap) continue;
-    const needed = displayCellWidth(columns[i].value);
+    if (isPluginItemColumn(columns[i])) continue;
+    const minSep = gap === 0 && i > 0 ? 1 : 0;
+    const needed = displayCellWidth(columns[i].value) + minSep;
     if (needed <= widths[i]) continue;
     let deficit = needed - widths[i];
     for (let j = 0; j < columns.length && deficit > 0; j += 1) {
-      if (j === i || columns[j].wrap) continue;
-      const spare = Math.max(0, widths[j] - Math.max(1, displayCellWidth(columns[j].value)));
+      if (j === i || isPluginItemColumn(columns[j])) continue;
+      const minFloor = Math.max(
+        1,
+        displayCellWidth(columns[j].value) + (gap === 0 && j > 0 ? 1 : 0),
+      );
+      const spare = Math.max(0, widths[j] - minFloor);
       if (spare > 0) {
         const take = Math.min(deficit, spare);
         widths[j] -= take;
@@ -3121,9 +3418,8 @@ function fitPluginRowColumns<T extends PluginLineColumn & { value: string }>(col
       }
     }
     for (let j = 0; j < columns.length && deficit > 0; j += 1) {
-      if (j === i || !columns[j].wrap) continue;
-      const minWrapWidth = Math.min(widths[j], 4);
-      const spare = Math.max(0, widths[j] - minWrapWidth);
+      if (j === i || !isPluginItemColumn(columns[j])) continue;
+      const spare = Math.max(0, widths[j] - 4);
       if (spare > 0) {
         const take = Math.min(deficit, spare);
         widths[j] -= take;
@@ -3135,6 +3431,28 @@ function fitPluginRowColumns<T extends PluginLineColumn & { value: string }>(col
   return columns.map((column, index) =>
     widths[index] === column.width ? column : { ...column, width: widths[index] },
   );
+}
+
+function wrapPluginItemColumn(
+  column: PluginLineColumn & { value: string },
+  width: number,
+): string[] {
+  const targetWidth = Math.max(1, width);
+  const maxLines = column.wrap ? column.maxLines || 2 : column.maxLines || 1;
+  const wrapped = column.wrap ? wrapText(column.value, targetWidth) : [column.value];
+  const limited = wrapped.slice(0, maxLines);
+  if (
+    (wrapped.length > maxLines ||
+      displayCellWidth(limited[limited.length - 1] || '') > targetWidth) &&
+    limited.length > 0
+  ) {
+    limited[limited.length - 1] = truncateCell(
+      limited[limited.length - 1],
+      targetWidth,
+      column.ellipsis !== false,
+    );
+  }
+  return limited.length > 0 ? limited : [''];
 }
 
 function pluginItemRows(
@@ -3150,46 +3468,112 @@ function pluginItemRows(
 ): string[] {
   const columns = pluginLineItemColumns(layout, cols, lang, capabilities);
   const gap = pluginLineGap(layout);
-  const values = fitPluginRowColumns(
-    columns.map((column) => {
-      const rawValue = normalizeThermalText(
-        pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits),
-        capabilities,
-      );
-      return {
-        ...column,
-        value: column.align === 'right' ? rawValue.trimStart() : rawValue,
-      };
-    }),
-  );
-  const wrappedValues = values.map((column) => {
-    if (!column.wrap)
-      return [truncateCell(column.value, Number(column.width), column.ellipsis !== false)];
-    const maxLines = column.maxLines || 2;
-    const wrapped = wrapText(column.value, Number(column.width));
-    const limited = wrapped.slice(0, maxLines);
-    if (wrapped.length > maxLines && limited.length > 0 && column.ellipsis !== false) {
-      limited[limited.length - 1] = truncateCell(
-        limited[limited.length - 1],
+  const preparedColumns = columns.map((column) => {
+    const rawValue = normalizeThermalText(
+      pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits),
+      capabilities,
+    );
+    const value = isPluginItemColumn(column)
+      ? column.align === 'right'
+        ? rawValue.trimStart()
+        : rawValue
+      : rawValue.trim();
+    if (!isPluginItemColumn(column)) {
+      assertFinancialValueFitsColumns(value, cols, `item ${column.key || 'financial'} column`);
+    }
+    return {
+      ...column,
+      value,
+    };
+  });
+  const values = fitPluginRowColumns(preparedColumns, gap);
+  const totalSingleLineWidth =
+    values.reduce((sum, column) => sum + Number(column.width), 0) +
+    gap * Math.max(0, values.length - 1);
+  const wrappedValues = values.map((column, columnIndex) => {
+    if (!isPluginItemColumn(column)) return [column.value];
+    const reserveTrailingSpace =
+      gap === 0 && columnIndex < values.length - 1 && values[columnIndex + 1]?.align !== 'right';
+    const itemTextWidth = Math.max(1, Number(column.width) - (reserveTrailingSpace ? 1 : 0));
+    return wrapPluginItemColumn(column, itemTextWidth);
+  });
+  const firstLineCells = values.map((column, columnIndex) =>
+    alignCell(
+      truncateCell(
+        wrappedValues[columnIndex][0] || '',
         Number(column.width),
-        true,
+        isPluginItemColumn(column) ? column.ellipsis !== false : false,
+      ),
+      Number(column.width),
+      column.align || 'left',
+      isPluginItemColumn(column) ? column.ellipsis !== false : false,
+    ),
+  );
+  const hasColumnSeparation =
+    gap >= 1 ||
+    firstLineCells.every(
+      (cell, idx) =>
+        idx === 0 ||
+        (wrappedValues[idx - 1][0] || '').length === 0 ||
+        (wrappedValues[idx][0] || '').length === 0 ||
+        firstLineCells[idx - 1].endsWith(' ') ||
+        cell.startsWith(' '),
+    );
+  const allFinancialColumnsFit =
+    totalSingleLineWidth <= cols &&
+    hasColumnSeparation &&
+    values.every((column) =>
+      isPluginItemColumn(column)
+        ? Number(column.width) >= 4
+        : displayCellWidth(column.value) <= Number(column.width),
+    );
+  if (allFinancialColumnsFit) {
+    const lineCount = Math.max(1, ...wrappedValues.map((value) => value.length));
+    const rows: string[] = [];
+    for (let index = 0; index < lineCount; index++) {
+      rows.push(
+        composePluginColumns(
+          values.map((column, columnIndex) => ({
+            ...column,
+            ellipsis: isPluginItemColumn(column) ? column.ellipsis : false,
+            value: wrappedValues[columnIndex][index] || '',
+          })),
+          gap,
+          cols,
+        ),
       );
     }
-    return limited.length > 0 ? limited : [''];
-  });
-  const lineCount = Math.max(1, ...wrappedValues.map((value) => value.length));
+    return rows;
+  }
+
   const rows: string[] = [];
-  for (let index = 0; index < lineCount; index++) {
-    rows.push(
-      composePluginColumns(
-        values.map((column, columnIndex) => ({
-          ...column,
-          value: wrappedValues[columnIndex][index] || '',
-        })),
-        gap,
-        cols,
-      ),
-    );
+  for (const column of preparedColumns) {
+    if (!isPluginItemColumn(column)) continue;
+    for (const line of wrapPluginItemColumn(column, cols)) {
+      rows.push(padToDisplayCells(line, cols, column.align || 'left'));
+    }
+  }
+  const financialValues = preparedColumns
+    .filter((column) => !isPluginItemColumn(column) && column.value.length > 0)
+    .map((column) => column.value);
+  const gapSpace = Math.max(1, gap);
+  const separator = ' '.repeat(gapSpace);
+  let currentGroup: string[] = [];
+  let currentWidth = 0;
+  for (const val of financialValues) {
+    const valWidth = displayCellWidth(val);
+    const nextWidth = currentGroup.length === 0 ? valWidth : currentWidth + gapSpace + valWidth;
+    if (currentGroup.length > 0 && nextWidth > cols) {
+      rows.push(padToDisplayCells(currentGroup.join(separator), cols, 'right'));
+      currentGroup = [val];
+      currentWidth = valWidth;
+    } else {
+      currentGroup.push(val);
+      currentWidth = nextWidth;
+    }
+  }
+  if (currentGroup.length > 0) {
+    rows.push(padToDisplayCells(currentGroup.join(separator), cols, 'right'));
   }
   return rows;
 }
@@ -3205,11 +3589,17 @@ function pluginItemLayout(
   lang: string = 'en',
   capabilities?: ThermalPrinterCapabilities,
 ): RasterTextLayout | undefined {
-  const configured = pluginLineItemColumns(layout, cols, lang, capabilities).map((column) => ({
-    text: normalizeThermalText(
-      pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits),
-      capabilities,
-    ).trim(),
+  const configured = fitPluginRowColumns(
+    pluginLineItemColumns(layout, cols, lang, capabilities).map((column) => ({
+      ...column,
+      value: normalizeThermalText(
+        pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits),
+        capabilities,
+      ).trim(),
+    })),
+    pluginLineGap(layout),
+  ).map((column) => ({
+    text: column.value,
     align: (column.align === 'right' ? 'right' : 'left') as 'left' | 'right',
     width: Math.max(1, Number(column.width) || 1),
   }));
@@ -3289,39 +3679,53 @@ function pluginSummaryRow(
   amount: string,
   layout: any,
   cols: number,
-  lang: string = 'en',
+  _lang: string = 'en',
   capabilities?: ThermalPrinterCapabilities,
-): string {
+): string[] {
   const normalizedLabel = normalizeThermalText(label, capabilities);
+  const trimmedAmount = String(amount ?? '').trimStart();
+  const rateMatch = normalizedLabel.match(/(?:^|\s)(@\S+%)$/);
+  if (rateMatch) {
+    assertFinancialValueFitsColumns(rateMatch[1], cols, 'tax rate');
+  }
+  assertFinancialValueFitsColumns(trimmedAmount, cols, 'tax summary amount');
   const labelWidth = Number(layout?.taxSummary?.labelWidth);
   const amountWidth = Number(layout?.taxSummary?.amountWidth);
+  const gap = cols >= 3 ? 1 : 0;
+  const labelCells = displayCellWidth(normalizedLabel);
+  const amountCells = displayCellWidth(trimmedAmount);
+  if (labelCells + gap + amountCells > cols) {
+    return [
+      ...wrapText(normalizedLabel, cols).map((line) => padToDisplayCells(line, cols)),
+      padToDisplayCells(trimmedAmount, cols, 'right'),
+    ];
+  }
   if (
     Number.isInteger(labelWidth) &&
     Number.isInteger(amountWidth) &&
     labelWidth > 0 &&
     amountWidth > 0
   ) {
-    const trimmedAmount = amount.trimStart();
-    const gap = cols >= 3 ? 1 : 0;
     const effectiveAmountWidth = Math.min(
-      Math.max(1, cols - gap - 1),
-      Math.max(amountWidth, displayCellWidth(trimmedAmount)),
+      Math.max(1, cols - gap - Math.max(1, labelCells)),
+      Math.max(amountWidth, amountCells),
     );
     const effectiveLabelWidth =
-      labelWidth + effectiveAmountWidth <= cols
+      labelWidth + effectiveAmountWidth <= cols && labelWidth >= labelCells
         ? labelWidth
-        : Math.max(1, cols - gap - effectiveAmountWidth);
-    return composePluginColumns(
-      [
-        { value: normalizedLabel, width: effectiveLabelWidth, align: 'left', ellipsis: true },
-        { value: trimmedAmount, width: effectiveAmountWidth, align: 'right', ellipsis: true },
-      ],
-      Math.max(0, cols - effectiveLabelWidth - effectiveAmountWidth),
-      cols,
-    );
+        : Math.max(labelCells, cols - gap - effectiveAmountWidth);
+    return [
+      composePluginColumns(
+        [
+          { value: normalizedLabel, width: effectiveLabelWidth, align: 'left', ellipsis: true },
+          { value: trimmedAmount, width: effectiveAmountWidth, align: 'right', ellipsis: false },
+        ],
+        Math.max(0, cols - effectiveLabelWidth - effectiveAmountWidth),
+        cols,
+      ),
+    ];
   }
-  const safeLabel = truncate(normalizedLabel, cols - 12, lang, capabilities);
-  return safeLabel + rightAlign(amount, cols - displayCellWidth(safeLabel));
+  return [normalizedLabel + rightAlign(trimmedAmount, cols - labelCells)];
 }
 
 function composePluginColumns(
@@ -3336,14 +3740,20 @@ function composePluginColumns(
         truncateCell(column.value, Number(column.width), column.ellipsis !== false),
         Number(column.width),
         column.align || 'left',
+        column.ellipsis !== false,
       ),
     )
     .join(separator);
   return padToDisplayCells(truncateCell(line, cols, false), cols);
 }
 
-function alignCell(value: string, width: number, align: PluginColumnAlign): string {
-  return padToDisplayCells(truncateCell(value, width, true), width, align);
+function alignCell(
+  value: string,
+  width: number,
+  align: PluginColumnAlign,
+  ellipsis: boolean = true,
+): string {
+  return padToDisplayCells(truncateCell(value, width, ellipsis), width, align);
 }
 
 function truncateCell(text: string, length: number, ellipsis: boolean): string {

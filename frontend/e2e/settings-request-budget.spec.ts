@@ -959,6 +959,9 @@ test('Save All preserves printing edits during business hydration', async ({ pag
 
   await expect.poll(() => savedPrintingRequests.length, { timeout: 10000 }).toBe(1);
   expect(savedPrintingRequests[0]).toEqual({
+    auto_print_kot: false,
+    printer_use_unicode: false,
+    printer_arabic_shaping: false,
     printer_trim_decimals: true,
     bill_language_policy: { primary: { mode: 'inherit' }, additional: [] },
     kot_language_policy: { primary: { mode: 'inherit' }, additional: [] },
@@ -972,6 +975,54 @@ test('Save All preserves printing edits during business hydration', async ({ pag
     bill_show_customer_phone: true,
     bill_show_table_number: true,
     bill_delivery_show_customer_phone_always: true,
+  });
+});
+
+test('Printers tab hydrates KOT/Unicode/shaping flags and writes false', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  const savedPrintingRequests: Record<string, unknown>[] = [];
+  for (const key of ['auto_print_kot', 'printer_use_unicode', 'printer_arabic_shaping']) {
+    await page.route(`**/api/settings/${key}`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          setting: { key, value: 'true', updated_at: '2026-01-01T00:00:00.000Z' },
+        }),
+      });
+    });
+  }
+  page.on('request', (request) => {
+    if (
+      request.method() === 'PUT' &&
+      new URL(request.url()).pathname === '/api/settings/printing'
+    ) {
+      savedPrintingRequests.push(request.postDataJSON());
+    }
+  });
+
+  await page.goto(`${BASE}/settings?tab=receipts-printers`);
+  const autoKotSwitch = page.getByRole('switch', { name: 'Auto-print KOT', exact: true });
+  const utfSwitch = page.getByRole('switch', { name: 'Printer supports Unicode', exact: true });
+  const shapingSwitch = page.getByRole('switch', {
+    name: 'Printer supports Arabic/Persian shaping',
+    exact: true,
+  });
+
+  await expect(autoKotSwitch).toHaveAttribute('aria-checked', 'true');
+  await expect(utfSwitch).toHaveAttribute('aria-checked', 'true');
+  await expect(shapingSwitch).toHaveAttribute('aria-checked', 'true');
+
+  await autoKotSwitch.click();
+  await utfSwitch.click();
+  await shapingSwitch.click();
+  await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+
+  await expect.poll(() => savedPrintingRequests.length, { timeout: 10000 }).toBe(1);
+  expect(savedPrintingRequests[0]).toMatchObject({
+    auto_print_kot: false,
+    printer_use_unicode: false,
+    printer_arabic_shaping: false,
   });
 });
 

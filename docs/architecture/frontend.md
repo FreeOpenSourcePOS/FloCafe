@@ -436,10 +436,10 @@ hook because it carries the transport:
 
 | Store | Holds | Persistence |
 | --- | --- | --- |
-| [`auth.ts`](../../frontend/src/store/auth.ts) | `user`, `token`, `tenants`, `currentTenant`, `loading`, and the locales that failed to warm at bootstrap | token and tenant in `localStorage`; throws `StorageUnavailableError` when storage is unavailable |
+| [`auth.ts`](../../frontend/src/store/auth.ts) | `user`, `token`, `tenants`, `currentTenant`, `loading`, `isLocked`, and the locales that failed to warm at bootstrap | token and tenant in `localStorage`; throws `StorageUnavailableError` when storage is unavailable |
 | [`cart.ts`](../../frontend/src/store/cart.ts) | cart items with their addons, instructions and selected product variant, order type, table, customer, guest count, delivery details, and the subtotal and item count selectors | none |
 | [`held-orders.ts`](../../frontend/src/store/held-orders.ts) | suspended orders keyed by table, and the fetch, hold, restore, remove, and lookup actions over `/held-orders` | none |
-| [`pos-settings.ts`](../../frontend/src/store/pos-settings.ts) | the tenant's POS configuration, printer defaults, bill template and provenance, receipt and kitchen-ticket language policy | `persist` under the `pos-settings` key, version 5; `partialize` excludes `whatsappEnabled`, `billLanguagePolicy`, and `kotLanguagePolicy` |
+| [`pos-settings.ts`](../../frontend/src/store/pos-settings.ts) | the tenant's POS configuration, printer defaults, bill template and provenance, receipt and kitchen-ticket language policy, and idle `autoLockMinutes` | `persist` under the `pos-settings` key, version 5; `partialize` excludes `whatsappEnabled`, `billLanguagePolicy`, `kotLanguagePolicy`, and `autoLockMinutes` |
 | [`theme.ts`](../../frontend/src/store/theme.ts) | `mode` and whether this session made an explicit choice | none; `useThemeModeToggle` writes through the API and rolls the store back when the write fails |
 | [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts) | connection status, the hardware and WebUSB printer records, the print method, the last emitted bytes, and the print actions: `printBill`, `printTaxBill`, `printKot`, `printDeliverySlip` | `persist` |
 
@@ -569,9 +569,13 @@ against `en.json`, the derived print-label table, and a `tsc` pass over the fron
 
 ## Customer display
 
-`/customer-display` is a signed-in order-status board. It pages through `GET /orders` via
-`before_id` cursor pagination (100 orders per page, up to 50 pages) filtered by configured statuses
-and shows active orders in a Preparing column (`pending`, `preparing`) and a Ready column (`ready`).
+`/customer-display` is a signed-in order-status board. It pages through `GET /orders` with
+`view=active` and `board_status` set to the configured statuses via `before_id` cursor pagination
+(100 orders per page, up to 50 pages) so effective board eligibility applies before pagination,
+projects effective board status from `order.items` for settled `completed` orders via
+`projectBoardStatusFromItems` in [`shared/order-item-status.ts`](../../shared/order-item-status.ts)
+(see [Order lifecycle](order-lifecycle.md#order-status)), and shows eligible orders in a Preparing
+column (`pending`, `preparing`) and a Ready column (`ready`).
 It re-reads `GET /settings/customer-display` on every poll cycle, so changes made in Settings >
 Kitchen Display apply without reloading the board. The tenant-wide config sets which statuses show,
 the refresh interval, and whether the last-updated time is shown. Deduplicated orders are sorted
@@ -592,8 +596,9 @@ clearly labelled local preview can be selected before pairing. Switching address
 one-time link without creating another token. If no LAN address is available, the card says so and
 offers only the local preview; if address lookup fails, it shows an error and retry action. The board
 moves the token from the URL fragment into `localStorage` and polls
-`GET /api/customer-display/feed` with it instead of using a staff session, so it needs no login and
-can read nothing but order numbers and statuses. It follows `next_cursor` across pages (100 orders
+`GET /api/customer-display/feed` ([API reference](../reference/api.md#customer-display-feed)) with
+it instead of using a staff session, so it needs no login and can read nothing but order numbers and
+statuses. It follows `next_cursor` across pages (100 orders
 per page, up to 50 pages) to display the complete eligible queue, deduplicating orders and updating
 the board state atomically per poll cycle. When the feed answers `401` (the token was revoked),
 in-flight requests abort immediately, the board clears the stored token and orders, and shows an
@@ -641,16 +646,17 @@ frontend/src/
 │   ├── kds/                    Kitchen display, login, tabs and kanban views
 │   ├── layout/                 Title bar, sidebar, status bar, auth guard, theme sync
 │   ├── orders/                 Order card, history grid, refund modal
-│   ├── pos/                    Cart, product grid, payment, number pad, checkout modals
+│   ├── pos/                    Cart, product grid, payment, number pad, checkout modals,
+│   │                           payment queue drawer, payment ticket modal
 │   ├── products/               Product image uploader
 │   ├── providers/              I18nProvider
 │   ├── settings/               The settings screen's building blocks:
-│   │   BetaChannelToggle, ChargesSettingsCard, CurrencyResetDialog, DatabaseSettingsTab,
-│   │   GeneralSettingsTab, HealthCheckDialog,
-│   │   InitializeDatabaseDialog, LocalePreferencesPanel, MasterPinPrompt,
-│   │   PaymentMethodsSettings, PermissionAuditLog, PermissionMatrix,
-│   │   PrintersSettingsTab, SettingsTabShell, TaxConfigurationPanel,
-│   │   Toggle, WhatsAppEnableCard
+│   │   BetaChannelToggle, ChargesSettingsCard, CountersSettingsTab,
+│   │   CurrencyResetDialog, DatabaseSettingsTab, GeneralSettingsTab,
+│   │   HealthCheckDialog, InitializeDatabaseDialog, LocalePreferencesPanel,
+│   │   MasterPinPrompt, PaymentMethodsSettings, PermissionAuditLog,
+│   │   PermissionMatrix, PrintersSettingsTab, SettingsTabShell,
+│   │   TaxConfigurationPanel, Toggle, WhatsAppEnableCard
 │   ├── support/                The support hub: SupportTicketForm, DiagnosticsPanel
 │   ├── tables/                 Floorplan editor, table move modal, table turnover badge
 │   ├── ui/                     shadcn/ui primitives

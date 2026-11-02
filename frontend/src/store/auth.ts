@@ -3,6 +3,7 @@ import api from '@/lib/api';
 import type { User, Tenant } from '@/lib/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { THEME_REHYDRATION_EVENT } from './theme';
+import { notifySessionBoundary } from './session-events';
 // Keep registry import relative for auth tests running without alias resolver.
 import { isLanguage, type Language } from '../lib/i18n/languages';
 import { syncPrintPoliciesAtBootstrap } from '../lib/print-policy-bootstrap';
@@ -17,7 +18,17 @@ function syncTenantLanguage(t: Tenant | null | undefined) {
 }
 
 function clearBillTemplateProvenance(): void {
-  usePosSettingsStore.getState().setBillTemplateSource?.(null);
+  const settings = usePosSettingsStore.getState();
+  settings.setBillTemplateSource?.(null);
+  settings.setAutoLockMinutes?.(0);
+}
+
+function readStoredToken(): string | null {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+  } catch {
+    return null;
+  }
 }
 
 interface AuthState {
@@ -26,10 +37,13 @@ interface AuthState {
   tenants: Tenant[];
   currentTenant: Tenant | null;
   loading: boolean;
+  isLocked: boolean;
   /** Locale bundles that could not be warmed during auth/bootstrap. */
   printLanguageLoadErrors: Language[];
 
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  pinLogin: (userId: string, pin: string, rememberMe?: boolean) => Promise<void>;
+  lock: () => Promise<void>;
   selectTenant: (tenantId: number) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => Promise<void>;
@@ -63,12 +77,13 @@ function persistSession(token: string, tenant: Tenant | null): void {
   }
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
   tenants: [],
   currentTenant: null,
   loading: true,
+  isLocked: false,
   printLanguageLoadErrors: [],
 
   login: async (email: string, password: string, rememberMe = false) => {
@@ -81,16 +96,79 @@ export const useAuthStore = create<AuthState>((set) => ({
     persistSession(data.access_token, currentTenant);
     syncTenantLanguage(currentTenant);
     const failedLanguages = currentTenant
-      ? await syncPrintPoliciesAtBootstrap(currentTenant, usePosSettingsStore, () => operation === authOperation)
+      ? await syncPrintPoliciesAtBootstrap(
+          currentTenant,
+          usePosSettingsStore,
+          () => operation === authOperation,
+        )
       : [];
     if (operation !== authOperation) return;
+    notifySessionBoundary('login');
     set({
       user: data.user,
       token: data.access_token,
       tenants,
       currentTenant,
+      isLocked: false,
       printLanguageLoadErrors: failedLanguages,
     });
+  },
+
+  pinLogin: async (userId: string, pin: string, rememberMe = false) => {
+    const operation = ++authOperation;
+    clearBillTemplateProvenance();
+    const { data } = await api.post('/auth/pin-login', { user_id: userId, pin, rememberMe });
+    if (operation !== authOperation) return;
+    const tenants: Tenant[] = data.tenants;
+    const currentTenant = tenants.length === 1 ? tenants[0] : null;
+    persistSession(data.access_token, currentTenant);
+    syncTenantLanguage(currentTenant);
+    const failedLanguages = currentTenant
+      ? await syncPrintPoliciesAtBootstrap(
+          currentTenant,
+          usePosSettingsStore,
+          () => operation === authOperation,
+        )
+      : [];
+    if (operation !== authOperation) return;
+    notifySessionBoundary('pin-login');
+    set({
+      user: data.user,
+      token: data.access_token,
+      tenants,
+      currentTenant,
+      isLocked: false,
+      printLanguageLoadErrors: failedLanguages,
+    });
+  },
+
+  lock: async () => {
+    ++authOperation;
+    clearBillTemplateProvenance();
+    notifySessionBoundary('lock');
+    const tokenToRevoke = get().token ?? readStoredToken();
+    const logoutPromise = api
+      .post(
+        '/auth/logout',
+        undefined,
+        tokenToRevoke ? { headers: { Authorization: `Bearer ${tokenToRevoke}` } } : undefined,
+      )
+      .catch(() => {});
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('tenant');
+    } catch {
+      // Ignore storage removal errors during lock.
+    }
+    set({
+      user: null,
+      token: null,
+      tenants: [],
+      currentTenant: null,
+      isLocked: true,
+      printLanguageLoadErrors: [],
+    });
+    await logoutPromise;
   },
 
   selectTenant: async (tenantId: number) => {
@@ -100,7 +178,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (operation !== authOperation) return;
     persistSession(data.access_token, data.tenant);
     syncTenantLanguage(data.tenant);
-    const failedLanguages = await syncPrintPoliciesAtBootstrap(data.tenant, usePosSettingsStore, () => operation === authOperation);
+    const failedLanguages = await syncPrintPoliciesAtBootstrap(
+      data.tenant,
+      usePosSettingsStore,
+      () => operation === authOperation,
+    );
     if (operation !== authOperation) return;
     set({
       token: data.access_token,
@@ -112,10 +194,25 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     ++authOperation;
     clearBillTemplateProvenance();
-    api.post('/auth/logout').catch(() => {});
+    notifySessionBoundary('logout');
+    const tokenToRevoke = get().token ?? readStoredToken();
+    api
+      .post(
+        '/auth/logout',
+        undefined,
+        tokenToRevoke ? { headers: { Authorization: `Bearer ${tokenToRevoke}` } } : undefined,
+      )
+      .catch(() => {});
     localStorage.removeItem('token');
     localStorage.removeItem('tenant');
-    set({ user: null, token: null, tenants: [], currentTenant: null, printLanguageLoadErrors: [] });
+    set({
+      user: null,
+      token: null,
+      tenants: [],
+      currentTenant: null,
+      isLocked: false,
+      printLanguageLoadErrors: [],
+    });
   },
 
   updateCurrentTenant: (updates) => {
@@ -129,12 +226,18 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   refreshAuthContext: async () => {
     const state = useAuthStore.getState();
-    if (!state.token) return;
+    const tokenAtStart = state.token;
+    if (!tokenAtStart) return;
+    const operation = authOperation;
     const { data } = await api.get('/auth/me');
+    if (operation !== authOperation || useAuthStore.getState().token !== tokenAtStart) return;
+    const latestState = useAuthStore.getState();
     const tenants: Tenant[] = data.tenants || [];
-    const currentTenant = state.currentTenant
-      ? tenants.find((tenant) => tenant.id === state.currentTenant?.id) ?? null
-      : (tenants.length === 1 ? tenants[0] : null);
+    const currentTenant = latestState.currentTenant
+      ? (tenants.find((tenant) => tenant.id === latestState.currentTenant?.id) ?? null)
+      : tenants.length === 1
+        ? tenants[0]
+        : null;
     if (currentTenant) localStorage.setItem('tenant', JSON.stringify(currentTenant));
     set({ user: data.user, tenants, currentTenant });
   },
@@ -163,12 +266,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
 
     if (token) {
-      await api.get('/auth/me')
+      await api
+        .get('/auth/me')
         .then(({ data }) => {
           if (operation !== authOperation) return null;
           const tenants: Tenant[] = data.tenants;
           // Find the fresh version of the currently selected tenant, or default to the first one
-          const freshTenant = currentTenant ? tenants.find((t: Tenant) => t.id === currentTenant.id) : null;
+          const freshTenant = currentTenant
+            ? tenants.find((t: Tenant) => t.id === currentTenant.id)
+            : null;
           const resolved = freshTenant ?? (tenants.length === 1 ? tenants[0] : null);
           if (resolved) localStorage.setItem('tenant', JSON.stringify(resolved));
           set({
@@ -179,7 +285,11 @@ export const useAuthStore = create<AuthState>((set) => ({
           });
           syncTenantLanguage(resolved);
           return resolved
-            ? syncPrintPoliciesAtBootstrap(resolved, usePosSettingsStore, () => operation === authOperation)
+            ? syncPrintPoliciesAtBootstrap(
+                resolved,
+                usePosSettingsStore,
+                () => operation === authOperation,
+              )
             : [];
         })
         .then((failedLanguages) => {

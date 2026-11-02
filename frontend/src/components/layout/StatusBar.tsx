@@ -123,7 +123,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
       clearInterval(interval);
       window.removeEventListener('flo-shift-changed', handleShiftChange);
     };
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     let cancelled = false;

@@ -139,6 +139,12 @@ async function main() {
       0,
       'upgraded order_item has ingredient_cost_known = 0',
     );
+    for (const migration of MIGRATIONS.filter((entry: any) => entry.version > 117)) {
+      db.transaction(() => {
+        migration.up();
+        db.pragma(`user_version = ${migration.version}`);
+      })();
+    }
 
     // ── 2. Unit normalization & Weighted Average Cost (WAC) + negative stock reset ──
     console.log('\n--- 2. Unit normalization & WAC + negative stock reset ---');

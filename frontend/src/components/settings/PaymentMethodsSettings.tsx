@@ -35,6 +35,8 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
   const [mergeTargets, setMergeTargets] = useState<Record<number, string>>({});
   const [merges, setMerges] = useState<MergeRecord[]>([]);
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
+  const [requireOpenShift, setRequireOpenShift] = useState(false);
+  const [oneShiftPerStaff, setOneShiftPerStaff] = useState(false);
   const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(false);
   const [cardTransactionSettingState, setCardTransactionSettingState] = useState<
     'loading' | 'ready' | 'error'
@@ -63,19 +65,29 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
   };
 
   const load = async () => {
-    const [methodsRes, historyRes, splitRes] = await Promise.all([
-      api.get('/payment-methods?include_inactive=true'),
-      api.get('/payment-methods/merge-history'),
-      api
-        .get('/settings/split_checks_enabled')
-        .catch(() => ({ data: { setting: { value: 'false' } } })),
-      loadCardTransactionSetting(),
-    ]);
+    const [methodsRes, historyRes, splitRes, requireShiftRes, perStaffShiftRes] = await Promise.all(
+      [
+        api.get('/payment-methods?include_inactive=true'),
+        api.get('/payment-methods/merge-history'),
+        api
+          .get('/settings/split_checks_enabled')
+          .catch(() => ({ data: { setting: { value: 'false' } } })),
+        api
+          .get('/settings/require_open_shift')
+          .catch(() => ({ data: { setting: { value: 'false' } } })),
+        api
+          .get('/settings/one_shift_per_staff')
+          .catch(() => ({ data: { setting: { value: 'false' } } })),
+        loadCardTransactionSetting(),
+      ],
+    );
     const rows = methodsRes.data.payment_methods || [];
     setMethods(rows);
     setNames(Object.fromEntries(rows.map((row: CustomPaymentMethod) => [row.id, row.name])));
     setMerges(historyRes.data.merges || []);
     setSplitChecksEnabled(splitRes.data?.setting?.value === 'true');
+    setRequireOpenShift(requireShiftRes.data?.setting?.value === 'true');
+    setOneShiftPerStaff(perStaffShiftRes.data?.setting?.value === 'true');
   };
 
   useEffect(() => {
@@ -310,6 +322,74 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
             }}
           />
         )}
+      </div>
+
+      <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
+        <div>
+          <h2 id="require-open-shift-label" className="font-semibold text-foreground">
+            {t('requireOpenShift')}
+          </h2>
+          <p id="require-open-shift-hint" className="text-sm text-muted-foreground mt-1">
+            {t('requireOpenShiftHint')}
+          </p>
+        </div>
+        <input
+          id="require-open-shift"
+          type="checkbox"
+          aria-labelledby="require-open-shift-label"
+          aria-describedby="require-open-shift-hint"
+          className="size-5 shrink-0"
+          disabled={!isAdmin}
+          checked={requireOpenShift}
+          onChange={async (e) => {
+            const value = e.target.checked;
+            setRequireOpenShift(value);
+            try {
+              await api.put('/settings/require_open_shift', { value: String(value) });
+            } catch {
+              setRequireOpenShift(!value);
+              toast.error(t('saveFailed'));
+            }
+          }}
+        />
+      </div>
+
+      <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
+        <div>
+          <h2 id="one-shift-per-staff-label" className="font-semibold text-foreground">
+            {t('oneShiftPerStaff')}
+          </h2>
+          <p id="one-shift-per-staff-hint" className="text-sm text-muted-foreground mt-1">
+            {t('oneShiftPerStaffHint')}
+          </p>
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+            {t('oneShiftPerStaffSharedDrawerWarning')}
+          </p>
+        </div>
+        <input
+          id="one-shift-per-staff"
+          type="checkbox"
+          aria-labelledby="one-shift-per-staff-label"
+          aria-describedby="one-shift-per-staff-hint"
+          className="size-5 shrink-0"
+          disabled={!isAdmin}
+          checked={oneShiftPerStaff}
+          onChange={async (e) => {
+            const value = e.target.checked;
+            setOneShiftPerStaff(value);
+            try {
+              await api.put('/settings/one_shift_per_staff', { value: String(value) });
+            } catch (err: unknown) {
+              setOneShiftPerStaff(!value);
+              const status = (err as { response?: { status?: number } })?.response?.status;
+              if (status === 409) {
+                toast.error(t('oneShiftPerStaffDisableBlocked'));
+              } else {
+                toast.error(t('saveFailed'));
+              }
+            }
+          }}
+        />
       </div>
 
       {merges.length > 0 && (

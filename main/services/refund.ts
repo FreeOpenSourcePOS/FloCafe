@@ -12,6 +12,7 @@ import {
 } from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
 import { adjustProductStock } from './inventory';
+import { reconcileActiveOrderStatusFromItems } from './orders';
 import {
   getOpenSession,
   NO_CASH_SESSION_ID,
@@ -170,20 +171,26 @@ export function checkIsLateRefund(
     | undefined;
   if (!bill) throw httpError('Bill not found', 404, 'bill_unavailable');
   const order = db
-    .prepare('SELECT created_at FROM orders WHERE id = ?')
-    .get(bill.order_id as string | number) as { created_at: string } | undefined;
+    .prepare('SELECT created_at, release_status, released_at FROM orders WHERE id = ?')
+    .get(bill.order_id as string | number) as
+    | { created_at: string; release_status?: string | null; released_at?: string | null }
+    | undefined;
   if (!order) throw httpError('Order not found', 404, 'order_unavailable');
-  const orderCreatedAt = parseDbTimestamp(order.created_at).getTime();
-  if (!Number.isFinite(orderCreatedAt)) throw httpError('Order creation time is invalid', 500);
+  if (order.release_status && order.release_status !== 'released') {
+    return { lateRefund: false, bill };
+  }
+  const anchorTimestamp = order.released_at || order.created_at;
+  const orderAnchorMs = parseDbTimestamp(anchorTimestamp).getTime();
+  if (!Number.isFinite(orderAnchorMs)) throw httpError('Order creation time is invalid', 500);
 
-  if (nowMs - orderCreatedAt > REFUND_WINDOW_MS) {
+  if (nowMs - orderAnchorMs > REFUND_WINDOW_MS) {
     const timezone = resolveRegionalSnapshot({
       country: getSettingValue('country') ?? undefined,
       currency: getSettingValue('currency') ?? undefined,
       timezone: getSettingValue('timezone') ?? undefined,
     }).timezone;
     const startTime = tenantBusinessDayStartTime(db);
-    const orderBusinessDate = localDateInTimezone(new Date(orderCreatedAt), timezone, startTime);
+    const orderBusinessDate = localDateInTimezone(new Date(orderAnchorMs), timezone, startTime);
     const [, businessDayEnd] = dayBoundsInTimezone(orderBusinessDate, timezone, startTime);
     if (nowMs >= parseDbTimestamp(businessDayEnd).getTime()) {
       throw httpError(
@@ -205,10 +212,11 @@ export function validateRefundPreconditions(
     method?: string;
     amountCents?: number;
     orderItemId?: number | null;
+    createdByUserId?: string;
   },
   nowMs: number = Date.now(),
 ): ValidatedRefundPreconditions {
-  requireOpenSessionForCashTender(db, [{ method: req.method }]);
+  requireOpenSessionForCashTender(db, [{ method: req.method }], req.createdByUserId);
 
   const { lateRefund, bill } = checkIsLateRefund(db, req.billId, nowMs);
 
@@ -476,7 +484,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     }
   }
 
-  const cashSessionId = getOpenSession(db)?.id ?? NO_CASH_SESSION_ID;
+  const cashSessionId = getOpenSession(db, req.createdByUserId)?.id ?? NO_CASH_SESSION_ID;
   const insertResult = db
     .prepare(`
     INSERT INTO refunds (bill_id, order_item_id, amount_cents, method, reason, shift_id, approved_by, created_by, created_at, cash_session_id)
@@ -534,6 +542,10 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
       reason: req.reason ?? null,
     },
   });
+
+  if (item) {
+    reconcileActiveOrderStatusFromItems(db, bill.order_id, req.createdByUserId);
+  }
 
   const refund = db.prepare('SELECT * FROM refunds WHERE id = ?').get(insertResult.lastInsertRowid);
   const freshBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.billId);

@@ -35,6 +35,13 @@ import PrepaidCheckoutModal, {
   type PrepaidDiscount,
 } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
+import ScheduledOrdersDrawer from '@/components/pos/ScheduledOrdersDrawer';
+import { PaymentQueueDrawer } from '@/components/pos/PaymentQueueDrawer';
+import { PaymentTicketConfirmationModal } from '@/components/pos/PaymentTicketConfirmationModal';
+import type { Counter } from '@/lib/types';
+import { canPayScheduledOrder, isPayableBill } from '@/lib/order-payment-state';
+import RefundModal from '@/components/orders/RefundModal';
+import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/scheduled-time';
 import dynamic from 'next/dynamic';
 import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
 import { ShiftCloseModal } from '@/components/dashboard/ShiftCloseModal';
@@ -87,6 +94,7 @@ import {
   isSupportedFailureOperation,
   persistOrderAttempt,
   readOrderAttempt,
+  buildCartFingerprintFromState,
 } from '@/lib/order-attempt';
 
 // Loaded on demand: the menu printer pulls the thermal print kernel in, which the
@@ -236,7 +244,7 @@ const parsePrepaidPaymentRequest = (serialized: string): PrepaidPaymentRequest |
 };
 
 export default function POSPage() {
-  const { currentTenant, user } = useAuthStore();
+  const { currentTenant, user, token } = useAuthStore();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
@@ -250,9 +258,13 @@ export default function POSPage() {
     setBillingType,
     setTablesRequired,
     setKotPrintingEnabled,
+    setAutoPrintKot,
+    setPrinterUseUnicode,
+    setPrinterArabicShaping,
   } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
+  const tSettings = useTranslations('settings');
   const tExpenses = useTranslations('expenses');
   const tCommon = useTranslations('common');
   const tSupport = useTranslations('support');
@@ -296,6 +308,36 @@ export default function POSPage() {
   const [cardTransactionIdRequired, setCardTransactionIdRequired] = useState(false);
   const [showKeyboardShortcutsModal, setShowKeyboardShortcutsModal] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [storeTimezone, setStoreTimezone] = useState<string>(currentTenant?.timezone || 'UTC');
+  const [scheduledOrders, setScheduledOrders] = useState<Order[]>([]);
+  const [nextScheduledCursor, setNextScheduledCursor] = useState<string | null>(null);
+  const [scheduledCount, setScheduledCount] = useState<number>(0);
+  const [blockedScheduledCount, setBlockedScheduledCount] = useState<number>(0);
+  const [loadingMoreScheduled, setLoadingMoreScheduled] = useState(false);
+  const [showScheduledOrders, setShowScheduledOrders] = useState(false);
+  const [refundModalTarget, setRefundModalTarget] = useState<{
+    order: Order;
+    bills: Bill[];
+  } | null>(null);
+
+  // Multi-counter ordering states
+  const [multiCounterEnabled, setMultiCounterEnabled] = useState(false);
+  const [counters, setCounters] = useState<Counter[]>([]);
+  const [activeCounter, setActiveCounter] = useState<Counter | null>(null);
+  const [showPaymentQueue, setShowPaymentQueue] = useState(false);
+  const [paymentQueueCount, setPaymentQueueCount] = useState(0);
+  const [paymentQueueBlockedCount, setPaymentQueueBlockedCount] = useState(0);
+  const [paymentQueueRefreshKey, setPaymentQueueRefreshKey] = useState(0);
+  const [showTicketModal, setShowTicketModal] = useState(false);
+  const [ticketModalOrder, setTicketModalOrder] = useState<Order | null>(null);
+  const [ticketModalQrDataUrl, setTicketModalQrDataUrl] = useState<string | null>(null);
+  const [ticketModalQrPayload, setTicketModalQrPayload] = useState<string | null>(null);
+  const isSendingToPaymentRef = useRef(false);
+  useEffect(() => {
+    if (currentTenant?.timezone) {
+      setStoreTimezone(currentTenant.timezone);
+    }
+  }, [currentTenant?.timezone]);
   const [supportError, setSupportError] = useState<{
     title: string;
     subject: string;
@@ -318,6 +360,48 @@ export default function POSPage() {
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
   const delivery = useSupportTicketStatus(sentTicketId);
   const activeUserId = user?.id == null ? null : String(user.id);
+  const activeToken = token ?? null;
+  const sessionEpochRef = useRef(0);
+  const lastActiveSessionRef = useRef<{ userId: string | null; token: string | null }>({
+    userId: activeUserId,
+    token: activeToken,
+  });
+  const activeSubmissionTokenRef = useRef<symbol | null>(null);
+
+  useEffect(() => {
+    if (
+      lastActiveSessionRef.current.userId === activeUserId &&
+      lastActiveSessionRef.current.token === activeToken
+    ) {
+      return;
+    }
+    lastActiveSessionRef.current = { userId: activeUserId, token: activeToken };
+    sessionEpochRef.current += 1;
+    activeSubmissionTokenRef.current = null;
+    isSendingToPaymentRef.current = false;
+    setSubmitting(false);
+
+    setCheckoutOverridePin(undefined);
+    setPaymentBill(null);
+    setCheckoutTable(null);
+    setPendingOrder(null);
+    setShowPrepaidCheckout(false);
+    setPrepaidModalAttempt(null);
+    setShowScheduledOrders(false);
+    setRefundModalTarget(null);
+    cashDrawer.setOpen(false);
+    shift.setOpenModalOpen(false);
+    shift.setCloseModalOpen(false);
+  }, [activeUserId, activeToken, cashDrawer, shift]);
+
+  const pinnedAuthHeaders = (authToken: string | null): Record<string, string> =>
+    authToken ? { Authorization: `Bearer ${authToken}` } : {};
+  const checkSessionCurrent = (originEpoch: number, originUserId: string | null): boolean => {
+    if (sessionEpochRef.current !== originEpoch) return false;
+    const currentUser = useAuthStore.getState().user;
+    const currentUserId = currentUser?.id == null ? null : String(currentUser.id);
+    return currentUserId === originUserId;
+  };
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const prepaidAttemptKeyRef = useRef<string | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
@@ -348,31 +432,53 @@ export default function POSPage() {
     return appendAttemptStorageRef.current;
   };
 
-  const readPostpaidAttempt = () => {
+  const createFreshAppendAttemptStorage = (): AppendAttemptStorage => {
+    let browserStorage: AppendAttemptStorage | null = null;
+    let sessionStorage: AppendAttemptStorage | null = null;
+    try {
+      if (typeof window !== 'undefined') browserStorage = window.localStorage;
+    } catch {
+      // Private/restricted renderers may throw while reading localStorage.
+    }
+    try {
+      if (typeof window !== 'undefined') sessionStorage = window.sessionStorage;
+    } catch {
+      // Session storage may also be restricted.
+    }
+    return createSafeAppendAttemptStorage(browserStorage, sessionStorage);
+  };
+
+  const readPostpaidAttempt = (targetUserId?: string | null) => {
     if (typeof window === 'undefined') return null;
+    const effectiveUserId = targetUserId || activeUserId;
     const storage = getAppendAttemptStorage();
     let sharedLegacyAppendRetained = false;
     try {
       const migratedAppend = migrateLegacyAppendAttempt(storage, {
-        userId: activeUserId || undefined,
+        userId: effectiveUserId || undefined,
       });
       sharedLegacyAppendRetained =
         migratedAppend !== null && storage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY) !== null;
     } catch {
       throw new OrderAttemptStorageError();
     }
-    if (postpaidAttemptRef.current?.userId === activeUserId) return postpaidAttemptRef.current;
-    postpaidAttemptRef.current = null;
-    postpaidAttemptKeyRef.current = null;
-    postpaidAttemptWasLegacyRef.current = false;
-    if (activeUserId) {
-      const userStorageKey = getPostpaidOrderAttemptStorageKey(activeUserId);
-      const scoped = readOrderAttempt<PostpaidAttempt>(storage, userStorageKey, activeUserId, {
+    if (effectiveUserId === activeUserId && postpaidAttemptRef.current?.userId === activeUserId)
+      return postpaidAttemptRef.current;
+    if (effectiveUserId === activeUserId) {
+      postpaidAttemptRef.current = null;
+      postpaidAttemptKeyRef.current = null;
+      postpaidAttemptWasLegacyRef.current = false;
+    }
+    if (effectiveUserId) {
+      const userStorageKey = getPostpaidOrderAttemptStorageKey(effectiveUserId);
+      const scoped = readOrderAttempt<PostpaidAttempt>(storage, userStorageKey, effectiveUserId, {
         isValid: isUsablePostpaidAttempt,
       });
       if (scoped) {
-        postpaidAttemptRef.current = scoped;
-        postpaidAttemptKeyRef.current = userStorageKey;
+        if (effectiveUserId === activeUserId) {
+          postpaidAttemptRef.current = scoped;
+          postpaidAttemptKeyRef.current = userStorageKey;
+        }
         return scoped;
       }
     }
@@ -381,44 +487,59 @@ export default function POSPage() {
       : readOrderAttempt<PostpaidAttempt>(
           storage,
           POSTPAID_ATTEMPT_STORAGE_KEY,
-          activeUserId || '',
+          effectiveUserId || '',
           {
             sharedKey: true,
             isValid: isUsablePostpaidAttempt,
           },
         );
     if (legacy) {
-      postpaidAttemptRef.current = legacy;
-      postpaidAttemptKeyRef.current = POSTPAID_ATTEMPT_STORAGE_KEY;
-      postpaidAttemptWasLegacyRef.current = true;
+      if (effectiveUserId === activeUserId) {
+        postpaidAttemptRef.current = legacy;
+        postpaidAttemptKeyRef.current = POSTPAID_ATTEMPT_STORAGE_KEY;
+        postpaidAttemptWasLegacyRef.current = true;
+      }
+      return legacy;
     }
-    return postpaidAttemptRef.current;
+    return null;
   };
   /** Only advance the in-memory attempt after a verified write: keys that never
    * reached a backend must not be executed from memory either. */
-  const savePostpaidAttempt = (attempt: PostpaidAttempt): boolean => {
+  const savePostpaidAttempt = (attempt: PostpaidAttempt, targetUserId?: string | null): boolean => {
     const previous = postpaidAttemptRef.current;
-    if (!activeUserId) return false;
-    const storageKey = getPostpaidOrderAttemptStorageKey(activeUserId);
+    const effectiveUserId = targetUserId || attempt.userId || activeUserId;
+    if (!effectiveUserId) return false;
+    const storageKey = getPostpaidOrderAttemptStorageKey(effectiveUserId);
     try {
       persistOrderAttempt(getAppendAttemptStorage(), storageKey, attempt);
     } catch {
-      postpaidAttemptRef.current = previous;
+      if (effectiveUserId === activeUserId) {
+        postpaidAttemptRef.current = previous;
+      }
       return false;
     }
-    postpaidAttemptRef.current = attempt;
-    postpaidAttemptKeyRef.current = storageKey;
+    if (effectiveUserId === activeUserId) {
+      postpaidAttemptRef.current = attempt;
+      postpaidAttemptKeyRef.current = storageKey;
+    }
     return true;
   };
-  const clearPostpaidAttempt = () => {
-    const completedAttempt = postpaidAttemptRef.current;
+  const clearPostpaidAttempt = (targetUserId?: string | null) => {
+    const effectiveUserId = targetUserId || activeUserId;
+    const completedAttempt =
+      (effectiveUserId === activeUserId ? postpaidAttemptRef.current : null) ||
+      readPostpaidAttempt(effectiveUserId);
     const storageKeys = [
-      postpaidAttemptKeyRef.current,
-      postpaidAttemptWasLegacyRef.current ? POSTPAID_ATTEMPT_STORAGE_KEY : null,
+      effectiveUserId ? getPostpaidOrderAttemptStorageKey(effectiveUserId) : null,
+      (effectiveUserId === activeUserId && postpaidAttemptWasLegacyRef.current) || !effectiveUserId
+        ? POSTPAID_ATTEMPT_STORAGE_KEY
+        : null,
     ];
     if (!completedAttempt) {
-      postpaidAttemptKeyRef.current = null;
-      postpaidAttemptWasLegacyRef.current = false;
+      if (effectiveUserId === activeUserId) {
+        postpaidAttemptKeyRef.current = null;
+        postpaidAttemptWasLegacyRef.current = false;
+      }
       return true;
     }
     const storage = getAppendAttemptStorage();
@@ -431,7 +552,7 @@ export default function POSPage() {
         cleared = false;
       }
     }
-    if (cleared) {
+    if (cleared && effectiveUserId === activeUserId) {
       postpaidAttemptRef.current = null;
       postpaidAttemptKeyRef.current = null;
       postpaidAttemptWasLegacyRef.current = false;
@@ -449,21 +570,25 @@ export default function POSPage() {
     return { ...attempt, discount: safeDiscount };
   };
 
-  const readPrepaidAttempt = (): PrepaidAttempt | null => {
-    if (prepaidAttemptRef.current?.userId === activeUserId) return prepaidAttemptRef.current;
-    prepaidAttemptRef.current = null;
-    prepaidAttemptKeyRef.current = null;
-    if (typeof window === 'undefined' || !activeUserId) return null;
+  const readPrepaidAttempt = (targetUserId?: string | null): PrepaidAttempt | null => {
+    const effectiveUserId = targetUserId || activeUserId;
+    if (effectiveUserId === activeUserId && prepaidAttemptRef.current?.userId === activeUserId)
+      return prepaidAttemptRef.current;
+    if (effectiveUserId === activeUserId) {
+      prepaidAttemptRef.current = null;
+      prepaidAttemptKeyRef.current = null;
+    }
+    if (typeof window === 'undefined' || !effectiveUserId) return null;
     const storage = getAppendAttemptStorage();
-    const scopedKey = getPrepaidOrderAttemptStorageKey(activeUserId);
-    const scoped = readOrderAttempt<PrepaidAttempt>(storage, scopedKey, activeUserId, {
+    const scopedKey = getPrepaidOrderAttemptStorageKey(effectiveUserId);
+    const scoped = readOrderAttempt<PrepaidAttempt>(storage, scopedKey, effectiveUserId, {
       isValid: isUsablePrepaidAttempt,
     });
     if (scoped) {
       const safeAttempt = stripPrepaidDiscountPin(scoped);
       if (safeAttempt !== scoped) {
-        if (!savePrepaidAttempt(safeAttempt)) throw new OrderAttemptStorageError();
-      } else {
+        if (!savePrepaidAttempt(safeAttempt, effectiveUserId)) throw new OrderAttemptStorageError();
+      } else if (effectiveUserId === activeUserId) {
         prepaidAttemptRef.current = safeAttempt;
         prepaidAttemptKeyRef.current = scopedKey;
       }
@@ -476,7 +601,7 @@ export default function POSPage() {
     const legacy = readOrderAttempt<PrepaidAttempt>(
       storage,
       PREPAID_ATTEMPT_STORAGE_KEY,
-      activeUserId,
+      effectiveUserId,
       {
         sharedKey: true,
         isValid: isUsablePrepaidAttempt,
@@ -484,36 +609,48 @@ export default function POSPage() {
     );
     if (!legacy) return null;
     const migrated = stripPrepaidDiscountPin(legacy);
-    if (!savePrepaidAttempt(migrated)) throw new OrderAttemptStorageError();
+    if (!savePrepaidAttempt(migrated, effectiveUserId)) throw new OrderAttemptStorageError();
     clearOrderAttempt(storage, PREPAID_ATTEMPT_STORAGE_KEY, migrated);
     return migrated;
   };
-  const savePrepaidAttempt = (attempt: PrepaidAttempt): boolean => {
+  const savePrepaidAttempt = (attempt: PrepaidAttempt, targetUserId?: string | null): boolean => {
     const previous = prepaidAttemptRef.current;
-    if (!activeUserId) return false;
-    const storageKey = getPrepaidOrderAttemptStorageKey(activeUserId);
+    const effectiveUserId = targetUserId || attempt.userId || activeUserId;
+    if (!effectiveUserId) return false;
+    const storageKey = getPrepaidOrderAttemptStorageKey(effectiveUserId);
     const safeAttempt = stripPrepaidDiscountPin(attempt);
     try {
       persistOrderAttempt(getAppendAttemptStorage(), storageKey, safeAttempt);
     } catch {
-      prepaidAttemptRef.current = previous;
+      if (effectiveUserId === activeUserId) {
+        prepaidAttemptRef.current = previous;
+      }
       return false;
     }
-    prepaidAttemptRef.current = safeAttempt;
-    prepaidAttemptKeyRef.current = storageKey;
+    if (effectiveUserId === activeUserId) {
+      prepaidAttemptRef.current = safeAttempt;
+      prepaidAttemptKeyRef.current = storageKey;
+    }
     return true;
   };
   /** Intermediate prepaid states are persisted too: a request that runs under a
    * key the next run cannot replay can capture the same payment twice. */
-  const requirePrepaidAttemptSaved = (attempt: PrepaidAttempt) => {
-    if (!savePrepaidAttempt(attempt)) throw new OrderAttemptStorageError();
+  const requirePrepaidAttemptSaved = (attempt: PrepaidAttempt, targetUserId?: string | null) => {
+    if (!savePrepaidAttempt(attempt, targetUserId)) throw new OrderAttemptStorageError();
   };
-  const clearPrepaidAttempt = () => {
-    const completedAttempt = prepaidAttemptRef.current;
-    const storageKey = prepaidAttemptKeyRef.current;
+  const clearPrepaidAttempt = (targetUserId?: string | null) => {
+    const effectiveUserId = targetUserId || activeUserId;
+    const completedAttempt =
+      (effectiveUserId === activeUserId ? prepaidAttemptRef.current : null) ||
+      (effectiveUserId ? readPrepaidAttempt(effectiveUserId) : null);
+    const storageKey = effectiveUserId
+      ? getPrepaidOrderAttemptStorageKey(effectiveUserId)
+      : prepaidAttemptKeyRef.current;
     if (!completedAttempt || !storageKey) {
-      prepaidAttemptRef.current = null;
-      prepaidAttemptKeyRef.current = null;
+      if (effectiveUserId === activeUserId) {
+        prepaidAttemptRef.current = null;
+        prepaidAttemptKeyRef.current = null;
+      }
       return true;
     }
     // The payment is already captured: report a cleanup problem without turning
@@ -522,8 +659,10 @@ export default function POSPage() {
       console.error('Failed to close the prepaid retry attempt after the payment was captured');
       return false;
     }
-    prepaidAttemptRef.current = null;
-    prepaidAttemptKeyRef.current = null;
+    if (effectiveUserId === activeUserId) {
+      prepaidAttemptRef.current = null;
+      prepaidAttemptKeyRef.current = null;
+    }
     return true;
   };
 
@@ -823,6 +962,7 @@ export default function POSPage() {
   const shouldTakePaymentNow = billingIsPrepaid;
 
   const printKotIfEnabled = async (order: Order) => {
+    if (order.release_status && order.release_status !== 'released') return;
     // Master kot_printing_enabled check gates both manual and automatic prints.
     if (!kotPrintingEnabled) return;
     if (!autoPrintKot) return;
@@ -949,6 +1089,76 @@ export default function POSPage() {
     }
   };
 
+  const canReadOrders = tenantCan(currentTenant, 'orders.read');
+  const refreshScheduledOrders = useCallback(async () => {
+    if (!canReadOrders) {
+      setScheduledOrders([]);
+      setNextScheduledCursor(null);
+      setScheduledCount(0);
+      setBlockedScheduledCount(0);
+      return;
+    }
+    try {
+      const { data } = await api.get('/orders/scheduled');
+      const loadedOrders = (data.orders as Order[]) || [];
+      setScheduledOrders(loadedOrders);
+      setNextScheduledCursor(data.next_cursor || null);
+      if (typeof data.scheduled_count === 'number') {
+        setScheduledCount(data.scheduled_count);
+      } else {
+        setScheduledCount(loadedOrders.filter((o) => o.release_status === 'scheduled').length);
+      }
+      if (typeof data.blocked_count === 'number') {
+        setBlockedScheduledCount(data.blocked_count);
+      } else {
+        setBlockedScheduledCount(loadedOrders.filter((o) => o.release_status === 'blocked').length);
+      }
+    } catch {
+      /* ignore background poll failures */
+    }
+  }, [canReadOrders]);
+
+  const handleLoadMoreScheduledOrders = async () => {
+    if (!nextScheduledCursor || loadingMoreScheduled) return;
+    setLoadingMoreScheduled(true);
+    try {
+      const { data } = await api.get('/orders/scheduled', {
+        params: { cursor: nextScheduledCursor },
+      });
+      const moreOrders = (data.orders as Order[]) || [];
+      setScheduledOrders((prev) => {
+        const seen = new Set(prev.map((o) => o.id));
+        return [...prev, ...moreOrders.filter((o) => !seen.has(o.id))];
+      });
+      setNextScheduledCursor(data.next_cursor || null);
+      if (typeof data.scheduled_count === 'number') {
+        setScheduledCount(data.scheduled_count);
+      }
+      if (typeof data.blocked_count === 'number') {
+        setBlockedScheduledCount(data.blocked_count);
+      }
+    } catch {
+      /* ignore load more failures */
+    } finally {
+      setLoadingMoreScheduled(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshScheduledOrders();
+    const interval = setInterval(() => {
+      void refreshScheduledOrders();
+    }, 10000);
+    const onFocus = () => {
+      void refreshScheduledOrders();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [refreshScheduledOrders]);
+
   // Replay persisted append attempt on reload to recover lost in-flight responses.
   useEffect(() => {
     if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;
@@ -1052,6 +1262,9 @@ export default function POSPage() {
         // 1. Fetch business settings first
         const settingsRes = await api.get('/settings/business');
         const d = settingsRes.data;
+        if (typeof d.timezone === 'string' && d.timezone.trim()) {
+          setStoreTimezone(d.timezone.trim());
+        }
         setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
         const isTablesRequired = typeof d.tables_required === 'boolean' ? d.tables_required : true;
         setTablesRequired(isTablesRequired);
@@ -1059,6 +1272,42 @@ export default function POSPage() {
         api
           .get('/settings/kot_printing_enabled')
           .then((res) => setKotPrintingEnabled(res.data.setting?.value !== 'false'))
+          .catch(() => {});
+        api
+          .get('/settings/auto_print_kot')
+          .then((res) => {
+            const setting = res.data.setting;
+            if (
+              setting?.updated_at != null &&
+              (setting.value === 'true' || setting.value === 'false')
+            ) {
+              setAutoPrintKot(setting.value === 'true');
+            }
+          })
+          .catch(() => {});
+        api
+          .get('/settings/printer_use_unicode')
+          .then((res) => {
+            const setting = res.data.setting;
+            if (
+              setting?.updated_at != null &&
+              (setting.value === 'true' || setting.value === 'false')
+            ) {
+              setPrinterUseUnicode(setting.value === 'true');
+            }
+          })
+          .catch(() => {});
+        api
+          .get('/settings/printer_arabic_shaping')
+          .then((res) => {
+            const setting = res.data.setting;
+            if (
+              setting?.updated_at != null &&
+              (setting.value === 'true' || setting.value === 'false')
+            ) {
+              setPrinterArabicShaping(setting.value === 'true');
+            }
+          })
           .catch(() => {});
 
         // 2. Fetch other menu data
@@ -1091,7 +1340,129 @@ export default function POSPage() {
     };
     fetchData();
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
+  }, [
+    isRestaurant,
+    setBillingType,
+    setTablesRequired,
+    setKotPrintingEnabled,
+    setAutoPrintKot,
+    setPrinterUseUnicode,
+    setPrinterArabicShaping,
+  ]);
+
+  const currentStoreId = currentTenant?.id || 'default';
+  useEffect(() => {
+    let cancelled = false;
+    setActiveCounter(null);
+    setShowPaymentQueue(false);
+    setCounters([]);
+
+    api
+      .get('/settings/multi_counter_enabled')
+      .then((res) => {
+        if (cancelled) return;
+        const isEnabled = res.data.setting?.value === 'true';
+        setMultiCounterEnabled(isEnabled);
+        if (isEnabled) {
+          api
+            .get('/counters?is_active=true')
+            .then((cRes) => {
+              if (cancelled) return;
+              const activeList: Counter[] = cRes.data.counters || [];
+              setCounters(activeList);
+              const savedId =
+                typeof window !== 'undefined'
+                  ? localStorage.getItem(`flocafe_active_counter_${currentStoreId}`)
+                  : null;
+              if (savedId) {
+                const matched = activeList.find((c) => c.id === savedId);
+                if (matched) {
+                  setActiveCounter(matched);
+                  if (matched.role === 'payment') {
+                    setShowPaymentQueue(true);
+                  }
+                } else {
+                  setActiveCounter(null);
+                  setShowPaymentQueue(false);
+                }
+              } else {
+                setActiveCounter(null);
+                setShowPaymentQueue(false);
+              }
+            })
+            .catch(() => {});
+        } else {
+          setActiveCounter(null);
+          setShowPaymentQueue(false);
+          setCounters([]);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMultiCounterEnabled(false);
+        setActiveCounter(null);
+        setShowPaymentQueue(false);
+        setCounters([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStoreId]);
+
+  const handleSelectCounter = (counter: Counter | null) => {
+    setActiveCounter(counter);
+    if (multiCounterEnabled && counter?.role === 'payment') {
+      setShowPaymentQueue(true);
+    }
+    if (typeof window !== 'undefined') {
+      if (counter) {
+        localStorage.setItem(`flocafe_active_counter_${currentStoreId}`, counter.id);
+      } else {
+        localStorage.removeItem(`flocafe_active_counter_${currentStoreId}`);
+      }
+    }
+  };
+
+  const refreshPaymentQueueCounts = useCallback(async () => {
+    try {
+      const { data } = await api.get('/orders/awaiting-payment', { params: { limit: '1' } });
+      const awaiting = Number(data.awaiting_count) || 0;
+      const blocked = Number(data.blocked_count) || 0;
+      setPaymentQueueCount(awaiting + blocked);
+      setPaymentQueueBlockedCount(blocked);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!multiCounterEnabled) return;
+    void refreshPaymentQueueCounts();
+    const interval = setInterval(() => {
+      void refreshPaymentQueueCounts();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [multiCounterEnabled, refreshPaymentQueueCounts]);
+
+  const handleLookupAndPayTicket = useCallback(
+    async (ticket: string) => {
+      try {
+        const { data } = await api.get(`/orders/by-ticket/${encodeURIComponent(ticket)}`);
+        if (data?.bill) {
+          setPaymentBill(data.bill as Bill);
+          toast.success(t('ticketLoaded', { number: data.order?.order_number || ticket }));
+        } else if (data?.order) {
+          await handlePayScheduledOrder(data.order as Order);
+        }
+      } catch (err: unknown) {
+        const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
+        toast.error(errData?.error || t('ticketNotFound'));
+      }
+    },
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [t],
+  );
 
   const handleProductClick = (product: Product, quantity = 1) => {
     if (!productNeedsCustomizer(product)) {
@@ -1150,11 +1521,19 @@ export default function POSPage() {
     shift.closeModalOpen ||
     showPrintMenuModal ||
     showKeyboardShortcutsModal ||
+    showScheduledOrders ||
+    showPaymentQueue ||
+    showTicketModal ||
+    !!refundModalTarget ||
     actionsMenuOpen ||
     isConfirmOpen;
   const anyModalOpen = showTablePicker || anyOtherModalOpen;
 
   useBarcodeScanner((code) => {
+    if (code.startsWith('FLOCAFE-TICKET:')) {
+      void handleLookupAndPayTicket(code);
+      return;
+    }
     const scan = resolveScannedProduct(code, products);
     if (scan) {
       if (scan.scaleBarcode) cart.addItem(scan.product, scan.quantity);
@@ -1201,47 +1580,59 @@ export default function POSPage() {
       toast.error(t('cartEmpty'));
       return false;
     }
-    if (customerMandatory && !cart.customerId) {
+    if (!pendingOrder && customerMandatory && !cart.customerId) {
       setShowCustomerPrompt(true);
       return false;
     }
-    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId) {
+    if (
+      !pendingOrder &&
+      isRestaurant &&
+      cart.orderType === 'dine_in' &&
+      tablesRequired &&
+      !cart.tableId
+    ) {
       setShowTablePicker(true);
       return false;
+    }
+    if (
+      !pendingOrder &&
+      (cart.orderType === 'takeaway' || cart.orderType === 'delivery') &&
+      cart.scheduledFor.trim().length > 0
+    ) {
+      const check = parseScheduledForInput({
+        input: cart.scheduledFor,
+        timezone: storeTimezone || currentTenant?.timezone || 'UTC',
+        nowMs: Date.now(),
+      });
+      if (!check.ok) {
+        const tz = storeTimezone || currentTenant?.timezone || 'UTC';
+        const msg =
+          check.code === 'PAST_SCHEDULED_TIME'
+            ? t('scheduledPastTimeError', { timezone: tz })
+            : check.code === 'DST_NONEXISTENT_TIME'
+              ? t('scheduledDstSkippedError', { timezone: tz })
+              : check.code === 'DST_AMBIGUOUS_TIME'
+                ? t('scheduledDstAmbiguousError', { timezone: tz })
+                : t('scheduledInvalidTimeError', { timezone: tz });
+        toast.error(msg);
+        return false;
+      }
     }
     return true;
   };
 
   const buildCurrentCartFingerprint = (orderItems = cart.items.map(cartItemToOrderItem)) =>
-    JSON.stringify({
-      table_id: cart.tableId,
-      customer_id: cart.customerId,
-      type: cart.orderType,
-      guest_count: cart.guestCount,
-      special_instructions: cart.orderNotes,
-      online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
-      external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
-      delivery_address:
-        cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
-      expected_payment_method:
-        cart.orderType === 'delivery' ? cart.expectedPaymentMethod || undefined : undefined,
-      expected_payment_method_id:
-        cart.orderType === 'delivery' ? (cart.expectedPaymentMethodId ?? undefined) : undefined,
-      delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
-      items: orderItems,
-      waived_charge_ids: Array.from(cart.waivedChargeIds),
-      opted_in_charge_ids: Array.from(cart.optedInChargeIds),
-    });
+    buildCartFingerprintFromState(cart, orderItems);
 
   const handlePlaceOrder = async () => {
     if (!validateOrderPreflight()) return;
 
+    const cartFingerprint = buildCurrentCartFingerprint();
     // Prepaid stores collect payment before finishing the order.
-    if (shouldTakePaymentNow) {
+    if (shouldTakePaymentNow && !pendingOrder) {
       let matchingAttempt: PrepaidAttempt | null = null;
       try {
         const storedAttempt = readPrepaidAttempt();
-        const cartFingerprint = buildCurrentCartFingerprint();
         if (
           storedAttempt &&
           storedAttempt.userId === activeUserId &&
@@ -1261,11 +1652,21 @@ export default function POSPage() {
 
     // Postpaid store / unpaid order → place order, kitchen gets the ticket, payment collected later
     setSubmitting(true);
+    const originEpoch = sessionEpochRef.current;
+    const originUserId = activeUserId;
+    const originToken =
+      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const submissionToken = Symbol('pos-place-order');
+    activeSubmissionTokenRef.current = submissionToken;
+
+    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+
     let failureOperation = pendingOrder ? 'order.append' : 'order.create';
     let failureStage = 'submission';
     let failureCorrelationId: string | null = null;
     try {
       let orderForKot: Order;
+      let postpaidOperationId: string | null = null;
 
       if (pendingOrder) {
         // Add new items to an existing order with a durable retry key.
@@ -1280,7 +1681,7 @@ export default function POSPage() {
         const candidateOperationId = createOperationReference() || undefined;
         failureCorrelationId = candidateOperationId || null;
         let itemAttempt = getOrCreateAppendAttempt(storage, {
-          userId: activeUserId || '',
+          userId: originUserId || '',
           orderId: pendingOrder.id,
           fingerprint: itemFingerprint,
           createKey: newIdempotencyKey,
@@ -1304,18 +1705,28 @@ export default function POSPage() {
           }
         }
         failureCorrelationId = itemAttempt.operationId || null;
-        addItemsAttemptRef.current = itemAttempt;
+        if (originUserId === activeUserId) {
+          addItemsAttemptRef.current = itemAttempt;
+        }
         failureStage = 'append_items';
         const { data } = await api.post(
           `/orders/${pendingOrder.id}/items`,
           { items: newItems, special_instructions: specialInstructions },
           {
             headers: {
+              ...pinnedAuthHeaders(originToken),
               'Idempotency-Key': itemAttempt.idempotencyKey,
               ...operationHeaders(itemAttempt.operationId),
             },
           },
         );
+        if (!isSessionCurrent()) {
+          // Item append succeeded on server while session changed. Stop before mutating state.
+          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+            useCartStore.getState().clearCart();
+          }
+          return;
+        }
         toast.success(t('itemsAddedToOrder', { number: pendingOrder.order_number }));
         const updatedOrder = data.order as Order;
         const existingItemIds = new Set((pendingOrder.items || []).map((item) => Number(item.id)));
@@ -1365,14 +1776,46 @@ export default function POSPage() {
           expected_payment_method_id:
             cart.orderType === 'delivery' ? (cart.expectedPaymentMethodId ?? undefined) : undefined,
           delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
+          scheduled_for:
+            cart.orderType === 'takeaway' || cart.orderType === 'delivery'
+              ? cart.scheduledFor.trim() || undefined
+              : undefined,
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
           items: cart.items.map(cartItemToOrderItem),
         };
         const orderFingerprint = JSON.stringify(orderPayload);
-        const priorOrderAttempt = readPostpaidAttempt();
+        const priorOrderAttempt = readPostpaidAttempt(originUserId);
         if (
-          priorOrderAttempt?.userId === activeUserId &&
+          priorOrderAttempt?.userId === originUserId &&
+          priorOrderAttempt.fingerprint === cartFingerprint
+        ) {
+          const completedOrder = priorOrderAttempt.order;
+          reportOrderFailure({
+            code: completedOrder ? 'order.retry_state.cleanup_failed' : 'order.retry_state.pending',
+            title: completedOrder
+              ? t('orderPlaced', { number: completedOrder.order_number })
+              : t('placeOrderFailed'),
+            message: completedOrder ? t('saleCompleteCleanupFailed') : t('operationOutcomeUnknown'),
+            nextStep: completedOrder
+              ? t('saleCompleteCheckOrders')
+              : t('operationCheckBeforeRetry'),
+            detail: completedOrder
+              ? 'This matching order attempt already has a confirmed order and cannot be reused for a new sale'
+              : 'A send-to-payment attempt for this cart is unresolved and cannot be replaced with a different checkout request',
+            status: null,
+            operation: 'order.create',
+            stage: completedOrder ? 'cleanup' : 'retry_state',
+            outcome: completedOrder ? 'applied' : 'unknown',
+            reasonCode: completedOrder
+              ? 'order.retry_state.cleanup_failed'
+              : 'order.retry_state.pending',
+            correlationId: priorOrderAttempt.operationId,
+          });
+          return;
+        }
+        if (
+          priorOrderAttempt?.userId === originUserId &&
           priorOrderAttempt.fingerprint === orderFingerprint &&
           priorOrderAttempt.order
         ) {
@@ -1395,21 +1838,22 @@ export default function POSPage() {
         failureOperation = 'order.create';
         failureStage = 'order_submission';
         const orderAttempt: PostpaidAttempt =
-          priorOrderAttempt?.userId === activeUserId &&
+          priorOrderAttempt?.userId === originUserId &&
           priorOrderAttempt.fingerprint === orderFingerprint
             ? priorOrderAttempt
             : {
-                userId: activeUserId || '',
+                userId: originUserId || '',
                 fingerprint: orderFingerprint,
                 idempotencyKey: newIdempotencyKey(),
                 operationId: createOperationReference() || undefined,
               };
         const operationId = orderAttempt.operationId || createOperationReference();
+        postpaidOperationId = operationId || null;
         failureCorrelationId = operationId;
         const attemptWithOperationId = operationId
           ? { ...orderAttempt, operationId }
           : orderAttempt;
-        if (!savePostpaidAttempt(attemptWithOperationId)) {
+        if (!savePostpaidAttempt(attemptWithOperationId, originUserId)) {
           if (operationId)
             void captureClientOperationFailure({
               operation: 'order.create',
@@ -1422,14 +1866,17 @@ export default function POSPage() {
           ? { data: { order: attemptWithOperationId.order } }
           : await api.post('/orders', orderPayload, {
               headers: {
+                ...pinnedAuthHeaders(originToken),
                 'Idempotency-Key': attemptWithOperationId.idempotencyKey,
                 ...operationHeaders(operationId),
               },
             });
         const confirmedAttempt = { ...attemptWithOperationId, order: data.order as Order };
-        if (!attemptWithOperationId.order && !savePostpaidAttempt(confirmedAttempt)) {
+        if (!attemptWithOperationId.order && !savePostpaidAttempt(confirmedAttempt, originUserId)) {
           console.error('The confirmed order could not be copied into retry storage');
-          postpaidAttemptRef.current = confirmedAttempt;
+          if (originUserId === activeUserId) {
+            postpaidAttemptRef.current = confirmedAttempt;
+          }
           if (operationId)
             void captureClientOperationFailure({
               operation: 'order.create',
@@ -1437,29 +1884,29 @@ export default function POSPage() {
               correlationId: operationId,
             });
         }
-        toast.success(t('orderPlaced', { number: data.order.order_number }));
-        orderForKot = data.order as Order;
-        if (!clearPostpaidAttempt()) {
-          if (operationId)
-            void captureClientOperationFailure({
-              operation: 'order.create',
-              phase: 'retry_cleanup',
-              correlationId: operationId,
-            });
-          reportOrderFailure({
-            code: 'order.retry_state.cleanup_failed',
-            title: t('orderPlaced', { number: data.order.order_number }),
-            message: t('saleCompleteCleanupFailed'),
-            nextStep: t('saleCompleteCheckOrders'),
-            detail: 'The order was created but local retry state could not be cleared',
-            status: null,
-            operation: 'order.create',
-            stage: 'cleanup',
-            outcome: 'applied',
-            reasonCode: 'order.retry_state.cleanup_failed',
-            correlationId: operationId,
-          });
+        if (!isSessionCurrent()) {
+          // Critical recovery invariant: order succeeded on server while session changed.
+          // Originating user's recovery attempt is saved under getPostpaidOrderAttemptStorageKey(originUserId).
+          // If the shared cart still matches the submitted cart, clear it so the new session doesn't double-order.
+          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+            useCartStore.getState().clearCart();
+          }
+          return;
         }
+        if (data.order.release_status === 'scheduled' && data.order.scheduled_for) {
+          toast.success(
+            t('scheduledOrderPlaced', {
+              number: data.order.order_number,
+              time: formatScheduledInstantForDisplay(
+                data.order.scheduled_for,
+                storeTimezone || currentTenant?.timezone || 'UTC',
+              ),
+            }),
+          );
+        } else {
+          toast.success(t('orderPlaced', { number: data.order.order_number }));
+        }
+        orderForKot = data.order as Order;
       }
 
       if (cart.tableId) {
@@ -1468,7 +1915,7 @@ export default function POSPage() {
             cart.tableId,
             cart.heldOrderId || undefined,
           );
-          if (!deleted) await heldOrders.fetchHeldOrders();
+          if (!deleted && isSessionCurrent()) await heldOrders.fetchHeldOrders();
         } catch (heldOrderError) {
           // The order has already been placed. Do not turn a cleanup failure
           // into a failed sale or leave an unhandled promise in the console.
@@ -1506,12 +1953,42 @@ export default function POSPage() {
           });
         }
       }
+      if (!isSessionCurrent()) {
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
+        return;
+      }
       cart.clearCart();
+      if (!pendingOrder && !clearPostpaidAttempt(originUserId)) {
+        if (postpaidOperationId)
+          void captureClientOperationFailure({
+            operation: 'order.create',
+            phase: 'retry_cleanup',
+            correlationId: postpaidOperationId,
+          });
+        reportOrderFailure({
+          code: 'order.retry_state.cleanup_failed',
+          title: t('orderPlaced', { number: orderForKot.order_number }),
+          message: t('saleCompleteCleanupFailed'),
+          nextStep: t('saleCompleteCheckOrders'),
+          detail: 'The order was created but local retry state could not be cleared',
+          status: null,
+          operation: 'order.create',
+          stage: 'cleanup',
+          outcome: 'applied',
+          reasonCode: 'order.retry_state.cleanup_failed',
+          correlationId: postpaidOperationId,
+        });
+      }
       setMobileCartOpen(false);
       await refreshTables();
+      void refreshScheduledOrders();
 
+      if (!isSessionCurrent()) return;
       await printKotIfEnabled(orderForKot);
     } catch (error) {
+      if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError)
         reportOrderStorageFailure(
           t('placeOrderFailed'),
@@ -1527,7 +2004,215 @@ export default function POSPage() {
           failureCorrelationId,
         );
     } finally {
-      setSubmitting(false);
+      if (isSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
+        setSubmitting(false);
+        activeSubmissionTokenRef.current = null;
+      }
+    }
+  };
+
+  const handleSendToPayment = async () => {
+    if (pendingOrder) {
+      void handlePlaceOrder();
+      return;
+    }
+    if (isSendingToPaymentRef.current) return;
+    if (cart.orderType !== 'takeaway' && cart.orderType !== 'dine_in') {
+      toast.error(
+        cart.orderType === 'delivery' ? t('sendToPaymentDeliveryError') : t('placeOrderFailed'),
+      );
+      return;
+    }
+    if (!validateOrderPreflight()) return;
+
+    isSendingToPaymentRef.current = true;
+    setSubmitting(true);
+    const originEpoch = sessionEpochRef.current;
+    const originUserId = activeUserId;
+    const originToken =
+      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const originTenantId = currentTenant?.id == null ? null : String(currentTenant.id);
+    const submissionToken = Symbol('pos-send-to-payment');
+    activeSubmissionTokenRef.current = submissionToken;
+    const isOriginSessionCurrent = () => {
+      const session = useAuthStore.getState();
+      const userId = session.user?.id == null ? null : String(session.user.id);
+      const tenantId = session.currentTenant?.id == null ? null : String(session.currentTenant.id);
+      return (
+        sessionEpochRef.current === originEpoch &&
+        userId === originUserId &&
+        session.token === originToken &&
+        tenantId === originTenantId
+      );
+    };
+
+    try {
+      if (!originUserId) throw new OrderAttemptStorageError();
+
+      const orderItems = cart.items.map(cartItemToOrderItem);
+      const cartFingerprint = buildCurrentCartFingerprint(orderItems);
+      const storage = getAppendAttemptStorage();
+      const storedAttempt = readPostpaidAttempt(originUserId);
+      const storedAttemptMatchesCart =
+        storedAttempt?.userId === originUserId && storedAttempt.fingerprint === cartFingerprint;
+      if (storedAttemptMatchesCart && storedAttempt.order) {
+        reportOrderFailure({
+          code: 'order.retry_state.cleanup_failed',
+          title: t('orderSentToPaymentSuccess', { number: storedAttempt.order.order_number }),
+          message: t('saleCompleteCleanupFailed'),
+          nextStep: t('saleCompleteCheckOrders'),
+          detail: 'This matching order attempt already has a confirmed ticket and cannot be reused',
+          status: null,
+          operation: 'order.create',
+          stage: 'cleanup',
+          outcome: 'applied',
+          reasonCode: 'order.retry_state.cleanup_failed',
+          correlationId: storedAttempt.operationId,
+        });
+        return;
+      }
+      const attempt = storedAttemptMatchesCart
+        ? storedAttempt
+        : {
+            userId: originUserId,
+            fingerprint: cartFingerprint,
+            idempotencyKey: newIdempotencyKey(),
+            operationId: createOperationReference() || undefined,
+          };
+      const storageKey = getPostpaidOrderAttemptStorageKey(originUserId);
+      if (!savePostpaidAttempt(attempt, originUserId)) throw new OrderAttemptStorageError();
+
+      const orderPayload = {
+        type: cart.orderType,
+        table_id: cart.orderType === 'dine_in' ? cart.tableId : undefined,
+        customer_id: cart.customerId || undefined,
+        guest_count: cart.orderType === 'dine_in' ? cart.guestCount : undefined,
+        special_instructions: cart.orderNotes || undefined,
+        scheduled_for:
+          cart.orderType === 'takeaway' ? cart.scheduledFor.trim() || undefined : undefined,
+        dispatch_policy: 'on_payment',
+        waived_charge_ids: Array.from(cart.waivedChargeIds),
+        opted_in_charge_ids: Array.from(cart.optedInChargeIds),
+        items: orderItems,
+      };
+
+      const { data } = await api.post('/orders', orderPayload, {
+        headers: {
+          ...pinnedAuthHeaders(originToken),
+          'Idempotency-Key': attempt.idempotencyKey,
+          ...operationHeaders(attempt.operationId),
+        },
+      });
+      const createdOrder = data.order as Order;
+
+      let isLatestAttempt = false;
+      let cleanupFailed = false;
+      try {
+        const currentAttempt = readOrderAttempt<PostpaidAttempt>(
+          createFreshAppendAttemptStorage(),
+          storageKey,
+          originUserId,
+          { isValid: isUsablePostpaidAttempt },
+        );
+        isLatestAttempt =
+          currentAttempt?.fingerprint === attempt.fingerprint &&
+          currentAttempt.idempotencyKey === attempt.idempotencyKey &&
+          currentAttempt.operationId === attempt.operationId;
+      } catch {
+        if (!isOriginSessionCurrent()) return;
+        setShowPaymentQueue(true);
+        reportOrderFailure({
+          code: 'order.retry_state.read_failed',
+          title: t('orderSentToPaymentSuccess', { number: createdOrder.order_number }),
+          message: t('saleCompleteCleanupFailed'),
+          nextStep: t('saleCompleteCheckOrders'),
+          detail:
+            'The order was created but local retry state could not be read; confirm it in the payment queue before retrying',
+          status: null,
+          operation: 'order.create',
+          stage: 'recovery',
+          outcome: 'applied',
+          reasonCode: 'order.retry_state.read_failed',
+          correlationId: attempt.operationId || null,
+        });
+        return;
+      }
+      if (!isLatestAttempt) return;
+
+      const confirmedAttempt = { ...attempt, order: createdOrder };
+      if (!savePostpaidAttempt(confirmedAttempt, originUserId)) {
+        if (originUserId === activeUserId) {
+          postpaidAttemptRef.current = confirmedAttempt;
+          postpaidAttemptKeyRef.current = storageKey;
+        }
+        if (attempt.operationId)
+          void captureClientOperationFailure({
+            operation: 'order.create',
+            phase: 'retry_state_update',
+            correlationId: attempt.operationId,
+          });
+      }
+      if (!isOriginSessionCurrent()) {
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
+        return;
+      }
+
+      if (!clearOrderAttempt(storage, storageKey, confirmedAttempt)) {
+        cleanupFailed = true;
+      } else if (postpaidAttemptRef.current?.idempotencyKey === attempt.idempotencyKey) {
+        postpaidAttemptRef.current = null;
+        postpaidAttemptKeyRef.current = null;
+        postpaidAttemptWasLegacyRef.current = false;
+      }
+      if (!isLatestAttempt || !isOriginSessionCurrent()) return;
+
+      if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        useCartStore.getState().clearCart();
+      }
+      setTicketModalOrder(createdOrder);
+      setTicketModalQrDataUrl(data.qr_data_url || null);
+      setTicketModalQrPayload(data.qr_payload || null);
+      setShowTicketModal(true);
+      void refreshTables();
+      void refreshPaymentQueueCounts();
+      if (cleanupFailed) {
+        reportOrderFailure({
+          code: 'order.retry_state.cleanup_failed',
+          title: t('orderSentToPaymentSuccess', { number: createdOrder.order_number }),
+          message: t('saleCompleteCleanupFailed'),
+          nextStep: t('saleCompleteCheckOrders'),
+          detail: 'The order was created but local retry state could not be cleared',
+          status: null,
+          operation: 'order.create',
+          stage: 'cleanup',
+          outcome: 'applied',
+          reasonCode: 'order.retry_state.cleanup_failed',
+          correlationId: attempt.operationId || null,
+        });
+      } else {
+        toast.success(t('orderSentToPaymentSuccess', { number: createdOrder.order_number }));
+      }
+    } catch (err: unknown) {
+      if (!isOriginSessionCurrent()) return;
+      if (err instanceof OrderAttemptStorageError) {
+        reportOrderStorageFailure(t('placeOrderFailed'), 'order.create');
+      } else {
+        const errData = (err as { response?: { data?: { error?: string; code?: string } } })
+          ?.response?.data;
+        toast.error(
+          errData?.code === 'MULTI_COUNTER_DISABLED'
+            ? tSettings('multiCounterDisabled')
+            : errData?.error || t('placeOrderFailed'),
+        );
+      }
+    } finally {
+      if (isOriginSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
+        isSendingToPaymentRef.current = false;
+        setSubmitting(false);
+        activeSubmissionTokenRef.current = null;
+      }
     }
   };
 
@@ -1540,6 +2225,15 @@ export default function POSPage() {
     const isPrepaidCheckout = shouldTakePaymentNow;
     setShowPrepaidCheckout(false);
     setSubmitting(true);
+    const originEpoch = sessionEpochRef.current;
+    const originUserId = activeUserId;
+    const originToken =
+      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const submissionToken = Symbol('pos-prepaid-checkout');
+    activeSubmissionTokenRef.current = submissionToken;
+
+    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+
     const orderItems = cart.items.map(cartItemToOrderItem);
     let paymentLines = payments
       .filter((p) => p.amount > 0)
@@ -1558,17 +2252,19 @@ export default function POSPage() {
     const cartFingerprint = buildCurrentCartFingerprint(orderItems);
     let storedAttempt: PrepaidAttempt | null;
     try {
-      storedAttempt = readPrepaidAttempt();
+      storedAttempt = readPrepaidAttempt(originUserId);
     } catch (error) {
       // An unreadable attempt cannot be safely replaced with a fresh key.
       if (!(error instanceof OrderAttemptStorageError)) throw error;
-      reportOrderStorageFailure(t('processOrderFailed'));
-      setSubmitting(false);
+      if (isSessionCurrent()) {
+        reportOrderStorageFailure(t('processOrderFailed'));
+        setSubmitting(false);
+      }
       return;
     }
     const existingAttempt =
       storedAttempt &&
-      storedAttempt.userId === activeUserId &&
+      storedAttempt.userId === originUserId &&
       storedAttempt.cartFingerprint === cartFingerprint &&
       storedAttempt.orderIdempotencyKey &&
       storedAttempt.paymentIdempotencyKey
@@ -1579,21 +2275,23 @@ export default function POSPage() {
         ? parsePrepaidPaymentRequest(existingAttempt.paymentFingerprint)
         : null;
     if (existingAttempt?.bill && existingAttempt.paymentFingerprint && !savedPaymentRequest) {
-      reportOrderFailure({
-        code: 'request.outcome_unknown',
-        title: t('processOrderFailed'),
-        message: t('operationOutcomeUnknown'),
-        nextStep: t('operationCheckBeforeRetry'),
-        detail:
-          'The saved payment request could not be validated, so no replacement payment was submitted',
-        status: null,
-        operation: 'payment.create',
-        stage: 'recovery',
-        outcome: 'unknown',
-        reasonCode: 'request.outcome_unknown',
-        correlationId: existingAttempt.operationId,
-      });
-      setSubmitting(false);
+      if (isSessionCurrent()) {
+        reportOrderFailure({
+          code: 'request.outcome_unknown',
+          title: t('processOrderFailed'),
+          message: t('operationOutcomeUnknown'),
+          nextStep: t('operationCheckBeforeRetry'),
+          detail:
+            'The saved payment request could not be validated, so no replacement payment was submitted',
+          status: null,
+          operation: 'payment.create',
+          stage: 'recovery',
+          outcome: 'unknown',
+          reasonCode: 'request.outcome_unknown',
+          correlationId: existingAttempt.operationId,
+        });
+        setSubmitting(false);
+      }
       return;
     }
     if (savedPaymentRequest && existingAttempt) {
@@ -1604,12 +2302,17 @@ export default function POSPage() {
       const recoveryOperationId = existingAttempt.operationId || createOperationReference();
       try {
         const { data } = await api.get(`/bills/${existingAttempt.bill.id}`, {
-          headers: operationHeaders(recoveryOperationId),
+          headers: {
+            ...pinnedAuthHeaders(originToken),
+            ...operationHeaders(recoveryOperationId),
+          },
         });
+        if (!isSessionCurrent()) return;
         if (!data?.bill || !['paid', 'partial', 'unpaid'].includes(data.bill.payment_status)) {
           throw new Error('Bill status unavailable');
         }
       } catch (recoveryError) {
+        if (!isSessionCurrent()) return;
         if (!(recoveryError as { response?: unknown } | null)?.response && recoveryOperationId) {
           void captureClientOperationFailure({
             operation: 'payment.create',
@@ -1634,6 +2337,7 @@ export default function POSPage() {
         return;
       }
     }
+    if (!isSessionCurrent()) return;
     const currentDiscount = savedPaymentRequest
       ? existingAttempt?.discount || null
       : discount && discount.value > 0
@@ -1659,7 +2363,7 @@ export default function POSPage() {
               : newIdempotencyKey(),
         }
       : {
-          userId: activeUserId || '',
+          userId: originUserId || '',
           cartFingerprint,
           paymentFingerprint,
           discount: discount && discount.value > 0 ? discount : null,
@@ -1671,7 +2375,8 @@ export default function POSPage() {
     if (operationId && attempt.operationId !== operationId) attempt = { ...attempt, operationId };
     // Persist the keys before the first order mutation. The server replays the
     // order response if this renderer loses the response or restarts.
-    if (!savePrepaidAttempt(attempt)) {
+    if (!savePrepaidAttempt(attempt, originUserId)) {
+      if (!isSessionCurrent()) return;
       reportOrderStorageFailure(t('processOrderFailed'), 'order.create', operationId || null);
       setSubmitting(false);
       return;
@@ -1686,7 +2391,7 @@ export default function POSPage() {
       failureCorrelationId = operationId;
       if (operationId && attempt.operationId !== operationId) {
         attempt = { ...attempt, operationId };
-        requirePrepaidAttemptSaved(attempt);
+        requirePrepaidAttemptSaved(attempt, originUserId);
       }
       if (attempt.order) {
         orderData = { order: attempt.order };
@@ -1715,12 +2420,17 @@ export default function POSPage() {
                 : undefined,
             delivery_note:
               cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
+            scheduled_for:
+              cart.orderType === 'takeaway' || cart.orderType === 'delivery'
+                ? cart.scheduledFor.trim() || undefined
+                : undefined,
             waived_charge_ids: Array.from(cart.waivedChargeIds),
             opted_in_charge_ids: Array.from(cart.optedInChargeIds),
             items: orderItems,
           },
           {
             headers: {
+              ...pinnedAuthHeaders(originToken),
               'Idempotency-Key': attempt.orderIdempotencyKey,
               ...operationHeaders(operationId),
             },
@@ -1728,7 +2438,15 @@ export default function POSPage() {
         );
         orderData = data;
         committedOrder = data.order as Order;
-        requirePrepaidAttemptSaved({ ...attempt, order: data.order });
+        requirePrepaidAttemptSaved({ ...attempt, order: data.order }, originUserId);
+        if (!isSessionCurrent()) {
+          // Order succeeded on the server while session changed.
+          // Recovery record is preserved under originUserId. Stop before generating/paying bill under new user.
+          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+            useCartStore.getState().clearCart();
+          }
+          return;
+        }
       }
       if (!orderData) throw new Error('Order result unavailable');
       const order = orderData.order;
@@ -1754,8 +2472,12 @@ export default function POSPage() {
       ) {
         try {
           const { data: currentOrderData } = await api.get(`/orders/${orderId}`, {
-            headers: operationHeaders(operationId),
+            headers: {
+              ...pinnedAuthHeaders(originToken),
+              ...operationHeaders(operationId),
+            },
           });
+          if (!isSessionCurrent()) return;
           const serverDiscount =
             currentOrderData.order?.discount_type &&
             Number(currentOrderData.order.discount_value) > 0
@@ -1772,6 +2494,7 @@ export default function POSPage() {
           // an approval PIN may be required to reapply an uncertain discount.
         }
       }
+      if (!isSessionCurrent()) return;
       if (
         !attempt.bill &&
         !discountAlreadyApplied &&
@@ -1788,8 +2511,14 @@ export default function POSPage() {
             override_pin: discountForRequest?.override_pin,
             approver_id: discountForRequest?.approver_id,
           },
-          { headers: operationHeaders(operationId) },
+          {
+            headers: {
+              ...pinnedAuthHeaders(originToken),
+              ...operationHeaders(operationId),
+            },
+          },
         );
+        if (!isSessionCurrent()) return;
       }
 
       if (attempt.bill) {
@@ -1800,9 +2529,24 @@ export default function POSPage() {
         const { data: generatedBill } = await api.post(
           '/bills/generate',
           { order_id: orderId },
-          { headers: operationHeaders(operationId) },
+          {
+            headers: {
+              ...pinnedAuthHeaders(originToken),
+              ...operationHeaders(operationId),
+            },
+          },
         );
         billData = generatedBill;
+        if (!isSessionCurrent()) {
+          // Bill was generated on server while session changed. Stop here.
+          if (generatedBill?.bill) {
+            savePrepaidAttempt({ ...attempt, order, bill: generatedBill.bill }, originUserId);
+          }
+          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+            useCartStore.getState().clearCart();
+          }
+          return;
+        }
       }
       if (!billData) throw new Error('Bill result unavailable');
       const bill = billData.bill;
@@ -1817,8 +2561,9 @@ export default function POSPage() {
         failureOperation = attempt.bill ? 'payment.create' : 'bill.generate';
         failureStage = 'retry_state';
         attempt = { ...attempt, order, bill, paymentFingerprint: exactPaymentFingerprint };
-        requirePrepaidAttemptSaved(attempt);
+        requirePrepaidAttemptSaved(attempt, originUserId);
       }
+      if (!isSessionCurrent()) return;
 
       // Record every split in one atomic request. The persisted bill/key pair
       // makes a lost response safe to retry without creating a second order.
@@ -1826,6 +2571,7 @@ export default function POSPage() {
       failureStage = 'payment_submission';
       const paymentResponse = await api.post(`/bills/${bill.id}/payments`, paymentRequest, {
         headers: {
+          ...pinnedAuthHeaders(originToken),
           'Idempotency-Key': attempt.paymentIdempotencyKey,
           ...operationHeaders(operationId),
         },
@@ -1836,16 +2582,27 @@ export default function POSPage() {
           ? paymentResponse.data.loyaltyPointsEarned
           : 0;
 
+      if (!isSessionCurrent()) {
+        savePrepaidAttempt({ ...attempt, order, bill: paidBill }, originUserId);
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
+        return;
+      }
+
       if (paidBill.payment_status !== 'paid') {
         const incompleteMessage = t('paymentIncomplete', {
           amount: currencyFmt(Number(paidBill.balance) || 0),
         });
-        savePrepaidAttempt({
-          ...attempt,
-          bill: paidBill,
-          paymentFingerprint: '',
-          paymentIdempotencyKey: newIdempotencyKey(),
-        });
+        savePrepaidAttempt(
+          {
+            ...attempt,
+            bill: paidBill,
+            paymentFingerprint: '',
+            paymentIdempotencyKey: newIdempotencyKey(),
+          },
+          originUserId,
+        );
         reportOrderFailure({
           code: 'payment.incomplete',
           title: incompleteMessage,
@@ -1863,10 +2620,12 @@ export default function POSPage() {
       }
 
       const completedAttempt = { ...attempt, order, bill: paidBill };
-      if (!savePrepaidAttempt(completedAttempt)) {
+      if (!savePrepaidAttempt(completedAttempt, originUserId)) {
         // Payment is confirmed. Keep that fact in memory and never turn a
         // local retry-state write failure into advice to charge again.
-        prepaidAttemptRef.current = stripPrepaidDiscountPin(completedAttempt);
+        if (originUserId === activeUserId) {
+          prepaidAttemptRef.current = stripPrepaidDiscountPin(completedAttempt);
+        }
         if (operationId)
           void captureClientOperationFailure({
             operation: 'payment.create',
@@ -1907,7 +2666,7 @@ export default function POSPage() {
             cart.tableId,
             cart.heldOrderId || undefined,
           );
-          if (!deleted) await heldOrders.fetchHeldOrders();
+          if (!deleted && isSessionCurrent()) await heldOrders.fetchHeldOrders();
         } catch (heldOrderError) {
           // The payment is complete; clearing the held-order record is cleanup.
           console.error('Failed to clear held order after payment', heldOrderError);
@@ -1918,31 +2677,39 @@ export default function POSPage() {
               correlationId: operationId,
             });
           }
-          reportOrderFailure({
-            code: 'order.held_state.cleanup_failed',
-            title: t('orderPaid', { number: order.order_number }),
-            message: t('saleCompleteCleanupFailed'),
-            nextStep: t('saleCompleteCheckOrders'),
-            detail: 'Payment completed but its held-order record could not be refreshed',
-            status: null,
-            operation: 'payment.create',
-            stage: 'cleanup',
-            outcome: 'applied',
-            reasonCode: 'order.held_state.cleanup_failed',
-            correlationId: operationId,
-            operationFailure:
-              !(heldOrderError as { response?: unknown } | null)?.response && !!operationId
-                ? {
-                    capture_point: 'fc.frontend.pos.payment.create.held_cleanup',
-                    operation_id: operationId,
-                    outcome: 'applied',
-                  }
-                : undefined,
-          });
+          if (isSessionCurrent()) {
+            reportOrderFailure({
+              code: 'order.held_state.cleanup_failed',
+              title: t('orderPaid', { number: order.order_number }),
+              message: t('saleCompleteCleanupFailed'),
+              nextStep: t('saleCompleteCheckOrders'),
+              detail: 'Payment completed but its held-order record could not be refreshed',
+              status: null,
+              operation: 'payment.create',
+              stage: 'cleanup',
+              outcome: 'applied',
+              reasonCode: 'order.held_state.cleanup_failed',
+              correlationId: operationId,
+              operationFailure:
+                !(heldOrderError as { response?: unknown } | null)?.response && !!operationId
+                  ? {
+                      capture_point: 'fc.frontend.pos.payment.create.held_cleanup',
+                      operation_id: operationId,
+                      outcome: 'applied',
+                    }
+                  : undefined,
+            });
+          }
         }
       }
+      if (!isSessionCurrent()) {
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
+        return;
+      }
       cart.clearCart();
-      if (!clearPrepaidAttempt()) {
+      if (!clearPrepaidAttempt(originUserId)) {
         if (operationId)
           void captureClientOperationFailure({
             operation: 'payment.create',
@@ -1965,11 +2732,15 @@ export default function POSPage() {
       }
       setMobileCartOpen(false);
       await refreshTables();
+      void refreshScheduledOrders();
+      if (!isSessionCurrent()) return;
 
       await printKotIfEnabled(order);
+      if (!isSessionCurrent()) return;
 
       await printBillForTenant(paidBill, isPrepaidCheckout);
     } catch (error) {
+      if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError && committedOrder) {
         if (
           failureOperation === 'payment.create' &&
@@ -2048,11 +2819,14 @@ export default function POSPage() {
             failure.outcome === 'not_applied' &&
             failure.displayCode !== 'idempotency_conflict'
           ) {
-            savePrepaidAttempt({
-              ...attempt,
-              paymentFingerprint: '',
-              paymentIdempotencyKey: newIdempotencyKey(),
-            });
+            savePrepaidAttempt(
+              {
+                ...attempt,
+                paymentFingerprint: '',
+                paymentIdempotencyKey: newIdempotencyKey(),
+              },
+              originUserId,
+            );
           }
         }
         reportOrderRequestFailure(
@@ -2064,7 +2838,10 @@ export default function POSPage() {
         );
       }
     } finally {
-      setSubmitting(false);
+      if (isSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
+        setSubmitting(false);
+        activeSubmissionTokenRef.current = null;
+      }
     }
   };
 
@@ -2188,14 +2965,24 @@ export default function POSPage() {
       return;
     }
     setSubmitting(true);
+    const originEpoch = sessionEpochRef.current;
+    const originUserId = activeUserId;
+    const originToken =
+      activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
+    const submissionToken = Symbol('pos-add-cart-to-order');
+    activeSubmissionTokenRef.current = submissionToken;
+
+    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+
     const operationId = createOperationReference();
     try {
+      const cartFingerprint = buildCurrentCartFingerprint();
       const items = cart.items.map(cartItemToOrderItem);
       const specialInstructions = order.special_instructions || undefined;
       const fingerprint = buildAppendItemsFingerprint(order.id, items, specialInstructions);
       const storage = getAppendAttemptStorage();
       const itemAttempt = getOrCreateAppendAttempt(storage, {
-        userId: activeUserId || '',
+        userId: originUserId || '',
         orderId: order.id,
         fingerprint,
         createKey: newIdempotencyKey,
@@ -2204,7 +2991,9 @@ export default function POSPage() {
         orderNumber: order.order_number,
         operationId: operationId || undefined,
       });
-      addItemsAttemptRef.current = itemAttempt;
+      if (originUserId === activeUserId) {
+        addItemsAttemptRef.current = itemAttempt;
+      }
       const { data } = await api.post(
         `/orders/${order.id}/items`,
         {
@@ -2213,11 +3002,19 @@ export default function POSPage() {
         },
         {
           headers: {
+            ...pinnedAuthHeaders(originToken),
             'Idempotency-Key': itemAttempt.idempotencyKey,
             ...operationHeaders(itemAttempt.operationId),
           },
         },
       );
+      if (!isSessionCurrent()) {
+        // Items append succeeded on server while session changed. Stop before mutating state.
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
+        return;
+      }
       // A resolved response is the confirmation boundary. Keep the durable
       // attempt through all network errors so a lost response can replay it.
       const cleared = clearAppendAttempt(storage, itemAttempt);
@@ -2251,10 +3048,17 @@ export default function POSPage() {
       await printKotIfEnabled(
         appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder,
       );
+      if (!isSessionCurrent()) {
+        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          useCartStore.getState().clearCart();
+        }
+        return;
+      }
       cart.clearCart();
       setCheckoutTable(null);
       refreshTables();
     } catch (error) {
+      if (!isSessionCurrent()) return;
       if (error instanceof OrderAttemptStorageError)
         reportOrderStorageFailure(t('addItemsFailed'), 'order.append', operationId);
       else
@@ -2266,34 +3070,122 @@ export default function POSPage() {
           operationId,
         );
     } finally {
-      setSubmitting(false);
+      if (isSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
+        setSubmitting(false);
+        activeSubmissionTokenRef.current = null;
+      }
     }
   };
 
   const handlePaymentComplete = async () => {
+    const originEpoch = sessionEpochRef.current;
+    const originUserId = activeUserId;
+    const isSessionCurrent = () => checkSessionCurrent(originEpoch, originUserId);
+
     const bill = paymentBill; // capture before clearing state
     setPaymentBill(null);
     setCheckoutOverridePin(undefined);
     setCheckoutTable(null);
     refreshTables();
+    void refreshScheduledOrders();
+    void refreshPaymentQueueCounts();
+    setPaymentQueueRefreshKey((k) => k + 1);
 
     if (bill) {
       try {
-        await printBillForTenant(await fetchLatestBill(bill.id));
+        const latestBill = await fetchLatestBill(bill.id);
+        if (!isSessionCurrent()) return;
+        await printBillForTenant(latestBill);
       } catch {
-        toast.error(t('receiptPrintFailed'));
+        if (isSessionCurrent()) {
+          toast.error(t('receiptPrintFailed'));
+        }
       }
     }
   };
+
+  const handleAddItemsToScheduledOrder = (order: Order) => {
+    setShowScheduledOrders(false);
+    setCheckoutTable(null);
+    cart.setTableId(null);
+    cart.setOrderType(order.type);
+    cart.setScheduledFor('');
+    cart.setDeliveryAddress('');
+    cart.setExpectedPaymentMethod('', null);
+    cart.setDeliveryNote('');
+    cart.setOrderNotes(order.special_instructions || '');
+    setPendingOrder(order);
+    toast(`${t('addingItemsToOrder', { number: order.order_number })} ${t('placeOrderReady')}`, {
+      icon: 'ℹ️',
+    });
+  };
+
+  const handlePayScheduledOrder = async (order: Order) => {
+    if (!canPayScheduledOrder(order)) return;
+    try {
+      const existingBills =
+        order.bills && order.bills.length > 0 ? order.bills : order.bill ? [order.bill] : [];
+      const payableBill = existingBills.find(isPayableBill);
+      let billToPay: Bill;
+      if (payableBill) {
+        billToPay = await fetchLatestBill(payableBill.id);
+      } else {
+        const { data } = await api.post('/bills/generate', { order_id: order.id });
+        billToPay = data.bill as Bill;
+      }
+      if (!isPayableBill(billToPay)) {
+        await refreshScheduledOrders();
+        return;
+      }
+      setCheckoutOverridePin(undefined);
+      setPaymentBill(billToPay);
+      void refreshScheduledOrders();
+    } catch (err: unknown) {
+      const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
+      toast.error(errData?.error || t('billOutcomeUnknown'));
+    }
+  };
+
+  const handleScheduledOrderReleased = async (releasedOrder: Order, kotAutoPrinted: boolean) => {
+    await refreshScheduledOrders();
+    if (!kotAutoPrinted) {
+      await printKotIfEnabled({ ...releasedOrder, release_status: 'released' });
+    }
+  };
+
+  const totalActiveScheduled = Math.max(
+    scheduledCount + blockedScheduledCount,
+    scheduledOrders.filter(
+      (o) =>
+        o.status !== 'cancelled' &&
+        o.status !== 'completed' &&
+        (o.release_status === 'scheduled' || o.release_status === 'blocked'),
+    ).length,
+  );
+  const totalBlockedScheduled = Math.max(
+    blockedScheduledCount,
+    scheduledOrders.filter(
+      (o) => o.status !== 'cancelled' && o.status !== 'completed' && o.release_status === 'blocked',
+    ).length,
+  );
 
   const cartPanelProps = {
     tables,
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
+    onSendToPayment: handleSendToPayment,
+    onOpenPaymentQueue: () => setShowPaymentQueue(true),
+    counterRole: activeCounter?.role || null,
+    multiCounterEnabled,
     onEditItem: setEditingCartItem,
     onModalOpenChange: setCartPanelModalOpen,
     existingOrder: pendingOrder,
+    storeTimezone,
+    onCancelExistingOrderMode: () => {
+      setPendingOrder(null);
+      cart.clearCart();
+    },
   };
 
   const itemCount = cart.itemCount();
@@ -2305,7 +3197,17 @@ export default function POSPage() {
       },
       onTender: () => {
         if (!submitting && cart.items.length > 0) {
-          void handlePlaceOrder();
+          if (pendingOrder) {
+            void handlePlaceOrder();
+          } else if (
+            multiCounterEnabled &&
+            activeCounter?.role === 'ordering' &&
+            (cart.orderType === 'takeaway' || cart.orderType === 'dine_in')
+          ) {
+            void handleSendToPayment();
+          } else {
+            void handlePlaceOrder();
+          }
         }
       },
       onToggleTables: () => {
@@ -2314,6 +3216,20 @@ export default function POSPage() {
         }
       },
       onOpenCheckout: () => {
+        if (pendingOrder) {
+          if (!submitting && cart.items.length > 0) void handlePlaceOrder();
+          return;
+        }
+        if (
+          multiCounterEnabled &&
+          activeCounter?.role === 'ordering' &&
+          (cart.orderType === 'takeaway' || cart.orderType === 'dine_in')
+        ) {
+          if (!submitting && cart.items.length > 0) {
+            void handleSendToPayment();
+          }
+          return;
+        }
         if (
           shouldTakePaymentNow ||
           !isRestaurant ||
@@ -2419,6 +3335,14 @@ export default function POSPage() {
         }
         if (paymentBill) {
           setPaymentBill(null);
+          return true;
+        }
+        if (refundModalTarget) {
+          setRefundModalTarget(null);
+          return true;
+        }
+        if (showScheduledOrders) {
+          setShowScheduledOrders(false);
           return true;
         }
         if (cashDrawer.open) {
@@ -2628,6 +3552,19 @@ export default function POSPage() {
           if (result.session) shift.setCloseModalOpen(true);
           else shift.setOpenModalOpen(true);
         }}
+        onShowCloseStaffShift={
+          !shift.session && shift.openSessions.length > 0
+            ? async () => {
+                const result = await shift.refresh();
+                if (result.status !== 'ok') return;
+                if (result.error) {
+                  toast.error(result.error || shift.shiftLoadFailedMessage);
+                  return;
+                }
+                if (result.openSessions.length > 0) shift.setCloseModalOpen(true);
+              }
+            : undefined
+        }
         shiftHasOpenSession={!!shift.session}
         shiftLoading={shift.loading}
         shiftError={shift.error}
@@ -2636,6 +3573,27 @@ export default function POSPage() {
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
         onCustomerModalOpenChange={setTopbarCustomerModalOpen}
+        scheduledOrderCount={totalActiveScheduled}
+        blockedScheduledCount={totalBlockedScheduled}
+        multiCounterEnabled={multiCounterEnabled}
+        counters={counters}
+        activeCounter={activeCounter}
+        onSelectCounter={handleSelectCounter}
+        paymentQueueCount={paymentQueueCount}
+        paymentQueueBlockedCount={paymentQueueBlockedCount}
+        onShowPaymentQueue={() => setShowPaymentQueue(true)}
+        onShowScheduledOrders={() => {
+          void refreshScheduledOrders();
+          api
+            .get('/settings/business')
+            .then((res) => {
+              if (typeof res.data?.timezone === 'string' && res.data.timezone.trim()) {
+                setStoreTimezone(res.data.timezone.trim());
+              }
+            })
+            .catch(() => {});
+          setShowScheduledOrders(true);
+        }}
       />
 
       {/* Main content area */}
@@ -2767,11 +3725,15 @@ export default function POSPage() {
           canGenerateBill={tenantCan(currentTenant, 'bills.generate')}
           canReadBills={tenantCan(currentTenant, 'bills.read')}
           onPayment={(bill, overridePin) => {
+            if (!checkoutTable) return;
             setCheckoutTable(null);
             setPaymentBill(bill);
             setCheckoutOverridePin(overridePin);
           }}
-          onAddCartToOrder={handleAddCartToOrder}
+          onAddCartToOrder={(table, order) => {
+            if (!checkoutTable) return;
+            handleAddCartToOrder(table, order);
+          }}
           onOrderMoved={({ sourceTable, targetTable }) => {
             if (cart.tableId === sourceTable.id) {
               cart.setTableId(targetTable.id);
@@ -2779,6 +3741,50 @@ export default function POSPage() {
           }}
         />
       )}
+
+      <ScheduledOrdersDrawer
+        open={showScheduledOrders}
+        orders={scheduledOrders}
+        storeTimezone={storeTimezone}
+        onClose={() => setShowScheduledOrders(false)}
+        onRefresh={refreshScheduledOrders}
+        onOrderReleased={handleScheduledOrderReleased}
+        onAddItemsToOrder={handleAddItemsToScheduledOrder}
+        onPayOrder={handlePayScheduledOrder}
+        onRefundOrder={(order, bills) => setRefundModalTarget({ order, bills })}
+        hasMore={Boolean(nextScheduledCursor)}
+        loadingMore={loadingMoreScheduled}
+        onLoadMore={handleLoadMoreScheduledOrders}
+        totalScheduledCount={totalActiveScheduled}
+      />
+
+      <PaymentQueueDrawer
+        open={showPaymentQueue}
+        onClose={() => setShowPaymentQueue(false)}
+        onPayOrder={handlePayScheduledOrder}
+        refreshKey={paymentQueueRefreshKey}
+        onRefundOrder={(order, bills) => {
+          setShowPaymentQueue(false);
+          setRefundModalTarget({ order, bills });
+        }}
+        onCountsChanged={(awaiting, blocked) => {
+          setPaymentQueueCount(awaiting + blocked);
+          setPaymentQueueBlockedCount(blocked);
+        }}
+      />
+
+      <PaymentTicketConfirmationModal
+        open={showTicketModal}
+        order={ticketModalOrder}
+        qrDataUrl={ticketModalQrDataUrl}
+        qrPayload={ticketModalQrPayload}
+        onClose={() => {
+          setShowTicketModal(false);
+          setTicketModalOrder(null);
+          setTicketModalQrDataUrl(null);
+          setTicketModalQrPayload(null);
+        }}
+      />
 
       {paymentBill && (
         <PaymentModal
@@ -2798,15 +3804,36 @@ export default function POSPage() {
               // pay against the remainder source bill during the fetch window.
               setPaymentBill(null);
               setCheckoutOverridePin(undefined);
+              const originEpoch = sessionEpochRef.current;
               void api
                 .get(`/bills/${departingBill.id}`)
-                .then(({ data }) => setPaymentBill((data?.bill as Bill) ?? departingBill))
-                .catch(() => setPaymentBill(departingBill));
+                .then(({ data }) => {
+                  if (sessionEpochRef.current === originEpoch) {
+                    setPaymentBill((data?.bill as Bill) ?? departingBill);
+                  }
+                })
+                .catch(() => {
+                  if (sessionEpochRef.current === originEpoch) {
+                    setPaymentBill(departingBill);
+                  }
+                });
             } else {
               setPaymentBill(null);
               setCheckoutOverridePin(undefined);
             }
             refreshTables();
+          }}
+        />
+      )}
+
+      {refundModalTarget && (
+        <RefundModal
+          order={refundModalTarget.order}
+          bills={refundModalTarget.bills}
+          onClose={() => setRefundModalTarget(null)}
+          onRefunded={() => {
+            setRefundModalTarget(null);
+            void refreshScheduledOrders();
           }}
         />
       )}

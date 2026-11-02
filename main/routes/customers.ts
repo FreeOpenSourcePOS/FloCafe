@@ -8,6 +8,7 @@ import { serializeOperationFailure } from '../lib/operation-failure';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import { validateCustomerAddress } from './orders-validation';
 import { TERMINAL_ITEM_STATUSES } from '../../shared/order-item-status';
+import { ACTIVE_CATEGORIES_CTE_CLAUSES } from './categories';
 
 export function parseCustomer(c: any): any {
   if (!c) return c;
@@ -135,7 +136,8 @@ export function getCustomerTopItems(
   const terminalPlaceholders = TERMINAL_ITEM_STATUSES.map(() => '?').join(', ');
   const rows = db
     .prepare(`
-    WITH sale_lines AS (
+    WITH RECURSIVE ${ACTIVE_CATEGORIES_CTE_CLAUSES},
+    sale_lines AS (
       SELECT oi.id, oi.order_id, oi.product_id, oi.quantity
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
@@ -161,11 +163,11 @@ export function getCustomerTopItems(
       t.total_quantity,
       t.order_count,
       CASE WHEN p.id IS NOT NULL AND p.deleted_at IS NULL AND p.is_active = 1
-        AND (c.id IS NULL OR c.is_active = 1) THEN 1 ELSE 0 END AS available
+        AND (NULLIF(TRIM(p.category_id), '') IS NULL OR c.id IN (SELECT id FROM active_categories)) THEN 1 ELSE 0 END AS available
     FROM product_totals t
     JOIN order_items latest ON latest.id = t.latest_line_id
     LEFT JOIN products p ON p.id = t.product_id
-    LEFT JOIN categories c ON c.id = p.category_id
+    LEFT JOIN categories c ON c.id = p.category_id AND c.deleted_at IS NULL
     ORDER BY t.total_quantity DESC,
       t.order_count DESC,
       COALESCE(p.name, latest.product_name) COLLATE NOCASE ASC,

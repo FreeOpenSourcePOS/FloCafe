@@ -29,6 +29,8 @@ async function main() {
   const dbModule = await import('../main/db');
   const {
     initDatabase,
+    getDatabase,
+    buildIdealSchemaDb,
     closeDatabase,
     createBackup,
     restoreBackup,
@@ -139,6 +141,70 @@ async function main() {
 
     const isCorruptedHealthy = isHealthyDatabaseFile(corruptedDbPath);
     assert.equal(isCorruptedHealthy, false, 'database missing a table is correctly rejected');
+
+    const preIndexBackupPath = path.join(testDir, 'pre-runtime-index-backup.db');
+    fs.copyFileSync(backupPath, preIndexBackupPath);
+    const preIndexDb = new Database(preIndexBackupPath);
+    preIndexDb.exec('DROP INDEX IF EXISTS idx_order_items_active_kds');
+    preIndexDb.close();
+
+    assert.equal(
+      isHealthyDatabaseFile(preIndexBackupPath),
+      true,
+      'same-version backup without runtime index remains healthy',
+    );
+    const preIndexRestore = await restoreBackup(preIndexBackupPath);
+    assert.equal(preIndexRestore.success, true, 'direct restore accepts pre-index v121 backup');
+    assert.equal(preIndexRestore.mode, 'direct', 'pre-index v121 backup uses direct restore');
+    assert.ok(
+      getDatabase()
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_order_items_active_kds'",
+        )
+        .get(),
+      'direct restore recreates idx_order_items_active_kds during re-initialization',
+    );
+
+    const tamperedIndexBackupPath = path.join(testDir, 'tampered-runtime-index-backup.db');
+    fs.copyFileSync(backupPath, tamperedIndexBackupPath);
+    const tamperedIndexDb = new Database(tamperedIndexBackupPath);
+    tamperedIndexDb.exec('DROP INDEX IF EXISTS idx_order_items_active_kds');
+    tamperedIndexDb.exec('CREATE INDEX idx_order_items_active_kds ON order_items(order_id)');
+    tamperedIndexDb.close();
+
+    assert.equal(
+      isHealthyDatabaseFile(tamperedIndexBackupPath),
+      false,
+      'candidate with mismatched idx_order_items_active_kds SQL is rejected',
+    );
+    const tamperedRestore = await restoreBackup(tamperedIndexBackupPath);
+    assert.equal(
+      tamperedRestore.success,
+      false,
+      'direct restore rejects mismatched idx_order_items_active_kds SQL',
+    );
+
+    const v114SnapshotPath = path.join(testDir, 'historical-v114.db');
+    const v114Ideal = buildIdealSchemaDb(114);
+    try {
+      assert.equal(
+        v114Ideal
+          .prepare(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_order_items_active_kds'",
+          )
+          .get(),
+        undefined,
+        'historical ideal schema before v121 omits idx_order_items_active_kds',
+      );
+      await v114Ideal.backup(v114SnapshotPath);
+    } finally {
+      v114Ideal.close();
+    }
+    assert.equal(
+      isHealthyDatabaseFile(v114SnapshotPath, undefined, false),
+      true,
+      'historical v114 snapshot without idx_order_items_active_kds is healthy',
+    );
 
     console.log('='.repeat(60));
     console.log('All schema reference cache tests passed successfully!');

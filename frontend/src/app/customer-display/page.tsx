@@ -6,15 +6,17 @@ import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useFormatDate } from '@/hooks/useFormatDate';
-import type { Order } from '@/lib/types';
 import {
   CUSTOMER_DISPLAY_DEFAULTS,
   CUSTOMER_DISPLAY_FEED_PATH,
+  MAX_DISPLAY_FEED_PAGES,
+  fetchSignedInBoardOrders,
   isCustomerDisplayConfig,
   isCustomerDisplayFeed,
   type BoardOrder,
   type CustomerDisplayConfig,
   type CustomerDisplayFeed,
+  type SignedInOrdersPageResponse,
 } from '@/lib/customer-display';
 import {
   clearStoredDisplayToken,
@@ -42,7 +44,6 @@ interface OrderBoardSectionProps {
 
 const ORDER_PAGE_INTERVAL_MS = 10_000;
 const CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS = 10_000;
-const MAX_DISPLAY_FEED_PAGES = 50;
 const CUSTOMER_DISPLAY_RATE_LIMIT_WINDOW_MS = 60_000;
 const CUSTOMER_DISPLAY_READ_LIMIT_PER_WINDOW = 120;
 const ORDER_ROW_GAP_FALLBACK = 12;
@@ -61,15 +62,6 @@ function getPollIntervalMs(refreshSeconds: number, pageRequests: number): number
 
 function getOrderId(order: BoardOrder): string {
   return String(order.id);
-}
-
-function compareOrderIds(a: number | string, b: number | string): number {
-  const numA = typeof a === 'number' ? a : Number(a);
-  const numB = typeof b === 'number' ? b : Number(b);
-  if (Number.isFinite(numA) && Number.isFinite(numB) && numA !== numB) {
-    return numA - numB;
-  }
-  return String(a).localeCompare(String(b));
 }
 
 function getPageKey(orderIds: string[]): string {
@@ -527,14 +519,6 @@ function OrderBoardSection({
   );
 }
 
-function toBoardOrder(order: Order): BoardOrder {
-  return {
-    id: order.id,
-    number: order.bill?.bill_number || order.order_number,
-    status: order.status,
-  };
-}
-
 export default function CustomerDisplayPage() {
   const router = useRouter();
   const t = useTranslations('customerDisplay');
@@ -725,43 +709,20 @@ export default function CustomerDisplayPage() {
           .catch(() => ({ data: null }));
         const validConfig = isCustomerDisplayConfig(latestConfig) ? latestConfig : null;
         const activeConfig: CustomerDisplayConfig = validConfig ?? configRef.current;
-        const seenById = new Map<string, Order>();
-        let beforeId: number | string | null = null;
-
-        for (let pageIndex = 0; pageIndex < MAX_DISPLAY_FEED_PAGES; pageIndex += 1) {
-          pageRequests += 1;
-          resetRequestTimeout();
-          const response: {
-            data?: { orders?: Order[]; nextCursor?: number | string | null };
-          } = await api.get('/orders', {
-            params: {
-              status: activeConfig.statuses.join(','),
-              per_page: 100,
-              ...(beforeId !== null ? { before_id: beforeId } : {}),
-            },
-            signal: controller.signal,
-          });
-          if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
-          for (const order of response.data?.orders ?? []) {
-            if ((activeConfig.statuses as string[]).includes(order.status)) {
-              seenById.set(String(order.id), order);
-            }
-          }
-          const nextCursor: number | string | null | undefined = response.data?.nextCursor;
-          if (nextCursor === undefined || nextCursor === null || nextCursor === '') break;
-          if (beforeId !== null && String(beforeId) === String(nextCursor)) break;
-          beforeId = nextCursor;
-        }
-
-        if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
-        const nextOrders = [...seenById.values()]
-          .sort((a: Order, b: Order) => {
-            if (a.created_at !== b.created_at) {
-              return a.created_at < b.created_at ? -1 : 1;
-            }
-            return compareOrderIds(a.id, b.id);
-          })
-          .map(toBoardOrder);
+        const { orders: nextOrders, stale } = await fetchSignedInBoardOrders({
+          config: activeConfig,
+          fetchPage: async (params) => {
+            pageRequests += 1;
+            resetRequestTimeout();
+            const response: { data?: SignedInOrdersPageResponse } = await api.get('/orders', {
+              params,
+              signal: controller.signal,
+            });
+            return response.data ?? {};
+          },
+          isStale: () => session !== feedSessionRef.current || request !== feedRequestRef.current,
+        });
+        if (stale) return;
         configRef.current = activeConfig;
         setConfig(activeConfig);
         acceptOrders(nextOrders);

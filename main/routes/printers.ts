@@ -17,6 +17,7 @@ import {
   printReceiptDetailed,
   printKOTDetailed,
   printDeliverySlipDetailed,
+  printPaymentTicketDetailed,
   detectConnectedPrinters,
   prepareReceipt,
   escPosToText,
@@ -49,7 +50,7 @@ import {
   capabilitiesForPrinter,
 } from '../printers/profiles';
 import { hasPermission, requirePermission, requireAnyPermission } from '../services/authorization';
-import { getOpenSession } from '../services/shift-session-gate';
+import { getOpenSession, listOpenSessions } from '../services/shift-session-gate';
 import {
   formatCurrencyForTenant,
   formatDateForTenant,
@@ -550,7 +551,13 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const db = getDatabase();
-      if (!getOpenSession(db)) {
+      const actorUser = (req as Request & { user?: { userId?: string; role?: string } }).user;
+      const actorUserId = String(actorUser?.userId || '');
+      const actorRole = String(actorUser?.role || '');
+      const hasOpenShift =
+        Boolean(getOpenSession(db, actorUserId)) ||
+        ((actorRole === 'owner' || actorRole === 'manager') && listOpenSessions(db).length > 0);
+      if (!hasOpenShift) {
         return res.status(409).json({ error: 'open_cash_shift_required' });
       }
       const printer = getDefaultPrinter(db);
@@ -701,7 +708,7 @@ router.post(
       const categories = (
         db
           .prepare(`
-      SELECT id, name, is_active, sort_order
+      SELECT id, name, parent_id, is_active, sort_order
       FROM categories
       WHERE deleted_at IS NULL
       ORDER BY sort_order, name
@@ -709,12 +716,17 @@ router.post(
           .all() as Array<{
           id: string | number;
           name: string | null;
+          parent_id: string | number | null;
           is_active: number;
           sort_order: number | null;
         }>
       ).map((category) => ({
         id: String(category.id),
         name: String(category.name ?? ''),
+        parentId:
+          category.parent_id !== null && category.parent_id !== undefined
+            ? String(category.parent_id)
+            : null,
         isActive: category.is_active === 1,
         sortOrder: Number(category.sort_order) || 0,
       }));
@@ -1253,6 +1265,15 @@ router.post(
       }
 
       const db = getDatabase();
+      const preCheckOrder = db
+        .prepare('SELECT id, release_status FROM orders WHERE id = ?')
+        .get(orderId) as { id: number; release_status?: string | null } | undefined;
+      if (preCheckOrder?.release_status && preCheckOrder.release_status !== 'released') {
+        return res.status(409).json({
+          error: 'Cannot print KOT for a scheduled order before it is released to the kitchen',
+        });
+      }
+
       const printer = db
         .prepare(
           `SELECT * FROM printers
@@ -1509,6 +1530,144 @@ router.post(
   }),
 );
 
+router.post(
+  '/print-payment-ticket',
+  requirePermission('printing.execute'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const orderId = req.body.orderId || req.body.order_id;
+      const printerId = req.body.printerId || req.body.printer_id;
+      const { useUnicode = false, preview = false } = req.body;
+      if (!orderId) {
+        return res.status(400).json({ error: 'orderId is required' });
+      }
+
+      const db = getDatabase();
+      let printer = printerId
+        ? db.prepare('SELECT * FROM printers WHERE id = ?').get(printerId)
+        : db
+            .prepare(
+              `SELECT * FROM printers
+               WHERE connection_type != 'webusb'
+               ORDER BY is_default DESC, name
+               LIMIT 1`,
+            )
+            .get() ||
+          db
+            .prepare(
+              `SELECT * FROM printers
+               WHERE connection_type = 'webusb'
+               ORDER BY is_default DESC, name
+               LIMIT 1`,
+            )
+            .get();
+
+      if (!printer && preview === true) {
+        printer = { id: 0, name: 'Default 80mm Preview', paper_width: '80mm' };
+      }
+
+      if (!printer) {
+        return res
+          .status(400)
+          .json({ error: 'No default printer configured. Add a printer in Settings.' });
+      }
+
+      const order = getOrderWithItems(db, Number(orderId));
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      let tableName: string | null = null;
+      if (order.table_id) {
+        const tableRow = db
+          .prepare('SELECT number FROM tables WHERE id = ?')
+          .get(order.table_id) as { number: string } | undefined;
+        tableName = tableRow?.number ?? null;
+      }
+
+      const balanceRow = db
+        .prepare(
+          `SELECT COALESCE(SUM(balance), 0) AS total_balance, COUNT(*) AS bill_count
+           FROM bills
+           WHERE order_id = ? AND payment_status != 'refunded'`,
+        )
+        .get(order.id) as { total_balance: number; bill_count: number } | undefined;
+      const balance =
+        balanceRow && balanceRow.bill_count > 0 ? Number(balanceRow.total_balance) : order.total;
+
+      const items = (order.items || []).map(
+        (item: {
+          product_name?: string;
+          quantity?: number;
+          unit_price?: number;
+          total?: number;
+        }) => ({
+          product_name: item.product_name || '',
+          quantity: item.quantity || 1,
+          unit_price: item.unit_price || 0,
+          total: item.total || 0,
+        }),
+      );
+
+      const result = await printPaymentTicketDetailed(
+        {
+          id: order.id,
+          order_number: order.order_number,
+          type: order.type,
+          table_id: order.table_id,
+          table_name: tableName,
+          total: order.total,
+          created_at: order.created_at,
+          scheduled_for: order.scheduled_for,
+        },
+        items,
+        {
+          balance: Number(balance),
+          useUnicode,
+          targetPrinter: printer,
+          signal: getHttpRequestSignal(req),
+          preview: Boolean(preview),
+        },
+      );
+
+      if (preview && result.ok) {
+        return res.json({
+          success: true,
+          preview: true,
+          bytes: result.bytes || [],
+          warnings: result.warnings || [],
+        });
+      }
+
+      if (result.ok && result.connection_type === 'webusb') {
+        return res.json({
+          success: true,
+          webusb: true,
+          bytes: Array.from(result.bytes || []),
+          printerName: (printer as { name?: string }).name,
+          warnings: result.warnings || [],
+        });
+      }
+
+      if (result.ok) {
+        return res.json({ success: true, warnings: result.warnings || [] });
+      }
+      return res.status(502).json({
+        error: result.detail || 'Payment ticket print failed. Check printer connection.',
+        detail: result.detail,
+        failure_class: result.failureClass,
+        code: result.code,
+        correlation_id: result.correlationId,
+        stage: result.stage,
+      });
+    } catch (error: unknown) {
+      console.error('[Print Payment Ticket] Error:', error);
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }),
+);
+
 export const printerRoutes = router;
 
 /** Tenant-configured language for print labels, defaulting to 'en'. */
@@ -1556,4 +1715,82 @@ function resolveTenantKotLanguage(db: ReturnType<typeof getDatabase>): string {
     tenantSettingValue(db, KOT_LANGUAGE_POLICY_KEY),
   ) as KotLanguagePolicy;
   return resolveKotLanguage(policy, tenantLanguage(db));
+}
+
+/**
+ * Automatically prints KOT tickets via configured backend printers when a
+ * scheduled order is released to the kitchen and `auto_print_kot` is enabled.
+ */
+export async function autoPrintReleasedOrderKot(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number,
+): Promise<boolean> {
+  try {
+    if (!isKotPrintingEnabled()) return false;
+    if (tenantSettingValue(db, 'auto_print_kot') !== 'true') return false;
+
+    const printer = db
+      .prepare(
+        `SELECT * FROM printers
+         WHERE connection_type != 'webusb'
+         ORDER BY is_default DESC, name
+         LIMIT 1`,
+      )
+      .get();
+    if (!printer) return false;
+
+    const order = db
+      .prepare("SELECT * FROM orders WHERE id = ? AND release_status = 'released'")
+      .get(orderId) as
+      | (Record<string, unknown> & {
+          table_id?: string | number | null;
+          customer_id?: string | number | null;
+        })
+      | undefined;
+    if (!order) return false;
+
+    if (order.table_id) {
+      const table = db.prepare('SELECT number FROM tables WHERE id = ?').get(order.table_id) as
+        | { number: string }
+        | undefined;
+      if (table) order.table = { name: table.number };
+    }
+    if (order.customer_id) {
+      const customer = db
+        .prepare('SELECT name FROM customers WHERE id = ?')
+        .get(order.customer_id) as { name: string } | undefined;
+      if (customer) order.customer = { name: customer.name };
+    }
+
+    const kotLanguage = resolveTenantKotLanguage(db);
+    const useUnicode = tenantSettingValue(db, 'printer_use_unicode') === 'true';
+    const arabicShapingSetting = tenantSettingValue(db, 'printer_arabic_shaping');
+    const arabicShapingOverride =
+      arabicShapingSetting !== undefined ? arabicShapingSetting === 'true' : undefined;
+
+    const kotSourceItems = getEffectiveOrderItems(db, String(orderId)).filter(
+      (item: { status?: string | null }) => isKotItemPending(item?.status),
+    );
+    if (kotSourceItems.length === 0) return false;
+
+    const groups = routeItemsToStations(db, kotSourceItems).filter((g) => g.items.length > 0);
+    let anyPrinted = false;
+    for (const group of groups) {
+      const result = await printKOTDetailed(
+        order as Parameters<typeof printKOTDetailed>[0],
+        group.items,
+        group.stationName,
+        useUnicode,
+        group.printer || undefined,
+        undefined,
+        arabicShapingOverride,
+        kotLanguage,
+      );
+      if (result.ok) anyPrinted = true;
+    }
+    return anyPrinted;
+  } catch (error) {
+    console.error('[Scheduled Release KOT] Automatic KOT print failed:', error);
+    return false;
+  }
 }

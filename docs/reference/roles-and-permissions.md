@@ -87,7 +87,7 @@ An owner can flip any configurable cell for a role, or for one user, from the in
 | Orders       | Update order status                                        |   ✓   |    ✓    |    ✓    |   ✓    |  ✓   |
 | Orders       | Change order customers and discounts                       |   ✓   |    ✓    |    —    |   —    |  —   |
 | Orders       | Cancel pending order items                                 |   ✓   |    ✓    |    —    |   —    |  —   |
-| Orders       | Void in-progress order items (manager PIN may be required) |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Void in-progress order items (Staff Approval PIN may be required) |   ✓   |    ✓    |    —    |   —    |  —   |
 | Orders       | Restore cancelled order items                              |   ✓   |    ✓    |    —    |   —    |  —   |
 | Orders       | Edit quantity or replace order items                       |   ✓   |    —    |    —    |   —    |  —   |
 | Orders       | Override order item prices                                 |   ✓   |    —    |    —    |   —    |  —   |
@@ -154,11 +154,18 @@ retains that user's exceptions; the editor shows their source (shipped default, 
 user override) so they can be reviewed or cleared. **Staff > Permission change history** lists
 every save.
 
-**Shift close.** Cashiers close only the shift they opened. An owner or manager can close any
-session, and the closing actor is recorded on the closure row. The route is
-`POST /api/cash-sessions/:id/close`; the own-session rule is enforced inside the close transaction,
-where the stored session and the actor are read together. This is a context policy, not a
-permission — see [the authentication and authorization page](../architecture/authentication-and-authorization.md).
+**Cash shifts.** Opening, viewing, and closing shifts are gated by `cash.shifts.open`,
+`cash.shifts.view`, and `cash.shifts.close`. Non-`owner`/`manager` roles (such as `cashier`) may
+only view, preview, close, attach explicit drawer movements to, or read/export the shift X-report
+for the shift they opened (`403` when targeting another user's shift), whereas an `owner` or
+`manager` can inspect, export, and close any staff member's shift, with the closing actor recorded
+on the closure row. On `POST /api/cash-sessions/:id/close` and `POST /api/cash-closures/movements`,
+the own-session rule is enforced inside the write transaction, where the stored session and the
+actor are read together. This is a context policy, not a permission - see
+[the authentication and authorization page](../architecture/authentication-and-authorization.md),
+[business time](../architecture/business-time.md#cash-closures), and per-route error codes in
+[Cash sessions](api.md#cash-sessions), [Cash closures](api.md#cash-closures), and
+[Reports](api.md#reports).
 
 **Order cancellation and completion overrides.** Staff holding `orders.status.update` can cancel a
 whole order without a PIN only while the order and all of its items are `pending` and no bill holds
@@ -170,6 +177,15 @@ unsettled payable bills, an unbilled positive total, or undelivered kitchen item
 manager PIN (with `payments.take` when overriding unsettled payment), even when the logged-in user
 is already an owner or manager. Full safeguard, restock, and audit rules are in
 [the Orders API reference](api.md#orders).
+
+**Paid bill payment method correction.** Only an active `owner` or `manager` holding `payments.take`
+can correct the tender method on a recorded payment line of a `paid` bill
+(`PATCH /api/bills/:id/payments/:index/method`) while its cash shift and store business day remain
+open (`Yes (with Staff Approval PIN)` for Owner and Manager; `No` for Cashier, Server, and Chef).
+Every correction requires an active `owner` or `manager` Staff Approval PIN (`override_pin`,
+`approver_id`); a `cashier`, `server`, or `chef` caller or PIN never authorizes this action (`403`).
+Full shift, refund, split-sibling, amount-immutability, and audit rules are in
+[the Bills API reference](api.md#bills).
 
 **Owner visibility.** The permission editor itself is rendered only for an authenticated user
 holding `authorization.manage` — an active owner, always. The API enforces this independently;
@@ -185,7 +201,9 @@ category narrowing is re-evaluated inside the transaction that applies a status 
 create orders" row above — can view and act on every order, including ones other staff created.
 There is no per-order `user_id` check anywhere in the authorization model. Restriction is by
 permission and, for kitchen operations, by KDS stage, station, and category. Accountability comes
-from audit attribution, not from hiding orders between staff.
+from audit attribution, not from hiding orders between staff. Multi-counter ordering follows this
+invariant: counter roles (`ordering`, `payment`, `combined`) guide interface defaults, but staff
+permissions remain authoritative and orders are never ownership-gated across counters.
 
 **Expenses.** Expense records are store-wide: `expenses.view` reads them, and `expenses.manage`
 together with view writes, voids, and replaces them. There is no per-expense ownership check, and
@@ -210,6 +228,11 @@ existing account. Demoting or deactivating an account is refused when no other a
 would still hold all four of `authorization.manage`, `staff.privileged.manage`,
 `staff.operational.manage`, and `settings.manage`, so the last administrator is protected even
 while other active owners remain who have been denied one of those capabilities.
+
+**Staff PINs and Staff Approval PINs.** Any staff role can configure a 4-6 digit sign-in PIN in
+Staff management for quick user switching on shared terminals, while only active `owner` and
+`manager` PINs qualify as a Staff Approval PIN. See
+[PIN quick user switch and terminal lock](../architecture/authentication-and-authorization.md#pin-quick-user-switch-and-terminal-lock).
 
 **Conditional surfaces.** Business type, feature settings such as KDS or WhatsApp, and account
 state can hide or disable a surface independently of whether the permission is granted.
@@ -236,6 +259,6 @@ npm run test:server-app-server-role
 ```
 
 A static audit test rejects any newly introduced `requireRole(...)` runtime gate in
-`main/routes/`. Direct role checks remain only in reviewed context-policy files — refund approval,
-last-owner/staff target policy, and KDS station/category scope — none of which decide whether a
-request may attempt the operation at all.
+`main/routes/`. Direct role checks remain only as reviewed context policy - see
+[Configurable permissions](../architecture/authentication-and-authorization.md#configurable-permissions) -
+none of which decide whether a request may attempt the operation at all.

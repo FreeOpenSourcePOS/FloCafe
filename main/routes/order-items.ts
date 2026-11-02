@@ -1,7 +1,9 @@
 import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import {
+  completeSettledReleasedOrderIfServed,
   getDatabase,
+  getKdsItemParentOrderState,
   getKdsStationCategoryIds,
   getKdsStationRoutingScope,
   getUserKdsStationIds,
@@ -13,9 +15,11 @@ import {
   isVoidedItemKdsVisible,
   projectKdsItem,
   projectKdsOrder,
+  UNRELEASED_KDS_ORDER_ITEM_ERROR,
   withTxn,
 } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
+import { reconcileActiveOrderStatusFromItems } from '../services/orders';
 import { parseCategoryIds } from './auth';
 import { requireKdsEnabled, isTokenRevoked, isTokenStale } from '../middleware/security';
 import { hasPermission, requirePermission } from '../services/authorization';
@@ -190,7 +194,9 @@ router.patch(
       let stationRoutingCategoryIds = stationScope!.tablelessCategoryIds;
       let restrictedKdsPayload =
         currentUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
+      let reconciledEvent: { orderId: string; status: string } | null = null;
 
+      let autoCompletedOrderId: string | null = null;
       const orderData = withTxn(() => {
         const liveUser = db
           .prepare(
@@ -273,10 +279,14 @@ router.patch(
             diagnosticCode: 'category_scope_denied',
           });
         }
-        const parentOrder = db.prepare('SELECT id FROM orders WHERE id = ?').get(item.order_id);
-        if (!parentOrder)
+        const parentOrderState = getKdsItemParentOrderState(db, item.order_id);
+        if (parentOrderState === 'missing')
           throw Object.assign(new Error('ORPHANED_ORDER_ITEM'), {
             diagnosticCode: 'orphaned_order',
+          });
+        if (parentOrderState === 'unreleased')
+          throw Object.assign(new Error('UNRELEASED_ORDER_ITEM'), {
+            diagnosticCode: 'order_unreleased',
           });
         let orderStationId: string | null | undefined;
         if (stationIds.length > 0) {
@@ -306,20 +316,32 @@ router.patch(
           }
         }
 
+        const updatedAt = now();
         const updateResult =
           expectedStatus === undefined
             ? db
                 .prepare(
                   "UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled', 'refunded')",
                 )
-                .run(status, now(), itemId)
+                .run(status, updatedAt, itemId)
             : db
                 .prepare(
                   'UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?',
                 )
-                .run(status, now(), itemId, expectedStatus);
+                .run(status, updatedAt, itemId, expectedStatus);
         if (updateResult.changes !== 1)
           throw Object.assign(new Error('STATUS_CONFLICT'), { diagnosticCode: 'status_conflict' });
+
+        const reconcile = reconcileActiveOrderStatusFromItems(db, item.order_id, userId);
+        if (reconcile.changed && reconcile.status) {
+          reconciledEvent = { orderId: String(item.order_id), status: reconcile.status };
+        }
+        if (
+          status === 'served' &&
+          completeSettledReleasedOrderIfServed(db, item.order_id, updatedAt)
+        ) {
+          autoCompletedOrderId = String(item.order_id);
+        }
 
         const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(item.order_id) as any;
 
@@ -389,7 +411,18 @@ router.patch(
       }
 
       operationCommitted = true;
+      if (reconciledEvent) {
+        try {
+          cloudSync.recordOrderChanged(
+            (reconciledEvent as { orderId: string; status: string }).orderId,
+            `order.${(reconciledEvent as { orderId: string; status: string }).status}`,
+          );
+        } catch {}
+      }
       notifyKdsUpdate();
+      if (autoCompletedOrderId) {
+        cloudSync.recordOrderChanged(autoCompletedOrderId, 'order.completed');
+      }
 
       res.json({ order: orderData });
     } catch (error: any) {
@@ -438,6 +471,11 @@ router.patch(
           return res
             .status(404)
             .json({ error: 'Order item is not attached to an order', ...diagnostic });
+        if (error.message === 'UNRELEASED_ORDER_ITEM')
+          return res.status(409).json({
+            error: UNRELEASED_KDS_ORDER_ITEM_ERROR,
+            ...diagnostic,
+          });
         if (error.message === 'STATUS_CONFLICT')
           return res
             .status(409)
@@ -463,8 +501,14 @@ router.patch(
       if (error.message === 'ORPHANED_ORDER_ITEM') {
         return res.status(404).json({ error: 'Order item is not attached to an order' });
       }
+      if (error.message === 'UNRELEASED_ORDER_ITEM') {
+        return res.status(409).json({ error: UNRELEASED_KDS_ORDER_ITEM_ERROR });
+      }
       if (error.message === 'STATUS_CONFLICT') {
         return res.status(409).json({ error: 'Item status changed; refresh and try again' });
+      }
+      if (error?.statusCode === 409) {
+        return res.status(409).json({ error: error.message });
       }
       const capturePoint = operationCommitted
         ? 'fc.backend.kds.item.status.completion'

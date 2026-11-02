@@ -6,7 +6,8 @@ import {
   type StatusKey,
 } from './status-messages';
 
-const PAGE = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>
+function buildPage(title: string, detail: string, dir: string): string {
+  return `<!doctype html><html dir="${dir}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><style>
 :root{color-scheme:light dark;--bg:#fff;--fg:#1c1917;--muted:#78716c;--accent:#d97706}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#fafaf9;--muted:#a8a29e;--accent:#f59e0b}}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}
@@ -15,8 +16,13 @@ body{display:flex;flex-direction:column;align-items:center;justify-content:cente
 @keyframes spin{to{transform:rotate(360deg)}}
 h1{font-size:19px;font-weight:600;margin:0}
 p{font-size:13px;line-height:1.45;color:var(--muted);margin:0;max-width:340px}
-</style></head><body><div class="spinner"></div><h1 id="t"></h1><p id="d"></p>
+</style></head><body><div class="spinner"></div><h1 id="t">${escapeHtml(title)}</h1><p id="d">${escapeHtml(detail)}</p>
 <script>window.__setStatus=function(t,d,dir){document.documentElement.dir=dir;document.getElementById('t').textContent=t;document.getElementById('d').textContent=d||''}</script></body></html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+}
 
 let statusWindow: BrowserWindow | null = null;
 let statusLanguage: string | null = null;
@@ -59,31 +65,60 @@ function currentLanguage(): string {
   return statusLanguage;
 }
 
+/** Each message stays up at least this long so an operator can read it. */
+const MIN_DWELL_MS = 450;
+let messageAt = 0;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Waits until the current message has been on screen for `minMs`. No-op without a window. */
+export async function holdStatus(minMs: number): Promise<void> {
+  if (opening) await opening.catch(() => {});
+  if (!isOpen()) return;
+  const remaining = messageAt + minMs - Date.now();
+  if (remaining > 0) await sleep(remaining);
+}
+
+/** Closes the window once its last message has been readable for `minMs`. */
+export async function closeStatusWhenSeen(minMs: number): Promise<void> {
+  await holdStatus(minMs);
+  closeStatus();
+}
+
 /** Shows (or updates) the small progress window. Never throws. */
 export async function showStatus(key: StatusKey, alwaysOnTop = false): Promise<void> {
   if (isSuppressed()) return;
   try {
-    if (!isOpen()) {
-      opening ??= openWindow(alwaysOnTop).finally(() => {
-        opening = null;
-      });
-      await opening;
-    }
-    if (!isOpen()) return;
     const language = currentLanguage();
     const [title, detail] = getStatusMessage(key, language);
     const dir = RTL_STATUS_LANGUAGES.has(language) ? 'rtl' : 'ltr';
+    if (!isOpen()) {
+      if (!opening) {
+        opening = openWindow(alwaysOnTop, buildPage(title, detail, dir)).finally(() => {
+          opening = null;
+        });
+        await opening;
+        messageAt = Date.now();
+        return;
+      }
+      await opening;
+    }
+    if (!isOpen()) return;
+    await holdStatus(MIN_DWELL_MS);
     statusWindow?.setAlwaysOnTop(alwaysOnTop);
     await statusWindow?.webContents.executeJavaScript(
       `window.__setStatus(${JSON.stringify(title)},${JSON.stringify(detail)},${JSON.stringify(dir)})`,
     );
+    messageAt = Date.now();
   } catch (error) {
     console.warn('[StatusWindow] Could not update:', error);
     closeStatus();
   }
 }
 
-async function openWindow(alwaysOnTop: boolean): Promise<void> {
+async function openWindow(alwaysOnTop: boolean, page: string): Promise<void> {
   const window = new BrowserWindow({
     width: 440,
     height: 260,
@@ -109,7 +144,7 @@ async function openWindow(alwaysOnTop: boolean): Promise<void> {
     window.webContents.once('did-fail-load', () => resolve());
     setTimeout(resolve, 2000);
   });
-  await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(PAGE)}`).catch(() => {});
+  await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`).catch(() => {});
   await loaded;
   if (!window.isDestroyed()) window.show();
 }
@@ -117,7 +152,7 @@ async function openWindow(alwaysOnTop: boolean): Promise<void> {
 /** Lets the window paint before a synchronous, blocking step starts. */
 export function waitForPaint(): Promise<void> {
   if (!isOpen()) return Promise.resolve();
-  return new Promise((resolve) => setTimeout(resolve, 80));
+  return sleep(150);
 }
 
 export function closeStatus(): void {

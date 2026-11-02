@@ -46,7 +46,14 @@ import { telemetry } from './services/telemetry';
 import { capturePostHogException, startPostHog, stopPostHog } from './services/posthog';
 import { googleDrive } from './services/google-drive';
 import { localBackup, SESSION_BACKUP_MIN_AGE_MS } from './services/local-backup';
-import { closeStatus, setStatusLanguage, showStatus, waitForPaint } from './status-window';
+import {
+  closeStatus,
+  closeStatusWhenSeen,
+  holdStatus,
+  setStatusLanguage,
+  showStatus,
+  waitForPaint,
+} from './status-window';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
 import { initPrinter } from './printers/thermal';
@@ -594,7 +601,7 @@ function showMainWindow(expectedWindow?: BrowserWindow): boolean {
   mainWindow.show();
   mainWindow.focus();
   mainWindow.webContents.focus();
-  closeStatus();
+  void closeStatusWhenSeen(WELCOME_VISIBLE_MS);
   return true;
 }
 
@@ -1868,6 +1875,8 @@ async function backupOnShutdown(): Promise<void> {
 }
 
 const SHUTDOWN_BACKUP_DEADLINE_MS = 7_000;
+const WELCOME_VISIBLE_MS = 900;
+const SHUTDOWN_MESSAGE_VISIBLE_MS = 1_500;
 
 // --- Cleanup function (idempotent — safe to call from every entrypoint) ---
 const cleanupCoordinator = createShutdownCoordinator(
@@ -1921,6 +1930,7 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
     }
     try {
       await cleanupCoordinator();
+      await holdStatus(SHUTDOWN_MESSAGE_VISIBLE_MS);
       log.info('[Lifecycle] Cleanup completed');
       console.log('[Flo] Goodbye!');
     } catch (error) {

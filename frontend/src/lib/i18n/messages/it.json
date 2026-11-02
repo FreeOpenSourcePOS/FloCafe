@@ -2548,7 +2548,7 @@
     "restoreFromFile": "Ripristina backup da un file...",
     "restoreFromFileHint": "Hai già un file di backup su questo computer? Selezionalo qui invece di copiarlo a mano sul database.",
     "restoreReplacesDetail": "Il ripristino sostituisce tutti gli ordini, le fatture, i prodotti e le schede cliente aggiunti da quando è stato creato questo backup.",
-    "restoreKeepsDetail": "Anche account del personale, PIN, stampanti e impostazioni provengono dal backup. Tutti vengono disconnessi e gli schermi e i dispositivi associati devono essere associati di nuovo.",
+    "restoreKeepsDetail": "Anche gli account del personale, PIN, stampanti e impostazioni provengono dal backup. Tutti vengono disconnessi e gli schermi e i dispositivi associati devono essere associati di nuovo.",
     "restoreSafetyCopyDetail": "Prima che qualcosa cambi, Flo conserva una copia dei tuoi dati attuali, così puoi annullare questo ripristino.",
     "diagnosticsConsentSyncPending": "L’impostazione della privacy è in attesa di sincronizzazione. I rapporti non verranno inviati finché non sarà confermata.",
     "diagnosticsTransportState": "Percorso di segnalazione: {transport}.",

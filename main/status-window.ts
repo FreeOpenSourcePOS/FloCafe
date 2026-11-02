@@ -83,8 +83,9 @@ export async function holdStatus(minMs: number): Promise<void> {
 
 /** Closes the window once its last message has been readable for `minMs`. */
 export async function closeStatusWhenSeen(minMs: number): Promise<void> {
+  const target = statusWindow;
   await holdStatus(minMs);
-  closeStatus();
+  if (statusWindow === target) closeStatus();
 }
 
 /** Shows (or updates) the small progress window. Never throws. */
@@ -139,13 +140,11 @@ async function openWindow(alwaysOnTop: boolean, page: string): Promise<void> {
   });
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  const loaded = new Promise<void>((resolve) => {
-    window.webContents.once('did-finish-load', () => resolve());
-    window.webContents.once('did-fail-load', () => resolve());
-    setTimeout(resolve, 2000);
-  });
-  await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`).catch(() => {});
-  await loaded;
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 2000));
+  const load = window
+    .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`)
+    .catch(() => {});
+  await Promise.race([load, timeout]);
   if (!window.isDestroyed()) window.show();
 }
 

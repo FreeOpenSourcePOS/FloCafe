@@ -146,6 +146,16 @@ async function run() {
       fs.chmodSync(readOnlySourceDir, 0o700);
     }
 
+    const uninitializedBackup = path.join(testDir, 'uninitialized-backup.db');
+    {
+      const blank = new Database(uninitializedBackup);
+      blank.exec('CREATE TABLE _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+      blank.close();
+    }
+    const uninitializedRestore = restoreBackup(uninitializedBackup, true);
+    assert.equal(uninitializedRestore.success, false, 'uninitialized backup is rejected');
+    assert.match(uninitializedRestore.error ?? '', /initialized/);
+
     const enabledKdsBackup = path.join(testDir, 'enabled-kds-backup.db');
     copyAndStamp(sameSchemaBackup, enabledKdsBackup, currentVersion);
     const enabledKdsDb = new Database(enabledKdsBackup);

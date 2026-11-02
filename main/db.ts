@@ -6129,6 +6129,17 @@ export function restoreBackup(
       };
     }
 
+    if (backupSchemaVersion < 1) {
+      return {
+        success: false,
+        mode: 'direct',
+        backupSchemaVersion,
+        currentSchemaVersion: currentVersion,
+        tablesRestored: 0,
+        error: 'Backup does not contain an initialized Flo Cafe schema',
+      };
+    }
+
     if (backupSchemaVersion <= currentVersion) {
       throwIfDatabaseMaintenanceAborted(signal);
       const liveForeignKeyViolations = getForeignKeyViolationKeys(currentDb);

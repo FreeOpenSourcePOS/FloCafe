@@ -46,7 +46,12 @@ import { GENERIC_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabiliti
 import { buildBillDocument, getBlock, type BusinessHeaderBlock } from '../shared/print/document';
 
 const { buildBillPrintData } = require('../main/printers/document-classic');
-const { formatReceipt, formatKOT, receiptDocumentLines, buildEscPos } = require('../main/printers/thermal');
+const {
+  formatReceipt,
+  formatKOT,
+  receiptDocumentLines,
+  buildEscPos,
+} = require('../main/printers/thermal');
 const { renderUnsupportedRasterLines } = require('../main/printers/raster-renderer');
 const { settingsRoutes } = require('../main/routes/settings');
 const {
@@ -460,7 +465,9 @@ async function run() {
     'Compact receipt ESC/POS bytes should not contain GS v 0 command when show_logo is false',
   );
 
-  console.log('--- 3b. Non-Latin / Persian store header preserves logo bitmap during rasterization ---');
+  console.log(
+    '--- 3b. Non-Latin / Persian store header preserves logo bitmap during rasterization ---',
+  );
   const rasterCaps = {
     ...GENERIC_THERMAL_CAPABILITIES,
     raster: {
@@ -540,7 +547,9 @@ async function run() {
       `renderUnsupportedRasterLines should have 0 failures for ${template}`,
     );
     assertOrThrow(
-      !renderedRequests.some((req) => req.text.includes('[Logo]') || req.text.includes('RAW_BYTES')),
+      !renderedRequests.some(
+        (req) => req.text.includes('[Logo]') || req.text.includes('RAW_BYTES'),
+      ),
       `Raster renderer must never receive '[Logo]' or RAW_BYTES for ${template}`,
     );
     assertOrThrow(

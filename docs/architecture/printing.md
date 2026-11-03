@@ -46,7 +46,7 @@ checks the consumer boundary from outside the kernel; it does not close this gap
 | `width.ts` | Grapheme- and display-cell-aware measurement and truncation. |
 | `thermal-capabilities.ts` | Capability shape, code pages, representability, and warning policy. |
 | `merchant-template.ts` | Merchant template payload validation and canonical serialization. |
-| `raster.ts`, `raster-canvas.ts` | Raster band construction, shared canvas painter (`paintRasterRequest`), and ESC/POS raster encoding. |
+| `raster.ts`, `raster-canvas.ts`, `image-raster.ts` | Raster band construction, shared canvas painter (`paintRasterRequest`), ESC/POS raster encoding, and 1-bit logo trimming, contrast normalization, dithering, and packing. |
 | `z-report.ts`, `layout.ts`, `currency.ts`, `warnings.ts` | Z-report assembly, column layout, currency tokens, and warning shapes. |
 
 ## Document models
@@ -182,11 +182,17 @@ renderer.
 
 The business settings `receipt_logo` and `receipt_logo_raster` carry the browser image and the
 precomputed thermal data; `bill_show_logo` controls whether a bill renderer includes the logo.
-`processReceiptLogoFile()` uses a browser canvas to resize wide images to at most 576 pixels,
-composite transparency on white, and generate packed 1-bit raster variants for 384- and 576-dot
-printers. Browser bills center the image above the business header. The classic ESC/POS renderer and
-frontend receipt encoders select a raster variant for the paper width and emit it with `GS v 0`.
-Kitchen tickets do not use the bill logo setting.
+`processReceiptLogoFile()` uses a browser canvas to composite transparency on white, trim
+surrounding transparent or white margins with a 4 px pad (`findLogoContentBounds()`), scale the
+cropped content to at most 576x240 dots (384x240 for 58 mm), normalize grayscale contrast
+(`normalizeGrayscaleContrast()`), and generate Floyd-Steinberg dithered 1-bit raster variants for
+384- and 576-dot printers. `receipt_logo` stores an adaptively compressed data URL (`<= 200 KB`
+target, `250 KB` cap) while `receipt_logo_raster` stores only the packed variants (`originalDataUrl`
+is left empty in new payloads, with `parseReceiptLogoData()` accepting both empty and populated
+values). Browser bills center the image above the business header. The classic and compact ESC/POS
+renderers and frontend receipt encoders select a raster variant for the paper width and emit it with
+`GS v 0` via `{RAW_BYTES:...}`, which the mixed-mode text rasterizer skips so non-Latin headers
+never overwrite the logo bitmap. Kitchen tickets do not use the bill logo setting.
 
 ## Transports
 

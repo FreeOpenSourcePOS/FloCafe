@@ -8,11 +8,30 @@
  * verifier, so it runs on every platform without needing `xattr`/`codesign`.
  */
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-const { classifyQuarantine } = require('../scripts/verify-electron-runtime.cjs');
+const {
+  classifyQuarantine,
+  resolveElectronAbi,
+} = require('../scripts/verify-electron-runtime.cjs');
 
 function run() {
-  console.log('Testing Electron runtime xattr classification...');
+  console.log('Testing Electron runtime xattr classification and ABI resolution...');
+
+  const electronPkg = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '../node_modules/electron/package.json'), 'utf8'),
+  );
+  assert.match(
+    resolveElectronAbi(electronPkg.version),
+    /^\d+$/,
+    `resolveElectronAbi must resolve numeric ABI for installed Electron ${electronPkg.version}`,
+  );
+  assert.throws(
+    () => resolveElectronAbi('999.0.0'),
+    /Could not detect abi for version 999\.0\.0/,
+    'resolveElectronAbi must throw when node-abi lacks a mapping for an unknown Electron version',
+  );
 
   // Present attribute (exit 0, value on stdout) → must fail as quarantined.
   const present = classifyQuarantine(0, '', '0083;1234567890;Electron');

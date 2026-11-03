@@ -1730,9 +1730,10 @@ export default function POSPage() {
         toast.success(t('itemsAddedToOrder', { number: pendingOrder.order_number }));
         const updatedOrder = data.order as Order;
         const existingItemIds = new Set((pendingOrder.items || []).map((item) => Number(item.id)));
-        const appendedItems = (updatedOrder.items || []).filter(
-          (item) => !existingItemIds.has(Number(item.id)),
-        );
+        const appendedItems =
+          Array.isArray(data.added_items) && data.added_items.length > 0
+            ? data.added_items
+            : (updatedOrder.items || []).filter((item) => !existingItemIds.has(Number(item.id)));
         orderForKot =
           appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder;
         if (!clearAppendAttempt(storage, itemAttempt)) {
@@ -3042,9 +3043,10 @@ export default function POSPage() {
       toast.success(t('itemsAddedToOrder', { number: order.order_number }));
       const updatedOrder = data.order as Order;
       const existingItemIds = new Set((order.items || []).map((item) => Number(item.id)));
-      const appendedItems = (updatedOrder.items || []).filter(
-        (item) => !existingItemIds.has(Number(item.id)),
-      );
+      const appendedItems =
+        Array.isArray(data.added_items) && data.added_items.length > 0
+          ? data.added_items
+          : (updatedOrder.items || []).filter((item) => !existingItemIds.has(Number(item.id)));
       await printKotIfEnabled(
         appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder,
       );

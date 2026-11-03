@@ -578,8 +578,13 @@ function getPaperStyles(size: PaperSize): string {
       return (
         baseStyles +
         `
-        .bill-container { padding: 5px; max-width: 58mm; font-size: 10px; }
-        .header h1 { font-size: 14px; }
+        body { color: #000; }
+        .bill-container { padding: 5px; max-width: 58mm; font-size: 12px; color: #000; }
+        .header h1 { font-size: 15px; }
+        .text-muted, .text-italic { color: #000; }
+        .items-table th, .tax-table th, .payments-table th { background: transparent; border-bottom: 1px solid #000; }
+        .items-table td { border-bottom: 1px dashed #000; font-size: 12px; font-weight: 500; }
+        .tax-table, .payments-table { width: 100%; margin-inline-start: 0; }
         .items-table th, .items-table td, .tax-table td, .totals-table td, .payments-table td { padding: 2px 4px; }
       `
       );
@@ -587,8 +592,13 @@ function getPaperStyles(size: PaperSize): string {
       return (
         baseStyles +
         `
-        .bill-container { padding: 10px; max-width: 80mm; font-size: 11px; }
-        .header h1 { font-size: 16px; }
+        body { color: #000; }
+        .bill-container { padding: 10px; max-width: 80mm; font-size: 13px; color: #000; }
+        .header h1 { font-size: 17px; }
+        .text-muted, .text-italic { color: #000; }
+        .items-table th, .tax-table th, .payments-table th { background: transparent; border-bottom: 1px solid #000; }
+        .items-table td { border-bottom: 1px dashed #000; font-size: 13px; font-weight: 500; }
+        .tax-table, .payments-table { width: 100%; margin-inline-start: 0; }
       `
       );
     default:

@@ -964,6 +964,7 @@ export default function ServerStandalonePage() {
     } catch (printError: unknown) {
       if (!isCurrent()) return;
       const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
+      if (status === 403) return;
       if (status !== 400) {
         toastApiError(printError, t('kotPrintFailed'), apiErrorT);
         return;

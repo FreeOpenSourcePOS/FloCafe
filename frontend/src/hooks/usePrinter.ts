@@ -715,7 +715,7 @@ export const usePrinterStore = create<PrinterState>()(
                 '/printers/print-kot',
                 {
                   orderId: order.id,
-                  items: opts?.items,
+                  items: opts?.items ?? order.items,
                   stationName: opts?.stationName,
                   useUnicode: printerUseUnicode,
                   arabicShaping: printerArabicShaping,

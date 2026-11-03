@@ -24,7 +24,11 @@ import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
 import { isPrintCancelledOnTenantChangeError, usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
-import { formatReceiptErrorToast, extractPrinterErrorMessage } from '@/lib/printer/warnings';
+import {
+  formatKotErrorToast,
+  formatReceiptErrorToast,
+  extractPrinterErrorMessage,
+} from '@/lib/printer/warnings';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -148,12 +152,20 @@ function OrdersTableQuerySync({
 
 export default function OrdersPage() {
   const { currentTenant, user } = useAuthStore();
-  const { printBill, printDeliverySlip } = usePrinterStore();
+  const { printBill, printDeliverySlip, printKot } = usePrinterStore();
   const heldOrdersStore = useHeldOrdersStore();
   const router = useRouter();
   const cartStore = useCartStore();
-  const { setTablesRequired, autoPrintBill, printerUseUnicode, printerArabicShaping } =
-    usePosSettingsStore();
+  const {
+    setTablesRequired,
+    autoPrintBill,
+    autoPrintKot,
+    kotPrintingEnabled,
+    setAutoPrintKot,
+    setKotPrintingEnabled,
+    printerUseUnicode,
+    printerArabicShaping,
+  } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
   const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
@@ -820,6 +832,24 @@ export default function OrdersPage() {
         .then((res) => {
           setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
           setDiscountRequiresApproval(!!res.data.discount_requires_approval);
+        })
+        .catch(() => {});
+
+      api
+        .get('/settings/kot_printing_enabled')
+        .then((res) => setKotPrintingEnabled(res.data?.setting?.value !== 'false'))
+        .catch(() => {});
+
+      api
+        .get('/settings/auto_print_kot')
+        .then((res) => {
+          const setting = res.data?.setting;
+          if (
+            setting?.updated_at != null &&
+            (setting.value === 'true' || setting.value === 'false')
+          ) {
+            setAutoPrintKot(setting.value === 'true');
+          }
         })
         .catch(() => {});
     };
@@ -1491,7 +1521,7 @@ export default function OrdersPage() {
       });
       addItemsAttemptRef.current = attempt;
       requestSubmitted = true;
-      await api.post(
+      const { data } = await api.post(
         `/orders/${addItemsOrder.id}/items`,
         {
           items,
@@ -1517,6 +1547,31 @@ export default function OrdersPage() {
           phase: 'retry_cleanup',
           correlationId: attempt.operationId,
         });
+      if (
+        kotPrintingEnabled &&
+        autoPrintKot &&
+        data?.order &&
+        data.order.release_status !== 'scheduled' &&
+        data.order.release_status !== 'blocked'
+      ) {
+        const kotItems =
+          Array.isArray(data.added_items) && data.added_items.length > 0
+            ? data.added_items
+            : data.order.items;
+        try {
+          const printWarnings = await printKot(
+            { ...data.order, items: kotItems },
+            kotItems ? { items: kotItems } : undefined,
+          );
+          showPrintWarningsToast(printWarnings);
+        } catch (printErr) {
+          if (!isPrintCancelledOnTenantChangeError(printErr)) {
+            toast.error(
+              formatKotErrorToast(extractPrinterErrorMessage(printErr), tPos('kotPrintFailed')),
+            );
+          }
+        }
+      }
       openAddItemsModal(null);
       fetchOrders(undefined, { refreshLoadedPages: true });
     } catch (error) {

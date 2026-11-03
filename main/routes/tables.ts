@@ -1,5 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, parseRowJson, withTxn } from '../db';
+import {
+  attachEffectiveAddons,
+  getDatabase,
+  now,
+  parseItemJson,
+  parseRowJson,
+  withTxn,
+} from '../db';
 import { randomUUID } from 'crypto';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { notifyKdsUpdate } from '../services/kds';
@@ -25,10 +32,19 @@ function activeOrderForTable(
   `)
       .get(...params) as any,
   );
-  if (!order?.customer_id) return order;
+  if (!order) return order;
+
+  const items = attachEffectiveAddons(
+    db,
+    db
+      .prepare('SELECT * FROM order_items WHERE order_id = ?')
+      .all(order.id)
+      .map(parseItemJson) as Array<{ id: number; [key: string]: unknown }>,
+  );
+  if (!order.customer_id) return { ...order, items };
 
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id);
-  return { ...order, customer: customer || null };
+  return { ...order, items, customer: customer || null };
 }
 
 function reservationCustomerShape(

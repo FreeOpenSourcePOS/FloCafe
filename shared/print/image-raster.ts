@@ -145,6 +145,92 @@ export function unpack1BitPixels(packed: Uint8Array, width: number, height: numb
 }
 
 /**
+ * Find the non-white/non-transparent content bounding box of an RGBA image,
+ * padded by `margin` pixels and clamped to the image bounds.
+ * Falls back to the full image bounds if the image is blank or uniform white.
+ */
+export function findLogoContentBounds(
+  rgba: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  margin = 4,
+): { x: number; y: number; width: number; height: number } {
+  if (width <= 0 || height <= 0 || rgba.length < width * height * 4) {
+    return { x: 0, y: 0, width: Math.max(1, width), height: Math.max(1, height) };
+  }
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = (y * width + x) * 4;
+      const a = rgba[idx + 3];
+      if (a < 16) continue;
+      const r = rgba[idx];
+      const g = rgba[idx + 1];
+      const b = rgba[idx + 2];
+      const alphaNorm = a / 255;
+      const lum = (0.299 * r + 0.587 * g + 0.114 * b) * alphaNorm + 255 * (1 - alphaNorm);
+      if (lum < 250) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return { x: 0, y: 0, width, height };
+  }
+
+  const safeMargin = Math.max(0, Math.floor(margin));
+  const x0 = Math.max(0, minX - safeMargin);
+  const y0 = Math.max(0, minY - safeMargin);
+  const x1 = Math.min(width - 1, maxX + safeMargin);
+  const y1 = Math.min(height - 1, maxY + safeMargin);
+
+  return {
+    x: x0,
+    y: y0,
+    width: x1 - x0 + 1,
+    height: y1 - y0 + 1,
+  };
+}
+
+/**
+ * Stretches the [min, max] luminance range of grayscale pixels (0..255) to [0, 255]
+ * when the image has non-white content (`min < 245` and `max > min`) so colored or
+ * low-contrast logos dither cleanly to 1-bit.
+ */
+export function normalizeGrayscaleContrast(grayscale: Float32Array): Float32Array {
+  const out = new Float32Array(grayscale.length);
+  if (grayscale.length === 0) return out;
+
+  let min = 255;
+  let max = 0;
+  for (let i = 0; i < grayscale.length; i += 1) {
+    const val = grayscale[i];
+    if (val < min) min = val;
+    if (val > max) max = val;
+  }
+
+  if (max <= min || min >= 245) {
+    out.set(grayscale);
+    return out;
+  }
+
+  const span = max - min;
+  for (let i = 0; i < grayscale.length; i += 1) {
+    out[i] = Math.min(255, Math.max(0, ((grayscale[i] - min) / span) * 255));
+  }
+  return out;
+}
+
+/**
  * Applies classic Floyd-Steinberg error-diffusion dithering to grayscale pixels.
  * Input: values 0..255 (0 = black, 255 = white).
  * Output: 1 for black (ink on thermal paper), 0 for white (no ink).
@@ -278,4 +364,25 @@ export function getLogoRasterBands(
   } catch {
     return [];
   }
+}
+
+export interface LogoAutoEnableState {
+  logoChanged: boolean;
+  receiptLogo: string | null | undefined;
+  pendingAutoEnable: boolean;
+  visibilityOverriddenAfterUpload: boolean;
+}
+
+/**
+ * Determines whether saving Store Details should automatically enable `bill_show_logo`.
+ * Returns true only when a new non-empty logo was uploaded in the current editing
+ * session and the merchant has not explicitly toggled Store Logo visibility since upload.
+ */
+export function shouldAutoEnableBillShowLogo(state: LogoAutoEnableState): boolean {
+  return (
+    state.logoChanged &&
+    Boolean(state.receiptLogo) &&
+    state.pendingAutoEnable &&
+    !state.visibilityOverriddenAfterUpload
+  );
 }

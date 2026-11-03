@@ -34,11 +34,17 @@ export interface FailedWindowRecovery {
 }
 
 /** Windows/Linux quit on the last closed window; macOS keeps the app alive. */
-export function shouldQuitOnAllWindowsClosed(platform: string, replacingWindow: boolean): boolean {
-  return platform !== 'darwin' && !replacingWindow;
+export function shouldQuitOnAllWindowsClosed(
+  platform: string,
+  replacingWindow: boolean,
+  runtimeStarting = false,
+): boolean {
+  return platform !== 'darwin' && !replacingWindow && !runtimeStarting;
 }
 
-export function createFailedWindowRecovery(options: FailedWindowRecoveryOptions): FailedWindowRecovery {
+export function createFailedWindowRecovery(
+  options: FailedWindowRecoveryOptions,
+): FailedWindowRecovery {
   let recoveryAttempted = false;
   let replacingWindow = false;
 
@@ -78,7 +84,9 @@ export function createFailedWindowRecovery(options: FailedWindowRecoveryOptions)
   return {
     isReplacingWindow: () => replacingWindow,
     suppressAllClosedQuit,
-    markLoadSucceeded: () => { recoveryAttempted = false; },
+    markLoadSucceeded: () => {
+      recoveryAttempted = false;
+    },
     recover,
   };
 }

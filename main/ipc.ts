@@ -336,16 +336,17 @@ export function registerIpcHandlers(
         };
       }
 
-      const versionMismatch = backupVersion !== getCurrentSchemaVersion();
+      const currentVersion = getCurrentSchemaVersion();
+      const versionMismatch = backupVersion !== currentVersion;
 
-      if (versionMismatch) {
+      if (backupVersion < currentVersion) {
         const confirmResult = await dialog.showMessageBox({
           type: 'warning',
           buttons: ['Restore Anyway', 'Cancel'],
           defaultId: 1,
           title: 'Schema Version Mismatch',
           message: `Backup was created with Schema v${backupVersion}`,
-          detail: `Current database uses Schema v${getCurrentSchemaVersion()}.\n\nRestoring will import data only (common fields) to preserve new database structure.\n\nDo you want to continue?`,
+          detail: `Current database uses Schema v${currentVersion}.\n\nRestoring will replace the current database with this backup and migrate its schema to v${currentVersion}.\n\nDo you want to continue?`,
         });
 
         if (confirmResult.response !== 0) {
@@ -355,33 +356,8 @@ export function registerIpcHandlers(
 
       await googleDrive.prepareForDatabaseRestore();
       try {
-        if (versionMismatch) {
-          const restoreResult = await withDatabaseMaintenanceLock(
-            (signal) => restoreBackup(backupPath, false, signal),
-            shutdownSignal,
-          );
-          const cleanup = restoreResult.success ? googleDrive.completeDatabaseRestore() : null;
-          clearUserAuthCache();
-          clearInMemoryRevokedTokens();
-          clearJWTSecretCache();
-          const cleanupPending =
-            restoreResult.cleanupPending === true || cleanup?.cleanupPending === true;
-          return {
-            success: restoreResult.success,
-            mode: restoreResult.mode,
-            backupVersion,
-            currentVersion: getCurrentSchemaVersion(),
-            tablesRestored: restoreResult.tablesRestored,
-            message: restoreResult.success
-              ? `Restored ${restoreResult.tablesRestored} tables (data-only mode due to version mismatch)`
-              : `Restore failed: ${restoreResult.error}`,
-            error: restoreResult.error,
-            cleanupPending,
-          };
-        }
-
         const restoreResult = await withDatabaseMaintenanceLock(
-          (signal) => restoreBackup(backupPath, true, signal),
+          (signal) => restoreBackup(backupPath, !versionMismatch, signal),
           shutdownSignal,
         );
         const cleanup = restoreResult.success ? googleDrive.completeDatabaseRestore() : null;

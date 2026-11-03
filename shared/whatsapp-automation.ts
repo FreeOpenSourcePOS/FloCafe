@@ -386,6 +386,29 @@ export function buildSampleWhatsAppContext(
   return merged;
 }
 
+export function insertPlaceholderAtSelection(
+  body: string,
+  token: string,
+  selectionStart?: number | null,
+  selectionEnd?: number | null,
+  selectionEstablished = true,
+): { body: string; cursor: number } {
+  const rawStart =
+    selectionEstablished && typeof selectionStart === 'number' && Number.isFinite(selectionStart)
+      ? Math.trunc(selectionStart)
+      : body.length;
+  const start = Math.max(0, Math.min(body.length, rawStart));
+  const rawEnd =
+    selectionEstablished && typeof selectionEnd === 'number' && Number.isFinite(selectionEnd)
+      ? Math.trunc(selectionEnd)
+      : start;
+  const end = Math.max(start, Math.min(body.length, rawEnd));
+  return {
+    body: `${body.slice(0, start)}${token}${body.slice(end)}`,
+    cursor: start + token.length,
+  };
+}
+
 const TIME_HH_MM_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {

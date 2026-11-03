@@ -424,8 +424,8 @@ try {
   );
   assert.match(
     cartMarkup,
-    /data-testid="cart-item-remove-btn"[^>]*class="[^"]*text-red-500 dark:text-red-400/,
-    'rendered CartPanel delete button uses red styling',
+    /data-testid="cart-item-remove-btn"[^>]*class="[^"]*text-red-500 dark:text-red-400[^"]*after:content-\[&#x27;&#x27;\] after:absolute after:-inset-1\.5/,
+    'rendered CartPanel delete button uses red styling and expanded touch hit area',
   );
   assert.doesNotMatch(
     cartMarkup,
@@ -434,8 +434,8 @@ try {
   );
   assert.match(
     cartMarkup,
-    /<div class="flex flex-wrap gap-2"><button[^>]*class="[^"]*flex-1 min-w-0 px-3"[^>]*>[\s\S]*?<span class="truncate">Hold<\/span>[\s\S]*?<button[^>]*class="[^"]*flex-1 min-w-0 px-3"[^>]*><span class="truncate">Place Order<\/span>/,
-    'rendered CartPanel footer wraps action buttons with flex-1 min-w-0 and truncates labels',
+    /<div class="flex flex-wrap gap-2"><button[^>]*class="[^"]*shrink-0 px-3"[^>]*>[\s\S]*?<span class="truncate">Hold<\/span>[\s\S]*?<button[^>]*class="[^"]*flex-1 min-w-0 px-3"[^>]*><span class="truncate">Place Order<\/span>/,
+    'rendered CartPanel footer keeps Hold compact (shrink-0 px-3) and gives Place Order the remaining width (flex-1 min-w-0 px-3)',
   );
 
   // 5. PosTopbar and CustomerSearch rendered output
@@ -483,22 +483,22 @@ try {
   );
   assert.match(
     inventoryMarkup,
-    /<div class="relative w-full sm:max-w-xs"><svg[^>]*width="16" height="16"[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
-    'rendered InventoryPage search bar matches the sleek Products search bar styling',
+    /<div class="relative w-full sm:max-w-xs"><svg[^>]*width="16" height="16"[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-3 text-sm outline-none focus:ring-2 focus:ring-brand"/,
+    'rendered InventoryPage search bar matches the sleek Products search bar styling with pe-3 when empty',
   );
 
   const customersMarkup = renderWithIntl(React.createElement(CustomersPage));
   assert.match(
     customersMarkup,
-    /<div class="relative mb-4 w-full shrink-0 sm:max-w-xs"><svg[^>]*width="16" height="16"[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
-    'rendered CustomersPage search bar matches the sleek Products search bar styling',
+    /<div class="relative mb-4 w-full shrink-0 sm:max-w-xs"><svg[^>]*width="16" height="16"[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-3 text-sm outline-none focus:ring-2 focus:ring-brand"/,
+    'rendered CustomersPage search bar matches the sleek Products search bar styling with pe-3 when empty',
   );
 
   const ordersMarkup = renderWithIntl(React.createElement(OrdersPage));
   assert.match(
     ordersMarkup,
-    /<div class="relative w-full sm:max-w-xs"><svg[^>]*width="16" height="16"[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
-    'rendered OrdersPage search bar matches the sleek Products search bar styling',
+    /<div class="relative w-full sm:max-w-xs"><svg[^>]*width="16" height="16"[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-3 text-sm outline-none focus:ring-2 focus:ring-brand"/,
+    'rendered OrdersPage search bar matches the sleek Products search bar styling with pe-3 when empty',
   );
 
   useCartStore.getState().clearCart();

@@ -8,7 +8,17 @@ import api, {
 } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { Trash2, Printer, Percent, Banknote, Search, Plus, Loader2, Download } from 'lucide-react';
+import {
+  Trash2,
+  Printer,
+  Percent,
+  Banknote,
+  Search,
+  Plus,
+  Loader2,
+  Download,
+  X,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import CreateCustomerModal from '@/components/pos/CreateCustomerModal';
@@ -1842,8 +1852,20 @@ export default function OrdersPage() {
             placeholder={tOrders('search')}
             value={filters.search}
             onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-            className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
+            className={`w-full rounded-lg border border-border bg-card py-2 ps-9 ${
+              filters.search !== '' ? 'pe-9' : 'pe-3'
+            } text-sm outline-none focus:ring-2 focus:ring-brand`}
           />
+          {filters.search !== '' && (
+            <button
+              type="button"
+              onClick={() => setFilters((prev) => ({ ...prev, search: '' }))}
+              aria-label={tCommon('clear')}
+              className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
         {/* Table filter */}

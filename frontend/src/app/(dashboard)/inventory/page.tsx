@@ -497,8 +497,20 @@ export default function InventoryPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={tCommon('search')}
-                className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
+                className={`w-full rounded-lg border border-border bg-card py-2 ps-9 ${
+                  search !== '' ? 'pe-9' : 'pe-3'
+                } text-sm outline-none focus:ring-2 focus:ring-brand`}
               />
+              {search !== '' && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  aria-label={tCommon('clear')}
+                  className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
             <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
               <input
@@ -657,8 +669,20 @@ export default function InventoryPage() {
               value={recipeSearch}
               onChange={(e) => setRecipeSearch(e.target.value)}
               placeholder={tCommon('search')}
-              className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
+              className={`w-full rounded-lg border border-border bg-card py-2 ps-9 ${
+                recipeSearch !== '' ? 'pe-9' : 'pe-3'
+              } text-sm outline-none focus:ring-2 focus:ring-brand`}
             />
+            {recipeSearch !== '' && (
+              <button
+                type="button"
+                onClick={() => setRecipeSearch('')}
+                aria-label={tCommon('clear')}
+                className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
           <div
             data-testid="inventory-recipes-scroll"
@@ -786,8 +810,25 @@ export default function InventoryPage() {
                 setMovementSearch(e.target.value);
               }}
               placeholder={tCommon('search')}
-              className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
+              className={`w-full rounded-lg border border-border bg-card py-2 ps-9 ${
+                movementSearch !== '' ? 'pe-9' : 'pe-3'
+              } text-sm outline-none focus:ring-2 focus:ring-brand`}
             />
+            {movementSearch !== '' && (
+              <button
+                type="button"
+                onClick={() => {
+                  movementRequestSequence.current++;
+                  setMovements([]);
+                  setNextCursor(null);
+                  setMovementSearch('');
+                }}
+                aria-label={tCommon('clear')}
+                className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
           <div
             data-testid="inventory-movements-scroll"

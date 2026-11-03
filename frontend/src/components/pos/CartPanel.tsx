@@ -667,7 +667,7 @@ export default function CartPanel({
                       type="button"
                       data-testid="cart-item-remove-btn"
                       onClick={() => cart.removeItem(item.id)}
-                      className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-red-500 dark:text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-300 active:bg-red-100 dark:active:bg-red-950/60"
+                      className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-red-500 dark:text-red-400 transition-colors after:content-[''] after:absolute after:-inset-1.5 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-300 active:bg-red-100 dark:active:bg-red-950/60"
                       aria-label={t('remove')}
                       title={t('remove')}
                     >
@@ -861,7 +861,7 @@ export default function CartPanel({
         )}
         <div className="flex flex-wrap gap-2">
           {canHold && (
-            <Button variant="outline" onClick={handleHold} className="flex-1 min-w-0 px-3">
+            <Button variant="outline" onClick={handleHold} className="shrink-0 px-3">
               <Pause size={14} className="me-1 shrink-0" />
               <span className="truncate">{t('holdButton')}</span>
               <span

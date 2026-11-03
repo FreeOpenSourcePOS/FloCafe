@@ -1196,7 +1196,9 @@ export default function ProductsPage() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder={tCommon('search')}
               aria-label={tCommon('search')}
-              className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
+              className={`w-full rounded-lg border border-border bg-card py-2 ps-9 ${
+                search !== '' ? 'pe-9' : 'pe-3'
+              } text-sm outline-none focus:ring-2 focus:ring-brand`}
             />
             {search !== '' && (
               <button

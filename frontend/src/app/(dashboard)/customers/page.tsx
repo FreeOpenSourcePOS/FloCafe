@@ -262,8 +262,20 @@ export default function CustomersPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={tCustomer('search')}
-          className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
+          className={`w-full rounded-lg border border-border bg-card py-2 ps-9 ${
+            search !== '' ? 'pe-9' : 'pe-3'
+          } text-sm outline-none focus:ring-2 focus:ring-brand`}
         />
+        {search !== '' && (
+          <button
+            type="button"
+            onClick={() => setSearch('')}
+            aria-label={tCommon('clear')}
+            className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+          >
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       <div

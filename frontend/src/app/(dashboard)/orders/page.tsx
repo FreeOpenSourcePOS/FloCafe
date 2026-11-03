@@ -159,6 +159,8 @@ export default function OrdersPage() {
   const {
     setTablesRequired,
     autoPrintBill,
+    autoPrintKot,
+    kotPrintingEnabled,
     setAutoPrintKot,
     setKotPrintingEnabled,
     printerUseUnicode,
@@ -371,7 +373,10 @@ export default function OrdersPage() {
       settingsReady = resolved !== null && currentTenantKeyRef.current === originTenantKey;
     }
     if (!settingsReady || currentTenantKeyRef.current !== originTenantKey) return;
-    const latestPosSettings = usePosSettingsStore.getState();
+    const latestPosSettings =
+      typeof usePosSettingsStore.getState === 'function'
+        ? usePosSettingsStore.getState()
+        : { kotPrintingEnabled, autoPrintKot };
     if (!latestPosSettings.kotPrintingEnabled || !latestPosSettings.autoPrintKot) return;
 
     const kotItems =
@@ -930,15 +935,15 @@ export default function OrdersPage() {
             ? autoSetting.value === 'true'
             : false;
         if (cancelled || currentTenantKeyRef.current !== currentTenantKey) return null;
-        setKotPrintingEnabled(enabled);
-        setAutoPrintKot(auto);
+        setKotPrintingEnabled?.(enabled);
+        setAutoPrintKot?.(auto);
         kotSettingsReadyTenantRef.current = currentTenantKey;
         return { kotPrintingEnabled: enabled, autoPrintKot: auto };
       })
       .catch(() => {
         if (!cancelled && currentTenantKeyRef.current === currentTenantKey) {
-          setKotPrintingEnabled(false);
-          setAutoPrintKot(false);
+          setKotPrintingEnabled?.(false);
+          setAutoPrintKot?.(false);
         }
         return null;
       });

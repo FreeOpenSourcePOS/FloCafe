@@ -3773,6 +3773,10 @@ export default function POSPage() {
           setPaymentQueueCount(awaiting + blocked);
           setPaymentQueueBlockedCount(blocked);
         }}
+        onQueueChanged={() => {
+          void refreshPaymentQueueCounts();
+          void refreshScheduledOrders();
+        }}
       />
 
       <PaymentTicketConfirmationModal
@@ -3836,6 +3840,8 @@ export default function POSPage() {
           onRefunded={() => {
             setRefundModalTarget(null);
             void refreshScheduledOrders();
+            void refreshPaymentQueueCounts();
+            setPaymentQueueRefreshKey((k) => k + 1);
           }}
         />
       )}

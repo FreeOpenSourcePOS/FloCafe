@@ -272,11 +272,22 @@ export function resolveDailySalesExportRange(
   };
 }
 
-export function resolveExportTimezone(): string {
+function getDbSettingValue(db: Database, key: string): string | undefined {
+  try {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+      | { value?: string | null }
+      | undefined;
+    return row?.value ?? undefined;
+  } catch {
+    return getSettingValue(key) ?? undefined;
+  }
+}
+
+export function resolveExportTimezone(db: Database = getDatabase()): string {
   return resolveRegionalSnapshot({
-    country: getSettingValue('country') ?? undefined,
-    currency: getSettingValue('currency') ?? undefined,
-    timezone: getSettingValue('timezone') ?? undefined,
+    country: getDbSettingValue(db, 'country'),
+    currency: getDbSettingValue(db, 'currency'),
+    timezone: getDbSettingValue(db, 'timezone'),
   }).timezone;
 }
 
@@ -1241,7 +1252,7 @@ export function buildDailySalesExportDataset(
   options?: { maxRangeDays?: number },
 ): DailySalesExportDataset {
   const range = resolveDailySalesExportRange(input, undefined, options?.maxRangeDays);
-  const timezone = resolveExportTimezone();
+  const timezone = resolveExportTimezone(db);
   const businessDayStart = tenantBusinessDayStartTime(db);
   const currency = getTenantCurrency(db);
   const minorFactor = getCurrencyMinorUnitFactor(currency);

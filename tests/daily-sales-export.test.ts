@@ -45,6 +45,7 @@ const {
 const { reportRoutes } = require('../main/routes/reports');
 const {
   buildDailySalesExportDataset,
+  resolveExportTimezone,
   serializeDailySalesExportHtml,
 } = require('../main/services/daily-sales-export');
 const ExcelJS = require('exceljs');
@@ -2387,6 +2388,23 @@ async function main() {
           { headers: authHeader },
         );
         assertEqual(oversizedInsightsRes.status, 400, 'insights range > 365 days → 400');
+
+        // (9) resolveExportTimezone reads settings from the passed db handle rather than the global singleton
+        const BetterSqlite3 = require('better-sqlite3');
+        const customDb = new BetterSqlite3(':memory:');
+        try {
+          customDb.exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)');
+          customDb
+            .prepare('INSERT INTO settings (key, value) VALUES (?, ?), (?, ?), (?, ?)')
+            .run('country', 'US', 'currency', 'USD', 'timezone', 'America/New_York');
+          assertEqual(
+            resolveExportTimezone(customDb),
+            'America/New_York',
+            'resolveExportTimezone(db) reads timezone from passed db handle instead of global singleton',
+          );
+        } finally {
+          customDb.close();
+        }
       }
     }
   } finally {

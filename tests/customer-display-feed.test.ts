@@ -1422,6 +1422,70 @@ async function main(): Promise<void> {
     'board_status=ready terminal page omits nextCursor',
   );
 
+  // Unreleased orders (scheduled/blocked) must never leak into customer-display feed or filtered board_status queries
+  const unreleasedNow = now();
+  const unreleasedActiveReadyId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, release_status, created_at, updated_at)
+         VALUES ('UNREL-ACTIVE-READY', 'feed-owner', 'takeaway', 'ready', 'scheduled', ?, ?)`,
+      )
+      .run(unreleasedNow, unreleasedNow).lastInsertRowid,
+  );
+  const unreleasedCompletedReadyId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, release_status, created_at, updated_at)
+         VALUES ('UNREL-COMPLETED-READY', 'feed-owner', 'takeaway', 'completed', 'blocked', ?, ?)`,
+      )
+      .run(unreleasedNow, unreleasedNow).lastInsertRowid,
+  );
+  db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at)
+     VALUES (?, 'feed-prod-1', 'Unreleased Item', 1, 10, 10, 10, 'ready', ?)`,
+  ).run(unreleasedCompletedReadyId, unreleasedNow);
+
+  const feedWithUnreleased = await request(app).get(FEED).set(display);
+  assert.equal(feedWithUnreleased.status, 200);
+  assert.ok(
+    !feedWithUnreleased.body.orders.some(
+      (o: any) => o.number === 'UNREL-ACTIVE-READY' || o.number === 'UNREL-COMPLETED-READY',
+    ),
+    'customer-display feed excludes unreleased active and projected-completed orders',
+  );
+
+  const filteredTakeawayBoard = await request(app)
+    .get('/api/orders?view=active&type=takeaway&board_status=ready&per_page=50')
+    .set(signedInOwnerReady);
+  assert.equal(filteredTakeawayBoard.status, 200);
+  assert.ok(
+    !filteredTakeawayBoard.body.orders.some(
+      (o: any) => o.id === unreleasedActiveReadyId || o.id === unreleasedCompletedReadyId,
+    ),
+    'filtered board_status query with projectedCompletedIds excludes unreleased orders',
+  );
+
+  const filteredPendingBoard = await request(app)
+    .get('/api/orders?view=active&type=takeaway&board_status=pending&per_page=50')
+    .set(signedInOwnerReady);
+  assert.equal(filteredPendingBoard.status, 200);
+  const unreleasedActivePendingId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, release_status, created_at, updated_at)
+         VALUES ('UNREL-ACTIVE-PENDING', 'feed-owner', 'takeaway', 'pending', 'scheduled', ?, ?)`,
+      )
+      .run(unreleasedNow, unreleasedNow).lastInsertRowid,
+  );
+  const filteredPendingBoardAfter = await request(app)
+    .get('/api/orders?view=active&type=takeaway&board_status=pending&per_page=50')
+    .set(signedInOwnerReady);
+  assert.equal(filteredPendingBoardAfter.status, 200);
+  assert.ok(
+    !filteredPendingBoardAfter.body.orders.some((o: any) => o.id === unreleasedActivePendingId),
+    'filtered board_status query without projectedCompletedIds excludes unreleased orders',
+  );
+
   console.log('customer-display-feed: all assertions passed');
 }
 

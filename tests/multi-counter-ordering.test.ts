@@ -2285,6 +2285,104 @@ async function main() {
 
     db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(splitBalanceOrder.id);
 
+    // Cancelled, voided, and edit-superseded items must be excluded from payment ticket print
+    seedProduct(db, 'prod-mc-active-item', 'cat-mc', 'ActiveEspresso', 4.5, {
+      track_inventory: false,
+      stock_quantity: 0,
+    });
+    seedProduct(db, 'prod-mc-cancel-item', 'cat-mc', 'CancelledMuffin', 3.0, {
+      track_inventory: false,
+      stock_quantity: 0,
+    });
+    seedProduct(db, 'prod-mc-superseded-item', 'cat-mc', 'SupersededBagel', 3.5, {
+      track_inventory: false,
+      stock_quantity: 0,
+    });
+    seedProduct(db, 'prod-mc-voided-item', 'cat-mc', 'VoidedCroissant', 4.0, {
+      track_inventory: false,
+      stock_quantity: 0,
+    });
+    const filterTicketOrderRes = await req({
+      path: '/api/orders',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        type: 'takeaway',
+        dispatch_policy: 'on_payment',
+        items: [
+          { product_id: 'prod-mc-active-item', quantity: 1 },
+          { product_id: 'prod-mc-cancel-item', quantity: 1 },
+          { product_id: 'prod-mc-superseded-item', quantity: 2 },
+          { product_id: 'prod-mc-voided-item', quantity: 1 },
+        ],
+      },
+    });
+    assertEqualOrThrow(filterTicketOrderRes.status, 201, 'create order for payment ticket filter');
+    const filterTicketOrder = filterTicketOrderRes.body.order;
+    const cancelItemRow = filterTicketOrder.items.find(
+      (it: any) => it.product_id === 'prod-mc-cancel-item',
+    );
+    const supersededItemRow = filterTicketOrder.items.find(
+      (it: any) => it.product_id === 'prod-mc-superseded-item',
+    );
+    const voidedItemRow = filterTicketOrder.items.find(
+      (it: any) => it.product_id === 'prod-mc-voided-item',
+    );
+
+    const cancelItemRes = await req({
+      path: `/api/orders/${filterTicketOrder.id}/items/${cancelItemRow.id}/cancel`,
+      method: 'PATCH',
+      headers: owner.authHeader,
+      body: { reason: 'Customer removed muffin' },
+    });
+    assertEqualOrThrow(cancelItemRes.status, 200, 'cancel muffin item on unpaid ticket');
+
+    const editSupersededRes = await req({
+      path: `/api/orders/${filterTicketOrder.id}/items/${supersededItemRow.id}/edit`,
+      method: 'PATCH',
+      headers: {
+        ...owner.authHeader,
+        'Idempotency-Key': 'idem-edit-superseded-bagel-1',
+      },
+      body: {
+        replacement: { product_id: 'prod-mc-active-item', quantity: 1 },
+        expected_edit_version: supersededItemRow.edit_version ?? 0,
+        reason: 'Replace bagel with espresso',
+      },
+    });
+    assertEqualOrThrow(editSupersededRes.status, 200, 'supersede bagel item via edit');
+
+    db.prepare("UPDATE order_items SET status = 'voided' WHERE id = ?").run(voidedItemRow.id);
+
+    const filteredTicketPrintRes = await req({
+      path: '/api/printers/print-payment-ticket',
+      method: 'POST',
+      headers: serverUser.authHeader,
+      body: {
+        orderId: filterTicketOrder.id,
+        preview: true,
+      },
+    });
+    assertEqualOrThrow(filteredTicketPrintRes.status, 200, 'filtered payment ticket preview 200');
+    const filteredTicketText = escPosToText(Buffer.from(filteredTicketPrintRes.body.bytes));
+    assertOrThrow(
+      filteredTicketText.includes('ActiveEspresso'),
+      'payment ticket prints active items',
+    );
+    assertOrThrow(
+      !filteredTicketText.includes('CancelledMuffin'),
+      'payment ticket excludes cancelled items',
+    );
+    assertOrThrow(
+      !filteredTicketText.includes('SupersededBagel'),
+      'payment ticket excludes edit-superseded items',
+    );
+    assertOrThrow(
+      !filteredTicketText.includes('VoidedCroissant'),
+      'payment ticket excludes voided items',
+    );
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(filterTicketOrder.id);
+
     // Queue amounts retain bill selection while aggregating all bills and refunds in tenant minor units.
     setStoreSetting(db, 'country', 'BH');
     setStoreSetting(db, 'timezone', 'Asia/Bahrain');

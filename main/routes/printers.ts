@@ -31,6 +31,7 @@ import { buildMenuDocument } from '../printers/document-menu';
 import { detectPrintLanguageDirection } from '../printers/document-classic';
 import type { DeliverySlipPaymentBill } from '../../shared/print';
 import { PRINTER_TEXT_SIZES, normalizePrinterTextSize } from '../../shared/print/text-size';
+import { isTerminalItemStatus } from '../../shared/order-item-status';
 import {
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
@@ -1598,19 +1599,21 @@ router.post(
       const balance =
         balanceRow && balanceRow.bill_count > 0 ? Number(balanceRow.total_balance) : order.total;
 
-      const items = (order.items || []).map(
-        (item: {
-          product_name?: string;
-          quantity?: number;
-          unit_price?: number;
-          total?: number;
-        }) => ({
-          product_name: item.product_name || '',
-          quantity: item.quantity || 1,
-          unit_price: item.unit_price || 0,
-          total: item.total || 0,
-        }),
-      );
+      const items = (order.items || [])
+        .filter((item: { status?: string }) => !isTerminalItemStatus(item.status))
+        .map(
+          (item: {
+            product_name?: string;
+            quantity?: number;
+            unit_price?: number;
+            total?: number;
+          }) => ({
+            product_name: item.product_name || '',
+            quantity: item.quantity || 1,
+            unit_price: item.unit_price || 0,
+            total: item.total || 0,
+          }),
+        );
 
       const result = await printPaymentTicketDetailed(
         {

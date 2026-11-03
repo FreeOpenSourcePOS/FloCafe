@@ -60,6 +60,7 @@ interface Props {
   onPayOrder: (order: Order) => Promise<void> | void;
   onRefundOrder?: (order: Order, bills: Bill[]) => void;
   onCountsChanged?: (awaiting: number, blocked: number) => void;
+  onQueueChanged?: () => void;
   refreshKey?: number;
 }
 
@@ -69,6 +70,7 @@ export function PaymentQueueDrawer({
   onPayOrder,
   onRefundOrder,
   onCountsChanged,
+  onQueueChanged,
   refreshKey,
 }: Props) {
   const t = useTranslations('pos');
@@ -93,6 +95,7 @@ export function PaymentQueueDrawer({
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [releasingId, setReleasingId] = useState<string | number | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | number | null>(null);
   const [printingId, setPrintingId] = useState<string | number | null>(null);
   const [awaitingCount, setAwaitingCount] = useState(0);
   const [blockedCount, setBlockedCount] = useState(0);
@@ -111,8 +114,8 @@ export function PaymentQueueDrawer({
   }, [onCountsChanged]);
 
   const fetchQueue = useCallback(
-    (cursor: string | null, searchQuery: string, append = false, poll = false) => {
-      if (poll && requestInFlightRef.current !== null) return;
+    (cursor: string | null = null, searchQuery = search, append = false, poll = false) => {
+      if (poll && requestInFlightRef.current !== null) return Promise.resolve();
       const sequence = ++requestSequenceRef.current;
       requestInFlightRef.current = sequence;
       const params: Record<string, string> = { limit: '50' };
@@ -124,7 +127,7 @@ export function PaymentQueueDrawer({
         }
         params.search = cleanSearch;
       }
-      api
+      return api
         .get('/orders/awaiting-payment', { params })
         .then(({ data }) => {
           if (sequence !== requestSequenceRef.current) return;
@@ -170,7 +173,7 @@ export function PaymentQueueDrawer({
           }
         });
     },
-    [],
+    [search],
   );
 
   useEffect(() => {
@@ -265,7 +268,8 @@ export function PaymentQueueDrawer({
       toast.success(t('scheduledReleasedSuccess', { number: order.order_number }));
       pausedRef.current = false;
       setPollingPaused(false);
-      void fetchQueue(null, search);
+      await fetchQueue(null, search);
+      onQueueChanged?.();
     } catch (err: unknown) {
       const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
       toast.error(
@@ -275,6 +279,23 @@ export function PaymentQueueDrawer({
       );
     } finally {
       setReleasingId(null);
+    }
+  };
+
+  const handleCancelBlockedOrder = async (order: AwaitingPaymentOrder) => {
+    setCancellingId(order.id);
+    try {
+      await api.patch(`/orders/${order.id}/status`, { status: 'cancelled' });
+      toast.success(tOrders('orderCancelled'));
+      pausedRef.current = false;
+      setPollingPaused(false);
+      await fetchQueue(null, search);
+      onQueueChanged?.();
+    } catch (err: unknown) {
+      const errData = (err as { response?: { data?: { error?: string } } })?.response?.data;
+      toast.error(errData?.error || tOrders('cancelOrderFailed'));
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -302,6 +323,15 @@ export function PaymentQueueDrawer({
   const renderOrderCard = (order: AwaitingPaymentOrder) => {
     const isBlocked = order.release_status === 'blocked';
     const isPaid = order.checkout_stage === 'paid';
+    const hasRefundablePayment =
+      isPaid &&
+      order.bill_payment_status !== 'refunded' &&
+      !(
+        Array.isArray(order.bills) &&
+        order.bills.length > 0 &&
+        order.bills.every((b) => b.payment_status === 'refunded')
+      ) &&
+      Number(order.paid_amount ?? order.total_amount ?? order.total ?? 0) > 0;
 
     return (
       <div
@@ -415,7 +445,7 @@ export function PaymentQueueDrawer({
               </Button>
             )}
 
-            {isBlocked && isPaid && canRefund && onRefundOrder && (
+            {isBlocked && hasRefundablePayment && canRefund && onRefundOrder && (
               <Button
                 type="button"
                 variant="outline"
@@ -454,6 +484,25 @@ export function PaymentQueueDrawer({
               >
                 <RotateCcw size={13} />
                 {tOrders('refundButton')}
+              </Button>
+            )}
+
+            {isBlocked && !hasRefundablePayment && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid={`cancel-blocked-btn-${order.id}`}
+                disabled={cancellingId === order.id}
+                onClick={() => void handleCancelBlockedOrder(order)}
+                className="gap-1 text-red-600 hover:text-red-700"
+              >
+                {cancellingId === order.id ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <X size={13} />
+                )}
+                {tOrders('cancel')}
               </Button>
             )}
 

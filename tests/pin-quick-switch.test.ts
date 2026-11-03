@@ -123,6 +123,28 @@ function findElement(node: any, type: any): any {
   return null;
 }
 
+function findElementByTestId(node: any, testId: string): any {
+  if (!node || typeof node !== 'object') return null;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findElementByTestId(item, testId);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (node.props?.['data-testid'] === testId) return node;
+  const children = Array.isArray(node.props?.children)
+    ? node.props.children
+    : node.props?.children
+      ? [node.props.children]
+      : [];
+  for (const child of children) {
+    const found = findElementByTestId(child, testId);
+    if (found) return found;
+  }
+  return null;
+}
+
 function renderPOSPage(POSPage: any) {
   hookStateIndex = 0;
   hookRefIndex = 0;
@@ -169,6 +191,14 @@ const ScheduledOrdersDrawerStub = (props: any) => {
   capturedScheduledDrawerProps = props;
   return null;
 };
+const PaymentQueueDrawerStub = (props: any) => {
+  return null;
+};
+const RefundModalStub = (props: any) => {
+  return null;
+};
+const ButtonStub = (props: any) => realReact.createElement('button', props, props.children);
+const LtrStub = (props: any) => realReact.createElement('span', props, props.children);
 const toastStub = Object.assign(() => {}, {
   success: () => {},
   error: () => {},
@@ -220,6 +250,8 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   if (reqName === '@/hooks/usePosKeyboardShortcuts') return { usePosKeyboardShortcuts: () => {} };
   if (reqName === '@/hooks/useFormatCurrency')
     return { useFormatCurrency: () => (v: number) => `$${v}` };
+  if (reqName === '@/hooks/useFormatDate')
+    return { useFormatDate: () => ({ formatTime: (s: string) => s }) };
   if (reqName === '@/hooks/useSupportTicketStatus')
     return { useSupportTicketStatus: () => ({ errorCount: 0 }) };
   if (reqName === '@/lib/countries')
@@ -257,6 +289,18 @@ Module._load = function (reqName: string, parent: unknown, isMain: boolean) {
   }
   if (reqName === '@/components/pos/ScheduledOrdersDrawer') {
     return { __esModule: true, default: ScheduledOrdersDrawerStub };
+  }
+  if (reqName === '@/components/pos/PaymentQueueDrawer') {
+    return { __esModule: true, PaymentQueueDrawer: PaymentQueueDrawerStub };
+  }
+  if (reqName === '@/components/orders/RefundModal') {
+    return { __esModule: true, default: RefundModalStub };
+  }
+  if (reqName === '@/components/ui/button') {
+    return { __esModule: true, Button: ButtonStub };
+  }
+  if (reqName === '@/components/layout/Ltr') {
+    return { __esModule: true, Ltr: LtrStub };
   }
   if (reqName.startsWith('@/components/')) return () => null;
   if (reqName === '@/lib/cart-identity') {
@@ -1302,6 +1346,7 @@ async function run() {
   // 1. Sign in as owner
   useAuthStore.setState({
     user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    currentTenant: { id: 1, business_name: 'Test Cafe', role: 'owner' } as any,
     token: 'token-for-owner-1',
     isLocked: false,
   });
@@ -1427,6 +1472,7 @@ async function run() {
   });
   useAuthStore.setState({
     user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    currentTenant: { id: 1, business_name: 'Test Cafe', role: 'owner' } as any,
     token: 'token-for-owner-1',
     isLocked: false,
   });
@@ -1447,6 +1493,7 @@ async function run() {
   // Sign in as owner again
   useAuthStore.setState({
     user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    currentTenant: { id: 1, business_name: 'Test Cafe', role: 'owner' } as any,
     token: 'token-for-owner-1',
     isLocked: false,
   });
@@ -1611,6 +1658,7 @@ async function run() {
   });
   useAuthStore.setState({
     user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    currentTenant: { id: 1, business_name: 'Test Cafe', role: 'owner' } as any,
     token: 'token-for-owner-1',
     isLocked: false,
   });
@@ -1648,6 +1696,7 @@ async function run() {
   // 1. Sign in as owner and open scheduled orders drawer
   useAuthStore.setState({
     user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    currentTenant: { id: 1, business_name: 'Test Cafe', role: 'owner' } as any,
     token: 'token-for-owner-1',
     isLocked: false,
   });
@@ -1747,6 +1796,218 @@ async function run() {
     useCartStore.getState().items.length,
     0,
     'Stale append continuation safely cleared matching cart after session switch',
+  );
+
+  // ── 12. PaymentQueueDrawer refund refresh & blocked-order Refund vs Cancel actions ──
+  console.log(
+    '\n── 12. PaymentQueueDrawer refund refresh & blocked-order Refund vs Cancel actions',
+  );
+  resetPOSHooks();
+  let awaitingPaymentCalls = 0;
+  mockApiHandler = {
+    get: async (url: string, config?: any) => {
+      if (url === '/orders/awaiting-payment') {
+        awaitingPaymentCalls += 1;
+        return { data: { awaiting_count: 1, blocked_count: 0, orders: [] } };
+      }
+      if (url === '/orders') return { data: { orders: [] } };
+      if (url === '/tables') return { data: { tables: [] } };
+      if (url === '/categories') return { data: { categories: [] } };
+      if (url === '/products') return { data: { products: [] } };
+      if (url === '/counters') return { data: { counters: [], multi_counter_enabled: true } };
+      return { data: {} };
+    },
+    post: async () => ({ data: {} }),
+  };
+  useAuthStore.setState({
+    user: { id: 'owner-1', name: 'Alice Owner', email: 'owner@test.local', role: 'owner' },
+    currentTenant: { id: 1, business_name: 'Test Cafe', role: 'owner' } as any,
+    token: 'token-for-owner-1',
+    isLocked: false,
+  });
+  renderPOSPage(POSPage);
+  tree = renderPOSPage(POSPage);
+  const queueDrawerElBefore = findElement(tree, PaymentQueueDrawerStub);
+  assertOrThrow(queueDrawerElBefore, 'PaymentQueueDrawer element rendered on POSPage');
+  const initialRefreshKey = queueDrawerElBefore.props.refreshKey;
+  queueDrawerElBefore.props.onRefundOrder({ id: 777, order_number: 'ORD-777', total: 25 }, [
+    { id: 888, bill_number: 'B-888', order_id: 777, total: 25, paid_amount: 25, balance: 0 },
+  ]);
+  tree = renderPOSPage(POSPage);
+  const refundModalEl = findElement(tree, RefundModalStub);
+  assertOrThrow(refundModalEl, 'RefundModal rendered after onRefundOrder from PaymentQueueDrawer');
+  const beforeRefundQueueCalls = awaitingPaymentCalls;
+  refundModalEl.props.onRefunded();
+  await new Promise((r) => setTimeout(r, 10));
+  tree = renderPOSPage(POSPage);
+  const queueDrawerElAfter = findElement(tree, PaymentQueueDrawerStub);
+  assertOrThrow(
+    awaitingPaymentCalls > beforeRefundQueueCalls,
+    'RefundModal onRefunded refreshes payment queue counts',
+  );
+  assertEqualOrThrow(
+    queueDrawerElAfter.props.refreshKey,
+    initialRefreshKey + 1,
+    'RefundModal onRefunded increments PaymentQueueDrawer refreshKey',
+  );
+
+  // Test real PaymentQueueDrawer component for blocked orders: refundable vs refunded/unpaid
+  const { PaymentQueueDrawer: RealPaymentQueueDrawer } = originalLoad.call(
+    Module,
+    path.join(process.cwd(), 'frontend/src/components/pos/PaymentQueueDrawer.tsx'),
+    module,
+    false,
+  );
+  resetPOSHooks();
+  let queueOrdersFixture: any[] = [
+    {
+      id: 501,
+      order_number: 'BLK-PAID-501',
+      type: 'takeaway',
+      total: 30,
+      total_amount: 30,
+      paid_amount: 30,
+      ticket_balance: 0,
+      ticket_paid_amount: 30,
+      balance: 0,
+      checkout_stage: 'paid',
+      release_status: 'blocked',
+      release_blocked_reason: 'Insufficient stock',
+      created_at: '2026-11-03 12:00:00',
+      bill_id: 601,
+      bill_number: 'BILL-601',
+      bill_payment_status: 'paid',
+    },
+    {
+      id: 502,
+      order_number: 'BLK-REFUNDED-502',
+      type: 'takeaway',
+      total: 30,
+      total_amount: 30,
+      paid_amount: 30,
+      ticket_balance: 30,
+      ticket_paid_amount: 0,
+      balance: 0,
+      checkout_stage: 'paid',
+      release_status: 'blocked',
+      release_blocked_reason: 'refunded',
+      created_at: '2026-11-03 12:01:00',
+      bill_id: 602,
+      bill_number: 'BILL-602',
+      bill_payment_status: 'refunded',
+    },
+    {
+      id: 503,
+      order_number: 'BLK-UNPAID-503',
+      type: 'takeaway',
+      total: 20,
+      total_amount: 20,
+      paid_amount: 0,
+      ticket_balance: 20,
+      ticket_paid_amount: 0,
+      balance: 20,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'blocked',
+      release_blocked_reason: 'Insufficient stock',
+      created_at: '2026-11-03 12:02:00',
+      bill_id: 603,
+      bill_number: 'BILL-603',
+      bill_payment_status: 'unpaid',
+    },
+  ];
+  const patchedStatuses: Array<{ url: string; body: any }> = [];
+  let queueFetchCount = 0;
+  let onQueueChangedCalls = 0;
+  mockApiHandler = {
+    get: async (url: string) => {
+      if (url === '/orders/awaiting-payment') {
+        queueFetchCount += 1;
+        return {
+          data: {
+            orders: queueOrdersFixture,
+            awaiting_count: 0,
+            blocked_count: queueOrdersFixture.length,
+            has_more: false,
+            next_cursor: null,
+          },
+        };
+      }
+      return { data: {} };
+    },
+    patch: async (url: string, body?: any) => {
+      patchedStatuses.push({ url, body });
+      return { data: { order: { id: 502, status: 'cancelled' } } };
+    },
+  };
+  const renderQueueDrawer = () =>
+    renderPOSPage(() =>
+      RealPaymentQueueDrawer({
+        open: true,
+        onClose: () => {},
+        onPayOrder: () => {},
+        onRefundOrder: () => {},
+        onQueueChanged: () => {
+          onQueueChangedCalls += 1;
+        },
+        refreshKey: 0,
+      }),
+    );
+  renderQueueDrawer();
+  await new Promise((r) => setTimeout(r, 15));
+  const drawerTree = renderQueueDrawer();
+
+  assertOrThrow(
+    Boolean(findElementByTestId(drawerTree, 'refund-blocked-btn-501')),
+    'Paid non-refunded blocked order renders Refund button',
+  );
+  assertEqualOrThrow(
+    findElementByTestId(drawerTree, 'cancel-blocked-btn-501'),
+    null,
+    'Paid non-refunded blocked order does not render Cancel button',
+  );
+  assertEqualOrThrow(
+    findElementByTestId(drawerTree, 'refund-blocked-btn-502'),
+    null,
+    'Already-refunded blocked order hides Refund button',
+  );
+  const cancelRefundedBtn = findElementByTestId(drawerTree, 'cancel-blocked-btn-502');
+  assertOrThrow(Boolean(cancelRefundedBtn), 'Already-refunded blocked order renders Cancel button');
+  assertEqualOrThrow(
+    findElementByTestId(drawerTree, 'refund-blocked-btn-503'),
+    null,
+    'Unpaid blocked order hides Refund button',
+  );
+  assertOrThrow(
+    Boolean(findElementByTestId(drawerTree, 'cancel-blocked-btn-503')),
+    'Unpaid blocked order renders Cancel button',
+  );
+
+  const fetchesBeforeCancel = queueFetchCount;
+  cancelRefundedBtn.props.onClick();
+  await new Promise((r) => setTimeout(r, 15));
+  assertEqualOrThrow(
+    patchedStatuses.length,
+    1,
+    'Clicking Cancel on blocked refunded order sends 1 PATCH request',
+  );
+  assertEqualOrThrow(
+    patchedStatuses[0].url,
+    '/orders/502/status',
+    'Cancel PATCH targets /orders/502/status',
+  );
+  assertEqualOrThrow(
+    patchedStatuses[0].body?.status,
+    'cancelled',
+    'Cancel PATCH sends status: cancelled',
+  );
+  assertOrThrow(
+    queueFetchCount > fetchesBeforeCancel,
+    'Cancelling blocked order refreshes PaymentQueueDrawer via fetchQueue',
+  );
+  assertEqualOrThrow(
+    onQueueChangedCalls,
+    1,
+    'Cancelling blocked order invokes onQueueChanged callback',
   );
 
   closeDatabase();

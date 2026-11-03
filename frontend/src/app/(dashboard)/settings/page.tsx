@@ -3578,6 +3578,10 @@ export default function SettingsPage() {
 
     setSavingBusiness(true);
     try {
+      const logoChanged =
+        form.receiptLogo !== savedBusiness.receiptLogo ||
+        form.receiptLogoRaster !== savedBusiness.receiptLogoRaster;
+      const enableLogoOnSave = logoChanged && Boolean(form.receiptLogo);
       const putRes = await api.put('/settings/business', {
         business_name: form.businessName,
         timezone: form.timezone,
@@ -3594,11 +3598,11 @@ export default function SettingsPage() {
         currency_display: form.currencyDisplay,
         number_digits: form.numberDigits,
         calendar: form.calendar,
-        ...(form.receiptLogo !== savedBusiness.receiptLogo ||
-        form.receiptLogoRaster !== savedBusiness.receiptLogoRaster
+        ...(logoChanged
           ? {
               receipt_logo: form.receiptLogo ?? '',
               receipt_logo_raster: form.receiptLogoRaster ?? '',
+              ...(enableLogoOnSave ? { bill_show_logo: true } : {}),
             }
           : {}),
       });
@@ -3642,6 +3646,10 @@ export default function SettingsPage() {
       setForm(updatedForm);
       setTaxIdFormat(resolvedTaxIdFormat);
       setTaxIdFormatCountryCode(form.countryCode);
+      if (enableLogoOnSave) {
+        setPrintingForm((prev) => ({ ...prev, billShowLogo: true }));
+        setSavedPrinting((prev) => ({ ...prev, billShowLogo: true }));
+      }
       posSettings.hydrateReceiptSettings({
         tax_registration_number: form.taxRegistrationNumber,
         business_address: form.businessAddress,
@@ -3650,6 +3658,7 @@ export default function SettingsPage() {
         tables_required: form.tablesRequired,
         receipt_logo: form.receiptLogo || '',
         receipt_logo_raster: form.receiptLogoRaster || '',
+        ...(enableLogoOnSave ? { bill_show_logo: true } : {}),
       });
       updateCurrentTenant({
         currency: form.currency,
@@ -4085,6 +4094,11 @@ export default function SettingsPage() {
               setOrderNumberForm={setOrderNumberForm}
               markHydrationTouched={markHydrationTouched}
               onRequestCurrencyChange={setCurrencyResetTarget}
+              onLogoUploaded={() => {
+                markHydrationTouched('billShowLogo');
+                setPrintingForm((prev) => ({ ...prev, billShowLogo: true }));
+                posSettings.setBillShowLogo(true);
+              }}
             />
           </TabsContent>
 

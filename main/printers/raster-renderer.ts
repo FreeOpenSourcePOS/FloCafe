@@ -503,6 +503,7 @@ const RASTER_CONTROL_TOKEN_RE =
   /\{(?:\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)|INIT|CUT|FEED|STORE_NAME|FINANCIAL)\}/g;
 
 function stripRasterControlTokens(line: string): string {
+  if (line.startsWith('{RAW_BYTES:')) return '';
   return line.replace(RASTER_CONTROL_TOKEN_RE, '');
 }
 
@@ -539,6 +540,8 @@ function requestForRasterLine(
 ): RasterRenderRequest | null {
   const metadataLine = controlMetadataLine(line, sourceText);
   if (
+    line.startsWith('{RAW_BYTES:') ||
+    metadataLine.startsWith('{RAW_BYTES:') ||
     metadataLine.includes('{INIT}') ||
     metadataLine.includes('{CUT}') ||
     metadataLine.includes('{FEED}')

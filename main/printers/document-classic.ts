@@ -533,8 +533,6 @@ export function renderBillDocumentToClassicLines(
           if (bands.length > 0) {
             const rawBytes = concatBytes(bands.map((band) => encodeGsV0Band(band, maxBandHeight)));
             segment.main.push(`{RAW_BYTES:${Buffer.from(rawBytes).toString('base64')}}`);
-            segment.sourceLines.main.push('[Logo]');
-            segment.sourceControlLines.main.push(segment.main.at(-1) ?? '');
           }
         }
         if (block.name) {
@@ -1160,7 +1158,15 @@ export function renderBillDocumentToClassicLines(
           lineCount: range.count,
         });
     }
-    if (options.rasterGroups && segment[part].length > 0) {
+    let rawPrefixCount = 0;
+    while (
+      rawPrefixCount < segment[part].length &&
+      segment[part][rawPrefixCount].startsWith('{RAW_BYTES:')
+    ) {
+      rawPrefixCount += 1;
+    }
+    const textLineCount = segment[part].length - rawPrefixCount;
+    if (options.rasterGroups && textLineCount > 0) {
       if (part === 'main' && segment.groups.length > 0) {
         for (const group of segment.groups) {
           options.rasterGroups.push({
@@ -1180,8 +1186,8 @@ export function renderBillDocumentToClassicLines(
         const financial = kind === 'totals' || kind === 'tax-breakdown' || kind === 'payments';
         options.rasterGroups.push({
           groupId: kind,
-          lineIndex: start,
-          lineCount: segment[part].length,
+          lineIndex: start + rawPrefixCount,
+          lineCount: textLineCount,
           sourceLines: segment.sourceLines[part],
           sourceControlLines: segment.sourceControlLines[part],
           ...(segment.sourceLayouts[part].length > 0

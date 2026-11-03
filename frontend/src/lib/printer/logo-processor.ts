@@ -1,6 +1,10 @@
 import {
   ditherGrayscalePixels,
+  findLogoContentBounds,
+  normalizeGrayscaleContrast,
   pack1BitPixels,
+  parseReceiptLogoData,
+  unpack1BitPixels,
   type PackedLogoVariant,
   type ReceiptLogoData,
 } from '@print/image-raster';
@@ -13,7 +17,12 @@ export interface ProcessedReceiptLogo {
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 const MAX_PERSISTED_LOGO_LENGTH = 250_000;
+const TARGET_DATA_URL_LENGTH = 200_000;
+const MAX_SOURCE_DIMENSION = 2048;
+const MAX_TARGET_HEIGHT = 240;
+const TRIM_MARGIN_PX = 4;
 const TARGET_WIDTHS = [384, 576] as const;
+const SUPPORTED_IMAGE_EXT_RE = /\.(png|jpe?g|webp|bmp|gif|svg|avif|ico)$/i;
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -21,6 +30,15 @@ function uint8ToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
+}
+
+function base64ToUint8(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -32,14 +50,39 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+function createSourceCanvasAndCrop(img: HTMLImageElement): {
+  sourceCanvas: HTMLCanvasElement;
+  crop: { x: number; y: number; width: number; height: number };
+} {
+  const rawWidth = Math.max(1, img.naturalWidth || img.width || 576);
+  const rawHeight = Math.max(1, img.naturalHeight || img.height || 240);
+  const preScale = Math.min(1, MAX_SOURCE_DIMENSION / Math.max(rawWidth, rawHeight));
+  const srcWidth = Math.max(1, Math.round(rawWidth * preScale));
+  const srcHeight = Math.max(1, Math.round(rawHeight * preScale));
+
+  const sourceCanvas = document.createElement('canvas');
+  sourceCanvas.width = srcWidth;
+  sourceCanvas.height = srcHeight;
+  const ctx = sourceCanvas.getContext('2d');
+  if (!ctx) throw new Error('Failed to get 2d canvas context');
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, srcWidth, srcHeight);
+  ctx.drawImage(img, 0, 0, srcWidth, srcHeight);
+
+  const imgData = ctx.getImageData(0, 0, srcWidth, srcHeight);
+  const crop = findLogoContentBounds(imgData.data, srcWidth, srcHeight, TRIM_MARGIN_PX);
+  return { sourceCanvas, crop };
+}
+
 function renderDitheredVariant(
-  img: HTMLImageElement,
+  sourceCanvas: HTMLCanvasElement,
+  crop: { x: number; y: number; width: number; height: number },
   targetWidth: number,
 ): { variant: PackedLogoVariant; dithered: Uint8Array; width: number; height: number } {
-  // Scale down to fit within targetWidth, preserving aspect ratio.
-  const scale = img.width > targetWidth ? targetWidth / img.width : 1;
-  const width = Math.max(1, Math.min(targetWidth, Math.round(img.width * scale)));
-  const height = Math.max(1, Math.round(img.height * scale));
+  const scale = Math.min(1, targetWidth / crop.width, MAX_TARGET_HEIGHT / crop.height);
+  const width = Math.max(1, Math.min(targetWidth, Math.round(crop.width * scale)));
+  const height = Math.max(1, Math.min(MAX_TARGET_HEIGHT, Math.round(crop.height * scale)));
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -47,10 +90,9 @@ function renderDitheredVariant(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Failed to get 2d canvas context');
 
-  // Fill white background first (in case of transparent PNG)
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, width, height);
-  ctx.drawImage(img, 0, 0, width, height);
+  ctx.drawImage(sourceCanvas, crop.x, crop.y, crop.width, crop.height, 0, 0, width, height);
 
   const imgData = ctx.getImageData(0, 0, width, height);
   const data = imgData.data;
@@ -61,13 +103,13 @@ function renderDitheredVariant(
     const g = data[i * 4 + 1];
     const b = data[i * 4 + 2];
     const a = data[i * 4 + 3];
-    // Blend with white if semi-transparent
     const alphaNorm = a / 255;
     const gray = (0.299 * r + 0.587 * g + 0.114 * b) * alphaNorm + 255 * (1 - alphaNorm);
     grayscale[i] = gray;
   }
 
-  const dithered = ditherGrayscalePixels(grayscale, width, height);
+  const normalized = normalizeGrayscaleContrast(grayscale);
+  const dithered = ditherGrayscalePixels(normalized, width, height);
   const packed = pack1BitPixels(dithered, width, height);
 
   return {
@@ -105,6 +147,69 @@ function createThermalPreview(dithered: Uint8Array, width: number, height: numbe
   return canvas.toDataURL('image/png');
 }
 
+export function getThermalPreviewDataUrl(rasterJson: string | undefined): string {
+  if (!rasterJson || typeof document === 'undefined') return '';
+  const parsed = parseReceiptLogoData(rasterJson);
+  if (!parsed) return '';
+  const variant = parsed.variants['576'] ?? parsed.variants['384'];
+  if (!variant) return '';
+  try {
+    const packed = base64ToUint8(variant.dataBase64);
+    const unpacked = unpack1BitPixels(packed, variant.width, variant.height);
+    return createThermalPreview(unpacked, variant.width, variant.height);
+  } catch {
+    return '';
+  }
+}
+
+function encodeWebLogoDataUrl(
+  sourceCanvas: HTMLCanvasElement,
+  crop: { x: number; y: number; width: number; height: number },
+): string {
+  const baseScale = Math.min(1, 576 / crop.width, MAX_TARGET_HEIGHT / crop.height);
+  const baseWidth = Math.max(1, Math.round(crop.width * baseScale));
+  const baseHeight = Math.max(1, Math.round(crop.height * baseScale));
+
+  const renderAtSize = (w: number, h: number): HTMLCanvasElement => {
+    const webCanvas = document.createElement('canvas');
+    webCanvas.width = w;
+    webCanvas.height = h;
+    const webCtx = webCanvas.getContext('2d');
+    if (!webCtx) throw new Error('Failed to get web canvas context');
+    webCtx.fillStyle = '#FFFFFF';
+    webCtx.fillRect(0, 0, w, h);
+    webCtx.drawImage(sourceCanvas, crop.x, crop.y, crop.width, crop.height, 0, 0, w, h);
+    return webCanvas;
+  };
+
+  const fullCanvas = renderAtSize(baseWidth, baseHeight);
+  const pngUrl = fullCanvas.toDataURL('image/png');
+  if (pngUrl.length <= TARGET_DATA_URL_LENGTH) {
+    return pngUrl;
+  }
+
+  for (const mime of ['image/webp', 'image/jpeg'] as const) {
+    for (const quality of [0.85, 0.7, 0.5] as const) {
+      const candidate = fullCanvas.toDataURL(mime, quality);
+      if (candidate.startsWith(`data:${mime}`) && candidate.length <= TARGET_DATA_URL_LENGTH) {
+        return candidate;
+      }
+    }
+  }
+
+  for (const factor of [0.75, 0.5, 0.35] as const) {
+    const w = Math.max(1, Math.round(baseWidth * factor));
+    const h = Math.max(1, Math.round(baseHeight * factor));
+    const scaledCanvas = renderAtSize(w, h);
+    const candidate = scaledCanvas.toDataURL('image/jpeg', 0.7);
+    if (candidate.length <= TARGET_DATA_URL_LENGTH) {
+      return candidate;
+    }
+  }
+
+  return fullCanvas.toDataURL('image/jpeg', 0.5);
+}
+
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -114,8 +219,12 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+export function isSupportedReceiptLogoFile(file: Pick<File, 'type' | 'name'>): boolean {
+  return file.type.startsWith('image/') || SUPPORTED_IMAGE_EXT_RE.test(file.name || '');
+}
+
 export async function processReceiptLogoFile(file: File): Promise<ProcessedReceiptLogo> {
-  if (!file.type.startsWith('image/')) {
+  if (!isSupportedReceiptLogoFile(file)) {
     throw new Error('Selected file is not an image');
   }
   if (file.size > MAX_FILE_SIZE) {
@@ -124,38 +233,26 @@ export async function processReceiptLogoFile(file: File): Promise<ProcessedRecei
 
   const dataUrl = await readFileAsDataUrl(file);
   const img = await loadImage(dataUrl);
+  const { sourceCanvas, crop } = createSourceCanvasAndCrop(img);
   const variants: Record<string, PackedLogoVariant> = {};
   let previewDataUrl = '';
 
   for (const tw of TARGET_WIDTHS) {
-    const { variant, dithered, width, height } = renderDitheredVariant(img, tw);
+    const { variant, dithered, width, height } = renderDitheredVariant(sourceCanvas, crop, tw);
     variants[String(tw)] = variant;
     if (tw === 576 || !previewDataUrl) {
       previewDataUrl = createThermalPreview(dithered, width, height);
     }
   }
 
-  // Generate resized web/browser print data URL (max 576px wide)
-  const scale = img.width > 576 ? 576 / img.width : 1;
-  const webWidth = Math.round(img.width * scale);
-  const webHeight = Math.round(img.height * scale);
-  const webCanvas = document.createElement('canvas');
-  webCanvas.width = webWidth;
-  webCanvas.height = webHeight;
-  const webCtx = webCanvas.getContext('2d');
-  if (!webCtx) throw new Error('Failed to get web canvas context');
-  webCtx.fillStyle = '#FFFFFF';
-  webCtx.fillRect(0, 0, webWidth, webHeight);
-  webCtx.drawImage(img, 0, 0, webWidth, webHeight);
-
-  const originalDataUrl = webCanvas.toDataURL('image/png');
+  const originalDataUrl = encodeWebLogoDataUrl(sourceCanvas, crop);
   if (originalDataUrl.length > MAX_PERSISTED_LOGO_LENGTH) {
     throw new Error('Processed logo exceeds maximum size (250 KB)');
   }
 
   const logoData: ReceiptLogoData = {
     version: 1,
-    originalDataUrl,
+    originalDataUrl: '',
     variants,
   };
   const rasterJson = JSON.stringify(logoData);

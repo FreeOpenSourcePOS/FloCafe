@@ -113,24 +113,26 @@ function ItemQuantityControl({
     return (
       <>
         <button
+          type="button"
           onClick={() => stepBy(-1)}
-          className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+          className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
           aria-label={t('remove')}
         >
-          <Minus size={16} />
+          <Minus size={13} />
         </button>
         <span
           data-testid="cart-item-qty"
-          className="w-6 text-center text-base font-semibold tabular-nums"
+          className="min-w-6 px-1 text-center text-xs font-semibold tabular-nums text-foreground"
         >
           {item.quantity}
         </span>
         <button
+          type="button"
           onClick={() => stepBy(1)}
-          className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+          className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
           aria-label={t('addItems')}
         >
-          <Plus size={16} />
+          <Plus size={13} />
         </button>
       </>
     );
@@ -139,11 +141,12 @@ function ItemQuantityControl({
   return (
     <>
       <button
+        type="button"
         onClick={() => stepBy(-1)}
-        className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+        className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
         aria-label={t('remove')}
       >
-        <Minus size={16} />
+        <Minus size={13} />
       </button>
       <input
         type="number"
@@ -157,14 +160,15 @@ function ItemQuantityControl({
           if (e.key === 'Enter') commitDraft();
         }}
         aria-label={t('quantity')}
-        className="w-14 text-center text-base font-semibold tabular-nums border border-border bg-card rounded-md px-1 py-0.5 outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+        className="w-12 text-center text-xs font-semibold tabular-nums border-0 bg-transparent px-0.5 outline-none focus:ring-1 focus:ring-brand/30 rounded"
       />
       <button
+        type="button"
         onClick={() => stepBy(1)}
-        className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+        className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
         aria-label={t('addItems')}
       >
-        <Plus size={16} />
+        <Plus size={13} />
       </button>
     </>
   );
@@ -324,7 +328,7 @@ export default function CartPanel({
       }
     >
       {/* Order Type */}
-      <div className="p-4 border-b border-border dark:border-border space-y-2">
+      <div className="px-3 py-2 border-b border-border dark:border-border space-y-1.5">
         {existingOrder &&
           existingOrder.release_status &&
           existingOrder.release_status !== 'released' && (
@@ -379,7 +383,7 @@ export default function CartPanel({
                   type="button"
                   disabled={Boolean(existingOrder && existingOrder.type !== type)}
                   onClick={() => cart.setOrderType(type)}
-                  className={`touch-target flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${showIcon ? '' : 'whitespace-nowrap'} ${
+                  className={`touch-target h-9 min-h-9 flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${showIcon ? '' : 'whitespace-nowrap'} ${
                     cart.orderType === type
                       ? 'bg-card text-brand shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -393,42 +397,40 @@ export default function CartPanel({
         </div>
 
         {cart.orderType === 'dine_in' && (
-          <div className="flex flex-wrap items-stretch gap-2">
-            <div className="flex flex-1 min-w-[160px] items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Users size={15} />
-                <span>{t('pax')}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  aria-label={t('decreasePax')}
-                  onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))}
-                  className="touch-target rounded-full bg-muted"
-                >
-                  <Minus size={15} />
-                </button>
-                <input
-                  aria-label={t('pax')}
-                  inputMode="numeric"
-                  type="number"
-                  min="1"
-                  max="99"
-                  value={cart.guestCount}
-                  onChange={(e) =>
-                    cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))
-                  }
-                  className="w-12 text-center text-base font-semibold border-0 outline-none bg-transparent"
-                />
-                <button
-                  type="button"
-                  aria-label={t('increasePax')}
-                  onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))}
-                  className="touch-target rounded-full bg-muted"
-                >
-                  <Plus size={15} />
-                </button>
-              </div>
+          <div className="flex items-center justify-between px-1 py-0.5">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Users size={15} />
+              <span>{t('pax')}</span>
+            </div>
+            <div className="inline-flex items-center rounded-full border border-border bg-muted/50 p-0.5">
+              <button
+                type="button"
+                aria-label={t('decreasePax')}
+                onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))}
+                className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
+              >
+                <Minus size={13} />
+              </button>
+              <input
+                aria-label={t('pax')}
+                inputMode="numeric"
+                type="number"
+                min="1"
+                max="99"
+                value={cart.guestCount}
+                onChange={(e) =>
+                  cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))
+                }
+                className="w-10 text-center text-sm font-semibold tabular-nums border-0 outline-none bg-transparent"
+              />
+              <button
+                type="button"
+                aria-label={t('increasePax')}
+                onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))}
+                className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
+              >
+                <Plus size={13} />
+              </button>
             </div>
           </div>
         )}
@@ -608,8 +610,8 @@ export default function CartPanel({
         data-testid="cart-items-scroll"
         className={
           isDrawer
-            ? 'overflow-y-auto p-4 max-h-[40vh]'
-            : 'pos-cart-items flex-1 min-h-0 overflow-y-auto p-4'
+            ? 'overflow-y-auto px-3 py-2 max-h-[40vh]'
+            : 'pos-cart-items flex-1 min-h-0 overflow-y-auto px-3 py-2'
         }
       >
         {/* Previously ordered items (add-items mode) */}
@@ -617,11 +619,11 @@ export default function CartPanel({
           existingOrder.items &&
           existingOrder.items.filter((i: OrderItem) => !isTerminalItemStatus(i.status)).length >
             0 && (
-            <div className="mb-3 pb-3 border-b border-dashed border-border">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            <div className="mb-2.5 pb-2.5 border-b border-dashed border-border">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
                 {t('alreadyOrdered')}
               </p>
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {existingOrder.items
                   .filter((i: OrderItem) => !isTerminalItemStatus(i.status))
                   .map((item: OrderItem) => (
@@ -629,7 +631,7 @@ export default function CartPanel({
                       <span className="text-xs text-muted-foreground">
                         {item.quantity}× {item.product_name}
                       </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs text-muted-foreground tabular-nums">
                         {fmt(Number(item.total))}
                       </span>
                     </div>
@@ -646,123 +648,152 @@ export default function CartPanel({
             <p className="mt-2 text-sm">{existingOrder ? t('addNewItemsAbove') : t('cartEmpty')}</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {cart.items.map((item) => (
-              <div
-                key={item.id}
-                data-testid="cart-item"
-                className="border-b border-border/60 pb-3 last:border-b-0 last:pb-0"
-              >
-                <div className="flex items-start gap-2">
-                  <p className="min-w-0 flex-1 break-words text-sm font-medium leading-snug text-foreground">
-                    {item.variant
-                      ? `${item.product.name} (${item.variant.name})`
-                      : item.product.name}
-                  </p>
-                  <button
-                    onClick={() => cart.removeItem(item.id)}
-                    className="touch-target -me-2 -mt-2 shrink-0 rounded-full text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 dark:hover:text-red-400 active:bg-red-50 dark:active:bg-red-950/40"
-                    aria-label={t('remove')}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-                <div className="min-w-0">
-                  {item.addons.length > 0 && (
-                    <div className="mt-0.5">
-                      {item.addons.map((a) => (
-                        <p key={a.id} className="break-words text-xs text-muted-foreground">
-                          + {a.name}
-                          {(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''}{' '}
-                          {Number(a.price) > 0 && `(${fmt(Number(a.price) * (a.quantity || 1))})`}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {item.special_instructions && (
-                    <p className="text-xs text-muted-foreground italic mt-0.5 break-words">
-                      {item.special_instructions}
+          <div className="divide-y divide-border/60">
+            {cart.items.map((item) => {
+              const onlineSelected =
+                cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0;
+              const unitPrice = cartLineUnitPrice(item, onlineSelected);
+              const addonUnitTotal = item.addons.reduce(
+                (sum, a) => sum + Number(a.price) * (a.quantity || 1),
+                0,
+              );
+              const effectiveUnitPrice = unitPrice + addonUnitTotal;
+              const lineTotal = effectiveUnitPrice * item.quantity;
+              const hasSubtext = item.addons.length > 0 || Boolean(item.special_instructions);
+              return (
+                <div key={item.id} data-testid="cart-item" className="py-1.5 first:pt-0 last:pb-0">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="min-w-0 flex-1 break-words text-sm font-medium leading-snug text-foreground">
+                      {item.variant
+                        ? `${item.product.name} (${item.variant.name})`
+                        : item.product.name}
                     </p>
-                  )}
-                </div>
-                <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-muted-foreground">
-                    {fmt(
-                      cartLineUnitPrice(
-                        item,
-                        cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0,
-                      ),
-                    )}
-                    {item.price_override && (
-                      <span className="ms-1.5 text-xs text-amber-600 dark:text-amber-400">
-                        {tOrders('priceOverriddenMenu', {
-                          price: fmt(
-                            cartVariantUnitPrice(
-                              item,
-                              cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0,
-                            ),
-                          ),
-                        })}
+                    <div className="flex items-baseline gap-1.5 shrink-0">
+                      {item.quantity > 1 && (
+                        <span className="text-[11px] text-muted-foreground tabular-nums">
+                          {fmt(effectiveUnitPrice)}
+                        </span>
+                      )}
+                      <span className="text-sm font-semibold tabular-nums text-foreground">
+                        {fmt(lineTotal)}
                       </span>
-                    )}
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    {canOverridePrice && (
+                    </div>
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      {item.price_override && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 leading-snug break-words">
+                          {tOrders('priceOverriddenMenu', {
+                            price: fmt(cartVariantUnitPrice(item, onlineSelected)),
+                          })}
+                        </p>
+                      )}
+                      {hasSubtext && (
+                        <p className="text-xs text-muted-foreground leading-snug break-words">
+                          {item.addons.map((a, idx) => (
+                            <span key={a.id}>
+                              {idx > 0 && ' · '}
+                              {`+ ${a.name}${(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''}${
+                                Number(a.price) > 0
+                                  ? ` (${fmt(Number(a.price) * (a.quantity || 1))})`
+                                  : ''
+                              }`}
+                            </span>
+                          ))}
+                          {item.special_instructions && (
+                            <>
+                              {item.addons.length > 0 && ' · '}
+                              <span className="italic">{item.special_instructions}</span>
+                            </>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    <div className="ms-auto flex items-center gap-1 shrink-0">
                       <button
-                        onClick={() => setPriceOverrideItemId(item.id)}
-                        className="touch-target shrink-0 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
-                        aria-label={tOrders('overridePrice')}
-                        title={tOrders('overridePrice')}
+                        type="button"
+                        onClick={() => cart.removeItem(item.id)}
+                        className="order-last relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 dark:hover:text-red-400 active:bg-red-50 dark:active:bg-red-950/40"
+                        aria-label={t('remove')}
+                        title={t('remove')}
                       >
-                        <Tag size={14} />
+                        <Trash2 size={13} />
                       </button>
-                    )}
-                    {onEditItem && (
-                      <button
-                        onClick={() => onEditItem(item)}
-                        className="touch-target shrink-0 gap-1 rounded-full bg-amber-100 px-3 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60 dark:active:bg-amber-950/60 transition-colors hover:bg-amber-200 active:bg-amber-200"
-                      >
-                        <SquarePen size={12} />
-                        {tCommon('edit')}
-                      </button>
-                    )}
-                    <ItemQuantityControl item={item} updateQuantity={cart.updateQuantity} />
+                      {canOverridePrice && (
+                        <button
+                          type="button"
+                          onClick={() => setPriceOverrideItemId(item.id)}
+                          className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
+                          aria-label={tOrders('overridePrice')}
+                          title={tOrders('overridePrice')}
+                        >
+                          <Tag size={13} />
+                        </button>
+                      )}
+                      {onEditItem && (
+                        <button
+                          type="button"
+                          onClick={() => onEditItem(item)}
+                          className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
+                          aria-label={tCommon('edit')}
+                          title={tCommon('edit')}
+                        >
+                          <SquarePen size={13} />
+                        </button>
+                      )}
+                      <div className="inline-flex items-center rounded-full border border-border bg-muted/50 p-0.5">
+                        <ItemQuantityControl item={item} updateQuantity={cart.updateQuantity} />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* Cart Footer */}
-      <div data-testid="cart-footer" className="p-4 border-t border-border dark:border-border">
+      <div
+        data-testid="cart-footer"
+        className="px-3 py-2 border-t border-border dark:border-border"
+      >
         {/* Order Notes */}
         {cart.items.length > 0 && (
-          <div className="mb-3">
-            <textarea
+          <div className="relative mb-2">
+            <StickyNote
+              size={14}
+              className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              type="text"
               value={cart.orderNotes}
               onChange={(e) => cart.setOrderNotes(e.target.value.slice(0, 200))}
               placeholder={t('orderNotesPlaceholder')}
-              rows={2}
               maxLength={200}
-              className="w-full min-h-20 px-3 py-2 text-sm border border-border bg-card rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+              className="w-full h-8 ps-8 pe-12 text-xs border border-border bg-card rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
-            <p className="text-xs text-muted-foreground text-end mt-0.5">
+            <span className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground tabular-nums">
               {cart.orderNotes.length}/200
-            </p>
+            </span>
           </div>
         )}
-        <div className="flex justify-between mb-1 text-sm">
-          <span className="text-muted-foreground">{t('items')}</span>
-          <span className="font-medium">{cart.itemCount()}</span>
-        </div>
-        <div className="flex justify-between mb-4 text-lg">
-          <span className="font-semibold text-foreground">{t('subtotal')}</span>
-          <span className="font-bold text-brand">{fmt(cart.subtotal())}</span>
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-sm">
+          <span className="text-xs text-muted-foreground">
+            {t('items')}{' '}
+            <span className="ms-1 font-semibold text-foreground tabular-nums">
+              {cart.itemCount()}
+            </span>
+          </span>
+          <span className="ms-auto flex flex-wrap items-baseline justify-end gap-1.5 min-w-0">
+            <span className="text-sm font-semibold text-foreground">{t('subtotal')}</span>
+            <span className="text-base font-bold text-brand tabular-nums">
+              {fmt(cart.subtotal())}
+            </span>
+          </span>
         </div>
         {(appliedCharges.length > 0 || addableCharges.length > 0) && (
-          <div className="mb-4 space-y-1" data-testid="cart-charges">
+          <div className="mb-2 space-y-1" data-testid="cart-charges">
             {appliedCharges.map((charge) => {
               const definition = applicableCharges.find((c) => c.id === charge.id);
               const isOptional = definition?.is_optional ?? false;

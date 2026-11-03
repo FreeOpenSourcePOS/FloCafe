@@ -365,3 +365,24 @@ export function getLogoRasterBands(
     return [];
   }
 }
+
+export interface LogoAutoEnableState {
+  logoChanged: boolean;
+  receiptLogo: string | null | undefined;
+  pendingAutoEnable: boolean;
+  visibilityOverriddenAfterUpload: boolean;
+}
+
+/**
+ * Determines whether saving Store Details should automatically enable `bill_show_logo`.
+ * Returns true only when a new non-empty logo was uploaded in the current editing
+ * session and the merchant has not explicitly toggled Store Logo visibility since upload.
+ */
+export function shouldAutoEnableBillShowLogo(state: LogoAutoEnableState): boolean {
+  return (
+    state.logoChanged &&
+    Boolean(state.receiptLogo) &&
+    state.pendingAutoEnable &&
+    !state.visibilityOverriddenAfterUpload
+  );
+}

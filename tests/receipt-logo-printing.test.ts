@@ -39,6 +39,7 @@ import {
   parseReceiptLogoData,
   findLogoContentBounds,
   normalizeGrayscaleContrast,
+  shouldAutoEnableBillShowLogo,
   type ReceiptLogoData,
 } from '../shared/print/image-raster';
 import { encodeGsV0Band, concatBytes, type RasterRenderRequest } from '../shared/print/raster';
@@ -255,6 +256,58 @@ async function run() {
     Math.round(stretched[2]),
     255,
     'Maximum luminance should stretch to 255 (white)',
+  );
+
+  // Verify shouldAutoEnableBillShowLogo guards auto-enabling bill_show_logo on save
+  assertEqualOrThrow(
+    shouldAutoEnableBillShowLogo({
+      logoChanged: true,
+      receiptLogo: logoUrl,
+      pendingAutoEnable: true,
+      visibilityOverriddenAfterUpload: false,
+    }),
+    true,
+    'shouldAutoEnableBillShowLogo should return true when a logo is uploaded and visibility was not overridden',
+  );
+  assertEqualOrThrow(
+    shouldAutoEnableBillShowLogo({
+      logoChanged: true,
+      receiptLogo: logoUrl,
+      pendingAutoEnable: true,
+      visibilityOverriddenAfterUpload: true,
+    }),
+    false,
+    'shouldAutoEnableBillShowLogo should return false when merchant explicitly toggled Store Logo after upload',
+  );
+  assertEqualOrThrow(
+    shouldAutoEnableBillShowLogo({
+      logoChanged: true,
+      receiptLogo: logoUrl,
+      pendingAutoEnable: false,
+      visibilityOverriddenAfterUpload: false,
+    }),
+    false,
+    'shouldAutoEnableBillShowLogo should return false when no upload is pending (e.g. after reset)',
+  );
+  assertEqualOrThrow(
+    shouldAutoEnableBillShowLogo({
+      logoChanged: true,
+      receiptLogo: '',
+      pendingAutoEnable: true,
+      visibilityOverriddenAfterUpload: false,
+    }),
+    false,
+    'shouldAutoEnableBillShowLogo should return false when logo was removed before saving',
+  );
+  assertEqualOrThrow(
+    shouldAutoEnableBillShowLogo({
+      logoChanged: false,
+      receiptLogo: logoUrl,
+      pendingAutoEnable: true,
+      visibilityOverriddenAfterUpload: false,
+    }),
+    false,
+    'shouldAutoEnableBillShowLogo should return false when logo did not change from saved state',
   );
 
   console.log('--- 2. Document model logo integration ---');

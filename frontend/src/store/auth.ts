@@ -267,7 +267,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     if (token) {
       await api
-        .get('/auth/me')
+        .get('/auth/me', { skipAuthRedirect: true })
         .then(({ data }) => {
           if (operation !== authOperation) return null;
           const tenants: Tenant[] = data.tenants;
@@ -300,7 +300,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if (operation !== authOperation) return;
           localStorage.removeItem('token');
           localStorage.removeItem('tenant');
-          set({ loading: false, printLanguageLoadErrors: [] });
+          set({
+            user: null,
+            token: null,
+            tenants: [],
+            currentTenant: null,
+            loading: false,
+            printLanguageLoadErrors: [],
+          });
         });
     } else {
       set({ loading: false, printLanguageLoadErrors: [] });

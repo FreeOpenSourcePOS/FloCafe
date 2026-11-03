@@ -19,6 +19,7 @@ import type {
   PrimaryLanguageSelection,
   ReceiptLanguagePolicy,
 } from '@print/types';
+import { shouldAutoEnableBillShowLogo } from '@print/image-raster';
 import {
   parseStoredKotLanguagePolicy,
   parseStoredReceiptLanguagePolicy,
@@ -427,6 +428,8 @@ export default function SettingsPage() {
   const activeTabRef = useRef(activeTab);
   const currentTenantIdRef = useRef<number | null>(currentTenant?.id ?? null);
   const hydrationTouchVersions = useRef(new Map<string, number>());
+  const pendingLogoAutoEnableRef = useRef(false);
+  const logoVisibilityOverriddenRef = useRef(false);
   const pendingKitchenSaves = useRef(
     new Map<'kdsEnabled' | 'kotPrintingEnabled' | 'requireKitchenDelivered', number>(),
   );
@@ -448,6 +451,8 @@ export default function SettingsPage() {
     if (currentTenantIdRef.current !== tenantId) {
       currentTenantIdRef.current = tenantId;
       hydrationTouchVersions.current.clear();
+      pendingLogoAutoEnableRef.current = false;
+      logoVisibilityOverriddenRef.current = false;
       pendingKitchenSaves.current.clear();
       confirmedKitchenVersions.current.clear();
       failedKitchenSaveVersions.current.clear();
@@ -455,6 +460,9 @@ export default function SettingsPage() {
     }
   };
   const markHydrationTouched = (field: string) => {
+    if (field === 'billShowLogo' && pendingLogoAutoEnableRef.current) {
+      logoVisibilityOverriddenRef.current = true;
+    }
     const nextVersion = (hydrationTouchVersions.current.get(field) || 0) + 1;
     hydrationTouchVersions.current.set(field, nextVersion);
     return nextVersion;
@@ -1446,7 +1454,9 @@ export default function SettingsPage() {
           return !touchedAfterStart && Object.is(previous[field], initial[field]);
         }),
       ) as Partial<PrintingForm>;
-      return { ...previous, ...applicablePatch };
+      const next = { ...previous, ...applicablePatch };
+      printingFormRef.current = next;
+      return next;
     });
   };
   const [zReportLanguagePolicyLoaded, setZReportLanguagePolicyLoaded] = useState(false);
@@ -1456,7 +1466,10 @@ export default function SettingsPage() {
     if (printingSaveInFlight.current) return;
     printingSaveInFlight.current = true;
     setSavingPrinting(true);
-    const formSnapshot = printingForm;
+    const formSnapshot = {
+      ...printingForm,
+      billShowLogo: printingFormRef.current.billShowLogo,
+    };
     try {
       const receiptPrimary: PrimaryLanguageSelection =
         formSnapshot.receiptPrimaryLanguage === 'inherit'
@@ -1553,7 +1566,12 @@ export default function SettingsPage() {
       setSavingPrinting(false);
     }
   };
-  const resetPrinting = () => setPrintingForm(savedPrinting);
+  const resetPrinting = () => {
+    pendingLogoAutoEnableRef.current = false;
+    logoVisibilityOverriddenRef.current = false;
+    printingFormRef.current = savedPrinting;
+    setPrintingForm(savedPrinting);
+  };
 
   // Bill template local state; billTemplateSource preserves pack
   // qualifier if ID collides with core template names.
@@ -1858,6 +1876,8 @@ export default function SettingsPage() {
       };
       setSavedBusiness(loaded);
       setForm(loaded);
+      pendingLogoAutoEnableRef.current = false;
+      logoVisibilityOverriddenRef.current = false;
       setTaxIdFormat(d.tax_id_format || null);
       setTaxIdFormatCountryCode(loaded.countryCode);
       const billDisplay = {
@@ -1872,7 +1892,11 @@ export default function SettingsPage() {
         billDeliveryShowCustomerPhoneAlways: d.bill_delivery_show_customer_phone_always !== false,
         billShowTableNumber: d.bill_show_table_number !== false,
       };
-      setPrintingForm((previous) => ({ ...previous, ...billDisplay }));
+      setPrintingForm((previous) => {
+        const next = { ...previous, ...billDisplay };
+        printingFormRef.current = next;
+        return next;
+      });
       setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
       posSettings.hydrateReceiptSettings({
         ...d,
@@ -3578,6 +3602,17 @@ export default function SettingsPage() {
 
     setSavingBusiness(true);
     try {
+      const logoChanged =
+        form.receiptLogo !== savedBusiness.receiptLogo ||
+        form.receiptLogoRaster !== savedBusiness.receiptLogoRaster;
+      const enableLogoOnSave = shouldAutoEnableBillShowLogo({
+        logoChanged,
+        receiptLogo: form.receiptLogo,
+        pendingAutoEnable: pendingLogoAutoEnableRef.current,
+        visibilityOverriddenAfterUpload:
+          logoVisibilityOverriddenRef.current ||
+          printingForm.billShowLogo !== savedPrinting.billShowLogo,
+      });
       const putRes = await api.put('/settings/business', {
         business_name: form.businessName,
         timezone: form.timezone,
@@ -3594,11 +3629,11 @@ export default function SettingsPage() {
         currency_display: form.currencyDisplay,
         number_digits: form.numberDigits,
         calendar: form.calendar,
-        ...(form.receiptLogo !== savedBusiness.receiptLogo ||
-        form.receiptLogoRaster !== savedBusiness.receiptLogoRaster
+        ...(logoChanged
           ? {
               receipt_logo: form.receiptLogo ?? '',
               receipt_logo_raster: form.receiptLogoRaster ?? '',
+              ...(enableLogoOnSave ? { bill_show_logo: true } : {}),
             }
           : {}),
       });
@@ -3642,6 +3677,13 @@ export default function SettingsPage() {
       setForm(updatedForm);
       setTaxIdFormat(resolvedTaxIdFormat);
       setTaxIdFormatCountryCode(form.countryCode);
+      pendingLogoAutoEnableRef.current = false;
+      logoVisibilityOverriddenRef.current = false;
+      if (enableLogoOnSave) {
+        printingFormRef.current = { ...printingFormRef.current, billShowLogo: true };
+        setPrintingForm((prev) => ({ ...prev, billShowLogo: true }));
+        setSavedPrinting((prev) => ({ ...prev, billShowLogo: true }));
+      }
       posSettings.hydrateReceiptSettings({
         tax_registration_number: form.taxRegistrationNumber,
         business_address: form.businessAddress,
@@ -3650,6 +3692,7 @@ export default function SettingsPage() {
         tables_required: form.tablesRequired,
         receipt_logo: form.receiptLogo || '',
         receipt_logo_raster: form.receiptLogoRaster || '',
+        ...(enableLogoOnSave ? { bill_show_logo: true } : {}),
       });
       updateCurrentTenant({
         currency: form.currency,
@@ -4085,6 +4128,10 @@ export default function SettingsPage() {
               setOrderNumberForm={setOrderNumberForm}
               markHydrationTouched={markHydrationTouched}
               onRequestCurrencyChange={setCurrencyResetTarget}
+              onLogoUploaded={() => {
+                pendingLogoAutoEnableRef.current = true;
+                logoVisibilityOverriddenRef.current = false;
+              }}
             />
           </TabsContent>
 

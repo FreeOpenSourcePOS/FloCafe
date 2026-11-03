@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Building2, Hash, CreditCard, Lock, Upload, Trash2 } from 'lucide-react';
 import { useTranslations, useLocale } from 'use-intl';
-import { processReceiptLogoFile } from '@/lib/printer/logo-processor';
+import { getThermalPreviewDataUrl, processReceiptLogoFile } from '@/lib/printer/logo-processor';
 import { Ltr } from '@/components/layout/Ltr';
 import { Toggle } from '@/components/settings/Toggle';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
@@ -126,6 +126,7 @@ export interface GeneralSettingsTabProps {
   setOrderNumberForm: React.Dispatch<React.SetStateAction<OrderNumberForm>>;
   markHydrationTouched: (field: string) => void;
   onRequestCurrencyChange: (currency: string) => void;
+  onLogoUploaded?: () => void;
 }
 
 export function GeneralSettingsTab({
@@ -139,6 +140,7 @@ export function GeneralSettingsTab({
   setOrderNumberForm,
   markHydrationTouched,
   onRequestCurrencyChange,
+  onLogoUploaded,
 }: GeneralSettingsTabProps) {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
@@ -156,6 +158,10 @@ export function GeneralSettingsTab({
   );
 
   const sortedCountries = useMemo(() => sortCountriesByLocalizedName(COUNTRIES, locale), [locale]);
+  const thermalLogoPreview = useMemo(
+    () => getThermalPreviewDataUrl(form.receiptLogoRaster),
+    [form.receiptLogoRaster],
+  );
   const [sampleOrderDate] = useState(() => new Date().toISOString().slice(0, 10).replace(/-/g, ''));
 
   const TAX_ID_WARNING_MAX_LENGTH = 24;
@@ -518,7 +524,7 @@ export function GeneralSettingsTab({
             {isAdmin ? (
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                 {form.receiptLogo ? (
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-4">
                     <div className="p-2 border border-border rounded-lg bg-white dark:bg-zinc-900 shadow-sm">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -527,6 +533,16 @@ export function GeneralSettingsTab({
                         className="max-h-16 max-w-[200px] object-contain"
                       />
                     </div>
+                    {thermalLogoPreview ? (
+                      <div className="p-2 border border-dashed border-border rounded-lg bg-white shadow-sm">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={thermalLogoPreview}
+                          alt={`${t('storeLogo')} (1-bit)`}
+                          className="max-h-16 max-w-[200px] object-contain"
+                        />
+                      </div>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => {
@@ -547,7 +563,7 @@ export function GeneralSettingsTab({
                       <span>{t('uploadLogo')}</span>
                       <input
                         type="file"
-                        accept="image/png,image/jpeg,image/webp"
+                        accept="image/*,.bmp,.svg,.webp,.png,.jpg,.jpeg,.gif,.avif"
                         className="hidden"
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
@@ -562,6 +578,7 @@ export function GeneralSettingsTab({
                               receiptLogo: originalDataUrl,
                               receiptLogoRaster: rasterJson,
                             }));
+                            onLogoUploaded?.();
                             toast.success(t('logoUploaded'));
                           } catch (err) {
                             const msg =

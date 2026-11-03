@@ -36,13 +36,26 @@ import {
   ditherGrayscalePixels,
   centerPixels,
   getLogoRasterBands,
+  parseReceiptLogoData,
+  findLogoContentBounds,
+  normalizeGrayscaleContrast,
+  shouldAutoEnableBillShowLogo,
   type ReceiptLogoData,
 } from '../shared/print/image-raster';
+import { encodeGsV0Band, concatBytes, type RasterRenderRequest } from '../shared/print/raster';
+import { GENERIC_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
 import { buildBillDocument, getBlock, type BusinessHeaderBlock } from '../shared/print/document';
-import { buildBillPrintData } from '../main/printers/document-classic';
-import { formatReceipt, formatKOT } from '../main/printers/thermal';
-import { settingsRoutes } from '../main/routes/settings';
-import {
+
+const { buildBillPrintData } = require('../main/printers/document-classic');
+const {
+  formatReceipt,
+  formatKOT,
+  receiptDocumentLines,
+  buildEscPos,
+} = require('../main/printers/thermal');
+const { renderUnsupportedRasterLines } = require('../main/printers/raster-renderer');
+const { settingsRoutes } = require('../main/routes/settings');
+const {
   initTestDb,
   createApp,
   startServer,
@@ -52,7 +65,7 @@ import {
   assertOrThrow,
   assertEqualOrThrow,
   assertIncludesOrThrow,
-} from './helpers/test-setup';
+} = require('./helpers/test-setup');
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -180,6 +193,121 @@ async function run() {
     getLogoRasterBands(malformedLogo, 576).length,
     0,
     'Invalid dimensions should be rejected',
+  );
+
+  // Decoupled ReceiptLogoData (originalDataUrl: "")
+  const decoupledLogoJson = JSON.stringify({
+    version: 1,
+    originalDataUrl: '',
+    variants: JSON.parse(rasterJson).variants,
+  });
+  const parsedDecoupled = parseReceiptLogoData(decoupledLogoJson);
+  assertOrThrow(
+    parsedDecoupled !== null,
+    'parseReceiptLogoData should accept empty originalDataUrl',
+  );
+  assertEqualOrThrow(
+    parsedDecoupled?.originalDataUrl,
+    '',
+    'Decoupled originalDataUrl should remain empty',
+  );
+  const decoupledBands = getLogoRasterBands(decoupledLogoJson, 384);
+  assertOrThrow(
+    decoupledBands.length > 0,
+    'getLogoRasterBands should resolve bands from decoupled ReceiptLogoData',
+  );
+
+  // findLogoContentBounds: trim surrounding white/transparent borders with 4px margin
+  const boundsW = 20;
+  const boundsH = 20;
+  const rgba = new Uint8Array(boundsW * boundsH * 4);
+  // Fill with white (255, 255, 255, 255)
+  rgba.fill(255);
+  // Draw a 4x4 dark square at (8..11, 8..11)
+  for (let y = 8; y <= 11; y += 1) {
+    for (let x = 8; x <= 11; x += 1) {
+      const idx = (y * boundsW + x) * 4;
+      rgba[idx] = 20;
+      rgba[idx + 1] = 20;
+      rgba[idx + 2] = 20;
+      rgba[idx + 3] = 255;
+    }
+  }
+  const trimmedBounds = findLogoContentBounds(rgba, boundsW, boundsH, 4);
+  assertEqualOrThrow(trimmedBounds.x, 4, 'Trimmed x should include 4px margin (8 - 4)');
+  assertEqualOrThrow(trimmedBounds.y, 4, 'Trimmed y should include 4px margin (8 - 4)');
+  assertEqualOrThrow(trimmedBounds.width, 12, 'Trimmed width should be 12 (4..15)');
+  assertEqualOrThrow(trimmedBounds.height, 12, 'Trimmed height should be 12 (4..15)');
+
+  // Blank image fallback in findLogoContentBounds
+  const blankRgba = new Uint8Array(10 * 10 * 4).fill(255);
+  const blankBounds = findLogoContentBounds(blankRgba, 10, 10, 4);
+  assertEqualOrThrow(blankBounds.x, 0, 'Blank image x should fallback to 0');
+  assertEqualOrThrow(blankBounds.y, 0, 'Blank image y should fallback to 0');
+  assertEqualOrThrow(blankBounds.width, 10, 'Blank image width should fallback to full width');
+  assertEqualOrThrow(blankBounds.height, 10, 'Blank image height should fallback to full height');
+
+  // normalizeGrayscaleContrast: stretches low-contrast [150, 255] to [0, 255]
+  const lowContrast = new Float32Array([150, 202.5, 255]);
+  const stretched = normalizeGrayscaleContrast(lowContrast);
+  assertEqualOrThrow(Math.round(stretched[0]), 0, 'Minimum luminance should stretch to 0 (black)');
+  assertEqualOrThrow(Math.round(stretched[1]), 128, 'Midpoint luminance should stretch to ~128');
+  assertEqualOrThrow(
+    Math.round(stretched[2]),
+    255,
+    'Maximum luminance should stretch to 255 (white)',
+  );
+
+  // Verify shouldAutoEnableBillShowLogo guards auto-enabling bill_show_logo on save
+  assertEqualOrThrow(
+    shouldAutoEnableBillShowLogo({
+      logoChanged: true,
+      receiptLogo: logoUrl,
+      pendingAutoEnable: true,
+      visibilityOverriddenAfterUpload: false,
+    }),
+    true,
+    'shouldAutoEnableBillShowLogo should return true when a logo is uploaded and visibility was not overridden',
+  );
+  assertEqualOrThrow(
+    shouldAutoEnableBillShowLogo({
+      logoChanged: true,
+      receiptLogo: logoUrl,
+      pendingAutoEnable: true,
+      visibilityOverriddenAfterUpload: true,
+    }),
+    false,
+    'shouldAutoEnableBillShowLogo should return false when merchant explicitly toggled Store Logo after upload',
+  );
+  assertEqualOrThrow(
+    shouldAutoEnableBillShowLogo({
+      logoChanged: true,
+      receiptLogo: logoUrl,
+      pendingAutoEnable: false,
+      visibilityOverriddenAfterUpload: false,
+    }),
+    false,
+    'shouldAutoEnableBillShowLogo should return false when no upload is pending (e.g. after reset)',
+  );
+  assertEqualOrThrow(
+    shouldAutoEnableBillShowLogo({
+      logoChanged: true,
+      receiptLogo: '',
+      pendingAutoEnable: true,
+      visibilityOverriddenAfterUpload: false,
+    }),
+    false,
+    'shouldAutoEnableBillShowLogo should return false when logo was removed before saving',
+  );
+  assertEqualOrThrow(
+    shouldAutoEnableBillShowLogo({
+      logoChanged: false,
+      receiptLogo: logoUrl,
+      pendingAutoEnable: true,
+      visibilityOverriddenAfterUpload: false,
+    }),
+    false,
+    'shouldAutoEnableBillShowLogo should return false when logo did not change from saved state',
   );
 
   console.log('--- 2. Document model logo integration ---');
@@ -325,6 +453,266 @@ async function run() {
     'Receipt ESC/POS bytes should not contain GS v 0 command when show_logo is false',
   );
 
+  // Compact template logo emission
+  const compactBytesWithLogo = formatReceipt(
+    dummyOrder,
+    dummyBill,
+    {
+      name: 'Flo Cafe',
+      country: 'US',
+      currency: 'USD',
+      show_logo: true,
+      receipt_logo: logoUrl,
+      receipt_logo_raster: rasterJson,
+      show_name: true,
+    },
+    'compact',
+    32,
+  );
+  let foundGsV0Compact = false;
+  for (let i = 0; i < compactBytesWithLogo.length - 4; i += 1) {
+    if (
+      compactBytesWithLogo[i] === 0x1d &&
+      compactBytesWithLogo[i + 1] === 0x76 &&
+      compactBytesWithLogo[i + 2] === 0x30 &&
+      compactBytesWithLogo[i + 3] === 0x00
+    ) {
+      foundGsV0Compact = true;
+      break;
+    }
+  }
+  assertOrThrow(
+    foundGsV0Compact,
+    'Compact receipt ESC/POS bytes should contain GS v 0 raster command when show_logo is true',
+  );
+
+  const compactBytesWithoutLogo = formatReceipt(
+    dummyOrder,
+    dummyBill,
+    {
+      name: 'Flo Cafe',
+      country: 'US',
+      currency: 'USD',
+      show_logo: false,
+      receipt_logo: logoUrl,
+      receipt_logo_raster: rasterJson,
+      show_name: true,
+    },
+    'compact',
+    32,
+  );
+  let foundGsV0CompactWithoutLogo = false;
+  for (let i = 0; i < compactBytesWithoutLogo.length - 4; i += 1) {
+    if (
+      compactBytesWithoutLogo[i] === 0x1d &&
+      compactBytesWithoutLogo[i + 1] === 0x76 &&
+      compactBytesWithoutLogo[i + 2] === 0x30 &&
+      compactBytesWithoutLogo[i + 3] === 0x00
+    ) {
+      foundGsV0CompactWithoutLogo = true;
+      break;
+    }
+  }
+  assertOrThrow(
+    !foundGsV0CompactWithoutLogo,
+    'Compact receipt ESC/POS bytes should not contain GS v 0 command when show_logo is false',
+  );
+
+  console.log(
+    '--- 3b. Non-Latin / Persian store header preserves logo bitmap during rasterization ---',
+  );
+  const rasterCaps = {
+    ...GENERIC_THERMAL_CAPABILITIES,
+    raster: {
+      enabled: true,
+      widthDots: 384,
+      maxBandHeight: 200,
+      modes: ['mixed', 'whole-receipt'] as const,
+    },
+  };
+  const expectedLogoBands = getLogoRasterBands(decoupledLogoJson, 384, 200);
+  const expectedLogoGsV0 = Buffer.from(
+    concatBytes(expectedLogoBands.map((band) => encodeGsV0Band(band, 200))),
+  );
+
+  for (const template of ['classic', 'compact'] as const) {
+    const renderedRequests: RasterRenderRequest[] = [];
+    const fakeRenderer = {
+      async render(request: unknown) {
+        const req = request as RasterRenderRequest;
+        renderedRequests.push(req);
+        return {
+          version: 1 as const,
+          requestId: req.requestId,
+          ok: true as const,
+          unit: {
+            unitId: req.requestId,
+            financial: req.financial,
+            complete: true as const,
+            bands: [
+              {
+                widthDots: req.widthDots,
+                heightDots: 1,
+                pixels: new Uint8Array(req.widthDots).fill(1),
+              },
+            ],
+          },
+        };
+      },
+    };
+
+    const docLines = receiptDocumentLines(
+      dummyOrder,
+      dummyBill,
+      {
+        name: 'کافه شکلات',
+        address: 'تهران، خیابان ولیعصر',
+        country: 'IR',
+        currency: 'IRR',
+        show_logo: true,
+        receipt_logo: logoUrl,
+        receipt_logo_raster: decoupledLogoJson,
+        show_name: true,
+        show_address: true,
+      },
+      template,
+      32,
+      false,
+      false,
+      false,
+      'fa',
+      undefined,
+      'full',
+      rasterCaps,
+    );
+    assertOrThrow(docLines !== null, `receiptDocumentLines should return lines for ${template}`);
+
+    const rasterResult = await renderUnsupportedRasterLines(
+      fakeRenderer,
+      docLines!.lines,
+      rasterCaps,
+      `test-${template}`,
+      docLines!.rasterGroups,
+    );
+    assertEqualOrThrow(
+      rasterResult.failures.length,
+      0,
+      `renderUnsupportedRasterLines should have 0 failures for ${template}`,
+    );
+    assertOrThrow(
+      !renderedRequests.some(
+        (req) => req.text.includes('[Logo]') || req.text.includes('RAW_BYTES'),
+      ),
+      `Raster renderer must never receive '[Logo]' or RAW_BYTES for ${template}`,
+    );
+    assertOrThrow(
+      renderedRequests.some((req) => req.text.includes('کافه شکلات')),
+      `Raster renderer should rasterize Persian store name for ${template}`,
+    );
+
+    const warnings: any[] = [];
+    const finalBytes = buildEscPos(
+      docLines!.lines,
+      false,
+      {
+        cutMode: 'full',
+        arabicShaping: false,
+        columns: 32,
+        language: 'fa',
+        capabilities: rasterCaps,
+        rasterUnits: rasterResult.units,
+        rasterFailures: rasterResult.failures,
+      },
+      warnings,
+    );
+    assertOrThrow(
+      finalBytes.includes(expectedLogoGsV0),
+      `Final ESC/POS output for ${template} with Persian header must preserve exact logo GS v 0 bitmap bytes`,
+    );
+  }
+
+  // Classic receipt with show_name: false (logo only in main) + Persian address in post
+  {
+    const renderedRequests: RasterRenderRequest[] = [];
+    const fakeRenderer = {
+      async render(request: unknown) {
+        const req = request as RasterRenderRequest;
+        renderedRequests.push(req);
+        return {
+          version: 1 as const,
+          requestId: req.requestId,
+          ok: true as const,
+          unit: {
+            unitId: req.requestId,
+            financial: req.financial,
+            complete: true as const,
+            bands: [
+              {
+                widthDots: req.widthDots,
+                heightDots: 1,
+                pixels: new Uint8Array(req.widthDots).fill(1),
+              },
+            ],
+          },
+        };
+      },
+    };
+    const docLines = receiptDocumentLines(
+      dummyOrder,
+      dummyBill,
+      {
+        name: 'کافه شکلات',
+        address: 'تهران، خیابان ولیعصر',
+        country: 'IR',
+        currency: 'IRR',
+        show_logo: true,
+        receipt_logo: logoUrl,
+        receipt_logo_raster: decoupledLogoJson,
+        show_name: false,
+        show_address: true,
+      },
+      'classic',
+      32,
+      false,
+      false,
+      false,
+      'fa',
+      undefined,
+      'full',
+      rasterCaps,
+    );
+    const rasterResult = await renderUnsupportedRasterLines(
+      fakeRenderer,
+      docLines!.lines,
+      rasterCaps,
+      'test-logo-only-main',
+      docLines!.rasterGroups,
+    );
+    assertEqualOrThrow(
+      rasterResult.failures.length,
+      0,
+      'renderUnsupportedRasterLines should succeed when business-header main has only logo and post has Persian address',
+    );
+    const finalBytes = buildEscPos(
+      docLines!.lines,
+      false,
+      {
+        cutMode: 'full',
+        arabicShaping: false,
+        columns: 32,
+        language: 'fa',
+        capabilities: rasterCaps,
+        rasterUnits: rasterResult.units,
+        rasterFailures: rasterResult.failures,
+      },
+      [],
+    );
+    assertOrThrow(
+      finalBytes.includes(expectedLogoGsV0),
+      'Logo GS v 0 bytes must remain intact when show_name is false and post has Persian address',
+    );
+  }
+
   console.log('--- 4. KOT kitchen tickets invariant: never print logo ---');
   const kotBytes = formatKOT(dummyOrder, dummyOrder.items, 'Kitchen', 32);
 
@@ -409,6 +797,22 @@ async function run() {
       'PUT /api/settings/business with valid logo should succeed',
     );
 
+    // Accept decoupled receipt_logo_raster (originalDataUrl: "") with bill_show_logo: true
+    const acceptDecoupledRes = await api(baseUrl, '/api/settings/business', {
+      method: 'PUT',
+      headers: authHeaders,
+      body: {
+        receipt_logo: logoUrl,
+        receipt_logo_raster: decoupledLogoJson,
+        bill_show_logo: true,
+      },
+    });
+    assertEqualOrThrow(
+      acceptDecoupledRes.status,
+      200,
+      'PUT /api/settings/business with decoupled receipt_logo_raster should succeed',
+    );
+
     // Fetch via GET /api/settings/business
     const getRes = await api(baseUrl, '/api/settings/business', {
       headers: authHeaders,
@@ -421,8 +825,13 @@ async function run() {
     );
     assertEqualOrThrow(
       getRes.data.receipt_logo_raster,
-      rasterJson,
-      'GET should return persisted receipt_logo_raster',
+      decoupledLogoJson,
+      'GET should return persisted decoupled receipt_logo_raster',
+    );
+    assertEqualOrThrow(
+      getRes.data.bill_show_logo,
+      true,
+      'GET should return bill_show_logo enabled when saved with logo',
     );
 
     // Update bill_show_logo toggle via PUT /api/settings/printing

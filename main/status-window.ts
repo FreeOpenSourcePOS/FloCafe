@@ -93,7 +93,7 @@ export async function closeStatusWhenSeen(minMs: number): Promise<void> {
 /** Shows (or updates) the small progress window. Never throws. */
 export async function showStatus(key: StatusKey, alwaysOnTop = false): Promise<void> {
   if (isSuppressed()) return;
-  if (key === 'closing' || (key as string) === 'updating') {
+  if (key === 'closing') {
     statusUnavailable = false;
   }
   if (statusUnavailable) return;

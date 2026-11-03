@@ -182,10 +182,11 @@ interface FakeWindowInstance {
 
     const statusWindowModulePath = require.resolve('../main/status-window');
     delete require.cache[statusWindowModulePath];
-    const { showStatus, closeStatus, hasStatusWindow } =
+    const { showStatus, closeStatus, closeStatusWhenSeen, hasStatusWindow } =
       require('../main/status-window') as typeof import('../main/status-window');
 
-    // 1. Rejected loadURL during startup destroys the broken window without showing it or quitting.
+    // 1. Rejected loadURL during startup destroys the broken window without showing it or quitting,
+    //    and latches statusUnavailable so subsequent startup steps do not repeatedly open new windows.
     loadBehavior = 'reject';
     runtimeStarting = true;
     await showStatus('starting');
@@ -195,12 +196,23 @@ interface FakeWindowInstance {
     assert.equal(hasStatusWindow(), false, 'no open status window remains after load failure');
     assert.equal(quitCalls, 0, 'destroying failed status window during startup does not quit app');
 
-    // 2. Subsequent showStatus succeeds and opens a fresh window, and if executeJavaScript fails,
-    //    closeStatus() destroys it without quitting during startup.
+    await showStatus('checking');
+    await showStatus('backingUp');
+    await showStatus('services');
+    await showStatus('welcome');
+    assert.equal(
+      createdWindows.length,
+      1,
+      'subsequent startup showStatus calls return immediately without creating another BrowserWindow',
+    );
+
+    // 2. Resetting via closeStatusWhenSeen allows a fresh open attempt; if executeJavaScript fails,
+    //    closeStatus() destroys it without quitting during startup and latches statusUnavailable.
+    await closeStatusWhenSeen(0);
     loadBehavior = 'resolve';
     executeBehavior = 'resolve';
     await showStatus('starting');
-    assert.equal(createdWindows.length, 2, 'second status window created after first failed');
+    assert.equal(createdWindows.length, 2, 'second status window created after reset');
     assert.equal(createdWindows[1].shown, true, 'healthy status window is shown');
     assert.equal(hasStatusWindow(), true, 'status window is open');
 
@@ -214,18 +226,28 @@ interface FakeWindowInstance {
     assert.equal(hasStatusWindow(), false, 'status window is closed after update failure');
     assert.equal(quitCalls, 0, 'update failure closure during startup does not quit app');
 
-    // 3. Timed-out loadURL destroys the hung window without showing it or quitting.
+    await showStatus('services');
+    assert.equal(
+      createdWindows.length,
+      2,
+      'after executeJavaScript failure, subsequent startup showStatus calls do not create another BrowserWindow',
+    );
+
+    // 3. Shutdown ('closing') resets statusUnavailable so shutdown can still try once, and a timed-out
+    //    loadURL destroys the hung window without showing it or retrying on shutdownBackup/saved.
     loadBehavior = 'hang';
     const originalSetTimeout = global.setTimeout;
     global.setTimeout = ((fn: (...args: any[]) => void, ms?: number, ...args: any[]) => {
       return originalSetTimeout(fn, ms === 2000 ? 10 : ms, ...args);
     }) as typeof setTimeout;
     try {
-      await showStatus('starting');
+      await showStatus('closing', true);
+      await showStatus('shutdownBackup', true);
+      await showStatus('saved', true);
     } finally {
       global.setTimeout = originalSetTimeout;
     }
-    assert.equal(createdWindows.length, 3, 'third status window created for timeout check');
+    assert.equal(createdWindows.length, 3, 'third status window created once for closing timeout check');
     assert.equal(createdWindows[2].shown, false, 'timed-out status window is never shown');
     assert.equal(createdWindows[2].destroyed, true, 'timed-out status window is destroyed');
     assert.equal(hasStatusWindow(), false, 'no open status window remains after timeout');

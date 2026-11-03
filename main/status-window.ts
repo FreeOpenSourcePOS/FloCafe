@@ -27,6 +27,7 @@ function escapeHtml(value: string): string {
 let statusWindow: BrowserWindow | null = null;
 let statusLanguage: string | null = null;
 let opening: Promise<void> | null = null;
+let statusUnavailable = false;
 
 function isOpen(): boolean {
   try {
@@ -83,6 +84,7 @@ export async function holdStatus(minMs: number): Promise<void> {
 
 /** Closes the window once its last message has been readable for `minMs`. */
 export async function closeStatusWhenSeen(minMs: number): Promise<void> {
+  statusUnavailable = false;
   const target = statusWindow;
   await holdStatus(minMs);
   if (statusWindow === target) closeStatus();
@@ -91,6 +93,10 @@ export async function closeStatusWhenSeen(minMs: number): Promise<void> {
 /** Shows (or updates) the small progress window. Never throws. */
 export async function showStatus(key: StatusKey, alwaysOnTop = false): Promise<void> {
   if (isSuppressed()) return;
+  if (key === 'closing' || (key as string) === 'updating') {
+    statusUnavailable = false;
+  }
+  if (statusUnavailable) return;
   try {
     const language = currentLanguage();
     const [title, detail] = getStatusMessage(key, language);
@@ -115,6 +121,7 @@ export async function showStatus(key: StatusKey, alwaysOnTop = false): Promise<v
     messageAt = Date.now();
   } catch (error) {
     console.warn('[StatusWindow] Could not update:', error);
+    statusUnavailable = true;
     closeStatus();
   }
 }
@@ -154,6 +161,7 @@ async function openWindow(alwaysOnTop: boolean, page: string): Promise<void> {
   const loaded = await Promise.race([load, timeout]);
   if (timer) clearTimeout(timer);
   if (!loaded) {
+    statusUnavailable = true;
     if (statusWindow === window) closeStatus();
     else if (!window.isDestroyed()) window.destroy();
     return;

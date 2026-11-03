@@ -1349,13 +1349,23 @@ async function testFailedWindowRecovery(): Promise<void> {
   assert.equal(alreadyDestroyed.creates.value, 1, 'an already-destroyed window is still replaced');
   assert.equal(alreadyDestroyed.quitCalls.value, 0, 'replacement after double destroy does not quit');
 
-  // Normal close outside recovery keeps the platform quit policy.
+  // Normal close outside recovery keeps the platform quit policy, while startup suppresses it.
   const idle = buildHarness(replaceWithLiveWindow);
   idle.handleAllWindowsClosed('win32');
   idle.handleAllWindowsClosed('linux');
   assert.equal(idle.quitCalls.value, 2, 'normal Windows/Linux all-closed still quits');
   idle.handleAllWindowsClosed('darwin');
   assert.equal(idle.quitCalls.value, 2, 'macOS never quits on all-closed');
+  assert.equal(
+    shouldQuitOnAllWindowsClosed('win32', false, true),
+    false,
+    'Windows does not quit on all-closed while runtime is starting',
+  );
+  assert.equal(
+    shouldQuitOnAllWindowsClosed('linux', false, true),
+    false,
+    'Linux does not quit on all-closed while runtime is starting',
+  );
 
   // Unhealthy runtime relaunches instead of destroying a window it cannot replace.
   const unhealthy = buildHarness(replaceWithLiveWindow);

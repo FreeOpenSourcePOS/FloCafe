@@ -1842,7 +1842,13 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (shouldQuitOnAllWindowsClosed(process.platform, failedWindowRecovery.isReplacingWindow())) {
+  if (
+    shouldQuitOnAllWindowsClosed(
+      process.platform,
+      failedWindowRecovery.isReplacingWindow(),
+      runtimeState === 'starting',
+    )
+  ) {
     app.quit();
   }
 });

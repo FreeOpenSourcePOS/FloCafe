@@ -9,6 +9,8 @@ const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-production-restore-'));
 
+let safeStorageAvailable = false;
+
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return {
@@ -16,6 +18,16 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
         isPackaged: true,
         getPath: () => testDir,
         getVersion: () => 'test',
+      },
+      safeStorage: {
+        isEncryptionAvailable: () => safeStorageAvailable,
+        encryptString: (value: string) =>
+          Buffer.from('enc:' + Buffer.from(value, 'utf8').toString('base64')),
+        decryptString: (value: Buffer) => {
+          const text = value.toString();
+          if (!text.startsWith('enc:')) throw new Error('not decryptable');
+          return Buffer.from(text.slice(4), 'base64').toString('utf8');
+        },
       },
     };
   }
@@ -39,6 +51,11 @@ import {
   buildIdealSchemaDb,
 } from '../main/db';
 import { adjustProductStock } from '../main/services/inventory';
+import {
+  clearJWTSecretCache,
+  getJWTSecret,
+  JWT_SECRET_SAFE_STORAGE_MARKER,
+} from '../main/security/jwt-secret';
 
 function assertNoRestoreAttachment(): void {
   const attached = getDatabase().prepare('PRAGMA database_list').all() as { name: string }[];
@@ -205,8 +222,19 @@ async function run() {
       'true',
       'direct restore uses the KDS setting from the selected backup',
     );
+    const rotatedJwtAfterRestore = (
+      getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get('jwt_secret') as {
+        value: string;
+      }
+    ).value;
+    assert.match(
+      rotatedJwtAfterRestore,
+      /^[0-9a-f]{64}$/,
+      'direct restore rotates jwt_secret to a fresh 32-byte hex secret',
+    );
+    assert.notEqual(rotatedJwtAfterRestore, 'backup-jwt');
+    assert.notEqual(rotatedJwtAfterRestore, 'current-jwt');
     for (const [key, expected] of [
-      ['jwt_secret', 'backup-jwt'],
       ['cloud_api_key', 'backup-cloud-key'],
       ['cloud_device_secret', 'backup-device-secret'],
       ['cloud_pos_hash', 'backup-pos-hash'],
@@ -222,6 +250,73 @@ async function run() {
         expected,
         `direct restore uses backup ${key}`,
       );
+    }
+
+    const safeStorageMarkerBackup = path.join(testDir, 'safe-storage-marker-backup.db');
+    copyAndStamp(sameSchemaBackup, safeStorageMarkerBackup, currentVersion);
+    const safeStorageMarkerDb = new Database(safeStorageMarkerBackup);
+    safeStorageMarkerDb.pragma('foreign_keys = OFF');
+    safeStorageMarkerDb
+      .prepare("UPDATE settings SET value = ? WHERE key = 'jwt_secret'")
+      .run(JWT_SECRET_SAFE_STORAGE_MARKER);
+    safeStorageMarkerDb.close();
+    const safeStorageMarkerRestore = restoreBackup(safeStorageMarkerBackup, true);
+    assert.equal(
+      safeStorageMarkerRestore.success,
+      true,
+      'restore succeeds when backup stores safe-storage:v1 marker',
+    );
+    const rotatedFromMarker = (
+      getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get('jwt_secret') as {
+        value: string;
+      }
+    ).value;
+    assert.match(
+      rotatedFromMarker,
+      /^[0-9a-f]{64}$/,
+      'restore rotates safe-storage:v1 marker to a fresh 64-char hex secret',
+    );
+    clearJWTSecretCache();
+    assert.equal(
+      getJWTSecret(),
+      rotatedFromMarker,
+      'getJWTSecret succeeds after restoring a safe-storage:v1 backup without OS safeStorage',
+    );
+
+    const preRestoreEncryptedSecret = 'f'.repeat(64);
+    fs.writeFileSync(
+      path.join(testDir, 'jwt-secret.enc'),
+      Buffer.from('enc:' + Buffer.from(preRestoreEncryptedSecret, 'utf8').toString('base64')),
+      { mode: 0o600 },
+    );
+    safeStorageAvailable = true;
+    try {
+      const safeStorageEnabledRestore = restoreBackup(safeStorageMarkerBackup, true);
+      assert.equal(
+        safeStorageEnabledRestore.success,
+        true,
+        'restore succeeds when OS safeStorage is available',
+      );
+      clearJWTSecretCache();
+      const postRestoreSecret = getJWTSecret();
+      assert.match(postRestoreSecret, /^[0-9a-f]{64}$/);
+      assert.notEqual(
+        postRestoreSecret,
+        preRestoreEncryptedSecret,
+        'restore rotates jwt_secret instead of reusing pre-restore jwt-secret.enc when OS safeStorage is available',
+      );
+      assert.equal(
+        (
+          getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get('jwt_secret') as {
+            value: string;
+          }
+        ).value,
+        JWT_SECRET_SAFE_STORAGE_MARKER,
+        'getJWTSecret migrates rotated secret into OS safeStorage',
+      );
+    } finally {
+      safeStorageAvailable = false;
+      fs.rmSync(path.join(testDir, 'jwt-secret.enc'), { force: true });
     }
 
     assert.equal(

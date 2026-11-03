@@ -151,15 +151,19 @@ const frontendRequire = Module.createRequire(resolve(process.cwd(), 'frontend/pa
 const originalResolveFilename = Module._resolveFilename;
 const originalLoad = Module._load;
 const reactPath = frontendRequire.resolve('react');
+const reactJsxRuntimePath = frontendRequire.resolve('react/jsx-runtime');
 const reactDomPath = frontendRequire.resolve('react-dom');
 const reactDomServerPath = frontendRequire.resolve('react-dom/server');
 const useIntlPath = frontendRequire.resolve('use-intl');
 const zustandPath = frontendRequire.resolve('zustand');
+const zustandMiddlewarePath = frontendRequire.resolve('zustand/middleware');
 
 Module._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
   let resolvedRequest = request;
   if (request === 'react') {
     resolvedRequest = reactPath;
+  } else if (request === 'react/jsx-runtime') {
+    resolvedRequest = reactJsxRuntimePath;
   } else if (request === 'react-dom') {
     resolvedRequest = reactDomPath;
   } else if (request === 'react-dom/server') {
@@ -168,12 +172,16 @@ Module._resolveFilename = function (request: string, parent: any, isMain: boolea
     resolvedRequest = useIntlPath;
   } else if (request === 'zustand') {
     resolvedRequest = zustandPath;
+  } else if (request === 'zustand/middleware') {
+    resolvedRequest = zustandMiddlewarePath;
   } else if (request === '@countries') {
     resolvedRequest = resolve(process.cwd(), 'main/countries.ts');
   } else if (request.startsWith('@/')) {
     resolvedRequest = resolve(process.cwd(), 'frontend/src', request.slice(2));
   } else if (request.startsWith('@print/')) {
     resolvedRequest = resolve(process.cwd(), 'shared/print', request.slice('@print/'.length));
+  } else if (request.startsWith('@shared/')) {
+    resolvedRequest = resolve(process.cwd(), 'shared', request.slice('@shared/'.length));
   }
   return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
 };
@@ -186,17 +194,40 @@ Module._load = function (request: string, parent: any, isMain: boolean) {
       usePathname: () => '/',
     };
   }
+  if (request === 'radix-ui') {
+    const mod = originalLoad.call(this, frontendRequire.resolve('radix-ui'), parent, isMain);
+    const React = frontendRequire('react');
+    return {
+      ...mod,
+      Dialog: {
+        ...mod.Dialog,
+        Portal: ({ children }: any) => React.createElement(React.Fragment, null, children),
+      },
+    };
+  }
+  if (request === 'vaul') {
+    const mod = originalLoad.call(this, frontendRequire.resolve('vaul'), parent, isMain);
+    const React = frontendRequire('react');
+    return {
+      ...mod,
+      Drawer: {
+        ...mod.Drawer,
+        Portal: ({ children }: any) => React.createElement(React.Fragment, null, children),
+      },
+    };
+  }
   return originalLoad.apply(this, arguments as any);
 };
 
+const origDocument = (globalThis as any).document;
 try {
   const React = frontendRequire('react');
   const ReactDOMServer = frontendRequire('react-dom/server');
   const { IntlProvider } = frontendRequire('use-intl');
   const postcss = frontendRequire('postcss');
   const enMessages = require('../frontend/src/lib/i18n/messages/en.json');
-  const { useAuthStore } = require('../frontend/src/store/auth');
-  const { useCartStore } = require('../frontend/src/store/cart');
+  const { useAuthStore } = require('@/store/auth');
+  const { useCartStore } = require('@/store/cart');
 
   const renderWithIntl = (element: any) =>
     ReactDOMServer.renderToStaticMarkup(
@@ -255,72 +286,62 @@ try {
   );
 
   // 2. Sheet and Drawer UI primitives rendered output
-  const radixUi = frontendRequire('radix-ui');
-  const vaul = frontendRequire('vaul');
-  const origSheetPortal = radixUi.Dialog.Portal;
-  const origDrawerPortal = vaul.Drawer.Portal;
-  radixUi.Dialog.Portal = ({ children }: any) => React.createElement(React.Fragment, null, children);
-  vaul.Drawer.Portal = ({ children }: any) => React.createElement(React.Fragment, null, children);
-  try {
-    const { Sheet, SheetContent, SheetTitle } = require('../frontend/src/components/ui/sheet');
-    const { Drawer, DrawerContent, DrawerTitle } = require('../frontend/src/components/ui/drawer');
+  const { Sheet, SheetContent, SheetTitle } = require('../frontend/src/components/ui/sheet');
+  const { Drawer, DrawerContent, DrawerTitle } = require('../frontend/src/components/ui/drawer');
+  (globalThis as any).document = { body: { style: {} }, querySelector: () => null };
 
-    for (const side of ['right', 'left', 'top'] as const) {
-      const sheetMarkup = ReactDOMServer.renderToStaticMarkup(
-        React.createElement(
-          Sheet,
-          { open: true },
-          React.createElement(
-            SheetContent,
-            { side, 'aria-describedby': undefined },
-            React.createElement(SheetTitle, null, 'Sheet Title'),
-          ),
-        ),
-      );
-      assert.match(
-        sheetMarkup,
-        /data-slot="sheet-content"[^>]*top-\[var\(--flo-sidebar-block-start,0px\)\]/,
-        `rendered SheetContent (${side}) offsets below the desktop titlebar`,
-      );
-      if (side === 'right' || side === 'left') {
-        assert.match(
-          sheetMarkup,
-          /data-slot="sheet-content"[^>]*h-\[calc\(100%-var\(--flo-sidebar-block-start,0px\)\)\]/,
-          `rendered SheetContent (${side}) adjusts height for the desktop titlebar`,
-        );
-      }
-    }
-
-    const drawerMarkup = ReactDOMServer.renderToStaticMarkup(
+  for (const side of ['right', 'left', 'top'] as const) {
+    const sheetMarkup = ReactDOMServer.renderToStaticMarkup(
       React.createElement(
-        Drawer,
-        { open: true, direction: 'right' },
+        Sheet,
+        { open: true },
         React.createElement(
-          DrawerContent,
-          { 'aria-describedby': undefined },
-          React.createElement(DrawerTitle, null, 'Drawer Title'),
+          SheetContent,
+          { side, 'aria-describedby': undefined },
+          React.createElement(SheetTitle, null, 'Sheet Title'),
         ),
       ),
     );
     assert.match(
-      drawerMarkup,
-      /data-slot="drawer-content"[^>]*data-\[vaul-drawer-direction=right\]:top-\[var\(--flo-sidebar-block-start,0px\)\]/,
-      'rendered DrawerContent right direction offsets below the desktop titlebar',
+      sheetMarkup,
+      /data-slot="sheet-content"[^>]*top-\[var\(--flo-sidebar-block-start,0px\)\]/,
+      `rendered SheetContent (${side}) offsets below the desktop titlebar`,
     );
-    assert.match(
-      drawerMarkup,
-      /data-slot="drawer-content"[^>]*data-\[vaul-drawer-direction=left\]:top-\[var\(--flo-sidebar-block-start,0px\)\]/,
-      'rendered DrawerContent left direction offsets below the desktop titlebar',
-    );
-    assert.match(
-      drawerMarkup,
-      /data-slot="drawer-content"[^>]*data-\[vaul-drawer-direction=top\]:top-\[var\(--flo-sidebar-block-start,0px\)\]/,
-      'rendered DrawerContent top direction offsets below the desktop titlebar',
-    );
-  } finally {
-    radixUi.Dialog.Portal = origSheetPortal;
-    vaul.Drawer.Portal = origDrawerPortal;
+    if (side === 'right' || side === 'left') {
+      assert.match(
+        sheetMarkup,
+        /data-slot="sheet-content"[^>]*h-\[calc\(100%-var\(--flo-sidebar-block-start,0px\)\)\]/,
+        `rendered SheetContent (${side}) adjusts height for the desktop titlebar`,
+      );
+    }
   }
+
+  const drawerMarkup = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(
+      Drawer,
+      { open: true, direction: 'right' },
+      React.createElement(
+        DrawerContent,
+        { 'aria-describedby': undefined },
+        React.createElement(DrawerTitle, null, 'Drawer Title'),
+      ),
+    ),
+  );
+  assert.match(
+    drawerMarkup,
+    /data-slot="drawer-content"[^>]*data-\[vaul-drawer-direction=right\]:top-\[var\(--flo-sidebar-block-start,0px\)\]/,
+    'rendered DrawerContent right direction offsets below the desktop titlebar',
+  );
+  assert.match(
+    drawerMarkup,
+    /data-slot="drawer-content"[^>]*data-\[vaul-drawer-direction=left\]:top-\[var\(--flo-sidebar-block-start,0px\)\]/,
+    'rendered DrawerContent left direction offsets below the desktop titlebar',
+  );
+  assert.match(
+    drawerMarkup,
+    /data-slot="drawer-content"[^>]*data-\[vaul-drawer-direction=top\]:top-\[var\(--flo-sidebar-block-start,0px\)\]/,
+    'rendered DrawerContent top direction offsets below the desktop titlebar',
+  );
 
   // 3. Parsed CSS AST check on globals.css for Electron no-drag rules
   const cssAst = postcss.parse(source('frontend/src/app/globals.css'));
@@ -378,6 +399,12 @@ try {
     } as any,
     2,
   );
+
+  const { usePosSettingsStore } = require('@/store/pos-settings');
+  usePosSettingsStore.setState({ billingType: 'postpaid' } as any);
+  Object.assign(usePosSettingsStore.getInitialState(), usePosSettingsStore.getState());
+  Object.assign(useAuthStore.getInitialState(), useAuthStore.getState());
+  Object.assign(useCartStore.getInitialState(), useCartStore.getState());
 
   const CartPanel = require('../frontend/src/components/pos/CartPanel').default;
   const cartMarkup = renderWithIntl(
@@ -456,26 +483,31 @@ try {
   );
   assert.match(
     inventoryMarkup,
-    /<div class="relative w-full sm:max-w-xs"><svg[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[^>]*width="16" height="16"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
+    /<div class="relative w-full sm:max-w-xs"><svg[^>]*width="16" height="16"[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
     'rendered InventoryPage search bar matches the sleek Products search bar styling',
   );
 
   const customersMarkup = renderWithIntl(React.createElement(CustomersPage));
   assert.match(
     customersMarkup,
-    /<div class="relative mb-4 w-full shrink-0 sm:max-w-xs"><svg[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[^>]*width="16" height="16"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
+    /<div class="relative mb-4 w-full shrink-0 sm:max-w-xs"><svg[^>]*width="16" height="16"[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
     'rendered CustomersPage search bar matches the sleek Products search bar styling',
   );
 
   const ordersMarkup = renderWithIntl(React.createElement(OrdersPage));
   assert.match(
     ordersMarkup,
-    /<div class="relative w-full sm:max-w-xs"><svg[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[^>]*width="16" height="16"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
+    /<div class="relative w-full sm:max-w-xs"><svg[^>]*width="16" height="16"[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
     'rendered OrdersPage search bar matches the sleek Products search bar styling',
   );
 
   useCartStore.getState().clearCart();
 } finally {
+  if (origDocument === undefined) {
+    delete (globalThis as any).document;
+  } else {
+    (globalThis as any).document = origDocument;
+  }
   Module._resolveFilename = originalResolveFilename;
   Module._load = originalLoad;
 }

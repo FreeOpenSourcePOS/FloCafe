@@ -115,7 +115,7 @@ function ItemQuantityControl({
         <button
           type="button"
           onClick={() => stepBy(-1)}
-          className="touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+          className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
           aria-label={t('remove')}
         >
           <Minus size={13} />
@@ -129,7 +129,7 @@ function ItemQuantityControl({
         <button
           type="button"
           onClick={() => stepBy(1)}
-          className="touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+          className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
           aria-label={t('addItems')}
         >
           <Plus size={13} />
@@ -143,7 +143,7 @@ function ItemQuantityControl({
       <button
         type="button"
         onClick={() => stepBy(-1)}
-        className="touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+        className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
         aria-label={t('remove')}
       >
         <Minus size={13} />
@@ -165,7 +165,7 @@ function ItemQuantityControl({
       <button
         type="button"
         onClick={() => stepBy(1)}
-        className="touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+        className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
         aria-label={t('addItems')}
       >
         <Plus size={13} />
@@ -383,7 +383,7 @@ export default function CartPanel({
                   type="button"
                   disabled={Boolean(existingOrder && existingOrder.type !== type)}
                   onClick={() => cart.setOrderType(type)}
-                  className={`touch-target h-8 min-h-8 flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${showIcon ? '' : 'whitespace-nowrap'} ${
+                  className={`touch-target h-9 min-h-9 flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${showIcon ? '' : 'whitespace-nowrap'} ${
                     cart.orderType === type
                       ? 'bg-card text-brand shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -407,7 +407,7 @@ export default function CartPanel({
                 type="button"
                 aria-label={t('decreasePax')}
                 onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))}
-                className="touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+                className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
               >
                 <Minus size={13} />
               </button>
@@ -427,7 +427,7 @@ export default function CartPanel({
                 type="button"
                 aria-label={t('increasePax')}
                 onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))}
-                className="touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+                className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
               >
                 <Plus size={13} />
               </button>
@@ -713,7 +713,7 @@ export default function CartPanel({
                       <button
                         type="button"
                         onClick={() => cart.removeItem(item.id)}
-                        className="order-last touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 dark:hover:text-red-400 active:bg-red-50 dark:active:bg-red-950/40"
+                        className="order-last relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 dark:hover:text-red-400 active:bg-red-50 dark:active:bg-red-950/40"
                         aria-label={t('remove')}
                         title={t('remove')}
                       >
@@ -723,7 +723,7 @@ export default function CartPanel({
                         <button
                           type="button"
                           onClick={() => setPriceOverrideItemId(item.id)}
-                          className="touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+                          className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
                           aria-label={tOrders('overridePrice')}
                           title={tOrders('overridePrice')}
                         >
@@ -734,7 +734,7 @@ export default function CartPanel({
                         <button
                           type="button"
                           onClick={() => onEditItem(item)}
-                          className="touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+                          className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
                           aria-label={tCommon('edit')}
                           title={tCommon('edit')}
                         >
@@ -778,14 +778,14 @@ export default function CartPanel({
             </span>
           </div>
         )}
-        <div className="mb-2 flex items-baseline justify-between gap-2">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-sm">
           <span className="text-xs text-muted-foreground">
             {t('items')}{' '}
             <span className="ms-1 font-semibold text-foreground tabular-nums">
               {cart.itemCount()}
             </span>
           </span>
-          <span className="flex items-baseline gap-2">
+          <span className="ms-auto flex flex-wrap items-baseline justify-end gap-1.5 min-w-0">
             <span className="text-sm font-semibold text-foreground">{t('subtotal')}</span>
             <span className="text-base font-bold text-brand tabular-nums">
               {fmt(cart.subtotal())}

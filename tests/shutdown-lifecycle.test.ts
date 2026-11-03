@@ -18,7 +18,11 @@ import {
   trackHttpRequestWork,
   waitForHttpShutdownWork,
 } from '../main/shutdown';
-import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from '../main/updater-shutdown';
+import {
+  createAutoUpdaterErrorHandler,
+  createRestartAndInstallHandler,
+  type UpdateShutdownState,
+} from '../main/updater-shutdown';
 import {
   createFailedWindowRecovery,
   shouldQuitOnAllWindowsClosed,
@@ -42,7 +46,9 @@ async function getFreeTcpPort(): Promise<number> {
   const address = probe.address();
   assert(address && typeof address !== 'string');
   const port = address.port;
-  await new Promise<void>((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
+  await new Promise<void>((resolve, reject) =>
+    probe.close((error) => (error ? reject(error) : resolve())),
+  );
   return port;
 }
 
@@ -77,7 +83,10 @@ class ProcessDouble {
   once(event: string, listener: (...args: any[]) => void): void {
     const wrapped = (...args: any[]) => {
       const listeners = this.listeners.get(event) || [];
-      this.listeners.set(event, listeners.filter((candidate) => candidate !== wrapped));
+      this.listeners.set(
+        event,
+        listeners.filter((candidate) => candidate !== wrapped),
+      );
       listener(...args);
     };
     const listeners = this.listeners.get(event) || [];
@@ -111,8 +120,18 @@ async function testCoordinatorOrderingAndIdempotency(): Promise<void> {
         events.push('http:end');
       },
     },
-    { name: 'websocket', run: () => { events.push('websocket'); } },
-    { name: 'database', run: () => { events.push('database'); } },
+    {
+      name: 'websocket',
+      run: () => {
+        events.push('websocket');
+      },
+    },
+    {
+      name: 'database',
+      run: () => {
+        events.push('database');
+      },
+    },
   ]);
 
   const first = shutdown();
@@ -125,13 +144,28 @@ async function testCoordinatorOrderingAndIdempotency(): Promise<void> {
   const startupFailure = new Error('startup failed');
   const failureEvents: string[] = [];
   const failingShutdown = createShutdownCoordinator(() => [
-    { name: 'failed listener', run: () => { failureEvents.push('listener'); throw startupFailure; } },
-    { name: 'database', run: () => { failureEvents.push('database'); } },
+    {
+      name: 'failed listener',
+      run: () => {
+        failureEvents.push('listener');
+        throw startupFailure;
+      },
+    },
+    {
+      name: 'database',
+      run: () => {
+        failureEvents.push('database');
+      },
+    },
   ]);
   await assert.rejects(failingShutdown(), (error: unknown) => {
     return error instanceof AggregateError && error.errors.includes(startupFailure);
   });
-  assert.deepEqual(failureEvents, ['listener', 'database'], 'later cleanup still runs after startup failure');
+  assert.deepEqual(
+    failureEvents,
+    ['listener', 'database'],
+    'later cleanup still runs after startup failure',
+  );
 }
 
 async function testDatabaseCloseRequiresSuccessfulDrains(): Promise<void> {
@@ -141,35 +175,92 @@ async function testDatabaseCloseRequiresSuccessfulDrains(): Promise<void> {
       {
         name: 'listener',
         blocksDatabase: true,
-        run: () => { events.push('listener'); throw new Error('listener did not drain'); },
+        run: () => {
+          events.push('listener');
+          throw new Error('listener did not drain');
+        },
       },
-      { name: 'database admission', run: () => { events.push('admission'); } },
-      { name: 'database requests', run: () => { events.push('requests'); } },
-      { name: 'database', databaseClose: true, run: () => { events.push('database'); } },
+      {
+        name: 'database admission',
+        run: () => {
+          events.push('admission');
+        },
+      },
+      {
+        name: 'database requests',
+        run: () => {
+          events.push('requests');
+        },
+      },
+      {
+        name: 'database',
+        databaseClose: true,
+        run: () => {
+          events.push('database');
+        },
+      },
     ]),
   );
-  assert.deepEqual(events, ['listener', 'admission', 'requests'], 'database closure waits for required drains');
+  assert.deepEqual(
+    events,
+    ['listener', 'admission', 'requests'],
+    'database closure waits for required drains',
+  );
 }
 
 async function testTimedOutCleanupUsesFatalBarrier(): Promise<void> {
-  const timeout = Object.assign(new Error('Drive ownership did not settle'), { code: 'ERR_SHUTDOWN_TIMEOUT' });
+  const timeout = Object.assign(new Error('Drive ownership did not settle'), {
+    code: 'ERR_SHUTDOWN_TIMEOUT',
+  });
   const events: string[] = [];
   let fatalTimeoutObserved = false;
   await assert.rejects(
-    runShutdownSteps([
+    runShutdownSteps(
+      [
+        {
+          name: 'Google Drive',
+          blocksDatabase: true,
+          run: () => {
+            events.push('drive');
+            throw timeout;
+          },
+        },
+        {
+          name: 'WhatsApp',
+          blocksDatabase: true,
+          run: () => {
+            events.push('whatsapp');
+          },
+        },
+        {
+          name: 'database admission',
+          run: () => {
+            events.push('admission');
+          },
+        },
+        {
+          name: 'database',
+          databaseClose: true,
+          run: () => {
+            events.push('database');
+          },
+        },
+      ],
       {
-        name: 'Google Drive',
-        blocksDatabase: true,
-        run: () => { events.push('drive'); throw timeout; },
+        onFatalTimeout: () => {
+          fatalTimeoutObserved = true;
+          events.push('fatal-timeout');
+        },
       },
-      { name: 'WhatsApp', blocksDatabase: true, run: () => { events.push('whatsapp'); } },
-      { name: 'database admission', run: () => { events.push('admission'); } },
-      { name: 'database', databaseClose: true, run: () => { events.push('database'); } },
-    ], { onFatalTimeout: () => { fatalTimeoutObserved = true; events.push('fatal-timeout'); } }),
+    ),
     (error: unknown) => error === timeout,
   );
   assert.equal(fatalTimeoutObserved, true, 'a bounded timeout invokes the fatal termination hook');
-  assert.deepEqual(events, ['drive', 'fatal-timeout'], 'a bounded timeout stops cleanup before later side effects or database progression');
+  assert.deepEqual(
+    events,
+    ['drive', 'fatal-timeout'],
+    'a bounded timeout stops cleanup before later side effects or database progression',
+  );
 }
 
 async function testActiveHttpAndWebSocketDrain(): Promise<void> {
@@ -210,7 +301,11 @@ async function testActiveHttpAndWebSocketDrain(): Promise<void> {
   await delay(50);
   assert.equal(shutdownSettled, false, 'shutdown waits for the active HTTP request');
   if (wsClient.readyState !== WebSocket.CLOSED) await once(wsClient, 'close');
-  assert.equal(wsClient.readyState, WebSocket.CLOSED, 'shutdown closes WebSocket clients while HTTP drains');
+  assert.equal(
+    wsClient.readyState,
+    WebSocket.CLOSED,
+    'shutdown closes WebSocket clients while HTTP drains',
+  );
 
   heldResponse?.end('drained');
   await shutdown;
@@ -223,13 +318,17 @@ async function testHttpStopsAcceptingBeforeSlowWebSocketDrain(): Promise<void> {
 
   let websocketDrainFinished = false;
   const slowWss = {
-    clients: new Set([{
-      readyState: WebSocket.OPEN,
-      close: () => {},
-      once: (event: string, listener: () => void) => { if (event === 'close') setTimeout(listener, 100); },
-      off: () => {},
-      terminate: () => {},
-    }]),
+    clients: new Set([
+      {
+        readyState: WebSocket.OPEN,
+        close: () => {},
+        once: (event: string, listener: () => void) => {
+          if (event === 'close') setTimeout(listener, 100);
+        },
+        off: () => {},
+        terminate: () => {},
+      },
+    ]),
     close: (callback: () => void) => {
       setTimeout(() => {
         websocketDrainFinished = true;
@@ -241,7 +340,11 @@ async function testHttpStopsAcceptingBeforeSlowWebSocketDrain(): Promise<void> {
   try {
     const shutdown = closeServerResources(server, slowWss, 'slow WebSocket test');
     await delay(20);
-    assert.equal(server.listening, false, 'HTTP stops accepting before a slow WebSocket drain finishes');
+    assert.equal(
+      server.listening,
+      false,
+      'HTTP stops accepting before a slow WebSocket drain finishes',
+    );
     assert.equal(websocketDrainFinished, false, 'the WebSocket drain is still pending');
     await shutdown;
   } finally {
@@ -252,8 +355,12 @@ async function testHttpStopsAcceptingBeforeSlowWebSocketDrain(): Promise<void> {
 async function testTrackedHttpHandlerDrain(): Promise<void> {
   let releaseHandler: (() => void) | null = null;
   let requestStarted: (() => void) | null = null;
-  const handlerStarted = new Promise<void>((resolve) => { requestStarted = resolve; });
-  const handlerWork = new Promise<void>((resolve) => { releaseHandler = resolve; });
+  const handlerStarted = new Promise<void>((resolve) => {
+    requestStarted = resolve;
+  });
+  const handlerWork = new Promise<void>((resolve) => {
+    releaseHandler = resolve;
+  });
   const server = http.createServer((request, response) => {
     requestStarted?.();
     void trackHttpRequestWork(request, handlerWork).then(() => response.end('done'));
@@ -267,7 +374,9 @@ async function testTrackedHttpHandlerDrain(): Promise<void> {
   await handlerStarted;
 
   let settled = false;
-  const shutdown = closeServerResources(server, null, 'tracked HTTP handler test').then(() => { settled = true; });
+  const shutdown = closeServerResources(server, null, 'tracked HTTP handler test').then(() => {
+    settled = true;
+  });
   await delay(20);
   assert.equal(settled, false, 'shutdown waits for tracked handler work after listener close');
   releaseHandler?.();
@@ -278,8 +387,12 @@ async function testTrackedHttpHandlerDrain(): Promise<void> {
 async function testTimedOutHttpHandlerBarrier(): Promise<void> {
   let releaseHandler: (() => void) | null = null;
   let requestStarted: (() => void) | null = null;
-  const handlerStarted = new Promise<void>((resolve) => { requestStarted = resolve; });
-  const handlerWork = new Promise<void>((resolve) => { releaseHandler = resolve; });
+  const handlerStarted = new Promise<void>((resolve) => {
+    requestStarted = resolve;
+  });
+  const handlerWork = new Promise<void>((resolve) => {
+    releaseHandler = resolve;
+  });
   const server = http.createServer((request, response) => {
     requestStarted?.();
     void trackHttpRequestWork(request, handlerWork).then(() => {
@@ -314,44 +427,71 @@ async function testStandaloneStartupCancellation(): Promise<void> {
   let shutdownRequested = false;
   await assert.rejects(
     startStandaloneServers({
-      initializeDatabase: () => { events.push('database'); },
-      prepare: () => { events.push('prepare'); },
+      initializeDatabase: () => {
+        events.push('database');
+      },
+      prepare: () => {
+        events.push('prepare');
+      },
       startServer: async () => {
         events.push('main');
         shutdownRequested = true;
       },
-      startKdsServer: async () => { events.push('kds'); },
-      startServerApp: async () => { events.push('server-app'); },
+      startKdsServer: async () => {
+        events.push('kds');
+      },
+      startServerApp: async () => {
+        events.push('server-app');
+      },
       isShutdownRequested: () => shutdownRequested,
     }),
-    (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED' && /startup cancelled during shutdown/.test(error.message),
+    (error: any) =>
+      error?.code === 'ERR_SHUTDOWN_ABORTED' &&
+      /startup cancelled during shutdown/.test(error.message),
   );
-  assert.deepEqual(events, ['database', 'prepare', 'main'], 'shutdown between startup awaits prevents later listeners');
+  assert.deepEqual(
+    events,
+    ['database', 'prepare', 'main'],
+    'shutdown between startup awaits prevents later listeners',
+  );
 }
 
 async function testDatabaseImportShutdownCancellation(): Promise<void> {
   for (const mode of ['import', 'reset'] as const) {
-    const child = spawn(process.execPath, [path.join(__dirname, 'database-import-shutdown-child.cjs'), mode], {
-      cwd: path.resolve(__dirname, '..'),
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawn(
+      process.execPath,
+      [path.join(__dirname, 'database-import-shutdown-child.cjs'), mode],
+      {
+        cwd: path.resolve(__dirname, '..'),
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
 
     let output = '';
-    child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
-    child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    child.stdout.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
     try {
-      const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`database ${mode} cancellation child timed out: ${output}`)), 20_000);
-        child.once('error', (error) => {
-          clearTimeout(timer);
-          reject(error);
-        });
-        child.once('exit', (exitCode, exitSignal) => {
-          clearTimeout(timer);
-          resolve([exitCode, exitSignal]);
-        });
-      });
+      const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>(
+        (resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error(`database ${mode} cancellation child timed out: ${output}`)),
+            20_000,
+          );
+          child.once('error', (error) => {
+            clearTimeout(timer);
+            reject(error);
+          });
+          child.once('exit', (exitCode, exitSignal) => {
+            clearTimeout(timer);
+            resolve([exitCode, exitSignal]);
+          });
+        },
+      );
       assert.equal(signal, null, `database ${mode} cancellation child exited by signal: ${output}`);
       assert.equal(code, 0, `database ${mode} cancellation regression failed: ${output}`);
     } finally {
@@ -365,7 +505,11 @@ async function testPendingHttpListenIsCancelled(): Promise<void> {
   server.listen(0, '127.0.0.1');
   await closeServerResources(server, null, 'pending HTTP listen test');
   await delay(20);
-  assert.equal(server.listening, false, 'shutdown cancels an HTTP listener that has not finished starting');
+  assert.equal(
+    server.listening,
+    false,
+    'shutdown cancels an HTTP listener that has not finished starting',
+  );
 }
 
 async function testEntrypointCoverage(): Promise<void> {
@@ -382,13 +526,25 @@ async function testEntrypointCoverage(): Promise<void> {
         cleanupCalls++;
         await delay(5);
       },
-      setQuitting: () => { quittingCalls++; },
-      destroyWindow: () => { windowDestroyCalls++; },
+      setQuitting: () => {
+        quittingCalls++;
+      },
+      destroyWindow: () => {
+        windowDestroyCalls++;
+      },
     });
 
     const cleanupPromise = entrypoints.runCleanup();
-    assert.equal(entrypoints.shutdownSignal.aborted, true, `${signal} aborts the shared shutdown signal before cleanup settles`);
-    assert.strictEqual(cleanupPromise, entrypoints.runCleanup(), 'repeated shutdown calls share one cleanup promise');
+    assert.equal(
+      entrypoints.shutdownSignal.aborted,
+      true,
+      `${signal} aborts the shared shutdown signal before cleanup settles`,
+    );
+    assert.strictEqual(
+      cleanupPromise,
+      entrypoints.runCleanup(),
+      'repeated shutdown calls share one cleanup promise',
+    );
     process.emit(signal);
     process.emit(signal);
     await cleanupPromise;
@@ -396,10 +552,17 @@ async function testEntrypointCoverage(): Promise<void> {
     assert.equal(cleanupCalls, 1, `${signal} runs cleanup once`);
     assert.deepEqual(process.exitCodes, [0], `${signal} exits once after repeated signals`);
     assert.equal(quittingCalls, 1, `${signal} marks the app as quitting`);
-    assert.equal(windowDestroyCalls, 0, `${signal} does not destroy the window through the quit path`);
+    assert.equal(
+      windowDestroyCalls,
+      0,
+      `${signal} does not destroy the window through the quit path`,
+    );
   };
 
-  for (const [label, trayQuit] of [['normal quit', false], ['tray quit', true]] as const) {
+  for (const [label, trayQuit] of [
+    ['normal quit', false],
+    ['tray quit', true],
+  ] as const) {
     const app = new AppDouble();
     const process = new ProcessDouble();
     let cleanupCalls = 0;
@@ -412,10 +575,19 @@ async function testEntrypointCoverage(): Promise<void> {
         cleanupCalls++;
         await delay(5);
       },
-      setQuitting: () => { quittingCalls++; },
-      destroyWindow: () => { windowDestroyCalls++; },
+      setQuitting: () => {
+        quittingCalls++;
+      },
+      destroyWindow: () => {
+        windowDestroyCalls++;
+      },
     });
-    const firstWillQuit = { prevented: false, preventDefault: () => { firstWillQuit.prevented = true; } };
+    const firstWillQuit = {
+      prevented: false,
+      preventDefault: () => {
+        firstWillQuit.prevented = true;
+      },
+    };
     app.emit('before-quit');
     if (trayQuit) quittingCalls++;
     app.emit('will-quit', firstWillQuit);
@@ -424,10 +596,19 @@ async function testEntrypointCoverage(): Promise<void> {
     assert.equal(firstWillQuit.prevented, true, `${label} waits for cleanup`);
     assert.deepEqual(app.exitCodes, [0], `${label} exits Electron cleanly after cleanup`);
     assert.equal(cleanupCalls, 1, `${label} runs cleanup once`);
-    assert.equal(quittingCalls, trayQuit ? 3 : 2, `${label} marks both quit entrypoints as quitting`);
+    assert.equal(
+      quittingCalls,
+      trayQuit ? 3 : 2,
+      `${label} marks both quit entrypoints as quitting`,
+    );
     assert.equal(windowDestroyCalls, 1, `${label} destroys the window after cleanup`);
 
-    const secondWillQuit = { prevented: false, preventDefault: () => { secondWillQuit.prevented = true; } };
+    const secondWillQuit = {
+      prevented: false,
+      preventDefault: () => {
+        secondWillQuit.prevented = true;
+      },
+    };
     app.emit('will-quit', secondWillQuit);
     assert.equal(secondWillQuit.prevented, false, `${label} allows the resumed quit`);
   }
@@ -438,7 +619,9 @@ async function testEntrypointCoverage(): Promise<void> {
     let isInstallingUpdate = false;
     let cleanupStarted = false;
     let releaseCleanup: (() => void) | null = null;
-    const cleanupHeld = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+    const cleanupHeld = new Promise<void>((resolve) => {
+      releaseCleanup = resolve;
+    });
     const entrypoints = createShutdownEntrypoints({
       app,
       process,
@@ -467,12 +650,16 @@ async function testEntrypointCoverage(): Promise<void> {
     const process = new ProcessDouble();
     let isInstallingUpdate = false;
     let rejectCleanup: ((error: Error) => void) | null = null;
-    const cleanupFailed = new Promise<void>((_resolve, reject) => { rejectCleanup = reject; });
+    const cleanupFailed = new Promise<void>((_resolve, reject) => {
+      rejectCleanup = reject;
+    });
     const failure = new Error('signal cleanup failed during updater handoff');
     const entrypoints = createShutdownEntrypoints({
       app,
       process,
-      cleanup: async () => { await cleanupFailed; },
+      cleanup: async () => {
+        await cleanupFailed;
+      },
       setQuitting: () => {},
       destroyWindow: () => {},
       isInstallingUpdate: () => isInstallingUpdate,
@@ -485,7 +672,11 @@ async function testEntrypointCoverage(): Promise<void> {
     await assert.rejects(entrypoints.runCleanup(), (error: unknown) => error === failure);
     await delay(0);
 
-    assert.deepEqual(process.exitCodes, [], 'signal does not exit after failed cleanup during updater handoff');
+    assert.deepEqual(
+      process.exitCodes,
+      [],
+      'signal does not exit after failed cleanup during updater handoff',
+    );
   }
 
   await runScenario('SIGTERM');
@@ -496,27 +687,38 @@ async function testEntrypointCoverage(): Promise<void> {
   const startupFailureEntrypoints = createShutdownEntrypoints({
     app: new AppDouble(),
     process: startupFailureProcess,
-    cleanup: async () => { await delay(5); },
+    cleanup: async () => {
+      await delay(5);
+    },
     setQuitting: () => {},
     destroyWindow: () => {},
-    getSignalExitCode: () => startupFailureObserved ? 1 : 0,
+    getSignalExitCode: () => (startupFailureObserved ? 1 : 0),
   });
   const startupFailureCleanup = startupFailureEntrypoints.runCleanup();
   startupFailureObserved = true;
   startupFailureProcess.emit('SIGTERM');
   await startupFailureCleanup;
   await delay(0);
-  assert.deepEqual(startupFailureProcess.exitCodes, [1], 'signal cleanup preserves a concurrent startup failure exit code');
+  assert.deepEqual(
+    startupFailureProcess.exitCodes,
+    [1],
+    'signal cleanup preserves a concurrent startup failure exit code',
+  );
 
   const startupFailure = new Error('startup failed');
   const failingEntrypoints = createShutdownEntrypoints({
     app: new AppDouble(),
     process: new ProcessDouble(),
-    cleanup: async () => { throw startupFailure; },
+    cleanup: async () => {
+      throw startupFailure;
+    },
     setQuitting: () => {},
     destroyWindow: () => {},
   });
-  await assert.rejects(failingEntrypoints.runCleanup(), (error: unknown) => error === startupFailure);
+  await assert.rejects(
+    failingEntrypoints.runCleanup(),
+    (error: unknown) => error === startupFailure,
+  );
 
   const startupFailureApp = new AppDouble();
   const startupFailureQuit = createShutdownEntrypoints({
@@ -527,12 +729,25 @@ async function testEntrypointCoverage(): Promise<void> {
     destroyWindow: () => {},
     getQuitExitCode: () => 1,
   });
-  const startupFailureQuitEvent = { prevented: false, preventDefault: () => { startupFailureQuitEvent.prevented = true; } };
+  const startupFailureQuitEvent = {
+    prevented: false,
+    preventDefault: () => {
+      startupFailureQuitEvent.prevented = true;
+    },
+  };
   startupFailureApp.emit('will-quit', startupFailureQuitEvent);
   await startupFailureQuit.runCleanup();
   await delay(0);
-  assert.deepEqual(startupFailureApp.exitCodes, [1], 'normal Electron quit preserves a concurrent startup failure exit code');
-  assert.equal(startupFailureApp.quitCount, 0, 'startup failure does not resume Electron quit as success');
+  assert.deepEqual(
+    startupFailureApp.exitCodes,
+    [1],
+    'normal Electron quit preserves a concurrent startup failure exit code',
+  );
+  assert.equal(
+    startupFailureApp.quitCount,
+    0,
+    'startup failure does not resume Electron quit as success',
+  );
 }
 
 async function testExitCodeEscalation(): Promise<void> {
@@ -552,12 +767,23 @@ async function testExitCodeEscalation(): Promise<void> {
   assert.equal(await first, 1, 'a later fatal shutdown caller escalates the exit code');
 
   const events: string[] = [];
-  const orderedShutdown = createExitCodeAwareShutdown(async () => {
-    events.push('cleanup');
-    return 0;
-  }, { onShutdownRequested: () => { events.push('requested'); } });
+  const orderedShutdown = createExitCodeAwareShutdown(
+    async () => {
+      events.push('cleanup');
+      return 0;
+    },
+    {
+      onShutdownRequested: () => {
+        events.push('requested');
+      },
+    },
+  );
   await orderedShutdown();
-  assert.deepEqual(events, ['requested', 'cleanup'], 'shared standalone shutdown requests integration cancellation before HTTP abort');
+  assert.deepEqual(
+    events,
+    ['requested', 'cleanup'],
+    'shared standalone shutdown requests integration cancellation before HTTP abort',
+  );
 }
 
 async function testStandaloneDevServerShutdown(): Promise<void> {
@@ -577,7 +803,10 @@ async function testStandaloneDevServerShutdown(): Promise<void> {
 
   let output = '';
   const ready = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`dev-server did not start: ${output}`)), 20_000);
+    const timer = setTimeout(
+      () => reject(new Error(`dev-server did not start: ${output}`)),
+      20_000,
+    );
     const collect = (chunk: Buffer) => {
       output += chunk.toString();
       if (output.includes('Server App running')) {
@@ -606,13 +835,18 @@ async function testStandaloneDevServerShutdown(): Promise<void> {
     } else {
       child.kill('SIGTERM');
     }
-    const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`dev-server did not exit: ${output}`)), 20_000);
-      child.once('exit', (exitCode, exitSignal) => {
-        clearTimeout(timer);
-        resolve([exitCode, exitSignal]);
-      });
-    });
+    const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>(
+      (resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`dev-server did not exit: ${output}`)),
+          20_000,
+        );
+        child.once('exit', (exitCode, exitSignal) => {
+          clearTimeout(timer);
+          resolve([exitCode, exitSignal]);
+        });
+      },
+    );
     assert.equal(signal, null, 'standalone dev-server exits through its shutdown handler');
     assert.equal(code, 0, `standalone dev-server exits successfully: ${output}`);
   } finally {
@@ -621,40 +855,60 @@ async function testStandaloneDevServerShutdown(): Promise<void> {
   }
 }
 
-async function testStartupEntrypoint(startupRace = false, startupFailureRace = false): Promise<void> {
+async function testStartupEntrypoint(
+  startupRace = false,
+  startupFailureRace = false,
+): Promise<void> {
   const childEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
   if (startupRace) childEnv.FLO_STARTUP_RACE = '1';
   else delete childEnv.FLO_STARTUP_RACE;
   if (startupFailureRace) childEnv.FLO_STARTUP_FAILURE_RACE = '1';
   else delete childEnv.FLO_STARTUP_FAILURE_RACE;
-  const child = spawn(process.execPath, [
-    require.resolve('ts-node/dist/bin.js'),
-    '--transpile-only',
-    '-P',
-    path.join(__dirname, 'tsconfig.json'),
-    path.join(__dirname, 'startup-failure-child.cjs'),
-  ], {
-    cwd: path.resolve(__dirname, '..'),
-    env: childEnv,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const child = spawn(
+    process.execPath,
+    [
+      require.resolve('ts-node/dist/bin.js'),
+      '--transpile-only',
+      '-P',
+      path.join(__dirname, 'tsconfig.json'),
+      path.join(__dirname, 'startup-failure-child.cjs'),
+    ],
+    {
+      cwd: path.resolve(__dirname, '..'),
+      env: childEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
 
   let output = '';
-  child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
-  child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
-  const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`startup-failure child timed out: ${output}`)), 20_000);
-    child.once('error', (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.once('exit', (exitCode, exitSignal) => {
-      clearTimeout(timer);
-      resolve([exitCode, exitSignal]);
-    });
+  child.stdout.on('data', (chunk: Buffer) => {
+    output += chunk.toString();
   });
+  child.stderr.on('data', (chunk: Buffer) => {
+    output += chunk.toString();
+  });
+  const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>(
+    (resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`startup-failure child timed out: ${output}`)),
+        20_000,
+      );
+      child.once('error', (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once('exit', (exitCode, exitSignal) => {
+        clearTimeout(timer);
+        resolve([exitCode, exitSignal]);
+      });
+    },
+  );
   assert.equal(signal, null, `startup-failure child exited by signal: ${output}`);
-  assert.equal(code, 0, `${startupFailureRace ? 'startup failure race' : startupRace ? 'startup cancellation' : 'startup failure'} entrypoint coverage failed: ${output}`);
+  assert.equal(
+    code,
+    0,
+    `${startupFailureRace ? 'startup failure race' : startupRace ? 'startup cancellation' : 'startup failure'} entrypoint coverage failed: ${output}`,
+  );
   const resultLine = output.trim().split('\n').at(-1) || '';
   assert.equal(JSON.parse(resultLine).passed, true, output);
 }
@@ -712,20 +966,36 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
 
     let releaseFirstMaintenance: (() => void) | null = null;
     let releaseSecondMaintenance: (() => void) | null = null;
-    const firstMaintenance = withDatabaseMaintenanceLock(() => new Promise<void>((resolve) => {
-      releaseFirstMaintenance = resolve;
-    }));
-    const secondMaintenance = withDatabaseMaintenanceLock(() => new Promise<void>((resolve) => {
-      releaseSecondMaintenance = resolve;
-    }));
+    const firstMaintenance = withDatabaseMaintenanceLock(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseFirstMaintenance = resolve;
+        }),
+    );
+    const secondMaintenance = withDatabaseMaintenanceLock(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSecondMaintenance = resolve;
+        }),
+    );
     const maintenanceDrain = waitForDatabaseRequests();
     let maintenanceDrainSettled = false;
-    void maintenanceDrain.then(() => { maintenanceDrainSettled = true; });
+    void maintenanceDrain.then(() => {
+      maintenanceDrainSettled = true;
+    });
     await delay(10);
-    assert.equal(maintenanceDrainSettled, false, 'the database barrier waits for queued maintenance');
+    assert.equal(
+      maintenanceDrainSettled,
+      false,
+      'the database barrier waits for queued maintenance',
+    );
     releaseFirstMaintenance?.();
     await delay(10);
-    assert.equal(maintenanceDrainSettled, false, 'the database barrier waits for the active queued operation');
+    assert.equal(
+      maintenanceDrainSettled,
+      false,
+      'the database barrier waits for the active queued operation',
+    );
     releaseSecondMaintenance?.();
     await Promise.all([firstMaintenance, secondMaintenance, maintenanceDrain]);
 
@@ -736,20 +1006,30 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(new Date().toISOString());
     let releaseQueuedMaintenance: (() => void) | null = null;
-    const queuedMaintenance = withDatabaseMaintenanceLock(() => new Promise<void>((resolve) => {
-      releaseQueuedMaintenance = resolve;
-    }));
+    const queuedMaintenance = withDatabaseMaintenanceLock(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseQueuedMaintenance = resolve;
+        }),
+    );
     for (let attempt = 0; attempt < 20 && !isDatabaseMaintenanceActive(); attempt++) await delay(1);
-    assert.equal(isDatabaseMaintenanceActive(), true, 'database maintenance starts before CloudSync queues work');
+    assert.equal(
+      isDatabaseMaintenanceActive(),
+      true,
+      'database maintenance starts before CloudSync queues work',
+    );
     const queuedRequest = new AbortController();
-    const queuedCloudWork = queuedCloudSync.queueSupportTicket({
-      client_ticket_id: 'shutdown-lifecycle-cloud-queue',
-      subject: 'shutdown test',
-      message: 'cancel queued support work',
-      severity: 'normal',
-      event_code: 'shutdown.test',
-      diagnostics: { test: true },
-    }, queuedRequest.signal);
+    const queuedCloudWork = queuedCloudSync.queueSupportTicket(
+      {
+        client_ticket_id: 'shutdown-lifecycle-cloud-queue',
+        subject: 'shutdown test',
+        message: 'cancel queued support work',
+        severity: 'normal',
+        event_code: 'shutdown.test',
+        diagnostics: { test: true },
+      },
+      queuedRequest.signal,
+    );
     await delay(10);
     queuedRequest.abort();
     await assert.rejects(
@@ -763,33 +1043,58 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
         queuedCloudShutdown.then(() => true),
         new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1_000)),
       ]);
-      assert.equal(queuedCloudShutdownSettled, true, 'CloudSync shutdown cancels its queued database work');
+      assert.equal(
+        queuedCloudShutdownSettled,
+        true,
+        'CloudSync shutdown cancels its queued database work',
+      );
     } finally {
       releaseQueuedMaintenance?.();
       await queuedMaintenance;
     }
     assert.equal(
-      db.prepare('SELECT 1 FROM support_ticket_outbox WHERE client_ticket_id = ?').get('shutdown-lifecycle-cloud-queue'),
+      db
+        .prepare('SELECT 1 FROM support_ticket_outbox WHERE client_ticket_id = ?')
+        .get('shutdown-lifecycle-cloud-queue'),
       undefined,
       'cancelled CloudSync work does not write after shutdown',
     );
 
     let releaseDatabaseRequest: (() => void) | null = null;
-    const activeDatabaseRequest = withDatabaseRequest(() => new Promise<void>((resolve) => {
-      releaseDatabaseRequest = resolve;
-    }));
+    const activeDatabaseRequest = withDatabaseRequest(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDatabaseRequest = resolve;
+        }),
+    );
     const cloudShutdown = cloudSync.cloudSync.shutdown();
-    assert.strictEqual(cloudShutdown, cloudSync.cloudSync.shutdown(), 'cloud shutdown is idempotent');
+    assert.strictEqual(
+      cloudShutdown,
+      cloudSync.cloudSync.shutdown(),
+      'cloud shutdown is idempotent',
+    );
     await cloudShutdown;
     const databaseDrain = waitForDatabaseRequests();
     let cloudShutdownSettled = false;
-    void cloudShutdown.then(() => { cloudShutdownSettled = true; });
+    void cloudShutdown.then(() => {
+      cloudShutdownSettled = true;
+    });
     await delay(10);
-    assert.equal(cloudShutdownSettled, true, 'cloud shutdown settles without waiting for HTTP database work');
+    assert.equal(
+      cloudShutdownSettled,
+      true,
+      'cloud shutdown settles without waiting for HTTP database work',
+    );
     let databaseDrainSettled = false;
-    void databaseDrain.then(() => { databaseDrainSettled = true; });
+    void databaseDrain.then(() => {
+      databaseDrainSettled = true;
+    });
     await delay(10);
-    assert.equal(databaseDrainSettled, false, 'the final database barrier waits for in-flight work');
+    assert.equal(
+      databaseDrainSettled,
+      false,
+      'the final database barrier waits for in-flight work',
+    );
     releaseDatabaseRequest?.();
     await activeDatabaseRequest;
     await databaseDrain;
@@ -802,24 +1107,33 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     // keep resource-level WebSocket coverage in the previous phase.
     await Promise.all([
       new Promise<void>((resolve, reject) => {
-        const request = http.get({ host: '127.0.0.1', port: mainServer.getServerPort(), path: '/api/health' }, (response) => {
-          response.resume();
-          response.once('end', resolve);
-        });
+        const request = http.get(
+          { host: '127.0.0.1', port: mainServer.getServerPort(), path: '/api/health' },
+          (response) => {
+            response.resume();
+            response.once('end', resolve);
+          },
+        );
         request.once('error', reject);
       }),
       new Promise<void>((resolve, reject) => {
-        const request = http.get({ host: '127.0.0.1', port: kdsServer.getKdsPort(), path: '/api/health' }, (response) => {
-          response.resume();
-          response.once('end', resolve);
-        });
+        const request = http.get(
+          { host: '127.0.0.1', port: kdsServer.getKdsPort(), path: '/api/health' },
+          (response) => {
+            response.resume();
+            response.once('end', resolve);
+          },
+        );
         request.once('error', reject);
       }),
       new Promise<void>((resolve, reject) => {
-        const request = http.get({ host: '127.0.0.1', port: serverApp.getServerAppPort(), path: '/api/health' }, (response) => {
-          response.resume();
-          response.once('end', resolve);
-        });
+        const request = http.get(
+          { host: '127.0.0.1', port: serverApp.getServerAppPort(), path: '/api/health' },
+          (response) => {
+            response.resume();
+            response.once('end', resolve);
+          },
+        );
         request.once('error', reject);
       }),
     ]);
@@ -828,56 +1142,89 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     db.prepare(`
       INSERT OR REPLACE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(serverAppUserId, 'Server App Test User', 'server-app-shutdown@example.com', 'test', 'server', new Date().toISOString(), new Date().toISOString());
+    `).run(
+      serverAppUserId,
+      'Server App Test User',
+      'server-app-shutdown@example.com',
+      'test',
+      'server',
+      new Date().toISOString(),
+      new Date().toISOString(),
+    );
     const { getJWTSecret } = await import('../main/routes/auth');
     const jwt = require('jsonwebtoken');
-    const token = jwt.sign({ userId: serverAppUserId, email: 'server-app-shutdown@example.com', role: 'server' }, getJWTSecret());
+    const token = jwt.sign(
+      { userId: serverAppUserId, email: 'server-app-shutdown@example.com', role: 'server' },
+      getJWTSecret(),
+    );
     const originalFetch = globalThis.fetch;
     let fetchStarted!: () => void;
-    const fetchStartedPromise = new Promise<void>((resolve) => { fetchStarted = resolve; });
-    globalThis.fetch = ((...args: any[]) => new Promise((_resolve, reject) => {
-      const signal = args[1]?.signal as AbortSignal | undefined;
-      const rejectAborted = () => {
-        const error = new Error('forwarded request aborted');
-        error.name = 'AbortError';
-        reject(error);
-      };
-      fetchStarted();
-      if (signal?.aborted) rejectAborted();
-      else signal?.addEventListener('abort', rejectAborted, { once: true });
-    })) as typeof fetch;
+    const fetchStartedPromise = new Promise<void>((resolve) => {
+      fetchStarted = resolve;
+    });
+    globalThis.fetch = ((...args: any[]) =>
+      new Promise((_resolve, reject) => {
+        const signal = args[1]?.signal as AbortSignal | undefined;
+        const rejectAborted = () => {
+          const error = new Error('forwarded request aborted');
+          error.name = 'AbortError';
+          reject(error);
+        };
+        fetchStarted();
+        if (signal?.aborted) rejectAborted();
+        else signal?.addEventListener('abort', rejectAborted, { once: true });
+      })) as typeof fetch;
     try {
       const forwardedResponse = new Promise<number>((resolve, reject) => {
-        const forwardedRequest = http.get({
-          host: '127.0.0.1',
-          port: serverApp.getServerAppPort(),
-          path: '/api/categories',
-          headers: { Authorization: `Bearer ${token}` },
-        }, (response) => {
-          response.resume();
-          response.once('end', () => resolve(response.statusCode ?? 0));
-        });
+        const forwardedRequest = http.get(
+          {
+            host: '127.0.0.1',
+            port: serverApp.getServerAppPort(),
+            path: '/api/categories',
+            headers: { Authorization: `Bearer ${token}` },
+          },
+          (response) => {
+            response.resume();
+            response.once('end', () => resolve(response.statusCode ?? 0));
+          },
+        );
         forwardedRequest.once('error', reject);
       });
       await fetchStartedPromise;
       cancelHttpShutdownWork();
-      assert.equal(await forwardedResponse, 503, 'aborted Server App forwarding completes its HTTP response');
+      assert.equal(
+        await forwardedResponse,
+        503,
+        'aborted Server App forwarding completes its HTTP response',
+      );
     } finally {
       globalThis.fetch = originalFetch;
     }
 
     const firstMainStop = mainServer.stopServer();
-    assert.strictEqual(firstMainStop, mainServer.stopServer(), 'main stop is idempotent while draining');
+    assert.strictEqual(
+      firstMainStop,
+      mainServer.stopServer(),
+      'main stop is idempotent while draining',
+    );
     await firstMainStop;
     assert.equal(mainServer.isServerRunning(), false);
 
     const firstKdsStop = kdsServer.stopKdsServer();
-    assert.strictEqual(firstKdsStop, kdsServer.stopKdsServer(), 'KDS stop is idempotent while draining');
+    assert.strictEqual(
+      firstKdsStop,
+      kdsServer.stopKdsServer(),
+      'KDS stop is idempotent while draining',
+    );
     await firstKdsStop;
     assert.equal(kdsServer.isKdsServerRunning(), false);
 
     const firstServerAppStop = serverApp.stopServerApp();
-    assert.strictEqual(firstServerAppStop, serverApp.stopServerApp(), 'server app stop is idempotent while draining');
+    assert.strictEqual(
+      firstServerAppStop,
+      serverApp.stopServerApp(),
+      'server app stop is idempotent while draining',
+    );
     await firstServerAppStop;
     assert.equal(serverApp.isServerAppRunning(), false);
 
@@ -885,18 +1232,33 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     await kdsServer.stopKdsServer();
     await serverApp.stopServerApp();
     let maintenanceStarted: (() => void) | null = null;
-    const startedMaintenance = new Promise<void>((resolve) => { maintenanceStarted = resolve; });
+    const startedMaintenance = new Promise<void>((resolve) => {
+      maintenanceStarted = resolve;
+    });
     let releaseMaintenance: (() => void) | null = null;
     let maintenanceAbortObserved = false;
-    const uncooperativeMaintenance = withDatabaseMaintenanceLock((signal) => new Promise<void>((resolve) => {
-      signal.addEventListener('abort', () => { maintenanceAbortObserved = true; }, { once: true });
-      releaseMaintenance = resolve;
-      maintenanceStarted?.();
-    }));
+    const uncooperativeMaintenance = withDatabaseMaintenanceLock(
+      (signal) =>
+        new Promise<void>((resolve) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              maintenanceAbortObserved = true;
+            },
+            { once: true },
+          );
+          releaseMaintenance = resolve;
+          maintenanceStarted?.();
+        }),
+    );
     await startedMaintenance;
     beginDatabaseShutdown();
     await delay(0);
-    assert.equal(maintenanceAbortObserved, true, 'database shutdown aborts active maintenance work');
+    assert.equal(
+      maintenanceAbortObserved,
+      true,
+      'database shutdown aborts active maintenance work',
+    );
     await assert.rejects(
       waitForDatabaseRequests(10),
       (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
@@ -907,14 +1269,18 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     await waitForDatabaseRequests();
     let lateDatabaseOperationRan = false;
     await assert.rejects(
-      withDatabaseRequest(() => { lateDatabaseOperationRan = true; }),
+      withDatabaseRequest(() => {
+        lateDatabaseOperationRan = true;
+      }),
       (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED',
       'late database requests are rejected after shutdown admission closes',
     );
     assert.equal(lateDatabaseOperationRan, false, 'late database operations never enter SQLite');
     let lateMaintenanceRan = false;
     await assert.rejects(
-      withDatabaseMaintenanceLock(() => { lateMaintenanceRan = true; }),
+      withDatabaseMaintenanceLock(() => {
+        lateMaintenanceRan = true;
+      }),
       (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED',
       'late maintenance requests are rejected after shutdown admission closes',
     );
@@ -922,7 +1288,9 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     closeDatabase();
   } finally {
     Module._load = originalLoad;
-    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch { }
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {}
   }
 }
 
@@ -944,13 +1312,17 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     let installCalls = 0;
     let installWillQuitPrevented = false;
     const updateState: UpdateShutdownState = {
-      setInstallingUpdate: (value) => { isInstallingUpdate = value; },
+      setInstallingUpdate: (value) => {
+        isInstallingUpdate = value;
+      },
       setQuitting: () => {},
     };
     const entrypoints = createShutdownEntrypoints({
       app,
       process,
-      cleanup: async () => { cleanupCalls++; },
+      cleanup: async () => {
+        cleanupCalls++;
+      },
       setQuitting: () => {},
       destroyWindow: () => {},
       isInstallingUpdate: () => isInstallingUpdate,
@@ -961,7 +1333,12 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
       runCleanup: entrypoints.runCleanup,
       quitAndInstall: () => {
         installCalls++;
-        const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+        const willQuit = {
+          prevented: false,
+          preventDefault: () => {
+            willQuit.prevented = true;
+          },
+        };
         app.emit('will-quit', willQuit);
         installWillQuitPrevented = willQuit.prevented;
       },
@@ -975,8 +1352,11 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
 
     assert.deepEqual(result, { success: true });
     assert.equal(installCalls, 1, 'quitAndInstall runs once after handler cleanup');
-    assert.equal(installWillQuitPrevented, false,
-      'will-quit is NOT blocked after the handler cleanup (installer can relaunch)');
+    assert.equal(
+      installWillQuitPrevented,
+      false,
+      'will-quit is NOT blocked after the handler cleanup (installer can relaunch)',
+    );
     assert.equal(cleanupCalls, 1, 'cleanup ran exactly once');
   }
 
@@ -988,16 +1368,23 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     let cleanupFinished = false;
     let installCalls = 0;
     let releaseCleanup: (() => void) | null = null;
-    const cleanupHeld = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+    const cleanupHeld = new Promise<void>((resolve) => {
+      releaseCleanup = resolve;
+    });
     const updateState: UpdateShutdownState = {
-      setInstallingUpdate: (value) => { isInstallingUpdate = value; },
+      setInstallingUpdate: (value) => {
+        isInstallingUpdate = value;
+      },
       setQuitting: () => {},
     };
 
     const entrypoints = createShutdownEntrypoints({
       app,
       process,
-      cleanup: async () => { await cleanupHeld; cleanupFinished = true; },
+      cleanup: async () => {
+        await cleanupHeld;
+        cleanupFinished = true;
+      },
       setQuitting: () => {},
       destroyWindow: () => {},
       isInstallingUpdate: () => isInstallingUpdate,
@@ -1006,7 +1393,9 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
       isInstallReady: () => true,
       authorize: () => ({ ok: true }),
       runCleanup: entrypoints.runCleanup,
-      quitAndInstall: () => { installCalls++; },
+      quitAndInstall: () => {
+        installCalls++;
+      },
       updateState,
       onInstallFailure: () => {},
       warn: () => {},
@@ -1031,20 +1420,29 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     const app = new AppDouble();
     const process = new ProcessDouble();
     let releaseCleanup: (() => void) | null = null;
-    const cleanupHeld = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+    const cleanupHeld = new Promise<void>((resolve) => {
+      releaseCleanup = resolve;
+    });
     let isInstallingUpdate = true;
 
     const entrypoints = createShutdownEntrypoints({
       app,
       process,
-      cleanup: async () => { await cleanupHeld; },
+      cleanup: async () => {
+        await cleanupHeld;
+      },
       setQuitting: () => {},
       destroyWindow: () => {},
       isInstallingUpdate: () => isInstallingUpdate,
     });
 
     const cleanupPromise = entrypoints.runCleanup();
-    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    const willQuit = {
+      prevented: false,
+      preventDefault: () => {
+        willQuit.prevented = true;
+      },
+    };
     app.emit('will-quit', willQuit);
     assert.equal(willQuit.prevented, true, 'concurrent quit waits for in-flight cleanup');
 
@@ -1053,7 +1451,11 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     await delay(0);
 
     assert.equal(app.quitCount, 0, 'normal quit does not preempt quitAndInstall after cleanup');
-    assert.deepEqual(app.exitCodes, [], 'normal quit does not call app.exit when installing update');
+    assert.deepEqual(
+      app.exitCodes,
+      [],
+      'normal quit does not call app.exit when installing update',
+    );
     isInstallingUpdate = false;
   }
 
@@ -1061,23 +1463,30 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
   {
     const app = new AppDouble();
     const process = new ProcessDouble();
-    const timeout = Object.assign(new Error('Cleanup step timed out'), { code: 'ERR_SHUTDOWN_TIMEOUT' });
+    const timeout = Object.assign(new Error('Cleanup step timed out'), {
+      code: 'ERR_SHUTDOWN_TIMEOUT',
+    });
     let isInstallingUpdate = true;
     let fatalExitCalled = false;
 
-    const coordinator = createShutdownCoordinator(() => [
+    const coordinator = createShutdownCoordinator(
+      () => [
+        {
+          name: 'timed out service',
+          run: () => {
+            throw timeout;
+          },
+        },
+      ],
       {
-        name: 'timed out service',
-        run: () => { throw timeout; },
+        onFatalTimeout: () => {
+          if (!isInstallingUpdate) {
+            fatalExitCalled = true;
+            app.exit(1);
+          }
+        },
       },
-    ], {
-      onFatalTimeout: () => {
-        if (!isInstallingUpdate) {
-          fatalExitCalled = true;
-          app.exit(1);
-        }
-      },
-    });
+    );
 
     const entrypoints = createShutdownEntrypoints({
       app,
@@ -1094,12 +1503,20 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     assert.deepEqual(app.exitCodes, [], 'app.exit was not called on pre-install cleanup timeout');
 
     // Rejection still marks cleanup as finished, so subsequent quitAndInstall's will-quit is allowed
-    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    const willQuit = {
+      prevented: false,
+      preventDefault: () => {
+        willQuit.prevented = true;
+      },
+    };
     app.emit('will-quit', willQuit);
     await delay(0);
 
-    assert.equal(willQuit.prevented, false,
-      'will-quit is NOT blocked even if cleanup timed out (updater can still proceed to install)');
+    assert.equal(
+      willQuit.prevented,
+      false,
+      'will-quit is NOT blocked even if cleanup timed out (updater can still proceed to install)',
+    );
   }
 
   // --- Concurrent quit during failing cleanup does not force app.exit when isInstallingUpdate is true ---
@@ -1112,15 +1529,24 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     const entrypoints = createShutdownEntrypoints({
       app,
       process,
-      cleanup: async () => { throw failure; },
+      cleanup: async () => {
+        throw failure;
+      },
       setQuitting: () => {},
       destroyWindow: () => {},
       isInstallingUpdate: () => true,
-      reportFailure: () => { reportedFailure = true; },
+      reportFailure: () => {
+        reportedFailure = true;
+      },
     });
 
     // Concurrent quit triggers will-quit before cleanup completes
-    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    const willQuit = {
+      prevented: false,
+      preventDefault: () => {
+        willQuit.prevented = true;
+      },
+    };
     app.emit('will-quit', willQuit);
     assert.equal(willQuit.prevented, true, 'concurrent quit waits for in-flight cleanup');
 
@@ -1129,7 +1555,11 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     await delay(0);
 
     assert.equal(reportedFailure, true, 'failure is reported');
-    assert.deepEqual(app.exitCodes, [], 'app.exit was NOT called on concurrent quit rejection during update');
+    assert.deepEqual(
+      app.exitCodes,
+      [],
+      'app.exit was NOT called on concurrent quit rejection during update',
+    );
   }
 
   // --- Concurrent quit during failing cleanup forces app.exit(1) when isInstallingUpdate is false ---
@@ -1142,14 +1572,23 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     const entrypoints = createShutdownEntrypoints({
       app,
       process,
-      cleanup: async () => { throw failure; },
+      cleanup: async () => {
+        throw failure;
+      },
       setQuitting: () => {},
       destroyWindow: () => {},
       isInstallingUpdate: () => false,
-      reportFailure: () => { reportedFailure = true; },
+      reportFailure: () => {
+        reportedFailure = true;
+      },
     });
 
-    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    const willQuit = {
+      prevented: false,
+      preventDefault: () => {
+        willQuit.prevented = true;
+      },
+    };
     app.emit('will-quit', willQuit);
     assert.equal(willQuit.prevented, true, 'concurrent quit waits for in-flight cleanup');
 
@@ -1157,7 +1596,11 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     await delay(0);
 
     assert.equal(reportedFailure, true, 'failure is reported');
-    assert.deepEqual(app.exitCodes, [1], 'app.exit(1) was called on concurrent quit rejection when not updating');
+    assert.deepEqual(
+      app.exitCodes,
+      [1],
+      'app.exit(1) was called on concurrent quit rejection when not updating',
+    );
   }
 
   // --- Failed quitAndInstall hands off to relaunch ---
@@ -1165,8 +1608,12 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     let isInstallingUpdate = false;
     let isQuitting = false;
     const updateState: UpdateShutdownState = {
-      setInstallingUpdate: (value) => { isInstallingUpdate = value; },
-      setQuitting: (value) => { isQuitting = value; },
+      setInstallingUpdate: (value) => {
+        isInstallingUpdate = value;
+      },
+      setQuitting: (value) => {
+        isQuitting = value;
+      },
     };
     const installError = new Error('Squirrel failed to spawn installer');
     let installSawActiveState = false;
@@ -1175,7 +1622,9 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     const handler = createRestartAndInstallHandler({
       isInstallReady: () => true,
       authorize: () => ({ ok: true }),
-      runCleanup: async () => { cleanupFinished = true; },
+      runCleanup: async () => {
+        cleanupFinished = true;
+      },
       quitAndInstall: () => {
         installSawActiveState = isInstallingUpdate && isQuitting;
         throw installError;
@@ -1190,7 +1639,11 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
 
     const result = await handler({}, '1234');
     assert.deepEqual(result, { success: false, error: installError.message });
-    assert.equal(installSawActiveState, true, 'quitAndInstall runs while updater shutdown state is active');
+    assert.equal(
+      installSawActiveState,
+      true,
+      'quitAndInstall runs while updater shutdown state is active',
+    );
     assert.equal(installFailureHandled, true, 'install failure is handed off after cleanup');
     assert.equal(isInstallingUpdate, true, 'failed installation keeps the relaunch handoff active');
     assert.equal(isQuitting, true, 'failed installation keeps shutdown active during relaunch');
@@ -1205,19 +1658,33 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     let installFailure: unknown;
     const handleError = createAutoUpdaterErrorHandler({
       getPhase: () => updaterPhase,
-      setPhase: (phase) => { updaterPhase = phase; },
+      setPhase: (phase) => {
+        updaterPhase = phase;
+      },
       isInstallReady: () => false,
       isInstallingUpdate: () => isInstallingUpdate,
-      setUpdateStatus: (status) => { reportedStatus = status; },
-      onInstallFailure: (error) => { installFailure = error; },
+      setUpdateStatus: (status) => {
+        reportedStatus = status;
+      },
+      onInstallFailure: (error) => {
+        installFailure = error;
+      },
       logInfo: () => {},
     });
     const updaterError = new Error('Updater failed during background operation');
 
     handleError(updaterError);
 
-    assert.equal(reportedStatus, undefined, 'install error does not replace the staged update status during shutdown');
-    assert.equal(installFailure, updaterError, 'install error event hands off to relaunch recovery');
+    assert.equal(
+      reportedStatus,
+      undefined,
+      'install error does not replace the staged update status during shutdown',
+    );
+    assert.equal(
+      installFailure,
+      updaterError,
+      'install error event hands off to relaunch recovery',
+    );
     assert.equal(updaterPhase, 'check', 'updater error callback resets its phase');
     assert.equal(isInstallingUpdate, true, 'updater error preserves active install state');
     assert.equal(isQuitting, true, 'updater error preserves quitting state');
@@ -1228,11 +1695,15 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     reportedStatus = undefined;
     installFailure = undefined;
     handleError(updaterError);
-    assert.deepEqual(reportedStatus, {
-      status: 'check-failed',
-      reason: 'download-failed',
-      error: updaterError.message,
-    }, 'background updater error still updates status outside installation');
+    assert.deepEqual(
+      reportedStatus,
+      {
+        status: 'check-failed',
+        reason: 'download-failed',
+        error: updaterError.message,
+      },
+      'background updater error still updates status outside installation',
+    );
     assert.equal(installFailure, undefined, 'background updater error does not request a relaunch');
   }
 }
@@ -1293,12 +1764,16 @@ async function testFailedWindowRecovery(): Promise<void> {
       getMainWindow: () => harness.mainWindow,
       isAborted: () => harness.aborted.value,
       isRuntimeHealthy: () => harness.runtimeHealthy.value,
-      requestRelaunch: (reason) => { harness.relaunches.push(reason); },
+      requestRelaunch: (reason) => {
+        harness.relaunches.push(reason);
+      },
       createWindow: () => {
         harness.creates.value += 1;
         createWindow(harness);
       },
-      logError: (_message, error) => { harness.logErrors.push(error); },
+      logError: (_message, error) => {
+        harness.logErrors.push(error);
+      },
     });
     harness.mainWindow = harness.failedWindow;
     return harness;
@@ -1317,9 +1792,17 @@ async function testFailedWindowRecovery(): Promise<void> {
   success.recovery.recover(success.failedWindow);
   assert.equal(success.destroyed.value, true, 'recovery destroys the failed window');
   assert.equal(success.creates.value, 1, 'recovery builds exactly one replacement window');
-  assert.equal(success.quitCalls.value, 0, 'destroying the failed window during recovery must not quit the app');
+  assert.equal(
+    success.quitCalls.value,
+    0,
+    'destroying the failed window during recovery must not quit the app',
+  );
   assert.deepEqual(success.relaunches, [], 'successful recovery does not request a relaunch');
-  assert.equal(success.recovery.isReplacingWindow(), false, 'recovery flag is restored after success');
+  assert.equal(
+    success.recovery.isReplacingWindow(),
+    false,
+    'recovery flag is restored after success',
+  );
   assert.equal(
     shouldQuitOnAllWindowsClosed('win32', success.recovery.isReplacingWindow()),
     true,
@@ -1328,40 +1811,73 @@ async function testFailedWindowRecovery(): Promise<void> {
 
   // Create failure: relaunch is requested, the flag is restored, and the
   // queued all-closed event still cannot quit.
-  const createFailure = buildHarness(() => { throw new Error('window construction failed'); });
+  const createFailure = buildHarness(() => {
+    throw new Error('window construction failed');
+  });
   createFailure.recovery.recover(createFailure.failedWindow);
-  assert.deepEqual(createFailure.relaunches, ['window-load-recovery-create-failed'],
-    'recreation failure requests a relaunch');
+  assert.deepEqual(
+    createFailure.relaunches,
+    ['window-load-recovery-create-failed'],
+    'recreation failure requests a relaunch',
+  );
   assert.equal(createFailure.logErrors.length, 1, 'recreation failure is logged');
   assert.equal(createFailure.quitCalls.value, 0, 'a failed replacement must not quit the app');
-  assert.equal(createFailure.recovery.isReplacingWindow(), false, 'recovery flag is restored after a failed create');
+  assert.equal(
+    createFailure.recovery.isReplacingWindow(),
+    false,
+    'recovery flag is restored after a failed create',
+  );
   const afterFailure = buildHarness(replaceWithLiveWindow);
   afterFailure.recovery.recover(afterFailure.failedWindow);
-  assert.equal(afterFailure.quitCalls.value, 0, 'the restored flag is a real flag, not a stuck one');
+  assert.equal(
+    afterFailure.quitCalls.value,
+    0,
+    'the restored flag is a real flag, not a stuck one',
+  );
 
   // Already-destroyed input: destroy is skipped but a replacement is still built.
   let redundantDestroys = 0;
   const alreadyDestroyed = buildHarness(replaceWithLiveWindow);
   alreadyDestroyed.destroyed.value = true;
-  alreadyDestroyed.failedWindow.destroy = () => { redundantDestroys += 1; };
+  alreadyDestroyed.failedWindow.destroy = () => {
+    redundantDestroys += 1;
+  };
   alreadyDestroyed.recovery.recover(alreadyDestroyed.failedWindow);
   assert.equal(redundantDestroys, 0, 'an already-destroyed window is not destroyed twice');
   assert.equal(alreadyDestroyed.creates.value, 1, 'an already-destroyed window is still replaced');
-  assert.equal(alreadyDestroyed.quitCalls.value, 0, 'replacement after double destroy does not quit');
+  assert.equal(
+    alreadyDestroyed.quitCalls.value,
+    0,
+    'replacement after double destroy does not quit',
+  );
 
-  // Normal close outside recovery keeps the platform quit policy.
+  // Normal close outside recovery keeps the platform quit policy, while startup suppresses it.
   const idle = buildHarness(replaceWithLiveWindow);
   idle.handleAllWindowsClosed('win32');
   idle.handleAllWindowsClosed('linux');
   assert.equal(idle.quitCalls.value, 2, 'normal Windows/Linux all-closed still quits');
   idle.handleAllWindowsClosed('darwin');
   assert.equal(idle.quitCalls.value, 2, 'macOS never quits on all-closed');
+  assert.equal(
+    shouldQuitOnAllWindowsClosed('win32', false, true),
+    false,
+    'Windows does not quit on all-closed while runtime is starting',
+  );
+  assert.equal(
+    shouldQuitOnAllWindowsClosed('linux', false, true),
+    false,
+    'Linux does not quit on all-closed while runtime is starting',
+  );
 
   // Unhealthy runtime relaunches instead of destroying a window it cannot replace.
   const unhealthy = buildHarness(replaceWithLiveWindow);
   unhealthy.runtimeHealthy.value = false;
   unhealthy.recovery.recover(unhealthy.failedWindow);
-  assert.deepEqual(unhealthy.relaunches, ['window-load-retry-exhausted'], 'unhealthy runtime relaunches');
+  assert.deepEqual(
+    unhealthy.relaunches,
+    ['window-load-retry-exhausted'],
+    'unhealthy runtime relaunches',
+  );
   assert.equal(unhealthy.destroyed.value, false, 'unhealthy runtime leaves the window alone');
 
   // Only one in-place recovery is attempted; later failures relaunch.
@@ -1370,8 +1886,11 @@ async function testFailedWindowRecovery(): Promise<void> {
   const secondFailure: RecoverableWindow = { isDestroyed: () => false, destroy: () => {} };
   secondAttempt.mainWindow = secondFailure;
   secondAttempt.recovery.recover(secondFailure);
-  assert.deepEqual(secondAttempt.relaunches, ['window-load-recovery-failed'],
-    'a second failure escalates to a relaunch');
+  assert.deepEqual(
+    secondAttempt.relaunches,
+    ['window-load-recovery-failed'],
+    'a second failure escalates to a relaunch',
+  );
   assert.equal(secondAttempt.creates.value, 1, 'the second failure does not rebuild again');
 
   // A successful load re-arms in-place recovery for the replacement window.
@@ -1388,7 +1907,11 @@ async function testFailedWindowRecovery(): Promise<void> {
   const aborted = buildHarness(replaceWithLiveWindow);
   aborted.aborted.value = true;
   aborted.recovery.recover(aborted.failedWindow);
-  assert.equal(aborted.destroyed.value, false, 'an in-progress quit is not interrupted by recovery');
+  assert.equal(
+    aborted.destroyed.value,
+    false,
+    'an in-progress quit is not interrupted by recovery',
+  );
   assert.deepEqual(aborted.relaunches, [], 'an in-progress quit does not relaunch');
 
   // A stale failed window is ignored once the main window moved on.

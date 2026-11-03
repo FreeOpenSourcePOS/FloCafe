@@ -137,7 +137,8 @@ update installation or a relaunch, where the caller still needs the process aliv
 
 Closing the main window does not quit the app. The window `close` handler calls `preventDefault()`
 and hides the window unless quitting, so a hidden POS keeps serving. `window-all-closed` quits on
-every platform except macOS, and even then only when no window recovery is in progress.
+every platform except macOS, and even then only when startup has finished (`runtimeState !== 'starting'`)
+and no window recovery is in progress.
 
 The native Playwright harness launches the real app with the POS window held hidden
 (`FLO_E2E_HIDDEN_WINDOW=1`, which the harness sets unless `FLO_E2E_SHOW_WINDOW=1`), so a local

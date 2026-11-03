@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -49,6 +49,7 @@ import {
   renderWhatsAppTemplate,
   buildSampleWhatsAppContext,
   extractTriggerRule,
+  insertPlaceholderAtSelection,
   type WhatsAppAutomationConfig,
 } from '../../../../../shared/whatsapp-automation';
 
@@ -322,6 +323,8 @@ export default function WhatsAppPage() {
   const [automationLoaded, setAutomationLoaded] = useState(false);
   const [automationLoadError, setAutomationLoadError] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('receipt');
+  const templateBodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const templateSelectionEstablishedRef = useRef(false);
   const [savingAutomation, setSavingAutomation] = useState(false);
   const [runningSweep, setRunningSweep] = useState(false);
   const [broadcasting, setBroadcasting] = useState(false);
@@ -477,6 +480,14 @@ export default function WhatsAppPage() {
     // oxlint-disable-next-line react-hooks/set-state-in-effect
     void refreshAutomation();
   }, [refreshAutomation]);
+
+  useEffect(() => {
+    templateSelectionEstablishedRef.current = false;
+    const el = templateBodyRef.current;
+    if (!el) return;
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
+  }, [selectedTemplateId, effectiveTab]);
 
   const saveAutomation = async () => {
     if (!automationLoaded || automationLoadError) {
@@ -1442,15 +1453,49 @@ export default function WhatsAppPage() {
                       }));
                     };
 
+                    const markTemplateSelectionEstablished = () => {
+                      templateSelectionEstablishedRef.current = true;
+                    };
+
                     const resetTemplateToDefault = () => {
                       const def = DEFAULT_WHATSAPP_TEMPLATES.find((d) => d.id === activeTpl.id);
                       if (!def) return;
+                      templateSelectionEstablishedRef.current = false;
                       setAutomationConfig((prev) => ({
                         ...prev,
                         templates: prev.templates.map((t) =>
                           t.id === activeTpl.id ? { ...def } : t,
                         ),
                       }));
+                      requestAnimationFrame(() => {
+                        const el = templateBodyRef.current;
+                        if (!el) return;
+                        el.setSelectionRange(def.body.length, def.body.length);
+                      });
+                    };
+
+                    const insertTemplatePlaceholder = (token: string) => {
+                      const el = templateBodyRef.current;
+                      const selectionEstablished =
+                        templateSelectionEstablishedRef.current ||
+                        (typeof document !== 'undefined' && document.activeElement === el) ||
+                        (typeof el?.selectionStart === 'number' &&
+                          (el.selectionStart !== 0 || (el.selectionEnd ?? 0) !== 0));
+                      const { body: nextBody, cursor: nextCursor } = insertPlaceholderAtSelection(
+                        activeTpl.body,
+                        token,
+                        el?.selectionStart,
+                        el?.selectionEnd,
+                        selectionEstablished,
+                      );
+                      templateSelectionEstablishedRef.current = true;
+                      updateTemplateField('body', nextBody);
+                      requestAnimationFrame(() => {
+                        const target = templateBodyRef.current;
+                        if (!target) return;
+                        target.focus();
+                        target.setSelectionRange(nextCursor, nextCursor);
+                      });
                     };
 
                     return (
@@ -1489,9 +1534,17 @@ export default function WhatsAppPage() {
                             </label>
                             <textarea
                               id="wa-template-body"
+                              ref={templateBodyRef}
                               rows={8}
                               value={activeTpl.body}
-                              onChange={(e) => updateTemplateField('body', e.target.value)}
+                              onFocus={markTemplateSelectionEstablished}
+                              onClick={markTemplateSelectionEstablished}
+                              onKeyUp={markTemplateSelectionEstablished}
+                              onSelect={markTemplateSelectionEstablished}
+                              onChange={(e) => {
+                                markTemplateSelectionEstablished();
+                                updateTemplateField('body', e.target.value);
+                              }}
                               className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
                             />
                           </div>
@@ -1505,9 +1558,8 @@ export default function WhatsAppPage() {
                                 <button
                                   key={ph.token}
                                   type="button"
-                                  onClick={() =>
-                                    updateTemplateField('body', `${activeTpl.body}${ph.token}`)
-                                  }
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => insertTemplatePlaceholder(ph.token)}
                                   className="rounded border bg-muted/60 hover:bg-muted px-2 py-0.5 text-xs font-mono transition-colors cursor-pointer"
                                   title={`${ph.label}: ${ph.sample}`}
                                 >

@@ -1,5 +1,11 @@
 import axios from 'axios';
 
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    skipAuthRedirect?: boolean;
+  }
+}
+
 let authRedirectInProgress = false;
 
 export type ClientFailureOperation =
@@ -137,7 +143,7 @@ api.interceptors.response.use(
       // KDS routes render inline login; avoid redirecting away to /auth/login.
       const isKdsPath = window.location.pathname.startsWith('/kds');
       localStorage.removeItem('token');
-      if (isKdsPath) return Promise.reject(error);
+      if (isKdsPath || error.config?.skipAuthRedirect) return Promise.reject(error);
       // Don't redirect when already on the login page — let the login handler show the error
       if (!window.location.pathname.includes('/auth/login') && !authRedirectInProgress) {
         authRedirectInProgress = true;

@@ -73,6 +73,8 @@ const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).
 // Mirrors main/services/cloud-sync.ts DEFAULT_CLOUD_SERVER_URL — kept in sync
 // manually since the frontend can't import backend TS modules directly.
 const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
+const SETUP_STATUS_MAX_RETRIES = 2;
+const SETUP_STATUS_RETRY_DELAY_MS = 400;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SUSPECT_EMAIL_TLDS = new Set(['example', 'invalid', 'lcaol', 'local', 'localhost', 'test']);
 
@@ -167,30 +169,43 @@ export default function SetupPage() {
       setBrowserLanguage(getBrowserLanguage());
     });
     let mountedFlag = true;
-    api
-      .get('/auth/setup/status')
-      .then(({ data }) => {
-        if (!mountedFlag) return;
-        setMasterPinAvailable(!!data.masterPinAvailable);
-        if (data.currencyReset) {
-          setCountry(String(data.currencyReset.country || ''));
-          setCurrency(String(data.currencyReset.currency || ''));
-          setTimezone(String(data.currencyReset.timezone || ''));
-          setProfile('empty');
-        }
-        // Redirect to login if setup was already completed.
-        if (!data.needsSetup) {
-          toast.error(t('alreadyCompleted'));
-          window.location.replace('/auth/login');
-        }
-      })
-      .catch((err: unknown) => {
-        if (!mountedFlag) return;
-        console.warn('[Setup] Failed to check setup status:', err);
-        setMasterPinAvailable(false);
-      });
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const checkSetupStatus = (attempt: number) => {
+      api
+        .get('/auth/setup/status')
+        .then(({ data }) => {
+          if (!mountedFlag) return;
+          setMasterPinAvailable(!!data.masterPinAvailable);
+          if (data.currencyReset) {
+            setCountry(String(data.currencyReset.country || ''));
+            setCurrency(String(data.currencyReset.currency || ''));
+            setTimezone(String(data.currencyReset.timezone || ''));
+            setProfile('empty');
+          }
+          // Redirect to login if setup was already completed.
+          if (!data.needsSetup) {
+            toast.error(t('alreadyCompleted'));
+            window.location.replace('/auth/login');
+          }
+        })
+        .catch((err: unknown) => {
+          if (!mountedFlag) return;
+          if (attempt < SETUP_STATUS_MAX_RETRIES) {
+            retryTimer = setTimeout(() => {
+              if (mountedFlag) checkSetupStatus(attempt + 1);
+            }, SETUP_STATUS_RETRY_DELAY_MS);
+            return;
+          }
+          console.warn('[Setup] Failed to check setup status:', err);
+          setMasterPinAvailable(false);
+        });
+    };
+
+    checkSetupStatus(0);
     return () => {
       mountedFlag = false;
+      if (retryTimer !== null) clearTimeout(retryTimer);
       window.cancelAnimationFrame(frame);
     };
     // One-time mount check — the toast uses the initial language selection.

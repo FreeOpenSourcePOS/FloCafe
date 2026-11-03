@@ -71,8 +71,10 @@ native route does not exist at all.
   from a LAN host reaches that host's API rather than a hard-coded address.
 - The request interceptor attaches `Bearer <token>` from `localStorage.token` when a token exists.
 - A `401` clears the token and hard-navigates to `/auth/login`, except on `/kds`, where the KDS
-  view renders its own inline login, and on the login page itself, where the login form reports the
-  error.
+  view renders its own inline login, on the login page itself, where the login form reports the
+  error, and when the request passes `skipAuthRedirect: true` (used by `loadFromStorage`'s startup
+  `GET /auth/me` probe so [`AuthGuard`](../../frontend/src/components/layout/AuthGuard.tsx) routes
+  cleanly after clearing the expired session).
 - A `403` carrying `{ code: 'permission_denied' }` dispatches a `flo:authorization-denied` window
   event. [`AuthGuard`](../../frontend/src/components/layout/AuthGuard.tsx) listens for it and calls
   `refreshAuthContext`, so an owner tightening a permission takes effect on the next request
@@ -624,8 +626,9 @@ unpaired screen.
 | Image handling | react-dropzone, react-easy-crop |
 | Phone numbers | libphonenumber-js |
 
-The `shadcn` CLI is a development dependency used to add primitives; the primitives themselves are
-committed under `src/components/ui` and are edited in place.
+The `shadcn` CLI can be invoked on demand via `npx shadcn` to add primitives; the primitives under
+`src/components/ui` and the Tailwind utilities in `src/app/shadcn-tailwind.css` are vendored in the
+repository and edited in place.
 
 ## Project structure
 

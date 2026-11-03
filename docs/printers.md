@@ -34,11 +34,12 @@ printed receipt jobs for that printer, and only for payment methods on the drawe
 
 ## Receipt logos
 
-Upload a PNG, JPEG, or WebP image under **Settings > General > Store Logo**. The source file can be
-up to 5 MB. FloCafe processes it in the browser and creates a monochrome raster for ESC/POS output.
-In **Settings > Printers > Bill Content**, enable **Store Logo** to include the logo on supported
-bill print paths. The setting is off by default. Browser bills center the logo above the business
-header. See the [printing architecture](architecture/printing.md) for the renderer details.
+Upload a browser-supported image (PNG, JPEG, WebP, BMP, GIF, SVG, AVIF, or ICO, up to 5 MB) under
+**Settings > General > Store Logo**. FloCafe trims surrounding margins, normalizes contrast, builds
+a monochrome thermal preview alongside the uploaded logo, and enables **Store Logo** automatically
+when you save. You can toggle **Store Logo** independently in **Settings > Printers > Bill Content**.
+Browser bills center the logo above the business header. See the
+[printing architecture](architecture/printing.md#receipt-logos) for the renderer details.
 
 ## Menu printing
 

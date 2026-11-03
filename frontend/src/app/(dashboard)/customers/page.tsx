@@ -252,14 +252,17 @@ export default function CustomersPage() {
         </Button>
       </div>
 
-      <div className="relative mb-4 shrink-0">
-        <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+      <div className="relative mb-4 w-full shrink-0 sm:max-w-xs">
+        <Search
+          size={16}
+          className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+        />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={tCustomer('search')}
-          className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+          className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
         />
       </div>
 

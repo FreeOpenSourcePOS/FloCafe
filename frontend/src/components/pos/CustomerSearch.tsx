@@ -415,7 +415,7 @@ export default function CustomerSearch({
   return (
     <div
       ref={containerRef}
-      className={`relative ${isTopbar ? 'w-full min-w-0 sm:max-w-52' : 'w-full'}`}
+      className={`relative ${isTopbar ? 'w-full min-w-0 sm:max-w-72 md:max-w-80' : 'w-full'}`}
     >
       <div className="relative flex items-center">
         <Search

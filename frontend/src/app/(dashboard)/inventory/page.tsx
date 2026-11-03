@@ -454,7 +454,7 @@ export default function InventoryPage() {
 
   return (
     <div className="dashboard-scroll-shell flex h-full min-h-0 flex-col">
-      <div className="mb-6 flex shrink-0 flex-wrap items-center justify-between gap-3">
+      <div className="mb-6 flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-foreground">{tNav('inventory')}</h1>
         {tab === 'supplies' && (
           <Button onClick={openAddSupply}>
@@ -486,18 +486,18 @@ export default function InventoryPage() {
           value="supplies"
           className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col"
         >
-          <div className="flex shrink-0 flex-wrap items-center gap-3 mb-4">
-            <div className="relative flex-1 min-w-48">
+          <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+            <div className="relative w-full sm:max-w-xs">
               <Search
-                size={18}
-                className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400"
+                size={16}
+                className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
               />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={tCommon('search')}
-                className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
               />
             </div>
             <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
@@ -647,14 +647,17 @@ export default function InventoryPage() {
         </TabsContent>
 
         <TabsContent value="recipes" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
-          <div className="relative mb-4 max-w-sm shrink-0">
-            <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <div className="relative mb-4 w-full shrink-0 sm:max-w-xs">
+            <Search
+              size={16}
+              className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
             <input
               type="text"
               value={recipeSearch}
               onChange={(e) => setRecipeSearch(e.target.value)}
               placeholder={tCommon('search')}
-              className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+              className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
             />
           </div>
           <div
@@ -768,8 +771,11 @@ export default function InventoryPage() {
           value="movements"
           className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col"
         >
-          <div className="relative mb-4 max-w-sm shrink-0">
-            <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <div className="relative mb-4 w-full shrink-0 sm:max-w-xs">
+            <Search
+              size={16}
+              className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
             <input
               type="text"
               value={movementSearch}
@@ -780,7 +786,7 @@ export default function InventoryPage() {
                 setMovementSearch(e.target.value);
               }}
               placeholder={tCommon('search')}
-              className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+              className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
             />
           </div>
           <div

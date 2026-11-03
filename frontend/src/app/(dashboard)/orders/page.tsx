@@ -1832,14 +1832,17 @@ export default function OrdersPage() {
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center gap-3 mb-4 shrink-0">
         {/* Search by order number, customer name, or phone */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="relative w-full sm:max-w-xs">
+          <Search
+            size={16}
+            className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
           <input
             type="text"
             placeholder={tOrders('search')}
             value={filters.search}
             onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-            className="w-full ps-9 pe-3 py-2 border border-border bg-card rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+            className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
           />
         </div>
 

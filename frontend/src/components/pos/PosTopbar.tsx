@@ -94,7 +94,7 @@ export default function PosTopbar({
   return (
     // Identity/search first, the action buttons end-aligned next to it, and the
     // customer favorites row full-width beneath both.
-    <div className="flex flex-col border-b bg-card shrink-0 px-3 py-2 sm:px-4 sm:py-2.5">
+    <div className="flex flex-col gap-1.5 border-b bg-card shrink-0 px-3 py-2 sm:px-4 sm:py-2.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex-1 min-w-0">
           <CustomerSearch variant="topbar" onModalOpenChange={onCustomerModalOpenChange} />

@@ -960,6 +960,142 @@ async function run() {
         ['/auth/login'],
         'SetupPage redirects to /auth/login when retry confirms setup is already completed',
       );
+
+      // Subcase 4: LoginPage mount check retries transient /api/auth/setup/status failure and redirects to /setup when needsSetup: true
+      for (const slot of effectSlots) {
+        if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+      }
+      states.length = 0;
+      refs.length = 0;
+      effectSlots.length = 0;
+      scheduledTimers.length = 0;
+      pushedRoutes.length = 0;
+      setupStatusCalls = 0;
+
+      const originalFetch = (globalThis as any).fetch;
+      (globalThis as any).fetch = async (url: string) => {
+        if (url === '/api/auth/setup/status') {
+          setupStatusCalls++;
+          if (setupStatusCalls === 1) {
+            return { ok: false, status: 503, json: async () => ({}) };
+          }
+          return { ok: true, status: 200, json: async () => ({ needsSetup: true }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ status: 'ok', users: [] }) };
+      };
+
+      try {
+        Module._load = function (request: string, parent: unknown, isMain: boolean) {
+          if (request === 'react') {
+            return {
+              ...reactHooks,
+              Suspense: 'Suspense',
+              useCallback: (fn: unknown) => fn,
+            };
+          }
+          if (request === 'react/jsx-runtime') {
+            return { jsx: jsxElement, jsxs: jsxElement, Fragment: 'Fragment' };
+          }
+          if (request === 'next/navigation') {
+            return {
+              useRouter: () => ({
+                push: (url: string) => pushedRoutes.push(url),
+                replace: (url: string) => pushedRoutes.push(url),
+              }),
+              useSearchParams: () => new URLSearchParams(),
+            };
+          }
+          if (request === 'use-intl') {
+            return {
+              useTranslations: (ns: string) => (key: string) => `${ns}.${key}`,
+            };
+          }
+          if (request === '@/store/auth') {
+            return {
+              StorageUnavailableError,
+              useAuthStore: () => ({
+                login: async () => {},
+                pinLogin: async () => {},
+                selectTenant: async () => {},
+                user: null,
+                tenants: [],
+                currentTenant: null,
+                loadFromStorage: () => {},
+              }),
+            };
+          }
+          if (request === '@/components/ui/button') return { Button: ButtonStub };
+          if (request === '@/components/ui/input') return { Input: IconStub };
+          if (request === '@/components/ui/label') return { Label: IconStub };
+          if (request === '@/components/ui/card') return { Card: IconStub, CardContent: IconStub };
+          if (request === '@/components/ui/dialog') {
+            return {
+              Dialog: IconStub,
+              DialogContent: IconStub,
+              DialogHeader: IconStub,
+              DialogTitle: IconStub,
+            };
+          }
+          if (request === '@/components/ui/dropdown-menu') {
+            return {
+              DropdownMenu: IconStub,
+              DropdownMenuContent: IconStub,
+              DropdownMenuItem: IconStub,
+              DropdownMenuTrigger: IconStub,
+            };
+          }
+          if (request === '@/components/support/SupportTicketForm') {
+            return { SupportTicketForm: IconStub, PRE_LOGIN_SUPPORT_ENDPOINTS: {} };
+          }
+          if (request === 'lucide-react') return new Proxy({}, { get: () => IconStub });
+          if (request === 'react-hot-toast') {
+            return { __esModule: true, default: { success: () => {}, error: () => {} } };
+          }
+          return originalLoad.apply(this, arguments as any);
+        };
+
+        delete require.cache[path.resolve(rootDir, 'frontend/src/app/auth/login/page.tsx')];
+        const LoginPageComponent = require('../frontend/src/app/auth/login/page').default;
+        currentStateIdx = 0;
+        currentRefIdx = 0;
+        currentEffectIdx = 0;
+        pendingEffects.length = 0;
+        const suspenseWrapper = LoginPageComponent();
+        suspenseWrapper.props.children.type(suspenseWrapper.props.children.props);
+        while (pendingEffects.length > 0) {
+          const runEffect = pendingEffects.shift()!;
+          runEffect();
+        }
+        await flushMicrotasks();
+
+        assert.equal(
+          setupStatusCalls,
+          1,
+          'LoginPage makes initial /api/auth/setup/status request on mount',
+        );
+        const loginRetryTimers = scheduledTimers.filter((t) => !t.cleared);
+        assert.equal(
+          loginRetryTimers.length,
+          1,
+          'LoginPage schedules a retry when /api/auth/setup/status fails transiently',
+        );
+        loginRetryTimers[0].cleared = true;
+        loginRetryTimers[0].fn();
+        await flushMicrotasks();
+
+        assert.equal(
+          setupStatusCalls,
+          2,
+          'LoginPage retries /api/auth/setup/status after transient failure',
+        );
+        assert.deepEqual(
+          pushedRoutes,
+          ['/setup'],
+          'LoginPage redirects to /setup when retry confirms needsSetup: true',
+        );
+      } finally {
+        (globalThis as any).fetch = originalFetch;
+      }
     } finally {
       globalThis.setTimeout = originalSetTimeout;
       globalThis.clearTimeout = originalClearTimeout;

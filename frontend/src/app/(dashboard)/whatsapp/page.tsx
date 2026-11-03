@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -49,6 +49,7 @@ import {
   renderWhatsAppTemplate,
   buildSampleWhatsAppContext,
   extractTriggerRule,
+  insertPlaceholderAtSelection,
   type WhatsAppAutomationConfig,
 } from '../../../../../shared/whatsapp-automation';
 
@@ -322,6 +323,7 @@ export default function WhatsAppPage() {
   const [automationLoaded, setAutomationLoaded] = useState(false);
   const [automationLoadError, setAutomationLoadError] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('receipt');
+  const templateBodyRef = useRef<HTMLTextAreaElement | null>(null);
   const [savingAutomation, setSavingAutomation] = useState(false);
   const [runningSweep, setRunningSweep] = useState(false);
   const [broadcasting, setBroadcasting] = useState(false);
@@ -477,6 +479,13 @@ export default function WhatsAppPage() {
     // oxlint-disable-next-line react-hooks/set-state-in-effect
     void refreshAutomation();
   }, [refreshAutomation]);
+
+  useEffect(() => {
+    const el = templateBodyRef.current;
+    if (!el) return;
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
+  }, [selectedTemplateId]);
 
   const saveAutomation = async () => {
     if (!automationLoaded || automationLoadError) {
@@ -1451,6 +1460,28 @@ export default function WhatsAppPage() {
                           t.id === activeTpl.id ? { ...def } : t,
                         ),
                       }));
+                      requestAnimationFrame(() => {
+                        const el = templateBodyRef.current;
+                        if (!el) return;
+                        el.setSelectionRange(def.body.length, def.body.length);
+                      });
+                    };
+
+                    const insertTemplatePlaceholder = (token: string) => {
+                      const el = templateBodyRef.current;
+                      const { body: nextBody, cursor: nextCursor } = insertPlaceholderAtSelection(
+                        activeTpl.body,
+                        token,
+                        el?.selectionStart,
+                        el?.selectionEnd,
+                      );
+                      updateTemplateField('body', nextBody);
+                      requestAnimationFrame(() => {
+                        const target = templateBodyRef.current;
+                        if (!target) return;
+                        target.focus();
+                        target.setSelectionRange(nextCursor, nextCursor);
+                      });
                     };
 
                     return (
@@ -1489,6 +1520,7 @@ export default function WhatsAppPage() {
                             </label>
                             <textarea
                               id="wa-template-body"
+                              ref={templateBodyRef}
                               rows={8}
                               value={activeTpl.body}
                               onChange={(e) => updateTemplateField('body', e.target.value)}
@@ -1505,9 +1537,8 @@ export default function WhatsAppPage() {
                                 <button
                                   key={ph.token}
                                   type="button"
-                                  onClick={() =>
-                                    updateTemplateField('body', `${activeTpl.body}${ph.token}`)
-                                  }
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => insertTemplatePlaceholder(ph.token)}
                                   className="rounded border bg-muted/60 hover:bg-muted px-2 py-0.5 text-xs font-mono transition-colors cursor-pointer"
                                   title={`${ph.label}: ${ph.sample}`}
                                 >

@@ -847,6 +847,7 @@ router.get(
           wheres.push(`orders.id IN (
             SELECT ao.id FROM orders AS ao
             WHERE ao.status IN (${boardPlaceholders})
+              AND ao.release_status = 'released'
             UNION ALL
             SELECT CAST(value AS INTEGER) FROM json_each(?)
           )`);
@@ -855,6 +856,7 @@ router.get(
           wheres.push(`orders.id IN (
             SELECT ao.id FROM orders AS ao
             WHERE ao.status IN (${boardPlaceholders})
+              AND ao.release_status = 'released'
           )`);
           params.push(...boardStatuses);
         }

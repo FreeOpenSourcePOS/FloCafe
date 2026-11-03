@@ -353,7 +353,7 @@ function serializeHtml(
 <html lang="${escapeHtml(resolved.locale)}">
 <head>
   <meta charset="utf-8">
-  <title>${escapeHtml(resolved.businessName)} — ${escapeHtml(titleText)}</title>
+  <title>${escapeHtml(resolved.businessName)} - ${escapeHtml(titleText)}</title>
   <style>
     @page { size: A4 portrait; margin: 12mm; }
     * { box-sizing: border-box; }

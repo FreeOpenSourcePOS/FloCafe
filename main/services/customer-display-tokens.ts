@@ -190,6 +190,7 @@ function collectProjectedCompletedRows(
                 co.created_at AS created_at
          FROM orders co
          WHERE +co.status = 'completed'
+           AND co.release_status = 'released'
            AND co.created_at >= ?`;
   const completedExistsSql = `AND EXISTS (
            SELECT 1 FROM order_items oi

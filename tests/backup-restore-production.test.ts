@@ -783,6 +783,30 @@ async function run() {
       'repair kept the backup data',
     );
 
+    // An older-version backup that migrates forward to currentVersion and has additive
+    // schema drift from an earlier skipped migration is repaired after forward migration.
+    const driftedOlderBackup = path.join(testDir, 'drifted-older-schema.db');
+    copyAndStamp(sameSchemaBackup, driftedOlderBackup, currentVersion - 1);
+    const driftedOlderDb = new Database(driftedOlderBackup);
+    driftedOlderDb.pragma('foreign_keys = OFF');
+    driftedOlderDb.exec(
+      'DROP TRIGGER clear_table_reservation_customer_on_status_change; ALTER TABLE tables DROP COLUMN reservation_customer_id;',
+    );
+    driftedOlderDb.close();
+    const driftedOlder = restoreBackup(driftedOlderBackup, true);
+    assert.equal(
+      driftedOlder.success,
+      true,
+      `direct restore repairs a drifted older-version backup after forward migration: ${driftedOlder.error}`,
+    );
+    const repairedOlderDb = getDatabase();
+    assert.ok(
+      (repairedOlderDb.prepare('PRAGMA table_info(tables)').all() as { name: string }[]).some(
+        (column) => column.name === 'reservation_customer_id',
+      ),
+      'the missing column was added back after forward migration',
+    );
+
     // A drifted live database yields clean backups, and is healed silently on the next start.
     const liveDriftDb = getDatabase();
     liveDriftDb.pragma('foreign_keys = OFF');

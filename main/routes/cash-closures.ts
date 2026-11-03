@@ -246,11 +246,12 @@ export function listCashDrawerMovementsForSession(
   end: string,
   includeVoided = true,
 ): CashDrawerMovementRow[] {
-  return db
+  const rows = db
     .prepare(
       `
-    SELECT m.*, created_user.name AS created_by_name, voided_user.name AS voided_by_name
+    SELECT m.*, s.opening_float_cents AS session_opening_float_cents, created_user.name AS created_by_name, voided_user.name AS voided_by_name
     FROM cash_drawer_movements m
+    LEFT JOIN cash_sessions s ON s.id = m.cash_session_id
     LEFT JOIN users created_user ON created_user.id = m.created_by
     LEFT JOIN users voided_user ON voided_user.id = m.voided_by
     WHERE (m.cash_session_id = ? OR (m.cash_session_id IS NULL AND m.created_at >= ? AND m.created_at < ?))
@@ -258,7 +259,21 @@ export function listCashDrawerMovementsForSession(
     ORDER BY m.created_at DESC, m.id DESC
   `,
     )
-    .all(sessionId, start, end) as CashDrawerMovementRow[];
+    .all(sessionId, start, end) as Array<
+    CashDrawerMovementRow & {
+      cash_session_id?: number | null;
+      session_opening_float_cents?: number | null;
+    }
+  >;
+  return rows.map(({ session_opening_float_cents, ...row }) => ({
+    ...row,
+    amount_cents:
+      row.movement_type === 'opening_float' &&
+      row.cash_session_id === sessionId &&
+      Number(session_opening_float_cents) > 0
+        ? Number(session_opening_float_cents)
+        : row.amount_cents,
+  }));
 }
 
 function activeOpeningFloatCents(
@@ -1797,9 +1812,27 @@ router.post(
       }
       const row = db.prepare(`SELECT * FROM cash_closures WHERE id = ?`).get(id) as any;
       if (!row) return res.status(404).json({ error: 'Cash closure not found' });
-      // Session Z rows print for the shift roles; day-close Z stays owner-only.
-      if (row.scope !== 'session' && (req as AuthedRequest).user?.role !== 'owner') {
-        return res.status(403).json({ error: 'Only owners can print day-close reports' });
+      const callerRole = (req as AuthedRequest).user?.role;
+      const callerId = String((req as AuthedRequest).user?.userId || '');
+      // Session Z rows print for the shift owner or manager/owner; day-close Z stays owner-only.
+      if (row.scope !== 'session') {
+        if (callerRole !== 'owner') {
+          return res.status(403).json({ error: 'Only owners can print day-close reports' });
+        }
+      } else if (callerRole !== 'owner' && callerRole !== 'manager') {
+        const linkedSession = db
+          .prepare(`SELECT id, opened_by FROM cash_sessions WHERE closure_id = ? LIMIT 1`)
+          .get(id) as { id?: number | null; opened_by?: string | null } | undefined;
+        const ownsShift =
+          Boolean(callerId) &&
+          (linkedSession?.id != null
+            ? String(linkedSession.opened_by || '') === callerId
+            : String(row.closed_by || '') === callerId);
+        if (!ownsShift) {
+          return res.status(403).json({
+            error: 'Only the shift owner, a manager, or an owner can print this shift report',
+          });
+        }
       }
       const isReprint = req.body && req.body.isReprint === true;
       // F6: resolve the operator's display name via users(id → name) so the

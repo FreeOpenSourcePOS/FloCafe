@@ -1,5 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, parseRowJson, withTxn } from '../db';
+import {
+  attachEffectiveAddons,
+  getDatabase,
+  now,
+  parseItemJson,
+  parseRowJson,
+  withTxn,
+} from '../db';
 import { randomUUID } from 'crypto';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { notifyKdsUpdate } from '../services/kds';
@@ -13,6 +20,7 @@ function activeOrderForTable(
   db: ReturnType<typeof getDatabase>,
   tableId: string,
   orderId?: number | string,
+  options: { includeItems?: boolean } = {},
 ) {
   const whereOrder = orderId ? ' AND id = ?' : '';
   const params = orderId ? [tableId, orderId] : [tableId];
@@ -25,10 +33,26 @@ function activeOrderForTable(
   `)
       .get(...params) as any,
   );
-  if (!order?.customer_id) return order;
+  if (!order) return order;
 
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id);
-  return { ...order, customer: customer || null };
+  const hydratedOrder = options.includeItems
+    ? {
+        ...order,
+        items: attachEffectiveAddons(
+          db,
+          db
+            .prepare('SELECT * FROM order_items WHERE order_id = ?')
+            .all(order.id)
+            .map(parseItemJson) as Array<{ id: number; [key: string]: unknown }>,
+        ),
+      }
+    : order;
+  if (!hydratedOrder.customer_id) return hydratedOrder;
+
+  const customer = db
+    .prepare('SELECT * FROM customers WHERE id = ?')
+    .get(hydratedOrder.customer_id);
+  return { ...hydratedOrder, customer: customer || null };
 }
 
 function reservationCustomerShape(
@@ -128,13 +152,44 @@ router.get('/', requirePermission('tables.view'), (req: Request, res: Response) 
     query += ' ORDER BY number';
 
     const rows = db.prepare(query).all(...params);
-    const includeReservationCustomer = hasPermission(
-      (req as Request & { user?: { userId?: string } }).user?.userId || '',
-      'customers.view',
-    );
+    const userId = (req as Request & { user?: { userId?: string } }).user?.userId || '';
+    const includeReservationCustomer = hasPermission(userId, 'customers.view');
+    const includeOrderItems =
+      (req.query.include_items === '1' || req.query.include_items === 'true') &&
+      hasPermission(userId, 'orders.read');
+    const activeOrdersByTableId = new Map<string, any>();
+    for (const t of rows as any[]) {
+      const activeOrder = activeOrderForTable(db, t.id, undefined, { includeItems: false });
+      if (activeOrder) activeOrdersByTableId.set(t.id, activeOrder);
+    }
+    if (includeOrderItems && activeOrdersByTableId.size > 0) {
+      const orderIds = Array.from(
+        new Set(Array.from(activeOrdersByTableId.values()).map((order) => order.id)),
+      );
+      const placeholders = orderIds.map(() => '?').join(', ');
+      const hydratedItems = attachEffectiveAddons(
+        db,
+        db
+          .prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders})`)
+          .all(...orderIds)
+          .map(parseItemJson) as Array<{ id: number; order_id: number; [key: string]: unknown }>,
+      );
+      const itemsByOrderId = new Map<number, Array<Record<string, unknown>>>();
+      for (const item of hydratedItems) {
+        const list = itemsByOrderId.get(Number(item.order_id)) || [];
+        list.push(item);
+        itemsByOrderId.set(Number(item.order_id), list);
+      }
+      for (const [tableId, activeOrder] of activeOrdersByTableId.entries()) {
+        activeOrdersByTableId.set(tableId, {
+          ...activeOrder,
+          items: itemsByOrderId.get(Number(activeOrder.id)) || [],
+        });
+      }
+    }
     // Normalize: frontend expects `name`, schema column is `number`
     const tables = rows.map((t: any) =>
-      tableShape(db, t, activeOrderForTable(db, t.id), includeReservationCustomer),
+      tableShape(db, t, activeOrdersByTableId.get(t.id) || null, includeReservationCustomer),
     );
     res.json({ tables });
   } catch (error: any) {
@@ -151,11 +206,11 @@ router.get('/:id', requirePermission('tables.view'), (req: Request, res: Respons
       return res.status(404).json({ error: 'Table not found' });
     }
 
-    const activeOrder = activeOrderForTable(db, req.params.id as string);
-    const includeReservationCustomer = hasPermission(
-      (req as Request & { user?: { userId?: string } }).user?.userId || '',
-      'customers.view',
-    );
+    const userId = (req as Request & { user?: { userId?: string } }).user?.userId || '';
+    const activeOrder = activeOrderForTable(db, req.params.id as string, undefined, {
+      includeItems: hasPermission(userId, 'orders.read'),
+    });
+    const includeReservationCustomer = hasPermission(userId, 'customers.view');
 
     // Normalize: frontend expects `name`, schema column is `number`
     res.json({ table: tableShape(db, table as any, activeOrder, includeReservationCustomer) });

@@ -3187,13 +3187,18 @@ router.post(
             .all(req.params.id)
             .map(parseItemJson) as any[],
         );
-        const response = { order: Object.assign({}, updatedOrder, { items: updatedItems }) };
+        const addedItems = updatedItems.filter((item) => insertedItemIds.includes(Number(item.id)));
+        const response = {
+          order: Object.assign({}, updatedOrder, { items: updatedItems }),
+          added_item_ids: insertedItemIds,
+          added_items: addedItems,
+        };
         if (idempotencyKey && requestHash) {
           db.prepare(
             'INSERT INTO order_idempotency (user_id, idempotency_key, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?)',
           ).run(idempotencyUserId, idempotencyKey, requestHash, JSON.stringify(response), now());
         }
-        return { updatedOrder, updatedItems, replayResponse: null };
+        return { updatedOrder, updatedItems, response, replayResponse: null };
       });
       operationCommitted = true;
 
@@ -3205,7 +3210,7 @@ router.post(
         notifyKdsUpdate();
       }
 
-      res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
+      res.json(result.response);
     } catch (error: any) {
       console.error('[API] Internal error:', error);
       const statusCode = error.statusCode || 500;

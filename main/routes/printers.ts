@@ -1252,7 +1252,10 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     // Enforce master KOT printing toggle for all automatic and manual print requests.
     if (!isKotPrintingEnabled()) {
-      return res.status(403).json({ error: 'KOT printing is disabled for this business' });
+      return res.status(403).json({
+        error: 'KOT printing is disabled for this business',
+        code: 'KOT_PRINTING_DISABLED',
+      });
     }
     try {
       const { orderId, stationName, items, useUnicode = false } = req.body;

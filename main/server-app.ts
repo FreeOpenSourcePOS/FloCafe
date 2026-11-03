@@ -19,6 +19,7 @@ import {
   databaseMaintenanceMiddleware,
   getDatabase,
   isServerAppEnabled,
+  isServerBillPrintingEnabled,
   revokeDatabaseMaintenanceHandoff,
 } from './db';
 import { getJWTSecret } from './security/jwt-secret';
@@ -438,8 +439,19 @@ export function startServerApp(): Promise<void> {
     app.post('/api/printers/print-kot', printForwardRateLimit, requireServerAppAuth, (req, res) =>
       forwardToMainApi(req, res, '/printers/print-kot'),
     );
-    app.post('/api/printers/print-bill', printForwardRateLimit, requireServerAppAuth, (req, res) =>
-      forwardToMainApi(req, res, '/printers/print-bill'),
+    app.post(
+      '/api/printers/print-bill',
+      printForwardRateLimit,
+      requireServerAppAuth,
+      (req, res) => {
+        if (!isServerBillPrintingEnabled()) {
+          return res.status(403).json({
+            error:
+              'Bill printing is disabled for the Server Companion App. An owner or manager can enable it in Settings.',
+          });
+        }
+        return forwardToMainApi(req, res, '/printers/print-bill');
+      },
     );
 
     const staticDir = getStaticDir();

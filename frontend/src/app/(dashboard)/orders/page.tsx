@@ -24,7 +24,11 @@ import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
 import { isPrintCancelledOnTenantChangeError, usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
-import { formatReceiptErrorToast, extractPrinterErrorMessage } from '@/lib/printer/warnings';
+import {
+  formatKotErrorToast,
+  formatReceiptErrorToast,
+  extractPrinterErrorMessage,
+} from '@/lib/printer/warnings';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -148,12 +152,20 @@ function OrdersTableQuerySync({
 
 export default function OrdersPage() {
   const { currentTenant, user } = useAuthStore();
-  const { printBill, printDeliverySlip } = usePrinterStore();
+  const { printBill, printDeliverySlip, printKot } = usePrinterStore();
   const heldOrdersStore = useHeldOrdersStore();
   const router = useRouter();
   const cartStore = useCartStore();
-  const { setTablesRequired, autoPrintBill, printerUseUnicode, printerArabicShaping } =
-    usePosSettingsStore();
+  const {
+    setTablesRequired,
+    autoPrintBill,
+    autoPrintKot,
+    kotPrintingEnabled,
+    setAutoPrintKot,
+    setKotPrintingEnabled,
+    printerUseUnicode,
+    printerArabicShaping,
+  } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
   const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
@@ -281,7 +293,111 @@ export default function OrdersPage() {
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
   const appendAttemptStorageRef = useRef<AppendAttemptStorage | null>(null);
   const appendRecoveryStartedUsersRef = useRef<Set<string>>(new Set());
+  const printedAppendAttemptKeysRef = useRef<Set<string>>(new Set());
   const activeUserId = user?.id == null ? null : String(user.id);
+  const currentTenantKey = currentTenant?.id == null ? '__default__' : String(currentTenant.id);
+  const currentTenantKeyRef = useRef(currentTenantKey);
+  currentTenantKeyRef.current = currentTenantKey;
+  const kotSettingsReadyTenantRef = useRef<string | null>(null);
+  const kotSettingsPromiseRef = useRef<{
+    tenantKey: string;
+    promise: Promise<{ kotPrintingEnabled: boolean; autoPrintKot: boolean } | null>;
+  } | null>(null);
+
+  const getPrintedAppendKotStorageKey = (userId: string) =>
+    `flo.orders.append-kot-printed.${encodeURIComponent(userId)}`;
+
+  const hasPrintedAppendKot = (userId: string | null, idempotencyKey: string): boolean => {
+    if (!idempotencyKey) return false;
+    const compositeKey = `${userId || ''}:${idempotencyKey}`;
+    if (printedAppendAttemptKeysRef.current.has(compositeKey)) return true;
+    if (!userId || typeof window === 'undefined') return false;
+    try {
+      const raw = window.sessionStorage?.getItem(getPrintedAppendKotStorageKey(userId));
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.includes(idempotencyKey);
+    } catch {
+      return false;
+    }
+  };
+
+  const markPrintedAppendKot = (userId: string | null, idempotencyKey: string): void => {
+    if (!idempotencyKey) return;
+    printedAppendAttemptKeysRef.current.add(`${userId || ''}:${idempotencyKey}`);
+    if (!userId || typeof window === 'undefined') return;
+    try {
+      const storageKey = getPrintedAppendKotStorageKey(userId);
+      const raw = window.sessionStorage?.getItem(storageKey);
+      const existing = raw ? JSON.parse(raw) : [];
+      const list = Array.isArray(existing)
+        ? existing.filter((entry): entry is string => typeof entry === 'string')
+        : [];
+      if (!list.includes(idempotencyKey)) {
+        list.push(idempotencyKey);
+        window.sessionStorage?.setItem(storageKey, JSON.stringify(list.slice(-64)));
+      }
+    } catch {
+      // Ignore sessionStorage errors; in-memory ref still guards current session
+    }
+  };
+
+  const printAppendedItemsKotIfEnabled = async (
+    data:
+      | {
+          order?: Order;
+          added_items?: OrderItem[];
+          idempotent_replay?: boolean;
+        }
+      | null
+      | undefined,
+    idempotencyKey: string,
+    options: { requireAddedItems?: boolean } = {},
+  ): Promise<void> => {
+    if (!data?.order) return;
+    if (data.idempotent_replay === true) return;
+    if (hasPrintedAppendKot(activeUserId, idempotencyKey)) return;
+    if (
+      options.requireAddedItems &&
+      (!Array.isArray(data.added_items) || data.added_items.length === 0)
+    ) {
+      return;
+    }
+    if (data.order.release_status === 'scheduled' || data.order.release_status === 'blocked') {
+      return;
+    }
+    const originTenantKey = currentTenantKeyRef.current;
+    let settingsReady = kotSettingsReadyTenantRef.current === originTenantKey;
+    if (!settingsReady && kotSettingsPromiseRef.current?.tenantKey === originTenantKey) {
+      const resolved = await kotSettingsPromiseRef.current.promise;
+      settingsReady = resolved !== null && currentTenantKeyRef.current === originTenantKey;
+    }
+    if (!settingsReady || currentTenantKeyRef.current !== originTenantKey) return;
+    const latestPosSettings =
+      typeof usePosSettingsStore.getState === 'function'
+        ? usePosSettingsStore.getState()
+        : { kotPrintingEnabled, autoPrintKot };
+    if (!latestPosSettings.kotPrintingEnabled || !latestPosSettings.autoPrintKot) return;
+
+    const kotItems =
+      Array.isArray(data.added_items) && data.added_items.length > 0
+        ? data.added_items
+        : data.order.items;
+    markPrintedAppendKot(activeUserId, idempotencyKey);
+    try {
+      const printWarnings = await printKot(
+        { ...data.order, items: kotItems },
+        kotItems ? { items: kotItems } : undefined,
+      );
+      showPrintWarningsToast(printWarnings);
+    } catch (printErr) {
+      if (!isPrintCancelledOnTenantChangeError(printErr)) {
+        toast.error(
+          formatKotErrorToast(extractPrinterErrorMessage(printErr), tPos('kotPrintFailed')),
+        );
+      }
+    }
+  };
 
   const getAppendAttemptStorage = (): AppendAttemptStorage => {
     if (appendAttemptStorageRef.current) return appendAttemptStorageRef.current;
@@ -658,7 +774,7 @@ export default function OrdersPage() {
           },
         },
       )
-      .then(() => {
+      .then(async (recoveryRes) => {
         const cleared = clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!);
         if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
         addItemsAttemptRef.current = null;
@@ -674,6 +790,15 @@ export default function OrdersPage() {
             phase: 'retry_cleanup',
             correlationId: pendingAttempt!.operationId,
           });
+        if (
+          recoveryRes?.data?.idempotent_replay !== true &&
+          Array.isArray(recoveryRes?.data?.added_items) &&
+          recoveryRes.data.added_items.length > 0
+        ) {
+          await printAppendedItemsKotIfEnabled(recoveryRes.data, pendingAttempt!.idempotencyKey, {
+            requireAddedItems: true,
+          });
+        }
         fetchOrders(undefined, { refreshLoadedPages: true });
       })
       .catch((error) => {
@@ -793,6 +918,40 @@ export default function OrdersPage() {
     const interval = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    kotSettingsReadyTenantRef.current = null;
+    const promise = Promise.all([
+      api.get('/settings/kot_printing_enabled'),
+      api.get('/settings/auto_print_kot'),
+    ])
+      .then(([kotEnabledRes, autoKotRes]) => {
+        const enabled = kotEnabledRes.data?.setting?.value !== 'false';
+        const autoSetting = autoKotRes.data?.setting;
+        const auto =
+          autoSetting?.updated_at != null &&
+          (autoSetting.value === 'true' || autoSetting.value === 'false')
+            ? autoSetting.value === 'true'
+            : false;
+        if (cancelled || currentTenantKeyRef.current !== currentTenantKey) return null;
+        setKotPrintingEnabled?.(enabled);
+        setAutoPrintKot?.(auto);
+        kotSettingsReadyTenantRef.current = currentTenantKey;
+        return { kotPrintingEnabled: enabled, autoPrintKot: auto };
+      })
+      .catch(() => {
+        if (!cancelled && currentTenantKeyRef.current === currentTenantKey) {
+          setKotPrintingEnabled?.(false);
+          setAutoPrintKot?.(false);
+        }
+        return null;
+      });
+    kotSettingsPromiseRef.current = { tenantKey: currentTenantKey, promise };
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTenantKey, setKotPrintingEnabled, setAutoPrintKot]);
 
   useEffect(() => {
     const initPage = async () => {
@@ -1491,7 +1650,7 @@ export default function OrdersPage() {
       });
       addItemsAttemptRef.current = attempt;
       requestSubmitted = true;
-      await api.post(
+      const { data } = await api.post(
         `/orders/${addItemsOrder.id}/items`,
         {
           items,
@@ -1517,6 +1676,7 @@ export default function OrdersPage() {
           phase: 'retry_cleanup',
           correlationId: attempt.operationId,
         });
+      await printAppendedItemsKotIfEnabled(data, attempt.idempotencyKey);
       openAddItemsModal(null);
       fetchOrders(undefined, { refreshLoadedPages: true });
     } catch (error) {

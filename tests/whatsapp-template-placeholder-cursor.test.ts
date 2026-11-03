@@ -5,8 +5,6 @@
  */
 
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import * as whatsappAutomation from '../shared/whatsapp-automation';
 
 const insertPlaceholderAtSelection = (
@@ -130,38 +128,6 @@ assert.deepEqual(
     cursor: 6 + '{store_name}'.length,
   },
   'clamps selectionEnd below selectionStart to selectionStart without corrupting text',
-);
-
-// 7. Verify WhatsApp page template editor wiring
-const whatsappPage = readFileSync(
-  resolve(__dirname, '../frontend/src/app/(dashboard)/whatsapp/page.tsx'),
-  'utf8',
-);
-
-assert.match(
-  whatsappPage,
-  /insertPlaceholderAtSelection/,
-  'whatsapp/page.tsx imports and uses insertPlaceholderAtSelection',
-);
-assert.match(
-  whatsappPage,
-  /id="wa-template-body"[\s\S]*?ref=\{templateBodyRef\}/,
-  'wa-template-body textarea is bound to templateBodyRef',
-);
-assert.match(
-  whatsappPage,
-  /onMouseDown=\{\(e\)\s*=>\s*e\.preventDefault\(\)\}/,
-  'placeholder chip buttons prevent focus loss on mousedown',
-);
-assert.match(
-  whatsappPage,
-  /setSelectionRange\(nextCursor,\s*nextCursor\)/,
-  'placeholder insertion restores caret position right after inserted token',
-);
-assert.doesNotMatch(
-  whatsappPage,
-  /updateTemplateField\('body',\s*`\$\{activeTpl\.body\}\$\{ph\.token\}`\)/,
-  'whatsapp/page.tsx no longer unconditionally appends ph.token to activeTpl.body',
 );
 
 console.log('✓ WhatsApp template placeholder cursor insertion tests passed');

@@ -184,8 +184,22 @@ function run() {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   const build = pkg.build;
   const releaseVerifier = require('../scripts/verify-release-assets.cjs');
+  const { resolveElectronAbi } = require('../scripts/verify-electron-runtime.cjs');
+  const electronPkg = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '../node_modules/electron/package.json'), 'utf8'),
+  );
 
   assert.equal(pkg.engines?.node, '>=22.12.0', 'root Node engine must match Electron 43 minimum');
+  assert.ok(
+    typeof pkg.devDependencies?.['node-abi'] === 'string' &&
+      pkg.devDependencies['node-abi'] === pkg.overrides?.['node-abi'],
+    'node-abi must be declared in both devDependencies and overrides to stay aligned on Electron bumps',
+  );
+  assert.match(
+    resolveElectronAbi(electronPkg.version),
+    /^\d+$/,
+    `installed node-abi must resolve ABI for Electron ${electronPkg.version}`,
+  );
   assert.equal(
     pkg.scripts?.['verify:electron'],
     'node scripts/verify-electron-runtime.cjs',

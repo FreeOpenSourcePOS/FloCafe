@@ -1,11 +1,20 @@
 #!/usr/bin/env node
 // Cross-platform postinstall sanity check for the Electron package.
-// Only macOS has the quarantine/ad-hoc-signature checks; other platforms
-// intentionally return success without requiring Bash, xattr, or codesign.
+// Verifies that node-abi resolves the installed Electron ABI on every platform;
+// macOS also verifies quarantine and ad-hoc code signing.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+
+function resolveElectronAbi(electronVersion) {
+  const nodeAbi = require('node-abi');
+  const abi = nodeAbi.getAbi(electronVersion, 'electron');
+  if (!abi || !/^\d+$/.test(String(abi))) {
+    throw new Error(`node-abi returned invalid ABI "${abi}" for Electron ${electronVersion}`);
+  }
+  return String(abi);
+}
 
 // macOS `xattr -p` exit semantics:
 //   0                         -> attribute present (value on stdout)
@@ -44,14 +53,31 @@ function fail(message) {
 }
 
 function main() {
-  if (process.platform !== 'darwin') process.exit(0);
-
   const electronDir = path.join(process.cwd(), 'node_modules', 'electron');
   if (!fs.existsSync(electronDir)) process.exit(0);
 
+  const electronPkgPath = path.join(electronDir, 'package.json');
+  if (fs.existsSync(electronPkgPath)) {
+    const { version: electronVersion } = JSON.parse(fs.readFileSync(electronPkgPath, 'utf8'));
+    try {
+      const abi = resolveElectronAbi(electronVersion);
+      console.log(
+        `verify-electron-runtime: Electron ${electronVersion} resolves to ABI ${abi} via node-abi.`,
+      );
+    } catch (error) {
+      fail(
+        `node-abi cannot resolve ABI for Electron ${electronVersion}: ${error && error.message ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  if (process.platform !== 'darwin') process.exit(0);
+
   const distDir = path.join(electronDir, 'dist');
   const app = fs.existsSync(distDir)
-    ? fs.readdirSync(distDir, { withFileTypes: true }).find((entry) => entry.isDirectory() && entry.name.endsWith('.app'))
+    ? fs
+        .readdirSync(distDir, { withFileTypes: true })
+        .find((entry) => entry.isDirectory() && entry.name.endsWith('.app'))
     : null;
 
   if (!app) fail('node_modules/electron is installed but no dist/*.app bundle was found.');
@@ -62,7 +88,9 @@ function main() {
     fail(`${appPath} is marked com.apple.quarantine (${quarantine.value.trim()}).`);
   }
   if (quarantine.state === 'error') {
-    fail(`could not read the quarantine attribute of ${appPath}: ${quarantine.message || 'unexpected xattr failure'}`);
+    fail(
+      `could not read the quarantine attribute of ${appPath}: ${quarantine.message || 'unexpected xattr failure'}`,
+    );
   }
 
   try {
@@ -71,11 +99,13 @@ function main() {
     fail(`${appPath} has no expected ad-hoc code signature and may be corrupted.`);
   }
 
-  console.log(`verify-electron-runtime: ${appPath} present, unquarantined, ad-hoc signed as expected.`);
+  console.log(
+    `verify-electron-runtime: ${appPath} present, unquarantined, ad-hoc signed as expected.`,
+  );
 }
 
 if (require.main === module) {
   main();
 }
 
-module.exports = { classifyQuarantine, readQuarantine };
+module.exports = { classifyQuarantine, readQuarantine, resolveElectronAbi };

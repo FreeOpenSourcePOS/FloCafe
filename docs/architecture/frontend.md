@@ -624,8 +624,9 @@ unpaired screen.
 | Image handling | react-dropzone, react-easy-crop |
 | Phone numbers | libphonenumber-js |
 
-The `shadcn` CLI is a development dependency used to add primitives; the primitives themselves are
-committed under `src/components/ui` and are edited in place.
+The `shadcn` CLI can be invoked on demand via `npx shadcn` to add primitives; the primitives under
+`src/components/ui` and the Tailwind utilities in `src/app/shadcn-tailwind.css` are vendored in the
+repository and edited in place.
 
 ## Project structure
 

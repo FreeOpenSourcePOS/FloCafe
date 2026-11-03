@@ -247,7 +247,11 @@ interface FakeWindowInstance {
     } finally {
       global.setTimeout = originalSetTimeout;
     }
-    assert.equal(createdWindows.length, 3, 'third status window created once for closing timeout check');
+    assert.equal(
+      createdWindows.length,
+      3,
+      'third status window created once for closing timeout check',
+    );
     assert.equal(createdWindows[2].shown, false, 'timed-out status window is never shown');
     assert.equal(createdWindows[2].destroyed, true, 'timed-out status window is destroyed');
     assert.equal(hasStatusWindow(), false, 'no open status window remains after timeout');

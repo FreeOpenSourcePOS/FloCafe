@@ -144,15 +144,13 @@ async function openWindow(alwaysOnTop: boolean, page: string): Promise<void> {
   const timeout = new Promise<boolean>((resolve) => {
     timer = setTimeout(() => resolve(false), 2000);
   });
-  const load = window
-    .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`)
-    .then(
-      () => true,
-      (error) => {
-        console.warn('[StatusWindow] Could not load:', error);
-        return false;
-      },
-    );
+  const load = window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`).then(
+    () => true,
+    (error) => {
+      console.warn('[StatusWindow] Could not load:', error);
+      return false;
+    },
+  );
   const loaded = await Promise.race([load, timeout]);
   if (timer) clearTimeout(timer);
   if (!loaded) {

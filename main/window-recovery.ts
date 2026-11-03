@@ -42,7 +42,9 @@ export function shouldQuitOnAllWindowsClosed(
   return platform !== 'darwin' && !replacingWindow && !runtimeStarting;
 }
 
-export function createFailedWindowRecovery(options: FailedWindowRecoveryOptions): FailedWindowRecovery {
+export function createFailedWindowRecovery(
+  options: FailedWindowRecoveryOptions,
+): FailedWindowRecovery {
   let recoveryAttempted = false;
   let replacingWindow = false;
 
@@ -82,7 +84,9 @@ export function createFailedWindowRecovery(options: FailedWindowRecoveryOptions)
   return {
     isReplacingWindow: () => replacingWindow,
     suppressAllClosedQuit,
-    markLoadSucceeded: () => { recoveryAttempted = false; },
+    markLoadSucceeded: () => {
+      recoveryAttempted = false;
+    },
     recover,
   };
 }

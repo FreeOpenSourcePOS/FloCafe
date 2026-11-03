@@ -182,11 +182,8 @@ interface FakeWindowInstance {
 
     const statusWindowModulePath = require.resolve('../main/status-window');
     delete require.cache[statusWindowModulePath];
-    const {
-      showStatus,
-      closeStatus,
-      hasStatusWindow,
-    } = require('../main/status-window') as typeof import('../main/status-window');
+    const { showStatus, closeStatus, hasStatusWindow } =
+      require('../main/status-window') as typeof import('../main/status-window');
 
     // 1. Rejected loadURL during startup destroys the broken window without showing it or quitting.
     loadBehavior = 'reject';
@@ -232,14 +229,19 @@ interface FakeWindowInstance {
     assert.equal(createdWindows[2].shown, false, 'timed-out status window is never shown');
     assert.equal(createdWindows[2].destroyed, true, 'timed-out status window is destroyed');
     assert.equal(hasStatusWindow(), false, 'no open status window remains after timeout');
-    assert.equal(quitCalls, 0, 'destroying timed-out status window during startup does not quit app');
+    assert.equal(
+      quitCalls,
+      0,
+      'destroying timed-out status window during startup does not quit app',
+    );
 
     closeStatus();
     console.log('Status messages cover every app language and startup failure guards pass.');
   } finally {
     Module._load = originalLoad;
     if (originalNodeEnv !== undefined) process.env.NODE_ENV = originalNodeEnv;
-    if (originalHiddenWindow !== undefined) process.env.FLO_E2E_HIDDEN_WINDOW = originalHiddenWindow;
+    if (originalHiddenWindow !== undefined)
+      process.env.FLO_E2E_HIDDEN_WINDOW = originalHiddenWindow;
     if (originalDbPath !== undefined) process.env.FLO_E2E_DB_PATH = originalDbPath;
   }
 })().catch((error) => {

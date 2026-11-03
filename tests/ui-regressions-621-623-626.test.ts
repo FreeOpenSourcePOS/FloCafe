@@ -140,143 +140,35 @@ assert.ok(
   'change returned stays below the payment controls',
 );
 
-// Issue #1453: POS drawers and side sheets must offset below the 40px desktop
-// titlebar drag region (--flo-sidebar-block-start) and declare no-drag so the
-// top-right close X button's full 44x44 touch target stays clickable in Electron.
-const scheduledDrawer = source('frontend/src/components/pos/ScheduledOrdersDrawer.tsx');
-assert.match(
-  scheduledDrawer,
-  /data-testid="scheduled-orders-drawer"\s+className="fixed inset-x-0 bottom-0 top-\[var\(--flo-sidebar-block-start,0px\)\] z-50 flex justify-end bg-black\/50"/,
-  'ScheduledOrdersDrawer offsets below the desktop titlebar',
-);
-assert.match(
-  scheduledDrawer,
-  /data-testid="close-scheduled-drawer-btn"[\s\S]*?className="touch-target shrink-0 cursor-pointer rounded-full/,
-  'ScheduledOrdersDrawer close button exposes close-scheduled-drawer-btn with a non-shrinking touch target',
-);
-
-const paymentQueueDrawer = source('frontend/src/components/pos/PaymentQueueDrawer.tsx');
-assert.match(
-  paymentQueueDrawer,
-  /data-testid="payment-queue-drawer"\s+className="fixed inset-x-0 bottom-0 top-\[var\(--flo-sidebar-block-start,0px\)\] z-50 flex justify-end bg-black\/50"/,
-  'PaymentQueueDrawer offsets below the desktop titlebar',
-);
-assert.match(
-  paymentQueueDrawer,
-  /data-testid="close-queue-drawer-btn"[\s\S]*?className="touch-target shrink-0 cursor-pointer rounded-full/,
-  'PaymentQueueDrawer close button retains close-queue-drawer-btn with a non-shrinking touch target',
-);
-
-const sheetUi = source('frontend/src/components/ui/sheet.tsx');
-assert.match(
-  sheetUi,
-  /side === ['"]right['"][\s\S]*?top-\[var\(--flo-sidebar-block-start,0px\)\] bottom-0 end-0 h-\[calc\(100%-var\(--flo-sidebar-block-start,0px\)\)\]/,
-  'SheetContent right side offsets below the desktop titlebar',
-);
-assert.match(
-  sheetUi,
-  /side === ['"]left['"][\s\S]*?top-\[var\(--flo-sidebar-block-start,0px\)\] bottom-0 start-0 h-\[calc\(100%-var\(--flo-sidebar-block-start,0px\)\)\]/,
-  'SheetContent left side offsets below the desktop titlebar',
-);
-assert.match(
-  sheetUi,
-  /side === ['"]top['"][\s\S]*?top-\[var\(--flo-sidebar-block-start,0px\)\]/,
-  'SheetContent top side offsets below the desktop titlebar',
-);
-
-const drawerUi = source('frontend/src/components/ui/drawer.tsx');
-assert.match(
-  drawerUi,
-  /data-\[vaul-drawer-direction=right\]:top-\[var\(--flo-sidebar-block-start,0px\)\] data-\[vaul-drawer-direction=right\]:bottom-0/,
-  'DrawerContent right direction offsets below the desktop titlebar',
-);
-assert.match(
-  drawerUi,
-  /data-\[vaul-drawer-direction=left\]:top-\[var\(--flo-sidebar-block-start,0px\)\] data-\[vaul-drawer-direction=left\]:bottom-0/,
-  'DrawerContent left direction offsets below the desktop titlebar',
-);
-assert.match(
-  drawerUi,
-  /data-\[vaul-drawer-direction=top\]:top-\[var\(--flo-sidebar-block-start,0px\)\]/,
-  'DrawerContent top direction offsets below the desktop titlebar',
-);
-
-const globalsCss = source('frontend/src/app/globals.css');
-assert.match(
-  globalsCss,
-  /\[data-testid='scheduled-orders-drawer'\],[\s\S]*?\[data-testid='payment-queue-drawer'\],[\s\S]*?\[data-slot='sheet-overlay'\],[\s\S]*?\[data-slot='sheet-content'\],[\s\S]*?\[data-slot='drawer-overlay'\],[\s\S]*?\[data-slot='drawer-content'\],[\s\S]*?\[role='dialog'\]\s*\{\s*-webkit-app-region:\s*no-drag;\s*app-region:\s*no-drag;\s*\}/,
-  'globals.css marks modal and drawer overlays as no-drag in Electron',
-);
-
-const cartPanel = source('frontend/src/components/pos/CartPanel.tsx');
-assert.match(
-  cartPanel,
-  /<div className="flex items-center justify-between gap-2">\s*<button\s+type="button"\s+data-testid="cart-item-remove-btn"[\s\S]*?className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-red-500 dark:text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950\/40 dark:hover:text-red-300 active:bg-red-100 dark:active:bg-red-950\/60"[\s\S]*?<Trash2 size=\{13\} \/>\s*<\/button>\s*<p className="min-w-0 flex-1 break-words text-sm font-medium leading-snug text-foreground">/,
-  'CartPanel places the red Trash2 delete button at the inline-start of the item name on row 1',
-);
-assert.doesNotMatch(
-  cartPanel,
-  /order-last[^"]*touch-target/,
-  'CartPanel does not leave the delete button next to the quantity stepper on row 2',
-);
-assert.match(
-  cartPanel,
-  /<div className="flex flex-wrap gap-2">[\s\S]*?className="flex-1 min-w-0 px-3"[\s\S]*?<span className="truncate">/,
-  'CartPanel footer buttons wrap and truncate to prevent horizontal overflow',
-);
-
-const posTopbar = source('frontend/src/components/pos/PosTopbar.tsx');
-assert.match(
-  posTopbar,
-  /className="flex flex-col gap-1\.5 border-b bg-card shrink-0 px-3 py-2 sm:px-4 sm:py-2\.5"/,
-  'PosTopbar adds a 6px gap between the linked customer bar and CustomerTopItems bubbles',
-);
-
-const customerSearch = source('frontend/src/components/pos/CustomerSearch.tsx');
-assert.match(
-  customerSearch,
-  /isTopbar \? 'w-full min-w-0 sm:max-w-72 md:max-w-80' : 'w-full'/,
-  'CustomerSearch widens the POS topbar search field so the placeholder is visible',
-);
-
-const inventoryPage = source('frontend/src/app/(dashboard)/inventory/page.tsx');
-assert.match(
-  inventoryPage,
-  /<div className="mb-6 flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-3">/,
-  'Inventory header preserves min-h-9 across tabs so Movements does not shift vertically',
-);
-assert.equal(
-  (
-    inventoryPage.match(
-      /className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/g,
-    ) ?? []
-  ).length,
-  3,
-  'All three Inventory tab search inputs match the sleek Products search input styling',
-);
-
-assert.match(
-  customers,
-  /<div className="relative mb-4 w-full shrink-0 sm:max-w-xs">\s*<Search\s+size=\{16\}\s+className="pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"\s*\/>\s*<input[\s\S]*?className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
-  'Customers search input matches the sleek Products search input styling',
-);
-
-const ordersPage = source('frontend/src/app/(dashboard)/orders/page.tsx');
-assert.match(
-  ordersPage,
-  /<div className="relative w-full sm:max-w-xs">\s*<Search\s+size=\{16\}\s+className="pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"\s*\/>\s*<input[\s\S]*?className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
-  'Orders filter bar search input matches the sleek Products search input styling',
-);
-
+// Issue #1453: Executable component rendering and parsed CSS checks for POS drawers,
+// side sheets, CartPanel, PosTopbar, CustomerSearch, and dashboard search fields.
 const Module = require('node:module') as {
   createRequire: (filename: string) => NodeRequire;
   _resolveFilename: (...args: any[]) => string;
+  _load: (request: string, parent: any, isMain: boolean) => any;
 };
 const frontendRequire = Module.createRequire(resolve(process.cwd(), 'frontend/package.json'));
 const originalResolveFilename = Module._resolveFilename;
+const originalLoad = Module._load;
+const reactPath = frontendRequire.resolve('react');
+const reactDomPath = frontendRequire.resolve('react-dom');
+const reactDomServerPath = frontendRequire.resolve('react-dom/server');
+const useIntlPath = frontendRequire.resolve('use-intl');
+const zustandPath = frontendRequire.resolve('zustand');
+
 Module._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
   let resolvedRequest = request;
-  if (request === '@countries') {
+  if (request === 'react') {
+    resolvedRequest = reactPath;
+  } else if (request === 'react-dom') {
+    resolvedRequest = reactDomPath;
+  } else if (request === 'react-dom/server') {
+    resolvedRequest = reactDomServerPath;
+  } else if (request === 'use-intl') {
+    resolvedRequest = useIntlPath;
+  } else if (request === 'zustand') {
+    resolvedRequest = zustandPath;
+  } else if (request === '@countries') {
     resolvedRequest = resolve(process.cwd(), 'main/countries.ts');
   } else if (request.startsWith('@/')) {
     resolvedRequest = resolve(process.cwd(), 'frontend/src', request.slice(2));
@@ -286,31 +178,52 @@ Module._resolveFilename = function (request: string, parent: any, isMain: boolea
   return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
 };
 
+Module._load = function (request: string, parent: any, isMain: boolean) {
+  if (request === 'next/navigation') {
+    return {
+      useRouter: () => ({ push: () => {}, replace: () => {}, back: () => {} }),
+      useSearchParams: () => new URLSearchParams(),
+      usePathname: () => '/',
+    };
+  }
+  return originalLoad.apply(this, arguments as any);
+};
+
 try {
   const React = frontendRequire('react');
   const ReactDOMServer = frontendRequire('react-dom/server');
   const { IntlProvider } = frontendRequire('use-intl');
+  const postcss = frontendRequire('postcss');
   const enMessages = require('../frontend/src/lib/i18n/messages/en.json');
+  const { useAuthStore } = require('../frontend/src/store/auth');
+  const { useCartStore } = require('../frontend/src/store/cart');
+
+  const renderWithIntl = (element: any) =>
+    ReactDOMServer.renderToStaticMarkup(
+      React.createElement(
+        IntlProvider,
+        { locale: 'en', messages: enMessages, timeZone: 'UTC' },
+        element,
+      ),
+    );
+
+  // 1. ScheduledOrdersDrawer and PaymentQueueDrawer rendered output
   const ScheduledOrdersDrawer =
     require('../frontend/src/components/pos/ScheduledOrdersDrawer').default;
   const { PaymentQueueDrawer } = require('../frontend/src/components/pos/PaymentQueueDrawer');
 
-  const scheduledMarkup = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(
-      IntlProvider,
-      { locale: 'en', messages: enMessages, timeZone: 'UTC' },
-      React.createElement(ScheduledOrdersDrawer, {
-        open: true,
-        orders: [],
-        storeTimezone: 'UTC',
-        onClose: () => {},
-        onRefresh: () => {},
-        onOrderReleased: () => {},
-        onAddItemsToOrder: () => {},
-        onPayOrder: () => {},
-        onRefundOrder: () => {},
-      }),
-    ),
+  const scheduledMarkup = renderWithIntl(
+    React.createElement(ScheduledOrdersDrawer, {
+      open: true,
+      orders: [],
+      storeTimezone: 'UTC',
+      onClose: () => {},
+      onRefresh: () => {},
+      onOrderReleased: () => {},
+      onAddItemsToOrder: () => {},
+      onPayOrder: () => {},
+      onRefundOrder: () => {},
+    }),
   );
   assert.match(
     scheduledMarkup,
@@ -323,16 +236,12 @@ try {
     'rendered ScheduledOrdersDrawer close button exposes close-scheduled-drawer-btn with touch-target shrink-0 cursor-pointer',
   );
 
-  const paymentQueueMarkup = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(
-      IntlProvider,
-      { locale: 'en', messages: enMessages, timeZone: 'UTC' },
-      React.createElement(PaymentQueueDrawer, {
-        open: true,
-        onClose: () => {},
-        onSelectOrderForPayment: () => {},
-      }),
-    ),
+  const paymentQueueMarkup = renderWithIntl(
+    React.createElement(PaymentQueueDrawer, {
+      open: true,
+      onClose: () => {},
+      onSelectOrderForPayment: () => {},
+    }),
   );
   assert.match(
     paymentQueueMarkup,
@@ -344,8 +253,231 @@ try {
     /data-testid="close-queue-drawer-btn"[^>]*class="[^"]*touch-target shrink-0 cursor-pointer/,
     'rendered PaymentQueueDrawer close button exposes close-queue-drawer-btn with touch-target shrink-0 cursor-pointer',
   );
+
+  // 2. Sheet and Drawer UI primitives rendered output
+  const radixUi = frontendRequire('radix-ui');
+  const vaul = frontendRequire('vaul');
+  const origSheetPortal = radixUi.Dialog.Portal;
+  const origDrawerPortal = vaul.Drawer.Portal;
+  radixUi.Dialog.Portal = ({ children }: any) => React.createElement(React.Fragment, null, children);
+  vaul.Drawer.Portal = ({ children }: any) => React.createElement(React.Fragment, null, children);
+  try {
+    const { Sheet, SheetContent, SheetTitle } = require('../frontend/src/components/ui/sheet');
+    const { Drawer, DrawerContent, DrawerTitle } = require('../frontend/src/components/ui/drawer');
+
+    for (const side of ['right', 'left', 'top'] as const) {
+      const sheetMarkup = ReactDOMServer.renderToStaticMarkup(
+        React.createElement(
+          Sheet,
+          { open: true },
+          React.createElement(
+            SheetContent,
+            { side, 'aria-describedby': undefined },
+            React.createElement(SheetTitle, null, 'Sheet Title'),
+          ),
+        ),
+      );
+      assert.match(
+        sheetMarkup,
+        /data-slot="sheet-content"[^>]*top-\[var\(--flo-sidebar-block-start,0px\)\]/,
+        `rendered SheetContent (${side}) offsets below the desktop titlebar`,
+      );
+      if (side === 'right' || side === 'left') {
+        assert.match(
+          sheetMarkup,
+          /data-slot="sheet-content"[^>]*h-\[calc\(100%-var\(--flo-sidebar-block-start,0px\)\)\]/,
+          `rendered SheetContent (${side}) adjusts height for the desktop titlebar`,
+        );
+      }
+    }
+
+    const drawerMarkup = ReactDOMServer.renderToStaticMarkup(
+      React.createElement(
+        Drawer,
+        { open: true, direction: 'right' },
+        React.createElement(
+          DrawerContent,
+          { 'aria-describedby': undefined },
+          React.createElement(DrawerTitle, null, 'Drawer Title'),
+        ),
+      ),
+    );
+    assert.match(
+      drawerMarkup,
+      /data-slot="drawer-content"[^>]*data-\[vaul-drawer-direction=right\]:top-\[var\(--flo-sidebar-block-start,0px\)\]/,
+      'rendered DrawerContent right direction offsets below the desktop titlebar',
+    );
+    assert.match(
+      drawerMarkup,
+      /data-slot="drawer-content"[^>]*data-\[vaul-drawer-direction=left\]:top-\[var\(--flo-sidebar-block-start,0px\)\]/,
+      'rendered DrawerContent left direction offsets below the desktop titlebar',
+    );
+    assert.match(
+      drawerMarkup,
+      /data-slot="drawer-content"[^>]*data-\[vaul-drawer-direction=top\]:top-\[var\(--flo-sidebar-block-start,0px\)\]/,
+      'rendered DrawerContent top direction offsets below the desktop titlebar',
+    );
+  } finally {
+    radixUi.Dialog.Portal = origSheetPortal;
+    vaul.Drawer.Portal = origDrawerPortal;
+  }
+
+  // 3. Parsed CSS AST check on globals.css for Electron no-drag rules
+  const cssAst = postcss.parse(source('frontend/src/app/globals.css'));
+  const requiredNoDragSelectors = [
+    "[data-testid='scheduled-orders-drawer']",
+    "[data-testid='payment-queue-drawer']",
+    "[data-slot='sheet-overlay']",
+    "[data-slot='sheet-content']",
+    "[data-slot='drawer-overlay']",
+    "[data-slot='drawer-content']",
+    "[role='dialog']",
+  ];
+  for (const targetSelector of requiredNoDragSelectors) {
+    let hasWebkitNoDrag = false;
+    let hasAppRegionNoDrag = false;
+    cssAst.walkRules((rule: any) => {
+      if (!rule.selectors?.includes(targetSelector)) return;
+      rule.walkDecls((decl: any) => {
+        if (decl.prop === '-webkit-app-region' && decl.value === 'no-drag') {
+          hasWebkitNoDrag = true;
+        }
+        if (decl.prop === 'app-region' && decl.value === 'no-drag') {
+          hasAppRegionNoDrag = true;
+        }
+      });
+    });
+    assert.ok(
+      hasWebkitNoDrag && hasAppRegionNoDrag,
+      `parsed globals.css declares -webkit-app-region: no-drag and app-region: no-drag for ${targetSelector}`,
+    );
+  }
+
+  // 4. CartPanel rendered output: inline-start red trash button and wrapping footer buttons
+  useAuthStore.setState({
+    user: { id: 'u1', name: 'Owner', email: 'owner@test.com', role: 'owner' } as any,
+    currentTenant: {
+      id: 't1',
+      name: 'Cafe',
+      currency: 'USD',
+      country: 'US',
+      business_type: 'restaurant',
+      permission_ids: ['orders.item.price_override', 'inventory.manage'],
+    } as any,
+  });
+  useCartStore.getState().clearCart();
+  useCartStore.getState().setOrderType('dine_in');
+  useCartStore.getState().setTableId('table-1');
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-1',
+      name: 'Espresso',
+      price: 4.5,
+      category_id: 'cat-1',
+      is_available: 1,
+    } as any,
+    2,
+  );
+
+  const CartPanel = require('../frontend/src/components/pos/CartPanel').default;
+  const cartMarkup = renderWithIntl(
+    React.createElement(CartPanel, {
+      tables: [{ id: 'table-1', name: 'T1', capacity: 4, status: 'available' }],
+      currency: 'USD',
+      submitting: false,
+      onPlaceOrder: () => {},
+    }),
+  );
+  const removeBtnIndex = cartMarkup.indexOf('data-testid="cart-item-remove-btn"');
+  const itemNameIndex = cartMarkup.indexOf('>Espresso</p>');
+  const qtyIndex = cartMarkup.indexOf('data-testid="cart-item-qty"');
+  assert.ok(
+    removeBtnIndex > 0 && itemNameIndex > removeBtnIndex && qtyIndex > itemNameIndex,
+    'rendered CartPanel places the delete button before the item name on row 1, ahead of the row 2 quantity stepper',
+  );
+  assert.match(
+    cartMarkup,
+    /data-testid="cart-item-remove-btn"[^>]*class="[^"]*text-red-500 dark:text-red-400/,
+    'rendered CartPanel delete button uses red styling',
+  );
+  assert.doesNotMatch(
+    cartMarkup,
+    /order-last[^"]*touch-target/,
+    'rendered CartPanel does not place a touch-target delete button with order-last',
+  );
+  assert.match(
+    cartMarkup,
+    /<div class="flex flex-wrap gap-2"><button[^>]*class="[^"]*flex-1 min-w-0 px-3"[^>]*>[\s\S]*?<span class="truncate">Hold<\/span>[\s\S]*?<button[^>]*class="[^"]*flex-1 min-w-0 px-3"[^>]*><span class="truncate">Place Order<\/span>/,
+    'rendered CartPanel footer wraps action buttons with flex-1 min-w-0 and truncates labels',
+  );
+
+  // 5. PosTopbar and CustomerSearch rendered output
+  const PosTopbar = require('../frontend/src/components/pos/PosTopbar').default;
+  const topbarSearchMarkup = renderWithIntl(
+    React.createElement(PosTopbar, {
+      products: [],
+      onTopItemSelect: () => {},
+      showTableButton: true,
+      tableName: 'T1',
+      onShowTablePicker: () => {},
+      onActionsMenuOpenChange: () => {},
+      onShowCashMovement: () => {},
+      onShowShift: () => {},
+      shiftHasOpenSession: true,
+      shiftLoading: false,
+      shiftError: null,
+      canUseShift: true,
+      onShowPrintMenu: () => {},
+      fullscreen: false,
+      onToggleFullscreen: () => {},
+    }),
+  );
+  assert.match(
+    topbarSearchMarkup,
+    /^<div class="flex flex-col gap-1\.5 border-b bg-card shrink-0 px-3 py-2 sm:px-4 sm:py-2\.5">/,
+    'rendered PosTopbar root container applies gap-1.5 between the topbar row and CustomerTopItems',
+  );
+  assert.match(
+    topbarSearchMarkup,
+    /<div class="relative w-full min-w-0 sm:max-w-72 md:max-w-80"><div class="relative flex items-center">[\s\S]*?data-testid="pos-customer-search-input"/,
+    'rendered CustomerSearch in PosTopbar widens the search wrapper to sm:max-w-72 md:max-w-80',
+  );
+
+  // 6. InventoryPage, CustomersPage, and OrdersPage rendered output
+  const InventoryPage = require('../frontend/src/app/(dashboard)/inventory/page').default;
+  const CustomersPage = require('../frontend/src/app/(dashboard)/customers/page').default;
+  const OrdersPage = require('../frontend/src/app/(dashboard)/orders/page').default;
+
+  const inventoryMarkup = renderWithIntl(React.createElement(InventoryPage));
+  assert.match(
+    inventoryMarkup,
+    /<div class="mb-6 flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-3"><h1 class="text-2xl font-bold text-foreground">Inventory<\/h1>/,
+    'rendered InventoryPage header row preserves min-h-9',
+  );
+  assert.match(
+    inventoryMarkup,
+    /<div class="relative w-full sm:max-w-xs"><svg[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[^>]*width="16" height="16"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
+    'rendered InventoryPage search bar matches the sleek Products search bar styling',
+  );
+
+  const customersMarkup = renderWithIntl(React.createElement(CustomersPage));
+  assert.match(
+    customersMarkup,
+    /<div class="relative mb-4 w-full shrink-0 sm:max-w-xs"><svg[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[^>]*width="16" height="16"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
+    'rendered CustomersPage search bar matches the sleek Products search bar styling',
+  );
+
+  const ordersMarkup = renderWithIntl(React.createElement(OrdersPage));
+  assert.match(
+    ordersMarkup,
+    /<div class="relative w-full sm:max-w-xs"><svg[^>]*class="lucide lucide-search pointer-events-none absolute start-3 top-1\/2 -translate-y-1\/2 text-muted-foreground"[^>]*width="16" height="16"[\s\S]*?<input type="text"[^>]*class="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"/,
+    'rendered OrdersPage search bar matches the sleek Products search bar styling',
+  );
+
+  useCartStore.getState().clearCart();
 } finally {
   Module._resolveFilename = originalResolveFilename;
+  Module._load = originalLoad;
 }
 
 console.log('✓ UI regression guards for issues #621, #623, #625, #626, and #1453 passed');

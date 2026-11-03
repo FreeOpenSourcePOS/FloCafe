@@ -52,40 +52,37 @@ const { startServerApp, stopServerApp } = require('../main/server-app');
 const { getServerAppPort } = require('../main/server-app-state');
 const { getJWTSecret } = require('../main/routes/auth');
 
-function loadFrontendModules() {
-  const originalResolveFilename = Module._resolveFilename;
-  Module._resolveFilename = function (
-    request: string,
-    parent: any,
-    isMain: boolean,
-    options?: any,
-  ) {
-    let resolvedRequest = request;
-    if (request === '@countries') {
-      resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
-    } else if (request.startsWith('@/')) {
-      resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
-    } else if (request.startsWith('@print/')) {
-      resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
-    } else if (request.startsWith('@shared/')) {
-      resolvedRequest = path.resolve(__dirname, '../shared', request.slice('@shared/'.length));
-    }
-    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
-  };
-
-  try {
-    return {
-      webPrint: require('../frontend/src/lib/printer/web-print'),
-      orderSlipWebPrint: require('../frontend/src/lib/printer/order-slip-web-print'),
-    };
-  } finally {
-    Module._resolveFilename = originalResolveFilename;
+const originalResolveFilename = Module._resolveFilename;
+Module._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  let resolvedRequest = request;
+  if (request === '@countries') {
+    resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
+  } else if (request.startsWith('@/')) {
+    resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+  } else if (request.startsWith('@print/')) {
+    resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
+  } else if (request.startsWith('@shared/')) {
+    resolvedRequest = path.resolve(__dirname, '../shared', request.slice('@shared/'.length));
   }
+  return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+};
+
+function loadFrontendModules() {
+  return {
+    webPrint: require('../frontend/src/lib/printer/web-print'),
+    orderSlipWebPrint: require('../frontend/src/lib/printer/order-slip-web-print'),
+    usePrinter: require('../frontend/src/hooks/usePrinter'),
+    posSettings: require('../frontend/src/store/pos-settings'),
+    apiClient: require('../frontend/src/lib/api'),
+  };
 }
 
-const { webPrint, orderSlipWebPrint } = loadFrontendModules();
+const { webPrint, orderSlipWebPrint, usePrinter, posSettings, apiClient } = loadFrontendModules();
 const { generateBillHtml } = webPrint;
 const { generateOrderSlipHtml } = orderSlipWebPrint;
+const { usePrinterStore } = usePrinter;
+const { usePosSettingsStore } = posSettings;
+const frontendApi = apiClient.default || apiClient;
 
 async function postJson(
   baseUrl: string,
@@ -282,48 +279,95 @@ async function main() {
       'Idempotent replay preserves added_items',
     );
 
-    // Verify POS and Orders page source contracts for incremental KOT
-    const posSource = fs.readFileSync(
-      path.join(__dirname, '../frontend/src/app/(dashboard)/pos/page.tsx'),
-      'utf8',
-    );
-    const posAddedItemsMatches = posSource.match(/data\.added_items/g) || [];
-    assertOrThrow(
-      posAddedItemsMatches.length >= 2,
-      'pos/page.tsx uses data.added_items in both pendingOrder append and handleAddCartToOrder paths',
-    );
-
-    const ordersSource = fs.readFileSync(
-      path.join(__dirname, '../frontend/src/app/(dashboard)/orders/page.tsx'),
-      'utf8',
-    );
-    assertOrThrow(
-      ordersSource.includes('data.added_items') && ordersSource.includes('printKot'),
-      'orders/page.tsx triggers printKot with data.added_items when appending items to an existing order',
-    );
+    // Verify usePrinterStore.getState().printKot forwards order.items to /printers/print-kot when opts.items is omitted
+    usePosSettingsStore.getState().setKotPrintingEnabled(true);
+    usePrinterStore.setState({
+      hardwarePrinter: {
+        id: 'hw-1442',
+        name: 'Kitchen Printer',
+        connection_type: 'network',
+        is_default: 1,
+      },
+      printMethod: 'escpos',
+    });
+    const capturedKotPayloads: any[] = [];
+    const origPost = frontendApi.post;
+    frontendApi.post = async (url: string, payload: any) => {
+      if (url === '/printers/print-kot') {
+        capturedKotPayloads.push(payload);
+      }
+      return { data: { warnings: [] } };
+    };
+    try {
+      await usePrinterStore.getState().printKot({
+        ...appendRes.data.order,
+        items: appendRes.data.added_items,
+      });
+      assertEqualOrThrow(
+        capturedKotPayloads.length,
+        1,
+        'usePrinterStore.printKot posts once to /printers/print-kot',
+      );
+      assertEqualOrThrow(
+        capturedKotPayloads[0].items?.length,
+        2,
+        'usePrinterStore.printKot forwards order.items (strictly the 2 added_items) when opts.items is omitted',
+      );
+      assertEqualOrThrow(
+        capturedKotPayloads[0].items[0].product_name,
+        'Garlic Bread',
+        'Forwarded KOT item 1 is Garlic Bread',
+      );
+      assertEqualOrThrow(
+        capturedKotPayloads[0].items[1].product_name,
+        'Iced Tea',
+        'Forwarded KOT item 2 is Iced Tea',
+      );
+    } finally {
+      frontendApi.post = origPost;
+      usePrinterStore.setState({ hardwarePrinter: null });
+    }
 
     // ── 2. Server Companion App KOT 403 & print-bill guard ────────────────────
     console.log('\n2. Server Companion App KOT 403 guard and print-bill setting enforcement');
-    const serverStandaloneSource = fs.readFileSync(
-      path.join(__dirname, '../frontend/src/app/server-standalone/page.tsx'),
-      'utf8',
-    );
-    const printKotFnMatch = serverStandaloneSource.match(
-      /async function printKotForOrder[\s\S]*?async function printOrderSlip/,
-    );
-    assertOrThrow(
-      Boolean(printKotFnMatch),
-      'printKotForOrder function found in server-standalone/page.tsx',
-    );
-    assertOrThrow(
-      printKotFnMatch![0].includes('if (status === 403) return;'),
-      'printKotForOrder returns silently on HTTP 403 without toasting kotPrintFailed or opening browser print',
-    );
-
     await startMainServer();
     await startServerApp();
     try {
       const serverAppBaseUrl = `http://127.0.0.1:${getServerAppPort()}`;
+
+      // When kot_printing_enabled is 'false', Server App POST /api/printers/print-kot returns 403 across all roles
+      db.prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES ('kot_printing_enabled', 'false', ?)
+         ON CONFLICT(key) DO UPDATE SET value = 'false', updated_at = excluded.updated_at`,
+      ).run(now());
+
+      for (const [roleName, token] of [
+        ['server', serverToken],
+        ['manager', managerToken],
+        ['owner', ownerToken],
+      ] as const) {
+        const kotRes = await postJson(
+          serverAppBaseUrl,
+          '/api/printers/print-kot',
+          { orderId, items: appendRes.data.added_items },
+          token,
+        );
+        assertEqualOrThrow(
+          kotRes.status,
+          403,
+          `Server App POST /api/printers/print-kot returns 403 for ${roleName} when kot_printing_enabled is false`,
+        );
+        assertEqualOrThrow(
+          kotRes.body?.error,
+          'KOT printing is disabled for this business',
+          `Server App POST /api/printers/print-kot returns clear disabled message for ${roleName}`,
+        );
+      }
+
+      // Restore kot_printing_enabled to 'true'
+      db.prepare(
+        `UPDATE settings SET value = 'true', updated_at = ? WHERE key = 'kot_printing_enabled'`,
+      ).run(now());
 
       // Default: server_app_bill_printing_enabled is 'false'
       db.prepare(
@@ -469,10 +513,18 @@ async function main() {
       slip58.includes('font-size:12px;') && slip58.includes('color:#000;'),
       '58mm order slip uses font-size:12px and color:#000',
     );
+    assertOrThrow(
+      !slip58.includes('color:#444;'),
+      '58mm order slip addon rows do not use #444 gray text',
+    );
     const slip80 = generateOrderSlipHtml(sampleBill, orderSlipLabels, { paperWidth: 80 });
     assertOrThrow(
       slip80.includes('font-size:13px;') && slip80.includes('color:#000;'),
       '80mm order slip uses font-size:13px and color:#000',
+    );
+    assertOrThrow(
+      !slip80.includes('color:#444;'),
+      '80mm order slip addon rows do not use #444 gray text',
     );
   } finally {
     server.close();

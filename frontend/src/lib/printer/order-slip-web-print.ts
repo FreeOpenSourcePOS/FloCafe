@@ -56,7 +56,7 @@ export function generateOrderSlipHtml(
       .filter((addon) => addon?.name)
       .map(
         (addon) => `
-      <div style="padding-inline-start:1em;display:flex;justify-content:space-between;gap:8px;color:#444;">
+      <div style="padding-inline-start:1em;display:flex;justify-content:space-between;gap:8px;">
         <span>+ ${escapeHtml(addon.name)}${(addon.quantity ?? 1) > 1 ? ` x${escapeHtml(addon.quantity)}` : ''}</span>
         ${addon.price ? `<span>${escapeHtml(money(addon.price))}</span>` : ''}
       </div>

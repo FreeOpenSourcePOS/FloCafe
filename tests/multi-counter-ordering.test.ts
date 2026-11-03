@@ -2353,6 +2353,19 @@ async function main() {
     assertEqualOrThrow(editSupersededRes.status, 200, 'supersede bagel item via edit');
 
     db.prepare("UPDATE order_items SET status = 'voided' WHERE id = ?").run(voidedItemRow.id);
+    db.prepare('UPDATE orders SET subtotal = subtotal - ?, total = total - ? WHERE id = ?').run(
+      Number(voidedItemRow.total || 0),
+      Number(voidedItemRow.total || 0),
+      filterTicketOrder.id,
+    );
+    db.prepare(
+      'UPDATE bills SET subtotal = subtotal - ?, total = total - ?, balance = balance - ? WHERE order_id = ?',
+    ).run(
+      Number(voidedItemRow.total || 0),
+      Number(voidedItemRow.total || 0),
+      Number(voidedItemRow.total || 0),
+      filterTicketOrder.id,
+    );
 
     const filteredTicketPrintRes = await req({
       path: '/api/printers/print-payment-ticket',
@@ -2381,6 +2394,40 @@ async function main() {
       !filteredTicketText.includes('VoidedCroissant'),
       'payment ticket excludes voided items',
     );
+    // Simulate a refunded item on the order (createRefund marks item 'refunded' without reducing orders.total)
+    const activeReplacementRows = db
+      .prepare("SELECT id, total FROM order_items WHERE order_id = ? AND status = 'pending'")
+      .all(filterTicketOrder.id) as Array<{ id: number; total: number }>;
+    if (activeReplacementRows.length >= 2) {
+      db.prepare("UPDATE order_items SET status = 'refunded' WHERE id = ?").run(
+        activeReplacementRows[1].id,
+      );
+      db.prepare('UPDATE bills SET balance = 4.5 WHERE order_id = ?').run(filterTicketOrder.id);
+      const afterRefundTicketRes = await req({
+        path: '/api/printers/print-payment-ticket',
+        method: 'POST',
+        headers: serverUser.authHeader,
+        body: {
+          orderId: filterTicketOrder.id,
+          preview: true,
+        },
+      });
+      assertEqualOrThrow(
+        afterRefundTicketRes.status,
+        200,
+        'payment ticket preview after item refund 200',
+      );
+      const afterRefundTicketText = escPosToText(Buffer.from(afterRefundTicketRes.body.bytes));
+      assertIncludesOrThrow(
+        afterRefundTicketText,
+        '4.50',
+        'payment ticket total subtracts refunded item total so printed total matches non-refunded items',
+      );
+      assertOrThrow(
+        !afterRefundTicketText.includes('9.00'),
+        'payment ticket does not print pre-refund 9.00 total after one of two 4.50 items is refunded',
+      );
+    }
     db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(filterTicketOrder.id);
 
     // Queue amounts retain bill selection while aggregating all bills and refunds in tenant minor units.

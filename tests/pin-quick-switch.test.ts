@@ -1914,8 +1914,27 @@ async function run() {
       bill_number: 'BILL-603',
       bill_payment_status: 'unpaid',
     },
+    {
+      id: 504,
+      order_number: 'BLK-SPLIT-504',
+      type: 'takeaway',
+      total: 30,
+      total_amount: 30,
+      paid_amount: 0,
+      ticket_balance: 15,
+      ticket_paid_amount: 15,
+      balance: 15,
+      checkout_stage: 'awaiting_payment',
+      release_status: 'blocked',
+      release_blocked_reason: 'Insufficient stock',
+      created_at: '2026-11-03 12:03:00',
+      bill_id: 604,
+      bill_number: 'BILL-604-UNPAID',
+      bill_payment_status: 'unpaid',
+    },
   ];
   const patchedStatuses: Array<{ url: string; body: any }> = [];
+  const refundedInvocations: Array<{ order: any; bills: any[] }> = [];
   let queueFetchCount = 0;
   let onQueueChangedCalls = 0;
   mockApiHandler = {
@@ -1932,6 +1951,36 @@ async function run() {
           },
         };
       }
+      if (url === '/orders/504') {
+        return {
+          data: {
+            order: {
+              id: 504,
+              order_number: 'BLK-SPLIT-504',
+              bills: [
+                {
+                  id: 604,
+                  bill_number: 'BILL-604-UNPAID',
+                  order_id: 504,
+                  total: 15,
+                  paid_amount: 0,
+                  balance: 15,
+                  payment_status: 'unpaid',
+                },
+                {
+                  id: 605,
+                  bill_number: 'BILL-605-PAID',
+                  order_id: 504,
+                  total: 15,
+                  paid_amount: 15,
+                  balance: 0,
+                  payment_status: 'paid',
+                },
+              ],
+            },
+          },
+        };
+      }
       return { data: {} };
     },
     patch: async (url: string, body?: any) => {
@@ -1945,7 +1994,9 @@ async function run() {
         open: true,
         onClose: () => {},
         onPayOrder: () => {},
-        onRefundOrder: () => {},
+        onRefundOrder: (ord: any, bills: any[]) => {
+          refundedInvocations.push({ order: ord, bills });
+        },
         onQueueChanged: () => {
           onQueueChangedCalls += 1;
         },
@@ -1981,14 +2032,50 @@ async function run() {
     Boolean(findElementByTestId(drawerTree, 'cancel-blocked-btn-503')),
     'Unpaid blocked order renders Cancel button',
   );
+  const refundSplitBtn = findElementByTestId(drawerTree, 'refund-blocked-btn-504');
+  assertOrThrow(
+    Boolean(refundSplitBtn),
+    'Split blocked order with ticket_paid_amount > 0 in awaiting_payment stage renders Refund button',
+  );
+  assertEqualOrThrow(
+    findElementByTestId(drawerTree, 'cancel-blocked-btn-504'),
+    null,
+    'Split blocked order with refundable payment does not render Cancel button',
+  );
+
+  // Clicking Refund on split blocked order fetches GET /orders/504 and passes all split bills to onRefundOrder
+  refundSplitBtn.props.onClick();
+  await new Promise((r) => setTimeout(r, 15));
+  assertEqualOrThrow(
+    refundedInvocations.length,
+    1,
+    'Clicking Refund on split blocked order invokes onRefundOrder once',
+  );
+  assertEqualOrThrow(
+    refundedInvocations[0].bills.length,
+    2,
+    'Refund on split blocked order passes all hydrated split bills from GET /orders/504',
+  );
 
   const fetchesBeforeCancel = queueFetchCount;
   cancelRefundedBtn.props.onClick();
+  assertEqualOrThrow(
+    patchedStatuses.length,
+    0,
+    'First click on Cancel opens confirmation step without sending PATCH immediately',
+  );
+  const confirmDrawerTree = renderQueueDrawer();
+  const confirmCancelBtn = findElementByTestId(confirmDrawerTree, 'confirm-cancel-blocked-btn-502');
+  assertOrThrow(
+    Boolean(confirmCancelBtn),
+    'Clicking Cancel reveals confirm-cancel-blocked-btn-502 confirmation button',
+  );
+  confirmCancelBtn.props.onClick();
   await new Promise((r) => setTimeout(r, 15));
   assertEqualOrThrow(
     patchedStatuses.length,
     1,
-    'Clicking Cancel on blocked refunded order sends 1 PATCH request',
+    'Clicking Confirm Cancel on blocked refunded order sends 1 PATCH request',
   );
   assertEqualOrThrow(
     patchedStatuses[0].url,
@@ -2008,6 +2095,25 @@ async function run() {
     onQueueChangedCalls,
     1,
     'Cancelling blocked order invokes onQueueChanged callback',
+  );
+
+  // Verify Cancel button is hidden when caller lacks orders.status.update
+  useAuthStore.setState({
+    currentTenant: {
+      id: 1,
+      business_name: 'Test Cafe',
+      role: 'cashier',
+      permission_ids: ['pos.use', 'payments.take', 'bills.generate'],
+    } as any,
+  });
+  resetPOSHooks();
+  renderQueueDrawer();
+  await new Promise((r) => setTimeout(r, 15));
+  const restrictedDrawerTree = renderQueueDrawer();
+  assertEqualOrThrow(
+    findElementByTestId(restrictedDrawerTree, 'cancel-blocked-btn-502'),
+    null,
+    'User without orders.status.update does not see cancel-blocked-btn-502',
   );
 
   closeDatabase();

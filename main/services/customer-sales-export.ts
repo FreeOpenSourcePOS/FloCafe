@@ -126,7 +126,7 @@ export function buildCustomerSalesDataset(
     );
   }
 
-  const timezone = resolveExportTimezone();
+  const timezone = resolveExportTimezone(db);
   const businessDayStart = tenantBusinessDayStartTime(db);
   const [start] = dayBoundsInTimezone(startDate, timezone, businessDayStart);
   const [, end] = dayBoundsInTimezone(endDate, timezone, businessDayStart);

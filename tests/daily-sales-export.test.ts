@@ -2402,6 +2402,17 @@ async function main() {
             'America/New_York',
             'resolveExportTimezone(db) reads timezone from passed db handle instead of global singleton',
           );
+          customDb.exec('DROP TABLE settings');
+          let unconfiguredErr: unknown = null;
+          try {
+            resolveExportTimezone(customDb);
+          } catch (err) {
+            unconfiguredErr = err;
+          }
+          assert(
+            unconfiguredErr !== null,
+            'resolveExportTimezone(db) does not fall back to global singleton settings when passed db has no settings table',
+          );
         } finally {
           customDb.close();
         }

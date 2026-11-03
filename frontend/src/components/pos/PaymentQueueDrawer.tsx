@@ -97,6 +97,8 @@ export function PaymentQueueDrawer({
   const [searchInput, setSearchInput] = useState('');
   const [releasingId, setReleasingId] = useState<string | number | null>(null);
   const [cancellingId, setCancellingId] = useState<string | number | null>(null);
+  const [confirmCancelOrderId, setConfirmCancelOrderId] = useState<string | number | null>(null);
+  const [refundLoadingId, setRefundLoadingId] = useState<string | number | null>(null);
   const [printingId, setPrintingId] = useState<string | number | null>(null);
   const [awaitingCount, setAwaitingCount] = useState(0);
   const [blockedCount, setBlockedCount] = useState(0);
@@ -288,6 +290,7 @@ export function PaymentQueueDrawer({
     try {
       await api.patch(`/orders/${order.id}/status`, { status: 'cancelled' });
       toast.success(tOrders('orderCancelled'));
+      setConfirmCancelOrderId((prev) => (prev === order.id ? null : prev));
       pausedRef.current = false;
       setPollingPaused(false);
       await fetchQueue(null, search);
@@ -297,6 +300,53 @@ export function PaymentQueueDrawer({
       toast.error(errData?.error || tOrders('cancelOrderFailed'));
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  const handleRefundBlockedOrder = async (order: AwaitingPaymentOrder) => {
+    if (!onRefundOrder) return;
+    setRefundLoadingId(order.id);
+    try {
+      let hydratedOrder: Order = order as unknown as Order;
+      let bills: Bill[] =
+        order.bills && order.bills.length > 0 ? order.bills : order.bill ? [order.bill] : [];
+      try {
+        const { data } = await api.get(`/orders/${order.id}`);
+        if (data?.order) {
+          hydratedOrder = { ...order, ...data.order } as unknown as Order;
+          if (Array.isArray(data.order.bills) && data.order.bills.length > 0) {
+            bills = data.order.bills;
+          } else if (data.order.bill) {
+            bills = [data.order.bill];
+          }
+        }
+      } catch {
+        // Fall back to the queue row's bill snapshot if order hydration fails.
+      }
+      if (bills.length === 0 && order.bill_id) {
+        bills = [
+          {
+            id: Number(order.bill_id),
+            bill_number: order.bill_number || '',
+            order_id: Number(order.id),
+            subtotal: Number(order.total_amount ?? order.total ?? 0),
+            tax_amount: 0,
+            discount_amount: 0,
+            service_charge: 0,
+            delivery_charge: 0,
+            total: Number(order.total_amount ?? order.total ?? 0),
+            paid_amount: Number(order.paid_amount || 0),
+            balance: Number(order.balance || 0),
+            payment_status:
+              (order.bill_payment_status as Bill['payment_status']) ||
+              (Number(order.balance || 0) === 0 ? 'paid' : 'partial'),
+            payment_details: [],
+          } as unknown as Bill,
+        ];
+      }
+      onRefundOrder(hydratedOrder, bills);
+    } finally {
+      setRefundLoadingId(null);
     }
   };
 
@@ -324,15 +374,18 @@ export function PaymentQueueDrawer({
   const renderOrderCard = (order: AwaitingPaymentOrder) => {
     const isBlocked = order.release_status === 'blocked';
     const isPaid = order.checkout_stage === 'paid';
+    const refundableAmount =
+      order.ticket_paid_amount !== undefined && order.ticket_paid_amount !== null
+        ? Number(order.ticket_paid_amount)
+        : order.bill_payment_status === 'refunded'
+          ? 0
+          : Number(order.paid_amount ?? 0);
     const hasRefundablePayment =
-      isPaid &&
-      order.bill_payment_status !== 'refunded' &&
       !(
         Array.isArray(order.bills) &&
         order.bills.length > 0 &&
         order.bills.every((b) => b.payment_status === 'refunded')
-      ) &&
-      Number(order.paid_amount ?? order.total_amount ?? order.total ?? 0) > 0;
+      ) && refundableAmount > 0;
 
     return (
       <div
@@ -452,60 +505,65 @@ export function PaymentQueueDrawer({
                 variant="outline"
                 size="sm"
                 data-testid={`refund-blocked-btn-${order.id}`}
-                onClick={() => {
-                  const bills: Bill[] =
-                    order.bills && order.bills.length > 0
-                      ? order.bills
-                      : order.bill
-                        ? [order.bill]
-                        : order.bill_id
-                          ? [
-                              {
-                                id: Number(order.bill_id),
-                                bill_number: order.bill_number || '',
-                                order_id: Number(order.id),
-                                subtotal: Number(order.total_amount ?? order.total ?? 0),
-                                tax_amount: 0,
-                                discount_amount: 0,
-                                service_charge: 0,
-                                delivery_charge: 0,
-                                total: Number(order.total_amount ?? order.total ?? 0),
-                                paid_amount: Number(order.paid_amount || 0),
-                                balance: Number(order.balance || 0),
-                                payment_status:
-                                  (order.bill_payment_status as Bill['payment_status']) ||
-                                  (Number(order.balance || 0) === 0 ? 'paid' : 'partial'),
-                                payment_details: [],
-                              } as unknown as Bill,
-                            ]
-                          : [];
-                  onRefundOrder(order as unknown as Order, bills);
-                }}
+                disabled={refundLoadingId === order.id}
+                onClick={() => void handleRefundBlockedOrder(order)}
                 className="gap-1 text-red-600 hover:text-red-700"
               >
-                <RotateCcw size={13} />
+                {refundLoadingId === order.id ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <RotateCcw size={13} />
+                )}
                 {tOrders('refundButton')}
               </Button>
             )}
 
-            {isBlocked && !hasRefundablePayment && canCancelOrder && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                data-testid={`cancel-blocked-btn-${order.id}`}
-                disabled={cancellingId === order.id}
-                onClick={() => void handleCancelBlockedOrder(order)}
-                className="gap-1 text-red-600 hover:text-red-700"
-              >
-                {cancellingId === order.id ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
+            {isBlocked &&
+              !hasRefundablePayment &&
+              canCancelOrder &&
+              (confirmCancelOrderId === order.id ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    data-testid={`confirm-cancel-blocked-btn-${order.id}`}
+                    disabled={cancellingId === order.id}
+                    onClick={() => void handleCancelBlockedOrder(order)}
+                    className="gap-1"
+                  >
+                    {cancellingId === order.id ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <X size={13} />
+                    )}
+                    {tOrders('confirmCancel')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    data-testid={`dismiss-cancel-blocked-btn-${order.id}`}
+                    disabled={cancellingId === order.id}
+                    onClick={() => setConfirmCancelOrderId(null)}
+                  >
+                    {tCommon('cancel')}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid={`cancel-blocked-btn-${order.id}`}
+                  disabled={cancellingId === order.id}
+                  onClick={() => setConfirmCancelOrderId(order.id)}
+                  className="gap-1 text-red-600 hover:text-red-700"
+                >
                   <X size={13} />
-                )}
-                {tOrders('cancel')}
-              </Button>
-            )}
+                  {tOrders('cancel')}
+                </Button>
+              ))}
 
             {!isPaid && canPay && (
               <Button

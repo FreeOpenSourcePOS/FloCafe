@@ -1589,31 +1589,39 @@ router.post(
         tableName = tableRow?.number ?? null;
       }
 
+      const rawItems = (order.items || []) as Array<{
+        status?: string;
+        product_name?: string;
+        quantity?: number;
+        unit_price?: number;
+        total?: number;
+      }>;
+      const items = rawItems
+        .filter((item) => !isTerminalItemStatus(item.status))
+        .map((item) => ({
+          product_name: item.product_name || '',
+          quantity: item.quantity || 1,
+          unit_price: item.unit_price || 0,
+          total: item.total || 0,
+        }));
+      const refundedItemsTotal = rawItems
+        .filter((item) => item.status === 'refunded')
+        .reduce((sum, item) => sum + Number(item.total || 0), 0);
+      const ticketTotal =
+        items.length === 0
+          ? 0
+          : Math.max(0, Number((Number(order.total || 0) - refundedItemsTotal).toFixed(4)));
+
       const balanceRow = db
         .prepare(
-          `SELECT COALESCE(SUM(balance), 0) AS total_balance, COUNT(*) AS bill_count
+          `SELECT COALESCE(SUM(CASE WHEN payment_status != 'refunded' THEN balance ELSE 0 END), 0) AS total_balance,
+                  COUNT(*) AS bill_count
            FROM bills
-           WHERE order_id = ? AND payment_status != 'refunded'`,
+           WHERE order_id = ?`,
         )
         .get(order.id) as { total_balance: number; bill_count: number } | undefined;
       const balance =
-        balanceRow && balanceRow.bill_count > 0 ? Number(balanceRow.total_balance) : order.total;
-
-      const items = (order.items || [])
-        .filter((item: { status?: string }) => !isTerminalItemStatus(item.status))
-        .map(
-          (item: {
-            product_name?: string;
-            quantity?: number;
-            unit_price?: number;
-            total?: number;
-          }) => ({
-            product_name: item.product_name || '',
-            quantity: item.quantity || 1,
-            unit_price: item.unit_price || 0,
-            total: item.total || 0,
-          }),
-        );
+        balanceRow && balanceRow.bill_count > 0 ? Number(balanceRow.total_balance) : ticketTotal;
 
       const result = await printPaymentTicketDetailed(
         {
@@ -1622,7 +1630,7 @@ router.post(
           type: order.type,
           table_id: order.table_id,
           table_name: tableName,
-          total: order.total,
+          total: ticketTotal,
           created_at: order.created_at,
           scheduled_for: order.scheduled_for,
         },

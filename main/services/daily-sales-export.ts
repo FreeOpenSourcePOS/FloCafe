@@ -279,7 +279,7 @@ function getDbSettingValue(db: Database, key: string): string | undefined {
       | undefined;
     return row?.value ?? undefined;
   } catch {
-    return getSettingValue(key) ?? undefined;
+    return undefined;
   }
 }
 

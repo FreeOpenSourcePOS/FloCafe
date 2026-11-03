@@ -1821,14 +1821,13 @@ router.post(
         }
       } else if (callerRole !== 'owner' && callerRole !== 'manager') {
         const linkedSession = db
-          .prepare(`SELECT opened_by, closed_by FROM cash_sessions WHERE closure_id = ? LIMIT 1`)
-          .get(id) as { opened_by?: string | null; closed_by?: string | null } | undefined;
+          .prepare(`SELECT id, opened_by FROM cash_sessions WHERE closure_id = ? LIMIT 1`)
+          .get(id) as { id?: number | null; opened_by?: string | null } | undefined;
         const ownsShift =
           Boolean(callerId) &&
-          (String(row.closed_by || '') === callerId ||
-            (linkedSession !== undefined &&
-              (String(linkedSession.opened_by || '') === callerId ||
-                String(linkedSession.closed_by || '') === callerId)));
+          (linkedSession?.id != null
+            ? String(linkedSession.opened_by || '') === callerId
+            : String(row.closed_by || '') === callerId);
         if (!ownsShift) {
           return res.status(403).json({
             error: 'Only the shift owner, a manager, or an owner can print this shift report',

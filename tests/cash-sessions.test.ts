@@ -2987,6 +2987,32 @@ async function main() {
           printShiftBByCashierA.status === 403,
           `#1339: Cashier A cannot print Cashier B session Z report (403, got ${printShiftBByCashierA.status})`,
         );
+        // Even if Cashier A triggered stale auto-close of Cashier B's shift (recording Cashier A as closed_by),
+        // Cashier A must still be denied printing Cashier B's shift Z report because linkedSession.opened_by is Cashier B.
+        db.prepare('UPDATE cash_sessions SET closed_by = ? WHERE id = ?').run(
+          'cashier-sess',
+          shiftBId,
+        );
+        db.prepare('UPDATE cash_closures SET closed_by = ? WHERE id = ?').run(
+          'cashier-sess',
+          mgrCloseB.body?.closure_id,
+        );
+        const printAutoClosedShiftBByCashierA = await request(app)
+          .post(`/api/cash-closures/${mgrCloseB.body?.closure_id}/print`)
+          .set('Authorization', `Bearer ${s11CashierAToken}`)
+          .send({});
+        assert(
+          printAutoClosedShiftBByCashierA.status === 403,
+          `#1339: Cashier A cannot print Cashier B session Z report even when recorded as closed_by from stale auto-close (403, got ${printAutoClosedShiftBByCashierA.status})`,
+        );
+        db.prepare('UPDATE cash_sessions SET closed_by = ? WHERE id = ?').run(
+          'manager-sess',
+          shiftBId,
+        );
+        db.prepare('UPDATE cash_closures SET closed_by = ? WHERE id = ?').run(
+          'manager-sess',
+          mgrCloseB.body?.closure_id,
+        );
         const printShiftAByCashierA = await request(app)
           .post(`/api/cash-closures/${closeA.body?.closure_id}/print`)
           .set('Authorization', `Bearer ${s11CashierAToken}`)

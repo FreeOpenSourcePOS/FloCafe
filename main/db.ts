@@ -670,6 +670,19 @@ function writeReplacementJournal(journalPath: string, journal: ReplacementJourna
   }
 }
 
+function isSameBigIntStatFile(candidateStat: fs.BigIntStats, targetStat: fs.BigIntStats): boolean {
+  if (candidateStat.dev !== targetStat.dev) return false;
+  if (candidateStat.ino !== 0n || targetStat.ino !== 0n) {
+    return candidateStat.ino !== 0n && candidateStat.ino === targetStat.ino;
+  }
+  return (
+    candidateStat.nlink > 1n &&
+    targetStat.nlink > 1n &&
+    candidateStat.size === targetStat.size &&
+    candidateStat.mtimeNs === targetStat.mtimeNs
+  );
+}
+
 function isLiveDatabaseTarget(candidatePath: string, dbPath: string): boolean {
   const normalize = (value: string) =>
     process.platform === 'win32' || process.platform === 'darwin' ? value.toLowerCase() : value;
@@ -677,11 +690,7 @@ function isLiveDatabaseTarget(candidatePath: string, dbPath: string): boolean {
   try {
     const candidateStat = fs.statSync(candidatePath, { bigint: true });
     const dbStat = fs.statSync(dbPath, { bigint: true });
-    if (
-      candidateStat.ino !== 0n &&
-      candidateStat.dev === dbStat.dev &&
-      candidateStat.ino === dbStat.ino
-    ) {
+    if (isSameBigIntStatFile(candidateStat, dbStat)) {
       return true;
     }
   } catch {}
@@ -6494,11 +6503,7 @@ function materializeRestoreSource(
     }
     if (pathEntryExists(livePath)) {
       const liveStat = fs.lstatSync(livePath, { bigint: true });
-      if (
-        openedStat.ino !== 0n &&
-        openedStat.dev === liveStat.dev &&
-        openedStat.ino === liveStat.ino
-      )
+      if (isSameBigIntStatFile(openedStat, liveStat))
         throw new Error('Restore source cannot be the live database');
     }
     const sourceBytes = fs.readFileSync(sourceFd);

@@ -3570,7 +3570,59 @@ async function run(): Promise<void> {
           `restoreBackup succeeds when NTFS 64-bit ino collides under Number rounding (${compatibleDirectRestore.error || ''})`,
         );
         finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+
+        // Zero-inode (ino === 0n) hardlink guard: when a filesystem reports ino === 0n,
+        // single-link backup files remain discoverable and restorable, while a multi-link
+        // hardlink to the live database on the same device fails closed.
+        clearDirectory(backupDir);
+        fs.copyFileSync(baseTemplateCopy, ntfsCompatiblePath);
+        {
+          const unrelatedZeroInoDb = new Database(ntfsUnrelatedPath);
+          unrelatedZeroInoDb.exec('CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)');
+          unrelatedZeroInoDb.close();
+        }
+        const zeroInoHardlinkPath = path.join(
+          backupDir,
+          'flo-backup-2026-10-29T11-10-00-000Z-zero-ino-hardlink.db',
+        );
+        fs.linkSync(dbPath, zeroInoHardlinkPath);
+        ntfsInoByRealIno.clear();
+        ntfsInoByRealIno.set(origStatForNtfsIno.call(nativeFs, dbPath, { bigint: true }).ino, 0n);
+        ntfsInoByRealIno.set(
+          origStatForNtfsIno.call(nativeFs, ntfsCompatiblePath, { bigint: true }).ino,
+          0n,
+        );
+        ntfsInoByRealIno.set(
+          origStatForNtfsIno.call(nativeFs, ntfsUnrelatedPath, { bigint: true }).ino,
+          0n,
+        );
+
+        const zeroInoDiscovery = await discoverDowngradeBackupsAsync();
+        assert.deepEqual(
+          zeroInoDiscovery.compatible.map((item) => item.fileName),
+          [path.basename(ntfsCompatiblePath)],
+          'discoverDowngradeBackupsAsync skips zero-inode hardlinks to live DB while keeping single-link candidates',
+        );
+        assert.deepEqual(
+          zeroInoDiscovery.corruptOrInvalid.map((item) => item.fileName),
+          [path.basename(ntfsUnrelatedPath)],
+          'discoverDowngradeBackupsAsync keeps single-link invalid candidates when ino is 0n',
+        );
+
+        const zeroInoHardlinkDirectRestore = restoreBackup(zeroInoHardlinkPath, true);
+        assert.equal(zeroInoHardlinkDirectRestore.success, false);
+        assert.match(zeroInoHardlinkDirectRestore.error || '', /cannot be the live database/i);
         closeDatabase();
+
+        buildActiveNewerWalDatabase(dbPath, baseTemplateCopy, newerDbVersion, '4.1.0');
+        if (fs.existsSync(zeroInoHardlinkPath)) fs.unlinkSync(zeroInoHardlinkPath);
+        fs.linkSync(dbPath, zeroInoHardlinkPath);
+        ntfsInoByRealIno.set(origStatForNtfsIno.call(nativeFs, dbPath, { bigint: true }).ino, 0n);
+        await assert.rejects(
+          () => restoreCompatibleBackupForDowngrade(zeroInoHardlinkPath, { newerDbVersion }),
+          /cannot be the live database/i,
+          'restoreCompatibleBackupForDowngrade rejects zero-inode hardlink to live database',
+        );
       } finally {
         mutableFsForNtfsIno.statSync = origStatForNtfsIno;
         mutableFsForNtfsIno.lstatSync = origLstatForNtfsIno;

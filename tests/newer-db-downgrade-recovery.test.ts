@@ -3437,6 +3437,198 @@ async function run(): Promise<void> {
         if (fs.existsSync(fakeBackupPath)) fs.unlinkSync(fakeBackupPath);
         fs.rmSync(tempScanDir, { recursive: true, force: true });
       }
+
+      // Windows NTFS 64-bit File Reference Number (st_ino > 2^53) regression test:
+      // Distinct files in the same directory with the same 16-bit MFT sequence number (>= 32)
+      // round to the same IEEE-754 Number (18014398509547520) when statSync/lstatSync/fstatSync
+      // is called without { bigint: true }.
+      clearDirectory(backupDir);
+      buildActiveNewerWalDatabase(dbPath, baseTemplateCopy, newerDbVersion, '4.1.0');
+      const ntfsCompatiblePath = path.join(
+        backupDir,
+        'flo-backup-2026-10-29T11-00-00-000Z-ntfs-compatible.db',
+      );
+      fs.copyFileSync(baseTemplateCopy, ntfsCompatiblePath);
+      const ntfsUnrelatedPath = path.join(backupDir, 'unrelated-sqlite.db');
+      {
+        const unrelatedNtfsDb = new Database(ntfsUnrelatedPath);
+        unrelatedNtfsDb.exec('CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)');
+        unrelatedNtfsDb.close();
+      }
+      const ntfsHardlinkPath = path.join(
+        backupDir,
+        'flo-backup-2026-10-29T11-05-00-000Z-live-hardlink.db',
+      );
+      fs.linkSync(dbPath, ntfsHardlinkPath);
+
+      const mutableFsForNtfsIno = nativeFs as unknown as {
+        statSync: typeof fs.statSync;
+        lstatSync: typeof fs.lstatSync;
+        fstatSync: typeof fs.fstatSync;
+      };
+      const origStatForNtfsIno = mutableFsForNtfsIno.statSync;
+      const origLstatForNtfsIno = mutableFsForNtfsIno.lstatSync;
+      const origFstatForNtfsIno = mutableFsForNtfsIno.fstatSync;
+
+      const ntfsLiveIno = 0x0040_0000_0001_0001n;
+      const ntfsCompatibleIno = 0x0040_0000_0001_0002n;
+      const ntfsUnrelatedIno = 0x0040_0000_0001_0000n;
+      assert.equal(Number(ntfsLiveIno), 18014398509547520);
+      assert.equal(Number(ntfsCompatibleIno), Number(ntfsLiveIno));
+      assert.equal(Number(ntfsUnrelatedIno), Number(ntfsLiveIno));
+
+      const ntfsInoByRealIno = new Map<bigint, bigint>([
+        [origStatForNtfsIno.call(nativeFs, dbPath, { bigint: true }).ino, ntfsLiveIno],
+        [
+          origStatForNtfsIno.call(nativeFs, ntfsCompatiblePath, { bigint: true }).ino,
+          ntfsCompatibleIno,
+        ],
+        [
+          origStatForNtfsIno.call(nativeFs, ntfsUnrelatedPath, { bigint: true }).ino,
+          ntfsUnrelatedIno,
+        ],
+      ]);
+      const applySimulatedNtfsIno = (statResult: any, realBigIntIno: bigint, options?: any) => {
+        const simulatedIno = ntfsInoByRealIno.get(realBigIntIno);
+        if (simulatedIno === undefined || !statResult) return statResult;
+        if (options?.bigint) {
+          statResult.dev = 0x1234n;
+          statResult.ino = simulatedIno;
+        } else {
+          statResult.dev = 0x1234;
+          statResult.ino = Number(simulatedIno);
+        }
+        return statResult;
+      };
+
+      mutableFsForNtfsIno.statSync = ((p: fs.PathLike, options?: any) => {
+        const res = origStatForNtfsIno.call(nativeFs, p, options);
+        if (!res) return res;
+        const big = options?.bigint
+          ? (res as fs.BigIntStats)
+          : origStatForNtfsIno.call(nativeFs, p, { bigint: true });
+        return applySimulatedNtfsIno(res, big.ino, options);
+      }) as typeof fs.statSync;
+      mutableFsForNtfsIno.lstatSync = ((p: fs.PathLike, options?: any) => {
+        const res = origLstatForNtfsIno.call(nativeFs, p, options);
+        if (!res) return res;
+        const big = options?.bigint
+          ? (res as fs.BigIntStats)
+          : origLstatForNtfsIno.call(nativeFs, p, { bigint: true });
+        return applySimulatedNtfsIno(res, big.ino, options);
+      }) as typeof fs.lstatSync;
+      mutableFsForNtfsIno.fstatSync = ((fd: number, options?: any) => {
+        const res = origFstatForNtfsIno.call(nativeFs, fd, options);
+        if (!res) return res;
+        const big = options?.bigint
+          ? (res as fs.BigIntStats)
+          : origFstatForNtfsIno.call(nativeFs, fd, { bigint: true });
+        return applySimulatedNtfsIno(res, big.ino, options);
+      }) as typeof fs.fstatSync;
+
+      try {
+        const ntfsDiscovery = await discoverDowngradeBackupsAsync();
+        assert.deepEqual(
+          ntfsDiscovery.compatible.map((item) => item.fileName),
+          [path.basename(ntfsCompatiblePath)],
+          'discoverDowngradeBackupsAsync retains compatible candidate when NTFS 64-bit ino collides under Number rounding and skips genuine hardlinks',
+        );
+        assert.deepEqual(
+          ntfsDiscovery.corruptOrInvalid.map((item) => item.fileName),
+          [path.basename(ntfsUnrelatedPath)],
+          'discoverDowngradeBackupsAsync retains unrelated-sqlite.db in corruptOrInvalid when NTFS 64-bit ino collides under Number rounding',
+        );
+
+        await assert.rejects(
+          () => restoreCompatibleBackupForDowngrade(ntfsHardlinkPath, { newerDbVersion }),
+          /cannot be the live database/i,
+          'restoreCompatibleBackupForDowngrade rejects genuine hardlink to live database',
+        );
+
+        const ntfsDowngradeRestore = await restoreCompatibleBackupForDowngrade(ntfsCompatiblePath, {
+          newerDbVersion,
+        });
+        assert.equal(ntfsDowngradeRestore.restoredSchemaVersion, maxSupported);
+        initDatabase();
+        finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+
+        ntfsInoByRealIno.set(
+          origStatForNtfsIno.call(nativeFs, dbPath, { bigint: true }).ino,
+          ntfsLiveIno,
+        );
+        const ntfsDirectHardlinkPath = path.join(backupDir, 'direct-live-hardlink.db');
+        fs.linkSync(dbPath, ntfsDirectHardlinkPath);
+
+        const hardlinkDirectRestore = restoreBackup(ntfsDirectHardlinkPath, true);
+        assert.equal(hardlinkDirectRestore.success, false);
+        assert.match(hardlinkDirectRestore.error || '', /cannot be the live database/i);
+
+        const compatibleDirectRestore = restoreBackup(ntfsCompatiblePath, true);
+        assert.equal(
+          compatibleDirectRestore.success,
+          true,
+          `restoreBackup succeeds when NTFS 64-bit ino collides under Number rounding (${compatibleDirectRestore.error || ''})`,
+        );
+        finalizeDatabaseReplacementJournal(getDatabaseReplacementJournal()!);
+
+        // Zero-inode (ino === 0n) hardlink guard: when a filesystem reports ino === 0n,
+        // single-link backup files remain discoverable and restorable, while a multi-link
+        // hardlink to the live database on the same device fails closed.
+        clearDirectory(backupDir);
+        fs.copyFileSync(baseTemplateCopy, ntfsCompatiblePath);
+        {
+          const unrelatedZeroInoDb = new Database(ntfsUnrelatedPath);
+          unrelatedZeroInoDb.exec('CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)');
+          unrelatedZeroInoDb.close();
+        }
+        const zeroInoHardlinkPath = path.join(
+          backupDir,
+          'flo-backup-2026-10-29T11-10-00-000Z-zero-ino-hardlink.db',
+        );
+        fs.linkSync(dbPath, zeroInoHardlinkPath);
+        ntfsInoByRealIno.clear();
+        ntfsInoByRealIno.set(origStatForNtfsIno.call(nativeFs, dbPath, { bigint: true }).ino, 0n);
+        ntfsInoByRealIno.set(
+          origStatForNtfsIno.call(nativeFs, ntfsCompatiblePath, { bigint: true }).ino,
+          0n,
+        );
+        ntfsInoByRealIno.set(
+          origStatForNtfsIno.call(nativeFs, ntfsUnrelatedPath, { bigint: true }).ino,
+          0n,
+        );
+
+        const zeroInoDiscovery = await discoverDowngradeBackupsAsync();
+        assert.deepEqual(
+          zeroInoDiscovery.compatible.map((item) => item.fileName),
+          [path.basename(ntfsCompatiblePath)],
+          'discoverDowngradeBackupsAsync skips zero-inode hardlinks to live DB while keeping single-link candidates',
+        );
+        assert.deepEqual(
+          zeroInoDiscovery.corruptOrInvalid.map((item) => item.fileName),
+          [path.basename(ntfsUnrelatedPath)],
+          'discoverDowngradeBackupsAsync keeps single-link invalid candidates when ino is 0n',
+        );
+
+        const zeroInoHardlinkDirectRestore = restoreBackup(zeroInoHardlinkPath, true);
+        assert.equal(zeroInoHardlinkDirectRestore.success, false);
+        assert.match(zeroInoHardlinkDirectRestore.error || '', /cannot be the live database/i);
+        closeDatabase();
+
+        buildActiveNewerWalDatabase(dbPath, baseTemplateCopy, newerDbVersion, '4.1.0');
+        if (fs.existsSync(zeroInoHardlinkPath)) fs.unlinkSync(zeroInoHardlinkPath);
+        fs.linkSync(dbPath, zeroInoHardlinkPath);
+        ntfsInoByRealIno.set(origStatForNtfsIno.call(nativeFs, dbPath, { bigint: true }).ino, 0n);
+        await assert.rejects(
+          () => restoreCompatibleBackupForDowngrade(zeroInoHardlinkPath, { newerDbVersion }),
+          /cannot be the live database/i,
+          'restoreCompatibleBackupForDowngrade rejects zero-inode hardlink to live database',
+        );
+      } finally {
+        mutableFsForNtfsIno.statSync = origStatForNtfsIno;
+        mutableFsForNtfsIno.lstatSync = origLstatForNtfsIno;
+        mutableFsForNtfsIno.fstatSync = origFstatForNtfsIno;
+        clearDirectory(backupDir);
+      }
     }
 
     // 6. Electron main/index.ts startup interception (via tests/startup-failure-child.cjs):

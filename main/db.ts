@@ -670,14 +670,29 @@ function writeReplacementJournal(journalPath: string, journal: ReplacementJourna
   }
 }
 
+function isSameBigIntStatFile(candidateStat: fs.BigIntStats, targetStat: fs.BigIntStats): boolean {
+  if (candidateStat.dev !== targetStat.dev) return false;
+  if (candidateStat.ino !== 0n || targetStat.ino !== 0n) {
+    return candidateStat.ino !== 0n && candidateStat.ino === targetStat.ino;
+  }
+  return (
+    candidateStat.nlink > 1n &&
+    targetStat.nlink > 1n &&
+    candidateStat.size === targetStat.size &&
+    candidateStat.mtimeNs === targetStat.mtimeNs
+  );
+}
+
 function isLiveDatabaseTarget(candidatePath: string, dbPath: string): boolean {
   const normalize = (value: string) =>
     process.platform === 'win32' || process.platform === 'darwin' ? value.toLowerCase() : value;
   if (normalize(path.resolve(candidatePath)) === normalize(path.resolve(dbPath))) return true;
   try {
-    const candidateStat = fs.statSync(candidatePath);
-    const dbStat = fs.statSync(dbPath);
-    if (candidateStat.dev === dbStat.dev && candidateStat.ino === dbStat.ino) return true;
+    const candidateStat = fs.statSync(candidatePath, { bigint: true });
+    const dbStat = fs.statSync(dbPath, { bigint: true });
+    if (isSameBigIntStatFile(candidateStat, dbStat)) {
+      return true;
+    }
   } catch {}
   try {
     const candidateReal = path.join(
@@ -4168,9 +4183,9 @@ function evaluateDowngradeBackupCandidate(
   incompatibleNewer: RejectedDowngradeBackup[],
   corruptOrInvalid: RejectedDowngradeBackup[],
 ): void {
-  let lstat: fs.Stats;
+  let lstat: fs.BigIntStats;
   try {
-    lstat = fs.lstatSync(fullPath);
+    lstat = fs.lstatSync(fullPath, { bigint: true });
   } catch (statError) {
     const code = (statError as NodeJS.ErrnoException | null)?.code;
     if (code === 'ENOENT' || code === 'ENOTDIR') {
@@ -4281,9 +4296,9 @@ function evaluateDowngradeBackupCandidate(
             };
     }
 
-    let afterStat: fs.Stats;
+    let afterStat: fs.BigIntStats;
     try {
-      afterStat = fs.lstatSync(fullPath);
+      afterStat = fs.lstatSync(fullPath, { bigint: true });
     } catch (afterStatError) {
       const code = (afterStatError as NodeJS.ErrnoException | null)?.code;
       if (code === 'ENOENT' || code === 'ENOTDIR') {
@@ -4325,7 +4340,7 @@ function evaluateDowngradeBackupCandidate(
       compatible.push({
         fileName,
         path: fullPath,
-        sizeBytes: lstat.size,
+        sizeBytes: Number(lstat.size),
         createdAt: lstat.mtime.toISOString(),
         backupCreatedAt: inspection.backupCreatedAt,
         appVersion: inspection.appVersion,
@@ -6448,7 +6463,7 @@ function materializeRestoreSource(
   sourcePath: string,
   livePath: string,
 ): { snapshotPath: string; cleanup: () => void } {
-  const sourceStat = fs.lstatSync(sourcePath);
+  const sourceStat = fs.lstatSync(sourcePath, { bigint: true });
   if (sourceStat.isSymbolicLink() || !sourceStat.isFile())
     throw new Error('Restore source must be a regular file');
   if (
@@ -6478,7 +6493,7 @@ function materializeRestoreSource(
     } catch {}
   };
   try {
-    const openedStat = fs.fstatSync(sourceFd);
+    const openedStat = fs.fstatSync(sourceFd, { bigint: true });
     if (
       openedStat.dev !== sourceStat.dev ||
       openedStat.ino !== sourceStat.ino ||
@@ -6487,12 +6502,12 @@ function materializeRestoreSource(
       throw new Error('Restore source changed while it was being opened');
     }
     if (pathEntryExists(livePath)) {
-      const liveStat = fs.lstatSync(livePath);
-      if (openedStat.dev === liveStat.dev && openedStat.ino === liveStat.ino)
+      const liveStat = fs.lstatSync(livePath, { bigint: true });
+      if (isSameBigIntStatFile(openedStat, liveStat))
         throw new Error('Restore source cannot be the live database');
     }
     const sourceBytes = fs.readFileSync(sourceFd);
-    const finalStat = fs.fstatSync(sourceFd);
+    const finalStat = fs.fstatSync(sourceFd, { bigint: true });
     if (
       finalStat.dev !== openedStat.dev ||
       finalStat.ino !== openedStat.ino ||

@@ -14,6 +14,7 @@ const insertPlaceholderAtSelection = (
       token: string,
       selectionStart?: number | null,
       selectionEnd?: number | null,
+      selectionEstablished?: boolean,
     ) => { body: string; cursor: number };
   }
 ).insertPlaceholderAtSelection;
@@ -128,6 +129,26 @@ assert.deepEqual(
     cursor: 6 + '{store_name}'.length,
   },
   'clamps selectionEnd below selectionStart to selectionStart without corrupting text',
+);
+
+// 7. Untouched textarea (selectionEstablished = false) appends to end even when DOM defaults to (0, 0),
+//    whereas an explicitly focused caret at index 0 (selectionEstablished = true) inserts at index 0
+assert.deepEqual(
+  insertPlaceholderAtSelection!('Reply STOP to opt out.', ' {feedback_link}', 0, 0, false),
+  {
+    body: 'Reply STOP to opt out. {feedback_link}',
+    cursor: 'Reply STOP to opt out. {feedback_link}'.length,
+  },
+  'appends to end when selection is not yet established even if DOM selectionStart/End report 0',
+);
+
+assert.deepEqual(
+  insertPlaceholderAtSelection!('Reply STOP to opt out.', '{store_name}: ', 0, 0, true),
+  {
+    body: '{store_name}: Reply STOP to opt out.',
+    cursor: '{store_name}: '.length,
+  },
+  'inserts at index 0 when selection at 0 is explicitly established by the user',
 );
 
 console.log('✓ WhatsApp template placeholder cursor insertion tests passed');

@@ -118,9 +118,10 @@ async function main() {
   const db = initTestDb();
   const { userId: ownerId, token: ownerToken, authHeader } = seedOwnerUser(db);
 
-  // Seed manager and server users
+  // Seed manager, server, and chef users
   const managerId = 'mgr-1442';
   const serverId = 'srv-1442';
+  const chefId = 'chef-1442';
   const passHash = bcrypt.hashSync('TestPass123!', 10);
   db.prepare(
     `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
@@ -130,6 +131,10 @@ async function main() {
     `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, 'server', 1, ?, ?)`,
   ).run(serverId, 'Server 1442', 'server@1442.test', passHash, now(), now());
+  db.prepare(
+    `INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'chef', 1, ?, ?)`,
+  ).run(chefId, 'Chef 1442', 'chef@1442.test', passHash, now(), now());
 
   const managerToken = jwt.sign(
     { userId: managerId, email: 'manager@1442.test', role: 'manager' },
@@ -141,6 +146,12 @@ async function main() {
     getJWTSecret(),
     { expiresIn: '1h' },
   );
+  const chefToken = jwt.sign(
+    { userId: chefId, email: 'chef@1442.test', role: 'chef' },
+    getJWTSecret(),
+    { expiresIn: '1h' },
+  );
+  const chefAuthHeader = { Authorization: `Bearer ${chefToken}` };
 
   seedCategory(db, 'cat-1442', 'Mains');
   seedProduct(db, 'prod-1442-1', 'cat-1442', 'Margherita Pizza', 120);
@@ -184,18 +195,31 @@ async function main() {
     const orderId = createRes.data.order.id;
     assertEqualOrThrow(createRes.data.order.items.length, 1, 'Initial order has 1 item');
 
-    // Check GET /api/tables and GET /api/tables/:id populate current_order.items
-    const tablesListRes = await api(baseUrl, '/api/tables', { headers: authHeader });
-    assertEqualOrThrow(tablesListRes.status, 200, 'GET /api/tables succeeds');
-    const tblFromList = tablesListRes.data.tables.find((t: any) => t.id === 'tbl-1442');
-    assertOrThrow(
-      Boolean(tblFromList?.current_order),
-      'Table has current_order in GET /api/tables',
+    // Check GET /api/tables (default omits items; include_items=1 populates items only when caller has orders.read)
+    const defaultTablesListRes = await api(baseUrl, '/api/tables', { headers: authHeader });
+    assertEqualOrThrow(defaultTablesListRes.status, 200, 'GET /api/tables succeeds');
+    const tblFromDefaultList = defaultTablesListRes.data.tables.find(
+      (t: any) => t.id === 'tbl-1442',
     );
     assertOrThrow(
-      Array.isArray(tblFromList.current_order.items) &&
+      Boolean(tblFromDefaultList?.current_order),
+      'Table has current_order in GET /api/tables',
+    );
+    assertEqualOrThrow(
+      tblFromDefaultList.current_order.items,
+      undefined,
+      'GET /api/tables without include_items=1 omits current_order.items',
+    );
+
+    const tablesListRes = await api(baseUrl, '/api/tables?include_items=1', {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(tablesListRes.status, 200, 'GET /api/tables?include_items=1 succeeds');
+    const tblFromList = tablesListRes.data.tables.find((t: any) => t.id === 'tbl-1442');
+    assertOrThrow(
+      Array.isArray(tblFromList?.current_order?.items) &&
         tblFromList.current_order.items.length === 1,
-      'GET /api/tables populates current_order.items',
+      'GET /api/tables?include_items=1 populates current_order.items for caller with orders.read',
     );
     assertEqualOrThrow(
       tblFromList.current_order.items[0].product_name,
@@ -203,12 +227,37 @@ async function main() {
       'current_order.items[0] matches initial item',
     );
 
+    const chefTablesListRes = await api(baseUrl, '/api/tables?include_items=1', {
+      headers: chefAuthHeader,
+    });
+    assertEqualOrThrow(
+      chefTablesListRes.status,
+      200,
+      'GET /api/tables?include_items=1 succeeds for chef',
+    );
+    const tblFromChefList = chefTablesListRes.data.tables.find((t: any) => t.id === 'tbl-1442');
+    assertEqualOrThrow(
+      tblFromChefList?.current_order?.items,
+      undefined,
+      'GET /api/tables?include_items=1 omits current_order.items when caller lacks orders.read',
+    );
+
     const tableDetailRes = await api(baseUrl, '/api/tables/tbl-1442', { headers: authHeader });
     assertEqualOrThrow(tableDetailRes.status, 200, 'GET /api/tables/:id succeeds');
     assertOrThrow(
       Array.isArray(tableDetailRes.data.table?.current_order?.items) &&
         tableDetailRes.data.table.current_order.items.length === 1,
-      'GET /api/tables/:id populates current_order.items',
+      'GET /api/tables/:id populates current_order.items for caller with orders.read',
+    );
+
+    const chefTableDetailRes = await api(baseUrl, '/api/tables/tbl-1442', {
+      headers: chefAuthHeader,
+    });
+    assertEqualOrThrow(chefTableDetailRes.status, 200, 'GET /api/tables/:id succeeds for chef');
+    assertEqualOrThrow(
+      chefTableDetailRes.data.table?.current_order?.items,
+      undefined,
+      'GET /api/tables/:id omits current_order.items when caller lacks orders.read',
     );
 
     // Append 2 new items (one with an addon)
@@ -361,6 +410,11 @@ async function main() {
           kotRes.body?.error,
           'KOT printing is disabled for this business',
           `Server App POST /api/printers/print-kot returns clear disabled message for ${roleName}`,
+        );
+        assertEqualOrThrow(
+          kotRes.body?.code,
+          'KOT_PRINTING_DISABLED',
+          `Server App POST /api/printers/print-kot returns KOT_PRINTING_DISABLED code for ${roleName}`,
         );
       }
 

@@ -1082,7 +1082,7 @@ export default function POSPage() {
   const refreshTables = async () => {
     if (!isRestaurant || !tablesRequired) return;
     try {
-      const { data } = await api.get('/tables?active=1');
+      const { data } = await api.get('/tables?active=1&include_items=1');
       setTables(data.tables || []);
     } catch {
       /* ignore */
@@ -1317,7 +1317,7 @@ export default function POSPage() {
         ];
 
         if (isRestaurant && isTablesRequired) {
-          requests.push(api.get('/tables?active=1'));
+          requests.push(api.get('/tables?active=1&include_items=1'));
         }
 
         const [catRes, prodRes, tableRes] = await Promise.all(requests);

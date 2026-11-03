@@ -43,6 +43,7 @@ import {
   normalizeCloudServerUrl,
 } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
+import { handleRestoreFromPickedFile } from './database';
 import { getHttpRequestSignal } from '../shutdown';
 import { PASSWORD_POLICY_MESSAGE } from '../../shared/password-policy';
 import { normalizeOptionalPhone } from '../lib/phone';
@@ -1089,6 +1090,22 @@ router.get('/setup/status', (_req: Request, res: Response) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ── POST /api/auth/setup/restore ────────────────────────────────────────────────
+// A brand-new install has no accounts to authorise against and nothing to lose,
+// so the POS computer may restore a backup before the first sign-in.
+
+router.post(
+  '/setup/restore',
+  authRateLimit(),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!requireLocalSetup(req, res)) return;
+    if (getUserCount(getDatabase()) > 0) {
+      return res.status(403).json({ error: 'Sign in to restore a backup on an existing install.' });
+    }
+    return handleRestoreFromPickedFile(req, res);
+  }),
+);
 
 // ── POST /api/auth/setup/initialize ─────────────────────────────────────────────
 // Creates the initial owner user. This endpoint is disabled after any user exists.

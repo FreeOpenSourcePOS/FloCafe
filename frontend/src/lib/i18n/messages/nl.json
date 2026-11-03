@@ -2548,7 +2548,7 @@
     "restoreFromFile": "Back-up terugzetten uit bestand...",
     "restoreFromFileHint": "Heb je al een back-upbestand op deze computer? Kies het hier in plaats van het handmatig over de database te kopiëren.",
     "restoreReplacesDetail": "Terugzetten vervangt alle bestellingen, facturen, producten en klantgegevens die zijn toegevoegd sinds deze back-up is gemaakt.",
-    "restoreKeepsDetail": "Je medewerkersaccounts, pincodes, printers, belastinginstellingen en de cloudaccount van deze computer blijven behouden.",
+    "restoreKeepsDetail": "Personeelsaccounts, pincodes, printers en instellingen komen ook uit de back-up. Iedereen wordt afgemeld en gekoppelde schermen en apparaten moeten opnieuw worden gekoppeld.",
     "restoreSafetyCopyDetail": "Voordat er iets verandert, bewaart Flo een kopie van je huidige gegevens zodat je dit terugzetten kunt ongedaan maken.",
     "diagnosticsConsentSyncPending": "De privacyinstelling wacht op synchronisatie. Rapporten worden pas verzonden nadat dit is bevestigd.",
     "diagnosticsTransportState": "Rapporteringsroute: {transport}.",

@@ -234,6 +234,23 @@ async function main(): Promise<void> {
   );
   assert.ok(fs.existsSync(firstCopy as string) && fs.existsSync(secondCopy as string));
 
+  // Startup and shutdown backups: skipped while a recent backup exists, taken once it is stale.
+  const countBeforeSession = listLocalBackups(backupDir).length;
+  assert.equal(localBackup.isSessionBackupWanted(), false, 'a backup under an hour old is enough');
+  assert.equal(await localBackup.backupForSession(), false, 'no session backup is taken');
+  assert.equal(listLocalBackups(backupDir).length, countBeforeSession);
+  for (const name of listLocalBackups(backupDir)) fs.unlinkSync(path.join(backupDir, name));
+  const staleName = localBackupFileName(new Date(Date.now() - 2 * HOUR));
+  fs.writeFileSync(path.join(backupDir, staleName), 'stale');
+  assert.equal(localBackup.isSessionBackupWanted(), true, 'a backup over an hour old is stale');
+  assert.equal(await localBackup.backupForSession(), true, 'a session backup is taken');
+  assert.ok(listLocalBackups(backupDir)[0] > staleName, 'the session backup is the newest');
+  assert.equal(
+    localBackup.isSessionBackupWanted(),
+    false,
+    'a second start right after does not add another',
+  );
+
   for (const name of listLocalBackups(backupDir)) fs.unlinkSync(path.join(backupDir, name));
   for (let day = 1; day <= LOCAL_BACKUP_RETENTION; day++) {
     const name = localBackupFileName(new Date(Date.UTC(2026, 0, day, 3, 0, 0)));
@@ -523,7 +540,7 @@ async function main(): Promise<void> {
     fs.unlinkSync(path.join(backupDir, name));
   }
 
-  // Backup restore (direct and data-only) preserves local_backup_enabled = 'false'
+  // Backup restore applies local_backup_enabled from the selected backup.
   getDatabase()
     .prepare('INSERT INTO categories (id, name) VALUES (?, ?)')
     .run('c-restore', 'Drinks');
@@ -539,14 +556,8 @@ async function main(): Promise<void> {
   assert.equal(directRestoreRes.mode, 'direct');
   assert.equal(
     isLocalBackupEnabled(),
-    false,
-    'local_backup_enabled remains false after direct restoreBackup of an enabled backup',
-  );
-  await localBackup.runIfDue();
-  assert.deepEqual(
-    listLocalBackups(backupDir),
-    [],
-    'runIfDue does not write a backup after direct restoreBackup when opted out',
+    true,
+    'direct restore applies local_backup_enabled=true from the backup',
   );
 
   const snapshotWithoutRowPath = path.join(testDir, 'snapshot-no-row.db');
@@ -565,8 +576,8 @@ async function main(): Promise<void> {
   );
   assert.equal(
     isLocalBackupEnabled(),
-    false,
-    'local_backup_enabled remains false after restoring a backup that had no local_backup_enabled row',
+    true,
+    'a backup without local_backup_enabled uses the install default',
   );
 
   const olderSnapshotPath = path.join(testDir, 'snapshot-older.db');
@@ -583,14 +594,12 @@ async function main(): Promise<void> {
   }
   const dataOnlyRestoreRes = restoreBackup(olderSnapshotPath, false);
   assert.equal(dataOnlyRestoreRes.success, true, 'data-only restore succeeds');
-  assert.equal(dataOnlyRestoreRes.mode, 'data_only');
+  assert.equal(dataOnlyRestoreRes.mode, 'direct');
   assert.equal(
     isLocalBackupEnabled(),
-    false,
-    'local_backup_enabled remains false after data-only restoreBackup of an enabled backup',
+    true,
+    'older-backup restore applies local_backup_enabled=true from the backup',
   );
-  await localBackup.runIfDue();
-  assert.deepEqual(listLocalBackups(backupDir), []);
 
   // Controlled delayed createBackup: disabling local backups while createBackup is in flight
   // cancels active work, cleans up the staged file, does not publish to the backup directory,

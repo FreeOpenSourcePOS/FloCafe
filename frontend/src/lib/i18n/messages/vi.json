@@ -2559,7 +2559,7 @@
     "restoreFromFile": "Khôi phục bản sao lưu từ tệp...",
     "restoreFromFileHint": "Bạn đã có tệp sao lưu trên máy này? Hãy chọn tại đây thay vì chép tay lên cơ sở dữ liệu.",
     "restoreReplacesDetail": "Khôi phục sẽ thay thế mọi đơn hàng, hóa đơn, sản phẩm và hồ sơ khách hàng đã thêm kể từ khi bản sao lưu này được tạo.",
-    "restoreKeepsDetail": "Tài khoản nhân viên, mã PIN, máy in, cài đặt thuế và tài khoản đám mây của máy này đều được giữ nguyên.",
+    "restoreKeepsDetail": "Tài khoản nhân viên, mã PIN, máy in và cài đặt cũng đến từ bản sao lưu. Mọi người sẽ bị đăng xuất, và các màn hình và thiết bị đã ghép nối phải được ghép nối lại.",
     "restoreSafetyCopyDetail": "Trước khi có bất kỳ thay đổi nào, Flo lưu một bản sao dữ liệu hiện tại của bạn để bạn có thể hoàn tác thao tác khôi phục này.",
     "diagnosticsConsentSyncPending": "Cài đặt quyền riêng tư đang chờ đồng bộ. Báo cáo sẽ không được gửi cho đến khi được xác nhận.",
     "diagnosticsTransportState": "Tuyến báo cáo: {transport}.",

@@ -844,72 +844,74 @@ const RESTORE_CONFIRMATION = 'RESTORE BACKUP';
 // path is only accepted when it is the one the main process just handed out from
 // that dialog (see services/restore-file-selection). The restore itself runs
 // through the same restoreBackup() mechanism as every other route.
+export async function handleRestoreFromPickedFile(req: Request, res: Response) {
+  if (req.body?.confirmation !== RESTORE_CONFIRMATION) {
+    return res.status(400).json({ error: `Type "${RESTORE_CONFIRMATION}" to confirm` });
+  }
+
+  const selectionToken =
+    typeof req.body?.selection_token === 'string' ? req.body.selection_token : '';
+  const backupPath = peekRestoreFileSelection(selectionToken);
+  if (!backupPath) {
+    return res
+      .status(400)
+      .json({ error: 'Choose a backup file in the restore dialog before confirming' });
+  }
+
+  if (!fs.existsSync(backupPath)) {
+    return res.status(404).json({ error: 'Backup file no longer exists' });
+  }
+
+  const backupVersion = getSchemaVersionFromBackup(backupPath);
+  if (backupVersion === null) {
+    return res.status(400).json({
+      error:
+        'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of Flo.',
+    });
+  }
+
+  if (!consumeRestoreFileSelection(selectionToken)) {
+    return res
+      .status(400)
+      .json({ error: 'Choose a backup file in the restore dialog before confirming' });
+  }
+
+  const currentVersion = getCurrentSchemaVersion();
+  const versionMismatch = backupVersion !== currentVersion;
+
+  await googleDrive.prepareForDatabaseRestore();
+  try {
+    const restoreResult = await withDatabaseMaintenanceLock(
+      (signal) => restoreBackup(backupPath, !versionMismatch, signal),
+      getHttpRequestSignal(req),
+    );
+    if (!restoreResult.success) {
+      return res.status(422).json({ error: restoreResult.error || 'Restore failed' });
+    }
+    const cleanup = googleDrive.completeDatabaseRestore();
+    clearUserAuthCache();
+    clearInMemoryRevokedTokens();
+    clearJWTSecretCache();
+    res.json({
+      success: true,
+      mode: restoreResult.mode,
+      backupVersion,
+      currentVersion,
+      tablesRestored: restoreResult.tablesRestored,
+      cleanupPending: restoreResult.cleanupPending === true || cleanup?.cleanupPending === true,
+    });
+  } catch (error: any) {
+    console.error('[DB Restore] Error:', error);
+    res.status(500).json({ error: 'Restore failed' });
+  } finally {
+    googleDrive.releaseDatabaseRestore();
+  }
+}
+
 router.post(
   '/restore',
   requirePermission('database.manage'),
-  asyncHandler(async (req: Request, res: Response) => {
-    if (req.body?.confirmation !== RESTORE_CONFIRMATION) {
-      return res.status(400).json({ error: `Type "${RESTORE_CONFIRMATION}" to confirm` });
-    }
-
-    const selectionToken =
-      typeof req.body?.selection_token === 'string' ? req.body.selection_token : '';
-    const backupPath = peekRestoreFileSelection(selectionToken);
-    if (!backupPath) {
-      return res
-        .status(400)
-        .json({ error: 'Choose a backup file in the restore dialog before confirming' });
-    }
-
-    if (!fs.existsSync(backupPath)) {
-      return res.status(404).json({ error: 'Backup file no longer exists' });
-    }
-
-    const backupVersion = getSchemaVersionFromBackup(backupPath);
-    if (backupVersion === null) {
-      return res.status(400).json({
-        error:
-          'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of Flo.',
-      });
-    }
-
-    if (!consumeRestoreFileSelection(selectionToken)) {
-      return res
-        .status(400)
-        .json({ error: 'Choose a backup file in the restore dialog before confirming' });
-    }
-
-    const currentVersion = getCurrentSchemaVersion();
-    const versionMismatch = backupVersion !== currentVersion;
-
-    await googleDrive.prepareForDatabaseRestore();
-    try {
-      const restoreResult = await withDatabaseMaintenanceLock(
-        (signal) => restoreBackup(backupPath, !versionMismatch, signal),
-        getHttpRequestSignal(req),
-      );
-      if (!restoreResult.success) {
-        return res.status(422).json({ error: restoreResult.error || 'Restore failed' });
-      }
-      const cleanup = googleDrive.completeDatabaseRestore();
-      clearUserAuthCache();
-      clearInMemoryRevokedTokens();
-      clearJWTSecretCache();
-      res.json({
-        success: true,
-        mode: restoreResult.mode,
-        backupVersion,
-        currentVersion,
-        tablesRestored: restoreResult.tablesRestored,
-        cleanupPending: restoreResult.cleanupPending === true || cleanup?.cleanupPending === true,
-      });
-    } catch (error: any) {
-      console.error('[DB Restore] Error:', error);
-      res.status(500).json({ error: 'Restore failed' });
-    } finally {
-      googleDrive.releaseDatabaseRestore();
-    }
-  }),
+  asyncHandler(handleRestoreFromPickedFile),
 );
 
 router.get(

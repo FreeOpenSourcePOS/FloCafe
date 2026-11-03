@@ -517,7 +517,7 @@ async function main() {
     'email recovery remains available after owner email update',
   );
 
-  // ── F2(b): Backup restore & protected settings preserve/resync owner email ─
+  // ── F2(b): Backup restore is authoritative; imports can merge protected settings ─
   db.prepare("UPDATE settings SET value = 'stale@backup.example.com' WHERE key = 'email'").run();
   const staleBackup = await createBackup(path.join(testDir, 'stale-email-backup.db'));
   // Restore live state to new-owner@example.com, then restore staleBackup.path
@@ -535,8 +535,8 @@ async function main() {
   assertEqualOrThrow(restoreRes.success, true, 'restoreBackup succeeds');
   assertEqualOrThrow(
     realCloudSync.getRegisteredOwnerEmail(),
-    'new-owner@example.com',
-    'restoreBackup preserves active owner email in settings.email over stale backup email',
+    'stale@backup.example.com',
+    'restoreBackup applies settings.email from the selected backup',
   );
   fs.rmSync(staleBackup.path, { force: true });
 

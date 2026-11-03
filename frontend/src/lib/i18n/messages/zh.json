@@ -2548,7 +2548,7 @@
     "restoreFromFile": "从文件恢复备份…",
     "restoreFromFileHint": "这台电脑上已经有备份文件了吗？在这里选择它，无需手动覆盖数据库。",
     "restoreReplacesDetail": "恢复会替换自该备份创建以来新增的所有订单、账单、商品和客户记录。",
-    "restoreKeepsDetail": "您的员工账号、PIN、打印机、税务设置以及本机的云端账号都会保留。",
+    "restoreKeepsDetail": "员工账户、PIN、打印机和设置也将来自备份。所有人都会被登出，已配对的显示屏和设备需要重新配对。",
     "restoreSafetyCopyDetail": "在更改任何内容之前，Flo 会先保存当前数据的副本，以便您可以撤销此次恢复。",
     "diagnosticsConsentSyncPending": "隐私设置正在等待同步。确认前不会发送报告。",
     "diagnosticsTransportState": "报告路线：{transport}。",

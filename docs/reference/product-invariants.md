@@ -66,6 +66,41 @@ authenticated user is subject to the same review as a change to this entry.
 
 ---
 
+## A selected backup is authoritative during restore
+
+**Rule:** Restoring a valid, supported backup replaces the store state with that backup. FloCafe
+does not merge users, staff activation, kitchen stations, station assignments, settings, inventory
+history, or other operational records from the database being replaced. Older backups migrate
+forward after replacement. Restore invalidates sessions and temporary pairing credentials, clears
+the Google Drive device binding, and retains an automatic pre-restore recovery copy.
+
+**Reason:** Backup restore is a deliberate disaster-recovery action. The operator expects the café
+to return to the selected snapshot after a machine failure. Merging the failed installation with
+the backup creates conflicts, makes valid backups unrestorable, and leaves the final state difficult
+to predict. Easily reconfigured local state does not justify blocking recovery.
+
+**Enforced by:** `restoreBackup` in [`main/db.ts`](../../main/db.ts), the file-selection and
+authorization boundary in `main/routes/database.ts`, and the production restore tests in
+`tests/backup-restore-production.test.ts`. See
+[data and migrations](../architecture/data-and-migrations.md#backup-and-restore) for the replacement
+journal, validation, migration, and rollback sequence.
+
+**How to verify:**
+
+```sh
+npm run test:backup
+```
+
+The suite verifies that current-only users and kitchen stations do not override the backup, that
+backup staff and settings remain authoritative, that supported older backups migrate forward, and
+that integrity failures leave the replaced database recoverable.
+
+**Change policy:** adding any cross-database merge or refusal rule to restore requires a demonstrated
+material risk and explicit product approval. Authorization, confirmation, validation, transient
+credential invalidation, migrations, and the pre-restore recovery copy remain mandatory safeguards.
+
+---
+
 ## Role templates and user permissions are owner-configurable
 
 **Rule:** FloCafe keeps its five fixed staff identities (owner, manager, cashier, server, chef),

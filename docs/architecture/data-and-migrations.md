@@ -193,20 +193,33 @@ After migrations and with `foreign_keys` re-enabled, startup runs:
 Backup, restore, and wipe are serialised by one lock. Two of them running at once is the failure
 mode that corrupts a database, so any new entry point in this area must take the same lock.
 
-`restoreBackup` reads the `_flo_meta` stamp and the `user_version` pragma from the backup and
-decides between a direct file replacement and a data-only restore from the metadata. An unreadable
-source returns a structured failure with both versions rather than throwing. Both restore paths
-validate inventory ledger movement chains in durable append order (`id` ASC), execute
-`executeSequenceRepair` to re-align sequence counters with restored orders and bills, and mark repair
-complete.
+`restoreBackup` reads the `_flo_meta` stamp and the `user_version` pragma from the backup. A
+supported backup replaces the live database as the authoritative store state; an older backup is
+migrated forward through the normal migration registry after replacement. Restore does not merge
+staff, kitchen stations, assignments, settings, inventory history, or other operational state from
+the database being replaced. An unreadable or newer source returns a structured failure with both
+versions rather than changing the live database.
+
+Restore validates SQLite integrity, foreign keys, inventory ledger consistency, and the resulting
+current schema. It invalidates user sessions and temporary KDS, customer-display, and mobile pairing
+credentials, clears the Google Drive device binding, runs `executeSequenceRepair` to re-align
+sequence counters with restored orders and bills, and marks repair complete. A same-version restore
+also compares tables structurally against the schema the current version defines and repairs the
+staged copy, never the operator's file, with the schema-health safe fixes: missing tables, columns
+(with their foreign keys), indexes, and triggers are added; nothing is dropped or rewritten. The
+same fixes run silently on the live database at every startup
+(`autoRepairSchemaDrift`, which keeps a `-schema-repair` snapshot first) and on every backup file
+as `createBackup` writes it, so drift neither lingers nor travels into backups. The Database Health
+Check remains available for manual review.
 
 ### Entry points
 
-Two routes reach `restoreBackup`, and they differ only in how the operator is authorised:
+Three entry points reach `restoreBackup`, and they differ only in how the operator is authorised:
 
 | Route | Authorisation | Use |
 | --- | --- | --- |
 | `POST /api/db/restore` | Session holding `database.manage`, the typed phrase `RESTORE BACKUP`, and a file the operator picked in the native dialog | Restore from a backup file anywhere on disk. The settings screen and the application menu both land here. |
+| `POST /api/auth/setup/restore` | Request from the POS computer, the typed phrase, a picked file, and no user account in the database yet | Restore onto a brand-new install before the first sign-in. Refused with 403 as soon as any account exists. Reached from the first setup screen and from File → Restore Backup when nobody is signed in. |
 | `restore-backup` IPC | Master PIN, and for a caller-supplied path a managed-backup check | Restore a managed backup from Backup History. |
 
 The HTTP route never accepts a path the renderer invented. `pick-restore-file` shows the native
@@ -232,6 +245,9 @@ loss. Retention failure is logged and never fails the committed restore.
 `local_backup_enabled` is `'false'`. A check runs two minutes after startup and then hourly; it calls
 `createBackup()` when the newest file is at least 24 hours old, and skips a database with
 no orders, products, or customers so an empty install cannot push real backups out of retention.
+The app also takes one at startup (after the database check) and one during shutdown, each skipped when
+the newest file is under `SESSION_BACKUP_MIN_AGE_MS` (one hour) old, bounded by a timeout, and never
+fatal. The startup and shutdown windows tell the operator what is happening.
 Files are named `flo-backup-<UTC timestamp with milliseconds>Z.db`; names from older releases
 without milliseconds are still recognized. Each file is staged and then hard-linked in under the
 first free millisecond name, so a snapshot never replaces an existing backup. Only names matching that pattern are listed or pruned. Files dated
@@ -241,8 +257,8 @@ logged and retried on the next check. These files are plain SQLite and unencrypt
 of `listBackups()`; restore one through `POST /api/db/restore` with the file picker.
 `POST /api/db-tools/initialize`, `POST /api/db-tools/currency-reset`, and the `db-initialize` IPC
 channel preserve `local_backup_enabled` across the reset and copy their pre-reset backup here
-(`retainBackupLocally`) when the setting is on; `restoreBackup()` likewise preserves the live
-`local_backup_enabled` setting across a restore.
+(`retainBackupLocally`) when the setting is on. A database restore uses the setting stored in the
+selected backup.
 
 ### Durability
 

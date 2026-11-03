@@ -27,6 +27,7 @@ function escapeHtml(value: string): string {
 let statusWindow: BrowserWindow | null = null;
 let statusLanguage: string | null = null;
 let opening: Promise<void> | null = null;
+let statusUnavailable = false;
 
 function isOpen(): boolean {
   try {
@@ -83,6 +84,7 @@ export async function holdStatus(minMs: number): Promise<void> {
 
 /** Closes the window once its last message has been readable for `minMs`. */
 export async function closeStatusWhenSeen(minMs: number): Promise<void> {
+  statusUnavailable = false;
   const target = statusWindow;
   await holdStatus(minMs);
   if (statusWindow === target) closeStatus();
@@ -91,6 +93,10 @@ export async function closeStatusWhenSeen(minMs: number): Promise<void> {
 /** Shows (or updates) the small progress window. Never throws. */
 export async function showStatus(key: StatusKey, alwaysOnTop = false): Promise<void> {
   if (isSuppressed()) return;
+  if (key === 'closing') {
+    statusUnavailable = false;
+  }
+  if (statusUnavailable) return;
   try {
     const language = currentLanguage();
     const [title, detail] = getStatusMessage(key, language);
@@ -101,7 +107,7 @@ export async function showStatus(key: StatusKey, alwaysOnTop = false): Promise<v
           opening = null;
         });
         await opening;
-        messageAt = Date.now();
+        if (isOpen()) messageAt = Date.now();
         return;
       }
       await opening;
@@ -115,6 +121,7 @@ export async function showStatus(key: StatusKey, alwaysOnTop = false): Promise<v
     messageAt = Date.now();
   } catch (error) {
     console.warn('[StatusWindow] Could not update:', error);
+    statusUnavailable = true;
     closeStatus();
   }
 }
@@ -140,11 +147,25 @@ async function openWindow(alwaysOnTop: boolean, page: string): Promise<void> {
   });
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 2000));
-  const load = window
-    .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`)
-    .catch(() => {});
-  await Promise.race([load, timeout]);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), 2000);
+  });
+  const load = window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`).then(
+    () => true,
+    (error) => {
+      console.warn('[StatusWindow] Could not load:', error);
+      return false;
+    },
+  );
+  const loaded = await Promise.race([load, timeout]);
+  if (timer) clearTimeout(timer);
+  if (!loaded) {
+    statusUnavailable = true;
+    if (statusWindow === window) closeStatus();
+    else if (!window.isDestroyed()) window.destroy();
+    return;
+  }
   if (!window.isDestroyed()) window.show();
 }
 

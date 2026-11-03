@@ -8,6 +8,7 @@ const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-restore-managed-'));
 
 const ipcHandlers = new Map<string, Function>();
+const messageBoxCalls: Array<Record<string, unknown>> = [];
 const mainFrame = { frameToken: 'frame-main', detached: false };
 const mainWin = { isDestroyed: () => false };
 
@@ -30,7 +31,10 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
       dialog: {
         showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
         showSaveDialog: async () => ({ canceled: true, filePath: '' }),
-        showMessageBox: async () => ({ response: 0 }),
+        showMessageBox: async (options: Record<string, unknown>) => {
+          messageBoxCalls.push(options);
+          return { response: 0 };
+        },
       },
       safeStorage: {
         isEncryptionAvailable: () => true,
@@ -43,7 +47,14 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-import { closeDatabase, createBackup, initDatabase, isManagedBackupFile } from '../main/db';
+import Database from 'better-sqlite3';
+import {
+  closeDatabase,
+  createBackup,
+  getCurrentSchemaVersion,
+  initDatabase,
+  isManagedBackupFile,
+} from '../main/db';
 import { registerIpcHandlers } from '../main/ipc';
 import { setMasterPin } from '../main/services/master-pin';
 
@@ -174,6 +185,43 @@ async function run(): Promise<void> {
     cleanUnconfiguredRestore.success,
     true,
     'unconfigured Drive still permits a clean local restore',
+  );
+  assert.equal(
+    cleanUnconfiguredRestore.message,
+    'Database restored successfully',
+    'same-version IPC restore reports authoritative restore message',
+  );
+
+  const olderManaged = path.join(backupDir, 'flo-backup-2026-08-15T00-00-00-000Z-older123.db');
+  fs.copyFileSync(validManaged, olderManaged);
+  const olderVersion = getCurrentSchemaVersion() - 1;
+  {
+    const olderDb = new Database(olderManaged);
+    olderDb
+      .prepare("UPDATE _flo_meta SET value = ? WHERE key = 'schema_version'")
+      .run(String(olderVersion));
+    olderDb.pragma(`user_version = ${olderVersion}`);
+    olderDb.close();
+  }
+  messageBoxCalls.length = 0;
+  const olderRestore = await restoreHandler(trustedSender, '1234', olderManaged);
+  assert.equal(olderRestore.success, true, 'older-schema IPC restore succeeds');
+  assert.equal(olderRestore.mode, 'direct', 'older-schema IPC restore uses direct mode');
+  assert.equal(
+    olderRestore.message,
+    'Database restored successfully',
+    'older-schema IPC restore returns authoritative restore message instead of stale data-only copy',
+  );
+  assert.equal(messageBoxCalls.length, 1, 'older-schema IPC restore shows schema mismatch dialog');
+  assert.doesNotMatch(
+    String(messageBoxCalls[0].detail ?? ''),
+    /data only/i,
+    'schema mismatch dialog does not claim data-only restore',
+  );
+  assert.match(
+    String(messageBoxCalls[0].detail ?? ''),
+    /migrate/i,
+    'schema mismatch dialog explains forward schema migration',
   );
 
   const restoreIntentPath = path.join(testDir, 'google-drive-restore.pending');

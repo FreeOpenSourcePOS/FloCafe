@@ -201,9 +201,10 @@ the database being replaced. An unreadable or newer source returns a structured 
 versions rather than changing the live database.
 
 Restore validates SQLite integrity, foreign keys, inventory ledger consistency, and the resulting
-current schema. It invalidates user sessions and temporary KDS, customer-display, and mobile pairing
-credentials, clears the Google Drive device binding, runs `executeSequenceRepair` to re-align
-sequence counters with restored orders and bills, and marks repair complete. A same-version restore
+current schema. It rotates the JWT signing secret, invalidates user sessions and temporary KDS,
+customer-display, and mobile pairing credentials, clears the Google Drive device binding, runs
+`executeSequenceRepair` to re-align sequence counters with restored orders and bills, and marks
+repair complete. A same-version restore
 also compares tables structurally against the schema the current version defines and repairs the
 staged copy, never the operator's file, with the schema-health safe fixes: missing tables, columns
 (with their foreign keys), indexes, and triggers are added; nothing is dropped or rewritten. The

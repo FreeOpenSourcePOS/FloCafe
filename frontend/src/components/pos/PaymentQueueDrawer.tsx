@@ -86,6 +86,7 @@ export function PaymentQueueDrawer({
   const canRelease =
     tenantCan(currentTenant, 'orders.create') || tenantCan(currentTenant, 'orders.status.update');
   const canRefund = tenantCan(currentTenant, 'refunds.initiate');
+  const canCancelOrder = tenantCan(currentTenant, 'orders.status.update');
 
   const [orders, setOrders] = useState<AwaitingPaymentOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -487,7 +488,7 @@ export function PaymentQueueDrawer({
               </Button>
             )}
 
-            {isBlocked && !hasRefundablePayment && (
+            {isBlocked && !hasRefundablePayment && canCancelOrder && (
               <Button
                 type="button"
                 variant="outline"

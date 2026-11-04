@@ -220,7 +220,7 @@ Three entry points reach `restoreBackup`, and they differ only in how the operat
 | Route | Authorisation | Use |
 | --- | --- | --- |
 | `POST /api/db/restore` | Session holding `database.manage`, the typed phrase `RESTORE BACKUP`, and a file the operator picked in the native dialog | Restore from a backup file anywhere on disk. The settings screen and the application menu both land here. |
-| `POST /api/auth/setup/restore` | Request from the POS computer, the typed phrase, a picked file, and no user account in the database yet | Restore onto a brand-new install before the first sign-in. Refused with 403 as soon as any account exists. Reached from the first setup screen and from File → Restore Backup when nobody is signed in. |
+| `POST /api/auth/setup/restore` | Request from the POS computer, the typed phrase, a picked file, and no user account in the database yet | Restore onto a brand-new install before the first sign-in. Refused with 403 as soon as any account exists. Reached from the setup wizard's top restore callout across all steps, `CmdOrCtrl+Shift+R`, and File → Restore Backup when nobody is signed in. |
 | `restore-backup` IPC | Master PIN, and for a caller-supplied path a managed-backup check | Restore a managed backup from Backup History. |
 
 The HTTP route never accepts a path the renderer invented. `pick-restore-file` shows the native

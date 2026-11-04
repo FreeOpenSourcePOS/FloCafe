@@ -984,7 +984,10 @@ export default function ServerStandalonePage() {
     } catch (printError: unknown) {
       if (!isCurrent()) return;
       const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
-      if (status === 400 || status === 403) return;
+      const errorCode = axios.isAxiosError(printError)
+        ? (printError.response?.data as { code?: unknown } | undefined)?.code
+        : undefined;
+      if (status === 400 || (status === 403 && errorCode === 'BILL_PRINTING_DISABLED')) return;
       toastApiError(printError, t('billPrintFailed'), apiErrorT);
     }
   }
@@ -1069,9 +1072,12 @@ export default function ServerStandalonePage() {
         orderId = data.order.id;
         rawOrder = data.order;
         // Print only what this call added — omitting items reprints every pending item on the order.
-        newItems = (data.order.items || []).filter(
-          (item: OrderItem) => !snapshot.existingItemIds.has(item.id),
-        );
+        newItems =
+          Array.isArray(data.added_items) && data.added_items.length > 0
+            ? data.added_items
+            : (data.order.items || []).filter(
+                (item: OrderItem) => !snapshot.existingItemIds.has(item.id),
+              );
       } else {
         const { data } = await api.post(
           '/api/orders',

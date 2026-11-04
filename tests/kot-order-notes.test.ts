@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { renderKotViaDocument, renderKotDocumentToLines } from '../main/printers/document-kot';
+import { renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
 import { escPosToText } from '../main/printers/thermal';
 import { isKotDocument } from '../shared/print';
+import { GENERIC_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
 
 function loadFrontendModules(): {
   kotEncoder: typeof import('../frontend/src/lib/printer/kot-encoder');
@@ -296,6 +298,216 @@ async function runAsyncTests() {
     headerBlank?.orderNotes,
     null,
     'buildFrontendKotDocument sets header.orderNotes to null when blank',
+  );
+
+  // Regression: KOT item description and item comment (special_instructions) must wrap within
+  // column bounds, reset ESC/POS double-height and bold styles before the comment line, and map
+  // to distinct raster source/control lines without overlaying comments over the item description.
+  const longItemOrder = {
+    order_number: 'A-77',
+    created_at: '2026-01-01 12:00:00',
+    type: 'dine_in',
+    items: [
+      {
+        id: 'item-long-1',
+        product_name: 'Wood Fired Margherita Pizza With Buffalo Mozzarella',
+        variant_selection: { name: 'Extra Large 16 Inch', sku: 'PIZ-MAR-XL' },
+        quantity: 2,
+        status: 'pending',
+        addons: [{ name: 'Extra Fresh Basil', quantity: 2 }],
+        special_instructions: 'Cut into 8 slices, well done crust, no garlic oil on edge',
+      },
+    ],
+  };
+
+  const longKotRendered = renderKotViaDocument(
+    longItemOrder,
+    longItemOrder.items,
+    'Main Kitchen',
+    opts,
+  );
+  const kotItemTokenLines = longKotRendered.lines.filter(
+    (line) => line.startsWith('{DOUBLE_HEIGHT}{BOLD}') && !line.includes('KITCHEN ORDER TICKET'),
+  );
+  assert.ok(
+    kotItemTokenLines.length >= 2,
+    `long KOT item description wraps across multiple double-height bold lines (got ${kotItemTokenLines.length})`,
+  );
+  for (const tokenLine of kotItemTokenLines) {
+    const stripped = tokenLine.replace(/\{\/?(?:DOUBLE_HEIGHT|BOLD)\}/g, '');
+    assert.ok(
+      stripped.length <= opts.columns,
+      `wrapped KOT item description line fits within ${opts.columns} columns (got ${stripped.length}: "${stripped}")`,
+    );
+  }
+  assert.ok(
+    kotItemTokenLines[1].replace(/\{\/?(?:DOUBLE_HEIGHT|BOLD)\}/g, '').startsWith('    '),
+    'continuation line of wrapped KOT item description is indented to align after quantity prefix',
+  );
+
+  const kotCommentLines = longKotRendered.lines.filter(
+    (line) => line.startsWith('  >> ') || line.startsWith('     '),
+  );
+  assert.ok(
+    kotCommentLines.length >= 2,
+    `long KOT item comment wraps across multiple lines instead of overflowing or truncating (got ${kotCommentLines.length})`,
+  );
+  for (const commentLine of kotCommentLines) {
+    assert.ok(
+      commentLine.length <= opts.columns,
+      `wrapped KOT comment line fits within ${opts.columns} columns (got ${commentLine.length}: "${commentLine}")`,
+    );
+    assert.ok(
+      !commentLine.includes('{DOUBLE_HEIGHT}') && !commentLine.includes('{BOLD}'),
+      'KOT comment line never carries double-height or bold tokens',
+    );
+  }
+  assert.equal(
+    kotCommentLines.map((l) => l.trim()).join(' '),
+    '>> Cut into 8 slices, well done crust, no garlic oil on edge',
+    'wrapped KOT comment preserves the entire special_instructions text without truncation',
+  );
+
+  // Verify ESC/POS bytes reset both ESC ! mode (0x1b 0x21 0x00) and ESC E bold (0x1b 0x45 0x00)
+  // before the addon / comment lines so double-height or bold never bleeds into comments.
+  const commentByteMarker = Buffer.from('  >> Cut into 8 slices', 'utf8');
+  const commentOffset = longKotRendered.data.indexOf(commentByteMarker);
+  assert.ok(commentOffset > 0, 'comment text present in ESC/POS bytes');
+  const prefixWindow = longKotRendered.data.subarray(
+    Math.max(0, commentOffset - 16),
+    commentOffset,
+  );
+  assert.ok(
+    prefixWindow.includes(Buffer.from([0x1b, 0x21, 0x00])),
+    'ESC/POS resets ESC ! print mode to 0x00 (normal height/weight) before item comment',
+  );
+  const lastItemTokenLine = kotItemTokenLines[kotItemTokenLines.length - 1].replace(
+    /\{\/?(?:DOUBLE_HEIGHT|BOLD)\}/g,
+    '',
+  );
+  const lastItemOffset = longKotRendered.data.indexOf(Buffer.from(lastItemTokenLine, 'utf8'));
+  assert.ok(lastItemOffset > 0 && lastItemOffset < commentOffset);
+  const betweenItemAndComment = longKotRendered.data.subarray(lastItemOffset, commentOffset);
+  assert.ok(
+    betweenItemAndComment.includes(Buffer.from([0x1b, 0x45, 0x00])),
+    'ESC/POS explicitly turns off ESC E bold (0x1b 0x45 0x00) after bold item description before non-bold lines',
+  );
+
+  // Verify raster line group mapping keeps item description and comment in separate raster units
+  // with accurate sourceControlLines when item description and comment wrap across multiple lines.
+  const rasterCaps = {
+    ...GENERIC_THERMAL_CAPABILITIES,
+    raster: {
+      enabled: true,
+      widthDots: 384,
+      maxBandHeight: 200,
+      modes: ['mixed' as const],
+    },
+  };
+  const rasterOrder = {
+    ...longItemOrder,
+    items: [
+      {
+        ...longItemOrder.items[0],
+        product_name: 'Wood Fired Margherita Pizza With Buffalo Mozzarella \u62B9\u8336',
+        special_instructions: 'Please bake well done crust with extra basil \u62B9\u8336',
+      },
+    ],
+  };
+  const rasterGroups: import('../shared/print/raster').RasterSemanticLineGroup[] = [];
+  const rasterKotDoc = renderKotViaDocument(rasterOrder, rasterOrder.items, 'Main Kitchen', {
+    ...opts,
+    capabilities: rasterCaps,
+  }).document;
+  const rasterLines = renderKotDocumentToLines(rasterKotDoc, {
+    columns: opts.columns,
+    language: 'en',
+    arabicShaping: false,
+    capabilities: rasterCaps,
+    rasterGroups,
+  });
+  const capturedRasterRequests: import('../shared/print/raster').RasterRenderRequest[] = [];
+  const rasterResult = await renderUnsupportedRasterLines(
+    {
+      render: async (request) => {
+        capturedRasterRequests.push(request);
+        return {
+          version: 1,
+          requestId: request.requestId,
+          ok: true,
+          unit: {
+            unitId: request.requestId,
+            financial: false,
+            complete: true,
+            bands: [{ widthDots: 384, heightDots: 2, pixels: new Uint8Array(384 * 2) }],
+          },
+        };
+      },
+    },
+    rasterLines,
+    rasterCaps,
+    'kot-long-wrap',
+    rasterGroups,
+  );
+  assert.equal(
+    rasterResult.failures.length,
+    0,
+    'wrapped KOT item row rasterizes without mapping failures',
+  );
+  const itemRasterReq = capturedRasterRequests.find((r) => r.text.includes('Margherita Pizza'));
+  const commentRasterReq = capturedRasterRequests.find((r) => r.text.includes('>> Please bake'));
+  assert.ok(itemRasterReq, 'item description is sent as its own raster request');
+  assert.ok(commentRasterReq, 'item comment is sent as its own separate raster request');
+  assert.ok(
+    itemRasterReq.styles?.includes('double-height') && itemRasterReq.styles?.includes('bold'),
+    'item description raster request carries double-height and bold styles',
+  );
+  assert.equal(
+    commentRasterReq.style,
+    'normal',
+    'item comment raster request uses normal style and never inherits double-height from item description',
+  );
+
+  // Verify frontend buildKotBytes wraps long item descriptions and comments on distinct lines
+  const feLongItemBytes = frontend.kotEncoder.buildKotBytes(longItemOrder as any, opts);
+  const feLongItemText = escPosToText(feLongItemBytes);
+  const feLongItemCollapsed = feLongItemText.replace(/\s+/g, ' ');
+  assert.ok(
+    feLongItemCollapsed.includes('Wood Fired Margherita Pizza With Buffalo Mozzarella') &&
+      feLongItemCollapsed.includes('(Extra Large 16 Inch)') &&
+      feLongItemCollapsed.includes('[PIZ-MAR-XL]'),
+    'frontend buildKotBytes wraps and preserves full item description with variant and SKU',
+  );
+  assert.ok(
+    feLongItemCollapsed.includes('>> Cut into 8 slices, well done crust, no garlic oil on edge'),
+    'frontend buildKotBytes wraps and preserves full item special_instructions',
+  );
+  const feLongItemLines = feLongItemText
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+$/g, ''))
+    .filter((line) => line.length > 0);
+  const feFirstItemIdx = feLongItemLines.findIndex((line) =>
+    line.includes('2x Wood Fired Margherita Pizza'),
+  );
+  const feAddonIdx = feLongItemLines.findIndex((line) => line.includes('+ Extra Fresh Basil x2'));
+  const feCommentIdx = feLongItemLines.findIndex((line) => line.includes('>> Cut into 8 slices'));
+  assert.ok(
+    feFirstItemIdx >= 0 && feAddonIdx > feFirstItemIdx + 1 && feCommentIdx > feAddonIdx,
+    'frontend buildKotBytes emits wrapped item description lines before addon line and wrapped comment lines',
+  );
+  for (const line of feLongItemLines.slice(feFirstItemIdx, feCommentIdx + 2)) {
+    const cleanLine = line.replace(/[\x00-\x1f]/g, '');
+    assert.ok(
+      cleanLine.length <= opts.columns,
+      `frontend buildKotBytes item/comment line exceeds ${opts.columns} columns (${cleanLine.length}): "${cleanLine}"`,
+    );
+  }
+
+  // Verify generateKotHtml sets explicit line-height on .kot-container and separates comment block
+  const htmlLongItem = frontend.kotWebPrint.generateKotHtml(longItemOrder as any);
+  assert.ok(
+    htmlLongItem.includes('line-height:1.4;'),
+    'generateKotHtml includes explicit line-height:1.4 on .kot-container',
   );
 }
 

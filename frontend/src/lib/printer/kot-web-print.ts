@@ -186,16 +186,16 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
           .map(
             (item) => `
         <div style="margin:${padding} 0;">
-          <div style="font-weight:bold;">${escapeHtml(item.quantity)}x ${directionalValue(item.name, base)}</div>
+          <div style="font-weight:bold;line-height:1.4;">${escapeHtml(item.quantity)}x ${directionalValue(item.name, base)}</div>
           ${item.addons
             .map((addon) => {
               const qty =
                 ('quantity' in addon && typeof addon.quantity === 'number' && addon.quantity) || 1;
               const suffix = qty > 1 ? ` x${qty}` : '';
-              return `<div style="padding-inline-start:1em;">+ ${escapeHtml(addon.name)}${escapeHtml(suffix)}</div>`;
+              return `<div style="padding-inline-start:1em;margin-top:2px;line-height:1.4;">+ ${escapeHtml(addon.name)}${escapeHtml(suffix)}</div>`;
             })
             .join('')}
-          ${item.specialInstructions ? `<div style="padding-inline-start:1em;font-style:italic;">&gt;&gt; ${directionalValue(item.specialInstructions, base)}</div>` : ''}
+          ${item.specialInstructions ? `<div style="padding-inline-start:1em;margin-top:2px;line-height:1.4;font-style:italic;">&gt;&gt; ${directionalValue(item.specialInstructions, base)}</div>` : ''}
         </div>
       `,
           )
@@ -203,7 +203,7 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
       : `<div style="margin:${padding} 0;">${escapeHtml(tr('print.kot.noPendingItems'))}</div>`;
 
   return `
-    <div class="kot-container" lang="${escapeHtml(locale)}" dir="${base}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;text-align:start;padding:${padding};font-family:${fontFamily};font-size:${fontSize};">
+    <div class="kot-container" lang="${escapeHtml(locale)}" dir="${base}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;text-align:start;padding:${padding};font-family:${fontFamily};font-size:${fontSize};line-height:1.4;">
       <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(tr('print.kot.banner'))}</h2>
       ${stationName ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.station'))}: ${directionalValue(directionalText(stationName, base), base)}</p>` : ''}
       <p style="margin:2px 0;font-weight:bold;">${formatOrderNumberLabel(tr('pos.orderNumber'), orderNumber, base)}</p>

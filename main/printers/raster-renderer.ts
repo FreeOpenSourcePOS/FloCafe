@@ -462,7 +462,13 @@ function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWi
       while (next < lines.length) {
         const candidate = lines[next];
         if (candidate.includes('{CUT}') || /^[-=]{8,}$/.test(candidate)) break;
-        if (kotItem && candidate.includes('{DOUBLE_HEIGHT}') && candidate.includes('{BOLD}')) break;
+        if (
+          kotItem &&
+          candidate.includes('{DOUBLE_HEIGHT}') &&
+          candidate.includes('{BOLD}') &&
+          !/^\s/.test(stripRasterControlTokens(candidate))
+        )
+          break;
         next += 1;
       }
       groups.push({

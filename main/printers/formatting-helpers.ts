@@ -438,6 +438,27 @@ export function truncateShapedLine(
     : normalizedText;
 }
 
+export function pushWrappedShapedLine(
+  lines: string[],
+  text: string,
+  cols: number,
+  arabicShaping: boolean,
+  language: string = 'en',
+  capabilities?: ThermalPrinterCapabilities,
+  formatLine: (line: string, index: number) => string = (line) => line,
+): void {
+  const safeCols = Math.max(1, cols);
+  const normalizedText = normalizeThermalText(text, capabilities);
+  if (arabicShaping && hasArabicScript(normalizedText)) {
+    lines.push(formatLine(truncate(normalizedText, safeCols, language, capabilities), 0));
+    return;
+  }
+  const wrapped = wrapText(normalizedText, safeCols);
+  wrapped.forEach((line, index) => {
+    lines.push(formatLine(line, index));
+  });
+}
+
 export function normalizePrintLanguage(language?: string): string {
   return language && isGeneratedPrintLanguage(language) ? language : 'en';
 }
@@ -636,10 +657,12 @@ export function buildEscPos(
   }
   if (financialRasterFailure) return Buffer.alloc(0);
 
+  let activeBold = false;
   const resetAllStyles = () => {
     buf.push(0x1b, 0x45, 0x00);
     buf.push(0x1b, 0x21, 0x00);
     buf.push(0x1b, 0x61, 0x00);
+    activeBold = false;
   };
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
@@ -793,6 +816,10 @@ export function buildEscPos(
 
     if (lineBold) {
       buf.push(0x1b, 0x45, 0x01);
+      activeBold = true;
+    } else if (activeBold) {
+      buf.push(0x1b, 0x45, 0x00);
+      activeBold = false;
     }
 
     const encodedText =

@@ -541,6 +541,7 @@ async function run() {
         memStorage.delete(k);
       },
     };
+    const windowListeners = new Map<string, Set<(e: any) => void>>();
     (globalThis as any).window = {
       location: {
         origin: 'http://127.0.0.1:3001',
@@ -553,9 +554,20 @@ async function run() {
           replacedUrls.push(url);
         },
       },
-      dispatchEvent: () => true,
-      addEventListener: () => {},
-      removeEventListener: () => {},
+      dispatchEvent: (event: { type?: string }) => {
+        const type = event?.type;
+        if (type && windowListeners.has(type)) {
+          for (const fn of [...windowListeners.get(type)!]) fn(event);
+        }
+        return true;
+      },
+      addEventListener: (type: string, fn: (e: any) => void) => {
+        if (!windowListeners.has(type)) windowListeners.set(type, new Set());
+        windowListeners.get(type)!.add(fn);
+      },
+      removeEventListener: (type: string, fn: (e: any) => void) => {
+        windowListeners.get(type)?.delete(fn);
+      },
       requestAnimationFrame: (cb: () => void) => {
         cb();
         return 1;
@@ -928,12 +940,117 @@ async function run() {
       currentRefIdx = 0;
       currentEffectIdx = 0;
       pendingEffects.length = 0;
-      SetupPageComponent();
+      const setupStep1Tree = SetupPageComponent();
       while (pendingEffects.length > 0) {
         const runEffect = pendingEffects.shift()!;
         runEffect();
       }
       await flushMicrotasks();
+
+      const findNodes = (
+        node: unknown,
+        predicate: (el: { type: unknown; props?: Record<string, unknown> }) => boolean,
+        out: Array<{ type: unknown; props?: Record<string, unknown> }> = [],
+      ): Array<{ type: unknown; props?: Record<string, unknown> }> => {
+        if (!node) return out;
+        if (Array.isArray(node)) {
+          for (const child of node) findNodes(child, predicate, out);
+          return out;
+        }
+        if (typeof node === 'object') {
+          const el = node as { type: unknown; props?: Record<string, unknown> };
+          if (predicate(el)) out.push(el);
+          if (el.props && 'children' in el.props) {
+            findNodes(el.props.children, predicate, out);
+          }
+        }
+        return out;
+      };
+
+      const step1Callouts = findNodes(
+        setupStep1Tree,
+        (el) => el.props?.['data-testid'] === 'setup-restore-backup-callout',
+      );
+      const step1Buttons = findNodes(
+        setupStep1Tree,
+        (el) => el.props?.['data-testid'] === 'setup-restore-backup-button',
+      );
+      assert.equal(
+        step1Callouts.length,
+        1,
+        'SetupPage renders top-level restore backup callout on Step 1',
+      );
+      assert.equal(
+        step1Buttons.length,
+        1,
+        'SetupPage renders setup-restore-backup-button on Step 1',
+      );
+
+      // Verify the callout appears before the main wizard Card inside the setup container
+      const containerNodes = findNodes(
+        setupStep1Tree,
+        (el) =>
+          Array.isArray(el.props?.children) &&
+          (el.props!.children as unknown[]).some(
+            (child: any) => child?.props?.['data-testid'] === 'setup-restore-backup-callout',
+          ),
+      );
+      assert.equal(containerNodes.length, 1, 'Found setup wizard container holding callout');
+      const containerChildren = containerNodes[0].props!.children as Array<any>;
+      const calloutIndex = containerChildren.findIndex(
+        (c) => c?.props?.['data-testid'] === 'setup-restore-backup-callout',
+      );
+      const cardIndex = containerChildren.findIndex((c) => c?.type === IconStub);
+      assert.equal(
+        calloutIndex >= 0 && cardIndex > calloutIndex,
+        true,
+        'Restore backup callout is rendered above the main wizard Card',
+      );
+
+      // Advance to Step 2 and verify the callout and button remain visible
+      states[0] = 2;
+      currentStateIdx = 0;
+      currentRefIdx = 0;
+      currentEffectIdx = 0;
+      const setupStep2Tree = SetupPageComponent();
+      const step2Buttons = findNodes(
+        setupStep2Tree,
+        (el) => el.props?.['data-testid'] === 'setup-restore-backup-button',
+      );
+      assert.equal(
+        step2Buttons.length,
+        1,
+        'setup-restore-backup-button remains rendered on Step 2',
+      );
+      assert.equal(
+        step2Buttons[0].props?.disabled,
+        false,
+        'setup-restore-backup-button is enabled when loading is false',
+      );
+
+      // Verify clicking setup-restore-backup-button and dispatching RESTORE_FROM_FILE_EVENT invoke pickRestoreFile
+      let pickRestoreCalls = 0;
+      (globalThis as any).window.electronAPI = {
+        platform: 'win32',
+        pickRestoreFile: async () => {
+          pickRestoreCalls++;
+          return { canceled: true };
+        },
+      };
+      await (step2Buttons[0].props?.onClick as () => Promise<void>)();
+      assert.equal(
+        pickRestoreCalls,
+        1,
+        'Clicking setup-restore-backup-button invokes window.electronAPI.pickRestoreFile',
+      );
+      (globalThis as any).window.dispatchEvent({ type: 'flo:restore-from-file' });
+      await flushMicrotasks();
+      assert.equal(
+        pickRestoreCalls,
+        2,
+        'Dispatching RESTORE_FROM_FILE_EVENT on /setup invokes window.electronAPI.pickRestoreFile',
+      );
+      delete (globalThis as any).window.electronAPI;
 
       assert.equal(
         setupStatusCalls,
@@ -1093,6 +1210,247 @@ async function run() {
           ['/setup'],
           'LoginPage redirects to /setup when retry confirms needsSetup: true',
         );
+
+        // Subcase 5: DesktopDragSurface exposes ApplicationMenuRow on standalone routes (/setup, /auth/*) and omits it on dashboard routes
+        let mockPathname = '/setup';
+        const AppMenuRowStub = () => ({ type: 'ApplicationMenuRow' });
+        const WindowControlsStub = () => ({ type: 'WindowControls' });
+        Module._load = function (request: string, parent: unknown, isMain: boolean) {
+          if (request === 'react') {
+            return {
+              ...reactHooks,
+              useSyncExternalStore: (_sub: unknown, getSnap: () => boolean) => getSnap(),
+            };
+          }
+          if (request === 'react/jsx-runtime') {
+            return { jsx: jsxElement, jsxs: jsxElement, Fragment: 'Fragment' };
+          }
+          if (request === 'next/navigation') {
+            return { usePathname: () => mockPathname };
+          }
+          if (request === './ApplicationMenuRow') {
+            return { __esModule: true, default: AppMenuRowStub };
+          }
+          if (request === './WindowControls') {
+            return { __esModule: true, default: WindowControlsStub };
+          }
+          if (request === './titlebar-sync') {
+            return { useDesktopTitleBarSync: () => {} };
+          }
+          return originalLoad.apply(this, arguments as any);
+        };
+
+        delete require.cache[
+          path.resolve(rootDir, 'frontend/src/components/layout/DesktopDragSurface.tsx')
+        ];
+        const {
+          default: DesktopDragSurface,
+          isStandaloneMenuRoute,
+        } = require('../frontend/src/components/layout/DesktopDragSurface');
+
+        assert.equal(isStandaloneMenuRoute('/setup'), true, '/setup is a standalone menu route');
+        assert.equal(isStandaloneMenuRoute('/setup/'), true, '/setup/ is a standalone menu route');
+        assert.equal(
+          isStandaloneMenuRoute('/auth/login'),
+          true,
+          '/auth/login is a standalone menu route',
+        );
+        assert.equal(
+          isStandaloneMenuRoute('/auth/recover'),
+          true,
+          '/auth/recover is a standalone menu route',
+        );
+        assert.equal(isStandaloneMenuRoute('/pos'), false, '/pos is not a standalone menu route');
+        assert.equal(
+          isStandaloneMenuRoute('/dashboard'),
+          false,
+          '/dashboard is not a standalone menu route',
+        );
+
+        (globalThis as any).window.electronAPI = { getStatus: async () => ({}) };
+        mockPathname = '/setup';
+        const setupSurfaceTree = DesktopDragSurface();
+        const setupMenuNodes = findNodes(setupSurfaceTree, (el) => el.type === AppMenuRowStub);
+        const setupSafeAreas = findNodes(
+          setupSurfaceTree,
+          (el) =>
+            typeof el.props?.className === 'string' &&
+            el.props.className.includes('flo-title-bar__safe-area'),
+        );
+        assert.equal(
+          setupMenuNodes.length,
+          1,
+          'DesktopDragSurface renders ApplicationMenuRow on /setup',
+        );
+        assert.equal(
+          setupSafeAreas.length,
+          1,
+          'DesktopDragSurface wraps ApplicationMenuRow in .flo-title-bar__safe-area on /setup',
+        );
+
+        mockPathname = '/pos';
+        const posSurfaceTree = DesktopDragSurface();
+        const posMenuNodes = findNodes(posSurfaceTree, (el) => el.type === AppMenuRowStub);
+        assert.equal(
+          posMenuNodes.length,
+          0,
+          'DesktopDragSurface does not duplicate ApplicationMenuRow on /pos',
+        );
+        delete (globalThis as any).window.electronAPI;
+
+        // Subcase 6: MenuActionHandler routes Cmd/Ctrl+Shift+R and menu-restore-from-file on /setup and /auth/login
+        for (const slot of effectSlots) {
+          if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+        }
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pushedRoutes.length = 0;
+
+        let menuActionCallback: ((action: string) => void) | null = null;
+        let dispatchedRestoreEvents = 0;
+        const onRestoreEvent = () => {
+          dispatchedRestoreEvents++;
+        };
+        (globalThis as any).window.addEventListener('flo-restore-from-file', onRestoreEvent);
+        (globalThis as any).CustomEvent = class CustomEvent {
+          type: string;
+          constructor(type: string) {
+            this.type = type;
+          }
+        };
+        (globalThis as any).window.electronAPI = {
+          onMenuAction: (cb: (action: string) => void) => {
+            menuActionCallback = cb;
+            return () => {
+              menuActionCallback = null;
+            };
+          },
+        };
+
+        Module._load = function (request: string, parent: unknown, isMain: boolean) {
+          if (request === 'react') {
+            return {
+              ...reactHooks,
+            };
+          }
+          if (request === 'react/jsx-runtime') {
+            return { jsx: jsxElement, jsxs: jsxElement, Fragment: 'Fragment' };
+          }
+          if (request === 'next/navigation') {
+            return {
+              useRouter: () => ({
+                push: (url: string) => pushedRoutes.push(url),
+              }),
+            };
+          }
+          if (request === 'use-intl') {
+            return {
+              useTranslations: (ns: string) => (key: string) => `${ns}.${key}`,
+            };
+          }
+          if (request === 'react-hot-toast') {
+            return {
+              __esModule: true,
+              default: { loading: () => {}, success: () => {}, error: () => {}, remove: () => {} },
+            };
+          }
+          if (request === '@/components/settings/MasterPinPrompt') {
+            return { MasterPinPrompt: IconStub };
+          }
+          if (request === '@/lib/quick-search') {
+            return { dispatchQuickSearchRequest: () => {} };
+          }
+          if (request === '@/store/auth') {
+            return {
+              useAuthStore: {
+                getState: () => ({ user: null, loading: false, lock: async () => {} }),
+                subscribe: () => () => {},
+              },
+            };
+          }
+          if (request === '@/lib/api') {
+            return {
+              __esModule: true,
+              default: {
+                get: async (url: string) => {
+                  if (url === '/auth/setup/status') {
+                    return { data: { needsSetup: true } };
+                  }
+                  throw new Error(`Unexpected GET ${url}`);
+                },
+              },
+            };
+          }
+          return originalLoad.apply(this, arguments as any);
+        };
+
+        delete require.cache[
+          path.resolve(rootDir, 'frontend/src/components/layout/MenuActionHandler.tsx')
+        ];
+        const MenuActionHandlerComponent =
+          require('../frontend/src/components/layout/MenuActionHandler').default;
+        currentStateIdx = 0;
+        currentRefIdx = 0;
+        currentEffectIdx = 0;
+        pendingEffects.length = 0;
+        MenuActionHandlerComponent();
+        while (pendingEffects.length > 0) {
+          const runEffect = pendingEffects.shift()!;
+          runEffect();
+        }
+
+        (globalThis as any).window.location.pathname = '/setup';
+        let prevented = false;
+        (globalThis as any).window.dispatchEvent({
+          type: 'keydown',
+          key: 'R',
+          ctrlKey: true,
+          shiftKey: true,
+          altKey: false,
+          defaultPrevented: false,
+          preventDefault: () => {
+            prevented = true;
+          },
+        });
+        await flushMicrotasks();
+        assert.equal(prevented, true, 'MenuActionHandler prevents default on Ctrl+Shift+R');
+        assert.equal(
+          dispatchedRestoreEvents,
+          1,
+          'MenuActionHandler dispatches RESTORE_FROM_FILE_EVENT when Ctrl+Shift+R is pressed on /setup',
+        );
+
+        // Repeated keydown events (repeat: true) are ignored
+        (globalThis as any).window.dispatchEvent({
+          type: 'keydown',
+          key: 'R',
+          ctrlKey: true,
+          shiftKey: true,
+          altKey: false,
+          repeat: true,
+          defaultPrevented: false,
+          preventDefault: () => {},
+        });
+        await flushMicrotasks();
+        assert.equal(
+          dispatchedRestoreEvents,
+          1,
+          'MenuActionHandler ignores repeated keydown events for Ctrl+Shift+R',
+        );
+
+        (globalThis as any).window.location.pathname = '/auth/login';
+        assert.ok(menuActionCallback, 'MenuActionHandler registers onMenuAction listener');
+        (menuActionCallback as (action: string) => void)('menu-restore-from-file');
+        await flushMicrotasks();
+        assert.deepEqual(
+          pushedRoutes,
+          ['/setup?action=restore-from-file'],
+          'MenuActionHandler routes menu-restore-from-file to /setup?action=restore-from-file when needsSetup is true off /setup',
+        );
+
+        (globalThis as any).window.removeEventListener('flo-restore-from-file', onRestoreEvent);
+        delete (globalThis as any).window.electronAPI;
       } finally {
         (globalThis as any).fetch = originalFetch;
       }

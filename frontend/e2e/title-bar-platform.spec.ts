@@ -526,3 +526,86 @@ test('macOS native fullscreen removes traffic-light inset and restores on exit (
     expect(fullPadding, `${nonMacPlatform} fullscreen padding is 12px`).toBe('12px');
   }
 });
+
+test('setup page exposes top Restore Backup callout across steps, top menu bar on non-macOS, and Ctrl+Shift+R shortcut (#1455)', async ({
+  page,
+}) => {
+  await injectElectronFixture(page, { platform: 'win32', focused: true });
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.route('**/api/auth/setup/status', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ needsSetup: true, masterPinAvailable: true }),
+    });
+  });
+
+  await page.goto(`${BASE}/setup`);
+
+  // 1. ApplicationMenuRow renders inside DesktopDragSurface's safe area on /setup for non-macOS Electron
+  const dragSurface = page.getByTestId('desktop-drag-surface');
+  const menu = page.getByTestId('desktop-application-menu');
+  await expect(dragSurface).toBeVisible();
+  await expect(menu).toBeVisible();
+  await expect(menu.locator('button')).toHaveText([
+    'File',
+    'Edit',
+    'Orders',
+    'Reports',
+    'Settings',
+    'Window',
+    'Help',
+    'Developer',
+  ]);
+  expect(
+    await menu.evaluate((element) => Boolean(element.closest('.flo-title-bar__safe-area'))),
+  ).toBe(true);
+
+  const fileButton = menu.getByRole('menuitem', { name: 'File' });
+  await fileButton.click();
+  await expect
+    .poll(async () => (await readOpenedMenuEntries(page)).map((entry) => entry.key))
+    .toEqual(['0']);
+
+  // 2. Prominent Restore Backup callout card is visible at the top of /setup above the main wizard Card on Step 1
+  const callout = page.getByTestId('setup-restore-backup-callout');
+  const restoreButton = page.getByTestId('setup-restore-backup-button');
+  const wizardCard = page.locator('[data-slot="card"]').first();
+  await expect(callout).toBeVisible();
+  await expect(restoreButton).toBeVisible();
+  await expect(restoreButton).toContainText('Ctrl+Shift+R');
+  await expect(wizardCard).toBeVisible();
+
+  const [calloutBox, cardBox] = await Promise.all([
+    callout.boundingBox(),
+    wizardCard.boundingBox(),
+  ]);
+  expect(calloutBox).not.toBeNull();
+  expect(cardBox).not.toBeNull();
+  expect(
+    calloutBox!.y + calloutBox!.height,
+    'Restore Backup callout sits above the setup wizard Card',
+  ).toBeLessThanOrEqual(cardBox!.y);
+
+  if (process.env.FLO_SETUP_RESTORE_SCREENSHOT) {
+    await page.screenshot({ path: process.env.FLO_SETUP_RESTORE_SCREENSHOT });
+  }
+
+  // 3. Clicking setup-restore-backup-button and pressing Ctrl+Shift+R invoke window.electronAPI.pickRestoreFile
+  expect(await page.evaluate(() => window.__floPickerCalls ?? 0)).toBe(0);
+  await restoreButton.click();
+  await expect.poll(() => page.evaluate(() => window.__floPickerCalls ?? 0)).toBe(1);
+
+  await page.keyboard.press('Control+Shift+R');
+  await expect.poll(() => page.evaluate(() => window.__floPickerCalls ?? 0)).toBe(2);
+
+  // 4. Advancing to Step 2 keeps the Restore Backup callout visible above the wizard Card
+  await page.locator('.max-h-72 button').first().click();
+  await page
+    .locator('button', { hasText: /Continue/ })
+    .first()
+    .click();
+  await expect(page.locator('#master-pin')).toBeVisible();
+  await expect(callout).toBeVisible();
+  await expect(restoreButton).toBeVisible();
+});

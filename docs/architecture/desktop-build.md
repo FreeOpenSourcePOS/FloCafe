@@ -112,8 +112,10 @@ supplied with the theme colours and `TITLE_BAR_HEIGHT` (40).
 `titleBarStyle: 'hidden'` makes the main window frameless on Windows and Linux, and Electron creates
 no menu bar for a frameless window, so `Menu.setApplicationMenu` still registers the accelerators but
 draws nothing. [`ApplicationMenuRow`](../../frontend/src/components/layout/ApplicationMenuRow.tsx)
-renders the top-level labels inside the title bar's safe area and opens the matching submenu through
-the `open-application-menu` IPC.
+renders the top-level labels inside the title bar's safe area (both in the authenticated dashboard
+[`TitleBar`](../../frontend/src/components/layout/TitleBar.tsx) and in
+[`DesktopDragSurface`](../../frontend/src/components/layout/DesktopDragSurface.tsx) on standalone
+`/setup` and `/auth` routes) and opens the matching submenu through the `open-application-menu` IPC.
 
 `createMenu()` is the single source of the menu. `get-application-menu` returns only the descriptor a
 label needs, and `open-application-menu` pops the same `Menu` object that was applied, so roles,

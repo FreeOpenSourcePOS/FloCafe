@@ -234,7 +234,7 @@ test.describe('setup with a Persian browser language', () => {
     await page.goto(`${BASE}/setup`);
 
     // After mount, the fa browser preference moves Persian to the first option.
-    const firstLanguageOption = page.locator('button').first();
+    const firstLanguageOption = page.locator('[data-slot="card"] button').first();
     await expect(firstLanguageOption).toContainText('فارسی');
     await expect(firstLanguageOption).toContainText('FA');
     expect(hydrationErrors).toEqual([]);

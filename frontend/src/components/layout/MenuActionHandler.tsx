@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
@@ -20,6 +20,7 @@ export default function MenuActionHandler() {
   const tAuth = useTranslations('auth');
   const router = useRouter();
   const [pendingPinAction, setPendingPinAction] = useState<PendingPinAction>(null);
+  const restoreRoutingInFlightRef = useRef(false);
 
   async function runBackup(pin: string) {
     if (!window.electronAPI?.backupDatabase)
@@ -101,32 +102,53 @@ export default function MenuActionHandler() {
   }
 
   async function routeRestoreRequest() {
-    const auth = await waitForAuthHydration();
-    if (auth !== 'signed-out') {
-      router.push('/settings?tab=data&action=restore-from-file');
-      return;
-    }
+    if (restoreRoutingInFlightRef.current) return;
+    restoreRoutingInFlightRef.current = true;
     try {
-      const { data } = await api.get('/auth/setup/status');
-      if (data?.needsSetup) {
-        if (window.location.pathname.startsWith('/setup')) {
-          window.dispatchEvent(new CustomEvent(RESTORE_FROM_FILE_EVENT));
-        } else {
-          router.push('/setup?action=restore-from-file');
-        }
+      const auth = await waitForAuthHydration();
+      if (auth !== 'signed-out') {
+        router.push('/settings?tab=data&action=restore-from-file');
         return;
       }
-    } catch {
-      // Fall through to sign-in.
+      try {
+        const { data } = await api.get('/auth/setup/status');
+        if (data?.needsSetup) {
+          if (window.location.pathname.startsWith('/setup')) {
+            window.dispatchEvent(new CustomEvent(RESTORE_FROM_FILE_EVENT));
+          } else {
+            router.push('/setup?action=restore-from-file');
+          }
+          return;
+        }
+      } catch {
+        // Fall through to sign-in.
+      }
+      toast.error(tAuth('signInTitle'));
+      router.push('/auth/login');
+    } finally {
+      restoreRoutingInFlightRef.current = false;
     }
-    toast.error(tAuth('signInTitle'));
-    router.push('/auth/login');
   }
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.electronAPI?.onMenuAction) return;
+    if (typeof window === 'undefined' || !window.electronAPI) return;
 
-    const unsubscribe = window.electronAPI.onMenuAction((action: string) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        !e.defaultPrevented &&
+        !e.repeat &&
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        !e.altKey &&
+        e.key?.toLowerCase() === 'r'
+      ) {
+        e.preventDefault?.();
+        void routeRestoreRequest();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const unsubscribe = window.electronAPI.onMenuAction?.((action: string) => {
       console.log('[Menu] Action received:', action);
 
       switch (action) {
@@ -212,6 +234,7 @@ export default function MenuActionHandler() {
     });
 
     return () => {
+      window.removeEventListener('keydown', handleKeyDown);
       unsubscribe?.();
     };
     // oxlint-disable-next-line react-hooks/exhaustive-deps

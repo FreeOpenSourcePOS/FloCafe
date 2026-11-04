@@ -742,7 +742,7 @@ test.describe('checkout controls stay visible while catalog and cart content scr
     expect(
       cartScrollBox!.height,
       'cart items container maintains usable height on 1024x600 display',
-    ).toBeGreaterThanOrEqual(120);
+    ).toBeGreaterThanOrEqual(300);
 
     const placeOrder = page.getByRole('button', { name: 'Place Order' });
     const viewport = page.viewportSize();
@@ -775,8 +775,8 @@ test.describe('checkout controls stay visible while catalog and cart content scr
     expect(deliveryCartScrollBox, 'delivery cart items container has bounds').not.toBeNull();
     expect(
       deliveryCartScrollBox!.height,
-      'cart items container maintains usable height with taller Delivery header on 1024x600 display',
-    ).toBeGreaterThanOrEqual(120);
+      'cart items container maintains usable height with compact Delivery header on 1024x600 display',
+    ).toBeGreaterThanOrEqual(300);
 
     await cartShell.evaluate((element) => {
       element.scrollTop = element.scrollHeight;

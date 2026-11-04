@@ -177,6 +177,7 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   split_checks_enabled: 'false',
   card_transaction_id_required: 'false',
   multi_counter_enabled: 'false',
+  scheduled_orders_enabled: 'false',
   require_open_shift: 'false',
   one_shift_per_staff: 'false',
   // Print language policies (#441) — inherit store language, no second
@@ -1753,6 +1754,30 @@ router.get(
   },
 );
 
+router.get(
+  '/scheduled_orders_enabled',
+  settingsReadRateLimit,
+  requireAnyPermission('settings.view', 'orders.read', 'orders.create'),
+  (_req: Request, res: Response) => {
+    try {
+      const setting = getDatabase()
+        .prepare('SELECT * FROM settings WHERE key = ?')
+        .get('scheduled_orders_enabled');
+      if (setting) return res.json({ setting });
+      return res.json({
+        setting: {
+          key: 'scheduled_orders_enabled',
+          value: OPTIONAL_SETTING_DEFAULTS.scheduled_orders_enabled,
+          updated_at: null,
+        },
+      });
+    } catch (error) {
+      console.error('[API] Internal error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
 const requireAuthenticatedStaff: RequestHandler = (req, res, next) => {
   const userId = String(
     (req as Request & { user?: { userId?: string; id?: string } }).user?.userId ||
@@ -1908,6 +1933,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'split_checks_enabled',
   'card_transaction_id_required',
   'multi_counter_enabled',
+  'scheduled_orders_enabled',
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
   Z_REPORT_LANGUAGE_POLICY_KEY,
@@ -2213,7 +2239,8 @@ router.put(
         req.params.key === 'require_open_shift' ||
         req.params.key === 'one_shift_per_staff' ||
         req.params.key === 'card_transaction_id_required' ||
-        req.params.key === 'multi_counter_enabled'
+        req.params.key === 'multi_counter_enabled' ||
+        req.params.key === 'scheduled_orders_enabled'
       ) {
         if (req.params.key === 'multi_counter_enabled') {
           const callerUser = (req as Request & { user?: { role?: string } }).user;

@@ -315,6 +315,7 @@ export default function POSPage() {
   const [blockedScheduledCount, setBlockedScheduledCount] = useState<number>(0);
   const [loadingMoreScheduled, setLoadingMoreScheduled] = useState(false);
   const [showScheduledOrders, setShowScheduledOrders] = useState(false);
+  const [scheduledOrdersEnabled, setScheduledOrdersEnabled] = useState(false);
   const [refundModalTarget, setRefundModalTarget] = useState<{
     order: Order;
     bills: Bill[];
@@ -1089,8 +1090,13 @@ export default function POSPage() {
     }
   };
 
+  const currentStoreId = currentTenant?.id || 'default';
+  const currentStoreIdRef = useRef(currentStoreId);
+  currentStoreIdRef.current = currentStoreId;
+
   const canReadOrders = tenantCan(currentTenant, 'orders.read');
   const refreshScheduledOrders = useCallback(async () => {
+    const originStoreId = currentStoreIdRef.current;
     if (!canReadOrders) {
       setScheduledOrders([]);
       setNextScheduledCursor(null);
@@ -1100,6 +1106,7 @@ export default function POSPage() {
     }
     try {
       const { data } = await api.get('/orders/scheduled');
+      if (currentStoreIdRef.current !== originStoreId) return;
       const loadedOrders = (data.orders as Order[]) || [];
       setScheduledOrders(loadedOrders);
       setNextScheduledCursor(data.next_cursor || null);
@@ -1120,11 +1127,13 @@ export default function POSPage() {
 
   const handleLoadMoreScheduledOrders = async () => {
     if (!nextScheduledCursor || loadingMoreScheduled) return;
+    const originStoreId = currentStoreIdRef.current;
     setLoadingMoreScheduled(true);
     try {
       const { data } = await api.get('/orders/scheduled', {
         params: { cursor: nextScheduledCursor },
       });
+      if (currentStoreIdRef.current !== originStoreId) return;
       const moreOrders = (data.orders as Order[]) || [];
       setScheduledOrders((prev) => {
         const seen = new Set(prev.map((o) => o.id));
@@ -1140,7 +1149,9 @@ export default function POSPage() {
     } catch {
       /* ignore load more failures */
     } finally {
-      setLoadingMoreScheduled(false);
+      if (currentStoreIdRef.current === originStoreId) {
+        setLoadingMoreScheduled(false);
+      }
     }
   };
 
@@ -1157,7 +1168,7 @@ export default function POSPage() {
       clearInterval(interval);
       window.removeEventListener('focus', onFocus);
     };
-  }, [refreshScheduledOrders]);
+  }, [currentStoreId, refreshScheduledOrders]);
 
   // Replay persisted append attempt on reload to recover lost in-flight responses.
   useEffect(() => {
@@ -1350,12 +1361,17 @@ export default function POSPage() {
     setPrinterArabicShaping,
   ]);
 
-  const currentStoreId = currentTenant?.id || 'default';
   useEffect(() => {
     let cancelled = false;
     setActiveCounter(null);
     setShowPaymentQueue(false);
     setCounters([]);
+    setScheduledOrdersEnabled(false);
+    setShowScheduledOrders(false);
+    setScheduledOrders([]);
+    setNextScheduledCursor(null);
+    setScheduledCount(0);
+    setBlockedScheduledCount(0);
 
     api
       .get('/settings/multi_counter_enabled')
@@ -1403,6 +1419,22 @@ export default function POSPage() {
         setActiveCounter(null);
         setShowPaymentQueue(false);
         setCounters([]);
+      });
+
+    api
+      .get('/settings/scheduled_orders_enabled')
+      .then((res) => {
+        if (cancelled) return;
+        const isScheduledEnabled = res.data.setting?.value === 'true';
+        setScheduledOrdersEnabled(isScheduledEnabled);
+        if (!isScheduledEnabled) {
+          useCartStore.getState().setScheduledFor('');
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setScheduledOrdersEnabled(false);
+        useCartStore.getState().setScheduledFor('');
       });
 
     return () => {
@@ -1595,6 +1627,7 @@ export default function POSPage() {
       return false;
     }
     if (
+      scheduledOrdersEnabled &&
       !pendingOrder &&
       (cart.orderType === 'takeaway' || cart.orderType === 'delivery') &&
       cart.scheduledFor.trim().length > 0
@@ -1621,8 +1654,58 @@ export default function POSPage() {
     return true;
   };
 
+  const buildCartFingerprint = (
+    cartState: Parameters<typeof buildCartFingerprintFromState>[0],
+    orderItems?: Parameters<typeof buildCartFingerprintFromState>[1],
+  ) =>
+    buildCartFingerprintFromState(
+      {
+        ...cartState,
+        scheduledFor: scheduledOrdersEnabled ? cartState.scheduledFor : '',
+      },
+      orderItems,
+    );
+
   const buildCurrentCartFingerprint = (orderItems = cart.items.map(cartItemToOrderItem)) =>
-    buildCartFingerprintFromState(cart, orderItems);
+    buildCartFingerprint(cart, orderItems);
+
+  const parseStoredAttemptScheduledFor = (fingerprint: string | undefined): string | undefined => {
+    if (!fingerprint) return undefined;
+    try {
+      const parsed = JSON.parse(fingerprint) as { scheduled_for?: unknown };
+      return typeof parsed?.scheduled_for === 'string' && parsed.scheduled_for.trim()
+        ? parsed.scheduled_for.trim()
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const stripScheduledForFromFingerprint = (fingerprint: string): string => {
+    try {
+      const parsed = JSON.parse(fingerprint) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fingerprint;
+      const { scheduled_for: _ignored, ...rest } = parsed;
+      return JSON.stringify(rest);
+    } catch {
+      return fingerprint;
+    }
+  };
+
+  const fingerprintsMatchAcrossScheduleToggle = (
+    storedFingerprint: string | undefined,
+    currentFingerprint: string,
+  ): boolean => {
+    if (!storedFingerprint) return false;
+    if (storedFingerprint === currentFingerprint) return true;
+    if (!scheduledOrdersEnabled && parseStoredAttemptScheduledFor(storedFingerprint)) {
+      return (
+        stripScheduledForFromFingerprint(storedFingerprint) ===
+        stripScheduledForFromFingerprint(currentFingerprint)
+      );
+    }
+    return false;
+  };
 
   const handlePlaceOrder = async () => {
     if (!validateOrderPreflight()) return;
@@ -1636,7 +1719,7 @@ export default function POSPage() {
         if (
           storedAttempt &&
           storedAttempt.userId === activeUserId &&
-          storedAttempt.cartFingerprint === cartFingerprint &&
+          fingerprintsMatchAcrossScheduleToggle(storedAttempt.cartFingerprint, cartFingerprint) &&
           storedAttempt.orderIdempotencyKey &&
           storedAttempt.paymentIdempotencyKey
         ) {
@@ -1722,7 +1805,7 @@ export default function POSPage() {
         );
         if (!isSessionCurrent()) {
           // Item append succeeded on server while session changed. Stop before mutating state.
-          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
             useCartStore.getState().clearCart();
           }
           return;
@@ -1760,6 +1843,11 @@ export default function POSPage() {
         addItemsAttemptRef.current = null;
         setPendingOrder(null);
       } else {
+        const priorOrderAttempt = readPostpaidAttempt(originUserId);
+        const preservedPostpaidScheduledFor =
+          priorOrderAttempt?.userId === originUserId
+            ? parseStoredAttemptScheduledFor(priorOrderAttempt.fingerprint)
+            : undefined;
         const orderPayload = {
           table_id: cart.tableId,
           customer_id: cart.customerId,
@@ -1779,17 +1867,32 @@ export default function POSPage() {
           delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
           scheduled_for:
             cart.orderType === 'takeaway' || cart.orderType === 'delivery'
-              ? cart.scheduledFor.trim() || undefined
+              ? (scheduledOrdersEnabled ? cart.scheduledFor.trim() : undefined) || undefined
               : undefined,
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
           items: cart.items.map(cartItemToOrderItem),
         };
-        const orderFingerprint = JSON.stringify(orderPayload);
-        const priorOrderAttempt = readPostpaidAttempt(originUserId);
+        const baseOrderFingerprint = JSON.stringify(orderPayload);
+        const matchesPriorPostpaidOrderAttempt =
+          priorOrderAttempt?.userId === originUserId &&
+          fingerprintsMatchAcrossScheduleToggle(
+            priorOrderAttempt.fingerprint,
+            baseOrderFingerprint,
+          );
+        if (
+          matchesPriorPostpaidOrderAttempt &&
+          !scheduledOrdersEnabled &&
+          preservedPostpaidScheduledFor
+        ) {
+          orderPayload.scheduled_for = preservedPostpaidScheduledFor;
+        }
+        const orderFingerprint = matchesPriorPostpaidOrderAttempt
+          ? priorOrderAttempt.fingerprint
+          : baseOrderFingerprint;
         if (
           priorOrderAttempt?.userId === originUserId &&
-          priorOrderAttempt.fingerprint === cartFingerprint
+          fingerprintsMatchAcrossScheduleToggle(priorOrderAttempt.fingerprint, cartFingerprint)
         ) {
           const completedOrder = priorOrderAttempt.order;
           reportOrderFailure({
@@ -1815,11 +1918,7 @@ export default function POSPage() {
           });
           return;
         }
-        if (
-          priorOrderAttempt?.userId === originUserId &&
-          priorOrderAttempt.fingerprint === orderFingerprint &&
-          priorOrderAttempt.order
-        ) {
+        if (matchesPriorPostpaidOrderAttempt && priorOrderAttempt.order) {
           reportOrderFailure({
             code: 'order.retry_state.cleanup_failed',
             title: t('orderPlaced', { number: priorOrderAttempt.order.order_number }),
@@ -1838,16 +1937,14 @@ export default function POSPage() {
         }
         failureOperation = 'order.create';
         failureStage = 'order_submission';
-        const orderAttempt: PostpaidAttempt =
-          priorOrderAttempt?.userId === originUserId &&
-          priorOrderAttempt.fingerprint === orderFingerprint
-            ? priorOrderAttempt
-            : {
-                userId: originUserId || '',
-                fingerprint: orderFingerprint,
-                idempotencyKey: newIdempotencyKey(),
-                operationId: createOperationReference() || undefined,
-              };
+        const orderAttempt: PostpaidAttempt = matchesPriorPostpaidOrderAttempt
+          ? priorOrderAttempt
+          : {
+              userId: originUserId || '',
+              fingerprint: orderFingerprint,
+              idempotencyKey: newIdempotencyKey(),
+              operationId: createOperationReference() || undefined,
+            };
         const operationId = orderAttempt.operationId || createOperationReference();
         postpaidOperationId = operationId || null;
         failureCorrelationId = operationId;
@@ -1889,7 +1986,7 @@ export default function POSPage() {
           // Critical recovery invariant: order succeeded on server while session changed.
           // Originating user's recovery attempt is saved under getPostpaidOrderAttemptStorageKey(originUserId).
           // If the shared cart still matches the submitted cart, clear it so the new session doesn't double-order.
-          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
             useCartStore.getState().clearCart();
           }
           return;
@@ -1955,7 +2052,7 @@ export default function POSPage() {
         }
       }
       if (!isSessionCurrent()) {
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -2055,7 +2152,8 @@ export default function POSPage() {
       const storage = getAppendAttemptStorage();
       const storedAttempt = readPostpaidAttempt(originUserId);
       const storedAttemptMatchesCart =
-        storedAttempt?.userId === originUserId && storedAttempt.fingerprint === cartFingerprint;
+        storedAttempt?.userId === originUserId &&
+        fingerprintsMatchAcrossScheduleToggle(storedAttempt.fingerprint, cartFingerprint);
       if (storedAttemptMatchesCart && storedAttempt.order) {
         reportOrderFailure({
           code: 'order.retry_state.cleanup_failed',
@@ -2080,6 +2178,9 @@ export default function POSPage() {
             idempotencyKey: newIdempotencyKey(),
             operationId: createOperationReference() || undefined,
           };
+      const preservedScheduledFor = storedAttemptMatchesCart
+        ? parseStoredAttemptScheduledFor(storedAttempt.fingerprint)
+        : undefined;
       const storageKey = getPostpaidOrderAttemptStorageKey(originUserId);
       if (!savePostpaidAttempt(attempt, originUserId)) throw new OrderAttemptStorageError();
 
@@ -2090,7 +2191,10 @@ export default function POSPage() {
         guest_count: cart.orderType === 'dine_in' ? cart.guestCount : undefined,
         special_instructions: cart.orderNotes || undefined,
         scheduled_for:
-          cart.orderType === 'takeaway' ? cart.scheduledFor.trim() || undefined : undefined,
+          cart.orderType === 'takeaway'
+            ? (scheduledOrdersEnabled ? cart.scheduledFor.trim() : preservedScheduledFor) ||
+              undefined
+            : undefined,
         dispatch_policy: 'on_payment',
         waived_charge_ids: Array.from(cart.waivedChargeIds),
         opted_in_charge_ids: Array.from(cart.optedInChargeIds),
@@ -2154,7 +2258,7 @@ export default function POSPage() {
           });
       }
       if (!isOriginSessionCurrent()) {
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -2169,7 +2273,7 @@ export default function POSPage() {
       }
       if (!isLatestAttempt || !isOriginSessionCurrent()) return;
 
-      if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+      if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
         useCartStore.getState().clearCart();
       }
       setTicketModalOrder(createdOrder);
@@ -2266,11 +2370,14 @@ export default function POSPage() {
     const existingAttempt =
       storedAttempt &&
       storedAttempt.userId === originUserId &&
-      storedAttempt.cartFingerprint === cartFingerprint &&
+      fingerprintsMatchAcrossScheduleToggle(storedAttempt.cartFingerprint, cartFingerprint) &&
       storedAttempt.orderIdempotencyKey &&
       storedAttempt.paymentIdempotencyKey
         ? storedAttempt
         : null;
+    const preservedPrepaidScheduledFor = existingAttempt
+      ? parseStoredAttemptScheduledFor(existingAttempt.cartFingerprint)
+      : undefined;
     const savedPaymentRequest =
       existingAttempt?.bill && existingAttempt.paymentFingerprint
         ? parsePrepaidPaymentRequest(existingAttempt.paymentFingerprint)
@@ -2423,7 +2530,9 @@ export default function POSPage() {
               cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
             scheduled_for:
               cart.orderType === 'takeaway' || cart.orderType === 'delivery'
-                ? cart.scheduledFor.trim() || undefined
+                ? (scheduledOrdersEnabled
+                    ? cart.scheduledFor.trim()
+                    : preservedPrepaidScheduledFor) || undefined
                 : undefined,
             waived_charge_ids: Array.from(cart.waivedChargeIds),
             opted_in_charge_ids: Array.from(cart.optedInChargeIds),
@@ -2443,7 +2552,7 @@ export default function POSPage() {
         if (!isSessionCurrent()) {
           // Order succeeded on the server while session changed.
           // Recovery record is preserved under originUserId. Stop before generating/paying bill under new user.
-          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
             useCartStore.getState().clearCart();
           }
           return;
@@ -2543,7 +2652,7 @@ export default function POSPage() {
           if (generatedBill?.bill) {
             savePrepaidAttempt({ ...attempt, order, bill: generatedBill.bill }, originUserId);
           }
-          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
             useCartStore.getState().clearCart();
           }
           return;
@@ -2585,7 +2694,7 @@ export default function POSPage() {
 
       if (!isSessionCurrent()) {
         savePrepaidAttempt({ ...attempt, order, bill: paidBill }, originUserId);
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -2704,7 +2813,7 @@ export default function POSPage() {
         }
       }
       if (!isSessionCurrent()) {
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -3011,7 +3120,7 @@ export default function POSPage() {
       );
       if (!isSessionCurrent()) {
         // Items append succeeded on server while session changed. Stop before mutating state.
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -3051,7 +3160,7 @@ export default function POSPage() {
         appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder,
       );
       if (!isSessionCurrent()) {
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -3180,6 +3289,7 @@ export default function POSPage() {
     onOpenPaymentQueue: () => setShowPaymentQueue(true),
     counterRole: activeCounter?.role || null,
     multiCounterEnabled,
+    scheduledOrdersEnabled,
     onEditItem: setEditingCartItem,
     onModalOpenChange: setCartPanelModalOpen,
     existingOrder: pendingOrder,
@@ -3577,6 +3687,7 @@ export default function POSPage() {
         onCustomerModalOpenChange={setTopbarCustomerModalOpen}
         scheduledOrderCount={totalActiveScheduled}
         blockedScheduledCount={totalBlockedScheduled}
+        scheduledOrdersEnabled={scheduledOrdersEnabled}
         multiCounterEnabled={multiCounterEnabled}
         counters={counters}
         activeCounter={activeCounter}
@@ -3599,7 +3710,7 @@ export default function POSPage() {
       />
 
       {/* Main content area */}
-      <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
+      <div className="flex flex-1 min-h-0 overflow-hidden px-3 py-2 sm:px-4 sm:py-2.5 gap-3 sm:gap-4">
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
           <ProductGrid

@@ -437,6 +437,106 @@ try {
     /<div class="flex flex-wrap gap-2"><button[^>]*class="[^"]*shrink-0 px-3"[^>]*>[\s\S]*?<span class="truncate">Hold<\/span>[\s\S]*?<button[^>]*class="[^"]*flex-1 min-w-0 px-3"[^>]*><span class="truncate">Place Order<\/span>/,
     'rendered CartPanel footer keeps Hold compact (shrink-0 px-3) and gives Place Order the remaining width (flex-1 min-w-0 px-3)',
   );
+  assert.match(
+    cartMarkup,
+    /data-testid="pos-order-details-summary"/,
+    'rendered CartPanel renders the compact order-details summary strip in the header',
+  );
+  assert.match(
+    cartMarkup,
+    /data-testid="pos-order-note-toggle-btn"/,
+    'rendered CartPanel collapses empty order notes to an inline pill button in the footer',
+  );
+  assert.doesNotMatch(
+    cartMarkup,
+    /data-testid="pos-order-notes-input"/,
+    'rendered CartPanel omits the full-width order-notes input when orderNotes is empty',
+  );
+
+  // Delivery CartPanel summary strip and OrderDetailsDrawer rendered output
+  useCartStore.getState().setOrderType('delivery');
+  useCartStore.getState().setDeliveryAddress('42 Sukhumvit Rd');
+  useCartStore.getState().setExpectedPaymentMethod('cash', null);
+  useCartStore.getState().setOrderNotes('Ring doorbell');
+  Object.assign(useCartStore.getInitialState(), useCartStore.getState());
+
+  const deliveryCartDisabledMarkup = renderWithIntl(
+    React.createElement(CartPanel, {
+      tables: [],
+      currency: 'USD',
+      submitting: false,
+      onPlaceOrder: () => {},
+      scheduledOrdersEnabled: false,
+    }),
+  );
+  assert.doesNotMatch(
+    deliveryCartDisabledMarkup,
+    /data-testid="pos-schedule-section"/,
+    'rendered Delivery CartPanel omits pos-schedule-section when scheduledOrdersEnabled is false',
+  );
+  assert.match(
+    deliveryCartDisabledMarkup,
+    /data-testid="pos-order-details-summary"[\s\S]*?42 Sukhumvit Rd[\s\S]*?Cash/,
+    'rendered Delivery CartPanel summary strip still displays address and expected payment when scheduledOrdersEnabled is false',
+  );
+
+  const deliveryCartMarkup = renderWithIntl(
+    React.createElement(CartPanel, {
+      tables: [],
+      currency: 'USD',
+      submitting: false,
+      onPlaceOrder: () => {},
+      scheduledOrdersEnabled: true,
+    }),
+  );
+  assert.match(
+    deliveryCartMarkup,
+    /data-testid="pos-schedule-section"[\s\S]*?data-testid="pos-order-details-summary"[\s\S]*?42 Sukhumvit Rd[\s\S]*?Cash/,
+    'rendered Delivery CartPanel summary strip displays truncated address, expected payment badge, and schedule section when scheduledOrdersEnabled is true',
+  );
+  assert.match(
+    deliveryCartMarkup,
+    /data-testid="pos-order-notes-input"[^>]*value="Ring doorbell"/,
+    'rendered CartPanel expands the compact order-notes input when orderNotes is non-empty',
+  );
+
+  const { OrderDetailsDrawer } = require('../frontend/src/components/pos/OrderDetailsDrawer');
+  const detailsDrawerDisabledMarkup = renderWithIntl(
+    React.createElement(OrderDetailsDrawer, {
+      open: true,
+      onOpenChange: () => {},
+      effectiveTimezone: 'UTC',
+      scheduleErrorMessage: null,
+      customPaymentMethods: [],
+      scheduledOrdersEnabled: false,
+    }),
+  );
+  assert.doesNotMatch(
+    detailsDrawerDisabledMarkup,
+    /data-testid="pos-send-to-kitchen-input"/,
+    'rendered OrderDetailsDrawer omits kitchen scheduling inputs when scheduledOrdersEnabled is false',
+  );
+
+  const detailsDrawerMarkup = renderWithIntl(
+    React.createElement(OrderDetailsDrawer, {
+      open: true,
+      onOpenChange: () => {},
+      effectiveTimezone: 'UTC',
+      scheduleErrorMessage: null,
+      customPaymentMethods: [],
+      scheduledOrdersEnabled: true,
+    }),
+  );
+  assert.match(
+    detailsDrawerMarkup,
+    /data-slot="sheet-content"[^>]*top-\[var\(--flo-sidebar-block-start,0px\)\][^>]*data-testid="pos-order-details-drawer"/,
+    'rendered OrderDetailsDrawer offsets below the desktop titlebar',
+  );
+  assert.match(
+    detailsDrawerMarkup,
+    /data-testid="pos-delivery-address-input"[\s\S]*?data-testid="pos-delivery-note-input"[\s\S]*?data-testid="pos-send-to-kitchen-input"[\s\S]*?data-testid="pos-order-details-done-btn"/,
+    'rendered OrderDetailsDrawer exposes delivery address, delivery note, schedule input, and Done button when scheduledOrdersEnabled is true',
+  );
 
   // 5. PosTopbar and CustomerSearch rendered output
   const PosTopbar = require('../frontend/src/components/pos/PosTopbar').default;

@@ -503,7 +503,8 @@ rule that a renderer consumes a document does not hold for the WebUSB and browse
 The projection carries the order and delivery notes, and the summary from
 `GET /api/printers/delivery-slip-payment/:orderId` carries the expected collection method, which
 all three paths word through `deliverySlipExpectedPaymentText` in `shared/print/document.ts`. The
-cart records both delivery details beside the delivery address, and only for delivery orders.
+cart records both delivery details and the delivery address in its order-details summary and drawer,
+and only for delivery orders.
 
 The action is reachable on an unpaid delivery order, because that is the workflow: the courier
 leaves before the customer settles. `OrderCard` renders it outside the payment branches, limited to

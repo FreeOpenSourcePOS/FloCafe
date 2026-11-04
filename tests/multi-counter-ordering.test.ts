@@ -238,6 +238,7 @@ async function main() {
   setStoreSetting(db, 'country', 'US');
   setStoreSetting(db, 'currency', 'USD');
   setStoreSetting(db, 'timezone', 'America/New_York');
+  setStoreSetting(db, 'scheduled_orders_enabled', 'true');
   setStoreSetting(db, 'kds_enabled', 'true');
   setStoreSetting(db, 'kot_printing_enabled', 'true');
   setStoreSetting(db, 'auto_print_kot', 'true');

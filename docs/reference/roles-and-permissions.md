@@ -156,9 +156,10 @@ every save.
 
 **Cash shifts.** Opening, viewing, and closing shifts are gated by `cash.shifts.open`,
 `cash.shifts.view`, and `cash.shifts.close`. Non-`owner`/`manager` roles (such as `cashier`) may
-only view, preview, close, attach explicit drawer movements to, or read/export the shift X-report
+only view, preview, close, attach explicit drawer movements to, read/export the shift X-report, or
+print the shift Z-report (`POST /api/cash-closures/:id/print`)
 for the shift they opened (`403` when targeting another user's shift), whereas an `owner` or
-`manager` can inspect, export, and close any staff member's shift, with the closing actor recorded
+`manager` can inspect, export, print, and close any staff member's shift, with the closing actor recorded
 on the closure row. On `POST /api/cash-sessions/:id/close` and `POST /api/cash-closures/movements`,
 the own-session rule is enforced inside the write transaction, where the stored session and the
 actor are read together. This is a context policy, not a permission - see

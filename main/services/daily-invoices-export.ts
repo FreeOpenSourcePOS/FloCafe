@@ -517,7 +517,7 @@ export function buildDailyInvoicesExportDataset(
     DAILY_INVOICES_EXPORT_MAX_RANGE_DAYS,
   );
 
-  const prelimTimezone = readDbSetting(db, 'timezone') || resolveExportTimezone();
+  const prelimTimezone = readDbSetting(db, 'timezone') || resolveExportTimezone(db);
   const prelimBusinessDayStart = tenantBusinessDayStartTime(db);
   const prelimDayWindows = range.dates.map((businessDate) => {
     const [start, end] = dayBoundsInTimezone(businessDate, prelimTimezone, prelimBusinessDayStart);

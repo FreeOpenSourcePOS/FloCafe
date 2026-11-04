@@ -4628,6 +4628,7 @@ export function restoreCompatibleBackupForDowngrade(
 
         initializeDatabase(false, true, true);
         const freshDb = getDatabase();
+        repairBackupSchemaDrift(freshDb);
         const restoredSchemaVersion = getCurrentSchemaVersion();
 
         const hasMetaTable = Boolean(
@@ -5507,6 +5508,7 @@ export function mergeRestoreProtectedSettings(
   settingsRevision += 1;
 }
 
+// Exported for outbox/diagnostics bounds verification tests; authoritative restore replaces the DB directly.
 export function captureRestoreOutboxState(dbInstance: Database.Database): RestoreOutboxState {
   const pending = (table: string) =>
     dbInstance
@@ -6163,6 +6165,30 @@ export function restoreBackup(
             error: `Backup contains ${backupForeignKeyViolations.size} foreign-key violation(s)`,
           };
         }
+        const stagedTables = new Set(getTables(stagedDb));
+        const missingCoreTables = CORE_FLO_BACKUP_TABLES.filter(
+          (table) => !stagedTables.has(table),
+        );
+        if (missingCoreTables.length > 0) {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: `Backup is missing required Flo Cafe table(s): ${missingCoreTables.join(', ')}`,
+          };
+        }
+        if (backupSchemaVersion >= 85 && !stagedTables.has('inventory_movements')) {
+          return {
+            success: false,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: 0,
+            error: 'Backup is missing required table(s): inventory_movements',
+          };
+        }
         const inventoryError = validateInventoryLedgerDatabase(stagedDb);
         if (inventoryError) {
           return {
@@ -6228,6 +6254,7 @@ export function restoreBackup(
         initializeDatabase(false, true, true);
 
         const freshDb = getDatabase();
+        repairBackupSchemaDrift(freshDb);
         freshDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
         const restoredSchemaVersion = getCurrentSchemaVersion();
         const putMeta = freshDb.prepare(

@@ -1022,6 +1022,11 @@ async function run() {
         1,
         'setup-restore-backup-button remains rendered on Step 2',
       );
+      assert.equal(
+        step2Buttons[0].props?.disabled,
+        false,
+        'setup-restore-backup-button is enabled when loading is false',
+      );
 
       // Verify clicking setup-restore-backup-button and dispatching RESTORE_FROM_FILE_EVENT invoke pickRestoreFile
       let pickRestoreCalls = 0;
@@ -1414,6 +1419,24 @@ async function run() {
           dispatchedRestoreEvents,
           1,
           'MenuActionHandler dispatches RESTORE_FROM_FILE_EVENT when Ctrl+Shift+R is pressed on /setup',
+        );
+
+        // Repeated keydown events (repeat: true) are ignored
+        (globalThis as any).window.dispatchEvent({
+          type: 'keydown',
+          key: 'R',
+          ctrlKey: true,
+          shiftKey: true,
+          altKey: false,
+          repeat: true,
+          defaultPrevented: false,
+          preventDefault: () => {},
+        });
+        await flushMicrotasks();
+        assert.equal(
+          dispatchedRestoreEvents,
+          1,
+          'MenuActionHandler ignores repeated keydown events for Ctrl+Shift+R',
         );
 
         (globalThis as any).window.location.pathname = '/auth/login';

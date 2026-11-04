@@ -213,14 +213,16 @@ export default function SetupPage() {
   }, []);
 
   const restoreInFlightRef = useRef(false);
+  const initInFlightRef = useRef(false);
 
   const handleRestoreBackup = useCallback(async () => {
-    if (restoreInFlightRef.current) return;
+    if (restoreInFlightRef.current || initInFlightRef.current || loading) return;
     if (!window.electronAPI?.pickRestoreFile) {
       toast.error(tCommon('notAvailable'));
       return;
     }
     restoreInFlightRef.current = true;
+    let succeeded = false;
     try {
       const picked = await window.electronAPI.pickRestoreFile();
       if (picked.canceled || !picked.path || !picked.token) return;
@@ -237,6 +239,7 @@ export default function SetupPage() {
         confirmation: 'RESTORE BACKUP',
         selection_token: picked.token,
       });
+      succeeded = true;
       toast.success(tRestore('success'));
       setTimeout(() => window.location.replace('/auth/login'), 1500);
     } catch (error) {
@@ -245,9 +248,11 @@ export default function SetupPage() {
         : undefined;
       toast.error(detail || tSettings('restoreFailedGeneric'));
     } finally {
-      restoreInFlightRef.current = false;
+      if (!succeeded) {
+        restoreInFlightRef.current = false;
+      }
     }
-  }, [confirm, tCommon, tRestore, tSettings]);
+  }, [confirm, loading, tCommon, tRestore, tSettings]);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('action') === 'restore-from-file') {
@@ -312,7 +317,7 @@ export default function SetupPage() {
   };
 
   const handleCompleteSetup = async () => {
-    if (loading) return;
+    if (loading || initInFlightRef.current || restoreInFlightRef.current) return;
     if (!country) {
       toast.error(t('chooseCountryRequired'));
       setStep(1);
@@ -351,6 +356,7 @@ export default function SetupPage() {
       }
     }
 
+    initInFlightRef.current = true;
     setLoading(true);
     try {
       const countryProfile = selectedCountry;
@@ -386,6 +392,7 @@ export default function SetupPage() {
     } catch {
       toast.error(t('errorGeneric'));
     } finally {
+      initInFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -439,6 +446,7 @@ export default function SetupPage() {
             type="button"
             variant="outline"
             size="sm"
+            disabled={loading}
             data-testid="setup-restore-backup-button"
             onClick={() => void handleRestoreBackup()}
             className="shrink-0 gap-2"

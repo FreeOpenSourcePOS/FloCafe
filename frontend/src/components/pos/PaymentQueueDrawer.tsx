@@ -612,7 +612,7 @@ export function PaymentQueueDrawer({
   return (
     <div
       data-testid="payment-queue-drawer"
-      className="fixed inset-0 z-50 flex justify-end bg-black/50"
+      className="fixed inset-x-0 bottom-0 top-[var(--flo-sidebar-block-start,0px)] z-50 flex justify-end bg-black/50"
       onClick={(e) => {
         if (e.target === e.currentTarget) handleClose();
       }}
@@ -647,7 +647,7 @@ export function PaymentQueueDrawer({
               onClick={handleClose}
               data-testid="close-queue-drawer-btn"
               aria-label={tCommon('close')}
-              className="touch-target rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="touch-target shrink-0 cursor-pointer rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <X size={18} />
             </button>

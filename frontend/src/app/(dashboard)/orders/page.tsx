@@ -8,7 +8,17 @@ import api, {
 } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { Trash2, Printer, Percent, Banknote, Search, Plus, Loader2, Download } from 'lucide-react';
+import {
+  Trash2,
+  Printer,
+  Percent,
+  Banknote,
+  Search,
+  Plus,
+  Loader2,
+  Download,
+  X,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import CreateCustomerModal from '@/components/pos/CreateCustomerModal';
@@ -1832,15 +1842,30 @@ export default function OrdersPage() {
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center gap-3 mb-4 shrink-0">
         {/* Search by order number, customer name, or phone */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="relative w-full sm:max-w-xs">
+          <Search
+            size={16}
+            className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
           <input
             type="text"
             placeholder={tOrders('search')}
             value={filters.search}
             onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-            className="w-full ps-9 pe-3 py-2 border border-border bg-card rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+            className={`w-full rounded-lg border border-border bg-card py-2 ps-9 ${
+              filters.search !== '' ? 'pe-9' : 'pe-3'
+            } text-sm outline-none focus:ring-2 focus:ring-brand`}
           />
+          {filters.search !== '' && (
+            <button
+              type="button"
+              onClick={() => setFilters((prev) => ({ ...prev, search: '' }))}
+              aria-label={tCommon('clear')}
+              className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
         {/* Table filter */}

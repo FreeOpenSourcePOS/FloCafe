@@ -662,7 +662,17 @@ export default function CartPanel({
               const hasSubtext = item.addons.length > 0 || Boolean(item.special_instructions);
               return (
                 <div key={item.id} data-testid="cart-item" className="py-1.5 first:pt-0 last:pb-0">
-                  <div className="flex items-baseline justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      data-testid="cart-item-remove-btn"
+                      onClick={() => cart.removeItem(item.id)}
+                      className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-red-500 dark:text-red-400 transition-colors after:content-[''] after:absolute after:-inset-1.5 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-300 active:bg-red-100 dark:active:bg-red-950/60"
+                      aria-label={t('remove')}
+                      title={t('remove')}
+                    >
+                      <Trash2 size={13} />
+                    </button>
                     <p className="min-w-0 flex-1 break-words text-sm font-medium leading-snug text-foreground">
                       {item.variant
                         ? `${item.product.name} (${item.variant.name})`
@@ -710,15 +720,6 @@ export default function CartPanel({
                       )}
                     </div>
                     <div className="ms-auto flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => cart.removeItem(item.id)}
-                        className="order-last relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 dark:hover:text-red-400 active:bg-red-50 dark:active:bg-red-950/40"
-                        aria-label={t('remove')}
-                        title={t('remove')}
-                      >
-                        <Trash2 size={13} />
-                      </button>
                       {canOverridePrice && (
                         <button
                           type="button"
@@ -858,13 +859,14 @@ export default function CartPanel({
             )}
           </div>
         )}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {canHold && (
-            <Button variant="outline" onClick={handleHold} className="flex-1">
-              <Pause size={14} className="me-1" /> {t('holdButton')}
+            <Button variant="outline" onClick={handleHold} className="shrink-0 px-3">
+              <Pause size={14} className="me-1 shrink-0" />
+              <span className="truncate">{t('holdButton')}</span>
               <span
                 aria-hidden="true"
-                className="hidden sm:inline-flex ms-1 px-1 py-0.2 rounded border border-border text-[10px] font-mono text-muted-foreground"
+                className="hidden sm:inline-flex shrink-0 ms-1 px-1 py-0.2 rounded border border-border text-[10px] font-mono text-muted-foreground"
               >
                 F8
               </span>
@@ -874,15 +876,15 @@ export default function CartPanel({
             <Button
               onClick={onPlaceOrder}
               disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
-              className="flex-1"
+              className="flex-1 min-w-0 px-3"
               size="lg"
               data-testid="pos-append-existing-order-btn"
             >
-              {submitting ? t('placing') : t('placeOrderButton')}
+              <span className="truncate">{submitting ? t('placing') : t('placeOrderButton')}</span>
               {!submitting && (
                 <span
                   aria-hidden="true"
-                  className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
+                  className="hidden sm:inline-flex shrink-0 ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
                 >
                   Space
                 </span>
@@ -893,12 +895,12 @@ export default function CartPanel({
               <Button
                 type="button"
                 onClick={onOpenPaymentQueue}
-                className="flex-1"
+                className="flex-1 min-w-0 px-3"
                 size="lg"
                 data-testid="pos-open-payment-queue-btn"
               >
-                <CreditCard className="me-2 h-4 w-4" />
-                {t('paymentQueue')}
+                <CreditCard className="me-2 h-4 w-4 shrink-0" />
+                <span className="truncate">{t('paymentQueue')}</span>
               </Button>
             ) : (
               <>
@@ -907,25 +909,27 @@ export default function CartPanel({
                     type="button"
                     variant="outline"
                     onClick={onOpenPaymentQueue}
-                    className="flex-1"
+                    className="flex-1 min-w-0 px-3"
                     size="lg"
                     data-testid="pos-open-payment-queue-btn"
                   >
-                    <CreditCard className="me-2 h-4 w-4" />
-                    {t('paymentQueue')}
+                    <CreditCard className="me-2 h-4 w-4 shrink-0" />
+                    <span className="truncate">{t('paymentQueue')}</span>
                   </Button>
                 )}
                 <Button
                   onClick={onPlaceOrder}
                   disabled={submitting || Boolean(scheduleErrorMessage)}
-                  className="flex-1"
+                  className="flex-1 min-w-0 px-3"
                   size="lg"
                 >
-                  {submitting ? t('placing') : t('placeOrderButton')}
+                  <span className="truncate">
+                    {submitting ? t('placing') : t('placeOrderButton')}
+                  </span>
                   {!submitting && (
                     <span
                       aria-hidden="true"
-                      className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
+                      className="hidden sm:inline-flex shrink-0 ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
                     >
                       Space
                     </span>
@@ -940,15 +944,15 @@ export default function CartPanel({
             <Button
               onClick={onSendToPayment}
               disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
-              className="flex-1"
+              className="flex-1 min-w-0 px-3"
               size="lg"
               data-testid="pos-send-to-payment-btn"
             >
-              {submitting ? t('placing') : t('sendToPayment')}
+              <span className="truncate">{submitting ? t('placing') : t('sendToPayment')}</span>
               {!submitting && (
                 <span
                   aria-hidden="true"
-                  className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
+                  className="hidden sm:inline-flex shrink-0 ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
                 >
                   Space
                 </span>
@@ -963,23 +967,25 @@ export default function CartPanel({
                 variant="outline"
                 onClick={onSendToPayment}
                 disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
-                className="flex-1"
+                className="flex-1 min-w-0 px-3"
                 size="lg"
                 data-testid="pos-send-to-payment-btn"
               >
-                {t('sendToPayment')}
+                <span className="truncate">{t('sendToPayment')}</span>
               </Button>
               <Button
                 onClick={onPlaceOrder}
                 disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
-                className="flex-1"
+                className="flex-1 min-w-0 px-3"
                 size="lg"
               >
-                {submitting ? t('placing') : t('placeOrderButton')}
+                <span className="truncate">
+                  {submitting ? t('placing') : t('placeOrderButton')}
+                </span>
                 {!submitting && (
                   <span
                     aria-hidden="true"
-                    className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
+                    className="hidden sm:inline-flex shrink-0 ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
                   >
                     Space
                   </span>
@@ -990,14 +996,14 @@ export default function CartPanel({
             <Button
               onClick={onPlaceOrder}
               disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
-              className="flex-1"
+              className="flex-1 min-w-0 px-3"
               size="lg"
             >
-              {submitting ? t('placing') : t('placeOrderButton')}
+              <span className="truncate">{submitting ? t('placing') : t('placeOrderButton')}</span>
               {!submitting && (
                 <span
                   aria-hidden="true"
-                  className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
+                  className="hidden sm:inline-flex shrink-0 ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
                 >
                   Space
                 </span>

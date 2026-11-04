@@ -276,6 +276,17 @@ html[data-flo-desktop-titlebar='true'] {
   --flo-sidebar-block-start: var(--flo-titlebar-height);
 }
 
+[data-testid='scheduled-orders-drawer'],
+[data-testid='payment-queue-drawer'],
+[data-slot='sheet-overlay'],
+[data-slot='sheet-content'],
+[data-slot='drawer-overlay'],
+[data-slot='drawer-content'],
+[role='dialog'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 /* Modern minimalist toast styling (Linear / Sonner aesthetic) */
 .flo-toast-card {
   position: relative !important;

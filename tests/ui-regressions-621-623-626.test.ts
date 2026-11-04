@@ -453,7 +453,7 @@ try {
     'rendered CartPanel omits the full-width order-notes input when orderNotes is empty',
   );
 
-  // Delivery CartPanel summary strip and OrderDetailsDrawer rendered output (#1456)
+  // Delivery CartPanel summary strip and OrderDetailsDrawer rendered output
   useCartStore.getState().setOrderType('delivery');
   useCartStore.getState().setDeliveryAddress('42 Sukhumvit Rd');
   useCartStore.getState().setExpectedPaymentMethod('cash', null);

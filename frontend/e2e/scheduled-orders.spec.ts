@@ -79,13 +79,27 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await cartShell.getByRole('button', { name: 'Delivery', exact: true }).click();
     await expect(cartShell.getByTestId('pos-schedule-section')).toHaveCount(0);
     await expect(cartShell.getByTestId('pos-order-details-summary')).toBeVisible();
+    await captureScreenshot(page, '00a-pos-scheduled-orders-disabled-clean-cart.png');
 
-    // Enable scheduled_orders_enabled and reload POS
-    const enableRes = await page.request.put(`${BASE}/api/settings/scheduled_orders_enabled`, {
-      headers: ownerHeaders,
-      data: { value: 'true' },
+    // Enable scheduled_orders_enabled via Settings -> POS toggle and verify POS reflects it
+    await page.goto(`${BASE}/settings`);
+    await page.getByRole('button', { name: /POS/i }).first().click();
+    const scheduledToggle = page.getByTestId('setting-scheduled-orders-enabled');
+    await expect(scheduledToggle).toBeVisible();
+    await expect(scheduledToggle).toHaveAttribute('aria-checked', 'false');
+    const putTogglePromise = page.waitForResponse((res) => {
+      const url = new URL(res.url());
+      return (
+        res.request().method() === 'PUT' &&
+        url.pathname === '/api/settings/scheduled_orders_enabled'
+      );
     });
-    expect(enableRes.ok()).toBeTruthy();
+    await scheduledToggle.click();
+    const putToggleRes = await putTogglePromise;
+    expect(putToggleRes.ok()).toBeTruthy();
+    await expect(scheduledToggle).toHaveAttribute('aria-checked', 'true');
+    await captureScreenshot(page, '00b-settings-pos-scheduled-orders-toggle.png');
+
     await page.goto(`${BASE}/pos`);
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
     await expect(page.getByTestId('pos-scheduled-orders-btn')).toBeVisible();
@@ -101,13 +115,19 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     await expect(cartShell.getByTestId('pos-schedule-section')).toBeVisible();
     await expect(cartShell.getByText('Send to kitchen at')).toBeVisible();
 
+    // Short screen (1024x600) Delivery compact layout check: cart items scroll area >= 300px
+    await page.setViewportSize({ width: 1024, height: 600 });
+    await page.getByTestId('pos-product-card').first().click();
+    await expect(page.getByTestId('cart-item')).toHaveCount(1);
+    const shortDeliveryCartBox = await page.getByTestId('cart-items-scroll').boundingBox();
+    expect(shortDeliveryCartBox).not.toBeNull();
+    expect(shortDeliveryCartBox!.height).toBeGreaterThanOrEqual(300);
+    await captureScreenshot(page, '00c-pos-short-screen-1024x600-delivery-cart.png');
+    await page.setViewportSize({ width: 1280, height: 720 });
+
     await cartShell.getByRole('button', { name: 'Takeaway', exact: true }).click();
     await expect(cartShell.getByTestId('pos-schedule-section')).toBeVisible();
     await expect(cartShell.getByText('Send to kitchen at')).toBeVisible();
-
-    // Add E2E Coffee to cart
-    await page.getByTestId('pos-product-card').first().click();
-    await expect(page.getByTestId('cart-item')).toHaveCount(1);
 
     // Past time triggers inline error and disables Place Order
     await cartShell.getByTestId('pos-order-details-summary').click();
@@ -132,6 +152,7 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     const initialFutureWall = futureBangkokWallClock(90);
     await scheduleInput.fill(initialFutureWall);
     await expect(detailsDrawer.getByTestId('pos-schedule-error')).toHaveCount(0);
+    await captureScreenshot(page, '01a-pos-order-details-drawer-open.png');
     await detailsDrawer.getByTestId('pos-order-details-done-btn').click();
     await expect(detailsDrawer).toHaveCount(0);
     await captureScreenshot(page, '01-pos-send-to-kitchen-at.png');

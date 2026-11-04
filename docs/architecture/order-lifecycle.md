@@ -72,8 +72,10 @@ table `occupied`.
 ## Scheduled orders and kitchen release
 
 Takeaway and delivery orders in the main POS (desktop and browser) can defer kitchen release by
-supplying `scheduled_for` ("Send to kitchen at"). Scheduling is rejected (`400`) on `dine_in` and
-`online` orders.
+supplying `scheduled_for` ("Send to kitchen at"). In the POS interface, kitchen scheduling controls
+and the scheduled orders queue are shown when `scheduled_orders_enabled` is enabled (`false` by
+default, configurable in Settings > POS). Scheduling is rejected (`400`) on `dine_in` and `online`
+orders.
 
 Scheduling separates kitchen release from order status via four columns on `orders`:
 

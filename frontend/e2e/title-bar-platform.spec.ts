@@ -601,7 +601,10 @@ test('setup page exposes top Restore Backup callout across steps, top menu bar o
 
   // 4. Advancing to Step 2 keeps the Restore Backup callout visible above the wizard Card
   await page.locator('.max-h-72 button').first().click();
-  await page.locator('button', { hasText: /Continue/ }).first().click();
+  await page
+    .locator('button', { hasText: /Continue/ })
+    .first()
+    .click();
   await expect(page.locator('#master-pin')).toBeVisible();
   await expect(callout).toBeVisible();
   await expect(restoreButton).toBeVisible();

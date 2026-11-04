@@ -448,6 +448,7 @@ export function startServerApp(): Promise<void> {
           return res.status(403).json({
             error:
               'Bill printing is disabled for the Server Companion App. An owner or manager can enable it in Settings.',
+            code: 'BILL_PRINTING_DISABLED',
           });
         }
         return forwardToMainApi(req, res, '/printers/print-bill');

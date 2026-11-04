@@ -121,16 +121,29 @@ test.describe('Server App tableside ordering', () => {
     await search.fill('E2E Coffee');
     await search.press('Enter');
 
+    const kotResponsePromise = page.waitForResponse(
+      (res) => res.url().includes('/api/printers/print-kot') && res.status() === 400,
+    );
+    const billResponsePromise = page.waitForResponse(
+      (res) => res.url().includes('/api/printers/print-bill') && res.status() === 400,
+    );
+
     await page.getByRole('button', { name: 'Send to kitchen' }).first().click();
-    await expect(page.getByText('Order sent').first()).toBeVisible();
-    await expect.poll(() => kotCalls).toBe(1);
-    await expect.poll(() => billCalls).toBe(1);
+    await expect(page.getByText('Order sent', { exact: true }).first()).toBeVisible();
+
+    await Promise.all([kotResponsePromise, billResponsePromise]);
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+    expect(kotCalls).toBe(1);
+    expect(billCalls).toBe(1);
 
     const browserPrintCalls = await page.evaluate(
       () => (window as unknown as { __browserPrintCalls?: number }).__browserPrintCalls ?? 0,
     );
     expect(browserPrintCalls).toBe(0);
     await expect(page.getByText('No default printer configured')).toHaveCount(0);
+    await expect(page.getByText("Order sent, but the kitchen ticket didn't print")).toHaveCount(0);
+    await expect(page.getByText("Order sent, but the bill didn't print")).toHaveCount(0);
   });
 
   test('explains that tables are required when none are set up', async ({ page }) => {

@@ -918,6 +918,7 @@ router.post(
       return res.status(403).json({
         error:
           'Bill printing is disabled for the server role. An owner or manager can enable it in Settings.',
+        code: 'BILL_PRINTING_DISABLED',
       });
     }
     try {

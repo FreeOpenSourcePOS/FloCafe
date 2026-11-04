@@ -110,10 +110,10 @@ export function buildKotBytes(
   const bannerWidth = displayCellWidth(bannerText) * 2 <= cols ? 2 : 1;
   enc.align('center').bold(true).width(bannerWidth).height(2);
   safePrinterText(enc, bannerText, warnings, false, arabicShaping, undefined, cols, language)
+    .newline()
     .width(1)
     .height(1)
-    .bold(false)
-    .newline();
+    .bold(false);
 
   // Order details
   enc.align('left').bold(true);
@@ -298,18 +298,43 @@ export function buildKotBytes(
     hasItems = true;
 
     // Item name with quantity
-    const qtyName = `${item.quantity}x ${formatItemHeading(item.product_name, item.variant_selection)}`;
+    const itemPrefix = `${item.quantity}x `;
+    const itemIndent = ' '.repeat(displayCellWidth(itemPrefix));
+    const itemHeading = formatItemHeading(item.product_name, item.variant_selection);
+    const normalizedHeading = normalizeThermalText(itemHeading, thermalCapabilities);
     enc.bold(true);
-    safePrinterText(
-      enc,
-      truncateText(qtyName, cols),
-      warnings,
-      false,
-      arabicShaping,
-      undefined,
-      undefined,
-      language,
-    ).newline();
+    if (
+      arabicShaping &&
+      /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(normalizedHeading)
+    ) {
+      safePrinterText(
+        enc,
+        truncateText(`${itemPrefix}${itemHeading}`, cols),
+        warnings,
+        false,
+        arabicShaping,
+        undefined,
+        undefined,
+        language,
+      ).newline();
+    } else {
+      const wrappedHeading = wrapPrinterText(
+        normalizedHeading,
+        Math.max(1, cols - displayCellWidth(itemPrefix)),
+      );
+      wrappedHeading.forEach((line, index) => {
+        safePrinterText(
+          enc,
+          `${index === 0 ? itemPrefix : itemIndent}${line}`,
+          warnings,
+          false,
+          arabicShaping,
+          undefined,
+          undefined,
+          language,
+        ).newline();
+      });
+    }
     enc.bold(false);
 
     // Addons can come from older/API paths as a JSON string. Normalize before
@@ -341,16 +366,41 @@ export function buildKotBytes(
 
     // Special instructions
     if (item.special_instructions) {
-      safePrinterText(
-        enc,
-        `   >> ${truncateText(item.special_instructions, cols - 6)}`,
-        warnings,
-        false,
-        arabicShaping,
-        undefined,
-        undefined,
-        language,
-      ).newline();
+      const normalizedComment = normalizeThermalText(
+        item.special_instructions,
+        thermalCapabilities,
+      );
+      if (
+        arabicShaping &&
+        /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(
+          normalizedComment,
+        )
+      ) {
+        safePrinterText(
+          enc,
+          `   >> ${truncateText(item.special_instructions, cols - 6)}`,
+          warnings,
+          false,
+          arabicShaping,
+          undefined,
+          undefined,
+          language,
+        ).newline();
+      } else {
+        const wrappedComment = wrapPrinterText(normalizedComment, Math.max(1, cols - 6));
+        wrappedComment.forEach((line, index) => {
+          safePrinterText(
+            enc,
+            `${index === 0 ? '   >> ' : '      '}${line}`,
+            warnings,
+            false,
+            arabicShaping,
+            undefined,
+            undefined,
+            language,
+          ).newline();
+        });
+      }
     }
 
     enc.newline();

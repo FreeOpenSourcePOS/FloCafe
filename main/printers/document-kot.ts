@@ -11,6 +11,7 @@ import {
   formatVariantItemHeading,
   parseVariantSelection,
   pushWrapped,
+  pushWrappedShapedLine,
   truncate,
   truncateShapedLine,
   type PrintWarning,
@@ -396,21 +397,28 @@ function kotItemLines(
   arabicShaping: boolean,
   language: string,
   capabilities?: ThermalPrinterCapabilities,
+  sourceLines?: string[],
+  sourceControlLines?: string[],
 ): string[] {
   const lines: string[] = [];
   const itemPrefix = row.quantity + 'x  ';
-  lines.push(
-    '{DOUBLE_HEIGHT}{BOLD}' +
-      itemPrefix +
-      truncateShapedLine(
-        row.name.text,
-        Math.max(1, cols - displayCellWidth(itemPrefix)),
-        arabicShaping,
-        language,
-        capabilities,
-      ) +
+  const itemIndent = ' '.repeat(displayCellWidth(itemPrefix));
+  const nameStart = lines.length;
+  pushWrappedShapedLine(
+    lines,
+    row.name.text,
+    Math.max(1, cols - displayCellWidth(itemPrefix)),
+    arabicShaping,
+    language,
+    capabilities,
+    (segment, index) =>
+      '{DOUBLE_HEIGHT}{BOLD}' +
+      (index === 0 ? itemPrefix : itemIndent) +
+      segment +
       '{/BOLD}{/DOUBLE_HEIGHT}',
   );
+  sourceLines?.push(`${row.quantity}x  ${row.name.text}`);
+  sourceControlLines?.push(lines[nameStart] ?? '');
   for (const addon of row.addons) {
     const quantity = addon.quantity ?? 1;
     const quantitySuffix = quantity > 1 ? ` x${quantity}` : '';
@@ -420,19 +428,24 @@ function kotItemLines(
       language,
       capabilities,
     );
-    lines.push('  + ' + name + quantitySuffix);
+    const addonLine = '  + ' + name + quantitySuffix;
+    lines.push(addonLine);
+    sourceLines?.push(`  + ${addon.text}${quantitySuffix}`);
+    sourceControlLines?.push(addonLine);
   }
   if (row.specialInstructions) {
-    lines.push(
-      '  >> ' +
-        truncateShapedLine(
-          row.specialInstructions.text,
-          Math.max(1, cols - 8),
-          arabicShaping,
-          language,
-          capabilities,
-        ),
+    const commentStart = lines.length;
+    pushWrappedShapedLine(
+      lines,
+      row.specialInstructions.text,
+      Math.max(1, cols - 5),
+      arabicShaping,
+      language,
+      capabilities,
+      (segment, index) => (index === 0 ? '  >> ' : '     ') + segment,
     );
+    sourceLines?.push('  >> ' + row.specialInstructions.text);
+    sourceControlLines?.push(lines[commentStart] ?? '');
   }
   return lines;
 }
@@ -473,27 +486,18 @@ export function renderKotDocumentToLines(
   if (items) {
     for (const [rowIndex, row] of items.rows.entries()) {
       const rowStart = lines.length;
+      const sourceLines: string[] = [];
+      const sourceControlLines: string[] = [];
       const rowLines = kotItemLines(
         row,
         cols,
         options.arabicShaping,
         options.language,
         options.capabilities,
+        sourceLines,
+        sourceControlLines,
       );
       lines.push(...rowLines);
-      const sourceLines = [`${row.quantity}x  ${row.name.text}`];
-      const sourceControlLines = [rowLines[0] ?? ''];
-      let rowLineOffset = 1;
-      for (const addon of row.addons) {
-        const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
-        sourceLines.push(`  + ${addon.text}${quantitySuffix}`);
-        sourceControlLines.push(rowLines[rowLineOffset] ?? '');
-        rowLineOffset += 1;
-      }
-      if (row.specialInstructions) {
-        sourceLines.push('  >> ' + row.specialInstructions.text);
-        sourceControlLines.push(rowLines[rowLineOffset] ?? '');
-      }
       if (options.rasterGroups) {
         const group = {
           groupId: `kot-items-row-${rowIndex}`,

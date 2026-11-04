@@ -2239,6 +2239,17 @@ router.post(
             });
           }
         }
+        if (isScheduledCreation) {
+          const setting = db
+            .prepare("SELECT value FROM settings WHERE key = 'scheduled_orders_enabled'")
+            .get() as { value: string } | undefined;
+          if (setting?.value !== 'true') {
+            throw Object.assign(new Error('Scheduled orders are disabled.'), {
+              statusCode: 409,
+              code: 'SCHEDULED_ORDERS_DISABLED',
+            });
+          }
+        }
         // Generate order number inside transaction to prevent race conditions
         const orderNumber = generateOrderNumber();
 
@@ -2759,7 +2770,9 @@ router.post(
           operationCommitted ? 'applied' : 'not_applied',
           error.statusCode ? error.message : 'Internal server error',
         ),
-        ...(error.code === 'MULTI_COUNTER_DISABLED' ? { code: error.code } : {}),
+        ...(error.code === 'MULTI_COUNTER_DISABLED' || error.code === 'SCHEDULED_ORDERS_DISABLED'
+          ? { code: error.code }
+          : {}),
       });
     }
   }),

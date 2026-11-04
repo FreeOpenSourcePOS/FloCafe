@@ -337,6 +337,47 @@ async function main() {
     {
       const validFuture = futureWallClockInZone('America/New_York', 90);
 
+      const defaultToggleRes = await api(baseUrl, '/api/settings/scheduled_orders_enabled', {
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(defaultToggleRes.status, 200, 'read default scheduled_orders_enabled');
+      assertEqualOrThrow(
+        defaultToggleRes.data.setting?.value,
+        'false',
+        'scheduled_orders_enabled defaults to false',
+      );
+
+      const disabledSchedRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          type: 'takeaway',
+          scheduled_for: validFuture,
+          items: [{ product_id: 'prod-latte', quantity: 1 }],
+        },
+      });
+      assertEqualOrThrow(
+        disabledSchedRes.status,
+        409,
+        'scheduled takeaway rejected with 409 when scheduled_orders_enabled is false',
+      );
+      assertEqualOrThrow(
+        disabledSchedRes.data?.code,
+        'SCHEDULED_ORDERS_DISABLED',
+        'disabled scheduled order returns SCHEDULED_ORDERS_DISABLED code',
+      );
+
+      const enableForSuiteRes = await api(baseUrl, '/api/settings/scheduled_orders_enabled', {
+        method: 'PUT',
+        headers: owner.authHeader,
+        body: { value: 'true' },
+      });
+      assertEqualOrThrow(
+        enableForSuiteRes.status,
+        200,
+        'enable scheduled_orders_enabled for suite',
+      );
+
       const dineInRes = await api(baseUrl, '/api/orders', {
         method: 'POST',
         headers: owner.authHeader,
@@ -3136,15 +3177,20 @@ async function main() {
         assertIncludesOrThrow(regCardHtml, 'Add Item', 'regular partial order keeps Add Item');
         assertIncludesOrThrow(regCardHtml, 'Refund', 'regular partial order also exposes Refund');
 
-        // 11f. scheduled_orders_enabled store setting defaults to 'false' and validates boolean writes
-        const defaultToggleRes = await api(baseUrl, '/api/settings/scheduled_orders_enabled', {
+        // 11f. scheduled_orders_enabled store setting validates boolean writes and toggles cleanly
+        const disableToggleRes = await api(baseUrl, '/api/settings/scheduled_orders_enabled', {
+          method: 'PUT',
+          headers: owner.authHeader,
+          body: { value: 'false' },
+        });
+        assertEqualOrThrow(disableToggleRes.status, 200, 'disable scheduled_orders_enabled');
+        const disabledReadRes = await api(baseUrl, '/api/settings/scheduled_orders_enabled', {
           headers: owner.authHeader,
         });
-        assertEqualOrThrow(defaultToggleRes.status, 200, 'read default scheduled_orders_enabled');
         assertEqualOrThrow(
-          defaultToggleRes.data.setting?.value,
+          disabledReadRes.data.setting?.value,
           'false',
-          'scheduled_orders_enabled defaults to false',
+          'scheduled_orders_enabled persists false',
         );
 
         const invalidToggleRes = await api(baseUrl, '/api/settings/scheduled_orders_enabled', {

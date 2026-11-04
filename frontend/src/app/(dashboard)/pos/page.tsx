@@ -1090,9 +1090,14 @@ export default function POSPage() {
     }
   };
 
+  const currentStoreId = currentTenant?.id || 'default';
+  const currentStoreIdRef = useRef(currentStoreId);
+  currentStoreIdRef.current = currentStoreId;
+
   const canReadOrders = tenantCan(currentTenant, 'orders.read');
   const refreshScheduledOrders = useCallback(async () => {
-    if (!canReadOrders || !scheduledOrdersEnabled) {
+    const originStoreId = currentStoreIdRef.current;
+    if (!canReadOrders) {
       setScheduledOrders([]);
       setNextScheduledCursor(null);
       setScheduledCount(0);
@@ -1101,6 +1106,7 @@ export default function POSPage() {
     }
     try {
       const { data } = await api.get('/orders/scheduled');
+      if (currentStoreIdRef.current !== originStoreId) return;
       const loadedOrders = (data.orders as Order[]) || [];
       setScheduledOrders(loadedOrders);
       setNextScheduledCursor(data.next_cursor || null);
@@ -1117,15 +1123,17 @@ export default function POSPage() {
     } catch {
       /* ignore background poll failures */
     }
-  }, [canReadOrders, scheduledOrdersEnabled]);
+  }, [canReadOrders]);
 
   const handleLoadMoreScheduledOrders = async () => {
     if (!nextScheduledCursor || loadingMoreScheduled) return;
+    const originStoreId = currentStoreIdRef.current;
     setLoadingMoreScheduled(true);
     try {
       const { data } = await api.get('/orders/scheduled', {
         params: { cursor: nextScheduledCursor },
       });
+      if (currentStoreIdRef.current !== originStoreId) return;
       const moreOrders = (data.orders as Order[]) || [];
       setScheduledOrders((prev) => {
         const seen = new Set(prev.map((o) => o.id));
@@ -1141,18 +1149,13 @@ export default function POSPage() {
     } catch {
       /* ignore load more failures */
     } finally {
-      setLoadingMoreScheduled(false);
+      if (currentStoreIdRef.current === originStoreId) {
+        setLoadingMoreScheduled(false);
+      }
     }
   };
 
   useEffect(() => {
-    if (!scheduledOrdersEnabled) {
-      setScheduledOrders([]);
-      setNextScheduledCursor(null);
-      setScheduledCount(0);
-      setBlockedScheduledCount(0);
-      return;
-    }
     void refreshScheduledOrders();
     const interval = setInterval(() => {
       void refreshScheduledOrders();
@@ -1165,7 +1168,7 @@ export default function POSPage() {
       clearInterval(interval);
       window.removeEventListener('focus', onFocus);
     };
-  }, [scheduledOrdersEnabled, refreshScheduledOrders]);
+  }, [currentStoreId, refreshScheduledOrders]);
 
   // Replay persisted append attempt on reload to recover lost in-flight responses.
   useEffect(() => {
@@ -1358,12 +1361,17 @@ export default function POSPage() {
     setPrinterArabicShaping,
   ]);
 
-  const currentStoreId = currentTenant?.id || 'default';
   useEffect(() => {
     let cancelled = false;
     setActiveCounter(null);
     setShowPaymentQueue(false);
     setCounters([]);
+    setScheduledOrdersEnabled(false);
+    setShowScheduledOrders(false);
+    setScheduledOrders([]);
+    setNextScheduledCursor(null);
+    setScheduledCount(0);
+    setBlockedScheduledCount(0);
 
     api
       .get('/settings/multi_counter_enabled')
@@ -1421,14 +1429,12 @@ export default function POSPage() {
         setScheduledOrdersEnabled(isScheduledEnabled);
         if (!isScheduledEnabled) {
           useCartStore.getState().setScheduledFor('');
-          setShowScheduledOrders(false);
         }
       })
       .catch(() => {
         if (cancelled) return;
         setScheduledOrdersEnabled(false);
         useCartStore.getState().setScheduledFor('');
-        setShowScheduledOrders(false);
       });
 
     return () => {
@@ -1663,6 +1669,44 @@ export default function POSPage() {
   const buildCurrentCartFingerprint = (orderItems = cart.items.map(cartItemToOrderItem)) =>
     buildCartFingerprint(cart, orderItems);
 
+  const parseStoredAttemptScheduledFor = (fingerprint: string | undefined): string | undefined => {
+    if (!fingerprint) return undefined;
+    try {
+      const parsed = JSON.parse(fingerprint) as { scheduled_for?: unknown };
+      return typeof parsed?.scheduled_for === 'string' && parsed.scheduled_for.trim()
+        ? parsed.scheduled_for.trim()
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const stripScheduledForFromFingerprint = (fingerprint: string): string => {
+    try {
+      const parsed = JSON.parse(fingerprint) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fingerprint;
+      const { scheduled_for: _ignored, ...rest } = parsed;
+      return JSON.stringify(rest);
+    } catch {
+      return fingerprint;
+    }
+  };
+
+  const fingerprintsMatchAcrossScheduleToggle = (
+    storedFingerprint: string | undefined,
+    currentFingerprint: string,
+  ): boolean => {
+    if (!storedFingerprint) return false;
+    if (storedFingerprint === currentFingerprint) return true;
+    if (!scheduledOrdersEnabled && parseStoredAttemptScheduledFor(storedFingerprint)) {
+      return (
+        stripScheduledForFromFingerprint(storedFingerprint) ===
+        stripScheduledForFromFingerprint(currentFingerprint)
+      );
+    }
+    return false;
+  };
+
   const handlePlaceOrder = async () => {
     if (!validateOrderPreflight()) return;
 
@@ -1675,7 +1719,7 @@ export default function POSPage() {
         if (
           storedAttempt &&
           storedAttempt.userId === activeUserId &&
-          storedAttempt.cartFingerprint === cartFingerprint &&
+          fingerprintsMatchAcrossScheduleToggle(storedAttempt.cartFingerprint, cartFingerprint) &&
           storedAttempt.orderIdempotencyKey &&
           storedAttempt.paymentIdempotencyKey
         ) {
@@ -1799,6 +1843,11 @@ export default function POSPage() {
         addItemsAttemptRef.current = null;
         setPendingOrder(null);
       } else {
+        const priorOrderAttempt = readPostpaidAttempt(originUserId);
+        const preservedPostpaidScheduledFor =
+          priorOrderAttempt?.userId === originUserId
+            ? parseStoredAttemptScheduledFor(priorOrderAttempt.fingerprint)
+            : undefined;
         const orderPayload = {
           table_id: cart.tableId,
           customer_id: cart.customerId,
@@ -1817,19 +1866,33 @@ export default function POSPage() {
             cart.orderType === 'delivery' ? (cart.expectedPaymentMethodId ?? undefined) : undefined,
           delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
           scheduled_for:
-            scheduledOrdersEnabled &&
-            (cart.orderType === 'takeaway' || cart.orderType === 'delivery')
-              ? cart.scheduledFor.trim() || undefined
+            cart.orderType === 'takeaway' || cart.orderType === 'delivery'
+              ? (scheduledOrdersEnabled ? cart.scheduledFor.trim() : undefined) || undefined
               : undefined,
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
           items: cart.items.map(cartItemToOrderItem),
         };
-        const orderFingerprint = JSON.stringify(orderPayload);
-        const priorOrderAttempt = readPostpaidAttempt(originUserId);
+        const baseOrderFingerprint = JSON.stringify(orderPayload);
+        const matchesPriorPostpaidOrderAttempt =
+          priorOrderAttempt?.userId === originUserId &&
+          fingerprintsMatchAcrossScheduleToggle(
+            priorOrderAttempt.fingerprint,
+            baseOrderFingerprint,
+          );
+        if (
+          matchesPriorPostpaidOrderAttempt &&
+          !scheduledOrdersEnabled &&
+          preservedPostpaidScheduledFor
+        ) {
+          orderPayload.scheduled_for = preservedPostpaidScheduledFor;
+        }
+        const orderFingerprint = matchesPriorPostpaidOrderAttempt
+          ? priorOrderAttempt.fingerprint
+          : baseOrderFingerprint;
         if (
           priorOrderAttempt?.userId === originUserId &&
-          priorOrderAttempt.fingerprint === cartFingerprint
+          fingerprintsMatchAcrossScheduleToggle(priorOrderAttempt.fingerprint, cartFingerprint)
         ) {
           const completedOrder = priorOrderAttempt.order;
           reportOrderFailure({
@@ -1855,11 +1918,7 @@ export default function POSPage() {
           });
           return;
         }
-        if (
-          priorOrderAttempt?.userId === originUserId &&
-          priorOrderAttempt.fingerprint === orderFingerprint &&
-          priorOrderAttempt.order
-        ) {
+        if (matchesPriorPostpaidOrderAttempt && priorOrderAttempt.order) {
           reportOrderFailure({
             code: 'order.retry_state.cleanup_failed',
             title: t('orderPlaced', { number: priorOrderAttempt.order.order_number }),
@@ -1878,16 +1937,14 @@ export default function POSPage() {
         }
         failureOperation = 'order.create';
         failureStage = 'order_submission';
-        const orderAttempt: PostpaidAttempt =
-          priorOrderAttempt?.userId === originUserId &&
-          priorOrderAttempt.fingerprint === orderFingerprint
-            ? priorOrderAttempt
-            : {
-                userId: originUserId || '',
-                fingerprint: orderFingerprint,
-                idempotencyKey: newIdempotencyKey(),
-                operationId: createOperationReference() || undefined,
-              };
+        const orderAttempt: PostpaidAttempt = matchesPriorPostpaidOrderAttempt
+          ? priorOrderAttempt
+          : {
+              userId: originUserId || '',
+              fingerprint: orderFingerprint,
+              idempotencyKey: newIdempotencyKey(),
+              operationId: createOperationReference() || undefined,
+            };
         const operationId = orderAttempt.operationId || createOperationReference();
         postpaidOperationId = operationId || null;
         failureCorrelationId = operationId;
@@ -2095,7 +2152,8 @@ export default function POSPage() {
       const storage = getAppendAttemptStorage();
       const storedAttempt = readPostpaidAttempt(originUserId);
       const storedAttemptMatchesCart =
-        storedAttempt?.userId === originUserId && storedAttempt.fingerprint === cartFingerprint;
+        storedAttempt?.userId === originUserId &&
+        fingerprintsMatchAcrossScheduleToggle(storedAttempt.fingerprint, cartFingerprint);
       if (storedAttemptMatchesCart && storedAttempt.order) {
         reportOrderFailure({
           code: 'order.retry_state.cleanup_failed',
@@ -2120,6 +2178,9 @@ export default function POSPage() {
             idempotencyKey: newIdempotencyKey(),
             operationId: createOperationReference() || undefined,
           };
+      const preservedScheduledFor = storedAttemptMatchesCart
+        ? parseStoredAttemptScheduledFor(storedAttempt.fingerprint)
+        : undefined;
       const storageKey = getPostpaidOrderAttemptStorageKey(originUserId);
       if (!savePostpaidAttempt(attempt, originUserId)) throw new OrderAttemptStorageError();
 
@@ -2130,8 +2191,9 @@ export default function POSPage() {
         guest_count: cart.orderType === 'dine_in' ? cart.guestCount : undefined,
         special_instructions: cart.orderNotes || undefined,
         scheduled_for:
-          scheduledOrdersEnabled && cart.orderType === 'takeaway'
-            ? cart.scheduledFor.trim() || undefined
+          cart.orderType === 'takeaway'
+            ? (scheduledOrdersEnabled ? cart.scheduledFor.trim() : preservedScheduledFor) ||
+              undefined
             : undefined,
         dispatch_policy: 'on_payment',
         waived_charge_ids: Array.from(cart.waivedChargeIds),
@@ -2308,11 +2370,14 @@ export default function POSPage() {
     const existingAttempt =
       storedAttempt &&
       storedAttempt.userId === originUserId &&
-      storedAttempt.cartFingerprint === cartFingerprint &&
+      fingerprintsMatchAcrossScheduleToggle(storedAttempt.cartFingerprint, cartFingerprint) &&
       storedAttempt.orderIdempotencyKey &&
       storedAttempt.paymentIdempotencyKey
         ? storedAttempt
         : null;
+    const preservedPrepaidScheduledFor = existingAttempt
+      ? parseStoredAttemptScheduledFor(existingAttempt.cartFingerprint)
+      : undefined;
     const savedPaymentRequest =
       existingAttempt?.bill && existingAttempt.paymentFingerprint
         ? parsePrepaidPaymentRequest(existingAttempt.paymentFingerprint)
@@ -2464,9 +2529,10 @@ export default function POSPage() {
             delivery_note:
               cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
             scheduled_for:
-              scheduledOrdersEnabled &&
-              (cart.orderType === 'takeaway' || cart.orderType === 'delivery')
-                ? cart.scheduledFor.trim() || undefined
+              cart.orderType === 'takeaway' || cart.orderType === 'delivery'
+                ? (scheduledOrdersEnabled
+                    ? cart.scheduledFor.trim()
+                    : preservedPrepaidScheduledFor) || undefined
                 : undefined,
             waived_charge_ids: Array.from(cart.waivedChargeIds),
             opted_in_charge_ids: Array.from(cart.optedInChargeIds),

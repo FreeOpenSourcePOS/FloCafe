@@ -54,12 +54,21 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
   let trackedProductId: string | null = null;
   let managerId: string | null = null;
   let extraApproverId: string | null = null;
+  const priorScheduledSettingRes = await page.request.get(
+    `${BASE}/api/settings/scheduled_orders_enabled`,
+    { headers: ownerHeaders },
+  );
+  expect(priorScheduledSettingRes.ok(), 'read prior scheduled_orders_enabled').toBeTruthy();
+  const priorScheduledSettingBody = await priorScheduledSettingRes.json();
+  const priorScheduledOrdersEnabled =
+    priorScheduledSettingBody?.setting?.value === 'true' ? 'true' : 'false';
 
   try {
-    await page.request.put(`${BASE}/api/settings/scheduled_orders_enabled`, {
+    const disableRes = await page.request.put(`${BASE}/api/settings/scheduled_orders_enabled`, {
       headers: ownerHeaders,
       data: { value: 'false' },
     });
+    expect(disableRes.ok(), 'set scheduled_orders_enabled to false for setup').toBeTruthy();
 
     await page.goto(`${BASE}/auth/login`);
     await page.locator('#email').fill('owner@flo.local');
@@ -760,11 +769,13 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     for (const response of deactivateResults) {
       expect(response.ok(), 'deactivate disposable refund approver').toBeTruthy();
     }
-    await page.request
-      .put(`${BASE}/api/settings/scheduled_orders_enabled`, {
+    const restoreSettingRes = await page.request.put(
+      `${BASE}/api/settings/scheduled_orders_enabled`,
+      {
         headers: ownerHeaders,
-        data: { value: 'false' },
-      })
-      .catch(() => {});
+        data: { value: priorScheduledOrdersEnabled },
+      },
+    );
+    expect(restoreSettingRes.ok(), 'restore prior scheduled_orders_enabled').toBeTruthy();
   }
 });

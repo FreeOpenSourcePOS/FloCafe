@@ -1754,6 +1754,30 @@ router.get(
   },
 );
 
+router.get(
+  '/scheduled_orders_enabled',
+  settingsReadRateLimit,
+  requireAnyPermission('settings.view', 'orders.read', 'orders.create'),
+  (_req: Request, res: Response) => {
+    try {
+      const setting = getDatabase()
+        .prepare('SELECT * FROM settings WHERE key = ?')
+        .get('scheduled_orders_enabled');
+      if (setting) return res.json({ setting });
+      return res.json({
+        setting: {
+          key: 'scheduled_orders_enabled',
+          value: OPTIONAL_SETTING_DEFAULTS.scheduled_orders_enabled,
+          updated_at: null,
+        },
+      });
+    } catch (error) {
+      console.error('[API] Internal error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
 const requireAuthenticatedStaff: RequestHandler = (req, res, next) => {
   const userId = String(
     (req as Request & { user?: { userId?: string; id?: string } }).user?.userId ||

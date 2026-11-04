@@ -125,37 +125,38 @@ export default function PosTopbar({
             </button>
           )}
 
-          {scheduledOrdersEnabled && onShowScheduledOrders && (
-            <button
-              type="button"
-              onClick={onShowScheduledOrders}
-              data-testid="pos-scheduled-orders-btn"
-              className={`touch-target shrink-0 gap-1.5 rounded-lg border px-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
-                blockedScheduledCount > 0
-                  ? 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300'
-                  : 'border-border bg-card text-foreground hover:bg-muted active:bg-muted'
-              }`}
-              title={t('scheduledOrdersTitle')}
-              aria-label={t('scheduledOrdersTitle')}
-            >
-              <CalendarClock size={16} />
-              <span className="hidden sm:inline">{t('scheduledOrders')}</span>
-              {scheduledOrderCount > 0 && (
-                <span
-                  data-testid={
-                    blockedScheduledCount > 0
-                      ? 'pos-scheduled-blocked-badge'
-                      : 'pos-scheduled-count-badge'
-                  }
-                  className={`inline-flex min-w-5 h-5 items-center justify-center rounded-full px-1.5 text-xs font-bold tabular-nums ${
-                    blockedScheduledCount > 0 ? 'bg-red-600 text-white' : 'bg-brand text-white'
-                  }`}
-                >
-                  {scheduledOrderCount}
-                </span>
-              )}
-            </button>
-          )}
+          {(scheduledOrdersEnabled || scheduledOrderCount > 0 || blockedScheduledCount > 0) &&
+            onShowScheduledOrders && (
+              <button
+                type="button"
+                onClick={onShowScheduledOrders}
+                data-testid="pos-scheduled-orders-btn"
+                className={`touch-target shrink-0 gap-1.5 rounded-lg border px-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+                  blockedScheduledCount > 0
+                    ? 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300'
+                    : 'border-border bg-card text-foreground hover:bg-muted active:bg-muted'
+                }`}
+                title={t('scheduledOrdersTitle')}
+                aria-label={t('scheduledOrdersTitle')}
+              >
+                <CalendarClock size={16} />
+                <span className="hidden sm:inline">{t('scheduledOrders')}</span>
+                {scheduledOrderCount > 0 && (
+                  <span
+                    data-testid={
+                      blockedScheduledCount > 0
+                        ? 'pos-scheduled-blocked-badge'
+                        : 'pos-scheduled-count-badge'
+                    }
+                    className={`inline-flex min-w-5 h-5 items-center justify-center rounded-full px-1.5 text-xs font-bold tabular-nums ${
+                      blockedScheduledCount > 0 ? 'bg-red-600 text-white' : 'bg-brand text-white'
+                    }`}
+                  >
+                    {scheduledOrderCount}
+                  </span>
+                )}
+              </button>
+            )}
 
           {multiCounterEnabled && onShowPaymentQueue && (
             <button

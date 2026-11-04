@@ -1427,6 +1427,7 @@ export default function POSPage() {
       .catch(() => {
         if (cancelled) return;
         setScheduledOrdersEnabled(false);
+        useCartStore.getState().setScheduledFor('');
         setShowScheduledOrders(false);
       });
 
@@ -1647,8 +1648,20 @@ export default function POSPage() {
     return true;
   };
 
+  const buildCartFingerprint = (
+    cartState: Parameters<typeof buildCartFingerprintFromState>[0],
+    orderItems?: Parameters<typeof buildCartFingerprintFromState>[1],
+  ) =>
+    buildCartFingerprintFromState(
+      {
+        ...cartState,
+        scheduledFor: scheduledOrdersEnabled ? cartState.scheduledFor : '',
+      },
+      orderItems,
+    );
+
   const buildCurrentCartFingerprint = (orderItems = cart.items.map(cartItemToOrderItem)) =>
-    buildCartFingerprintFromState(cart, orderItems);
+    buildCartFingerprint(cart, orderItems);
 
   const handlePlaceOrder = async () => {
     if (!validateOrderPreflight()) return;
@@ -1748,7 +1761,7 @@ export default function POSPage() {
         );
         if (!isSessionCurrent()) {
           // Item append succeeded on server while session changed. Stop before mutating state.
-          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
             useCartStore.getState().clearCart();
           }
           return;
@@ -1916,7 +1929,7 @@ export default function POSPage() {
           // Critical recovery invariant: order succeeded on server while session changed.
           // Originating user's recovery attempt is saved under getPostpaidOrderAttemptStorageKey(originUserId).
           // If the shared cart still matches the submitted cart, clear it so the new session doesn't double-order.
-          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
             useCartStore.getState().clearCart();
           }
           return;
@@ -1982,7 +1995,7 @@ export default function POSPage() {
         }
       }
       if (!isSessionCurrent()) {
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -2183,7 +2196,7 @@ export default function POSPage() {
           });
       }
       if (!isOriginSessionCurrent()) {
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -2198,7 +2211,7 @@ export default function POSPage() {
       }
       if (!isLatestAttempt || !isOriginSessionCurrent()) return;
 
-      if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+      if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
         useCartStore.getState().clearCart();
       }
       setTicketModalOrder(createdOrder);
@@ -2451,7 +2464,8 @@ export default function POSPage() {
             delivery_note:
               cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
             scheduled_for:
-              cart.orderType === 'takeaway' || cart.orderType === 'delivery'
+              scheduledOrdersEnabled &&
+              (cart.orderType === 'takeaway' || cart.orderType === 'delivery')
                 ? cart.scheduledFor.trim() || undefined
                 : undefined,
             waived_charge_ids: Array.from(cart.waivedChargeIds),
@@ -2472,7 +2486,7 @@ export default function POSPage() {
         if (!isSessionCurrent()) {
           // Order succeeded on the server while session changed.
           // Recovery record is preserved under originUserId. Stop before generating/paying bill under new user.
-          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
             useCartStore.getState().clearCart();
           }
           return;
@@ -2572,7 +2586,7 @@ export default function POSPage() {
           if (generatedBill?.bill) {
             savePrepaidAttempt({ ...attempt, order, bill: generatedBill.bill }, originUserId);
           }
-          if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+          if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
             useCartStore.getState().clearCart();
           }
           return;
@@ -2614,7 +2628,7 @@ export default function POSPage() {
 
       if (!isSessionCurrent()) {
         savePrepaidAttempt({ ...attempt, order, bill: paidBill }, originUserId);
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -2733,7 +2747,7 @@ export default function POSPage() {
         }
       }
       if (!isSessionCurrent()) {
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -3040,7 +3054,7 @@ export default function POSPage() {
       );
       if (!isSessionCurrent()) {
         // Items append succeeded on server while session changed. Stop before mutating state.
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;
@@ -3080,7 +3094,7 @@ export default function POSPage() {
         appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder,
       );
       if (!isSessionCurrent()) {
-        if (buildCartFingerprintFromState(useCartStore.getState()) === cartFingerprint) {
+        if (buildCartFingerprint(useCartStore.getState()) === cartFingerprint) {
           useCartStore.getState().clearCart();
         }
         return;

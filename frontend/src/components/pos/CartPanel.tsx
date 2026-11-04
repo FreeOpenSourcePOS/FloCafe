@@ -16,10 +16,10 @@ import {
   SquarePen,
   Tag,
   Users,
-  Wallet,
   StickyNote,
   CalendarClock,
   CreditCard,
+  ChevronRight,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -37,15 +37,12 @@ import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
 import { cartLineUnitPrice, cartVariantUnitPrice } from '@/lib/cart-price';
 import { tenantCan } from '@/lib/permissions';
 import { CartPriceOverrideModal } from '@/components/pos/CartPriceOverrideModal';
+import { OrderDetailsDrawer } from '@/components/pos/OrderDetailsDrawer';
 import { calculateAppliedCharges } from '@/lib/charges';
 import { chargesForOrderType, useChargesStore } from '@/store/charges';
 import { getCurrencyFractionDigits } from '@countries';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
-import {
-  formatScheduledInstantForDisplay,
-  parseScheduledForInput,
-  suggestFutureScheduleWallClock,
-} from '@/lib/scheduled-time';
+import { formatScheduledInstantForDisplay, parseScheduledForInput } from '@/lib/scheduled-time';
 
 interface Props {
   tables: Table[];
@@ -56,6 +53,7 @@ interface Props {
   onOpenPaymentQueue?: () => void;
   counterRole?: 'ordering' | 'payment' | 'combined' | null;
   multiCounterEnabled?: boolean;
+  scheduledOrdersEnabled?: boolean;
   onEditItem?: (item: CartItem) => void;
   onModalOpenChange?: (open: boolean) => void;
   variant?: 'sidebar' | 'drawer';
@@ -182,6 +180,7 @@ export default function CartPanel({
   onOpenPaymentQueue,
   counterRole,
   multiCounterEnabled = false,
+  scheduledOrdersEnabled = false,
   onEditItem,
   onModalOpenChange,
   variant = 'sidebar',
@@ -208,15 +207,17 @@ export default function CartPanel({
       ? cart.items.find((i) => i.id === priceOverrideItemId)
       : undefined;
   const priceOverrideOpen = Boolean(priceOverrideTarget);
+  const [detailsDrawerOpen, setDetailsDrawerOpen] = useState(false);
+  const [orderNotesExpanded, setOrderNotesExpanded] = useState(false);
+  const effectiveDetailsDrawerOpen = detailsDrawerOpen && !existingOrder;
   useEffect(() => {
-    onModalOpenChange?.(priceOverrideOpen);
+    onModalOpenChange?.(priceOverrideOpen || effectiveDetailsDrawerOpen);
     return () => onModalOpenChange?.(false);
-  }, [priceOverrideOpen, onModalOpenChange]);
+  }, [priceOverrideOpen, effectiveDetailsDrawerOpen, onModalOpenChange]);
   const billingType = usePosSettingsStore((s) => s.billingType);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
-  const tSettings = useTranslations('settings');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const fmt = useFormatCurrency();
   const effectiveTimezone = storeTimezone || currentTenant?.timezone || 'UTC';
@@ -226,7 +227,9 @@ export default function CartPanel({
     return () => clearInterval(interval);
   }, []);
   const canScheduleCart =
-    !existingOrder && (cart.orderType === 'takeaway' || cart.orderType === 'delivery');
+    Boolean(scheduledOrdersEnabled) &&
+    !existingOrder &&
+    (cart.orderType === 'takeaway' || cart.orderType === 'delivery');
   const scheduleValidation =
     canScheduleCart && cart.scheduledFor.trim().length > 0
       ? parseScheduledForInput({
@@ -318,6 +321,24 @@ export default function CartPanel({
 
   const isDrawer = variant === 'drawer';
 
+  const expectedPaymentSummaryLabel =
+    cart.expectedPaymentMethodId !== null
+      ? customPaymentMethods.find((m) => m.id === cart.expectedPaymentMethodId)?.name ||
+        cart.expectedPaymentMethod ||
+        tCommon('unknown')
+      : cart.expectedPaymentMethod === 'pending'
+        ? tOrders('pending')
+        : cart.expectedPaymentMethod === 'cash'
+          ? t('methodCash')
+          : cart.expectedPaymentMethod === 'card'
+            ? t('methodCard')
+            : tCommon('unknown');
+
+  const orderNotesShortLabel =
+    t('orderNotesPlaceholder')
+      .replace(/\s*\([^)]*\)\s*$/, '')
+      .trim() || t('orderNotesPlaceholder');
+
   return (
     <div
       data-testid="cart-shell"
@@ -327,14 +348,14 @@ export default function CartPanel({
           : 'pos-cart-shell w-full h-full bg-card rounded-xl border border-border dark:border-border flex flex-col shadow-sm'
       }
     >
-      {/* Order Type */}
-      <div className="px-3 py-2 border-b border-border dark:border-border space-y-1.5">
+      {/* Order Type + Compact OrderDetailsSummary */}
+      <div className="px-2.5 py-1 border-b border-border dark:border-border space-y-1">
         {existingOrder &&
           existingOrder.release_status &&
           existingOrder.release_status !== 'released' && (
             <div
               data-testid="cart-scheduled-existing-banner"
-              className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-2 text-xs text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200"
+              className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-1.5 text-xs text-blue-800 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200"
             >
               <span className="inline-flex items-center gap-1.5 min-w-0">
                 <CalendarClock size={14} className="shrink-0" />
@@ -363,7 +384,7 @@ export default function CartPanel({
             </div>
           )}
 
-        <div className="flex gap-1 bg-muted rounded-lg p-1">
+        <div className="flex gap-0.5 h-7 p-0.5 rounded-lg bg-muted">
           {(['dine_in', 'takeaway', 'delivery', 'online'] as const)
             .filter((type) => isRestaurant || type !== 'dine_in')
             .map((type) => {
@@ -383,222 +404,291 @@ export default function CartPanel({
                   type="button"
                   disabled={Boolean(existingOrder && existingOrder.type !== type)}
                   onClick={() => cart.setOrderType(type)}
-                  className={`touch-target h-9 min-h-9 flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${showIcon ? '' : 'whitespace-nowrap'} ${
+                  className={`touch-target h-6 min-h-6 flex-1 gap-1 px-1.5 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${showIcon ? '' : 'whitespace-nowrap'} ${
                     cart.orderType === type
                       ? 'bg-card text-brand shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {showIcon && <Icon size={14} />}
+                  {showIcon && <Icon size={13} />}
                   {label}
                 </button>
               );
             })}
         </div>
 
-        {cart.orderType === 'dine_in' && (
-          <div className="flex items-center justify-between px-1 py-0.5">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Users size={15} />
-              <span>{t('pax')}</span>
-            </div>
-            <div className="inline-flex items-center rounded-full border border-border bg-muted/50 p-0.5">
-              <button
-                type="button"
-                aria-label={t('decreasePax')}
-                onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))}
-                className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
-              >
-                <Minus size={13} />
-              </button>
-              <input
-                aria-label={t('pax')}
-                inputMode="numeric"
-                type="number"
-                min="1"
-                max="99"
-                value={cart.guestCount}
-                onChange={(e) =>
-                  cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))
-                }
-                className="w-10 text-center text-sm font-semibold tabular-nums border-0 outline-none bg-transparent"
-              />
-              <button
-                type="button"
-                aria-label={t('increasePax')}
-                onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))}
-                className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
-              >
-                <Plus size={13} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Delivery address — shown inline when delivery is selected */}
-        {!existingOrder && cart.orderType === 'delivery' && (
-          <div className="flex items-center gap-2">
-            <MapPin size={14} className="text-muted-foreground shrink-0" />
-            <input
-              type="text"
-              value={cart.deliveryAddress}
-              onChange={(e) => cart.setDeliveryAddress(e.target.value)}
-              placeholder={t('deliveryAddress')}
-              className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
-            />
-          </div>
-        )}
-
-        {/* Expected collection and courier note: recorded with the order, never a payment */}
-        {!existingOrder && isDeliveryOrder && (
-          <>
-            <label className="flex items-center gap-2">
-              <Wallet size={14} className="text-muted-foreground shrink-0" />
-              <span className="text-sm text-muted-foreground">{t('expectedPayment')}</span>
-              <select
-                value={
-                  cart.expectedPaymentMethodId !== null
-                    ? `custom:${cart.expectedPaymentMethodId}`
-                    : cart.expectedPaymentMethod
-                }
-                onChange={(e) => {
-                  const selected = e.target.value;
-                  // A configured method travels by identity, so a method named
-                  // "Pending" or "Unknown" cannot be read back as a sentinel.
-                  const customId = selected.startsWith('custom:')
-                    ? Number(selected.slice('custom:'.length))
-                    : null;
-                  if (customId !== null) {
-                    const method = customPaymentMethods.find(
-                      (candidate) => candidate.id === customId,
-                    );
-                    if (method) {
-                      cart.setExpectedPaymentMethod(method.name, method.id);
-                      return;
-                    }
-                    if (customId === cart.expectedPaymentMethodId) return;
-                  }
-                  cart.setExpectedPaymentMethod(selected, null);
-                }}
-                className="flex-1 min-w-0 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
-              >
-                <option value="">{tCommon('unknown')}</option>
-                <option value="pending">{tOrders('pending')}</option>
-                <option value="cash">{t('methodCash')}</option>
-                <option value="card">{t('methodCard')}</option>
-                {customPaymentMethods.length > 0 && (
-                  <optgroup label={tSettings('paymentMethods')}>
-                    {customPaymentMethods.map((method) => (
-                      <option key={method.id} value={`custom:${method.id}`}>
-                        {method.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {cart.expectedPaymentMethodId !== null &&
-                  !customPaymentMethods.some(
-                    (method) => method.id === cart.expectedPaymentMethodId,
-                  ) && (
-                    <option value={`custom:${cart.expectedPaymentMethodId}`}>
-                      {cart.expectedPaymentMethod || tCommon('unknown')}
-                    </option>
-                  )}
-              </select>
-            </label>
-            <div className="flex items-center gap-2">
-              <StickyNote size={14} className="text-muted-foreground shrink-0" />
-              <input
-                type="text"
-                value={cart.deliveryNote}
-                onChange={(e) => cart.setDeliveryNote(e.target.value.slice(0, 200))}
-                placeholder={t('deliveryNotePlaceholder')}
-                maxLength={200}
-                className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
-              />
-            </div>
-          </>
-        )}
-
-        {/* Online platform + external order id — shown inline when online is selected */}
-        {!existingOrder && cart.orderType === 'online' && (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <Globe size={14} className="text-muted-foreground shrink-0" />
-              <input
-                type="text"
-                value={cart.onlinePlatform}
-                onChange={(e) => cart.setOnlinePlatform(e.target.value)}
-                placeholder={t('onlinePlatformPlaceholder')}
-                className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
-              />
-            </div>
-            <input
-              type="text"
-              value={cart.externalOrderId}
-              onChange={(e) => cart.setExternalOrderId(e.target.value)}
-              placeholder={t('externalOrderIdPlaceholder')}
-              className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
-            />
-          </div>
-        )}
-
-        {canScheduleCart && (
+        {!existingOrder && cart.orderType === 'dine_in' && (
           <div
-            data-testid="pos-schedule-section"
-            className="rounded-lg border border-border bg-muted/30 p-2.5 space-y-1.5"
+            data-testid="pos-order-details-summary"
+            className="flex min-h-7 items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/50 px-2.5 py-0.5"
           >
-            <div className="flex items-center justify-between gap-2">
-              <label
-                htmlFor={`pos-send-to-kitchen-at-${variant}`}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground"
-              >
-                <CalendarClock size={14} className="text-muted-foreground shrink-0" />
-                {t('sendToKitchenAt')}
-              </label>
-              {cart.scheduledFor ? (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Users size={13} className="shrink-0" />
+              <span className="font-medium text-foreground">{t('pax')}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="inline-flex items-center rounded-full border border-border bg-card p-0.5">
                 <button
                   type="button"
-                  data-testid="pos-schedule-clear-btn"
-                  onClick={() => cart.setScheduledFor('')}
-                  className="text-xs font-medium text-brand hover:underline"
+                  aria-label={t('decreasePax')}
+                  onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))}
+                  className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-1.5 hover:bg-muted hover:text-foreground active:bg-muted"
                 >
-                  {t('sendImmediately')}
+                  <Minus size={12} />
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  data-testid="pos-schedule-suggest-btn"
-                  onClick={() =>
-                    cart.setScheduledFor(suggestFutureScheduleWallClock(effectiveTimezone))
+                <input
+                  aria-label={t('pax')}
+                  inputMode="numeric"
+                  type="number"
+                  min="1"
+                  max="99"
+                  value={cart.guestCount}
+                  onChange={(e) =>
+                    cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))
                   }
-                  className="text-xs font-medium text-brand hover:underline"
+                  className="w-8 text-center text-xs font-semibold tabular-nums border-0 outline-none bg-transparent"
+                />
+                <button
+                  type="button"
+                  aria-label={t('increasePax')}
+                  onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))}
+                  className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-1.5 hover:bg-muted hover:text-foreground active:bg-muted"
                 >
-                  {t('scheduleOrderToggle')}
+                  <Plus size={12} />
                 </button>
+              </div>
+              <button
+                type="button"
+                data-testid="pos-order-details-edit-btn"
+                onClick={() => setDetailsDrawerOpen(true)}
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-brand hover:underline"
+              >
+                <span>{tCommon('edit')}</span>
+                <ChevronRight size={12} className="rtl-flip" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!existingOrder && cart.orderType === 'takeaway' && scheduledOrdersEnabled && (
+          <div data-testid="pos-schedule-section">
+            <div
+              data-testid="pos-order-details-summary"
+              role="button"
+              tabIndex={0}
+              onClick={() => setDetailsDrawerOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setDetailsDrawerOpen(true);
+                }
+              }}
+              className="flex min-h-7 cursor-pointer items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/50 px-2.5 py-0.5 text-xs transition-colors hover:bg-muted"
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
+                <CalendarClock size={13} className="shrink-0 text-muted-foreground" />
+                {scheduleErrorMessage ? (
+                  <span
+                    role="alert"
+                    data-testid="pos-schedule-error"
+                    className="truncate font-medium text-red-600 dark:text-red-400"
+                  >
+                    {scheduleErrorMessage}
+                  </span>
+                ) : cart.scheduledFor && scheduleValidation?.ok ? (
+                  <span className="truncate font-medium text-brand">
+                    {t('sendToKitchenAt')} ·{' '}
+                    {formatScheduledInstantForDisplay(scheduleValidation.isoUtc, effectiveTimezone)}
+                  </span>
+                ) : (
+                  <span className="truncate text-muted-foreground">
+                    <span className="font-medium text-foreground">{t('sendToKitchenAt')}</span> ·{' '}
+                    {t('sendImmediately')}
+                  </span>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {cart.scheduledFor && (
+                  <button
+                    type="button"
+                    data-testid="pos-schedule-clear-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      cart.setScheduledFor('');
+                    }}
+                    aria-label={t('sendImmediately')}
+                    title={t('sendImmediately')}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  data-testid="pos-order-details-edit-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDetailsDrawerOpen(true);
+                  }}
+                  className="inline-flex items-center gap-0.5 font-medium text-brand hover:underline"
+                >
+                  <span>{tCommon('edit')}</span>
+                  <ChevronRight size={12} className="rtl-flip" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!existingOrder && cart.orderType === 'delivery' && (
+          <div data-testid={scheduledOrdersEnabled ? 'pos-schedule-section' : undefined}>
+            <div
+              data-testid="pos-order-details-summary"
+              role="button"
+              tabIndex={0}
+              onClick={() => setDetailsDrawerOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setDetailsDrawerOpen(true);
+                }
+              }}
+              className="flex min-h-7 cursor-pointer items-center justify-between gap-1.5 rounded-lg border border-border/60 bg-muted/50 px-2.5 py-0.5 text-xs transition-colors hover:bg-muted"
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+                <span className="inline-flex min-w-0 flex-1 items-center gap-1 truncate">
+                  <MapPin
+                    size={13}
+                    className={
+                      cart.deliveryAddress.trim()
+                        ? 'shrink-0 text-muted-foreground'
+                        : 'shrink-0 text-amber-600 dark:text-amber-400'
+                    }
+                  />
+                  {cart.deliveryAddress.trim() ? (
+                    <span className="truncate font-medium text-foreground">
+                      {cart.deliveryAddress}
+                    </span>
+                  ) : (
+                    <span className="truncate rounded bg-amber-500/15 px-1 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                      {t('deliveryAddress')}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 text-muted-foreground/60">·</span>
+                <span className="max-w-16 shrink-0 truncate rounded border border-border/50 bg-background/80 px-1 py-0.5 text-[11px] text-muted-foreground">
+                  {expectedPaymentSummaryLabel}
+                </span>
+                {scheduledOrdersEnabled && (
+                  <>
+                    <span className="shrink-0 text-muted-foreground/60">·</span>
+                    <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px]">
+                      <CalendarClock size={12} className="shrink-0 text-muted-foreground" />
+                      <span className="sr-only">{t('sendToKitchenAt')}</span>
+                      {scheduleErrorMessage ? (
+                        <span
+                          role="alert"
+                          data-testid="pos-schedule-error"
+                          className="max-w-20 truncate font-medium text-red-600 dark:text-red-400"
+                        >
+                          {scheduleErrorMessage}
+                        </span>
+                      ) : cart.scheduledFor && scheduleValidation?.ok ? (
+                        <span className="max-w-20 truncate font-medium text-brand">
+                          {formatScheduledInstantForDisplay(
+                            scheduleValidation.isoUtc,
+                            effectiveTimezone,
+                          )}
+                        </span>
+                      ) : (
+                        <span className="max-w-14 truncate text-muted-foreground">
+                          {t('sendImmediately')}
+                        </span>
+                      )}
+                    </span>
+                  </>
+                )}
+                {cart.deliveryNote.trim().length > 0 && (
+                  <StickyNote
+                    size={12}
+                    className="shrink-0 text-brand"
+                    aria-label={cart.deliveryNote}
+                  />
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {scheduledOrdersEnabled && cart.scheduledFor && (
+                  <button
+                    type="button"
+                    data-testid="pos-schedule-clear-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      cart.setScheduledFor('');
+                    }}
+                    aria-label={t('sendImmediately')}
+                    title={t('sendImmediately')}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  data-testid="pos-order-details-edit-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDetailsDrawerOpen(true);
+                  }}
+                  className="inline-flex items-center gap-0.5 font-medium text-brand hover:underline"
+                >
+                  <span>{tCommon('edit')}</span>
+                  <ChevronRight size={12} className="rtl-flip" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!existingOrder && cart.orderType === 'online' && (
+          <div
+            data-testid="pos-order-details-summary"
+            role="button"
+            tabIndex={0}
+            onClick={() => setDetailsDrawerOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setDetailsDrawerOpen(true);
+              }
+            }}
+            className="flex min-h-7 cursor-pointer items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/50 px-2.5 py-0.5 text-xs transition-colors hover:bg-muted"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
+              <Globe size={13} className="shrink-0 text-muted-foreground" />
+              {cart.onlinePlatform.trim() ? (
+                <span className="truncate font-medium text-foreground">
+                  {cart.onlinePlatform}
+                  {cart.externalOrderId.trim() ? ` · #${cart.externalOrderId.trim()}` : ''}
+                </span>
+              ) : (
+                <span className="truncate text-muted-foreground">
+                  {t('onlinePlatformPlaceholder')}
+                  {cart.externalOrderId.trim() ? ` · #${cart.externalOrderId.trim()}` : ''}
+                </span>
               )}
             </div>
-            <input
-              id={`pos-send-to-kitchen-at-${variant}`}
-              data-testid="pos-send-to-kitchen-input"
-              type="datetime-local"
-              value={cart.scheduledFor}
-              onChange={(e) => cart.setScheduledFor(e.target.value)}
-              className={`w-full min-h-10 px-2.5 py-1.5 text-sm border bg-card rounded-lg outline-none focus:ring-2 focus:ring-brand focus:border-brand ${
-                scheduleErrorMessage ? 'border-red-500' : 'border-border'
-              }`}
-            />
-            <p className="text-[11px] text-muted-foreground leading-snug">
-              {t('sendToKitchenHint', { timezone: effectiveTimezone })}
-            </p>
-            {scheduleErrorMessage && (
-              <p
-                role="alert"
-                data-testid="pos-schedule-error"
-                className="text-xs text-red-600 dark:text-red-400 font-medium leading-snug"
-              >
-                {scheduleErrorMessage}
-              </p>
-            )}
+            <button
+              type="button"
+              data-testid="pos-order-details-edit-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDetailsDrawerOpen(true);
+              }}
+              className="inline-flex shrink-0 items-center gap-0.5 font-medium text-brand hover:underline"
+            >
+              <span>{tCommon('edit')}</span>
+              <ChevronRight size={12} className="rtl-flip" />
+            </button>
           </div>
         )}
       </div>
@@ -610,8 +700,8 @@ export default function CartPanel({
         data-testid="cart-items-scroll"
         className={
           isDrawer
-            ? 'overflow-y-auto px-3 py-2 max-h-[40vh]'
-            : 'pos-cart-items flex-1 min-h-0 overflow-y-auto px-3 py-2'
+            ? 'overflow-y-auto px-2.5 py-1.5 max-h-[40vh]'
+            : 'pos-cart-items flex-1 min-h-0 overflow-y-auto px-2.5 py-1.5'
         }
       >
         {/* Previously ordered items (add-items mode) */}
@@ -757,49 +847,78 @@ export default function CartPanel({
       {/* Cart Footer */}
       <div
         data-testid="cart-footer"
-        className="px-3 py-2 border-t border-border dark:border-border"
+        className="px-2.5 py-1 border-t border-border dark:border-border bg-card space-y-1"
       >
-        {/* Order Notes */}
-        {cart.items.length > 0 && (
-          <div className="relative mb-2">
+        {/* Order Notes (shown only when non-empty or toggled open) */}
+        {(cart.orderNotes.length > 0 || orderNotesExpanded) && (
+          <div className="relative flex items-center">
             <StickyNote
-              size={14}
-              className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+              size={13}
+              className="pointer-events-none absolute start-2 text-muted-foreground"
             />
             <input
+              data-testid="pos-order-notes-input"
               type="text"
               value={cart.orderNotes}
               onChange={(e) => cart.setOrderNotes(e.target.value.slice(0, 200))}
+              onBlur={() => {
+                if (!cart.orderNotes.trim()) {
+                  setOrderNotesExpanded(false);
+                }
+              }}
               placeholder={t('orderNotesPlaceholder')}
               maxLength={200}
-              className="w-full h-8 ps-8 pe-12 text-xs border border-border bg-card rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+              className="w-full h-7 ps-7 pe-7 text-xs border border-border bg-muted/40 rounded-md focus:outline-none focus:ring-1 focus:ring-brand/30 focus:border-brand"
             />
-            <span className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground tabular-nums">
-              {cart.orderNotes.length}/200
-            </span>
+            <button
+              type="button"
+              onClick={() => {
+                cart.setOrderNotes('');
+                setOrderNotesExpanded(false);
+              }}
+              aria-label={tCommon('clear')}
+              className="absolute end-1.5 inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X size={12} />
+            </button>
           </div>
         )}
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-sm">
-          <span className="text-xs text-muted-foreground">
-            {t('items')}{' '}
-            <span className="ms-1 font-semibold text-foreground tabular-nums">
-              {cart.itemCount()}
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-xs">
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>
+              {t('items')}{' '}
+              <span className="ms-0.5 font-semibold text-foreground tabular-nums">
+                {cart.itemCount()}
+              </span>
             </span>
+            {cart.orderNotes.length === 0 && !orderNotesExpanded && (
+              <button
+                type="button"
+                data-testid="pos-order-note-toggle-btn"
+                onClick={() => setOrderNotesExpanded(true)}
+                className="inline-flex h-5 items-center gap-1 rounded border border-transparent px-1.5 text-[11px] text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground"
+              >
+                <span>+ {orderNotesShortLabel}</span>
+              </button>
+            )}
           </span>
           <span className="ms-auto flex flex-wrap items-baseline justify-end gap-1.5 min-w-0">
-            <span className="text-sm font-semibold text-foreground">{t('subtotal')}</span>
-            <span className="text-base font-bold text-brand tabular-nums">
+            <span className="text-xs font-semibold text-foreground">{t('subtotal')}</span>
+            <span className="text-sm font-bold text-brand tabular-nums">
               {fmt(cart.subtotal())}
             </span>
           </span>
         </div>
         {(appliedCharges.length > 0 || addableCharges.length > 0) && (
-          <div className="mb-2 space-y-1" data-testid="cart-charges">
+          <div className="space-y-1 text-[11px] leading-tight" data-testid="cart-charges">
             {appliedCharges.map((charge) => {
               const definition = applicableCharges.find((c) => c.id === charge.id);
               const isOptional = definition?.is_optional ?? false;
               return (
-                <div key={charge.id} className="flex items-center justify-between gap-2 text-sm">
+                <div
+                  key={charge.id}
+                  className="flex items-center justify-between gap-2 text-[11px] leading-tight"
+                >
                   <span
                     className={
                       charge.waived ? 'text-muted-foreground line-through' : 'text-muted-foreground'
@@ -807,7 +926,7 @@ export default function CartPanel({
                   >
                     {charge.name}
                   </span>
-                  <span className="flex items-center gap-2">
+                  <span className="flex items-center gap-1.5">
                     <span
                       className={
                         charge.waived ? 'text-muted-foreground line-through' : 'font-medium'
@@ -820,7 +939,7 @@ export default function CartPanel({
                         type="button"
                         onClick={() => cart.toggleWaiveCharge(charge.id)}
                         aria-pressed={charge.waived}
-                        className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
+                        className="text-[11px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
                       >
                         {charge.waived ? t('applyCharge') : t('waiveCharge')}
                       </button>
@@ -830,7 +949,7 @@ export default function CartPanel({
                         type="button"
                         onClick={() => cart.toggleOptedInCharge(charge.id)}
                         aria-pressed={!cart.optedInChargeIds.has(charge.id)}
-                        className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
+                        className="text-[11px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
                       >
                         {cart.optedInChargeIds.has(charge.id) ? t('removeCharge') : t('addCharge')}
                       </button>
@@ -840,19 +959,22 @@ export default function CartPanel({
               );
             })}
             {addableCharges.map((charge) => (
-              <div key={charge.id} className="flex items-center justify-between gap-2 text-sm">
+              <div
+                key={charge.id}
+                className="flex items-center justify-between gap-2 text-[11px] leading-tight"
+              >
                 <span className="text-muted-foreground">{charge.name}</span>
                 <button
                   type="button"
                   onClick={() => cart.toggleOptedInCharge(charge.id)}
-                  className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
+                  className="text-[11px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
                 >
                   {t('addCharge')}
                 </button>
               </div>
             ))}
             {appliedCharges.length > 0 && (
-              <div className="flex justify-between text-sm font-medium">
+              <div className="flex justify-between text-[11px] leading-tight font-medium">
                 <span>{t('chargesTotal')}</span>
                 <span>{fmt(chargeTotal)}</span>
               </div>
@@ -877,7 +999,6 @@ export default function CartPanel({
               onClick={onPlaceOrder}
               disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
               className="flex-1 min-w-0 px-3"
-              size="lg"
               data-testid="pos-append-existing-order-btn"
             >
               <span className="truncate">{submitting ? t('placing') : t('placeOrderButton')}</span>
@@ -896,7 +1017,6 @@ export default function CartPanel({
                 type="button"
                 onClick={onOpenPaymentQueue}
                 className="flex-1 min-w-0 px-3"
-                size="lg"
                 data-testid="pos-open-payment-queue-btn"
               >
                 <CreditCard className="me-2 h-4 w-4 shrink-0" />
@@ -910,7 +1030,6 @@ export default function CartPanel({
                     variant="outline"
                     onClick={onOpenPaymentQueue}
                     className="flex-1 min-w-0 px-3"
-                    size="lg"
                     data-testid="pos-open-payment-queue-btn"
                   >
                     <CreditCard className="me-2 h-4 w-4 shrink-0" />
@@ -921,7 +1040,6 @@ export default function CartPanel({
                   onClick={onPlaceOrder}
                   disabled={submitting || Boolean(scheduleErrorMessage)}
                   className="flex-1 min-w-0 px-3"
-                  size="lg"
                 >
                   <span className="truncate">
                     {submitting ? t('placing') : t('placeOrderButton')}
@@ -945,7 +1063,6 @@ export default function CartPanel({
               onClick={onSendToPayment}
               disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
               className="flex-1 min-w-0 px-3"
-              size="lg"
               data-testid="pos-send-to-payment-btn"
             >
               <span className="truncate">{submitting ? t('placing') : t('sendToPayment')}</span>
@@ -968,7 +1085,6 @@ export default function CartPanel({
                 onClick={onSendToPayment}
                 disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
                 className="flex-1 min-w-0 px-3"
-                size="lg"
                 data-testid="pos-send-to-payment-btn"
               >
                 <span className="truncate">{t('sendToPayment')}</span>
@@ -977,7 +1093,6 @@ export default function CartPanel({
                 onClick={onPlaceOrder}
                 disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
                 className="flex-1 min-w-0 px-3"
-                size="lg"
               >
                 <span className="truncate">
                   {submitting ? t('placing') : t('placeOrderButton')}
@@ -997,7 +1112,6 @@ export default function CartPanel({
               onClick={onPlaceOrder}
               disabled={submitting || cart.items.length === 0 || Boolean(scheduleErrorMessage)}
               className="flex-1 min-w-0 px-3"
-              size="lg"
             >
               <span className="truncate">{submitting ? t('placing') : t('placeOrderButton')}</span>
               {!submitting && (
@@ -1022,6 +1136,14 @@ export default function CartPanel({
           onClose={() => setPriceOverrideItemId(null)}
         />
       )}
+      <OrderDetailsDrawer
+        open={effectiveDetailsDrawerOpen}
+        onOpenChange={setDetailsDrawerOpen}
+        effectiveTimezone={effectiveTimezone}
+        scheduleErrorMessage={scheduleErrorMessage}
+        customPaymentMethods={customPaymentMethods}
+        scheduledOrdersEnabled={scheduledOrdersEnabled}
+      />
     </div>
   );
 }

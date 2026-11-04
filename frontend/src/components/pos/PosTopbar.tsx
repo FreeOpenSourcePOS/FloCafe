@@ -47,6 +47,7 @@ interface Props {
   scheduledOrderCount?: number;
   blockedScheduledCount?: number;
   onShowScheduledOrders?: () => void;
+  scheduledOrdersEnabled?: boolean;
   multiCounterEnabled?: boolean;
   counters?: Counter[];
   activeCounter?: Counter | null;
@@ -77,6 +78,7 @@ export default function PosTopbar({
   scheduledOrderCount = 0,
   blockedScheduledCount = 0,
   onShowScheduledOrders,
+  scheduledOrdersEnabled = false,
   multiCounterEnabled = false,
   counters = [],
   activeCounter = null,
@@ -123,7 +125,7 @@ export default function PosTopbar({
             </button>
           )}
 
-          {onShowScheduledOrders && (
+          {scheduledOrdersEnabled && onShowScheduledOrders && (
             <button
               type="button"
               onClick={onShowScheduledOrders}

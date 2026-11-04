@@ -67,6 +67,7 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
   let previousBillingType: string | undefined;
   let previousTablesRequired: boolean | undefined;
   let previousMultiCounterEnabled: string | undefined;
+  let previousScheduledOrdersEnabled: string | undefined;
   let previousTimezone: string | undefined;
   const cleanupErrors: string[] = [];
   let primaryTestError: unknown;
@@ -121,6 +122,17 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
         data: { value: 'true' },
       });
       expect(settingRes.ok()).toBeTruthy();
+
+      const prevSchedRes = await request.get(`${BASE}/api/settings/scheduled_orders_enabled`, {
+        headers: ownerHeaders,
+      });
+      expect(prevSchedRes.ok(), 'read prior scheduled-orders setting').toBeTruthy();
+      previousScheduledOrdersEnabled = (await prevSchedRes.json()).setting?.value;
+      const schedSettingRes = await request.put(`${BASE}/api/settings/scheduled_orders_enabled`, {
+        headers: ownerHeaders,
+        data: { value: 'true' },
+      });
+      expect(schedSettingRes.ok()).toBeTruthy();
 
       // Create ordering counter
       const ordRes = await request.post(`${BASE}/api/counters`, {
@@ -298,11 +310,18 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
       ]) {
         await cartShell.getByRole('button', { name: type, exact: true }).click();
         await page.getByTestId('pos-product-card').first().click();
+        await cartShell.getByTestId('pos-order-details-summary').click();
+        const detailsDrawer = page.getByTestId('pos-order-details-drawer');
+        await expect(detailsDrawer).toBeVisible();
         if (type === 'Delivery') {
-          await cartShell.getByPlaceholder('Delivery address').fill('123 Test Street');
+          await detailsDrawer.getByPlaceholder('Delivery address').fill('123 Test Street');
         } else {
-          await cartShell.getByPlaceholder('Platform (e.g. Swiggy, Zomato)').fill('Test platform');
+          await detailsDrawer
+            .getByPlaceholder('Platform (e.g. Swiggy, Zomato)')
+            .fill('Test platform');
         }
+        await detailsDrawer.getByTestId('pos-order-details-done-btn').click();
+        await expect(detailsDrawer).toHaveCount(0);
         await expect(cartShell.getByTestId('pos-send-to-payment-btn')).toHaveCount(0);
         const placeOrder = cartShell.getByRole('button', { name: 'Place Order' });
         await expect(placeOrder).toBeEnabled();
@@ -1412,6 +1431,15 @@ test('Multi-counter ordering flow: Owner config, create & pay, queue, table occu
           data: { value: previousMultiCounterEnabled },
         });
         expect(result.ok(), 'restore prior multi-counter setting').toBeTruthy();
+      });
+    }
+    if (previousScheduledOrdersEnabled !== undefined) {
+      await attemptCleanup('restore prior scheduled-orders setting', async () => {
+        const result = await request.put(`${BASE}/api/settings/scheduled_orders_enabled`, {
+          headers: ownerHeaders,
+          data: { value: previousScheduledOrdersEnabled },
+        });
+        expect(result.ok(), 'restore prior scheduled-orders setting').toBeTruthy();
       });
     }
     if (previousTimezone !== undefined) {

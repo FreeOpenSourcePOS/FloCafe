@@ -315,6 +315,7 @@ export default function POSPage() {
   const [blockedScheduledCount, setBlockedScheduledCount] = useState<number>(0);
   const [loadingMoreScheduled, setLoadingMoreScheduled] = useState(false);
   const [showScheduledOrders, setShowScheduledOrders] = useState(false);
+  const [scheduledOrdersEnabled, setScheduledOrdersEnabled] = useState(false);
   const [refundModalTarget, setRefundModalTarget] = useState<{
     order: Order;
     bills: Bill[];
@@ -1091,7 +1092,7 @@ export default function POSPage() {
 
   const canReadOrders = tenantCan(currentTenant, 'orders.read');
   const refreshScheduledOrders = useCallback(async () => {
-    if (!canReadOrders) {
+    if (!canReadOrders || !scheduledOrdersEnabled) {
       setScheduledOrders([]);
       setNextScheduledCursor(null);
       setScheduledCount(0);
@@ -1116,7 +1117,7 @@ export default function POSPage() {
     } catch {
       /* ignore background poll failures */
     }
-  }, [canReadOrders]);
+  }, [canReadOrders, scheduledOrdersEnabled]);
 
   const handleLoadMoreScheduledOrders = async () => {
     if (!nextScheduledCursor || loadingMoreScheduled) return;
@@ -1145,6 +1146,13 @@ export default function POSPage() {
   };
 
   useEffect(() => {
+    if (!scheduledOrdersEnabled) {
+      setScheduledOrders([]);
+      setNextScheduledCursor(null);
+      setScheduledCount(0);
+      setBlockedScheduledCount(0);
+      return;
+    }
     void refreshScheduledOrders();
     const interval = setInterval(() => {
       void refreshScheduledOrders();
@@ -1157,7 +1165,7 @@ export default function POSPage() {
       clearInterval(interval);
       window.removeEventListener('focus', onFocus);
     };
-  }, [refreshScheduledOrders]);
+  }, [scheduledOrdersEnabled, refreshScheduledOrders]);
 
   // Replay persisted append attempt on reload to recover lost in-flight responses.
   useEffect(() => {
@@ -1405,6 +1413,23 @@ export default function POSPage() {
         setCounters([]);
       });
 
+    api
+      .get('/settings/scheduled_orders_enabled')
+      .then((res) => {
+        if (cancelled) return;
+        const isScheduledEnabled = res.data.setting?.value === 'true';
+        setScheduledOrdersEnabled(isScheduledEnabled);
+        if (!isScheduledEnabled) {
+          useCartStore.getState().setScheduledFor('');
+          setShowScheduledOrders(false);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setScheduledOrdersEnabled(false);
+        setShowScheduledOrders(false);
+      });
+
     return () => {
       cancelled = true;
     };
@@ -1595,6 +1620,7 @@ export default function POSPage() {
       return false;
     }
     if (
+      scheduledOrdersEnabled &&
       !pendingOrder &&
       (cart.orderType === 'takeaway' || cart.orderType === 'delivery') &&
       cart.scheduledFor.trim().length > 0
@@ -1778,7 +1804,8 @@ export default function POSPage() {
             cart.orderType === 'delivery' ? (cart.expectedPaymentMethodId ?? undefined) : undefined,
           delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
           scheduled_for:
-            cart.orderType === 'takeaway' || cart.orderType === 'delivery'
+            scheduledOrdersEnabled &&
+            (cart.orderType === 'takeaway' || cart.orderType === 'delivery')
               ? cart.scheduledFor.trim() || undefined
               : undefined,
           waived_charge_ids: Array.from(cart.waivedChargeIds),
@@ -2090,7 +2117,9 @@ export default function POSPage() {
         guest_count: cart.orderType === 'dine_in' ? cart.guestCount : undefined,
         special_instructions: cart.orderNotes || undefined,
         scheduled_for:
-          cart.orderType === 'takeaway' ? cart.scheduledFor.trim() || undefined : undefined,
+          scheduledOrdersEnabled && cart.orderType === 'takeaway'
+            ? cart.scheduledFor.trim() || undefined
+            : undefined,
         dispatch_policy: 'on_payment',
         waived_charge_ids: Array.from(cart.waivedChargeIds),
         opted_in_charge_ids: Array.from(cart.optedInChargeIds),
@@ -3180,6 +3209,7 @@ export default function POSPage() {
     onOpenPaymentQueue: () => setShowPaymentQueue(true),
     counterRole: activeCounter?.role || null,
     multiCounterEnabled,
+    scheduledOrdersEnabled,
     onEditItem: setEditingCartItem,
     onModalOpenChange: setCartPanelModalOpen,
     existingOrder: pendingOrder,
@@ -3577,6 +3607,7 @@ export default function POSPage() {
         onCustomerModalOpenChange={setTopbarCustomerModalOpen}
         scheduledOrderCount={totalActiveScheduled}
         blockedScheduledCount={totalBlockedScheduled}
+        scheduledOrdersEnabled={scheduledOrdersEnabled}
         multiCounterEnabled={multiCounterEnabled}
         counters={counters}
         activeCounter={activeCounter}
@@ -3599,7 +3630,7 @@ export default function POSPage() {
       />
 
       {/* Main content area */}
-      <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
+      <div className="flex flex-1 min-h-0 overflow-hidden px-3 py-2 sm:px-4 sm:py-2.5 gap-3 sm:gap-4">
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
           <ProductGrid

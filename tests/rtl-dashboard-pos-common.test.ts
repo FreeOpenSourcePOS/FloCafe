@@ -59,6 +59,7 @@ const SCREEN_FILES = [
   'frontend/src/app/(dashboard)/customers/page.tsx',
   'frontend/src/app/(dashboard)/tables/page.tsx',
   'frontend/src/components/pos/CartPanel.tsx',
+  'frontend/src/components/pos/OrderDetailsDrawer.tsx',
   'frontend/src/components/pos/ProductGrid.tsx',
   'frontend/src/components/pos/PosTopbar.tsx',
   'frontend/src/components/pos/TaxBreakdown.tsx',

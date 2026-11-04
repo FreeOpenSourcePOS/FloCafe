@@ -3135,6 +3135,43 @@ async function main() {
         );
         assertIncludesOrThrow(regCardHtml, 'Add Item', 'regular partial order keeps Add Item');
         assertIncludesOrThrow(regCardHtml, 'Refund', 'regular partial order also exposes Refund');
+
+        // 11f. scheduled_orders_enabled store setting defaults to 'false' and validates boolean writes
+        const defaultToggleRes = await api(baseUrl, '/api/settings/scheduled_orders_enabled', {
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(defaultToggleRes.status, 200, 'read default scheduled_orders_enabled');
+        assertEqualOrThrow(
+          defaultToggleRes.data.setting?.value,
+          'false',
+          'scheduled_orders_enabled defaults to false',
+        );
+
+        const invalidToggleRes = await api(baseUrl, '/api/settings/scheduled_orders_enabled', {
+          method: 'PUT',
+          headers: owner.authHeader,
+          body: { value: 'invalid' },
+        });
+        assertEqualOrThrow(
+          invalidToggleRes.status,
+          400,
+          'non-boolean scheduled_orders_enabled rejected with 400',
+        );
+
+        const enableToggleRes = await api(baseUrl, '/api/settings/scheduled_orders_enabled', {
+          method: 'PUT',
+          headers: owner.authHeader,
+          body: { value: 'true' },
+        });
+        assertEqualOrThrow(enableToggleRes.status, 200, 'enable scheduled_orders_enabled');
+        const enabledReadRes = await api(baseUrl, '/api/settings/scheduled_orders_enabled', {
+          headers: owner.authHeader,
+        });
+        assertEqualOrThrow(
+          enabledReadRes.data.setting?.value,
+          'true',
+          'scheduled_orders_enabled persists true',
+        );
       } finally {
         Module._resolveFilename = origResolveFilename;
       }

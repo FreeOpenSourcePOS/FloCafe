@@ -368,6 +368,7 @@ export default function SettingsPage() {
   const whatsappEnabled = posSettings.whatsappEnabled;
   const { printMethod, setPrintMethod } = usePrinterStore();
   const t = useTranslations('settings');
+  const tPos = useTranslations('pos');
   const tAnalytics = useTranslations('productAnalytics');
   const tCommon = useTranslations('common');
   const tRestore = useTranslations('restore');
@@ -1767,6 +1768,8 @@ export default function SettingsPage() {
   const [savingServerAppBillPrintingEnabled, setSavingServerAppBillPrintingEnabled] =
     useState(false);
   const [kotPrintingEnabledSetting, setKotPrintingEnabledSetting] = useState(true);
+  const [scheduledOrdersEnabled, setScheduledOrdersEnabled] = useState(false);
+  const [savingScheduledOrdersEnabled, setSavingScheduledOrdersEnabled] = useState(false);
 
   const [savedOrderNumberForm, setSavedOrderNumberForm] = useState<OrderNumberForm>({
     prefix: 'ORD',
@@ -2746,6 +2749,13 @@ export default function SettingsPage() {
         }
         return;
       }
+      if (tab === 'pos') {
+        const res = await readOptional('/settings/scheduled_orders_enabled');
+        if (active()) {
+          setScheduledOrdersEnabled(res?.data?.setting?.value === 'true');
+        }
+        return;
+      }
       if (tab === 'server-app') {
         const [{ data }, { data: billPrintData }] = await Promise.all([
           get('/settings/server_app_enabled'),
@@ -3534,6 +3544,23 @@ export default function SettingsPage() {
         off: t('kotPrintingEnabledOff'),
       },
     );
+  };
+
+  const saveScheduledOrdersEnabled = async (enabled: boolean) => {
+    const previous = scheduledOrdersEnabled;
+    setScheduledOrdersEnabled(enabled);
+    setSavingScheduledOrdersEnabled(true);
+    try {
+      await api.put('/settings/scheduled_orders_enabled', {
+        value: enabled ? 'true' : 'false',
+      });
+      toast.success(t('diagnosticsSettingSaved'));
+    } catch {
+      setScheduledOrdersEnabled(previous);
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingScheduledOrdersEnabled(false);
+    }
   };
 
   const saveLoyalty = async (silent = false) => {
@@ -4416,6 +4443,23 @@ export default function SettingsPage() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div className="flex items-center justify-between pt-3 border-t border-border">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {tPos('scheduledOrdersTitle')}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {tPos('scheduleOrderToggle')}
+                      </p>
+                    </div>
+                    <Toggle
+                      value={scheduledOrdersEnabled}
+                      onChange={(val) => void saveScheduledOrdersEnabled(val)}
+                      label={tPos('scheduledOrdersTitle')}
+                      disabled={!isAdmin || savingScheduledOrdersEnabled}
+                      dataTestId="setting-scheduled-orders-enabled"
+                    />
                   </div>
                 </div>
               </div>

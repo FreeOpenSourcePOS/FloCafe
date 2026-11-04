@@ -541,6 +541,7 @@ async function run() {
         memStorage.delete(k);
       },
     };
+    const windowListeners = new Map<string, Set<(e: any) => void>>();
     (globalThis as any).window = {
       location: {
         origin: 'http://127.0.0.1:3001',
@@ -553,12 +554,19 @@ async function run() {
           replacedUrls.push(url);
         },
       },
-      dispatchEvent: () => true,
-      addEventListener: (type: string, fn: (e: { key: string }) => void) => {
-        if (type === 'keydown') keydownListeners.add(fn);
+      dispatchEvent: (event: { type?: string }) => {
+        const type = event?.type;
+        if (type && windowListeners.has(type)) {
+          for (const fn of [...windowListeners.get(type)!]) fn(event);
+        }
+        return true;
       },
-      removeEventListener: (type: string, fn: (e: { key: string }) => void) => {
-        if (type === 'keydown') keydownListeners.delete(fn);
+      addEventListener: (type: string, fn: (e: any) => void) => {
+        if (!windowListeners.has(type)) windowListeners.set(type, new Set());
+        windowListeners.get(type)!.add(fn);
+      },
+      removeEventListener: (type: string, fn: (e: any) => void) => {
+        windowListeners.get(type)?.delete(fn);
       },
       requestAnimationFrame: (cb: () => void) => {
         cb();
@@ -1015,7 +1023,7 @@ async function run() {
         'setup-restore-backup-button remains rendered on Step 2',
       );
 
-      // Verify clicking setup-restore-backup-button and pressing Ctrl+Shift+R invoke pickRestoreFile
+      // Verify clicking setup-restore-backup-button and dispatching RESTORE_FROM_FILE_EVENT invoke pickRestoreFile
       let pickRestoreCalls = 0;
       (globalThis as any).window.electronAPI = {
         platform: 'win32',
@@ -1030,14 +1038,12 @@ async function run() {
         1,
         'Clicking setup-restore-backup-button invokes window.electronAPI.pickRestoreFile',
       );
-      for (const listener of [...keydownListeners]) {
-        listener({ key: 'R', ctrlKey: true, shiftKey: true, altKey: false } as any);
-      }
+      (globalThis as any).window.dispatchEvent({ type: 'flo:restore-from-file' });
       await flushMicrotasks();
       assert.equal(
         pickRestoreCalls,
         2,
-        'Pressing Ctrl+Shift+R on /setup invokes window.electronAPI.pickRestoreFile',
+        'Dispatching RESTORE_FROM_FILE_EVENT on /setup invokes window.electronAPI.pickRestoreFile',
       );
       delete (globalThis as any).window.electronAPI;
 
@@ -1287,18 +1293,141 @@ async function run() {
         );
         delete (globalThis as any).window.electronAPI;
 
-        // Subcase 6: main/index.ts assigns accelerator CmdOrCtrl+Shift+R to Restore Backup under File
-        const mainIndexSource = require('fs').readFileSync(
-          path.resolve(rootDir, 'main/index.ts'),
-          'utf8',
-        );
+        // Subcase 6: MenuActionHandler routes Cmd/Ctrl+Shift+R and menu-restore-from-file on /setup and /auth/login
+        for (const slot of effectSlots) {
+          if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+        }
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pushedRoutes.length = 0;
+
+        let menuActionCallback: ((action: string) => void) | null = null;
+        let dispatchedRestoreEvents = 0;
+        const onRestoreEvent = () => {
+          dispatchedRestoreEvents++;
+        };
+        (globalThis as any).window.addEventListener('flo-restore-from-file', onRestoreEvent);
+        (globalThis as any).CustomEvent = class CustomEvent {
+          type: string;
+          constructor(type: string) {
+            this.type = type;
+          }
+        };
+        (globalThis as any).window.electronAPI = {
+          onMenuAction: (cb: (action: string) => void) => {
+            menuActionCallback = cb;
+            return () => {
+              menuActionCallback = null;
+            };
+          },
+        };
+
+        Module._load = function (request: string, parent: unknown, isMain: boolean) {
+          if (request === 'react') {
+            return {
+              ...reactHooks,
+            };
+          }
+          if (request === 'react/jsx-runtime') {
+            return { jsx: jsxElement, jsxs: jsxElement, Fragment: 'Fragment' };
+          }
+          if (request === 'next/navigation') {
+            return {
+              useRouter: () => ({
+                push: (url: string) => pushedRoutes.push(url),
+              }),
+            };
+          }
+          if (request === 'use-intl') {
+            return {
+              useTranslations: (ns: string) => (key: string) => `${ns}.${key}`,
+            };
+          }
+          if (request === 'react-hot-toast') {
+            return {
+              __esModule: true,
+              default: { loading: () => {}, success: () => {}, error: () => {}, remove: () => {} },
+            };
+          }
+          if (request === '@/components/settings/MasterPinPrompt') {
+            return { MasterPinPrompt: IconStub };
+          }
+          if (request === '@/lib/quick-search') {
+            return { dispatchQuickSearchRequest: () => {} };
+          }
+          if (request === '@/store/auth') {
+            return {
+              useAuthStore: {
+                getState: () => ({ user: null, loading: false, lock: async () => {} }),
+                subscribe: () => () => {},
+              },
+            };
+          }
+          if (request === '@/lib/api') {
+            return {
+              __esModule: true,
+              default: {
+                get: async (url: string) => {
+                  if (url === '/auth/setup/status') {
+                    return { data: { needsSetup: true } };
+                  }
+                  throw new Error(`Unexpected GET ${url}`);
+                },
+              },
+            };
+          }
+          return originalLoad.apply(this, arguments as any);
+        };
+
+        delete require.cache[
+          path.resolve(rootDir, 'frontend/src/components/layout/MenuActionHandler.tsx')
+        ];
+        const MenuActionHandlerComponent =
+          require('../frontend/src/components/layout/MenuActionHandler').default;
+        currentStateIdx = 0;
+        currentRefIdx = 0;
+        currentEffectIdx = 0;
+        pendingEffects.length = 0;
+        MenuActionHandlerComponent();
+        while (pendingEffects.length > 0) {
+          const runEffect = pendingEffects.shift()!;
+          runEffect();
+        }
+
+        (globalThis as any).window.location.pathname = '/setup';
+        let prevented = false;
+        (globalThis as any).window.dispatchEvent({
+          type: 'keydown',
+          key: 'R',
+          ctrlKey: true,
+          shiftKey: true,
+          altKey: false,
+          defaultPrevented: false,
+          preventDefault: () => {
+            prevented = true;
+          },
+        });
+        await flushMicrotasks();
+        assert.equal(prevented, true, 'MenuActionHandler prevents default on Ctrl+Shift+R');
         assert.equal(
-          /label:\s*'Restore Backup'[\s\S]{0,120}accelerator:\s*'CmdOrCtrl\+Shift\+R'[\s\S]{0,160}menu-restore-from-file/.test(
-            mainIndexSource,
-          ),
-          true,
-          "main/index.ts defines Restore Backup with accelerator 'CmdOrCtrl+Shift+R'",
+          dispatchedRestoreEvents,
+          1,
+          'MenuActionHandler dispatches RESTORE_FROM_FILE_EVENT when Ctrl+Shift+R is pressed on /setup',
         );
+
+        (globalThis as any).window.location.pathname = '/auth/login';
+        assert.ok(menuActionCallback, 'MenuActionHandler registers onMenuAction listener');
+        (menuActionCallback as (action: string) => void)('menu-restore-from-file');
+        await flushMicrotasks();
+        assert.deepEqual(
+          pushedRoutes,
+          ['/setup?action=restore-from-file'],
+          'MenuActionHandler routes menu-restore-from-file to /setup?action=restore-from-file when needsSetup is true off /setup',
+        );
+
+        (globalThis as any).window.removeEventListener('flo-restore-from-file', onRestoreEvent);
+        delete (globalThis as any).window.electronAPI;
       } finally {
         (globalThis as any).fetch = originalFetch;
       }

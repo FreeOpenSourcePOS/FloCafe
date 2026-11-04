@@ -255,25 +255,8 @@ export default function SetupPage() {
       void handleRestoreBackup();
     }
     const onRestoreRequested = () => void handleRestoreBackup();
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (
-        !e.defaultPrevented &&
-        window.electronAPI &&
-        (e.metaKey || e.ctrlKey) &&
-        e.shiftKey &&
-        !e.altKey &&
-        e.key?.toLowerCase() === 'r'
-      ) {
-        e.preventDefault?.();
-        void handleRestoreBackup();
-      }
-    };
     window.addEventListener(RESTORE_FROM_FILE_EVENT, onRestoreRequested);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener(RESTORE_FROM_FILE_EVENT, onRestoreRequested);
-      window.removeEventListener('keydown', onKeyDown);
-    };
+    return () => window.removeEventListener(RESTORE_FROM_FILE_EVENT, onRestoreRequested);
   }, [handleRestoreBackup]);
 
   const selectedCountry: Country | undefined = getCountryByCode(country);

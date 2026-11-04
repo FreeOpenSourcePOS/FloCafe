@@ -24,15 +24,13 @@ import {
 import { Drawer, DrawerContent, DrawerTrigger } from '@/components/ui/drawer';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parsePhone } from '@/lib/phone';
-import { getLanguageDirection, getLanguageLocale, useSyncServerLanguage } from '@/lib/i18n';
+import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { toastApiError } from '@/lib/api-error';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { formatItemHeading } from '@/lib/printer/item-heading';
-import { usePosSettingsStore } from '@/store/pos-settings';
-import { printerService } from '@/lib/printer/PrinterService';
 import { generateCartItemId } from '@/lib/cart-identity';
 import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
 import AddonModal from '@/components/pos/AddonModal';
@@ -41,7 +39,6 @@ import type { PosCategorySort, PosItemSort } from '@/lib/pos-sort';
 import MoveTableModal from '@/components/tables/MoveTableModal';
 import { tenantCan } from '@/lib/permissions';
 import type {
-  Order as FullOrder,
   Table as FullTable,
   Tenant,
   Product,
@@ -182,7 +179,6 @@ function sendAttemptSignature(
 export default function ServerStandalonePage() {
   // Syncs tenant language preference from /api/server-app/info.
   useSyncServerLanguage('/api/server-app/info');
-  const language = usePosSettingsStore((state) => state.language);
   const t = useTranslations('serverApp');
   const tAuth = useTranslations('auth');
   const tTables = useTranslations('tables');
@@ -943,7 +939,7 @@ export default function ServerStandalonePage() {
     return res.data.customer?.id || null;
   }
 
-  // Falls back to this device's browser print dialog when no hardware printer is configured (400).
+  // Stays quiet on 400 (no hardware printer configured) so tableside devices never open window.print().
   async function printKotForOrder(
     orderId: number,
     orderForPrint: Record<string, unknown>,
@@ -960,38 +956,21 @@ export default function ServerStandalonePage() {
         },
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      return;
     } catch (printError: unknown) {
       if (!isCurrent()) return;
       const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
       const errorCode = axios.isAxiosError(printError)
         ? (printError.response?.data as { code?: unknown } | undefined)?.code
         : undefined;
-      if (status === 403 && errorCode === 'KOT_PRINTING_DISABLED') return;
-      if (status !== 400) {
-        toastApiError(printError, t('kotPrintFailed'), apiErrorT);
-        return;
-      }
-    }
-    try {
-      const { generateKotHtml, resolveKotTicketLanguage } =
-        await import('@/lib/printer/kot-web-print');
-      if (!isCurrent()) return;
-      const html = generateKotHtml(orderForPrint as unknown as FullOrder, {
-        paperWidth: 80,
-        language: resolveKotTicketLanguage(),
-        stationName: t('kitchen'),
-      });
-      await printerService.printViaBrowser(html, 80);
-    } catch (fallbackError: unknown) {
-      toastApiError(fallbackError, t('kotPrintFailed'), apiErrorT);
+      if (status === 400 || (status === 403 && errorCode === 'KOT_PRINTING_DISABLED')) return;
+      toastApiError(printError, t('kotPrintFailed'), apiErrorT);
     }
   }
 
-  // Same browser-print fallback as KOT above on 400; stays quiet on 403 (owner hasn't enabled server bill printing).
+  // Stays quiet on 400 (no hardware printer configured) and 403 (owner hasn't enabled server bill printing).
   async function printOrderSlip(
     orderId: number,
-    orderForPrint: Record<string, unknown>,
+    _orderForPrint: Record<string, unknown>,
     token: string,
     isCurrent: () => boolean,
   ) {
@@ -1002,42 +981,11 @@ export default function ServerStandalonePage() {
         { orderId },
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      return;
     } catch (printError: unknown) {
       if (!isCurrent()) return;
       const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
-      if (status === 403) return;
-      if (status !== 400) {
-        toastApiError(printError, t('billPrintFailed'), apiErrorT);
-        return;
-      }
-    }
-    try {
-      const { generateOrderSlipHtml } = await import('@/lib/printer/order-slip-web-print');
-      if (!isCurrent()) return;
-      const html = generateOrderSlipHtml(
-        orderForPrint as unknown as FullOrder,
-        {
-          title: t('orderSlipTitle'),
-          subtotal: t('orderSlipSubtotal'),
-          discount: t('orderSlipDiscount'),
-          serviceCharge: t('orderSlipServiceCharge'),
-          deliveryCharge: t('orderSlipDeliveryCharge'),
-          packagingCharge: t('orderSlipPackagingCharge'),
-          tax: t('orderSlipTax'),
-          total: t('orderSlipTotal'),
-        },
-        {
-          paperWidth: 80,
-          country: regional?.country,
-          currency: regional?.currency,
-          locale: getLanguageLocale(language),
-          direction: getLanguageDirection(language),
-        },
-      );
-      await printerService.printViaBrowser(html, 80);
-    } catch (fallbackError: unknown) {
-      toastApiError(fallbackError, t('billPrintFailed'), apiErrorT);
+      if (status === 400 || status === 403) return;
+      toastApiError(printError, t('billPrintFailed'), apiErrorT);
     }
   }
 

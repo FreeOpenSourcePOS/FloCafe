@@ -68,6 +68,71 @@ test.describe('Server App tableside ordering', () => {
     ).toBeTruthy();
   });
 
+  test('does not open browser print popup when no hardware printer is configured (400)', async ({
+    page,
+  }) => {
+    const managerToken = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
+    const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
+    const headers = { Authorization: `Bearer ${managerToken}` };
+
+    const tableName = `NoBrowserPrint ${Date.now()}`;
+    const tableRes = await page.request.post(`${E2E_BASE_URL}/api/tables`, {
+      headers,
+      data: { number: tableName, capacity: 2 },
+    });
+    expect(tableRes.ok()).toBeTruthy();
+
+    await page.addInitScript(() => {
+      const win = window as unknown as { __browserPrintCalls?: number };
+      win.__browserPrintCalls = 0;
+      window.print = () => {
+        win.__browserPrintCalls = (win.__browserPrintCalls ?? 0) + 1;
+      };
+      const origOpen = window.open.bind(window);
+      window.open = (...args: Parameters<typeof window.open>) => {
+        win.__browserPrintCalls = (win.__browserPrintCalls ?? 0) + 1;
+        return origOpen(...args);
+      };
+    });
+
+    let kotCalls = 0;
+    let billCalls = 0;
+    await page.route('**/api/printers/print-kot', async (route) => {
+      kotCalls += 1;
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'No default printer configured' }),
+      });
+    });
+    await page.route('**/api/printers/print-bill', async (route) => {
+      billCalls += 1;
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'No default printer configured' }),
+      });
+    });
+
+    await openServerApp(page, serverToken);
+    await page.getByRole('button', { name: new RegExp(tableName) }).click();
+
+    const search = page.getByTestId('pos-product-grid').getByPlaceholder('Search menu');
+    await search.fill('E2E Coffee');
+    await search.press('Enter');
+
+    await page.getByRole('button', { name: 'Send to kitchen' }).first().click();
+    await expect(page.getByText('Order sent').first()).toBeVisible();
+    await expect.poll(() => kotCalls).toBe(1);
+    await expect.poll(() => billCalls).toBe(1);
+
+    const browserPrintCalls = await page.evaluate(
+      () => (window as unknown as { __browserPrintCalls?: number }).__browserPrintCalls ?? 0,
+    );
+    expect(browserPrintCalls).toBe(0);
+    await expect(page.getByText('No default printer configured')).toHaveCount(0);
+  });
+
   test('explains that tables are required when none are set up', async ({ page }) => {
     const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
     await page.route('**/api/tables?*', (route) =>

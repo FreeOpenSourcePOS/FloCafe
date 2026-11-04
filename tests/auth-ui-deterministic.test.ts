@@ -554,8 +554,12 @@ async function run() {
         },
       },
       dispatchEvent: () => true,
-      addEventListener: () => {},
-      removeEventListener: () => {},
+      addEventListener: (type: string, fn: (e: { key: string }) => void) => {
+        if (type === 'keydown') keydownListeners.add(fn);
+      },
+      removeEventListener: (type: string, fn: (e: { key: string }) => void) => {
+        if (type === 'keydown') keydownListeners.delete(fn);
+      },
       requestAnimationFrame: (cb: () => void) => {
         cb();
         return 1;
@@ -928,12 +932,114 @@ async function run() {
       currentRefIdx = 0;
       currentEffectIdx = 0;
       pendingEffects.length = 0;
-      SetupPageComponent();
+      const setupStep1Tree = SetupPageComponent();
       while (pendingEffects.length > 0) {
         const runEffect = pendingEffects.shift()!;
         runEffect();
       }
       await flushMicrotasks();
+
+      const findNodes = (
+        node: unknown,
+        predicate: (el: { type: unknown; props?: Record<string, unknown> }) => boolean,
+        out: Array<{ type: unknown; props?: Record<string, unknown> }> = [],
+      ): Array<{ type: unknown; props?: Record<string, unknown> }> => {
+        if (!node) return out;
+        if (Array.isArray(node)) {
+          for (const child of node) findNodes(child, predicate, out);
+          return out;
+        }
+        if (typeof node === 'object') {
+          const el = node as { type: unknown; props?: Record<string, unknown> };
+          if (predicate(el)) out.push(el);
+          if (el.props && 'children' in el.props) {
+            findNodes(el.props.children, predicate, out);
+          }
+        }
+        return out;
+      };
+
+      const step1Callouts = findNodes(
+        setupStep1Tree,
+        (el) => el.props?.['data-testid'] === 'setup-restore-backup-callout',
+      );
+      const step1Buttons = findNodes(
+        setupStep1Tree,
+        (el) => el.props?.['data-testid'] === 'setup-restore-backup-button',
+      );
+      assert.equal(
+        step1Callouts.length,
+        1,
+        'SetupPage renders top-level restore backup callout on Step 1',
+      );
+      assert.equal(
+        step1Buttons.length,
+        1,
+        'SetupPage renders setup-restore-backup-button on Step 1',
+      );
+
+      // Verify the callout appears before the main wizard Card inside the setup container
+      const containerNodes = findNodes(
+        setupStep1Tree,
+        (el) =>
+          Array.isArray(el.props?.children) &&
+          (el.props!.children as unknown[]).some(
+            (child: any) => child?.props?.['data-testid'] === 'setup-restore-backup-callout',
+          ),
+      );
+      assert.equal(containerNodes.length, 1, 'Found setup wizard container holding callout');
+      const containerChildren = containerNodes[0].props!.children as Array<any>;
+      const calloutIndex = containerChildren.findIndex(
+        (c) => c?.props?.['data-testid'] === 'setup-restore-backup-callout',
+      );
+      const cardIndex = containerChildren.findIndex((c) => c?.type === IconStub);
+      assert.equal(
+        calloutIndex >= 0 && cardIndex > calloutIndex,
+        true,
+        'Restore backup callout is rendered above the main wizard Card',
+      );
+
+      // Advance to Step 2 and verify the callout and button remain visible
+      states[0] = 2;
+      currentStateIdx = 0;
+      currentRefIdx = 0;
+      currentEffectIdx = 0;
+      const setupStep2Tree = SetupPageComponent();
+      const step2Buttons = findNodes(
+        setupStep2Tree,
+        (el) => el.props?.['data-testid'] === 'setup-restore-backup-button',
+      );
+      assert.equal(
+        step2Buttons.length,
+        1,
+        'setup-restore-backup-button remains rendered on Step 2',
+      );
+
+      // Verify clicking setup-restore-backup-button and pressing Ctrl+Shift+R invoke pickRestoreFile
+      let pickRestoreCalls = 0;
+      (globalThis as any).window.electronAPI = {
+        platform: 'win32',
+        pickRestoreFile: async () => {
+          pickRestoreCalls++;
+          return { canceled: true };
+        },
+      };
+      await (step2Buttons[0].props?.onClick as () => Promise<void>)();
+      assert.equal(
+        pickRestoreCalls,
+        1,
+        'Clicking setup-restore-backup-button invokes window.electronAPI.pickRestoreFile',
+      );
+      for (const listener of [...keydownListeners]) {
+        listener({ key: 'R', ctrlKey: true, shiftKey: true, altKey: false } as any);
+      }
+      await flushMicrotasks();
+      assert.equal(
+        pickRestoreCalls,
+        2,
+        'Pressing Ctrl+Shift+R on /setup invokes window.electronAPI.pickRestoreFile',
+      );
+      delete (globalThis as any).window.electronAPI;
 
       assert.equal(
         setupStatusCalls,
@@ -1092,6 +1198,106 @@ async function run() {
           pushedRoutes,
           ['/setup'],
           'LoginPage redirects to /setup when retry confirms needsSetup: true',
+        );
+
+        // Subcase 5: DesktopDragSurface exposes ApplicationMenuRow on standalone routes (/setup, /auth/*) and omits it on dashboard routes
+        let mockPathname = '/setup';
+        const AppMenuRowStub = () => ({ type: 'ApplicationMenuRow' });
+        const WindowControlsStub = () => ({ type: 'WindowControls' });
+        Module._load = function (request: string, parent: unknown, isMain: boolean) {
+          if (request === 'react') {
+            return {
+              ...reactHooks,
+              useSyncExternalStore: (_sub: unknown, getSnap: () => boolean) => getSnap(),
+            };
+          }
+          if (request === 'react/jsx-runtime') {
+            return { jsx: jsxElement, jsxs: jsxElement, Fragment: 'Fragment' };
+          }
+          if (request === 'next/navigation') {
+            return { usePathname: () => mockPathname };
+          }
+          if (request === './ApplicationMenuRow') {
+            return { __esModule: true, default: AppMenuRowStub };
+          }
+          if (request === './WindowControls') {
+            return { __esModule: true, default: WindowControlsStub };
+          }
+          if (request === './titlebar-sync') {
+            return { useDesktopTitleBarSync: () => {} };
+          }
+          return originalLoad.apply(this, arguments as any);
+        };
+
+        delete require.cache[
+          path.resolve(rootDir, 'frontend/src/components/layout/DesktopDragSurface.tsx')
+        ];
+        const {
+          default: DesktopDragSurface,
+          isStandaloneMenuRoute,
+        } = require('../frontend/src/components/layout/DesktopDragSurface');
+
+        assert.equal(isStandaloneMenuRoute('/setup'), true, '/setup is a standalone menu route');
+        assert.equal(isStandaloneMenuRoute('/setup/'), true, '/setup/ is a standalone menu route');
+        assert.equal(
+          isStandaloneMenuRoute('/auth/login'),
+          true,
+          '/auth/login is a standalone menu route',
+        );
+        assert.equal(
+          isStandaloneMenuRoute('/auth/recover'),
+          true,
+          '/auth/recover is a standalone menu route',
+        );
+        assert.equal(isStandaloneMenuRoute('/pos'), false, '/pos is not a standalone menu route');
+        assert.equal(
+          isStandaloneMenuRoute('/dashboard'),
+          false,
+          '/dashboard is not a standalone menu route',
+        );
+
+        (globalThis as any).window.electronAPI = { getStatus: async () => ({}) };
+        mockPathname = '/setup';
+        const setupSurfaceTree = DesktopDragSurface();
+        const setupMenuNodes = findNodes(setupSurfaceTree, (el) => el.type === AppMenuRowStub);
+        const setupSafeAreas = findNodes(
+          setupSurfaceTree,
+          (el) =>
+            typeof el.props?.className === 'string' &&
+            el.props.className.includes('flo-title-bar__safe-area'),
+        );
+        assert.equal(
+          setupMenuNodes.length,
+          1,
+          'DesktopDragSurface renders ApplicationMenuRow on /setup',
+        );
+        assert.equal(
+          setupSafeAreas.length,
+          1,
+          'DesktopDragSurface wraps ApplicationMenuRow in .flo-title-bar__safe-area on /setup',
+        );
+
+        mockPathname = '/pos';
+        const posSurfaceTree = DesktopDragSurface();
+        const posMenuNodes = findNodes(posSurfaceTree, (el) => el.type === AppMenuRowStub);
+        assert.equal(
+          posMenuNodes.length,
+          0,
+          'DesktopDragSurface does not duplicate ApplicationMenuRow on /pos',
+        );
+        delete (globalThis as any).window.electronAPI;
+
+        // Subcase 6: main/index.ts assigns accelerator CmdOrCtrl+Shift+R to Restore Backup under File
+        const mainIndexSource = require('fs').readFileSync(
+          path.resolve(rootDir, 'main/index.ts'),
+          'utf8',
+        );
+        assert.equal(
+          /label:\s*'Restore Backup'[\s\S]{0,120}accelerator:\s*'CmdOrCtrl\+Shift\+R'[\s\S]{0,160}menu-restore-from-file/.test(
+            mainIndexSource,
+          ),
+          true,
+          "main/index.ts defines Restore Backup with accelerator 'CmdOrCtrl+Shift+R'",
         );
       } finally {
         (globalThis as any).fetch = originalFetch;

@@ -1359,6 +1359,7 @@ function createMenu(): void {
         { label: 'Backup Database', click: () => mainWindow?.webContents.send('backup-database') },
         {
           label: 'Restore Backup',
+          accelerator: 'CmdOrCtrl+Shift+R',
           click: () => mainWindow?.webContents.send('menu-restore-from-file'),
         },
         { type: 'separator' },

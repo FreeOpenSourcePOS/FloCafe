@@ -124,9 +124,23 @@ export default function MenuActionHandler() {
   }
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.electronAPI?.onMenuAction) return;
+    if (typeof window === 'undefined' || !window.electronAPI) return;
 
-    const unsubscribe = window.electronAPI.onMenuAction((action: string) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        !e.defaultPrevented &&
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        !e.altKey &&
+        e.key?.toLowerCase() === 'r'
+      ) {
+        e.preventDefault?.();
+        void routeRestoreRequest();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const unsubscribe = window.electronAPI.onMenuAction?.((action: string) => {
       console.log('[Menu] Action received:', action);
 
       switch (action) {
@@ -212,6 +226,7 @@ export default function MenuActionHandler() {
     });
 
     return () => {
+      window.removeEventListener('keydown', handleKeyDown);
       unsubscribe?.();
     };
     // oxlint-disable-next-line react-hooks/exhaustive-deps

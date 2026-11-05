@@ -1309,7 +1309,7 @@ async function main() {
   assert.equal(apiCaptured.properties?.process_type, 'api');
   assert.match(
     apiCaptured.stack,
-    /main\/services\/posthog\.ts/,
+    /main[\\/]services[\\/]posthog\.ts/,
     'a 5xx without a thrown error still carries frames, never a bare name',
   );
 

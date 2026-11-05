@@ -38,6 +38,7 @@ router.get('/feed', feedRateLimit, (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json(feed);
   } catch (error) {
+    res.locals.postHogError = error;
     if (error instanceof DisplayFeedPaginationError) {
       return res.status(400).json({ error: error.message });
     }

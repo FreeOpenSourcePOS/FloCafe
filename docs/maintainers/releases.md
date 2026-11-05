@@ -10,14 +10,14 @@ uploads are separate from the GitHub release.
 
 The default install is the stable channel. There are exactly two channels, `stable` and `beta`.
 
-| | Stable | Beta |
-| --- | --- | --- |
-| Package version | `X.Y.Z` | `X.Y.Z-beta.N` |
-| Updater manifest prefix | `latest` | `beta` |
-| Manifests emitted | `latest.yml`, `latest-mac.yml`, `latest-linux.yml`, `latest-linux-arm64.yml` | `beta.yml`, `beta-mac.yml`, `beta-linux.yml`, `beta-linux-arm64.yml` |
-| GitHub prerelease | no | yes |
-| GitHub Latest pointer | eligible after promotion | never |
-| Snap Store channel | `stable` | `edge` |
+|                         | Stable                                                                       | Beta                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Package version         | `X.Y.Z`                                                                      | `X.Y.Z-beta.N`                                                       |
+| Updater manifest prefix | `latest`                                                                     | `beta`                                                               |
+| Manifests emitted       | `latest.yml`, `latest-mac.yml`, `latest-linux.yml`, `latest-linux-arm64.yml` | `beta.yml`, `beta-mac.yml`, `beta-linux.yml`, `beta-linux-arm64.yml` |
+| GitHub prerelease       | no                                                                           | yes                                                                  |
+| GitHub Latest pointer   | eligible after promotion                                                     | never                                                                |
+| Snap Store channel      | `stable`                                                                     | `edge`                                                               |
 
 The manifest prefix is computed once in the release metadata step and passed to every
 electron-builder invocation, so a build emits exactly one channel's manifest set. A beta build
@@ -56,9 +56,9 @@ Each Linux architecture publishes its own snap, tagged separately, and the Snap 
 multiple per-architecture revisions under the one snap name.
 
 | Release channel | Snap Store channel |
-| --- | --- |
-| `stable` | `stable` |
-| `beta` | `edge` |
+| --------------- | ------------------ |
+| `stable`        | `stable`           |
+| `beta`          | `edge`             |
 
 Beta publishes to `edge` because the Snap Store credential macaroon in use is scoped to the
 `stable` and `edge` channels. This keeps a prerelease out of the stable package-manager channel.
@@ -88,14 +88,17 @@ Each Linux, macOS, and Windows build step runs `npm run sourcemaps:posthog`
 `POSTHOG_CLI_API_KEY` secret and the `POSTHOG_CLI_PROJECT_ID` variable are both set, the renderer
 export is built with browser source maps, and the script injects chunk ids into `frontend/out` and
 `dist`, uploads their maps as release `flocafe` at the `package.json` version, and deletes the
-`.js.map` files so they do not ship. `POSTHOG_CLI_HOST` defaults to `https://eu.posthog.com`.
-The script runs `@posthog/cli@latest` through `npx`, so a release uses the newest published CLI.
+`.js.map` files so they do not ship. The upload uses `--release-mode symbol-set`, so each uploaded
+symbol set is bound to that release; the default `event` mode leaves them unbound.
+`POSTHOG_CLI_HOST` defaults to `https://eu.posthog.com`.
+The script runs a pinned `@posthog/cli` version through `npx`, so a new CLI release cannot change the upload; update the pin on purpose.
 The CLI gets only `PATH`, home and temp directories, proxy and npm cache settings, and
 `POSTHOG_CLI_*`; signing certificates and store credentials in the job are not passed to it.
 
 Without the key or the project id, the step prints a skip notice and the build is unchanged. An
-upload failure is a warning, not a release failure; the maps are still deleted. The key needs the
-`error tracking write` and `organization read` scopes.
+upload failure is a warning, not a release failure, and the maps are deleted anyway so a failed
+upload cannot ship the renderer source; a rerun rebuilds them. The key needs the `error tracking
+write` and `organization read` scopes.
 
 To check a release, open a served chunk in the packaged app and look for a `//# chunkId=` comment,
 then confirm the symbol sets under Error tracking settings in PostHog.
@@ -106,11 +109,11 @@ Every published release must carry this exact inventory.
 [`scripts/verify-release-assets.cjs`](../../scripts/verify-release-assets.cjs) requires all of these
 names and no substitutes.
 
-| Platform | Artifact names, where `<version>` is the release version |
-| --- | --- |
-| Windows | `flocafe-<version>-win-x64.exe`, `flocafe-<version>-win-x64.exe.blockmap`, `flocafe-<version>-win-x64.appx`, `flocafe-<version>-win-arm64.appx` |
-| macOS | `flocafe-<version>-mac-x64.dmg`, `flocafe-<version>-mac-arm64.dmg`, `flocafe-<version>-mac-x64.zip`, `flocafe-<version>-mac-arm64.zip`, `flocafe-<version>-mac-x64.zip.blockmap`, `flocafe-<version>-mac-arm64.zip.blockmap` |
-| Linux | `flocafe-<version>-linux-x64.appimage`, `flocafe-<version>-linux-arm64.appimage`, `flocafe-<version>-linux-x64.deb`, `flocafe-<version>-linux-arm64.deb`, `flocafe-<version>-linux-x64.rpm`, `flocafe-<version>-linux-arm64.rpm`, `flocafe-<version>-linux-x64.snap`, `flocafe-<version>-linux-arm64.snap` |
+| Platform | Artifact names, where `<version>` is the release version                                                                                                                                                                                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows  | `flocafe-<version>-win-x64.exe`, `flocafe-<version>-win-x64.exe.blockmap`, `flocafe-<version>-win-x64.appx`, `flocafe-<version>-win-arm64.appx`                                                                                                                                                            |
+| macOS    | `flocafe-<version>-mac-x64.dmg`, `flocafe-<version>-mac-arm64.dmg`, `flocafe-<version>-mac-x64.zip`, `flocafe-<version>-mac-arm64.zip`, `flocafe-<version>-mac-x64.zip.blockmap`, `flocafe-<version>-mac-arm64.zip.blockmap`                                                                               |
+| Linux    | `flocafe-<version>-linux-x64.appimage`, `flocafe-<version>-linux-arm64.appimage`, `flocafe-<version>-linux-x64.deb`, `flocafe-<version>-linux-arm64.deb`, `flocafe-<version>-linux-x64.rpm`, `flocafe-<version>-linux-arm64.rpm`, `flocafe-<version>-linux-x64.snap`, `flocafe-<version>-linux-arm64.snap` |
 
 Plus the two uninstaller scripts `uninstall-macos.sh` and `uninstall-windows.ps1`.
 

@@ -231,6 +231,7 @@ router.get(
       const defaultPrinter = getDefaultPrinter(db);
       res.json({ printers: defaultPrinter ? [printerReadinessShape(defaultPrinter)] : [] });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -247,6 +248,7 @@ router.get(
       console.log('[Printer] Detected printers:', printers);
       res.json({ printers });
     } catch (error: any) {
+      res.locals.postHogError = error;
       if (getHttpRequestSignal(req)?.aborted) {
         if (!res.headersSent) res.status(503).end();
         else if (!res.writableEnded) res.destroy();
@@ -272,6 +274,7 @@ router.get('/:id', requirePermission('printers.manage'), (req: Request, res: Res
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
     res.json({ printer: printerShape(printer) });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -341,6 +344,7 @@ router.post('/', requirePermission('printers.manage'), (req: Request, res: Respo
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(id);
     res.status(201).json({ printer: printerShape(printer) });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -414,6 +418,7 @@ router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Res
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
     res.json({ printer: printerShape(printer) });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
     res.status(500).json({ error: 'Internal server error' });
@@ -448,6 +453,7 @@ router.delete('/:id', requirePermission('printers.manage'), (req: Request, res: 
     })();
     res.json({ message: 'Printer deleted' });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
     res.status(500).json({ error: 'Internal server error' });
@@ -474,6 +480,7 @@ router.post(
 
       res.json({ message: 'Default printer set' });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -539,6 +546,7 @@ router.post(
         });
       }
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -606,6 +614,7 @@ router.post(
         res.status(502).json({ error: 'Cash drawer kick failed' });
       }
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -670,6 +679,7 @@ router.post(
         res.status(502).json({ error: 'Test print failed' });
       }
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -898,6 +908,7 @@ router.post(
         warnings: result.warnings || [],
       });
     } catch (error) {
+      res.locals.postHogError = error;
       if (error instanceof RegionalNotConfiguredError) {
         return res.status(409).json({ error: 'regional_not_configured' });
       }
@@ -1178,6 +1189,7 @@ router.post(
         });
       }
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[Print Bill] Error:', error);
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -1376,6 +1388,7 @@ router.post(
         });
       }
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[Print KOT] Error:', error);
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -1528,6 +1541,7 @@ router.post(
         stage: result.stage,
       });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[Print Delivery Slip] Error:', error);
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -1676,6 +1690,7 @@ router.post(
         stage: result.stage,
       });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[Print Payment Ticket] Error:', error);
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });

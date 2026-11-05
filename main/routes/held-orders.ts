@@ -177,6 +177,7 @@ router.get('/', heldOrderReadRateLimit, requirePermission('held-orders.manage'),
     }
     res.json({ orders, skippedCount });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error("[API] Held orders fetch error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -221,6 +222,7 @@ router.post('/', heldOrderWriteRateLimit, requirePermission('held-orders.manage'
     // Return held order identity so clients can verify snapshot validity on deletion.
     res.json({ success: true, id: heldOrderId });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error("[API] Hold order error:", error);
     res.status(500).json({ error: "Could not hold order" });
   }
@@ -252,6 +254,7 @@ router.delete('/:tableId', heldOrderWriteRateLimit, requirePermission('held-orde
     // Deletion is idempotent; concurrent resumption or deletion is treated as success.
     res.json({ success: true, deleted });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error("[API] Delete held order error:", error);
     res.status(500).json({ error: "Could not delete held order" });
   }

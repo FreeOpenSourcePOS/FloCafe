@@ -183,6 +183,7 @@ router.get('/', requirePermission('staff.view'), (req: Request, res: Response) =
     const staff = db.prepare(query).all(...params);
     res.json({ staff });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -219,6 +220,7 @@ router.get(
         .all();
       res.json({ approvers, staff: approvers });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -248,6 +250,7 @@ router.get('/:id', requirePermission('staff.view'), (req: Request, res: Response
 
     res.json({ staff: { ...member, performance } });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -384,6 +387,7 @@ router.post('/', requireStaffWrite, authRateLimit(), (req: Request, res: Respons
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -565,6 +569,7 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
 
     res.json({ staff: updated });
   } catch (error: any) {
+    res.locals.postHogError = error;
     if (error instanceof AdministrationUnreachableError) {
       captureAdministrationAccessGuard();
       return res.status(400).json({ error: error.message, code: 'administration_unreachable' });
@@ -627,6 +632,7 @@ router.post('/:id/deactivate', requireStaffWrite, (req: Request, res: Response) 
       .get(req.params.id);
     res.json({ staff: updated });
   } catch (error: any) {
+    res.locals.postHogError = error;
     if (error instanceof AdministrationUnreachableError) {
       captureAdministrationAccessGuard();
       return res.status(400).json({ error: error.message, code: 'administration_unreachable' });
@@ -660,6 +666,7 @@ router.post('/:id/reactivate', requireStaffWrite, (req: Request, res: Response) 
       .get(req.params.id);
     res.json({ staff: updated });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

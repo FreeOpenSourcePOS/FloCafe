@@ -341,6 +341,7 @@ router.get('/business', requireBusinessSettingsRead, (req: Request, res: Respons
     const s = getAllSettings(getDatabase());
     res.json(businessShape(s));
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -532,6 +533,7 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
 
     res.json(businessShape(getAllSettings(db)));
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -542,6 +544,7 @@ router.get('/tax', requirePermission('settings.view'), (req: Request, res: Respo
     const s = getAllSettings(getDatabase());
     res.json(taxShape(s));
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -587,6 +590,7 @@ router.put('/tax', requirePermission('tax-configuration.manage'), (req: Request,
     cloudSync.refreshRegistrationProfile();
     res.json(taxShape(getAllSettings(db)));
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -600,6 +604,7 @@ router.get('/loyalty', requirePermission('settings.view'), (req: Request, res: R
       global_cashback_percent: parseFloat(s.global_cashback_percent || '0'),
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -635,6 +640,7 @@ router.put('/loyalty', requirePermission('settings.manage'), (req: Request, res:
       global_cashback_percent: parseFloat(s.global_cashback_percent || '0'),
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -653,6 +659,7 @@ router.get('/discount', requirePermission('settings.view'), (req: Request, res: 
         s.discount_requires_approval === 'true' || s.discount_requires_approval === '1',
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -712,6 +719,7 @@ router.put('/discount', requirePermission('settings.manage'), (req: Request, res
         s.discount_requires_approval === 'true' || s.discount_requires_approval === '1',
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -727,6 +735,7 @@ router.get('/kds', requirePermission('settings.view'), (_req: Request, res: Resp
       kds_default_view: s.kds_default_view === 'kanban' ? 'kanban' : 'tabs',
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -746,6 +755,7 @@ router.put('/kds', requirePermission('settings.manage'), (req: Request, res: Res
       kds_default_view: s.kds_default_view === 'kanban' ? 'kanban' : 'tabs',
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -760,6 +770,7 @@ router.get(
     try {
       res.json(readProductAnalyticsChoice());
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -785,6 +796,7 @@ router.put(
       syncPostHogIdentity();
       res.json(readProductAnalyticsChoice());
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -802,6 +814,7 @@ router.get(
     try {
       res.json(readPosSortSettings(getAllSettings(getDatabase())));
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -821,6 +834,7 @@ router.get(
         readStoredCustomerDisplayConfig(getAllSettings(getDatabase())[CUSTOMER_DISPLAY_KEY]),
       );
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -840,6 +854,7 @@ router.put(
       upsertSettings(getDatabase(), { [CUSTOMER_DISPLAY_KEY]: JSON.stringify(config) });
       res.json(config);
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -854,6 +869,7 @@ router.get(
     try {
       res.json({ tokens: listDisplayTokens() });
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -877,6 +893,7 @@ router.post(
       const actor = (req as Request & { user?: { userId?: string } }).user?.userId ?? null;
       res.status(201).json(createDisplayToken(label, actor));
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -894,6 +911,7 @@ router.delete(
       }
       res.json({ success: true });
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -948,6 +966,7 @@ router.get(
       const s = getAllSettings(getDatabase());
       res.json(orderNumberingShape(s));
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -1035,6 +1054,7 @@ router.put(
       })();
       res.json(orderNumberingShape(getAllSettings(db)));
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -1857,6 +1877,7 @@ router.put(
       }
       res.json({ offline_mode: isOfflineMode() });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[API] Offline mode update failed:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -1968,6 +1989,7 @@ router.get('/', requirePermission('settings.view'), (req: Request, res: Response
     const s = getAllSettings(getDatabase());
     res.json({ settings: publicSettingsShape(s) });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -2016,6 +2038,7 @@ router.get(
       }));
       res.json({ core: [...CORE_BILL_TEMPLATES], plugins, merchant });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -2158,6 +2181,7 @@ router.put(
       upsertSettings(getDatabase(), entries);
       res.json({ settings: entries });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -2190,6 +2214,7 @@ router.get(
       }
       res.json({ setting });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -2393,6 +2418,7 @@ router.put(
       const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
       res.json({ setting });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }

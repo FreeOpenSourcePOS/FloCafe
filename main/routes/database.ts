@@ -164,6 +164,7 @@ router.get('/export', requirePermission('database.manage'), (req: Request, res: 
       data: result.exportData,
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[DB Export] Error:', error);
     res.status(500).json({ error: 'Export failed' });
   }
@@ -712,6 +713,7 @@ router.post(
                 cleanupPending: cleanup.cleanupPending,
               });
             } catch (err: any) {
+              res.locals.postHogError = err;
               try {
                 db.exec('ROLLBACK');
               } catch {}
@@ -721,6 +723,7 @@ router.post(
             db.pragma(`foreign_keys = ${previousForeignKeys ? 'ON' : 'OFF'}`);
           }
         } catch (error: any) {
+          res.locals.postHogError = error;
           console.error('[DB Import] Error:', error);
           res.status(500).json({ error: 'Import failed' });
         }
@@ -830,6 +833,7 @@ router.post(
         schemaVersion,
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[DB Backup] Error:', error);
       res.status(500).json({ error: 'Backup failed' });
     }
@@ -901,6 +905,7 @@ export async function handleRestoreFromPickedFile(req: Request, res: Response) {
       cleanupPending: restoreResult.cleanupPending === true || cleanup?.cleanupPending === true,
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[DB Restore] Error:', error);
     res.status(500).json({ error: 'Restore failed' });
   } finally {
@@ -971,6 +976,7 @@ router.get(
           console.error('[DB Download] Stream error:', (error as Error).message);
         });
     } catch (error: any) {
+      res.locals.postHogError = error;
       if (tempDir) {
         try {
           fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1003,6 +1009,7 @@ router.get('/tables', requirePermission('database.manage'), (req: Request, res: 
 
     res.json({ tables: tableInfo });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[DB Tables] Error:', error);
     res.status(500).json({ error: 'Could not fetch database tables' });
   }

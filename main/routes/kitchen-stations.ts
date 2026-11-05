@@ -66,6 +66,7 @@ router.get('/', requirePermission('kitchen.stations.manage'), (req: Request, res
     const stations = db.prepare('SELECT * FROM kitchen_stations WHERE is_active = 1 ORDER BY sort_order, name').all();
     res.json({ kitchenStations: stations });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -90,6 +91,7 @@ router.get('/:id', requirePermission('kitchen.stations.manage'), (req: Request, 
       : null;
     res.json({ kitchenStation: { ...station, tables, users, printer } });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -140,6 +142,7 @@ router.post('/', requirePermission('kitchen.stations.manage'), (req: Request, re
     const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(id);
     res.status(201).json({ kitchenStation: station, reassignedFrom });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -210,6 +213,7 @@ router.put('/:id', requirePermission('kitchen.stations.manage'), (req: Request, 
     const updated = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(req.params.id);
     res.json({ kitchenStation: updated, reassignedFrom });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -262,6 +266,7 @@ router.put('/:id/users', requirePermission('kitchen.stations.manage'), (req: Req
     `).all(req.params.id);
     res.json({ users });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -283,6 +288,7 @@ router.delete('/:id', requirePermission('kitchen.stations.manage'), (req: Reques
     db.prepare('UPDATE kitchen_stations SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.id);
     res.json({ message: 'Kitchen station deleted' });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }

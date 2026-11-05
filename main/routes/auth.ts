@@ -311,6 +311,7 @@ router.post(
         tenants: [tenant],
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[Auth] Login error:', error);
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -348,6 +349,7 @@ router.get('/pin-users', authRateLimit({ max: 600 }), (_req: Request, res: Respo
       })),
     });
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     console.error('[Auth] PIN users error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -550,6 +552,7 @@ router.post(
         tenants: [tenant],
       });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[Auth] PIN login error:', error);
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -775,6 +778,7 @@ router.post('/password/change', authRateLimit(), (req: Request, res: Response) =
 
     res.json({ message: 'Password changed successfully' });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -902,6 +906,7 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
         : 'Password reset successfully. You can now log in with your new password.',
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Auth] Password recovery error:', error);
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1086,6 +1091,7 @@ router.get('/setup/status', (_req: Request, res: Response) => {
       currencyReset,
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

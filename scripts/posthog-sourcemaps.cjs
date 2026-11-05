@@ -8,7 +8,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const CLI = '@posthog/cli@latest';
+const CLI = '@posthog/cli@0.19.0';
 const RELEASE_NAME = 'flocafe';
 const DEFAULT_HOST = 'https://eu.posthog.com';
 const ROOT = path.resolve(__dirname, '..');
@@ -90,7 +90,15 @@ function main() {
   }
   const env = cliEnv();
   const version = require(path.join(ROOT, 'package.json')).version;
-  const release = ['--release-name', RELEASE_NAME, '--release-version', version];
+  // The default `event` mode leaves every symbol set unbound; `symbol-set` binds the release.
+  const release = [
+    '--release-name',
+    RELEASE_NAME,
+    '--release-version',
+    version,
+    '--release-mode',
+    'symbol-set',
+  ];
   for (const relative of DIRECTORIES) {
     const directory = path.join(ROOT, relative);
     if (!fs.existsSync(directory)) {
@@ -100,8 +108,13 @@ function main() {
     const uploaded =
       cli(['sourcemap', 'inject', '--directory', directory, ...release], env) &&
       cli(['sourcemap', 'upload', '--directory', directory, ...release, '--delete-after'], env);
-    if (!uploaded) warn(`PostHog source map upload failed for ${relative}; the release continues.`);
+    // `frontend/out` is packaged, so a map left behind ships the source. Delete it either way.
     removeMaps(directory);
+    if (!uploaded) {
+      warn(
+        `PostHog source map upload failed for ${relative} (release ${RELEASE_NAME} ${version}); the maps were deleted so they do not ship.`,
+      );
+    }
   }
 }
 

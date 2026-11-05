@@ -1264,6 +1264,7 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
 
     res.json({ products: productsWithRelations });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -1321,6 +1322,7 @@ router.get(
       });
       res.send(buffer);
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -1359,6 +1361,7 @@ router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Respon
       }),
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -1506,7 +1509,8 @@ router.post(
           const dataUri = `data:${detectedType};base64,${base64}`;
 
           res.json({ data: dataUri });
-        } catch {
+        } catch (error) {
+          res.locals.postHogError = error;
           return res.status(502).json({ error: 'Could not fetch the image' });
         }
       } finally {
@@ -1515,6 +1519,7 @@ router.post(
         offlineSignal.removeEventListener('abort', abortForShutdown);
       }
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -2148,6 +2153,7 @@ router.delete('/:id', requirePermission('catalog.manage'), (req: Request, res: R
     db.prepare('UPDATE products SET deleted_at = ? WHERE id = ?').run(now(), req.params.id);
     res.json({ message: 'Product deleted' });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -2227,6 +2233,7 @@ router.get(
         .get() as { count: number };
       res.json({ count: row.count });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -2245,6 +2252,7 @@ router.post(
         .run(now());
       res.json({ updated: result.changes });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }

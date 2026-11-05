@@ -890,6 +890,7 @@ router.get(
         ...(nextCursor !== null && { nextCursor }),
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -1538,6 +1539,7 @@ router.get(
         blocked_count,
       });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Failed to load scheduled orders' });
     }
@@ -1702,6 +1704,7 @@ router.get(
         },
       });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[API] Awaiting payment queue error:', error);
       res.status(500).json({ error: 'Failed to load awaiting payment queue' });
     }
@@ -1763,6 +1766,7 @@ router.get(
         bills,
       });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[API] Ticket lookup error:', error);
       res.status(500).json({ error: 'Failed to lookup ticket' });
     }
@@ -1787,6 +1791,7 @@ router.get(
       const [hydrated] = batchHydrateOrders(db, [order]);
       res.json({ order: hydrated });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }

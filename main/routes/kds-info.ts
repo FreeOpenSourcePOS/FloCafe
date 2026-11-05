@@ -41,6 +41,7 @@ router.get('/', asyncHandler(async (_req: Request, res: Response) => {
       ips_data:    ipsData,
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

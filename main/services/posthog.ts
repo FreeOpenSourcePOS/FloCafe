@@ -110,6 +110,13 @@ function appVersion(): string {
 }
 
 const CONSENT_CACHE_TTL_MS = 30_000;
+/** One `api-5xx` exception per method, route, and status, so a polling route cannot flood a plan. */
+const API_FAILURE_WINDOW_MS = 60 * 60_000;
+/** Cloud routes fail for every store without a cloud subscription, and the sidebar polls them. */
+const CLOUD_ROUTE_PREFIX = '/api/settings/cloud';
+/** These answer 502 or 503 when a remote host is unreachable, which is normal while offline. */
+const OFFLINE_GATEWAY_ROUTES = ['/api/products/fetch-url', '/api/mobile/devices'];
+const apiFailureSentAt = new Map<string, number>();
 
 interface CachedConsentState {
   level: ProductAnalyticsLevel;
@@ -536,19 +543,24 @@ export async function stopPostHog(options?: { flush?: boolean }): Promise<void> 
 }
 
 /** A copy of the error whose message is redacted and whose stack carries only frame lines. */
-function scrubbedError(input: unknown): Error {
+function scrubbedError(input: unknown, depth = 0): Error {
   const record =
     input instanceof Error
-      ? { name: input.name, message: input.message, stack: input.stack }
+      ? input
       : input && typeof input === 'object'
-        ? (input as { name?: unknown; message?: unknown; stack?: unknown })
+        ? (input as { name?: unknown; message?: unknown; stack?: unknown; cause?: unknown })
         : {};
   const stack = typeof record.stack === 'string' ? record.stack : undefined;
   const name = sanitizeErrorName(record.name, stack);
-  const message = redactExceptionMessage(record.message);
+  // A rejection reason is often a plain string; keep it as the message instead of sending a blank.
+  const message = redactExceptionMessage(typeof input === 'string' ? input : record.message);
   const error = new Error(message);
   error.name = name;
   error.stack = [message ? `${name}: ${message}` : name, ...stackFrameLines(stack)].join('\n');
+  // A chained cause stays, scrubbed the same way. Two levels, so a self-referencing cause ends.
+  if (depth < 2 && record.cause instanceof Error) {
+    error.cause = scrubbedError(record.cause, depth + 1);
+  }
   return error;
 }
 
@@ -565,6 +577,7 @@ export function capturePostHogException(
     const who = identity();
     current.captureException(scrubbedError(input), who.distinctId, {
       ...readSuperProperties(who),
+      process_type: 'main',
       ...(who.identified || who.installRef ? {} : { $process_person_profile: false }),
       ...(properties ?? {}),
       capture_point: capturePoint,
@@ -587,26 +600,75 @@ export function apiRoutePattern(originalUrl: string, routePath: unknown): string
   return `/${[...prefix, ...routeSegments].join('/')}`;
 }
 
-/** A 5xx from the local API, keyed by method and route pattern. No params, query, or body. */
-export function capturePostHogApiFailure(method: string, route: string, status: number): void {
-  const error = new Error(`${method} ${route}`);
-  error.name = 'ApiServerError';
-  error.stack = error.name;
+/**
+ * A 5xx from the local API, keyed by method and route pattern. No params, query, or body. What it
+ * failed on keeps its own type and frames; the message is the route pattern, because a route error
+ * can name a customer.
+ */
+export function capturePostHogApiFailure(
+  method: string,
+  route: string,
+  status: number,
+  thrown?: unknown,
+  sentStack?: string,
+): void {
+  if (route.startsWith(CLOUD_ROUTE_PREFIX)) return;
+  if ((status === 502 || status === 503) && OFFLINE_GATEWAY_ROUTES.includes(route)) return;
+  const key = `${method} ${route} ${status}`;
+  const at = Date.now();
+  const last = apiFailureSentAt.get(key);
+  if (last !== undefined && at - last < API_FAILURE_WINDOW_MS) return;
+  apiFailureSentAt.set(key, at);
+  const source = thrown instanceof Error ? thrown : undefined;
+  const error = frameError(
+    source?.name ?? 'ApiServerError',
+    `${method} ${route}`,
+    source?.stack ?? sentStack,
+  );
+  // The cause keeps only what links it: its type and its frames, never its message.
+  const cause = source?.cause instanceof Error ? source.cause : undefined;
+  if (cause) error.cause = frameError(cause.name, '', cause.stack);
   capturePostHogException('api-5xx', error, {
     http_method: method,
     http_route: route,
     http_status: status,
+    process_type: 'api',
   });
+}
+
+/** An error built from a type, a message, and frame lines only. */
+function frameError(name: unknown, message: string, stack: unknown): Error {
+  const error = new Error(message);
+  error.name = typeof name === 'string' && name ? name : 'Error';
+  const frames = stackFrameLines(stack);
+  // Without frames the error keeps the stack of this call, which still points inside this app.
+  if (frames.length > 0) {
+    error.stack = [message ? `${error.name}: ${message}` : error.name, ...frames].join('\n');
+  }
+  return error;
 }
 
 /** Reports every 5xx the local API sends, including those from the global error handler. */
 export function postHogApiFailureMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const sendStatus = res.status.bind(res);
+  let sentStack: string | undefined;
+  // Recorded where the route sends the 500, so a 5xx without a thrown error still has frames.
+  res.status = (code: number) => {
+    if (code >= 500 && !sentStack) sentStack = new Error().stack;
+    return sendStatus(code);
+  };
   res.on('finish', () => {
     if (res.statusCode < 500) return;
     const route = req.route
       ? apiRoutePattern(req.originalUrl, req.route.path)
       : req.baseUrl || '<unmatched>';
-    capturePostHogApiFailure(req.method, route, res.statusCode);
+    capturePostHogApiFailure(
+      req.method,
+      route,
+      res.statusCode,
+      res.locals?.postHogError,
+      sentStack,
+    );
   });
   next();
 }

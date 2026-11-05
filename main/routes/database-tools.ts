@@ -37,6 +37,7 @@ router.get(
     try {
       res.json(runHealthCheck());
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[DB Tools] health-check error:', error);
       res.status(500).json({ error: 'Health check failed' });
     }
@@ -60,6 +61,7 @@ router.post(
       }
       res.json(applySafeFixes(findingIds as string[] | undefined));
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[DB Tools] apply-safe-fixes error:', error);
       res.status(500).json({ error: 'Applying fixes failed' });
     }
@@ -71,6 +73,7 @@ router.get('/backups', requirePermission('database.manage'), (req: Request, res:
     const pagination = parseBackupPaginationQuery(req.query.limit, req.query.cursor);
     res.json(listBackupsPage(pagination));
   } catch (error: any) {
+    res.locals.postHogError = error;
     if (error?.code === 'ERR_INVALID_BACKUP_PAGINATION') {
       return res.status(400).json({ error: error.message });
     }
@@ -89,6 +92,7 @@ router.post(
       deleteBackup(req.params.fileName as string);
       res.json({ success: true });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[DB Tools] delete backup error:', error);
       if (error?.code === 'ERR_INVALID_BACKUP_NAME') {
         return res.status(400).json({ error: 'Invalid backup file name' });
@@ -117,6 +121,7 @@ router.get(
     try {
       res.json(localBackupStatus());
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[DB Tools] local backup status error:', error);
       res.status(500).json({ error: 'Could not read local backup status' });
     }
@@ -131,6 +136,7 @@ router.put('/local-backup', requirePermission('database.manage'), (req: Request,
     setLocalBackupEnabled(req.body.enabled);
     res.json(localBackupStatus());
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     console.error('[DB Tools] local backup update error:', error);
     res.status(500).json({ error: 'Could not update local backup setting' });
   }
@@ -174,6 +180,7 @@ router.post(
       resetMasterPin(cleanPin);
       res.json({ success: true });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[DB Tools] set Master PIN error:', error);
       res.status(500).json({ error: 'Failed to set Master PIN' });
     }
@@ -189,6 +196,7 @@ router.get(
     try {
       res.json(getCurrencyResetImpact());
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[DB Tools] currency reset impact error:', error);
       res.status(500).json({ error: 'Could not inspect currency reset impact' });
     }
@@ -252,6 +260,7 @@ router.post(
         localBackupFailed,
       });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       if (
         typeof error === 'object' &&
         error !== null &&
@@ -303,6 +312,7 @@ router.post(
         localBackupFailed,
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[DB Tools] initialize error:', error);
       res.status(500).json({ error: 'Initialize failed' });
     } finally {

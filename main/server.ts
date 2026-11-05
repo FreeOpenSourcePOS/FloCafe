@@ -322,6 +322,8 @@ export function startServer(): Promise<void> {
             : 500;
         if (status >= 500) {
           console.error('[Server] Error:', err);
+          // The failure middleware reads it to report the thrown error with its own stack.
+          res.locals.postHogError = err;
         }
         res
           .status(status)

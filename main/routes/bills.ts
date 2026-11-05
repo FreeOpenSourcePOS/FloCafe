@@ -1026,6 +1026,7 @@ router.get('/', requirePermission('bills.read'), (req: Request, res: Response) =
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -1059,6 +1060,7 @@ router.get('/:id', requirePermission('bills.read'), (req: Request, res: Response
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -1097,6 +1099,7 @@ router.get('/order/:orderId', requirePermission('bills.read'), (req: Request, re
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -5756,6 +5759,7 @@ router.post('/:id/markPrinted', requirePermission('bills.print'), (req: Request,
     );
     res.json({ bill: updatedBill });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -5805,6 +5809,7 @@ router.get('/:id/print-history', requirePermission('bills.read'), (req: Request,
 
     res.json({ prints });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

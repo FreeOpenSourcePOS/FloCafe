@@ -2131,6 +2131,7 @@ router.get(
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       return res.send(serializeCustomerSalesCsv(dataset));
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       if (error instanceof CustomerSalesRangeError) {
         return res.status(400).json({ error: error.message });
       }

@@ -198,6 +198,7 @@ router.delete(
       const result = db.prepare('DELETE FROM customers WHERE id IS NULL').run();
       res.json({ message: `Deleted ${result.changes} customers with null IDs` });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -251,6 +252,7 @@ router.post(
         conflictedCount,
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -274,6 +276,7 @@ router.get(
 
       res.json({ invalidPhonesCount: result.count });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -391,6 +394,7 @@ router.get(
       const customers = db.prepare(query).all(...params);
       res.json({ data: customers });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -425,6 +429,7 @@ router.get(
 
       res.json({ customer: { ...customer, walletBalance, loyaltyHistory, recentOrders } });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -488,6 +493,7 @@ router.get(
         },
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -508,6 +514,7 @@ router.get(
       }
       res.json({ items: getCustomerTopItems(db, customerId) });
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -741,6 +748,7 @@ router.put(
       const updated = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
       res.json({ customer: updated });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }

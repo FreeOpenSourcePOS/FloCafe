@@ -81,6 +81,7 @@ export const POSTHOG_SUPER_KEYS = [
   'environment',
   'release_channel',
   'install_ref',
+  'process_type',
 ] as const;
 
 /**
@@ -120,6 +121,7 @@ const CONTEXT_KEYS = new Set<string>([
   '$pageview_id',
   '$insert_id',
   '$geoip_disable',
+  '$release_id',
   '$process_person_profile',
 ]);
 
@@ -261,6 +263,11 @@ function positiveInteger(value: unknown): number | null {
   return Number.isInteger(number) && number > 0 && number <= 10_000_000 ? number : null;
 }
 
+function nonNegativeInteger(value: unknown): number | null {
+  const number = typeof value === 'number' ? value : Number(value);
+  return Number.isInteger(number) && number >= 0 && number <= 10_000 ? number : null;
+}
+
 function scrubFrame(frame: unknown): Record<string, unknown> | null {
   if (!frame || typeof frame !== 'object') return null;
   const item = frame as Record<string, unknown>;
@@ -290,6 +297,14 @@ function scrubMechanism(value: unknown): Record<string, unknown> | undefined {
   if (typeof record.handled === 'boolean') next.handled = record.handled;
   if (typeof record.synthetic === 'boolean') next.synthetic = record.synthetic;
   if (typeof record.type === 'string' && /^[\w-]{1,40}$/.test(record.type)) next.type = record.type;
+  // The link to a chained cause, so the exception list reads in order.
+  for (const key of ['exception_id', 'parent_id'] as const) {
+    const id = nonNegativeInteger(record[key]);
+    if (id !== null) next[key] = id;
+  }
+  if (typeof record.source === 'string' && /^[a-z_]{1,20}$/.test(record.source)) {
+    next.source = record.source;
+  }
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
@@ -385,9 +400,23 @@ export function scrubPathname(value: unknown): string | null {
   if (!path.startsWith('/')) return null;
   const segments = path
     .split('/')
-    .map((segment) => (/\d{3,}|^[0-9a-f-]{16,}$|@/i.test(segment) ? ':id' : segment));
+    // Any all-digit segment is an id, however short, so no order or product number rides along.
+    .map((segment) => (/^\d+$|^[0-9a-f-]{16,}$|@/i.test(segment) ? ':id' : segment));
   const scrubbed = segments.join('/');
-  return /^[\w/().:~-]{1,200}$/.test(scrubbed) ? scrubbed : null;
+  // `*` is allowed so a caller can shorten a path to a prefix pattern.
+  return /^[\w/().:~*-]{1,200}$/.test(scrubbed) ? scrubbed : null;
+}
+
+/**
+ * A request path in the renderer: the first segment only, because a call can put a customer name,
+ * a phone number, or a search term in the next one.
+ */
+export function scrubRequestPath(value: unknown): string | null {
+  const pathname = scrubPathname(value);
+  if (!pathname) return null;
+  const segments = pathname.split('/');
+  // `segments[0]` is the empty string before the leading slash.
+  return segments.length > 2 ? `${segments.slice(0, 2).join('/')}/*` : pathname;
 }
 
 function withoutPersonOperators(event: ScrubbableEvent): ScrubbableEvent {
@@ -440,13 +469,19 @@ function scrubUsage(event: ScrubbableEvent): ScrubbableEvent {
   return { ...withoutPersonOperators(event), properties };
 }
 
+/** The screen as a route pattern, on both properties PostHog reads. */
+function setScreen(properties: Record<string, unknown>, pathname: string | null): void {
+  if (!pathname) return;
+  properties.$pathname = pathname;
+  properties.$current_url = pathname;
+}
+
 function scrubPageview(event: ScrubbableEvent): ScrubbableEvent | null {
   const source = event.properties ?? {};
   const pathname = scrubPathname(source.$pathname ?? source.$current_url);
   if (!pathname) return null;
   const properties = contextProperties(source);
-  properties.$pathname = pathname;
-  properties.$current_url = pathname;
+  setScreen(properties, pathname);
   for (const key of PAGEVIEW_KEYS) {
     const plain = key === 'screen' ? scrubPathname(source[key]) : plainValue(source[key]);
     if (plain !== undefined && plain !== null) properties[key] = plain;
@@ -470,17 +505,18 @@ function scrubException(
   const first = list[0];
   if (typeof first?.type === 'string') properties.$exception_type = first.type;
   if (typeof first?.value === 'string') properties.$exception_message = first.value;
+  // The screen, as a route pattern: no query, no ids. Next.js reports the full URL.
+  setScreen(properties, scrubPathname(source.$pathname ?? source.$current_url));
   if (
     typeof source.$exception_level === 'string' &&
     /^[a-z]{1,10}$/.test(source.$exception_level)
   ) {
     properties.$exception_level = source.$exception_level;
   }
-  if (capturePoint === 'api-5xx') {
-    for (const key of API_FAILURE_KEYS) {
-      const plain = plainValue(source[key]);
-      if (plain !== undefined) properties[key] = plain;
-    }
+  // The request an exception failed on: a route pattern, its method, and its status.
+  for (const key of API_FAILURE_KEYS) {
+    const value = key === 'http_route' ? scrubPathname(source[key]) : plainValue(source[key]);
+    if (value !== undefined && value !== null) properties[key] = value;
   }
   return { ...withoutPersonOperators(event), properties };
 }

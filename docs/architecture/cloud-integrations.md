@@ -171,6 +171,11 @@ Every event passes through `scrubPostHogEvent` in `shared/posthog-scrub.ts`, in 
 person property it does not list is dropped. Every event carries `app_version`, `platform`,
 `run_mode`, `install_source`, `environment`, and `release_channel`; `install_ref` is added at the
 `anonymous` and `full` levels, and `store_ref` at `full` only (see **Sharing levels** below).
+`process_type` names the process that failed: `main` for the main-process handlers, `api` for a
+local API 5xx, and `renderer` for the window (`kds` and `server-app` are allowed for later use).
+`$release_id` is kept when the SDK sends one. Release builds use `--release-mode symbol-set`, so
+chunk code carries no release id and PostHog binds an exception to its release through the symbol
+set uploaded for it.
 
 **Sharing levels** (`product_analytics_level`, read by `readProductAnalyticsLevel()` in
 `main/services/posthog-identity.ts`).
@@ -277,17 +282,25 @@ exception stays on the machine. The client itself is disabled only at `off` with
 transmission also off. `sendAnonymousDiagnosticReport` is unchanged and still requires
 both checks.
 
-| Capture point                             | Source                                                                                                                                                  |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `uncaughtException`, `unhandledRejection` | Main process handlers in `main/index.ts`                                                                                                                |
-| `renderer-autocapture`                    | Unhandled errors and rejections in the main window (bundled `posthog-js` extension, always loaded; the scrubber drops them while diagnostics is off)    |
-| `react-error-boundary`                    | `reportRendererError`, called by the dashboard and global error boundaries                                                                              |
-| `api-5xx`                                 | A local API response with status 500 or higher: method, route pattern (mount prefix included, also for errors from the global handler), and status only |
+| Capture point                             | Source                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `uncaughtException`, `unhandledRejection` | Main process handlers in `main/index.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `renderer-autocapture`                    | Unhandled errors and rejections in the main window (bundled `posthog-js` extension, always loaded; the scrubber drops them while diagnostics is off)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `react-error-boundary`                    | `reportRendererError`, called by the dashboard and global error boundaries                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `api-5xx`                                 | A local API response with status 500 or higher: method, route pattern (mount prefix included, also for errors from the global handler), and status. The error a route caught, or the global handler saw, gives its type and its stack frames, and its chained cause gives its type and frames too; the message is always the route pattern, never the error's own text, which can name a customer. A 5xx sent without one keeps the frames of the code that sent it. Requests under `/api/settings/cloud` are never reported, because they fail for every store without a cloud subscription. A 502 or 503 from `/api/products/fetch-url` or `/api/mobile/devices` is not reported either, because those routes answer that way while offline. One exception per method, route, and status is sent per process per hour |
 
 An exception keeps its type, a redacted first line of the message, the mechanism, and stack frames
 with a project-relative file (`_next/static/...` for the packaged renderer), line, column, function
-name, and chunk id. Message redaction replaces emails, URLs, quoted text, and digit runs. Request
-params, query, body, digest, log tail, and any order or customer field are dropped. Release builds upload source maps when PostHog credentials are configured; see
+name, and chunk id. The mechanism keeps `handled`, `synthetic`, `type`, the cause indexes
+`exception_id` and `parent_id`, and a short `source`. Message redaction replaces emails, URLs,
+quoted text, and digit runs. A chained `cause` is kept, scrubbed the same way, and a rejection
+reason that is a plain string becomes the message. Renderer exceptions also carry `$pathname` and
+`$current_url` as a route pattern: no host, no query, and an all-digit segment is `:id`. An axios
+failure adds `http_method`, `http_route`, and `http_status`, because its frames are all inside
+`node_modules/axios`; `http_route` keeps only the first path segment followed by `/*`, because a
+call can put a customer name, phone number, or search term in the next one. Request
+params, query, body, digest, log tail, and any order or customer field are dropped. Release builds
+upload source maps when PostHog credentials are configured; see
 [PostHog release builds](../maintainers/releases.md#posthog-release-builds).
 
 **Offline behaviour.** Sends are best-effort. A failed send is dropped; there is no PostHog outbox,

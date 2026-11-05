@@ -253,6 +253,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     }
     res.json({ orders: ordersWithItems, counts });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -286,6 +287,7 @@ router.get('/pairing', (req: Request, res: Response) => {
       .map((station) => projectKdsStation(station, restrictedPayload, userCategoryIds));
     res.json({ stations });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -335,6 +337,7 @@ router.post('/pairing', requirePermission('kitchen.pair'), (req: Request, res: R
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -459,6 +462,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       orders: Object.values(groupedByOrder),
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

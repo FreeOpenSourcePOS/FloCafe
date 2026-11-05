@@ -1884,6 +1884,7 @@ router.post(
       }
       res.json({ success: true, isReprint, warnings: result.warnings || [] });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[CashClosures] Print error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }

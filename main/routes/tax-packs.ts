@@ -803,6 +803,7 @@ router.get('/', requirePermission('tax-packs.view-test'), (_req: Request, res: R
     });
     res.json({ store_country: storeCountry, packs });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Tax Packs] List failed:', error);
     res.status(500).json({ error: 'Could not load tax packs' });
   }
@@ -824,6 +825,7 @@ router.get('/audit', requirePermission('tax-packs.view-test'), (req: Request, re
       })),
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Tax Packs] Audit load failed:', error);
     res.status(500).json({ error: 'Could not load tax audit history' });
   }
@@ -843,6 +845,7 @@ router.get('/catalog', requirePermission('tax-packs.view-test'), asyncHandler(as
       available: remote.catalog.packs.filter((entry) => !installed.has(`${entry.id}@${entry.version}`)),
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Tax Packs] Catalog fetch failed:', error);
     res.status(502).json({ error: error.message || 'Could not check the tax pack catalog' });
   }
@@ -865,6 +868,7 @@ router.get('/updates', requirePermission('tax-packs.view-test'), asyncHandler(as
     );
     res.json({ checked_at: now(), release_tag: remote.releaseTag, updates });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Tax Packs] Update check failed:', error);
     res.status(502).json({ error: error.message || 'Could not check for tax plugin updates' });
   }
@@ -1397,6 +1401,7 @@ router.delete('/overrides/:overrideId', requirePermission('tax-packs.manage'), (
     });
     res.json({ message: 'Override reset to the official pack value' });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Tax Packs] Override reset failed:', error);
     res.status(500).json({ error: 'Could not reset override' });
   }
@@ -1435,6 +1440,7 @@ router.post('/:packId/versions/:versionId/activate', requirePermission('tax-pack
     }
     res.json({ changed: true, active_version_id: version.id, validation });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Tax Packs] Activation failed:', error);
     res.status(500).json({ error: 'Could not activate pack version' });
   }
@@ -1494,6 +1500,7 @@ router.post('/:packId/rollback', requirePermission('tax-packs.manage'), (req: Re
     });
     res.json({ active_version_id: target.id, validation });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Tax Packs] Rollback failed:', error);
     res.status(500).json({ error: 'Could not roll back tax pack' });
   }
@@ -1564,6 +1571,7 @@ router.get('/:packId', requirePermission('tax-packs.view-test'), (req: Request, 
       targets,
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Tax Packs] Detail load failed:', error);
     res.status(500).json({ error: 'Could not load tax pack details' });
   }

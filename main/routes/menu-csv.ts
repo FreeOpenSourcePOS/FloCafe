@@ -434,6 +434,7 @@ router.get(
       res.setHeader('Content-Disposition', 'attachment; filename="categories-export.csv"');
       res.send(lines.join('\n'));
     } catch (err: any) {
+      res.locals.postHogError = err;
       console.error('[API] Menu CSV export failed:', err);
       res.status(500).json({ error: 'Menu CSV export failed' });
     }
@@ -485,6 +486,7 @@ router.get(
       res.setHeader('Content-Disposition', 'attachment; filename="products-export.csv"');
       res.send(lines.join('\n'));
     } catch (err: any) {
+      res.locals.postHogError = err;
       if (err instanceof RegionalNotConfiguredError)
         return res.status(409).json({ error: 'regional_not_configured' });
       console.error('[API] Menu CSV export failed:', err);
@@ -532,6 +534,7 @@ router.get(
       res.setHeader('Content-Disposition', 'attachment; filename="addons-export.csv"');
       res.send(lines.join('\n'));
     } catch (err: any) {
+      res.locals.postHogError = err;
       if (err instanceof RegionalNotConfiguredError)
         return res.status(409).json({ error: 'regional_not_configured' });
       console.error('[API] Menu CSV export failed:', err);

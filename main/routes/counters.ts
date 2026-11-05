@@ -74,6 +74,7 @@ router.get(
 
       res.json({ counters });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[Counters] Error listing counters:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -102,6 +103,7 @@ router.get(
       }
       res.json({ counter });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[Counters] Error fetching counter:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -142,6 +144,7 @@ router.post('/', requirePermission('settings.manage'), (req: Request, res: Respo
     const created = db.prepare('SELECT * FROM counters WHERE id = ?').get(id) as CounterRow;
     res.status(201).json({ counter: created });
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     console.error('[Counters] Error creating counter:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -205,6 +208,7 @@ router.put('/:id', requirePermission('settings.manage'), (req: Request, res: Res
       .get(existing.id) as CounterRow;
     res.json({ counter: updated });
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     console.error('[Counters] Error updating counter:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -230,6 +234,7 @@ router.delete('/:id', requirePermission('settings.manage'), (req: Request, res: 
     db.prepare('DELETE FROM counters WHERE id = ?').run(existing.id);
     res.json({ success: true });
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     console.error('[Counters] Error deleting counter:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

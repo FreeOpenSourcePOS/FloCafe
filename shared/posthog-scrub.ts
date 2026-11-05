@@ -20,6 +20,7 @@ export const POSTHOG_USAGE_EVENTS = [
   'setup_completed',
   'first_order_created',
   'first_bill_paid',
+  'api_slow_request',
 ] as const;
 
 export type PostHogUsageEvent = (typeof POSTHOG_USAGE_EVENTS)[number];
@@ -52,6 +53,15 @@ export const POSTHOG_USAGE_PROPERTY_KEYS = [
   'customers_count',
   'printers_count',
   'kitchen_stations_count',
+  'http_method',
+  'http_route',
+  'http_status',
+  'duration_ms',
+  'db_ms',
+  'db_queries',
+  'slowest_query_ms',
+  'slowest_query',
+  'occurrences',
 ] as const;
 
 /** Store configuration kept on the person. None of it identifies a customer or an order. */
@@ -149,6 +159,8 @@ const EMAIL = /[^\s@"'<>]+@[^\s@"'<>]+\.[^\s@"'<>]+/g;
 
 const MAX_FRAMES = 50;
 const MAX_MESSAGE = 300;
+/** Normalized SQL: `normalizeSql` leaves no quoted literal or comment behind. */
+const NORMALIZED_SQL = /^[\w\s(),.?*=<>%:;!|+/@$[\]-]{1,400}$/;
 
 export interface ScrubbableEvent {
   event?: string;
@@ -463,6 +475,12 @@ function scrubUsage(event: ScrubbableEvent): ScrubbableEvent {
   const properties = contextProperties(source);
   for (const key of USAGE_PROPERTY_KEY_SET) {
     if (key in properties) continue;
+    if (key === 'slowest_query') {
+      if (typeof source[key] === 'string' && NORMALIZED_SQL.test(source[key])) {
+        properties[key] = source[key];
+      }
+      continue;
+    }
     const plain = plainValue(source[key]);
     if (plain !== undefined) properties[key] = plain;
   }

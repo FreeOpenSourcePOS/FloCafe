@@ -150,6 +150,7 @@ const {
 } = require('../main/db');
 const {
   apiRoutePattern,
+  apiSlowRequestMiddleware,
   capturePostHogApiFailure,
   capturePostHogException,
   capturePostHogUsage,
@@ -711,8 +712,7 @@ async function main() {
     on,
   );
   assert.deepEqual(rawSql?.properties, {}, 'SQL that still holds a literal is dropped');
-  const namedSql =
-    'SELECT "o".id || ? FROM orders o WHERE o.status != @status AND o.total / ? > [x]';
+  const namedSql = 'SELECT o.id || ? FROM orders o WHERE o.status != @status AND o.total / ? > [x]';
   const namedParams = scrubPostHogEvent(
     { event: 'api_slow_request', properties: { slowest_query: namedSql } },
     on,
@@ -721,6 +721,16 @@ async function main() {
     namedParams?.properties,
     { slowest_query: namedSql },
     'normalized SQL with named parameters and operators is kept',
+  );
+  const quotedSql = 'SELECT * FROM items WHERE name = "OMELETTE"';
+  const quoted = scrubPostHogEvent(
+    { event: 'api_slow_request', properties: { slowest_query: quotedSql } },
+    on,
+  );
+  assert.deepEqual(
+    quoted?.properties,
+    {},
+    'SQL that still holds a double-quoted string is dropped',
   );
 
   const anonymous = { telemetryEnabled: true, accountLinked: false, allowExceptions: true };
@@ -1427,6 +1437,89 @@ async function main() {
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+  }
+
+  // A request whose time is mostly SQL is logged and sent, with the statement normalized.
+  const Database = require('better-sqlite3');
+  const { instrumentDatabase } = require('../main/services/db-timing');
+  const slowDb = new Database(':memory:');
+  instrumentDatabase(slowDb);
+  const slowApi = express();
+  slowApi.use(apiSlowRequestMiddleware);
+  const slowQuery = () =>
+    // Recursion long enough to pass 200 ms on a fast machine, so the threshold is not the test.
+    slowDb
+      .prepare(
+        'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 10000000) SELECT COUNT(*) AS total FROM c',
+      )
+      .get();
+  slowApi.get('/api/slow/:id', (_req: unknown, res: any) => {
+    slowQuery();
+    res.json({ ok: true });
+  });
+  slowApi.get('/api/slow-consent/:id', (_req: unknown, res: any) => {
+    slowQuery();
+    res.json({ ok: true });
+  });
+  const slowServer = slowApi.listen(0, '127.0.0.1');
+  await new Promise((resolve) => slowServer.once('listening', resolve));
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(' '));
+  };
+  try {
+    const eventsBefore = latest().events.length;
+    const { port: slowPort } = slowServer.address();
+    await fetch(`http://127.0.0.1:${slowPort}/api/slow/7`);
+    await new Promise((resolve) => setImmediate(resolve));
+    const slowWarnings = warnings.filter((line) => line.startsWith('[API] slow request'));
+    assert.equal(slowWarnings.length, 1, 'one warn line for the slow request');
+    assert.match(slowWarnings[0], /db=\d+ms/);
+    assert.equal(latest().events.length, eventsBefore + 1, 'one api_slow_request is sent');
+    const slowEvent = latest().events.at(-1);
+    assert.equal(slowEvent?.event, 'api_slow_request');
+    assert.equal(slowEvent?.properties?.http_route, '/api/slow/:id');
+    assert.ok(Number(slowEvent?.properties?.db_ms) >= 200, 'db_ms carries the SQL time');
+    assert.match(String(slowEvent?.properties?.slowest_query), /^WITH RECURSIVE c\(x\)/);
+    assert.equal(
+      String(slowEvent?.properties?.slowest_query).includes('10000000'),
+      false,
+      'the statement carries no literal',
+    );
+
+    // Telemetry off and then on inside the window: the dropped slow request must not hold the slot.
+    const slowConsentEvents = () =>
+      latest().events.filter(
+        (event) =>
+          event.event === 'api_slow_request' &&
+          event.properties?.http_route === '/api/slow-consent/:id',
+      ).length;
+    assert.equal(slowConsentEvents(), 0, 'no slow-request event for that route yet');
+    setSetting('telemetry_enabled', 'false');
+    syncPostHogIdentity();
+    await fetch(`http://127.0.0.1:${slowPort}/api/slow-consent/9`);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(slowConsentEvents(), 0, 'a slow request with telemetry off sends nothing');
+    setSetting('telemetry_enabled', 'true');
+    syncPostHogIdentity();
+    await fetch(`http://127.0.0.1:${slowPort}/api/slow-consent/9`);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      slowConsentEvents(),
+      1,
+      'telemetry on inside the window still sends that slow request, once',
+    );
+    assert.equal(
+      latest().events.at(-1)?.properties?.occurrences,
+      1,
+      'the slow request sent while telemetry was off did not count as suppressed',
+    );
+  } finally {
+    console.warn = originalWarn;
+    slowServer.closeAllConnections();
+    await new Promise((resolve) => slowServer.close(resolve));
+    slowDb.close();
   }
 
   setSetting('telemetry_enabled', 'false');

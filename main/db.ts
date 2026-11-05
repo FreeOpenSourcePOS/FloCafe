@@ -26,6 +26,7 @@ import {
 } from './countries';
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from './middleware/security';
 import { clearJWTSecretCache } from './security/jwt-secret';
+import { instrumentDatabase } from './services/db-timing';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
 
@@ -2442,6 +2443,7 @@ function initializeDatabase(
   console.log(`[DB] Opening database at: ${dbPath}`);
   dbHealthError = null;
   db = new Database(dbPath);
+  instrumentDatabase(db);
   settingsRevision += 1;
   registerOrderSearchFunctions(db);
   db.pragma('journal_mode = WAL');

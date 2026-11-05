@@ -251,7 +251,9 @@ onto another terminal brings its seed, so both terminals share a device id.
   cloud registration also sends, or the email of the earliest `users` row when that setting is
   empty. No name is sent.
 - A usage event keeps only the properties in `POSTHOG_USAGE_PROPERTY_KEYS`; any other property is
-  dropped.
+  dropped. `slowest_query` is the one free-text field: it must be a normalized statement (string,
+  number, and double-quoted literals replaced by `?`, comments removed, white space collapsed, 400
+  characters at most), and a value that still holds a literal or a `"` is dropped.
 - `app_launch` and `feature_used` mirror the collector events. `daily_ping` runs on the
   collector's hourly check but does not depend on the collector: it is sent at most once every 24
   hours (`posthog_last_daily_ping_at`) with counts for the last 24 hours (orders by type, including
@@ -260,7 +262,14 @@ onto another terminal brings its seed, so both terminals share a device id.
   profile, service model, and business type. `first_order_created` and `first_bill_paid` are sent
   once per installation with `hours_since_setup`, read hourly from the database. A milestone older
   than the first check on this installation (`posthog_milestones_since`), such as an upgraded
-  store's first order, carries `backfilled: true`.
+  store's first order, carries `backfilled: true`. `api_slow_request` is sent for a local API
+  request that takes 200 ms or more only when the time spent in SQL (`db_ms`) is 200 ms or more, so
+  a request that is slow for another reason, such as a printer or the network, sends nothing. The
+  same route (method and route pattern) sends one event per hour per process; the requests folded
+  into that event are counted in `occurrences`. The properties are `http_method`, the route pattern
+  (`http_route`), `http_status`, `duration_ms`, `db_ms`, the statement count (`db_queries`),
+  `occurrences`, and the slowest statement (`slowest_query_ms`, `slowest_query`). Every such request
+  writes one `console.warn` line, whether or not telemetry is on.
 - The renderer sends at most one `$pageview` per screen per staff member every 30 minutes
   (`shared/posthog-screen-views.ts`); views inside the window are folded into the next pageview's
   `repeat_views`. A screen is the route path with id-like segments removed, plus `settings_tab` on

@@ -4,6 +4,7 @@
  */
 
 import type { NextFunction, Request, Response } from 'express';
+import { performance } from 'node:perf_hooks';
 import {
   getDatabase,
   getSettingValue,
@@ -22,6 +23,12 @@ import {
 import { getOfflineModeAbortSignal, onOfflineModeEnabled } from './offline-mode';
 import { readCountryProvenance } from './country-provenance';
 import { getInstallSource, getRunMode } from './telemetry';
+import {
+  getRequestStats,
+  runWithRequestStats,
+  slowRequestEventGate,
+  type SlowRequestRouteState,
+} from './db-timing';
 import {
   markAliased,
   pendingAlias,
@@ -648,6 +655,13 @@ function frameError(name: unknown, message: string, stack: unknown): Error {
   return error;
 }
 
+/** The matched route pattern, or the mount prefix Express has left on the request. */
+function requestRoute(req: Request): string {
+  return req.route
+    ? apiRoutePattern(req.originalUrl, req.route.path)
+    : req.baseUrl || '<unmatched>';
+}
+
 /** Reports every 5xx the local API sends, including those from the global error handler. */
 export function postHogApiFailureMiddleware(req: Request, res: Response, next: NextFunction): void {
   const sendStatus = res.status.bind(res);
@@ -659,16 +673,60 @@ export function postHogApiFailureMiddleware(req: Request, res: Response, next: N
   };
   res.on('finish', () => {
     if (res.statusCode < 500) return;
-    const route = req.route
-      ? apiRoutePattern(req.originalUrl, req.route.path)
-      : req.baseUrl || '<unmatched>';
     capturePostHogApiFailure(
       req.method,
-      route,
+      requestRoute(req),
       res.statusCode,
       res.locals?.postHogError,
       sentStack,
     );
   });
   next();
+}
+
+/** A request at or above this wall-clock time is logged, and sent when SQL is the slow part. */
+export const SLOW_REQUEST_MS = 200;
+
+// Keyed by method and route pattern, so the map stays as small as the API surface.
+const slowRequestRoutes = new Map<string, SlowRequestRouteState>();
+
+/** Opens the SQL stats of the request, then reports the requests slow enough to notice. */
+export function apiSlowRequestMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const startedAt = performance.now();
+  runWithRequestStats(() => {
+    // A `finish` listener can run outside this async context, so hold the store itself.
+    const stats = getRequestStats();
+    res.on('finish', () => {
+      const durationMs = Math.round(performance.now() - startedAt);
+      if (durationMs < SLOW_REQUEST_MS) return;
+      const route = requestRoute(req);
+      if (!stats) return;
+      const dbMs = Math.round(stats.dbMs);
+      console.warn(
+        `[API] slow request ${req.method} ${route} ${res.statusCode} ${durationMs}ms db=${dbMs}ms queries=${stats.queries}`,
+      );
+      // Same condition as the capture below: with no consent or no client the gate stays untouched,
+      // so the route is not blocked for the hour after consent turns on.
+      if (!usageEnabled() || !activeClient()) return;
+      const gate = slowRequestEventGate(
+        slowRequestRoutes,
+        `${req.method} ${route}`,
+        dbMs,
+        Date.now(),
+      );
+      if (!gate.send) return;
+      capturePostHogUsage('api_slow_request', {
+        http_method: req.method,
+        http_route: route,
+        http_status: res.statusCode,
+        duration_ms: durationMs,
+        db_ms: dbMs,
+        db_queries: stats.queries,
+        slowest_query_ms: Math.round(stats.slowestMs),
+        slowest_query: stats.slowestSql,
+        occurrences: gate.occurrences,
+      });
+    });
+    next();
+  });
 }

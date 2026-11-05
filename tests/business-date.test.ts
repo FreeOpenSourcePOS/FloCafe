@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 
 import { localDateInTimezone } from '../main/db';
-import { businessDateForInstant, dayBoundsInTimezone, normalizeBusinessDayStartTime } from '../shared/business-date';
+import {
+  businessDateForInstant,
+  dateTimeFormat,
+  dayBoundsInTimezone,
+  normalizeBusinessDayStartTime,
+  utcDayBounds,
+} from '../shared/business-date';
 
 /** The backend and the renderer each answer "what is today's business date?" for the same
  *  instant, tenant timezone and `business_day_start_time`. The two copies of that rule were
@@ -138,3 +144,96 @@ assert.deepEqual(
 );
 
 console.log('Business-day start-time contract tests passed');
+
+/** The formatter cache exists because a report that formats one timestamp per row built
+ *  a new Intl.DateTimeFormat per row. The cache must be invisible in the output, so every
+ *  cached result is compared against a formatter built fresh at that moment, on both sides
+ *  of a daylight-saving transition, and an unusable zone must still fail or fall back
+ *  exactly as the uncached code did. */
+const cachedFormatterCases = [
+  { timezone: 'America/New_York', instant: '2026-03-08T06:30:00Z' }, // 01:30 EST, before spring-forward
+  { timezone: 'America/New_York', instant: '2026-03-08T07:30:00Z' }, // 03:30 EDT, after the gap
+  { timezone: 'Asia/Kolkata', instant: '2026-11-01T06:15:00Z' }, // a half-hour zone, no DST
+  { timezone: 'Australia/Sydney', instant: '2026-10-03T15:59:00Z' }, // 01:59 AEST, before spring-forward
+  { timezone: 'Australia/Sydney', instant: '2026-10-03T16:30:00Z' }, // 03:30 AEDT, after the gap
+] as const;
+
+const formatterVariants: { locale: string; options: Intl.DateTimeFormatOptions }[] = [
+  { locale: 'en-US', options: { year: 'numeric', month: '2-digit', day: '2-digit' } },
+  {
+    locale: 'sv-SE',
+    options: {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    },
+  },
+  { locale: 'en-GB', options: { dateStyle: 'medium', timeStyle: 'short' } },
+];
+
+const assertSameAsFresh = (
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+  instant: Date,
+): void => {
+  const label = `${locale} ${options.timeZone} ${instant.toISOString()}`;
+  const fresh = new Intl.DateTimeFormat(locale, { ...options }).format(instant);
+  assert.equal(
+    dateTimeFormat(locale, options).format(instant),
+    fresh,
+    `${label}: cached formatter prints what a fresh one prints`,
+  );
+  assert.equal(
+    dateTimeFormat(locale, { ...options }).format(instant),
+    fresh,
+    `${label}: a re-built options object hits the same cache entry`,
+  );
+};
+
+for (const testCase of cachedFormatterCases) {
+  for (const { locale, options } of formatterVariants) {
+    assertSameAsFresh(
+      locale,
+      { ...options, timeZone: testCase.timezone },
+      new Date(testCase.instant),
+    );
+  }
+}
+assert.equal(
+  dateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata', hour: '2-digit' }),
+  dateTimeFormat('sv-SE', { hour: '2-digit', timeZone: 'Asia/Kolkata' }),
+  'option order does not create a second cache entry',
+);
+assert.notEqual(
+  dateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata' }),
+  dateTimeFormat('sv-SE', { timeZone: 'UTC' }),
+  'a different time zone gets its own formatter',
+);
+
+assert.throws(
+  () => dateTimeFormat('sv-SE', { timeZone: 'Not/AZone', year: 'numeric' }),
+  RangeError,
+  'an unusable time zone still throws as an unfetched formatter would',
+);
+assert.throws(
+  () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Not/AZone', year: 'numeric' }),
+  RangeError,
+  'the uncached call it replaces throws the same way',
+);
+const invalidZoneInstant = new Date('2026-11-01T06:15:00Z');
+assert.equal(
+  businessDateForInstant({ instant: invalidZoneInstant, timezone: 'Not/AZone' }),
+  invalidZoneInstant.toISOString().slice(0, 10),
+  'an unusable zone still falls back to the UTC calendar day',
+);
+assert.deepEqual(
+  dayBoundsInTimezone('2026-11-01', 'Not/AZone', '00:00'),
+  utcDayBounds('2026-11-01', '00:00'),
+  'an unusable zone still falls back to UTC day bounds',
+);
+
+console.log('Cached formatter parity tests passed');

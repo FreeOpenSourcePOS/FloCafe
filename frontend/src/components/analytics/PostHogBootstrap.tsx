@@ -60,13 +60,18 @@ async function refreshConsent(): Promise<void> {
 
 /** Puts the event on the id main reports now, not the one the page loaded with. */
 function withCurrentIdentity(event: ScrubbableEvent): ScrubbableEvent {
-  if (!identity.distinctId) return event;
+  if (!identity.distinctId) return withProcessType(event);
   const properties: Record<string, unknown> = {
     ...(event.properties ?? {}),
     distinct_id: identity.distinctId,
   };
   if (!identity.identified && !consent.telemetry) properties.$process_person_profile = false;
-  return { ...event, properties };
+  return withProcessType({ ...event, properties });
+}
+
+/** The renderer is a process of its own; main and the local API tag their own events. */
+function withProcessType(event: ScrubbableEvent): ScrubbableEvent {
+  return { ...event, properties: { ...(event.properties ?? {}), process_type: 'renderer' } };
 }
 
 async function bootPostHog() {

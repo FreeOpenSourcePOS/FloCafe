@@ -176,6 +176,7 @@ router.get('/orders', (req: Request, res: Response) => {
 
     res.json({ orders: ordersWithItems, counts: countMap });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Kitchen] Orders fetch error:', error);
     res.status(500).json({ error: 'Could not fetch kitchen orders' });
   }

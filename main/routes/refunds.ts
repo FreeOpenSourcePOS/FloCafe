@@ -410,6 +410,7 @@ router.post('/', requirePermission('refunds.initiate'), async (req: Request, res
     }
     res.status(201).json(result);
   } catch (error: any) {
+    res.locals.postHogError = error;
     const status = error.statusCode || 500;
     const outcome = operationCommitted
       ? 'applied'
@@ -476,6 +477,7 @@ router.get('/', requirePermission('refunds.view'), (req: Request, res: Response)
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     res.status(error.statusCode || 500).json({ error: error.message || 'Unable to list refunds' });
   }
 });

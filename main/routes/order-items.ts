@@ -426,6 +426,7 @@ router.patch(
 
       res.json({ order: orderData });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const diagnosticCode =
         typeof error?.diagnosticCode === 'string' ? error.diagnosticCode : null;
       if (diagnosticCode) {

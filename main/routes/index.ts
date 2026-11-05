@@ -195,6 +195,7 @@ export function registerRoutes(app: Express): void {
           unclassified_category_id: pack.unclassifiedCategoryId,
         });
       } catch (error: any) {
+        res.locals.postHogError = error;
         console.error('[API] Internal error:', error);
         res.status(500).json({ error: 'Internal server error' });
       }
@@ -226,6 +227,7 @@ export function registerRoutes(app: Express): void {
           qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
         });
       } catch (error: any) {
+        res.locals.postHogError = error;
         res
           .status(mobilePairingErrorStatus(error))
           .json({ error: mobilePairingErrorMessage(error) });
@@ -247,6 +249,7 @@ export function registerRoutes(app: Express): void {
           qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
         });
       } catch (error: any) {
+        res.locals.postHogError = error;
         res
           .status(mobilePairingErrorStatus(error))
           .json({ error: mobilePairingErrorMessage(error) });
@@ -263,6 +266,7 @@ export function registerRoutes(app: Express): void {
         const devices = await cloudSync.listPairedDevices();
         res.json({ devices });
       } catch (error: any) {
+        res.locals.postHogError = error;
         console.error('[API] FloAdmin request failed:', error);
         res.status(502).json({ error: 'Could not reach FloAdmin' });
       }
@@ -311,6 +315,7 @@ export function registerRoutes(app: Express): void {
 
         res.json(results);
       } catch (error: any) {
+        res.locals.postHogError = error;
         console.error('[API] Internal error:', error);
         res.status(500).json({ error: 'Internal server error' });
       }
@@ -345,6 +350,7 @@ export function registerRoutes(app: Express): void {
           res.json({ found: false, customer: null });
         }
       } catch (error: any) {
+        res.locals.postHogError = error;
         console.error('[API] Internal error:', error);
         res.status(500).json({ error: 'Internal server error' });
       }

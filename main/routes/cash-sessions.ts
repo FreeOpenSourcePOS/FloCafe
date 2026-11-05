@@ -301,6 +301,7 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
     operationCommitted = true;
     res.json(result);
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     const status = errorStatus(error);
     const safeMessage =
       status >= 500 ? 'Failed to open shift' : errorMessage(error, 'Failed to open shift');
@@ -354,6 +355,7 @@ router.get('/open', requirePermission('cash.shifts.view'), (req: Request, res: R
       one_shift_per_staff: isPerStaffShiftsEnabled(db),
     });
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     const status = errorStatus(error);
     res.status(status).json({
       error:
@@ -407,6 +409,7 @@ router.get(
         would_block_close: false,
       });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       const status = errorStatus(error);
       res.status(status).json({
         error:
@@ -461,6 +464,7 @@ router.get('/current', requirePermission('cash.shifts.view'), (req: Request, res
     const expectedCashCents = sessionExpectedCash(db, session, asOf);
     res.json({ ...session, expected_cash_cents: expectedCashCents });
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     const status = errorStatus(error);
     res.status(status).json({
       error:
@@ -507,6 +511,7 @@ router.post('/:id/close', requirePermission('cash.shifts.close'), (req: Request,
     operationCommitted = true;
     res.json(result);
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     const status = errorStatus(error);
     const safeMessage =
       status >= 500 ? 'Failed to close shift' : errorMessage(error, 'Failed to close shift');

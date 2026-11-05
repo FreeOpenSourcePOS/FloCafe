@@ -193,6 +193,7 @@ router.get('/', requirePermission('tables.view'), (req: Request, res: Response) 
     );
     res.json({ tables });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -215,6 +216,7 @@ router.get('/:id', requirePermission('tables.view'), (req: Request, res: Respons
     // Normalize: frontend expects `name`, schema column is `number`
     res.json({ table: tableShape(db, table as any, activeOrder, includeReservationCustomer) });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -246,6 +248,7 @@ router.patch('/floors/:name', requirePermission('tables.manage'), (req: Request,
 
     res.json({ floor: newName, previousFloor: oldName, affected: result.changes });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Floor rename failed:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -275,6 +278,7 @@ router.delete(
 
       res.json({ floor: null, removedFloor: name, affected: result.changes });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Floor delete failed:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -354,6 +358,7 @@ router.post('/', requirePermission('tables.manage'), (req: Request, res: Respons
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId);
     res.status(201).json({ table });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -416,6 +421,7 @@ router.patch('/positions', requirePermission('tables.manage'), (req: Request, re
 
     res.json({ success: true, count: updates.length });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -505,6 +511,7 @@ router.put('/:id', requirePermission('tables.manage'), (req: Request, res: Respo
       table: tableShape(db, updated as any, activeOrderForTable(db, req.params.id as string)),
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -540,6 +547,7 @@ router.post(
       const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
       res.json({ table: tableShape(db, updated as any) });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -567,6 +575,7 @@ router.post(
       const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
       res.json({ table: tableShape(db, updated as any) });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -701,6 +710,7 @@ router.post(
         targetTable: moved.targetTable,
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const statusCode = error.status || 500;
       console.error('[API] Table move failed:', error);
       res
@@ -773,6 +783,7 @@ router.patch('/:id/status', requirePermission('tables.manage'), (req: Request, r
     };
     res.json({ table: { ...updated, ...reservationCustomerShape(db, updated) } });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

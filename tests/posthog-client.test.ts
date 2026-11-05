@@ -23,6 +23,8 @@ interface RecordedClient {
     stack: string;
     distinctId?: string;
     properties?: Record<string, unknown>;
+    scrubbed?: Record<string, unknown>;
+    cause?: Error;
   }>;
   shutdowns: number;
   aliases: Array<{ distinctId: string; alias: string }>;
@@ -30,6 +32,33 @@ interface RecordedClient {
 }
 
 const clients: RecordedClient[] = [];
+
+interface StackFrame {
+  filename: string;
+  lineno: number;
+  colno: number;
+  function: string;
+}
+
+/** The frames posthog-node parses from a stack, so the mock sends the same shape it would. */
+function stackFrames(stack: string): StackFrame[] {
+  const frames: StackFrame[] = [];
+  for (const line of stackFrameLines(stack)) {
+    const text = line.trim().slice(3);
+    const open = text.lastIndexOf('(');
+    const location = open === -1 ? text : text.slice(open + 1).replace(/\)$/, '');
+    const match = /^(.*):(\d+):(\d+)$/.exec(location);
+    if (match) {
+      frames.push({
+        filename: match[1],
+        lineno: Number(match[2]),
+        colno: Number(match[3]),
+        function: 'frame',
+      });
+    }
+  }
+  return frames;
+}
 
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
@@ -69,16 +98,25 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
           this.events.push(payload);
         }
         captureException(error: Error, distinctId?: string, properties?: Record<string, unknown>) {
+          const event = {
+            event: '$exception',
+            properties: {
+              ...(properties ?? {}),
+              distinct_id: distinctId,
+              $exception_list: [
+                {
+                  type: error.name,
+                  value: error.message,
+                  stacktrace: { type: 'raw', frames: stackFrames(error.stack ?? '') },
+                },
+              ],
+            },
+          };
+          let scrubbed: Record<string, unknown> | undefined;
           if (this.options.before_send) {
-            const scrubbed = this.options.before_send({
-              event: '$exception',
-              properties: {
-                ...(properties ?? {}),
-                distinct_id: distinctId,
-                $exception_list: [{ type: error.name, value: error.message }],
-              },
-            });
-            if (!scrubbed) return;
+            const kept = this.options.before_send(event);
+            if (!kept) return;
+            scrubbed = (kept as { properties?: Record<string, unknown> }).properties;
           }
           this.exceptions.push({
             message: error.message,
@@ -86,6 +124,8 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
             stack: error.stack ?? '',
             distinctId,
             properties,
+            scrubbed,
+            cause: error.cause instanceof Error ? error.cause : undefined,
           });
         }
         alias(payload: { distinctId: string; alias: string }) {
@@ -110,6 +150,7 @@ const {
 } = require('../main/db');
 const {
   apiRoutePattern,
+  apiSlowRequestMiddleware,
   capturePostHogApiFailure,
   capturePostHogException,
   capturePostHogUsage,
@@ -144,6 +185,7 @@ const {
   POSTHOG_USAGE_PROPERTY_KEYS,
   redactExceptionMessage,
   scrubPostHogEvent,
+  scrubRequestPath,
   stackFrameLines,
 } = require('../shared/posthog-scrub');
 
@@ -467,6 +509,140 @@ async function main() {
   assert.equal(apiFailure.properties.http_status, 500);
   assert.equal(JSON.stringify(apiFailure).includes('Ada'), false);
 
+  // A 5xx from app-level middleware has no matched route, and `requestRoute` says so.
+  const unmatchedFailure = scrubPostHogEvent(
+    {
+      event: '$exception',
+      properties: {
+        capture_point: 'api-5xx',
+        http_method: 'GET',
+        http_route: '<unmatched>',
+        http_status: 500,
+      },
+    },
+    on,
+  );
+  assert.equal(
+    unmatchedFailure.properties.http_route,
+    '<unmatched>',
+    'the unmatched-route sentinel survives the scrub and is reported',
+  );
+  const otherSentinel = scrubPostHogEvent(
+    {
+      event: '$exception',
+      properties: {
+        capture_point: 'api-5xx',
+        http_method: 'GET',
+        http_route: '<customer Ada>',
+        http_status: 500,
+      },
+    },
+    on,
+  );
+  assert.equal(
+    otherSentinel.properties.http_route,
+    undefined,
+    'only the exact sentinel passes; any other non-path value is still dropped',
+  );
+
+  const located = scrubPostHogEvent(
+    {
+      event: '$exception',
+      properties: {
+        capture_point: 'api-5xx',
+        process_type: 'api',
+        $release_id: '0192f0c4-7d1e-7000-8000-000000000000',
+        $current_url: 'http://localhost:3001/orders/4471/?customer=ada#x',
+        $exception_list: [
+          {
+            type: 'TypeError',
+            value: 'order 55123 could not be read',
+            stacktrace: {
+              type: 'raw',
+              frames: [
+                { filename: 'main/routes/orders.ts', lineno: 42, colno: 7, function: 'read' },
+              ],
+            },
+          },
+        ],
+      },
+    },
+    on,
+  );
+  assert.equal(located.properties.process_type, 'api', 'the failing process survives the scrub');
+  assert.equal(located.properties.$release_id, '0192f0c4-7d1e-7000-8000-000000000000');
+  assert.equal(located.properties.$pathname, '/orders/:id/', 'the route is a pattern');
+  assert.equal(JSON.stringify(located).includes('ada'), false);
+  assert.equal(JSON.stringify(located).includes('localhost'), false);
+  assert.deepEqual(located.properties.$exception_list[0].stacktrace.frames, [
+    { filename: 'main/routes/orders.ts', lineno: 42, colno: 7, function: 'read' },
+  ]);
+
+  const chained = scrubPostHogEvent(
+    {
+      event: '$exception',
+      properties: {
+        capture_point: 'uncaughtException',
+        $exception_list: [
+          {
+            type: 'Error',
+            value: 'ledger write failed',
+            mechanism: { type: 'generic', handled: false, exception_id: 0, source: 'cause' },
+            stacktrace: { type: 'raw', frames: [{ filename: 'main/db.ts', lineno: 20 }] },
+          },
+          {
+            type: 'TypeError',
+            value: 'chained failure',
+            mechanism: {
+              type: 'chained',
+              handled: false,
+              exception_id: 1,
+              parent_id: 0,
+              source: 'cause',
+              data: 'Customer Juan Perez',
+            },
+            stacktrace: { type: 'raw', frames: [{ filename: 'main/db.ts', lineno: 30 }] },
+          },
+        ],
+      },
+    },
+    on,
+  );
+  const list = chained.properties.$exception_list as Array<Record<string, any>>;
+  assert.equal(list.length, 2, 'a cause stays in the list');
+  assert.deepEqual(
+    list[1].mechanism,
+    { handled: false, type: 'chained', exception_id: 1, parent_id: 0, source: 'cause' },
+    'the mechanism keeps the cause link and its source',
+  );
+  assert.deepEqual(
+    list[0].mechanism,
+    { handled: false, type: 'generic', exception_id: 0, source: 'cause' },
+    'the first cause index is 0, not dropped',
+  );
+  assert.equal(JSON.stringify(chained).includes('Juan'), false, 'no mechanism data leaves');
+
+  const axiosFailure = scrubPostHogEvent(
+    {
+      event: '$exception',
+      properties: {
+        capture_point: 'react-error-boundary',
+        process_type: 'renderer',
+        http_method: 'GET',
+        http_route: 'http://localhost:3001/api/orders/4471?expand=ada',
+        http_status: 502,
+        $exception_list: [{ type: 'AxiosError', value: 'Network Error' }],
+      },
+    },
+    on,
+  );
+  assert.equal(axiosFailure.properties.$exception_type, 'AxiosError');
+  assert.equal(axiosFailure.properties.http_method, 'GET');
+  assert.equal(axiosFailure.properties.http_route, '/api/orders/:id', 'the request is a pattern');
+  assert.equal(axiosFailure.properties.http_status, 502);
+  assert.equal(JSON.stringify(axiosFailure).includes('localhost'), false);
+  assert.equal(JSON.stringify(axiosFailure).includes('ada'), false);
+
   const pageview = scrubPostHogEvent(
     {
       event: '$pageview',
@@ -533,6 +709,65 @@ async function main() {
     on,
   );
   assert.deepEqual(unlisted?.properties, { feature: 'split_checks' }, 'unlisted keys are dropped');
+  const slow = scrubPostHogEvent(
+    {
+      event: 'api_slow_request',
+      properties: {
+        http_method: 'GET',
+        http_route: '/api/orders/:id',
+        http_status: 200,
+        duration_ms: 1420,
+        db_ms: 900,
+        db_queries: 12,
+        slowest_query_ms: 320,
+        slowest_query: 'SELECT * FROM orders WHERE id = ? AND status = ?',
+        order_id: 1234,
+      },
+    },
+    on,
+  );
+  assert.deepEqual(
+    slow?.properties,
+    {
+      http_method: 'GET',
+      http_route: '/api/orders/:id',
+      http_status: 200,
+      duration_ms: 1420,
+      db_ms: 900,
+      db_queries: 12,
+      slowest_query_ms: 320,
+      slowest_query: 'SELECT * FROM orders WHERE id = ? AND status = ?',
+    },
+    'a slow request keeps its counters and the normalized SQL',
+  );
+  const rawSql = scrubPostHogEvent(
+    {
+      event: 'api_slow_request',
+      properties: { slowest_query: "SELECT * FROM orders WHERE name = 'Ada'" },
+    },
+    on,
+  );
+  assert.deepEqual(rawSql?.properties, {}, 'SQL that still holds a literal is dropped');
+  const namedSql = 'SELECT o.id || ? FROM orders o WHERE o.status != @status AND o.total / ? > [x]';
+  const namedParams = scrubPostHogEvent(
+    { event: 'api_slow_request', properties: { slowest_query: namedSql } },
+    on,
+  );
+  assert.deepEqual(
+    namedParams?.properties,
+    { slowest_query: namedSql },
+    'normalized SQL with named parameters and operators is kept',
+  );
+  const quotedSql = 'SELECT * FROM items WHERE name = "OMELETTE"';
+  const quoted = scrubPostHogEvent(
+    { event: 'api_slow_request', properties: { slowest_query: quotedSql } },
+    on,
+  );
+  assert.deepEqual(
+    quoted?.properties,
+    {},
+    'SQL that still holds a double-quoted string is dropped',
+  );
 
   const anonymous = { telemetryEnabled: true, accountLinked: false, allowExceptions: true };
   const anonymousIdentify = scrubPostHogEvent(
@@ -1030,13 +1265,40 @@ async function main() {
   assert.equal(recorded.stack.includes('posthog-client.test'), true, 'real frames are kept');
   assert.equal(recorded.distinctId, account);
   assert.equal(recorded.properties?.capture_point, 'uncaughtException');
+  assert.equal(recorded.properties?.process_type, 'main');
   assert.equal(typeof recorded.properties?.app_version, 'string');
+  const frames = recorded.scrubbed?.$exception_list as Array<Record<string, any>> | undefined;
+  const firstFrame = (frames?.[0]?.stacktrace?.frames ?? [])[0];
+  assert.match(
+    String(firstFrame?.filename),
+    /tests\/posthog-client\.test\.ts$/,
+    'the file and line of the failing frame reach PostHog',
+  );
+  assert.ok(Number(firstFrame?.lineno) > 0);
+
+  const cause = new Error('ledger 4411 unreadable');
+  capturePostHogException(
+    'uncaughtException',
+    Object.assign(new Error('order save failed'), { cause }),
+  );
+  assert.equal(latest().exceptions.at(-1)?.cause?.message, 'ledger <n> unreadable');
+  assert.equal(
+    latest().exceptions.at(-1)?.cause?.stack?.includes('posthog-client.test'),
+    true,
+    'the cause keeps its own frames',
+  );
 
   capturePostHogException('unhandledRejection', 'customer Ada phone');
   const rejection = latest().exceptions.at(-1);
-  assert.equal(rejection.message, '');
-  assert.equal(rejection.stack.includes('Ada'), false);
+  assert.equal(rejection.message, 'customer Ada phone', 'a string reason keeps its message');
   assert.equal(rejection.name, 'Error');
+
+  capturePostHogException('unhandledRejection', 'customer 55123 at "Ada"');
+  assert.equal(
+    latest().exceptions.at(-1)?.message,
+    'customer <n> at "<redacted>"',
+    'a string reason is redacted like any message',
+  );
 
   capturePostHogApiFailure('POST', '/api/orders/:id/items', 500);
   const apiCaptured = latest().exceptions.at(-1);
@@ -1044,11 +1306,134 @@ async function main() {
   assert.equal(apiCaptured.message, 'POST /api/orders/:id/items');
   assert.equal(apiCaptured.properties?.capture_point, 'api-5xx');
   assert.equal(apiCaptured.properties?.http_status, 500);
+  assert.equal(apiCaptured.properties?.process_type, 'api');
+  assert.match(
+    apiCaptured.stack,
+    /main\/services\/posthog\.ts/,
+    'a 5xx without a thrown error still carries frames, never a bare name',
+  );
+
+  capturePostHogApiFailure(
+    'PATCH',
+    '/api/orders/:id/notes',
+    500,
+    new Error('Customer Juan Perez not found'),
+  );
+  const thrownCaptured = latest().exceptions.at(-1);
+  assert.equal(thrownCaptured.name, 'Error', 'the thrown error names the issue');
+  assert.equal(
+    thrownCaptured.message,
+    'PATCH /api/orders/:id/notes',
+    'the message is the route pattern, never the text of the route error',
+  );
+  assert.equal(
+    JSON.stringify(thrownCaptured).includes('Juan'),
+    false,
+    'a customer name in the thrown error never leaves the machine',
+  );
+  assert.equal(
+    thrownCaptured.stack.includes('posthog-client.test'),
+    true,
+    'a thrown error brings its own frames',
+  );
+
+  const caused = new Error('ledger write failed');
+  caused.cause = new TypeError('Customer Juan Perez not found');
+  capturePostHogApiFailure('GET', '/api/reports/ledger', 500, caused);
+  const causedCaptured = latest().exceptions.at(-1);
+  assert.equal(causedCaptured.cause?.name, 'TypeError', 'the cause keeps its type');
+  assert.equal(causedCaptured.cause?.message, '', 'the cause carries no message');
+  assert.equal(
+    causedCaptured.cause?.stack.includes('posthog-client.test'),
+    true,
+    'the cause keeps its frames',
+  );
+  assert.equal(JSON.stringify(causedCaptured).includes('Juan'), false);
+  assert.equal(JSON.stringify(causedCaptured).includes('ledger write'), false);
+
+  const beforeCloud = latest().exceptions.length;
+  capturePostHogApiFailure('GET', '/api/settings/cloud/account', 502, new Error('no subscription'));
+  capturePostHogApiFailure('GET', '/api/settings/cloud/account', 502);
+  capturePostHogApiFailure(
+    'POST',
+    '/api/products/fetch-url',
+    502,
+    new Error('getaddrinfo ENOTFOUND'),
+  );
+  capturePostHogApiFailure(
+    'GET',
+    '/api/mobile/devices',
+    502,
+    new Error('Could not reach FloAdmin'),
+  );
+  assert.equal(
+    latest().exceptions.length,
+    beforeCloud,
+    'a route that answers 5xx while offline sends no exception',
+  );
+  capturePostHogApiFailure('POST', '/api/products/fetch-url', 500, new Error('bug'));
+  assert.equal(
+    latest().exceptions.length,
+    beforeCloud + 1,
+    'a real 500 on an offline-gateway route is still reported',
+  );
+
+  const beforeRepeat = latest().exceptions.length;
+  capturePostHogApiFailure('GET', '/api/reports/summary', 500);
+  capturePostHogApiFailure('GET', '/api/reports/summary', 500);
+  assert.equal(latest().exceptions.length, beforeRepeat + 1, 'one route sends once an hour');
+  capturePostHogApiFailure('GET', '/api/reports/other', 500);
+  assert.equal(
+    latest().exceptions.length,
+    beforeRepeat + 2,
+    'another route still sends its own exception',
+  );
+
+  // Consent off and then on inside the window: the dropped send must not have taken the slot.
+  setSetting('diagnostics_transmission_enabled', 'false');
+  syncPostHogIdentity();
+  const beforeConsentWindow = latest().exceptions.length;
+  capturePostHogApiFailure('DELETE', '/api/reports/consent-window/:id', 500);
+  assert.equal(
+    latest().exceptions.length,
+    beforeConsentWindow,
+    'a 5xx with diagnostics transmission off sends nothing',
+  );
+  setSetting('diagnostics_transmission_enabled', 'true');
+  syncPostHogIdentity();
+  capturePostHogApiFailure('DELETE', '/api/reports/consent-window/:id', 500);
+  assert.equal(
+    latest().exceptions.length,
+    beforeConsentWindow + 1,
+    'consent on inside the window still sends that 5xx, once',
+  );
+  capturePostHogApiFailure('DELETE', '/api/reports/consent-window/:id', 500);
+  assert.equal(
+    latest().exceptions.length,
+    beforeConsentWindow + 1,
+    'and from then on the hour holds',
+  );
 
   assert.equal(apiRoutePattern('/api/orders/42/?q=Ada', '/:id'), '/api/orders/:id');
   assert.equal(apiRoutePattern('/api/orders/42/items', '/:id/items'), '/api/orders/:id/items');
   assert.equal(apiRoutePattern('/api/health', '/api/health'), '/api/health');
   assert.equal(apiRoutePattern('/api/x', /x/), '<unmatched>');
+
+  assert.equal(
+    scrubRequestPath('/customers/juan-perez'),
+    '/customers/*',
+    'a name after the first segment of a request path is dropped',
+  );
+  assert.equal(
+    scrubRequestPath('/tables/floors/Patio'),
+    '/tables/*',
+    'a floor name in a request path is dropped',
+  );
+  assert.equal(
+    scrubRequestPath('/customers-search?q=juan'),
+    '/customers-search',
+    'a search term is dropped with the query',
+  );
   const express = require('express');
   const api = express();
   api.use(postHogApiFailureMiddleware);
@@ -1059,8 +1444,30 @@ async function main() {
   orders.post('/:id', async () => {
     throw new Error('boom');
   });
+  orders.get('/:id', (_req: unknown, res: any) => res.status(503).json({ error: 'busy' }));
+  // The shape of a route catch after this change: hand the error over, then send the 5xx.
+  orders.post('/:id/handoff', (_req: unknown, res: any) => {
+    try {
+      throw new RangeError('boom');
+    } catch (error) {
+      res.locals.postHogError = error;
+      res.status(500).json({ error: 'failed' });
+    }
+  });
+  // The same catch without the handoff, for the contrast.
+  orders.post('/:id/no-handoff', (_req: unknown, res: any) => {
+    try {
+      throw new RangeError('boom');
+    } catch {
+      res.status(500).json({ error: 'failed' });
+    }
+  });
   api.use('/api/orders', orders);
-  api.use((_error: Error, _req: unknown, res: any, _next: unknown) => res.status(500).end());
+  // Mirrors the global error handler in main/server.ts: the thrown error rides along.
+  api.use((error: Error, _req: unknown, res: any, _next: unknown) => {
+    res.locals.postHogError = error;
+    res.status(500).end();
+  });
   const server = api.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const { port } = server.address();
@@ -1075,10 +1482,137 @@ async function main() {
         `${method} errors from the global handler keep the mount prefix`,
       );
       assert.equal(routed.properties?.http_method, method);
+      assert.equal(routed.properties?.http_route?.includes('customer'), false);
+      assert.equal(routed.name, 'Error', 'the caught error names the issue');
+      assert.equal(
+        routed.message,
+        `${method} /api/orders/:id`,
+        'the message is the route pattern, never the text of the error the route caught',
+      );
+      assert.match(
+        String(
+          (routed.scrubbed?.$exception_list as Array<Record<string, any>>)?.[0]?.stacktrace
+            ?.frames?.[0]?.filename,
+        ),
+        /tests\/posthog-client\.test\.ts$/,
+        `${method} keeps the frames of the error the route caught`,
+      );
+      assert.equal(
+        routed.stack.includes('posthog-client.test'),
+        true,
+        `${method} keeps real frames`,
+      );
     }
+    await fetch(`http://127.0.0.1:${port}/api/orders/42`, { method: 'GET' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const bare = latest().exceptions.at(-1);
+    assert.equal(bare.properties?.http_status, 503);
+    assert.equal(
+      bare.stack.includes('posthog-client.test'),
+      true,
+      'a 5xx sent without a thrown error keeps the frames of its sender',
+    );
+
+    // A catch that sets the handoff carries the real error type; one that does not cannot.
+    await fetch(`http://127.0.0.1:${port}/api/orders/42/handoff`, { method: 'POST' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const handedOff = latest().exceptions.at(-1);
+    assert.equal(handedOff.name, 'RangeError', 'the caught error keeps its type');
+    assert.equal(handedOff.properties?.http_route, '/api/orders/:id/handoff');
+    assert.equal(handedOff.stack.includes('posthog-client.test'), true, 'and its own frames');
+    await fetch(`http://127.0.0.1:${port}/api/orders/42/no-handoff`, { method: 'POST' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      latest().exceptions.at(-1)?.name,
+      'ApiServerError',
+      'a catch that sends a 5xx without the handoff reports no error type',
+    );
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+  }
+
+  // A request whose time is mostly SQL is logged and sent, with the statement normalized.
+  const Database = require('better-sqlite3');
+  const { instrumentDatabase } = require('../main/services/db-timing');
+  const slowDb = new Database(':memory:');
+  instrumentDatabase(slowDb);
+  const slowApi = express();
+  slowApi.use(apiSlowRequestMiddleware);
+  const slowQuery = () =>
+    // Recursion long enough to pass 200 ms on a fast machine, so the threshold is not the test.
+    slowDb
+      .prepare(
+        'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 10000000) SELECT COUNT(*) AS total FROM c',
+      )
+      .get();
+  slowApi.get('/api/slow/:id', (_req: unknown, res: any) => {
+    slowQuery();
+    res.json({ ok: true });
+  });
+  slowApi.get('/api/slow-consent/:id', (_req: unknown, res: any) => {
+    slowQuery();
+    res.json({ ok: true });
+  });
+  const slowServer = slowApi.listen(0, '127.0.0.1');
+  await new Promise((resolve) => slowServer.once('listening', resolve));
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(' '));
+  };
+  try {
+    const eventsBefore = latest().events.length;
+    const { port: slowPort } = slowServer.address();
+    await fetch(`http://127.0.0.1:${slowPort}/api/slow/7`);
+    await new Promise((resolve) => setImmediate(resolve));
+    const slowWarnings = warnings.filter((line) => line.startsWith('[API] slow request'));
+    assert.equal(slowWarnings.length, 1, 'one warn line for the slow request');
+    assert.match(slowWarnings[0], /db=\d+ms/);
+    assert.equal(latest().events.length, eventsBefore + 1, 'one api_slow_request is sent');
+    const slowEvent = latest().events.at(-1);
+    assert.equal(slowEvent?.event, 'api_slow_request');
+    assert.equal(slowEvent?.properties?.http_route, '/api/slow/:id');
+    assert.ok(Number(slowEvent?.properties?.db_ms) >= 200, 'db_ms carries the SQL time');
+    assert.match(String(slowEvent?.properties?.slowest_query), /^WITH RECURSIVE c\(x\)/);
+    assert.equal(
+      String(slowEvent?.properties?.slowest_query).includes('10000000'),
+      false,
+      'the statement carries no literal',
+    );
+
+    // Telemetry off and then on inside the window: the dropped slow request must not hold the slot.
+    const slowConsentEvents = () =>
+      latest().events.filter(
+        (event) =>
+          event.event === 'api_slow_request' &&
+          event.properties?.http_route === '/api/slow-consent/:id',
+      ).length;
+    assert.equal(slowConsentEvents(), 0, 'no slow-request event for that route yet');
+    setSetting('telemetry_enabled', 'false');
+    syncPostHogIdentity();
+    await fetch(`http://127.0.0.1:${slowPort}/api/slow-consent/9`);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(slowConsentEvents(), 0, 'a slow request with telemetry off sends nothing');
+    setSetting('telemetry_enabled', 'true');
+    syncPostHogIdentity();
+    await fetch(`http://127.0.0.1:${slowPort}/api/slow-consent/9`);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      slowConsentEvents(),
+      1,
+      'telemetry on inside the window still sends that slow request, once',
+    );
+    assert.equal(
+      latest().events.at(-1)?.properties?.occurrences,
+      1,
+      'the slow request sent while telemetry was off did not count as suppressed',
+    );
+  } finally {
+    console.warn = originalWarn;
+    slowServer.closeAllConnections();
+    await new Promise((resolve) => slowServer.close(resolve));
+    slowDb.close();
   }
 
   setSetting('telemetry_enabled', 'false');

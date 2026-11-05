@@ -4,6 +4,7 @@
  */
 
 import type { NextFunction, Request, Response } from 'express';
+import { performance } from 'node:perf_hooks';
 import {
   getDatabase,
   getSettingValue,
@@ -22,6 +23,12 @@ import {
 import { getOfflineModeAbortSignal, onOfflineModeEnabled } from './offline-mode';
 import { readCountryProvenance } from './country-provenance';
 import { getInstallSource, getRunMode } from './telemetry';
+import {
+  getRequestStats,
+  runWithRequestStats,
+  slowRequestEventGate,
+  type SlowRequestRouteState,
+} from './db-timing';
 import {
   markAliased,
   pendingAlias,
@@ -110,6 +117,13 @@ function appVersion(): string {
 }
 
 const CONSENT_CACHE_TTL_MS = 30_000;
+/** One `api-5xx` exception per method, route, and status, so a polling route cannot flood a plan. */
+const API_FAILURE_WINDOW_MS = 60 * 60_000;
+/** Cloud routes fail for every store without a cloud subscription, and the sidebar polls them. */
+const CLOUD_ROUTE_PREFIX = '/api/settings/cloud';
+/** These answer 502 or 503 when a remote host is unreachable, which is normal while offline. */
+const OFFLINE_GATEWAY_ROUTES = ['/api/products/fetch-url', '/api/mobile/devices'];
+const apiFailureSentAt = new Map<string, number>();
 
 interface CachedConsentState {
   level: ProductAnalyticsLevel;
@@ -536,41 +550,50 @@ export async function stopPostHog(options?: { flush?: boolean }): Promise<void> 
 }
 
 /** A copy of the error whose message is redacted and whose stack carries only frame lines. */
-function scrubbedError(input: unknown): Error {
+function scrubbedError(input: unknown, depth = 0): Error {
   const record =
     input instanceof Error
-      ? { name: input.name, message: input.message, stack: input.stack }
+      ? input
       : input && typeof input === 'object'
-        ? (input as { name?: unknown; message?: unknown; stack?: unknown })
+        ? (input as { name?: unknown; message?: unknown; stack?: unknown; cause?: unknown })
         : {};
   const stack = typeof record.stack === 'string' ? record.stack : undefined;
   const name = sanitizeErrorName(record.name, stack);
-  const message = redactExceptionMessage(record.message);
+  // A rejection reason is often a plain string; keep it as the message instead of sending a blank.
+  const message = redactExceptionMessage(typeof input === 'string' ? input : record.message);
   const error = new Error(message);
   error.name = name;
   error.stack = [message ? `${name}: ${message}` : name, ...stackFrameLines(stack)].join('\n');
+  // A chained cause stays, scrubbed the same way. Two levels, so a self-referencing cause ends.
+  if (depth < 2 && record.cause instanceof Error) {
+    error.cause = scrubbedError(record.cause, depth + 1);
+  }
   return error;
 }
 
+/** Returns whether the exception was handed to the client, so a caller's throttle starts only then. */
 export function capturePostHogException(
   capturePoint: PostHogCapturePoint,
   input: unknown,
   properties?: Record<string, unknown>,
-): void {
+): boolean {
   try {
-    if (!isPostHogCapturePoint(capturePoint)) return;
-    if (!getConsentState().diagnosticsEnabled) return;
+    if (!isPostHogCapturePoint(capturePoint)) return false;
+    if (!getConsentState().diagnosticsEnabled) return false;
     const current = activeClient();
-    if (!current) return;
+    if (!current) return false;
     const who = identity();
     current.captureException(scrubbedError(input), who.distinctId, {
       ...readSuperProperties(who),
+      process_type: 'main',
       ...(who.identified || who.installRef ? {} : { $process_person_profile: false }),
       ...(properties ?? {}),
       capture_point: capturePoint,
     });
+    return true;
   } catch {
     // A failed PostHog send is dropped. There is no outbox.
+    return false;
   }
 }
 
@@ -587,26 +610,127 @@ export function apiRoutePattern(originalUrl: string, routePath: unknown): string
   return `/${[...prefix, ...routeSegments].join('/')}`;
 }
 
-/** A 5xx from the local API, keyed by method and route pattern. No params, query, or body. */
-export function capturePostHogApiFailure(method: string, route: string, status: number): void {
-  const error = new Error(`${method} ${route}`);
-  error.name = 'ApiServerError';
-  error.stack = error.name;
-  capturePostHogException('api-5xx', error, {
+/**
+ * A 5xx from the local API, keyed by method and route pattern. No params, query, or body. What it
+ * failed on keeps its own type and frames; the message is the route pattern, because a route error
+ * can name a customer.
+ */
+export function capturePostHogApiFailure(
+  method: string,
+  route: string,
+  status: number,
+  thrown?: unknown,
+  sentStack?: string,
+): void {
+  if (route.startsWith(CLOUD_ROUTE_PREFIX)) return;
+  if ((status === 502 || status === 503) && OFFLINE_GATEWAY_ROUTES.includes(route)) return;
+  const key = `${method} ${route} ${status}`;
+  const at = Date.now();
+  const last = apiFailureSentAt.get(key);
+  if (last !== undefined && at - last < API_FAILURE_WINDOW_MS) return;
+  const source = thrown instanceof Error ? thrown : undefined;
+  const error = frameError(
+    source?.name ?? 'ApiServerError',
+    `${method} ${route}`,
+    source?.stack ?? sentStack,
+  );
+  // The cause keeps only what links it: its type and its frames, never its message.
+  const cause = source?.cause instanceof Error ? source.cause : undefined;
+  if (cause) error.cause = frameError(cause.name, '', cause.stack);
+  // The slot is taken only by a send, so an event dropped for no consent cannot block the key.
+  const sent = capturePostHogException('api-5xx', error, {
     http_method: method,
     http_route: route,
     http_status: status,
+    process_type: 'api',
   });
+  if (sent) apiFailureSentAt.set(key, at);
+}
+
+/** An error built from a type, a message, and frame lines only. */
+function frameError(name: unknown, message: string, stack: unknown): Error {
+  const error = new Error(message);
+  error.name = typeof name === 'string' && name ? name : 'Error';
+  const frames = stackFrameLines(stack);
+  // Without frames the error keeps the stack of this call, which still points inside this app.
+  if (frames.length > 0) {
+    error.stack = [message ? `${error.name}: ${message}` : error.name, ...frames].join('\n');
+  }
+  return error;
+}
+
+/** The matched route pattern, or the mount prefix Express has left on the request. */
+function requestRoute(req: Request): string {
+  return req.route
+    ? apiRoutePattern(req.originalUrl, req.route.path)
+    : req.baseUrl || '<unmatched>';
 }
 
 /** Reports every 5xx the local API sends, including those from the global error handler. */
 export function postHogApiFailureMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const sendStatus = res.status.bind(res);
+  let sentStack: string | undefined;
+  // Recorded where the route sends the 500, so a 5xx without a thrown error still has frames.
+  res.status = (code: number) => {
+    if (code >= 500 && !sentStack) sentStack = new Error().stack;
+    return sendStatus(code);
+  };
   res.on('finish', () => {
     if (res.statusCode < 500) return;
-    const route = req.route
-      ? apiRoutePattern(req.originalUrl, req.route.path)
-      : req.baseUrl || '<unmatched>';
-    capturePostHogApiFailure(req.method, route, res.statusCode);
+    capturePostHogApiFailure(
+      req.method,
+      requestRoute(req),
+      res.statusCode,
+      res.locals?.postHogError,
+      sentStack,
+    );
   });
   next();
+}
+
+/** A request at or above this wall-clock time is logged, and sent when SQL is the slow part. */
+export const SLOW_REQUEST_MS = 200;
+
+// Keyed by method and route pattern, so the map stays as small as the API surface.
+const slowRequestRoutes = new Map<string, SlowRequestRouteState>();
+
+/** Opens the SQL stats of the request, then reports the requests slow enough to notice. */
+export function apiSlowRequestMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const startedAt = performance.now();
+  runWithRequestStats(() => {
+    // A `finish` listener can run outside this async context, so hold the store itself.
+    const stats = getRequestStats();
+    res.on('finish', () => {
+      const durationMs = Math.round(performance.now() - startedAt);
+      if (durationMs < SLOW_REQUEST_MS) return;
+      const route = requestRoute(req);
+      if (!stats) return;
+      const dbMs = Math.round(stats.dbMs);
+      console.warn(
+        `[API] slow request ${req.method} ${route} ${res.statusCode} ${durationMs}ms db=${dbMs}ms queries=${stats.queries}`,
+      );
+      // Same condition as the capture below: with no consent or no client the gate stays untouched,
+      // so the route is not blocked for the hour after consent turns on.
+      if (!usageEnabled() || !activeClient()) return;
+      const gate = slowRequestEventGate(
+        slowRequestRoutes,
+        `${req.method} ${route}`,
+        dbMs,
+        Date.now(),
+      );
+      if (!gate.send) return;
+      capturePostHogUsage('api_slow_request', {
+        http_method: req.method,
+        http_route: route,
+        http_status: res.statusCode,
+        duration_ms: durationMs,
+        db_ms: dbMs,
+        db_queries: stats.queries,
+        slowest_query_ms: Math.round(stats.slowestMs),
+        slowest_query: stats.slowestSql,
+        occurrences: gate.occurrences,
+      });
+    });
+    next();
+  });
 }

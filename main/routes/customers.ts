@@ -634,6 +634,7 @@ router.post(
       const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
       res.status(201).json({ customer });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[Customer POST error]', error);
       res
         .status(500)

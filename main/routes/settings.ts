@@ -1592,6 +1592,7 @@ router.post(
       );
       return res.json(status);
     } catch (error) {
+      res.locals.postHogError = error;
       if (getHttpRequestSignal(req)?.aborted) {
         if (!res.headersSent) res.status(503).end();
         else if (!res.writableEnded) res.destroy();
@@ -1705,6 +1706,7 @@ router.get(
     try {
       return res.json({ charges: getChargeDefinitions() });
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
@@ -1737,6 +1739,7 @@ router.put(
 
       return res.json({ charges: definitions });
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
@@ -1768,6 +1771,7 @@ router.get(
         },
       });
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
@@ -1792,6 +1796,7 @@ router.get(
         },
       });
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
@@ -1837,6 +1842,7 @@ router.get(
         },
       });
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
@@ -1902,6 +1908,7 @@ router.get(
         },
       });
     } catch (error) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }

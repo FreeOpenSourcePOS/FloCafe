@@ -78,6 +78,7 @@ router.get('/movements', requirePermission('inventory.view'), (req: Request, res
       ...(page.nextCursor !== null && { nextCursor: page.nextCursor }),
     });
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     const details = error as { statusCode?: unknown; message?: unknown };
     const statusCode = Number.isInteger(details.statusCode) ? (details.statusCode as number) : 500;
     if (

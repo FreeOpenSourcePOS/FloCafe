@@ -1300,6 +1300,7 @@ router.get(
         movements: listCashDrawerMovements(getDatabase(), businessDate),
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const status = error.statusCode || 500;
       if (status === 500) console.error('[CashClosures] Movement list error:', error);
       res.status(status).json({
@@ -1404,6 +1405,7 @@ router.post(
         .get(id);
       res.status(201).json({ movement });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const status = error.statusCode || 500;
       if (status === 500) console.error('[CashClosures] Movement create error:', error);
       const safeMessage =
@@ -1492,6 +1494,7 @@ router.post(
         .get(id);
       res.json({ movement });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const status = error.statusCode || 500;
       if (status === 500) console.error('[CashClosures] Movement void error:', error);
       const safeMessage =
@@ -1750,6 +1753,7 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
       console.warn('[CashClosures] Automatic Z-report WhatsApp dispatch error:', err);
     }
   } catch (error: any) {
+    res.locals.postHogError = error;
     const uncommittedClaim = claimedZReport as whatsapp.ClaimedDayCloseZReportAttempt | null;
     if (!operationCommitted && uncommittedClaim) {
       whatsapp.releaseClaimedDayCloseZReportAttempt?.(uncommittedClaim.messageId);

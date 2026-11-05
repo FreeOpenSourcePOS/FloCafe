@@ -571,16 +571,17 @@ function scrubbedError(input: unknown, depth = 0): Error {
   return error;
 }
 
+/** Returns whether the exception was handed to the client, so a caller's throttle starts only then. */
 export function capturePostHogException(
   capturePoint: PostHogCapturePoint,
   input: unknown,
   properties?: Record<string, unknown>,
-): void {
+): boolean {
   try {
-    if (!isPostHogCapturePoint(capturePoint)) return;
-    if (!getConsentState().diagnosticsEnabled) return;
+    if (!isPostHogCapturePoint(capturePoint)) return false;
+    if (!getConsentState().diagnosticsEnabled) return false;
     const current = activeClient();
-    if (!current) return;
+    if (!current) return false;
     const who = identity();
     current.captureException(scrubbedError(input), who.distinctId, {
       ...readSuperProperties(who),
@@ -589,8 +590,10 @@ export function capturePostHogException(
       ...(properties ?? {}),
       capture_point: capturePoint,
     });
+    return true;
   } catch {
     // A failed PostHog send is dropped. There is no outbox.
+    return false;
   }
 }
 
@@ -625,7 +628,6 @@ export function capturePostHogApiFailure(
   const at = Date.now();
   const last = apiFailureSentAt.get(key);
   if (last !== undefined && at - last < API_FAILURE_WINDOW_MS) return;
-  apiFailureSentAt.set(key, at);
   const source = thrown instanceof Error ? thrown : undefined;
   const error = frameError(
     source?.name ?? 'ApiServerError',
@@ -635,12 +637,14 @@ export function capturePostHogApiFailure(
   // The cause keeps only what links it: its type and its frames, never its message.
   const cause = source?.cause instanceof Error ? source.cause : undefined;
   if (cause) error.cause = frameError(cause.name, '', cause.stack);
-  capturePostHogException('api-5xx', error, {
+  // The slot is taken only by a send, so an event dropped for no consent cannot block the key.
+  const sent = capturePostHogException('api-5xx', error, {
     http_method: method,
     http_route: route,
     http_status: status,
     process_type: 'api',
   });
+  if (sent) apiFailureSentAt.set(key, at);
 }
 
 /** An error built from a type, a message, and frame lines only. */

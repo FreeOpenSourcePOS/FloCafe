@@ -227,6 +227,7 @@ export function registerRoutes(app: Express): void {
           qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
         });
       } catch (error: any) {
+        res.locals.postHogError = error;
         res
           .status(mobilePairingErrorStatus(error))
           .json({ error: mobilePairingErrorMessage(error) });
@@ -248,6 +249,7 @@ export function registerRoutes(app: Express): void {
           qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
         });
       } catch (error: any) {
+        res.locals.postHogError = error;
         res
           .status(mobilePairingErrorStatus(error))
           .json({ error: mobilePairingErrorMessage(error) });

@@ -1227,6 +1227,7 @@ router.post(
         tax_id_format: resolveTaxIdFormat(country),
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const statusCode = error.statusCode || 502;
       return res
         .status(statusCode)
@@ -1571,6 +1572,7 @@ router.post(
         validation,
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const statusCode = error.statusCode || 500;
       return res
         .status(statusCode)
@@ -1602,6 +1604,7 @@ router.post(
       });
       res.status(201).json({ installed });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const statusCode = error.statusCode || 502;
       res.status(statusCode).json({
         error: error.message || 'Could not install tax pack version',
@@ -1670,6 +1673,7 @@ router.post(
         },
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const statusCode = error.statusCode || 400;
       res.status(statusCode).json({ error: error.message || 'Tax test calculation failed' });
     }
@@ -1717,6 +1721,7 @@ router.post('/overrides', requirePermission('tax-packs.manage'), (req: Request, 
       override: getDatabase().prepare('SELECT * FROM tax_overrides WHERE id = ?').get(id),
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     const statusCode = error.statusCode || 500;
     res.status(statusCode).json({
       error:
@@ -1791,6 +1796,7 @@ router.put(
         override: db.prepare('SELECT * FROM tax_overrides WHERE id = ?').get(existing.id),
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const statusCode = error.statusCode || 500;
       res.status(statusCode).json({
         error:
@@ -1909,6 +1915,7 @@ router.post(
       );
       res.json({ reinstalled: result });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const statusCode = error.statusCode || 502;
       res.status(statusCode).json({
         error: error.message || 'Could not reinstall tax plugin version',

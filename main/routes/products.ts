@@ -1428,6 +1428,7 @@ router.post(
           try {
             resolvedAddress = await resolvePublicHostname(parsedUrl.hostname, controller.signal);
           } catch (error: any) {
+            res.locals.postHogError = error;
             if (error?.code === 'offline_mode' || isOfflineMode() || offlineSignal.aborted) {
               return res.status(503).json({ error: 'offline_mode' });
             }
@@ -1448,6 +1449,7 @@ router.post(
           try {
             hopResponse = await fetchPinnedHttps(currentUrl, resolvedAddress, controller.signal);
           } catch (fetchError: any) {
+            res.locals.postHogError = fetchError;
             if (fetchError?.code === 'offline_mode' || isOfflineMode() || offlineSignal.aborted) {
               return res.status(503).json({ error: 'offline_mode' });
             }
@@ -1750,6 +1752,7 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
       }),
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
     res
@@ -2104,6 +2107,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       }),
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
     res
@@ -2212,6 +2216,7 @@ router.post('/:id/stock', requirePermission('inventory.manage'), (req: Request, 
     })();
     res.json({ product: serializeProduct(updated) });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
     res

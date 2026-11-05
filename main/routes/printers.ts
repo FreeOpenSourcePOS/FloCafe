@@ -1429,6 +1429,7 @@ router.get(
       );
       return res.json({ payment });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[Delivery Slip Payment] Error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }

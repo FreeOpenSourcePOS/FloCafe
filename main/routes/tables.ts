@@ -710,6 +710,7 @@ router.post(
         targetTable: moved.targetTable,
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const statusCode = error.status || 500;
       console.error('[API] Table move failed:', error);
       res

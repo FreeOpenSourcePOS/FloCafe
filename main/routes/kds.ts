@@ -656,6 +656,7 @@ router.patch(
       }
       res.json({ item: projectKdsItem(updatedItem, restrictedPayload) });
     } catch (error: any) {
+      res.locals.postHogError = error;
       if (error.message === 'VOIDED_ITEM') {
         return res
           .status(400)

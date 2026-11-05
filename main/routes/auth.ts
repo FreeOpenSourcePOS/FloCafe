@@ -1396,6 +1396,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       tenants: [tenant],
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[Auth] Setup error:', error);
     const message = error.message || 'Setup failed';
     const status = message.includes('already complete')

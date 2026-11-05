@@ -1959,6 +1959,7 @@ router.post(
         delCharge = normalizeChargeAmount(delivery_charge, 'delivery');
         serviceCharge = normalizeChargeAmount(service_charge, 'service_charge');
       } catch (error: unknown) {
+        res.locals.postHogError = error;
         const statusCode =
           typeof error === 'object' &&
           error !== null &&
@@ -2116,6 +2117,7 @@ router.post(
           scheduledForInput: body.scheduled_for,
         });
       } catch (err: unknown) {
+        res.locals.postHogError = err;
         const statusCode = err instanceof ScheduledOrderError ? err.statusCode : 400;
         const message =
           err instanceof Error ? err.message : 'Invalid scheduled kitchen release time';
@@ -2756,6 +2758,7 @@ router.post(
         ...(qrPayload ? { qr_payload: qrPayload, qr_data_url: qrDataUrl } : {}),
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[Orders] Create error:', error);
       console.error('[API] Internal error:', error);
       const statusCode = error.statusCode || 500;
@@ -2880,6 +2883,7 @@ router.patch(
       cloudSync.recordOrderChanged(String(req.params.id), 'order.schedule_updated');
       return res.json({ order: hydrated });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       if (error instanceof ScheduledOrderError) {
         return res.status(error.statusCode).json({ error: error.message, code: error.code });
       }
@@ -2918,6 +2922,7 @@ router.post(
         kot_auto_printed: result.kotAutoPrinted,
       });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       if (error instanceof ScheduledOrderError) {
         return res.status(error.statusCode).json({ error: error.message, code: error.code });
       }
@@ -3232,6 +3237,7 @@ router.post(
 
       res.json(result.response);
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       const statusCode = error.statusCode || 500;
       const message = error.statusCode ? error.message : 'Internal server error';
@@ -3913,6 +3919,7 @@ router.patch(
 
       res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table }) });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(error.statusCode || 500).json({
         error: error.statusCode ? error.message : 'Internal server error',
@@ -4236,6 +4243,7 @@ router.patch(
 
       res.json({ order: { ...updatedOrder, customer } });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       const err = error as { statusCode?: number; message?: string; code?: string };
       console.error('[API] Internal error:', err);
       res.status(err.statusCode || 500).json({
@@ -4429,6 +4437,7 @@ router.patch(
 
       res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table: null }) });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res.status(error.statusCode || 500).json({
         error: error.statusCode ? error.message : 'Internal server error',
@@ -4451,6 +4460,7 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
     try {
       assertScheduledOrderUnpaidForEdit(db, req.params.id as string, order);
     } catch (err: unknown) {
+      res.locals.postHogError = err;
       const typedErr = err as { statusCode?: number; message?: string };
       return res.status(typedErr.statusCode || 409).json({
         ...structuredOperationFailure(
@@ -4976,6 +4986,7 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
     notifyOrderUpdated();
     res.json({ order: result });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     const statusCode = error.statusCode || 500;
     const message = error.statusCode ? error.message : 'Internal server error';
@@ -5022,6 +5033,7 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     try {
       assertScheduledOrderUnpaidForEdit(db, req.params.id as string, order);
     } catch (err: unknown) {
+      res.locals.postHogError = err;
       const typedErr = err as { statusCode?: number; message?: string; code?: string };
       return res.status(typedErr.statusCode || 409).json({
         error:
@@ -5530,6 +5542,7 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
 
     res.json({ item: updatedItem });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res.status(error.statusCode || 500).json({
       error: error.statusCode ? error.message : 'Internal server error',
@@ -5794,6 +5807,7 @@ const handleItemPriceOverride = asyncHandler(async (req: Request, res: Response)
     notifyOrderUpdated();
     res.json({ item: updatedItem });
   } catch (error: unknown) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     const failure = error as { statusCode?: number; message?: string; code?: string };
     res.status(failure.statusCode || 500).json({
@@ -6375,6 +6389,7 @@ router.patch(
       }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[Orders] Cancel item error:', error);
       console.error('[API] Internal error:', error);
       res.status(error.statusCode || 500).json({
@@ -6914,6 +6929,7 @@ router.patch(
       }
       res.json({ order: result.order });
     } catch (err) {
+      res.locals.postHogError = err;
       const error = err as { statusCode?: number; message?: string; code?: string };
       console.error('[Orders] Edit item error:', error);
       res.status(error.statusCode || 500).json({
@@ -7168,6 +7184,7 @@ router.patch(
       }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[Orders] Restore item error:', error);
       console.error('[API] Internal error:', error);
       res.status(error.statusCode || 500).json({

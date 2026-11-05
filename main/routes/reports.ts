@@ -279,6 +279,7 @@ router.get('/daily-stats', requirePermission('reports.view'), (req: Request, res
       paymentMethods: paymentMethodsToday,
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res
       .status(error.statusCode || 500)
@@ -359,6 +360,7 @@ router.get('/summary', requirePermission('reports.view'), (req: Request, res: Re
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res
       .status(error.statusCode || 500)
@@ -447,6 +449,7 @@ router.get(
         },
       });
     } catch (error: any) {
+      res.locals.postHogError = error;
       console.error('[API] Internal error:', error);
       res
         .status(error.statusCode || 500)
@@ -501,6 +504,7 @@ router.get('/tax-components', requirePermission('reports.view'), (req: Request, 
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Tax component report failed:', error);
     res
       .status(error.statusCode || 500)
@@ -554,6 +558,7 @@ router.get(
         },
       });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[API] Price exceptions report failed:', error);
       const failure = error as { statusCode?: number; message?: string };
       res
@@ -631,6 +636,7 @@ router.get('/sales', requirePermission('reports.view'), (req: Request, res: Resp
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res
       .status(error.statusCode || 500)
@@ -873,6 +879,7 @@ router.get('/topProducts', requirePermission('reports.view'), (req: Request, res
 
     res.json({ topProducts });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res
       .status(error.statusCode || 500)
@@ -966,6 +973,7 @@ router.get('/recentOrders', requirePermission('reports.view'), (req: Request, re
 
     res.json({ recentOrders: ordersWithItems });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res
       .status(error.statusCode || 500)
@@ -1009,6 +1017,7 @@ router.get('/tables', requirePermission('reports.view'), (req: Request, res: Res
       tableUtilization,
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res
       .status(error.statusCode || 500)
@@ -1239,6 +1248,7 @@ router.get('/insights', requirePermission('reports.view'), (req: Request, res: R
         : null,
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res
       .status(error.statusCode || 500)
@@ -1492,6 +1502,7 @@ router.get('/x-report', requirePermission('reports.view'), (req: Request, res: R
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res
       .status(error.statusCode || 500)
@@ -1552,6 +1563,7 @@ router.get('/z-report', requirePermission('reports.view'), (req: Request, res: R
       },
     });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     res
       .status(error.statusCode || 500)
@@ -1707,6 +1719,7 @@ router.get(
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       return res.send(serializeXReportCsv(report));
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[API] X report export error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
@@ -1795,6 +1808,7 @@ router.get(
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       return res.send(serializeZReportCsv(report));
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       console.error('[API] Z report export error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
@@ -1927,6 +1941,7 @@ router.post(
 
       return res.json({ success: true, deliveryStatus, messageId: result.messageId, body });
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       if (error instanceof DailySalesExportValidationError) {
         return res.status(400).json({ error: error.message, reason: 'invalid_range' });
       }
@@ -2030,6 +2045,7 @@ router.get(
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       return res.send(csv);
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       if (error instanceof DailySalesExportValidationError) {
         return res.status(400).json({ error: error.message });
       }
@@ -2084,6 +2100,7 @@ router.get(
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       return res.send(html);
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       if (error instanceof DailySalesExportValidationError) {
         return res.status(400).json({ error: error.message });
       }

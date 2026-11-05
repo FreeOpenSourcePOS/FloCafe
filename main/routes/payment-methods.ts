@@ -50,6 +50,7 @@ router.post('/', requirePermission('payment-methods.manage'), (req: Request, res
     void sendEvent('feature_used', { feature: 'custom_payment_methods', action: 'added' });
     res.status(201).json({ payment_method: list(true).find((row) => row.id === Number(result.lastInsertRowid)) });
   } catch (error: any) {
+    res.locals.postHogError = error;
     const duplicate = String(error.message || '').includes('UNIQUE constraint');
     res.status(duplicate ? 409 : error.statusCode || 500).json({ error: duplicate ? 'A payment method with this name already exists' : error.message || 'Unable to add payment method' });
   }
@@ -70,6 +71,7 @@ router.put('/:id', requirePermission('payment-methods.manage'), (req: Request, r
     if (active !== current.is_active) void sendEvent('feature_used', { feature: 'custom_payment_methods', action: active ? 'enabled' : 'disabled' });
     res.json({ payment_method: list(true).find((row) => row.id === id) });
   } catch (error: any) {
+    res.locals.postHogError = error;
     const duplicate = String(error.message || '').includes('UNIQUE constraint');
     res.status(duplicate ? 409 : error.statusCode || 500).json({ error: duplicate ? 'A payment method with this name already exists' : error.message || 'Unable to update payment method' });
   }
@@ -130,6 +132,7 @@ router.post('/:id/merge', requirePermission('payment-methods.manage'), (req: Req
     res.json({ merge: result, payment_methods: list(true) });
     void sendEvent('feature_used', { feature: 'custom_payment_methods', action: 'merged' });
   } catch (error: any) {
+    res.locals.postHogError = error;
     res.status(error.statusCode || 500).json({ error: error.message || 'Unable to merge payment methods' });
   }
 });

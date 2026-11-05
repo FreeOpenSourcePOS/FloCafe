@@ -1300,6 +1300,7 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
     const orderWithItems = getOrderWithItems(db, order_id, Number(result.bill.id));
     res.status(result.isNew ? 201 : 200).json({ bill: { ...result.bill, order: orderWithItems } });
   } catch (error: any) {
+    res.locals.postHogError = error;
     console.error('[API] Internal error:', error);
     const statusCode = error.statusCode || 500;
     return res
@@ -2981,6 +2982,7 @@ router.post(
       notifyOrderUpdated();
       res.status(201).json({ bills: result });
     } catch (error: any) {
+      res.locals.postHogError = error;
       res.status(error.statusCode || 500).json({ error: error.message || 'Unable to split check' });
     }
   },
@@ -4328,6 +4330,7 @@ router.post(
 
       res.json(result);
     } catch (error: any) {
+      res.locals.postHogError = error;
       rejectAttempt?.(error);
       const statusCode = error.statusCode || 500;
       console.error('[API] Bill payment failed:', error);
@@ -4593,6 +4596,7 @@ router.post(
 
       res.json(result);
     } catch (error: any) {
+      res.locals.postHogError = error;
       rejectAttempt?.(error);
       const statusCode = error.statusCode || 500;
       console.error('[API] Batch bill payment failed:', error);
@@ -5181,6 +5185,7 @@ router.post(
       notifyOrderUpdated();
       res.json({ bill: updatedBill });
     } catch (error: any) {
+      res.locals.postHogError = error;
       const statusCode = error.statusCode || 500;
       console.error('[API] Bill discount failed:', error);
       const message = statusCode >= 500 ? 'Internal server error' : error.message;
@@ -5710,6 +5715,7 @@ router.patch(
       notifyOrderUpdated();
       res.json({ bill: updated });
     } catch (error) {
+      res.locals.postHogError = error;
       const statusCode = (error as { statusCode?: number }).statusCode || 500;
       const diagnosticCode = (error as { diagnosticCode?: string }).diagnosticCode;
       if (statusCode === 403 && !diagnosticCode) {
@@ -5784,6 +5790,7 @@ router.post(
       res.json(result);
     } catch (error: any) {
       // Return 404 for "Bill not found", 500 for other errors
+      res.locals.postHogError = error;
       const statusCode = error.message?.includes('Bill not found') ? 404 : 500;
       console.error('[API] Receipt printing failed:', error);
       res
@@ -6705,6 +6712,7 @@ router.patch(
       notifyOrderUpdated();
       return res.json(result);
     } catch (error: unknown) {
+      res.locals.postHogError = error;
       const err = error as {
         statusCode?: unknown;
         displayCode?: unknown;

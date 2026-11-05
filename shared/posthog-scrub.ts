@@ -533,7 +533,10 @@ function scrubException(
   }
   // The request an exception failed on: a route pattern, its method, and its status.
   for (const key of API_FAILURE_KEYS) {
-    const value = key === 'http_route' ? scrubPathname(source[key]) : plainValue(source[key]);
+    const raw = source[key];
+    // `requestRoute` sends this exact sentinel when Express cannot name the matched route.
+    const value =
+      key === 'http_route' ? (raw === '<unmatched>' ? raw : scrubPathname(raw)) : plainValue(raw);
     if (value !== undefined && value !== null) properties[key] = value;
   }
   return { ...withoutPersonOperators(event), properties };

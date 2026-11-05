@@ -509,6 +509,42 @@ async function main() {
   assert.equal(apiFailure.properties.http_status, 500);
   assert.equal(JSON.stringify(apiFailure).includes('Ada'), false);
 
+  // A 5xx from app-level middleware has no matched route, and `requestRoute` says so.
+  const unmatchedFailure = scrubPostHogEvent(
+    {
+      event: '$exception',
+      properties: {
+        capture_point: 'api-5xx',
+        http_method: 'GET',
+        http_route: '<unmatched>',
+        http_status: 500,
+      },
+    },
+    on,
+  );
+  assert.equal(
+    unmatchedFailure.properties.http_route,
+    '<unmatched>',
+    'the unmatched-route sentinel survives the scrub and is reported',
+  );
+  const otherSentinel = scrubPostHogEvent(
+    {
+      event: '$exception',
+      properties: {
+        capture_point: 'api-5xx',
+        http_method: 'GET',
+        http_route: '<customer Ada>',
+        http_status: 500,
+      },
+    },
+    on,
+  );
+  assert.equal(
+    otherSentinel.properties.http_route,
+    undefined,
+    'only the exact sentinel passes; any other non-path value is still dropped',
+  );
+
   const located = scrubPostHogEvent(
     {
       event: '$exception',
@@ -1353,6 +1389,31 @@ async function main() {
     'another route still sends its own exception',
   );
 
+  // Consent off and then on inside the window: the dropped send must not have taken the slot.
+  setSetting('diagnostics_transmission_enabled', 'false');
+  syncPostHogIdentity();
+  const beforeConsentWindow = latest().exceptions.length;
+  capturePostHogApiFailure('DELETE', '/api/reports/consent-window/:id', 500);
+  assert.equal(
+    latest().exceptions.length,
+    beforeConsentWindow,
+    'a 5xx with diagnostics transmission off sends nothing',
+  );
+  setSetting('diagnostics_transmission_enabled', 'true');
+  syncPostHogIdentity();
+  capturePostHogApiFailure('DELETE', '/api/reports/consent-window/:id', 500);
+  assert.equal(
+    latest().exceptions.length,
+    beforeConsentWindow + 1,
+    'consent on inside the window still sends that 5xx, once',
+  );
+  capturePostHogApiFailure('DELETE', '/api/reports/consent-window/:id', 500);
+  assert.equal(
+    latest().exceptions.length,
+    beforeConsentWindow + 1,
+    'and from then on the hour holds',
+  );
+
   assert.equal(apiRoutePattern('/api/orders/42/?q=Ada', '/:id'), '/api/orders/:id');
   assert.equal(apiRoutePattern('/api/orders/42/items', '/:id/items'), '/api/orders/:id/items');
   assert.equal(apiRoutePattern('/api/health', '/api/health'), '/api/health');
@@ -1384,6 +1445,23 @@ async function main() {
     throw new Error('boom');
   });
   orders.get('/:id', (_req: unknown, res: any) => res.status(503).json({ error: 'busy' }));
+  // The shape of a route catch after this change: hand the error over, then send the 5xx.
+  orders.post('/:id/handoff', (_req: unknown, res: any) => {
+    try {
+      throw new RangeError('boom');
+    } catch (error) {
+      res.locals.postHogError = error;
+      res.status(500).json({ error: 'failed' });
+    }
+  });
+  // The same catch without the handoff, for the contrast.
+  orders.post('/:id/no-handoff', (_req: unknown, res: any) => {
+    try {
+      throw new RangeError('boom');
+    } catch {
+      res.status(500).json({ error: 'failed' });
+    }
+  });
   api.use('/api/orders', orders);
   // Mirrors the global error handler in main/server.ts: the thrown error rides along.
   api.use((error: Error, _req: unknown, res: any, _next: unknown) => {
@@ -1433,6 +1511,21 @@ async function main() {
       bare.stack.includes('posthog-client.test'),
       true,
       'a 5xx sent without a thrown error keeps the frames of its sender',
+    );
+
+    // A catch that sets the handoff carries the real error type; one that does not cannot.
+    await fetch(`http://127.0.0.1:${port}/api/orders/42/handoff`, { method: 'POST' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const handedOff = latest().exceptions.at(-1);
+    assert.equal(handedOff.name, 'RangeError', 'the caught error keeps its type');
+    assert.equal(handedOff.properties?.http_route, '/api/orders/:id/handoff');
+    assert.equal(handedOff.stack.includes('posthog-client.test'), true, 'and its own frames');
+    await fetch(`http://127.0.0.1:${port}/api/orders/42/no-handoff`, { method: 'POST' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      latest().exceptions.at(-1)?.name,
+      'ApiServerError',
+      'a catch that sends a 5xx without the handoff reports no error type',
     );
   } finally {
     server.closeAllConnections();

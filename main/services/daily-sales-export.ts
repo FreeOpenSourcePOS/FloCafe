@@ -15,6 +15,7 @@ import {
   resolveRegionalSnapshot,
   type LocalePreferences,
 } from '../countries';
+import { formatStoreLocalDateTime } from '../../shared/business-date';
 import { isExcludedFromBillReceipt, isTerminalItemStatus } from '../../shared/order-item-status';
 import { getTenantCurrency } from './refund';
 import { roundCurrencyCost } from './supplies';
@@ -300,20 +301,10 @@ export function dailySalesPaymentMetricKey(method: string): string {
   return key || 'unknown';
 }
 
-// `sv-SE` formats as `YYYY-MM-DD HH:MM:SS`, matching the stored timestamp shape.
 function storeLocalTimestamp(stored: string, timezone: string): string {
   const instant = parseDbTimestamp(stored);
   if (Number.isNaN(instant.getTime())) return '';
-  return new Intl.DateTimeFormat('sv-SE', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(instant);
+  return formatStoreLocalDateTime(instant, timezone);
 }
 
 type RawItemAggregateRow = {

@@ -14,6 +14,7 @@ import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '
 import { ROLE_KEYS } from '../shared/role-permissions';
 import {
   businessDateForInstant,
+  dateTimeFormat,
   dayBoundsInTimezone,
   normalizeBusinessDayStartTime,
   utcDayBounds,
@@ -11103,7 +11104,7 @@ function getNextSequence(name: string, date: string): number {
 /** YYYYMMDD for "now" in the given IANA timezone (falls back to UTC if the zone is invalid). */
 export function dateStampInTimezone(timezone: string): string {
   try {
-    const parts = new Intl.DateTimeFormat('en-CA', {
+    const parts = dateTimeFormat('en-CA', {
       timeZone: timezone,
       year: 'numeric',
       month: '2-digit',
@@ -11120,7 +11121,7 @@ type InvoiceResetPeriod = 'never' | 'daily' | 'monthly' | 'financial_year';
 
 function datePartsInTimezone(timezone: string): { year: number; month: number; day: number } {
   try {
-    const parts = new Intl.DateTimeFormat('en-CA', {
+    const parts = dateTimeFormat('en-CA', {
       timeZone: timezone,
       year: 'numeric',
       month: '2-digit',

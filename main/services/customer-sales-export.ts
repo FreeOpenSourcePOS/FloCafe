@@ -10,6 +10,7 @@ import {
 } from '../db';
 import { getCurrencyFractionDigits } from '../countries';
 import { getTenantCurrency } from './refund';
+import { formatStoreLocalDateTime } from '../../shared/business-date';
 import { resolveExportTimezone } from './daily-sales-export';
 
 export const CUSTOMER_SALES_MAX_RANGE_DAYS = 366;
@@ -71,20 +72,10 @@ function dayCount(startDate: string, endDate: string): number {
   return Math.floor(ms / 86_400_000) + 1;
 }
 
-// `sv-SE` formats as `YYYY-MM-DD HH:MM:SS`, matching the stored timestamp shape.
 function storeLocalTimestamp(stored: string, timezone: string): string {
   const instant = parseDbTimestamp(stored);
   if (Number.isNaN(instant.getTime())) return '';
-  return new Intl.DateTimeFormat('sv-SE', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(instant);
+  return formatStoreLocalDateTime(instant, timezone);
 }
 
 function paymentMethodNames(paymentDetails: unknown, namesById: Map<number, string>): string {

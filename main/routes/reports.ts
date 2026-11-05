@@ -821,6 +821,10 @@ router.get('/topProducts', requirePermission('reports.view'), (req: Request, res
     const rawTopProducts = db
       .prepare(
         `
+      WITH win AS MATERIALIZED (
+        SELECT o.id FROM orders o
+        WHERE o.created_at >= ? AND o.created_at < ? AND o.status != 'cancelled'
+      )
       SELECT oi.product_id, oi.product_name,
         SUM(oi.quantity) as total_quantity,
         SUM(oi.subtotal) as total_revenue,
@@ -832,11 +836,9 @@ router.get('/topProducts', requirePermission('reports.view'), (req: Request, res
                  THEN (oi.subtotal - CASE WHEN oi.tax_type = 'inclusive' THEN COALESCE(oi.tax_amount, 0) ELSE 0 END)
                  ELSE 0 END) as known_cost_revenue,
         SUM(CASE WHEN oi.ingredient_cost_known = 1 AND oi.ingredient_cost IS NOT NULL THEN oi.ingredient_cost ELSE 0 END) as known_ingredient_cost
-      FROM order_items oi
-      JOIN orders o ON oi.order_id = o.id
-      WHERE o.created_at >= ? AND o.created_at < ?
-        AND o.status != 'cancelled'
-        AND COALESCE(oi.status, 'active') NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
+      FROM win
+      JOIN order_items oi ON oi.order_id = win.id
+      WHERE COALESCE(oi.status, 'active') NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
       GROUP BY oi.product_id
       ORDER BY total_quantity DESC
       LIMIT ?

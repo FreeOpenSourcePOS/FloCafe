@@ -45,9 +45,43 @@ function dayStartOffsetMs(startTime: string = '00:00'): number {
   return (hours * 60 + minutes) * 60 * 1000;
 }
 
+const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * A formatter is immutable and costs more to build than to use, so reports that
+ * format one timestamp per row must not build one per row. Throws as
+ * `new Intl.DateTimeFormat` does for an unusable time zone.
+ */
+export function dateTimeFormat(
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options, Object.keys(options).sort())}`;
+  let format = dateTimeFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, options);
+    dateTimeFormats.set(key, format);
+  }
+  return format;
+}
+
+/** `sv-SE` prints as `YYYY-MM-DD HH:MM:SS`, the shape stored timestamps use. */
+export function formatStoreLocalDateTime(instant: Date, timezone: string): string {
+  return dateTimeFormat('sv-SE', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(instant);
+}
+
 function calendarDateInTimezone(instant: Date, timezone: string): string {
   try {
-    const parts = new Intl.DateTimeFormat('en-US', {
+    const parts = dateTimeFormat('en-US', {
       timeZone: timezone,
       year: 'numeric',
       month: '2-digit',
@@ -66,7 +100,7 @@ function previousCalendarDate(calendarDate: string): string {
 }
 
 function timezoneOffsetMilliseconds(instant: Date, timezone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
+  const parts = dateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
@@ -77,7 +111,10 @@ function timezoneOffsetMilliseconds(instant: Date, timezone: string): number {
     hourCycle: 'h23',
   }).formatToParts(instant);
   const get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
-  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - instant.getTime();
+  return (
+    Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) -
+    instant.getTime()
+  );
 }
 
 /** `[start, end)` instants of one business day, or null when the timezone cannot resolve. */
@@ -119,19 +156,29 @@ function sqlTimestamp(instant: Date): string {
  *  the instant is still inside the previous business day's window. The configured start
  *  time is held to the tenant contract first, so this answers exactly what the
  *  backend's own settings read path answers. */
-export function businessDateForInstant({ instant, timezone, startTime = '00:00' }: BusinessDateInput): string {
+export function businessDateForInstant({
+  instant,
+  timezone,
+  startTime = '00:00',
+}: BusinessDateInput): string {
   const offset = normalizeBusinessDayStartTime(startTime);
   const calendarDate = calendarDateInTimezone(instant, timezone);
   if (dayStartOffsetMs(offset) === 0) return calendarDate;
 
-  const [start] = dayStartInstants(calendarDate, timezone, offset) ?? [utcDayStartInstant(calendarDate, offset)];
+  const [start] = dayStartInstants(calendarDate, timezone, offset) ?? [
+    utcDayStartInstant(calendarDate, offset),
+  ];
   if (instant >= start) return calendarDate;
 
   return previousCalendarDate(calendarDate);
 }
 
 /** Half-open UTC ranges `[start, end)` for one date in the tenant timezone with an optional day start offset. */
-export function dayBoundsInTimezone(date: string, timezone: string, startTime: string = '00:00'): [string, string] {
+export function dayBoundsInTimezone(
+  date: string,
+  timezone: string,
+  startTime: string = '00:00',
+): [string, string] {
   const instants = dayStartInstants(date, timezone, startTime);
   if (!instants) return utcDayBounds(date, startTime);
   return [sqlTimestamp(instants[0]), sqlTimestamp(instants[1])];

@@ -29,6 +29,7 @@ import {
   type DailySalesExportDataset,
   type DailySalesExportQueryInput,
 } from './daily-sales-export';
+import { formatStoreLocalDateTime } from '../../shared/business-date';
 import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import { receiptChargeLines } from '../../shared/charges';
 
@@ -312,16 +313,7 @@ function storeLocalTimestamp(stored: string | null | undefined, timezone: string
   if (!stored) return '';
   const instant = parseDbTimestamp(stored);
   if (Number.isNaN(instant.getTime())) return String(stored);
-  return new Intl.DateTimeFormat('sv-SE', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(instant);
+  return formatStoreLocalDateTime(instant, timezone);
 }
 
 function formatVariantLabel(raw: unknown): string {

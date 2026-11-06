@@ -877,6 +877,8 @@ test.describe('checkout controls stay visible while catalog and cart content scr
       'button[aria-label="Remove"]:not([data-testid="cart-item-remove-btn"])',
     );
     const plusBtn = cartItem.getByRole('button', { name: 'Add Items' });
+    const decreasePaxBtn = cartShell.getByRole('button', { name: 'Decrease pax' });
+    const increasePaxBtn = cartShell.getByRole('button', { name: 'Increase pax' });
 
     for (const [label, locator] of [
       ['remove', removeBtn],
@@ -884,6 +886,8 @@ test.describe('checkout controls stay visible while catalog and cart content scr
       ['edit', editBtn],
       ['minus', minusBtn],
       ['plus', plusBtn],
+      ['decrease pax', decreasePaxBtn],
+      ['increase pax', increasePaxBtn],
     ] as const) {
       await expect(locator, `${label} button is visible`).toBeVisible();
       const box = await locator.boundingBox();

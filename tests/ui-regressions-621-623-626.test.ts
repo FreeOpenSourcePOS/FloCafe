@@ -456,6 +456,11 @@ try {
     /<button type="button" class="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full[^"]*" aria-label="Remove">[\s\S]*?<input type="number" inputMode="decimal"[^>]*aria-label="Quantity"[^>]*\/><button type="button" class="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full[^"]*" aria-label="Add Items">/,
     'rendered CartPanel fractional quantity stepper buttons use real 28px touch target boxes without overlapping the quantity input',
   );
+  assert.match(
+    cartMarkup,
+    /<button type="button" aria-label="Decrease pax" class="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full[^"]*">[\s\S]*?<input aria-label="Pax"[^>]*\/><button type="button" aria-label="Increase pax" class="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full[^"]*">/,
+    'rendered CartPanel PAX stepper buttons use real 28px touch target boxes without overlapping the PAX input',
+  );
   assert.doesNotMatch(
     cartMarkup,
     /order-last[^"]*touch-target/,

@@ -432,7 +432,7 @@ export default function CartPanel({
                   type="button"
                   aria-label={t('decreasePax')}
                   onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))}
-                  className="touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+                  className="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
                 >
                   <Minus size={12} />
                 </button>
@@ -452,7 +452,7 @@ export default function CartPanel({
                   type="button"
                   aria-label={t('increasePax')}
                   onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))}
-                  className="touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+                  className="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
                 >
                   <Plus size={12} />
                 </button>

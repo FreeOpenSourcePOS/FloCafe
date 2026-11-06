@@ -90,10 +90,14 @@ import {
   OrderAttemptStorageError,
   classifyOrderRequestFailure,
   clearOrderAttempt,
+  fingerprintsMatchAcrossScheduleToggle,
   getPrepaidOrderAttemptStorageKey,
   isSupportedFailureOperation,
+  parseStoredAttemptScheduledFor,
   persistOrderAttempt,
   readOrderAttempt,
+  resolveCartScheduledForAfterSettingRead,
+  resolveRetryScheduledFor,
   buildCartFingerprintFromState,
 } from '@/lib/order-attempt';
 
@@ -1361,6 +1365,89 @@ export default function POSPage() {
     setPrinterArabicShaping,
   ]);
 
+  const getPreservedAttemptScheduledFor = (
+    cartState: Parameters<typeof buildCartFingerprintFromState>[0] = useCartStore.getState(),
+  ): string | undefined => {
+    const currentAuthUser = useAuthStore.getState().user;
+    const effectiveUserId =
+      activeUserId || (currentAuthUser?.id == null ? null : String(currentAuthUser.id));
+    if (!effectiveUserId) return undefined;
+
+    const orderItems = cartState.items.map(cartItemToOrderItem);
+    const unscheduledCartFingerprint = buildCartFingerprintFromState(
+      { ...cartState, scheduledFor: '' },
+      orderItems,
+    );
+    const unscheduledPostpaidOrderFingerprint = JSON.stringify({
+      table_id: cartState.tableId,
+      customer_id: cartState.customerId,
+      type: cartState.orderType,
+      guest_count: cartState.guestCount,
+      special_instructions: cartState.orderNotes || undefined,
+      online_platform:
+        cartState.orderType === 'online' ? cartState.onlinePlatform || undefined : undefined,
+      external_order_id:
+        cartState.orderType === 'online' ? cartState.externalOrderId || undefined : undefined,
+      delivery_address:
+        cartState.orderType === 'delivery' ? cartState.deliveryAddress || undefined : undefined,
+      expected_payment_method:
+        cartState.orderType === 'delivery'
+          ? cartState.expectedPaymentMethod || undefined
+          : undefined,
+      expected_payment_method_id:
+        cartState.orderType === 'delivery'
+          ? (cartState.expectedPaymentMethodId ?? undefined)
+          : undefined,
+      delivery_note:
+        cartState.orderType === 'delivery' ? cartState.deliveryNote || undefined : undefined,
+      scheduled_for: undefined,
+      waived_charge_ids: Array.from(cartState.waivedChargeIds),
+      opted_in_charge_ids: Array.from(cartState.optedInChargeIds),
+      items: orderItems,
+    });
+
+    const matchesStoredSchedule = (storedFingerprint: string | undefined): string | undefined => {
+      const storedScheduledFor = parseStoredAttemptScheduledFor(storedFingerprint);
+      if (!storedScheduledFor) return undefined;
+      const currentScheduledFor = cartState.scheduledFor?.trim() || '';
+      if (currentScheduledFor && currentScheduledFor !== storedScheduledFor) return undefined;
+      if (
+        fingerprintsMatchAcrossScheduleToggle(storedFingerprint, unscheduledCartFingerprint) ||
+        fingerprintsMatchAcrossScheduleToggle(
+          storedFingerprint,
+          unscheduledPostpaidOrderFingerprint,
+        )
+      ) {
+        return storedScheduledFor;
+      }
+      return undefined;
+    };
+
+    try {
+      const postpaidAttempt = readPostpaidAttempt(effectiveUserId);
+      const postpaidScheduledFor =
+        postpaidAttempt?.userId === effectiveUserId
+          ? matchesStoredSchedule(postpaidAttempt.fingerprint)
+          : undefined;
+      if (postpaidScheduledFor) return postpaidScheduledFor;
+    } catch {
+      return cartState.scheduledFor?.trim() || undefined;
+    }
+
+    try {
+      const prepaidAttempt = readPrepaidAttempt(effectiveUserId);
+      const prepaidScheduledFor =
+        prepaidAttempt?.userId === effectiveUserId
+          ? matchesStoredSchedule(prepaidAttempt.cartFingerprint)
+          : undefined;
+      if (prepaidScheduledFor) return prepaidScheduledFor;
+    } catch {
+      return cartState.scheduledFor?.trim() || undefined;
+    }
+
+    return undefined;
+  };
+
   useEffect(() => {
     let cancelled = false;
     setActiveCounter(null);
@@ -1421,25 +1508,40 @@ export default function POSPage() {
         setCounters([]);
       });
 
+    const syncCartScheduledForWithSetting = (
+      settingReadSucceeded: boolean,
+      isScheduledEnabled: boolean,
+    ) => {
+      const currentCart = useCartStore.getState();
+      const nextScheduledFor = resolveCartScheduledForAfterSettingRead({
+        settingReadSucceeded,
+        scheduledOrdersEnabled: isScheduledEnabled,
+        cartScheduledFor: currentCart.scheduledFor,
+        preservedScheduledFor: getPreservedAttemptScheduledFor(currentCart),
+      });
+      if (currentCart.scheduledFor !== nextScheduledFor) {
+        currentCart.setScheduledFor(nextScheduledFor);
+      }
+    };
+
     api
       .get('/settings/scheduled_orders_enabled')
       .then((res) => {
         if (cancelled) return;
         const isScheduledEnabled = res.data.setting?.value === 'true';
         setScheduledOrdersEnabled(isScheduledEnabled);
-        if (!isScheduledEnabled) {
-          useCartStore.getState().setScheduledFor('');
-        }
+        syncCartScheduledForWithSetting(true, isScheduledEnabled);
       })
       .catch(() => {
         if (cancelled) return;
         setScheduledOrdersEnabled(false);
-        useCartStore.getState().setScheduledFor('');
+        syncCartScheduledForWithSetting(false, false);
       });
 
     return () => {
       cancelled = true;
     };
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStoreId]);
 
   const handleSelectCounter = (counter: Counter | null) => {
@@ -1630,7 +1732,8 @@ export default function POSPage() {
       scheduledOrdersEnabled &&
       !pendingOrder &&
       (cart.orderType === 'takeaway' || cart.orderType === 'delivery') &&
-      cart.scheduledFor.trim().length > 0
+      cart.scheduledFor.trim().length > 0 &&
+      getPreservedAttemptScheduledFor(cart) !== cart.scheduledFor.trim()
     ) {
       const check = parseScheduledForInput({
         input: cart.scheduledFor,
@@ -1668,44 +1771,6 @@ export default function POSPage() {
 
   const buildCurrentCartFingerprint = (orderItems = cart.items.map(cartItemToOrderItem)) =>
     buildCartFingerprint(cart, orderItems);
-
-  const parseStoredAttemptScheduledFor = (fingerprint: string | undefined): string | undefined => {
-    if (!fingerprint) return undefined;
-    try {
-      const parsed = JSON.parse(fingerprint) as { scheduled_for?: unknown };
-      return typeof parsed?.scheduled_for === 'string' && parsed.scheduled_for.trim()
-        ? parsed.scheduled_for.trim()
-        : undefined;
-    } catch {
-      return undefined;
-    }
-  };
-
-  const stripScheduledForFromFingerprint = (fingerprint: string): string => {
-    try {
-      const parsed = JSON.parse(fingerprint) as Record<string, unknown>;
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fingerprint;
-      const { scheduled_for: _ignored, ...rest } = parsed;
-      return JSON.stringify(rest);
-    } catch {
-      return fingerprint;
-    }
-  };
-
-  const fingerprintsMatchAcrossScheduleToggle = (
-    storedFingerprint: string | undefined,
-    currentFingerprint: string,
-  ): boolean => {
-    if (!storedFingerprint) return false;
-    if (storedFingerprint === currentFingerprint) return true;
-    if (!scheduledOrdersEnabled && parseStoredAttemptScheduledFor(storedFingerprint)) {
-      return (
-        stripScheduledForFromFingerprint(storedFingerprint) ===
-        stripScheduledForFromFingerprint(currentFingerprint)
-      );
-    }
-    return false;
-  };
 
   const handlePlaceOrder = async () => {
     if (!validateOrderPreflight()) return;
@@ -1865,10 +1930,11 @@ export default function POSPage() {
           expected_payment_method_id:
             cart.orderType === 'delivery' ? (cart.expectedPaymentMethodId ?? undefined) : undefined,
           delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
-          scheduled_for:
-            cart.orderType === 'takeaway' || cart.orderType === 'delivery'
-              ? (scheduledOrdersEnabled ? cart.scheduledFor.trim() : undefined) || undefined
-              : undefined,
+          scheduled_for: resolveRetryScheduledFor({
+            orderType: cart.orderType,
+            scheduledOrdersEnabled,
+            cartScheduledFor: cart.scheduledFor,
+          }),
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
           items: cart.items.map(cartItemToOrderItem),
@@ -1880,12 +1946,13 @@ export default function POSPage() {
             priorOrderAttempt.fingerprint,
             baseOrderFingerprint,
           );
-        if (
-          matchesPriorPostpaidOrderAttempt &&
-          !scheduledOrdersEnabled &&
-          preservedPostpaidScheduledFor
-        ) {
-          orderPayload.scheduled_for = preservedPostpaidScheduledFor;
+        if (matchesPriorPostpaidOrderAttempt) {
+          orderPayload.scheduled_for = resolveRetryScheduledFor({
+            orderType: cart.orderType,
+            scheduledOrdersEnabled,
+            cartScheduledFor: cart.scheduledFor,
+            preservedScheduledFor: preservedPostpaidScheduledFor,
+          });
         }
         const orderFingerprint = matchesPriorPostpaidOrderAttempt
           ? priorOrderAttempt.fingerprint
@@ -2192,8 +2259,12 @@ export default function POSPage() {
         special_instructions: cart.orderNotes || undefined,
         scheduled_for:
           cart.orderType === 'takeaway'
-            ? (scheduledOrdersEnabled ? cart.scheduledFor.trim() : preservedScheduledFor) ||
-              undefined
+            ? resolveRetryScheduledFor({
+                orderType: cart.orderType,
+                scheduledOrdersEnabled,
+                cartScheduledFor: cart.scheduledFor,
+                preservedScheduledFor,
+              })
             : undefined,
         dispatch_policy: 'on_payment',
         waived_charge_ids: Array.from(cart.waivedChargeIds),
@@ -2528,12 +2599,12 @@ export default function POSPage() {
                 : undefined,
             delivery_note:
               cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
-            scheduled_for:
-              cart.orderType === 'takeaway' || cart.orderType === 'delivery'
-                ? (scheduledOrdersEnabled
-                    ? cart.scheduledFor.trim()
-                    : preservedPrepaidScheduledFor) || undefined
-                : undefined,
+            scheduled_for: resolveRetryScheduledFor({
+              orderType: cart.orderType,
+              scheduledOrdersEnabled,
+              cartScheduledFor: cart.scheduledFor,
+              preservedScheduledFor: preservedPrepaidScheduledFor,
+            }),
             waived_charge_ids: Array.from(cart.waivedChargeIds),
             opted_in_charge_ids: Array.from(cart.optedInChargeIds),
             items: orderItems,

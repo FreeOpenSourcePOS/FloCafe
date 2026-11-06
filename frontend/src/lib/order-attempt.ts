@@ -85,6 +85,81 @@ export function buildCartFingerprintFromState(
   });
 }
 
+export function parseStoredAttemptScheduledFor(
+  fingerprint: string | undefined,
+): string | undefined {
+  if (!fingerprint) return undefined;
+  try {
+    const parsed = JSON.parse(fingerprint) as { scheduled_for?: unknown };
+    return typeof parsed?.scheduled_for === 'string' && parsed.scheduled_for.trim()
+      ? parsed.scheduled_for.trim()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function stripScheduledForFromFingerprint(fingerprint: string): string {
+  try {
+    const parsed = JSON.parse(fingerprint) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fingerprint;
+    const { scheduled_for: _ignored, ...rest } = parsed;
+    return JSON.stringify(rest);
+  } catch {
+    return fingerprint;
+  }
+}
+
+export function fingerprintsMatchAcrossScheduleToggle(
+  storedFingerprint: string | undefined,
+  currentFingerprint: string,
+): boolean {
+  if (!storedFingerprint) return false;
+  if (storedFingerprint === currentFingerprint) return true;
+  if (
+    parseStoredAttemptScheduledFor(storedFingerprint) &&
+    !parseStoredAttemptScheduledFor(currentFingerprint)
+  ) {
+    return (
+      stripScheduledForFromFingerprint(storedFingerprint) ===
+      stripScheduledForFromFingerprint(currentFingerprint)
+    );
+  }
+  return false;
+}
+
+export function resolveRetryScheduledFor(params: {
+  orderType: string;
+  scheduledOrdersEnabled: boolean;
+  cartScheduledFor?: string | null;
+  preservedScheduledFor?: string;
+}): string | undefined {
+  if (params.orderType !== 'takeaway' && params.orderType !== 'delivery') {
+    return undefined;
+  }
+  const currentScheduledFor = params.scheduledOrdersEnabled
+    ? params.cartScheduledFor?.trim() || undefined
+    : undefined;
+  return currentScheduledFor || params.preservedScheduledFor?.trim() || undefined;
+}
+
+export function resolveCartScheduledForAfterSettingRead(params: {
+  settingReadSucceeded: boolean;
+  scheduledOrdersEnabled: boolean;
+  cartScheduledFor?: string | null;
+  preservedScheduledFor?: string;
+}): string {
+  const current = params.cartScheduledFor?.trim() || '';
+  const preserved = params.preservedScheduledFor?.trim() || '';
+  if (params.scheduledOrdersEnabled || preserved) {
+    return current || preserved;
+  }
+  if (!params.settingReadSucceeded) {
+    return '';
+  }
+  return '';
+}
+
 function isCompletedAttempt(value: unknown): value is CompletedOrderAttempt {
   return (
     !!value && typeof value === 'object' && (value as { completed?: unknown }).completed === true

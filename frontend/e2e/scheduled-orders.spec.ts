@@ -779,3 +779,278 @@ test('POS scheduled orders: Send to kitchen at, prepay without early release, au
     expect(restoreSettingRes.ok(), 'restore prior scheduled_orders_enabled').toBeTruthy();
   }
 });
+
+test('POS scheduled orders: unresolved order attempts preserve payload and idempotency key when scheduling settings fail or toggle', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const ownerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
+  const ownerHeaders = { Authorization: `Bearer ${ownerToken}` };
+  const createdOrderIds: number[] = [];
+
+  const priorBusinessRes = await page.request.get(`${BASE}/api/settings/business`, {
+    headers: ownerHeaders,
+  });
+  expect(priorBusinessRes.ok()).toBeTruthy();
+  const priorBusiness = (await priorBusinessRes.json()) as Record<string, unknown>;
+
+  const priorScheduledSettingRes = await page.request.get(
+    `${BASE}/api/settings/scheduled_orders_enabled`,
+    { headers: ownerHeaders },
+  );
+  expect(priorScheduledSettingRes.ok()).toBeTruthy();
+  const priorScheduledSettingBody = await priorScheduledSettingRes.json();
+  const priorScheduledOrdersEnabled =
+    priorScheduledSettingBody?.setting?.value === 'true' ? 'true' : 'false';
+
+  const submittedOrders: Array<{
+    idempotencyKey: string | undefined;
+    body: { scheduled_for?: string };
+  }> = [];
+  page.on('request', (req) => {
+    if (req.method() !== 'POST') return;
+    if (new URL(req.url()).pathname !== '/api/orders') return;
+    submittedOrders.push({
+      idempotencyKey: req.headers()['idempotency-key'],
+      body: (req.postDataJSON() || {}) as { scheduled_for?: string },
+    });
+  });
+
+  try {
+    const postpaidRes = await page.request.put(`${BASE}/api/settings/business`, {
+      headers: ownerHeaders,
+      data: { ...priorBusiness, billing_type: 'postpaid' },
+    });
+    expect(postpaidRes.ok()).toBeTruthy();
+
+    const enableRes = await page.request.put(`${BASE}/api/settings/scheduled_orders_enabled`, {
+      headers: ownerHeaders,
+      data: { value: 'true' },
+    });
+    expect(enableRes.ok()).toBeTruthy();
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20_000 });
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/pos`);
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    const cartShell = page.getByTestId('cart-shell');
+
+    // Scenario A: Scheduled order commits on backend (201) while response is lost,
+    // followed by one failed scheduling-setting read and recovery -> retry replays original order (200)
+    await cartShell.getByRole('button', { name: 'Takeaway', exact: true }).click();
+    await page.getByTestId('pos-product-card').first().click();
+    await expect(page.getByTestId('cart-item')).toHaveCount(1);
+
+    await cartShell.getByTestId('pos-order-details-summary').click();
+    const detailsDrawer = page.getByTestId('pos-order-details-drawer');
+    await expect(detailsDrawer).toBeVisible();
+    const firstScheduleWall = futureBangkokWallClock(95);
+    await detailsDrawer.getByTestId('pos-send-to-kitchen-input').fill(firstScheduleWall);
+    await detailsDrawer.getByTestId('pos-order-details-done-btn').click();
+    await expect(detailsDrawer).toHaveCount(0);
+
+    let firstCommittedOrderId = 0;
+    let abortFirstOrderPost = true;
+    let abortSecondOrderPost = false;
+    let secondCommittedOrderId = 0;
+    await page.route('**/api/orders', async (route) => {
+      if (
+        route.request().method() !== 'POST' ||
+        new URL(route.request().url()).pathname !== '/api/orders'
+      ) {
+        await route.continue();
+        return;
+      }
+      if (abortFirstOrderPost) {
+        abortFirstOrderPost = false;
+        const realRes = await route.fetch();
+        expect(realRes.status()).toBe(201);
+        const body = await realRes.json();
+        firstCommittedOrderId = Number(body.order.id);
+        createdOrderIds.push(firstCommittedOrderId);
+        await route.abort('connectionreset');
+        return;
+      }
+      if (abortSecondOrderPost) {
+        abortSecondOrderPost = false;
+        const realRes = await route.fetch();
+        expect(realRes.status()).toBe(201);
+        const body = await realRes.json();
+        secondCommittedOrderId = Number(body.order.id);
+        createdOrderIds.push(secondCommittedOrderId);
+        await route.abort('connectionreset');
+        return;
+      }
+      await route.continue();
+    });
+
+    await cartShell.getByRole('button', { name: 'Place Order' }).click();
+    await expect(page.getByRole('status')).toContainText(
+      'FloCafe could not confirm whether the order or payment was saved.',
+    );
+    expect(submittedOrders).toHaveLength(1);
+    expect(submittedOrders[0].idempotencyKey).toBeTruthy();
+    expect(submittedOrders[0].body.scheduled_for).toBe(firstScheduleWall);
+
+    const navMenu = page.getByRole('navigation', { name: 'Menu' });
+
+    // Trigger one failed scheduling-setting read when POS remounts
+    let failNextScheduledSettingRead = true;
+    await page.route('**/api/settings/scheduled_orders_enabled', async (route) => {
+      if (route.request().method() === 'GET' && failNextScheduledSettingRead) {
+        failNextScheduledSettingRead = false;
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Temporary settings read failure' }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await navMenu.getByRole('link', { name: 'Orders', exact: true }).click();
+    await page.waitForURL('**/orders/**');
+    const failedSettingRead = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        new URL(res.url()).pathname === '/api/settings/scheduled_orders_enabled' &&
+        res.status() === 503,
+    );
+    await navMenu.getByRole('link', { name: 'POS', exact: true }).click();
+    await failedSettingRead;
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    // Now let the scheduling-setting read recover (returns true)
+    await navMenu.getByRole('link', { name: 'Orders', exact: true }).click();
+    await page.waitForURL('**/orders/**');
+    const recoveredSettingRead = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        new URL(res.url()).pathname === '/api/settings/scheduled_orders_enabled' &&
+        res.status() === 200,
+    );
+    await navMenu.getByRole('link', { name: 'POS', exact: true }).click();
+    await recoveredSettingRead;
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+    await expect(page.getByTestId('pos-scheduled-orders-btn')).toBeVisible();
+
+    const firstReplayResPromise = page.waitForResponse(
+      (res) => res.request().method() === 'POST' && new URL(res.url()).pathname === '/api/orders',
+    );
+    await cartShell.getByRole('button', { name: 'Place Order' }).click();
+    const firstReplayRes = await firstReplayResPromise;
+    expect(firstReplayRes.status()).toBe(200);
+    const firstReplayBody = await firstReplayRes.json();
+    expect(Number(firstReplayBody.order.id)).toBe(firstCommittedOrderId);
+    expect(submittedOrders).toHaveLength(2);
+    expect(submittedOrders[1].idempotencyKey).toBe(submittedOrders[0].idempotencyKey);
+    expect(submittedOrders[1].body.scheduled_for).toBe(firstScheduleWall);
+    await expect(page.getByTestId('cart-item')).toHaveCount(0);
+
+    // Scenario B: Scheduled order commits on backend (201) while response is lost,
+    // followed by disabling then re-enabling scheduling -> retry replays original order (200)
+    await cartShell.getByRole('button', { name: 'Takeaway', exact: true }).click();
+    await page.getByTestId('pos-product-card').first().click();
+    await expect(page.getByTestId('cart-item')).toHaveCount(1);
+
+    await cartShell.getByTestId('pos-order-details-summary').click();
+    await expect(detailsDrawer).toBeVisible();
+    const secondScheduleWall = futureBangkokWallClock(115);
+    await detailsDrawer.getByTestId('pos-send-to-kitchen-input').fill(secondScheduleWall);
+    await detailsDrawer.getByTestId('pos-order-details-done-btn').click();
+    await expect(detailsDrawer).toHaveCount(0);
+
+    abortSecondOrderPost = true;
+    await cartShell.getByRole('button', { name: 'Place Order' }).click();
+    await expect(page.getByRole('status')).toContainText(
+      'FloCafe could not confirm whether the order or payment was saved.',
+    );
+    expect(submittedOrders).toHaveLength(3);
+    expect(submittedOrders[2].idempotencyKey).toBeTruthy();
+    expect(submittedOrders[2].body.scheduled_for).toBe(secondScheduleWall);
+
+    // Disable scheduling and remount POS
+    const disableToggleRes = await page.request.put(
+      `${BASE}/api/settings/scheduled_orders_enabled`,
+      {
+        headers: ownerHeaders,
+        data: { value: 'false' },
+      },
+    );
+    expect(disableToggleRes.ok()).toBeTruthy();
+    await navMenu.getByRole('link', { name: 'Orders', exact: true }).click();
+    await page.waitForURL('**/orders/**');
+    const disabledRead = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        new URL(res.url()).pathname === '/api/settings/scheduled_orders_enabled' &&
+        res.status() === 200,
+    );
+    await navMenu.getByRole('link', { name: 'POS', exact: true }).click();
+    await disabledRead;
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    // Re-enable scheduling and remount POS
+    const reenableToggleRes = await page.request.put(
+      `${BASE}/api/settings/scheduled_orders_enabled`,
+      {
+        headers: ownerHeaders,
+        data: { value: 'true' },
+      },
+    );
+    expect(reenableToggleRes.ok()).toBeTruthy();
+    await navMenu.getByRole('link', { name: 'Orders', exact: true }).click();
+    await page.waitForURL('**/orders/**');
+    const reenabledRead = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        new URL(res.url()).pathname === '/api/settings/scheduled_orders_enabled' &&
+        res.status() === 200,
+    );
+    await navMenu.getByRole('link', { name: 'POS', exact: true }).click();
+    await reenabledRead;
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    const secondReplayResPromise = page.waitForResponse(
+      (res) => res.request().method() === 'POST' && new URL(res.url()).pathname === '/api/orders',
+    );
+    await cartShell.getByRole('button', { name: 'Place Order' }).click();
+    const secondReplayRes = await secondReplayResPromise;
+    expect(secondReplayRes.status()).toBe(200);
+    const secondReplayBody = await secondReplayRes.json();
+    expect(Number(secondReplayBody.order.id)).toBe(secondCommittedOrderId);
+    expect(submittedOrders).toHaveLength(4);
+    expect(submittedOrders[3].idempotencyKey).toBe(submittedOrders[2].idempotencyKey);
+    expect(submittedOrders[3].body.scheduled_for).toBe(secondScheduleWall);
+    await expect(page.getByTestId('cart-item')).toHaveCount(0);
+  } finally {
+    for (const orderId of createdOrderIds) {
+      await page.request
+        .patch(`${BASE}/api/orders/${orderId}/status`, {
+          headers: ownerHeaders,
+          data: { status: 'cancelled', reason: 'E2E cleanup' },
+        })
+        .catch(() => {});
+    }
+    await page.request
+      .put(`${BASE}/api/settings/business`, {
+        headers: ownerHeaders,
+        data: priorBusiness,
+      })
+      .catch(() => {});
+    const restoreSettingRes = await page.request.put(
+      `${BASE}/api/settings/scheduled_orders_enabled`,
+      {
+        headers: ownerHeaders,
+        data: { value: priorScheduledOrdersEnabled },
+      },
+    );
+    expect(restoreSettingRes.ok(), 'restore prior scheduled_orders_enabled').toBeTruthy();
+  }
+});

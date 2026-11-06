@@ -170,8 +170,16 @@ async function run(): Promise<void> {
       );
     }
     if (language === 'pa') {
-      assert.match(browserHtml, /font-family:'Noto Sans Gurmukhi'/, `${language}: browser KOT selects the Gurmukhi font stack`);
-      assert.match(browserHtml, /lang="pa-IN" dir="ltr"/, `${language}: browser KOT carries locale pa-IN`);
+      assert.match(
+        browserHtml,
+        /font-family:'Noto Sans Gurmukhi'/,
+        `${language}: browser KOT selects the Gurmukhi font stack`,
+      );
+      assert.match(
+        browserHtml,
+        /lang="pa-IN" dir="ltr"/,
+        `${language}: browser KOT carries locale pa-IN`,
+      );
     }
     assert.match(browserHtml, /KOT-PHASE3-001/, `${language}: browser order number`);
     assert.match(browserHtml, /Pending coffee/, `${language}: browser pending item`);

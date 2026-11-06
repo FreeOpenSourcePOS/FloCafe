@@ -330,7 +330,10 @@ function run(): void {
       printLabel('sw', 'print.grandTotal') !== printLabel('sw', 'pos.subtotal'),
   );
   assert('Punjabi grand total is localized', printLabel('pa', 'print.grandTotal') === 'ਕੁੱਲ ਜੋੜ');
-  assert('Punjabi bill number label is localized', printLabel('pa', 'receipt.billNumber') === 'ਬਿੱਲ #');
+  assert(
+    'Punjabi bill number label is localized',
+    printLabel('pa', 'receipt.billNumber') === 'ਬਿੱਲ #',
+  );
   assert('Punjabi print-test amount is localized', printLabel('pa', 'printTest.amt') === 'ਰਕਮ');
   assert(
     'Punjabi takeaway is distinct from delivery',

@@ -309,7 +309,7 @@ The drawer pulse is the ESC/POS sequence `ESC p 0 0x19 0xFA`. It is emitted only
 
 `shared/print/width.ts` measures in grapheme clusters and display cells, not UTF-16 code units. A
 combining mark attaches to its base, an Indic conjunct is never split at a virama
-(U+094D, U+09CD), and a ZWNJ stays with the grapheme it follows. Measuring in code units silently
+(U+094D, U+09CD, U+0A4D), and a ZWNJ stays with the grapheme it follows. Measuring in code units silently
 breaks every non-BMP and every combining-script receipt, which is why every renderer in the
 pipeline uses this helper rather than `String.length`.
 

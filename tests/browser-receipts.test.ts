@@ -678,12 +678,16 @@ async function run() {
       timezone: 'Asia/Kolkata',
     };
     const paHtml = generateBillHtml(sampleEnBill, paTenant, { language: 'pa', isReprint: true });
-    assert('PA receipt has lang="pa-IN" and dir="ltr"', paHtml.includes('<html lang="pa-IN" dir="ltr">'));
-    assert('PA labels are Gurmukhi',
+    assert(
+      'PA receipt has lang="pa-IN" and dir="ltr"',
+      paHtml.includes('<html lang="pa-IN" dir="ltr">'),
+    );
+    assert(
+      'PA labels are Gurmukhi',
       paHtml.includes('ਮੁੜ-ਪ੍ਰਿੰਟ') &&
-      paHtml.includes('ਬਿੱਲ #') &&
-      paHtml.includes('ਕੁੱਲ ਜੋੜ') &&
-      paHtml.includes('ਤੁਹਾਡੇ ਆਉਣ ਲਈ ਧੰਨਵਾਦ!')
+        paHtml.includes('ਬਿੱਲ #') &&
+        paHtml.includes('ਕੁੱਲ ਜੋੜ') &&
+        paHtml.includes('ਤੁਹਾਡੇ ਆਉਣ ਲਈ ਧੰਨਵਾਦ!'),
     );
 
     // The browser receipt is the primary print path, and its body stack was

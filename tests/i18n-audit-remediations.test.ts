@@ -809,12 +809,16 @@ async function run() {
   visualArtifacts.push({
     filename: 'web_print_bill_pa_in',
     title: 'Web Print Bill (Punjabi - lang="pa-IN")',
-    html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe Amritsar',
-      currency: 'INR',
-      country: 'IN',
-      timezone: 'Asia/Kolkata',
-    }, { language: 'pa' }),
+    html: generateBillHtml(
+      sampleBill,
+      {
+        business_name: 'FloCafe Amritsar',
+        currency: 'INR',
+        country: 'IN',
+        timezone: 'Asia/Kolkata',
+      },
+      { language: 'pa' },
+    ),
   });
 
   // Write all HTML files to evidence dir

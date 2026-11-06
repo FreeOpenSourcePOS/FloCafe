@@ -56,7 +56,7 @@ export function paintRasterRequest(
     const topPad = 3;
     const weight = styles.includes('bold') ? '700' : '400';
     const fontFallback =
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Bengali", "Nirmala UI", "Vrinda", "Bangla Sangam MN", "Noto Sans Devanagari", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Gurmukhi", "Raavi", "Kohinoor Gurmukhi", "Gurmukhi Sangam MN", "Noto Sans Thai", "Leelawadee UI", "Thonburi", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Noto Sans", sans-serif';
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Bengali", "Nirmala UI", "Vrinda", "Bangla Sangam MN", "Noto Sans Devanagari", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Gurmukhi", "Raavi", "Kohinoor Gurmukhi", "Gurmukhi Sangam MN", "Noto Sans Tamil", "Latha", "Tamil Sangam MN", "Noto Sans Thai", "Leelawadee UI", "Thonburi", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Noto Sans", sans-serif';
     const fontSpec = request.bundledFont
       ? JSON.stringify(request.bundledFont.family) + ', ' + fontFallback
       : fontFallback;

@@ -218,6 +218,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/pa.json'),
   },
+  ta: {
+    locale: 'ta-IN',
+    nativeName: 'தமிழ்',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ta.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

@@ -2740,6 +2740,64 @@ function paFallbackErrors(
   return errors;
 }
 
+/** Tamil translation safeguards: technical acronyms, email/IP/port examples, and pure format templates. */
+const TA_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', // Email address example: you@business.com
+  'dashboard.exportCsv', // File format label: CSV (.csv)
+  'dashboard.exportPdf', // File format label: PDF (.pdf)
+  'dashboard.ticketMethodCount', // Numeric multiplier format: {count} ×
+  'kds.emptyColumn', // Em-dash placeholder: —
+  'nav.kds', // Kitchen Display System acronym: KDS
+  'nav.pos', // Point of Sale acronym: POS
+  'pos.addonPrice', // Price format template: +{currency}{price}
+  'pos.loadingEllipsis', // Single ellipsis character: …
+  'pos.tagCount', // Tag count format template: {tag} ×{count}
+  'pos.taxLine', // Tax line format template: {title} @{rate}%
+  'printTest.escpos', // Thermal printer protocol/bus acronym: ESCPOS (USB)
+  'print.hsn', // Indian GST Harmonized System of Nomenclature code: HSN
+  'print.zReport.paymentCount', // Count multiplier format: x{count}
+  'products.addonSelectionRange', // Numeric range format: {min} – {max}
+  'products.fieldSku', // Stock Keeping Unit acronym: SKU
+  'products.skuLabel', // SKU label format: SKU: {sku}
+  'serverApp.emailPlaceholder', // Local email address example: server@flo.local
+  'settings.apiKeyInputPlaceholder', // API key token example: fac_live_xxxxxxxxxxxxxxxxxxxx
+  'settings.connectionUsb', // Hardware bus acronym: USB
+  'settings.instagramPlaceholder', // Instagram handle example: @yourcafe
+  'settings.ipAddressPlaceholder', // IPv4 address example: 192.168.1.100
+  'settings.kds', // Kitchen Display System acronym: KDS
+  'settings.paymentMethodUpi', // Unified Payments Interface acronym: UPI
+  'settings.portPlaceholder', // TCP port number example: 9100
+  'settings.registrationEmailPlaceholder', // Email address example: owner@yourcafe.com
+  'settings.registrationLastError', // Pure ICU variable placeholder: {error}
+  'settings.revflo', // Companion product brand name: RevFlo
+  'setup.ownerEmailPlaceholder', // Email address example: owner@restaurant.com
+  'tax.auditCreateOverride', // Audit trail arrow template: {entityType} {entityId} → {categoryId}
+  'tax.auditUpdateOverride', // Audit trail diff template: {entityType} {entityId}: {before} → {after}
+  'update.downloadingBadge', // Download percentage badge format: ↓ {percent}%
+  'whatsapp.connect.pairingPhonePlaceholder', // E.164 phone number mask: {dialCode}XXXXXXXXXX
+]);
+
+function taFallbackErrors(
+  taFlat: Record<string, string>,
+  enFlat: Record<string, string>,
+): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const taVal = taFlat[k];
+    if (taVal === undefined) continue;
+    if (taVal.startsWith('[TA]') || taVal.startsWith('[TODO]')) {
+      errors.push(`ta.json ${k} — placeholder prefix found: "${taVal}"`);
+    } else if (taVal === enFlat[k] && !TA_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`ta.json ${k} — identical to English value (renders as English for Tamil users)`);
+    } else if (taVal !== taVal.normalize('NFC')) {
+      errors.push(`ta.json ${k} — value must use Unicode NFC`);
+    } else if (taVal.includes('\uFFFD')) {
+      errors.push(`ta.json ${k} — value contains a Unicode replacement character`);
+    }
+  }
+  return errors;
+}
+
 /** Keys whose `{number}` placeholder names an order number that must stay
  * introduced by punctuation (for example `#` or `№`) or a space, never welded
  * onto the end of a verb-final clause. */
@@ -3796,7 +3854,49 @@ async function run(): Promise<void> {
     `  ✓ no untranslated pa.json values (${PA_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
   );
 
-  // 29. No locale may weld an order number onto a word. Devanagari, Arabic, and
+  // 29. ta.json values must be complete, NFC text without malformed characters.
+  const taMessages = loadedStrings.get('ta');
+  if (!taMessages) throw new Error('languages registry must include the maintained ta locale');
+  const taErrors = taFallbackErrors(taMessages, loadedStrings.get('en')!);
+  if (taErrors.length) {
+    console.error(`\nta.json values with errors (${taErrors.length}):`);
+    for (const e of taErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(
+      false,
+      'ta.json contains untranslated, placeholder, non-NFC, or replacement-character values',
+    );
+  }
+  assert(
+    taMessages['receipt.cashReceived'] === 'பெற்ற ரொக்கம்',
+    'ta.json receipt.cashReceived must preserve the canonical cash-received label',
+  );
+  assert(
+    taMessages['pos.tagVeg'] === 'சைவம்' && taMessages['products.tagVeg'] === 'சைவம்',
+    'ta.json vegetarian product tags must use the Tamil vegetarian term',
+  );
+  assert(
+    taMessages['pos.tagNonVeg'] === 'அசைவம்' && taMessages['products.tagNonVeg'] === 'அசைவம்',
+    'ta.json non-vegetarian product tags must use the Tamil non-vegetarian term',
+  );
+  assert(
+    taMessages['orders.takeaway'] === 'பார்சல்' && taMessages['pos.orderTypeTakeaway'] === 'பார்சல்',
+    'ta.json takeaway labels must match the Tamil takeaway term',
+  );
+  assert(
+    taMessages['dashboard.payIn'] === 'ரொக்க வரவு' &&
+      taMessages['dashboard.payOut'] === 'ரொக்க செலவு',
+    'ta.json cash-movement labels must match the Z-report terminology',
+  );
+  assert(
+    taMessages['print.zReport.payIn'] === taMessages['dashboard.payIn'] &&
+      taMessages['print.zReport.payOut'] === taMessages['dashboard.payOut'],
+    'ta.json cash-movement labels must be identical on the dashboard and the Z-report',
+  );
+  console.log(
+    `  ✓ no untranslated ta.json values (${TA_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
+  );
+
+  // 30. No locale may weld an order number onto a word. Devanagari, Arabic, and
   // Cyrillic are all verb-final, so a trailing "{number}" reads as part of the
   // word. This covers every registered locale, not only Nepali.
   const orderNumberErrors = orderNumberPlaceholderErrors(Object.fromEntries(loadedStrings));
@@ -3836,6 +3936,14 @@ async function run(): Promise<void> {
   assert(
     paMessages['pos.itemsAddedToOrder'] === 'ਆਰਡਰ #{number} ਵਿੱਚ ਆਈਟਮਾਂ ਜੋੜੀਆਂ ਗਈਆਂ',
     'pa.json itemsAddedToOrder must place the order number directly after the # marker',
+  );
+  assert(
+    taMessages['pos.addingItemsToOrder'] === 'ஆர்டர் #{number} இல் பொருட்கள் சேர்க்கப்படுகின்றன',
+    'ta.json addingItemsToOrder must place the order number directly after the # marker',
+  );
+  assert(
+    taMessages['pos.itemsAddedToOrder'] === 'ஆர்டர் #{number} இல் பொருட்கள் சேர்க்கப்பட்டன',
+    'ta.json itemsAddedToOrder must place the order number directly after the # marker',
   );
   console.log(
     `  ✓ no locale welds an order number onto a word (${Object.keys(Object.fromEntries(loadedStrings)).length} locales checked)`,
@@ -4203,6 +4311,18 @@ function runNegativeTests(): void {
   expectDetected(
     'sw: Unicode replacement character',
     swFallbackErrors({ 'a.b': 'Kahawa\uFFFD' }, { 'a.b': 'Kahawa' }),
+  );
+  expectDetected(
+    'ta: English-identical value',
+    taFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'ta: placeholder prefix value',
+    taFallbackErrors({ 'a.b': '[TA] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'ta: Unicode replacement character',
+    taFallbackErrors({ 'a.b': 'கா\uFFFDபி' }, { 'a.b': 'காபி' }),
   );
   expectDetected(
     'ne: Unicode replacement character',

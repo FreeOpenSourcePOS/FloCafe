@@ -103,6 +103,11 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
     web: 'ਵੈੱਬ ਪ੍ਰਿੰਟ (ਬ੍ਰਾਊਜ਼ਰ)',
     whatsapp: 'WhatsApp ਸ਼ੇਅਰ',
   },
+  ta: {
+    basic: 'அடிப்படை ரசீது (தெர்மல்)',
+    web: 'வெப் அச்சு (உலாவி)',
+    whatsapp: 'WhatsApp பகிர்வு',
+  },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

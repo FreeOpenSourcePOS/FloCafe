@@ -55,7 +55,7 @@ is invisible on screen and corrupts comparison, searching, and print labels.
 identically and wrap identically after normalisation, which is what makes NFC a requirement rather
 than a preference. `tests/translations.test.ts` rejects a `vi.json` value that is not already NFC.
 
-The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `pa.json`, `ru.json`, `sw.json`, and `th.json`.
+The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `pa.json`, `ru.json`, `sw.json`, `ta.json`, and `th.json`.
 
 ## Albanian and Vietnamese on a generic thermal printer
 
@@ -197,6 +197,12 @@ both `pos.*` and `products.*`. Cash movement uses `ਨਕਦ ਜਮ੍ਹਾਂ`
 pay-out on both the dashboard and the Z-report, and takeaway is `ਟੇਕਅਵੇ` across `orders.*` and
 `pos.*`. Gurmukhi virama conjuncts (`ਪ੍ਰ`, `ਸ੍ਰ`) and combining signs (`ੰ` tippi, `ਂ` bindi, `ੱ`
 addak, `਼` nukta) must remain NFC-normalized and attached to their base consonant.
+
+**Tamil.** Subtotal `துணை மொத்தம்` and grand total `மொத்தத் தொகை` are distinct labels and must stay
+distinct on the receipt. The vegetarian tags are `சைவம்` and the non-vegetarian tags `அசைவம்`,
+identical between `pos.*` and `products.*`. Cash movement uses `ரொக்க வரவு` for pay-in and `ரொக்க செலவு`
+for pay-out across the dashboard and the Z-report. Takeaway is `பார்சல்` across `orders.takeaway` and
+`pos.orderTypeTakeaway`, distinct from delivery `டெலிவரி` and dine-in `உள்ளே உண்பது`.
 
 ## Verification
 

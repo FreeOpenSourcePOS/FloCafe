@@ -113,7 +113,7 @@ function ItemQuantityControl({
         <button
           type="button"
           onClick={() => stepBy(-1)}
-          className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
+          className="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
           aria-label={t('remove')}
         >
           <Minus size={13} />
@@ -127,7 +127,7 @@ function ItemQuantityControl({
         <button
           type="button"
           onClick={() => stepBy(1)}
-          className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
+          className="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
           aria-label={t('addItems')}
         >
           <Plus size={13} />
@@ -141,7 +141,7 @@ function ItemQuantityControl({
       <button
         type="button"
         onClick={() => stepBy(-1)}
-        className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
+        className="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
         aria-label={t('remove')}
       >
         <Minus size={13} />
@@ -163,7 +163,7 @@ function ItemQuantityControl({
       <button
         type="button"
         onClick={() => stepBy(1)}
-        className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
+        className="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
         aria-label={t('addItems')}
       >
         <Plus size={13} />
@@ -432,7 +432,7 @@ export default function CartPanel({
                   type="button"
                   aria-label={t('decreasePax')}
                   onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))}
-                  className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-1.5 hover:bg-muted hover:text-foreground active:bg-muted"
+                  className="touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
                 >
                   <Minus size={12} />
                 </button>
@@ -452,7 +452,7 @@ export default function CartPanel({
                   type="button"
                   aria-label={t('increasePax')}
                   onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))}
-                  className="relative touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-1.5 hover:bg-muted hover:text-foreground active:bg-muted"
+                  className="touch-target h-6 w-6 min-h-6 min-w-6 rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
                 >
                   <Plus size={12} />
                 </button>
@@ -757,7 +757,7 @@ export default function CartPanel({
                       type="button"
                       data-testid="cart-item-remove-btn"
                       onClick={() => cart.removeItem(item.id)}
-                      className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-red-500 dark:text-red-400 transition-colors after:content-[''] after:absolute after:-inset-1.5 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-300 active:bg-red-100 dark:active:bg-red-950/60"
+                      className="touch-target h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-md text-red-500 dark:text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-300 active:bg-red-100 dark:active:bg-red-950/60"
                       aria-label={t('remove')}
                       title={t('remove')}
                     >
@@ -809,12 +809,12 @@ export default function CartPanel({
                         </p>
                       )}
                     </div>
-                    <div className="ms-auto flex items-center gap-1 shrink-0">
+                    <div className="ms-auto flex items-center gap-1.5 shrink-0">
                       {canOverridePrice && (
                         <button
                           type="button"
                           onClick={() => setPriceOverrideItemId(item.id)}
-                          className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
+                          className="touch-target h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
                           aria-label={tOrders('overridePrice')}
                           title={tOrders('overridePrice')}
                         >
@@ -825,7 +825,7 @@ export default function CartPanel({
                         <button
                           type="button"
                           onClick={() => onEditItem(item)}
-                          className="relative touch-target h-6 w-6 min-h-6 min-w-6 shrink-0 rounded-md text-muted-foreground transition-colors after:content-[''] after:absolute after:-inset-2 hover:bg-muted hover:text-foreground active:bg-muted"
+                          className="touch-target h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
                           aria-label={tCommon('edit')}
                           title={tCommon('edit')}
                         >

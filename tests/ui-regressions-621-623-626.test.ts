@@ -399,6 +399,19 @@ try {
     } as any,
     2,
   );
+  useCartStore.getState().addItem(
+    {
+      id: 'prod-2',
+      name: 'House Beans',
+      price: 18,
+      category_id: 'cat-1',
+      is_available: 1,
+      allow_fractional_quantity: true,
+      sale_unit: 'kg',
+      weight_precision: 2,
+    } as any,
+    0.5,
+  );
 
   const { usePosSettingsStore } = require('@/store/pos-settings');
   usePosSettingsStore.setState({ billingType: 'postpaid' } as any);
@@ -413,6 +426,7 @@ try {
       currency: 'USD',
       submitting: false,
       onPlaceOrder: () => {},
+      onEditItem: () => {},
     }),
   );
   const removeBtnIndex = cartMarkup.indexOf('data-testid="cart-item-remove-btn"');
@@ -424,8 +438,23 @@ try {
   );
   assert.match(
     cartMarkup,
-    /data-testid="cart-item-remove-btn"[^>]*class="[^"]*text-red-500 dark:text-red-400[^"]*after:content-\[&#x27;&#x27;\] after:absolute after:-inset-1\.5/,
-    'rendered CartPanel delete button uses red styling and expanded touch hit area',
+    /data-testid="cart-item-remove-btn"[^>]*class="[^"]*touch-target h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-md text-red-500 dark:text-red-400/,
+    'rendered CartPanel delete button uses red styling and a real 28px touch target box',
+  );
+  assert.doesNotMatch(
+    cartMarkup,
+    /after:-inset/,
+    'rendered CartPanel does not expand control hit areas with overlapping after:-inset pseudo-elements',
+  );
+  assert.match(
+    cartMarkup,
+    /<div class="ms-auto flex items-center gap-1\.5 shrink-0"><button type="button" class="touch-target h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-md[^"]*" aria-label="Override price"[^>]*>[\s\S]*?<button type="button" class="touch-target h-7 w-7 min-h-7 min-w-7 shrink-0 rounded-md[^"]*" aria-label="Edit"[^>]*>[\s\S]*?<div class="inline-flex items-center rounded-full border border-border bg-muted\/50 p-0\.5"><button type="button" class="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full[^"]*" aria-label="Remove">[\s\S]*?<button type="button" class="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full[^"]*" aria-label="Add Items">/,
+    'rendered CartPanel gives Override Price, Edit, and quantity stepper buttons non-overlapping 28px touch target boxes with gap-1.5 separation',
+  );
+  assert.match(
+    cartMarkup,
+    /<button type="button" class="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full[^"]*" aria-label="Remove">[\s\S]*?<input type="number" inputMode="decimal"[^>]*aria-label="Quantity"[^>]*\/><button type="button" class="touch-target h-7 w-7 min-h-7 min-w-7 rounded-full[^"]*" aria-label="Add Items">/,
+    'rendered CartPanel fractional quantity stepper buttons use real 28px touch target boxes without overlapping the quantity input',
   );
   assert.doesNotMatch(
     cartMarkup,

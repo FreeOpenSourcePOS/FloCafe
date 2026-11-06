@@ -23,6 +23,10 @@ const {
   assertOrThrow,
 } = require('./helpers/test-setup');
 
+// Far slower than the statements below it, so the slowest statement is the same on every machine.
+const SLOW_SQL =
+  'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 20000) SELECT count(*) AS n FROM c';
+
 function seed(): Database.Database {
   const db = new Database(':memory:');
   db.exec('CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)');
@@ -88,16 +92,14 @@ function main(): void {
     const rows = db.prepare('SELECT name FROM items').iterate();
     rows.next();
     rows.return?.();
-    assertEqualOrThrow(inner.queries, 4, 'four statements counted');
+    db.prepare(SLOW_SQL).get();
+    assertEqualOrThrow(inner.queries, 5, 'five statements counted');
     assertGreaterThanOrThrow(inner.dbMs, 0, 'db time accumulated');
-    assertOrThrow(
-      inner.slowestSql.startsWith('SELECT name FROM items'),
-      `slowest SQL is kept normalized: ${inner.slowestSql}`,
-    );
-    assertOrThrow(!inner.slowestSql.includes('abc'), 'slowest SQL carries no literal');
+    assertEqualOrThrow(inner.slowestSql, normalizeSql(SLOW_SQL), 'slowest SQL is kept normalized');
+    assertOrThrow(!inner.slowestSql.includes('20000'), 'slowest SQL carries no literal');
     return inner;
   });
-  assertEqualOrThrow(stats.queries, 4, 'the request store is the one that was read');
+  assertEqualOrThrow(stats.queries, 5, 'the request store is the one that was read');
 
   // The wrappers answer and throw exactly as the plain handle does.
   const where = 'SELECT name FROM items WHERE id = ?';

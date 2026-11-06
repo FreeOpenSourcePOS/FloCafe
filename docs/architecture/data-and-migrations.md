@@ -303,9 +303,10 @@ cannot be written, with in-place read-only fallback when staging encounters stor
 without a `-journal` sidecar) so probing never leaves orphaned `-wal` or `-shm` files behind. It requires a
 clean `integrity_check`, no foreign-key violations outside an explicit allowlist, a schema version
 above zero and within the supported range, an `_flo_meta` stamp that matches the pragma, and a table
-and column set, plus normalised `CREATE` definitions, that match the ideal schema built by running
-the whole migration pipeline in memory (cached across health checks and invalidated on migration
-registry changes; runtime-ensured indexes in
+and column set, plus structural table definitions and normalised index, trigger, and view
+definitions (`getSchemaDefinitions`), that match the ideal schema built by running the whole
+migration pipeline in memory (`getRecoverySchemaReference`, cached across health checks and direct
+restores and invalidated on migration registry changes; runtime-ensured indexes in
 `RUNTIME_ENSURED_SCHEMA_OBJECTS` such as `idx_order_items_active_kds` at schema v121+ may be absent
 on an unopened file or direct-restore backup and are created on writable open by
 `ensureRuntimeIndexes()`, while mismatched definitions or unknown extra objects are still rejected).

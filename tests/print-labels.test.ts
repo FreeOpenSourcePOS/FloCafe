@@ -329,6 +329,25 @@ function run(): void {
     printLabel('sw', 'pos.subtotal') === 'Jumla Ndogo' &&
       printLabel('sw', 'print.grandTotal') !== printLabel('sw', 'pos.subtotal'),
   );
+  assert('Ukrainian grand total is localized', printLabel('uk', 'print.grandTotal') === 'РАЗОМ');
+  assert(
+    'Ukrainian bill number label is localized',
+    printLabel('uk', 'receipt.billNumber') === 'Рахунок №',
+  );
+  assert(
+    'Ukrainian cash received resolves from the canonical receipt key',
+    printLabel('uk', 'receipt.cashReceived') === 'Отримано готівкою',
+  );
+  assert(
+    'Ukrainian takeaway is distinct from delivery',
+    printLabel('uk', 'pos.orderTypeTakeaway') === 'З собою' &&
+      printLabel('uk', 'pos.orderTypeDelivery') === 'Доставка',
+  );
+  assert(
+    'Ukrainian subtotal stays distinct from grand total',
+    printLabel('uk', 'pos.subtotal') === 'Проміжний підсумок' &&
+      printLabel('uk', 'print.grandTotal') !== printLabel('uk', 'pos.subtotal'),
+  );
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {

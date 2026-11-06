@@ -222,6 +222,19 @@ async function runTests() {
     'Marathi UI locale supplies date language without changing tenant timezone',
   );
 
+  const ukDate = formatDateForTenant(
+    testDateUtc,
+    'AR',
+    argentinaTimezone,
+    {},
+    { year: 'numeric', month: 'short', day: 'numeric' },
+    'uk-UA',
+  );
+  assert.ok(
+    ukDate.includes('2026') && ukDate.includes('серп'),
+    `Ukrainian UI locale supplies date language without changing tenant timezone, got: ${ukDate}`,
+  );
+
   // Argentina store + Spanish UI
   const arEsDate = formatDateForTenant(
     testDateUtc,

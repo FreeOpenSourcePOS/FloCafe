@@ -119,6 +119,7 @@ async function run() {
     'jv',
     'mr',
     'sw',
+    'uk',
   ] as const) {
     await i18n.loadLocaleMessages(lang);
   }
@@ -670,6 +671,25 @@ async function run() {
         swHtml.includes('Asante kwa kututembelea!'),
     );
 
+    const ukTenant = {
+      business_name: 'FloCafe Київ',
+      currency: 'UAH',
+      country: 'UA',
+      timezone: 'Europe/Kyiv',
+    };
+    const ukHtml = generateBillHtml(sampleEnBill, ukTenant, { language: 'uk', isReprint: true });
+    assert(
+      'UK receipt has lang="uk-UA" and dir="ltr"',
+      ukHtml.includes('<html lang="uk-UA" dir="ltr">'),
+    );
+    assert(
+      'UK labels are Ukrainian Cyrillic',
+      ukHtml.includes('ПОВТОРНИЙ ДРУК') &&
+        ukHtml.includes('Рахунок №') &&
+        ukHtml.includes('Загальна сума') &&
+        ukHtml.includes('Дякуємо за ваш візит!'),
+    );
+
     // The browser receipt is the primary print path, and its body stack was
     // extended per language by hand, so Bengali was the one merged locale left
     // without a declared family here. Assert the families the order-slip and
@@ -1094,6 +1114,35 @@ async function run() {
         swahiliSlip.includes('Karatasi ya Oda') &&
         swahiliSlip.includes('Jumla Ndogo') &&
         swahiliSlip.includes('Jumla'),
+    );
+
+    const ukrainianSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'Чек замовлення',
+        subtotal: 'Проміжний підсумок',
+        discount: 'Знижка',
+        serviceCharge: 'Сервісний збір',
+        deliveryCharge: 'Вартість доставки',
+        packagingCharge: 'Вартість пакування',
+        tax: 'Податок',
+        total: 'Разом',
+      },
+      {
+        paperWidth: 80,
+        country: 'UA',
+        currency: 'UAH',
+        locale: 'uk-UA',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Ukrainian order slip carries uk-UA LTR metadata and localized Cyrillic labels',
+      ukrainianSlip.includes('lang="uk-UA" dir="ltr"') &&
+        ukrainianSlip.includes('direction:ltr;text-align:left;') &&
+        ukrainianSlip.includes('Чек замовлення') &&
+        ukrainianSlip.includes('Проміжний підсумок') &&
+        ukrainianSlip.includes('Разом'),
     );
   }
 

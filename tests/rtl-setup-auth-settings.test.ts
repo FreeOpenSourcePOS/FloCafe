@@ -491,6 +491,18 @@ async function run(): Promise<void> {
       'sw-TZ must resolve through the same-script regional fallback to sw-KE',
     );
   });
+  withNavigatorLanguage('uk-UA', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'uk',
+      'getBrowserLanguage must return "uk" for uk-UA',
+    );
+  });
+  withNavigatorLanguage('uk', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'uk',
+      'getBrowserLanguage must return "uk" for bare uk',
+    );
+  });
   withNavigatorLanguage(
     'en-US',
     () => {
@@ -545,6 +557,7 @@ async function run(): Promise<void> {
     'jv',
     'mr',
     'sw',
+    'uk',
   ] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.

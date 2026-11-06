@@ -74,6 +74,9 @@
  *  27. Swahili safeguards: sw.json values never contain placeholders, malformed
  *      replacement characters, or non-NFC text, and only documented shared
  *      values may remain identical to English.
+ *  28. Ukrainian safeguards: uk.json values never contain placeholders, malformed
+ *      replacement characters, invisible formatting characters, or non-NFC text,
+ *      and only documented shared values may remain identical to English.
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -2668,6 +2671,75 @@ function swFallbackErrors(
   return errors;
 }
 
+/** Ukrainian translation safeguards. */
+const UK_INTENTIONAL_IDENTICAL = new Set<string>([
+  'common.appTitle', // brand name: Flo
+  'common.brandName', // brand name: Flo Cafe
+  'dashboard.exportCsv', // file format label: CSV (.csv)
+  'dashboard.exportPdf', // file format label: PDF (.pdf)
+  'dashboard.exportXlsx', // file format label: Excel (.xlsx)
+  'dashboard.ticketMethodCount', // pure format: {count} ×
+  'kds.emptyColumn', // punctuation dash: —
+  'nav.kds', // technical acronym: KDS
+  'nav.pos', // technical acronym: POS
+  'nav.whatsapp', // brand name: WhatsApp
+  'pos.addonPrice', // pure format: +{currency}{price}
+  'pos.loadingEllipsis', // punctuation: …
+  'pos.tagCount', // pure format: {tag} ×{count}
+  'pos.taxLine', // pure format: {title} @{rate}%
+  'print.hsn', // Indian tax code acronym: HSN
+  'print.zReport.paymentCount', // pure format: x{count}
+  'printTest.escpos', // technical acronym: ESCPOS (USB)
+  'products.addonSelectionRange', // pure format: {min} – {max}
+  'serverApp.emailPlaceholder', // example email: server@flo.local
+  'settings.apiKeyInputPlaceholder', // example API key: fac_live_xxxxxxxxxxxxxxxxxxxx
+  'settings.connectionUsb', // technical acronym: USB
+  'settings.instagramPlaceholder', // example handle: @yourcafe
+  'settings.ipAddressPlaceholder', // example IP: 192.168.1.100
+  'settings.kds', // technical acronym: KDS
+  'settings.paymentMethodUpi', // payment rail acronym: UPI
+  'settings.portPlaceholder', // example port: 9100
+  'settings.registrationEmailPlaceholder', // example email: owner@yourcafe.com
+  'settings.registrationLastError', // pure placeholder: {error}
+  'settings.revflo', // brand name: RevFlo
+  'settings.tabOrderflow', // brand name: OrderFlow
+  'settings.tabWhatsapp', // brand name: WhatsApp
+  'settings.unicode', // technical standard: Unicode
+  'settings.whatsapp', // brand name: WhatsApp
+  'setup.finedineLabel', // FloCafe flow name: FineDine
+  'setup.ownerEmailPlaceholder', // example email: owner@restaurant.com
+  'setup.qsrLabel', // industry acronym: QSR
+  'tax.auditCreateOverride', // pure format: {entityType} {entityId} → {categoryId}
+  'tax.auditUpdateOverride', // pure format: {entityType} {entityId}: {before} → {after}
+  'update.downloadingBadge', // pure format: ↓ {percent}%
+  'whatsapp.connect.pairingPhonePlaceholder', // pure format: {dialCode}XXXXXXXXXX
+]);
+
+function ukFallbackErrors(
+  ukFlat: Record<string, string>,
+  enFlat: Record<string, string>,
+): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const ukVal = ukFlat[k];
+    if (ukVal === undefined) continue;
+    if (ukVal.startsWith('[UK]') || ukVal.startsWith('[TODO]')) {
+      errors.push(`uk.json ${k} — placeholder prefix found: "${ukVal}"`);
+    } else if (ukVal === enFlat[k] && !UK_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(
+        `uk.json ${k} — identical to English value (renders as English for Ukrainian users)`,
+      );
+    } else if (ukVal !== ukVal.normalize('NFC')) {
+      errors.push(`uk.json ${k} — value must use Unicode NFC`);
+    } else if (ukVal.includes('\uFFFD')) {
+      errors.push(`uk.json ${k} — value contains a Unicode replacement character`);
+    } else if (/[\u200B\u200C\u200D\u00AD\uFEFF]/u.test(ukVal)) {
+      errors.push(`uk.json ${k} — invisible formatting character found`);
+    }
+  }
+  return errors;
+}
+
 /** Keys whose `{number}` placeholder names an order number that must stay
  * introduced by punctuation (for example `#` or `№`) or a space, never welded
  * onto the end of a verb-final clause. */
@@ -3683,7 +3755,91 @@ async function run(): Promise<void> {
     `  ✓ no untranslated sw.json values (${SW_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
   );
 
-  // 28. No locale may weld an order number onto a word. Devanagari, Arabic, and
+  // 28. uk.json values must be complete, NFC text without malformed or invisible characters.
+  const ukMessages = loadedStrings.get('uk');
+  if (!ukMessages) throw new Error('languages registry must include the maintained uk locale');
+  const ukErrors = ukFallbackErrors(ukMessages, loadedStrings.get('en')!);
+  if (ukErrors.length) {
+    console.error(`\nuk.json values with errors (${ukErrors.length}):`);
+    for (const e of ukErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(
+      false,
+      'uk.json contains untranslated, placeholder, malformed, or invisible Unicode values',
+    );
+  }
+  assert(
+    ukMessages['receipt.cashReceived'] === 'Отримано готівкою',
+    'Ukrainian cash-received label must use the canonical receipt key',
+  );
+  assert(
+    ukMessages['auth.attemptsRemaining'] === 'До блокування залишилося спроб: {count}',
+    'Ukrainian attempt counter must use count-safe label wording',
+  );
+  assert(
+    ukMessages['pos.tableSeats'] === 'Місць: {count}',
+    'Ukrainian seat counter must use count-safe label wording',
+  );
+  assert(
+    ukMessages['settings.printColumnsShort'] === 'Стовпців: {cols}',
+    'Ukrainian print-column counter must use count-safe label wording',
+  );
+  assert(
+    ukMessages['pos.tagVeg'] === 'Вегетаріанське' &&
+      ukMessages['products.tagVeg'] === 'Вегетаріанське',
+    'Ukrainian vegetarian tags must use the reviewed term',
+  );
+  assert(
+    ukMessages['pos.tagNonVeg'] === 'Не вегетаріанське' &&
+      ukMessages['products.tagNonVeg'] === 'Не вегетаріанське',
+    'Ukrainian non-vegetarian tags must use the reviewed term',
+  );
+  assert(
+    ukMessages['orders.takeaway'] === ukMessages['pos.orderTypeTakeaway'],
+    'Ukrainian takeaway labels must match the reviewed pickup term',
+  );
+  assert(
+    ukMessages['print.zReport.payIn'] === ukMessages['dashboard.payIn'] &&
+      ukMessages['print.zReport.payOut'] === ukMessages['dashboard.payOut'],
+    'Ukrainian cash-movement labels must be identical on the dashboard and the Z-report',
+  );
+  for (const [key, technicalLiteral] of [
+    ['products.csvAddonsHelp', 'group_name'],
+    ['products.csvAddonsHelp', 'addon_name'],
+    ['products.csvAddonsHelp', 'price'],
+    ['products.csvAddonsHelp', 'group_required'],
+    ['products.csvAddonsHelp', 'group_min_select'],
+    ['products.csvAddonsHelp', 'group_max_select'],
+    ['products.csvCategoriesHelp', 'name'],
+    ['products.csvCategoriesHelp', 'description'],
+    ['products.csvCategoriesHelp', 'color'],
+    ['products.csvCategoriesHelp', 'icon'],
+    ['products.csvCategoriesHelp', 'sort_order'],
+    ['products.csvProductsHelp', 'id'],
+    ['products.csvProductsHelp', 'sku'],
+    ['products.csvProductsHelp', 'name'],
+    ['products.csvProductsHelp', 'category'],
+    ['products.csvProductsHelp', 'price'],
+    ['products.csvProductsHelp', 'description'],
+    ['products.csvProductsHelp', 'cost'],
+    ['products.csvProductsHelp', 'tax_category'],
+    ['products.csvProductsHelp', 'tax_behavior'],
+    ['products.csvProductsHelp', 'cashback_percent'],
+    ['products.csvProductsHelp', 'tags'],
+    ['products.csvProductsHelp', 'non_veg'],
+    ['products.csvProductsHelp', 'is_active'],
+  ] as const) {
+    const machineFields = ukMessages[key]?.match(/[a-z][a-z0-9_]*/g) ?? [];
+    assert(
+      machineFields.includes(technicalLiteral),
+      `uk.json ${key} must preserve the machine-readable CSV field ${technicalLiteral}`,
+    );
+  }
+  console.log('  ✓ Ukrainian CSV guidance preserves machine-readable field names');
+  console.log(
+    `  ✓ no untranslated uk.json values (${UK_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
+  );
+
+  // 29. No locale may weld an order number onto a word. Devanagari, Arabic, and
   // Cyrillic are all verb-final, so a trailing "{number}" reads as part of the
   // word. This covers every registered locale, not only Nepali.
   const orderNumberErrors = orderNumberPlaceholderErrors(Object.fromEntries(loadedStrings));
@@ -3715,6 +3871,14 @@ async function run(): Promise<void> {
   assert(
     mrMessages['pos.itemsAddedToOrder'] === 'ऑर्डर #{number} मध्ये आयटम जोडले गेले',
     'mr.json itemsAddedToOrder must place the order number directly after the # marker',
+  );
+  assert(
+    ukMessages['pos.addingItemsToOrder'] === 'Додавання позицій до замовлення №{number}',
+    'uk.json addingItemsToOrder must place the order number directly after the № marker',
+  );
+  assert(
+    ukMessages['pos.itemsAddedToOrder'] === 'Позиції додано до замовлення №{number}',
+    'uk.json itemsAddedToOrder must place the order number directly after the № marker',
   );
   console.log(
     `  ✓ no locale welds an order number onto a word (${Object.keys(Object.fromEntries(loadedStrings)).length} locales checked)`,
@@ -4082,6 +4246,29 @@ function runNegativeTests(): void {
   expectDetected(
     'sw: Unicode replacement character',
     swFallbackErrors({ 'a.b': 'Kahawa\uFFFD' }, { 'a.b': 'Kahawa' }),
+  );
+  expectDetected(
+    'uk: English-identical value',
+    ukFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'uk: placeholder prefix value',
+    ukFallbackErrors({ 'a.b': '[UK] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'uk: non-NFC value',
+    ukFallbackErrors(
+      { 'a.b': 'Українська'.normalize('NFD') },
+      { 'a.b': 'Українська'.normalize('NFC') },
+    ),
+  );
+  expectDetected(
+    'uk: Unicode replacement character',
+    ukFallbackErrors({ 'a.b': 'Укранська\uFFFD' }, { 'a.b': 'Українська' }),
+  );
+  expectDetected(
+    'uk: invisible formatting character',
+    ukFallbackErrors({ 'a.b': 'Прихований\u200bтекст' }, { 'a.b': 'Different value' }),
   );
   expectDetected(
     'ne: Unicode replacement character',

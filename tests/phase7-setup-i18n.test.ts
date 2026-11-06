@@ -464,6 +464,38 @@ async function run(): Promise<void> {
         'Swahili express snack is localized',
       );
     }
+    if (language === 'uk') {
+      assert.equal(
+        rows('categories', 'name', "id = 'cat-express-food'")[0].name,
+        'Їжа',
+        'Ukrainian express category is localized',
+      );
+      assert.equal(
+        rows('categories', 'name', "id = 'cat-express-beverages'")[0].name,
+        'Напої',
+        'Ukrainian express beverages category is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-meal'")[0].name,
+        'Страва',
+        'Ukrainian express meal is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-tea'")[0].name,
+        'Чай',
+        'Ukrainian express tea is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-coffee'")[0].name,
+        'Кава',
+        'Ukrainian express coffee is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-snack'")[0].name,
+        'Закуска',
+        'Ukrainian express snack is localized',
+      );
+    }
 
     seedSetupProfile(db, 'demo', 'finedine', language, 'IN');
     const seededCustomers = rows('customers', 'phone, phone_digits, country_code', 'is_active = 1');
@@ -820,6 +852,38 @@ async function run(): Promise<void> {
         'Russian demo table label is localized',
       );
     }
+    if (language === 'uk') {
+      assert.equal(snapshot.category, 'Закуски', 'Ukrainian demo category is localized');
+      assert.equal(snapshot.product, 'Деруни зі сметаною', 'Ukrainian demo product is localized');
+      assert.equal(
+        rows('products', 'name', "id = 'prod-demo-borshch'")[0].name,
+        'Український борщ',
+        'Ukrainian demo borshch uses Ukrainian restaurant terminology',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-demo-kyiv-cutlet'")[0].name,
+        'Котлета по-київськи',
+        'Ukrainian demo Kyiv cutlet uses Ukrainian restaurant terminology',
+      );
+      assert.equal(snapshot.manager, 'Демо-менеджер', 'Ukrainian demo manager is localized');
+      assert.equal(snapshot.customer, 'Олена Коваленко', 'Ukrainian demo customer is localized');
+      assert.deepEqual(
+        rows('customers', 'phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id").map(
+          (customer) => [customer.phone, customer.country_code],
+        ),
+        [
+          ['+380501234567', '+380'],
+          ['+380501234568', '+380'],
+          ['+380501234569', '+380'],
+        ],
+        'Ukrainian demo customers use Ukraine E.164 numbers independent of the selected store country',
+      );
+      assert.equal(
+        rows('tables', 'number', "id = 'tbl-demo-1'")[0].number,
+        'С1',
+        'Ukrainian demo table label is localized',
+      );
+    }
     if (englishIdenticalSeeds.has(language)) {
       assert.deepEqual(
         snapshot,
@@ -963,6 +1027,34 @@ async function run(): Promise<void> {
   assert.equal(
     translate('ru', 'settings.fixesAppliedPartial', { applied: 1, failed: 0 }),
     'Исправлений применено: 1; ошибок: 0',
+  );
+
+  // Ukrainian cardinal plural branches and count-safe labels must render one/few/many forms cleanly.
+  assert.equal(translate('uk', 'pos.addToOrder', { count: 1 }), 'Додати 1 позицію до замовлення');
+  assert.equal(translate('uk', 'pos.addToOrder', { count: 2 }), 'Додати 2 позиції до замовлення');
+  assert.equal(translate('uk', 'pos.addToOrder', { count: 5 }), 'Додати 5 позицій до замовлення');
+  assert.equal(
+    translate('uk', 'kds.itemsUpdateFailed', { count: 1 }),
+    'Не вдалося оновити 1 позицію. Дошку оновлено.',
+  );
+  assert.equal(
+    translate('uk', 'kds.itemsUpdateFailed', { count: 2 }),
+    'Не вдалося оновити 2 позиції. Дошку оновлено.',
+  );
+  assert.equal(
+    translate('uk', 'kds.itemsUpdateFailed', { count: 5 }),
+    'Не вдалося оновити 5 позицій. Дошку оновлено.',
+  );
+  assert.equal(
+    translate('uk', 'auth.attemptsRemaining', { count: 1 }),
+    'До блокування залишилося спроб: 1',
+  );
+  assert.equal(translate('uk', 'dashboard.ordersCount', { count: 1 }), 'Замовлень: 1');
+  assert.equal(translate('uk', 'pos.tableSeats', { count: 1 }), 'Місць: 1');
+  assert.equal(translate('uk', 'settings.printColumnsShort', { cols: 32 }), 'Стовпців: 32');
+  assert.equal(
+    translate('uk', 'settings.fixesAppliedPartial', { applied: 1, failed: 0 }),
+    'Виправлень застосовано: 1; помилок: 0',
   );
 
   for (const language of languages) {

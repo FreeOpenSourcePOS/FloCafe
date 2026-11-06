@@ -55,7 +55,7 @@ is invisible on screen and corrupts comparison, searching, and print labels.
 identically and wrap identically after normalisation, which is what makes NFC a requirement rather
 than a preference. `tests/translations.test.ts` rejects a `vi.json` value that is not already NFC.
 
-The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `ru.json`, `sw.json`, and `th.json`.
+The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `ru.json`, `sw.json`, `th.json`, and `uk.json`.
 
 ## Albanian and Vietnamese on a generic thermal printer
 
@@ -190,6 +190,13 @@ distinct labels and must stay distinct on the receipt. Vegetarian tags are `Mbog
 tags `Isiyo ya Mboga`, identical between `pos.*` and `products.*`. Takeaway is `Kuchukua`, dine-in is
 `Kula Hapa`, and delivery is `Uwasilishaji`. Cash movement uses `Uwekaji pesa` for pay-in and
 `Utoaji pesa` for pay-out, identically on the dashboard and on the Z-report.
+
+**Ukrainian.** Takeaway is `З собою` and dine-in is `У закладі`; "delivery" is `Доставка`. Subtotal
+`Проміжний підсумок` and grand total `РАЗОМ` (or `Загальна сума` on browser receipts) stay distinct.
+Cash movement is `Внесення готівки` for pay-in, `Видача готівки` for pay-out, and `Інкасація` for
+safe drop, identically on the dashboard and on the Z-report, and the counted-versus-expected pair is
+`Фактична готівка` and `Очікувана готівка`. Use count-safe wording throughout where the English
+catalogue has no plural selector.
 
 ## Verification
 

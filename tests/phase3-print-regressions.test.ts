@@ -32,6 +32,7 @@ const languages = [
   'jv',
   'mr',
   'sw',
+  'uk',
 ] as const;
 // Any Devanagari codepoint: the native paths must emit none, not merely none of
 // the specific phrases this fixture happens to use.

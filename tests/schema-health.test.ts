@@ -39,9 +39,11 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initDatabase,
   getDatabase,
+  getDbPath,
   closeDatabase,
   getCurrentSchemaVersion,
   buildIdealSchemaDb,
+  isHealthyDatabaseFile,
 } = require('../main/db');
 const { runHealthCheck, applySafeFixes } = require('../main/services/schema-health');
 
@@ -378,6 +380,130 @@ function main() {
   );
   console.log(
     '   ✓ initDatabase() tolerates missing users table and applySafeFixes() installs revision triggers',
+  );
+
+  // ── Upgraded / applySafeFixes-healed databases pass isHealthyDatabaseFile and journal recovery ──
+  closeDatabase();
+  const liveDbPath = getDbPath();
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    fs.rmSync(`${liveDbPath}${suffix}`, { force: true });
+  }
+  fs.rmSync(path.join(testDir, '.flo-db-initialized'), { force: true });
+  fs.rmSync(path.join(testDir, 'backups'), { recursive: true, force: true });
+  const preUpgradeV98Db = buildIdealSchemaDb(98);
+  try {
+    preUpgradeV98Db.exec('ALTER TABLE orders DROP COLUMN charges_breakdown');
+    fs.writeFileSync(liveDbPath, preUpgradeV98Db.serialize());
+  } finally {
+    preUpgradeV98Db.close();
+  }
+  initDatabase();
+  const upgradedDb = getDatabase();
+  upgradedDb.exec('ALTER TABLE products DROP COLUMN cb_percent');
+  const healedCols = applySafeFixes(['missing_column:products.cb_percent']);
+  assert.deepEqual(
+    healedCols.applied,
+    ['missing_column:products.cb_percent'],
+    'applySafeFixes() re-adds column via ALTER TABLE ADD COLUMN',
+  );
+  assert.equal(healedCols.errors.length, 0);
+  assert.equal(runHealthCheck().findings.length, 0, 'upgraded database has zero schema drift');
+  upgradedDb
+    .prepare("INSERT INTO categories (id, name) VALUES ('cat-upgraded-rec', 'Upgraded Recovery')")
+    .run();
+  const freshCheckDb = buildIdealSchemaDb();
+  try {
+    const upgradedOrdersSql = (
+      upgradedDb
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'orders'")
+        .get() as { sql: string }
+    ).sql;
+    const freshOrdersSql = (
+      freshCheckDb
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'orders'")
+        .get() as { sql: string }
+    ).sql;
+    assert.notEqual(
+      upgradedOrdersSql.replace(/\s+/g, ' ').trim().toLowerCase(),
+      freshOrdersSql.replace(/\s+/g, ' ').trim().toLowerCase(),
+      'upgraded database has different raw sqlite_master CREATE TABLE text than a fresh install',
+    );
+  } finally {
+    freshCheckDb.close();
+  }
+  upgradedDb.pragma('wal_checkpoint(TRUNCATE)');
+  closeDatabase();
+
+  assert.equal(
+    isHealthyDatabaseFile(liveDbPath, undefined, false),
+    true,
+    'upgraded database with ALTER TABLE column order is recognized as healthy',
+  );
+
+  const backupDir = path.join(testDir, 'backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const preparedRecoveryName = 'flo-restore-recovery-upgraded-prepared';
+  const preparedRecoveryPath = path.join(backupDir, `${preparedRecoveryName}.db`);
+  const preparedJournalPath = path.join(backupDir, `${preparedRecoveryName}.json`);
+  fs.copyFileSync(liveDbPath, preparedRecoveryPath);
+  fs.writeFileSync(
+    preparedJournalPath,
+    JSON.stringify({
+      phase: 'prepared',
+      recoveryPath: preparedRecoveryPath,
+      dbPath: liveDbPath,
+    }),
+  );
+  fs.writeFileSync(liveDbPath, 'interrupted replacement partial write');
+
+  initDatabase();
+  assert.equal(
+    (
+      getDatabase().prepare("SELECT name FROM categories WHERE id = 'cat-upgraded-rec'").get() as
+        | { name: string }
+        | undefined
+    )?.name,
+    'Upgraded Recovery',
+    'recoverInterruptedDatabaseReplacement restores healthy upgraded snapshot from prepared journal',
+  );
+  assert.equal(
+    fs.existsSync(preparedJournalPath),
+    false,
+    'prepared recovery journal is cleaned up',
+  );
+  getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+  closeDatabase();
+
+  const committedRecoveryName = 'flo-restore-recovery-upgraded-committed';
+  const committedRecoveryPath = path.join(backupDir, `${committedRecoveryName}.db`);
+  const committedJournalPath = path.join(backupDir, `${committedRecoveryName}.json`);
+  fs.writeFileSync(
+    committedJournalPath,
+    JSON.stringify({
+      phase: 'committed',
+      recoveryPath: committedRecoveryPath,
+      dbPath: liveDbPath,
+      driveInvalidationRequired: false,
+    }),
+  );
+
+  initDatabase();
+  assert.equal(
+    (
+      getDatabase().prepare("SELECT name FROM categories WHERE id = 'cat-upgraded-rec'").get() as
+        | { name: string }
+        | undefined
+    )?.name,
+    'Upgraded Recovery',
+    'recoverInterruptedDatabaseReplacement finalizes committed journal for healthy upgraded database',
+  );
+  assert.equal(
+    fs.existsSync(committedJournalPath),
+    false,
+    'committed recovery journal is finalized and removed',
+  );
+  console.log(
+    '   ✓ upgraded / applySafeFixes-healed databases pass isHealthyDatabaseFile and journal recovery',
   );
 }
 

@@ -1806,28 +1806,13 @@ function getRecoverySchemaReference(targetVersion?: number): SchemaRecoveryRefer
     const ref: SchemaRecoveryReference = {
       identity: currentIdentity,
       tableColumns: new Map(getTables(idealDb).map((table) => [table, getColumns(idealDb, table)])),
-      definitions: normalizedSchemaDefinitions(idealDb),
+      definitions: getSchemaDefinitions(idealDb),
     };
     cachedSchemaRecoveryReferences.set(version, ref);
     return ref;
   } finally {
     idealDb.close();
   }
-}
-
-function normalizedSchemaDefinitions(dbInstance: Database.Database): Map<string, string> {
-  const definitions = dbInstance
-    .prepare(`
-    SELECT type, name, tbl_name, sql FROM sqlite_master
-    WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name <> '_flo_meta'
-  `)
-    .all() as { type: string; name: string; tbl_name: string; sql: string }[];
-  return new Map(
-    definitions.map((row) => [
-      `${row.type}:${row.name}`,
-      row.sql.replace(/\s+/g, ' ').trim().toLowerCase(),
-    ]),
-  );
 }
 
 function checkHealthyDatabaseFile(
@@ -1879,7 +1864,7 @@ function checkHealthyDatabaseFile(
           const available = new Set(getColumns(candidate, table));
           return columns.every((column) => available.has(column));
         });
-        const actualDefinitions = normalizedSchemaDefinitions(candidate);
+        const actualDefinitions = getSchemaDefinitions(candidate);
         const requiredDefinitionsValid = [...schemaRef.definitions].every(([key, sql]) =>
           actualDefinitions.has(key)
             ? actualDefinitions.get(key) === sql
@@ -5330,17 +5315,10 @@ function validateDirectBackup(backupPath: string, currentVersion: number): strin
     }
     // The backup replaces the live database, so it must match the schema this
     // version defines, not whatever the live file happens to look like.
-    const expectedDb = buildIdealSchemaDb(currentVersion);
-    let currentTables: string[];
-    let expectedColumns: Map<string, string[]>;
-    let currentSchema: Map<string, string>;
-    try {
-      currentTables = getTables(expectedDb);
-      expectedColumns = new Map(currentTables.map((name) => [name, getColumns(expectedDb, name)]));
-      currentSchema = getSchemaDefinitions(expectedDb);
-    } finally {
-      expectedDb.close();
-    }
+    const schemaRef = getRecoverySchemaReference(currentVersion);
+    const expectedColumns = schemaRef.tableColumns;
+    const currentTables = [...expectedColumns.keys()];
+    const currentSchema = schemaRef.definitions;
     const backupTables = new Set(getTables(backupDb));
     const missingTables = currentTables.filter((tableName) => !backupTables.has(tableName));
     if (missingTables.length > 0) {

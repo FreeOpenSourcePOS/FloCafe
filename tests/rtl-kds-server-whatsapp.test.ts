@@ -263,6 +263,7 @@ async function run(): Promise<void> {
     'sw',
     'pa',
     'te',
+    'ta',
   ] as const) {
     await loadLocaleMessages(lang);
   }
@@ -367,6 +368,7 @@ async function run(): Promise<void> {
     'sw',
     'pa',
     'te',
+    'ta',
   ] as const) {
     usePosSettingsStore.getState().setLanguage(lang);
     const kdsMarkup = ReactDOMServer.renderToStaticMarkup(React.createElement(KdsHtmlLang));
@@ -409,6 +411,7 @@ async function run(): Promise<void> {
     'sw',
     'pa',
     'te',
+    'ta',
   ] as const) {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
   }
@@ -443,7 +446,8 @@ async function run(): Promise<void> {
       | 'mr'
       | 'sw'
       | 'pa'
-      | 'te',
+      | 'te'
+      | 'ta',
   ) => {
     const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
     return createTranslator({ locale: getLanguageLocale(lang), messages }) as unknown as (
@@ -521,6 +525,7 @@ async function run(): Promise<void> {
     'sw',
     'pa',
     'te',
+    'ta',
   ] as const) {
     for (const key of [
       'kds.disabledTitle',

@@ -361,6 +361,26 @@ function run(): void {
     printLabel('te', 'pos.subtotal') === 'ఉప మొత్తం' &&
       printLabel('te', 'print.grandTotal') !== printLabel('te', 'pos.subtotal'),
   );
+  assert('Tamil grand total is localized', printLabel('ta', 'print.grandTotal') === 'மொத்தத் தொகை');
+  assert(
+    'Tamil bill number label is localized',
+    printLabel('ta', 'receipt.billNumber') === 'பில் #',
+  );
+  assert('Tamil print-test amount is localized', printLabel('ta', 'printTest.amt') === 'தொகை');
+  assert(
+    'Tamil takeaway is distinct from delivery',
+    printLabel('ta', 'pos.orderTypeTakeaway') === 'பார்சல்' &&
+      printLabel('ta', 'pos.orderTypeDelivery') === 'டெலிவரி',
+  );
+  assert(
+    'Tamil subtotal stays distinct from grand total',
+    printLabel('ta', 'pos.subtotal') === 'துணை மொத்தம்' &&
+      printLabel('ta', 'print.grandTotal') !== printLabel('ta', 'pos.subtotal'),
+  );
+  assert(
+    'Tamil cash received resolves from the canonical receipt key',
+    printLabel('ta', 'receipt.cashReceived') === 'பெற்ற ரொக்கம்',
+  );
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {

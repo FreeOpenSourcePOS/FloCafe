@@ -115,6 +115,8 @@ function printReprintBanner(
   arabicShaping: boolean,
   cols: number,
   language?: string,
+  useUnicode?: boolean,
+  capabilities?: ThermalPrinterCapabilities,
 ): void {
   const layout = layoutStyledUnit(
     {
@@ -125,7 +127,7 @@ function printReprintBanner(
       widthMultiplier: 2,
       field: 'reprint banner',
     },
-    { logicalColumns: cols, direction: 'ltr', languages: ['en'] },
+    { logicalColumns: cols, direction: 'ltr', languages: [language ?? 'en'], capabilities },
   );
   warnings?.push(...layout.warnings);
   enc.align('center').bold(true).width(layout.widthMultiplier).height(2);
@@ -139,6 +141,9 @@ function printReprintBanner(
       cols,
       undefined,
       language,
+      false,
+      useUnicode,
+      capabilities,
     ).newline();
   }
   enc.width(1).height(1).bold(false).align('left');
@@ -153,6 +158,8 @@ function printOnlineOrderBanner(
   arabicShaping: boolean,
   cols: number,
   language?: string,
+  useUnicode?: boolean,
+  capabilities?: ThermalPrinterCapabilities,
 ): void {
   const layout = layoutStyledUnit(
     {
@@ -163,7 +170,7 @@ function printOnlineOrderBanner(
       widthMultiplier: 2,
       field: 'online order banner',
     },
-    { logicalColumns: cols, direction: 'ltr', languages: ['en'] },
+    { logicalColumns: cols, direction: 'ltr', languages: [language ?? 'en'], capabilities },
   );
   warnings?.push(...layout.warnings);
   enc.align('center').bold(true).width(layout.widthMultiplier).height(2);
@@ -177,6 +184,9 @@ function printOnlineOrderBanner(
       cols,
       undefined,
       language,
+      false,
+      useUnicode,
+      capabilities,
     ).newline();
   }
   enc.width(1).height(1);
@@ -190,6 +200,9 @@ function printOnlineOrderBanner(
       cols,
       undefined,
       language,
+      false,
+      useUnicode,
+      capabilities,
     ).newline();
   if (externalOrderId)
     writeSafePrinterText(
@@ -201,6 +214,9 @@ function printOnlineOrderBanner(
       cols,
       undefined,
       language,
+      false,
+      useUnicode,
+      capabilities,
     ).newline();
   enc.bold(false).align('left');
 }
@@ -562,7 +578,16 @@ export function buildClassicReceiptBytes(
 
   enc.initialize();
   if (messages?.reprintBanner)
-    printReprintBanner(enc, messages.reprintBanner, warnings, arabicShaping, cols, primaryLang);
+    printReprintBanner(
+      enc,
+      messages.reprintBanner,
+      warnings,
+      arabicShaping,
+      cols,
+      primaryLang,
+      useUnicode,
+      opts.capabilities,
+    );
   if (messages?.onlineOrderBanner) {
     printOnlineOrderBanner(
       enc,
@@ -573,6 +598,8 @@ export function buildClassicReceiptBytes(
       arabicShaping,
       cols,
       primaryLang,
+      useUnicode,
+      opts.capabilities,
     );
   }
 
@@ -1075,7 +1102,16 @@ export function buildCompactReceiptBytes(
 
   enc.initialize();
   if (messages?.reprintBanner)
-    printReprintBanner(enc, messages.reprintBanner, warnings, arabicShaping, cols, primaryLang);
+    printReprintBanner(
+      enc,
+      messages.reprintBanner,
+      warnings,
+      arabicShaping,
+      cols,
+      primaryLang,
+      useUnicode,
+      opts.capabilities,
+    );
   if (messages?.onlineOrderBanner) {
     printOnlineOrderBanner(
       enc,
@@ -1086,6 +1122,8 @@ export function buildCompactReceiptBytes(
       arabicShaping,
       cols,
       primaryLang,
+      useUnicode,
+      opts.capabilities,
     );
   }
 
@@ -1531,6 +1569,8 @@ export function buildDetailedReceiptBytes(
       arabicShaping,
       cols,
       primaryLang,
+      useUnicode,
+      opts.capabilities,
     );
 
   // Header
@@ -1640,7 +1680,16 @@ export function buildDetailedReceiptBytes(
       primaryLang,
       opts.capabilities,
     )) {
-      safePrinterText(enc, row, warnings, false, arabicShaping).newline();
+      safePrinterText(
+        enc,
+        row,
+        warnings,
+        false,
+        arabicShaping,
+        undefined,
+        undefined,
+        true,
+      ).newline();
     }
 
     if (item.addons && item.addons.length > 0) {
@@ -1659,6 +1708,9 @@ export function buildDetailedReceiptBytes(
             warnings,
             false,
             arabicShaping,
+            undefined,
+            undefined,
+            true,
           ).newline();
         } else {
           safePrinterText(enc, addonLabel, warnings, false, arabicShaping).newline();
@@ -1680,68 +1732,89 @@ export function buildDetailedReceiptBytes(
   enc.rule({ style: 'single' });
 
   // Subtotal (excl. tax)
-  enc
-    .text(
-      padRow(
-        'Subtotal (excl. tax)',
-        formatAmount(bill.subtotal, currency, locale, trimDecimals, fractionDigits),
-        cols,
-      ),
-    )
-    .newline();
+  safePrinterText(
+    enc,
+    padRow(
+      'Subtotal (excl. tax)',
+      formatAmount(bill.subtotal, currency, locale, trimDecimals, fractionDigits),
+      cols,
+    ),
+    warnings,
+    false,
+    arabicShaping,
+    undefined,
+    undefined,
+    true,
+  ).newline();
 
   enc.rule({ style: 'single' });
 
   if (showTaxBreakdown && taxComponents.length > 0) {
     for (const component of taxComponents) {
-      enc
-        .text(
-          padRow(
-            ` ${formatTaxComponentLabel(component)}`,
-            formatAmount(component.amount, currency, locale, trimDecimals, fractionDigits),
-            cols,
-          ),
-        )
-        .newline();
-    }
-  } else if (Number(bill.tax_amount) > 0) {
-    enc
-      .text(
+      safePrinterText(
+        enc,
         padRow(
-          'Tax',
-          formatAmount(bill.tax_amount, currency, locale, trimDecimals, fractionDigits),
+          ` ${formatTaxComponentLabel(component)}`,
+          formatAmount(component.amount, currency, locale, trimDecimals, fractionDigits),
           cols,
         ),
-      )
-      .newline();
+        warnings,
+        false,
+        arabicShaping,
+        undefined,
+        undefined,
+        true,
+      ).newline();
+    }
+  } else if (Number(bill.tax_amount) > 0) {
+    safePrinterText(
+      enc,
+      padRow(
+        'Tax',
+        formatAmount(bill.tax_amount, currency, locale, trimDecimals, fractionDigits),
+        cols,
+      ),
+      warnings,
+      false,
+      arabicShaping,
+      undefined,
+      undefined,
+      true,
+    ).newline();
   }
 
   enc.rule({ style: 'double' });
-  enc
-    .bold(true)
-    .text(
-      padRow(
-        'TOTAL',
-        formatAmount(bill.total, currency, locale, trimDecimals, fractionDigits),
-        cols,
-      ),
-    )
-    .bold(false)
-    .newline();
+  enc.bold(true);
+  safePrinterText(
+    enc,
+    padRow('TOTAL', formatAmount(bill.total, currency, locale, trimDecimals, fractionDigits), cols),
+    warnings,
+    false,
+    arabicShaping,
+    undefined,
+    undefined,
+    true,
+  );
+  enc.bold(false).newline();
   enc.rule({ style: 'single' });
 
   // Payment methods
   if (bill.payment_details && bill.payment_details.length > 0) {
     for (const p of bill.payment_details) {
-      enc
-        .text(
-          padRow(
-            capitalize(p.method),
-            formatAmount(p.amount, currency, locale, trimDecimals, fractionDigits),
-            cols,
-          ),
-        )
-        .newline();
+      safePrinterText(
+        enc,
+        padRow(
+          capitalize(p.method),
+          formatAmount(p.amount, currency, locale, trimDecimals, fractionDigits),
+          cols,
+        ),
+        warnings,
+        false,
+        arabicShaping,
+        undefined,
+        undefined,
+        true,
+      ).newline();
     }
   }
 

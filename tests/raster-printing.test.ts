@@ -14,6 +14,7 @@ import {
 } from '../shared/print/raster';
 import {
   GENERIC_THERMAL_CAPABILITIES,
+  normalizeThermalText as normalizeSharedThermalText,
   type ThermalPrinterCapabilities,
 } from '../shared/print/thermal-capabilities';
 import { paintRasterRequest, type RasterCanvas } from '../shared/print/raster-canvas';
@@ -33,15 +34,21 @@ import {
 } from '../main/printers/profiles';
 import {
   buildEscPos,
+  buildTestPage,
+  buildZReportBody,
   escPosToText,
   financialRows,
+  hasFinancialPrintWarning,
   itemRows,
+  makeFinancialPrintRefusalMessage,
   normalizeThermalText,
   pluginReceiptLines,
+  printPaymentTicket,
+  printZReport,
   receiptDocumentLines,
+  renderTestPage,
   resolvePrinterContext,
 } from '../main/printers/thermal';
-import { buildTestPage } from '../main/printers/thermal';
 import { buildKotPrintData, renderKotDocumentToLines } from '../main/printers/document-kot';
 import {
   renderBillDocumentToClassicLines,
@@ -2938,11 +2945,324 @@ async function run(): Promise<void> {
           .makeFinancialPrintRefusalMessage(failedTaxWarn)
           .includes('Canvas 2D context is unavailable'),
       );
+
+      // #1480: WebUSB Turkish reprint/online-order banners and detailed receipt items rasterize
+      feWarnings.setBrowserRasterCanvasFactory(() => createMockCanvas(true));
+      const turkishWebUsbBill = {
+        ...webusbBill,
+        order: {
+          ...webusbBill.order,
+          online_platform: 'Yemeksepeti Şube',
+          external_order_id: 'TR-1480',
+          items: [
+            {
+              product_name: 'İskender Kebap & Şalgam',
+              quantity: 1,
+              unit_price: 550,
+              total: 550,
+              addons: [{ name: 'Acılı Ezme', price: 50, quantity: 1 }],
+              status: 'pending',
+            },
+          ],
+        },
+      };
+      const turkishClassicWarn: any[] = [];
+      const turkishClassicBytes = feReceipt.buildClassicReceiptBytes(
+        turkishWebUsbBill as any,
+        { ...webusbTenant, business_name: 'Güneş Börekçisi' } as any,
+        { paperWidth: 80, capabilities: webusbCaps, isReprint: true, language: 'tr' },
+        turkishClassicWarn,
+      );
+      assert.equal(feWarnings.hasFinancialPrintWarning(turkishClassicWarn), false);
+      assert.ok(Buffer.from(turkishClassicBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
+
+      const turkishDetailedWarn: any[] = [];
+      const turkishDetailedBytes = feReceipt.buildDetailedReceiptBytes(
+        turkishWebUsbBill as any,
+        { ...webusbTenant, business_name: 'Güneş Börekçisi' } as any,
+        { paperWidth: 80, capabilities: webusbCaps, isReprint: true, language: 'tr' },
+        turkishDetailedWarn,
+      );
+      assert.equal(feWarnings.hasFinancialPrintWarning(turkishDetailedWarn), false);
+      assert.ok(Buffer.from(turkishDetailedBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
+
+      // Detailed receipt fails closed if browser canvas context is unavailable on Turkish financial row
+      feWarnings.setBrowserRasterCanvasFactory(() => ({
+        width: 1,
+        height: 1,
+        getContext: () => null,
+      }));
+      const failedDetailedWarn: any[] = [];
+      feReceipt.buildDetailedReceiptBytes(
+        turkishWebUsbBill as any,
+        webusbTenant as any,
+        { paperWidth: 80, capabilities: webusbCaps, language: 'tr' },
+        failedDetailedWarn,
+      );
+      assert.equal(feWarnings.hasFinancialPrintWarning(failedDetailedWarn), true);
     } finally {
       feWarnings.setBrowserRasterCanvasFactory(undefined);
     }
   } finally {
     moduleApi._resolveFilename = originalResolve;
+  }
+
+  // #1480: Shared normalizeThermalText preserves unrepresentable strings intact when raster is enabled
+  assert.equal(
+    normalizeSharedThermalText('Açılış kasası', generic80.capabilities),
+    'Açılış kasası',
+  );
+  assert.equal(
+    normalizeSharedThermalText('ÖDEME YÖNTEMLERİ', generic80.capabilities),
+    'ÖDEME YÖNTEMLERİ',
+  );
+  assert.equal(
+    normalizeSharedThermalText('Dönem başlangıcı:', generic80.capabilities),
+    'Dönem başlangıcı:',
+  );
+  assert.equal(normalizeSharedThermalText('Müsli', generic80.capabilities), 'Muesli');
+
+  // #1480: Turkish Z-report rasterization via printZReport, printPaymentTicket, and renderTestPage
+  const turkishZSnapshot = {
+    z_number: 14,
+    business_date: '2026-11-06',
+    period_start: '2026-11-06T08:00:00Z',
+    period_end: '2026-11-06T22:00:00Z',
+    opening_float_cents: 10000,
+    pay_in_cents: 2500,
+    pay_out_cents: 1500,
+    safe_drop_cents: 5000,
+    payment_methods: [
+      { method: 'cash', count: 3, total_cents: 45000 },
+      { method: 'card', count: 2, total_cents: 30000 },
+    ],
+    refund_count: 1,
+    refunded_cents: 5000,
+    tax_components: [{ title: 'KDV %10 (İçecek & Gıda)', amount: 75 }],
+    staff_sales: [{ name: 'Çağrı Şahin', orderCount: 5, revenue_cents: 75000 }],
+    expected_cash_cents: 46000,
+    counted_cash_cents: 46000,
+    variance_cents: 0,
+    closed_by_name: 'Çağrı Şahin',
+    __language: 'tr',
+    __country: 'TR',
+    __currency: 'TRY',
+    __timezone: 'Europe/Istanbul',
+    __businessName: 'Boğaziçi Kahve Evi',
+  };
+
+  // Without raster capability, buildZReportBody refuses Turkish financial rows fail-closed
+  const nativeOnlyZWarnings: any[] = [];
+  const nativeOnlyZBody = buildZReportBody(
+    turkishZSnapshot,
+    'tr',
+    {
+      columns: 42,
+      capabilities: {
+        ...generic80.capabilities,
+        raster: { ...generic80.capabilities.raster, enabled: false },
+      },
+    },
+    nativeOnlyZWarnings,
+  );
+  assert.equal(nativeOnlyZBody.length, 0);
+  assert.equal(hasFinancialPrintWarning(nativeOnlyZWarnings), true);
+  assert.ok(
+    makeFinancialPrintRefusalMessage(nativeOnlyZWarnings).includes(
+      'financial row contains unsupported printer text',
+    ),
+  );
+
+  // With shared raster renderer active, printZReport rasterizes Turkish Z-report cleanly
+  destroySharedRasterRenderer();
+  const zRasterRequests: any[] = [];
+  const zIpc = new EventEmitter();
+  const zWebContents = Object.assign(new EventEmitter(), {
+    loadURL: async () => {
+      zIpc.emit('flo:raster-ready', { sender: zWebContents });
+    },
+    send: (channel: string, payload: any) => {
+      if (channel === 'flo:raster-request' && payload?.request) {
+        zRasterRequests.push(payload.request);
+        const painted = paintRasterRequest(payload.request, () => createMockCanvas(true));
+        setImmediate(() => {
+          zIpc.emit('flo:raster-result', { sender: zWebContents }, { version: 1, result: painted });
+        });
+      }
+    },
+  });
+  const zSurface = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    close: () => undefined,
+    webContents: zWebContents,
+  });
+  getSharedRasterRenderer({
+    timeoutMs: 1000,
+    ipc: zIpc as any,
+    windowFactory: () => zSurface as any,
+  });
+  try {
+    const zResult = await printZReport(turkishZSnapshot, undefined, {
+      id: 'tr-webusb-80',
+      name: 'Generic 80mm',
+      connection_type: 'webusb',
+      paper_width: '80mm',
+      profile_id: 'generic-escpos-80',
+    });
+    assert.equal(zResult.ok, true, `Expected printZReport ok=true, got detail: ${zResult.detail}`);
+    assert.equal(hasFinancialPrintWarning(zResult.warnings ?? []), false);
+    assert.ok(Buffer.isBuffer(zResult.bytes));
+    assert.ok(zResult.bytes!.includes(Buffer.from([0x1d, 0x76, 0x30])));
+    assert.deepEqual(Array.from(zResult.bytes!.slice(-5)), [0x1b, 0x70, 0x00, 0x19, 0xfa]);
+    assert.ok(zRasterRequests.some((req) => req.text.includes('Açılış kasası') && req.financial));
+    assert.ok(zRasterRequests.some((req) => req.text.includes('Ödeme yöntemine göre satışlar')));
+    assert.ok(
+      zRasterRequests.some(
+        (req) =>
+          req.text.includes('Çağrı Şahin 5 kez') &&
+          req.financial &&
+          req.layout?.kind === 'financial-summary',
+      ),
+    );
+    assert.ok(zRasterRequests.some((req) => req.text.includes('Sayılan nakit') && req.financial));
+
+    // printPaymentTicket rasterizes Turkish item rows cleanly
+    const ticketRasterRequests: any[] = [];
+    zRasterRequests.length = 0;
+    const ticketResult = await printPaymentTicket(
+      {
+        id: 1480,
+        order_number: 'ORD-TR-1480',
+        type: 'dine_in',
+        table_name: 'Bahçe Masa 3',
+        total: 350,
+        created_at: '2026-11-06T12:00:00Z',
+      },
+      [
+        {
+          product_name: 'Künefe & Şöbiyet Porsiyon',
+          quantity: 2,
+          unit_price: 175,
+          total: 350,
+        },
+      ],
+      {
+        balance: 350,
+        targetPrinter: {
+          id: 'tr-webusb-80',
+          name: 'Generic 80mm',
+          connection_type: 'webusb',
+          paper_width: '80mm',
+          profile_id: 'generic-escpos-80',
+        },
+      },
+    );
+    ticketRasterRequests.push(...zRasterRequests);
+    assert.equal(ticketResult.ok, true);
+    assert.equal(hasFinancialPrintWarning(ticketResult.warnings ?? []), false);
+    assert.ok(Buffer.from(ticketResult.bytes ?? []).includes(Buffer.from([0x1d, 0x76, 0x30])));
+    assert.ok(
+      ticketRasterRequests.some(
+        (req) =>
+          req.text.includes('Künefe & Şöbiyet Porsiyon') &&
+          req.financial === true &&
+          req.layout?.kind === 'financial-summary',
+      ),
+    );
+
+    // renderTestPage rasterizes Turkish test page lines when raster is enabled
+    zRasterRequests.length = 0;
+    const trTestBytes = await renderTestPage(
+      '80mm',
+      'full',
+      'tr',
+      'Europe/Istanbul',
+      generic80.capabilities,
+    );
+    assert.ok(trTestBytes.includes(Buffer.from([0x1d, 0x76, 0x30])));
+    assert.ok(zRasterRequests.some((req) => req.text.includes('Flo Yazıcı Testi')));
+    assert.ok(
+      zRasterRequests.some((req) =>
+        req.text.includes('Bu metni okuyabiliyorsanız yazıcınız başarıyla çalışıyor!'),
+      ),
+    );
+  } finally {
+    destroySharedRasterRenderer();
+  }
+
+  // When raster renderer fails on Turkish Z-report or payment ticket, both fail closed
+  const failingIpc = new EventEmitter();
+  const failingWebContents = Object.assign(new EventEmitter(), {
+    loadURL: async () => {
+      failingIpc.emit('flo:raster-ready', { sender: failingWebContents });
+    },
+    send: (channel: string, payload: any) => {
+      if (channel === 'flo:raster-request' && payload?.request) {
+        setImmediate(() => {
+          failingIpc.emit(
+            'flo:raster-result',
+            { sender: failingWebContents },
+            {
+              version: 1,
+              result: {
+                version: 1,
+                requestId: payload.request.requestId,
+                ok: false,
+                code: 'render-failed',
+                detail: 'Simulated raster failure',
+              },
+            },
+          );
+        });
+      }
+    },
+  });
+  const failingSurface = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    close: () => undefined,
+    webContents: failingWebContents,
+  });
+  getSharedRasterRenderer({
+    timeoutMs: 1000,
+    ipc: failingIpc as any,
+    windowFactory: () => failingSurface as any,
+  });
+  try {
+    const failedZ = await printZReport(turkishZSnapshot, undefined, {
+      id: 'tr-webusb-80',
+      name: 'Generic 80mm',
+      connection_type: 'webusb',
+      paper_width: '80mm',
+      profile_id: 'generic-escpos-80',
+    });
+    assert.equal(failedZ.ok, false);
+    assert.equal(failedZ.bytes, undefined);
+    assert.equal(hasFinancialPrintWarning(failedZ.warnings ?? []), true);
+    assert.ok(String(failedZ.detail).includes('Raster rendering failed'));
+
+    const failedTicket = await printPaymentTicket(
+      {
+        id: 1480,
+        order_number: 'ORD-TR-1480',
+        type: 'dine_in',
+        total: 350,
+      },
+      [{ product_name: 'Künefe & Şöbiyet', quantity: 1, total: 350 }],
+      {
+        targetPrinter: {
+          id: 'tr-webusb-80',
+          name: 'Generic 80mm',
+          connection_type: 'webusb',
+          paper_width: '80mm',
+          profile_id: 'generic-escpos-80',
+        },
+      },
+    );
+    assert.equal(failedTicket.ok, false);
+    assert.equal(hasFinancialPrintWarning(failedTicket.warnings ?? []), true);
+    assert.ok(String(failedTicket.detail).includes('Raster rendering failed'));
+  } finally {
+    destroySharedRasterRenderer();
   }
 
   console.log('Raster encoder and mixed-mode contract checks passed.');

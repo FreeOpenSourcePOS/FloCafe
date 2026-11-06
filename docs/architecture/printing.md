@@ -350,9 +350,10 @@ Raster is an additive, profile-owned capability, not a rendering mode a document
 profile that declares `raster.enabled` may render text it cannot represent as bitmaps; a profile
 that does not never takes that path. The two declared modes are `mixed`, which rasterizes only the
 rows that need it (across core classic/compact, merchant, and `escpos-line-template-v1` compliance
-pack templates on the backend, and via `paintRasterRequest` canvas fallback on browser/WebUSB
-encoders), and `whole-receipt`, which rasterizes the entire receipt and must be opted into
-explicitly by the caller.
+pack receipts, Z-reports, kitchen tickets, delivery slips, payment tickets, menu prints, and printer
+test pages on the backend, and via `paintRasterRequest` canvas fallback on browser/WebUSB encoders),
+and `whole-receipt`, which rasterizes the entire receipt and must be opted into explicitly by the
+caller.
 
 ### The diagnostic probe is not reachable from the UI
 

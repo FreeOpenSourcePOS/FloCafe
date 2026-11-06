@@ -298,6 +298,16 @@ const TABLES: Record<string, StatusTable> = {
     shutdownBackup: ['Nggawe cadhangan', 'Aja mateni komputer.'],
     saved: ['Kabeh wis kasimpen', 'Flo bakal enggal ditutup.'],
   },
+  sw: {
+    starting: ['Inaanzisha Flo', 'Inaandaa kila kitu…'],
+    checking: ['Inakagua data yako', 'Inathibitisha hifadhidata na kuiweka salama…'],
+    backingUp: ['Inahifadhi nakala ya data yako', 'Inahifadhi nakala salama kabla ya kuanza…'],
+    services: ['Inaanzisha huduma', 'Karibu tayari…'],
+    welcome: ['Karibu kwenye Flo', 'Inafungua nafasi yako ya kazi…'],
+    closing: ['Inafunga Flo', 'Inahifadhi data yako. Tafadhali usizime kompyuta.'],
+    shutdownBackup: ['Inachukua nakala rudufu', 'Tafadhali usizime kompyuta.'],
+    saved: ['Kila kitu kimehifadhiwa', 'Flo itafungwa hivi punde.'],
+  },
 };
 
 export const RTL_STATUS_LANGUAGES: ReadonlySet<string> = new Set(['ar', 'fa', 'ur']);

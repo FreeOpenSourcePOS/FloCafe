@@ -1,6 +1,6 @@
 # Internationalization
 
-FloCafe supports 26 UI languages. This page describes how a language is declared, loaded, and
+FloCafe supports 27 UI languages. This page describes how a language is declared, loaded, and
 validated, and how the UI language stays separate from a store's regional settings.
 
 ## Source of truth and the parity rule
@@ -15,8 +15,8 @@ translation test fails. `npm run i18n:check` runs `tests/translations.test.ts`, 
 registry and file consistency, key parity, ICU validity, placeholder and tag parity, per-language
 completeness, and frontend key safety.
 
-The 26 committed catalogues are: `ar`, `bn`, `de`, `en`, `es`, `fa`, `fil`, `fr`, `ha`, `hi`, `id`,
-`it`, `ja`, `jv`, `ko`, `ne`, `nl`, `pt`, `ru`, `sq`, `th`, `tr`, `ur`, `vi`, `zh`, `zh-tw`.
+The 27 committed catalogues are: `ar`, `bn`, `de`, `en`, `es`, `fa`, `fil`, `fr`, `ha`, `hi`, `id`,
+`it`, `ja`, `jv`, `ko`, `ne`, `nl`, `pt`, `ru`, `sq`, `sw`, `th`, `tr`, `ur`, `vi`, `zh`, `zh-tw`.
 
 ## The registry
 

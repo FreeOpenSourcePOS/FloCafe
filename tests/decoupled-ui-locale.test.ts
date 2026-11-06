@@ -361,7 +361,8 @@ async function runTests() {
       | 'sq'
       | 'th'
       | 'ha'
-      | 'jv';
+      | 'jv'
+      | 'sw';
     label: string;
     filePrefix: string;
   }> = [
@@ -379,6 +380,7 @@ async function runTests() {
     { lang: 'th', label: 'Thai UI', filePrefix: 'receipt-argentina-thai-ui' },
     { lang: 'ha', label: 'Hausa UI', filePrefix: 'receipt-argentina-hausa-ui' },
     { lang: 'jv', label: 'Javanese UI', filePrefix: 'receipt-argentina-javanese-ui' },
+    { lang: 'sw', label: 'Swahili UI', filePrefix: 'receipt-argentina-swahili-ui' },
   ];
 
   const receiptResults: Record<string, { html: string; htmlPath: string; pngPath: string }> = {};
@@ -447,6 +449,11 @@ async function runTests() {
       assert.ok(
         receiptHtml.includes('Tagihan #') && receiptHtml.includes('Gunggung Akhir'),
         `Receipt in Javanese UI must contain Javanese labels, got: ${receiptHtml}`,
+      );
+    } else if (lang === 'sw') {
+      assert.ok(
+        receiptHtml.includes('Bili #') && receiptHtml.includes('Jumla Kuu'),
+        `Receipt in Swahili UI must contain Swahili labels`,
       );
     }
 

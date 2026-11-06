@@ -88,6 +88,11 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
     web: 'Cetak Web (Browser)',
     whatsapp: 'Bagekake WhatsApp',
   },
+  sw: {
+    basic: 'Risiti ya Msingi (Joto)',
+    web: 'Uchapishaji wa Wavuti (Kivinjari)',
+    whatsapp: 'Shiriki kwa WhatsApp',
+  },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

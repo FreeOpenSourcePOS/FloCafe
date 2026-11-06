@@ -1115,3 +1115,29 @@ test('tax breakdown rates, space-grouped addon prices, and zero-gap/wrapped fina
     /overflows available line width/i,
   );
 });
+
+test('printerShape includes normalized textSize on capabilities', () => {
+  const { printerShape } = require('../main/routes/printers') as typeof import('../main/routes/printers');
+  const defaultShape = printerShape({
+    id: 'p-1',
+    name: 'XP-58',
+    connection_type: 'usb',
+    paper_width: 'cols-32',
+    is_default: 1,
+  });
+  assert.equal(defaultShape.text_size, 'normal');
+  assert.equal(defaultShape.capabilities.textSize, 'normal');
+
+  for (const size of SIZES) {
+    const shaped = printerShape({
+      id: `p-${size}`,
+      name: 'XP-58',
+      connection_type: 'usb',
+      paper_width: 'cols-32',
+      text_size: size,
+      is_default: 1,
+    });
+    assert.equal(shaped.text_size, size);
+    assert.equal(shaped.capabilities.textSize, size);
+  }
+});

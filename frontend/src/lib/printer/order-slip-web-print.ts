@@ -2,6 +2,7 @@
 
 import type { Order } from '@/lib/types';
 import { formatCurrencyForTenant } from '@/lib/countries';
+import { normalizePrinterTextSize, type PrinterTextSize } from '@print/text-size';
 import { escapeHtml } from './web-print';
 import { formatItemHeading } from './item-heading';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
@@ -9,6 +10,8 @@ import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 export interface OrderSlipWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
   paperWidth?: 58 | 80;
+  /** Per-printer text size ('normal' | 'large' | 'extra_large'). Default: 'normal'. */
+  textSize?: PrinterTextSize;
   country?: string;
   currency?: string;
   /** BCP-47 locale used by the print fragment. */
@@ -35,7 +38,31 @@ export function generateOrderSlipHtml(
   opts: OrderSlipWebPrintOptions = {},
 ): string {
   const paperWidth = opts.paperWidth ?? 58;
-  const fontSize = paperWidth === 58 ? '12px' : '13px';
+  const textSize = normalizePrinterTextSize(opts.textSize);
+  const fontSize =
+    paperWidth === 58
+      ? textSize === 'extra_large'
+        ? '17px'
+        : textSize === 'large'
+          ? '15px'
+          : '13px'
+      : textSize === 'extra_large'
+        ? '18px'
+        : textSize === 'large'
+          ? '16px'
+          : '14px';
+  const headingFontSize =
+    paperWidth === 58
+      ? textSize === 'extra_large'
+        ? '19px'
+        : textSize === 'large'
+          ? '17px'
+          : '15px'
+      : textSize === 'extra_large'
+        ? '20px'
+        : textSize === 'large'
+          ? '18px'
+          : '16px';
   const padding = paperWidth === 58 ? '4px' : '6px';
   const paperWidthCss = paperWidth === 58 ? '58mm' : '80mm';
   const money = (value: unknown) =>
@@ -69,8 +96,8 @@ export function generateOrderSlipHtml(
     .join('');
 
   return `
-    <div class="order-slip" lang="${escapeHtml(locale)}" dir="${direction}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New','Noto Sans Bengali','Nirmala UI','Vrinda','Bangla Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Thai','Leelawadee UI',Thonburi,monospace;font-size:${fontSize};color:#000;direction:${direction};text-align:${textAlign};">
-      <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(labels.title)}</h2>
+    <div class="order-slip" lang="${escapeHtml(locale)}" dir="${direction}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New','Noto Sans Bengali','Nirmala UI','Vrinda','Bangla Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Thai','Leelawadee UI',Thonburi,monospace;font-size:${fontSize};font-weight:600;color:#000;direction:${direction};text-align:${textAlign};">
+      <h2 style="margin:0 0 ${padding} 0;font-size:${headingFontSize};font-weight:700;color:#000;text-align:center;">${escapeHtml(labels.title)}</h2>
       <p style="margin:2px 0;font-weight:bold;">#${escapeHtml(order.order_number)}</p>
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(order.table.name)}</p>` : ''}
       <hr style="border:1px dashed #000;margin:${padding} 0;">

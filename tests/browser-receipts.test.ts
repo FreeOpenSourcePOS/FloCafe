@@ -40,7 +40,9 @@ function loadFrontendModules() {
   try {
     return {
       webPrint: require('../frontend/src/lib/printer/web-print'),
+      kotWebPrint: require('../frontend/src/lib/printer/kot-web-print'),
       orderSlipWebPrint: require('../frontend/src/lib/printer/order-slip-web-print'),
+      usePrinter: require('../frontend/src/hooks/usePrinter'),
       i18n: require('../frontend/src/lib/i18n'),
       countries: require('../frontend/src/lib/countries'),
     };
@@ -49,9 +51,11 @@ function loadFrontendModules() {
   }
 }
 
-const { webPrint, orderSlipWebPrint, i18n, countries } = loadFrontendModules();
-const { generateBillHtml } = webPrint;
+const { webPrint, kotWebPrint, orderSlipWebPrint, usePrinter, i18n, countries } = loadFrontendModules();
+const { generateBillHtml, getPaperStyles } = webPrint;
+const { generateKotHtml } = kotWebPrint;
 const { generateOrderSlipHtml } = orderSlipWebPrint;
+const { defaultWebUsbCapabilities, resolveWebUsbCapabilities, resolveActivePrinterTextSize } = usePrinter;
 
 let passed = 0;
 let failed = 0;
@@ -936,6 +940,93 @@ async function run() {
         hausaSlip.includes('Takardar Oda') &&
         hausaSlip.includes('Jimillar ƙasa') &&
         hausaSlip.includes('Jimilla'),
+    );
+  }
+
+  console.log('\nTest Suite 8: Thermal 58mm/80mm Legibility, Pure #000 Colors, and Text Size Scaling (#1482)');
+  {
+    for (const paperSize of ['thermal58', 'thermal80'] as const) {
+      const normalHtml = generateBillHtml(testIranBill, baseIranTenant, {
+        language: 'en',
+        paperSize,
+        textSize: 'normal',
+        isReprint: true,
+      });
+      const largeHtml = generateBillHtml(testIranBill, baseIranTenant, {
+        language: 'en',
+        paperSize,
+        textSize: 'large',
+        isReprint: true,
+      });
+      const xlHtml = generateBillHtml(testIranBill, baseIranTenant, {
+        language: 'en',
+        paperSize,
+        textSize: 'extra_large',
+        isReprint: true,
+      });
+
+      assert(
+        `${paperSize} styles use pure #000 with no gray/red halftone-dithering hex colors`,
+        normalHtml.includes('color: #000;') &&
+          !/#(?:c00|ccc|eee|333|555|666|888)/i.test(normalHtml) &&
+          !/#(?:c00|ccc|eee|333|555|666|888)/i.test(getPaperStyles(paperSize, 'extra_large')),
+      );
+      const expectedPageWidth = paperSize === 'thermal58' ? '58mm' : '80mm';
+      assert(
+        `${paperSize} declares @page { size: ${expectedPageWidth} auto; margin: 0; }`,
+        normalHtml.includes(`@page { size: ${expectedPageWidth} auto; margin: 0; }`),
+      );
+      const expectedNormalFont = paperSize === 'thermal58' ? '13px' : '14px';
+      const expectedLargeFont = paperSize === 'thermal58' ? '15px' : '16px';
+      const expectedXlFont = paperSize === 'thermal58' ? '17px' : '18px';
+      assert(
+        `${paperSize} scales body/item font size across normal (${expectedNormalFont}), large (${expectedLargeFont}), and extra_large (${expectedXlFont})`,
+        normalHtml.includes(`.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: ${expectedNormalFont}; font-weight: 600; }`) &&
+          largeHtml.includes(`.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: ${expectedLargeFont}; font-weight: 600; }`) &&
+          xlHtml.includes(`.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: ${expectedXlFont}; font-weight: 700; }`),
+      );
+    }
+
+    const kotNormal = generateKotHtml(testIranOrder, { paperWidth: 58, textSize: 'normal', language: 'en' });
+    const kotLarge = generateKotHtml(testIranOrder, { paperWidth: 58, textSize: 'large', language: 'en' });
+    const kotXl = generateKotHtml(testIranOrder, { paperWidth: 58, textSize: 'extra_large', language: 'en' });
+    assert(
+      'KOT browser HTML scales font-size for normal (12px), large (14px), and extra_large (16px) with #000 weight 600',
+      kotNormal.includes('font-size:12px;') &&
+        kotNormal.includes('color:#000;font-weight:600;') &&
+        kotLarge.includes('font-size:14px;') &&
+        kotXl.includes('font-size:16px;'),
+    );
+
+    const slipLabels = {
+      title: 'Order Slip',
+      subtotal: 'Subtotal',
+      discount: 'Discount',
+      serviceCharge: 'Service Charge',
+      deliveryCharge: 'Delivery Charge',
+      packagingCharge: 'Packaging Charge',
+      tax: 'Tax',
+      total: 'Total',
+    };
+    const slipNormal = generateOrderSlipHtml(testIranOrder, slipLabels, { paperWidth: 58, textSize: 'normal' });
+    const slipLarge = generateOrderSlipHtml(testIranOrder, slipLabels, { paperWidth: 58, textSize: 'large' });
+    const slipXl = generateOrderSlipHtml(testIranOrder, slipLabels, { paperWidth: 58, textSize: 'extra_large' });
+    assert(
+      'Order slip browser HTML scales font-size for normal (13px), large (15px), and extra_large (17px) with #000 weight 600',
+      slipNormal.includes('font-size:13px;font-weight:600;color:#000;') &&
+        slipLarge.includes('font-size:15px;font-weight:600;color:#000;') &&
+        slipXl.includes('font-size:17px;font-weight:600;color:#000;'),
+    );
+
+    assert(
+      'WebUSB capabilities and active printer text size inherit configured text_size',
+      defaultWebUsbCapabilities(58, 'cols-32', 'extra_large').textSize === 'extra_large' &&
+        resolveWebUsbCapabilities({ id: 'w1', name: 'XP-58', connection_type: 'webusb', is_default: 1, text_size: 'large' }, 58).textSize === 'large' &&
+        resolveActivePrinterTextSize({
+          defaultPrinter: { id: 'p1', name: 'XP-58', connection_type: 'usb', is_default: 1, text_size: 'extra_large' },
+          hardwarePrinter: null,
+          webusbPrinter: null,
+        }) === 'extra_large',
     );
   }
 

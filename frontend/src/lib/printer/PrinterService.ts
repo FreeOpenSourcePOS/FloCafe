@@ -330,8 +330,10 @@ class PrinterService {
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body {
         font-family: 'Courier New', 'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Noto Sans Thai', 'Leelawadee UI', Thonburi, monospace;
-        font-size: 12px;
-        line-height: 1.2;
+        font-size: 13px;
+        font-weight: 600;
+        color: #000;
+        line-height: 1.3;
         width: ${mmWidth};
         max-width: ${mmWidth};
         margin: 0 auto;
@@ -339,7 +341,7 @@ class PrinterService {
         text-align: left;
       }
       @media print {
-        body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; }
+        body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; color: #000 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         @page { size: ${mmWidth} auto; margin: 0; }
       }
     `;

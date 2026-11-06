@@ -183,6 +183,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/ne.json'),
   },
+  mr: {
+    locale: 'mr-IN',
+    nativeName: 'मराठी',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/mr.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

@@ -135,12 +135,12 @@ A space before `{number}` is legitimate. Persian and Arabic use `شماره {num
 
 ## Devanagari spelling: the visarga in पुनः
 
-Nepali spells "again" `पुनः` with the visarga, U+0903, not with an ASCII colon. `पुन:` looks
+Nepali and Marathi spell "again" `पुनः` with the visarga, U+0903, not with an ASCII colon. `पुन:` looks
 close enough in a diff to be overlooked, and it renders as a visibly wrong glyph on a thermal
 receipt. The same applies to the matra in a trailing syllable, where a base consonant must keep
 the marks that attach to it.
 
-`tests/translations.test.ts` rejects a `ne.json` value containing `पुन:` and requires at least one
+`tests/translations.test.ts` rejects a `ne.json` or `mr.json` value containing `पुन:` and requires at least one
 `पुनः`, so the spelling cannot silently regress.
 
 ## POS terminology a translator would otherwise get wrong
@@ -163,6 +163,13 @@ movement uses `नगद जम्मा` for pay-in and `नगद निका
 the Z-report. Watch the visarga above, and note that Nepali keeps loanwords common in restaurant
 POS use: order is `अर्डर`, takeaway is `टेकअवे`, delivery is `डेलिभरी`, dine-in is
 `रेस्टुरेन्टमा खाने`, and a WebUSB or USB port is untranslated.
+
+**Marathi.** Subtotal `उप-एकूण` and grand total `एकूण रक्कम` are distinct labels and must stay
+distinct on the receipt. The vegetarian tags are `शाकाहारी` and the non-vegetarian tags
+`मांसाहारी`, identical between `pos.*` and `products.*`. Cash movement uses `रोख जमा` for pay-in
+and `रोख काढणे` for pay-out, identically on the dashboard and on the Z-report. Reprint is
+`पुनःमुद्रण` with the visarga (U+0903), and standard restaurant POS loanwords remain natural:
+order is `ऑर्डर`, takeaway is `टेकअवे`, delivery is `डिलिव्हरी`, and dine-in is `डाइन-इन`.
 
 ## Verification
 

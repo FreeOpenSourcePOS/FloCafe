@@ -2309,6 +2309,89 @@ function neFallbackErrors(
   return errors;
 }
 
+/** Marathi translation safeguards. */
+const MR_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', // sample email address placeholder
+  'common.appTitle', // Flo brand name
+  'common.brandName', // Flo Cafe brand name
+  'common.logoAlt', // Flo Cafe logo alt text
+  'dashboard.exportCsv', // file format label CSV (.csv)
+  'dashboard.exportPdf', // file format label PDF (.pdf)
+  'dashboard.exportXlsx', // file format label Excel (.xlsx)
+  'dashboard.ticketMethodCount', // numeric multiplication template {count} ×
+  'kds.emptyColumn', // em-dash placeholder for empty column
+  'nav.kds', // KDS technical acronym
+  'nav.pos', // POS technical acronym
+  'nav.whatsapp', // WhatsApp brand name
+  'pos.addonPrice', // currency price template +{currency}{price}
+  'pos.loadingEllipsis', // ellipsis character …
+  'pos.tagCount', // tag multiplier template {tag} ×{count}
+  'pos.taxLine', // tax line template {title} @{rate}%
+  'print.hsn', // Indian GST HSN code acronym
+  'print.zReport.paymentCount', // count prefix template x{count}
+  'printTest.escpos', // ESC/POS USB protocol label
+  'printTest.paperWidth58', // hardware paper width 2.5" (58mm)
+  'printTest.paperWidth80', // hardware paper width 3.5" (80mm)
+  'products.addonSelectionRange', // numeric range template {min} – {max}
+  'products.fieldSku', // SKU acronym
+  'products.saleUnitCl', // SI unit symbol cl
+  'products.saleUnitFlOz', // unit symbol fl oz
+  'products.skuLabel', // SKU label template SKU: {sku}
+  'serverApp.emailPlaceholder', // sample local server email placeholder
+  'settings.apiKeyInputPlaceholder', // API key format placeholder
+  'settings.backupSchemaVersion', // technical schema version badge schema v{version}
+  'settings.connectionUsb', // USB hardware connection acronym
+  'settings.instagramPlaceholder', // sample Instagram handle placeholder
+  'settings.ipAddressPlaceholder', // IPv4 address placeholder
+  'settings.kds', // KDS technical acronym
+  'settings.languageEn', // self-named language option English (EN)
+  'settings.languageEs', // self-named language option Español (ES)
+  'settings.languagePt', // self-named language option Português (PT)
+  'settings.paperSize58', // hardware paper size 2.5" (58mm)
+  'settings.paperSize80', // hardware paper size 3.5" (80mm)
+  'settings.paperWidth58', // hardware paper width spec 2.5" (58mm, 32 cols)
+  'settings.paperWidth80', // hardware paper width spec 3.5" (80mm, 48 cols - wide)
+  'settings.paperWidth80Safe', // hardware paper width spec 3.5" (80mm, 42 cols - safe)
+  'settings.paymentMethodUpi', // Indian UPI payment acronym
+  'settings.portPlaceholder', // TCP port number placeholder 9100
+  'settings.registrationEmailPlaceholder', // sample owner email placeholder
+  'settings.registrationLastError', // raw error pass-through placeholder {error}
+  'settings.revflo', // RevFlo product brand name
+  'settings.tabOrderflow', // OrderFlow product brand name
+  'settings.tabWhatsapp', // WhatsApp brand name
+  'settings.whatsapp', // WhatsApp brand name
+  'setup.finedineLabel', // FineDine product flow name
+  'setup.ownerEmailPlaceholder', // sample owner email placeholder
+  'setup.qsrLabel', // QSR restaurant flow acronym
+  'tax.auditCreateOverride', // technical audit arrow template {entityType} {entityId} → {categoryId}
+  'tax.auditUpdateOverride', // technical audit transition template {entityType} {entityId}: {before} → {after}
+  'update.downloadingBadge', // download progress badge ↓ {percent}%
+  'whatsapp.connect.pairingPhonePlaceholder', // E.164 phone placeholder {dialCode}XXXXXXXXXX
+]);
+
+function mrFallbackErrors(
+  mrFlat: Record<string, string>,
+  enFlat: Record<string, string>,
+): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const mrVal = mrFlat[k];
+    if (mrVal === undefined) continue;
+    if (mrVal.startsWith('[MR]') || mrVal.startsWith('[TODO]')) {
+      errors.push(`mr.json ${k} - placeholder prefix found: "${mrVal}"`);
+    } else if (mrVal === enFlat[k] && !MR_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(
+        `mr.json ${k} - identical to English value (renders as English for Marathi users)`,
+      );
+    } else if (mrVal !== mrVal.normalize('NFC')) {
+      errors.push(`mr.json ${k} - value must use Unicode NFC`);
+    } else if (mrVal.includes('\uFFFD')) {
+      errors.push(`mr.json ${k} - value contains a Unicode replacement character`);
+    }
+  }
+  return errors;
+}
+
 /** Keys whose `{number}` placeholder names an order number that must stay
  * introduced by punctuation (for example `#` or `№`) or a space, never welded
  * onto the end of a verb-final clause. */
@@ -3075,6 +3158,55 @@ async function run(): Promise<void> {
     `  ✓ no untranslated ne.json values (${NE_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
   );
 
+  // 24. mr.json values must be complete, NFC text without malformed characters.
+  const mrMessages = loadedStrings.get('mr');
+  if (!mrMessages) throw new Error('languages registry must include the maintained mr locale');
+  const mrErrors = mrFallbackErrors(mrMessages, loadedStrings.get('en')!);
+  if (mrErrors.length) {
+    console.error(`\nmr.json values with errors (${mrErrors.length}):`);
+    for (const e of mrErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(
+      false,
+      'mr.json contains untranslated, placeholder, non-NFC, or replacement-character values',
+    );
+  }
+  assert(
+    mrMessages['receipt.cashReceived'] === 'प्राप्त रोख',
+    'mr.json receipt.cashReceived must preserve the canonical cash-received label',
+  );
+  assert(
+    mrMessages['pos.tagVeg'] === 'शाकाहारी' && mrMessages['products.tagVeg'] === 'शाकाहारी',
+    'mr.json vegetarian product tags must use the vegetarian Marathi term',
+  );
+  assert(
+    mrMessages['pos.tagNonVeg'] === 'मांसाहारी' && mrMessages['products.tagNonVeg'] === 'मांसाहारी',
+    'mr.json non-vegetarian product tags must use the Marathi non-vegetarian term',
+  );
+  assert(
+    mrMessages['orders.takeaway'] === mrMessages['pos.orderTypeTakeaway'],
+    'mr.json takeaway labels must match the reviewed Marathi pickup term',
+  );
+  assert(
+    mrMessages['dashboard.payIn'] === 'रोख जमा' && mrMessages['dashboard.payOut'] === 'रोख काढणे',
+    'mr.json cash-movement labels must match the Z-report terminology',
+  );
+  assert(
+    mrMessages['print.zReport.payIn'] === mrMessages['dashboard.payIn'] &&
+      mrMessages['print.zReport.payOut'] === mrMessages['dashboard.payOut'],
+    'mr.json cash-movement labels must be identical on the dashboard and the Z-report',
+  );
+  assert(
+    !Object.entries(mrMessages).some(([, v]) => v.includes('पुन:')),
+    'mr.json must use the visarga in पुनः rather than a plain colon',
+  );
+  assert(
+    Object.values(mrMessages).some((v) => v.includes('पुनः')),
+    'mr.json must contain the visarga spelling of पुनः',
+  );
+  console.log(
+    `  ✓ no untranslated mr.json values (${MR_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
+  );
+
   // 25. No locale may weld an order number onto a word. Devanagari, Arabic, and
   // Cyrillic are all verb-final, so a trailing "{number}" reads as part of the
   // word. This covers every registered locale, not only Nepali.
@@ -3091,6 +3223,14 @@ async function run(): Promise<void> {
   assert(
     neMessages['pos.itemsAddedToOrder'] === 'अर्डर #{number} मा वस्तुहरू थपियो',
     'ne.json itemsAddedToOrder must place the order number directly after the # marker',
+  );
+  assert(
+    mrMessages['pos.addingItemsToOrder'] === 'ऑर्डर #{number} मध्ये आयटम जोडत आहे',
+    'mr.json addingItemsToOrder must place the order number directly after the # marker',
+  );
+  assert(
+    mrMessages['pos.itemsAddedToOrder'] === 'ऑर्डर #{number} मध्ये आयटम जोडले गेले',
+    'mr.json itemsAddedToOrder must place the order number directly after the # marker',
   );
   console.log(
     `  ✓ no locale welds an order number onto a word (${Object.keys(Object.fromEntries(loadedStrings)).length} locales checked)`,
@@ -3384,6 +3524,18 @@ function runNegativeTests(): void {
   expectDetected(
     'ne: placeholder prefix value',
     neFallbackErrors({ 'a.b': '[NE] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'mr: English-identical value',
+    mrFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'mr: placeholder prefix value',
+    mrFallbackErrors({ 'a.b': '[MR] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'mr: Unicode replacement character',
+    mrFallbackErrors({ 'a.b': 'क\uFFFDफी' }, { 'a.b': 'कॉफी' }),
   );
   expectDetected(
     'ne: Unicode replacement character',

@@ -29,6 +29,7 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
   vi: { basic: 'Biên nhận đơn giản (máy in nhiệt)', web: 'In web (trình duyệt)', whatsapp: 'Chia sẻ WhatsApp' },
   th: { basic: 'ใบเสร็จพื้นฐาน (เครื่องพิมพ์ความร้อน)', web: 'พิมพ์เว็บ (เบราว์เซอร์)', whatsapp: 'แชร์ผ่าน WhatsApp' },
   ne: { basic: 'आधारभूत रसिद (थर्मल)', web: 'वेब प्रिन्ट (ब्राउजर)', whatsapp: 'व्हाट्सएप सेयर गर्नुहोस्' },
+  mr: { basic: 'साधी पावती (थर्मल)', web: 'वेब प्रिंट (ब्राउझर)', whatsapp: 'WhatsApp शेअर' },
   ar: { basic: 'إيصال أساسي (حراري)', web: 'الطباعة من الويب (المتصفح)', whatsapp: 'مشاركة عبر WhatsApp' },
 };
 

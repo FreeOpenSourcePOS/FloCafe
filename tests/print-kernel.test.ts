@@ -398,6 +398,58 @@ assert.deepEqual(
   'Nepali wrapping breaks on the word boundary rather than stranding a matra at a 3-cell width',
 );
 
+// Marathi POS terminology also leans on virama conjuncts (व्य, स्था, द्य, र्थ, द्र)
+// plus the visarga in पुनःमुद्रण and ळ (U+0933).
+for (const [term, segments, cells] of [
+  ['व्यवस्थापक', ['व्य', 'व', 'स्था', 'प', 'क'], 5],
+  ['खाद्यपदार्थ', ['खा', 'द्य', 'प', 'दा', 'र्थ'], 5],
+  ['पुरणपोळी', ['पु', 'र', 'ण', 'पो', 'ळी'], 5],
+  ['पुनःमुद्रण', ['पु', 'नः', 'मु', 'द्र', 'ण'], 5],
+] as const) {
+  assert.deepEqual(graphemeSegments(term), [...segments], `Marathi term ${term} segments without splitting a virama conjunct`);
+  assert.equal(displayCellWidth(term), cells, `Marathi term ${term} consumes ${cells} thermal display cells, not its code-point count`);
+  for (let width = 1; width < cells; width += 1) {
+    const wrapped = wrapToDisplayCells(term, width);
+    assert.deepEqual(
+      graphemeSegments(wrapped.join('')),
+      [...segments],
+      `Marathi term ${term} keeps every cluster after a ${width}-cell wrap`,
+    );
+    for (let index = 0; index < wrapped.length - 1; index += 1) {
+      const left = graphemeSegments(wrapped[index]);
+      const right = graphemeSegments(wrapped[index + 1]);
+      assert.equal(
+        graphemeSegments(wrapped[index] + wrapped[index + 1]).length,
+        left.length + right.length,
+        `Marathi term ${term} must break between complete clusters at the ${width}-cell boundary `
+        + `${JSON.stringify(wrapped[index])} | ${JSON.stringify(wrapped[index + 1])}`,
+      );
+    }
+  }
+}
+
+const mrNarrowReceiptProduct = 'मिसळ पाव';
+assert.deepEqual(
+  graphemeSegments(mrNarrowReceiptProduct),
+  ['मि', 'स', 'ळ', ' ', 'पा', 'व'],
+  'Marathi receipt product segments into base consonants with attached matras',
+);
+assert.equal(
+  displayCellWidth(mrNarrowReceiptProduct),
+  6,
+  'Marathi receipt product measures six thermal display cells, not its eight code points',
+);
+assert.equal(
+  truncateToDisplayCells(mrNarrowReceiptProduct, 3),
+  'मिसळ',
+  'Marathi matras are dropped with their base rather than emitted as orphan marks',
+);
+assert.deepEqual(
+  wrapToDisplayCells(mrNarrowReceiptProduct, 3),
+  ['मिसळ', 'पाव'],
+  'Marathi wrapping breaks on the word boundary rather than stranding a matra at a 3-cell width',
+);
+
 const widthModulePath = require.resolve('../shared/print/width');
 const originalWidthModule = require.cache[widthModulePath];
 const segmenterDescriptor = Object.getOwnPropertyDescriptor(Intl, 'Segmenter');

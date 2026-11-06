@@ -64,7 +64,7 @@ While translating:
   such as an email or IP address. Anything else renders as untranslated English to your users, and
   the check will reject it.
 - For a language with combining marks, the value must be in Unicode NFC. `tests/translations.test.ts`
-  enforces NFC for the languages it checks by name, which are `ru`, `th`, and `vi`.
+  enforces NFC for the languages it checks by name, which are `mr`, `ne`, `ru`, `th`, and `vi`.
 - Avoid invisible formatting characters. The Russian validator in `tests/translations.test.ts` rejects
   U+200B, U+200C, U+200D, U+00AD, and U+FEFF, because they corrupt printed text silently. No other
   language's validator checks for them yet, so this is your responsibility to get right rather than
@@ -74,7 +74,7 @@ While translating:
 ## 4. Register the intentional-identical keys
 
 Each language has a `<LANG>_INTENTIONAL_IDENTICAL` set in `tests/translations.test.ts` listing the
-keys allowed to be English-identical, most with a comment saying why. There are 18 such sets.
+keys allowed to be English-identical, most with a comment saying why. There are 20 such sets.
 
 Add an entry for every key you deliberately left identical, with a comment giving the reason. Without
 the entry the check fails, and the failure is what keeps an accidentally untranslated string from

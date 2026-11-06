@@ -74,7 +74,7 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne', 'mr'] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 
@@ -449,6 +449,21 @@ async function run() {
       neHtml.includes('तपाईंको भ्रमणको लागि धन्यवाद!')
     );
 
+    const mrTenant = {
+      business_name: 'FloCafe Pune',
+      currency: 'INR',
+      country: 'IN',
+      timezone: 'Asia/Kolkata',
+    };
+    const mrHtml = generateBillHtml(sampleEnBill, mrTenant, { language: 'mr', isReprint: true });
+    assert('MR receipt has lang="mr-IN" and dir="ltr"', mrHtml.includes('<html lang="mr-IN" dir="ltr">'));
+    assert('MR labels are Devanagari',
+      mrHtml.includes('पुनःमुद्रण') &&
+      mrHtml.includes('बिल #') &&
+      mrHtml.includes('एकूण रक्कम') &&
+      mrHtml.includes('तुमच्या भेटीबद्दल धन्यवाद!')
+    );
+
     // The browser receipt is the primary print path, and its body stack was
     // extended per language by hand, so Bengali was the one merged locale left
     // without a declared family here. Assert the families the order-slip and
@@ -641,6 +656,28 @@ async function run() {
       nepaliSlip.includes('उप-जम्मा') &&
       nepaliSlip.includes('कुल जम्मा') &&
       nepaliSlip.includes('रू'),
+    );
+
+    const marathiSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'ऑर्डर स्लिप',
+      subtotal: 'उप-एकूण',
+      discount: 'सवलत',
+      serviceCharge: 'सेवा शुल्क',
+      deliveryCharge: 'डिलिव्हरी शुल्क',
+      packagingCharge: 'पॅकेजिंग शुल्क',
+      tax: 'कर',
+      total: 'एकूण रक्कम',
+    }, {
+      country: 'IN',
+      currency: 'INR',
+      locale: 'mr-IN',
+      direction: 'ltr',
+    });
+    assert('Marathi order slip carries mr-IN LTR metadata, Devanagari labels, and tenant currency',
+      marathiSlip.includes('lang="mr-IN" dir="ltr"') &&
+      marathiSlip.includes('उप-एकूण') &&
+      marathiSlip.includes('एकूण रक्कम') &&
+      marathiSlip.includes('₹'),
     );
 
     const bengaliSlip = generateOrderSlipHtml(testIranOrder, {

@@ -173,6 +173,11 @@ function run(): void {
   assert('Nepali print-test amount is localized', printLabel('ne', 'printTest.amt') === 'रकम');
   assert('Nepali takeaway is distinct from delivery', printLabel('ne', 'pos.orderTypeTakeaway') === 'टेकअवे' && printLabel('ne', 'pos.orderTypeDelivery') === 'डेलिभरी');
   assert('Nepali subtotal stays distinct from grand total', printLabel('ne', 'pos.subtotal') === 'उप-जम्मा' && printLabel('ne', 'print.grandTotal') !== printLabel('ne', 'pos.subtotal'));
+  assert('Marathi grand total is localized', printLabel('mr', 'print.grandTotal') === 'एकूण रक्कम');
+  assert('Marathi bill number label is localized', printLabel('mr', 'receipt.billNumber') === 'बिल #');
+  assert('Marathi print-test amount is localized', printLabel('mr', 'printTest.amt') === 'रक्कम');
+  assert('Marathi takeaway is distinct from delivery', printLabel('mr', 'pos.orderTypeTakeaway') === 'टेकअवे' && printLabel('mr', 'pos.orderTypeDelivery') === 'डिलिव्हरी');
+  assert('Marathi subtotal stays distinct from grand total', printLabel('mr', 'pos.subtotal') === 'उप-एकूण' && printLabel('mr', 'print.grandTotal') !== printLabel('mr', 'pos.subtotal'));
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {

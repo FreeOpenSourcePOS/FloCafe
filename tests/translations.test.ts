@@ -65,6 +65,9 @@
  *  24. Nepali safeguards: ne.json values never contain placeholders, malformed
  *      replacement characters, or non-NFC text, and only documented shared
  *      values may remain identical to English.
+ *  25. Javanese safeguards: jv.json values never contain placeholders, malformed
+ *      replacement characters, or non-NFC text, and only documented shared
+ *      values may remain identical to English.
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -2309,6 +2312,99 @@ function neFallbackErrors(
   return errors;
 }
 
+/** Javanese translation safeguards, including canonical NFC text. */
+const JV_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.countryIndia', // country proper name in Latin script
+  'auth.countryThailand', // country proper name in Latin script
+  'common.appTitle', // brand
+  'common.brandName', // brand
+  'common.logoAlt', // brand
+  'dashboard.exportCsv', // file format label
+  'dashboard.exportPdf', // file format label
+  'dashboard.exportXlsx', // file format label
+  'dashboard.ticketMethodCount', // pure format: {count} ×
+  'kds.emptyColumn', // em dash
+  'kds.viewKanban', // product layout term
+  'nav.kds', // technical acronym
+  'nav.pos', // technical acronym
+  'nav.whatsapp', // brand
+  'pos.addonPrice', // pure format: +{currency}{price}
+  'pos.loadingEllipsis', // ellipsis
+  'pos.tagCount', // pure format: {tag} ×{count}
+  'pos.tagHalal', // universal dietary loanword
+  'pos.tagVegan', // universal dietary loanword
+  'pos.taxLine', // pure format: {title} @{rate}%
+  'printTest.escpos', // technical acronym
+  'printTest.paperWidth58', // measurement
+  'printTest.paperWidth80', // measurement
+  'print.hsn', // technical acronym
+  'print.zReport.paymentCount', // pure format: x{count}
+  'products.addonSelectionRange', // pure format: {min} – {max}
+  'products.fieldSku', // technical acronym
+  'products.saleUnitCl', // unit symbol
+  'products.saleUnitFlOz', // unit symbol
+  'products.saleUnitG', // unit symbol
+  'products.saleUnitKg', // unit symbol
+  'products.saleUnitL', // unit symbol
+  'products.saleUnitLb', // unit symbol
+  'products.saleUnitMl', // unit symbol
+  'products.saleUnitOz', // unit symbol
+  'products.skuLabel', // technical acronym + placeholder
+  'products.tagVegan', // universal dietary loanword
+  'serverApp.emailPlaceholder', // example email
+  'settings.apiKeyInputPlaceholder', // example API key
+  'settings.connectionUsb', // technical acronym
+  'settings.ipAddressPlaceholder', // example IP
+  'settings.iranCurrencyDisplayRial', // currency name and native script
+  'settings.iranCurrencyDisplayToman', // currency name and native script
+  'settings.iranNumberDigitsLatin', // digit script label
+  'settings.kds', // technical acronym
+  'settings.languageEs', // native language name
+  'settings.paperSize58', // measurement
+  'settings.paperSize80', // measurement
+  'settings.paymentMethodUpi', // payment rail acronym
+  'settings.portPlaceholder', // example port
+  'settings.registrationLastError', // pure placeholder: {error}
+  'settings.revflo', // brand
+  'settings.tabOrderflow', // brand
+  'settings.tabWhatsapp', // brand
+  'settings.unicode', // technical standard name
+  'settings.whatsapp', // brand
+  'setup.demoLabel', // product flow mode name
+  'setup.finedineLabel', // product flow mode name
+  'setup.pinLabel', // technical acronym
+  'setup.qsrLabel', // industry acronym
+  'tax.auditCreateOverride', // pure format: {entityType} {entityId} → {categoryId}
+  'tax.auditUpdateOverride', // pure format: {entityType} {entityId}: {before} → {after}
+  'update.downloadingBadge', // pure format: ↓ {percent}%
+  'whatsapp.connect.pairingPhonePlaceholder', // pure format: {dialCode}XXXXXXXXXX
+]);
+
+function jvFallbackErrors(
+  jvFlat: Record<string, string>,
+  enFlat: Record<string, string>,
+): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const jvVal = jvFlat[k];
+    if (jvVal === undefined) continue;
+    if (jvVal.startsWith('[JV]') || jvVal.startsWith('[TODO]')) {
+      errors.push(`jv.json ${k} — placeholder prefix found: "${jvVal}"`);
+    } else if (jvVal === enFlat[k] && !JV_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(
+        `jv.json ${k} — identical to English value (renders as English for Javanese users)`,
+      );
+    } else if (jvVal !== jvVal.normalize('NFC')) {
+      errors.push(`jv.json ${k} — value must use Unicode NFC`);
+    } else if (jvVal.includes('\uFFFD')) {
+      errors.push(`jv.json ${k} — value contains a Unicode replacement character`);
+    } else if (/[\u200B\u200C\u200D\u00AD\uFEFF]/u.test(jvVal)) {
+      errors.push(`jv.json ${k} — invisible formatting character found`);
+    }
+  }
+  return errors;
+}
+
 /** Keys whose `{number}` placeholder names an order number that must stay
  * introduced by punctuation (for example `#` or `№`) or a space, never welded
  * onto the end of a verb-final clause. */
@@ -3075,6 +3171,88 @@ async function run(): Promise<void> {
     `  ✓ no untranslated ne.json values (${NE_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
   );
 
+  // 24. jv.json values must be complete, NFC text without malformed characters.
+  const jvMessages = loadedStrings.get('jv');
+  if (!jvMessages) throw new Error('languages registry must include the maintained jv locale');
+  const jvErrors = jvFallbackErrors(jvMessages, loadedStrings.get('en')!);
+  if (jvErrors.length) {
+    console.error(`\njv.json values with errors (${jvErrors.length}):`);
+    for (const e of jvErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(
+      false,
+      'jv.json contains untranslated, placeholder, non-NFC, or replacement-character values',
+    );
+  }
+  assert(
+    jvMessages['receipt.cashReceived'] === 'Tunai Ditampa',
+    'jv.json receipt.cashReceived must preserve the canonical cash-received label',
+  );
+  assert(
+    jvMessages['pos.tagVeg'] === 'Nabati' && jvMessages['products.tagVeg'] === 'Nabati',
+    'jv.json vegetarian product tags must use the reviewed Javanese term',
+  );
+  assert(
+    jvMessages['pos.tagNonVeg'] === 'Non-Nabati' &&
+      jvMessages['products.tagNonVeg'] === 'Non-Nabati',
+    'jv.json non-vegetarian product tags must negate the Javanese vegetarian term',
+  );
+  assert(
+    jvMessages['orders.takeaway'] === 'Gawa Mulih' &&
+      jvMessages['pos.orderTypeTakeaway'] === 'Gawa Mulih',
+    'jv.json takeaway labels must match the reviewed Javanese pickup term',
+  );
+  assert(
+    jvMessages['orders.convertToTakeaway'] === 'Owahi dadi Gawa Mulih' &&
+      jvMessages['orders.orderConvertedTakeaway'] === 'Pesenan diowahi dadi gawa mulih',
+    'jv.json takeaway conversion labels must use the reviewed Javanese pickup term',
+  );
+  assert(
+    jvMessages['dashboard.payIn'] === 'Lebokake Tunai' &&
+      jvMessages['dashboard.payOut'] === 'Wetokake Tunai',
+    'jv.json cash-movement labels must match the Z-report terminology',
+  );
+  assert(
+    jvMessages['print.zReport.payIn'] === jvMessages['dashboard.payIn'] &&
+      jvMessages['print.zReport.payOut'] === jvMessages['dashboard.payOut'],
+    'jv.json cash-movement labels must be identical on the dashboard and the Z-report',
+  );
+  for (const [key, technicalLiteral] of [
+    ['products.csvAddonsHelp', 'group_name'],
+    ['products.csvAddonsHelp', 'addon_name'],
+    ['products.csvAddonsHelp', 'price'],
+    ['products.csvAddonsHelp', 'group_required'],
+    ['products.csvAddonsHelp', 'group_min_select'],
+    ['products.csvAddonsHelp', 'group_max_select'],
+    ['products.csvCategoriesHelp', 'name'],
+    ['products.csvCategoriesHelp', 'description'],
+    ['products.csvCategoriesHelp', 'color'],
+    ['products.csvCategoriesHelp', 'icon'],
+    ['products.csvCategoriesHelp', 'sort_order'],
+    ['products.csvProductsHelp', 'id'],
+    ['products.csvProductsHelp', 'sku'],
+    ['products.csvProductsHelp', 'name'],
+    ['products.csvProductsHelp', 'category'],
+    ['products.csvProductsHelp', 'price'],
+    ['products.csvProductsHelp', 'description'],
+    ['products.csvProductsHelp', 'cost'],
+    ['products.csvProductsHelp', 'tax_category'],
+    ['products.csvProductsHelp', 'tax_behavior'],
+    ['products.csvProductsHelp', 'cashback_percent'],
+    ['products.csvProductsHelp', 'tags'],
+    ['products.csvProductsHelp', 'non_veg'],
+    ['products.csvProductsHelp', 'is_active'],
+  ] as const) {
+    const machineFields = jvMessages[key]?.match(/[a-z][a-z0-9_]*/g) ?? [];
+    assert(
+      machineFields.includes(technicalLiteral),
+      `jv.json ${key} must preserve the machine-readable CSV field ${technicalLiteral}`,
+    );
+  }
+  console.log('  ✓ Javanese CSV guidance preserves machine-readable field names');
+  console.log(
+    `  ✓ no untranslated jv.json values (${JV_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
+  );
+
   // 25. No locale may weld an order number onto a word. Devanagari, Arabic, and
   // Cyrillic are all verb-final, so a trailing "{number}" reads as part of the
   // word. This covers every registered locale, not only Nepali.
@@ -3091,6 +3269,14 @@ async function run(): Promise<void> {
   assert(
     neMessages['pos.itemsAddedToOrder'] === 'अर्डर #{number} मा वस्तुहरू थपियो',
     'ne.json itemsAddedToOrder must place the order number directly after the # marker',
+  );
+  assert(
+    jvMessages['pos.addingItemsToOrder'] === 'Nambahake item menyang pesenan #{number}',
+    'jv.json addingItemsToOrder must place the order number directly after the # marker',
+  );
+  assert(
+    jvMessages['pos.itemsAddedToOrder'] === 'Item ditambahake menyang pesenan #{number}',
+    'jv.json itemsAddedToOrder must place the order number directly after the # marker',
   );
   console.log(
     `  ✓ no locale welds an order number onto a word (${Object.keys(Object.fromEntries(loadedStrings)).length} locales checked)`,
@@ -3388,6 +3574,22 @@ function runNegativeTests(): void {
   expectDetected(
     'ne: Unicode replacement character',
     neFallbackErrors({ 'a.b': 'क��ा' }, { 'a.b': 'काफी' }),
+  );
+  expectDetected(
+    'jv: English-identical value',
+    jvFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'jv: placeholder prefix value',
+    jvFallbackErrors({ 'a.b': '[JV] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'jv: non-NFC value',
+    jvFallbackErrors({ 'a.b': 'é'.normalize('NFD') }, { 'a.b': 'é'.normalize('NFC') }),
+  );
+  expectDetected(
+    'jv: invisible formatting character',
+    jvFallbackErrors({ 'a.b': 'Kopi\u200bJawa' }, { 'a.b': 'Kopi Jawa' }),
   );
   expectDetected(
     'order number: placeholder welded to a preceding word',

@@ -30,6 +30,7 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
   th: { basic: 'ใบเสร็จพื้นฐาน (เครื่องพิมพ์ความร้อน)', web: 'พิมพ์เว็บ (เบราว์เซอร์)', whatsapp: 'แชร์ผ่าน WhatsApp' },
   ne: { basic: 'आधारभूत रसिद (थर्मल)', web: 'वेब प्रिन्ट (ब्राउजर)', whatsapp: 'व्हाट्सएप सेयर गर्नुहोस्' },
   ar: { basic: 'إيصال أساسي (حراري)', web: 'الطباعة من الويب (المتصفح)', whatsapp: 'مشاركة عبر WhatsApp' },
+  jv: { basic: 'Struk Dhasar (Termal)', web: 'Cetak Web (Browser)', whatsapp: 'Bagekake WhatsApp' },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

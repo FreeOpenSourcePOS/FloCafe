@@ -4,7 +4,7 @@ import { formatKOT, escPosToText } from '../main/printers/thermal';
 import { printLabel } from '../main/print/print-labels.generated';
 import { LANGUAGES as LANGUAGE_REGISTRY } from '../frontend/src/lib/i18n/languages';
 
-const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const;
+const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne', 'jv'] as const;
 // Any Devanagari codepoint: the native paths must emit none, not merely none of
 // the specific phrases this fixture happens to use.
 const DEVANAGARI_RE = /[ऀ-ॿ]/;
@@ -119,10 +119,13 @@ async function run(): Promise<void> {
     ));
     assert.match(thermalText, /KOT-PHASE3-001/, `${language}: thermal order number remains visible`);
     assert.match(thermalText, /Main Kitchen/, `${language}: thermal station remains visible`);
-    assert.match(thermalText, /(?:Time|Hora|Uhrzeit|Saat|Oras|Heure|Ora|時刻|时间|시간|Waktu|Tijd|সময়|Thời gian)/, `${language}: thermal time remains visible`);
-    assert.match(thermalText, /KITCHEN ORDER TICKET|COMANDA DE COCINA|KUECHENBESTELLSCHEIN|BON DE COMMANDE CUISINE|COMANDA DE COZINHA|BIGLIETTO ORDINE DI CUCINA|キッチン伝票|厨房订单|廚房訂單|주방 주문지|TIKET PESANAN DAPUR|KEUKENBESTELBON|রান্নাঘরের অর্ডার টিকিট|POROSI E KUZHINES|PHIẾU BẾP/, `${language}: thermal banner remains visible`);
+    assert.match(thermalText, /(?:Time|Hora|Uhrzeit|Saat|Oras|Heure|Ora|時刻|时间|시간|Waktu|Tijd|সময়|Thời gian|Wektu)/, `${language}: thermal time remains visible`);
+    assert.match(thermalText, /KITCHEN ORDER TICKET|COMANDA DE COCINA|KUECHENBESTELLSCHEIN|BON DE COMMANDE CUISINE|COMANDA DE COZINHA|BIGLIETTO ORDINE DI CUCINA|キッチン伝票|厨房订单|廚房訂單|주방 주문지|TIKET PESANAN DAPUR|KEUKENBESTELBON|রান্নাঘরের অর্ডার টিকিট|POROSI E KUZHINES|PHIẾU BẾP|TIKET PESENAN PAWON/, `${language}: thermal banner remains visible`);
     if (language !== 'sq') {
       assert.doesNotMatch(thermalText, /POROSI E KUZHINES/, `${language}: thermal banner is not Albanian`);
+    }
+    if (language !== 'jv') {
+      assert.doesNotMatch(thermalText, /TIKET PESENAN PAWON/, `${language}: thermal banner is not Javanese`);
     }
     assert.match(thermalText, /Pending coffee/, `${language}: thermal pending item`);
     assert.match(thermalText, /\+ Oat milk x3/, `${language}: thermal preserves addon quantity`);

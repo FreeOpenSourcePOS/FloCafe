@@ -276,7 +276,7 @@ async function runTests() {
     },
   };
 
-  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'ru' | 'fa' | 'ur' | 'ja' | 'hi' | 'ne' | 'sq' | 'th'; label: string; filePrefix: string }> = [
+  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'ru' | 'fa' | 'ur' | 'ja' | 'hi' | 'ne' | 'sq' | 'th' | 'jv'; label: string; filePrefix: string }> = [
     { lang: 'en', label: 'English UI', filePrefix: 'receipt-argentina-english-ui' },
     { lang: 'es', label: 'Spanish UI', filePrefix: 'receipt-argentina-spanish-ui' },
     { lang: 'fr', label: 'French UI', filePrefix: 'receipt-argentina-french-ui' },
@@ -289,6 +289,7 @@ async function runTests() {
     { lang: 'ne', label: 'Nepali UI', filePrefix: 'receipt-argentina-nepali-ui' },
     { lang: 'sq', label: 'Albanian UI', filePrefix: 'receipt-argentina-albanian-ui' },
     { lang: 'th', label: 'Thai UI', filePrefix: 'receipt-argentina-thai-ui' },
+    { lang: 'jv', label: 'Javanese UI', filePrefix: 'receipt-argentina-javanese-ui' },
   ];
 
   const receiptResults: Record<string, { html: string; htmlPath: string; pngPath: string }> = {};
@@ -347,6 +348,11 @@ async function runTests() {
       assert.ok(
         receiptHtml.includes('अगस्ट'),
         `Receipt in Nepali UI must contain a Nepali month name, got: ${receiptHtml}`,
+      );
+    } else if (lang === 'jv') {
+      assert.ok(
+        receiptHtml.includes('Tagihan #') && receiptHtml.includes('Gunggung Akhir'),
+        `Receipt in Javanese UI must contain Javanese labels`,
       );
     }
 

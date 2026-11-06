@@ -164,6 +164,14 @@ the Z-report. Watch the visarga above, and note that Nepali keeps loanwords comm
 POS use: order is `अर्डर`, takeaway is `टेकअवे`, delivery is `डेलिभरी`, dine-in is
 `रेस्टुरेन्टमा खाने`, and a WebUSB or USB port is untranslated.
 
+**Javanese.** Subtotal `Sub-gunggung` and grand total `Gunggung Akhir` (`GUNGGUNG` on thermal
+receipts) stay distinct from each other and from Indonesian `Subtotal` / `Total Akhir`. Order types
+use idiomatic Javanese: dine-in is `Mangan ing Kene`, takeaway is `Gawa Mulih`, and delivery is
+`Kiriman`. The vegetarian and non-vegetarian tags are `Nabati` and `Non-Nabati` across both
+`pos.*` and `products.*`. Cash movement uses `Lebokake Tunai` for pay-in and `Wetokake Tunai` for
+pay-out across both the dashboard and the Z-report, and cash received on a receipt is
+`Tunai Ditampa`.
+
 ## Verification
 
 The contracts on this page are pinned by `tests/print-kernel.test.ts`,

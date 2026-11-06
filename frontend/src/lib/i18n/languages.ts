@@ -183,6 +183,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/ne.json'),
   },
+  jv: {
+    locale: 'jv-ID',
+    nativeName: 'Basa Jawa',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/jv.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

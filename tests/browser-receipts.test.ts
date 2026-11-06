@@ -74,7 +74,7 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne', 'jv'] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 
@@ -449,6 +449,21 @@ async function run() {
       neHtml.includes('तपाईंको भ्रमणको लागि धन्यवाद!')
     );
 
+    const jvTenant = {
+      business_name: 'FloCafe Yogyakarta',
+      currency: 'IDR',
+      country: 'ID',
+      timezone: 'Asia/Jakarta',
+    };
+    const jvHtml = generateBillHtml(sampleEnBill, jvTenant, { language: 'jv', isReprint: true });
+    assert('JV receipt has lang="jv-ID" and dir="ltr"', jvHtml.includes('<html lang="jv-ID" dir="ltr">'));
+    assert('JV labels are Javanese',
+      jvHtml.includes('CETAK MANEH') &&
+      jvHtml.includes('Tagihan #') &&
+      jvHtml.includes('Gunggung Akhir') &&
+      jvHtml.includes('Matur nuwun rawuhipun!')
+    );
+
     // The browser receipt is the primary print path, and its body stack was
     // extended per language by hand, so Bengali was the one merged locale left
     // without a declared family here. Assert the families the order-slip and
@@ -709,6 +724,29 @@ async function run() {
       vietnameseSlip.includes('Phiếu đơn hàng') &&
       vietnameseSlip.includes('Tạm tính') &&
       vietnameseSlip.includes('Tổng cộng'),
+    );
+
+    const javaneseSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'Slip Pesenan',
+      subtotal: 'Sub-gunggung',
+      discount: 'Diskon',
+      serviceCharge: 'Ragad Layanan',
+      deliveryCharge: 'Ragad Kiriman',
+      packagingCharge: 'Ragad Bungkus',
+      tax: 'Pajeg',
+      total: 'Gunggung',
+    }, {
+      country: 'ID',
+      currency: 'IDR',
+      locale: 'jv-ID',
+      direction: 'ltr',
+    });
+    assert('Javanese order slip carries jv-ID LTR metadata and localized labels',
+      javaneseSlip.includes('lang="jv-ID" dir="ltr"') &&
+      javaneseSlip.includes('direction:ltr;text-align:left;') &&
+      javaneseSlip.includes('Slip Pesenan') &&
+      javaneseSlip.includes('Sub-gunggung') &&
+      javaneseSlip.includes('Gunggung'),
     );
   }
 

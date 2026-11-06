@@ -306,6 +306,12 @@ async function run(): Promise<void> {
   withNavigatorLanguage('ne', () => {
     assert(i18nModule.getBrowserLanguage() === 'ne', 'getBrowserLanguage must return "ne" for bare ne');
   });
+  withNavigatorLanguage('jv-ID', () => {
+    assert(i18nModule.getBrowserLanguage() === 'jv', 'getBrowserLanguage must return "jv" for jv-ID');
+  });
+  withNavigatorLanguage('jv', () => {
+    assert(i18nModule.getBrowserLanguage() === 'jv', 'getBrowserLanguage must return "jv" for bare jv');
+  });
   withNavigatorLanguage('hi-NP', () => {
     assert(i18nModule.getBrowserLanguage() === 'hi', 'hi-NP must keep the Hindi bundle; a registered Devanagari sibling must not hijack it');
   });
@@ -324,7 +330,7 @@ async function run(): Promise<void> {
   console.log('  ✓ getBrowserLanguage resolves regional locales before primary-language fallbacks');
 
   // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all supported languages.
-  const languages = ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const;
+  const languages = ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne', 'jv'] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.
   for (const lang of languages) {

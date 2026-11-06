@@ -3900,7 +3900,8 @@ export default function SettingsPage() {
     discountMaxAmount !== savedDiscountMaxAmount ||
     discountMode !== savedDiscountMode ||
     discountRequiresApproval !== savedDiscountRequiresApproval ||
-    JSON.stringify(cloudSettings) !== JSON.stringify(savedCloudSettings);
+    JSON.stringify(cloudSettings) !== JSON.stringify(savedCloudSettings) ||
+    JSON.stringify(orderNumberForm) !== JSON.stringify(savedOrderNumberForm);
 
   useEffect(() => {
     if (!isDirty) return;

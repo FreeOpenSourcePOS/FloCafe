@@ -505,6 +505,98 @@ function main() {
   console.log(
     '   ✓ upgraded / applySafeFixes-healed databases pass isHealthyDatabaseFile and journal recovery',
   );
+
+  // ── Column collation ownership and constraint ON CONFLICT policies are enforced ──
+  const collationMovedDb = buildIdealSchemaDb();
+  const collationMovedPath = path.join(testDir, 'collation-moved.db');
+  try {
+    const paymentMethodsSql = (
+      collationMovedDb
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'payment_methods'")
+        .get() as { sql: string }
+    ).sql;
+    const movedSql = paymentMethodsSql
+      .replace('name TEXT NOT NULL COLLATE NOCASE UNIQUE', 'name TEXT NOT NULL UNIQUE')
+      .replace(
+        'created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP',
+        'created_at TEXT NOT NULL COLLATE NOCASE DEFAULT CURRENT_TIMESTAMP',
+      )
+      .replace(/CREATE TABLE(?:\s+IF NOT EXISTS)?\s+payment_methods/i, 'CREATE TABLE payment_methods_rebuilt');
+    assert.notEqual(movedSql, paymentMethodsSql, 'collation move modified payment_methods DDL');
+    collationMovedDb.exec('PRAGMA foreign_keys = OFF');
+    collationMovedDb.exec(movedSql);
+    collationMovedDb.exec(
+      'INSERT INTO payment_methods_rebuilt SELECT * FROM payment_methods; DROP TABLE payment_methods; ALTER TABLE payment_methods_rebuilt RENAME TO payment_methods; CREATE INDEX IF NOT EXISTS idx_payment_methods_active_sort ON payment_methods(is_active, sort_order, id);',
+    );
+    collationMovedDb.exec('PRAGMA foreign_keys = ON');
+    fs.writeFileSync(collationMovedPath, collationMovedDb.serialize());
+  } finally {
+    collationMovedDb.close();
+  }
+  assert.equal(
+    isHealthyDatabaseFile(collationMovedPath, undefined, false),
+    false,
+    'isHealthyDatabaseFile rejects database where COLLATE NOCASE moved off payment_methods.name',
+  );
+
+  for (const [label, transform] of [
+    [
+      'column-level UNIQUE ON CONFLICT REPLACE',
+      (sql: string) =>
+        sql.replace(
+          'name TEXT NOT NULL COLLATE NOCASE UNIQUE',
+          'name TEXT NOT NULL COLLATE NOCASE UNIQUE ON CONFLICT REPLACE',
+        ),
+    ],
+    [
+      'table-level UNIQUE ON CONFLICT REPLACE',
+      (sql: string) =>
+        sql
+          .replace('name TEXT NOT NULL COLLATE NOCASE UNIQUE', 'name TEXT NOT NULL COLLATE NOCASE')
+          .replace(/\)\s*$/, ', UNIQUE(name) ON CONFLICT REPLACE)'),
+    ],
+  ] as const) {
+    const conflictChangedDb = buildIdealSchemaDb();
+    const conflictChangedPath = path.join(
+      testDir,
+      `conflict-changed-${label.replace(/\s+/g, '-')}.db`,
+    );
+    try {
+      const paymentMethodsSql = (
+        conflictChangedDb
+          .prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'payment_methods'",
+          )
+          .get() as { sql: string }
+      ).sql;
+      const modifiedSql = transform(paymentMethodsSql).replace(
+        /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+payment_methods/i,
+        'CREATE TABLE payment_methods_rebuilt',
+      );
+      assert.notEqual(
+        modifiedSql,
+        paymentMethodsSql,
+        `${label} modified payment_methods DDL`,
+      );
+      conflictChangedDb.exec('PRAGMA foreign_keys = OFF');
+      conflictChangedDb.exec(modifiedSql);
+      conflictChangedDb.exec(
+        'INSERT INTO payment_methods_rebuilt SELECT * FROM payment_methods; DROP TABLE payment_methods; ALTER TABLE payment_methods_rebuilt RENAME TO payment_methods; CREATE INDEX IF NOT EXISTS idx_payment_methods_active_sort ON payment_methods(is_active, sort_order, id);',
+      );
+      conflictChangedDb.exec('PRAGMA foreign_keys = ON');
+      fs.writeFileSync(conflictChangedPath, conflictChangedDb.serialize());
+    } finally {
+      conflictChangedDb.close();
+    }
+    assert.equal(
+      isHealthyDatabaseFile(conflictChangedPath, undefined, false),
+      false,
+      `isHealthyDatabaseFile rejects database with ${label} on payment_methods.name`,
+    );
+  }
+  console.log(
+    '   ✓ isHealthyDatabaseFile enforces per-column collation ownership and UNIQUE ON CONFLICT policies',
+  );
 }
 
 try {

@@ -491,6 +491,24 @@ async function run(): Promise<void> {
       'sw-TZ must resolve through the same-script regional fallback to sw-KE',
     );
   });
+  withNavigatorLanguage('pa-IN', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'pa',
+      'getBrowserLanguage must return "pa" for pa-IN',
+    );
+  });
+  withNavigatorLanguage('pa', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'pa',
+      'getBrowserLanguage must return "pa" for bare pa',
+    );
+  });
+  withNavigatorLanguage('pa-Guru-IN', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'pa',
+      'pa-Guru-IN must resolve through the Gurmukhi script fallback to pa-IN',
+    );
+  });
   withNavigatorLanguage(
     'en-US',
     () => {
@@ -545,6 +563,7 @@ async function run(): Promise<void> {
     'jv',
     'mr',
     'sw',
+    'pa',
   ] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.

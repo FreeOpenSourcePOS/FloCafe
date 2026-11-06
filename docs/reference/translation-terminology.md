@@ -191,6 +191,13 @@ tags `Isiyo ya Mboga`, identical between `pos.*` and `products.*`. Takeaway is `
 `Kula Hapa`, and delivery is `Uwasilishaji`. Cash movement uses `Uwekaji pesa` for pay-in and
 `Utoaji pesa` for pay-out, identically on the dashboard and on the Z-report.
 
+**Punjabi.** Subtotal `ਉਪ-ਜੋੜ` and grand total `ਕੁੱਲ ਜੋੜ` stay distinct on the receipt, and cash
+received is `ਪ੍ਰਾਪਤ ਨਕਦ`. The vegetarian and non-vegetarian tags are `ਸ਼ਾਕਾਹਾਰੀ` and `ਮਾਸਾਹਾਰੀ` across
+both `pos.*` and `products.*`. Cash movement uses `ਨਕਦ ਜਮ੍ਹਾਂ` for pay-in and `ਨਕਦ ਨਿਕਾਸੀ` for
+pay-out on both the dashboard and the Z-report, and takeaway is `ਟੇਕਅਵੇ` across `orders.*` and
+`pos.*`. Gurmukhi virama conjuncts (`ਪ੍ਰ`, `ਸ੍ਰ`) and combining signs (`ੰ` tippi, `ਂ` bindi, `ੱ`
+addak, `਼` nukta) must remain NFC-normalized and attached to their base consonant.
+
 ## Verification
 
 The contracts on this page are pinned by `tests/print-kernel.test.ts`,

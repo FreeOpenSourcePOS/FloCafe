@@ -690,6 +690,18 @@ async function run(): Promise<void> {
         'Marathi demo customers use India E.164 numbers',
       );
     }
+    if (language === 'pa') {
+      assert.equal(snapshot.category, 'ਸਟਾਰਟਰ', 'Punjabi demo category is localized');
+      assert.equal(snapshot.product, 'ਪਨੀਰ ਟਿੱਕਾ', 'Punjabi demo product is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-demo-dal-makhani'")[0].name, 'ਦਾਲ ਮੱਖਣੀ', 'Punjabi demo dal makhani uses Punjabi restaurant terminology');
+      assert.equal(snapshot.manager, 'ਡੈਮੋ ਮੈਨੇਜਰ', 'Punjabi demo manager is localized');
+      assert.equal(snapshot.customer, 'ਹਰਪ੍ਰੀਤ ਸਿੰਘ', 'Punjabi demo customer is localized');
+      assert.deepEqual(
+        rows('customers', 'phone', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => customer.phone),
+        ['+919876543210', '+919876543211', '+919876543212'],
+        'Punjabi demo customers use India E.164 numbers',
+      );
+    }
     if (language === 'bn') {
       assert.equal(snapshot.category, 'স্টার্টার', 'Bengali demo category is localized');
       assert.equal(snapshot.product, 'ফুচকা', 'Bengali demo product is localized');

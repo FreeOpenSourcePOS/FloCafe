@@ -329,6 +329,19 @@ function run(): void {
     printLabel('sw', 'pos.subtotal') === 'Jumla Ndogo' &&
       printLabel('sw', 'print.grandTotal') !== printLabel('sw', 'pos.subtotal'),
   );
+  assert('Punjabi grand total is localized', printLabel('pa', 'print.grandTotal') === 'ਕੁੱਲ ਜੋੜ');
+  assert('Punjabi bill number label is localized', printLabel('pa', 'receipt.billNumber') === 'ਬਿੱਲ #');
+  assert('Punjabi print-test amount is localized', printLabel('pa', 'printTest.amt') === 'ਰਕਮ');
+  assert(
+    'Punjabi takeaway is distinct from delivery',
+    printLabel('pa', 'pos.orderTypeTakeaway') === 'ਟੇਕਅਵੇ' &&
+      printLabel('pa', 'pos.orderTypeDelivery') === 'ਡਿਲੀਵਰੀ',
+  );
+  assert(
+    'Punjabi subtotal stays distinct from grand total',
+    printLabel('pa', 'pos.subtotal') === 'ਉਪ-ਜੋੜ' &&
+      printLabel('pa', 'print.grandTotal') !== printLabel('pa', 'pos.subtotal'),
+  );
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {

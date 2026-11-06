@@ -5,7 +5,7 @@ const GRAPHEME_SEGMENTER = typeof Intl !== 'undefined' && typeof Intl.Segmenter 
   ? new Intl.Segmenter('und', { granularity: 'grapheme' })
   : null;
 const THAI_SARA_AM_CODE_POINT = 0x0e33;
-const INDIC_VIRAMA_CODE_POINTS = new Set([0x094d, 0x09cd]);
+const INDIC_VIRAMA_CODE_POINTS = new Set([0x094d, 0x09cd, 0x0a4d]);
 const EMOJI_BASE_RE = /\p{Extended_Pictographic}/u;
 
 export type PrintPaperWidth =
@@ -104,8 +104,19 @@ function fallbackGraphemeSegments(value: string): string[] {
 /** Keep script clusters together when the runtime supports Unicode segmentation. */
 export function graphemeSegments(text: string): string[] {
   const value = String(text ?? '');
-  if (GRAPHEME_SEGMENTER) return Array.from(GRAPHEME_SEGMENTER.segment(value), (part) => part.segment);
-  return fallbackGraphemeSegments(value);
+  if (!GRAPHEME_SEGMENTER) return fallbackGraphemeSegments(value);
+  const raw = Array.from(GRAPHEME_SEGMENTER.segment(value), (part) => part.segment);
+  const merged: string[] = [];
+  for (const segment of raw) {
+    const prev = merged[merged.length - 1];
+    const prevLast = prev ? codePointBefore(prev) : undefined;
+    if (prev && prevLast !== undefined && INDIC_VIRAMA_CODE_POINTS.has(prevLast) && /^\p{L}/u.test(segment)) {
+      merged[merged.length - 1] = prev + segment;
+    } else {
+      merged.push(segment);
+    }
+  }
+  return merged;
 }
 
 function isFullWidthCodePoint(codePoint: number): boolean {

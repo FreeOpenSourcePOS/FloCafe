@@ -119,6 +119,7 @@ async function run() {
     'jv',
     'mr',
     'sw',
+    'pa',
   ] as const) {
     await i18n.loadLocaleMessages(lang);
   }
@@ -670,6 +671,21 @@ async function run() {
         swHtml.includes('Asante kwa kututembelea!'),
     );
 
+    const paTenant = {
+      business_name: 'FloCafe Amritsar',
+      currency: 'INR',
+      country: 'IN',
+      timezone: 'Asia/Kolkata',
+    };
+    const paHtml = generateBillHtml(sampleEnBill, paTenant, { language: 'pa', isReprint: true });
+    assert('PA receipt has lang="pa-IN" and dir="ltr"', paHtml.includes('<html lang="pa-IN" dir="ltr">'));
+    assert('PA labels are Gurmukhi',
+      paHtml.includes('ਮੁੜ-ਪ੍ਰਿੰਟ') &&
+      paHtml.includes('ਬਿੱਲ #') &&
+      paHtml.includes('ਕੁੱਲ ਜੋੜ') &&
+      paHtml.includes('ਤੁਹਾਡੇ ਆਉਣ ਲਈ ਧੰਨਵਾਦ!')
+    );
+
     // The browser receipt is the primary print path, and its body stack was
     // extended per language by hand, so Bengali was the one merged locale left
     // without a declared family here. Assert the families the order-slip and
@@ -927,6 +943,33 @@ async function run() {
         marathiSlip.includes('उप-एकूण') &&
         marathiSlip.includes('एकूण रक्कम') &&
         marathiSlip.includes('₹'),
+    );
+
+    const punjabiSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'ਆਰਡਰ ਸਲਿੱਪ',
+        subtotal: 'ਉਪ-ਜੋੜ',
+        discount: 'ਛੋਟ',
+        serviceCharge: 'ਸਰਵਿਸ ਚਾਰਜ',
+        deliveryCharge: 'ਡਿਲੀਵਰੀ ਚਾਰਜ',
+        packagingCharge: 'ਪੈਕੇਜਿੰਗ ਚਾਰਜ',
+        tax: 'ਟੈਕਸ',
+        total: 'ਕੁੱਲ ਜੋੜ',
+      },
+      {
+        country: 'IN',
+        currency: 'INR',
+        locale: 'pa-IN',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Punjabi order slip carries pa-IN LTR metadata, Gurmukhi labels, and local font fallback',
+      punjabiSlip.includes('lang="pa-IN" dir="ltr"') &&
+        punjabiSlip.includes('Noto Sans Gurmukhi') &&
+        punjabiSlip.includes('ਉਪ-ਜੋੜ') &&
+        punjabiSlip.includes('ਕੁੱਲ ਜੋੜ'),
     );
 
     const bengaliSlip = generateOrderSlipHtml(

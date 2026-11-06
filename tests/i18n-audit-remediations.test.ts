@@ -109,6 +109,7 @@ async function run() {
     'jv',
     'mr',
     'sw',
+    'pa',
   ] as const) {
     await ensureReceiptMessagesLoaded(lang);
     const cached = getCachedMessages(lang);
@@ -195,6 +196,7 @@ async function run() {
     jv: { tag: 'jv-ID', dir: 'ltr' },
     mr: { tag: 'mr-IN', dir: 'ltr' },
     sw: { tag: 'sw-KE', dir: 'ltr' },
+    pa: { tag: 'pa-IN', dir: 'ltr' },
   };
 
   for (const [lang, { tag, dir }] of Object.entries(expectedLocaleTags)) {
@@ -441,6 +443,7 @@ async function run() {
     'jv',
     'mr',
     'sw',
+    'pa',
   ]) {
     const filePath = path.join(MESSAGES_DIR, `${lang}.json`);
     const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -801,6 +804,17 @@ async function run() {
       },
       { language: 'fa' },
     ),
+  });
+
+  visualArtifacts.push({
+    filename: 'web_print_bill_pa_in',
+    title: 'Web Print Bill (Punjabi - lang="pa-IN")',
+    html: generateBillHtml(sampleBill, {
+      business_name: 'FloCafe Amritsar',
+      currency: 'INR',
+      country: 'IN',
+      timezone: 'Asia/Kolkata',
+    }, { language: 'pa' }),
   });
 
   // Write all HTML files to evidence dir

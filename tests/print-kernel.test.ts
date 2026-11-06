@@ -399,6 +399,7 @@ assert.equal(
 for (const [label, cluster] of [
   ['Devanagari', 'क्ष'],
   ['Bengali', 'ক্ষ'],
+  ['Gurmukhi', 'ਪ੍ਰ'],
   ['Thai', 'กำ'],
   ['Urdu', 'کّ'],
 ] as const) {
@@ -569,6 +570,23 @@ assert.deepEqual(
   wrapToDisplayCells(mrNarrowReceiptProduct, 3),
   ['मिसळ', 'पाव'],
   'Marathi wrapping breaks on the word boundary rather than stranding a matra at a 3-cell width',
+);
+
+const paNarrowReceiptProduct = 'ਮਸਾਲਾ ਚਾਹ';
+assert.deepEqual(
+  graphemeSegments(paNarrowReceiptProduct),
+  ['ਮ', 'ਸਾ', 'ਲਾ', ' ', 'ਚਾ', 'ਹ'],
+  'Punjabi receipt product segments into base consonants with attached Gurmukhi matras',
+);
+assert.equal(
+  displayCellWidth(paNarrowReceiptProduct),
+  6,
+  'Punjabi receipt product measures six thermal display cells, not its eight code points',
+);
+assert.deepEqual(
+  wrapToDisplayCells(paNarrowReceiptProduct, 3),
+  ['ਮਸਾਲਾ', 'ਚਾਹ'],
+  'Punjabi wrapping breaks on the word boundary rather than stranding a Gurmukhi matra at a 3-cell width',
 );
 
 const widthModulePath = require.resolve('../shared/print/width');

@@ -50,9 +50,15 @@ const ROOT = path.join(__dirname, '..');
 const storage = new Map<string, string>();
 const dummyStorage = {
   getItem: (k: string) => storage.get(k) ?? null,
-  setItem: (k: string, v: string) => { storage.set(k, String(v)); },
-  removeItem: (k: string) => { storage.delete(k); },
-  clear: () => { storage.clear(); },
+  setItem: (k: string, v: string) => {
+    storage.set(k, String(v));
+  },
+  removeItem: (k: string) => {
+    storage.delete(k);
+  },
+  clear: () => {
+    storage.clear();
+  },
 };
 (global as any).localStorage = dummyStorage;
 (global as any).window = { localStorage: dummyStorage };
@@ -117,7 +123,12 @@ function loadComponents(): {
   };
   const originalResolveFilename = moduleApi._resolveFilename;
 
-  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  moduleApi._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
     let resolvedRequest = request;
     if (request.startsWith('@/')) {
       resolvedRequest = path.resolve(ROOT, 'frontend/src', request.slice(2));
@@ -134,7 +145,13 @@ function loadComponents(): {
     const { KdsHtmlLang } = require('../frontend/src/components/kds/KdsHtmlLang');
     const { HtmlLangSync } = require('../frontend/src/components/layout/HtmlLangSync');
     const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
-    const { fetchServerInfo, getLanguageDirection, getLanguageLocale, loadLocaleMessages, getCachedMessages } = require('../frontend/src/lib/i18n');
+    const {
+      fetchServerInfo,
+      getLanguageDirection,
+      getLanguageLocale,
+      loadLocaleMessages,
+      getCachedMessages,
+    } = require('../frontend/src/lib/i18n');
     const { IntlProvider } = frontendRequire('use-intl');
     return {
       Ltr,
@@ -176,7 +193,9 @@ async function run(): Promise<void> {
     }
     totalPhysical += matches.length;
   }
-  console.log(`  ✓ batch screens use logical direction utilities (${totalPhysical} allowlisted physical cases)`);
+  console.log(
+    `  ✓ batch screens use logical direction utilities (${totalPhysical} allowlisted physical cases)`,
+  );
 
   // 2. Directional icons carry `.rtl-flip`.
   const iconFiles = SCREEN_FILES.filter((f) => {
@@ -187,12 +206,17 @@ async function run(): Promise<void> {
     const lines = fs.readFileSync(path.join(ROOT, file), 'utf8').split('\n');
     lines.forEach((line, i) => {
       // Only flag JSX usage (`<Arrow…`, `<Chevron…`), not the lucide import statement.
-      if (/<(ArrowLeft|ArrowRight|ChevronLeft|ChevronRight)\b/.test(line) && !line.includes('rtl-flip')) {
+      if (
+        /<(ArrowLeft|ArrowRight|ChevronLeft|ChevronRight)\b/.test(line) &&
+        !line.includes('rtl-flip')
+      ) {
         assert(false, `${file}:${i + 1} uses a directional icon without rtl-flip: ${line.trim()}`);
       }
     });
   }
-  console.log(`  ✓ directional icons carry rtl-flip (${iconFiles.length} file(s) with directional icons)`);
+  console.log(
+    `  ✓ directional icons carry rtl-flip (${iconFiles.length} file(s) with directional icons)`,
+  );
 
   // 3. Executable Ltr component isolates Batch F operational values.
   const {
@@ -212,58 +236,77 @@ async function run(): Promise<void> {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const) {
+  for (const lang of [
+    'en',
+    'es',
+    'fr',
+    'pt',
+    'ru',
+    'fa',
+    'ur',
+    'it',
+    'ja',
+    'zh',
+    'zh-tw',
+    'ko',
+    'id',
+    'nl',
+    'hi',
+    'bn',
+    'sq',
+    'vi',
+    'th',
+    'ne',
+    'ha',
+  ] as const) {
     await loadLocaleMessages(lang);
   }
 
   React.useSyncExternalStore = (_subscribe: any, getSnapshot: () => any) => getSnapshot();
 
   const orderNumRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, null, '#101')
+    React.createElement(Ltr, null, '#101'),
   );
   assert(
     orderNumRender === '<span dir="ltr" class="ltr-island">#101</span>',
-    `Ltr must isolate KDS order numbers with dir="ltr", got: ${orderNumRender}`
+    `Ltr must isolate KDS order numbers with dir="ltr", got: ${orderNumRender}`,
   );
 
   const elapsedRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, null, '05:32')
+    React.createElement(Ltr, null, '05:32'),
   );
   assert(
     elapsedRender === '<span dir="ltr" class="ltr-island">05:32</span>',
-    `Ltr must isolate KDS elapsed time with dir="ltr", got: ${elapsedRender}`
+    `Ltr must isolate KDS elapsed time with dir="ltr", got: ${elapsedRender}`,
   );
 
   const pairingCodeRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, { className: 'font-mono tracking-widest' }, '7H3K-9Q2M')
+    React.createElement(Ltr, { className: 'font-mono tracking-widest' }, '7H3K-9Q2M'),
   );
   assert(
-    pairingCodeRender === '<span dir="ltr" class="ltr-island font-mono tracking-widest">7H3K-9Q2M</span>',
-    `Ltr must isolate pairing codes with dir="ltr", got: ${pairingCodeRender}`
+    pairingCodeRender ===
+      '<span dir="ltr" class="ltr-island font-mono tracking-widest">7H3K-9Q2M</span>',
+    `Ltr must isolate pairing codes with dir="ltr", got: ${pairingCodeRender}`,
   );
 
   const phoneRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, null, '+98 912 123 4567')
+    React.createElement(Ltr, null, '+98 912 123 4567'),
   );
   assert(
     phoneRender === '<span dir="ltr" class="ltr-island">+98 912 123 4567</span>',
-    `Ltr must isolate WhatsApp phone numbers with dir="ltr", got: ${phoneRender}`
+    `Ltr must isolate WhatsApp phone numbers with dir="ltr", got: ${phoneRender}`,
   );
 
-  const priceRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, null, '$14.99')
-  );
+  const priceRender = ReactDOMServer.renderToStaticMarkup(React.createElement(Ltr, null, '$14.99'));
   assert(
     priceRender === '<span dir="ltr" class="ltr-island">$14.99</span>',
-    `Ltr must isolate Server App prices with dir="ltr", got: ${priceRender}`
+    `Ltr must isolate Server App prices with dir="ltr", got: ${priceRender}`,
   );
 
-  const qtyRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, null, 2)
-  );
+  const qtyRender = ReactDOMServer.renderToStaticMarkup(React.createElement(Ltr, null, 2));
   assert(
     qtyRender === '<span dir="ltr" class="ltr-island">2</span>',
-    `Ltr must isolate Server App item quantities with dir="ltr", got: ${qtyRender}`
+    `Ltr must isolate Server App item quantities with dir="ltr", got: ${qtyRender}`,
   );
 
   const urlRender = ReactDOMServer.renderToStaticMarkup(
@@ -276,26 +319,54 @@ async function run(): Promise<void> {
         target: '_blank',
         rel: 'noopener noreferrer',
       },
-      'http://192.168.1.50:3001/server-standalone'
-    )
+      'http://192.168.1.50:3001/server-standalone',
+    ),
   );
   assert(
     urlRender ===
       '<a dir="ltr" class="ltr-island block font-mono text-sm break-all" href="http://192.168.1.50:3001/server-standalone" target="_blank" rel="noopener noreferrer">http://192.168.1.50:3001/server-standalone</a>',
-    `Ltr as="a" must isolate Server App LAN URLs with dir="ltr", got: ${urlRender}`
+    `Ltr as="a" must isolate Server App LAN URLs with dir="ltr", got: ${urlRender}`,
   );
-  console.log('  ✓ naturally LTR values are isolated with Ltr (order #, elapsed time, phones, pairing code, money, LAN URLs)');
+  console.log(
+    '  ✓ naturally LTR values are isolated with Ltr (order #, elapsed time, phones, pairing code, money, LAN URLs)',
+  );
 
   // 4. Standalone layouts sync dir/lang on the document.
   //    #376: HtmlLangSync reads the active locale from the i18n context
   //    (useLocale), so each render is wrapped in an IntlProvider whose locale
   //    matches the language under test.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const) {
+  for (const lang of [
+    'en',
+    'es',
+    'fr',
+    'pt',
+    'ru',
+    'fa',
+    'ur',
+    'it',
+    'ja',
+    'zh',
+    'zh-tw',
+    'ko',
+    'id',
+    'nl',
+    'hi',
+    'bn',
+    'sq',
+    'vi',
+    'th',
+    'ne',
+    'ha',
+  ] as const) {
     usePosSettingsStore.getState().setLanguage(lang);
     const kdsMarkup = ReactDOMServer.renderToStaticMarkup(React.createElement(KdsHtmlLang));
     assert(kdsMarkup === '', `KdsHtmlLang must render null, got: ${kdsMarkup}`);
     const serverMarkup = ReactDOMServer.renderToStaticMarkup(
-      React.createElement(IntlProvider, { locale: getLanguageLocale(lang) }, React.createElement(HtmlLangSync))
+      React.createElement(
+        IntlProvider,
+        { locale: getLanguageLocale(lang) },
+        React.createElement(HtmlLangSync),
+      ),
     );
     assert(serverMarkup === '', `HtmlLangSync must render null, got: ${serverMarkup}`);
   }
@@ -303,14 +374,57 @@ async function run(): Promise<void> {
   for (const rtlLang of ['fa', 'ur'] as const) {
     assert(getLanguageDirection(rtlLang) === 'rtl', `${rtlLang} must resolve to rtl`);
   }
-  for (const ltrLang of ['en', 'es', 'fr', 'pt', 'ru', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const) {
+  for (const ltrLang of [
+    'en',
+    'es',
+    'fr',
+    'pt',
+    'ru',
+    'it',
+    'ja',
+    'zh',
+    'zh-tw',
+    'ko',
+    'id',
+    'nl',
+    'hi',
+    'bn',
+    'sq',
+    'vi',
+    'th',
+    'ne',
+    'ha',
+  ] as const) {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
   }
   console.log('  ✓ standalone layouts sync document dir/lang (KdsHtmlLang / HtmlLangSync)');
 
   // 5. KDS disabled screens and Server App strings resolve localized i18n keys.
   const { createTranslator } = frontendRequire('use-intl/core');
-  const getTestTranslator = (lang: 'en' | 'es' | 'fr' | 'pt' | 'ru' | 'fa' | 'ur' | 'it' | 'ja' | 'zh' | 'zh-tw' | 'ko' | 'id' | 'nl' | 'hi' | 'bn' | 'sq' | 'vi' | 'th' | 'ne') => {
+  const getTestTranslator = (
+    lang:
+      | 'en'
+      | 'es'
+      | 'fr'
+      | 'pt'
+      | 'ru'
+      | 'fa'
+      | 'ur'
+      | 'it'
+      | 'ja'
+      | 'zh'
+      | 'zh-tw'
+      | 'ko'
+      | 'id'
+      | 'nl'
+      | 'hi'
+      | 'bn'
+      | 'sq'
+      | 'vi'
+      | 'th'
+      | 'ne'
+      | 'ha',
+  ) => {
     const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
     return createTranslator({ locale: getLanguageLocale(lang), messages }) as unknown as (
       key: string,
@@ -320,36 +434,75 @@ async function run(): Promise<void> {
 
   const kdsDisabledFa = getTestTranslator('fa')('kds.disabledTitle');
   assert(
-    kdsDisabledFa && kdsDisabledFa !== 'kds.disabledTitle' && kdsDisabledFa !== 'Kitchen Display is disabled',
-    `kds.disabledTitle in Persian must be localized, got: ${kdsDisabledFa}`
+    kdsDisabledFa &&
+      kdsDisabledFa !== 'kds.disabledTitle' &&
+      kdsDisabledFa !== 'Kitchen Display is disabled',
+    `kds.disabledTitle in Persian must be localized, got: ${kdsDisabledFa}`,
   );
   const kdsHintFa = getTestTranslator('fa')('kds.disabledHint');
   assert(
-    kdsHintFa && kdsHintFa !== 'kds.disabledHint' && !kdsHintFa.includes('This business has turned off'),
-    `kds.disabledHint in Persian must be localized, got: ${kdsHintFa}`
+    kdsHintFa &&
+      kdsHintFa !== 'kds.disabledHint' &&
+      !kdsHintFa.includes('This business has turned off'),
+    `kds.disabledHint in Persian must be localized, got: ${kdsHintFa}`,
   );
 
   const serverAppTitleFa = getTestTranslator('fa')('serverApp.title');
   assert(
     serverAppTitleFa && serverAppTitleFa !== 'serverApp.title',
-    `serverApp.title in Persian must be localized, got: ${serverAppTitleFa}`
+    `serverApp.title in Persian must be localized, got: ${serverAppTitleFa}`,
   );
   const serverAppDisabledFa = getTestTranslator('fa')('serverApp.disabledTitle');
   assert(
-    serverAppDisabledFa && serverAppDisabledFa !== 'serverApp.disabledTitle' && serverAppDisabledFa !== 'Server App is disabled',
-    `serverApp.disabledTitle in Persian must be localized, got: ${serverAppDisabledFa}`
+    serverAppDisabledFa &&
+      serverAppDisabledFa !== 'serverApp.disabledTitle' &&
+      serverAppDisabledFa !== 'Server App is disabled',
+    `serverApp.disabledTitle in Persian must be localized, got: ${serverAppDisabledFa}`,
   );
 
   const tableEn = getTestTranslator('en')('serverApp.tableLabel', { name: '12' });
   assert(tableEn === 'Table 12', `serverApp.tableLabel EN substitution failed, got: ${tableEn}`);
   const tableFa = getTestTranslator('fa')('serverApp.tableLabel', { name: '12' });
-  assert(tableFa.includes('12') && tableFa !== 'Table 12', `serverApp.tableLabel FA substitution failed, got: ${tableFa}`);
+  assert(
+    tableFa.includes('12') && tableFa !== 'Table 12',
+    `serverApp.tableLabel FA substitution failed, got: ${tableFa}`,
+  );
 
   const guestFa = getTestTranslator('fa')('serverApp.guestFallbackName', { last4: '5678' });
-  assert(guestFa.includes('5678') && !guestFa.startsWith('Guest '), `serverApp.guestFallbackName FA substitution failed, got: ${guestFa}`);
+  assert(
+    guestFa.includes('5678') && !guestFa.startsWith('Guest '),
+    `serverApp.guestFallbackName FA substitution failed, got: ${guestFa}`,
+  );
 
-  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const) {
-    for (const key of ['kds.disabledTitle', 'kds.disabledHint', 'serverApp.disabledTitle', 'serverApp.disabledHint']) {
+  for (const lang of [
+    'en',
+    'es',
+    'fr',
+    'pt',
+    'ru',
+    'fa',
+    'ur',
+    'it',
+    'ja',
+    'zh',
+    'zh-tw',
+    'ko',
+    'id',
+    'nl',
+    'hi',
+    'bn',
+    'sq',
+    'vi',
+    'th',
+    'ne',
+    'ha',
+  ] as const) {
+    for (const key of [
+      'kds.disabledTitle',
+      'kds.disabledHint',
+      'serverApp.disabledTitle',
+      'serverApp.disabledHint',
+    ]) {
       const val = getTestTranslator(lang)(key);
       assert(val && val !== key, `Translation key ${key} must resolve for ${lang}`);
     }
@@ -371,17 +524,25 @@ async function run(): Promise<void> {
   (global as any).window = {};
   try {
     const info = await fetchServerInfo('http://192.168.1.50:3002', 1500, '/api/server-app/info');
-    assert(info.language === 'fa', `Server App info must resolve language 'fa', got: ${info.language}`);
-    assert(info.country === 'IR', `Server App info must resolve country 'IR', got: ${info.country}`);
+    assert(
+      info.language === 'fa',
+      `Server App info must resolve language 'fa', got: ${info.language}`,
+    );
+    assert(
+      info.country === 'IR',
+      `Server App info must resolve country 'IR', got: ${info.country}`,
+    );
     assert(
       fetchCalls.length === 1 && fetchCalls[0] === 'http://192.168.1.50:3002/api/server-app/info',
-      `Server App info must be fetched from /api/server-app/info, got: ${fetchCalls.join(', ')}`
+      `Server App info must be fetched from /api/server-app/info, got: ${fetchCalls.join(', ')}`,
     );
   } finally {
     global.fetch = realFetch;
     (global as any).window = realWindow;
   }
-  console.log('  ✓ Server App inherits tenant language via /api/server-app/info (useSyncServerLanguage path)');
+  console.log(
+    '  ✓ Server App inherits tenant language via /api/server-app/info (useSyncServerLanguage path)',
+  );
 
   // 7. LAN-safe send nonce, scoped to sendDraft so an unrelated later call cannot mask a regression.
   const serverAppPage = fs.readFileSync(
@@ -401,7 +562,8 @@ async function run(): Promise<void> {
     'sendDraft must generate its nonce via the LAN-safe createPaymentIdempotencyKey helper',
   );
   assert(
-    sendDraftBody.indexOf('createPaymentIdempotencyKey()') < sendDraftBody.indexOf('setSending(true)'),
+    sendDraftBody.indexOf('createPaymentIdempotencyKey()') <
+      sendDraftBody.indexOf('setSending(true)'),
     'sendDraft must compute its nonce before setSending(true) so a sync throw cannot stick the UI on Sending...',
   );
   const { createPaymentIdempotencyKey } = frontendRequire('./src/lib/payment-idempotency');

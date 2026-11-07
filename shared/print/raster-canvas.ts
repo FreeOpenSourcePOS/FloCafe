@@ -56,7 +56,7 @@ export function paintRasterRequest(
     const topPad = 3;
     const weight = styles.includes('bold') ? '700' : '400';
     const fontFallback =
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Bengali", "Nirmala UI", "Vrinda", "Bangla Sangam MN", "Noto Sans Devanagari", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Thai", "Leelawadee UI", "Thonburi", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Noto Sans", sans-serif';
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Bengali", "Nirmala UI", "Vrinda", "Bangla Sangam MN", "Noto Sans Devanagari", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Gurmukhi", "Raavi", "Kohinoor Gurmukhi", "Gurmukhi Sangam MN", "Noto Sans Thai", "Leelawadee UI", "Thonburi", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Noto Sans", sans-serif';
     const fontSpec = request.bundledFont
       ? JSON.stringify(request.bundledFont.family) + ', ' + fontFallback
       : fontFallback;
@@ -68,8 +68,39 @@ export function paintRasterRequest(
     if (typeof Intl.Segmenter !== 'function')
       return makeFailure('Grapheme segmentation is unavailable');
     const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-    const graphemes = (value: string): string[] =>
-      Array.from(segmenter.segment(value), (part) => part.segment);
+    const isIndicVirama = (codePoint: number): boolean =>
+      codePoint === 0x094d || codePoint === 0x09cd || codePoint === 0x0a4d;
+    const isIndicConsonant = (codePoint: number): boolean =>
+      (codePoint >= 0x0915 && codePoint <= 0x0939) ||
+      (codePoint >= 0x0958 && codePoint <= 0x095f) ||
+      (codePoint >= 0x0978 && codePoint <= 0x097f) ||
+      (codePoint >= 0x0995 && codePoint <= 0x09b9) ||
+      (codePoint >= 0x09dc && codePoint <= 0x09df) ||
+      (codePoint >= 0x09f0 && codePoint <= 0x09f1) ||
+      codePoint === 0x09fc ||
+      (codePoint >= 0x0a15 && codePoint <= 0x0a39) ||
+      (codePoint >= 0x0a59 && codePoint <= 0x0a5e) ||
+      codePoint === 0x0a75;
+    const graphemes = (value: string): string[] => {
+      const merged: string[] = [];
+      for (const { segment } of segmenter.segment(value)) {
+        const prev = merged[merged.length - 1];
+        const prevLast = prev ? prev.charCodeAt(prev.length - 1) : undefined;
+        const nextFirst = segment.codePointAt(0);
+        if (
+          prev &&
+          prevLast !== undefined &&
+          isIndicVirama(prevLast) &&
+          nextFirst !== undefined &&
+          isIndicConsonant(nextFirst)
+        ) {
+          merged[merged.length - 1] = prev + segment;
+        } else {
+          merged.push(segment);
+        }
+      }
+      return merged;
+    };
     const wrap = (value: string, width: number): string[] => {
       const wrapped: string[] = [];
       let current = '';

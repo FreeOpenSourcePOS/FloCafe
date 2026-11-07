@@ -172,9 +172,16 @@ export function shouldSkipOrderWriteRateLimit(req: Request): boolean {
   return isAllowedPrivateIp(req.socket?.remoteAddress || '');
 }
 
+const configuredOrderReadLimit = Number.parseInt(
+  process.env.FLO_ORDER_READ_RATE_LIMIT_MAX || '',
+  10,
+);
 const orderReadRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: 120,
+  limit:
+    Number.isFinite(configuredOrderReadLimit) && configuredOrderReadLimit > 0
+      ? configuredOrderReadLimit
+      : 120,
   standardHeaders: true,
   legacyHeaders: false,
 });

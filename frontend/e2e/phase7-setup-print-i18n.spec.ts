@@ -98,6 +98,11 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
     web: 'Uchapishaji wa Wavuti (Kivinjari)',
     whatsapp: 'Shiriki kwa WhatsApp',
   },
+  pa: {
+    basic: 'ਮੁੱਢਲੀ ਰਸੀਦ (ਥਰਮਲ)',
+    web: 'ਵੈੱਬ ਪ੍ਰਿੰਟ (ਬ੍ਰਾਊਜ਼ਰ)',
+    whatsapp: 'WhatsApp ਸ਼ੇਅਰ',
+  },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

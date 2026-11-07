@@ -509,6 +509,18 @@ async function run(): Promise<void> {
       'pa-Guru-IN must resolve through the Gurmukhi script fallback to pa-IN',
     );
   });
+  withNavigatorLanguage('te-IN', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'te',
+      'getBrowserLanguage must return "te" for te-IN',
+    );
+  });
+  withNavigatorLanguage('te', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'te',
+      'getBrowserLanguage must return "te" for bare te',
+    );
+  });
   withNavigatorLanguage(
     'en-US',
     () => {
@@ -564,6 +576,7 @@ async function run(): Promise<void> {
     'mr',
     'sw',
     'pa',
+    'te',
   ] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.

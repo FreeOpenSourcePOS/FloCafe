@@ -15,11 +15,18 @@ function loadFrontendKotEncoder(): typeof import('../frontend/src/lib/printer/ko
   const path = require('node:path') as typeof import('node:path');
   const moduleApi = require('node:module') as { _resolveFilename: (...args: any[]) => string };
   const originalResolveFilename = moduleApi._resolveFilename;
-  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  moduleApi._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
     let resolvedRequest = request;
     if (request === '@countries') resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
-    else if (request.startsWith('@/')) resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
-    else if (request.startsWith('@print/')) resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
+    else if (request.startsWith('@/'))
+      resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+    else if (request.startsWith('@print/'))
+      resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
     return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
   };
   try {
@@ -35,7 +42,9 @@ const order = {
   created_at: '2026-08-21 18:42:00',
   table: { name: '4' },
   customer: { name: 'Asha' },
-  items: [{ quantity: 1, product_name: 'چای', status: 'pending', addons: [], special_instructions: '' }],
+  items: [
+    { quantity: 1, product_name: 'چای', status: 'pending', addons: [], special_instructions: '' },
+  ],
 };
 
 const latinCodePageCapabilities: ThermalPrinterCapabilities = {
@@ -50,33 +59,48 @@ const shapingCapabilities: ThermalPrinterCapabilities = {
   shaping: { arabic: true },
 };
 
-function outputPair(capabilities: ThermalPrinterCapabilities, arabicShaping: boolean, kotOrder = order, useUnicode = false): { backend: string; webusb: string; backendWarnings: any[]; webusbWarnings: any[] } {
+function outputPair(
+  capabilities: ThermalPrinterCapabilities,
+  arabicShaping: boolean,
+  kotOrder = order,
+  useUnicode = false,
+): { backend: string; webusb: string; backendWarnings: any[]; webusbWarnings: any[] } {
   const backendWarnings: any[] = [];
-  const backend = escPosToText(formatKOT(
-    kotOrder,
-    kotOrder.items,
-    'Kitchen',
-    42,
-    useUnicode,
-    'full',
-    'en-US',
-    { timeZone: 'UTC' },
-    backendWarnings,
-    arabicShaping,
-    'en',
-    capabilities,
-  ));
+  const backend = escPosToText(
+    formatKOT(
+      kotOrder,
+      kotOrder.items,
+      'Kitchen',
+      42,
+      useUnicode,
+      'full',
+      'en-US',
+      { timeZone: 'UTC' },
+      backendWarnings,
+      arabicShaping,
+      'en',
+      capabilities,
+    ),
+  );
   const webusbWarnings: any[] = [];
   const encoder = loadFrontendKotEncoder();
-  const webusb = escPosToText(Buffer.from(encoder.buildKotBytes(kotOrder as any, {
-    paperWidth: 58,
-    language: 'en',
-    stationName: 'Kitchen',
-    locale: 'en-US',
-    timezone: 'UTC',
-    arabicShaping,
-    capabilities,
-  }, webusbWarnings)));
+  const webusb = escPosToText(
+    Buffer.from(
+      encoder.buildKotBytes(
+        kotOrder as any,
+        {
+          paperWidth: 58,
+          language: 'en',
+          stationName: 'Kitchen',
+          locale: 'en-US',
+          timezone: 'UTC',
+          arabicShaping,
+          capabilities,
+        },
+        webusbWarnings,
+      ),
+    ),
+  );
   return { backend, webusb, backendWarnings, webusbWarnings };
 }
 
@@ -85,9 +109,17 @@ function run(): void {
   assert.deepEqual(generic.capabilities.encoding.codePages, ['ascii']);
   assert.equal(generic.capabilities.warnings.financialText, 'refuse');
   assert.equal(normalizeThermalText('Küche', generic.capabilities), 'Kueche');
-  assert.equal(isThermalTextRepresentable('Burrito de Camarón 1 $550', generic.capabilities), false);
+  assert.equal(
+    isThermalTextRepresentable('Burrito de Camarón 1 $550', generic.capabilities),
+    false,
+  );
   const genericCamaronWarnings: any[] = [];
-  const genericCamaronBytes = buildEscPos(['Burrito de Camarón 1 $550'], false, { capabilities: generic.capabilities, financialLineRanges: [{ lineIndex: 0, lineCount: 1 }] }, genericCamaronWarnings);
+  const genericCamaronBytes = buildEscPos(
+    ['Burrito de Camarón 1 $550'],
+    false,
+    { capabilities: generic.capabilities, financialLineRanges: [{ lineIndex: 0, lineCount: 1 }] },
+    genericCamaronWarnings,
+  );
   assert.equal(genericCamaronWarnings.length, 1);
   assert.equal(genericCamaronWarnings[0].kind, 'financial');
   assert.equal(genericCamaronBytes.length, 0);
@@ -110,8 +142,34 @@ function run(): void {
   );
   assert.equal(isThermalTextRepresentable('किनारा', generic.capabilities), false);
   assert.equal(generic.capabilities.raster.font, undefined);
-  assert.ok(hindiWarnings.some((warning) => warning.text.includes('किनारा')), 'unsupported Devanagari KOT text keeps an explicit warning');
+  assert.ok(
+    hindiWarnings.some((warning) => warning.text.includes('किनारा')),
+    'unsupported Devanagari KOT text keeps an explicit warning',
+  );
   assert.equal(escPosToText(hindiBytes).includes('किनारा'), false);
+
+  const teluguOrder = { ...order, items: [{ ...order.items[0], product_name: 'బిర్యానీ' }] };
+  const teluguWarnings: any[] = [];
+  const teluguBytes = formatKOT(
+    teluguOrder,
+    teluguOrder.items,
+    'Kitchen',
+    42,
+    false,
+    'full',
+    'te-IN',
+    { timeZone: 'UTC' },
+    teluguWarnings,
+    false,
+    'te',
+    generic.capabilities,
+  );
+  assert.equal(isThermalTextRepresentable('బిర్యానీ', generic.capabilities), false);
+  assert.ok(
+    teluguWarnings.some((warning) => warning.text.includes('బిర్యానీ')),
+    'unsupported Telugu KOT text keeps an explicit warning',
+  );
+  assert.equal(escPosToText(teluguBytes).includes('బిర్యానీ'), false);
 
   const epson = resolvePrinterProfile({ profile_id: 'epson-tm-series' });
   const xprinter = resolvePrinterProfile({ profile_id: 'xprinter-xp-v320m-v330m' });
@@ -120,7 +178,12 @@ function run(): void {
   assert.equal(isThermalTextRepresentable('Burrito de Camarón 1 $550', epson.capabilities), true);
   assert.equal(selectThermalCodePage('Burrito de Camarón', epson.capabilities), 'cp437');
   const epsonCamaronWarnings: any[] = [];
-  const epsonCamaronBytes = buildEscPos(['{INIT}', 'Burrito de Camarón 1 $550'], false, { capabilities: epson.capabilities, financialLineRanges: [{ lineIndex: 1, lineCount: 1 }] }, epsonCamaronWarnings);
+  const epsonCamaronBytes = buildEscPos(
+    ['{INIT}', 'Burrito de Camarón 1 $550'],
+    false,
+    { capabilities: epson.capabilities, financialLineRanges: [{ lineIndex: 1, lineCount: 1 }] },
+    epsonCamaronWarnings,
+  );
   assert.deepEqual(epsonCamaronWarnings, []);
   assert.ok(epsonCamaronBytes.length > 0);
   assert.equal(escPosToText(epsonCamaronBytes).includes('Burrito de Camarón'), true);
@@ -129,7 +192,9 @@ function run(): void {
   assert.equal(normalizeThermalText('Straße', epson.capabilities), 'Straße');
   assert.equal(selectThermalCodePage('Küche', epson.capabilities), 'cp437');
   assert.equal(selectThermalCodePage('Straße', epson.capabilities), 'cp437');
-  const epsonKuecheBytes = buildEscPos(['{INIT}', 'Küche Straße'], false, { capabilities: epson.capabilities });
+  const epsonKuecheBytes = buildEscPos(['{INIT}', 'Küche Straße'], false, {
+    capabilities: epson.capabilities,
+  });
   assert.equal(escPosToText(epsonKuecheBytes).includes('Küche Straße'), true);
 
   assert.equal(selectThermalCodePage('Cafe', latinCodePageCapabilities), 'cp437');
@@ -140,11 +205,16 @@ function run(): void {
   assert.equal(isThermalTextRepresentable('π', latinCodePageCapabilities), false);
   assert.equal(isThermalTextRepresentable('עברית', latinCodePageCapabilities), false);
   const greekWarnings: any[] = [];
-  const greekBytes = buildEscPos(['π'], false, { capabilities: latinCodePageCapabilities }, greekWarnings);
+  const greekBytes = buildEscPos(
+    ['π'],
+    false,
+    { capabilities: latinCodePageCapabilities },
+    greekWarnings,
+  );
   assert.equal(escPosToText(greekBytes).includes('π'), false);
   assert.equal(greekWarnings.length, 1);
   const codePageBytes = buildEscPos(['À'], false, { capabilities: latinCodePageCapabilities });
-  assert.equal(codePageBytes.includes(Buffer.from([0x1B, 0x74, 2])), true);
+  assert.equal(codePageBytes.includes(Buffer.from([0x1b, 0x74, 2])), true);
 
   const latinOrder = {
     ...order,
@@ -166,15 +236,19 @@ function run(): void {
     latinCodePageCapabilities,
   );
   const latinWebUsbWarnings: any[] = [];
-  const latinWebUsbBytes = loadFrontendKotEncoder().buildKotBytes(latinOrder as any, {
-    paperWidth: 58,
-    language: 'en',
-    stationName: 'Kitchen',
-    locale: 'en-US',
-    timezone: 'UTC',
-    capabilities: latinCodePageCapabilities,
-  }, latinWebUsbWarnings);
-  const cp850Command = Buffer.from([0x1B, 0x74, escPosCodePageId('cp850')]);
+  const latinWebUsbBytes = loadFrontendKotEncoder().buildKotBytes(
+    latinOrder as any,
+    {
+      paperWidth: 58,
+      language: 'en',
+      stationName: 'Kitchen',
+      locale: 'en-US',
+      timezone: 'UTC',
+      capabilities: latinCodePageCapabilities,
+    },
+    latinWebUsbWarnings,
+  );
+  const cp850Command = Buffer.from([0x1b, 0x74, escPosCodePageId('cp850')]);
   assert.equal(selectThermalCodePage('Smørrebrød', latinCodePageCapabilities), 'cp850');
   assert.equal(Buffer.from(latinBackendBytes).includes(cp850Command), true);
   assert.equal(Buffer.from(latinWebUsbBytes).includes(cp850Command), true);
@@ -195,8 +269,14 @@ function run(): void {
   const shapedPair = outputPair(shapingCapabilities, true);
   assert.match(shapedPair.backend, /چای/);
   assert.match(shapedPair.webusb, /چای/);
-  assert.equal(shapedPair.backendWarnings.some((warning) => warning.text.includes('چای')), false);
-  assert.equal(shapedPair.webusbWarnings.some((warning) => warning.text.includes('چای')), false);
+  assert.equal(
+    shapedPair.backendWarnings.some((warning) => warning.text.includes('چای')),
+    false,
+  );
+  assert.equal(
+    shapedPair.webusbWarnings.some((warning) => warning.text.includes('چای')),
+    false,
+  );
 
   const urduOrder = { ...order, items: [{ ...order.items[0], product_name: 'پنیر ٹکّا' }] };
   const urduGenericPair = outputPair(GENERIC_THERMAL_CAPABILITIES, false, urduOrder);
@@ -207,8 +287,14 @@ function run(): void {
   const urduShapedPair = outputPair(shapingCapabilities, true, urduOrder);
   assert.match(urduShapedPair.backend, /پنیر ٹکّا/);
   assert.match(urduShapedPair.webusb, /پنیر ٹکّا/);
-  assert.equal(urduShapedPair.backendWarnings.some((warning) => warning.text.includes('پنیر ٹکّا')), false);
-  assert.equal(urduShapedPair.webusbWarnings.some((warning) => warning.text.includes('پنیر ٹکّا')), false);
+  assert.equal(
+    urduShapedPair.backendWarnings.some((warning) => warning.text.includes('پنیر ٹکّا')),
+    false,
+  );
+  assert.equal(
+    urduShapedPair.webusbWarnings.some((warning) => warning.text.includes('پنیر ٹکّا')),
+    false,
+  );
 
   console.log('Thermal capability parity: backend and WebUSB fixtures passed.');
 }

@@ -6,7 +6,7 @@ const GRAPHEME_SEGMENTER =
     ? new Intl.Segmenter('und', { granularity: 'grapheme' })
     : null;
 const THAI_SARA_AM_CODE_POINT = 0x0e33;
-const INDIC_VIRAMA_CODE_POINTS = new Set([0x094d, 0x09cd, 0x0a4d]);
+const INDIC_VIRAMA_CODE_POINTS = new Set([0x094d, 0x09cd, 0x0a4d, 0x0c4d]);
 const EMOJI_BASE_RE = /\p{Extended_Pictographic}/u;
 
 export type PrintPaperWidth =
@@ -75,7 +75,9 @@ function isIndicConsonant(codePoint: number): boolean {
     codePoint === 0x09fc ||
     (codePoint >= 0x0a15 && codePoint <= 0x0a39) ||
     (codePoint >= 0x0a59 && codePoint <= 0x0a5e) ||
-    codePoint === 0x0a75
+    codePoint === 0x0a75 ||
+    (codePoint >= 0x0c15 && codePoint <= 0x0c39) ||
+    (codePoint >= 0x0c58 && codePoint <= 0x0c5a)
   );
 }
 

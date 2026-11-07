@@ -345,9 +345,10 @@ export function classifyDetectedPrinterCompatibility(info: {
   make?: string | null;
   model?: string | null;
   driver?: string | null;
+  deviceUri?: string | null;
   profileId?: string | null;
 }): PrinterCompatibility {
-  const haystack = [info.name, info.make, info.model, info.driver]
+  const haystack = [info.name, info.make, info.model, info.driver, info.deviceUri]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
@@ -367,7 +368,7 @@ export function classifyDetectedPrinterCompatibility(info: {
       haystack,
     ) ||
     /\b(?:canon|hewlett|hp\b|lexmark|ricoh|kyocera|xerox|konica|minolta|pantum)\b/.test(haystack) ||
-    /\b(?:pdf|xps|onenote|fax|microsoft\s+print|send\s+to|save\s+as|cups-pdf)\b/.test(haystack)
+    /\b(?:pdf\w*|xps|onenote|fax|microsoft\s+print|send\s+to|save\s+as|cups-pdf)\b/.test(haystack)
   ) {
     return 'driver_only';
   }

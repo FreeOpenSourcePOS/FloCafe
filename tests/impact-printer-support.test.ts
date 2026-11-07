@@ -573,6 +573,7 @@ async function run() {
     { name: 'Zebra ZD420', make: 'Unknown', model: 'Generic Printer' },
     { name: 'EPSON TM-L90', make: 'Epson', model: 'EPSON TM-L90' },
     { name: 'Microsoft Print to PDF', make: 'Unknown', model: 'Generic Printer' },
+    { name: 'PDFwriter', make: 'Unknown', model: 'Thermal Printer', deviceUri: 'pdfwriter:/' },
   ]) {
     assertEqualOrThrow(
       classifyDetectedPrinterCompatibility(driverOnlyCase),

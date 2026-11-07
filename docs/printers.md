@@ -17,7 +17,8 @@ FloCafe prints receipts and kitchen order tickets from the desktop app. Configur
 | USB / OS Queue | Direct USB printers and OS-managed print queues | A configured OS print queue (Windows Spooler, or CUPS via **System Settings > Printers & Scanners** on macOS including Mac App Store builds) |
 | WebUSB | A browser-connected printer | A compatible browser and a user-selected device; the browser sends the print bytes |
 
-Set the paper width to match the printer, either 58 mm or 80 mm. The first configured printer
+Set the printer profile and printable columns to match the hardware (see
+[printer profiles and paper width](#printer-profiles-and-paper-width)). The first configured printer
 becomes the default; choose a different default in Settings when another printer should receive
 ordinary receipts. Keep **Print Method** set to **ESCPOS (USB / Network Thermal Printer)** for
 USB, Network, and WebUSB receipt printers; **Browser Print (any printer)** opens the browser print
@@ -67,8 +68,9 @@ rendered.
 ## Printer profiles and paper width
 
 When adding or editing a printer in **Settings > Printers**, choose a **Printer Type / Profile** or
-leave it on **Auto-detect from printer name**, and set the printable column width (`32`, `42`, or
-`48` columns). Selecting a profile sets its default column width unless you override it manually.
+leave it on **Auto-detect from printer name**, and set the printable column width (`32`, `36`, `40`,
+`42`, `44`, or `48` columns). Selecting a profile sets its default column width unless you override
+it manually.
 The `76mm Impact / Dot-Matrix (Epson TM-U220, Bixolon SRP-275)` profile (`escpos-impact-76`) uses
 32-column text mode and omits bitmap logos, QR graphics, and raster bands.
 

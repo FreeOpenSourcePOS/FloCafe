@@ -263,6 +263,7 @@ async function run(): Promise<void> {
     'sw',
     'pa',
     'te',
+    'ta',
     'uk',
   ] as const) {
     await loadLocaleMessages(lang);
@@ -368,6 +369,7 @@ async function run(): Promise<void> {
     'sw',
     'pa',
     'te',
+    'ta',
     'uk',
   ] as const) {
     usePosSettingsStore.getState().setLanguage(lang);
@@ -411,6 +413,7 @@ async function run(): Promise<void> {
     'sw',
     'pa',
     'te',
+    'ta',
     'uk',
   ] as const) {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
@@ -447,6 +450,7 @@ async function run(): Promise<void> {
       | 'sw'
       | 'pa'
       | 'te'
+      | 'ta'
       | 'uk',
   ) => {
     const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
@@ -525,6 +529,7 @@ async function run(): Promise<void> {
     'sw',
     'pa',
     'te',
+    'ta',
     'uk',
   ] as const) {
     for (const key of [

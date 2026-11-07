@@ -225,6 +225,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/te.json'),
   },
+  ta: {
+    locale: 'ta-IN',
+    nativeName: 'தமிழ்',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ta.json'),
+  },
   uk: {
     locale: 'uk-UA',
     nativeName: 'Українська',

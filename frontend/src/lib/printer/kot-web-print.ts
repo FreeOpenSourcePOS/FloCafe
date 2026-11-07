@@ -130,6 +130,7 @@ const KOT_FONT_STACKS_BY_SCRIPT: Record<string, string> = {
   Jpan: `'Yu Gothic', Meiryo, 'Hiragino Sans', 'Noto Sans CJK JP', 'Noto Sans JP', ${KOT_MONOSPACE_TAIL}`,
   Kore: `'Noto Sans', ${KOT_MONOSPACE_TAIL}`,
   Latn: `'Courier New',monospace`,
+  Taml: `'Noto Sans Tamil', 'Nirmala UI', 'Latha', 'Tamil Sangam MN', ${KOT_MONOSPACE_TAIL}`,
   Telu: `'Noto Sans Telugu', 'Nirmala UI', 'Kohinoor Telugu', 'Telugu Sangam MN', ${KOT_MONOSPACE_TAIL}`,
   Thai: `'Noto Sans Thai', 'Leelawadee UI', Thonburi, ${KOT_MONOSPACE_TAIL}`,
 };

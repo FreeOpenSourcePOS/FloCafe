@@ -117,6 +117,7 @@ type SeedLanguage =
   | 'sw'
   | 'pa'
   | 'te'
+  | 'ta'
   | 'uk';
 
 /** Filipino intentionally uses the English sample data as its reviewed exception. */
@@ -152,6 +153,7 @@ function resolveSeedLanguage(language?: string): SeedLanguage {
     language === 'sw' ||
     language === 'pa' ||
     language === 'te' ||
+    language === 'ta' ||
     language === 'uk'
     ? language
     : 'en';
@@ -194,6 +196,7 @@ function seedExpressRestaurant(
     sw: ['Chakula', 'Vinywaji', 'Mlo', 'Chai'],
     pa: ['ਖਾਣਾ', 'ਪੀਣ ਵਾਲੇ ਪਦਾਰਥ', 'ਭੋਜਨ', 'ਚਾਹ'],
     te: ['ఆహారం', 'పానీయాలు', 'భోజనం', 'టీ'],
+    ta: ['உணவு', 'பானங்கள்', 'சாப்பாடு', 'தேநீர்'],
     uk: ['Їжа', 'Напої', 'Страва', 'Чай'],
   };
   const [food, beverages, meal, tea] = labels[lang];
@@ -252,9 +255,11 @@ function seedExpressRestaurant(
                                                         ? 'ਕੌਫੀ'
                                                         : lang === 'te'
                                                           ? 'కాఫీ'
-                                                          : lang === 'uk'
-                                                            ? 'Кава'
-                                                            : 'Coffee';
+                                                          : lang === 'ta'
+                                                            ? 'காபி'
+                                                            : lang === 'uk'
+                                                              ? 'Кава'
+                                                              : 'Coffee';
   const snack =
     lang === 'es'
       ? 'Bocadillo'
@@ -312,9 +317,11 @@ function seedExpressRestaurant(
                                                           ? 'ਨਾਸ਼ਤਾ'
                                                           : lang === 'te'
                                                             ? 'చిరుతిండి'
-                                                            : lang === 'uk'
-                                                              ? 'Закуска'
-                                                              : 'Snack';
+                                                            : lang === 'ta'
+                                                              ? 'சிற்றுண்டி'
+                                                              : lang === 'uk'
+                                                                ? 'Закуска'
+                                                                : 'Snack';
   insertCategory(db, 'cat-express-food', food, '#F97316', '🍽️', 1);
   insertCategory(db, 'cat-express-beverages', beverages, '#0EA5E9', '🥤', 2);
   insertProduct(db, 'prod-express-meal', 'cat-express-food', meal, 150, 1);
@@ -750,67 +757,98 @@ function seedDemoRestaurant(
                                                                   4,
                                                                 ],
                                                               ] as const)
-                                                            : lang === 'uk'
+                                                            : lang === 'ta'
                                                               ? ([
                                                                   [
                                                                     'cat-demo-starters',
-                                                                    'Закуски',
+                                                                    'தொடக்க உணவுகள்',
                                                                     '#FF6B6B',
                                                                     '🍟',
                                                                     1,
                                                                   ],
                                                                   [
                                                                     'cat-demo-main',
-                                                                    'Основні страви',
+                                                                    'முக்கிய உணவுகள்',
                                                                     '#4ECDC4',
                                                                     '🍛',
                                                                     2,
                                                                   ],
                                                                   [
                                                                     'cat-demo-beverages',
-                                                                    'Напої',
+                                                                    'பானங்கள்',
                                                                     '#45B7D1',
                                                                     '🥤',
                                                                     3,
                                                                   ],
                                                                   [
                                                                     'cat-demo-desserts',
-                                                                    'Десерти',
+                                                                    'இனிப்புகள்',
                                                                     '#96CEB4',
                                                                     '🍰',
                                                                     4,
                                                                   ],
                                                                 ] as const)
-                                                              : ([
-                                                                  [
-                                                                    'cat-demo-starters',
-                                                                    'Starters',
-                                                                    '#FF6B6B',
-                                                                    '🍔',
-                                                                    1,
-                                                                  ],
-                                                                  [
-                                                                    'cat-demo-main',
-                                                                    'Main Course',
-                                                                    '#4ECDC4',
-                                                                    '🍛',
-                                                                    2,
-                                                                  ],
-                                                                  [
-                                                                    'cat-demo-beverages',
-                                                                    'Beverages',
-                                                                    '#45B7D1',
-                                                                    '🥤',
-                                                                    3,
-                                                                  ],
-                                                                  [
-                                                                    'cat-demo-desserts',
-                                                                    'Desserts',
-                                                                    '#96CEB4',
-                                                                    '🍰',
-                                                                    4,
-                                                                  ],
-                                                                ] as const);
+                                                              : lang === 'uk'
+                                                                ? ([
+                                                                    [
+                                                                      'cat-demo-starters',
+                                                                      'Закуски',
+                                                                      '#FF6B6B',
+                                                                      '🍟',
+                                                                      1,
+                                                                    ],
+                                                                    [
+                                                                      'cat-demo-main',
+                                                                      'Основні страви',
+                                                                      '#4ECDC4',
+                                                                      '🍛',
+                                                                      2,
+                                                                    ],
+                                                                    [
+                                                                      'cat-demo-beverages',
+                                                                      'Напої',
+                                                                      '#45B7D1',
+                                                                      '🥤',
+                                                                      3,
+                                                                    ],
+                                                                    [
+                                                                      'cat-demo-desserts',
+                                                                      'Десерти',
+                                                                      '#96CEB4',
+                                                                      '🍰',
+                                                                      4,
+                                                                    ],
+                                                                  ] as const)
+                                                                : ([
+                                                                    [
+                                                                      'cat-demo-starters',
+                                                                      'Starters',
+                                                                      '#FF6B6B',
+                                                                      '🍔',
+                                                                      1,
+                                                                    ],
+                                                                    [
+                                                                      'cat-demo-main',
+                                                                      'Main Course',
+                                                                      '#4ECDC4',
+                                                                      '🍛',
+                                                                      2,
+                                                                    ],
+                                                                    [
+                                                                      'cat-demo-beverages',
+                                                                      'Beverages',
+                                                                      '#45B7D1',
+                                                                      '🥤',
+                                                                      3,
+                                                                    ],
+                                                                    [
+                                                                      'cat-demo-desserts',
+                                                                      'Desserts',
+                                                                      '#96CEB4',
+                                                                      '🍰',
+                                                                      4,
+                                                                    ],
+                                                                  ] as const);
   for (const [id, name, color, icon, sort] of cats) insertCategory(db, id, name, color, icon, sort);
 
   const products =
@@ -1836,123 +1874,182 @@ function seedDemoRestaurant(
                                                                   1,
                                                                 ],
                                                               ] as const)
-                                                            : lang === 'uk'
+                                                            : lang === 'ta'
                                                               ? ([
                                                                   [
-                                                                    'prod-demo-deruny',
+                                                                    'prod-demo-medu-vada',
                                                                     'cat-demo-starters',
-                                                                    'Деруни зі сметаною',
-                                                                    250,
-                                                                    1,
-                                                                  ],
-                                                                  [
-                                                                    'prod-demo-varenyky',
-                                                                    'cat-demo-starters',
-                                                                    'Вареники з картоплею',
+                                                                    'மெது வடை',
                                                                     280,
-                                                                    2,
-                                                                  ],
-                                                                  [
-                                                                    'prod-demo-borshch',
-                                                                    'cat-demo-main',
-                                                                    'Український борщ',
-                                                                    320,
                                                                     1,
                                                                   ],
                                                                   [
-                                                                    'prod-demo-kyiv-cutlet',
-                                                                    'cat-demo-main',
-                                                                    'Котлета по-київськи',
-                                                                    220,
+                                                                    'prod-demo-paneer-tikka',
+                                                                    'cat-demo-starters',
+                                                                    'பனீர் டிக்கா',
+                                                                    250,
                                                                     2,
                                                                   ],
                                                                   [
-                                                                    'prod-demo-banosh',
+                                                                    'prod-demo-masala-dosa',
                                                                     'cat-demo-main',
-                                                                    'Банош із бринзою',
-                                                                    150,
+                                                                    'மசாலா தோசை',
+                                                                    800,
+                                                                    1,
+                                                                  ],
+                                                                  [
+                                                                    'prod-demo-sambar-rice',
+                                                                    'cat-demo-main',
+                                                                    'சாம்பார் சாதம்',
+                                                                    1100,
+                                                                    2,
+                                                                  ],
+                                                                  [
+                                                                    'prod-demo-curd-rice',
+                                                                    'cat-demo-main',
+                                                                    'தயிர் சாதம்',
+                                                                    1200,
                                                                     3,
                                                                   ],
                                                                   [
-                                                                    'prod-demo-uzvar',
+                                                                    'prod-demo-filter-coffee',
                                                                     'cat-demo-beverages',
-                                                                    'Узвар',
+                                                                    'பில்டர் காபி',
                                                                     60,
                                                                     1,
                                                                   ],
                                                                   [
-                                                                    'prod-demo-lemonade',
+                                                                    'prod-demo-water',
                                                                     'cat-demo-beverages',
-                                                                    'Лимонад',
+                                                                    'தண்ணீர்',
                                                                     70,
                                                                     2,
                                                                   ],
                                                                   [
-                                                                    'prod-demo-syrnyky',
+                                                                    'prod-demo-payasam',
                                                                     'cat-demo-desserts',
-                                                                    'Сирники',
+                                                                    'பாயசம்',
                                                                     80,
                                                                     1,
                                                                   ],
                                                                 ] as const)
-                                                              : ([
-                                                                  [
-                                                                    'prod-demo-paneer-tikka',
-                                                                    'cat-demo-starters',
-                                                                    'Paneer Tikka',
-                                                                    250,
-                                                                    1,
-                                                                  ],
-                                                                  [
-                                                                    'prod-demo-chicken-wings',
-                                                                    'cat-demo-starters',
-                                                                    'Chicken Wings',
-                                                                    280,
-                                                                    2,
-                                                                  ],
-                                                                  [
-                                                                    'prod-demo-butter-chicken',
-                                                                    'cat-demo-main',
-                                                                    'Butter Chicken',
-                                                                    320,
-                                                                    1,
-                                                                  ],
-                                                                  [
-                                                                    'prod-demo-dal-makhani',
-                                                                    'cat-demo-main',
-                                                                    'Dal Makhani',
-                                                                    220,
-                                                                    2,
-                                                                  ],
-                                                                  [
-                                                                    'prod-demo-jeera-rice',
-                                                                    'cat-demo-main',
-                                                                    'Jeera Rice',
-                                                                    150,
-                                                                    3,
-                                                                  ],
-                                                                  [
-                                                                    'prod-demo-cola',
-                                                                    'cat-demo-beverages',
-                                                                    'Cola',
-                                                                    60,
-                                                                    1,
-                                                                  ],
-                                                                  [
-                                                                    'prod-demo-lemon-soda',
-                                                                    'cat-demo-beverages',
-                                                                    'Lemon Soda',
-                                                                    70,
-                                                                    2,
-                                                                  ],
-                                                                  [
-                                                                    'prod-demo-gulab-jamun',
-                                                                    'cat-demo-desserts',
-                                                                    'Gulab Jamun',
-                                                                    80,
-                                                                    1,
-                                                                  ],
-                                                                ] as const);
+                                                              : lang === 'uk'
+                                                                ? ([
+                                                                    [
+                                                                      'prod-demo-deruny',
+                                                                      'cat-demo-starters',
+                                                                      'Деруни зі сметаною',
+                                                                      250,
+                                                                      1,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-varenyky',
+                                                                      'cat-demo-starters',
+                                                                      'Вареники з картоплею',
+                                                                      280,
+                                                                      2,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-borshch',
+                                                                      'cat-demo-main',
+                                                                      'Український борщ',
+                                                                      320,
+                                                                      1,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-kyiv-cutlet',
+                                                                      'cat-demo-main',
+                                                                      'Котлета по-київськи',
+                                                                      220,
+                                                                      2,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-banosh',
+                                                                      'cat-demo-main',
+                                                                      'Банош із бринзою',
+                                                                      150,
+                                                                      3,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-uzvar',
+                                                                      'cat-demo-beverages',
+                                                                      'Узвар',
+                                                                      60,
+                                                                      1,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-lemonade',
+                                                                      'cat-demo-beverages',
+                                                                      'Лимонад',
+                                                                      70,
+                                                                      2,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-syrnyky',
+                                                                      'cat-demo-desserts',
+                                                                      'Сирники',
+                                                                      80,
+                                                                      1,
+                                                                    ],
+                                                                  ] as const)
+                                                                : ([
+                                                                    [
+                                                                      'prod-demo-paneer-tikka',
+                                                                      'cat-demo-starters',
+                                                                      'Paneer Tikka',
+                                                                      250,
+                                                                      1,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-chicken-wings',
+                                                                      'cat-demo-starters',
+                                                                      'Chicken Wings',
+                                                                      280,
+                                                                      2,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-butter-chicken',
+                                                                      'cat-demo-main',
+                                                                      'Butter Chicken',
+                                                                      320,
+                                                                      1,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-dal-makhani',
+                                                                      'cat-demo-main',
+                                                                      'Dal Makhani',
+                                                                      220,
+                                                                      2,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-jeera-rice',
+                                                                      'cat-demo-main',
+                                                                      'Jeera Rice',
+                                                                      150,
+                                                                      3,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-cola',
+                                                                      'cat-demo-beverages',
+                                                                      'Cola',
+                                                                      60,
+                                                                      1,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-lemon-soda',
+                                                                      'cat-demo-beverages',
+                                                                      'Lemon Soda',
+                                                                      70,
+                                                                      2,
+                                                                    ],
+                                                                    [
+                                                                      'prod-demo-gulab-jamun',
+                                                                      'cat-demo-desserts',
+                                                                      'Gulab Jamun',
+                                                                      80,
+                                                                      1,
+                                                                    ],
+                                                                  ] as const);
   for (const [id, categoryId, name, price, sort] of products)
     insertProduct(db, id, categoryId, name, price, sort);
 
@@ -2091,6 +2188,10 @@ function seedDemoRestaurant(
     insertCustomer(db, 'cust-demo-1', 'రవి కుమార్', '+919876543210', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'లక్ష్మీ దేవి', '+919876543211', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-3', 'వెంకట రావు', '+919876543212', dialCode, demoCountry);
+  } else if (lang === 'ta') {
+    insertCustomer(db, 'cust-demo-1', 'கார்த்திக் சுப்பிரமணியன்', '+919876543210', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'திவ்யா நடராஜன்', '+919876543211', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'செந்தில் குமார்', '+919876543212', dialCode, demoCountry);
   } else if (lang === 'uk') {
     insertCustomer(db, 'cust-demo-1', 'Олена Коваленко', '+380501234567', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'Тарас Шевченко', '+380501234568', dialCode, demoCountry);
@@ -2158,9 +2259,11 @@ function seedDemoRestaurant(
                                                           ? 'ਡੈਮੋ ਮੈਨੇਜਰ'
                                                           : lang === 'te'
                                                             ? 'డెమో మేనేజర్'
-                                                            : lang === 'uk'
-                                                              ? 'Демо-менеджер'
-                                                              : 'Demo Manager';
+                                                            : lang === 'ta'
+                                                              ? 'மாதிரி மேலாளர்'
+                                                              : lang === 'uk'
+                                                                ? 'Демо-менеджер'
+                                                                : 'Demo Manager';
   const cashierName =
     lang === 'es'
       ? 'Cajero Demo'
@@ -2218,9 +2321,11 @@ function seedDemoRestaurant(
                                                           ? 'ਡੈਮੋ ਕੈਸ਼ੀਅਰ'
                                                           : lang === 'te'
                                                             ? 'డెమో క్యాషియర్'
-                                                            : lang === 'uk'
-                                                              ? 'Демо-касир'
-                                                              : 'Demo Cashier';
+                                                            : lang === 'ta'
+                                                              ? 'மாதிரி காசாளர்'
+                                                              : lang === 'uk'
+                                                                ? 'Демо-касир'
+                                                                : 'Demo Cashier';
   const chefName =
     lang === 'es'
       ? 'Cocinero Demo'
@@ -2278,9 +2383,11 @@ function seedDemoRestaurant(
                                                           ? 'ਡੈਮੋ ਸ਼ੈੱਫ'
                                                           : lang === 'te'
                                                             ? 'డెమో చెఫ్'
-                                                            : lang === 'uk'
-                                                              ? 'Демо-кухар'
-                                                              : 'Demo Chef';
+                                                            : lang === 'ta'
+                                                              ? 'மாதிரி சமையல்காரர்'
+                                                              : lang === 'uk'
+                                                                ? 'Демо-кухар'
+                                                                : 'Demo Chef';
   // Demo staff accounts are inactive with random passwords to prevent usable default credentials.
   insertStaffUser(
     db,

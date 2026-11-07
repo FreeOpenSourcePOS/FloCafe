@@ -521,6 +521,24 @@ async function run(): Promise<void> {
       'getBrowserLanguage must return "te" for bare te',
     );
   });
+  withNavigatorLanguage('ta-IN', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'ta',
+      'getBrowserLanguage must return "ta" for ta-IN',
+    );
+  });
+  withNavigatorLanguage('ta', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'ta',
+      'getBrowserLanguage must return "ta" for bare ta',
+    );
+  });
+  withNavigatorLanguage('ta-LK', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'ta',
+      'ta-LK must resolve through the same-script regional fallback to ta-IN',
+    );
+  });
   withNavigatorLanguage('uk-UA', () => {
     assert(
       i18nModule.getBrowserLanguage() === 'uk',
@@ -589,6 +607,7 @@ async function run(): Promise<void> {
     'sw',
     'pa',
     'te',
+    'ta',
     'uk',
   ] as const;
   const { createTranslator } = frontendRequire('use-intl/core');

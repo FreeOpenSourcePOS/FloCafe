@@ -34,12 +34,14 @@ const languages = [
   'sw',
   'pa',
   'te',
+  'ta',
   'uk',
 ] as const;
-// Any Devanagari or Telugu codepoint: the native paths must emit none, not merely none of
+// Any Devanagari, Telugu, or Tamil codepoint: the native paths must emit none, not merely none of
 // the specific phrases this fixture happens to use.
 const DEVANAGARI_RE = /[ऀ-ॿ]/;
 const TELUGU_RE = /[\u0C00-\u0C7F]/;
+const TAMIL_RE = /[\u0B80-\u0BFF]/;
 const order = {
   order_number: 'KOT-PHASE3-001',
   type: 'dine_in',
@@ -194,6 +196,18 @@ async function run(): Promise<void> {
         browserHtml,
         /lang="te-IN" dir="ltr"/,
         `${language}: browser KOT must carry its own locale te-IN`,
+      );
+    }
+    if (language === 'ta') {
+      assert.match(
+        browserHtml,
+        /font-family:'Noto Sans Tamil'/,
+        'ta: browser KOT selects the Tamil font stack',
+      );
+      assert.match(
+        browserHtml,
+        /lang="ta-IN" dir="ltr"/,
+        'ta: browser KOT carries ta-IN LTR metadata',
       );
     }
     assert.match(browserHtml, /KOT-PHASE3-001/, `${language}: browser order number`);
@@ -643,6 +657,64 @@ async function run(): Promise<void> {
       TELUGU_RE,
       'Telugu WebUSB KOT emits no Telugu codepoints at all',
     );
+  }
+
+  {
+    const tamilOrder = {
+      ...order,
+      items: [
+        {
+          quantity: 1,
+          product_name: 'பில்டர் காபி',
+          status: 'pending',
+          addons: [{ name: 'பால்', quantity: 1 }],
+          special_instructions: 'சர்க்கரை குறைவு',
+        },
+      ],
+    };
+    const thermalWarnings: any[] = [];
+    const thermalText = escPosToText(
+      formatKOT(
+        tamilOrder,
+        tamilOrder.items,
+        'Main Kitchen',
+        42,
+        false,
+        'full',
+        'en-US',
+        { timeZone: 'UTC' },
+        thermalWarnings,
+        false,
+        'ta',
+      ),
+    );
+    assert.equal(
+      thermalWarnings.some((warning) => warning.kind === 'line'),
+      true,
+      'Tamil unsupported KOT lines warn before native output',
+    );
+    assert.doesNotMatch(thermalText, TAMIL_RE, 'Tamil native KOT emits no Tamil codepoints at all');
+
+    const webUsbWarnings: any[] = [];
+    const webUsbText = Buffer.from(
+      frontend.kotEncoder.buildKotBytes(
+        tamilOrder as any,
+        {
+          paperWidth: 58,
+          language: 'ta',
+          stationName: 'Main Kitchen',
+          locale: 'ta-IN',
+          timezone: 'UTC',
+        },
+        webUsbWarnings,
+      ),
+    ).toString('utf8');
+    assert.equal(
+      webUsbWarnings.some((warning) => warning.kind === 'line'),
+      true,
+      'Tamil unsupported WebUSB KOT lines warn before output',
+    );
+    assert.doesNotMatch(webUsbText, TAMIL_RE, 'Tamil WebUSB KOT emits no Tamil codepoints at all');
   }
 
   const longKotHtml = frontend.kotWebPrint.generateKotHtml(

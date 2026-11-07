@@ -667,7 +667,7 @@ frontend/src/
 │   └── updates/                Update download prompt and install guard dialog
 ├── hooks/                      Printer, KDS, theme, update, cash, approver, and formatting hooks
 ├── lib/
-│   ├── i18n/                   Language registry, loader, and the 31 message files
+│   ├── i18n/                   Language registry, loader, and the 32 message files
 │   ├── printer/                Encoders, document builders, warnings, WebUSB bridge,
 │   │                           and the delivery-slip encoder and browser renderer
 │   ├── updates/                Beta channel, auto-check, and restart-and-install helpers

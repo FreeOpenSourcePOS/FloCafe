@@ -496,6 +496,28 @@ async function run(): Promise<void> {
         'Telugu express snack is localized',
       );
     }
+    if (language === 'ta') {
+      assert.equal(
+        rows('categories', 'name', "id = 'cat-express-food'")[0].name,
+        'உணவு',
+        'Tamil express category is localized',
+      );
+      assert.equal(
+        rows('categories', 'name', "id = 'cat-express-beverages'")[0].name,
+        'பானங்கள்',
+        'Tamil express beverages category is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-meal'")[0].name,
+        'சாப்பாடு',
+        'Tamil express product is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-snack'")[0].name,
+        'சிற்றுண்டி',
+        'Tamil express snack is localized',
+      );
+    }
     if (language === 'uk') {
       assert.equal(
         rows('categories', 'name', "id = 'cat-express-food'")[0].name,
@@ -792,6 +814,24 @@ async function run(): Promise<void> {
         ),
         ['+919876543210', '+919876543211', '+919876543212'],
         'Punjabi demo customers use India E.164 numbers',
+      );
+    }
+    if (language === 'ta') {
+      assert.equal(snapshot.category, 'தொடக்க உணவுகள்', 'Tamil demo category is localized');
+      assert.equal(snapshot.product, 'மெது வடை', 'Tamil demo product is localized');
+      assert.equal(
+        rows('products', 'name', "id = 'prod-demo-masala-dosa'")[0].name,
+        'மசாலா தோசை',
+        'Tamil demo masala dosa uses Tamil restaurant terminology',
+      );
+      assert.equal(snapshot.manager, 'மாதிரி மேலாளர்', 'Tamil demo manager is localized');
+      assert.equal(snapshot.customer, 'கார்த்திக் சுப்பிரமணியன்', 'Tamil demo customer is localized');
+      assert.deepEqual(
+        rows('customers', 'phone', "id LIKE 'cust-demo-%' ORDER BY id").map(
+          (customer) => customer.phone,
+        ),
+        ['+919876543210', '+919876543211', '+919876543212'],
+        'Tamil demo customers use India E.164 numbers',
       );
     }
     if (language === 'bn') {

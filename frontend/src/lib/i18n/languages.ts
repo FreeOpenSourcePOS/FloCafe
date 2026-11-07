@@ -218,6 +218,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/pa.json'),
   },
+  uk: {
+    locale: 'uk-UA',
+    nativeName: 'Українська',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/uk.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

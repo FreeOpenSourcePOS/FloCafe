@@ -231,10 +231,7 @@ async function run() {
     'Extended Latin multi-char/stroke/dotless foldings must transliterate to ASCII',
   );
   assertEqualOrThrow(
-    isThermalTextRepresentable(
-      'Ærø Œuvre Łódź Đắk Þór Ğıdalar İçecek Şeker',
-      LATIN_THERMAL_CAPABILITIES,
-    ),
+    isThermalTextRepresentable(extended, LATIN_THERMAL_CAPABILITIES),
     true,
     'Extended Latin text should be representable after transliteration',
   );
@@ -250,7 +247,7 @@ async function run() {
     'NFD combining-mark stripping should fold accented Latin characters cleanly',
   );
   assertEqualOrThrow(
-    isThermalTextRepresentable('Čevapčići Žemľa Rīga Phở Kraków', LATIN_THERMAL_CAPABILITIES),
+    isThermalTextRepresentable(nfdLatin, LATIN_THERMAL_CAPABILITIES),
     true,
     'NFD Latin text should be representable after transliteration',
   );
@@ -278,7 +275,7 @@ async function run() {
     'LATIN_THERMAL_CAPABILITIES should transliterate Turkish dotless-i / dotted-I cleanly when not in CP437/CP858',
   );
   assertEqualOrThrow(
-    isThermalTextRepresentable('Mercimek Çorbası & İskender', LATIN_THERMAL_CAPABILITIES),
+    isThermalTextRepresentable(turkishImpact, LATIN_THERMAL_CAPABILITIES),
     true,
     'Turkish on impact should be representable',
   );

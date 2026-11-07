@@ -1375,6 +1375,67 @@ function main() {
   );
   closeDatabase();
 
+  // ── v125: add_printer_profile_id on printers ──────────────────────────────
+  const printerProfileMigrationIndex = MIGRATIONS.findIndex(
+    (migration: any) => migration.name === 'add_printer_profile_id',
+  );
+  assert.ok(printerProfileMigrationIndex > 0, 'the add_printer_profile_id migration is registered');
+  assert.equal(
+    MIGRATIONS[printerProfileMigrationIndex].version,
+    125,
+    'the add_printer_profile_id migration is v125',
+  );
+  const v124SnapDb = buildIdealSchemaDb(124);
+  try {
+    v124SnapDb.exec('ALTER TABLE printers DROP COLUMN profile_id');
+    const preV125PrinterCols = (
+      v124SnapDb.prepare('PRAGMA table_info(printers)').all() as Array<{ name: string }>
+    ).map((col) => col.name);
+    assert.ok(
+      !preV125PrinterCols.includes('profile_id'),
+      'v124 printers schema must not include profile_id column',
+    );
+    v124SnapDb
+      .prepare(
+        `INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, text_size, is_default, cash_drawer_pulse_enabled, created_at, updated_at)
+         VALUES ('pr-pre-v125', 'EPSON TM-U220', 'usb', NULL, 9100, 'cols-32', 'normal', 1, 0, '2026-10-29 09:00:00', '2026-10-29 09:00:00')`,
+      )
+      .run();
+    fs.writeFileSync(upgradeDbPath, v124SnapDb.serialize());
+  } finally {
+    v124SnapDb.close();
+  }
+
+  initDatabase();
+  const postPrinterProfileDb = getDatabase();
+  assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
+  const postV125PrinterCols = (
+    postPrinterProfileDb.prepare('PRAGMA table_info(printers)').all() as Array<{ name: string }>
+  ).map((col) => col.name);
+  assert.ok(
+    postV125PrinterCols.includes('profile_id'),
+    'v125 adds printers.profile_id during upgrade from v124',
+  );
+  const migratedPrinter = postPrinterProfileDb
+    .prepare(`SELECT id, name, profile_id FROM printers WHERE id = 'pr-pre-v125'`)
+    .get() as { id: string; name: string; profile_id: string | null } | undefined;
+  assert.deepEqual(
+    migratedPrinter,
+    {
+      id: 'pr-pre-v125',
+      name: 'EPSON TM-U220',
+      profile_id: null,
+    },
+    'existing pre-v125 printers default to profile_id = null',
+  );
+  assert.equal(
+    runHealthCheck().findings.length,
+    0,
+    'runHealthCheck() reports zero drift after v125',
+  );
+  console.log('   ✓ v125 adds printers.profile_id and preserves existing printers with NULL');
+  closeDatabase();
+
   console.log('='.repeat(60));
   console.log('✅ Upgrade-path regression test passed');
 }

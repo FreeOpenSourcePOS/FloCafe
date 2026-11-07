@@ -2672,7 +2672,20 @@
     "counterRole": "கவுண்டர் பங்கு",
     "counterIsActive": "செயலில்",
     "confirmDeleteCounter": "இந்தக் கவுண்டரை நீக்கவா?",
-    "confirmDeleteCounterDesc": "இந்தக் கவுண்டர் நிரந்தரமாக அகற்றப்படும்."
+    "confirmDeleteCounterDesc": "இந்தக் கவுண்டர் நிரந்தரமாக அகற்றப்படும்.",
+    "printerProfile": "பிரிண்டர் வகை / சுயவிவரம்",
+    "printerProfileAuto": "பிரிண்டர் பெயரிலிருந்து தானாகக் கண்டறி",
+    "printerProfileImpact76": "76மிமீ இம்பாக்ட் / டாட்-மேட்ரிக்ஸ் (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM தொடர் (80மிமீ தெர்மல்)",
+    "printerProfileXprinter": "Xprinter 80மிமீ தெர்மல்",
+    "printerProfileGeneric80": "பொதுவான 80மிமீ ESC/POS தெர்மல்",
+    "printerProfileGeneric58": "பொதுவான 58மிமீ ESC/POS தெர்மல்",
+    "printerProfileImpactHint": "இம்பாக்ட் ரிப்பன் பிரிண்டர்கள் 32-பத்தி உரை முறையைப் பயன்படுத்துகின்றன மற்றும் பிட்மேப் லோகோக்கள், QR படங்களைத் தவிர்க்கின்றன.",
+    "printerCompatibilityImpact": "76மிமீ இம்பாக்ட்",
+    "printerCompatibilityDriverOnly": "இயக்கி / உலாவி அச்சு மட்டும்",
+    "printerDriverOnlyWarning": "இந்தப் பிரிண்டர் நேரடி ESC/POS கட்டளைகளைப் பயன்படுத்துவதில்லை. இதை நேரடி தெர்மல் பிரிண்டராகச் சேர்ப்பதற்குப் பதிலாக உலாவி அச்சைப் பயன்படுத்தவும்.",
+    "printerSwitchToBrowserPrint": "உலாவி அச்சைப் பயன்படுத்து",
+    "printerSwitchedToBrowserPrint": "அச்சு முறை உலாவி அச்சுக்கு மாற்றப்பட்டது"
   },
   "setup": {
     "alreadyCompleted": "இந்த நிறுவலில் அமைப்பு ஏற்கனவே முடிக்கப்பட்டுவிட்டது. உள்நுழைவுக்குத் திருப்பி விடப்படுகிறது…",

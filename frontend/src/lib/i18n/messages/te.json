@@ -2672,7 +2672,20 @@
     "counterRole": "కౌంటర్ పాత్ర",
     "counterIsActive": "యాక్టివ్",
     "confirmDeleteCounter": "ఈ కౌంటర్ను తొలగించాలా?",
-    "confirmDeleteCounterDesc": "ఈ కౌంటర్ శాశ్వతంగా తొలగించబడుతుంది."
+    "confirmDeleteCounterDesc": "ఈ కౌంటర్ శాశ్వతంగా తొలగించబడుతుంది.",
+    "printerProfile": "ప్రింటర్ రకం / ప్రొఫైల్",
+    "printerProfileAuto": "ప్రింటర్ పేరు నుండి ఆటో-డిటెక్ట్ చేయండి",
+    "printerProfileImpact76": "76mm ఇంపాక్ట్ / డాట్-మ్యాట్రిక్స్ (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM సిరీస్ (80mm థర్మల్)",
+    "printerProfileXprinter": "Xprinter 80mm థర్మల్",
+    "printerProfileGeneric80": "జనరిక్ 80mm ESC/POS థర్మల్",
+    "printerProfileGeneric58": "జనరిక్ 58mm ESC/POS థర్మల్",
+    "printerProfileImpactHint": "ఇంపాక్ట్ రిబ్బన్ ప్రింటర్లు 32-నిలువు వరుసల టెక్స్ట్ మోడ్ను ఉపయోగిస్తాయి మరియు బిట్మ్యాప్ లోగోలు, QR గ్రాఫిక్స్ను దాటవేస్తాయి.",
+    "printerCompatibilityImpact": "76mm ఇంపాక్ట్",
+    "printerCompatibilityDriverOnly": "డ్రైవర్ / బ్రౌజర్ ప్రింట్ మాత్రమే",
+    "printerDriverOnlyWarning": "ఈ ప్రింటర్ రా ESC/POS ఆదేశాలను ఉపయోగించదు. దీన్ని రా థర్మల్ ప్రింటర్గా జోడించే బదులు బ్రౌజర్ ప్రింట్ను ఉపయోగించండి.",
+    "printerSwitchToBrowserPrint": "బ్రౌజర్ ప్రింట్ ఉపయోగించండి",
+    "printerSwitchedToBrowserPrint": "ప్రింట్ పద్ధతి బ్రౌజర్ ప్రింట్కు మార్చబడింది"
   },
   "setup": {
     "alreadyCompleted": "ఈ ఇన్స్టాల్లో సెటప్ ఇప్పటికే పూర్తయింది. లాగిన్కు మళ్లిస్తోంది…",

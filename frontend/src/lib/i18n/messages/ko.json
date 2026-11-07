@@ -2672,7 +2672,20 @@
     "counterRole": "카운터 역할",
     "counterIsActive": "활성",
     "confirmDeleteCounter": "이 카운터를 삭제하시겠습니까?",
-    "confirmDeleteCounterDesc": "이 카운터는 완전히 제거됩니다."
+    "confirmDeleteCounterDesc": "이 카운터는 완전히 제거됩니다.",
+    "printerProfile": "프린터 유형 / 프로필",
+    "printerProfileAuto": "프린터 이름으로 자동 감지",
+    "printerProfileImpact76": "76mm 도트 매트릭스 / 임팩트 (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM 시리즈 (80mm 감열식)",
+    "printerProfileXprinter": "Xprinter 80mm 감열식",
+    "printerProfileGeneric80": "일반 80mm ESC/POS 감열식",
+    "printerProfileGeneric58": "일반 58mm ESC/POS 감열식",
+    "printerProfileImpactHint": "임팩트 리본 프린터는 32열 텍스트 모드를 사용하며 비트맵 로고와 QR 그래픽을 건너뜁니다.",
+    "printerCompatibilityImpact": "76mm 임팩트",
+    "printerCompatibilityDriverOnly": "드라이버 / 브라우저 인쇄 전용",
+    "printerDriverOnlyWarning": "이 프린터는 원시 ESC/POS 명령을 사용하지 않습니다. 감열식 프린터로 추가하는 대신 브라우저 인쇄를 사용하세요.",
+    "printerSwitchToBrowserPrint": "브라우저 인쇄 사용",
+    "printerSwitchedToBrowserPrint": "인쇄 방식을 브라우저 인쇄로 전환했습니다"
   },
   "setup": {
     "alreadyCompleted": "이 설치에서는 초기 설정이 이미 완료되었습니다. 로그인으로 이동합니다…",

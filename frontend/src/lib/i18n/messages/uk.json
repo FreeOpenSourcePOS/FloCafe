@@ -2672,7 +2672,20 @@
     "counterRole": "Роль каси",
     "counterIsActive": "Активна",
     "confirmDeleteCounter": "Видалити цю касу?",
-    "confirmDeleteCounterDesc": "Цю касу буде видалено назавжди."
+    "confirmDeleteCounterDesc": "Цю касу буде видалено назавжди.",
+    "printerProfile": "Тип / профіль принтера",
+    "printerProfileAuto": "Визначати автоматично за назвою принтера",
+    "printerProfileImpact76": "Матричний / ударний 76 мм (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Серія Epson TM (термопринтер 80 мм)",
+    "printerProfileXprinter": "Термопринтер Xprinter 80 мм",
+    "printerProfileGeneric80": "Універсальний термопринтер ESC/POS 80 мм",
+    "printerProfileGeneric58": "Універсальний термопринтер ESC/POS 58 мм",
+    "printerProfileImpactHint": "Стрічкові матричні принтери використовують текстовий режим на 32 стовпці та пропускають растрові логотипи й графічні QR-коди.",
+    "printerCompatibilityImpact": "Матричний 76 мм",
+    "printerCompatibilityDriverOnly": "Лише друк через драйвер / браузер",
+    "printerDriverOnlyWarning": "Цей принтер не підтримує прямі команди ESC/POS. Використовуйте друк через браузер замість додавання його як термопринтера.",
+    "printerSwitchToBrowserPrint": "Використовувати друк через браузер",
+    "printerSwitchedToBrowserPrint": "Спосіб друку перемкнено на друк через браузер"
   },
   "setup": {
     "alreadyCompleted": "Налаштування на цьому пристрої вже завершено. Перенаправлення на екран входу…",

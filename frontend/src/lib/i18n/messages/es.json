@@ -2672,7 +2672,20 @@
     "counterRole": "Rol del mostrador",
     "counterIsActive": "Activo",
     "confirmDeleteCounter": "¿Eliminar este mostrador?",
-    "confirmDeleteCounterDesc": "Este mostrador se eliminará de forma permanente."
+    "confirmDeleteCounterDesc": "Este mostrador se eliminará de forma permanente.",
+    "printerProfile": "Tipo / perfil de impresora",
+    "printerProfileAuto": "Detectar automáticamente por el nombre de la impresora",
+    "printerProfileImpact76": "Impacto / matriz de puntos de 76mm (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Serie Epson TM (térmica de 80mm)",
+    "printerProfileXprinter": "Térmica Xprinter de 80mm",
+    "printerProfileGeneric80": "Térmica ESC/POS genérica de 80mm",
+    "printerProfileGeneric58": "Térmica ESC/POS genérica de 58mm",
+    "printerProfileImpactHint": "Las impresoras de impacto con cinta usan el modo de texto de 32 columnas y omiten logotipos de mapa de bits y gráficos QR.",
+    "printerCompatibilityImpact": "Impacto 76mm",
+    "printerCompatibilityDriverOnly": "Solo impresión por navegador / controlador",
+    "printerDriverOnlyWarning": "Esta impresora no usa comandos ESC/POS directos. Use la impresión del navegador en lugar de agregarla como impresora térmica directa.",
+    "printerSwitchToBrowserPrint": "Usar impresión del navegador",
+    "printerSwitchedToBrowserPrint": "Método de impresión cambiado a impresión del navegador"
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",

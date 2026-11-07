@@ -2672,7 +2672,20 @@
     "counterRole": "কাউন্টারের ভূমিকা",
     "counterIsActive": "সক্রিয়",
     "confirmDeleteCounter": "এই কাউন্টারটি মুছে ফেলবেন?",
-    "confirmDeleteCounterDesc": "এই কাউন্টারটি স্থায়ীভাবে অপসারণ করা হবে।"
+    "confirmDeleteCounterDesc": "এই কাউন্টারটি স্থায়ীভাবে অপসারণ করা হবে।",
+    "printerProfile": "প্রিন্টারের ধরন / প্রোফাইল",
+    "printerProfileAuto": "প্রিন্টারের নাম থেকে স্বয়ংক্রিয় শনাক্তকরণ",
+    "printerProfileImpact76": "৭৬মিমি ইমপ্যাক্ট / ডট-ম্যাট্রিক্স (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM সিরিজ (৮০মিমি থার্মাল)",
+    "printerProfileXprinter": "Xprinter ৮০মিমি থার্মাল",
+    "printerProfileGeneric80": "জেনেরিক ৮০মিমি ESC/POS থার্মাল",
+    "printerProfileGeneric58": "জেনেরিক ৫৮মিমি ESC/POS থার্মাল",
+    "printerProfileImpactHint": "ইমপ্যাক্ট রিবন প্রিন্টার ৩২-কলাম টেক্সট মোড ব্যবহার করে এবং বিটম্যাপ লোগো ও QR গ্রাফিক্স বাদ দেয়।",
+    "printerCompatibilityImpact": "৭৬মিমি ইমপ্যাক্ট",
+    "printerCompatibilityDriverOnly": "শুধু ড্রাইভার / ব্রাউজার প্রিন্ট",
+    "printerDriverOnlyWarning": "এই প্রিন্টারটি সরাসরি ESC/POS কমান্ড ব্যবহার করে না। থার্মাল প্রিন্টার হিসেবে যোগ না করে ব্রাউজার প্রিন্ট ব্যবহার করুন।",
+    "printerSwitchToBrowserPrint": "ব্রাউজার প্রিন্ট ব্যবহার করুন",
+    "printerSwitchedToBrowserPrint": "প্রিন্ট পদ্ধতি ব্রাউজার প্রিন্টে পরিবর্তন করা হয়েছে"
   },
   "setup": {
     "alreadyCompleted": "এই ইনস্টলে সেটআপ ইতিমধ্যেই সম্পন্ন হয়েছে। লগইন করার জন্য পুনঃনির্দেশ করা হচ্ছে...",

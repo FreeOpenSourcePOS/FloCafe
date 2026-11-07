@@ -49,6 +49,7 @@ import {
   getSupportedPrinterProfiles,
   resolvePrinterProfile,
   capabilitiesForPrinter,
+  isValidPrinterProfileId,
 } from '../printers/profiles';
 import { hasPermission, requirePermission, requireAnyPermission } from '../services/authorization';
 import { getOpenSession, listOpenSessions } from '../services/shift-session-gate';
@@ -109,6 +110,14 @@ function validatePrinterFields(body: any, existing?: any): string | null {
   }
   if (body.text_size !== undefined && !PRINTER_TEXT_SIZES.includes(body.text_size)) {
     return 'text_size must be normal, large, or extra_large';
+  }
+  if (
+    body.profile_id !== undefined &&
+    body.profile_id !== null &&
+    body.profile_id !== '' &&
+    !isValidPrinterProfileId(body.profile_id)
+  ) {
+    return 'profile_id must be a supported printer profile ID';
   }
 
   const connectionType =
@@ -172,6 +181,7 @@ export function printerShape(printer: any) {
     text_size: textSize,
     created_at: printer.created_at,
     updated_at: printer.updated_at,
+    configured_profile_id: printer.profile_id ?? null,
     profile_id: profile.id,
     profile_name: `${profile.make} ${profile.model}`,
     capabilities,
@@ -292,6 +302,7 @@ router.post('/', requirePermission('printers.manage'), (req: Request, res: Respo
       port,
       paper_width,
       text_size,
+      profile_id,
       is_default,
       cash_drawer_pulse_enabled,
     } = req.body;
@@ -319,6 +330,13 @@ router.post('/', requirePermission('printers.manage'), (req: Request, res: Respo
 
     const db = getDatabase();
     const id = randomUUID();
+    const normalizedProfileId =
+      typeof profile_id === 'string' && profile_id.trim().length > 0 ? profile_id.trim() : null;
+    const resolvedProfile = resolvePrinterProfile({
+      name,
+      profile_id: normalizedProfileId,
+    });
+    const resolvedPaperWidth = paper_width ?? resolvedProfile.defaultPaperWidth ?? 'cols-42';
 
     db.transaction(() => {
       const existingPrinters = db.prepare('SELECT COUNT(*) as count FROM printers').get() as any;
@@ -326,16 +344,17 @@ router.post('/', requirePermission('printers.manage'), (req: Request, res: Respo
       const shouldBeDefault = Boolean(is_default) || isFirstPrinter;
       if (shouldBeDefault) db.prepare('UPDATE printers SET is_default = 0').run();
       db.prepare(`
-        INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, text_size, is_default, cash_drawer_pulse_enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, text_size, profile_id, is_default, cash_drawer_pulse_enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         name,
         connection_type,
         ip_address ?? null,
         port ?? 9100,
-        paper_width ?? 'cols-42',
+        resolvedPaperWidth,
         text_size ?? 'normal',
+        normalizedProfileId,
         shouldBeDefault ? 1 : 0,
         cash_drawer_pulse_enabled === true ? 1 : 0,
         now(),
@@ -366,6 +385,7 @@ router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Res
       port,
       paper_width,
       text_size,
+      profile_id,
       is_default,
       cash_drawer_pulse_enabled,
     } = req.body;
@@ -378,11 +398,17 @@ router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Res
       const updatedConnectionType =
         connection_type !== undefined ? connection_type : existing.connection_type;
       const updatedIpAddress = ip_address !== undefined ? ip_address : existing.ip_address;
+      const updatedProfileId =
+        profile_id !== undefined
+          ? typeof profile_id === 'string' && profile_id.trim().length > 0
+            ? profile_id.trim()
+            : null
+          : (existing.profile_id ?? null);
       const becameDefault = is_default === true;
       db.prepare(`
         UPDATE printers SET
           name = ?, connection_type = ?, ip_address = ?, port = ?,
-          paper_width = ?, text_size = ?, is_default = ?, cash_drawer_pulse_enabled = ?, updated_at = ?
+          paper_width = ?, text_size = ?, profile_id = ?, is_default = ?, cash_drawer_pulse_enabled = ?, updated_at = ?
         WHERE id = ?
       `).run(
         name !== undefined ? name : existing.name,
@@ -391,6 +417,7 @@ router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Res
         port !== undefined ? port : existing.port,
         paper_width !== undefined ? paper_width : existing.paper_width,
         text_size !== undefined ? text_size : existing.text_size,
+        updatedProfileId,
         becameDefault ? 1 : is_default === false ? 0 : existing.is_default,
         cash_drawer_pulse_enabled !== undefined
           ? cash_drawer_pulse_enabled

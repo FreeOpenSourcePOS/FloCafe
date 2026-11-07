@@ -2672,7 +2672,20 @@
     "counterRole": "บทบาทเคาน์เตอร์",
     "counterIsActive": "เปิดใช้งาน",
     "confirmDeleteCounter": "ต้องการลบเคาน์เตอร์นี้หรือไม่?",
-    "confirmDeleteCounterDesc": "เคาน์เตอร์นี้จะถูกลบออกอย่างถาวร"
+    "confirmDeleteCounterDesc": "เคาน์เตอร์นี้จะถูกลบออกอย่างถาวร",
+    "printerProfile": "ประเภท / โปรไฟล์เครื่องพิมพ์",
+    "printerProfileAuto": "ตรวจหาอัตโนมัติจากชื่อเครื่องพิมพ์",
+    "printerProfileImpact76": "หัวเข็ม / อิมแพ็ค 76 มม. (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM ซีรีส์ (ความร้อน 80 มม.)",
+    "printerProfileXprinter": "Xprinter ความร้อน 80 มม.",
+    "printerProfileGeneric80": "เครื่องพิมพ์ความร้อน ESC/POS ทั่วไป 80 มม.",
+    "printerProfileGeneric58": "เครื่องพิมพ์ความร้อน ESC/POS ทั่วไป 58 มม.",
+    "printerProfileImpactHint": "เครื่องพิมพ์ผ้าหมึกหัวเข็มใช้โหมดข้อความ 32 คอลัมน์ และข้ามการพิมพ์โลโก้บิตแมปและกราฟิก QR",
+    "printerCompatibilityImpact": "หัวเข็ม 76 มม.",
+    "printerCompatibilityDriverOnly": "พิมพ์ผ่านไดรเวอร์ / เบราว์เซอร์เท่านั้น",
+    "printerDriverOnlyWarning": "เครื่องพิมพ์นี้ไม่รองรับคำสั่ง ESC/POS โดยตรง โปรดใช้การพิมพ์ผ่านเบราว์เซอร์แทนการเพิ่มเป็นเครื่องพิมพ์ความร้อน",
+    "printerSwitchToBrowserPrint": "ใช้การพิมพ์ผ่านเบราว์เซอร์",
+    "printerSwitchedToBrowserPrint": "เปลี่ยนวิธีการพิมพ์เป็นการพิมพ์ผ่านเบราว์เซอร์แล้ว"
   },
   "setup": {
     "alreadyCompleted": "ตั้งค่าการติดตั้งนี้เสร็จสมบูรณ์แล้ว กำลังกลับไปหน้าเข้าสู่ระบบ…",

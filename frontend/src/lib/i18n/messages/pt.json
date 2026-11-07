@@ -2672,7 +2672,20 @@
     "counterRole": "Função do balcão",
     "counterIsActive": "Ativo",
     "confirmDeleteCounter": "Excluir este balcão?",
-    "confirmDeleteCounterDesc": "Este balcão será permanentemente removido."
+    "confirmDeleteCounterDesc": "Este balcão será permanentemente removido.",
+    "printerProfile": "Tipo / perfil da impressora",
+    "printerProfileAuto": "Detetar automaticamente pelo nome da impressora",
+    "printerProfileImpact76": "Impacto / matricial de 76mm (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Série Epson TM (térmica de 80mm)",
+    "printerProfileXprinter": "Térmica Xprinter de 80mm",
+    "printerProfileGeneric80": "Térmica ESC/POS genérica de 80mm",
+    "printerProfileGeneric58": "Térmica ESC/POS genérica de 58mm",
+    "printerProfileImpactHint": "As impressoras de impacto com fita usam o modo de texto de 32 colunas e ignoram logótipos bitmap e gráficos QR.",
+    "printerCompatibilityImpact": "Impacto 76mm",
+    "printerCompatibilityDriverOnly": "Apenas impressão por navegador / controlador",
+    "printerDriverOnlyWarning": "Esta impressora não utiliza comandos ESC/POS diretos. Use a impressão pelo navegador em vez de a adicionar como impressora térmica direta.",
+    "printerSwitchToBrowserPrint": "Usar impressão pelo navegador",
+    "printerSwitchedToBrowserPrint": "Método de impressão alterado para impressão pelo navegador"
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",

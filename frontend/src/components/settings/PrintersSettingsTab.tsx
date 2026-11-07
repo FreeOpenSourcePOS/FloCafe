@@ -47,6 +47,7 @@ export type HwPrinter = {
   paper_width: string;
   text_size?: PrinterTextSize;
   is_default: number;
+  configured_profile_id?: string | null;
   profile_id?: string;
   profile_name?: string;
 };
@@ -63,6 +64,7 @@ export type DetectedPrinter = {
   port?: number;
   paperWidth?: string;
   profileId?: string;
+  compatibility?: 'escpos_thermal' | 'escpos_impact' | 'driver_only';
 };
 
 export type PrinterForm = {
@@ -72,6 +74,7 @@ export type PrinterForm = {
   port: string;
   paper_width: string;
   text_size: PrinterTextSize;
+  profile_id: string;
 };
 
 export type PrintingForm = {
@@ -132,6 +135,7 @@ const emptyPrinterForm: PrinterForm = {
   port: '9100',
   paper_width: 'cols-42',
   text_size: 'normal',
+  profile_id: '',
 };
 
 export interface PrintersSettingsTabProps {
@@ -149,6 +153,7 @@ export interface PrintersSettingsTabProps {
   kdsEnabledSetting: boolean;
   pulseCustomMethods: string[];
   markHydrationTouched: (field: string) => void;
+  onPersistPrintMethod?: (method: 'escpos' | 'browser') => void | Promise<void>;
   confirm: (
     message: string,
     options?: { title?: string; confirmLabel?: string; destructive?: boolean },
@@ -170,13 +175,15 @@ export function PrintersSettingsTab({
   kdsEnabledSetting,
   pulseCustomMethods,
   markHydrationTouched,
+  onPersistPrintMethod,
   confirm,
 }: PrintersSettingsTabProps) {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
-  const { refreshHardwarePrinter } = usePrinterStore();
+  const { refreshHardwarePrinter, setPrintMethod } = usePrinterStore();
 
   const [printerForm, setPrinterForm] = useState<PrinterForm>(emptyPrinterForm);
+  const [paperWidthTouched, setPaperWidthTouched] = useState(false);
   const [showPrinterForm, setShowPrinterForm] = useState(false);
   const [editingPrinterId, setEditingPrinterId] = useState<string | null>(null);
   const [savingPrinter, setSavingPrinter] = useState(false);
@@ -250,6 +257,7 @@ export function PrintersSettingsTab({
         name: string;
         connection_type: 'network' | 'usb';
         paper_width: string;
+        profile_id?: string;
         ip_address?: string;
         port?: number;
       } = {
@@ -257,6 +265,9 @@ export function PrintersSettingsTab({
         connection_type: p.connectionType === 'network' ? 'network' : 'usb',
         paper_width: normalizePrinterWidthValue(p.paperWidth),
       };
+      if (p.profileId === 'escpos-impact-76') {
+        payload.profile_id = p.profileId;
+      }
       if (p.connectionType === 'network') {
         payload.ip_address = p.ipAddress || '';
         payload.port = p.port || 9100;
@@ -274,6 +285,7 @@ export function PrintersSettingsTab({
 
   const openAddPrinter = () => {
     setPrinterForm(emptyPrinterForm);
+    setPaperWidthTouched(false);
     setEditingPrinterId(null);
     setShowPrinterForm(true);
   };
@@ -286,7 +298,9 @@ export function PrintersSettingsTab({
       port: String(p.port || 9100),
       paper_width: normalizePrinterWidthValue(p.paper_width),
       text_size: p.text_size ?? 'normal',
+      profile_id: p.configured_profile_id || '',
     });
+    setPaperWidthTouched(false);
     setEditingPrinterId(p.id);
     setShowPrinterForm(true);
   };
@@ -305,6 +319,7 @@ export function PrintersSettingsTab({
         port: printerForm.connection_type === 'network' ? Number(printerForm.port) : undefined,
         paper_width: printerForm.paper_width,
         text_size: printerForm.text_size,
+        profile_id: printerForm.profile_id || null,
       };
       if (editingPrinterId) {
         await api.put(`/printers/${editingPrinterId}`, payload);
@@ -435,6 +450,8 @@ export function PrintersSettingsTab({
                         (h) => h.name.toLowerCase() === p.name.toLowerCase(),
                       );
                       const isAdding = addingDetectedName === p.name;
+                      const isDriverOnly = p.compatibility === 'driver_only';
+                      const isImpact = p.compatibility === 'escpos_impact';
                       const dotColor =
                         p.status === 'idle'
                           ? 'bg-green-500'
@@ -460,7 +477,7 @@ export function PrintersSettingsTab({
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="font-medium text-foreground text-sm truncate">
                                 {p.name}
                               </span>
@@ -468,6 +485,17 @@ export function PrintersSettingsTab({
                                 <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
                                 {statusLabel}
                               </span>
+                              {isImpact && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
+                                  {t('printerCompatibilityImpact')}
+                                </span>
+                              )}
+                              {isDriverOnly && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-300">
+                                  <AlertTriangle size={11} />
+                                  {t('printerCompatibilityDriverOnly')}
+                                </span>
+                              )}
                             </div>
                             <p className="text-xs text-muted-foreground mt-0.5 truncate">
                               {p.make !== 'Unknown' ? `${p.make} ${p.model}` : p.model}
@@ -482,11 +510,37 @@ export function PrintersSettingsTab({
                               ) : (
                                 ''
                               )}
-                              {p.paperWidth ? ` · ${printWidthLabel(p.paperWidth)}` : ''}
-                              {p.profileId ? ` · ${t('printerSupportedProfile')}` : ''}
+                              {!isDriverOnly && p.paperWidth
+                                ? ` · ${printWidthLabel(p.paperWidth)}`
+                                : ''}
+                              {!isDriverOnly && p.profileId
+                                ? ` · ${t('printerSupportedProfile')}`
+                                : ''}
                             </p>
+                            {isDriverOnly && (
+                              <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-1">
+                                {t('printerDriverOnlyWarning')}
+                              </p>
+                            )}
                           </div>
-                          {alreadyAdded ? (
+                          {isDriverOnly ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                markHydrationTouched('printMethod');
+                                setPrintingForm((prev) => ({
+                                  ...prev,
+                                  printMethod: 'browser',
+                                }));
+                                setPrintMethod('browser');
+                                await onPersistPrintMethod?.('browser');
+                                toast.success(t('printerSwitchedToBrowserPrint'));
+                              }}
+                              className="px-3 py-1.5 text-xs border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/50 font-medium shrink-0"
+                            >
+                              {t('printerSwitchToBrowserPrint')}
+                            </button>
+                          ) : alreadyAdded ? (
                             <span className="text-xs text-muted-foreground px-3 py-1.5 flex items-center gap-1">
                               <CheckCircle2 size={14} className="text-green-500" />{' '}
                               {t('printerAdded')}
@@ -692,13 +746,57 @@ export function PrintersSettingsTab({
                   </div>
                 )}
 
+                <div className="md:col-span-2">
+                  <label className="block text-xs text-muted-foreground mb-1">
+                    {t('printerProfile')}
+                  </label>
+                  <select
+                    value={printerForm.profile_id}
+                    onChange={(e) => {
+                      const nextProfileId = e.target.value;
+                      setPrinterForm((p) => ({
+                        ...p,
+                        profile_id: nextProfileId,
+                        paper_width:
+                          !paperWidthTouched && nextProfileId === 'escpos-impact-76'
+                            ? 'cols-32'
+                            : !paperWidthTouched && nextProfileId === 'generic-escpos-58'
+                              ? 'cols-32'
+                              : !paperWidthTouched &&
+                                  (nextProfileId === 'epson-tm-series' ||
+                                    nextProfileId === 'xprinter-xp-v320m-v330m')
+                                ? 'cols-48'
+                                : !paperWidthTouched && nextProfileId === 'generic-escpos-80'
+                                  ? 'cols-42'
+                                  : p.paper_width,
+                      }));
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  >
+                    <option value="">{t('printerProfileAuto')}</option>
+                    <option value="escpos-impact-76">{t('printerProfileImpact76')}</option>
+                    <option value="epson-tm-series">{t('printerProfileEpsonTm')}</option>
+                    <option value="xprinter-xp-v320m-v330m">{t('printerProfileXprinter')}</option>
+                    <option value="generic-escpos-80">{t('printerProfileGeneric80')}</option>
+                    <option value="generic-escpos-58">{t('printerProfileGeneric58')}</option>
+                  </select>
+                  {printerForm.profile_id === 'escpos-impact-76' && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('printerProfileImpactHint')}
+                    </p>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">
                     {t('paperWidth')}
                   </label>
                   <select
                     value={printerForm.paper_width}
-                    onChange={(e) => setPrinterForm((p) => ({ ...p, paper_width: e.target.value }))}
+                    onChange={(e) => {
+                      setPaperWidthTouched(true);
+                      setPrinterForm((p) => ({ ...p, paper_width: e.target.value }));
+                    }}
                     className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                   >
                     <option value="cols-32">{t('printColumns32')}</option>

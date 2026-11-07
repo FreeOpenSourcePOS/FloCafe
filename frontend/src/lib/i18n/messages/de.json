@@ -2672,7 +2672,20 @@
     "counterRole": "Thekenrolle",
     "counterIsActive": "Aktiv",
     "confirmDeleteCounter": "Diese Theke löschen?",
-    "confirmDeleteCounterDesc": "Diese Theke wird dauerhaft entfernt."
+    "confirmDeleteCounterDesc": "Diese Theke wird dauerhaft entfernt.",
+    "printerProfile": "Druckertyp / Profil",
+    "printerProfileAuto": "Automatisch anhand des Druckernamens erkennen",
+    "printerProfileImpact76": "76mm Nadeldrucker / Impact (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM-Serie (80mm Thermo)",
+    "printerProfileXprinter": "Xprinter 80mm Thermo",
+    "printerProfileGeneric80": "Generischer 80mm ESC/POS-Thermodrucker",
+    "printerProfileGeneric58": "Generischer 58mm ESC/POS-Thermodrucker",
+    "printerProfileImpactHint": "Farbband-Nadeldrucker verwenden den 32-Spalten-Textmodus und lassen Bitmap-Logos sowie QR-Grafiken aus.",
+    "printerCompatibilityImpact": "76mm Nadeldrucker",
+    "printerCompatibilityDriverOnly": "Nur Treiber- / Browserdruck",
+    "printerDriverOnlyWarning": "Dieser Drucker unterstützt keine direkten ESC/POS-Befehle. Verwenden Sie den Browserdruck, anstatt ihn als direkten Thermodrucker hinzuzufügen.",
+    "printerSwitchToBrowserPrint": "Browserdruck verwenden",
+    "printerSwitchedToBrowserPrint": "Druckmethode auf Browserdruck umgestellt"
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",

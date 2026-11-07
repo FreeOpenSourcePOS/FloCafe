@@ -160,11 +160,12 @@ four whitespace-separated tokens read as a sentence.
 | WebUSB | `frontend/src/lib/printer/PrinterService.ts` | Encoder output, sent over the browser's WebUSB API. |
 | Delivery slip | `frontend/src/lib/printer/delivery-slip-encoder.ts` and `delivery-slip-web-print.ts` | A `DeliverySlipDocument`'s contact facts, rendered as bytes or HTML. |
 | Tax bill | `frontend/src/lib/printer/tax-bill-encoder.ts` | A raw `Bill` and `Tenant`, not a document. |
-| Payment ticket slip | `printPaymentTicket` in `main/printers/thermal.ts` | Order metadata, item lines, balance due, and ESC/POS QR code (`FLOCAFE-TICKET:<order_number>`) for multi-counter ordering. |
+| Payment ticket slip | `printPaymentTicket` in `main/printers/thermal.ts` | Order metadata, item lines, balance due, centered `FLOCAFE-TICKET:<order_number>` text, and (when `raster.enabled` is true) an ESC/POS QR code for multi-counter ordering. |
 
 The tax bill encoder and payment ticket slip generator are exceptions to "renderers consume
 documents": the tax bill encoder reads `Bill` directly for per-component tax detail, while
-`printPaymentTicket` formats a compact payment ticket slip and QR code from order items and totals.
+`printPaymentTicket` formats a compact payment ticket slip and optional QR code from order items
+and totals.
 
 ### Browser HTML printing
 
@@ -190,10 +191,12 @@ cropped content to at most 576x240 dots (384x240 for 58 mm), normalize grayscale
 384- and 576-dot printers. `receipt_logo` stores an adaptively compressed data URL (`<= 200 KB`
 target, `250 KB` cap) while `receipt_logo_raster` stores only the packed variants (`originalDataUrl`
 is left empty in new payloads, with `parseReceiptLogoData()` accepting both empty and populated
-values). Browser bills center the image above the business header. The classic and compact ESC/POS
-renderers and frontend receipt encoders select a raster variant for the paper width and emit it with
-`GS v 0` via `{RAW_BYTES:...}`, which the mixed-mode text rasterizer skips so non-Latin headers
-never overwrite the logo bitmap. Kitchen tickets do not use the bill logo setting.
+values). Browser bills center the image above the business header. When `rasterCapabilityEnabled()`
+is true, the classic and compact ESC/POS renderers and frontend receipt encoders select a raster
+variant for the paper width and emit it with `GS v 0` via `{RAW_BYTES:...}`, which the mixed-mode
+text rasterizer skips so non-Latin headers never overwrite the logo bitmap. Profiles with
+`raster.enabled: false` (such as `escpos-impact-76`) omit `{RAW_BYTES:...}` logo bitmaps. Kitchen
+tickets do not use the bill logo setting.
 
 ## Transports
 
@@ -212,23 +215,34 @@ so it must not embed device names or user data.
 
 ## Printer profiles
 
-`main/printers/profiles.ts` ships four profiles:
+`main/printers/profiles.ts` ships five profiles:
 
 | Id | Make and model | Paper | Font A columns |
 | --- | --- | --- | --- |
 | `xprinter-xp-v320m-v330m` | Xprinter XP-V320M / XP-V330M | 72 mm, `cols-48` | 48 |
+| `escpos-impact-76` | Epson TM-U220 / 76mm Impact | 64 mm, `cols-32` | 32 |
 | `epson-tm-series` | Epson TM Series ESC/POS | `cols-48` | 48 |
 | `generic-escpos-80` | Generic ESC/POS 80 mm | `cols-42` | 42 |
 | `generic-escpos-58` | Generic ESC/POS 58 mm | `cols-32` | 32 |
 
-All four declare `raster.enabled: true` with modes `mixed` and `whole-receipt`, at 576 dots of
-width except the 58 mm profile, which declares 384.
+The four thermal profiles declare `raster.enabled: true` with modes `mixed` and `whole-receipt`, at
+576 dots of width except the 58 mm profile, which declares 384. `escpos-impact-76` targets 76 mm
+ribbon impact printers (`TM-U220`, `SRP-275`, `XP-76`) with `raster.enabled: false` (`widthDots: 0`,
+`modes: []`), so bitmap logos (`GS v 0`), `GS ( k` QR codes, and text-to-bitmap raster bands are
+never sent to an impact head.
 
-`resolvePrinterProfile()` resolves in three steps: an explicit `profile_id` if it names a known
-profile, then a substring match against each profile's make, model, and aliases, then the paper
-width, which selects `generic-escpos-58` for a width starting `58mm` and `generic-escpos-80`
-otherwise. A name that matches nothing does not produce "generic for everything": it produces one
-of the two generic profiles, chosen by paper width.
+`resolvePrinterProfile()` resolves in three steps: an explicit `profile_id` persisted on `printers`
+(exposed as `configured_profile_id` alongside the resolved `profile_id` on `/api/printers`
+responses) if it names a known profile, then a substring match against each profile's make, model,
+and aliases, then the paper width, which selects `generic-escpos-58` for a width starting `58mm` and
+`generic-escpos-80` otherwise. A name that matches nothing does not produce "generic for
+everything": it produces one of the two generic profiles, chosen by paper width. OS printer
+detection (`detectConnectedPrinters()`) also annotates each queue with
+`compatibility: 'escpos_thermal' | 'escpos_impact' | 'driver_only'` via
+`classifyDetectedPrinterCompatibility()`, keeping driver-only queues (such as Star `TSP100` /
+`TSP143` / `SP700` / `mC-Print`, Epson `EcoTank` / `WorkForce` / `Stylus` inkjets, label printers,
+and PDF queues) visible in Settings with a browser-print switch instead of misclassifying them as
+raw ESC/POS thermal printers.
 
 `capabilitiesForPrinter()` then caps the profile's raster width to the configured paper width when
 that width is narrower than the profile's hardware, so a 42-column configuration on 80 mm hardware

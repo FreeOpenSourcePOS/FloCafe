@@ -174,7 +174,11 @@ async function run(): Promise<void> {
   assert.equal(rasterWebUsbPathEnabled(caps, true, 'validated-profile'), true);
   assert.equal(rasterCapabilityEnabled(GENERIC_THERMAL_CAPABILITIES), false);
   assert.equal(
-    getSupportedPrinterProfiles().every((profile) => profile.capabilities.raster.enabled === true),
+    getSupportedPrinterProfiles().every((profile) =>
+      profile.id === 'escpos-impact-76'
+        ? profile.capabilities.raster.enabled === false
+        : profile.capabilities.raster.enabled === true,
+    ),
     true,
   );
   assert.equal(

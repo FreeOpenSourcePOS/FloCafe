@@ -83,6 +83,11 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
     web: 'Buga ta Yanar Gizo (Burauza)',
     whatsapp: 'Raba ta WhatsApp',
   },
+  jv: {
+    basic: 'Struk Dhasar (Termal)',
+    web: 'Cetak Web (Browser)',
+    whatsapp: 'Bagekake WhatsApp',
+  },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

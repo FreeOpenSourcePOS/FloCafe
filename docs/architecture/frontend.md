@@ -542,10 +542,10 @@ and the auth store keeps the languages that failed. Every print action calls
 a receipt warning saying English labels were used. A receipt that renders in the wrong language is
 a financial document, not a cosmetic bug.
 
-## Internationalization: 25 locales
+## Internationalization: 26 locales
 
 [`frontend/src/lib/i18n/languages.ts`](../../frontend/src/lib/i18n/languages.ts) is the renderer's
-registry. It holds 25 entries, and
+registry. It holds 26 entries, and
 [`frontend/src/lib/i18n/messages/`](../../frontend/src/lib/i18n/messages) holds one JSON file per
 entry. Each registry entry carries the BCP-47 locale tag, the native name, the text direction, the
 `selectable` flag, and a dynamic chunk loader.
@@ -667,7 +667,7 @@ frontend/src/
 │   └── updates/                Update download prompt and install guard dialog
 ├── hooks/                      Printer, KDS, theme, update, cash, approver, and formatting hooks
 ├── lib/
-│   ├── i18n/                   Language registry, loader, and the 25 message files
+│   ├── i18n/                   Language registry, loader, and the 26 message files
 │   ├── printer/                Encoders, document builders, warnings, WebUSB bridge,
 │   │                           and the delivery-slip encoder and browser renderer
 │   ├── updates/                Beta channel, auto-check, and restart-and-install helpers

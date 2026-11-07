@@ -347,7 +347,21 @@ async function runTests() {
   };
 
   const receiptLanguages: Array<{
-    lang: 'en' | 'es' | 'fr' | 'pt' | 'ru' | 'fa' | 'ur' | 'ja' | 'hi' | 'ne' | 'sq' | 'th' | 'ha';
+    lang:
+      | 'en'
+      | 'es'
+      | 'fr'
+      | 'pt'
+      | 'ru'
+      | 'fa'
+      | 'ur'
+      | 'ja'
+      | 'hi'
+      | 'ne'
+      | 'sq'
+      | 'th'
+      | 'ha'
+      | 'jv';
     label: string;
     filePrefix: string;
   }> = [
@@ -364,6 +378,7 @@ async function runTests() {
     { lang: 'sq', label: 'Albanian UI', filePrefix: 'receipt-argentina-albanian-ui' },
     { lang: 'th', label: 'Thai UI', filePrefix: 'receipt-argentina-thai-ui' },
     { lang: 'ha', label: 'Hausa UI', filePrefix: 'receipt-argentina-hausa-ui' },
+    { lang: 'jv', label: 'Javanese UI', filePrefix: 'receipt-argentina-javanese-ui' },
   ];
 
   const receiptResults: Record<string, { html: string; htmlPath: string; pngPath: string }> = {};
@@ -427,6 +442,11 @@ async function runTests() {
       assert.ok(
         receiptHtml.includes('Lambar lissafi #') && receiptHtml.includes('Jimillar ƙasa'),
         `Receipt in Hausa UI must contain Hausa labels, got: ${receiptHtml}`,
+      );
+    } else if (lang === 'jv') {
+      assert.ok(
+        receiptHtml.includes('Tagihan #') && receiptHtml.includes('Gunggung Akhir'),
+        `Receipt in Javanese UI must contain Javanese labels, got: ${receiptHtml}`,
       );
     }
 

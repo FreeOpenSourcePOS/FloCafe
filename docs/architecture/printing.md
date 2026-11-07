@@ -164,7 +164,8 @@ four whitespace-separated tokens read as a sentence.
 
 The tax bill encoder and payment ticket slip generator are exceptions to "renderers consume
 documents": the tax bill encoder reads `Bill` directly for per-component tax detail, while
-`printPaymentTicket` formats a compact payment ticket slip and QR code from order items and totals.
+`printPaymentTicket` formats a compact payment ticket slip and optional QR code from order items
+and totals.
 
 ### Browser HTML printing
 
@@ -219,7 +220,7 @@ so it must not embed device names or user data.
 | Id | Make and model | Paper | Font A columns |
 | --- | --- | --- | --- |
 | `xprinter-xp-v320m-v330m` | Xprinter XP-V320M / XP-V330M | 72 mm, `cols-48` | 48 |
-| `escpos-impact-76` | Epson / Bixolon / Star 76mm ESC/POS Impact (TM-U220 / SRP-275) | 64 mm, `cols-32` | 32 |
+| `escpos-impact-76` | Epson TM-U220 / 76mm Impact | 64 mm, `cols-32` | 32 |
 | `epson-tm-series` | Epson TM Series ESC/POS | `cols-48` | 48 |
 | `generic-escpos-80` | Generic ESC/POS 80 mm | `cols-42` | 42 |
 | `generic-escpos-58` | Generic ESC/POS 58 mm | `cols-32` | 32 |

@@ -57,39 +57,40 @@ than a preference. `tests/translations.test.ts` rejects a `vi.json` value that i
 
 The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `pa.json`, `ru.json`, `sw.json`, `ta.json`, `te.json`, `th.json`, and `uk.json`.
 
-## Albanian and Vietnamese on a generic thermal printer
+## Albanian and Vietnamese on thermal and impact printers
 
-`LATIN_THERMAL_CAPABILITIES` in `shared/print/thermal-capabilities.ts` covers Latin-script printers
-with `cp437`, `cp850`, `cp858`, and `windows1252` code pages, and transliteration to ASCII.
+`GENERIC_THERMAL_CAPABILITIES` (`scripts: ['ascii']`) in `shared/print/thermal-capabilities.ts`
+transliterates only through the fixed `LATIN_ASCII_MAP`, so Albanian `Ç`/`ç` and `Ë`/`ë` become
+`C`/`c` and `E`/`e`, and German umlauts (`Ä`/`Ö`/`Ü`/`ß`) fold the same way. Characters outside
+that map remain unrepresentable on `GENERIC_THERMAL_CAPABILITIES` unless raster rendering is
+enabled.
 
-Albanian is transliterated through a fixed `LATIN_ASCII_MAP`, so `Ç` and `ç` become `C` and `c`, and
-`Ë` and `ë` become `E` and `e`. The map exists because those two characters are outside CP437. German
-umlauts are transliterated the same way in the same table. A translation is free to use the full
-character set; the printer path handles the reduction.
+`LATIN_THERMAL_CAPABILITIES` (`scripts: ['ascii', 'latin']`) covers Latin-script printers with
+`cp437`, `cp850`, `cp858`, and `windows1252` code pages plus fallback transliteration. Native
+code-page coverage (without transliteration, as checked by `shouldUseOrderTypeFallback()`) for
+Vietnamese strings is:
 
-Vietnamese is a different case, because many of its characters are outside every supported code page.
-Verified against `LATIN_THERMAL_CAPABILITIES`:
+| String | Native code-page match | Code page |
+| --- | --- | --- |
+| `Món` | yes | `cp437` |
+| `Khách hàng` | yes | `cp437` |
+| `Cà phê` | yes | `cp437` |
+| `Bàn` | yes | `cp437` |
+| `Tổng cộng` | no | none |
+| `Hóa đơn` | no | none |
+| `Ăn tại chỗ` | no | none |
+| `Nước` | no | none |
+| `Số tiền` | no | none |
+| `Đơn vị` | no | none |
+| `Tiếng Việt` | no | none |
 
-| String       | Representable | Code page |
-| ------------ | ------------- | --------- |
-| `Món`        | yes           | `cp437`   |
-| `Khách hàng` | yes           | `cp437`   |
-| `Cà phê`     | yes           | `cp437`   |
-| `Bàn`        | yes           | `cp437`   |
-| `Tổng cộng`  | no            | none      |
-| `Hóa đơn`    | no            | none      |
-| `Ăn tại chỗ` | no            | none      |
-| `Nước`       | no            | none      |
-| `Số tiền`    | no            | none      |
-| `Đơn vị`     | no            | none      |
-| `Tiếng Việt` | no            | none      |
-
-The characters that fail are those carrying a tone mark: `ộ`, `đ`, `ạ`, `ố`, `ơ`, and the stacked
-`ế` in `Tiếng`. Note that the language endonym itself is not representable, so a printer-specific
-surface that prints the language name needs a fallback too.
-
-This is a property of the printer, not of the translation. A Vietnamese string that fails this table
-still renders correctly in the UI, on a browser receipt, and on a printer with a raster path.
+The characters lacking a native single-byte code page are those carrying a tone mark or stroke: `ộ`,
+`đ`, `ạ`, `ố`, `ơ`, and the stacked `ế` in `Tiếng`. When no single native code page can represent a
+Latin-script string on `LATIN_THERMAL_CAPABILITIES`, `transliterateThermalText()` applies
+`LATIN_ASCII_MAP`, `LATIN_EXTENDED_ASCII_MAP` (`Æ/æ`, `Œ/œ`, `Ø/ø`, `Ł/ł`, `Đ/đ`, `Ð/ð`, `Þ/þ`,
+`Ğ/ğ`, `İ/ı`, `Ş/ş`), and Unicode NFD `\p{Diacritic}` stripping on Latin characters so non-raster
+Latin profiles (such as `escpos-impact-76`) fold those strings to ASCII (`cp437`). A translation is
+free to use the full character set; the printer path handles the reduction or raster fallback.
 
 ## Print capability is owned by the printer profile
 

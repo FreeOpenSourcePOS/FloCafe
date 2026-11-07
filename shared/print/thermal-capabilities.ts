@@ -68,8 +68,8 @@ export const LATIN_THERMAL_CAPABILITIES: ThermalPrinterCapabilities = {
   transliteration: { enabled: true },
 };
 
-// The shipped fallback preserves established German and Albanian thermal
-// transliteration without claiming quality coverage for every accented locale.
+// Base ASCII map used on GENERIC_THERMAL_CAPABILITIES and applied first on
+// Latin profiles before extended multi-char/stroke folding and NFD stripping.
 const LATIN_ASCII_MAP: Record<string, string> = {
   Ä: 'AE',
   Ö: 'OE',
@@ -147,7 +147,10 @@ function transliterateThermalText(text: string, capabilities: ThermalPrinterCapa
       .map((character) => LATIN_EXTENDED_ASCII_MAP[character] ?? character)
       .join('');
     return withExtendedMap.replace(/\p{Script=Latin}\p{Mark}*/gu, (segment) =>
-      segment.normalize('NFD').replace(/\p{Diacritic}/gu, '').normalize('NFC'),
+      segment
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .normalize('NFC'),
     );
   }
   return text.replace(/[À-ÿ]/g, (character) => LATIN_ASCII_MAP[character] ?? character);

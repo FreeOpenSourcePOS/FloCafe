@@ -366,16 +366,14 @@ export function classifyDetectedPrinterCompatibility(info: {
     /\b(?:zebra|zd\d|gk420|gx420|zp450|zt\d|dymo|labelwriter|rollo|brother|ql-\d|td-\d|bixolon\s+slp|label)\b/.test(
       haystack,
     ) ||
-    /\b(?:canon|hewlett|hp\b|lexmark|ricoh|kyocera|xerox|konica|minolta|pantum)\b/.test(
-      haystack,
-    ) ||
+    /\b(?:canon|hewlett|hp\b|lexmark|ricoh|kyocera|xerox|konica|minolta|pantum)\b/.test(haystack) ||
     /\b(?:pdf|xps|onenote|fax|microsoft\s+print|send\s+to|save\s+as|cups-pdf)\b/.test(haystack)
   ) {
     return 'driver_only';
   }
 
   const matchedProfile = info.profileId
-    ? getSupportedPrinterProfiles().find((p) => p.id === info.profileId) ?? null
+    ? (getSupportedPrinterProfiles().find((p) => p.id === info.profileId) ?? null)
     : matchSupportedPrinterProfile(info.name, info.make, info.model, info.driver);
 
   if (matchedProfile?.id === 'escpos-impact-76') return 'escpos_impact';

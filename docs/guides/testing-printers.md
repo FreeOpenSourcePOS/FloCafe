@@ -21,10 +21,10 @@ npm run test:raster
 
 ## Which profile applies to a printer
 
-`main/printers/profiles.ts` ships five profiles: `xprinter-xp-v320m-v330m`, `escpos-impact-76`,
-`epson-tm-series`, `generic-escpos-80`, and `generic-escpos-58`. A printer with no matching profile
-is not unsupported; it runs on one of the two generic profiles, chosen by paper width, or on an
-explicit `profile_id` selected in **Settings -> Printers**.
+See [printer profiles](../architecture/printing.md#printer-profiles) for the shipped profiles in
+`main/printers/profiles.ts`, their raster capabilities, and the resolution order. A printer with no
+matching name alias runs on one of the two generic profiles chosen by paper width, or on an explicit
+`profile_id` selected in **Settings -> Printers**.
 
 To determine which profile a printer actually resolves to:
 
@@ -35,10 +35,6 @@ To determine which profile a printer actually resolves to:
    alias and no explicit profile was selected. `matchSupportedPrinterProfile()` substring-matches
    the lower-cased make, model, and alias list, so an auto-detected name has to contain one of the
    profile's tokens. Recording the name string you entered is part of the report.
-
-The four thermal profiles declare raster capability (`384` dots on `generic-escpos-58`, `576` dots
-on the three 80 mm profiles). `escpos-impact-76` targets 76 mm impact ribbon printers (`cols-32`)
-and declares `raster.enabled: false`.
 
 ## Test 1: chunked network printing
 

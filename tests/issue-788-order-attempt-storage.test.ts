@@ -23,12 +23,22 @@ const {
 const {
   PREPAID_ATTEMPT_STORAGE_KEY,
   OrderAttemptStorageError,
+  buildCartFingerprintFromState,
   classifyOrderRequestFailure,
   clearOrderAttempt,
+  doesAttemptMatchStore,
+  fingerprintsMatchAcrossScheduleToggle,
   getPrepaidOrderAttemptStorageKey,
+  getScheduleRejectionCode,
+  isDefinitiveScheduleRejection,
+  parseStoredAttemptScheduledFor,
   readOrderAttempt,
   persistOrderAttempt,
+  reconcileRejectedScheduledOrderAttempt,
+  resolveCartScheduledForAfterSettingRead,
+  resolveRetryScheduledFor,
   sanitizeServerError,
+  stripScheduledForFromFingerprint,
 } = require('../frontend/src/lib/order-attempt');
 
 class MemoryStorage {
@@ -823,6 +833,344 @@ function main() {
     sqlLeakageAttempt.detail,
     'The local server response did not confirm the result (HTTP 400)',
     'SQL leakage falls back to safe generic detail',
+  );
+
+  // 12. Issue #1470: Unresolved scheduled order attempts preserve their schedule
+  //     and idempotency key when a scheduling-setting read fails and recovers,
+  //     or when scheduling is disabled and re-enabled before reconciliation.
+  const scheduledForValue = '2026-06-15T14:30';
+  const baseCartState = {
+    tableId: null,
+    customerId: null,
+    orderType: 'takeaway',
+    guestCount: 1,
+    orderNotes: '',
+    scheduledFor: scheduledForValue,
+    items: [{ product_id: 'p1', quantity: 1 }],
+    waivedChargeIds: new Set(),
+    optedInChargeIds: new Set(),
+  };
+  const scheduledFingerprint = buildCartFingerprintFromState(baseCartState, baseCartState.items);
+  const unscheduledFingerprint = buildCartFingerprintFromState(
+    { ...baseCartState, scheduledFor: '' },
+    baseCartState.items,
+  );
+  assert.equal(
+    parseStoredAttemptScheduledFor(scheduledFingerprint),
+    scheduledForValue,
+    'stored scheduled fingerprint exposes its scheduled_for value',
+  );
+  assert.equal(
+    parseStoredAttemptScheduledFor(unscheduledFingerprint),
+    undefined,
+    'unscheduled fingerprint has no scheduled_for value',
+  );
+  assert.equal(
+    stripScheduledForFromFingerprint(scheduledFingerprint),
+    stripScheduledForFromFingerprint(unscheduledFingerprint),
+    'stripping scheduled_for equates otherwise identical cart fingerprints',
+  );
+
+  const scheduleRetryStorage = createSafeAppendAttemptStorage(
+    new MemoryStorage(),
+    new MemoryStorage(),
+  );
+  const originalScheduledAttempt = buildPostpaidAttempt({
+    fingerprint: scheduledFingerprint,
+    idempotencyKey: 'scheduled-attempt-key-1',
+  });
+  persistOrderAttempt(scheduleRetryStorage, postpaidKey, originalScheduledAttempt);
+
+  // Scenario A: A scheduled order attempt commits on the server, its response is
+  // lost, one scheduling-setting read fails, and then the read recovers (true).
+  const preservedFromAttempt = parseStoredAttemptScheduledFor(
+    readOrderAttempt(scheduleRetryStorage, postpaidKey, USER_ID, {
+      isValid: isUsablePostpaidAttempt,
+    }).fingerprint,
+  );
+  const cartAfterFailedSettingRead = resolveCartScheduledForAfterSettingRead({
+    settingReadSucceeded: false,
+    scheduledOrdersEnabled: false,
+    cartScheduledFor: scheduledForValue,
+    preservedScheduledFor: preservedFromAttempt,
+  });
+  assert.equal(
+    cartAfterFailedSettingRead,
+    scheduledForValue,
+    'a failed scheduling-setting read preserves the cart schedule while an unresolved attempt exists',
+  );
+  const cartAfterRecoveredSettingRead = resolveCartScheduledForAfterSettingRead({
+    settingReadSucceeded: true,
+    scheduledOrdersEnabled: true,
+    cartScheduledFor: cartAfterFailedSettingRead,
+    preservedScheduledFor: preservedFromAttempt,
+  });
+  assert.equal(
+    cartAfterRecoveredSettingRead,
+    scheduledForValue,
+    'recovering scheduling-setting read keeps the preserved schedule on the cart',
+  );
+
+  // Scenario B: Scheduling is disabled (false) then re-enabled (true) while the
+  // unresolved scheduled attempt is still awaiting reconciliation.
+  const cartAfterDisabledSetting = resolveCartScheduledForAfterSettingRead({
+    settingReadSucceeded: true,
+    scheduledOrdersEnabled: false,
+    cartScheduledFor: scheduledForValue,
+    preservedScheduledFor: preservedFromAttempt,
+  });
+  assert.equal(
+    cartAfterDisabledSetting,
+    scheduledForValue,
+    'disabling scheduling preserves the cart schedule while an unresolved attempt exists',
+  );
+  const cartAfterReenabledFromEmpty = resolveCartScheduledForAfterSettingRead({
+    settingReadSucceeded: true,
+    scheduledOrdersEnabled: true,
+    cartScheduledFor: '',
+    preservedScheduledFor: preservedFromAttempt,
+  });
+  assert.equal(
+    cartAfterReenabledFromEmpty,
+    scheduledForValue,
+    're-enabling scheduling restores the preserved attempt schedule even if cart state was cleared',
+  );
+
+  // Even if the current fingerprint is built after cart.scheduledFor was cleared
+  // and scheduledOrdersEnabled recovered to true, retry still matches the saved
+  // attempt and restores both the original idempotency key and scheduled_for.
+  assert.equal(
+    fingerprintsMatchAcrossScheduleToggle(scheduledFingerprint, unscheduledFingerprint),
+    true,
+    'stored scheduled attempt matches unscheduled retry fingerprint of the same cart across schedule recovery or toggle',
+  );
+  assert.equal(
+    resolveRetryScheduledFor({
+      orderType: 'takeaway',
+      scheduledOrdersEnabled: true,
+      cartScheduledFor: '',
+      preservedScheduledFor: preservedFromAttempt,
+    }),
+    scheduledForValue,
+    'retry with scheduling enabled restores preserved scheduled_for when cart schedule was cleared',
+  );
+  assert.equal(
+    resolveRetryScheduledFor({
+      orderType: 'takeaway',
+      scheduledOrdersEnabled: false,
+      cartScheduledFor: '',
+      preservedScheduledFor: preservedFromAttempt,
+    }),
+    scheduledForValue,
+    'retry with scheduling disabled also restores preserved scheduled_for for idempotent replay',
+  );
+
+  // Once the attempt is reconciled and cleared, a disabled or failed setting read
+  // clears an unsubmitted cart schedule as normal.
+  assert.equal(
+    clearOrderAttempt(scheduleRetryStorage, postpaidKey, originalScheduledAttempt),
+    true,
+  );
+  assert.equal(
+    resolveCartScheduledForAfterSettingRead({
+      settingReadSucceeded: true,
+      scheduledOrdersEnabled: false,
+      cartScheduledFor: scheduledForValue,
+      preservedScheduledFor: undefined,
+    }),
+    '',
+    'disabling scheduling clears cart schedule when no unresolved attempt exists',
+  );
+  assert.equal(
+    resolveCartScheduledForAfterSettingRead({
+      settingReadSucceeded: false,
+      scheduledOrdersEnabled: false,
+      cartScheduledFor: scheduledForValue,
+      preservedScheduledFor: undefined,
+    }),
+    '',
+    'failed scheduling-setting read clears cart schedule when no unresolved attempt exists',
+  );
+
+  // 13. Definitive schedule rejections (past-time or disabled-setting) reconcile
+  //     the attempt as not_applied and retire it so the cashier can clear or
+  //     replace the schedule without remaining pinned to the rejected schedule.
+  const rejectionStorage = createSafeAppendAttemptStorage(new MemoryStorage(), new MemoryStorage());
+  const pastScheduleAttempt = buildPostpaidAttempt({
+    storeId: '1',
+    fingerprint: scheduledFingerprint,
+    idempotencyKey: 'scheduled-past-key-1',
+    operationId: operationReference,
+  });
+  persistOrderAttempt(rejectionStorage, postpaidKey, pastScheduleAttempt);
+
+  // Uncertain transport failure does NOT retire the scheduled attempt.
+  const uncertainReconciliation = reconcileRejectedScheduledOrderAttempt({
+    storage: rejectionStorage,
+    key: postpaidKey,
+    attempt: pastScheduleAttempt,
+    attemptedScheduledFor: scheduledForValue,
+    error: { isAxiosError: true, message: 'Network Error' },
+    correlationId: operationReference,
+  });
+  assert.equal(uncertainReconciliation.reconciledNotApplied, false);
+  assert.notEqual(
+    readOrderAttempt(rejectionStorage, postpaidKey, USER_ID, { isValid: isUsablePostpaidAttempt }),
+    null,
+    'uncertain failure preserves the scheduled attempt for idempotent retry',
+  );
+
+  // Past-time rejection retires the saved attempt.
+  const pastTimeError = {
+    response: {
+      status: 400,
+      data: {
+        error: 'Scheduled kitchen release time must be in the future.',
+        code: 'PAST_SCHEDULED_TIME',
+        reason_code: 'validation.rejected',
+        operation: 'order.create',
+        stage: 'validation',
+        outcome: 'not_applied',
+        classification: 'expected_rejection',
+        correlation_id: operationReference,
+      },
+    },
+  };
+  assert.equal(getScheduleRejectionCode(pastTimeError), 'PAST_SCHEDULED_TIME');
+  assert.equal(isDefinitiveScheduleRejection(pastTimeError, operationReference), true);
+  const pastTimeReconciliation = reconcileRejectedScheduledOrderAttempt({
+    storage: rejectionStorage,
+    key: postpaidKey,
+    attempt: pastScheduleAttempt,
+    attemptedScheduledFor: scheduledForValue,
+    error: pastTimeError,
+    correlationId: operationReference,
+  });
+  assert.equal(pastTimeReconciliation.reconciledNotApplied, true);
+  assert.equal(pastTimeReconciliation.rejectionCode, 'PAST_SCHEDULED_TIME');
+  assert.equal(
+    readOrderAttempt(rejectionStorage, postpaidKey, USER_ID, { isValid: isUsablePostpaidAttempt }),
+    null,
+    'definitive past-time rejection retires the saved attempt',
+  );
+  assert.equal(
+    resolveRetryScheduledFor({
+      orderType: 'takeaway',
+      scheduledOrdersEnabled: true,
+      cartScheduledFor: '',
+      preservedScheduledFor: undefined,
+    }),
+    undefined,
+    'clearing the schedule after retirement sends an unscheduled immediate order',
+  );
+  assert.equal(
+    resolveRetryScheduledFor({
+      orderType: 'takeaway',
+      scheduledOrdersEnabled: true,
+      cartScheduledFor: '2026-06-15T16:00',
+      preservedScheduledFor: undefined,
+    }),
+    '2026-06-15T16:00',
+    'replacing the schedule after retirement sends the new future time',
+  );
+
+  // Disabled-setting rejection retires the saved attempt and reports SCHEDULED_ORDERS_DISABLED.
+  const disabledScheduleAttempt = buildPrepaidAttempt({
+    storeId: '1',
+    cartFingerprint: scheduledFingerprint,
+    orderIdempotencyKey: 'scheduled-disabled-order-key-1',
+    paymentIdempotencyKey: 'scheduled-disabled-pay-key-1',
+    operationId: operationReference,
+  });
+  persistOrderAttempt(rejectionStorage, prepaidKey, disabledScheduleAttempt);
+  const disabledScheduleError = {
+    response: {
+      status: 409,
+      data: {
+        error: 'Scheduled orders are disabled.',
+        code: 'SCHEDULED_ORDERS_DISABLED',
+        reason_code: 'validation.rejected',
+        operation: 'order.create',
+        stage: 'validation',
+        outcome: 'not_applied',
+        classification: 'expected_rejection',
+        correlation_id: operationReference,
+      },
+    },
+  };
+  const disabledReconciliation = reconcileRejectedScheduledOrderAttempt({
+    storage: rejectionStorage,
+    key: prepaidKey,
+    attempt: disabledScheduleAttempt,
+    attemptedScheduledFor: scheduledForValue,
+    error: disabledScheduleError,
+    correlationId: operationReference,
+  });
+  assert.equal(disabledReconciliation.reconciledNotApplied, true);
+  assert.equal(disabledReconciliation.rejectionCode, 'SCHEDULED_ORDERS_DISABLED');
+  assert.equal(
+    readOrderAttempt(rejectionStorage, prepaidKey, USER_ID, { isValid: isUsablePrepaidAttempt }),
+    null,
+    'definitive disabled-setting rejection retires the saved prepaid attempt',
+  );
+
+  // 14. Store scoping prevents a pending scheduled attempt from Store 1 from
+  //     importing its schedule into Store 2's cart on store switch, while
+  //     preserving safe migration of legacy attempts without storeId.
+  const storeOneAttempt = buildPostpaidAttempt({
+    storeId: '1',
+    fingerprint: scheduledFingerprint,
+    idempotencyKey: 'store-1-scheduled-key',
+  });
+  assert.equal(
+    doesAttemptMatchStore(storeOneAttempt, '1', '1'),
+    true,
+    'attempt matches its originating store',
+  );
+  assert.equal(
+    doesAttemptMatchStore(storeOneAttempt, '2', '1'),
+    false,
+    'attempt from store 1 does not match after switching to store 2',
+  );
+  assert.equal(
+    resolveCartScheduledForAfterSettingRead({
+      settingReadSucceeded: true,
+      scheduledOrdersEnabled: false,
+      cartScheduledFor: '',
+      preservedScheduledFor: scheduledForValue,
+      attemptStoreId: '1',
+      currentStoreId: '2',
+      legacyOriginStoreId: '1',
+    }),
+    '',
+    'switching to store 2 with scheduling disabled does not import store 1 schedule into an unscheduled cart',
+  );
+  assert.equal(
+    resolveCartScheduledForAfterSettingRead({
+      settingReadSucceeded: true,
+      scheduledOrdersEnabled: true,
+      cartScheduledFor: '',
+      preservedScheduledFor: scheduledForValue,
+      attemptStoreId: '1',
+      currentStoreId: '2',
+      legacyOriginStoreId: '1',
+    }),
+    '',
+    'switching to store 2 with scheduling enabled does not import store 1 schedule into an unscheduled cart',
+  );
+  const legacyNoStoreAttempt = buildPostpaidAttempt({
+    fingerprint: scheduledFingerprint,
+    idempotencyKey: 'legacy-no-store-key',
+  });
+  assert.equal(
+    doesAttemptMatchStore(legacyNoStoreAttempt, '1', '1'),
+    true,
+    'legacy attempt without storeId still matches its origin store during migration',
+  );
+  assert.equal(
+    doesAttemptMatchStore(legacyNoStoreAttempt, '2', '1'),
+    false,
+    'legacy attempt without storeId does not match after switching to another store',
   );
 
   console.log('Issue #788 order-attempt storage tests passed');

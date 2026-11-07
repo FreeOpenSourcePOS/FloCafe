@@ -3621,6 +3621,10 @@ export default function POSPage() {
           setShowScheduledOrders(false);
           return true;
         }
+        if (showPaymentQueue) {
+          setShowPaymentQueue(false);
+          return true;
+        }
         if (cashDrawer.open) {
           cashDrawer.setOpen(false);
           return true;

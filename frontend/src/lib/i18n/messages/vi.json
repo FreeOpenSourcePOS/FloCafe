@@ -2672,7 +2672,20 @@
     "counterRole": "Vai trò quầy",
     "counterIsActive": "Hoạt động",
     "confirmDeleteCounter": "Xóa quầy này?",
-    "confirmDeleteCounterDesc": "Quầy này sẽ bị xóa vĩnh viễn."
+    "confirmDeleteCounterDesc": "Quầy này sẽ bị xóa vĩnh viễn.",
+    "printerProfile": "Loại / cấu hình máy in",
+    "printerProfileAuto": "Tự động nhận diện theo tên máy in",
+    "printerProfileImpact76": "Máy in kim 76mm (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Dòng Epson TM (In nhiệt 80mm)",
+    "printerProfileXprinter": "Máy in nhiệt Xprinter 80mm",
+    "printerProfileGeneric80": "Máy in nhiệt ESC/POS 80mm phổ thông",
+    "printerProfileGeneric58": "Máy in nhiệt ESC/POS 58mm phổ thông",
+    "printerProfileImpactHint": "Máy in kim dùng ruy-băng sử dụng chế độ văn bản 32 cột và bỏ qua logo bitmap cùng mã QR đồ họa.",
+    "printerCompatibilityImpact": "In kim 76mm",
+    "printerCompatibilityDriverOnly": "Chỉ in qua trình điều khiển / trình duyệt",
+    "printerDriverOnlyWarning": "Máy in này không dùng lệnh ESC/POS trực tiếp. Hãy dùng In qua trình duyệt thay vì thêm làm máy in nhiệt trực tiếp.",
+    "printerSwitchToBrowserPrint": "Dùng In qua trình duyệt",
+    "printerSwitchedToBrowserPrint": "Đã chuyển phương thức in sang In qua trình duyệt"
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

@@ -2672,7 +2672,20 @@
     "counterRole": "Peran konter",
     "counterIsActive": "Aktif",
     "confirmDeleteCounter": "Hapus konter ini?",
-    "confirmDeleteCounterDesc": "Konter ini akan dihapus secara permanen."
+    "confirmDeleteCounterDesc": "Konter ini akan dihapus secara permanen.",
+    "printerProfile": "Jenis / Profil Printer",
+    "printerProfileAuto": "Deteksi otomatis dari nama printer",
+    "printerProfileImpact76": "Impact / Dot-Matrix 76mm (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Seri Epson TM (Termal 80mm)",
+    "printerProfileXprinter": "Termal 80mm Xprinter",
+    "printerProfileGeneric80": "Termal ESC/POS 80mm Generik",
+    "printerProfileGeneric58": "Termal ESC/POS 58mm Generik",
+    "printerProfileImpactHint": "Printer pita impact menggunakan mode teks 32 kolom serta melewati logo bitmap dan grafik QR.",
+    "printerCompatibilityImpact": "Impact 76mm",
+    "printerCompatibilityDriverOnly": "Khusus cetak driver / browser",
+    "printerDriverOnlyWarning": "Printer ini tidak menggunakan perintah ESC/POS mentah. Gunakan Cetak Browser alih-alih menambahkannya sebagai printer termal mentah.",
+    "printerSwitchToBrowserPrint": "Gunakan Cetak Browser",
+    "printerSwitchedToBrowserPrint": "Metode Cetak dialihkan ke Cetak Browser"
   },
   "setup": {
     "alreadyCompleted": "Pengaturan awal sudah selesai dilakukan pada instalasi ini. Mengalihkan ke layar masuk…",

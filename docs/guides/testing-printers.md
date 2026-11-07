@@ -21,22 +21,24 @@ npm run test:raster
 
 ## Which profile applies to a printer
 
-`main/printers/profiles.ts` ships four profiles: `xprinter-xp-v320m-v330m`, `epson-tm-series`,
-`generic-escpos-80`, and `generic-escpos-58`. A printer with no matching profile is not
-unsupported; it runs on one of the two generic profiles, chosen by paper width.
+`main/printers/profiles.ts` ships five profiles: `xprinter-xp-v320m-v330m`, `escpos-impact-76`,
+`epson-tm-series`, `generic-escpos-80`, and `generic-escpos-58`. A printer with no matching profile
+is not unsupported; it runs on one of the two generic profiles, chosen by paper width, or on an
+explicit `profile_id` selected in **Settings -> Printers**.
 
 To determine which profile a printer actually resolves to:
 
 1. In FloCafe, open **Settings -> Printers**, add the printer, and save it.
-2. Read the resolved `profile_id` from the stored printer row, or call the profile listing endpoint
-   that the printer settings page uses.
+2. Read the resolved `profile_id` (and optional `configured_profile_id`) from the stored printer
+   row, or call the profile listing endpoint that the printer settings page uses.
 3. If it resolved to a generic profile but you expected a specific one, the name did not match any
-   alias. `matchSupportedPrinterProfile()` substring-matches the lower-cased make, model, and alias
-   list, so the stored name has to contain one of the profile's tokens. Recording the name string
-   you entered is part of the report.
+   alias and no explicit profile was selected. `matchSupportedPrinterProfile()` substring-matches
+   the lower-cased make, model, and alias list, so an auto-detected name has to contain one of the
+   profile's tokens. Recording the name string you entered is part of the report.
 
-Every profile declares raster capability. The 58 mm profile declares 384 dots of width; the other
-three declare 576.
+The four thermal profiles declare raster capability (`384` dots on `generic-escpos-58`, `576` dots
+on the three 80 mm profiles). `escpos-impact-76` targets 76 mm impact ribbon printers (`cols-32`)
+and declares `raster.enabled: false`.
 
 ## Test 1: chunked network printing
 

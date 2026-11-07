@@ -2672,7 +2672,20 @@
     "counterRole": "Counter Role",
     "counterIsActive": "Active",
     "confirmDeleteCounter": "Delete this counter?",
-    "confirmDeleteCounterDesc": "This counter will be permanently removed."
+    "confirmDeleteCounterDesc": "This counter will be permanently removed.",
+    "printerProfile": "Printer Type / Profile",
+    "printerProfileAuto": "Auto-detect from printer name",
+    "printerProfileImpact76": "76mm Impact / Dot-Matrix (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM Series (80mm Thermal)",
+    "printerProfileXprinter": "Xprinter 80mm Thermal",
+    "printerProfileGeneric80": "Generic 80mm ESC/POS Thermal",
+    "printerProfileGeneric58": "Generic 58mm ESC/POS Thermal",
+    "printerProfileImpactHint": "Impact ribbon printers use 32-column text mode and skip bitmap logos and QR graphics.",
+    "printerCompatibilityImpact": "76mm Impact",
+    "printerCompatibilityDriverOnly": "Driver / Browser print only",
+    "printerDriverOnlyWarning": "This printer does not use raw ESC/POS commands. Use Browser Print instead of adding it as a raw thermal printer.",
+    "printerSwitchToBrowserPrint": "Use Browser Print",
+    "printerSwitchedToBrowserPrint": "Switched Print Method to Browser Print"
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

@@ -18,6 +18,7 @@ import {
 import {
   concatBytes,
   encodeGsV0Band,
+  rasterCapabilityEnabled,
   type RasterSemanticLineGroup,
   type RasterTextLayout,
 } from '../../shared/print/raster';
@@ -526,7 +527,10 @@ export function renderBillDocumentToClassicLines(
     switch (block.kind) {
       case 'business-header': {
         const segment = segmentOf('business-header');
-        if (block.logoRaster) {
+        if (
+          block.logoRaster &&
+          (options.capabilities === undefined || rasterCapabilityEnabled(options.capabilities))
+        ) {
           const widthDots = options.capabilities?.raster?.widthDots ?? (cols <= 32 ? 384 : 576);
           const maxBandHeight = options.capabilities?.raster?.maxBandHeight ?? 200;
           const bands = getLogoRasterBands(block.logoRaster, widthDots, maxBandHeight);

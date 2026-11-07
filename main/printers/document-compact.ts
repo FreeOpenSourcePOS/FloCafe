@@ -11,6 +11,7 @@ import { receiptChargeLines } from '../../shared/charges';
 import {
   concatBytes,
   encodeGsV0Band,
+  rasterCapabilityEnabled,
   type RasterSemanticLineGroup,
   type RasterTextLayout,
 } from '../../shared/print/raster';
@@ -240,7 +241,10 @@ export function renderBillDocumentToCompactLines(
   markGroup('message', messageStart, messageSourceLines, messageSourceControlLines);
 
   // Business header (store name only — compact keeps contact facts in the footer).
-  if (header?.logoRaster) {
+  if (
+    header?.logoRaster &&
+    (options.capabilities === undefined || rasterCapabilityEnabled(options.capabilities))
+  ) {
     const widthDots = options.capabilities?.raster?.widthDots ?? (cols <= 32 ? 384 : 576);
     const maxBandHeight = options.capabilities?.raster?.maxBandHeight ?? 200;
     const bands = getLogoRasterBands(header.logoRaster, widthDots, maxBandHeight);

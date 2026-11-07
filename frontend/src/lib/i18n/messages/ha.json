@@ -2672,7 +2672,20 @@
     "counterRole": "Aikin Kanta",
     "counterIsActive": "Mai aiki",
     "confirmDeleteCounter": "A share wannan kantar?",
-    "confirmDeleteCounterDesc": "Za a cire wannan kantar har abada."
+    "confirmDeleteCounterDesc": "Za a cire wannan kantar har abada.",
+    "printerProfile": "Nau'in Firinta / Bayanin Aiki",
+    "printerProfileAuto": "Gano kai tsaye daga sunan firinta",
+    "printerProfileImpact76": "Firinta mai bugawa 76mm (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Jerin Epson TM (80mm mai zafi)",
+    "printerProfileXprinter": "Firinta Xprinter 80mm mai zafi",
+    "printerProfileGeneric80": "Firinta gama-gari 80mm ESC/POS mai zafi",
+    "printerProfileGeneric58": "Firinta gama-gari 58mm ESC/POS mai zafi",
+    "printerProfileImpactHint": "Firintocin kintinkiri suna amfani da tsarin rubutu mai ginshiƙai 32 kuma suna tsallake tambarin hoto da zanen QR.",
+    "printerCompatibilityImpact": "76mm Mai bugawa",
+    "printerCompatibilityDriverOnly": "Buga ta Direba / Burauza kawai",
+    "printerDriverOnlyWarning": "Wannan firinta ba ta amfani da umarnin ESC/POS kai tsaye. Yi amfani da Buga ta Burauza maimakon ƙara ta a matsayin firinta mai zafi.",
+    "printerSwitchToBrowserPrint": "Yi amfani da Buga ta Burauza",
+    "printerSwitchedToBrowserPrint": "An sauya Hanyar Bugawa zuwa Buga ta Burauza"
   },
   "setup": {
     "alreadyCompleted": "An riga an kammala saitin farko a wannan manhajar da aka girka. Ana turawa zuwa shafin shiga…",

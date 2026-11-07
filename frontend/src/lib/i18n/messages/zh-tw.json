@@ -2672,7 +2672,20 @@
     "counterRole": "櫃檯角色",
     "counterIsActive": "啟用",
     "confirmDeleteCounter": "確定刪除此櫃檯？",
-    "confirmDeleteCounterDesc": "該櫃檯將被永久移除。"
+    "confirmDeleteCounterDesc": "該櫃檯將被永久移除。",
+    "printerProfile": "印表機類型 / 設定檔",
+    "printerProfileAuto": "依印表機名稱自動偵測",
+    "printerProfileImpact76": "76mm 點陣 / 撞針式 (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM 系列 (80mm 熱感式)",
+    "printerProfileXprinter": "Xprinter 80mm 熱感式",
+    "printerProfileGeneric80": "通用 80mm ESC/POS 熱感式",
+    "printerProfileGeneric58": "通用 58mm ESC/POS 熱感式",
+    "printerProfileImpactHint": "色帶點陣式印表機使用 32 欄純文字模式，並略過點陣圖商標與 QR 圖形。",
+    "printerCompatibilityImpact": "76mm 點陣式",
+    "printerCompatibilityDriverOnly": "僅限驅動程式 / 瀏覽器列印",
+    "printerDriverOnlyWarning": "此印表機不使用原生 ESC/POS 指令。請改用瀏覽器列印，勿將其新增為原生熱感式印表機。",
+    "printerSwitchToBrowserPrint": "使用瀏覽器列印",
+    "printerSwitchedToBrowserPrint": "已將列印方式切換為瀏覽器列印"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",

@@ -2672,7 +2672,20 @@
     "counterRole": "役割",
     "counterIsActive": "有効",
     "confirmDeleteCounter": "このカウンターを削除しますか？",
-    "confirmDeleteCounterDesc": "このカウンターは完全に削除されます。"
+    "confirmDeleteCounterDesc": "このカウンターは完全に削除されます。",
+    "printerProfile": "プリンター種別 / プロファイル",
+    "printerProfileAuto": "プリンター名から自動検出",
+    "printerProfileImpact76": "76mm インパクト / ドットインパクト (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM シリーズ (80mm サーマル)",
+    "printerProfileXprinter": "Xprinter 80mm サーマル",
+    "printerProfileGeneric80": "汎用 80mm ESC/POS サーマル",
+    "printerProfileGeneric58": "汎用 58mm ESC/POS サーマル",
+    "printerProfileImpactHint": "インクリボン式インパクトプリンターは32桁テキストモードを使用し、ビットマップロゴやQR画像を省略します。",
+    "printerCompatibilityImpact": "76mm インパクト",
+    "printerCompatibilityDriverOnly": "ドライバー / ブラウザー印刷専用",
+    "printerDriverOnlyWarning": "このプリンターは生のESC/POSコマンドに対応していません。サーマルプリンターとして追加せず、ブラウザー印刷を使用してください。",
+    "printerSwitchToBrowserPrint": "ブラウザー印刷を使用",
+    "printerSwitchedToBrowserPrint": "印刷方式をブラウザー印刷に切り替えました"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",

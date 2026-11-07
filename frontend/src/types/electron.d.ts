@@ -213,6 +213,8 @@ export interface ElectronPrinter {
   port: number | null;
   is_default: number;
   paper_width: string | null;
+  profile_id?: string | null;
+  configured_profile_id?: string | null;
   created_at: string;
   updated_at: string;
 }

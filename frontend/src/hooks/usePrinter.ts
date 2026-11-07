@@ -186,6 +186,7 @@ export interface HardwarePrinter {
   text_size?: PrinterTextSize | null;
   is_default: number;
   readiness_state?: 'configured';
+  configured_profile_id?: string | null;
   profile_id?: string;
   capabilities?: ThermalPrinterCapabilities;
 }

@@ -2672,7 +2672,20 @@
     "counterRole": "Rôle du comptoir",
     "counterIsActive": "Actif",
     "confirmDeleteCounter": "Supprimer ce comptoir ?",
-    "confirmDeleteCounterDesc": "Ce comptoir sera définitivement supprimé."
+    "confirmDeleteCounterDesc": "Ce comptoir sera définitivement supprimé.",
+    "printerProfile": "Type / profil d'imprimante",
+    "printerProfileAuto": "Détection automatique à partir du nom de l'imprimante",
+    "printerProfileImpact76": "Matricielle / impact 76mm (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Série Epson TM (thermique 80mm)",
+    "printerProfileXprinter": "Thermique Xprinter 80mm",
+    "printerProfileGeneric80": "Thermique ESC/POS générique 80mm",
+    "printerProfileGeneric58": "Thermique ESC/POS générique 58mm",
+    "printerProfileImpactHint": "Les imprimantes matricielles à ruban utilisent le mode texte 32 colonnes et ignorent les logos bitmap ainsi que les graphiques QR.",
+    "printerCompatibilityImpact": "Matricielle 76mm",
+    "printerCompatibilityDriverOnly": "Impression pilote / navigateur uniquement",
+    "printerDriverOnlyWarning": "Cette imprimante n'utilise pas les commandes ESC/POS brutes. Utilisez l'impression via le navigateur au lieu de l'ajouter comme imprimante thermique brute.",
+    "printerSwitchToBrowserPrint": "Utiliser l'impression du navigateur",
+    "printerSwitchedToBrowserPrint": "Méthode d'impression basculée sur l'impression du navigateur"
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",

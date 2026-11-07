@@ -2672,7 +2672,20 @@
     "counterRole": "Roli i sportelit",
     "counterIsActive": "Aktiv",
     "confirmDeleteCounter": "Fshini këtë sportel?",
-    "confirmDeleteCounterDesc": "Ky sportel do të fshihet përgjithmonë."
+    "confirmDeleteCounterDesc": "Ky sportel do të fshihet përgjithmonë.",
+    "printerProfile": "Lloji / Profili i printerit",
+    "printerProfileAuto": "Zbulo automatikisht nga emri i printerit",
+    "printerProfileImpact76": "Me gjilpëra / impakt 76mm (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Seria Epson TM (termik 80mm)",
+    "printerProfileXprinter": "Termik Xprinter 80mm",
+    "printerProfileGeneric80": "Termik gjenerik 80mm ESC/POS",
+    "printerProfileGeneric58": "Termik gjenerik 58mm ESC/POS",
+    "printerProfileImpactHint": "Printerët me shirit impakti përdorin mënyrën e tekstit me 32 kolona dhe anashkalojnë logot bitmap dhe grafikët QR.",
+    "printerCompatibilityImpact": "Impakt 76mm",
+    "printerCompatibilityDriverOnly": "Vetëm printim me drajver / shfletues",
+    "printerDriverOnlyWarning": "Ky printer nuk përdor komanda të drejtpërdrejta ESC/POS. Përdorni Printimin nga Shfletuesi në vend që ta shtoni si printer termik.",
+    "printerSwitchToBrowserPrint": "Përdor printimin nga shfletuesi",
+    "printerSwitchedToBrowserPrint": "Metoda e printimit u kalua në printimin nga shfletuesi"
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

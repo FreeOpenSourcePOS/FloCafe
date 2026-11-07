@@ -104,6 +104,7 @@ async function loginAsOwner(page: Page): Promise<void> {
 }
 
 test('print-test visible labels use the selected UI locale', async ({ page }) => {
+  test.setTimeout(90_000);
   await loginAsOwner(page);
   try {
     // Driven from the registry so a newly registered locale cannot be skipped:

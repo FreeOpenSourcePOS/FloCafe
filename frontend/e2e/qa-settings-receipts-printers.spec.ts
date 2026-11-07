@@ -365,8 +365,8 @@ test.describe('@ci-tier2 Settings > Printers', () => {
         const formSection = page.locator('h3', { hasText: 'Add Printer' }).locator('..');
         const selects = formSection.locator('select');
         await selects.nth(0).selectOption('usb');
-        await selects.nth(1).selectOption('cols-32');
-        await selects.nth(2).selectOption('extra_large');
+        await selects.nth(2).selectOption('cols-32');
+        await selects.nth(3).selectOption('extra_large');
         await formSection.getByRole('button', { name: 'Add Printer', exact: true }).click();
         didCreatePrinter = true;
       } else {
@@ -594,6 +594,207 @@ test.describe('@ci-tier2 Settings > Printers', () => {
             headers,
             data: { is_default: true },
           })
+          .catch(() => undefined);
+      }
+      await openPrintersTab(page);
+      const pmSelect = page
+        .getByText('Print Method', { exact: true })
+        .first()
+        .locator('xpath=following-sibling::select[1]');
+      await pmSelect.selectOption(originalMethod);
+      if (
+        await saveChanges(page)
+          .isVisible()
+          .catch(() => false)
+      ) {
+        await saveAndReloadPrintersTab(page);
+      }
+    }
+  });
+
+  test('76mm impact printer profile selection and driver_only Browser Print onboarding work end-to-end', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const evidenceDir = process.env.EVIDENCE_DIR;
+
+    await page.route('**/api/printers/detect', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          printers: [
+            {
+              name: 'EPSON TM-U220 Receipt',
+              make: 'Epson',
+              model: 'TM-U Series',
+              connectionType: 'usb',
+              deviceUri: 'usb://EPSON/TM-U220',
+              status: 'idle',
+              isDefault: false,
+              paperWidth: 'cols-32',
+              profileId: 'escpos-impact-76',
+              compatibility: 'escpos_impact',
+            },
+            {
+              name: 'Star TSP100 Cutter (TSP143)',
+              make: 'Star Micronics',
+              model: 'Star POS',
+              connectionType: 'usb',
+              deviceUri: 'usb://Star/TSP143',
+              status: 'idle',
+              isDefault: false,
+              paperWidth: 'cols-48',
+              compatibility: 'driver_only',
+            },
+            {
+              name: 'EPSON EcoTank L3250',
+              make: 'Epson',
+              model: 'Epson Inkjet',
+              connectionType: 'usb',
+              deviceUri: 'usb://EPSON/L3250',
+              status: 'idle',
+              isDefault: false,
+              paperWidth: 'cols-48',
+              compatibility: 'driver_only',
+            },
+          ],
+        }),
+      });
+    });
+
+    await openPrintersTab(page);
+    const token = await page.evaluate(() => localStorage.getItem('token'));
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const printMethod = page
+      .getByText('Print Method', { exact: true })
+      .first()
+      .locator('xpath=following-sibling::select[1]');
+    const originalMethod = await printMethod.inputValue();
+
+    let createdImpactId: string | null = null;
+    try {
+      await printMethod.selectOption('escpos');
+
+      const installedToggle = page.getByRole('button', { name: /Installed on this computer/ });
+      await expect(installedToggle).toBeVisible();
+      await installedToggle.click();
+
+      await expect(page.getByText('EPSON TM-U220 Receipt')).toBeVisible();
+      await expect(page.getByText('76mm Impact', { exact: true })).toBeVisible();
+      await expect(page.getByText('Star TSP100 Cutter (TSP143)')).toBeVisible();
+      await expect(page.getByText('EPSON EcoTank L3250')).toBeVisible();
+      await expect(page.getByText('Driver / Browser print only').first()).toBeVisible();
+      await expect(
+        page
+          .getByText(
+            'This printer does not use raw ESC/POS commands. Use Browser Print instead of adding it as a raw thermal printer.',
+          )
+          .first(),
+      ).toBeVisible();
+
+      if (evidenceDir && fs.existsSync(evidenceDir)) {
+        await page.screenshot({
+          path: path.join(evidenceDir, '01_detected_printers_impact_and_driver_only.png'),
+          fullPage: false,
+        });
+      }
+
+      const switchBtn = page.getByRole('button', { name: 'Use Browser Print' }).first();
+      await expect(switchBtn).toBeVisible();
+      await switchBtn.click();
+
+      await expect(printMethod).toHaveValue('browser');
+      await expect(page.getByText('Switched Print Method to Browser Print')).toBeVisible();
+
+      if (evidenceDir && fs.existsSync(evidenceDir)) {
+        await page.screenshot({
+          path: path.join(evidenceDir, '02_switched_to_browser_print.png'),
+          fullPage: false,
+        });
+      }
+
+      await page.getByRole('button', { name: 'Add Manually', exact: true }).click();
+      await page.getByPlaceholder('e.g. Kitchen Printer').fill('EPSON TM-U220D Kitchen');
+      const formSection = page.locator('h3', { hasText: 'Add Printer' }).locator('..');
+      const selects = formSection.locator('select');
+      await selects.nth(0).selectOption('usb');
+      // Default paper_width starts at cols-42 before selecting impact profile
+      await expect(selects.nth(2)).toHaveValue('cols-42');
+      await selects.nth(1).selectOption('escpos-impact-76');
+      // Selecting escpos-impact-76 auto-defaults Printable Columns to cols-32 and reveals impact hint
+      await expect(selects.nth(2)).toHaveValue('cols-32');
+      await expect(
+        page.getByText(
+          'Impact ribbon printers use 32-column text mode and skip bitmap logos and QR graphics.',
+        ),
+      ).toBeVisible();
+
+      if (evidenceDir && fs.existsSync(evidenceDir)) {
+        await formSection.screenshot({
+          path: path.join(evidenceDir, '03_add_printer_impact_profile_form.png'),
+        });
+      }
+
+      await formSection.getByRole('button', { name: 'Add Printer', exact: true }).click();
+      await expect(page.getByText('EPSON TM-U220D Kitchen', { exact: true }).first()).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByText(/32 columns · Epson TM-U220 \/ 76mm Impact/)).toBeVisible();
+
+      if (evidenceDir && fs.existsSync(evidenceDir)) {
+        await page.screenshot({
+          path: path.join(evidenceDir, '04_configured_impact_printer_card.png'),
+          fullPage: false,
+        });
+      }
+
+      const listRes = await page.request.get(`${BASE}/api/printers`, { headers });
+      expect(listRes.ok()).toBeTruthy();
+      const { printers } = (await listRes.json()) as {
+        printers: Array<{
+          id: string;
+          name: string;
+          paper_width: string;
+          configured_profile_id: string | null;
+          profile_id: string;
+          profile_name: string;
+          capabilities: { raster: { enabled: boolean } };
+        }>;
+      };
+      const createdImpact = printers.find((p) => p.name === 'EPSON TM-U220D Kitchen');
+      expect(createdImpact).toBeDefined();
+      createdImpactId = createdImpact!.id;
+      expect(createdImpact!.paper_width).toBe('cols-32');
+      expect(createdImpact!.configured_profile_id).toBe('escpos-impact-76');
+      expect(createdImpact!.profile_id).toBe('escpos-impact-76');
+      expect(createdImpact!.profile_name).toBe('Epson TM-U220 / 76mm Impact');
+      expect(createdImpact!.capabilities.raster.enabled).toBe(false);
+
+      // Adversarial check: backend rejects unknown profile_id on POST and PUT
+      const badPost = await page.request.post(`${BASE}/api/printers`, {
+        headers,
+        data: {
+          name: 'Invalid Profile Printer',
+          connection_type: 'usb',
+          profile_id: 'unknown-profile',
+        },
+      });
+      expect(badPost.status()).toBe(400);
+      const badPostBody = (await badPost.json()) as { error: string };
+      expect(badPostBody.error).toContain('profile_id must be a supported printer profile ID');
+
+      const badPut = await page.request.put(`${BASE}/api/printers/${createdImpactId}`, {
+        headers,
+        data: { profile_id: 'unknown-profile' },
+      });
+      expect(badPut.status()).toBe(400);
+    } finally {
+      await page.unroute('**/api/printers/detect').catch(() => undefined);
+      if (createdImpactId) {
+        await page.request
+          .delete(`${BASE}/api/printers/${createdImpactId}`, { headers })
           .catch(() => undefined);
       }
       await openPrintersTab(page);

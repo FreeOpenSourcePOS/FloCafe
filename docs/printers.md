@@ -66,27 +66,21 @@ rendered.
 
 ## Printer profiles and paper width
 
-FloCafe resolves a printer to a capability profile in three steps, in order:
+When adding or editing a printer in **Settings > Printers**, choose a **Printer Type / Profile** or
+leave it on **Auto-detect from printer name**, and set the printable column width (`32`, `42`, or
+`48` columns). Selecting a profile sets its default column width unless you override it manually.
+The `76mm Impact / Dot-Matrix (Epson TM-U220, Bixolon SRP-275)` profile (`escpos-impact-76`) uses
+32-column text mode and omits bitmap logos, QR graphics, and raster bands.
 
-1. An explicitly selected profile id on the configured printer, if one is set.
-2. A match against the printer's name, make, or model. Matching is a case-insensitive substring
-   test against each profile's make, model, and alias list, in profile order.
-3. The paper width, which selects a generic profile: `58mm` selects the 58 mm generic, anything
-   else selects the 80 mm generic.
+When **Settings > Printers** detects OS queues that do not accept raw ESC/POS commands (such as Star
+`TSP100` / `TSP143` / `SP700` / `mC-Print`, Epson `EcoTank` / `WorkForce` / `Stylus` inkjets, label
+printers, and PDF queues), it marks them **Driver / Browser print only** and offers a **Use Browser
+Print** button instead of adding them as raw thermal printers.
 
-Four profiles ship. Detection does **not** return the generic profile for everything: a name
-containing an Xprinter XP-V320M or XP-V330M, or a string containing `v320m` or `v330m`, resolves
-to the Xprinter profile. A name containing `epson tm`, `tm-t88`, `tm-t82`, `tm-t20`, or `tm-m30`
-resolves to the Epson TM series profile. Only a name that matches nothing falls through to the
-generic profile chosen by paper width.
-
-The generic profiles are the conservative ones for native text encoding (ASCII-only, with no text
-shaping), while the Xprinter and Epson profiles add the Latin code pages and Latin script
-representability. All four shipped profiles enable the capability-gated
-[raster printing](architecture/printing.md#raster-printing) path, so lines containing characters
-outside the printer's native code pages are rendered as raster bands. If raster rendering is
-unavailable or fails on a financial row, FloCafe refuses the print rather than omitting an amount,
-reporting `Receipt not printed: ...` with the affected row and next steps.
+For the shipped profile table, profile resolution order, native code-page vs.
+[raster printing](architecture/printing.md#raster-printing) capabilities, and
+[financial-row refusal](architecture/printing.md#capabilities-and-refusal), see
+[printer profiles](architecture/printing.md#printer-profiles).
 
 ## Arabic-script text
 

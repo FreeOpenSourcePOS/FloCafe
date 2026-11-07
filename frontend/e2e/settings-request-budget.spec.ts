@@ -1021,6 +1021,30 @@ test('Editing only order numbering marks Settings dirty and saves or discards cl
   await expect(discardButton).toHaveCount(0);
 });
 
+test('Save All with an invalid business phone writes nothing and does not report success', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'PUT' && path.startsWith('/api/settings')) writes.push(path);
+  });
+
+  await page.goto(`${BASE}/settings?tab=store`);
+  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+  await page.locator('input[type="text"]').first().fill('Changed Store');
+  await page.locator('div:has(> label:text-is("Phone")) input').fill('12');
+
+  const saveButton = page.getByRole('button', { name: 'Save Changes', exact: true });
+  await saveButton.click();
+
+  await expect(page.getByText('Invalid phone number format', { exact: true })).toBeVisible();
+  await expect(saveButton).toBeEnabled();
+  await expect(page.getByText('Settings saved', { exact: true })).toHaveCount(0);
+  expect(writes).toEqual([]);
+});
+
 test('Save All preserves printing edits during business hydration', async ({ page }) => {
   await startMockedSettingsSession(page);
   const savedPrintingRequests: Record<string, unknown>[] = [];

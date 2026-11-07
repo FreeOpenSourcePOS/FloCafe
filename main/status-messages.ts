@@ -285,6 +285,19 @@ const TABLES: Record<string, StatusTable> = {
     shutdownBackup: ['Ana yin ajiyar bayanai', 'Don Allah kada ka kashe kwamfutar.'],
     saved: ['An adana komai', 'Flo zai rufe nan take.'],
   },
+  jv: {
+    starting: ['Miwiti Flo', 'Nyiapake kabeh…'],
+    checking: ['Mriksa data sampeyan', 'Mriksa basis data lan njaga supaya tetep sehat…'],
+    backingUp: [
+      'Nyadhangake data sampeyan',
+      'Nyimpen salinan sing aman sadurunge sampeyan miwiti…',
+    ],
+    services: ['Miwiti layanan', 'Meh rampung…'],
+    welcome: ['Sugeng rawuh ing Flo', 'Mbukak ruang kerja sampeyan…'],
+    closing: ['Nutup Flo', 'Nyimpen data sampeyan. Aja mateni komputer.'],
+    shutdownBackup: ['Nggawe cadhangan', 'Aja mateni komputer.'],
+    saved: ['Kabeh wis kasimpen', 'Flo bakal enggal ditutup.'],
+  },
 };
 
 export const RTL_STATUS_LANGUAGES: ReadonlySet<string> = new Set(['ar', 'fa', 'ur']);

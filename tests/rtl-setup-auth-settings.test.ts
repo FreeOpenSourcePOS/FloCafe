@@ -449,6 +449,18 @@ async function run(): Promise<void> {
       'ha-NE must resolve through the same-script regional fallback to ha-NG',
     );
   });
+  withNavigatorLanguage('jv-ID', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'jv',
+      'getBrowserLanguage must return "jv" for jv-ID',
+    );
+  });
+  withNavigatorLanguage('jv', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'jv',
+      'getBrowserLanguage must return "jv" for bare jv',
+    );
+  });
   withNavigatorLanguage(
     'en-US',
     () => {
@@ -500,6 +512,7 @@ async function run(): Promise<void> {
     'th',
     'ne',
     'ha',
+    'jv',
   ] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.

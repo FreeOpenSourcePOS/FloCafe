@@ -84,13 +84,14 @@ Vietnamese strings is:
 | `Đơn vị` | no | none |
 | `Tiếng Việt` | no | none |
 
-The characters lacking a native single-byte code page are those carrying a tone mark or stroke: `ộ`,
-`đ`, `ạ`, `ố`, `ơ`, and the stacked `ế` in `Tiếng`. When no single native code page can represent a
-Latin-script string on `LATIN_THERMAL_CAPABILITIES`, `transliterateThermalText()` applies
-`LATIN_ASCII_MAP`, `LATIN_EXTENDED_ASCII_MAP` (`Æ/æ`, `Œ/œ`, `Ø/ø`, `Ł/ł`, `Đ/đ`, `Ð/ð`, `Þ/þ`,
-`Ğ/ğ`, `İ/ı`, `Ş/ş`), and Unicode NFD `\p{Diacritic}` stripping on Latin characters so non-raster
-Latin profiles (such as `escpos-impact-76`) fold those strings to ASCII (`cp437`). A translation is
-free to use the full character set; the printer path handles the reduction or raster fallback.
+The characters lacking a native single-byte code page are those carrying a tone mark, horn, or
+stroke: `ộ`, `đ`, `ạ`, `ố`, `ơ`, and the stacked `ế` in `Tiếng`. When no single native code page
+can represent a Latin-script string on `LATIN_THERMAL_CAPABILITIES` (and raster rendering is not
+handling it), `normalizeThermalText()` applies `LATIN_ASCII_MAP`, `LATIN_EXTENDED_ASCII_MAP`
+(`Æ/æ`, `Œ/œ`, `Ø/ø`, `Ł/ł`, `Đ/đ`, `Ð/ð`, `Þ/þ`, `Ğ/ğ`, `İ/ı`, `Ş/ş`, `Ơ/ơ`, `Ư/ư`), and Unicode
+NFD `\p{Diacritic}` stripping on Latin characters so non-raster Latin profiles (such as
+`escpos-impact-76`) fold those strings to ASCII (`cp437`). A translation is free to use the full
+character set; the printer path handles the reduction or raster fallback.
 
 ## Print capability is owned by the printer profile
 

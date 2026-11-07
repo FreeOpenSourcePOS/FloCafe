@@ -165,6 +165,12 @@ async function run() {
     'EPSON TM-T88VI',
     'EPSON TM-T20III',
     'EPSON TM-m30II',
+    'EPSON TM Receipt',
+    'EPSON TM T88V',
+    'EPSON TM-H6000IV',
+    'TM-T100',
+    'TM Series',
+    'TM-H600',
     'Bixolon SRP-350III',
   ]) {
     const resolved = resolvePrinterProfile({ name: thermalName });
@@ -175,7 +181,14 @@ async function run() {
     );
   }
 
-  for (const nonTmName of ['EPSON TM-L90', 'EPSON EcoTank L3250', 'EPSON WorkForce WF-2830']) {
+  for (const nonTmName of [
+    'EPSON TM-L90',
+    'EPSON EcoTank L3250',
+    'EPSON WorkForce WF-2830',
+    'EPSON Stylus Photo',
+    'EPSON L3150',
+    'EPSON L4150',
+  ]) {
     const matched = matchSupportedPrinterProfile(nonTmName);
     assertEqualOrThrow(
       matched,
@@ -278,6 +291,44 @@ async function run() {
     isThermalTextRepresentable(turkishImpact, LATIN_THERMAL_CAPABILITIES),
     true,
     'Turkish on impact should be representable',
+  );
+
+  // Vietnamese horned vowels ('Ơ/ơ', 'Ư/ư') and tone-marked forms ('Sườn') on escpos-impact-76
+  const vietnameseImpact = normalizeThermalText(
+    'Cơm Sườn Nướng & Phở Bò Ơi Ướp',
+    impactProfile.capabilities,
+  );
+  assertEqualOrThrow(
+    vietnameseImpact,
+    'Com Suon Nuong & Pho Bo Oi Uop',
+    'Vietnamese horned vowels and tone-marked forms must fold cleanly to ASCII on escpos-impact-76',
+  );
+  assertEqualOrThrow(
+    isThermalTextRepresentable(
+      normalizeThermalText('Sườn', impactProfile.capabilities),
+      impactProfile.capabilities,
+    ),
+    true,
+    'Normalized Sườn must be text-representable on escpos-impact-76',
+  );
+
+  // Raster-capable thermal profiles (epson-tm-series) must treat 'Tiếng Việt' / 'Đơn vị' as
+  // non-representable by native codepages so they render via raster bands instead of losing accents
+  const epsonTmCapabilities = resolvePrinterProfile({ name: 'EPSON TM-T88VI' }).capabilities;
+  assertEqualOrThrow(
+    isThermalTextRepresentable('Tiếng Việt', epsonTmCapabilities),
+    false,
+    'Tiếng Việt must not be marked text-representable on raster-capable epson-tm-series',
+  );
+  assertEqualOrThrow(
+    isThermalTextRepresentable('Đơn vị', epsonTmCapabilities),
+    false,
+    'Đơn vị must not be marked text-representable on raster-capable epson-tm-series',
+  );
+  assertEqualOrThrow(
+    normalizeThermalText('Tiếng Việt', epsonTmCapabilities),
+    'Tiếng Việt',
+    'normalizeThermalText must preserve Tiếng Việt on raster-capable epson-tm-series for raster band rendering',
   );
 
   console.log('--- 3. Logo & payment-ticket QR suppression when raster.enabled: false ---');
@@ -486,16 +537,19 @@ async function run() {
     );
   }
 
-  assertEqualOrThrow(
-    classifyDetectedPrinterCompatibility({
-      name: 'EPSON TM-T88VI',
-      make: 'Epson',
-      model: 'TM Series',
-      profileId: 'epson-tm-series',
-    }),
-    'escpos_thermal',
-    'EPSON TM-T88VI must be classified as escpos_thermal',
-  );
+  for (const thermalDetectedCase of [
+    { name: 'EPSON TM-T88VI', make: 'Epson', model: 'TM Series', profileId: 'epson-tm-series' },
+    { name: 'EPSON TM Receipt', make: 'Epson', model: 'TM Series' },
+    { name: 'EPSON TM T88V', make: 'Epson', model: 'TM-T88' },
+    { name: 'EPSON TM-H6000IV', make: 'Epson', model: 'TM-H600' },
+    { name: 'TM-T100', make: 'Epson', model: 'TM-T100' },
+  ]) {
+    assertEqualOrThrow(
+      classifyDetectedPrinterCompatibility(thermalDetectedCase),
+      'escpos_thermal',
+      `${thermalDetectedCase.name} must be classified as escpos_thermal`,
+    );
+  }
 
   console.log('--- 5. Migration 125 & /api/printers profile_id persistence + payment ticket ---');
   initTestDb();
@@ -517,14 +571,17 @@ async function run() {
     currency: 'USD',
     timezone: 'UTC',
   };
-  const ticketItems = [{ product_name: 'Bagel', quantity: 1, unit_price: 12.5, total: 12.5 }];
+  const ticketItems = [
+    { product_name: 'Bagel', quantity: 1, unit_price: 12.5, total: 12.5 },
+    { product_name: 'Cơm Sườn Nướng', quantity: 1, unit_price: 15.0, total: 15.0 },
+  ];
 
   const ticketRes = await printPaymentTicketDetailed(
     {
       order_number: 'ORD-7601',
       type: 'takeaway',
       created_at: '2026-10-29 12:00:00',
-      total: 12.5,
+      total: 27.5,
     },
     ticketItems,
     {
@@ -550,6 +607,11 @@ async function run() {
   const decodedTicket = escPosToText(capturedImpactTicket);
   assertIncludesOrThrow(
     decodedTicket,
+    'Com Suon Nuong',
+    'Impact payment ticket must fold priced Vietnamese horned-vowel item Sườn cleanly to ASCII',
+  );
+  assertIncludesOrThrow(
+    decodedTicket,
     'FLOCAFE-TICKET:ORD-7601',
     'Impact payment ticket must still print centered FLOCAFE-TICKET:<order_number> text line',
   );
@@ -562,7 +624,7 @@ async function run() {
       created_at: '2026-10-29 12:00:00',
       total: 12.5,
     },
-    ticketItems,
+    [{ product_name: 'Bagel', quantity: 1, unit_price: 12.5, total: 12.5 }],
     {
       preview: true,
       settings: ticketSettings,

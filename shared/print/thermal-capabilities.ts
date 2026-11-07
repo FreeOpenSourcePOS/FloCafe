@@ -105,6 +105,10 @@ const LATIN_EXTENDED_ASCII_MAP: Record<string, string> = {
   ı: 'i',
   Ş: 'S',
   ş: 's',
+  Ơ: 'O',
+  ơ: 'o',
+  Ư: 'U',
+  ư: 'u',
 };
 
 const CODE_PAGE_CHARACTERS: Record<Exclude<ThermalCodePage, 'ascii'>, string> = {

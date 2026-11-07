@@ -2672,7 +2672,20 @@
     "counterRole": "ਕਾਊਂਟਰ ਦੀ ਭੂਮਿਕਾ",
     "counterIsActive": "ਸਰਗਰਮ",
     "confirmDeleteCounter": "ਕੀ ਇਹ ਕਾਊਂਟਰ ਮਿਟਾਉਣਾ ਹੈ?",
-    "confirmDeleteCounterDesc": "ਇਹ ਕਾਊਂਟਰ ਪੱਕੇ ਤੌਰ ਉੱਤੇ ਹਟਾ ਦਿੱਤਾ ਜਾਵੇਗਾ।"
+    "confirmDeleteCounterDesc": "ਇਹ ਕਾਊਂਟਰ ਪੱਕੇ ਤੌਰ ਉੱਤੇ ਹਟਾ ਦਿੱਤਾ ਜਾਵੇਗਾ।",
+    "printerProfile": "ਪ੍ਰਿੰਟਰ ਦੀ ਕਿਸਮ / ਪ੍ਰੋਫਾਈਲ",
+    "printerProfileAuto": "ਪ੍ਰਿੰਟਰ ਦੇ ਨਾਮ ਤੋਂ ਆਪਣੇ-ਆਪ ਪਛਾਣੋ",
+    "printerProfileImpact76": "76mm ਇੰਪੈਕਟ / ਡੌਟ-ਮੈਟ੍ਰਿਕਸ (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM ਸੀਰੀਜ਼ (80mm ਥਰਮਲ)",
+    "printerProfileXprinter": "Xprinter 80mm ਥਰਮਲ",
+    "printerProfileGeneric80": "ਆਮ 80mm ESC/POS ਥਰਮਲ",
+    "printerProfileGeneric58": "ਆਮ 58mm ESC/POS ਥਰਮਲ",
+    "printerProfileImpactHint": "ਇੰਪੈਕਟ ਰਿਬਨ ਪ੍ਰਿੰਟਰ 32-ਕਾਲਮ ਟੈਕਸਟ ਮੋਡ ਵਰਤਦੇ ਹਨ ਅਤੇ ਬਿੱਟਮੈਪ ਲੋਗੋ ਤੇ QR ਗ੍ਰਾਫਿਕਸ ਛੱਡ ਦਿੰਦੇ ਹਨ।",
+    "printerCompatibilityImpact": "76mm ਇੰਪੈਕਟ",
+    "printerCompatibilityDriverOnly": "ਸਿਰਫ਼ ਡਰਾਈਵਰ / ਬ੍ਰਾਊਜ਼ਰ ਪ੍ਰਿੰਟ",
+    "printerDriverOnlyWarning": "ਇਹ ਪ੍ਰਿੰਟਰ ਕੱਚੇ ESC/POS ਕਮਾਂਡਾਂ ਦੀ ਵਰਤੋਂ ਨਹੀਂ ਕਰਦਾ। ਇਸਨੂੰ ਕੱਚੇ ਥਰਮਲ ਪ੍ਰਿੰਟਰ ਵਜੋਂ ਜੋੜਨ ਦੀ ਬਜਾਏ ਬ੍ਰਾਊਜ਼ਰ ਪ੍ਰਿੰਟ ਵਰਤੋ।",
+    "printerSwitchToBrowserPrint": "ਬ੍ਰਾਊਜ਼ਰ ਪ੍ਰਿੰਟ ਵਰਤੋ",
+    "printerSwitchedToBrowserPrint": "ਪ੍ਰਿੰਟ ਵਿਧੀ ਨੂੰ ਬ੍ਰਾਊਜ਼ਰ ਪ੍ਰਿੰਟ ਉੱਤੇ ਬਦਲ ਦਿੱਤਾ ਗਿਆ"
   },
   "setup": {
     "alreadyCompleted": "ਇਸ ਇੰਸਟਾਲ ਉੱਤੇ ਸੈੱਟਅੱਪ ਪਹਿਲਾਂ ਹੀ ਪੂਰਾ ਹੋ ਚੁੱਕਾ ਹੈ। ਲੌਗਇਨ ਉੱਤੇ ਭੇਜਿਆ ਜਾ ਰਿਹਾ ਹੈ…",

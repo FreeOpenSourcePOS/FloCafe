@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "es. Bar, banco dessert",
     "stationNameRequired": "Il nome della postazione è obbligatorio",
     "stationNoAvailableCategories": "Nessuna categoria disponibile",
-    "stationNoCategories": "Nessuna categoria assegnata",
+    "stationNoCategories": "Tutte le categorie (incluse le nuove)",
     "stationNoChef": "Nessun cuoco assegnato",
     "stationNoDefaultCategories": "Tutte le categorie sono assegnate alle postazioni di cucina",
     "stationNoPrinter": "Stampante predefinita",

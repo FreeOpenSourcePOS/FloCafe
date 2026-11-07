@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import {
   ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
+  expandCategoryIdsWithSubcategories,
   getDatabase,
   getKdsStationCategoryIds,
   getKdsStationRoutingScope,
@@ -36,7 +37,7 @@ router.get('/orders', (req: Request, res: Response) => {
     if (!currentUser) return res.status(403).json({ error: 'User account is not active' });
     const categoryIds = hasRole(currentUser.role, ROLE_ACCESS.ownerManager)
       ? []
-      : parseCategoryIds(currentUser.category_ids);
+      : expandCategoryIdsWithSubcategories(db, parseCategoryIds(currentUser.category_ids));
     const stationIds = getUserKdsStationIds(db, userId);
     const hasStationAssignments = hasUserKdsStationAssignments(db, userId);
     if (!stationIds || hasStationAssignments === null)

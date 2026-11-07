@@ -5900,6 +5900,63 @@ export function getUserKdsStationIds(
   }
 }
 
+export function expandCategoryIdsWithSubcategories(
+  dbInstance: Database.Database,
+  categoryIds: string[],
+  excludedChildCategoryIds?: Set<string>,
+): string[] {
+  const normalized = [
+    ...new Set(categoryIds.filter((id) => id != null && String(id).trim() !== '').map(String)),
+  ];
+  if (normalized.length === 0) return [];
+  try {
+    const placeholders = normalized.map(() => '?').join(',');
+    const childRows = dbInstance
+      .prepare(
+        `SELECT id FROM categories WHERE deleted_at IS NULL AND parent_id IN (${placeholders})`,
+      )
+      .all(...normalized) as { id: string }[];
+    const expanded = new Set<string>(normalized);
+    for (const row of childRows) {
+      if (row.id != null) {
+        const childId = String(row.id);
+        if (!excludedChildCategoryIds?.has(childId)) {
+          expanded.add(childId);
+        }
+      }
+    }
+    return [...expanded];
+  } catch {
+    return normalized;
+  }
+}
+
+function getOtherActiveStationExplicitCategories(
+  dbInstance: Database.Database,
+  stationId: string,
+): Set<string> {
+  const claimed = new Set<string>();
+  try {
+    const rows = dbInstance
+      .prepare('SELECT category_ids FROM kitchen_stations WHERE is_active = 1 AND id != ?')
+      .all(stationId) as { category_ids: string | null }[];
+    for (const row of rows) {
+      if (!row.category_ids) continue;
+      try {
+        const parsed = JSON.parse(row.category_ids);
+        if (Array.isArray(parsed)) {
+          for (const categoryId of parsed) {
+            if (categoryId != null && String(categoryId).trim() !== '') {
+              claimed.add(String(categoryId));
+            }
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+  return claimed;
+}
+
 export function getKdsStationCategoryIds(
   dbInstance: Database.Database,
   stationIds: string[],
@@ -5909,17 +5966,28 @@ export function getKdsStationCategoryIds(
     const placeholders = stationIds.map(() => '?').join(',');
     const rows = dbInstance
       .prepare(
-        `SELECT category_ids FROM kitchen_stations WHERE is_active = 1 AND id IN (${placeholders})`,
+        `SELECT id, category_ids FROM kitchen_stations WHERE is_active = 1 AND id IN (${placeholders})`,
       )
-      .all(...stationIds) as { category_ids: string | null }[];
+      .all(...stationIds) as { id: string; category_ids: string | null }[];
     const categories = new Set<string>();
     for (const row of rows) {
       if (!row.category_ids) continue;
       try {
         const parsed = JSON.parse(row.category_ids);
-        if (Array.isArray(parsed))
-          for (const categoryId of parsed)
-            if (categoryId != null) categories.add(String(categoryId));
+        if (Array.isArray(parsed)) {
+          const rawIds = parsed.filter((id) => id != null).map(String);
+          const excludedChildren = getOtherActiveStationExplicitCategories(
+            dbInstance,
+            String(row.id),
+          );
+          for (const categoryId of expandCategoryIdsWithSubcategories(
+            dbInstance,
+            rawIds,
+            excludedChildren,
+          )) {
+            categories.add(categoryId);
+          }
+        }
       } catch {}
     }
     return [...categories];
@@ -5939,6 +6007,7 @@ export function getKdsStationRoutingScope(
   stationIds: string[],
   userCategoryIds: string[],
 ): KdsStationRoutingScope | null {
+  const expandedUserCategoryIds = expandCategoryIdsWithSubcategories(dbInstance, userCategoryIds);
   if (stationIds.length === 0)
     return { tablelessCategoryIds: [], categoryIdsByStation: {}, hasUnrestrictedStation: false };
   try {
@@ -5959,7 +6028,11 @@ export function getKdsStationRoutingScope(
         try {
           const parsed = JSON.parse(row.category_ids);
           if (!Array.isArray(parsed)) return null;
-          stationCategories = parsed.filter((id) => id != null).map(String);
+          stationCategories = expandCategoryIdsWithSubcategories(
+            dbInstance,
+            parsed.filter((id) => id != null).map(String),
+            getOtherActiveStationExplicitCategories(dbInstance, String(stationId)),
+          );
         } catch {
           return null;
         }
@@ -5967,10 +6040,10 @@ export function getKdsStationRoutingScope(
       const allowed =
         stationCategories.length > 0
           ? stationCategories.filter(
-              (id) => userCategoryIds.length === 0 || userCategoryIds.includes(id),
+              (id) => expandedUserCategoryIds.length === 0 || expandedUserCategoryIds.includes(id),
             )
-          : userCategoryIds.length > 0
-            ? [...userCategoryIds]
+          : expandedUserCategoryIds.length > 0
+            ? [...expandedUserCategoryIds]
             : null;
       byStation[String(stationId)] = allowed;
       if (allowed === null) hasUnrestrictedStation = true;

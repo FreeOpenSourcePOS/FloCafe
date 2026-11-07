@@ -2452,7 +2452,7 @@
     "stationNamePlaceholder": "Örn. Sıcak Mutfak, Bar, Izgara",
     "stationNameRequired": "İstasyon adı zorunludur",
     "stationNoAvailableCategories": "Kullanılabilir kategori yok",
-    "stationNoCategories": "Kategori atanmadı",
+    "stationNoCategories": "Tüm kategoriler (yeniler dahil)",
     "stationNoChef": "Şef atanmadı",
     "stationNoDefaultCategories": "Tüm kategoriler mutfak istasyonlarına atanmış",
     "stationNoPrinter": "Yazıcı Yok (Yalnızca KDS)",

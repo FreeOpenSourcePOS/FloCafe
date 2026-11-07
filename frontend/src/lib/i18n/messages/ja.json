@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "例: バー、デザートカウンター",
     "stationNameRequired": "ステーション名は必須です",
     "stationNoAvailableCategories": "利用可能なカテゴリはありません",
-    "stationNoCategories": "カテゴリ未割り当て",
+    "stationNoCategories": "すべてのカテゴリ（新規作成を含む）",
     "stationNoChef": "シェフ未割り当て",
     "stationNoDefaultCategories": "すべてのカテゴリがキッチンステーションに割り当てられています",
     "stationNoPrinter": "既定プリンター",

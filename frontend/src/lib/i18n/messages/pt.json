@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "ex.: Bar, Balcão de Sobremesas",
     "stationNameRequired": "O nome da estação é obrigatório",
     "stationNoAvailableCategories": "Nenhuma categoria disponível",
-    "stationNoCategories": "Nenhuma categoria atribuída",
+    "stationNoCategories": "Todas as categorias (incluindo novas)",
     "stationNoChef": "Nenhum chef atribuído",
     "stationNoDefaultCategories": "Todas as categorias estão atribuídas a estações de cozinha",
     "stationNoPrinter": "Impressora padrão",

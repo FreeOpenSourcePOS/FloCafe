@@ -16,6 +16,7 @@ import {
   ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
   completeSettledReleasedOrderIfServed,
   databaseMaintenanceMiddleware,
+  expandCategoryIdsWithSubcategories,
   getDatabase,
   getKdsItemParentOrderState,
   getKdsStationCategoryIds,
@@ -81,7 +82,9 @@ type KdsRequestUser = {
 };
 
 function categoryIdsForRole(role: string, categoryIds: string | null): string[] {
-  return hasRole(role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(categoryIds);
+  return hasRole(role, ROLE_ACCESS.ownerManager)
+    ? []
+    : expandCategoryIdsWithSubcategories(getDatabase(), parseCategoryIds(categoryIds));
 }
 
 export function isKdsServerRunning(): boolean {

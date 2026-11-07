@@ -47,7 +47,9 @@ import { LANGUAGES } from '../frontend/src/lib/i18n/languages';
 // The shipped registry, not a hand-written stand-in, so the kernel is exercised
 // against the real selectable locale set and a new locale cannot be left out.
 const SELECTABLE = new Set(
-  (Object.keys(LANGUAGES) as Array<keyof typeof LANGUAGES>).filter((code) => LANGUAGES[code].selectable),
+  (Object.keys(LANGUAGES) as Array<keyof typeof LANGUAGES>).filter(
+    (code) => LANGUAGES[code].selectable,
+  ),
 );
 const FACTS: LanguageRegistryFacts = {
   isSelectableLanguage: (code) => SELECTABLE.has(code),
@@ -77,7 +79,10 @@ assert.deepEqual(
   'additional language follows the resolved primary',
 );
 assert.deepEqual(
-  resolveReceiptLanguages({ primary: { mode: 'fixed', language: 'fa' }, additional: ['fa'] as const }, 'en'),
+  resolveReceiptLanguages(
+    { primary: { mode: 'fixed', language: 'fa' }, additional: ['fa'] as const },
+    'en',
+  ),
   ['fa'],
   'additional equal to the fixed primary collapses (dedupe)',
 );
@@ -87,11 +92,15 @@ assert.deepEqual(
   'additional equal to the inherited store language collapses',
 );
 assert.ok(
-  resolveReceiptLanguages({ primary: inherit(), additional: [] }, 'en').length <= MAX_RECEIPT_LANGUAGES,
+  resolveReceiptLanguages({ primary: inherit(), additional: [] }, 'en').length <=
+    MAX_RECEIPT_LANGUAGES,
 );
 
 assert.equal(resolveKotLanguage({ primary: inherit(), additional: [] }, 'fa'), 'fa');
-assert.equal(resolveKotLanguage({ primary: { mode: 'fixed', language: 'en' }, additional: [] }, 'fa'), 'en');
+assert.equal(
+  resolveKotLanguage({ primary: { mode: 'fixed', language: 'en' }, additional: [] }, 'fa'),
+  'en',
+);
 assert.equal(resolvePrimaryLanguage({ mode: 'inherit' }, 'pt'), 'pt');
 
 // Type-level max-2 for v1: these shapes must compile; the runtime parser also
@@ -103,10 +112,7 @@ console.log('✓ policy resolution');
 
 console.log('Testing policy validation...');
 
-const valid = parsePrintLanguagePolicy(
-  { primary: { mode: 'inherit' }, additional: [] },
-  FACTS,
-);
+const valid = parsePrintLanguagePolicy({ primary: { mode: 'inherit' }, additional: [] }, FACTS);
 assert.ok(valid.ok);
 assert.deepEqual(valid.policy, { primary: { mode: 'inherit' }, additional: [] });
 
@@ -133,18 +139,9 @@ const badCases: Array<[unknown, RegExp]> = [
   [{ primary: { mode: 'fixed' } }, /non-empty string/],
   [{ primary: { mode: 'fixed', language: '' } }, /non-empty string/],
   [{ primary: { mode: 'fixed', language: 'xx' } }, /not a registered selectable language/],
-  [
-    { primary: { mode: 'inherit' }, additional: ['xx'] },
-    /not a registered selectable language/,
-  ],
-  [
-    { primary: { mode: 'inherit' }, additional: ['fa', 'es'] },
-    /at most 1 entry/,
-  ],
-  [
-    { primary: { mode: 'inherit' }, additional: ['fa', 'fa'] },
-    /at most 1 entry/,
-  ],
+  [{ primary: { mode: 'inherit' }, additional: ['xx'] }, /not a registered selectable language/],
+  [{ primary: { mode: 'inherit' }, additional: ['fa', 'es'] }, /at most 1 entry/],
+  [{ primary: { mode: 'inherit' }, additional: ['fa', 'fa'] }, /at most 1 entry/],
   [
     { primary: { mode: 'fixed', language: 'fa' }, additional: ['fa'] },
     /duplicates the fixed primary/,
@@ -159,7 +156,10 @@ for (const [payload, pattern] of badCases) {
 }
 
 // KOT policies are single-primary: any additional entry is rejected.
-const kotValid = parseKotLanguagePolicy({ primary: { mode: 'fixed', language: 'fa' }, additional: [] }, FACTS);
+const kotValid = parseKotLanguagePolicy(
+  { primary: { mode: 'fixed', language: 'fa' }, additional: [] },
+  FACTS,
+);
 assert.ok(kotValid.ok);
 const kotBad = parseKotLanguagePolicy({ primary: inherit(), additional: ['es'] }, FACTS);
 assert.ok(!kotBad.ok);
@@ -167,10 +167,7 @@ assert.match(kotBad.ok ? '' : kotBad.error, /at most 0 entries/);
 
 // Defaults preserve current behavior: inherit / none.
 assert.deepEqual(defaultPrintLanguagePolicy(), { primary: { mode: 'inherit' }, additional: [] });
-assert.deepEqual(
-  resolveReceiptLanguages(defaultPrintLanguagePolicy(), 'en'),
-  ['en'],
-);
+assert.deepEqual(resolveReceiptLanguages(defaultPrintLanguagePolicy(), 'en'), ['en']);
 
 console.log('✓ policy validation');
 
@@ -184,8 +181,16 @@ assert.equal(rtlSpec.block, 'rtl');
 assert.equal(rtlSpec.value, 'rtl');
 assert.equal(resolveDirectionSpec('ltr').document, 'ltr');
 
-assert.equal(resolveValueDirection('چای زعفرانی', 'rtl'), 'rtl', 'natural RTL text keeps base direction');
-assert.equal(resolveValueDirection('+91 98765 43210', 'rtl'), 'ltr', 'phone numbers are LTR islands');
+assert.equal(
+  resolveValueDirection('چای زعفرانی', 'rtl'),
+  'rtl',
+  'natural RTL text keeps base direction',
+);
+assert.equal(
+  resolveValueDirection('+91 98765 43210', 'rtl'),
+  'ltr',
+  'phone numbers are LTR islands',
+);
 assert.equal(resolveScopeDirection('value', 'rtl', 'ORD-2026-001'), 'ltr');
 assert.equal(resolveScopeDirection('document', 'rtl'), 'rtl');
 
@@ -235,10 +240,15 @@ for (const columns of COLUMNS) {
 
 // Short pair fits inline even at the narrowest width ("Total" + "مجموع").
 assert.equal(selectBilingualFit({ primary: 'Total', secondary: 'مجموع' }, 32), 'inline');
-assert.deepEqual(bilingualLabelLines({ primary: 'Total', secondary: 'مجموع' }, 'inline'), ['Total  مجموع']);
+assert.deepEqual(bilingualLabelLines({ primary: 'Total', secondary: 'مجموع' }, 'inline'), [
+  'Total  مجموع',
+]);
 
 // Long pairs stack at every realistic width...
-const longPair = { primary: 'Subtotal before taxes', secondary: 'جمع کل اقلام پیش از احتساب مالیات' };
+const longPair = {
+  primary: 'Subtotal before taxes',
+  secondary: 'جمع کل اقلام پیش از احتساب مالیات',
+};
 assert.ok(
   labelWidth(longPair.primary) + 2 + labelWidth(longPair.secondary) > 48,
   'fixture must exceed the widest tested width',
@@ -270,29 +280,58 @@ const layoutContext = (columns: number): ThermalLayoutContext => ({
   languages: ['en'],
 });
 for (const columns of [32, 42, 48]) {
-  const banner = layoutStyledUnit({
-    text: '** receipt.reprint[en] **',
-    widthMultiplier: 2,
-    field: 'reprint banner',
-  }, layoutContext(columns));
-  assert.equal(banner.lines.join(''), '** receipt.reprint[en] **', `complete banner survives ${columns} columns`);
+  const banner = layoutStyledUnit(
+    {
+      text: '** receipt.reprint[en] **',
+      widthMultiplier: 2,
+      field: 'reprint banner',
+    },
+    layoutContext(columns),
+  );
+  assert.equal(
+    banner.lines.join(''),
+    '** receipt.reprint[en] **',
+    `complete banner survives ${columns} columns`,
+  );
   assert.equal(banner.widthMultiplier, 1, `banner downgrades style at ${columns} columns`);
 }
-const financial = layoutStyledUnit({
-  text: 'Credit Card (Mastercard) 1234567890',
-  field: 'payment row',
-  financial: true,
-}, layoutContext(32));
-assert.ok(financial.lines.every((line) => displayCellWidth(line) <= 32), 'financial text fits within 32 columns');
-assert.equal(financial.lines.join(' '), 'Credit Card (Mastercard) 1234567890', 'financial text wraps without truncation');
+const financial = layoutStyledUnit(
+  {
+    text: 'Credit Card (Mastercard) 1234567890',
+    field: 'payment row',
+    financial: true,
+  },
+  layoutContext(32),
+);
+assert.ok(
+  financial.lines.every((line) => displayCellWidth(line) <= 32),
+  'financial text fits within 32 columns',
+);
+assert.equal(
+  financial.lines.join(' '),
+  'Credit Card (Mastercard) 1234567890',
+  'financial text wraps without truncation',
+);
 
 const bidiControlled = `\u200f${'A'.repeat(32)}`;
-assert.equal(displayCellWidth(bidiControlled), 32, 'RTL formatting controls consume no display cells');
-assert.equal(fitThermalLine(bidiControlled, 32), bidiControlled, 'final fitting preserves 32 visible cells plus an RTL control');
+assert.equal(
+  displayCellWidth(bidiControlled),
+  32,
+  'RTL formatting controls consume no display cells',
+);
+assert.equal(
+  fitThermalLine(bidiControlled, 32),
+  bidiControlled,
+  'final fitting preserves 32 visible cells plus an RTL control',
+);
 const vietnameseNfc = 'Tiếng Việt';
 const vietnameseNfd = vietnameseNfc.normalize('NFD');
 assert.equal(displayCellWidth(vietnameseNfc), 10, 'composed Vietnamese text measures by grapheme');
-assert.equal(displayCellWidth(vietnameseNfd), 10, 'decomposed Vietnamese combining marks consume no extra cells');
+assert.equal(
+  displayCellWidth(vietnameseNfd),
+  10,
+  'decomposed Vietnamese combining marks consume no extra cells',
+);
 assert.deepEqual(
   wrapToDisplayCells(vietnameseNfd, 8).map((line) => line.normalize('NFC')),
   wrapToDisplayCells(vietnameseNfc, 8).map((line) => line.normalize('NFC')),
@@ -300,34 +339,100 @@ assert.deepEqual(
 );
 const fullWidthText = '商品商品';
 assert.equal(displayCellWidth(fullWidthText), 8, 'full-width glyphs consume two display cells');
-assert.equal(fitThermalLine(fullWidthText, 6), '商品商', 'final fitting truncates full-width glyphs by display cells');
-const fullWidthLayout = layoutStyledUnit({ text: fullWidthText, field: 'full-width text' }, layoutContext(6));
-assert.ok(fullWidthLayout.lines.every((line) => displayCellWidth(line) <= 6), 'semantic layout uses the same display-cell budget');
-assert.equal(fullWidthLayout.lines.join(''), fullWidthText, 'semantic layout wraps full-width glyphs without loss');
+assert.equal(
+  fitThermalLine(fullWidthText, 6),
+  '商品商',
+  'final fitting truncates full-width glyphs by display cells',
+);
+const fullWidthLayout = layoutStyledUnit(
+  { text: fullWidthText, field: 'full-width text' },
+  layoutContext(6),
+);
+assert.ok(
+  fullWidthLayout.lines.every((line) => displayCellWidth(line) <= 6),
+  'semantic layout uses the same display-cell budget',
+);
+assert.equal(
+  fullWidthLayout.lines.join(''),
+  fullWidthText,
+  'semantic layout wraps full-width glyphs without loss',
+);
 const fullWidthHeader = wrapToDisplayCells('商品商品商品商品商品商品商品商品商', 32);
-assert.ok(fullWidthHeader.every((line) => displayCellWidth(line) <= 32), 'full-width header wrapping respects thermal display cells');
-assert.equal(fullWidthHeader.join(''), '商品商品商品商品商品商品商品商品商', 'full-width header wrapping preserves text');
+assert.ok(
+  fullWidthHeader.every((line) => displayCellWidth(line) <= 32),
+  'full-width header wrapping respects thermal display cells',
+);
+assert.equal(
+  fullWidthHeader.join(''),
+  '商品商品商品商品商品商品商品商品商',
+  'full-width header wrapping preserves text',
+);
 
 const devanagariGrapheme = 'कि';
-assert.equal(fitThermalLine(devanagariGrapheme, 1), devanagariGrapheme, 'Devanagari combining marks are not split at a narrow width');
-assert.deepEqual(wrapToDisplayCells('किनारा', 1), ['कि', 'ना', 'रा'], 'Devanagari grapheme clusters wrap as complete units');
+assert.equal(
+  fitThermalLine(devanagariGrapheme, 1),
+  devanagariGrapheme,
+  'Devanagari combining marks are not split at a narrow width',
+);
+assert.deepEqual(
+  wrapToDisplayCells('किनारा', 1),
+  ['कि', 'ना', 'रा'],
+  'Devanagari grapheme clusters wrap as complete units',
+);
 const urduZwnjCluster = 'ک\u200c';
-assert.deepEqual(graphemeSegments(urduZwnjCluster), [urduZwnjCluster], 'Urdu ZWNJ stays attached to its grapheme cluster');
+assert.deepEqual(
+  graphemeSegments(urduZwnjCluster),
+  [urduZwnjCluster],
+  'Urdu ZWNJ stays attached to its grapheme cluster',
+);
 assert.deepEqual(
   graphemeSegments('خ\u200cود'),
   ['خ\u200c', 'و', 'د'],
   'Urdu ZWNJ stays attached to the preceding grapheme without joining the following letter',
 );
-assert.equal(displayCellWidth(urduZwnjCluster), 1, 'Urdu ZWNJ consumes no extra thermal display cell');
+assert.equal(
+  displayCellWidth(urduZwnjCluster),
+  1,
+  'Urdu ZWNJ consumes no extra thermal display cell',
+);
 
-for (const [label, cluster] of [['Devanagari', 'क्ष'], ['Bengali', 'ক্ষ'], ['Thai', 'กำ'], ['Urdu', 'کّ']] as const) {
-  assert.deepEqual(graphemeSegments(cluster), [cluster], `${label} conjunct stays one grapheme cluster`);
+for (const [label, cluster] of [
+  ['Devanagari', 'क्ष'],
+  ['Bengali', 'ক্ষ'],
+  ['Thai', 'กำ'],
+  ['Urdu', 'کّ'],
+] as const) {
+  assert.deepEqual(
+    graphemeSegments(cluster),
+    [cluster],
+    `${label} conjunct stays one grapheme cluster`,
+  );
   assert.equal(displayCellWidth(cluster), 1, `${label} conjunct consumes one thermal display cell`);
-  assert.equal(truncateToDisplayCells(cluster, 0), '', `${label} conjunct is not partially emitted at zero cells`);
-  assert.equal(truncateToDisplayCells(`A${cluster}B`, 1), 'A', `${label} conjunct is not split when the budget ends inside it`);
-  assert.equal(truncateToDisplayCells(`A${cluster}B`, 2), `A${cluster}`, `${label} conjunct is retained when it fits whole`);
-  assert.equal(padToDisplayCells(cluster, 2), `${cluster} `, `${label} padding is measured in display cells`);
-  assert.equal(truncateToDisplayCellsFromEnd(`A${cluster}B`, 1), 'B', `${label} suffix truncation is grapheme-safe`);
+  assert.equal(
+    truncateToDisplayCells(cluster, 0),
+    '',
+    `${label} conjunct is not partially emitted at zero cells`,
+  );
+  assert.equal(
+    truncateToDisplayCells(`A${cluster}B`, 1),
+    'A',
+    `${label} conjunct is not split when the budget ends inside it`,
+  );
+  assert.equal(
+    truncateToDisplayCells(`A${cluster}B`, 2),
+    `A${cluster}`,
+    `${label} conjunct is retained when it fits whole`,
+  );
+  assert.equal(
+    padToDisplayCells(cluster, 2),
+    `${cluster} `,
+    `${label} padding is measured in display cells`,
+  );
+  assert.equal(
+    truncateToDisplayCellsFromEnd(`A${cluster}B`, 1),
+    'B',
+    `${label} suffix truncation is grapheme-safe`,
+  );
 }
 
 assert.deepEqual(
@@ -350,8 +455,16 @@ for (const [term, segments, cells] of [
   ['प्रबन्धक', ['प्र', 'ब', 'न्ध', 'क'], 4],
   ['तरकारी', ['त', 'र', 'का', 'री'], 4],
 ] as const) {
-  assert.deepEqual(graphemeSegments(term), [...segments], `Nepali term ${term} segments without splitting a virama conjunct`);
-  assert.equal(displayCellWidth(term), cells, `Nepali term ${term} consumes ${cells} thermal display cells, not its code-point count`);
+  assert.deepEqual(
+    graphemeSegments(term),
+    [...segments],
+    `Nepali term ${term} segments without splitting a virama conjunct`,
+  );
+  assert.equal(
+    displayCellWidth(term),
+    cells,
+    `Nepali term ${term} consumes ${cells} thermal display cells, not its code-point count`,
+  );
   for (let width = 1; width < cells; width += 1) {
     const wrapped = wrapToDisplayCells(term, width);
     assert.deepEqual(
@@ -369,8 +482,8 @@ for (const [term, segments, cells] of [
       assert.equal(
         graphemeSegments(wrapped[index] + wrapped[index + 1]).length,
         left.length + right.length,
-        `Nepali term ${term} must break between complete clusters at the ${width}-cell boundary `
-        + `${JSON.stringify(wrapped[index])} | ${JSON.stringify(wrapped[index + 1])}`,
+        `Nepali term ${term} must break between complete clusters at the ${width}-cell boundary ` +
+          `${JSON.stringify(wrapped[index])} | ${JSON.stringify(wrapped[index + 1])}`,
       );
     }
   }
@@ -462,7 +575,11 @@ const widthModulePath = require.resolve('../shared/print/width');
 const originalWidthModule = require.cache[widthModulePath];
 const segmenterDescriptor = Object.getOwnPropertyDescriptor(Intl, 'Segmenter');
 try {
-  Object.defineProperty(Intl, 'Segmenter', { value: undefined, writable: true, configurable: true });
+  Object.defineProperty(Intl, 'Segmenter', {
+    value: undefined,
+    writable: true,
+    configurable: true,
+  });
   delete require.cache[widthModulePath];
   const fallbackWidth = require(widthModulePath) as typeof import('../shared/print/width');
   const fallbackClusters = [
@@ -486,53 +603,96 @@ try {
     ['خ\u200c', 'و', 'د'],
     'fallback keeps Urdu ZWNJ with the preceding grapheme without joining the following letter',
   );
-  assert.deepEqual(fallbackWidth.graphemeSegments(fallbackEmoji), [fallbackEmoji], 'fallback keeps emoji modifiers attached');
-  assert.deepEqual(fallbackWidth.graphemeSegments(adjacentEmoji), [fallbackEmoji, adjacentEmojiBase], 'fallback starts a new cluster after an emoji modifier');
-  assert.equal(fallbackWidth.displayCellWidth(adjacentEmoji), 4, 'fallback measures adjacent emoji clusters separately');
-  assert.deepEqual(fallbackWidth.graphemeSegments(fallbackFlag), [fallbackFlag], 'fallback keeps regional indicators paired');
-  assert.equal(fallbackWidth.truncateToDisplayCells(fallbackEmoji, 2), fallbackEmoji, 'fallback truncation keeps the complete emoji modifier sequence');
-  assert.equal(fallbackWidth.truncateToDisplayCells(adjacentEmoji, 3), fallbackEmoji, 'fallback truncation does not merge adjacent emoji clusters');
-  assert.equal(fallbackWidth.truncateToDisplayCells(fallbackFlag, 1), fallbackFlag, 'fallback truncation never splits a regional-indicator pair');
-  assert.equal(fallbackWidth.truncateToDisplayCells(`A${fallbackClusters[0]}B`, 1), 'A', 'fallback truncation never splits Indic clusters');
+  assert.deepEqual(
+    fallbackWidth.graphemeSegments(fallbackEmoji),
+    [fallbackEmoji],
+    'fallback keeps emoji modifiers attached',
+  );
+  assert.deepEqual(
+    fallbackWidth.graphemeSegments(adjacentEmoji),
+    [fallbackEmoji, adjacentEmojiBase],
+    'fallback starts a new cluster after an emoji modifier',
+  );
+  assert.equal(
+    fallbackWidth.displayCellWidth(adjacentEmoji),
+    4,
+    'fallback measures adjacent emoji clusters separately',
+  );
+  assert.deepEqual(
+    fallbackWidth.graphemeSegments(fallbackFlag),
+    [fallbackFlag],
+    'fallback keeps regional indicators paired',
+  );
+  assert.equal(
+    fallbackWidth.truncateToDisplayCells(fallbackEmoji, 2),
+    fallbackEmoji,
+    'fallback truncation keeps the complete emoji modifier sequence',
+  );
+  assert.equal(
+    fallbackWidth.truncateToDisplayCells(adjacentEmoji, 3),
+    fallbackEmoji,
+    'fallback truncation does not merge adjacent emoji clusters',
+  );
+  assert.equal(
+    fallbackWidth.truncateToDisplayCells(fallbackFlag, 1),
+    fallbackFlag,
+    'fallback truncation never splits a regional-indicator pair',
+  );
+  assert.equal(
+    fallbackWidth.truncateToDisplayCells(`A${fallbackClusters[0]}B`, 1),
+    'A',
+    'fallback truncation never splits Indic clusters',
+  );
 } finally {
   if (originalWidthModule) require.cache[widthModulePath] = originalWidthModule;
   else delete require.cache[widthModulePath];
   if (segmenterDescriptor) Object.defineProperty(Intl, 'Segmenter', segmenterDescriptor);
 }
 
-const zDocument = buildZReportDocument({
-  zNumber: 7,
-  businessDate: '2026-09-07',
-  periodStart: '07/09/2026 09:00',
-  periodEnd: '07/09/2026 23:00',
-  openingFloatCents: 1000,
-  payInCents: 200,
-  payOutCents: 100,
-  safeDropCents: 50,
-  paymentMethods: [{ method: 'cash', count: 2, totalCents: 5000 }],
-  refundCount: 1,
-  refundedCents: 500,
-  taxComponents: [{ title: 'GST', amount: 10 }],
-  staffSales: [{ name: 'Amina', orderCount: 2, revenueCents: 5000 }],
-  expectedCashCents: 5500,
-  countedCashCents: 5400,
-  varianceCents: -100,
-  closedByName: 'Amina',
-  businessName: 'Cafe',
-  businessAddress: '',
-  taxRegistrationNumber: '',
-  isReprint: true,
-}, {
-  languages: ['fa', 'en'],
-  baseDirection: 'rtl',
-  resolveLabel: (concept, language) => `${concept}[${language}]`,
-});
+const zDocument = buildZReportDocument(
+  {
+    zNumber: 7,
+    businessDate: '2026-09-07',
+    periodStart: '07/09/2026 09:00',
+    periodEnd: '07/09/2026 23:00',
+    openingFloatCents: 1000,
+    payInCents: 200,
+    payOutCents: 100,
+    safeDropCents: 50,
+    paymentMethods: [{ method: 'cash', count: 2, totalCents: 5000 }],
+    refundCount: 1,
+    refundedCents: 500,
+    taxComponents: [{ title: 'GST', amount: 10 }],
+    staffSales: [{ name: 'Amina', orderCount: 2, revenueCents: 5000 }],
+    expectedCashCents: 5500,
+    countedCashCents: 5400,
+    varianceCents: -100,
+    closedByName: 'Amina',
+    businessName: 'Cafe',
+    businessAddress: '',
+    taxRegistrationNumber: '',
+    isReprint: true,
+  },
+  {
+    languages: ['fa', 'en'],
+    baseDirection: 'rtl',
+    resolveLabel: (concept, language) => `${concept}[${language}]`,
+  },
+);
 assert.equal(zDocument.version, 1);
 assert.equal(zDocument.header.reprintMarker?.conceptId, 'receipt.reprint');
 assert.equal(zDocument.payments.rows[0].label.conceptId, 'pos.methodCash');
 assert.equal(zDocument.payments.rows[0].countLabel.conceptId, 'print.zReport.paymentCount');
-assert.equal(zDocument.cash.variance.cents, -100, 'Z financial truth passes through the semantic document');
-assert.equal(zDocument.cashMovements.safeDrop.cents, 50, 'Z cash movement totals pass through the semantic document');
+assert.equal(
+  zDocument.cash.variance.cents,
+  -100,
+  'Z financial truth passes through the semantic document',
+);
+assert.equal(
+  zDocument.cashMovements.safeDrop.cents,
+  50,
+  'Z cash movement totals pass through the semantic document',
+);
 for (const [row, property, replacement] of [
   [zDocument.period[0], 'value', null],
   [zDocument.payments.rows[0], 'totalCents', 999],
@@ -540,10 +700,18 @@ for (const [row, property, replacement] of [
   [zDocument.staff.rows[0], 'totalCents', 999],
 ] as const) {
   const before = (row as Record<string, unknown>)[property];
-  assert.throws(() => {
-    (row as Record<string, unknown>)[property] = replacement;
-  }, TypeError, `frozen Z-report ${property} rejects mutation`);
-  assert.equal((row as Record<string, unknown>)[property], before, `frozen Z-report ${property} remains unchanged`);
+  assert.throws(
+    () => {
+      (row as Record<string, unknown>)[property] = replacement;
+    },
+    TypeError,
+    `frozen Z-report ${property} rejects mutation`,
+  );
+  assert.equal(
+    (row as Record<string, unknown>)[property],
+    before,
+    `frozen Z-report ${property} remains unchanged`,
+  );
 }
 
 console.log('✓ semantic thermal overflow and Z-report contracts');

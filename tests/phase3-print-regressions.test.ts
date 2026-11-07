@@ -35,6 +35,7 @@ const languages = [
   'pa',
   'te',
   'ta',
+  'uk',
 ] as const;
 // Any Devanagari, Telugu, or Tamil codepoint: the native paths must emit none, not merely none of
 // the specific phrases this fixture happens to use.

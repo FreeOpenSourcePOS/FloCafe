@@ -55,7 +55,7 @@ is invisible on screen and corrupts comparison, searching, and print labels.
 identically and wrap identically after normalisation, which is what makes NFC a requirement rather
 than a preference. `tests/translations.test.ts` rejects a `vi.json` value that is not already NFC.
 
-The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `pa.json`, `ru.json`, `sw.json`, `ta.json`, `te.json`, and `th.json`.
+The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `pa.json`, `ru.json`, `sw.json`, `ta.json`, `te.json`, `th.json`, and `uk.json`.
 
 ## Albanian and Vietnamese on a generic thermal printer
 
@@ -209,6 +209,16 @@ distinct on the receipt. The vegetarian tags are `சைவம்` and the non-v
 identical between `pos.*` and `products.*`. Cash movement uses `ரொக்க வரவு` for pay-in and `ரொக்க செலவு`
 for pay-out across the dashboard and the Z-report. Takeaway is `பார்சல்` across `orders.takeaway` and
 `pos.orderTypeTakeaway`, distinct from delivery `டெலிவரி` and dine-in `உணவகத்தில் சாப்பிட`.
+
+**Ukrainian.** Takeaway is `З собою` and dine-in is `У закладі`; "delivery" is `Доставка`. Subtotal
+`Проміжний підсумок` and grand total `РАЗОМ` (or `Загальна сума` on browser receipts) stay distinct,
+and cash received on a receipt is `Отримано готівкою`. The dietary tags are `Вегетаріанське`,
+`Не вегетаріанське`, and `Без молочних продуктів` (dairy-free, not lactose-free) across both `pos.*`
+and `products.*`. Store-credit refund is `Баланс гаманця клієнта`, and waiving a charge is
+`Не стягувати`. Cash movement is `Внесення готівки` for pay-in, `Видача готівки` for pay-out, and
+`Інкасація` for safe drop, identically on the dashboard and on the Z-report, and the
+counted-versus-expected pair is `Фактична готівка` and `Очікувана готівка`. Use count-safe wording
+throughout where the English catalogue has no plural selector.
 
 ## Verification
 

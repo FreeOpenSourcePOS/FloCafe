@@ -539,6 +539,18 @@ async function run(): Promise<void> {
       'ta-LK must resolve through the same-script regional fallback to ta-IN',
     );
   });
+  withNavigatorLanguage('uk-UA', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'uk',
+      'getBrowserLanguage must return "uk" for uk-UA',
+    );
+  });
+  withNavigatorLanguage('uk', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'uk',
+      'getBrowserLanguage must return "uk" for bare uk',
+    );
+  });
   withNavigatorLanguage(
     'en-US',
     () => {
@@ -596,6 +608,7 @@ async function run(): Promise<void> {
     'pa',
     'te',
     'ta',
+    'uk',
   ] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.

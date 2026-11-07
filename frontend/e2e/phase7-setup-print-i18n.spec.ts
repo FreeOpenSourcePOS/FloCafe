@@ -109,6 +109,11 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
     web: 'வெப் அச்சு (உலாவி)',
     whatsapp: 'WhatsApp பகிர்வு',
   },
+  uk: {
+    basic: 'Базовий чек (термопринтер)',
+    web: 'Веб-друк (браузер)',
+    whatsapp: 'Поділитися у WhatsApp',
+  },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

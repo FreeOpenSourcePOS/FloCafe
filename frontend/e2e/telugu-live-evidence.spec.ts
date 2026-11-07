@@ -9,9 +9,11 @@ import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
 const { formatDailySalesWhatsAppMessage } = require('../../dist/main/services/daily-sales-export');
 
 const LOCAL_EVIDENCE_BASE = path.join(os.homedir(), '.no-mistakes', 'evidence');
-const EVIDENCE_DIR = fs.existsSync(LOCAL_EVIDENCE_BASE)
-  ? path.join(LOCAL_EVIDENCE_BASE, '01M6TGJDPKE6JXWNKH7JEW6QKH')
-  : path.join(os.tmpdir(), 'flocafe-telugu-e2e-evidence');
+const EVIDENCE_DIR =
+  process.env.EVIDENCE_DIR ||
+  (fs.existsSync(LOCAL_EVIDENCE_BASE)
+    ? path.join(LOCAL_EVIDENCE_BASE, '01M6TWNVZRE2MT9WHN20Z3GYKA')
+    : path.join(os.tmpdir(), 'flocafe-telugu-e2e-evidence'));
 
 function ensureEvidenceDir() {
   if (!fs.existsSync(EVIDENCE_DIR)) {
@@ -530,16 +532,31 @@ test.describe('Live Telugu (te / te-IN) E2E verification across FloCafe surfaces
       });
       expect(restoreLangRes.ok()).toBeTruthy();
       await setLanguage(page, initialLanguage as 'en').catch(() => {});
-      for (const orderId of createdOrderIds) {
-        const cancelRes = await request.patch(`${E2E_BASE_URL}/api/orders/${orderId}/status`, {
+      if (createdOrderIds.length > 0) {
+        const setPinRes = await request.put(`${E2E_BASE_URL}/api/staff/e2e-manager`, {
           headers,
-          data: {
-            status: 'cancelled',
-            override_pin: '1111',
-            approver_id: 'e2e-owner',
-          },
+          data: { pin: '1111' },
         });
-        expect(cancelRes.ok()).toBeTruthy();
+        expect(setPinRes.ok()).toBeTruthy();
+        try {
+          for (const orderId of createdOrderIds) {
+            const cancelRes = await request.patch(`${E2E_BASE_URL}/api/orders/${orderId}/status`, {
+              headers,
+              data: {
+                status: 'cancelled',
+                override_pin: '1111',
+                approver_id: 'e2e-manager',
+              },
+            });
+            expect(cancelRes.ok()).toBeTruthy();
+          }
+        } finally {
+          const clearPinRes = await request.put(`${E2E_BASE_URL}/api/staff/e2e-manager`, {
+            headers,
+            data: { pin: null },
+          });
+          expect(clearPinRes.ok()).toBeTruthy();
+        }
       }
       for (const prodId of createdProductIds) {
         const delProdRes = await request.delete(`${E2E_BASE_URL}/api/products/${prodId}`, {

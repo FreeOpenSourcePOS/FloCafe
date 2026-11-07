@@ -55,7 +55,7 @@ is invisible on screen and corrupts comparison, searching, and print labels.
 identically and wrap identically after normalisation, which is what makes NFC a requirement rather
 than a preference. `tests/translations.test.ts` rejects a `vi.json` value that is not already NFC.
 
-The same NFC requirement is enforced for `ha.json`, `jv.json`, `ne.json`, `ru.json`, and `th.json`.
+The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `ru.json`, and `th.json`.
 
 ## Albanian and Vietnamese on a generic thermal printer
 

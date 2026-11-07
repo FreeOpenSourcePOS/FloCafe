@@ -68,6 +68,9 @@
  *  25. Javanese safeguards: jv.json values never contain placeholders, malformed
  *      replacement characters, or non-NFC text, and only documented shared
  *      values may remain identical to English.
+ *  26. Marathi safeguards: mr.json values never contain placeholders, malformed
+ *      replacement characters, invisible formatting characters, or non-NFC text,
+ *      and only documented shared values may remain identical to English.
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -2567,6 +2570,8 @@ function mrFallbackErrors(
       errors.push(`mr.json ${k} - value must use Unicode NFC`);
     } else if (mrVal.includes('\uFFFD')) {
       errors.push(`mr.json ${k} - value contains a Unicode replacement character`);
+    } else if (/[\u200B\u200C\u200D\u00AD\uFEFF]/u.test(mrVal)) {
+      errors.push(`mr.json ${k} - invisible formatting character found`);
     }
   }
   return errors;
@@ -3898,8 +3903,16 @@ function runNegativeTests(): void {
     mrFallbackErrors({ 'a.b': '[MR] Placeholder value' }, { 'a.b': 'Different value' }),
   );
   expectDetected(
+    'mr: non-NFC value',
+    mrFallbackErrors({ 'a.b': 'क़'.normalize('NFD') }, { 'a.b': 'क़'.normalize('NFC') }),
+  );
+  expectDetected(
     'mr: Unicode replacement character',
     mrFallbackErrors({ 'a.b': 'क\uFFFDफी' }, { 'a.b': 'कॉफी' }),
+  );
+  expectDetected(
+    'mr: invisible formatting character',
+    mrFallbackErrors({ 'a.b': 'अ\u200dॅक्सेस' }, { 'a.b': 'ॲक्सेस' }),
   );
   expectDetected(
     'ne: Unicode replacement character',

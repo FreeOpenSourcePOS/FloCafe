@@ -110,6 +110,7 @@ async function run() {
     'mr',
     'sw',
     'pa',
+    'te',
   ] as const) {
     await ensureReceiptMessagesLoaded(lang);
     const cached = getCachedMessages(lang);
@@ -197,6 +198,7 @@ async function run() {
     mr: { tag: 'mr-IN', dir: 'ltr' },
     sw: { tag: 'sw-KE', dir: 'ltr' },
     pa: { tag: 'pa-IN', dir: 'ltr' },
+    te: { tag: 'te-IN', dir: 'ltr' },
   };
 
   for (const [lang, { tag, dir }] of Object.entries(expectedLocaleTags)) {
@@ -444,6 +446,7 @@ async function run() {
     'mr',
     'sw',
     'pa',
+    'te',
   ]) {
     const filePath = path.join(MESSAGES_DIR, `${lang}.json`);
     const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));

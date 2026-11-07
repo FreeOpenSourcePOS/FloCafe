@@ -120,6 +120,7 @@ async function run() {
     'mr',
     'sw',
     'pa',
+    'te',
   ] as const) {
     await i18n.loadLocaleMessages(lang);
   }
@@ -705,6 +706,27 @@ async function run() {
         "'Noto Naskh Arabic', 'Noto Sans Bengali', 'Vrinda', 'Bangla Sangam MN', 'Noto Sans Devanagari'",
       ),
     );
+
+    const teHtml = generateBillHtml(
+      sampleEnBill,
+      { ...neTenant, currency: 'INR', country: 'IN', timezone: 'Asia/Kolkata' },
+      { language: 'te', isReprint: true },
+    );
+    assert(
+      'TE receipt has lang="te-IN" and dir="ltr"',
+      teHtml.includes('<html lang="te-IN" dir="ltr">'),
+    );
+    assert(
+      'TE receipt declares the Telugu font families',
+      teHtml.includes("'Noto Sans Telugu', 'Kohinoor Telugu', 'Telugu Sangam MN'"),
+    );
+    assert(
+      'TE labels are Telugu',
+      teHtml.includes('రీప్రింట్') &&
+        teHtml.includes('బిల్లు #') &&
+        teHtml.includes('మొత్తం') &&
+        teHtml.includes('మీ సందర్శనకు ధన్యవాదాలు!'),
+    );
   }
 
   console.log('\nTest Suite 6: Canonical semantic labels and unknown-language fallback');
@@ -1141,6 +1163,34 @@ async function run() {
         swahiliSlip.includes('Karatasi ya Oda') &&
         swahiliSlip.includes('Jumla Ndogo') &&
         swahiliSlip.includes('Jumla'),
+    );
+
+    const teluguSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'ఆర్డర్ స్లిప్',
+        subtotal: 'ఉప మొత్తం',
+        discount: 'డిస్కౌంట్',
+        serviceCharge: 'సర్వీస్ ఛార్జ్',
+        deliveryCharge: 'డెలివరీ ఛార్జ్',
+        packagingCharge: 'ప్యాకేజింగ్ ఛార్జ్',
+        tax: 'పన్ను',
+        total: 'మొత్తం',
+      },
+      {
+        country: 'IN',
+        currency: 'INR',
+        locale: 'te-IN',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Telugu order slip carries te-IN LTR metadata and Telugu font fallback',
+      teluguSlip.includes('lang="te-IN" dir="ltr"') &&
+        teluguSlip.includes('Noto Sans Telugu') &&
+        teluguSlip.includes('ఆర్డర్ స్లిప్') &&
+        teluguSlip.includes('ఉప మొత్తం') &&
+        teluguSlip.includes('మొత్తం'),
     );
   }
 

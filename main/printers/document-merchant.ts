@@ -73,12 +73,26 @@ export function renderMerchantReceiptViaDocument(
       rasterGroups,
       financialLineRanges,
     });
-    return { lines, rasterGroups, financialLineRanges };
+    let nativeLines = lines;
+    let nativeFinancialLineRanges = financialLineRanges;
+    if (opts.capabilities?.raster.enabled === true) {
+      nativeFinancialLineRanges = [];
+      nativeLines = renderBillDocumentToClassicLines(document, {
+        ...baseOptions,
+        capabilities: {
+          ...opts.capabilities,
+          raster: { ...opts.capabilities.raster, enabled: false },
+        },
+        logoCapabilities: opts.capabilities,
+        financialLineRanges: nativeFinancialLineRanges,
+      });
+    }
+    return { lines, nativeLines, rasterGroups, nativeFinancialLineRanges };
   };
 
   const finish = (rendered: ReturnType<typeof renderDocument>, fellBackToClassic: boolean) => {
     const data = buildEscPos(
-      rendered.lines,
+      rendered.nativeLines,
       opts.useUnicode,
       {
         cutMode: opts.cutMode,
@@ -86,7 +100,7 @@ export function renderMerchantReceiptViaDocument(
         columns: opts.columns,
         language: opts.language,
         capabilities: opts.capabilities,
-        financialLineRanges: rendered.financialLineRanges,
+        financialLineRanges: rendered.nativeFinancialLineRanges,
       },
       warnings,
     );

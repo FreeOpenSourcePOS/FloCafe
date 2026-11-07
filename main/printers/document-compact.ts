@@ -76,6 +76,7 @@ export interface CompactDocumentRenderOptions {
   readonly preserveCurrencySymbol?: boolean;
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
+  readonly logoCapabilities?: ThermalPrinterCapabilities;
   readonly maskCustomerPhone?: boolean;
   readonly rasterGroups?: RasterSemanticLineGroup[];
   readonly financialLineRanges?: Array<{ lineIndex: number; lineCount: number }>;
@@ -241,12 +242,13 @@ export function renderBillDocumentToCompactLines(
   markGroup('message', messageStart, messageSourceLines, messageSourceControlLines);
 
   // Business header (store name only — compact keeps contact facts in the footer).
+  const logoCapabilities = options.logoCapabilities ?? options.capabilities;
   if (
     header?.logoRaster &&
-    (options.capabilities === undefined || rasterCapabilityEnabled(options.capabilities))
+    (logoCapabilities === undefined || rasterCapabilityEnabled(logoCapabilities))
   ) {
-    const widthDots = options.capabilities?.raster?.widthDots ?? (cols <= 32 ? 384 : 576);
-    const maxBandHeight = options.capabilities?.raster?.maxBandHeight ?? 200;
+    const widthDots = logoCapabilities?.raster?.widthDots ?? (cols <= 32 ? 384 : 576);
+    const maxBandHeight = logoCapabilities?.raster?.maxBandHeight ?? 200;
     const bands = getLogoRasterBands(header.logoRaster, widthDots, maxBandHeight);
     if (bands.length > 0) {
       const rawBytes = concatBytes(bands.map((band) => encodeGsV0Band(band, maxBandHeight)));
@@ -884,7 +886,7 @@ export function renderCompactReceiptViaDocument(
   const warnings: PrintWarning[] = [];
   const rasterGroups: RasterSemanticLineGroup[] = [];
   const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
-  const lines = renderBillDocumentToCompactLines(document, {
+  const baseRenderOptions = {
     columns: opts.columns,
     language: printContext.languages[0],
     locale: printContext.locale,
@@ -895,14 +897,31 @@ export function renderCompactReceiptViaDocument(
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
-    capabilities: opts.capabilities,
     maskCustomerPhone: false,
     preserveCurrencySymbol: opts.preserveCurrencySymbol,
+  };
+  const lines = renderBillDocumentToCompactLines(document, {
+    ...baseRenderOptions,
+    capabilities: opts.capabilities,
     rasterGroups,
     financialLineRanges,
   });
+  let nativeLines = lines;
+  let nativeFinancialLineRanges = financialLineRanges;
+  if (opts.capabilities?.raster.enabled === true) {
+    nativeFinancialLineRanges = [];
+    nativeLines = renderBillDocumentToCompactLines(document, {
+      ...baseRenderOptions,
+      capabilities: {
+        ...opts.capabilities,
+        raster: { ...opts.capabilities.raster, enabled: false },
+      },
+      logoCapabilities: opts.capabilities,
+      financialLineRanges: nativeFinancialLineRanges,
+    });
+  }
   const data = buildEscPos(
-    lines,
+    nativeLines,
     opts.useUnicode,
     {
       cutMode: opts.cutMode,
@@ -910,7 +929,7 @@ export function renderCompactReceiptViaDocument(
       columns: opts.columns,
       language: opts.language,
       capabilities: opts.capabilities,
-      financialLineRanges,
+      financialLineRanges: nativeFinancialLineRanges,
     },
     warnings,
   );

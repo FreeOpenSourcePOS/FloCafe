@@ -2705,6 +2705,7 @@ export function renderPluginReceipt(
       undefined,
       capabilities,
     );
+  const nativeCapabilities = capabilities ? nativeFallbackCapabilities(capabilities) : undefined;
   const rendered = pluginReceiptLines(
     template,
     order,
@@ -2716,7 +2717,7 @@ export function renderPluginReceipt(
     warnings,
     arabicShaping,
     lang,
-    capabilities,
+    nativeCapabilities,
   );
   return buildEscPos(
     rendered.lines,
@@ -2726,7 +2727,7 @@ export function renderPluginReceipt(
       arabicShaping,
       columns: rendered.columns,
       language: lang,
-      capabilities,
+      capabilities: nativeCapabilities,
       financialLineRanges: rendered.financialLineRanges,
     },
     warnings,

@@ -443,8 +443,8 @@ async function run() {
   const webUsbDocument = buildBillDocument(webUsbPrintData, webUsbPrintContext);
   const webUsbThermalResult = await rasterizePrintDocumentForWebUsb(
     webUsbDocument,
-    'epson-tm-series',
     'classic',
+    'epson-tm-series',
     {
       columns: 48,
       language: 'en',
@@ -694,12 +694,16 @@ async function run() {
   );
 
   db.prepare(
-    `UPDATE printers SET is_default = 1, is_active = 1, profile_id = 'epson-tm-series', paper_width = 'cols-48' WHERE id = ?`,
-  ).run(insertedPrinter.lastInsertRowid);
+    `INSERT INTO printers (id, name, connection_type, is_default, paper_width, profile_id) VALUES ('pr-prep-test', 'Receipt Test Printer', 'usb', 1, 'cols-48', 'epson-tm-series')`,
+  ).run();
+  const extendedLatinBiz = {
+    ...sampleBiz,
+    address: 'Ulica Świętokrzyska 123, Śródmieście, Warszawa, Polska 00-001',
+  };
   const preparedThermal = prepareReceipt(
     sampleOrder,
     sampleBill,
-    sampleBiz,
+    extendedLatinBiz,
     'classic',
     false,
     false,
@@ -711,14 +715,20 @@ async function run() {
     true,
     'prepareReceipt must emit GS v 0 logo when the default printer profile has raster.enabled=true',
   );
+  const preparedThermalText = escPosToText(preparedThermal.data);
+  assertEqualOrThrow(
+    preparedThermalText.includes('Warszawa') && preparedThermalText.includes('00-001'),
+    true,
+    'prepareReceipt must wrap extended-Latin address across lines rather than truncating it at 48 columns',
+  );
 
   db.prepare(
-    `UPDATE printers SET is_default = 1, is_active = 1, profile_id = 'escpos-impact-76', paper_width = 'cols-32' WHERE id = ?`,
-  ).run(insertedPrinter.lastInsertRowid);
+    `UPDATE printers SET is_default = 1, profile_id = 'escpos-impact-76', paper_width = 'cols-32' WHERE id = 'pr-prep-test'`,
+  ).run();
   const preparedImpact = prepareReceipt(
     sampleOrder,
     sampleBill,
-    sampleBiz,
+    extendedLatinBiz,
     'classic',
     false,
     false,
@@ -730,6 +740,13 @@ async function run() {
     false,
     'prepareReceipt must omit GS v 0 logo when the default printer profile has raster.enabled=false',
   );
+  const preparedImpactText = escPosToText(preparedImpact.data);
+  assertEqualOrThrow(
+    preparedImpactText.includes('Warszawa') && preparedImpactText.includes('00-001'),
+    true,
+    'prepareReceipt on impact profile must wrap extended-Latin address across lines',
+  );
+  db.prepare(`DELETE FROM printers WHERE id = 'pr-prep-test'`).run();
 
   // Test HTTP routes POST /api/printers and PUT /api/printers/:id
   const { authHeader } = seedOwnerUser(db);

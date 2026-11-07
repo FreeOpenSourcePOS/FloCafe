@@ -298,6 +298,16 @@ const TABLES: Record<string, StatusTable> = {
     shutdownBackup: ['Nggawe cadhangan', 'Aja mateni komputer.'],
     saved: ['Kabeh wis kasimpen', 'Flo bakal enggal ditutup.'],
   },
+  mr: {
+    starting: ['Flo सुरू होत आहे', 'सर्व काही तयार केले जात आहे…'],
+    checking: ['तुमचा डेटा तपासला जात आहे', 'डेटाबेसची पडताळणी करून तो सुस्थितीत ठेवला जात आहे…'],
+    backingUp: ['तुमच्या डेटाचा बॅकअप घेतला जात आहे', 'सुरुवात करण्यापूर्वी सुरक्षित प्रत जतन केली जात आहे…'],
+    services: ['सेवा सुरू होत आहेत', 'जवळजवळ तयार…'],
+    welcome: ['Flo मध्ये तुमचे स्वागत आहे', 'तुमची कार्यजागा उघडली जात आहे…'],
+    closing: ['Flo बंद होत आहे', 'तुमचा डेटा जतन केला जात आहे. कृपया संगणक बंद करू नका.'],
+    shutdownBackup: ['बॅकअप घेतला जात आहे', 'कृपया संगणक बंद करू नका.'],
+    saved: ['सर्व जतन झाले', 'Flo काही क्षणात बंद होईल.'],
+  },
   sw: {
     starting: ['Inaanzisha Flo', 'Inaandaa kila kitu…'],
     checking: ['Inakagua data yako', 'Inathibitisha hifadhidata na kuiweka salama…'],

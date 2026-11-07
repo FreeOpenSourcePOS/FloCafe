@@ -197,6 +197,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/jv.json'),
   },
+  mr: {
+    locale: 'mr-IN',
+    nativeName: 'मराठी',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/mr.json'),
+  },
   sw: {
     locale: 'sw-KE',
     nativeName: 'Kiswahili',

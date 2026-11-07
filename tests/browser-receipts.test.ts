@@ -117,6 +117,7 @@ async function run() {
     'ne',
     'ha',
     'jv',
+    'mr',
     'sw',
   ] as const) {
     await i18n.loadLocaleMessages(lang);
@@ -631,6 +632,25 @@ async function run() {
         jvHtml.includes('Matur nuwun rawuhipun!'),
     );
 
+    const mrTenant = {
+      business_name: 'FloCafe Pune',
+      currency: 'INR',
+      country: 'IN',
+      timezone: 'Asia/Kolkata',
+    };
+    const mrHtml = generateBillHtml(sampleEnBill, mrTenant, { language: 'mr', isReprint: true });
+    assert(
+      'MR receipt has lang="mr-IN" and dir="ltr"',
+      mrHtml.includes('<html lang="mr-IN" dir="ltr">'),
+    );
+    assert(
+      'MR labels are Devanagari',
+      mrHtml.includes('पुनःमुद्रण') &&
+        mrHtml.includes('बिल #') &&
+        mrHtml.includes('एकूण रक्कम') &&
+        mrHtml.includes('तुमच्या भेटीबद्दल धन्यवाद!'),
+    );
+
     const swTenant = {
       business_name: 'FloCafe Nairobi',
       currency: 'KES',
@@ -880,6 +900,33 @@ async function run() {
         nepaliSlip.includes('उप-जम्मा') &&
         nepaliSlip.includes('कुल जम्मा') &&
         nepaliSlip.includes('रू'),
+    );
+
+    const marathiSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'ऑर्डर स्लिप',
+        subtotal: 'उप-एकूण',
+        discount: 'सवलत',
+        serviceCharge: 'सेवा शुल्क',
+        deliveryCharge: 'डिलिव्हरी शुल्क',
+        packagingCharge: 'पॅकेजिंग शुल्क',
+        tax: 'कर',
+        total: 'एकूण रक्कम',
+      },
+      {
+        country: 'IN',
+        currency: 'INR',
+        locale: 'mr-IN',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Marathi order slip carries mr-IN LTR metadata, Devanagari labels, and tenant currency',
+      marathiSlip.includes('lang="mr-IN" dir="ltr"') &&
+        marathiSlip.includes('उप-एकूण') &&
+        marathiSlip.includes('एकूण रक्कम') &&
+        marathiSlip.includes('₹'),
     );
 
     const bengaliSlip = generateOrderSlipHtml(

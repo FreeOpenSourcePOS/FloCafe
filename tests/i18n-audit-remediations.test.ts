@@ -107,6 +107,7 @@ async function run() {
     'ne',
     'ha',
     'jv',
+    'mr',
     'sw',
   ] as const) {
     await ensureReceiptMessagesLoaded(lang);
@@ -192,6 +193,7 @@ async function run() {
     ne: { tag: 'ne-NP', dir: 'ltr' },
     ha: { tag: 'ha-NG', dir: 'ltr' },
     jv: { tag: 'jv-ID', dir: 'ltr' },
+    mr: { tag: 'mr-IN', dir: 'ltr' },
     sw: { tag: 'sw-KE', dir: 'ltr' },
   };
 
@@ -437,6 +439,7 @@ async function run() {
     'ne',
     'ha',
     'jv',
+    'mr',
     'sw',
   ]) {
     const filePath = path.join(MESSAGES_DIR, `${lang}.json`);

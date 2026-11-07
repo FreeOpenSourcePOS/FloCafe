@@ -297,6 +297,22 @@ function run(): void {
     printLabel('jv', 'pos.subtotal') === 'Sub-gunggung' &&
       printLabel('jv', 'print.grandTotal') !== printLabel('jv', 'pos.subtotal'),
   );
+  assert('Marathi grand total is localized', printLabel('mr', 'print.grandTotal') === 'एकूण रक्कम');
+  assert(
+    'Marathi bill number label is localized',
+    printLabel('mr', 'receipt.billNumber') === 'बिल #',
+  );
+  assert('Marathi print-test amount is localized', printLabel('mr', 'printTest.amt') === 'रक्कम');
+  assert(
+    'Marathi takeaway is distinct from delivery',
+    printLabel('mr', 'pos.orderTypeTakeaway') === 'टेकअवे' &&
+      printLabel('mr', 'pos.orderTypeDelivery') === 'डिलिव्हरी',
+  );
+  assert(
+    'Marathi subtotal stays distinct from grand total',
+    printLabel('mr', 'pos.subtotal') === 'उप-एकूण' &&
+      printLabel('mr', 'print.grandTotal') !== printLabel('mr', 'pos.subtotal'),
+  );
   assert('Swahili grand total is localized', printLabel('sw', 'print.grandTotal') === 'JUMLA KUU');
   assert(
     'Swahili bill number label is localized',

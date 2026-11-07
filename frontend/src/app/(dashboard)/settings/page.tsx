@@ -3829,6 +3829,10 @@ export default function SettingsPage() {
     if (saveAllHydrationRun === 0 || !savingAllSettingsInFlight.current) return;
     void (async () => {
       try {
+        if (!normalizeOptionalPhone(form.businessPhone, form.countryCode || '').valid) {
+          toast.error(t('invalidPhoneFormat'));
+          return;
+        }
         await Promise.all([
           saveBusinessInfo(true),
           saveLoyalty(true),

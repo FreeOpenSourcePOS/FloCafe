@@ -3621,6 +3621,13 @@ export default function POSPage() {
           setShowScheduledOrders(false);
           return true;
         }
+        if (showPaymentQueue) {
+          setShowPaymentQueue(false);
+          setTimeout(() => {
+            document.querySelector<HTMLElement>('[data-testid="pos-payment-queue-btn"]')?.focus();
+          }, 0);
+          return true;
+        }
         if (cashDrawer.open) {
           cashDrawer.setOpen(false);
           return true;

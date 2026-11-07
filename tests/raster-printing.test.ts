@@ -3052,7 +3052,7 @@ async function run(): Promise<void> {
           order_number: 'ŞUBE-14',
           type: 'dine_in',
           created_at: '2026-08-21T18:42:00Z',
-          table: { id: 1, name: 'Bahçe 3' },
+          table: { id: 1, name: 'Bahçe Köşesi 3' },
           customer: { id: 2, name: 'Çağrı Şahin', phone: '+905551112233' },
           items: [
             {
@@ -3081,7 +3081,7 @@ async function run(): Promise<void> {
         'buildKotBytes rasterizes non-ASCII stationName instead of [UNSUPPORTED]',
       );
       assert.ok(
-        turkishPaintedCells.some((cell) => cell.text.includes('Bahçe 3')),
+        turkishPaintedCells.some((cell) => cell.text.includes('Bahçe Köşesi 3')),
         'buildKotBytes rasterizes non-ASCII table name',
       );
       assert.ok(

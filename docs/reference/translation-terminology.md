@@ -199,11 +199,14 @@ pay-out on both the dashboard and the Z-report, and takeaway is `ਟੇਕਅਵ
 addak, `਼` nukta) must remain NFC-normalized and attached to their base consonant.
 
 **Ukrainian.** Takeaway is `З собою` and dine-in is `У закладі`; "delivery" is `Доставка`. Subtotal
-`Проміжний підсумок` and grand total `РАЗОМ` (or `Загальна сума` on browser receipts) stay distinct.
-Cash movement is `Внесення готівки` for pay-in, `Видача готівки` for pay-out, and `Інкасація` for
-safe drop, identically on the dashboard and on the Z-report, and the counted-versus-expected pair is
-`Фактична готівка` and `Очікувана готівка`. Use count-safe wording throughout where the English
-catalogue has no plural selector.
+`Проміжний підсумок` and grand total `РАЗОМ` (or `Загальна сума` on browser receipts) stay distinct,
+and cash received on a receipt is `Отримано готівкою`. The dietary tags are `Вегетаріанське`,
+`Не вегетаріанське`, and `Без молочних продуктів` (dairy-free, not lactose-free) across both `pos.*`
+and `products.*`. Store-credit refund is `Баланс гаманця клієнта`, and waiving a charge is
+`Не стягувати`. Cash movement is `Внесення готівки` for pay-in, `Видача готівки` for pay-out, and
+`Інкасація` for safe drop, identically on the dashboard and on the Z-report, and the
+counted-versus-expected pair is `Фактична готівка` and `Очікувана готівка`. Use count-safe wording
+throughout where the English catalogue has no plural selector.
 
 ## Verification
 

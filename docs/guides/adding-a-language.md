@@ -74,7 +74,7 @@ While translating:
 ## 4. Register the intentional-identical keys
 
 Each language has a `<LANG>_INTENTIONAL_IDENTICAL` set in `tests/translations.test.ts` listing the
-keys allowed to be English-identical, most with a comment saying why. There are 24 such sets.
+keys allowed to be English-identical, most with a comment saying why. There are 25 such sets.
 
 Add an entry for every key you deliberately left identical, with a comment giving the reason. Without
 the entry the check fails, and the failure is what keeps an accidentally untranslated string from

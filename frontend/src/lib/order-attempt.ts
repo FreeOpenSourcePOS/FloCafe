@@ -20,6 +20,7 @@ export class OrderAttemptStorageError extends Error {
 
 export interface StoredOrderAttempt {
   userId: string;
+  storeId?: string | number;
 }
 
 interface CompletedOrderAttempt {
@@ -83,6 +84,118 @@ export function buildCartFingerprintFromState(
     waived_charge_ids: Array.from(cartState.waivedChargeIds),
     opted_in_charge_ids: Array.from(cartState.optedInChargeIds),
   });
+}
+
+export function parseStoredAttemptScheduledFor(
+  fingerprint: string | undefined,
+): string | undefined {
+  if (!fingerprint) return undefined;
+  try {
+    const parsed = JSON.parse(fingerprint) as { scheduled_for?: unknown };
+    return typeof parsed?.scheduled_for === 'string' && parsed.scheduled_for.trim()
+      ? parsed.scheduled_for.trim()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function stripScheduledForFromFingerprint(fingerprint: string): string {
+  try {
+    const parsed = JSON.parse(fingerprint) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fingerprint;
+    const { scheduled_for: _ignored, ...rest } = parsed;
+    return JSON.stringify(rest);
+  } catch {
+    return fingerprint;
+  }
+}
+
+export function normalizeAttemptStoreId(
+  storeId: string | number | null | undefined,
+): string | undefined {
+  if (storeId === null || storeId === undefined) return undefined;
+  const trimmed = String(storeId).trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function doesAttemptMatchStore(
+  attempt: { storeId?: string | number | null } | null | undefined,
+  currentStoreId: string | number | null | undefined,
+  legacyOriginStoreId?: string | number | null,
+): boolean {
+  if (!attempt) return false;
+  const normalizedCurrent = normalizeAttemptStoreId(currentStoreId) || 'default';
+  const normalizedAttemptStore = normalizeAttemptStoreId(attempt.storeId);
+  if (normalizedAttemptStore) {
+    return normalizedAttemptStore === normalizedCurrent;
+  }
+  const normalizedLegacyOrigin = normalizeAttemptStoreId(legacyOriginStoreId);
+  if (normalizedLegacyOrigin) {
+    return normalizedLegacyOrigin === normalizedCurrent;
+  }
+  return true;
+}
+
+export function fingerprintsMatchAcrossScheduleToggle(
+  storedFingerprint: string | undefined,
+  currentFingerprint: string,
+): boolean {
+  if (!storedFingerprint) return false;
+  if (storedFingerprint === currentFingerprint) return true;
+  if (
+    parseStoredAttemptScheduledFor(storedFingerprint) &&
+    !parseStoredAttemptScheduledFor(currentFingerprint)
+  ) {
+    return (
+      stripScheduledForFromFingerprint(storedFingerprint) ===
+      stripScheduledForFromFingerprint(currentFingerprint)
+    );
+  }
+  return false;
+}
+
+export function resolveRetryScheduledFor(params: {
+  orderType: string;
+  scheduledOrdersEnabled: boolean;
+  cartScheduledFor?: string | null;
+  preservedScheduledFor?: string;
+}): string | undefined {
+  if (params.orderType !== 'takeaway' && params.orderType !== 'delivery') {
+    return undefined;
+  }
+  const currentScheduledFor = params.scheduledOrdersEnabled
+    ? params.cartScheduledFor?.trim() || undefined
+    : undefined;
+  return currentScheduledFor || params.preservedScheduledFor?.trim() || undefined;
+}
+
+export function resolveCartScheduledForAfterSettingRead(params: {
+  settingReadSucceeded: boolean;
+  scheduledOrdersEnabled: boolean;
+  cartScheduledFor?: string | null;
+  preservedScheduledFor?: string;
+  attemptStoreId?: string | number | null;
+  currentStoreId?: string | number | null;
+  legacyOriginStoreId?: string | number | null;
+}): string {
+  const current = params.cartScheduledFor?.trim() || '';
+  const storeMatches =
+    params.attemptStoreId === undefined && params.currentStoreId === undefined
+      ? true
+      : doesAttemptMatchStore(
+          { storeId: params.attemptStoreId },
+          params.currentStoreId,
+          params.legacyOriginStoreId,
+        );
+  const preserved = storeMatches ? params.preservedScheduledFor?.trim() || '' : '';
+  if (params.scheduledOrdersEnabled || preserved) {
+    return current || preserved;
+  }
+  if (!params.settingReadSucceeded) {
+    return '';
+  }
+  return '';
 }
 
 function isCompletedAttempt(value: unknown): value is CompletedOrderAttempt {
@@ -668,5 +781,94 @@ export function classifyOrderRequestFailure(
     serverError,
     detail,
     trusted: true,
+  };
+}
+
+export const SCHEDULE_REJECTION_CODES = [
+  'SCHEDULED_ORDERS_DISABLED',
+  'PAST_SCHEDULED_TIME',
+  'INVALID_FORMAT',
+  'INVALID_TIMEZONE',
+  'INVALID_CALENDAR_DATE',
+  'DST_NONEXISTENT_TIME',
+  'DST_AMBIGUOUS_TIME',
+  'UNSUPPORTED_ORDER_TYPE',
+] as const;
+
+export type ScheduleRejectionCode = (typeof SCHEDULE_REJECTION_CODES)[number];
+
+export function getScheduleRejectionCode(error: unknown): ScheduleRejectionCode | null {
+  const data = (error as { response?: { data?: unknown } } | null)?.response?.data;
+  if (!plainRecord(data) || typeof data.code !== 'string') return null;
+  return (SCHEDULE_REJECTION_CODES as readonly string[]).includes(data.code)
+    ? (data.code as ScheduleRejectionCode)
+    : null;
+}
+
+export function isDefinitiveScheduleRejection(
+  error: unknown,
+  correlationId?: string | null,
+): boolean {
+  const response = (error as { response?: { status?: unknown; data?: unknown } } | null)?.response;
+  if (!plainRecord(response?.data)) return false;
+  const payload = response.data;
+  const scheduleCode = getScheduleRejectionCode(error);
+  const status = Number(response?.status);
+  const isExpectedRejectionStatus = status === 400 || status === 409;
+
+  if (correlationId && UUID_V4.test(correlationId)) {
+    const classified = classifyOrderRequestFailure(error, {
+      operation: 'order.create',
+      correlationId,
+    });
+    if (classified.trusted) {
+      return (
+        classified.outcome === 'not_applied' &&
+        (scheduleCode !== null || classified.reasonCode === 'validation.rejected')
+      );
+    }
+    if (
+      payload.correlation_id === undefined &&
+      payload.operation === undefined &&
+      payload.outcome === undefined &&
+      scheduleCode !== null &&
+      isExpectedRejectionStatus
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  return (
+    scheduleCode !== null &&
+    isExpectedRejectionStatus &&
+    payload.outcome !== 'applied' &&
+    payload.outcome !== 'unknown'
+  );
+}
+
+export function reconcileRejectedScheduledOrderAttempt(params: {
+  storage: AppendAttemptStorage;
+  key: string;
+  attempt: StoredOrderAttempt | null | undefined;
+  attemptedScheduledFor?: string | null;
+  error: unknown;
+  correlationId?: string | null;
+}): {
+  reconciledNotApplied: boolean;
+  rejectionCode: ScheduleRejectionCode | null;
+} {
+  if (
+    !params.attemptedScheduledFor?.trim() ||
+    !isDefinitiveScheduleRejection(params.error, params.correlationId)
+  ) {
+    return { reconciledNotApplied: false, rejectionCode: null };
+  }
+  if (params.attempt) {
+    clearOrderAttempt(params.storage, params.key, params.attempt);
+  }
+  return {
+    reconciledNotApplied: true,
+    rejectionCode: getScheduleRejectionCode(params.error),
   };
 }

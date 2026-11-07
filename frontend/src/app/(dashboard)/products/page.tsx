@@ -2274,7 +2274,7 @@ export default function ProductsPage() {
                         <span
                           className={`px-2 py-1 rounded-full text-xs font-medium ${cat.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}`}
                         >
-                          {cat.is_active ? 'Active' : 'Inactive'}
+                          {cat.is_active ? tCommon('active') : tCommon('inactive')}
                         </span>
                         {cat.is_active && !isMenuCategoryVisible(categoryById, cat.id) && (
                           <span className="text-[10px] text-amber-600 font-medium block mt-1">

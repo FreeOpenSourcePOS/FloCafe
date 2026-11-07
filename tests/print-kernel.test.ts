@@ -36,6 +36,7 @@ import {
   graphemeSegments,
   layoutStyledUnit,
   padToDisplayCells,
+  paintRasterRequest,
   truncateToDisplayCells,
   truncateToDisplayCellsFromEnd,
   wrapToDisplayCells,
@@ -587,6 +588,47 @@ assert.deepEqual(
   wrapToDisplayCells(paNarrowReceiptProduct, 3),
   ['ਮਸਾਲਾ', 'ਚਾਹ'],
   'Punjabi wrapping breaks on the word boundary rather than stranding a Gurmukhi matra at a 3-cell width',
+);
+
+const paintedGurmukhiLines: string[] = [];
+const paintedGurmukhiResult = paintRasterRequest(
+  {
+    version: 1,
+    requestId: 'pa-conjunct-wrap',
+    text: 'ਹਰਪ੍ਰੀਤ',
+    widthDots: 50,
+    maxBandHeight: 200,
+    direction: 'ltr',
+    style: 'normal',
+    financial: false,
+    maxLines: 4,
+  },
+  () => ({
+    width: 1,
+    height: 1,
+    getContext: () => ({
+      font: '',
+      textBaseline: 'top',
+      direction: 'ltr',
+      textAlign: 'left',
+      fillStyle: '#000',
+      measureText: (text: string) => ({ width: text.length * 10 }),
+      setTransform: () => undefined,
+      fillRect: () => undefined,
+      fillText: (text: string) => {
+        paintedGurmukhiLines.push(text);
+      },
+      getImageData: (_x: number, _y: number, width: number, height: number) => ({
+        data: new Uint8ClampedArray(width * height * 4),
+      }),
+    }),
+  }),
+);
+assert.equal(paintedGurmukhiResult.ok, true);
+assert.deepEqual(
+  paintedGurmukhiLines,
+  ['ਹਰ', 'ਪ੍ਰੀਤ'],
+  'paintRasterRequest wrapping keeps Gurmukhi virama conjuncts intact across line breaks',
 );
 
 const widthModulePath = require.resolve('../shared/print/width');

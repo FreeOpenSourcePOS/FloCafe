@@ -55,7 +55,7 @@ is invisible on screen and corrupts comparison, searching, and print labels.
 identically and wrap identically after normalisation, which is what makes NFC a requirement rather
 than a preference. `tests/translations.test.ts` rejects a `vi.json` value that is not already NFC.
 
-The same NFC requirement is enforced for `ha.json`, `jv.json`, `ne.json`, `ru.json`, and `th.json`.
+The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `ru.json`, and `th.json`.
 
 ## Albanian and Vietnamese on a generic thermal printer
 
@@ -135,12 +135,12 @@ A space before `{number}` is legitimate. Persian and Arabic use `شماره {num
 
 ## Devanagari spelling: the visarga in पुनः
 
-Nepali spells "again" `पुनः` with the visarga, U+0903, not with an ASCII colon. `पुन:` looks
+Nepali and Marathi spell "again" `पुनः` with the visarga, U+0903, not with an ASCII colon. `पुन:` looks
 close enough in a diff to be overlooked, and it renders as a visibly wrong glyph on a thermal
 receipt. The same applies to the matra in a trailing syllable, where a base consonant must keep
 the marks that attach to it.
 
-`tests/translations.test.ts` rejects a `ne.json` value containing `पुन:` and requires at least one
+`tests/translations.test.ts` rejects a `ne.json` or `mr.json` value containing `पुन:` and requires at least one
 `पुनः`, so the spelling cannot silently regress.
 
 ## POS terminology a translator would otherwise get wrong
@@ -177,6 +177,13 @@ use idiomatic Javanese: dine-in is `Mangan ing Kene`, takeaway is `Gawa Mulih`, 
 `pos.*` and `products.*`. Cash movement uses `Lebokake Tunai` for pay-in and `Wetokake Tunai` for
 pay-out across both the dashboard and the Z-report, and cash received on a receipt is
 `Tunai Ditampa`.
+
+**Marathi.** Subtotal `उप-एकूण` and grand total `एकूण रक्कम` are distinct labels and must stay
+distinct on the receipt. The vegetarian tags are `शाकाहारी` and the non-vegetarian tags
+`मांसाहारी`, identical between `pos.*` and `products.*`. Cash movement uses `रोख जमा` for pay-in
+and `रोख काढणे` for pay-out, identically on the dashboard and on the Z-report. Reprint is
+`पुनःमुद्रण` with the visarga (U+0903), and standard restaurant POS loanwords remain natural:
+order is `ऑर्डर`, takeaway is `टेकअवे`, delivery is `डिलिव्हरी`, and dine-in is `डाइन-इन`.
 
 ## Verification
 

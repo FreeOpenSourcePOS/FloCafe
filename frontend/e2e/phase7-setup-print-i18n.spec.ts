@@ -88,6 +88,11 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
     web: 'Cetak Web (Browser)',
     whatsapp: 'Bagekake WhatsApp',
   },
+  mr: {
+    basic: 'साधी पावती (थर्मल)',
+    web: 'वेब प्रिंट (ब्राउझर)',
+    whatsapp: 'WhatsApp शेअर',
+  },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

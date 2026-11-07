@@ -461,6 +461,18 @@ async function run(): Promise<void> {
       'getBrowserLanguage must return "jv" for bare jv',
     );
   });
+  withNavigatorLanguage('mr-IN', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'mr',
+      'getBrowserLanguage must return "mr" for mr-IN',
+    );
+  });
+  withNavigatorLanguage('mr', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'mr',
+      'getBrowserLanguage must return "mr" for bare mr',
+    );
+  });
   withNavigatorLanguage(
     'en-US',
     () => {
@@ -513,6 +525,7 @@ async function run(): Promise<void> {
     'ne',
     'ha',
     'jv',
+    'mr',
   ] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.

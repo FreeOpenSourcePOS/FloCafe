@@ -30,6 +30,7 @@ const languages = [
   'ne',
   'ha',
   'jv',
+  'mr',
 ] as const;
 // Any Devanagari codepoint: the native paths must emit none, not merely none of
 // the specific phrases this fixture happens to use.
@@ -149,12 +150,12 @@ async function run(): Promise<void> {
         `${language}: browser KOT keeps Thai font fallback available`,
       );
     }
-    if (language === 'hi' || language === 'ne') {
+    if (language === 'hi' || language === 'ne' || language === 'mr') {
       // The KOT font stack and the document locale are both selected per
       // language, so this proves the Devanagari branch resolves for the locale
       // under test rather than inheriting a sibling Devanagari bundle. The
-      // locale is matched exactly: a Nepali ticket tagged hi-IN must fail.
-      const expectedLocale = language === 'hi' ? 'hi-IN' : 'ne-NP';
+      // locale is matched exactly: a Nepali or Marathi ticket tagged hi-IN must fail.
+      const expectedLocale = language === 'hi' ? 'hi-IN' : language === 'ne' ? 'ne-NP' : 'mr-IN';
       assert.match(
         browserHtml,
         /font-family:'Noto Sans Devanagari'/,
@@ -480,6 +481,72 @@ async function run(): Promise<void> {
       webUsbText,
       DEVANAGARI_RE,
       'Nepali WebUSB KOT emits no Devanagari codepoints at all',
+    );
+  }
+
+  {
+    const marathiOrder = {
+      ...order,
+      items: [
+        {
+          quantity: 1,
+          product_name: 'मिसळ पाव',
+          status: 'pending',
+          addons: [{ name: 'अतिरिक्त पाव', quantity: 1 }],
+          special_instructions: 'कमी तिखट',
+        },
+      ],
+    };
+    const thermalWarnings: any[] = [];
+    const thermalText = escPosToText(
+      formatKOT(
+        marathiOrder,
+        marathiOrder.items,
+        'Main Kitchen',
+        42,
+        false,
+        'full',
+        'en-US',
+        { timeZone: 'UTC' },
+        thermalWarnings,
+        false,
+        'mr',
+      ),
+    );
+    assert.equal(
+      thermalWarnings.some((warning) => warning.kind === 'line'),
+      true,
+      'Marathi unsupported KOT lines warn before native output',
+    );
+    assert.doesNotMatch(
+      thermalText,
+      DEVANAGARI_RE,
+      'Marathi native KOT emits no Devanagari codepoints at all',
+    );
+
+    const webUsbWarnings: any[] = [];
+    const webUsbText = Buffer.from(
+      frontend.kotEncoder.buildKotBytes(
+        marathiOrder as any,
+        {
+          paperWidth: 58,
+          language: 'mr',
+          stationName: 'Main Kitchen',
+          locale: 'mr-IN',
+          timezone: 'UTC',
+        },
+        webUsbWarnings,
+      ),
+    ).toString('utf8');
+    assert.equal(
+      webUsbWarnings.some((warning) => warning.kind === 'line'),
+      true,
+      'Marathi unsupported WebUSB KOT lines warn before output',
+    );
+    assert.doesNotMatch(
+      webUsbText,
+      DEVANAGARI_RE,
+      'Marathi WebUSB KOT emits no Devanagari codepoints at all',
     );
   }
 

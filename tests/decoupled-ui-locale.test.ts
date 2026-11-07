@@ -209,6 +209,19 @@ async function runTests() {
     'Nepali UI locale supplies date language without changing tenant timezone',
   );
 
+  const mrDate = formatDateForTenant(
+    testDateUtc,
+    'IN',
+    'Asia/Kolkata',
+    {},
+    { year: 'numeric', month: 'short', day: 'numeric' },
+    'mr-IN',
+  );
+  assert.ok(
+    mrDate.includes('2026') && mrDate.includes('ऑग'),
+    'Marathi UI locale supplies date language without changing tenant timezone',
+  );
+
   // Argentina store + Spanish UI
   const arEsDate = formatDateForTenant(
     testDateUtc,
@@ -361,7 +374,8 @@ async function runTests() {
       | 'sq'
       | 'th'
       | 'ha'
-      | 'jv';
+      | 'jv'
+      | 'mr';
     label: string;
     filePrefix: string;
   }> = [
@@ -379,6 +393,7 @@ async function runTests() {
     { lang: 'th', label: 'Thai UI', filePrefix: 'receipt-argentina-thai-ui' },
     { lang: 'ha', label: 'Hausa UI', filePrefix: 'receipt-argentina-hausa-ui' },
     { lang: 'jv', label: 'Javanese UI', filePrefix: 'receipt-argentina-javanese-ui' },
+    { lang: 'mr', label: 'Marathi UI', filePrefix: 'receipt-argentina-marathi-ui' },
   ];
 
   const receiptResults: Record<string, { html: string; htmlPath: string; pngPath: string }> = {};
@@ -447,6 +462,15 @@ async function runTests() {
       assert.ok(
         receiptHtml.includes('Tagihan #') && receiptHtml.includes('Gunggung Akhir'),
         `Receipt in Javanese UI must contain Javanese labels, got: ${receiptHtml}`,
+      );
+    } else if (lang === 'mr') {
+      assert.ok(
+        receiptHtml.includes('बिल #') && receiptHtml.includes('एकूण रक्कम'),
+        `Receipt in Marathi UI must contain Devanagari labels`,
+      );
+      assert.ok(
+        receiptHtml.includes('ऑग'),
+        `Receipt in Marathi UI must contain a Marathi month name, got: ${receiptHtml}`,
       );
     }
 

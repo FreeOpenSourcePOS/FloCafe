@@ -281,10 +281,7 @@ router.get('/pairing', (req: Request, res: Response) => {
       .filter((station) => {
         if (userStationIds.length > 0 && !userStationIds.includes(String(station.id))) return false;
         if (userCategoryIds.length === 0 || !station.category_ids) return true;
-        const stationCategories = expandCategoryIdsWithSubcategories(
-          db,
-          parseCategoryIds(station.category_ids),
-        );
+        const stationCategories = getKdsStationCategoryIds(db, [String(station.id)]) || [];
         return (
           stationCategories.length === 0 ||
           stationCategories.some((categoryId) => userCategoryIds.includes(categoryId))
@@ -375,18 +372,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       return res.status(403).json({ error: 'You are not assigned to this kitchen station' });
     }
 
-    let stationCategoryIds: string[] = [];
-    try {
-      const stationData = station as any;
-      if (stationData.category_ids) {
-        stationCategoryIds = expandCategoryIdsWithSubcategories(
-          db,
-          parseCategoryIds(stationData.category_ids),
-        );
-      }
-    } catch (e) {
-      stationCategoryIds = [];
-    }
+    const stationCategoryIds = getKdsStationCategoryIds(db, [stationId]) || [];
     if (
       userCategoryIds.length > 0 &&
       stationCategoryIds.length > 0 &&

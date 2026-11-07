@@ -1185,8 +1185,9 @@ visible only if its product's category is in the expanded list.
 configured but none active, authentication is refused with `No active kitchen station is assigned to
 this user` rather than silently showing an empty board. `getKdsStationCategoryIds` and
 `getKdsStationRoutingScope` resolve each assigned station's `category_ids` (expanded with
-non-deleted child subcategories) into a set of categories, plus a separate set for orders on tables
-with no `kitchen_station_id`, and report whether any assigned station is unrestricted (empty
+non-deleted child subcategories except child subcategories explicitly assigned to another active
+kitchen station) into a set of categories, plus a separate set for orders on tables with no
+`kitchen_station_id`, and report whether any assigned station is unrestricted (empty
 `category_ids`).
 
 An order is in scope when its table's `kitchen_station_id` is one of the caller's stations, or when

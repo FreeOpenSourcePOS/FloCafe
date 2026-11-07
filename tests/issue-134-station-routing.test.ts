@@ -305,6 +305,83 @@ function main() {
       'H: Espresso routes to Coffee Bar instead of parent Bar',
     );
     assertEqual(coffeeGroup.printer.id, 'pr-coffee', 'H: Coffee Bar uses pr-coffee');
+
+    // Verify KDS station scope also excludes child subcategory explicitly claimed by another active station
+    const barCatsAfterOverride = getKdsStationCategoryIds(db, ['stn-bar']);
+    assert(
+      Array.isArray(barCatsAfterOverride) &&
+        barCatsAfterOverride.includes('cat-bev') &&
+        !barCatsAfterOverride.includes('cat-bev-hot'),
+      'H: getKdsStationCategoryIds excludes child subcategory explicitly claimed by Station B from Station A',
+    );
+    const coffeeCatsAfterOverride = getKdsStationCategoryIds(db, ['stn-coffee']);
+    assert(
+      Array.isArray(coffeeCatsAfterOverride) && coffeeCatsAfterOverride.includes('cat-bev-hot'),
+      'H: getKdsStationCategoryIds includes explicitly claimed child subcategory on Station B',
+    );
+    const barScopeAfterOverride = getKdsStationRoutingScope(db, ['stn-bar'], ['cat-bev']);
+    assert(
+      !!barScopeAfterOverride &&
+        !isKdsStationItemAllowed(
+          ['stn-bar'],
+          barScopeAfterOverride.tablelessCategoryIds,
+          null,
+          'cat-bev-hot',
+          undefined,
+          barScopeAfterOverride.hasUnrestrictedStation,
+        ),
+      'H: Station A KDS scope does not duplicate child subcategory items claimed by Station B',
+    );
+    const coffeeScopeAfterOverride = getKdsStationRoutingScope(db, ['stn-coffee'], ['cat-bev']);
+    assert(
+      !!coffeeScopeAfterOverride &&
+        isKdsStationItemAllowed(
+          ['stn-coffee'],
+          coffeeScopeAfterOverride.tablelessCategoryIds,
+          null,
+          'cat-bev-hot',
+          undefined,
+          coffeeScopeAfterOverride.hasUnrestrictedStation,
+        ),
+      'H: Station B KDS scope allows child subcategory items for chef assigned to parent category',
+    );
+  }
+
+  console.log(
+    '\n─── Scenario I: unrestricted station (category_ids: []) with printer catches unmatched items ───',
+  );
+  {
+    db.prepare(
+      `INSERT INTO printers (id, name, connection_type, ip_address, port) VALUES ('pr-all', 'All-Categories Printer', 'network', '192.168.1.63', 9100)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO kitchen_stations (id, name, category_ids, printer_id, is_active) VALUES ('stn-all', 'Main Line', '[]', 'pr-all', 1)`,
+    ).run();
+
+    // 'prod-espresso' (explicit subcategory -> Coffee Bar), 'prod-bev' (parent category -> Bar),
+    // 'prod-dessert' (unassigned category -> Main Line unrestricted station)
+    const groups = routeItemsToStations(db, [
+      { product_id: 'prod-espresso' },
+      { product_id: 'prod-bev' },
+      { product_id: 'prod-dessert' },
+    ]);
+    assertEqual(
+      groups.length,
+      3,
+      'I: explicit subcategory, parent category, and unrestricted station each receive their item without default fallback',
+    );
+    assert(
+      !groups.some((g: any) => g.printer === null),
+      'I: no items fall back to the default kitchen printer when an unrestricted station has a printer',
+    );
+    const allGroup = groups.find((g: any) => g.stationName === 'Main Line');
+    assert(
+      !!allGroup,
+      'I: unrestricted station (category_ids: []) receives unmatched category item',
+    );
+    assertEqual(allGroup.items.length, 1, 'I: Main Line has 1 item');
+    assertEqual(allGroup.items[0].product_id, 'prod-dessert', 'I: Brownie routes to Main Line');
+    assertEqual(allGroup.printer.id, 'pr-all', 'I: Main Line uses pr-all');
   }
 
   closeDatabase();

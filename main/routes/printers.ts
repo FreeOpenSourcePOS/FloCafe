@@ -1212,18 +1212,24 @@ export function routeItemsToStations(
   orderItems: any[],
 ): { stationName: string; printer: any; items: any[] }[] {
   const rawStations = db
-    .prepare(
-      `SELECT * FROM kitchen_stations WHERE is_active = 1 AND printer_id IS NOT NULL AND category_ids IS NOT NULL AND category_ids != ''`,
-    )
+    .prepare(`SELECT * FROM kitchen_stations WHERE is_active = 1 AND printer_id IS NOT NULL`)
     .all() as any[];
 
   const stations = rawStations
     .map((s) => {
       let categoryIds: string[] = [];
-      try {
-        categoryIds = JSON.parse(s.category_ids) || [];
-      } catch {
-        categoryIds = [];
+      let validCategories = true;
+      if (s.category_ids != null && String(s.category_ids).trim() !== '') {
+        try {
+          const parsed = JSON.parse(s.category_ids);
+          if (Array.isArray(parsed)) {
+            categoryIds = parsed.filter((id) => id != null && String(id).trim() !== '').map(String);
+          } else {
+            validCategories = false;
+          }
+        } catch {
+          validCategories = false;
+        }
       }
       const printer = db
         .prepare(
@@ -1231,13 +1237,16 @@ export function routeItemsToStations(
          WHERE id = ? AND connection_type != 'webusb'`,
         )
         .get(s.printer_id);
-      return { ...s, categoryIds, printer };
+      return { ...s, categoryIds, validCategories, printer };
     })
-    .filter((s) => s.categoryIds.length > 0 && s.printer);
+    .filter((s) => s.validCategories && s.printer);
 
   if (stations.length === 0) {
     return [{ stationName: 'Kitchen', printer: null, items: orderItems }];
   }
+
+  const restrictedStations = stations.filter((s) => s.categoryIds.length > 0);
+  const unrestrictedStation = stations.find((s) => s.categoryIds.length === 0);
 
   const groups = new Map<string, { stationName: string; printer: any; items: any[] }>();
   const unrouted: any[] = [];
@@ -1250,11 +1259,14 @@ export function routeItemsToStations(
           )
           .get(item.product_id)
       : null;
-    const categoryId = product?.category_id;
-    const parentId = product?.parent_id;
+    const categoryId = product?.category_id != null ? String(product.category_id) : null;
+    const parentId = product?.parent_id != null ? String(product.parent_id) : null;
     const matched =
-      (categoryId ? stations.find((s) => s.categoryIds.includes(categoryId)) : undefined) ??
-      (parentId ? stations.find((s) => s.categoryIds.includes(parentId)) : undefined);
+      (categoryId
+        ? restrictedStations.find((s) => s.categoryIds.includes(categoryId))
+        : undefined) ??
+      (parentId ? restrictedStations.find((s) => s.categoryIds.includes(parentId)) : undefined) ??
+      unrestrictedStation;
     if (matched) {
       if (!groups.has(matched.id)) {
         groups.set(matched.id, { stationName: matched.name, printer: matched.printer, items: [] });

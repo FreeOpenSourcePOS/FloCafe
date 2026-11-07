@@ -2784,6 +2784,10 @@ async function run(): Promise<void> {
       require('../frontend/src/lib/printer/tax-bill-encoder') as typeof import('../frontend/src/lib/printer/tax-bill-encoder');
     const feDeliverySlip =
       require('../frontend/src/lib/printer/delivery-slip-encoder') as typeof import('../frontend/src/lib/printer/delivery-slip-encoder');
+    const feKot =
+      require('../frontend/src/lib/printer/kot-encoder') as typeof import('../frontend/src/lib/printer/kot-encoder');
+    const fePrintDoc =
+      require('../frontend/src/lib/printer/print-document') as typeof import('../frontend/src/lib/printer/print-document');
     const webusbCaps: ThermalPrinterCapabilities = {
       ...GENERIC_THERMAL_CAPABILITIES,
       raster: {
@@ -2946,8 +2950,24 @@ async function run(): Promise<void> {
           .includes('Canvas 2D context is unavailable'),
       );
 
-      // #1480: WebUSB Turkish reprint/online-order banners and detailed receipt items rasterize
-      feWarnings.setBrowserRasterCanvasFactory(() => createMockCanvas(true));
+      // #1480: WebUSB Turkish reprint/online-order banners, KOT headers, and stacked/compact financial rows rasterize
+      await fePrintDoc.ensurePrintLanguagesLoaded(['tr']);
+      const turkishPaintedCells: Array<{ text: string; align: string }> = [];
+      feWarnings.setBrowserRasterCanvasFactory(() => {
+        const base = createMockCanvas(true);
+        const origGetContext = base.getContext.bind(base);
+        return {
+          ...base,
+          getContext: (id: '2d', opts?: { alpha?: boolean }) => {
+            const ctx = origGetContext(id, opts);
+            if (!ctx) return null;
+            ctx.fillText = (text: string) => {
+              turkishPaintedCells.push({ text, align: ctx.textAlign });
+            };
+            return ctx;
+          },
+        };
+      });
       const turkishWebUsbBill = {
         ...webusbBill,
         order: {
@@ -2960,7 +2980,13 @@ async function run(): Promise<void> {
               quantity: 1,
               unit_price: 550,
               total: 550,
-              addons: [{ name: 'Acılı Ezme', price: 50, quantity: 1 }],
+              addons: [
+                {
+                  name: 'Acılı Ezme ve Közlenmiş Biber Sosu',
+                  price: 50,
+                  quantity: 1,
+                },
+              ],
               status: 'pending',
             },
           ],
@@ -2970,21 +2996,103 @@ async function run(): Promise<void> {
       const turkishClassicBytes = feReceipt.buildClassicReceiptBytes(
         turkishWebUsbBill as any,
         { ...webusbTenant, business_name: 'Güneş Börekçisi' } as any,
-        { paperWidth: 80, capabilities: webusbCaps, isReprint: true, language: 'tr' },
+        { paperWidth: 80, capabilities: webusbCaps, isReprint: true, languages: ['tr'] },
         turkishClassicWarn,
       );
       assert.equal(feWarnings.hasFinancialPrintWarning(turkishClassicWarn), false);
       assert.ok(Buffer.from(turkishClassicBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
+      assert.ok(
+        turkishPaintedCells.some((cell) => cell.text.includes('YENİDEN YAZDIRMA')),
+        'buildClassicReceiptBytes rasterizes Turkish reprint banner',
+      );
 
+      turkishPaintedCells.length = 0;
+      const turkishCompactWarn: any[] = [];
+      const turkishCompactBytes = feReceipt.buildCompactReceiptBytes(
+        turkishWebUsbBill as any,
+        { ...webusbTenant, business_name: 'Güneş Börekçisi' } as any,
+        { paperWidth: 58, capabilities: webusbCaps, isReprint: true, languages: ['tr'] },
+        turkishCompactWarn,
+      );
+      assert.equal(feWarnings.hasFinancialPrintWarning(turkishCompactWarn), false);
+      assert.ok(Buffer.from(turkishCompactBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
+      assert.ok(
+        turkishPaintedCells.some((cell) => cell.text.includes('YENİDEN YAZDIRMA')),
+        'buildCompactReceiptBytes rasterizes Turkish reprint banner',
+      );
+      assert.ok(
+        turkishPaintedCells.some((cell) => cell.text === '$50.00' && cell.align === 'right'),
+        'stacked/narrow padRowForLanguage financial row right-aligns amount',
+      );
+
+      turkishPaintedCells.length = 0;
       const turkishDetailedWarn: any[] = [];
       const turkishDetailedBytes = feReceipt.buildDetailedReceiptBytes(
         turkishWebUsbBill as any,
         { ...webusbTenant, business_name: 'Güneş Börekçisi' } as any,
-        { paperWidth: 80, capabilities: webusbCaps, isReprint: true, language: 'tr' },
+        { paperWidth: 58, capabilities: webusbCaps, isReprint: true, languages: ['tr'] },
         turkishDetailedWarn,
       );
       assert.equal(feWarnings.hasFinancialPrintWarning(turkishDetailedWarn), false);
       assert.ok(Buffer.from(turkishDetailedBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
+      assert.ok(
+        turkishPaintedCells.some((cell) => cell.text.includes('YENİDEN YAZDIRMA')),
+        'buildDetailedReceiptBytes rasterizes Turkish reprint banner',
+      );
+      assert.ok(
+        turkishPaintedCells.some((cell) => cell.text === '$50.00' && cell.align === 'right'),
+        'buildDetailedReceiptBytes right-aligns stacked addon amount',
+      );
+
+      turkishPaintedCells.length = 0;
+      const turkishKotWarn: any[] = [];
+      const turkishKotBytes = feKot.buildKotBytes(
+        {
+          id: 1480,
+          order_number: 'ŞUBE-14',
+          type: 'dine_in',
+          created_at: '2026-08-21T18:42:00Z',
+          table: { id: 1, name: 'Bahçe 3' },
+          customer: { id: 2, name: 'Çağrı Şahin', phone: '+905551112233' },
+          items: [
+            {
+              id: 1,
+              product_name: 'İskender Kebap',
+              quantity: 1,
+              unit_price: 550,
+              total: 550,
+              addons: [],
+              status: 'pending',
+            },
+          ],
+        } as any,
+        {
+          paperWidth: 58,
+          capabilities: webusbCaps,
+          language: 'tr',
+          stationName: 'Izgara & Şiş',
+        },
+        turkishKotWarn,
+      );
+      assert.equal(turkishKotWarn.length, 0);
+      assert.ok(Buffer.from(turkishKotBytes).includes(Buffer.from([0x1d, 0x76, 0x30])));
+      assert.ok(
+        turkishPaintedCells.some((cell) => cell.text.includes('Izgara & Şiş')),
+        'buildKotBytes rasterizes non-ASCII stationName instead of [UNSUPPORTED]',
+      );
+      assert.ok(
+        turkishPaintedCells.some((cell) => cell.text.includes('Bahçe 3')),
+        'buildKotBytes rasterizes non-ASCII table name',
+      );
+      assert.ok(
+        turkishPaintedCells.some((cell) => cell.text.includes('Çağrı Şahin')),
+        'buildKotBytes rasterizes non-ASCII customer name',
+      );
+      assert.equal(
+        Buffer.from(turkishKotBytes).includes(Buffer.from('[UNSUPPORTED]')),
+        false,
+        'buildKotBytes does not emit [UNSUPPORTED] when raster is enabled',
+      );
 
       // Detailed receipt fails closed if browser canvas context is unavailable on Turkish financial row
       feWarnings.setBrowserRasterCanvasFactory(() => ({
@@ -2996,7 +3104,7 @@ async function run(): Promise<void> {
       feReceipt.buildDetailedReceiptBytes(
         turkishWebUsbBill as any,
         webusbTenant as any,
-        { paperWidth: 80, capabilities: webusbCaps, language: 'tr' },
+        { paperWidth: 80, capabilities: webusbCaps, languages: ['tr'] },
         failedDetailedWarn,
       );
       assert.equal(feWarnings.hasFinancialPrintWarning(failedDetailedWarn), true);
@@ -3145,15 +3253,21 @@ async function run(): Promise<void> {
           unit_price: 175,
           total: 350,
         },
+        {
+          product_name: 'Fıstıklı Baklava & Kaymaklı Kadayıf Özel Tabağı',
+          quantity: 1,
+          unit_price: 420,
+          total: 420,
+        },
       ],
       {
         balance: 350,
         targetPrinter: {
-          id: 'tr-webusb-80',
-          name: 'Generic 80mm',
+          id: 'tr-webusb-58',
+          name: 'Generic 58mm',
           connection_type: 'webusb',
-          paper_width: '80mm',
-          profile_id: 'generic-escpos-80',
+          paper_width: '58mm',
+          profile_id: 'generic-escpos-58',
         },
       },
     );
@@ -3167,6 +3281,34 @@ async function run(): Promise<void> {
           req.text.includes('Künefe & Şöbiyet Porsiyon') &&
           req.financial === true &&
           req.layout?.kind === 'financial-summary',
+      ),
+    );
+    assert.ok(
+      ticketRasterRequests.some(
+        (req) =>
+          req.layout?.kind === 'financial-summary' &&
+          req.layout?.columns?.[0]?.text === '1x Fıstıklı Baklava & Kaymaklı Kadayıf Özel Tabağı' &&
+          req.layout?.columns?.[1]?.align === 'right',
+      ),
+    );
+
+    // 58mm Z-report wrapped rows emit covering financial-summary rasterGroups
+    zRasterRequests.length = 0;
+    const z58Result = await printZReport(turkishZSnapshot, undefined, {
+      id: 'tr-webusb-58',
+      name: 'Generic 58mm',
+      connection_type: 'webusb',
+      paper_width: '58mm',
+      profile_id: 'generic-escpos-58',
+    });
+    assert.equal(z58Result.ok, true);
+    assert.ok(
+      zRasterRequests.some(
+        (req) =>
+          req.layout?.kind === 'financial-summary' &&
+          req.layout?.columns?.[0]?.text.includes('Çağrı Şahin 5 kez') &&
+          req.layout?.columns?.[0]?.text.startsWith('  ') &&
+          req.layout?.columns?.[1]?.align === 'right',
       ),
     );
 

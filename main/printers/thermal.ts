@@ -1519,50 +1519,57 @@ export async function printPaymentTicket(
           1,
           cols - quantityWidth - (amount && inlineAmount ? amountWidth + 1 : 0),
         );
-        const nameLines = wrapText(
-          normalizeThermalText(safePrinterText(item.product_name), caps),
-          nameWidth,
+        const normalizedProductName = normalizeThermalText(
+          safePrinterText(item.product_name),
+          caps,
         );
+        const nameLines = wrapText(normalizedProductName, nameWidth);
         const firstLine = quantity + (nameLines.shift() || '');
         const financialTag = amount ? '{FINANCIAL}' : '';
+        const lineIndex = lines.length;
+        const fullItemLabel = `${quantity}${normalizedProductName}`;
+        let formattedLine: string;
         if (amount && inlineAmount && nameLines.length === 0) {
-          const lineIndex = lines.length;
-          const formattedLine = firstLine + rightAlign(amount, cols - displayCellWidth(firstLine));
-          const controlLine = `${financialTag}${formattedLine}`;
-          lines.push(controlLine);
-          rasterGroups.push({
-            groupId: `payment-ticket-item-${itemIndex}`,
-            lineIndex,
-            lineCount: 1,
-            sourceLines: [formattedLine],
-            sourceControlLines: [controlLine],
-            financial: true,
-            financialSourceLines: [true],
-            sourceLayouts: [
-              {
-                kind: 'financial-summary',
-                columns: [
-                  { text: firstLine, align: 'left' },
-                  { text: amount, align: 'right' },
-                ],
-              },
-            ],
-          });
-          continue;
-        }
-        if (amount && inlineAmount) {
-          lines.push(
-            `${financialTag}${firstLine}${rightAlign(amount, cols - displayCellWidth(firstLine))}`,
-          );
+          formattedLine = firstLine + rightAlign(amount, cols - displayCellWidth(firstLine));
+          lines.push(`${financialTag}${formattedLine}`);
         } else {
-          lines.push(`${financialTag}${firstLine}`);
+          if (amount && inlineAmount) {
+            lines.push(
+              `${financialTag}${firstLine}${rightAlign(amount, cols - displayCellWidth(firstLine))}`,
+            );
+          } else {
+            lines.push(`${financialTag}${firstLine}`);
+          }
+          lines.push(
+            ...nameLines.map((line) => `${financialTag}${' '.repeat(quantityWidth)}${line}`),
+          );
+          if (amount && !inlineAmount) {
+            lines.push(`${financialTag}${padToDisplayCells(amount, cols, 'right')}`);
+          }
+          formattedLine = amount ? `${fullItemLabel} ${amount}` : fullItemLabel;
         }
-        lines.push(
-          ...nameLines.map((line) => `${financialTag}${' '.repeat(quantityWidth)}${line}`),
-        );
-        if (amount && !inlineAmount) {
-          lines.push(`${financialTag}${padToDisplayCells(amount, cols, 'right')}`);
-        }
+        rasterGroups.push({
+          groupId: `payment-ticket-item-${itemIndex}`,
+          lineIndex,
+          lineCount: lines.length - lineIndex,
+          sourceLines: [formattedLine],
+          sourceControlLines: [lines[lineIndex]],
+          ...(amount
+            ? {
+                financial: true,
+                financialSourceLines: [true],
+                sourceLayouts: [
+                  {
+                    kind: 'financial-summary',
+                    columns: [
+                      { text: fullItemLabel, align: 'left' },
+                      { text: amount, align: 'right' },
+                    ],
+                  },
+                ],
+              }
+            : {}),
+        });
       }
 
       lines.push('-'.repeat(cols));
@@ -1571,35 +1578,36 @@ export async function printPaymentTicket(
       const pushSummaryAmount = (label: string, amount: string, field: string, groupId: string) => {
         assertFinancialValueFitsColumns(amount, cols, field);
         const labelWidth = displayCellWidth(label);
+        const lineIndex = lines.length;
+        let formattedLine: string;
         if (labelWidth + 1 + displayCellWidth(amount) <= cols) {
-          const lineIndex = lines.length;
-          const formattedLine = `${label}${rightAlign(amount, cols - labelWidth)}`;
-          const controlLine = `{FINANCIAL}${formattedLine}`;
-          lines.push(controlLine);
-          rasterGroups.push({
-            groupId,
-            lineIndex,
-            lineCount: 1,
-            sourceLines: [formattedLine],
-            sourceControlLines: [controlLine],
-            financial: true,
-            financialSourceLines: [true],
-            sourceLayouts: [
-              {
-                kind: 'financial-summary',
-                columns: [
-                  { text: label, align: 'left' },
-                  { text: amount, align: 'right' },
-                ],
-              },
-            ],
-          });
+          formattedLine = `${label}${rightAlign(amount, cols - labelWidth)}`;
+          lines.push(`{FINANCIAL}${formattedLine}`);
         } else {
           lines.push(
             ...wrapText(label, cols).map((line) => `{FINANCIAL}${padToDisplayCells(line, cols)}`),
           );
           lines.push(`{FINANCIAL}${padToDisplayCells(amount, cols, 'right')}`);
+          formattedLine = `${label} ${amount}`;
         }
+        rasterGroups.push({
+          groupId,
+          lineIndex,
+          lineCount: lines.length - lineIndex,
+          sourceLines: [formattedLine],
+          sourceControlLines: [lines[lineIndex]],
+          financial: true,
+          financialSourceLines: [true],
+          sourceLayouts: [
+            {
+              kind: 'financial-summary',
+              columns: [
+                { text: label, align: 'left' },
+                { text: amount, align: 'right' },
+              ],
+            },
+          ],
+        });
       };
       pushSummaryAmount('Total:', totalAmount, 'payment ticket total', 'payment-ticket-total');
       pushSummaryAmount(
@@ -4564,46 +4572,55 @@ function pushZReportLabelValue(
   const labelLines = zLaidOutLabel(label, context);
   const normalizedFirstLabel =
     labelLines.length === 1 ? normalizeThermalText(labelLines[0], context.capabilities) : '';
+  const lineIndex = lines.length;
+  const leftText =
+    labelLines.length === 1
+      ? normalizedFirstLabel
+      : zLabelVariants(label, columns)
+          .map((variant) => normalizeThermalText(variant, context.capabilities))
+          .join('  ');
+  let formattedLine: string;
   if (
     labelLines.length === 1 &&
     thermalDisplayWidth(normalizedFirstLabel) + 1 + thermalDisplayWidth(normalizedValue) <= columns
   ) {
-    const lineIndex = lines.length;
-    const formattedLine =
+    formattedLine =
       normalizedFirstLabel +
       rightAlign(normalizedValue, columns - thermalDisplayWidth(normalizedFirstLabel));
-    const controlLine = (financial ? '{FINANCIAL}' : '') + formattedLine;
-    lines.push(controlLine);
-    if (rasterGroups) {
-      rasterGroups.push({
-        groupId: `z-label-value-${lineIndex}`,
-        lineIndex,
-        lineCount: 1,
-        sourceLines: [formattedLine],
-        sourceControlLines: [controlLine],
-        ...(financial
-          ? {
-              financial: true,
-              financialSourceLines: [true],
-              sourceLayouts: [
-                {
-                  kind: 'financial-summary',
-                  columns: [
-                    { text: normalizedFirstLabel, align: 'left' },
-                    { text: normalizedValue, align: 'right' },
-                  ],
-                },
-              ],
-            }
-          : {}),
-      });
-    }
-    return;
+    lines.push((financial ? '{FINANCIAL}' : '') + formattedLine);
+  } else {
+    for (const line of labelLines)
+      lines.push(
+        (financial ? '{FINANCIAL}' : '') + normalizeThermalText(line, context.capabilities),
+      );
+    for (const line of wrapText(normalizedValue, columns))
+      lines.push((financial ? '{FINANCIAL}' : '') + rightAlign(line, columns));
+    formattedLine = `${leftText} ${normalizedValue}`;
   }
-  for (const line of labelLines)
-    lines.push((financial ? '{FINANCIAL}' : '') + normalizeThermalText(line, context.capabilities));
-  for (const line of wrapText(normalizedValue, columns))
-    lines.push((financial ? '{FINANCIAL}' : '') + rightAlign(line, columns));
+  if (rasterGroups && lines.length > lineIndex) {
+    rasterGroups.push({
+      groupId: `z-label-value-${lineIndex}`,
+      lineIndex,
+      lineCount: lines.length - lineIndex,
+      sourceLines: [formattedLine],
+      sourceControlLines: [lines[lineIndex]],
+      sourceLayouts: [
+        {
+          kind: 'financial-summary',
+          columns: [
+            { text: leftText, align: 'left' },
+            { text: normalizedValue, align: 'right' },
+          ],
+        },
+      ],
+      ...(financial
+        ? {
+            financial: true,
+            financialSourceLines: [true],
+          }
+        : {}),
+    });
+  }
 }
 
 function pushZReportTextValue(
@@ -4635,6 +4652,15 @@ function pushZReportRow(
   const labelLines = zLaidOutLabel(label, labelContext);
   const normalizedFirstLabel =
     labelLines.length === 1 ? normalizeThermalText(labelLines[0], context.capabilities) : '';
+  const lineIndex = lines.length;
+  const leftText =
+    prefix +
+    (labelLines.length === 1
+      ? normalizedFirstLabel
+      : zLabelVariants(label, labelContext.logicalColumns)
+          .map((variant) => normalizeThermalText(variant, context.capabilities))
+          .join('  '));
+  let formattedLine: string;
   if (
     labelLines.length === 1 &&
     prefix.length +
@@ -4643,42 +4669,40 @@ function pushZReportRow(
       thermalDisplayWidth(normalizedValue) <=
       columns
   ) {
-    const lineIndex = lines.length;
-    const leftText = prefix + normalizedFirstLabel;
-    const formattedLine =
+    formattedLine =
       leftText +
       rightAlign(
         normalizedValue,
         columns - prefix.length - thermalDisplayWidth(normalizedFirstLabel),
       );
-    const controlLine = '{FINANCIAL}' + formattedLine;
-    lines.push(controlLine);
-    if (rasterGroups) {
-      rasterGroups.push({
-        groupId: `z-row-${lineIndex}`,
-        lineIndex,
-        lineCount: 1,
-        sourceLines: [formattedLine],
-        sourceControlLines: [controlLine],
-        financial: true,
-        financialSourceLines: [true],
-        sourceLayouts: [
-          {
-            kind: 'financial-summary',
-            columns: [
-              { text: leftText, align: 'left' },
-              { text: normalizedValue, align: 'right' },
-            ],
-          },
-        ],
-      });
-    }
-    return;
+    lines.push('{FINANCIAL}' + formattedLine);
+  } else {
+    for (const line of labelLines)
+      lines.push('{FINANCIAL}' + prefix + normalizeThermalText(line, context.capabilities));
+    for (const line of wrapText(normalizedValue, columns))
+      lines.push('{FINANCIAL}' + rightAlign(line, columns));
+    formattedLine = `${leftText} ${normalizedValue}`;
   }
-  for (const line of labelLines)
-    lines.push('{FINANCIAL}' + prefix + normalizeThermalText(line, context.capabilities));
-  for (const line of wrapText(normalizedValue, columns))
-    lines.push('{FINANCIAL}' + rightAlign(line, columns));
+  if (rasterGroups && lines.length > lineIndex) {
+    rasterGroups.push({
+      groupId: `z-row-${lineIndex}`,
+      lineIndex,
+      lineCount: lines.length - lineIndex,
+      sourceLines: [formattedLine],
+      sourceControlLines: [lines[lineIndex]],
+      financial: true,
+      financialSourceLines: [true],
+      sourceLayouts: [
+        {
+          kind: 'financial-summary',
+          columns: [
+            { text: leftText, align: 'left' },
+            { text: normalizedValue, align: 'right' },
+          ],
+        },
+      ],
+    });
+  }
 }
 
 /**

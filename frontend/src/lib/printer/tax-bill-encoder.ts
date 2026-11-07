@@ -698,7 +698,7 @@ function padRowsForLanguage(
   const normalizedRight = normalizeThermalText(right, capabilities);
   const leftWidth = displayCellWidth(normalizedLeft);
   const rightWidth = displayCellWidth(normalizedRight);
-  if (leftWidth + 1 + rightWidth <= cols) {
+  if (leftWidth + 2 + rightWidth <= cols) {
     return [normalizedLeft + ' '.repeat(cols - leftWidth - rightWidth) + normalizedRight];
   }
   return [

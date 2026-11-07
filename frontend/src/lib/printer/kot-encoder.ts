@@ -7,6 +7,7 @@ import { formatTime } from './format-date';
 import { normalizeThermalText } from './unicode';
 import {
   GENERIC_THERMAL_CAPABILITIES,
+  isThermalTextRepresentable,
   mergeThermalCapabilities,
   shouldUseOrderTypeFallback,
   thermalTextFallback,
@@ -490,11 +491,12 @@ function thermalSafeHeaderText(
   arabicShaping: boolean,
   capabilities?: ThermalPrinterCapabilities,
 ): string {
-  return thermalTextFallback(
-    value,
-    fallback,
-    mergeThermalCapabilities(capabilities ?? GENERIC_THERMAL_CAPABILITIES, arabicShaping),
+  const merged = mergeThermalCapabilities(
+    capabilities ?? GENERIC_THERMAL_CAPABILITIES,
+    arabicShaping,
   );
+  if (merged.raster.enabled === true && !isThermalTextRepresentable(value, merged)) return value;
+  return thermalTextFallback(value, fallback, merged);
 }
 
 function resolveOrderType(type: string, language: string): string {

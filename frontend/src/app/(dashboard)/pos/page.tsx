@@ -90,9 +90,13 @@ import {
   OrderAttemptStorageError,
   classifyOrderRequestFailure,
   clearOrderAttempt,
+  doesAttemptMatchStore,
   fingerprintsMatchAcrossScheduleToggle,
   getPrepaidOrderAttemptStorageKey,
+  getScheduleRejectionCode,
+  isDefinitiveScheduleRejection,
   isSupportedFailureOperation,
+  normalizeAttemptStoreId,
   parseStoredAttemptScheduledFor,
   persistOrderAttempt,
   readOrderAttempt,
@@ -111,6 +115,7 @@ const POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
 
 interface PostpaidAttempt {
   userId: string;
+  storeId?: string;
   fingerprint: string;
   idempotencyKey: string;
   operationId?: string;
@@ -119,6 +124,7 @@ interface PostpaidAttempt {
 
 interface PrepaidAttempt {
   userId: string;
+  storeId?: string;
   cartFingerprint: string;
   paymentFingerprint: string;
   discount: PrepaidDiscount | null;
@@ -366,6 +372,13 @@ export default function POSPage() {
   const delivery = useSupportTicketStatus(sentTicketId);
   const activeUserId = user?.id == null ? null : String(user.id);
   const activeToken = token ?? null;
+  const currentStoreId = currentTenant?.id || 'default';
+  const currentStoreIdRef = useRef(currentStoreId);
+  currentStoreIdRef.current = currentStoreId;
+  const initialStoreIdRef = useRef<string | number>(currentStoreId);
+  if (initialStoreIdRef.current === 'default' && currentTenant?.id != null) {
+    initialStoreIdRef.current = currentTenant.id;
+  }
   const sessionEpochRef = useRef(0);
   const lastActiveSessionRef = useRef<{ userId: string | null; token: string | null }>({
     userId: activeUserId,
@@ -515,8 +528,12 @@ export default function POSPage() {
     const effectiveUserId = targetUserId || attempt.userId || activeUserId;
     if (!effectiveUserId) return false;
     const storageKey = getPostpaidOrderAttemptStorageKey(effectiveUserId);
+    const attemptWithStore: PostpaidAttempt = {
+      ...attempt,
+      storeId: normalizeAttemptStoreId(attempt.storeId) || String(currentStoreIdRef.current),
+    };
     try {
-      persistOrderAttempt(getAppendAttemptStorage(), storageKey, attempt);
+      persistOrderAttempt(getAppendAttemptStorage(), storageKey, attemptWithStore);
     } catch {
       if (effectiveUserId === activeUserId) {
         postpaidAttemptRef.current = previous;
@@ -524,7 +541,7 @@ export default function POSPage() {
       return false;
     }
     if (effectiveUserId === activeUserId) {
-      postpaidAttemptRef.current = attempt;
+      postpaidAttemptRef.current = attemptWithStore;
       postpaidAttemptKeyRef.current = storageKey;
     }
     return true;
@@ -623,7 +640,10 @@ export default function POSPage() {
     const effectiveUserId = targetUserId || attempt.userId || activeUserId;
     if (!effectiveUserId) return false;
     const storageKey = getPrepaidOrderAttemptStorageKey(effectiveUserId);
-    const safeAttempt = stripPrepaidDiscountPin(attempt);
+    const safeAttempt: PrepaidAttempt = {
+      ...stripPrepaidDiscountPin(attempt),
+      storeId: normalizeAttemptStoreId(attempt.storeId) || String(currentStoreIdRef.current),
+    };
     try {
       persistOrderAttempt(getAppendAttemptStorage(), storageKey, safeAttempt);
     } catch {
@@ -1094,10 +1114,6 @@ export default function POSPage() {
     }
   };
 
-  const currentStoreId = currentTenant?.id || 'default';
-  const currentStoreIdRef = useRef(currentStoreId);
-  currentStoreIdRef.current = currentStoreId;
-
   const canReadOrders = tenantCan(currentTenant, 'orders.read');
   const refreshScheduledOrders = useCallback(async () => {
     const originStoreId = currentStoreIdRef.current;
@@ -1367,6 +1383,7 @@ export default function POSPage() {
 
   const getPreservedAttemptScheduledFor = (
     cartState: Parameters<typeof buildCartFingerprintFromState>[0] = useCartStore.getState(),
+    targetStoreId: string | number = useAuthStore.getState().currentTenant?.id ?? currentStoreId,
   ): string | undefined => {
     const currentAuthUser = useAuthStore.getState().user;
     const effectiveUserId =
@@ -1426,7 +1443,8 @@ export default function POSPage() {
     try {
       const postpaidAttempt = readPostpaidAttempt(effectiveUserId);
       const postpaidScheduledFor =
-        postpaidAttempt?.userId === effectiveUserId
+        postpaidAttempt?.userId === effectiveUserId &&
+        doesAttemptMatchStore(postpaidAttempt, targetStoreId, initialStoreIdRef.current)
           ? matchesStoredSchedule(postpaidAttempt.fingerprint)
           : undefined;
       if (postpaidScheduledFor) return postpaidScheduledFor;
@@ -1437,7 +1455,8 @@ export default function POSPage() {
     try {
       const prepaidAttempt = readPrepaidAttempt(effectiveUserId);
       const prepaidScheduledFor =
-        prepaidAttempt?.userId === effectiveUserId
+        prepaidAttempt?.userId === effectiveUserId &&
+        doesAttemptMatchStore(prepaidAttempt, targetStoreId, initialStoreIdRef.current)
           ? matchesStoredSchedule(prepaidAttempt.cartFingerprint)
           : undefined;
       if (prepaidScheduledFor) return prepaidScheduledFor;
@@ -1517,7 +1536,7 @@ export default function POSPage() {
         settingReadSucceeded,
         scheduledOrdersEnabled: isScheduledEnabled,
         cartScheduledFor: currentCart.scheduledFor,
-        preservedScheduledFor: getPreservedAttemptScheduledFor(currentCart),
+        preservedScheduledFor: getPreservedAttemptScheduledFor(currentCart, currentStoreId),
       });
       if (currentCart.scheduledFor !== nextScheduledFor) {
         currentCart.setScheduledFor(nextScheduledFor);
@@ -1784,6 +1803,7 @@ export default function POSPage() {
         if (
           storedAttempt &&
           storedAttempt.userId === activeUserId &&
+          doesAttemptMatchStore(storedAttempt, currentStoreId, initialStoreIdRef.current) &&
           fingerprintsMatchAcrossScheduleToggle(storedAttempt.cartFingerprint, cartFingerprint) &&
           storedAttempt.orderIdempotencyKey &&
           storedAttempt.paymentIdempotencyKey
@@ -1802,6 +1822,7 @@ export default function POSPage() {
     setSubmitting(true);
     const originEpoch = sessionEpochRef.current;
     const originUserId = activeUserId;
+    const originStoreId = currentStoreId;
     const originToken =
       activeToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null);
     const submissionToken = Symbol('pos-place-order');
@@ -1812,6 +1833,7 @@ export default function POSPage() {
     let failureOperation = pendingOrder ? 'order.append' : 'order.create';
     let failureStage = 'submission';
     let failureCorrelationId: string | null = null;
+    let attemptedScheduledFor: string | undefined;
     try {
       let orderForKot: Order;
       let postpaidOperationId: string | null = null;
@@ -1909,10 +1931,12 @@ export default function POSPage() {
         setPendingOrder(null);
       } else {
         const priorOrderAttempt = readPostpaidAttempt(originUserId);
-        const preservedPostpaidScheduledFor =
-          priorOrderAttempt?.userId === originUserId
-            ? parseStoredAttemptScheduledFor(priorOrderAttempt.fingerprint)
-            : undefined;
+        const priorPostpaidMatchesStore =
+          priorOrderAttempt?.userId === originUserId &&
+          doesAttemptMatchStore(priorOrderAttempt, originStoreId, initialStoreIdRef.current);
+        const preservedPostpaidScheduledFor = priorPostpaidMatchesStore
+          ? parseStoredAttemptScheduledFor(priorOrderAttempt.fingerprint)
+          : undefined;
         const orderPayload = {
           table_id: cart.tableId,
           customer_id: cart.customerId,
@@ -1941,7 +1965,7 @@ export default function POSPage() {
         };
         const baseOrderFingerprint = JSON.stringify(orderPayload);
         const matchesPriorPostpaidOrderAttempt =
-          priorOrderAttempt?.userId === originUserId &&
+          priorPostpaidMatchesStore &&
           fingerprintsMatchAcrossScheduleToggle(
             priorOrderAttempt.fingerprint,
             baseOrderFingerprint,
@@ -1954,11 +1978,12 @@ export default function POSPage() {
             preservedScheduledFor: preservedPostpaidScheduledFor,
           });
         }
+        attemptedScheduledFor = orderPayload.scheduled_for;
         const orderFingerprint = matchesPriorPostpaidOrderAttempt
           ? priorOrderAttempt.fingerprint
           : baseOrderFingerprint;
         if (
-          priorOrderAttempt?.userId === originUserId &&
+          priorPostpaidMatchesStore &&
           fingerprintsMatchAcrossScheduleToggle(priorOrderAttempt.fingerprint, cartFingerprint)
         ) {
           const completedOrder = priorOrderAttempt.order;
@@ -2160,7 +2185,24 @@ export default function POSPage() {
           failureOperation === 'order.append' ? 'order.append' : 'order.create',
           failureCorrelationId,
         );
-      else
+      else {
+        if (
+          !pendingOrder &&
+          failureOperation === 'order.create' &&
+          attemptedScheduledFor &&
+          isDefinitiveScheduleRejection(error, failureCorrelationId)
+        ) {
+          clearPostpaidAttempt(originUserId);
+          if (
+            !scheduledOrdersEnabled ||
+            getScheduleRejectionCode(error) === 'SCHEDULED_ORDERS_DISABLED'
+          ) {
+            setScheduledOrdersEnabled(false);
+            if (useCartStore.getState().scheduledFor.trim()) {
+              useCartStore.getState().setScheduledFor('');
+            }
+          }
+        }
         reportOrderRequestFailure(
           error,
           t('placeOrderFailed'),
@@ -2168,6 +2210,7 @@ export default function POSPage() {
           failureStage,
           failureCorrelationId,
         );
+      }
     } finally {
       if (isSessionCurrent() && activeSubmissionTokenRef.current === submissionToken) {
         setSubmitting(false);
@@ -2211,6 +2254,8 @@ export default function POSPage() {
       );
     };
 
+    let sendToPaymentOperationId: string | null = null;
+    let attemptedScheduledFor: string | undefined;
     try {
       if (!originUserId) throw new OrderAttemptStorageError();
 
@@ -2220,6 +2265,11 @@ export default function POSPage() {
       const storedAttempt = readPostpaidAttempt(originUserId);
       const storedAttemptMatchesCart =
         storedAttempt?.userId === originUserId &&
+        doesAttemptMatchStore(
+          storedAttempt,
+          originTenantId ?? currentStoreId,
+          initialStoreIdRef.current,
+        ) &&
         fingerprintsMatchAcrossScheduleToggle(storedAttempt.fingerprint, cartFingerprint);
       if (storedAttemptMatchesCart && storedAttempt.order) {
         reportOrderFailure({
@@ -2237,13 +2287,21 @@ export default function POSPage() {
         });
         return;
       }
-      const attempt = storedAttemptMatchesCart
-        ? storedAttempt
+      const attemptOperationId =
+        (storedAttemptMatchesCart ? storedAttempt.operationId : undefined) ||
+        createOperationReference() ||
+        undefined;
+      sendToPaymentOperationId = attemptOperationId || null;
+      const attempt: PostpaidAttempt = storedAttemptMatchesCart
+        ? {
+            ...storedAttempt,
+            ...(attemptOperationId ? { operationId: attemptOperationId } : {}),
+          }
         : {
             userId: originUserId,
             fingerprint: cartFingerprint,
             idempotencyKey: newIdempotencyKey(),
-            operationId: createOperationReference() || undefined,
+            operationId: attemptOperationId,
           };
       const preservedScheduledFor = storedAttemptMatchesCart
         ? parseStoredAttemptScheduledFor(storedAttempt.fingerprint)
@@ -2271,6 +2329,7 @@ export default function POSPage() {
         opted_in_charge_ids: Array.from(cart.optedInChargeIds),
         items: orderItems,
       };
+      attemptedScheduledFor = orderPayload.scheduled_for;
 
       const { data } = await api.post('/orders', orderPayload, {
         headers: {
@@ -2375,6 +2434,18 @@ export default function POSPage() {
       if (err instanceof OrderAttemptStorageError) {
         reportOrderStorageFailure(t('placeOrderFailed'), 'order.create');
       } else {
+        if (attemptedScheduledFor && isDefinitiveScheduleRejection(err, sendToPaymentOperationId)) {
+          clearPostpaidAttempt(originUserId);
+          if (
+            !scheduledOrdersEnabled ||
+            getScheduleRejectionCode(err) === 'SCHEDULED_ORDERS_DISABLED'
+          ) {
+            setScheduledOrdersEnabled(false);
+            if (useCartStore.getState().scheduledFor.trim()) {
+              useCartStore.getState().setScheduledFor('');
+            }
+          }
+        }
         const errData = (err as { response?: { data?: { error?: string; code?: string } } })
           ?.response?.data;
         toast.error(
@@ -2441,6 +2512,7 @@ export default function POSPage() {
     const existingAttempt =
       storedAttempt &&
       storedAttempt.userId === originUserId &&
+      doesAttemptMatchStore(storedAttempt, currentStoreId, initialStoreIdRef.current) &&
       fingerprintsMatchAcrossScheduleToggle(storedAttempt.cartFingerprint, cartFingerprint) &&
       storedAttempt.orderIdempotencyKey &&
       storedAttempt.paymentIdempotencyKey
@@ -2566,6 +2638,7 @@ export default function POSPage() {
     let failureStage = 'submission';
     let failureCorrelationId: string | null = null;
     let committedOrder: Order | null = attempt.order || null;
+    let attemptedScheduledFor: string | undefined;
     try {
       failureCorrelationId = operationId;
       if (operationId && attempt.operationId !== operationId) {
@@ -2577,6 +2650,13 @@ export default function POSPage() {
       } else {
         failureOperation = 'order.create';
         failureStage = 'submission';
+        const resolvedPrepaidScheduledFor = resolveRetryScheduledFor({
+          orderType: cart.orderType,
+          scheduledOrdersEnabled,
+          cartScheduledFor: cart.scheduledFor,
+          preservedScheduledFor: preservedPrepaidScheduledFor,
+        });
+        attemptedScheduledFor = resolvedPrepaidScheduledFor;
         const { data } = await api.post(
           '/orders',
           {
@@ -2599,12 +2679,7 @@ export default function POSPage() {
                 : undefined,
             delivery_note:
               cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
-            scheduled_for: resolveRetryScheduledFor({
-              orderType: cart.orderType,
-              scheduledOrdersEnabled,
-              cartScheduledFor: cart.scheduledFor,
-              preservedScheduledFor: preservedPrepaidScheduledFor,
-            }),
+            scheduled_for: resolvedPrepaidScheduledFor,
             waived_charge_ids: Array.from(cart.waivedChargeIds),
             opted_in_charge_ids: Array.from(cart.optedInChargeIds),
             items: orderItems,
@@ -2990,6 +3065,24 @@ export default function POSPage() {
           failureCorrelationId,
         );
       else {
+        if (
+          failureOperation === 'order.create' &&
+          !committedOrder &&
+          attemptedScheduledFor &&
+          isDefinitiveScheduleRejection(error, failureCorrelationId)
+        ) {
+          clearPrepaidAttempt(originUserId);
+          setPrepaidModalAttempt(null);
+          if (
+            !scheduledOrdersEnabled ||
+            getScheduleRejectionCode(error) === 'SCHEDULED_ORDERS_DISABLED'
+          ) {
+            setScheduledOrdersEnabled(false);
+            if (useCartStore.getState().scheduledFor.trim()) {
+              useCartStore.getState().setScheduledFor('');
+            }
+          }
+        }
         if (failureOperation === 'payment.create' && attempt.bill) {
           const failure = classifyOrderRequestFailure(error, {
             operation: 'payment.create',

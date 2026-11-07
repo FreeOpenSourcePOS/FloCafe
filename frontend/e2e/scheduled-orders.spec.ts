@@ -858,6 +858,7 @@ test('POS scheduled orders: unresolved order attempts preserve payload and idemp
     let abortFirstOrderPost = true;
     let abortSecondOrderPost = false;
     let secondCommittedOrderId = 0;
+    let abortWithoutCommitOrderPost = false;
     await page.route('**/api/orders', async (route) => {
       if (
         route.request().method() !== 'POST' ||
@@ -886,11 +887,16 @@ test('POS scheduled orders: unresolved order attempts preserve payload and idemp
         await route.abort('connectionreset');
         return;
       }
+      if (abortWithoutCommitOrderPost) {
+        abortWithoutCommitOrderPost = false;
+        await route.abort('connectionreset');
+        return;
+      }
       await route.continue();
     });
 
     await cartShell.getByRole('button', { name: 'Place Order' }).click();
-    await expect(page.getByRole('status')).toContainText(
+    await expect(page.getByRole('status').last()).toContainText(
       'FloCafe could not confirm whether the order or payment was saved.',
     );
     expect(submittedOrders).toHaveLength(1);
@@ -968,7 +974,7 @@ test('POS scheduled orders: unresolved order attempts preserve payload and idemp
 
     abortSecondOrderPost = true;
     await cartShell.getByRole('button', { name: 'Place Order' }).click();
-    await expect(page.getByRole('status')).toContainText(
+    await expect(page.getByRole('status').last()).toContainText(
       'FloCafe could not confirm whether the order or payment was saved.',
     );
     expect(submittedOrders).toHaveLength(3);
@@ -1029,6 +1035,77 @@ test('POS scheduled orders: unresolved order attempts preserve payload and idemp
     expect(submittedOrders[3].idempotencyKey).toBe(submittedOrders[2].idempotencyKey);
     expect(submittedOrders[3].body.scheduled_for).toBe(secondScheduleWall);
     await expect(page.getByTestId('cart-item')).toHaveCount(0);
+
+    // Scenario C: Uncommitted scheduled order attempt whose retry receives a definitive
+    // schedule rejection (409 SCHEDULED_ORDERS_DISABLED, outcome: not_applied) retires the
+    // saved attempt so the cashier can place an unscheduled order with a fresh idempotency key.
+    await cartShell.getByRole('button', { name: 'Takeaway', exact: true }).click();
+    await page.getByTestId('pos-product-card').first().click();
+    await expect(page.getByTestId('cart-item')).toHaveCount(1);
+
+    await cartShell.getByTestId('pos-order-details-summary').click();
+    await expect(detailsDrawer).toBeVisible();
+    const thirdScheduleWall = futureBangkokWallClock(135);
+    await detailsDrawer.getByTestId('pos-send-to-kitchen-input').fill(thirdScheduleWall);
+    await detailsDrawer.getByTestId('pos-order-details-done-btn').click();
+    await expect(detailsDrawer).toHaveCount(0);
+
+    abortWithoutCommitOrderPost = true;
+    await cartShell.getByRole('button', { name: 'Place Order' }).click();
+    await expect(page.getByRole('status').last()).toContainText(
+      'FloCafe could not confirm whether the order or payment was saved.',
+    );
+    expect(submittedOrders).toHaveLength(5);
+    expect(submittedOrders[4].idempotencyKey).toBeTruthy();
+    expect(submittedOrders[4].body.scheduled_for).toBe(thirdScheduleWall);
+
+    const disableForRejectRes = await page.request.put(
+      `${BASE}/api/settings/scheduled_orders_enabled`,
+      {
+        headers: ownerHeaders,
+        data: { value: 'false' },
+      },
+    );
+    expect(disableForRejectRes.ok()).toBeTruthy();
+    await navMenu.getByRole('link', { name: 'Orders', exact: true }).click();
+    await page.waitForURL('**/orders/**');
+    const disabledForRejectRead = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        new URL(res.url()).pathname === '/api/settings/scheduled_orders_enabled' &&
+        res.status() === 200,
+    );
+    await navMenu.getByRole('link', { name: 'POS', exact: true }).click();
+    await disabledForRejectRead;
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    const rejectedRetryResPromise = page.waitForResponse(
+      (res) => res.request().method() === 'POST' && new URL(res.url()).pathname === '/api/orders',
+    );
+    await cartShell.getByRole('button', { name: 'Place Order' }).click();
+    const rejectedRetryRes = await rejectedRetryResPromise;
+    expect(rejectedRetryRes.status()).toBe(409);
+    const rejectedRetryBody = await rejectedRetryRes.json();
+    expect(rejectedRetryBody.code).toBe('SCHEDULED_ORDERS_DISABLED');
+    expect(rejectedRetryBody.outcome).toBe('not_applied');
+    expect(submittedOrders).toHaveLength(6);
+    expect(submittedOrders[5].idempotencyKey).toBe(submittedOrders[4].idempotencyKey);
+    expect(submittedOrders[5].body.scheduled_for).toBe(thirdScheduleWall);
+    await expect(page.getByTestId('cart-item')).toHaveCount(1);
+
+    const freshImmediateResPromise = page.waitForResponse(
+      (res) => res.request().method() === 'POST' && new URL(res.url()).pathname === '/api/orders',
+    );
+    await cartShell.getByRole('button', { name: 'Place Order' }).click();
+    const freshImmediateRes = await freshImmediateResPromise;
+    expect(freshImmediateRes.status()).toBe(201);
+    const freshImmediateBody = await freshImmediateRes.json();
+    createdOrderIds.push(Number(freshImmediateBody.order.id));
+    expect(submittedOrders).toHaveLength(7);
+    expect(submittedOrders[6].idempotencyKey).toBeTruthy();
+    expect(submittedOrders[6].idempotencyKey).not.toBe(submittedOrders[4].idempotencyKey);
+    expect(submittedOrders[6].body.scheduled_for).toBeUndefined();
+    await expect(page.getByTestId('cart-item')).toHaveCount(0);
   } finally {
     for (const orderId of createdOrderIds) {
       await page.request
@@ -1038,19 +1115,23 @@ test('POS scheduled orders: unresolved order attempts preserve payload and idemp
         })
         .catch(() => {});
     }
-    await page.request
-      .put(`${BASE}/api/settings/business`, {
+    const [restoreBusinessOutcome, restoreSettingOutcome] = await Promise.allSettled([
+      page.request.put(`${BASE}/api/settings/business`, {
         headers: ownerHeaders,
         data: priorBusiness,
-      })
-      .catch(() => {});
-    const restoreSettingRes = await page.request.put(
-      `${BASE}/api/settings/scheduled_orders_enabled`,
-      {
+      }),
+      page.request.put(`${BASE}/api/settings/scheduled_orders_enabled`, {
         headers: ownerHeaders,
         data: { value: priorScheduledOrdersEnabled },
-      },
-    );
-    expect(restoreSettingRes.ok(), 'restore prior scheduled_orders_enabled').toBeTruthy();
+      }),
+    ]);
+    expect(
+      restoreBusinessOutcome.status === 'fulfilled' && restoreBusinessOutcome.value.ok(),
+      'restore prior business settings',
+    ).toBeTruthy();
+    expect(
+      restoreSettingOutcome.status === 'fulfilled' && restoreSettingOutcome.value.ok(),
+      'restore prior scheduled_orders_enabled',
+    ).toBeTruthy();
   }
 });

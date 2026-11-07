@@ -5900,6 +5900,31 @@ export function getUserKdsStationIds(
   }
 }
 
+export function expandCategoryIdsWithSubcategories(
+  dbInstance: Database.Database,
+  categoryIds: string[],
+): string[] {
+  const normalized = [
+    ...new Set(categoryIds.filter((id) => id != null && String(id).trim() !== '').map(String)),
+  ];
+  if (normalized.length === 0) return [];
+  try {
+    const placeholders = normalized.map(() => '?').join(',');
+    const childRows = dbInstance
+      .prepare(
+        `SELECT id FROM categories WHERE deleted_at IS NULL AND parent_id IN (${placeholders})`,
+      )
+      .all(...normalized) as { id: string }[];
+    const expanded = new Set<string>(normalized);
+    for (const row of childRows) {
+      if (row.id != null) expanded.add(String(row.id));
+    }
+    return [...expanded];
+  } catch {
+    return normalized;
+  }
+}
+
 export function getKdsStationCategoryIds(
   dbInstance: Database.Database,
   stationIds: string[],
@@ -5922,7 +5947,7 @@ export function getKdsStationCategoryIds(
             if (categoryId != null) categories.add(String(categoryId));
       } catch {}
     }
-    return [...categories];
+    return expandCategoryIdsWithSubcategories(dbInstance, [...categories]);
   } catch {
     return null;
   }
@@ -5939,6 +5964,7 @@ export function getKdsStationRoutingScope(
   stationIds: string[],
   userCategoryIds: string[],
 ): KdsStationRoutingScope | null {
+  const expandedUserCategoryIds = expandCategoryIdsWithSubcategories(dbInstance, userCategoryIds);
   if (stationIds.length === 0)
     return { tablelessCategoryIds: [], categoryIdsByStation: {}, hasUnrestrictedStation: false };
   try {
@@ -5959,7 +5985,10 @@ export function getKdsStationRoutingScope(
         try {
           const parsed = JSON.parse(row.category_ids);
           if (!Array.isArray(parsed)) return null;
-          stationCategories = parsed.filter((id) => id != null).map(String);
+          stationCategories = expandCategoryIdsWithSubcategories(
+            dbInstance,
+            parsed.filter((id) => id != null).map(String),
+          );
         } catch {
           return null;
         }
@@ -5967,10 +5996,10 @@ export function getKdsStationRoutingScope(
       const allowed =
         stationCategories.length > 0
           ? stationCategories.filter(
-              (id) => userCategoryIds.length === 0 || userCategoryIds.includes(id),
+              (id) => expandedUserCategoryIds.length === 0 || expandedUserCategoryIds.includes(id),
             )
-          : userCategoryIds.length > 0
-            ? [...userCategoryIds]
+          : expandedUserCategoryIds.length > 0
+            ? [...expandedUserCategoryIds]
             : null;
       byStation[String(stationId)] = allowed;
       if (allowed === null) hasUnrestrictedStation = true;

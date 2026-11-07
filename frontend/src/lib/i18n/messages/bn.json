@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "যেমন বার, ডেজার্ট কাউন্টার",
     "stationNameRequired": "স্টেশনের নাম প্রয়োজন",
     "stationNoAvailableCategories": "কোন বিভাগ উপলব্ধ",
-    "stationNoCategories": "কোনো বিভাগ বরাদ্দ করা হয়নি",
+    "stationNoCategories": "সব বিভাগ (নতুন বিভাগসহ)",
     "stationNoChef": "কোনো শেফ নিয়োগ করা হয়নি",
     "stationNoDefaultCategories": "সমস্ত বিভাগ রান্নাঘর স্টেশনে বরাদ্দ করা হয়",
     "stationNoPrinter": "ডিফল্ট প্রিন্টার",

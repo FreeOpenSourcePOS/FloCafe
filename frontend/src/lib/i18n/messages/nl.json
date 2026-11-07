@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "bijv. Bar, Dessertbalie",
     "stationNameRequired": "Naam van het station is vereist",
     "stationNoAvailableCategories": "Geen categorieën beschikbaar",
-    "stationNoCategories": "Geen categorieën toegewezen",
+    "stationNoCategories": "Alle categorieën (inclusief nieuwe)",
     "stationNoChef": "Geen kok toegewezen",
     "stationNoDefaultCategories": "Alle categorieën zijn toegewezen aan keukenstations",
     "stationNoPrinter": "Standaardprinter",

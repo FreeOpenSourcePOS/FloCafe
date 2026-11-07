@@ -1244,12 +1244,17 @@ export function routeItemsToStations(
 
   for (const item of orderItems) {
     const product: any = item.product_id
-      ? db.prepare('SELECT category_id FROM products WHERE id = ?').get(item.product_id)
+      ? db
+          .prepare(
+            'SELECT p.category_id, c.parent_id FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id = ?',
+          )
+          .get(item.product_id)
       : null;
     const categoryId = product?.category_id;
-    const matched = categoryId
-      ? stations.find((s) => s.categoryIds.includes(categoryId))
-      : undefined;
+    const parentId = product?.parent_id;
+    const matched =
+      (categoryId ? stations.find((s) => s.categoryIds.includes(categoryId)) : undefined) ??
+      (parentId ? stations.find((s) => s.categoryIds.includes(parentId)) : undefined);
     if (matched) {
       if (!groups.has(matched.id)) {
         groups.set(matched.id, { stationName: matched.name, printer: matched.printer, items: [] });

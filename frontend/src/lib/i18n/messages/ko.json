@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "예: 바, 디저트 카운터",
     "stationNameRequired": "스테이션 이름은 필수입니다",
     "stationNoAvailableCategories": "사용 가능한 카테고리 없음",
-    "stationNoCategories": "배정된 카테고리 없음",
+    "stationNoCategories": "모든 카테고리 (새 카테고리 포함)",
     "stationNoChef": "배정된 셰프 없음",
     "stationNoDefaultCategories": "모든 카테고리가 주방 스테이션에 배정되었습니다",
     "stationNoPrinter": "기본 프린터",

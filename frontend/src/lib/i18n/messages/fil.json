@@ -2452,7 +2452,7 @@
     "stationNamePlaceholder": "hal. Bar, Dessert Counter",
     "stationNameRequired": "Kailangan ang pangalan ng istasyon",
     "stationNoAvailableCategories": "Walang available na kategorya",
-    "stationNoCategories": "Walang nakatalagang kategorya",
+    "stationNoCategories": "Lahat ng kategorya (kasama ang mga bago)",
     "stationNoChef": "Walang nakatalagang chef",
     "stationNoDefaultCategories": "Lahat ng kategorya ay naka-assign sa mga kitchen station",
     "stationNoPrinter": "Default na printer",

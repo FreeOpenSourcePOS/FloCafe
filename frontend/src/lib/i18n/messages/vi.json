@@ -2452,7 +2452,7 @@
     "stationNamePlaceholder": "ví dụ: Quầy bar, Quầy tráng miệng",
     "stationNameRequired": "Cần có tên khu vực",
     "stationNoAvailableCategories": "Không có danh mục khả dụng",
-    "stationNoCategories": "Chưa gán danh mục",
+    "stationNoCategories": "Tất cả danh mục (bao gồm danh mục mới)",
     "stationNoChef": "Chưa gán đầu bếp",
     "stationNoDefaultCategories": "Mọi danh mục đã được gán cho khu vực bếp",
     "stationNoPrinter": "Máy in mặc định",

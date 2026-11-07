@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import {
   ACTIVE_RELEASED_KDS_ORDER_IDS_SQL,
   completeSettledReleasedOrderIfServed,
+  expandCategoryIdsWithSubcategories,
   getDatabase,
   getKdsItemParentOrderState,
   getKdsStationCategoryIds,
@@ -70,7 +71,9 @@ function getKdsUserCategoryIds(db: ReturnType<typeof getDatabase>, req: Request)
       }
     | undefined;
   if (!user?.is_active || !hasPermission(userId, 'kitchen.use')) return null;
-  return hasRole(user.role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(user.category_ids);
+  return hasRole(user.role, ROLE_ACCESS.ownerManager)
+    ? []
+    : expandCategoryIdsWithSubcategories(db, parseCategoryIds(user.category_ids));
 }
 
 // Return 404 on pairing endpoints when KDS is disabled before checking roles.
@@ -278,7 +281,10 @@ router.get('/pairing', (req: Request, res: Response) => {
       .filter((station) => {
         if (userStationIds.length > 0 && !userStationIds.includes(String(station.id))) return false;
         if (userCategoryIds.length === 0 || !station.category_ids) return true;
-        const stationCategories = parseCategoryIds(station.category_ids);
+        const stationCategories = expandCategoryIdsWithSubcategories(
+          db,
+          parseCategoryIds(station.category_ids),
+        );
         return (
           stationCategories.length === 0 ||
           stationCategories.some((categoryId) => userCategoryIds.includes(categoryId))
@@ -373,7 +379,10 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     try {
       const stationData = station as any;
       if (stationData.category_ids) {
-        stationCategoryIds = parseCategoryIds(stationData.category_ids);
+        stationCategoryIds = expandCategoryIdsWithSubcategories(
+          db,
+          parseCategoryIds(stationData.category_ids),
+        );
       }
     } catch (e) {
       stationCategoryIds = [];

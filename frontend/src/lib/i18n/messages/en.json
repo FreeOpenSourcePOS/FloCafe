@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "e.g. Bar, Dessert Counter",
     "stationNameRequired": "Station name is required",
     "stationNoAvailableCategories": "No categories available",
-    "stationNoCategories": "No categories assigned",
+    "stationNoCategories": "All categories (including new ones)",
     "stationNoChef": "No chef assigned",
     "stationNoDefaultCategories": "All categories are assigned to kitchen stations",
     "stationNoPrinter": "Default printer",

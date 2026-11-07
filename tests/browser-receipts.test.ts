@@ -51,11 +51,13 @@ function loadFrontendModules() {
   }
 }
 
-const { webPrint, kotWebPrint, orderSlipWebPrint, usePrinter, i18n, countries } = loadFrontendModules();
+const { webPrint, kotWebPrint, orderSlipWebPrint, usePrinter, i18n, countries } =
+  loadFrontendModules();
 const { generateBillHtml, getPaperStyles } = webPrint;
 const { generateKotHtml } = kotWebPrint;
 const { generateOrderSlipHtml } = orderSlipWebPrint;
-const { defaultWebUsbCapabilities, resolveWebUsbCapabilities, resolveActivePrinterTextSize } = usePrinter;
+const { defaultWebUsbCapabilities, resolveWebUsbCapabilities, resolveActivePrinterTextSize } =
+  usePrinter;
 
 let passed = 0;
 let failed = 0;
@@ -943,7 +945,9 @@ async function run() {
     );
   }
 
-  console.log('\nTest Suite 8: Thermal 58mm/80mm Legibility, Pure #000 Colors, and Text Size Scaling (#1482)');
+  console.log(
+    '\nTest Suite 8: Thermal 58mm/80mm Legibility, Pure #000 Colors, and Text Size Scaling (#1482)',
+  );
   {
     for (const paperSize of ['thermal58', 'thermal80'] as const) {
       const normalHtml = generateBillHtml(testIranBill, baseIranTenant, {
@@ -981,15 +985,33 @@ async function run() {
       const expectedXlFont = paperSize === 'thermal58' ? '17px' : '18px';
       assert(
         `${paperSize} scales body/item font size across normal (${expectedNormalFont}), large (${expectedLargeFont}), and extra_large (${expectedXlFont})`,
-        normalHtml.includes(`.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: ${expectedNormalFont}; font-weight: 600; }`) &&
-          largeHtml.includes(`.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: ${expectedLargeFont}; font-weight: 600; }`) &&
-          xlHtml.includes(`.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: ${expectedXlFont}; font-weight: 700; }`),
+        normalHtml.includes(
+          `.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: ${expectedNormalFont}; font-weight: 600; }`,
+        ) &&
+          largeHtml.includes(
+            `.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: ${expectedLargeFont}; font-weight: 600; }`,
+          ) &&
+          xlHtml.includes(
+            `.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: ${expectedXlFont}; font-weight: 700; }`,
+          ),
       );
     }
 
-    const kotNormal = generateKotHtml(testIranOrder, { paperWidth: 58, textSize: 'normal', language: 'en' });
-    const kotLarge = generateKotHtml(testIranOrder, { paperWidth: 58, textSize: 'large', language: 'en' });
-    const kotXl = generateKotHtml(testIranOrder, { paperWidth: 58, textSize: 'extra_large', language: 'en' });
+    const kotNormal = generateKotHtml(testIranOrder, {
+      paperWidth: 58,
+      textSize: 'normal',
+      language: 'en',
+    });
+    const kotLarge = generateKotHtml(testIranOrder, {
+      paperWidth: 58,
+      textSize: 'large',
+      language: 'en',
+    });
+    const kotXl = generateKotHtml(testIranOrder, {
+      paperWidth: 58,
+      textSize: 'extra_large',
+      language: 'en',
+    });
     assert(
       'KOT browser HTML scales font-size for normal (12px), large (14px), and extra_large (16px) with #000 weight 600',
       kotNormal.includes('font-size:12px;') &&
@@ -1008,9 +1030,18 @@ async function run() {
       tax: 'Tax',
       total: 'Total',
     };
-    const slipNormal = generateOrderSlipHtml(testIranOrder, slipLabels, { paperWidth: 58, textSize: 'normal' });
-    const slipLarge = generateOrderSlipHtml(testIranOrder, slipLabels, { paperWidth: 58, textSize: 'large' });
-    const slipXl = generateOrderSlipHtml(testIranOrder, slipLabels, { paperWidth: 58, textSize: 'extra_large' });
+    const slipNormal = generateOrderSlipHtml(testIranOrder, slipLabels, {
+      paperWidth: 58,
+      textSize: 'normal',
+    });
+    const slipLarge = generateOrderSlipHtml(testIranOrder, slipLabels, {
+      paperWidth: 58,
+      textSize: 'large',
+    });
+    const slipXl = generateOrderSlipHtml(testIranOrder, slipLabels, {
+      paperWidth: 58,
+      textSize: 'extra_large',
+    });
     assert(
       'Order slip browser HTML scales font-size for normal (13px), large (15px), and extra_large (17px) with #000 weight 600',
       slipNormal.includes('font-size:13px;font-weight:600;color:#000;') &&
@@ -1018,15 +1049,91 @@ async function run() {
         slipXl.includes('font-size:17px;font-weight:600;color:#000;'),
     );
 
+    const kot80Normal = generateKotHtml(testIranOrder, {
+      paperWidth: 80,
+      textSize: 'normal',
+      language: 'en',
+    });
+    const kot80Large = generateKotHtml(testIranOrder, {
+      paperWidth: 80,
+      textSize: 'large',
+      language: 'en',
+    });
+    const kot80Xl = generateKotHtml(testIranOrder, {
+      paperWidth: 80,
+      textSize: 'extra_large',
+      language: 'en',
+    });
+    assert(
+      '80mm KOT browser HTML scales font-size for normal (13px), large (15px), and extra_large (17px)',
+      kot80Normal.includes('font-size:13px;') &&
+        kot80Large.includes('font-size:15px;') &&
+        kot80Xl.includes('font-size:17px;'),
+    );
+
+    const slip80Normal = generateOrderSlipHtml(testIranOrder, slipLabels, {
+      paperWidth: 80,
+      textSize: 'normal',
+    });
+    const slip80Large = generateOrderSlipHtml(testIranOrder, slipLabels, {
+      paperWidth: 80,
+      textSize: 'large',
+    });
+    const slip80Xl = generateOrderSlipHtml(testIranOrder, slipLabels, {
+      paperWidth: 80,
+      textSize: 'extra_large',
+    });
+    assert(
+      '80mm order slip browser HTML scales font-size for normal (14px), large (16px), and extra_large (18px)',
+      slip80Normal.includes('font-size:14px;font-weight:600;color:#000;') &&
+        slip80Large.includes('font-size:16px;font-weight:600;color:#000;') &&
+        slip80Xl.includes('font-size:18px;font-weight:600;color:#000;'),
+    );
+
     assert(
       'WebUSB capabilities and active printer text size inherit configured text_size',
       defaultWebUsbCapabilities(58, 'cols-32', 'extra_large').textSize === 'extra_large' &&
-        resolveWebUsbCapabilities({ id: 'w1', name: 'XP-58', connection_type: 'webusb', is_default: 1, text_size: 'large' }, 58).textSize === 'large' &&
+        resolveWebUsbCapabilities(
+          { id: 'w1', name: 'XP-58', connection_type: 'webusb', is_default: 1, text_size: 'large' },
+          58,
+        ).textSize === 'large' &&
         resolveActivePrinterTextSize({
-          defaultPrinter: { id: 'p1', name: 'XP-58', connection_type: 'usb', is_default: 1, text_size: 'extra_large' },
+          defaultPrinter: {
+            id: 'p1',
+            name: 'XP-58',
+            connection_type: 'usb',
+            is_default: 1,
+            text_size: 'extra_large',
+          },
           hardwarePrinter: null,
           webusbPrinter: null,
         }) === 'extra_large',
+    );
+
+    assert(
+      'Unrecognized or adversarial text_size values normalize safely to normal across all browser print surfaces',
+      defaultWebUsbCapabilities(58, 'cols-32', 'gigantic').textSize === 'normal' &&
+        resolveActivePrinterTextSize({
+          defaultPrinter: {
+            id: 'p1',
+            name: 'XP-58',
+            connection_type: 'usb',
+            is_default: 1,
+            text_size: 'huge' as any,
+          },
+          hardwarePrinter: null,
+          webusbPrinter: null,
+        }) === 'normal' &&
+        getPaperStyles('thermal58', 'invalid_size' as any).includes('font-size: 13px;') &&
+        generateKotHtml(testIranOrder, {
+          paperWidth: 58,
+          textSize: 'invalid_size' as any,
+          language: 'en',
+        }).includes('font-size:12px;') &&
+        generateOrderSlipHtml(testIranOrder, slipLabels, {
+          paperWidth: 58,
+          textSize: 'invalid_size' as any,
+        }).includes('font-size:13px;'),
     );
   }
 
@@ -1292,6 +1399,132 @@ async function run() {
         },
       ),
     },
+    {
+      name: '08_thermal58_receipt_normal',
+      html: generateBillHtml(
+        testIranBill,
+        {
+          business_name: 'FloCafe XP-58 Store',
+          currency: 'USD',
+          country: 'US',
+          timezone: 'America/New_York',
+        },
+        {
+          language: 'en',
+          paperSize: 'thermal58',
+          textSize: 'normal',
+          isReprint: true,
+          address: '350 5th Ave, New York',
+          phone: '+1 212 736 3100',
+          includeTaxId: true,
+          taxRegistrationNumber: 'US-99-1234567',
+          showTaxBreakdown: true,
+        },
+      ),
+    },
+    {
+      name: '09_thermal58_receipt_large',
+      html: generateBillHtml(
+        testIranBill,
+        {
+          business_name: 'FloCafe XP-58 Store',
+          currency: 'USD',
+          country: 'US',
+          timezone: 'America/New_York',
+        },
+        {
+          language: 'en',
+          paperSize: 'thermal58',
+          textSize: 'large',
+          isReprint: true,
+          address: '350 5th Ave, New York',
+          phone: '+1 212 736 3100',
+          includeTaxId: true,
+          taxRegistrationNumber: 'US-99-1234567',
+          showTaxBreakdown: true,
+        },
+      ),
+    },
+    {
+      name: '10_thermal58_receipt_extra_large',
+      html: generateBillHtml(
+        testIranBill,
+        {
+          business_name: 'FloCafe XP-58 Store',
+          currency: 'USD',
+          country: 'US',
+          timezone: 'America/New_York',
+        },
+        {
+          language: 'en',
+          paperSize: 'thermal58',
+          textSize: 'extra_large',
+          isReprint: true,
+          address: '350 5th Ave, New York',
+          phone: '+1 212 736 3100',
+          includeTaxId: true,
+          taxRegistrationNumber: 'US-99-1234567',
+          showTaxBreakdown: true,
+        },
+      ),
+    },
+    {
+      name: '11_thermal80_receipt_extra_large',
+      html: generateBillHtml(
+        testIranBill,
+        {
+          business_name: 'FloCafe 80mm Store',
+          currency: 'USD',
+          country: 'US',
+          timezone: 'America/New_York',
+        },
+        {
+          language: 'en',
+          paperSize: 'thermal80',
+          textSize: 'extra_large',
+          isReprint: true,
+          address: '350 5th Ave, New York',
+          phone: '+1 212 736 3100',
+          includeTaxId: true,
+          taxRegistrationNumber: 'US-99-1234567',
+          showTaxBreakdown: true,
+        },
+      ),
+    },
+    {
+      name: '12_thermal58_kot_extra_large',
+      html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${generateKotHtml(
+        testIranOrder,
+        {
+          paperWidth: 58,
+          textSize: 'extra_large',
+          language: 'en',
+          stationName: 'Hot Kitchen',
+        },
+      )}</body></html>`,
+    },
+    {
+      name: '13_thermal58_order_slip_extra_large',
+      html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${generateOrderSlipHtml(
+        testIranOrder,
+        {
+          title: 'Order Slip',
+          subtotal: 'Subtotal',
+          discount: 'Discount',
+          serviceCharge: 'Service Charge',
+          deliveryCharge: 'Delivery Charge',
+          packagingCharge: 'Packaging Charge',
+          tax: 'Tax',
+          total: 'Total',
+        },
+        {
+          paperWidth: 58,
+          textSize: 'extra_large',
+          country: 'US',
+          currency: 'USD',
+        },
+      )}</body></html>`,
+    },
   ];
 
   // Write HTML files
@@ -1318,14 +1551,53 @@ async function run() {
       const htmlPath = path.join(EVIDENCE_DIR, `${item.name}.html`);
       const pngPath = path.join(EVIDENCE_DIR, `${item.name}.png`);
       await page.goto(`file://${htmlPath}`);
-      // Find the bill container
-      const container = await page.$('.bill-container');
+      const container = await page.$('.bill-container, .kot-container, .order-slip');
       if (container) {
         await container.screenshot({ path: pngPath });
       } else {
         await page.screenshot({ path: pngPath, fullPage: true });
       }
       console.log(`   Captured screenshot artifact: ${pngPath}`);
+
+      if (item.name === '10_thermal58_receipt_extra_large') {
+        const computed = await page.evaluate(() => {
+          const td = document.querySelector('.items-table td')!;
+          const h1 = document.querySelector('.header h1')!;
+          const banner = document.querySelector('.reprint-banner')!;
+          const total = document.querySelector('.total-row')!;
+          const tdStyle = window.getComputedStyle(td);
+          const h1Style = window.getComputedStyle(h1);
+          const bannerStyle = window.getComputedStyle(banner);
+          const totalStyle = window.getComputedStyle(total);
+          return {
+            tdFontSize: tdStyle.fontSize,
+            tdFontWeight: tdStyle.fontWeight,
+            tdColor: tdStyle.color,
+            tdBorderBottomColor: tdStyle.borderBottomColor,
+            h1FontSize: h1Style.fontSize,
+            h1FontWeight: h1Style.fontWeight,
+            h1Color: h1Style.color,
+            bannerColor: bannerStyle.color,
+            bannerBorderColor: bannerStyle.borderTopColor,
+            totalFontSize: totalStyle.fontSize,
+            totalColor: totalStyle.color,
+          };
+        });
+        assert(
+          'Chromium computed styles for 58mm extra_large receipt enforce 17px/700 items, 21px/700 h1, and pure rgb(0, 0, 0) colors',
+          computed.tdFontSize === '17px' &&
+            computed.tdFontWeight === '700' &&
+            computed.tdColor === 'rgb(0, 0, 0)' &&
+            computed.tdBorderBottomColor === 'rgb(0, 0, 0)' &&
+            computed.h1FontSize === '21px' &&
+            computed.h1FontWeight === '700' &&
+            computed.h1Color === 'rgb(0, 0, 0)' &&
+            computed.bannerColor === 'rgb(0, 0, 0)' &&
+            computed.bannerBorderColor === 'rgb(0, 0, 0)' &&
+            computed.totalFontSize === '19px' &&
+            computed.totalColor === 'rgb(0, 0, 0)',
+        );
+      }
     }
   } catch (err: any) {
     if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;

@@ -255,9 +255,14 @@ instead; `getPrinterCapabilities()` merges the override into the capability set.
 ### Text size
 
 `printers.text_size` (`normal`, `large`, `extra_large`; default `normal`) enlarges text per printer.
-`resolvePrinterContext()` reads it and returns two things: `columns`, the layout width every
-document renderer targets, and `capabilities.textSize`, which `buildEscPos()` and the raster path
-read. `shared/print/text-size.ts` owns the rules:
+On the backend, `resolvePrinterContext()` reads it (`printerShape()` also exposes normalized
+`text_size` and `capabilities.textSize` on `/api/printers` responses) and returns two things:
+`columns`, the layout width every document renderer targets, and `capabilities.textSize`, which
+`buildEscPos()` and the raster path read. On the frontend, `usePrinterStore` resolves the active
+printer's `text_size` (`resolveActivePrinterTextSize()` and `resolveWebUsbCapabilities()`) and passes
+it to WebUSB encoders (`capabilities.textSize`) and browser HTML renderers (`web-print.ts`,
+`kot-web-print.ts`, and `order-slip-web-print.ts`). `shared/print/text-size.ts` owns the ESC/POS and
+column rules:
 
 - `normal` changes nothing; the capability field is left unset so output is byte-identical to a
   printer with no setting.
@@ -281,8 +286,12 @@ read. `shared/print/text-size.ts` owns the rules:
 
 The enlargement is idempotent. The raster path applies it to the lines and to each group's
 `sourceControlLines` before `renderUnsupportedRasterLines()`, so rasterized rows render with the
-same `double-height` and `double-width` styles as native rows. `tests/printer-text-size.test.ts`
-covers both paths; the column math is also pinned by the receipt column oracle.
+same `double-height` and `double-width` styles as native rows. On the browser HTML path,
+`web-print.ts`, `kot-web-print.ts`, and `order-slip-web-print.ts` render thermal output in solid
+`#000` (so 203 DPI GDI thermal drivers do not halftone-dither text or borders) with `@page` sizing
+(`58mm` or `80mm`) and scale font sizes and weights (`600`/`700`) for `normal`, `large`, and
+`extra_large`. `tests/printer-text-size.test.ts` and `tests/browser-receipts.test.ts` cover these
+paths; the ESC/POS column math is also pinned by the receipt column oracle.
 
 ## Cash drawer
 

@@ -15,16 +15,23 @@
  *     does not claim they persist server-side.
  */
 import { test, expect, type Page } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
 
-type LanguagePolicy = { primary: { mode: string; language?: string }; additional: Array<{ mode?: string; language?: string }> };
+type LanguagePolicy = {
+  primary: { mode: string; language?: string };
+  additional: Array<{ mode?: string; language?: string }>;
+};
 
 async function readSetting(page: Page, key: string): Promise<unknown> {
   const token = await page.evaluate(() => localStorage.getItem('token'));
-  const res = await page.request.get(`${BASE}/api/settings`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await page.request.get(`${BASE}/api/settings`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   expect(res.ok(), `GET /api/settings must succeed (got ${res.status()})`).toBeTruthy();
-  const { settings } = await res.json() as { settings: Record<string, string> };
+  const { settings } = (await res.json()) as { settings: Record<string, string> };
   const raw = settings[key];
   if (raw === undefined) return undefined;
   try {
@@ -67,7 +74,9 @@ test.describe('@ci-tier2 Settings > Printers', () => {
 
     const footer = page.getByLabel('Footer Message', { exact: true });
     const originalFooter = await footer.inputValue();
-    const originalTemplate = (await readSetting(page, 'bill_template')) as { id: string } | undefined;
+    const originalTemplate = (await readSetting(page, 'bill_template')) as
+      | { id: string }
+      | undefined;
 
     const stamp = `UAT footer ${Date.now()}`;
     try {
@@ -89,15 +98,22 @@ test.describe('@ci-tier2 Settings > Printers', () => {
       await saveAndReloadPrintersTab(page);
 
       const expected = originalTemplate?.id === 'compact' ? 'classic' : 'compact';
-      expect((await readSetting(page, 'bill_template')) as { id: string }).toMatchObject({ id: expected });
+      expect((await readSetting(page, 'bill_template')) as { id: string }).toMatchObject({
+        id: expected,
+      });
     } finally {
       await openPrintersTab(page);
       await page.getByLabel('Footer Message', { exact: true }).fill(originalFooter);
-      const restore = originalTemplate?.id === 'compact'
-        ? page.getByRole('button', { name: /^Compact/ })
-        : page.getByRole('button', { name: /^Classic/ });
+      const restore =
+        originalTemplate?.id === 'compact'
+          ? page.getByRole('button', { name: /^Compact/ })
+          : page.getByRole('button', { name: /^Classic/ });
       await restore.click();
-      if (await saveChanges(page).isVisible().catch(() => false)) {
+      if (
+        await saveChanges(page)
+          .isVisible()
+          .catch(() => false)
+      ) {
         await saveAndReloadPrintersTab(page);
       }
       expect(await readSetting(page, 'bill_footer_message')).toBe(originalFooter);
@@ -108,7 +124,7 @@ test.describe('@ci-tier2 Settings > Printers', () => {
     await openPrintersTab(page);
 
     const receiptPrimary = page.getByLabel('Receipt language', { exact: true });
-    const original = await readSetting(page, 'bill_language_policy') as LanguagePolicy;
+    const original = (await readSetting(page, 'bill_language_policy')) as LanguagePolicy;
     const originalValue = await receiptPrimary.inputValue();
     const next = originalValue === 'de' ? 'th' : 'de';
 
@@ -126,19 +142,25 @@ test.describe('@ci-tier2 Settings > Printers', () => {
     } finally {
       await openPrintersTab(page);
       await page.getByLabel('Receipt language', { exact: true }).selectOption(originalValue);
-      if (await saveChanges(page).isVisible().catch(() => false)) {
+      if (
+        await saveChanges(page)
+          .isVisible()
+          .catch(() => false)
+      ) {
         await saveAndReloadPrintersTab(page);
       }
       expect(await readSetting(page, 'bill_language_policy')).toEqual(original);
     }
   });
 
-  test('a second receipt language equal to the primary is de-duplicated on save', async ({ page }) => {
+  test('a second receipt language equal to the primary is de-duplicated on save', async ({
+    page,
+  }) => {
     await openPrintersTab(page);
 
     const receiptPrimary = page.getByLabel('Receipt language', { exact: true });
     const receiptSecond = page.getByLabel('Second receipt language', { exact: true });
-    const original = await readSetting(page, 'bill_language_policy') as LanguagePolicy;
+    const original = (await readSetting(page, 'bill_language_policy')) as LanguagePolicy;
 
     const primary = (await receiptPrimary.inputValue()) === 'fr' ? 'it' : 'fr';
     try {
@@ -157,19 +179,27 @@ test.describe('@ci-tier2 Settings > Printers', () => {
     } finally {
       await openPrintersTab(page);
       await page.getByLabel('Second receipt language', { exact: true }).selectOption('none');
-      await page.getByLabel('Receipt language', { exact: true }).selectOption(
-        original?.primary?.mode === 'fixed' && original.primary.language
-          ? original.primary.language
-          : 'inherit',
-      );
-      if (await saveChanges(page).isVisible().catch(() => false)) {
+      await page
+        .getByLabel('Receipt language', { exact: true })
+        .selectOption(
+          original?.primary?.mode === 'fixed' && original.primary.language
+            ? original.primary.language
+            : 'inherit',
+        );
+      if (
+        await saveChanges(page)
+          .isVisible()
+          .catch(() => false)
+      ) {
         await saveAndReloadPrintersTab(page);
       }
       expect(await readSetting(page, 'bill_language_policy')).toEqual(original);
     }
   });
 
-  test('kitchen ticket and Z-report languages persist independently of the receipt', async ({ page }) => {
+  test('kitchen ticket and Z-report languages persist independently of the receipt', async ({
+    page,
+  }) => {
     await openPrintersTab(page);
 
     const kot = page.getByLabel('Kitchen ticket language', { exact: true });
@@ -196,13 +226,17 @@ test.describe('@ci-tier2 Settings > Printers', () => {
       });
     } finally {
       await openPrintersTab(page);
-      await page.getByLabel('Kitchen ticket language', { exact: true }).selectOption(
-        (originalKot as LanguagePolicy)?.primary?.language ?? 'inherit',
-      );
-      await page.getByLabel('Z-report language', { exact: true }).selectOption(
-        (originalZ as LanguagePolicy)?.primary?.language ?? 'inherit',
-      );
-      if (await saveChanges(page).isVisible().catch(() => false)) {
+      await page
+        .getByLabel('Kitchen ticket language', { exact: true })
+        .selectOption((originalKot as LanguagePolicy)?.primary?.language ?? 'inherit');
+      await page
+        .getByLabel('Z-report language', { exact: true })
+        .selectOption((originalZ as LanguagePolicy)?.primary?.language ?? 'inherit');
+      if (
+        await saveChanges(page)
+          .isVisible()
+          .catch(() => false)
+      ) {
         await saveAndReloadPrintersTab(page);
       }
       expect(await readSetting(page, 'kot_language_policy')).toEqual(originalKot);
@@ -210,7 +244,9 @@ test.describe('@ci-tier2 Settings > Printers', () => {
     }
   });
 
-  test('the printers tab surfaces print method, bill template and detected devices', async ({ page }) => {
+  test('the printers tab surfaces print method, bill template and detected devices', async ({
+    page,
+  }) => {
     await openPrintersTab(page);
 
     await expect(page.getByRole('heading', { name: 'Printers', exact: true })).toBeVisible();
@@ -220,24 +256,317 @@ test.describe('@ci-tier2 Settings > Printers', () => {
 
     // Print method is a real ESC/POS vs browser choice, and the explanatory
     // hint below the select follows the selection.
-    const printMethod = page.getByText('Print Method', { exact: true }).first()
+    const printMethod = page
+      .getByText('Print Method', { exact: true })
+      .first()
       .locator('xpath=following-sibling::select[1]');
     const selectedMethod = await printMethod.inputValue();
     await expect(printMethod).toHaveValue(/escpos|browser/);
-    await expect(page.getByText(
-      selectedMethod === 'browser'
-        ? 'Opens the browser print dialog — works with any printer on this computer'
-        : 'Direct USB printing via WebUSB — connect the printer from the POS toolbar',
-    )).toBeVisible();
+    await expect(
+      page.getByText(
+        selectedMethod === 'browser'
+          ? 'Opens the browser print dialog — works with any printer on this computer'
+          : 'Direct thermal printing for USB, Network, and WebUSB printers — keep selected for receipt printers',
+      ),
+    ).toBeVisible();
+    await printMethod.selectOption('escpos');
+    await expect(
+      page.getByText(
+        'Direct thermal printing for USB, Network, and WebUSB printers — keep selected for receipt printers',
+      ),
+    ).toBeVisible();
+    await printMethod.selectOption(selectedMethod);
 
     // Every receipt-surface language policy has its own control.
-    for (const label of ['Receipt language', 'Second receipt language', 'Kitchen ticket language',
-      'Z-report language', 'Second Z-report language']) {
+    for (const label of [
+      'Receipt language',
+      'Second receipt language',
+      'Kitchen ticket language',
+      'Z-report language',
+      'Second Z-report language',
+    ]) {
       await expect(page.getByLabel(label, { exact: true })).toBeVisible();
     }
 
     // The device list is real, not a placeholder: it reports what the OS
     // enumerates (here, one device).
     await expect(page.getByRole('button', { name: /Installed on this computer/ })).toBeVisible();
+  });
+
+  test('XP-58 printer text_size, localized Print Method guidance, and live Browser Print scaling work end-to-end', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const evidenceDir = process.env.EVIDENCE_DIR;
+    await openPrintersTab(page);
+
+    const token = await page.evaluate(() => localStorage.getItem('token'));
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const printMethod = page
+      .getByText('Print Method', { exact: true })
+      .first()
+      .locator('xpath=following-sibling::select[1]');
+    const originalMethod = await printMethod.inputValue();
+
+    // 1. Verify English and Spanish Print Method guidance copy in the live UI
+    await printMethod.selectOption('escpos');
+    await expect(printMethod.locator('option[value="escpos"]')).toHaveText(
+      'ESCPOS (USB / Network Thermal Printer)',
+    );
+    await expect(
+      page.getByText(
+        'Direct thermal printing for USB, Network, and WebUSB printers — keep selected for receipt printers',
+      ),
+    ).toBeVisible();
+
+    if (evidenceDir && fs.existsSync(evidenceDir)) {
+      await page.screenshot({
+        path: path.join(evidenceDir, '14_settings_print_method_escpos_hint.png'),
+        fullPage: false,
+      });
+    }
+
+    await setLanguage(page, 'es');
+    await page.goto(`${BASE}/settings?tab=receipts-printers`);
+    await expect(
+      page.getByText(
+        'Impresión térmica directa para impresoras USB, de red y WebUSB: mantenlo seleccionado para impresoras de tickets',
+      ),
+    ).toBeVisible({ timeout: 30_000 });
+    await setLanguage(page, 'en');
+    await openPrintersTab(page);
+
+    // 2. Configure an XP-58 SIR printer with Extra Large text size via the UI and verify API shape + adversarial guard
+    let createdPrinterId: string | null = null;
+    try {
+      const initialListRes = await page.request.get(`${BASE}/api/printers`, { headers });
+      const initialPrinters = (
+        (await initialListRes.json()) as { printers: Array<{ id: string; name: string }> }
+      ).printers;
+      const preExistingXp58 = initialPrinters.find((p) => p.name === 'XP-58 SIR');
+      if (!preExistingXp58) {
+        await page.getByRole('button', { name: 'Add Manually', exact: true }).click();
+        await page.getByPlaceholder('e.g. Kitchen Printer').fill('XP-58 SIR');
+        const formSection = page.locator('h3', { hasText: 'Add Printer' }).locator('..');
+        const selects = formSection.locator('select');
+        await selects.nth(0).selectOption('usb');
+        await selects.nth(1).selectOption('cols-32');
+        await selects.nth(2).selectOption('extra_large');
+        await formSection.getByRole('button', { name: 'Add Printer', exact: true }).click();
+      } else {
+        await page.request.put(`${BASE}/api/printers/${preExistingXp58.id}`, {
+          headers,
+          data: {
+            connection_type: 'usb',
+            paper_width: 'cols-32',
+            text_size: 'extra_large',
+            is_default: true,
+          },
+        });
+        await openPrintersTab(page);
+      }
+
+      await expect(page.getByText('XP-58 SIR', { exact: true }).first()).toBeVisible({
+        timeout: 15_000,
+      });
+
+      const listRes = await page.request.get(`${BASE}/api/printers`, { headers });
+      expect(listRes.ok()).toBeTruthy();
+      const { printers } = (await listRes.json()) as {
+        printers: Array<{
+          id: string;
+          name: string;
+          text_size: string;
+          is_default: number;
+          capabilities: { textSize: string };
+        }>;
+      };
+      const xp58 = printers.find((p) => p.name === 'XP-58 SIR');
+      expect(xp58).toBeDefined();
+      createdPrinterId = xp58!.id;
+      expect(xp58!.text_size).toBe('extra_large');
+      expect(xp58!.capabilities.textSize).toBe('extra_large');
+
+      // Ensure XP-58 SIR is the default printer so active printer resolution selects it
+      if (xp58!.is_default !== 1) {
+        const defaultRes = await page.request.put(`${BASE}/api/printers/${createdPrinterId}`, {
+          headers,
+          data: { is_default: true },
+        });
+        expect(defaultRes.ok()).toBeTruthy();
+      }
+
+      if (evidenceDir && fs.existsSync(evidenceDir)) {
+        await openPrintersTab(page);
+        await page.screenshot({
+          path: path.join(evidenceDir, '15_settings_xp58_extra_large_printer.png'),
+          fullPage: false,
+        });
+      }
+
+      // Adversarial check: backend rejects unrecognized text_size values on POST and PUT
+      const badPost = await page.request.post(`${BASE}/api/printers`, {
+        headers,
+        data: {
+          name: 'Bad Text Size Printer',
+          connection_type: 'usb',
+          paper_width: 'cols-32',
+          text_size: 'gigantic',
+        },
+      });
+      expect(badPost.status()).toBe(400);
+      const badPostBody = (await badPost.json()) as { error: string };
+      expect(badPostBody.error).toContain('text_size must be normal, large, or extra_large');
+
+      const badPut = await page.request.put(`${BASE}/api/printers/${createdPrinterId}`, {
+        headers,
+        data: { text_size: 'gigantic' },
+      });
+      expect(badPut.status()).toBe(400);
+
+      // 3. Switch Print Method to Browser Print and trigger a live receipt print from /orders
+      await openPrintersTab(page);
+      const pmSelect = page
+        .getByText('Print Method', { exact: true })
+        .first()
+        .locator('xpath=following-sibling::select[1]');
+      await pmSelect.selectOption('browser');
+      if (
+        await saveChanges(page)
+          .isVisible()
+          .catch(() => false)
+      ) {
+        await saveAndReloadPrintersTab(page);
+      }
+
+      // Create a disposable order and generate its bill via API so /orders has a bill ready to print
+      const orderRes = await page.request.post(`${BASE}/api/orders`, {
+        headers,
+        data: {
+          type: 'takeaway',
+          items: [{ product_id: 'e2e-product', quantity: 2 }],
+        },
+      });
+      expect(orderRes.ok()).toBeTruthy();
+      const { order } = (await orderRes.json()) as { order: { id: number; order_number: string } };
+
+      const billRes = await page.request.post(`${BASE}/api/bills/generate`, {
+        headers,
+        data: { order_id: order.id },
+      });
+      expect(billRes.ok()).toBeTruthy();
+
+      // Trigger printBill through the live /orders UI in the running browser app and inspect the popup
+      await page.goto(`${BASE}/orders`);
+      await page.waitForLoadState('networkidle');
+      const orderRow = page.getByText(order.order_number).first();
+      await expect(orderRow).toBeVisible({ timeout: 15_000 });
+      await orderRow.click();
+
+      type PrintHookWindow = Window & {
+        __capturedPrintPopupHtml?: string;
+        __origOpen?: typeof window.open;
+      };
+
+      await page.evaluate(() => {
+        const win = window as PrintHookWindow;
+        win.__capturedPrintPopupHtml = '';
+        const origOpen = window.open;
+        win.__origOpen = origOpen;
+        window.open = (() => {
+          const docParts: string[] = [];
+          const fakeWin = {
+            closed: false,
+            document: {
+              readyState: 'complete',
+              open() {},
+              write(chunk: string) {
+                docParts.push(chunk);
+                win.__capturedPrintPopupHtml = docParts.join('');
+              },
+              close() {},
+            },
+            print() {},
+            close() {
+              this.closed = true;
+            },
+          };
+          return fakeWin as unknown as Window;
+        }) as typeof window.open;
+      });
+
+      const printIconBtn = page.locator('button[title="Print"], button[title="Reprint"]').first();
+      await expect(printIconBtn).toBeVisible({ timeout: 15_000 });
+      await printIconBtn.click();
+
+      const confirmPrintBtn = page.getByRole('button', { name: /^Confirm (Print|Reprint)$/ });
+      await expect(confirmPrintBtn).toBeVisible({ timeout: 10_000 });
+      await confirmPrintBtn.click();
+
+      await expect
+        .poll(
+          async () =>
+            await page.evaluate(
+              () => String((window as PrintHookWindow).__capturedPrintPopupHtml || '').length,
+            ),
+          { timeout: 15_000 },
+        )
+        .toBeGreaterThan(200);
+
+      const capturedHtml = await page.evaluate(() => {
+        const win = window as PrintHookWindow;
+        if (win.__origOpen) {
+          window.open = win.__origOpen;
+        }
+        return String(win.__capturedPrintPopupHtml || '');
+      });
+
+      expect(capturedHtml).toContain('@page { size: 58mm auto; margin: 0; }');
+      expect(capturedHtml).toContain(
+        '.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: 17px; font-weight: 700; }',
+      );
+      expect(capturedHtml).not.toMatch(/#(?:c00|ccc|eee|333|555|666|888)/i);
+
+      if (evidenceDir && fs.existsSync(evidenceDir)) {
+        const popupHtmlPath = path.join(evidenceDir, '16_live_orders_browser_print_xp58_xl.html');
+        fs.writeFileSync(popupHtmlPath, capturedHtml, 'utf8');
+        const previewPage = await page.context().newPage();
+        await previewPage.setViewportSize({ width: 480, height: 900 });
+        await previewPage.setContent(capturedHtml, { waitUntil: 'load' });
+        const billContainer = previewPage.locator('.bill-container');
+        await billContainer.screenshot({
+          path: path.join(evidenceDir, '16_live_orders_browser_print_xp58_xl.png'),
+        });
+        await previewPage.close();
+      }
+    } finally {
+      if (createdPrinterId) {
+        const cleanupListRes = await page.request
+          .get(`${BASE}/api/printers`, { headers })
+          .catch(() => null);
+        const cleanupPrinters = cleanupListRes?.ok()
+          ? (((await cleanupListRes.json()) as { printers: Array<{ id: string }> }).printers ?? [])
+          : [];
+        if (cleanupPrinters.length > 1) {
+          await page.request
+            .delete(`${BASE}/api/printers/${createdPrinterId}`, { headers })
+            .catch(() => undefined);
+        }
+      }
+      await openPrintersTab(page);
+      const pmSelect = page
+        .getByText('Print Method', { exact: true })
+        .first()
+        .locator('xpath=following-sibling::select[1]');
+      await pmSelect.selectOption(originalMethod);
+      if (
+        await saveChanges(page)
+          .isVisible()
+          .catch(() => false)
+      ) {
+        await saveAndReloadPrintersTab(page);
+      }
+    }
   });
 });

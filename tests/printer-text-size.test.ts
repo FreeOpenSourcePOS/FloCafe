@@ -1117,7 +1117,8 @@ test('tax breakdown rates, space-grouped addon prices, and zero-gap/wrapped fina
 });
 
 test('printerShape includes normalized textSize on capabilities', () => {
-  const { printerShape } = require('../main/routes/printers') as typeof import('../main/routes/printers');
+  const { printerShape } =
+    require('../main/routes/printers') as typeof import('../main/routes/printers');
   const defaultShape = printerShape({
     id: 'p-1',
     name: 'XP-58',

@@ -284,7 +284,7 @@ async function main(): Promise<void> {
     const localeFiles = fs.readdirSync(messageDir).filter((file) => file.endsWith('.json'));
     assert.equal(
       localeFiles.length,
-      30,
+      31,
       'the full-report localization test covers all supported locales',
     );
     for (const localeFile of localeFiles) {
@@ -850,7 +850,7 @@ async function main(): Promise<void> {
       'only top 5 items by net item sales are included',
     );
 
-    // Store-language localization across all 29 supported languages + regional currency formatting
+    // Store-language localization across all 31 supported languages + regional currency formatting
     for (const localeFile of localeFiles) {
       const lang = localeFile.replace(/\.json$/, '');
       const msgJson = JSON.parse(fs.readFileSync(path.join(messageDir, localeFile), 'utf8'));

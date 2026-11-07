@@ -457,6 +457,10 @@ for (const [term, segments, cells] of [
   ['क्रिम', ['क्रि', 'म'], 2],
   ['प्रबन्धक', ['प्र', 'ब', 'न्ध', 'क'], 4],
   ['तरकारी', ['त', 'र', 'का', 'री'], 4],
+  ['தமிழ்', ['த', 'மி', 'ழ்'], 3],
+  ['மொத்தம்', ['மொ', 'த்', 'த', 'ம்'], 4],
+  ['பார்சல்', ['பா', 'ர்', 'ச', 'ல்'], 4],
+  ['சிற்றுண்டி', ['சி', 'ற்', 'று', 'ண்', 'டி'], 5],
 ] as const) {
   assert.deepEqual(
     graphemeSegments(term),
@@ -630,6 +634,28 @@ assert.deepEqual(
   paintedGurmukhiLines,
   ['ਹਰ', 'ਪ੍ਰੀਤ'],
   'paintRasterRequest wrapping keeps Gurmukhi virama conjuncts intact across line breaks',
+);
+
+const taNarrowReceiptProduct = 'பில்டர் காபி';
+assert.deepEqual(
+  graphemeSegments(taNarrowReceiptProduct),
+  ['பி', 'ல்', 'ட', 'ர்', ' ', 'கா', 'பி'],
+  'Tamil receipt product segments into base consonants with attached vowel signs and pulli',
+);
+assert.equal(
+  displayCellWidth(taNarrowReceiptProduct),
+  7,
+  'Tamil receipt product measures seven thermal display cells, not its twelve code points',
+);
+assert.equal(
+  truncateToDisplayCells(taNarrowReceiptProduct, 4),
+  'பில்டர்',
+  'Tamil vowel signs and pulli are dropped with their base rather than emitted as orphan marks',
+);
+assert.deepEqual(
+  wrapToDisplayCells(taNarrowReceiptProduct, 4),
+  ['பில்டர்', 'காபி'],
+  'Tamil wrapping breaks on the word boundary rather than stranding a vowel sign or pulli at a 4-cell width',
 );
 
 const widthModulePath = require.resolve('../shared/print/width');

@@ -121,6 +121,7 @@ async function run() {
     'sw',
     'pa',
     'te',
+    'ta',
   ] as const) {
     await i18n.loadLocaleMessages(lang);
   }
@@ -691,6 +692,29 @@ async function run() {
         paHtml.includes('ਤੁਹਾਡੇ ਆਉਣ ਲਈ ਧੰਨਵਾਦ!'),
     );
 
+    const taTenant = {
+      business_name: 'FloCafe Chennai',
+      currency: 'INR',
+      country: 'IN',
+      timezone: 'Asia/Kolkata',
+    };
+    const taHtml = generateBillHtml(sampleEnBill, taTenant, { language: 'ta', isReprint: true });
+    assert(
+      'TA receipt has lang="ta-IN" and dir="ltr"',
+      taHtml.includes('<html lang="ta-IN" dir="ltr">'),
+    );
+    assert(
+      'TA labels are Tamil',
+      taHtml.includes('மறுஅச்சு') &&
+        taHtml.includes('பில் #') &&
+        taHtml.includes('மொத்தத் தொகை') &&
+        taHtml.includes('உங்கள் வருகைக்கு நன்றி!'),
+    );
+    assert(
+      'TA receipt declares the Tamil font families',
+      taHtml.includes("'Noto Sans Tamil', 'Latha', 'Tamil Sangam MN'"),
+    );
+
     // The browser receipt is the primary print path, and its body stack was
     // extended per language by hand, so Bengali was the one merged locale left
     // without a declared family here. Assert the families the order-slip and
@@ -996,6 +1020,33 @@ async function run() {
         punjabiSlip.includes('Noto Sans Gurmukhi') &&
         punjabiSlip.includes('ਉਪ-ਜੋੜ') &&
         punjabiSlip.includes('ਕੁੱਲ ਜੋੜ'),
+    );
+
+    const tamilSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'ஆர்டர் சீட்டு',
+        subtotal: 'துணை மொத்தம்',
+        discount: 'தள்ளுபடி',
+        serviceCharge: 'சேவை கட்டணம்',
+        deliveryCharge: 'டெலிவரி கட்டணம்',
+        packagingCharge: 'பேக்கேஜிங் கட்டணம்',
+        tax: 'வரி',
+        total: 'மொத்தத் தொகை',
+      },
+      {
+        country: 'IN',
+        currency: 'INR',
+        locale: 'ta-IN',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Tamil order slip carries ta-IN LTR metadata, local font fallback, and Tamil labels',
+      tamilSlip.includes('lang="ta-IN" dir="ltr"') &&
+        tamilSlip.includes('Noto Sans Tamil') &&
+        tamilSlip.includes('துணை மொத்தம்') &&
+        tamilSlip.includes('மொத்தத் தொகை'),
     );
 
     const bengaliSlip = generateOrderSlipHtml(

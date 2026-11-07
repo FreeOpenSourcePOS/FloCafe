@@ -55,7 +55,7 @@ is invisible on screen and corrupts comparison, searching, and print labels.
 identically and wrap identically after normalisation, which is what makes NFC a requirement rather
 than a preference. `tests/translations.test.ts` rejects a `vi.json` value that is not already NFC.
 
-The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `pa.json`, `ru.json`, `sw.json`, `te.json`, and `th.json`.
+The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `pa.json`, `ru.json`, `sw.json`, `ta.json`, `te.json`, and `th.json`.
 
 ## Albanian and Vietnamese on a generic thermal printer
 
@@ -70,19 +70,19 @@ character set; the printer path handles the reduction.
 Vietnamese is a different case, because many of its characters are outside every supported code page.
 Verified against `LATIN_THERMAL_CAPABILITIES`:
 
-| String | Representable | Code page |
-| --- | --- | --- |
-| `Món` | yes | `cp437` |
-| `Khách hàng` | yes | `cp437` |
-| `Cà phê` | yes | `cp437` |
-| `Bàn` | yes | `cp437` |
-| `Tổng cộng` | no | none |
-| `Hóa đơn` | no | none |
-| `Ăn tại chỗ` | no | none |
-| `Nước` | no | none |
-| `Số tiền` | no | none |
-| `Đơn vị` | no | none |
-| `Tiếng Việt` | no | none |
+| String       | Representable | Code page |
+| ------------ | ------------- | --------- |
+| `Món`        | yes           | `cp437`   |
+| `Khách hàng` | yes           | `cp437`   |
+| `Cà phê`     | yes           | `cp437`   |
+| `Bàn`        | yes           | `cp437`   |
+| `Tổng cộng`  | no            | none      |
+| `Hóa đơn`    | no            | none      |
+| `Ăn tại chỗ` | no            | none      |
+| `Nước`       | no            | none      |
+| `Số tiền`    | no            | none      |
+| `Đơn vị`     | no            | none      |
+| `Tiếng Việt` | no            | none      |
 
 The characters that fail are those carrying a tone mark: `ộ`, `đ`, `ạ`, `ố`, `ơ`, and the stacked
 `ế` in `Tiếng`. Note that the language endonym itself is not representable, so a printer-specific
@@ -203,6 +203,12 @@ distinct on the receipt. The vegetarian tags are `శాకాహారం` and 
 `మాంసాహారం`, identical between `pos.*` and `products.*`. Cash movement uses `నగదు జమ` for pay-in
 and `నగదు ఉపసంహరణ` for pay-out, identically on the dashboard and on the Z-report. Takeaway is
 `టేక్అవే` and delivery is `డెలివరీ`.
+
+**Tamil.** Subtotal `துணை மொத்தம்` and grand total `மொத்தத் தொகை` are distinct labels and must stay
+distinct on the receipt. The vegetarian tags are `சைவம்` and the non-vegetarian tags `அசைவம்`,
+identical between `pos.*` and `products.*`. Cash movement uses `ரொக்க வரவு` for pay-in and `ரொக்க செலவு`
+for pay-out across the dashboard and the Z-report. Takeaway is `பார்சல்` across `orders.takeaway` and
+`pos.orderTypeTakeaway`, distinct from delivery `டெலிவரி` and dine-in `உணவகத்தில் சாப்பிட`.
 
 ## Verification
 

@@ -2672,7 +2672,20 @@
     "counterRole": "Banko rolü",
     "counterIsActive": "Aktif",
     "confirmDeleteCounter": "Bu banko silinsin mi?",
-    "confirmDeleteCounterDesc": "Bu banko kalıcı olarak kaldırılacaktır."
+    "confirmDeleteCounterDesc": "Bu banko kalıcı olarak kaldırılacaktır.",
+    "printerProfile": "Yazıcı Türü / Profili",
+    "printerProfileAuto": "Yazıcı adından otomatik algıla",
+    "printerProfileImpact76": "76mm Nokta Vuruşlu / İğneli (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM Serisi (80mm Termal)",
+    "printerProfileXprinter": "Xprinter 80mm Termal",
+    "printerProfileGeneric80": "Genel 80mm ESC/POS Termal",
+    "printerProfileGeneric58": "Genel 58mm ESC/POS Termal",
+    "printerProfileImpactHint": "Şeritli nokta vuruşlu yazıcılar 32 sütunlu metin modunu kullanır ve bitmap logoları ile QR grafiklerini atlar.",
+    "printerCompatibilityImpact": "76mm Nokta Vuruşlu",
+    "printerCompatibilityDriverOnly": "Yalnızca sürücü / tarayıcı yazdırma",
+    "printerDriverOnlyWarning": "Bu yazıcı ham ESC/POS komutlarını kullanmaz. Ham termal yazıcı olarak eklemek yerine Tarayıcı ile Yazdır seçeneğini kullanın.",
+    "printerSwitchToBrowserPrint": "Tarayıcı ile Yazdırmayı Kullan",
+    "printerSwitchedToBrowserPrint": "Yazdırma Yöntemi Tarayıcı ile Yazdırma olarak değiştirildi"
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",

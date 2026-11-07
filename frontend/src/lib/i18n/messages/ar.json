@@ -2672,7 +2672,20 @@
     "counterRole": "دور المحطة",
     "counterIsActive": "نشط",
     "confirmDeleteCounter": "هل تريد حذف هذه المحطة؟",
-    "confirmDeleteCounterDesc": "سيتم حذف هذه المحطة نهائياً."
+    "confirmDeleteCounterDesc": "سيتم حذف هذه المحطة نهائياً.",
+    "printerProfile": "نوع الطابعة / ملف التعريف",
+    "printerProfileAuto": "اكتشاف تلقائي من اسم الطابعة",
+    "printerProfileImpact76": "طابعة نقطية 76 مم (Epson TM-U220، Bixolon SRP-275)",
+    "printerProfileEpsonTm": "سلسلة Epson TM (حرارية 80 مم)",
+    "printerProfileXprinter": "طابعة Xprinter حرارية 80 مم",
+    "printerProfileGeneric80": "طابعة حرارية عامة 80 مم ESC/POS",
+    "printerProfileGeneric58": "طابعة حرارية عامة 58 مم ESC/POS",
+    "printerProfileImpactHint": "تستخدم طابعات الشريط النقطية وضع النص المكون من 32 عمودا وتتخطى شعارات الصور ورموز QR الرسومية.",
+    "printerCompatibilityImpact": "نقطية 76 مم",
+    "printerCompatibilityDriverOnly": "طباعة عبر المتصفح / التعريف فقط",
+    "printerDriverOnlyWarning": "لا تستخدم هذه الطابعة أوامر ESC/POS المباشرة. استخدم الطباعة عبر المتصفح بدلا من إضافتها كطابعة حرارية مباشرة.",
+    "printerSwitchToBrowserPrint": "استخدام طباعة المتصفح",
+    "printerSwitchedToBrowserPrint": "تم التبديل إلى الطباعة عبر المتصفح"
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",

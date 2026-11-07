@@ -2672,7 +2672,20 @@
     "counterRole": "نقش پیشخوان",
     "counterIsActive": "فعال",
     "confirmDeleteCounter": "آیا این پیشخوان حذف شود؟",
-    "confirmDeleteCounterDesc": "این پیشخوان برای همیشه حذف خواهد شد."
+    "confirmDeleteCounterDesc": "این پیشخوان برای همیشه حذف خواهد شد.",
+    "printerProfile": "نوع / نمایه چاپگر",
+    "printerProfileAuto": "تشخیص خودکار از نام چاپگر",
+    "printerProfileImpact76": "ضربه‌ای / سوزنی ۷۶ میلی‌متری (Epson TM-U220، Bixolon SRP-275)",
+    "printerProfileEpsonTm": "سری Epson TM (حرارتی ۸۰ میلی‌متری)",
+    "printerProfileXprinter": "حرارتی ۸۰ میلی‌متری Xprinter",
+    "printerProfileGeneric80": "حرارتی عمومی ۸۰ میلی‌متری ESC/POS",
+    "printerProfileGeneric58": "حرارتی عمومی ۵۸ میلی‌متری ESC/POS",
+    "printerProfileImpactHint": "چاپگرهای ریبونی ضربه‌ای از حالت متنی ۳۲ ستونی استفاده می‌کنند و لوگوی تصویری و گرافیک QR را چاپ نمی‌کنند.",
+    "printerCompatibilityImpact": "ضربه‌ای ۷۶ میلی‌متری",
+    "printerCompatibilityDriverOnly": "فقط چاپ مرورگر / درایور",
+    "printerDriverOnlyWarning": "این چاپگر از دستورات مستقیم ESC/POS پشتیبانی نمی‌کند. به‌جای افزودن آن به‌عنوان چاپگر حرارتی مستقیم، از چاپ مرورگر استفاده کنید.",
+    "printerSwitchToBrowserPrint": "استفاده از چاپ مرورگر",
+    "printerSwitchedToBrowserPrint": "روش چاپ به چاپ مرورگر تغییر یافت"
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",

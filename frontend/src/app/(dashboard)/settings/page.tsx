@@ -5978,6 +5978,11 @@ export default function SettingsPage() {
               kdsEnabledSetting={kdsEnabledSetting}
               pulseCustomMethods={pulseCustomMethods}
               markHydrationTouched={markHydrationTouched}
+              onPersistPrintMethod={(method) => {
+                setPrintMethod(method);
+                printingFormRef.current = { ...printingFormRef.current, printMethod: method };
+                setSavedPrinting((prev) => ({ ...prev, printMethod: method }));
+              }}
               confirm={confirm}
             />
           </TabsContent>

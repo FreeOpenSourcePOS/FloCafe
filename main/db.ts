@@ -10260,6 +10260,15 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertSettingIfMissing('multi_counter_enabled', 'false');
     },
   },
+  {
+    version: 125,
+    name: 'add_printer_profile_id',
+    up: () => {
+      if (!getColumns(db, 'printers').includes('profile_id')) {
+        db.exec('ALTER TABLE printers ADD COLUMN profile_id TEXT DEFAULT NULL');
+      }
+    },
+  },
 ];
 
 export function backfillWhatsAppMessageAttempts(
@@ -10755,6 +10764,7 @@ function createSchema(): void {
       cash_drawer_pulse_enabled INTEGER NOT NULL DEFAULT 0,
       paper_width TEXT DEFAULT '80mm',
       text_size TEXT NOT NULL DEFAULT 'normal' CHECK (text_size IN ('normal', 'large', 'extra_large')),
+      profile_id TEXT DEFAULT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );

@@ -2672,7 +2672,20 @@
     "counterRole": "काउन्टरको भूमिका",
     "counterIsActive": "सक्रिय",
     "confirmDeleteCounter": "यो काउन्टर मेटाउने?",
-    "confirmDeleteCounterDesc": "यो काउन्टर स्थायी रूपमा हटाइनेछ।"
+    "confirmDeleteCounterDesc": "यो काउन्टर स्थायी रूपमा हटाइनेछ।",
+    "printerProfile": "प्रिन्टर प्रकार / प्रोफाइल",
+    "printerProfileAuto": "प्रिन्टरको नामबाट स्वतः पहिचान गर्नुहोस्",
+    "printerProfileImpact76": "76mm इम्प्याक्ट / डट-म्याट्रिक्स (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM शृङ्खला (80mm थर्मल)",
+    "printerProfileXprinter": "Xprinter 80mm थर्मल",
+    "printerProfileGeneric80": "साधारण 80mm ESC/POS थर्मल",
+    "printerProfileGeneric58": "साधारण 58mm ESC/POS थर्मल",
+    "printerProfileImpactHint": "इम्प्याक्ट रिबन प्रिन्टरहरूले ३२-स्तम्भ पाठ मोड प्रयोग गर्छन् र बिटम्याप लोगो तथा QR ग्राफिक्स छोड्छन्।",
+    "printerCompatibilityImpact": "76mm इम्प्याक्ट",
+    "printerCompatibilityDriverOnly": "ड्राइभर / ब्राउजर प्रिन्ट मात्र",
+    "printerDriverOnlyWarning": "यस प्रिन्टरले सिधा ESC/POS आदेशहरू प्रयोग गर्दैन। यसलाई थर्मल प्रिन्टरको रूपमा थप्नुको सट्टा ब्राउजर प्रिन्ट प्रयोग गर्नुहोस्।",
+    "printerSwitchToBrowserPrint": "ब्राउजर प्रिन्ट प्रयोग गर्नुहोस्",
+    "printerSwitchedToBrowserPrint": "प्रिन्ट विधिलाई ब्राउजर प्रिन्टमा बदलियो"
   },
   "setup": {
     "alreadyCompleted": "यस स्थापनामा सेटअप पहिले नै पूरा भइसकेको छ। लगइन गर्न रिडिरेक्ट गर्दै...",

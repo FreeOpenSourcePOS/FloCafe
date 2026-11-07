@@ -2672,7 +2672,20 @@
     "counterRole": "Jukumu la Kaunta",
     "counterIsActive": "Hai",
     "confirmDeleteCounter": "Futa kaunta hii?",
-    "confirmDeleteCounterDesc": "Kaunta hii itaondolewa kabisa."
+    "confirmDeleteCounterDesc": "Kaunta hii itaondolewa kabisa.",
+    "printerProfile": "Aina / Wasifu wa Printa",
+    "printerProfileAuto": "Tambua kiotomatiki kutoka kwa jina la printa",
+    "printerProfileImpact76": "Printa ya Impact / Nukta 76mm (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Mfululizo wa Epson TM (Joto 80mm)",
+    "printerProfileXprinter": "Xprinter ya Joto 80mm",
+    "printerProfileGeneric80": "Printa ya Joto ya Kawaida 80mm ESC/POS",
+    "printerProfileGeneric58": "Printa ya Joto ya Kawaida 58mm ESC/POS",
+    "printerProfileImpactHint": "Printa za utepe wa impact hutumia hali ya maandishi ya safu 32 na kuruka nembo za picha na michoro ya QR.",
+    "printerCompatibilityImpact": "Impact ya 76mm",
+    "printerCompatibilityDriverOnly": "Uchapishaji wa kiendeshi / kivinjari pekee",
+    "printerDriverOnlyWarning": "Printa hii haitumii amri ghafi za ESC/POS. Tumia Uchapishaji wa Kivinjari badala ya kuiongeza kama printa ghafi ya joto.",
+    "printerSwitchToBrowserPrint": "Tumia Uchapishaji wa Kivinjari",
+    "printerSwitchedToBrowserPrint": "Njia ya uchapishaji imebadilishwa kuwa Uchapishaji wa Kivinjari"
   },
   "setup": {
     "alreadyCompleted": "Usanidi tayari umekamilishwa kwenye usakinishaji huu. Inaelekeza kwenye kuingia…",

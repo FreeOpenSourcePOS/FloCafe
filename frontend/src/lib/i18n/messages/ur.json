@@ -2672,7 +2672,20 @@
     "counterRole": "کاؤنٹر کا کردار",
     "counterIsActive": "فعال",
     "confirmDeleteCounter": "کیا یہ کاؤنٹر حذف کرنا ہے؟",
-    "confirmDeleteCounterDesc": "یہ کاؤنٹر مستقل طور پر ہٹا دیا جائے گا۔"
+    "confirmDeleteCounterDesc": "یہ کاؤنٹر مستقل طور پر ہٹا دیا جائے گا۔",
+    "printerProfile": "پرنٹر کی قسم / پروفائل",
+    "printerProfileAuto": "پرنٹر کے نام سے خودکار شناخت کریں",
+    "printerProfileImpact76": "76 ملی میٹر امپیکٹ / ڈاٹ میٹرکس (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM سیریز (80 ملی میٹر تھرمل)",
+    "printerProfileXprinter": "Xprinter 80 ملی میٹر تھرمل",
+    "printerProfileGeneric80": "عمومی 80 ملی میٹر ESC/POS تھرمل",
+    "printerProfileGeneric58": "عمومی 58 ملی میٹر ESC/POS تھرمل",
+    "printerProfileImpactHint": "امپیکٹ ربن پرنٹرز 32 کالم ٹیکسٹ موڈ استعمال کرتے ہیں اور بٹ میپ لوگو اور QR گرافکس چھوڑ دیتے ہیں۔",
+    "printerCompatibilityImpact": "76 ملی میٹر امپیکٹ",
+    "printerCompatibilityDriverOnly": "صرف ڈرائیور / براؤزر پرنٹ",
+    "printerDriverOnlyWarning": "یہ پرنٹر براہ راست ESC/POS کمانڈز استعمال نہیں کرتا۔ اسے تھرمل پرنٹر کے طور پر شامل کرنے کے بجائے براؤزر پرنٹ استعمال کریں۔",
+    "printerSwitchToBrowserPrint": "براؤزر پرنٹ استعمال کریں",
+    "printerSwitchedToBrowserPrint": "پرنٹ کا طریقہ براؤزر پرنٹ پر منتقل کر دیا گیا"
   },
   "setup": {
     "alreadyCompleted": "اس انسٹال کا سیٹ اپ پہلے ہی مکمل ہو چکا ہے۔ سائن ان پر بھیج رہا ہے…",

@@ -2672,7 +2672,20 @@
     "counterRole": "Balierol",
     "counterIsActive": "Actief",
     "confirmDeleteCounter": "Deze balie verwijderen?",
-    "confirmDeleteCounterDesc": "Deze balie wordt permanent verwijderd."
+    "confirmDeleteCounterDesc": "Deze balie wordt permanent verwijderd.",
+    "printerProfile": "Printertype / profiel",
+    "printerProfileAuto": "Automatisch detecteren op basis van printernaam",
+    "printerProfileImpact76": "76mm matrix / impactprinter (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM-serie (80mm thermisch)",
+    "printerProfileXprinter": "Xprinter 80mm thermisch",
+    "printerProfileGeneric80": "Generieke 80mm ESC/POS thermisch",
+    "printerProfileGeneric58": "Generieke 58mm ESC/POS thermisch",
+    "printerProfileImpactHint": "Impactprinters met inktlint gebruiken de tekstmodus met 32 kolommen en slaan bitmaplogo's en QR-afbeeldingen over.",
+    "printerCompatibilityImpact": "76mm impactprinter",
+    "printerCompatibilityDriverOnly": "Alleen stuurprogramma- / browserafdruk",
+    "printerDriverOnlyWarning": "Deze printer gebruikt geen directe ESC/POS-opdrachten. Gebruik Afdrukken via browser in plaats van deze als directe thermische printer toe te voegen.",
+    "printerSwitchToBrowserPrint": "Afdrukken via browser gebruiken",
+    "printerSwitchedToBrowserPrint": "Afdrukmethode gewijzigd naar Afdrukken via browser"
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",

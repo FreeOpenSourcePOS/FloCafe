@@ -57,7 +57,7 @@ import {
 import { layoutStyledUnit } from '@print/layout';
 import type { ResolvedPrintLanguages } from '@print/types';
 import { getLogoRasterBands } from '@print/image-raster';
-import { concatBytes, encodeGsV0Band } from '@print/raster';
+import { concatBytes, encodeGsV0Band, rasterCapabilityEnabled } from '@print/raster';
 import { formatItemHeading } from './item-heading';
 import { isExcludedFromBillReceipt } from '../../../../shared/order-item-status';
 
@@ -638,7 +638,10 @@ export function buildClassicReceiptBytes(
   }
 
   // Business header (document block).
-  if (header?.logoRaster) {
+  if (
+    header?.logoRaster &&
+    (opts.capabilities === undefined || rasterCapabilityEnabled(opts.capabilities))
+  ) {
     const widthDots = opts.capabilities?.raster?.widthDots ?? (physicalCols <= 32 ? 384 : 576);
     const maxBandHeight = opts.capabilities?.raster?.maxBandHeight ?? 200;
     const bands = getLogoRasterBands(header.logoRaster, widthDots, maxBandHeight);
@@ -1165,7 +1168,10 @@ export function buildCompactReceiptBytes(
   }
 
   // Header (document business-header block)
-  if (header?.logoRaster) {
+  if (
+    header?.logoRaster &&
+    (opts.capabilities === undefined || rasterCapabilityEnabled(opts.capabilities))
+  ) {
     const widthDots = opts.capabilities?.raster?.widthDots ?? (physicalCols <= 32 ? 384 : 576);
     const maxBandHeight = opts.capabilities?.raster?.maxBandHeight ?? 200;
     const bands = getLogoRasterBands(header.logoRaster, widthDots, maxBandHeight);

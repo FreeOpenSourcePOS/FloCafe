@@ -68,8 +68,8 @@ export const LATIN_THERMAL_CAPABILITIES: ThermalPrinterCapabilities = {
   transliteration: { enabled: true },
 };
 
-// The shipped fallback preserves established German and Albanian thermal
-// transliteration without claiming quality coverage for every accented locale.
+// Base ASCII map used on GENERIC_THERMAL_CAPABILITIES and applied first on
+// Latin profiles before extended multi-char/stroke folding and NFD stripping.
 const LATIN_ASCII_MAP: Record<string, string> = {
   Ä: 'AE',
   Ö: 'OE',
@@ -82,6 +82,33 @@ const LATIN_ASCII_MAP: Record<string, string> = {
   ç: 'c',
   Ë: 'E',
   ë: 'e',
+};
+
+const LATIN_EXTENDED_ASCII_MAP: Record<string, string> = {
+  Æ: 'AE',
+  æ: 'ae',
+  Œ: 'OE',
+  œ: 'oe',
+  Ø: 'O',
+  ø: 'o',
+  Ł: 'L',
+  ł: 'l',
+  Đ: 'D',
+  đ: 'd',
+  Ð: 'D',
+  ð: 'd',
+  Þ: 'TH',
+  þ: 'th',
+  Ğ: 'G',
+  ğ: 'g',
+  İ: 'I',
+  ı: 'i',
+  Ş: 'S',
+  ş: 's',
+  Ơ: 'O',
+  ơ: 'o',
+  Ư: 'U',
+  ư: 'u',
 };
 
 const CODE_PAGE_CHARACTERS: Record<Exclude<ThermalCodePage, 'ascii'>, string> = {
@@ -126,6 +153,26 @@ export function normalizeThermalText(
 ): string {
   if (capabilities.raster.enabled === true && !isThermalTextRepresentable(text, capabilities)) {
     return text;
+  }
+  if (!capabilities.transliteration.enabled) return text;
+  if (capabilities.representability.scripts.includes('latin')) {
+    const hasNativeCodePage = capabilities.encoding.codePages.some(
+      (codePage) => codePage !== 'ascii' && codePageCanRepresent(text, codePage),
+    );
+    if (hasNativeCodePage) return text;
+    const withLegacyMap = text.replace(
+      /[À-ÿ]/g,
+      (character) => LATIN_ASCII_MAP[character] ?? character,
+    );
+    const withExtendedMap = [...withLegacyMap]
+      .map((character) => LATIN_EXTENDED_ASCII_MAP[character] ?? character)
+      .join('');
+    return withExtendedMap.replace(/\p{Script=Latin}\p{Mark}*/gu, (segment) =>
+      segment
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .normalize('NFC'),
+    );
   }
   return transliterateThermalText(text, capabilities);
 }
@@ -180,7 +227,7 @@ export function thermalTextFallback(
   fallback: string,
   capabilities: ThermalPrinterCapabilities,
 ): string {
-  const normalized = normalizeThermalText(value, capabilities);
+  const normalized = transliterateThermalText(value, capabilities);
   return isThermalTextRepresentable(normalized, capabilities) ? normalized : fallback;
 }
 

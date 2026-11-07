@@ -33,9 +33,17 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const {
-  assert: assertReports, assertEqual, assertIncludes, assertGreaterThan,
-  assertOrThrow, assertEqualOrThrow, assertIncludesOrThrow, assertGreaterThanOrThrow,
-  getResults, resetCounters,
+  assert: assertReports,
+  assertEqual,
+  assertIncludes,
+  assertGreaterThan,
+  assertOrThrow,
+  assertEqualOrThrow,
+  assertIncludesOrThrow,
+  assertGreaterThanOrThrow,
+  api,
+  getResults,
+  resetCounters,
 } = require('./helpers/test-setup');
 
 function threw(fn: () => void): Error | null {
@@ -70,16 +78,36 @@ async function run() {
 
   // ── Throwing variants record the failure and abort ─────────────────────────
   const throwingFailures: Array<[string, () => void, string]> = [
-    ['assertOrThrow', () => assertOrThrow(false, 'deliberate throwing failure'), 'deliberate throwing failure'],
-    ['assertEqualOrThrow', () => assertEqualOrThrow(1, 2, 'deliberate throwing failure'), 'expected 2, got 1'],
-    ['assertIncludesOrThrow', () => assertIncludesOrThrow('abc', 'z', 'deliberate throwing failure'), 'does not contain'],
-    ['assertGreaterThanOrThrow', () => assertGreaterThanOrThrow(1, 2, 'deliberate throwing failure'), 'expected > 2, got 1'],
+    [
+      'assertOrThrow',
+      () => assertOrThrow(false, 'deliberate throwing failure'),
+      'deliberate throwing failure',
+    ],
+    [
+      'assertEqualOrThrow',
+      () => assertEqualOrThrow(1, 2, 'deliberate throwing failure'),
+      'expected 2, got 1',
+    ],
+    [
+      'assertIncludesOrThrow',
+      () => assertIncludesOrThrow('abc', 'z', 'deliberate throwing failure'),
+      'does not contain',
+    ],
+    [
+      'assertGreaterThanOrThrow',
+      () => assertGreaterThanOrThrow(1, 2, 'deliberate throwing failure'),
+      'expected > 2, got 1',
+    ],
   ];
   resetCounters();
   for (const [name, fn, detail] of throwingFailures) {
     const error = threw(fn);
     assert.ok(error, `${name} throws on a failing assertion`);
-    assert.match(error!.message, new RegExp(detail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${name} reports why it failed`);
+    assert.match(
+      error!.message,
+      new RegExp(detail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      `${name} reports why it failed`,
+    );
   }
   assert.deepEqual(
     getResults(),
@@ -115,6 +143,111 @@ async function run() {
     `${stdout}${stderr}`.includes('THROWING_ASSERT_DID_NOT_THROW'),
     'the failure is reported with its message before the process dies',
   );
+
+  // ── api() closes loopback connections and retries transient ECONNRESET ─────
+  const savedFetch = globalThis.fetch;
+  try {
+    let attempts = 0;
+    let capturedHeaders: Record<string, string> | undefined;
+    globalThis.fetch = (async (_input: any, init?: any) => {
+      attempts += 1;
+      capturedHeaders = init?.headers;
+      if (attempts === 1) {
+        const cause = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+        throw new TypeError('fetch failed', { cause });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const recovered = await api('http://127.0.0.1:39999', '/api/settings/offline-mode', {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    assert.equal(attempts, 2, 'api() retries once after a transient ECONNRESET fetch error');
+    assert.equal(recovered.status, 200, 'api() returns the retried response status');
+    assert.deepEqual(recovered.data, { ok: true }, 'api() returns the retried response body');
+    assert.equal(
+      capturedHeaders?.Connection,
+      'close',
+      'api() sends Connection: close by default to avoid stale loopback keep-alive sockets',
+    );
+    assert.equal(
+      capturedHeaders?.Authorization,
+      'Bearer test-token',
+      'api() preserves caller headers alongside default headers',
+    );
+
+    let persistentResetAttempts = 0;
+    globalThis.fetch = (async () => {
+      persistentResetAttempts += 1;
+      const cause = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+      throw new TypeError('fetch failed', { cause });
+    }) as typeof fetch;
+    await assert.rejects(
+      () => api('http://127.0.0.1:39999', '/api/settings/offline-mode'),
+      /fetch failed/,
+      'api() rethrows if the retry also fails with ECONNRESET',
+    );
+    assert.equal(persistentResetAttempts, 2, 'api() stops after one retry');
+
+    let nonResetAttempts = 0;
+    globalThis.fetch = (async () => {
+      nonResetAttempts += 1;
+      const cause = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+      throw new TypeError('fetch failed', { cause });
+    }) as typeof fetch;
+    await assert.rejects(
+      () => api('http://127.0.0.1:39999', '/api/settings/offline-mode'),
+      /fetch failed/,
+      'api() does not mask non-ECONNRESET failures',
+    );
+    assert.equal(nonResetAttempts, 1, 'api() does not retry non-ECONNRESET errors');
+
+    let postResetAttempts = 0;
+    globalThis.fetch = (async () => {
+      postResetAttempts += 1;
+      const cause = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+      throw new TypeError('fetch failed', { cause });
+    }) as typeof fetch;
+    await assert.rejects(
+      () =>
+        api('http://127.0.0.1:39999', '/api/addon-groups', {
+          method: 'POST',
+          body: { name: 'Toppings' },
+        }),
+      /fetch failed/,
+      'api() does not automatically retry non-idempotent POST requests on ECONNRESET',
+    );
+    assert.equal(postResetAttempts, 1, 'POST requests fail without automatic retry on ECONNRESET');
+
+    let putOptInAttempts = 0;
+    globalThis.fetch = (async () => {
+      putOptInAttempts += 1;
+      if (putOptInAttempts === 1) {
+        const cause = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+        throw new TypeError('fetch failed', { cause });
+      }
+      return new Response(JSON.stringify({ offline_mode: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+    const optedInWrite = await api('http://127.0.0.1:39999', '/api/settings/offline-mode', {
+      method: 'PUT',
+      body: { offline_mode: true },
+      retryOnReset: true,
+    });
+    assert.equal(putOptInAttempts, 2, 'api() retries opted-in write requests once on ECONNRESET');
+    assert.equal(
+      optedInWrite.status,
+      200,
+      'opted-in write retry returns the second attempt status',
+    );
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
 
   console.log('  ✓ harness contract verified');
 }

@@ -420,7 +420,7 @@ export default function CartPanel({
         {!existingOrder && cart.orderType === 'dine_in' && (
           <div
             data-testid="pos-order-details-summary"
-            className="flex min-h-7 items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/50 px-2.5 py-0.5"
+            className="flex min-h-7 items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/50 px-2.5"
           >
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Users size={13} className="shrink-0" />

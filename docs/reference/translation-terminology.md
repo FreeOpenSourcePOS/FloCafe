@@ -208,7 +208,7 @@ and `నగదు ఉపసంహరణ` for pay-out, identically on the dashboa
 distinct on the receipt. The vegetarian tags are `சைவம்` and the non-vegetarian tags `அசைவம்`,
 identical between `pos.*` and `products.*`. Cash movement uses `ரொக்க வரவு` for pay-in and `ரொக்க செலவு`
 for pay-out across the dashboard and the Z-report. Takeaway is `பார்சல்` across `orders.takeaway` and
-`pos.orderTypeTakeaway`, distinct from delivery `டெலிவரி` and dine-in `உள்ளே உண்பது`.
+`pos.orderTypeTakeaway`, distinct from delivery `டெலிவரி` and dine-in `உணவகத்தில் சாப்பிட`.
 
 ## Verification
 

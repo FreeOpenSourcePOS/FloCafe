@@ -668,6 +668,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(drawer).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(drawer).toHaveCount(0);
+    await expect(page.getByTestId('pos-payment-queue-btn')).toBeFocused();
   });
 
   test('PrepaidCheckoutModal focused buttons are not hijacked by global Space/Enter quick-pay', async ({

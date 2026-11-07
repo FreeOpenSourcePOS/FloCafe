@@ -36,6 +36,7 @@ import {
   graphemeSegments,
   layoutStyledUnit,
   padToDisplayCells,
+  paintRasterRequest,
   truncateToDisplayCells,
   truncateToDisplayCellsFromEnd,
   wrapToDisplayCells,
@@ -399,6 +400,7 @@ assert.equal(
 for (const [label, cluster] of [
   ['Devanagari', 'क्ष'],
   ['Bengali', 'ক্ষ'],
+  ['Gurmukhi', 'ਪ੍ਰ'],
   ['Thai', 'กำ'],
   ['Urdu', 'کّ'],
 ] as const) {
@@ -571,6 +573,64 @@ assert.deepEqual(
   'Marathi wrapping breaks on the word boundary rather than stranding a matra at a 3-cell width',
 );
 
+const paNarrowReceiptProduct = 'ਮਸਾਲਾ ਚਾਹ';
+assert.deepEqual(
+  graphemeSegments(paNarrowReceiptProduct),
+  ['ਮ', 'ਸਾ', 'ਲਾ', ' ', 'ਚਾ', 'ਹ'],
+  'Punjabi receipt product segments into base consonants with attached Gurmukhi matras',
+);
+assert.equal(
+  displayCellWidth(paNarrowReceiptProduct),
+  6,
+  'Punjabi receipt product measures six thermal display cells, not its eight code points',
+);
+assert.deepEqual(
+  wrapToDisplayCells(paNarrowReceiptProduct, 3),
+  ['ਮਸਾਲਾ', 'ਚਾਹ'],
+  'Punjabi wrapping breaks on the word boundary rather than stranding a Gurmukhi matra at a 3-cell width',
+);
+
+const paintedGurmukhiLines: string[] = [];
+const paintedGurmukhiResult = paintRasterRequest(
+  {
+    version: 1,
+    requestId: 'pa-conjunct-wrap',
+    text: 'ਹਰਪ੍ਰੀਤ',
+    widthDots: 50,
+    maxBandHeight: 200,
+    direction: 'ltr',
+    style: 'normal',
+    financial: false,
+    maxLines: 4,
+  },
+  () => ({
+    width: 1,
+    height: 1,
+    getContext: () => ({
+      font: '',
+      textBaseline: 'top',
+      direction: 'ltr',
+      textAlign: 'left',
+      fillStyle: '#000',
+      measureText: (text: string) => ({ width: text.length * 10 }),
+      setTransform: () => undefined,
+      fillRect: () => undefined,
+      fillText: (text: string) => {
+        paintedGurmukhiLines.push(text);
+      },
+      getImageData: (_x: number, _y: number, width: number, height: number) => ({
+        data: new Uint8ClampedArray(width * height * 4),
+      }),
+    }),
+  }),
+);
+assert.equal(paintedGurmukhiResult.ok, true);
+assert.deepEqual(
+  paintedGurmukhiLines,
+  ['ਹਰ', 'ਪ੍ਰੀਤ'],
+  'paintRasterRequest wrapping keeps Gurmukhi virama conjuncts intact across line breaks',
+);
+
 const widthModulePath = require.resolve('../shared/print/width');
 const originalWidthModule = require.cache[widthModulePath];
 const segmenterDescriptor = Object.getOwnPropertyDescriptor(Intl, 'Segmenter');
@@ -585,6 +645,7 @@ try {
   const fallbackClusters = [
     String.fromCodePoint(0x0915, 0x094d, 0x0937),
     String.fromCodePoint(0x0995, 0x09cd, 0x09b7),
+    String.fromCodePoint(0x0a2a, 0x0a4d, 0x0a30),
     String.fromCodePoint(0x0e01, 0x0e33),
     'کّ',
     'ک\u200c',
@@ -597,6 +658,26 @@ try {
     fallbackClusters.map((cluster) => fallbackWidth.graphemeSegments(cluster)),
     fallbackClusters.map((cluster) => [cluster]),
     'fallback segmentation keeps Indic, Thai, and Urdu clusters together without Intl.Segmenter',
+  );
+  assert.deepEqual(
+    fallbackWidth.graphemeSegments('ਕ੍!'),
+    ['ਕ੍', '!'],
+    'fallback segmentation does not absorb punctuation after a Gurmukhi virama',
+  );
+  assert.equal(
+    fallbackWidth.displayCellWidth('ਕ੍!'),
+    2,
+    'fallback measures a Gurmukhi virama followed by punctuation as two display cells',
+  );
+  assert.deepEqual(
+    fallbackWidth.graphemeSegments('ਕ੍ ਖ'),
+    ['ਕ੍', ' ', 'ਖ'],
+    'fallback segmentation does not absorb whitespace after a Gurmukhi virama',
+  );
+  assert.equal(
+    fallbackWidth.displayCellWidth('ਕ੍ ਖ'),
+    3,
+    'fallback measures a Gurmukhi virama followed by whitespace and a consonant as three display cells',
   );
   assert.deepEqual(
     fallbackWidth.graphemeSegments('خ\u200cود'),

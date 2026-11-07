@@ -122,7 +122,9 @@ routes on `3001`: `POST /api/auth/password/change`, `POST /api/auth/recover-pass
 
 Per-resource limiters named in the tables below are `express-rate-limit` instances declared in
 their own route file. Unless noted otherwise, they apply to every caller including LAN addresses.
-In [`main/routes/orders.ts`](../../main/routes/orders.ts), `orderWriteRateLimit` and
+In [`main/routes/orders.ts`](../../main/routes/orders.ts), `orderReadRateLimit` defaults to 120
+requests per minute (configurable via `FLO_ORDER_READ_RATE_LIMIT_MAX` when set to a positive
+integer); `orderWriteRateLimit` and
 `orderItemCancelRateLimit` remain separate 60-requests-per-minute buckets (configurable via
 `FLO_ORDER_WRITE_RATE_LIMIT_MAX` when set to a positive integer) and exempt authenticated callers
 connecting from private, loopback, or Tailscale socket addresses (`isAllowedPrivateIp` on

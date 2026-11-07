@@ -211,6 +211,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/sw.json'),
   },
+  pa: {
+    locale: 'pa-IN',
+    nativeName: 'ਪੰਜਾਬੀ',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/pa.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

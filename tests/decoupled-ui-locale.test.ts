@@ -371,6 +371,7 @@ async function runTests() {
       | 'ja'
       | 'hi'
       | 'ne'
+      | 'pa'
       | 'sq'
       | 'th'
       | 'ha'
@@ -390,6 +391,7 @@ async function runTests() {
     { lang: 'ja', label: 'Japanese UI', filePrefix: 'receipt-argentina-japanese-ui' },
     { lang: 'hi', label: 'Hindi UI', filePrefix: 'receipt-argentina-hindi-ui' },
     { lang: 'ne', label: 'Nepali UI', filePrefix: 'receipt-argentina-nepali-ui' },
+    { lang: 'pa', label: 'Punjabi UI', filePrefix: 'receipt-argentina-punjabi-ui' },
     { lang: 'sq', label: 'Albanian UI', filePrefix: 'receipt-argentina-albanian-ui' },
     { lang: 'th', label: 'Thai UI', filePrefix: 'receipt-argentina-thai-ui' },
     { lang: 'ha', label: 'Hausa UI', filePrefix: 'receipt-argentina-hausa-ui' },
@@ -478,6 +480,15 @@ async function runTests() {
       assert.ok(
         receiptHtml.includes('Bili #') && receiptHtml.includes('Jumla Kuu'),
         `Receipt in Swahili UI must contain Swahili labels`,
+      );
+    } else if (lang === 'pa') {
+      assert.ok(
+        receiptHtml.includes('ਬਿੱਲ #') && receiptHtml.includes('ਕੁੱਲ ਜੋੜ'),
+        `Receipt in Punjabi UI must contain Gurmukhi labels`,
+      );
+      assert.ok(
+        receiptHtml.includes('ਅਗ'),
+        `Receipt in Punjabi UI must contain a Punjabi month name, got: ${receiptHtml}`,
       );
     }
 

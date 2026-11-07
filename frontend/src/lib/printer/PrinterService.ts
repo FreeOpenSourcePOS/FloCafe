@@ -329,7 +329,7 @@ class PrinterService {
       @page { size: ${mmWidth} auto; margin: 0; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body {
-        font-family: 'Courier New', 'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Noto Sans Thai', 'Leelawadee UI', Thonburi, monospace;
+        font-family: 'Courier New', 'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Noto Sans Gurmukhi', 'Raavi', 'Kohinoor Gurmukhi', 'Gurmukhi Sangam MN', 'Noto Sans Thai', 'Leelawadee UI', Thonburi, monospace;
         font-size: 13px;
         font-weight: 600;
         color: #000;

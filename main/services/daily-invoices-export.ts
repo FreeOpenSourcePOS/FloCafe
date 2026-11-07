@@ -199,6 +199,7 @@ const REPORT_FONT_STACK = [
   '"Noto Sans Arabic"',
   '"Noto Sans Hebrew"',
   '"Noto Sans Devanagari"',
+  '"Noto Sans Gurmukhi"',
   '"Noto Sans Bengali"',
   '"Noto Sans Tamil"',
   '"Noto Sans Thai"',

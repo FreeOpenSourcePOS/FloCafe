@@ -318,6 +318,16 @@ const TABLES: Record<string, StatusTable> = {
     shutdownBackup: ['Inachukua nakala rudufu', 'Tafadhali usizime kompyuta.'],
     saved: ['Kila kitu kimehifadhiwa', 'Flo itafungwa hivi punde.'],
   },
+  pa: {
+    starting: ['Flo ਸ਼ੁਰੂ ਹੋ ਰਿਹਾ ਹੈ', 'ਸਭ ਕੁਝ ਤਿਆਰ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ…'],
+    checking: ['ਤੁਹਾਡੇ ਡਾਟਾ ਦੀ ਜਾਂਚ ਕੀਤੀ ਜਾ ਰਹੀ ਹੈ', 'ਡਾਟਾਬੇਸ ਦੀ ਪੁਸ਼ਟੀ ਕਰਕੇ ਇਸ ਨੂੰ ਤੰਦਰੁਸਤ ਰੱਖਿਆ ਜਾ ਰਿਹਾ ਹੈ…'],
+    backingUp: ['ਤੁਹਾਡੇ ਡਾਟਾ ਦਾ ਬੈਕਅੱਪ ਲਿਆ ਜਾ ਰਿਹਾ ਹੈ', 'ਸ਼ੁਰੂ ਕਰਨ ਤੋਂ ਪਹਿਲਾਂ ਇੱਕ ਸੁਰੱਖਿਅਤ ਕਾਪੀ ਸੰਭਾਲੀ ਜਾ ਰਹੀ ਹੈ…'],
+    services: ['ਸੇਵਾਵਾਂ ਸ਼ੁਰੂ ਹੋ ਰਹੀਆਂ ਹਨ', 'ਲਗਭਗ ਤਿਆਰ…'],
+    welcome: ['Flo ਵਿੱਚ ਤੁਹਾਡਾ ਸੁਆਗਤ ਹੈ', 'ਤੁਹਾਡਾ ਵਰਕਸਪੇਸ ਖੋਲ੍ਹਿਆ ਜਾ ਰਿਹਾ ਹੈ…'],
+    closing: ['Flo ਬੰਦ ਹੋ ਰਿਹਾ ਹੈ', 'ਤੁਹਾਡਾ ਡਾਟਾ ਸੰਭਾਲਿਆ ਜਾ ਰਿਹਾ ਹੈ। ਕਿਰਪਾ ਕਰਕੇ ਕੰਪਿਊਟਰ ਬੰਦ ਨਾ ਕਰੋ।'],
+    shutdownBackup: ['ਬੈਕਅੱਪ ਲਿਆ ਜਾ ਰਿਹਾ ਹੈ', 'ਕਿਰਪਾ ਕਰਕੇ ਕੰਪਿਊਟਰ ਬੰਦ ਨਾ ਕਰੋ।'],
+    saved: ['ਸਭ ਕੁਝ ਸੰਭਾਲ ਲਿਆ ਗਿਆ', 'Flo ਕੁਝ ਹੀ ਪਲਾਂ ਵਿੱਚ ਬੰਦ ਹੋ ਜਾਵੇਗਾ।'],
+  },
 };
 
 export const RTL_STATUS_LANGUAGES: ReadonlySet<string> = new Set(['ar', 'fa', 'ur']);

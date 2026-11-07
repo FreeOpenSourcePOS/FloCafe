@@ -179,7 +179,7 @@ Router: `main/routes/auth.ts`. Full path: `/api/auth`.
 
 Router: `main/routes/categories.ts`. Full path: `/api/categories`.
 
-Categories support at most two levels: root categories (`parent_id IS NULL`) and one subcategory level (`parent.parent_id IS NULL`). Sibling names are unique after trimming, case-insensitively, under the same parent (`parent_id IS NULL` for roots or matching `parent_id` for subcategories), while identical child names are allowed under different root parents. Categories do not inherit taxes, permissions, or kitchen routing from their parent.
+Categories support at most two levels: root categories (`parent_id IS NULL`) and one subcategory level (`parent.parent_id IS NULL`). Sibling names are unique after trimming, case-insensitively, under the same parent (`parent_id IS NULL` for roots or matching `parent_id` for subcategories), while identical child names are allowed under different root parents. Categories do not inherit taxes or permissions from their parent; subcategory kitchen routing and KDS scope inheritance are covered in [Kitchen printing](../printers.md#kitchen-printing) and [KDS category and station scoping](#kds-category-and-station-scoping).
 
 | Method   | Path       | Authorization                                       | Parameters                                                                                                          | Response                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | -------- | ---------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1177,14 +1177,17 @@ re-resolved on every broadcast, and both are re-checked inside the write transac
 `status_update`.
 
 **Categories.** `categoryIds` is the empty list for `owner` and `manager`, which means unrestricted,
-and the parsed `users.category_ids` for everyone else. When the list is non-empty, an item is
-visible only if its product's category is in the list.
+and the parsed `users.category_ids` expanded with non-deleted child subcategories
+(`expandCategoryIdsWithSubcategories`) for everyone else. When the list is non-empty, an item is
+visible only if its product's category is in the expanded list.
 
 **Stations.** `stationIds` comes from `getUserKdsStationIds`. When a user has station assignments
 configured but none active, authentication is refused with `No active kitchen station is assigned to
-this user` rather than silently showing an empty board. `getKdsStationRoutingScope` resolves each
-assigned station into a set of categories, plus a separate set for orders on tables with no
-`kitchen_station_id`, and reports whether any station is unrestricted.
+this user` rather than silently showing an empty board. `getKdsStationCategoryIds` and
+`getKdsStationRoutingScope` resolve each assigned station's `category_ids` (expanded with
+non-deleted child subcategories) into a set of categories, plus a separate set for orders on tables
+with no `kitchen_station_id`, and report whether any assigned station is unrestricted (empty
+`category_ids`).
 
 An order is in scope when its table's `kitchen_station_id` is one of the caller's stations, or when
 the table has no station and the order contains an item in a tableless routing category, or when the

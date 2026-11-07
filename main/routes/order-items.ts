@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import {
   completeSettledReleasedOrderIfServed,
+  expandCategoryIdsWithSubcategories,
   getDatabase,
   getKdsItemParentOrderState,
   getKdsStationCategoryIds,
@@ -148,7 +149,7 @@ router.patch(
         });
       let categoryIds = hasRole(currentUser.role, ROLE_ACCESS.ownerManager)
         ? []
-        : parseCategoryIds(currentUser.category_ids);
+        : expandCategoryIdsWithSubcategories(db, parseCategoryIds(currentUser.category_ids));
       const loadedStationIds = getUserKdsStationIds(db, userId);
       const hasStationAssignments = hasUserKdsStationAssignments(db, userId);
       if (!loadedStationIds || hasStationAssignments === null)
@@ -220,7 +221,7 @@ router.patch(
         }
         categoryIds = hasRole(liveUser.role, ROLE_ACCESS.ownerManager)
           ? []
-          : parseCategoryIds(liveUser.category_ids);
+          : expandCategoryIdsWithSubcategories(db, parseCategoryIds(liveUser.category_ids));
         const liveStationIds = getUserKdsStationIds(db, userId);
         const liveAssignments = hasUserKdsStationAssignments(db, userId);
         if (!liveStationIds || liveAssignments === null)

@@ -4775,9 +4775,37 @@ export default function SettingsPage() {
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-foreground mb-1">
-                            {t('stationCategories')}
-                          </label>
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <label className="block text-sm font-medium text-foreground">
+                              {t('stationCategories')}
+                            </label>
+                            {stationForm.category_ids.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setStationForm((f) => ({ ...f, category_ids: [] }))}
+                                className="text-xs font-medium text-brand hover:underline"
+                              >
+                                {tCommon('clear')}
+                              </button>
+                            )}
+                          </div>
+                          <div className="mb-2">
+                            <label
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 border rounded-full text-xs cursor-pointer transition-colors ${
+                                stationForm.category_ids.length === 0
+                                  ? 'border-brand/50 bg-brand/5 text-foreground font-medium hover:bg-brand/10'
+                                  : 'border-border text-muted-foreground hover:bg-muted'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={stationForm.category_ids.length === 0}
+                                onChange={() => setStationForm((f) => ({ ...f, category_ids: [] }))}
+                                className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                              />
+                              {t('stationNoCategories')}
+                            </label>
+                          </div>
                           {stationCategories.length === 0 ? (
                             <p className="text-xs text-muted-foreground">{t('noCategoriesYet')}</p>
                           ) : (

@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "เช่น บาร์ เคาน์เตอร์ของหวาน",
     "stationNameRequired": "ต้องระบุชื่อสถานี",
     "stationNoAvailableCategories": "ไม่มีหมวดหมู่ที่ใช้ได้",
-    "stationNoCategories": "ยังไม่ได้กำหนดหมวดหมู่",
+    "stationNoCategories": "ทุกหมวดหมู่ (รวมหมวดหมู่ใหม่)",
     "stationNoChef": "ยังไม่ได้กำหนดพ่อครัว",
     "stationNoDefaultCategories": "กำหนดหมวดหมู่ทั้งหมดให้สถานีครัวแล้ว",
     "stationNoPrinter": "เครื่องพิมพ์เริ่มต้น",

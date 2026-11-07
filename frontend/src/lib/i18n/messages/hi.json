@@ -2452,7 +2452,7 @@
     "stationNamePlaceholder": "जैसे बार, मिठाई काउंटर",
     "stationNameRequired": "स्टेशन का नाम आवश्यक है",
     "stationNoAvailableCategories": "कोई श्रेणियां उपलब्ध नहीं",
-    "stationNoCategories": "कोई श्रेणियां निर्दिष्ट नहीं की गईं",
+    "stationNoCategories": "सभी श्रेणियां (नई श्रेणियों सहित)",
     "stationNoChef": "कोई शेफ नियुक्त नहीं किया गया",
     "stationNoDefaultCategories": "सभी श्रेणियां रसोई स्टेशनों को सौंपी गई हैं",
     "stationNoPrinter": "डिफ़ॉल्ट प्रिंटर",

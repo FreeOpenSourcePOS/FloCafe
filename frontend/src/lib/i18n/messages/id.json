@@ -2452,7 +2452,7 @@
     "stationNamePlaceholder": "misalnya Bar, Meja Hidangan Penutup",
     "stationNameRequired": "Nama stasiun wajib diisi",
     "stationNoAvailableCategories": "Tidak ada kategori tersedia",
-    "stationNoCategories": "Tidak ada kategori yang ditugaskan",
+    "stationNoCategories": "Semua kategori (termasuk yang baru)",
     "stationNoChef": "Tidak ada koki yang ditugaskan",
     "stationNoDefaultCategories": "Semua kategori telah ditugaskan ke stasiun dapur",
     "stationNoPrinter": "Printer bawaan",

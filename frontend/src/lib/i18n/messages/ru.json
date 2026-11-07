@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "например: бар, кондитерская",
     "stationNameRequired": "Укажите название станции.",
     "stationNoAvailableCategories": "Нет доступных категорий",
-    "stationNoCategories": "Категорий не присвоено",
+    "stationNoCategories": "Все категории (включая новые)",
     "stationNoChef": "Повар не назначен",
     "stationNoDefaultCategories": "Все категории закреплены за кухонными станциями",
     "stationNoPrinter": "Принтер по умолчанию",

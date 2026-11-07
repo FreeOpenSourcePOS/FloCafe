@@ -303,11 +303,12 @@ independently configurable) and is then narrowed twice more, in
 [`main/services/kds.ts`](../../main/services/kds.ts).
 
 **Category narrowing.** Whether the caller is unrestricted is decided by
-`hasRole(role, ROLE_ACCESS.ownerManager)` — a deliberate role check, not a permission, because
+`hasRole(role, ROLE_ACCESS.ownerManager)` - a deliberate role check, not a permission, because
 category scope is about which identity the KDS trusts to see the whole kitchen, independent of
-whatever `kitchen.use` an owner may have granted to some other role. Owner and manager receive an
-empty `categoryIds` array, which means unrestricted. A chef receives the `category_ids` recorded on
-the user row. A chef whose item's category is not in that list is refused.
+whatever `kitchen.use` an owner may have granted to some other role. Owner and manager are
+unrestricted; a chef is narrowed to the categories (and child subcategories) resolved from
+`users.category_ids` (see
+[KDS category and station scoping](../reference/api.md#kds-category-and-station-scoping)).
 
 **Station narrowing.** The user's assigned stations come from `getUserKdsStationIds`. If station
 assignments are configured for the user and the resolved list is empty, authentication fails rather

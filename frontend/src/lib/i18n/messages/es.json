@@ -2442,7 +2442,7 @@
     "stationNamePlaceholder": "ej. Bar, Mostrador de postres",
     "stationNameRequired": "El nombre de la estación es obligatorio",
     "stationNoAvailableCategories": "No hay categorías disponibles",
-    "stationNoCategories": "Sin categorías asignadas",
+    "stationNoCategories": "Todas las categorías (incluidas las nuevas)",
     "stationNoChef": "Sin chef asignado",
     "stationNoDefaultCategories": "Todas las categorías están asignadas a estaciones de cocina",
     "stationNoPrinter": "Impresora predeterminada",

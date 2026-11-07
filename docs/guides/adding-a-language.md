@@ -129,13 +129,13 @@ language is not covered by them until you add it:
 
 | File                                       | Array                    | Current coverage                                               |
 | ------------------------------------------ | ------------------------ | -------------------------------------------------------------- |
-| `tests/phase3-print-regressions.test.ts`   | `languages`              | 30 of 31; omits `ar`.                                          |
-| `tests/issue-241-localized-errors.test.ts` | `LANGUAGES`              | All 31 (`Object.keys(LANGUAGE_REGISTRY)`).                     |
-| `tests/rtl-setup-auth-settings.test.ts`    | `languages`              | 27 of 31; omits `ar`, `de`, `fil`, `tr`.                       |
-| `tests/browser-receipts.test.ts`           | loop array               | 27 of 31; omits `ar`, `de`, `fil`, `tr`.                       |
-| `tests/i18n-audit-remediations.test.ts`    | two loop arrays          | 27 of 31 each; omits `ar`, `de`, `fil`, `tr`.                  |
-| `tests/rtl-kds-server-whatsapp.test.ts`    | four loop arrays         | 27 of 31 for the all-language loops, 25 for the LTR-only loop. |
-| `tests/rtl-dashboard-pos-common.test.ts`   | two LTR-only loop arrays | 25 of 31; omits the RTL languages plus `de`, `fil`, `tr`.      |
+| `tests/phase3-print-regressions.test.ts`   | `languages`              | 31 of 32; omits `ar`.                                          |
+| `tests/issue-241-localized-errors.test.ts` | `LANGUAGES`              | All 32 (`Object.keys(LANGUAGE_REGISTRY)`).                     |
+| `tests/rtl-setup-auth-settings.test.ts`    | `languages`              | 28 of 32; omits `ar`, `de`, `fil`, `tr`.                       |
+| `tests/browser-receipts.test.ts`           | loop array               | 28 of 32; omits `ar`, `de`, `fil`, `tr`.                       |
+| `tests/i18n-audit-remediations.test.ts`    | two loop arrays          | 28 of 32 each; omits `ar`, `de`, `fil`, `tr`.                  |
+| `tests/rtl-kds-server-whatsapp.test.ts`    | four loop arrays         | 28 of 32 for the all-language loops, 26 for the LTR-only loop. |
+| `tests/rtl-dashboard-pos-common.test.ts`   | two LTR-only loop arrays | 26 of 32; omits the RTL languages plus `de`, `fil`, `tr`.      |
 
 This is a known baseline, not something this procedure introduces. Several of these arrays already
 omit registered locales, so they are not a reliable coverage signal. The arrays whose names include

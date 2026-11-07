@@ -78,11 +78,11 @@ generic profile chosen by paper width.
 
 The generic profiles are the conservative ones for native text encoding (ASCII-only, with no text
 shaping), while the Xprinter and Epson profiles add the Latin code pages and Latin script
-representability. All four shipped profiles enable the capability-gated raster path across core,
-merchant, and compliance pack templates (and via canvas rasterization on browser/WebUSB paths), so
-lines containing characters outside the printer's native code pages are rendered as raster bands.
-If raster rendering is unavailable or fails on a financial row, FloCafe refuses the print rather
-than omitting an amount, reporting `Receipt not printed: ...` with the affected row and next steps.
+representability. All four shipped profiles enable the capability-gated
+[raster printing](architecture/printing.md#raster-printing) path, so lines containing characters
+outside the printer's native code pages are rendered as raster bands. If raster rendering is
+unavailable or fails on a financial row, FloCafe refuses the print rather than omitting an amount,
+reporting `Receipt not printed: ...` with the affected row and next steps.
 
 ## Arabic-script text
 

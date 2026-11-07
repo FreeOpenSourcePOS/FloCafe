@@ -1404,6 +1404,7 @@ export async function printPaymentTicket(
     targetPrinter?: any;
     signal?: AbortSignal;
     preview?: boolean;
+    settings?: Record<string, string>;
   } = {},
 ): Promise<DispatchResult> {
   try {
@@ -1413,30 +1414,24 @@ export async function printPaymentTicket(
       return { ok: false, detail: 'No printer configured' };
     }
 
-    const { profile, columns: cols } = resolvePrinterContext(printer || { paper_width: '80mm' });
-    const storeName = getSettingValue('business_name') || 'FloCafe';
-
-    let snapshot: RegionalSnapshot;
-    try {
-      snapshot = resolveRegionalSnapshot({
-        country: getSettingValue('country') || undefined,
-        currency: getSettingValue('currency') || undefined,
-        timezone: getSettingValue('timezone') || undefined,
-      });
-    } catch {
-      snapshot = resolveRegionalSnapshot({
-        country: 'US',
-        currency: 'USD',
-        timezone: 'UTC',
-      });
-    }
+    const {
+      profile,
+      columns: cols,
+      capabilities,
+    } = resolvePrinterContext(printer || { paper_width: '80mm' });
+    const readSetting = (key: string): string | null =>
+      options.settings !== undefined ? (options.settings[key] ?? null) : getSettingValue(key);
+    const storeName = readSetting('business_name') || 'FloCafe';
+    const snapshot = resolveRegionalSnapshot({
+      country: readSetting('country') || undefined,
+      currency: readSetting('currency') || undefined,
+      timezone: readSetting('timezone') || undefined,
+    });
     const currency = snapshot.currency;
     const fractionDigits = snapshot.currencyFractionDigits;
     const locale = snapshot.locale;
     const tz = snapshot.timezone;
-    const prefix = resolveCurrencyPrefix(snapshot.currencySymbol || currency, false);
-    const formatAmount = (val: number): string =>
-      formatCurrency(val, prefix, locale, false, fractionDigits);
+    const useUnicode = options.useUnicode ?? false;
 
     const localTime = (iso: string): string => {
       try {
@@ -1449,86 +1444,233 @@ export async function printPaymentTicket(
     };
 
     const balance = options.balance ?? order.total;
-    const storeNameLines = wrapText(safePrinterText(storeName), cols).map(
-      (line) => `{CENTER}{BOLD}${line}{/BOLD}{/CENTER}`,
-    );
-
-    const lines: string[] = [
-      '{INIT}',
-      ...storeNameLines,
-      '{CENTER}{BOLD}PAYMENT TICKET{/BOLD}{/CENTER}',
-      `{CENTER}Ticket #: ${order.order_number}{/CENTER}`,
-      '-'.repeat(cols),
-      `Type: ${order.type === 'dine_in' ? 'Dine In' : 'Takeaway'}`,
-    ];
-
-    if (order.table_name) {
-      lines.push(`Table: ${order.table_name}`);
-    }
-    if (order.created_at) {
-      lines.push(`Date: ${localTime(order.created_at)}`);
-    }
-    if (order.scheduled_for) {
-      lines.push(`Scheduled For: ${localTime(order.scheduled_for)}`);
-    }
-
-    lines.push('-'.repeat(cols));
-    for (const item of items) {
-      const quantity = `${item.quantity}x `;
-      const amount = item.total !== undefined ? formatAmount(Number(item.total)) : '';
-      const quantityWidth = displayCellWidth(quantity);
-      const amountWidth = displayCellWidth(amount);
-      assertFinancialValueFitsColumns(quantity, cols, 'payment ticket item quantity');
-      if (amount) assertFinancialValueFitsColumns(amount, cols, 'payment ticket item amount');
-      const inlineAmount = !amount || quantityWidth + amountWidth + 1 <= cols;
-      const nameWidth = Math.max(
-        1,
-        cols - quantityWidth - (amount && inlineAmount ? amountWidth + 1 : 0),
-      );
-      const nameLines = wrapText(safePrinterText(item.product_name), nameWidth);
-      const firstLine = quantity + (nameLines.shift() || '');
-      if (amount && inlineAmount) {
-        lines.push(firstLine + rightAlign(amount, cols - displayCellWidth(firstLine)));
-      } else {
-        lines.push(firstLine);
-      }
-      lines.push(...nameLines.map((line) => ' '.repeat(quantityWidth) + line));
-      if (amount && !inlineAmount) lines.push(padToDisplayCells(amount, cols, 'right'));
-    }
-
-    lines.push('-'.repeat(cols));
-    const totalAmount = formatAmount(Number(order.total));
-    const balanceAmount = formatAmount(Number(balance));
-    const pushSummaryAmount = (label: string, amount: string, field: string) => {
-      assertFinancialValueFitsColumns(amount, cols, field);
-      const labelWidth = displayCellWidth(label);
-      if (labelWidth + 1 + displayCellWidth(amount) <= cols) {
-        lines.push(`${label}${rightAlign(amount, cols - labelWidth)}`);
-      } else {
-        lines.push(...wrapText(label, cols).map((line) => padToDisplayCells(line, cols)));
-        lines.push(padToDisplayCells(amount, cols, 'right'));
-      }
-    };
-    pushSummaryAmount('Total:', totalAmount, 'payment ticket total');
-    pushSummaryAmount('Balance Due:', balanceAmount, 'payment ticket balance');
-    lines.push('-'.repeat(cols));
-    lines.push('{CENTER}Please pay at the payment counter{/CENTER}');
-    lines.push('{CENTER}Scan or enter ticket number to pay:{/CENTER}');
-
     const qrPayload = `FLOCAFE-TICKET:${order.order_number}`;
     const qrBytes = buildEscPosQrCode(qrPayload);
-    lines.push(`{RAW_BYTES:${qrBytes.toString('base64')}}`);
-    lines.push(`{CENTER}${qrPayload}{/CENTER}`);
-    lines.push('');
-    lines.push('{CUT}');
 
-    const data = buildEscPos(lines, options.useUnicode ?? false, {
-      cutMode: profile.cutMode,
-      columns: cols,
-    });
+    const buildTicketDocument = (
+      caps: ThermalPrinterCapabilities,
+    ): { lines: string[]; rasterGroups: RasterSemanticLineGroup[] } => {
+      const prefix = resolveCurrencyPrefix(
+        snapshot.currencySymbol || currency,
+        useUnicode,
+        caps,
+        false,
+        currency,
+      );
+      const formatAmount = (val: number): string =>
+        formatCurrency(val, prefix, locale, false, fractionDigits);
+
+      const storeNameLines = wrapText(
+        normalizeThermalText(safePrinterText(storeName), caps),
+        cols,
+      ).map((line) => `{CENTER}{BOLD}${line}{/BOLD}{/CENTER}`);
+
+      const lines: string[] = [
+        '{INIT}',
+        ...storeNameLines,
+        '{CENTER}{BOLD}PAYMENT TICKET{/BOLD}{/CENTER}',
+        `{CENTER}Ticket #: ${normalizeThermalText(safePrinterText(String(order.order_number)), caps)}{/CENTER}`,
+        '-'.repeat(cols),
+        `Type: ${order.type === 'dine_in' ? 'Dine In' : 'Takeaway'}`,
+      ];
+      const rasterGroups: RasterSemanticLineGroup[] = [];
+
+      if (order.table_name) {
+        lines.push(`Table: ${normalizeThermalText(safePrinterText(order.table_name), caps)}`);
+      }
+      if (order.created_at) {
+        lines.push(`Date: ${localTime(order.created_at)}`);
+      }
+      if (order.scheduled_for) {
+        lines.push(`Scheduled For: ${localTime(order.scheduled_for)}`);
+      }
+
+      lines.push('-'.repeat(cols));
+      for (const [itemIndex, item] of items.entries()) {
+        const quantity = `${item.quantity}x `;
+        const amount =
+          item.total !== undefined
+            ? normalizeThermalText(formatAmount(Number(item.total)), caps)
+            : '';
+        const quantityWidth = displayCellWidth(quantity);
+        const amountWidth = displayCellWidth(amount);
+        assertFinancialValueFitsColumns(quantity, cols, 'payment ticket item quantity');
+        if (amount) assertFinancialValueFitsColumns(amount, cols, 'payment ticket item amount');
+        const inlineAmount = !amount || quantityWidth + amountWidth + 1 <= cols;
+        const nameWidth = Math.max(
+          1,
+          cols - quantityWidth - (amount && inlineAmount ? amountWidth + 1 : 0),
+        );
+        const normalizedProductName = normalizeThermalText(
+          safePrinterText(item.product_name),
+          caps,
+        );
+        const nameLines = wrapText(normalizedProductName, nameWidth);
+        const firstLine = quantity + (nameLines.shift() || '');
+        const financialTag = amount ? '{FINANCIAL}' : '';
+        const lineIndex = lines.length;
+        const fullItemLabel = `${quantity}${normalizedProductName}`;
+        let formattedLine: string;
+        if (amount && inlineAmount && nameLines.length === 0) {
+          formattedLine = firstLine + rightAlign(amount, cols - displayCellWidth(firstLine));
+          lines.push(`${financialTag}${formattedLine}`);
+        } else {
+          if (amount && inlineAmount) {
+            lines.push(
+              `${financialTag}${firstLine}${rightAlign(amount, cols - displayCellWidth(firstLine))}`,
+            );
+          } else {
+            lines.push(`${financialTag}${firstLine}`);
+          }
+          lines.push(
+            ...nameLines.map((line) => `${financialTag}${' '.repeat(quantityWidth)}${line}`),
+          );
+          if (amount && !inlineAmount) {
+            lines.push(`${financialTag}${padToDisplayCells(amount, cols, 'right')}`);
+          }
+          formattedLine = amount ? `${fullItemLabel} ${amount}` : fullItemLabel;
+        }
+        rasterGroups.push({
+          groupId: `payment-ticket-item-${itemIndex}`,
+          lineIndex,
+          lineCount: lines.length - lineIndex,
+          sourceLines: [formattedLine],
+          sourceControlLines: [lines[lineIndex]],
+          ...(amount
+            ? {
+                financial: true,
+                financialSourceLines: [true],
+                sourceLayouts: [
+                  {
+                    kind: 'financial-summary',
+                    columns: [
+                      { text: fullItemLabel, align: 'left' },
+                      { text: amount, align: 'right' },
+                    ],
+                  },
+                ],
+              }
+            : {}),
+        });
+      }
+
+      lines.push('-'.repeat(cols));
+      const totalAmount = normalizeThermalText(formatAmount(Number(order.total)), caps);
+      const balanceAmount = normalizeThermalText(formatAmount(Number(balance)), caps);
+      const pushSummaryAmount = (label: string, amount: string, field: string, groupId: string) => {
+        assertFinancialValueFitsColumns(amount, cols, field);
+        const labelWidth = displayCellWidth(label);
+        const lineIndex = lines.length;
+        let formattedLine: string;
+        if (labelWidth + 1 + displayCellWidth(amount) <= cols) {
+          formattedLine = `${label}${rightAlign(amount, cols - labelWidth)}`;
+          lines.push(`{FINANCIAL}${formattedLine}`);
+        } else {
+          lines.push(
+            ...wrapText(label, cols).map((line) => `{FINANCIAL}${padToDisplayCells(line, cols)}`),
+          );
+          lines.push(`{FINANCIAL}${padToDisplayCells(amount, cols, 'right')}`);
+          formattedLine = `${label} ${amount}`;
+        }
+        rasterGroups.push({
+          groupId,
+          lineIndex,
+          lineCount: lines.length - lineIndex,
+          sourceLines: [formattedLine],
+          sourceControlLines: [lines[lineIndex]],
+          financial: true,
+          financialSourceLines: [true],
+          sourceLayouts: [
+            {
+              kind: 'financial-summary',
+              columns: [
+                { text: label, align: 'left' },
+                { text: amount, align: 'right' },
+              ],
+            },
+          ],
+        });
+      };
+      pushSummaryAmount('Total:', totalAmount, 'payment ticket total', 'payment-ticket-total');
+      pushSummaryAmount(
+        'Balance Due:',
+        balanceAmount,
+        'payment ticket balance',
+        'payment-ticket-balance',
+      );
+      lines.push('-'.repeat(cols));
+      lines.push('{CENTER}Please pay at the payment counter{/CENTER}');
+      lines.push('{CENTER}Scan or enter ticket number to pay:{/CENTER}');
+      lines.push(`{RAW_BYTES:${qrBytes.toString('base64')}}`);
+      lines.push(`{CENTER}${qrPayload}{/CENTER}`);
+      lines.push('');
+      lines.push('{CUT}');
+      return { lines, rasterGroups };
+    };
+
+    const warnings: PrintWarning[] = [];
+    const nativeCapabilities = nativeFallbackCapabilities(capabilities);
+    let data: Buffer;
+    if (rasterCapabilityEnabled(capabilities)) {
+      const documentResult = buildTicketDocument(capabilities);
+      const nativeDoc = buildTicketDocument(nativeCapabilities);
+      const nativeWarnings: PrintWarning[] = [];
+      const nativeData = buildEscPos(
+        nativeDoc.lines,
+        useUnicode,
+        {
+          cutMode: profile.cutMode,
+          columns: cols,
+          capabilities: nativeCapabilities,
+        },
+        nativeWarnings,
+      );
+      const rasterized = await rasterizeDocumentLines(
+        documentResult.lines,
+        [],
+        {
+          useUnicode,
+          cutMode: profile.cutMode,
+          arabicShaping: capabilities.shaping.arabic,
+          columns: cols,
+          language: 'en',
+          capabilities,
+          requestPrefix: 'payment-ticket',
+        },
+        documentResult.rasterGroups,
+      );
+      if (rasterized.rasterSelected && !rasterized.rasterFailed) {
+        data = rasterized.data;
+        warnings.push(...rasterized.warnings);
+      } else {
+        data = nativeData;
+        warnings.push(...nativeWarnings, ...rasterized.warnings);
+      }
+    } else {
+      const nativeDoc = buildTicketDocument(capabilities);
+      data = buildEscPos(
+        nativeDoc.lines,
+        useUnicode,
+        {
+          cutMode: profile.cutMode,
+          columns: cols,
+          capabilities,
+        },
+        warnings,
+      );
+    }
+
+    if (hasFinancialPrintWarning(warnings)) {
+      return {
+        ok: false,
+        detail: makeFinancialPrintRefusalMessage(warnings),
+        failureClass: 'unsupported',
+        warnings,
+      };
+    }
 
     if (options.preview) {
-      return { ok: true, preview: true, bytes: Array.from(data), warnings: [] };
+      return { ok: true, preview: true, bytes: Array.from(data), warnings };
     }
 
     if (printer?.connection_type === 'webusb') {
@@ -1536,11 +1678,12 @@ export async function printPaymentTicket(
         ok: true,
         bytes: Array.from(data),
         connection_type: 'webusb',
-        warnings: [],
+        warnings,
       };
     }
 
-    return await dispatchPrint(printer, data, options.signal);
+    const dispatch = await dispatchPrint(printer, data, options.signal);
+    return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
   } catch (error: unknown) {
     console.error('[Printer] Payment ticket print error:', error);
     return { ok: false, detail: error instanceof Error ? error.message : String(error) };
@@ -1559,6 +1702,8 @@ export async function printPaymentTicketDetailed(
   const id = correlationId();
   try {
     const dispatch = await printPaymentTicket(...args);
+    const stage =
+      !dispatch.ok && hasFinancialPrintWarning(dispatch.warnings || []) ? 'prepare' : 'dispatch';
     const result: PaymentTicketPrintResult = dispatch.ok
       ? {
           ok: true,
@@ -1573,7 +1718,7 @@ export async function printPaymentTicketDetailed(
           ok: false,
           code: 'print.payment_ticket.failed',
           correlationId: id,
-          stage: 'dispatch',
+          stage,
           detail: dispatch.detail,
           failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
           platformErrorCode:
@@ -2038,17 +2183,29 @@ async function rasterizeDocumentLines(
   rasterFailed: boolean;
 }> {
   let financialRasterText = '';
-  const financialRasterContent = (rasterGroups ?? []).some((group) => {
-    const sourceLines =
-      group.sourceLines ?? lines.slice(group.lineIndex, group.lineIndex + group.lineCount);
-    return sourceLines.some((line, index) => {
-      const financial = group.financialSourceLines?.[index] ?? group.financial === true;
+  const financialRasterContent =
+    (rasterGroups ?? []).some((group) => {
+      const sourceLines =
+        group.sourceLines ?? lines.slice(group.lineIndex, group.lineIndex + group.lineCount);
+      return sourceLines.some((line, index) => {
+        const financial = group.financialSourceLines?.[index] ?? group.financial === true;
+        const unsupported =
+          financial && line.length > 0 && !isThermalTextRepresentable(line, options.capabilities);
+        if (unsupported) financialRasterText = line;
+        return unsupported;
+      });
+    }) ||
+    lines.some((line) => {
+      if (!line.includes('{FINANCIAL}')) return false;
+      const text = line.replace(
+        /\{(?:\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)|INIT|CUT|FEED|STORE_NAME|FINANCIAL)\}/g,
+        '',
+      );
       const unsupported =
-        financial && line.length > 0 && !isThermalTextRepresentable(line, options.capabilities);
-      if (unsupported) financialRasterText = line;
+        text.length > 0 && !isThermalTextRepresentable(text, options.capabilities);
+      if (unsupported && !financialRasterText) financialRasterText = text;
       return unsupported;
     });
-  });
   let selectedFinancial = financialRasterContent;
   const failureResult = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -2073,15 +2230,22 @@ async function rasterizeDocumentLines(
       whenRasterRendererReady,
       applyTextSizeToRasterInput,
     } = await import('./raster-renderer');
-    await whenRasterRendererReady();
-    renderer = getSharedRasterRenderer();
+    const lazyRenderer: Pick<import('./raster-renderer').ChromiumRasterRenderer, 'render'> = {
+      render: async (request) => {
+        if (!renderer) {
+          await whenRasterRendererReady();
+          renderer = getSharedRasterRenderer();
+        }
+        return await renderer.render(request);
+      },
+    };
     const enlarged = applyTextSizeToRasterInput(
       lines,
       rasterGroups,
       options.capabilities.textSize ?? 'normal',
     );
     const raster = await renderUnsupportedRasterLines(
-      renderer,
+      lazyRenderer,
       enlarged.lines,
       options.capabilities,
       options.requestPrefix,
@@ -3816,17 +3980,16 @@ export function formatKOT(
   return result.data;
 }
 
-export function buildTestPage(
+function buildTestPageLines(
   paperWidth: string = '80mm',
-  cutMode: PrinterCutMode = 'full',
   language?: string,
   timezone?: string,
   capabilities?: ThermalPrinterCapabilities,
-): Buffer {
+): { width: number; lang: string; lines: string[] } {
   const width = columnsForPaperWidth(paperWidth) || 48;
   const lang = normalizePrintLanguage(language);
   const label = (concept: PrintConceptId): string =>
-    normalizeThermalText(printLabel(lang, concept));
+    normalizeThermalText(printLabel(lang, concept), capabilities);
   const bar = '='.repeat(width);
   const ruler = Array.from({ length: width }, (_, i) => String((i + 1) % 10)).join('');
   const edgeProbe = 'X'.repeat(width);
@@ -3850,6 +4013,22 @@ export function buildTestPage(
     bar,
     '{CUT}',
   ];
+  return { width, lang, lines };
+}
+
+export function buildTestPage(
+  paperWidth: string = '80mm',
+  cutMode: PrinterCutMode = 'full',
+  language?: string,
+  timezone?: string,
+  capabilities?: ThermalPrinterCapabilities,
+): Buffer {
+  const { width, lang, lines } = buildTestPageLines(
+    paperWidth,
+    language,
+    timezone,
+    capabilities ? nativeFallbackCapabilities(capabilities) : undefined,
+  );
   if (!capabilities || !rasterCapabilityEnabled(capabilities))
     return buildEscPos(lines, false, { cutMode, language: lang, columns: width });
   // Explicit shaping capability prevents raster profile passing unshaped Arabic to text.
@@ -3881,35 +4060,88 @@ export function buildTestPage(
   ]);
 }
 
-/**
- * Build the ESC/POS bytes for a Z-report (cierre de caja) from a stored
- * `cash_closures` row. Day-close, no bill — sections in spec print order:
- * header → Z number + business date + period → opening float → cash
- * movements → sales by payment method → refunds → tax breakdown → staff
- * sales → expected / counted / variance (variance emphasized) → operator +
- * signature → footer.
- * The byte builder never touches the drawer pulse; that is appended by
- * `printZReport` (the route layer) so the byte form is reusable for the
- * WebUSB `bytes: number[]` branch where the renderer dispatches.
- */
-export function buildZReportBody(
+export async function renderTestPage(
+  paperWidth: string = '80mm',
+  cutMode: PrinterCutMode = 'full',
+  language?: string,
+  timezone?: string,
+  capabilities?: ThermalPrinterCapabilities,
+  options?: { rasterProbe?: boolean },
+): Promise<Buffer> {
+  const fallback = buildTestPage(
+    paperWidth,
+    cutMode,
+    language,
+    timezone,
+    options?.rasterProbe ? capabilities : undefined,
+  );
+  if (!capabilities || !rasterCapabilityEnabled(capabilities)) return fallback;
+  const { width, lang, lines } = buildTestPageLines(paperWidth, language, timezone, capabilities);
+  const targetLines = options?.rasterProbe ? lines.slice(0, -1) : lines;
+  const rasterized = await rasterizeDocumentLines(targetLines, [], {
+    useUnicode: false,
+    cutMode,
+    arabicShaping: capabilities.shaping.arabic,
+    columns: width,
+    language: lang,
+    capabilities,
+    requestPrefix: 'test-page',
+  });
+  if (!rasterized.rasterSelected || rasterized.rasterFailed) return fallback;
+  if (!options?.rasterProbe) return rasterized.data;
+  const rasterData = encodeRasterUnits(
+    [
+      {
+        unitId: 'diagnostic-test-page',
+        financial: false,
+        complete: true,
+        bands: buildRasterDiagnosticBands(
+          capabilities.raster.widthDots,
+          capabilities.raster.maxBandHeight,
+        ),
+      },
+    ],
+    capabilities,
+  );
+  return Buffer.concat([
+    rasterized.data,
+    Buffer.from(rasterData),
+    Buffer.from(encodeRasterFeedAndCut(cutMode)),
+  ]);
+}
+
+function buildZReportDocumentLines(
   z: any,
   language?: string,
-  printer?: { columns?: number; capabilities?: ThermalPrinterCapabilities },
-  warnings?: PrintWarning[],
-): Buffer {
+  printer?: {
+    columns?: number;
+    cutMode?: PrinterCutMode;
+    capabilities?: ThermalPrinterCapabilities;
+    settings?: Record<string, string>;
+  },
+): {
+  lines: string[];
+  rasterGroups: RasterSemanticLineGroup[];
+  language: string;
+  columns: number;
+  cutMode: PrinterCutMode;
+} {
   const cols = printer?.columns || columnsForPaperWidth('80mm') || 48;
+  const cutMode = printer?.cutMode ?? 'full';
   const lang = normalizePrintLanguage(language ?? z?.__language);
   const additionalLanguage = z?.__additionalLanguage
     ? normalizePrintLanguage(z.__additionalLanguage)
     : undefined;
-  const settingsRows = getDatabase().prepare('SELECT key, value FROM settings').all() as {
-    key: string;
-    value: string;
-  }[];
-  const settings: Record<string, string> = Object.fromEntries(
-    settingsRows.map((r) => [r.key, r.value]),
-  );
+  const settings: Record<string, string> =
+    printer?.settings ??
+    Object.fromEntries(
+      (
+        getDatabase().prepare('SELECT key, value FROM settings').all() as {
+          key: string;
+          value: string;
+        }[]
+      ).map((r) => [r.key, r.value]),
+    );
   // Single resolution for currency/locale/timezone — resolves the stored
   // timezone through the country profile when missing or invalid, instead of
   // leaving it undefined (which would use the server's own host timezone,
@@ -3920,7 +4152,13 @@ export function buildZReportBody(
   const factor = 10 ** fractionDigits;
   const locale = snapshot.locale;
   const tz = snapshot.timezone;
-  const prefix = resolveCurrencyPrefix(getCurrencySymbol(currency, locale), false);
+  const prefix = resolveCurrencyPrefix(
+    getCurrencySymbol(currency, locale),
+    false,
+    printer?.capabilities,
+    false,
+    currency,
+  );
   const trimDecimals = false;
   const centsToAmount = (cents: number): number => (Number(cents) || 0) / factor;
   const formatAmount = (cents: number): string =>
@@ -3984,6 +4222,7 @@ export function buildZReportBody(
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
   const sections: string[] = [];
+  const rasterGroups: RasterSemanticLineGroup[] = [];
   sections.push('{INIT}');
   if (zDocument.header.businessName)
     pushCenteredWrapped(
@@ -4029,7 +4268,7 @@ export function buildZReportBody(
 
   sections.push(bar);
   for (const row of zDocument.period)
-    pushZReportLabelValue(sections, row.label, row.value.text, zContext);
+    pushZReportLabelValue(sections, row.label, row.value.text, zContext, false, rasterGroups);
   sections.push(bar);
   sections.push('');
 
@@ -4043,18 +4282,24 @@ export function buildZReportBody(
     zDocument.cashMovements.payIn.label,
     formatAmount(zDocument.cashMovements.payIn.cents),
     zContext,
+    true,
+    rasterGroups,
   );
   pushZReportLabelValue(
     sections,
     zDocument.cashMovements.payOut.label,
     formatAmount(zDocument.cashMovements.payOut.cents),
     zContext,
+    true,
+    rasterGroups,
   );
   pushZReportLabelValue(
     sections,
     zDocument.cashMovements.safeDrop.label,
     formatAmount(zDocument.cashMovements.safeDrop.cents),
     zContext,
+    true,
+    rasterGroups,
   );
   sections.push('');
 
@@ -4074,6 +4319,7 @@ export function buildZReportBody(
       },
       formatAmount(row.totalCents),
       zContext,
+      rasterGroups,
     );
   }
   sections.push('');
@@ -4084,6 +4330,8 @@ export function buildZReportBody(
     zDocument.refunds.countLabel,
     String(zDocument.refunds.count),
     zContext,
+    false,
+    rasterGroups,
   );
   pushZReportLabelValue(
     sections,
@@ -4091,6 +4339,7 @@ export function buildZReportBody(
     formatAmount(zDocument.refunds.totalCents),
     zContext,
     true,
+    rasterGroups,
   );
   sections.push('');
 
@@ -4102,6 +4351,7 @@ export function buildZReportBody(
       row.label,
       formatCurrency(row.amount, prefix, locale, trimDecimals, fractionDigits),
       zContext,
+      rasterGroups,
     );
   sections.push('');
 
@@ -4120,6 +4370,7 @@ export function buildZReportBody(
       },
       formatAmount(row.totalCents),
       zContext,
+      rasterGroups,
     );
   }
   sections.push('');
@@ -4186,10 +4437,47 @@ export function buildZReportBody(
   );
   sections.push('{CUT}');
 
+  return {
+    lines: sections,
+    rasterGroups,
+    language: lang,
+    columns: cols,
+    cutMode,
+  };
+}
+
+/**
+ * Build the ESC/POS bytes for a Z-report (cierre de caja) from a stored
+ * `cash_closures` row. Day-close, no bill — sections in spec print order:
+ * header → Z number + business date + period → opening float → cash
+ * movements → sales by payment method → refunds → tax breakdown → staff
+ * sales → expected / counted / variance (variance emphasized) → operator +
+ * signature → footer.
+ * The byte builder never touches the drawer pulse; that is appended by
+ * `printZReport` (the route layer) so the byte form is reusable for the
+ * WebUSB `bytes: number[]` branch where the renderer dispatches.
+ */
+export function buildZReportBody(
+  z: any,
+  language?: string,
+  printer?: {
+    columns?: number;
+    cutMode?: PrinterCutMode;
+    capabilities?: ThermalPrinterCapabilities;
+    settings?: Record<string, string>;
+  },
+  warnings?: PrintWarning[],
+): Buffer {
+  const doc = buildZReportDocumentLines(z, language, printer);
   return buildEscPos(
-    sections,
+    doc.lines,
     false,
-    { cutMode: 'full', language: lang, columns: cols, capabilities: printer?.capabilities },
+    {
+      cutMode: doc.cutMode,
+      language: doc.language,
+      columns: doc.columns,
+      capabilities: printer?.capabilities,
+    },
     warnings,
   );
 }
@@ -4256,25 +4544,62 @@ function pushZReportLabelValue(
   value: string,
   context: ThermalLayoutContext,
   financial = false,
+  rasterGroups?: RasterSemanticLineGroup[],
 ): void {
   const columns = context.logicalColumns;
   const normalizedValue = normalizeThermalText(value, context.capabilities);
   const labelLines = zLaidOutLabel(label, context);
+  const normalizedFirstLabel =
+    labelLines.length === 1 ? normalizeThermalText(labelLines[0], context.capabilities) : '';
+  const lineIndex = lines.length;
+  const leftText =
+    labelLines.length === 1
+      ? normalizedFirstLabel
+      : zLabelVariants(label, columns)
+          .map((variant) => normalizeThermalText(variant, context.capabilities))
+          .join('  ');
+  let formattedLine: string;
   if (
     labelLines.length === 1 &&
-    thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <= columns
+    thermalDisplayWidth(normalizedFirstLabel) + 1 + thermalDisplayWidth(normalizedValue) <= columns
   ) {
-    lines.push(
-      (financial ? '{FINANCIAL}' : '') +
-        normalizeThermalText(labelLines[0], context.capabilities) +
-        rightAlign(normalizedValue, columns - thermalDisplayWidth(labelLines[0])),
-    );
-    return;
+    formattedLine =
+      normalizedFirstLabel +
+      rightAlign(normalizedValue, columns - thermalDisplayWidth(normalizedFirstLabel));
+    lines.push((financial ? '{FINANCIAL}' : '') + formattedLine);
+  } else {
+    for (const line of labelLines)
+      lines.push(
+        (financial ? '{FINANCIAL}' : '') + normalizeThermalText(line, context.capabilities),
+      );
+    for (const line of wrapText(normalizedValue, columns))
+      lines.push((financial ? '{FINANCIAL}' : '') + rightAlign(line, columns));
+    formattedLine = `${leftText} ${normalizedValue}`;
   }
-  for (const line of labelLines)
-    lines.push((financial ? '{FINANCIAL}' : '') + normalizeThermalText(line, context.capabilities));
-  for (const line of wrapText(normalizedValue, columns))
-    lines.push((financial ? '{FINANCIAL}' : '') + rightAlign(line, columns));
+  if (rasterGroups && lines.length > lineIndex) {
+    rasterGroups.push({
+      groupId: `z-label-value-${lineIndex}`,
+      lineIndex,
+      lineCount: lines.length - lineIndex,
+      sourceLines: [formattedLine],
+      sourceControlLines: [lines[lineIndex]],
+      sourceLayouts: [
+        {
+          kind: 'financial-summary',
+          columns: [
+            { text: leftText, align: 'left' },
+            { text: normalizedValue, align: 'right' },
+          ],
+        },
+      ],
+      ...(financial
+        ? {
+            financial: true,
+            financialSourceLines: [true],
+          }
+        : {}),
+    });
+  }
 }
 
 function pushZReportTextValue(
@@ -4297,29 +4622,66 @@ function pushZReportRow(
   label: SemanticLabel,
   value: string,
   context: ThermalLayoutContext,
+  rasterGroups?: RasterSemanticLineGroup[],
 ): void {
   const prefix = '  ';
   const columns = context.logicalColumns;
   const normalizedValue = normalizeThermalText(value, context.capabilities);
   const labelContext = { ...context, logicalColumns: Math.max(1, columns - prefix.length) };
   const labelLines = zLaidOutLabel(label, labelContext);
+  const normalizedFirstLabel =
+    labelLines.length === 1 ? normalizeThermalText(labelLines[0], context.capabilities) : '';
+  const lineIndex = lines.length;
+  const leftText =
+    prefix +
+    (labelLines.length === 1
+      ? normalizedFirstLabel
+      : zLabelVariants(label, labelContext.logicalColumns)
+          .map((variant) => normalizeThermalText(variant, context.capabilities))
+          .join('  '));
+  let formattedLine: string;
   if (
     labelLines.length === 1 &&
-    prefix.length + thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <=
+    prefix.length +
+      thermalDisplayWidth(normalizedFirstLabel) +
+      1 +
+      thermalDisplayWidth(normalizedValue) <=
       columns
   ) {
-    lines.push(
-      '{FINANCIAL}' +
-        prefix +
-        labelLines[0] +
-        rightAlign(normalizedValue, columns - prefix.length - thermalDisplayWidth(labelLines[0])),
-    );
-    return;
+    formattedLine =
+      leftText +
+      rightAlign(
+        normalizedValue,
+        columns - prefix.length - thermalDisplayWidth(normalizedFirstLabel),
+      );
+    lines.push('{FINANCIAL}' + formattedLine);
+  } else {
+    for (const line of labelLines)
+      lines.push('{FINANCIAL}' + prefix + normalizeThermalText(line, context.capabilities));
+    for (const line of wrapText(normalizedValue, columns))
+      lines.push('{FINANCIAL}' + rightAlign(line, columns));
+    formattedLine = `${leftText} ${normalizedValue}`;
   }
-  for (const line of labelLines)
-    lines.push('{FINANCIAL}' + prefix + normalizeThermalText(line, context.capabilities));
-  for (const line of wrapText(normalizedValue, columns))
-    lines.push('{FINANCIAL}' + rightAlign(line, columns));
+  if (rasterGroups && lines.length > lineIndex) {
+    rasterGroups.push({
+      groupId: `z-row-${lineIndex}`,
+      lineIndex,
+      lineCount: lines.length - lineIndex,
+      sourceLines: [formattedLine],
+      sourceControlLines: [lines[lineIndex]],
+      financial: true,
+      financialSourceLines: [true],
+      sourceLayouts: [
+        {
+          kind: 'financial-summary',
+          columns: [
+            { text: leftText, align: 'left' },
+            { text: normalizedValue, align: 'right' },
+          ],
+        },
+      ],
+    });
+  }
 }
 
 /**
@@ -4332,6 +4694,7 @@ export async function printZReport(
   z: any,
   signal?: AbortSignal,
   targetPrinter?: any,
+  settings?: Record<string, string>,
 ): Promise<DispatchResult & { bytes?: Buffer; connection_type?: string }> {
   try {
     if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
@@ -4344,12 +4707,56 @@ export async function printZReport(
     // F3: resolve the printer's profile so `buildZReportBody` can use the
     // right columns and capabilities (58mm/36/42 cols, profile-specific
     // code pages, etc.). Same pattern as `prepareReceipt` (`:1043-1056`).
-    const { profile, columns, capabilities } = resolvePrinterContext(printer, false);
+    const { profile, columns, capabilities } = resolvePrinterContext(printer);
     const zWithMarker = { ...z, __isReprint: !!z?.__isReprint };
     // The route carries the resolved Z-report language policy in the snapshot;
     // direct callers retain the English store-language default.
     const warnings: PrintWarning[] = [];
-    const baseBody = buildZReportBody(zWithMarker, undefined, { columns, capabilities }, warnings);
+    const nativeCapabilities = nativeFallbackCapabilities(capabilities);
+    let baseBody: Buffer;
+    if (rasterCapabilityEnabled(capabilities)) {
+      const documentResult = buildZReportDocumentLines(zWithMarker, undefined, {
+        columns,
+        cutMode: profile.cutMode,
+        capabilities,
+        settings,
+      });
+      const nativeWarnings: PrintWarning[] = [];
+      const nativeBody = buildZReportBody(
+        zWithMarker,
+        undefined,
+        { columns, cutMode: profile.cutMode, capabilities: nativeCapabilities, settings },
+        nativeWarnings,
+      );
+      const rasterized = await rasterizeDocumentLines(
+        documentResult.lines,
+        [],
+        {
+          useUnicode: false,
+          cutMode: profile.cutMode,
+          arabicShaping: capabilities.shaping.arabic,
+          columns,
+          language: documentResult.language,
+          capabilities,
+          requestPrefix: 'z-report',
+        },
+        documentResult.rasterGroups,
+      );
+      if (rasterized.rasterSelected && !rasterized.rasterFailed) {
+        baseBody = rasterized.data;
+        warnings.push(...rasterized.warnings);
+      } else {
+        baseBody = nativeBody;
+        warnings.push(...nativeWarnings, ...rasterized.warnings);
+      }
+    } else {
+      baseBody = buildZReportBody(
+        zWithMarker,
+        undefined,
+        { columns, cutMode: profile.cutMode, capabilities, settings },
+        warnings,
+      );
+    }
     if (hasFinancialPrintWarning(warnings)) {
       return { ok: false, detail: makeFinancialPrintRefusalMessage(warnings), warnings };
     }

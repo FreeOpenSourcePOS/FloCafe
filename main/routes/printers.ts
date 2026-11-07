@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import {
   printViaNetwork,
   printViaUSB,
-  buildTestPage,
+  renderTestPage,
   printReceiptDetailed,
   printKOTDetailed,
   printDeliverySlipDetailed,
@@ -508,12 +508,13 @@ router.post(
         profile,
         printer.paper_width || profile.defaultPaperWidth,
       );
-      const testData = buildTestPage(
+      const testData = await renderTestPage(
         printer.paper_width || profile.defaultPaperWidth,
         profile.cutMode,
         tenantLanguage(db),
         timezone,
-        req.body?.rasterProbe === true ? capabilities : undefined,
+        capabilities,
+        { rasterProbe: req.body?.rasterProbe === true },
       );
       let result: { ok: boolean; detail?: string } = { ok: false };
 
@@ -636,11 +637,16 @@ router.post(
       if (!timezone) return res.status(409).json({ error: 'regional_not_configured' });
 
       const profile = resolvePrinterProfile(printer);
-      const testData = buildTestPage(
+      const capabilities = capabilitiesForPrinter(
+        profile,
+        printer.paper_width || profile.defaultPaperWidth,
+      );
+      const testData = await renderTestPage(
         printer.paper_width || profile.defaultPaperWidth,
         profile.cutMode,
         tenantLanguage(db),
         timezone,
+        capabilities,
       );
       let result: { ok: boolean; detail?: string } = { ok: false };
 

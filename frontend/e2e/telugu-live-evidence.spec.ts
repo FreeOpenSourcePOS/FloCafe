@@ -169,10 +169,7 @@ test.describe('Live Telugu (te / te-IN) E2E verification across FloCafe surfaces
       await webPrintBtn.click();
       const downloadBtn = page.getByRole('button', { name: 'HTML డౌన్లోడ్ చేయి', exact: true });
       await expect(downloadBtn).toBeVisible();
-      const [download] = await Promise.all([
-        page.waitForEvent('download'),
-        downloadBtn.click(),
-      ]);
+      const [download] = await Promise.all([page.waitForEvent('download'), downloadBtn.click()]);
       const receiptHtmlPath = path.join(EVIDENCE_DIR, '07-web-print-receipt-telugu.html');
       await download.saveAs(receiptHtmlPath);
       const billHtml = fs.readFileSync(receiptHtmlPath, 'utf8');
@@ -183,14 +180,15 @@ test.describe('Live Telugu (te / te-IN) E2E verification across FloCafe surfaces
       await kotBtn.click();
       await page.getByRole('button', { name: 'బ్రౌజర్ ప్రింట్', exact: true }).click();
       await page.evaluate(() => {
-        (window as any).__capturedKotHtml = '';
+        const win = window as unknown as { __capturedKotHtml?: string };
+        win.__capturedKotHtml = '';
         window.open = (() => {
           const doc = document.implementation.createHTMLDocument('KOT Preview');
           return {
             document: doc,
             focus: () => {},
             print: () => {
-              (window as any).__capturedKotHtml = doc.documentElement.outerHTML;
+              win.__capturedKotHtml = doc.documentElement.outerHTML;
             },
             close: () => {},
           } as unknown as Window;
@@ -198,9 +196,15 @@ test.describe('Live Telugu (te / te-IN) E2E verification across FloCafe surfaces
       });
       await page.getByRole('button', { name: 'టెస్ట్ రన్ చేయి', exact: true }).click();
       await expect
-        .poll(async () => page.evaluate(() => (window as any).__capturedKotHtml || ''))
+        .poll(async () =>
+          page.evaluate(
+            () => (window as unknown as { __capturedKotHtml?: string }).__capturedKotHtml || '',
+          ),
+        )
         .toContain('వంటగది');
-      const kotHtml: string = await page.evaluate(() => (window as any).__capturedKotHtml);
+      const kotHtml: string = await page.evaluate(
+        () => (window as unknown as { __capturedKotHtml?: string }).__capturedKotHtml || '',
+      );
 
       // Render Web Print Receipt and KOT side-by-side in Chromium
       const printContext = await browser.newContext({ viewport: { width: 960, height: 900 } });

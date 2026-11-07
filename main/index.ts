@@ -1881,7 +1881,14 @@ async function backupOnShutdown(): Promise<void> {
     localBackup.backupForSession(SESSION_BACKUP_MIN_AGE_MS, 5_000),
     deadline,
   ]);
-  if (saved) await showStatus('saved', true);
+  if (saved) {
+    await Promise.race([
+      showStatus('saved', true),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, SHUTDOWN_MESSAGE_VISIBLE_MS).unref?.();
+      }),
+    ]);
+  }
 }
 
 const SHUTDOWN_BACKUP_DEADLINE_MS = 7_000;

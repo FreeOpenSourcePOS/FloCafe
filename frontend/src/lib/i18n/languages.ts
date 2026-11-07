@@ -183,6 +183,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/ne.json'),
   },
+  ha: {
+    locale: 'ha-NG',
+    nativeName: 'Hausa',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ha.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

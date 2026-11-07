@@ -2309,6 +2309,90 @@ function neFallbackErrors(
   return errors;
 }
 
+/** Hausa translation safeguards (brand names, acronyms, unit symbols, and pure format templates). */
+const HA_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', // email address placeholder
+  'common.appTitle', // brand name
+  'common.brandName', // brand name
+  'common.logoAlt', // brand name
+  'dashboard.exportXlsx', // file format label
+  'dashboard.exportCsv', // file format label
+  'dashboard.exportPdf', // file format label
+  'dashboard.ticketMethodCount', // numeric multiplication badge
+  'kds.emptyColumn', // punctuation dash
+  'kds.viewKanban', // international board term
+  'nav.kds', // acronym
+  'nav.pos', // acronym
+  'nav.whatsapp', // brand name
+  'pos.addonPrice', // price formula
+  'pos.loadingEllipsis', // punctuation
+  'pos.tagCount', // tag multiplication formula
+  'pos.taxLine', // tax rate formula
+  'printTest.escpos', // protocol acronym
+  'printTest.paperWidth58', // physical paper dimensions
+  'printTest.paperWidth80', // physical paper dimensions
+  'print.hsn', // tax code acronym
+  'print.zReport.paymentCount', // count prefix formula
+  'products.addonSelectionRange', // numeric range formula
+  'products.fieldSku', // inventory acronym
+  'products.saleUnitCl', // SI unit symbol
+  'products.saleUnitFlOz', // unit symbol
+  'products.saleUnitG', // SI unit symbol
+  'products.saleUnitKg', // SI unit symbol
+  'products.saleUnitL', // SI unit symbol
+  'products.saleUnitLb', // unit symbol
+  'products.saleUnitMl', // SI unit symbol
+  'products.saleUnitOz', // unit symbol
+  'products.skuLabel', // SKU label formula
+  'serverApp.emailPlaceholder', // email address placeholder
+  'settings.apiKeyInputPlaceholder', // API key format token
+  'settings.connectionUsb', // hardware acronym
+  'settings.paymentMethodUpi', // payment system acronym
+  'settings.ipAddressPlaceholder', // IPv4 literal
+  'settings.iranCurrencyDisplayRial', // Iranian currency proper name + script
+  'settings.iranCurrencyDisplayToman', // Iranian currency proper name + script
+  'settings.kds', // acronym
+  'settings.paperSize58', // physical paper dimensions
+  'settings.paperSize80', // physical paper dimensions
+  'settings.portPlaceholder', // TCP port literal
+  'settings.registrationEmailPlaceholder', // email address placeholder
+  'settings.registrationLastError', // bare placeholder
+  'settings.revflo', // companion app brand name
+  'settings.tabOrderflow', // integration brand name
+  'settings.tabWhatsapp', // brand name
+  'settings.unicode', // technical encoding standard
+  'settings.whatsapp', // brand name
+  'setup.finedineLabel', // product flow proper name
+  'setup.ownerEmailPlaceholder', // email address placeholder
+  'setup.pinLabel', // acronym
+  'setup.qsrLabel', // acronym
+  'tax.auditCreateOverride', // audit trail formula
+  'tax.auditUpdateOverride', // audit trail formula
+  'update.downloadingBadge', // symbol + percentage formula
+  'whatsapp.connect.pairingPhonePlaceholder', // phone number mask
+]);
+
+function haFallbackErrors(
+  haFlat: Record<string, string>,
+  enFlat: Record<string, string>,
+): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const haVal = haFlat[k];
+    if (haVal === undefined) continue;
+    if (haVal.startsWith('[HA]') || haVal.startsWith('[TODO]')) {
+      errors.push(`ha.json ${k} — placeholder prefix found: "${haVal}"`);
+    } else if (haVal === enFlat[k] && !HA_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`ha.json ${k} — identical to English value (renders as English for Hausa users)`);
+    } else if (haVal !== haVal.normalize('NFC')) {
+      errors.push(`ha.json ${k} — value must use Unicode NFC`);
+    } else if (haVal.includes('\uFFFD')) {
+      errors.push(`ha.json ${k} — value contains a Unicode replacement character`);
+    }
+  }
+  return errors;
+}
+
 /** Keys whose `{number}` placeholder names an order number that must stay
  * introduced by punctuation (for example `#` or `№`) or a space, never welded
  * onto the end of a verb-final clause. */
@@ -3075,6 +3159,65 @@ async function run(): Promise<void> {
     `  ✓ no untranslated ne.json values (${NE_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
   );
 
+  // 24. ha.json values must be complete, NFC text without malformed characters.
+  const haMessages = loadedStrings.get('ha');
+  if (!haMessages) throw new Error('languages registry must include the maintained ha locale');
+  const haErrors = haFallbackErrors(haMessages, loadedStrings.get('en')!);
+  if (haErrors.length) {
+    console.error(`\nha.json values with errors (${haErrors.length}):`);
+    for (const e of haErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(
+      false,
+      'ha.json contains untranslated, placeholder, non-NFC, or replacement-character values',
+    );
+  }
+  for (const [key, technicalLiteral] of [
+    ['products.csvCategoriesHelp', 'sort_order'],
+    ['products.csvProductsHelp', 'tax_category'],
+    ['products.csvProductsHelp', 'tax_behavior'],
+    ['products.csvProductsHelp', 'cashback_percent'],
+    ['products.csvProductsHelp', 'is_active'],
+  ] as const) {
+    assert(
+      haMessages[key]?.includes(technicalLiteral),
+      `ha.json ${key} must preserve the CSV field ${technicalLiteral}`,
+    );
+  }
+  assert(
+    haMessages['receipt.cashReceived'] === 'Kuɗin hannu da aka karɓa',
+    'ha.json receipt.cashReceived must preserve the canonical cash-received label',
+  );
+  assert(
+    haMessages['pos.tagVeg'] === 'Na ganyayyaki' &&
+      haMessages['products.tagVeg'] === 'Na ganyayyaki',
+    'ha.json vegetarian product tags must use the Hausa vegetarian term',
+  );
+  assert(
+    haMessages['pos.tagNonVeg'] === 'Mai nama' && haMessages['products.tagNonVeg'] === 'Mai nama',
+    'ha.json non-vegetarian product tags must use the Hausa non-vegetarian term',
+  );
+  assert(
+    haMessages['orders.takeaway'] === haMessages['pos.orderTypeTakeaway'],
+    'ha.json takeaway labels must match the reviewed Hausa pickup term',
+  );
+  assert(
+    haMessages['dashboard.payIn'] === 'Shigar da kuɗi' &&
+      haMessages['dashboard.payOut'] === 'Fitar da kuɗi',
+    'ha.json cash-movement labels must match the Z-report terminology',
+  );
+  assert(
+    haMessages['print.zReport.payIn'] === haMessages['dashboard.payIn'] &&
+      haMessages['print.zReport.payOut'] === haMessages['dashboard.payOut'],
+    'ha.json cash-movement labels must be identical on the dashboard and the Z-report',
+  );
+  assert(
+    haMessages['setup.emailCommunicationDescription'].includes('ba za a iya kashe su a nan ba'),
+    'ha.json must tell Hausa users that essential notices cannot be disabled at setup',
+  );
+  console.log(
+    `  ✓ no untranslated ha.json values (${HA_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
+  );
+
   // 25. No locale may weld an order number onto a word. Devanagari, Arabic, and
   // Cyrillic are all verb-final, so a trailing "{number}" reads as part of the
   // word. This covers every registered locale, not only Nepali.
@@ -3384,6 +3527,25 @@ function runNegativeTests(): void {
   expectDetected(
     'ne: placeholder prefix value',
     neFallbackErrors({ 'a.b': '[NE] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'ha: English-identical value',
+    haFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'ha: placeholder prefix value',
+    haFallbackErrors({ 'a.b': '[HA] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'ha: non-NFC value',
+    haFallbackErrors(
+      { 'a.b': 'Abincin\u0301'.normalize('NFD') },
+      { 'a.b': 'Abincin\u0301'.normalize('NFC') },
+    ),
+  );
+  expectDetected(
+    'ha: Unicode replacement character',
+    haFallbackErrors({ 'a.b': 'Ku\uFFFDin hannu' }, { 'a.b': 'Kuɗin hannu' }),
   );
   expectDetected(
     'ne: Unicode replacement character',

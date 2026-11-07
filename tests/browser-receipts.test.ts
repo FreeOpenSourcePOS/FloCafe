@@ -20,7 +20,12 @@ function loadFrontendModules() {
   };
   const originalResolveFilename = moduleApi._resolveFilename;
 
-  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  moduleApi._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
     let resolvedRequest = request;
     if (request === '@countries') {
       resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
@@ -74,7 +79,29 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const) {
+  for (const lang of [
+    'en',
+    'es',
+    'fr',
+    'pt',
+    'ru',
+    'fa',
+    'ur',
+    'it',
+    'ja',
+    'zh',
+    'zh-tw',
+    'ko',
+    'id',
+    'nl',
+    'hi',
+    'bn',
+    'sq',
+    'vi',
+    'th',
+    'ne',
+    'ha',
+  ] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 
@@ -153,12 +180,8 @@ async function run() {
     paid_amount: 990000,
     balance: 0,
     payment_status: 'paid',
-    payment_details: [
-      { method: 'card', amount: 990000, timestamp: '2026-08-17T14:35:00.000Z' },
-    ],
-    tax_breakdown: [
-      { title: 'ارزش افزوده (VAT)', rate: 10, amount: 90000 },
-    ],
+    payment_details: [{ method: 'card', amount: 990000, timestamp: '2026-08-17T14:35:00.000Z' }],
+    tax_breakdown: [{ title: 'ارزش افزوده (VAT)', rate: 10, amount: 90000 }],
     order: testIranOrder,
   };
 
@@ -174,26 +197,65 @@ async function run() {
 
   console.log('Test Suite: Browser receipts show itemised engine charges once');
   {
-    const html = generateBillHtml({
-      ...testIranBill,
-      service_charge: 9,
-      packaging_charge: 4,
-      charges_breakdown: JSON.stringify([
-        { id: 'service_charge', name: 'Merchant Service Fee', type: 'percentage', rate: 10, amount: 9, calculation_basis: 'net', waived: false },
-        { id: 'packaging_charge', name: 'Box Fee', type: 'fixed', amount: 4, calculation_basis: 'gross', waived: false },
-        { id: 'late_night', name: 'Late Night Fee', type: 'fixed', amount: 7, calculation_basis: 'gross', waived: false },
-        { id: 'waived_fee', name: 'Waived Fee', type: 'fixed', amount: 0, calculation_basis: 'gross', waived: true },
-      ]),
-    }, baseIranTenant, { language: 'en' });
+    const html = generateBillHtml(
+      {
+        ...testIranBill,
+        service_charge: 9,
+        packaging_charge: 4,
+        charges_breakdown: JSON.stringify([
+          {
+            id: 'service_charge',
+            name: 'Merchant Service Fee',
+            type: 'percentage',
+            rate: 10,
+            amount: 9,
+            calculation_basis: 'net',
+            waived: false,
+          },
+          {
+            id: 'packaging_charge',
+            name: 'Box Fee',
+            type: 'fixed',
+            amount: 4,
+            calculation_basis: 'gross',
+            waived: false,
+          },
+          {
+            id: 'late_night',
+            name: 'Late Night Fee',
+            type: 'fixed',
+            amount: 7,
+            calculation_basis: 'gross',
+            waived: false,
+          },
+          {
+            id: 'waived_fee',
+            name: 'Waived Fee',
+            type: 'fixed',
+            amount: 0,
+            calculation_basis: 'gross',
+            waived: true,
+          },
+        ]),
+      },
+      baseIranTenant,
+      { language: 'en' },
+    );
 
-    assert('Browser receipt includes merchant-named and non-standard engine fees',
-      html.includes('<td>Merchant Service Fee</td>')
-      && html.includes('<td>Box Fee</td>')
-      && html.includes('<td>Late Night Fee</td>'));
-    assert('Itemised standard charges replace the duplicate legacy rows',
-      !html.includes('<td>Service Charge</td>')
-      && !html.includes('<td>Packaging</td>'));
-    assert('Waived zero-amount charges stay off the receipt', !html.includes('<td>Waived Fee</td>'));
+    assert(
+      'Browser receipt includes merchant-named and non-standard engine fees',
+      html.includes('<td>Merchant Service Fee</td>') &&
+        html.includes('<td>Box Fee</td>') &&
+        html.includes('<td>Late Night Fee</td>'),
+    );
+    assert(
+      'Itemised standard charges replace the duplicate legacy rows',
+      !html.includes('<td>Service Charge</td>') && !html.includes('<td>Packaging</td>'),
+    );
+    assert(
+      'Waived zero-amount charges stay off the receipt',
+      !html.includes('<td>Waived Fee</td>'),
+    );
   }
 
   console.log('Test Suite 1: Persian (fa) RTL Document Flow & Structure');
@@ -206,12 +268,16 @@ async function run() {
       includeTaxId: true,
     });
 
-    assert('HTML contains lang="fa-IR" and dir="rtl"', html.includes('<html lang="fa-IR" dir="rtl">'));
-    assert('CSS contains RTL logical properties and bidi styles',
+    assert(
+      'HTML contains lang="fa-IR" and dir="rtl"',
+      html.includes('<html lang="fa-IR" dir="rtl">'),
+    );
+    assert(
+      'CSS contains RTL logical properties and bidi styles',
       html.includes('.text-end { text-align: end !important; }') &&
-      html.includes('.num { unicode-bidi: isolate; white-space: nowrap; }') &&
-      html.includes('.ltr { direction: ltr; unicode-bidi: isolate; }') &&
-      html.includes('margin-inline-start: 50%')
+        html.includes('.num { unicode-bidi: isolate; white-space: nowrap; }') &&
+        html.includes('.ltr { direction: ltr; unicode-bidi: isolate; }') &&
+        html.includes('margin-inline-start: 50%'),
     );
   }
 
@@ -226,23 +292,36 @@ async function run() {
       isReprint: true,
     });
 
-    assert('Reprint banner shows Persian "چاپ مجدد"', html.includes('<div class="reprint-banner">چاپ مجدد</div>'));
+    assert(
+      'Reprint banner shows Persian "چاپ مجدد"',
+      html.includes('<div class="reprint-banner">چاپ مجدد</div>'),
+    );
     assert('Phone prefix shows Persian "تلفن"', html.includes('تلفن:'));
     assert('Tax ID label shows localized Iran "کد اقتصادی"', html.includes('کد اقتصادی:'));
     assert('Bill number label shows Persian "رسید #"', html.includes('<strong>رسید #</strong>'));
     assert('Date label shows Persian "تاریخ"', html.includes('<strong>تاریخ</strong>'));
     assert('Table label shows Persian "میز"', html.includes('<strong>میز</strong>'));
     assert('Customer label shows Persian "مشتری"', html.includes('<strong>مشتری</strong>'));
-    assert('Customer No label shows Persian "شماره مشتری"', html.includes('<strong>شماره مشتری</strong>'));
-    assert('Table headers show Persian items, qty, rate, amount',
-      html.includes('<th>اقلام</th>') &&
-      html.includes('<th class="text-end">تعداد</th>') &&
-      html.includes('<th class="text-end">نرخ</th>') &&
-      html.includes('<th class="text-end">مبلغ</th>')
+    assert(
+      'Customer No label shows Persian "شماره مشتری"',
+      html.includes('<strong>شماره مشتری</strong>'),
     );
-    assert('Tax Details header shows Persian "جزئیات مالیات"', html.includes('<th colspan="2">جزئیات مالیات</th>'));
+    assert(
+      'Table headers show Persian items, qty, rate, amount',
+      html.includes('<th>اقلام</th>') &&
+        html.includes('<th class="text-end">تعداد</th>') &&
+        html.includes('<th class="text-end">نرخ</th>') &&
+        html.includes('<th class="text-end">مبلغ</th>'),
+    );
+    assert(
+      'Tax Details header shows Persian "جزئیات مالیات"',
+      html.includes('<th colspan="2">جزئیات مالیات</th>'),
+    );
     assert('Grand Total row shows Persian "جمع کل"', html.includes('<strong>جمع کل</strong>'));
-    assert('Payments section header shows Persian "پرداخت‌ها"', html.includes('<th colspan="2">پرداخت‌ها</th>'));
+    assert(
+      'Payments section header shows Persian "پرداخت‌ها"',
+      html.includes('<th colspan="2">پرداخت‌ها</th>'),
+    );
     assert('Card payment method translated to "کارت"', html.includes('<td>کارت</td>'));
     assert('Footer preserves Persian thank you text', html.includes('از بازدید شما سپاسگزاریم!'));
     assert('Footer shows Persian tax notice', html.includes('مالیات در صورت اعمال، شامل شده است'));
@@ -258,57 +337,98 @@ async function run() {
       includeTaxId: true,
     });
 
-    assert('Bill number is wrapped in LTR island span', html.includes('<span class="ltr" dir="ltr">BILL-IR-0089</span>'));
-    assert('Store phone is wrapped in LTR island span', html.includes('<span class="ltr" dir="ltr">+98 21 6644 1234</span>'));
-    assert('Customer phone is wrapped in LTR island span', html.includes('<span class="ltr" dir="ltr">+98 912 345 6789</span>'));
-    assert('Economic Code / Tax ID is wrapped in LTR island span', html.includes('<span class="ltr" dir="ltr">411123456789</span>'));
+    assert(
+      'Bill number is wrapped in LTR island span',
+      html.includes('<span class="ltr" dir="ltr">BILL-IR-0089</span>'),
+    );
+    assert(
+      'Store phone is wrapped in LTR island span',
+      html.includes('<span class="ltr" dir="ltr">+98 21 6644 1234</span>'),
+    );
+    assert(
+      'Customer phone is wrapped in LTR island span',
+      html.includes('<span class="ltr" dir="ltr">+98 912 345 6789</span>'),
+    );
+    assert(
+      'Economic Code / Tax ID is wrapped in LTR island span',
+      html.includes('<span class="ltr" dir="ltr">411123456789</span>'),
+    );
   }
 
   console.log('\nTest Suite 4: Iran Amount / Number / Date Formatting Modes');
   {
     // Mode 1: Rial + Persian Digits + Persian Calendar
-    const rialHtml = generateBillHtml(testIranBill, {
-      ...baseIranTenant,
-      currency_display: 'rial',
-      number_digits: 'locale',
-      calendar: 'persian',
-    }, { language: 'fa', trimDecimals: true });
+    const rialHtml = generateBillHtml(
+      testIranBill,
+      {
+        ...baseIranTenant,
+        currency_display: 'rial',
+        number_digits: 'locale',
+        calendar: 'persian',
+      },
+      { language: 'fa', trimDecimals: true },
+    );
 
-    assert('Rial mode displays Persian Rial "ریال"', rialHtml.includes('ریال') && !rialHtml.includes('IRR'));
-    assert('Rial mode formats numbers in Persian digits', /[۰-۹]/.test(rialHtml) && rialHtml.includes('۹۹۰٬۰۰۰'));
-    assert('Rial mode formats date with Persian Solar Hijri calendar (1405)', rialHtml.includes('۱۴۰۵') || rialHtml.includes('مرداد'));
+    assert(
+      'Rial mode displays Persian Rial "ریال"',
+      rialHtml.includes('ریال') && !rialHtml.includes('IRR'),
+    );
+    assert(
+      'Rial mode formats numbers in Persian digits',
+      /[۰-۹]/.test(rialHtml) && rialHtml.includes('۹۹۰٬۰۰۰'),
+    );
+    assert(
+      'Rial mode formats date with Persian Solar Hijri calendar (1405)',
+      rialHtml.includes('۱۴۰۵') || rialHtml.includes('مرداد'),
+    );
 
     // Mode 2: Toman + Persian Digits + Persian Calendar
-    const tomanHtml = generateBillHtml(testIranBill, {
-      ...baseIranTenant,
-      currency_display: 'toman',
-      number_digits: 'locale',
-      calendar: 'persian',
-    }, { language: 'fa', trimDecimals: true });
+    const tomanHtml = generateBillHtml(
+      testIranBill,
+      {
+        ...baseIranTenant,
+        currency_display: 'toman',
+        number_digits: 'locale',
+        calendar: 'persian',
+      },
+      { language: 'fa', trimDecimals: true },
+    );
 
-    assert('Toman mode converts Rial to Toman (990,000 -> 99,000) and displays "تومان"',
-      tomanHtml.includes('۹۹٬۰۰۰ تومان') && !tomanHtml.includes('ریال')
+    assert(
+      'Toman mode converts Rial to Toman (990,000 -> 99,000) and displays "تومان"',
+      tomanHtml.includes('۹۹٬۰۰۰ تومان') && !tomanHtml.includes('ریال'),
     );
 
     // Mode 3: Toman Short + Latin Digits + Gregorian Calendar
-    const tomanShortHtml = generateBillHtml(testIranBill, {
-      ...baseIranTenant,
-      currency_display: 'toman_short',
-      number_digits: 'latin',
-      calendar: 'gregorian',
-    }, { language: 'fa', trimDecimals: true });
+    const tomanShortHtml = generateBillHtml(
+      testIranBill,
+      {
+        ...baseIranTenant,
+        currency_display: 'toman_short',
+        number_digits: 'latin',
+        calendar: 'gregorian',
+      },
+      { language: 'fa', trimDecimals: true },
+    );
 
     assert('Toman Short + Latin digits displays "99,000T"', tomanShortHtml.includes('99,000T'));
-    assert('Toman Short with Latin digits uses Latin quantities (2, 1)', tomanShortHtml.includes('>2<') && tomanShortHtml.includes('>1<'));
-    assert('Gregorian calendar displays Gregorian year 2026 in date', tomanShortHtml.includes('2026') || tomanShortHtml.includes('Aug'));
+    assert(
+      'Toman Short with Latin digits uses Latin quantities (2, 1)',
+      tomanShortHtml.includes('>2<') && tomanShortHtml.includes('>1<'),
+    );
+    assert(
+      'Gregorian calendar displays Gregorian year 2026 in date',
+      tomanShortHtml.includes('2026') || tomanShortHtml.includes('Aug'),
+    );
 
     // Mode 4: useUnicode: false does NOT downgrade to IRR in browser printing
     const noUnicodeHtml = generateBillHtml(testIranBill, baseIranTenant, {
       language: 'fa',
       useUnicode: false,
     });
-    assert('useUnicode: false option never downgrades Rial to IRR in browser HTML',
-      noUnicodeHtml.includes('ریال') && !noUnicodeHtml.includes('IRR')
+    assert(
+      'useUnicode: false option never downgrades Rial to IRR in browser HTML',
+      noUnicodeHtml.includes('ریال') && !noUnicodeHtml.includes('IRR'),
     );
   }
 
@@ -317,10 +437,10 @@ async function run() {
     const sampleEnBill: Bill = {
       ...testIranBill,
       bill_number: 'BILL-EN-001',
-      total: 50.00,
-      subtotal: 45.00,
-      tax_amount: 5.00,
-      payment_details: [{ method: 'cash', amount: 50.00 }],
+      total: 50.0,
+      subtotal: 45.0,
+      tax_amount: 5.0,
+      payment_details: [{ method: 'cash', amount: 50.0 }],
     };
     const usTenant = {
       business_name: 'FloCafe New York',
@@ -332,11 +452,12 @@ async function run() {
     // English
     const enHtml = generateBillHtml(sampleEnBill, usTenant, { language: 'en', isReprint: true });
     assert('EN receipt has lang="en" and dir="ltr"', enHtml.includes('<html lang="en" dir="ltr">'));
-    assert('EN labels are English',
+    assert(
+      'EN labels are English',
       enHtml.includes('REPRINT') &&
-      enHtml.includes('Bill #') &&
-      enHtml.includes('Grand Total') &&
-      enHtml.includes('Thank you for your visit!')
+        enHtml.includes('Bill #') &&
+        enHtml.includes('Grand Total') &&
+        enHtml.includes('Thank you for your visit!'),
     );
     assert('EN currency displays $50.00', enHtml.includes('$50.00'));
 
@@ -349,11 +470,12 @@ async function run() {
     };
     const esHtml = generateBillHtml(sampleEnBill, esTenant, { language: 'es', isReprint: true });
     assert('ES receipt has lang="es" and dir="ltr"', esHtml.includes('<html lang="es" dir="ltr">'));
-    assert('ES labels are Spanish',
+    assert(
+      'ES labels are Spanish',
       esHtml.includes('REIMPRESIÓN') &&
-      esHtml.includes('Comprobante #') &&
-      esHtml.includes('Total general') &&
-      esHtml.includes('¡Gracias por su visita!')
+        esHtml.includes('Comprobante #') &&
+        esHtml.includes('Total general') &&
+        esHtml.includes('¡Gracias por su visita!'),
     );
 
     // French
@@ -364,12 +486,16 @@ async function run() {
       timezone: 'Europe/Paris',
     };
     const frHtml = generateBillHtml(sampleEnBill, frTenant, { language: 'fr', isReprint: true });
-    assert('FR receipt has lang="fr-FR" and dir="ltr"', frHtml.includes('<html lang="fr-FR" dir="ltr">'));
-    assert('FR labels are French',
+    assert(
+      'FR receipt has lang="fr-FR" and dir="ltr"',
+      frHtml.includes('<html lang="fr-FR" dir="ltr">'),
+    );
+    assert(
+      'FR labels are French',
       frHtml.includes('RÉIMPRESSION') &&
-      frHtml.includes('N° de facture') &&
-      frHtml.includes('Total général') &&
-      frHtml.includes('Merci de votre visite !')
+        frHtml.includes('N° de facture') &&
+        frHtml.includes('Total général') &&
+        frHtml.includes('Merci de votre visite !'),
     );
 
     // Portuguese
@@ -380,12 +506,16 @@ async function run() {
       timezone: 'Europe/Lisbon',
     };
     const ptHtml = generateBillHtml(sampleEnBill, ptTenant, { language: 'pt', isReprint: true });
-    assert('PT receipt has lang="pt-BR" and dir="ltr"', ptHtml.includes('<html lang="pt-BR" dir="ltr">'));
-    assert('PT labels are Portuguese',
+    assert(
+      'PT receipt has lang="pt-BR" and dir="ltr"',
+      ptHtml.includes('<html lang="pt-BR" dir="ltr">'),
+    );
+    assert(
+      'PT labels are Portuguese',
       ptHtml.includes('REIMPRESSÃO') &&
-      ptHtml.includes('Conta #') &&
-      ptHtml.includes('Total geral') &&
-      ptHtml.includes('Obrigado pela sua visita!')
+        ptHtml.includes('Conta #') &&
+        ptHtml.includes('Total geral') &&
+        ptHtml.includes('Obrigado pela sua visita!'),
     );
 
     // Urdu
@@ -396,12 +526,16 @@ async function run() {
       timezone: 'Asia/Karachi',
     };
     const urHtml = generateBillHtml(sampleEnBill, urTenant, { language: 'ur', isReprint: true });
-    assert('UR receipt has lang="ur-PK" and dir="rtl"', urHtml.includes('<html lang="ur-PK" dir="rtl">'));
-    assert('UR labels are Urdu',
+    assert(
+      'UR receipt has lang="ur-PK" and dir="rtl"',
+      urHtml.includes('<html lang="ur-PK" dir="rtl">'),
+    );
+    assert(
+      'UR labels are Urdu',
       urHtml.includes('دوبارہ پرنٹ') &&
-      urHtml.includes('بل #') &&
-      urHtml.includes('کل رقم') &&
-      urHtml.includes('آپ کے تشریف لانے کا شکریہ!')
+        urHtml.includes('بل #') &&
+        urHtml.includes('کل رقم') &&
+        urHtml.includes('آپ کے تشریف لانے کا شکریہ!'),
     );
 
     const hiTenant = {
@@ -411,12 +545,16 @@ async function run() {
       timezone: 'Asia/Kolkata',
     };
     const hiHtml = generateBillHtml(sampleEnBill, hiTenant, { language: 'hi', isReprint: true });
-    assert('HI receipt has lang="hi-IN" and dir="ltr"', hiHtml.includes('<html lang="hi-IN" dir="ltr">'));
-    assert('HI labels are Devanagari',
+    assert(
+      'HI receipt has lang="hi-IN" and dir="ltr"',
+      hiHtml.includes('<html lang="hi-IN" dir="ltr">'),
+    );
+    assert(
+      'HI labels are Devanagari',
       hiHtml.includes('पुनर्मुद्रण') &&
-      hiHtml.includes('बिल #') &&
-      hiHtml.includes('कुल योग') &&
-      hiHtml.includes('धन्यवाद!')
+        hiHtml.includes('बिल #') &&
+        hiHtml.includes('कुल योग') &&
+        hiHtml.includes('धन्यवाद!'),
     );
 
     const sqTenant = {
@@ -426,12 +564,16 @@ async function run() {
       timezone: 'Europe/Tirane',
     };
     const sqHtml = generateBillHtml(sampleEnBill, sqTenant, { language: 'sq', isReprint: true });
-    assert('SQ receipt has lang="sq-AL" and dir="ltr"', sqHtml.includes('<html lang="sq-AL" dir="ltr">'));
-    assert('SQ labels are Albanian',
+    assert(
+      'SQ receipt has lang="sq-AL" and dir="ltr"',
+      sqHtml.includes('<html lang="sq-AL" dir="ltr">'),
+    );
+    assert(
+      'SQ labels are Albanian',
       sqHtml.includes('PRINTIM PËRSËRI') &&
-      sqHtml.includes('Dëftesë nr.') &&
-      sqHtml.includes('Totali i përgjithshëm') &&
-      sqHtml.includes('Faleminderit për vizitën!')
+        sqHtml.includes('Dëftesë nr.') &&
+        sqHtml.includes('Totali i përgjithshëm') &&
+        sqHtml.includes('Faleminderit për vizitën!'),
     );
 
     const neTenant = {
@@ -441,21 +583,32 @@ async function run() {
       timezone: 'Asia/Kathmandu',
     };
     const neHtml = generateBillHtml(sampleEnBill, neTenant, { language: 'ne', isReprint: true });
-    assert('NE receipt has lang="ne-NP" and dir="ltr"', neHtml.includes('<html lang="ne-NP" dir="ltr">'));
-    assert('NE labels are Devanagari',
+    assert(
+      'NE receipt has lang="ne-NP" and dir="ltr"',
+      neHtml.includes('<html lang="ne-NP" dir="ltr">'),
+    );
+    assert(
+      'NE labels are Devanagari',
       neHtml.includes('पुनः छाप्नुहोस्') &&
-      neHtml.includes('बिल #') &&
-      neHtml.includes('कुल जम्मा') &&
-      neHtml.includes('तपाईंको भ्रमणको लागि धन्यवाद!')
+        neHtml.includes('बिल #') &&
+        neHtml.includes('कुल जम्मा') &&
+        neHtml.includes('तपाईंको भ्रमणको लागि धन्यवाद!'),
     );
 
     // The browser receipt is the primary print path, and its body stack was
     // extended per language by hand, so Bengali was the one merged locale left
     // without a declared family here. Assert the families the order-slip and
     // raster stacks already carry.
-    const bnHtml = generateBillHtml(sampleEnBill, { ...neTenant, currency: 'BDT', country: 'BD' }, { language: 'bn', isReprint: true });
-    assert('BN receipt declares the Bengali font families in the order-slip position',
-      bnHtml.includes("'Noto Naskh Arabic', 'Noto Sans Bengali', 'Vrinda', 'Bangla Sangam MN', 'Noto Sans Devanagari'")
+    const bnHtml = generateBillHtml(
+      sampleEnBill,
+      { ...neTenant, currency: 'BDT', country: 'BD' },
+      { language: 'bn', isReprint: true },
+    );
+    assert(
+      'BN receipt declares the Bengali font families in the order-slip position',
+      bnHtml.includes(
+        "'Noto Naskh Arabic', 'Noto Sans Bengali', 'Vrinda', 'Bangla Sangam MN', 'Noto Sans Devanagari'",
+      ),
     );
   }
 
@@ -489,7 +642,10 @@ async function run() {
       card: 'کارت',
       thankYou: 'از بازدید شما سپاسگزاریم!',
     };
-    const faHtml = generateBillHtml(canonicalBill, canonicalTenant, { language: 'fa', showTaxBreakdown: false });
+    const faHtml = generateBillHtml(canonicalBill, canonicalTenant, {
+      language: 'fa',
+      showTaxBreakdown: false,
+    });
     for (const [name, label] of Object.entries(expectedLabels)) {
       assert(`fa canonical ${name} label renders`, faHtml.includes(label));
     }
@@ -500,10 +656,11 @@ async function run() {
       languages: ['xx'] as any,
       showTaxBreakdown: false,
     });
-    assert('unknown browser print language falls back to English labels',
+    assert(
+      'unknown browser print language falls back to English labels',
       unknownHtml.includes('<strong>Grand Total</strong>') &&
-      unknownHtml.includes('<p>Thank you for your visit!</p>') &&
-      !unknownHtml.includes('receipt.grandTotal'),
+        unknownHtml.includes('<p>Thank you for your visit!</p>') &&
+        !unknownHtml.includes('receipt.grandTotal'),
     );
   }
 
@@ -526,189 +683,259 @@ async function run() {
       locale: 'ar-SA',
       direction: 'rtl',
     });
-    assert('Arabic order slip carries its locale and RTL direction',
+    assert(
+      'Arabic order slip carries its locale and RTL direction',
       arabicSlip.includes('class="order-slip" lang="ar-SA" dir="rtl"') &&
-      arabicSlip.includes('direction:rtl;text-align:right;') &&
-      arabicSlip.includes('المجموع الفرعي') &&
-      arabicSlip.includes('الإجمالي'),
+        arabicSlip.includes('direction:rtl;text-align:right;') &&
+        arabicSlip.includes('المجموع الفرعي') &&
+        arabicSlip.includes('الإجمالي'),
     );
 
-    const urduSlip = generateOrderSlipHtml(testIranOrder, {
-      title: 'آرڈر سلپ',
-      subtotal: 'ذیلی رقم',
-      discount: 'رعایت',
-      serviceCharge: 'سروس چارج',
-      deliveryCharge: 'ڈیلیوری چارج',
-      packagingCharge: 'پیکنگ چارج',
-      tax: 'ٹیکس',
-      total: 'کل رقم',
-    }, {
-      paperWidth: 80,
-      country: 'PK',
-      currency: 'PKR',
-      locale: 'ur-PK',
-      direction: 'rtl',
-    });
-    assert('Urdu order slip keeps explicit RTL layout and escaped labels',
+    const urduSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'آرڈر سلپ',
+        subtotal: 'ذیلی رقم',
+        discount: 'رعایت',
+        serviceCharge: 'سروس چارج',
+        deliveryCharge: 'ڈیلیوری چارج',
+        packagingCharge: 'پیکنگ چارج',
+        tax: 'ٹیکس',
+        total: 'کل رقم',
+      },
+      {
+        paperWidth: 80,
+        country: 'PK',
+        currency: 'PKR',
+        locale: 'ur-PK',
+        direction: 'rtl',
+      },
+    );
+    assert(
+      'Urdu order slip keeps explicit RTL layout and escaped labels',
       urduSlip.includes('lang="ur-PK" dir="rtl"') &&
-      urduSlip.includes('direction:rtl;text-align:right;') &&
-      urduSlip.includes('آرڈر سلپ') &&
-      urduSlip.includes('ذیلی رقم') &&
-      urduSlip.includes('کل رقم') &&
-      !urduSlip.includes('<script>'),
+        urduSlip.includes('direction:rtl;text-align:right;') &&
+        urduSlip.includes('آرڈر سلپ') &&
+        urduSlip.includes('ذیلی رقم') &&
+        urduSlip.includes('کل رقم') &&
+        !urduSlip.includes('<script>'),
     );
 
-    const escapedLocaleSlip = generateOrderSlipHtml(testIranOrder, {
-      ...orderSlipLabels,
-      title: '<script>alert(1)</script>',
-    }, {
-      locale: 'ur-PK" data-test="unsafe',
-      direction: 'rtl',
-    });
-    assert('Order-slip locale attribute is escaped',
+    const escapedLocaleSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        ...orderSlipLabels,
+        title: '<script>alert(1)</script>',
+      },
+      {
+        locale: 'ur-PK" data-test="unsafe',
+        direction: 'rtl',
+      },
+    );
+    assert(
+      'Order-slip locale attribute is escaped',
       escapedLocaleSlip.includes('lang="ur-PK&quot; data-test=&quot;unsafe"') &&
-      !escapedLocaleSlip.includes('<script>alert(1)</script>'),
+        !escapedLocaleSlip.includes('<script>alert(1)</script>'),
     );
 
     const ltrSlip = generateOrderSlipHtml(testIranOrder, orderSlipLabels, { direction: 'ltr' });
-    assert('LTR order slips retain explicit left-to-right layout',
+    assert(
+      'LTR order slips retain explicit left-to-right layout',
       ltrSlip.includes('dir="ltr"') && ltrSlip.includes('direction:ltr;text-align:left;'),
     );
 
-    const russianSlip = generateOrderSlipHtml(testIranOrder, {
-      title: 'Чек заказа',
-      subtotal: 'Промежуточный итог',
-      discount: 'Скидка',
-      serviceCharge: 'Стоимость обслуживания',
-      deliveryCharge: 'Стоимость доставки',
-      packagingCharge: 'Стоимость упаковки',
-      tax: 'Налог',
-      total: 'Итого',
-    }, {
-      paperWidth: 80,
-      country: 'RU',
-      currency: 'RUB',
-      locale: 'ru-RU',
-      direction: 'ltr',
-    });
-    assert('Russian order slip carries ru-RU LTR metadata and localized labels',
+    const russianSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'Чек заказа',
+        subtotal: 'Промежуточный итог',
+        discount: 'Скидка',
+        serviceCharge: 'Стоимость обслуживания',
+        deliveryCharge: 'Стоимость доставки',
+        packagingCharge: 'Стоимость упаковки',
+        tax: 'Налог',
+        total: 'Итого',
+      },
+      {
+        paperWidth: 80,
+        country: 'RU',
+        currency: 'RUB',
+        locale: 'ru-RU',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Russian order slip carries ru-RU LTR metadata and localized labels',
       russianSlip.includes('lang="ru-RU" dir="ltr"') &&
-      russianSlip.includes('direction:ltr;text-align:left;') &&
-      russianSlip.includes('Чек заказа') &&
-      russianSlip.includes('Промежуточный итог') &&
-      russianSlip.includes('Итого'),
+        russianSlip.includes('direction:ltr;text-align:left;') &&
+        russianSlip.includes('Чек заказа') &&
+        russianSlip.includes('Промежуточный итог') &&
+        russianSlip.includes('Итого'),
     );
 
-    const hindiSlip = generateOrderSlipHtml(testIranOrder, {
-      title: 'ऑर्डर स्लिप',
-      subtotal: 'उप-योग',
-      discount: 'छूट',
-      serviceCharge: 'सेवा शुल्क',
-      deliveryCharge: 'डिलीवरी शुल्क',
-      packagingCharge: 'पैकेजिंग शुल्क',
-      tax: 'कर',
-      total: 'कुल योग',
-    }, {
-      country: 'IN',
-      currency: 'INR',
-      locale: 'hi-IN',
-      direction: 'ltr',
-    });
-    assert('Hindi order slip carries hi-IN LTR metadata and local font fallback',
+    const hindiSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'ऑर्डर स्लिप',
+        subtotal: 'उप-योग',
+        discount: 'छूट',
+        serviceCharge: 'सेवा शुल्क',
+        deliveryCharge: 'डिलीवरी शुल्क',
+        packagingCharge: 'पैकेजिंग शुल्क',
+        tax: 'कर',
+        total: 'कुल योग',
+      },
+      {
+        country: 'IN',
+        currency: 'INR',
+        locale: 'hi-IN',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Hindi order slip carries hi-IN LTR metadata and local font fallback',
       hindiSlip.includes('lang="hi-IN" dir="ltr"') &&
-      hindiSlip.includes('Noto Sans Devanagari') &&
-      hindiSlip.includes('उप-योग') &&
-      hindiSlip.includes('कुल योग'),
+        hindiSlip.includes('Noto Sans Devanagari') &&
+        hindiSlip.includes('उप-योग') &&
+        hindiSlip.includes('कुल योग'),
     );
 
-    const nepaliSlip = generateOrderSlipHtml(testIranOrder, {
-      title: 'अर्डर स्लिप',
-      subtotal: 'उप-जम्मा',
-      discount: 'छूट',
-      serviceCharge: 'सेवा शुल्क',
-      deliveryCharge: 'डिलिभरी शुल्क',
-      packagingCharge: 'प्याकेजिङ शुल्क',
-      tax: 'कर',
-      total: 'कुल जम्मा',
-    }, {
-      country: 'NP',
-      currency: 'NPR',
-      locale: 'ne-NP',
-      direction: 'ltr',
-    });
-    assert('Nepali order slip carries ne-NP LTR metadata, Devanagari labels, and tenant currency',
+    const nepaliSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'अर्डर स्लिप',
+        subtotal: 'उप-जम्मा',
+        discount: 'छूट',
+        serviceCharge: 'सेवा शुल्क',
+        deliveryCharge: 'डिलिभरी शुल्क',
+        packagingCharge: 'प्याकेजिङ शुल्क',
+        tax: 'कर',
+        total: 'कुल जम्मा',
+      },
+      {
+        country: 'NP',
+        currency: 'NPR',
+        locale: 'ne-NP',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Nepali order slip carries ne-NP LTR metadata, Devanagari labels, and tenant currency',
       nepaliSlip.includes('lang="ne-NP" dir="ltr"') &&
-      nepaliSlip.includes('उप-जम्मा') &&
-      nepaliSlip.includes('कुल जम्मा') &&
-      nepaliSlip.includes('रू'),
+        nepaliSlip.includes('उप-जम्मा') &&
+        nepaliSlip.includes('कुल जम्मा') &&
+        nepaliSlip.includes('रू'),
     );
 
-    const bengaliSlip = generateOrderSlipHtml(testIranOrder, {
-      title: 'অর্ডার স্লিপ',
-      subtotal: 'সাবটোটাল',
-      discount: 'ছাড়',
-      serviceCharge: 'সার্ভিস চার্জ',
-      deliveryCharge: 'ডেলিভারি চার্জ',
-      packagingCharge: 'প্যাকেজিং চার্জ',
-      tax: 'কর',
-      total: 'মোট',
-    }, {
-      country: 'BD',
-      currency: 'BDT',
-      locale: 'bn-BD',
-      direction: 'ltr',
-    });
-    assert('Bengali order slip carries bn-BD LTR metadata and local font fallback',
+    const bengaliSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'অর্ডার স্লিপ',
+        subtotal: 'সাবটোটাল',
+        discount: 'ছাড়',
+        serviceCharge: 'সার্ভিস চার্জ',
+        deliveryCharge: 'ডেলিভারি চার্জ',
+        packagingCharge: 'প্যাকেজিং চার্জ',
+        tax: 'কর',
+        total: 'মোট',
+      },
+      {
+        country: 'BD',
+        currency: 'BDT',
+        locale: 'bn-BD',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Bengali order slip carries bn-BD LTR metadata and local font fallback',
       bengaliSlip.includes('lang="bn-BD" dir="ltr"') &&
-      bengaliSlip.includes('Noto Sans Bengali') &&
-      bengaliSlip.includes('সাবটোটাল') &&
-      bengaliSlip.includes('মোট'),
+        bengaliSlip.includes('Noto Sans Bengali') &&
+        bengaliSlip.includes('সাবটোটাল') &&
+        bengaliSlip.includes('মোট'),
     );
 
-    const albanianSlip = generateOrderSlipHtml(testIranOrder, {
-      title: 'Fletë porosie',
-      subtotal: 'Nëntotali',
-      discount: 'Zbritje',
-      serviceCharge: 'Tarifa e shërbimit',
-      deliveryCharge: 'Tarifa e dorëzimit',
-      packagingCharge: 'Tarifa e paketimit',
-      tax: 'Taksa',
-      total: 'Totali',
-    }, {
-      country: 'AL',
-      currency: 'ALL',
-      locale: 'sq-AL',
-      direction: 'ltr',
-    });
-    assert('Albanian order slip carries sq-AL LTR metadata and diacritics',
+    const albanianSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'Fletë porosie',
+        subtotal: 'Nëntotali',
+        discount: 'Zbritje',
+        serviceCharge: 'Tarifa e shërbimit',
+        deliveryCharge: 'Tarifa e dorëzimit',
+        packagingCharge: 'Tarifa e paketimit',
+        tax: 'Taksa',
+        total: 'Totali',
+      },
+      {
+        country: 'AL',
+        currency: 'ALL',
+        locale: 'sq-AL',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Albanian order slip carries sq-AL LTR metadata and diacritics',
       albanianSlip.includes('lang="sq-AL" dir="ltr"') &&
-      albanianSlip.includes('direction:ltr;text-align:left;') &&
-      albanianSlip.includes('Fletë porosie') &&
-      albanianSlip.includes('Nëntotali') &&
-      albanianSlip.includes('Totali'),
+        albanianSlip.includes('direction:ltr;text-align:left;') &&
+        albanianSlip.includes('Fletë porosie') &&
+        albanianSlip.includes('Nëntotali') &&
+        albanianSlip.includes('Totali'),
     );
 
-    const vietnameseSlip = generateOrderSlipHtml(testIranOrder, {
-      title: 'Phiếu đơn hàng',
-      subtotal: 'Tạm tính',
-      discount: 'Giảm giá',
-      serviceCharge: 'Phí dịch vụ',
-      deliveryCharge: 'Phí giao hàng',
-      packagingCharge: 'Phí đóng gói',
-      tax: 'Thuế',
-      total: 'Tổng cộng',
-    }, {
-      country: 'VN',
-      currency: 'VND',
-      locale: 'vi-VN',
-      direction: 'ltr',
-    });
-    assert('Vietnamese order slip carries vi-VN LTR metadata and stacked diacritics',
+    const vietnameseSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'Phiếu đơn hàng',
+        subtotal: 'Tạm tính',
+        discount: 'Giảm giá',
+        serviceCharge: 'Phí dịch vụ',
+        deliveryCharge: 'Phí giao hàng',
+        packagingCharge: 'Phí đóng gói',
+        tax: 'Thuế',
+        total: 'Tổng cộng',
+      },
+      {
+        country: 'VN',
+        currency: 'VND',
+        locale: 'vi-VN',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Vietnamese order slip carries vi-VN LTR metadata and stacked diacritics',
       vietnameseSlip.includes('lang="vi-VN" dir="ltr"') &&
-      vietnameseSlip.includes('direction:ltr;text-align:left;') &&
-      vietnameseSlip.includes('Phiếu đơn hàng') &&
-      vietnameseSlip.includes('Tạm tính') &&
-      vietnameseSlip.includes('Tổng cộng'),
+        vietnameseSlip.includes('direction:ltr;text-align:left;') &&
+        vietnameseSlip.includes('Phiếu đơn hàng') &&
+        vietnameseSlip.includes('Tạm tính') &&
+        vietnameseSlip.includes('Tổng cộng'),
+    );
+
+    const hausaSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'Takardar Oda',
+        subtotal: 'Jimillar ƙasa',
+        discount: 'Rangwame',
+        serviceCharge: 'Cajin sabis',
+        deliveryCharge: 'Cajin isarwa',
+        packagingCharge: 'Cajin marufi',
+        tax: 'Haraji',
+        total: 'Jimilla',
+      },
+      {
+        country: 'NG',
+        currency: 'NGN',
+        locale: 'ha-NG',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Hausa order slip carries ha-NG LTR metadata and Boko hooked letters',
+      hausaSlip.includes('lang="ha-NG" dir="ltr"') &&
+        hausaSlip.includes('direction:ltr;text-align:left;') &&
+        hausaSlip.includes('Takardar Oda') &&
+        hausaSlip.includes('Jimillar ƙasa') &&
+        hausaSlip.includes('Jimilla'),
     );
   }
 
@@ -721,178 +948,258 @@ async function run() {
   const artifactsList: { name: string; html: string }[] = [
     {
       name: '01_persian_receipt_rial_persian_digits',
-      html: generateBillHtml(testIranBill, {
-        ...baseIranTenant,
-        currency_display: 'rial',
-        number_digits: 'locale',
-        calendar: 'persian',
-      }, {
-        language: 'fa',
-        paperSize: 'thermal80',
-        address: 'تهران، خیابان انقلاب، پلاک ۱۲',
-        phone: '+98 21 6644 1234',
-        taxRegistrationNumber: '411123456789',
-        includeTaxId: true,
-        showTaxBreakdown: true,
-      }),
+      html: generateBillHtml(
+        testIranBill,
+        {
+          ...baseIranTenant,
+          currency_display: 'rial',
+          number_digits: 'locale',
+          calendar: 'persian',
+        },
+        {
+          language: 'fa',
+          paperSize: 'thermal80',
+          address: 'تهران، خیابان انقلاب، پلاک ۱۲',
+          phone: '+98 21 6644 1234',
+          taxRegistrationNumber: '411123456789',
+          includeTaxId: true,
+          showTaxBreakdown: true,
+        },
+      ),
     },
     {
       name: '02_persian_receipt_toman_persian_digits',
-      html: generateBillHtml(testIranBill, {
-        ...baseIranTenant,
-        currency_display: 'toman',
-        number_digits: 'locale',
-        calendar: 'persian',
-      }, {
-        language: 'fa',
-        paperSize: 'thermal80',
-        address: 'تهران، خیابان انقلاب، پلاک ۱۲',
-        phone: '+98 21 6644 1234',
-        taxRegistrationNumber: '411123456789',
-        includeTaxId: true,
-        showTaxBreakdown: true,
-        trimDecimals: true,
-      }),
+      html: generateBillHtml(
+        testIranBill,
+        {
+          ...baseIranTenant,
+          currency_display: 'toman',
+          number_digits: 'locale',
+          calendar: 'persian',
+        },
+        {
+          language: 'fa',
+          paperSize: 'thermal80',
+          address: 'تهران، خیابان انقلاب، پلاک ۱۲',
+          phone: '+98 21 6644 1234',
+          taxRegistrationNumber: '411123456789',
+          includeTaxId: true,
+          showTaxBreakdown: true,
+          trimDecimals: true,
+        },
+      ),
     },
     {
       name: '03_persian_receipt_toman_short_latin_digits',
-      html: generateBillHtml(testIranBill, {
-        ...baseIranTenant,
-        currency_display: 'toman_short',
-        number_digits: 'latin',
-        calendar: 'gregorian',
-      }, {
-        language: 'fa',
-        paperSize: 'thermal80',
-        address: 'Tehran, Enghelab St, No. 12',
-        phone: '+98 21 6644 1234',
-        taxRegistrationNumber: '411123456789',
-        includeTaxId: true,
-        showTaxBreakdown: true,
-        trimDecimals: true,
-      }),
+      html: generateBillHtml(
+        testIranBill,
+        {
+          ...baseIranTenant,
+          currency_display: 'toman_short',
+          number_digits: 'latin',
+          calendar: 'gregorian',
+        },
+        {
+          language: 'fa',
+          paperSize: 'thermal80',
+          address: 'Tehran, Enghelab St, No. 12',
+          phone: '+98 21 6644 1234',
+          taxRegistrationNumber: '411123456789',
+          includeTaxId: true,
+          showTaxBreakdown: true,
+          trimDecimals: true,
+        },
+      ),
     },
     {
       name: '04_persian_receipt_reprint_tax_persian',
-      html: generateBillHtml(testIranBill, {
-        ...baseIranTenant,
-        currency_display: 'rial',
-        number_digits: 'locale',
-        calendar: 'persian',
-      }, {
-        language: 'fa',
-        paperSize: 'thermal80',
-        isReprint: true,
-        address: 'تهران، خیابان ولیعصر، برج سپید',
-        phone: '+98 21 8899 0011',
-        taxRegistrationNumber: '411987654321',
-        includeTaxId: true,
-        showTaxBreakdown: true,
-      }),
+      html: generateBillHtml(
+        testIranBill,
+        {
+          ...baseIranTenant,
+          currency_display: 'rial',
+          number_digits: 'locale',
+          calendar: 'persian',
+        },
+        {
+          language: 'fa',
+          paperSize: 'thermal80',
+          isReprint: true,
+          address: 'تهران، خیابان ولیعصر، برج سپید',
+          phone: '+98 21 8899 0011',
+          taxRegistrationNumber: '411987654321',
+          includeTaxId: true,
+          showTaxBreakdown: true,
+        },
+      ),
     },
     {
       name: '05_english_receipt_baseline',
-      html: generateBillHtml({
-        ...testIranBill,
-        bill_number: 'BILL-US-1001',
-        subtotal: 45.00,
-        tax_amount: 4.50,
-        total: 49.50,
-        paid_amount: 49.50,
-        payment_details: [{ method: 'card', amount: 49.50, timestamp: '2026-08-17T14:35:00.000Z' }],
-        order: {
-          ...testIranOrder,
-          order_number: 'ORD-1001',
-          customer: { id: 'c1', name: 'John Doe', phone: '+1 555 123 4567', country_code: '+1' },
-          table: { id: 't1', name: 'Table 4', capacity: 2, status: 'occupied', is_active: true },
-          items: [{
-            id: 1, order_id: 101, product_id: 'p1', product_name: 'Espresso', unit_price: 15.00,
-            quantity: 3, subtotal: 45.00, tax_amount: 4.50, total: 49.50, addons: null, special_instructions: null, status: 'served'
-          }],
+      html: generateBillHtml(
+        {
+          ...testIranBill,
+          bill_number: 'BILL-US-1001',
+          subtotal: 45.0,
+          tax_amount: 4.5,
+          total: 49.5,
+          paid_amount: 49.5,
+          payment_details: [
+            { method: 'card', amount: 49.5, timestamp: '2026-08-17T14:35:00.000Z' },
+          ],
+          order: {
+            ...testIranOrder,
+            order_number: 'ORD-1001',
+            customer: { id: 'c1', name: 'John Doe', phone: '+1 555 123 4567', country_code: '+1' },
+            table: { id: 't1', name: 'Table 4', capacity: 2, status: 'occupied', is_active: true },
+            items: [
+              {
+                id: 1,
+                order_id: 101,
+                product_id: 'p1',
+                product_name: 'Espresso',
+                unit_price: 15.0,
+                quantity: 3,
+                subtotal: 45.0,
+                tax_amount: 4.5,
+                total: 49.5,
+                addons: null,
+                special_instructions: null,
+                status: 'served',
+              },
+            ],
+          },
         },
-      }, {
-        business_name: 'FloCafe New York',
-        currency: 'USD',
-        country: 'US',
-        timezone: 'America/New_York',
-      }, {
-        language: 'en',
-        paperSize: 'thermal80',
-        address: '350 5th Ave, New York, NY 10118',
-        phone: '+1 212 736 3100',
-        includeTaxId: true,
-        taxRegistrationNumber: 'US-99-1234567',
-      }),
+        {
+          business_name: 'FloCafe New York',
+          currency: 'USD',
+          country: 'US',
+          timezone: 'America/New_York',
+        },
+        {
+          language: 'en',
+          paperSize: 'thermal80',
+          address: '350 5th Ave, New York, NY 10118',
+          phone: '+1 212 736 3100',
+          includeTaxId: true,
+          taxRegistrationNumber: 'US-99-1234567',
+        },
+      ),
     },
     {
       name: '06_spanish_receipt_reprint',
-      html: generateBillHtml({
-        ...testIranBill,
-        bill_number: 'COMP-ES-2045',
-        subtotal: 30.00,
-        tax_amount: 3.00,
-        total: 33.00,
-        paid_amount: 33.00,
-        payment_details: [{ method: 'cash', amount: 33.00, timestamp: '2026-08-17T14:35:00.000Z' }],
-        order: {
-          ...testIranOrder,
-          order_number: 'ORD-ES-2045',
-          customer: { id: 'c1', name: 'Carlos Ruiz', phone: '+34 612 345 678', country_code: '+34' },
-          table: { id: 't1', name: 'Mesa 7', capacity: 2, status: 'occupied', is_active: true },
-          items: [{
-            id: 1, order_id: 101, product_id: 'p1', product_name: 'Café con Leche', unit_price: 15.00,
-            quantity: 2, subtotal: 30.00, tax_amount: 3.00, total: 33.00, addons: null, special_instructions: null, status: 'served'
-          }],
+      html: generateBillHtml(
+        {
+          ...testIranBill,
+          bill_number: 'COMP-ES-2045',
+          subtotal: 30.0,
+          tax_amount: 3.0,
+          total: 33.0,
+          paid_amount: 33.0,
+          payment_details: [
+            { method: 'cash', amount: 33.0, timestamp: '2026-08-17T14:35:00.000Z' },
+          ],
+          order: {
+            ...testIranOrder,
+            order_number: 'ORD-ES-2045',
+            customer: {
+              id: 'c1',
+              name: 'Carlos Ruiz',
+              phone: '+34 612 345 678',
+              country_code: '+34',
+            },
+            table: { id: 't1', name: 'Mesa 7', capacity: 2, status: 'occupied', is_active: true },
+            items: [
+              {
+                id: 1,
+                order_id: 101,
+                product_id: 'p1',
+                product_name: 'Café con Leche',
+                unit_price: 15.0,
+                quantity: 2,
+                subtotal: 30.0,
+                tax_amount: 3.0,
+                total: 33.0,
+                addons: null,
+                special_instructions: null,
+                status: 'served',
+              },
+            ],
+          },
         },
-      }, {
-        business_name: 'Café Flo Madrid',
-        currency: 'EUR',
-        country: 'ES',
-        timezone: 'Europe/Madrid',
-      }, {
-        language: 'es',
-        paperSize: 'thermal80',
-        isReprint: true,
-        address: 'Calle Mayor 10, Madrid',
-        phone: '+34 91 123 4567',
-        includeTaxId: true,
-        taxRegistrationNumber: 'B-12345678',
-      }),
+        {
+          business_name: 'Café Flo Madrid',
+          currency: 'EUR',
+          country: 'ES',
+          timezone: 'Europe/Madrid',
+        },
+        {
+          language: 'es',
+          paperSize: 'thermal80',
+          isReprint: true,
+          address: 'Calle Mayor 10, Madrid',
+          phone: '+34 91 123 4567',
+          includeTaxId: true,
+          taxRegistrationNumber: 'B-12345678',
+        },
+      ),
     },
     {
       name: '07_portuguese_receipt_brazil',
-      html: generateBillHtml({
-        ...testIranBill,
-        bill_number: 'CONTA-PT-3001',
-        subtotal: 80.00,
-        tax_amount: 8.00,
-        total: 88.00,
-        paid_amount: 88.00,
-        payment_details: [{ method: 'wallet', amount: 88.00, timestamp: '2026-08-17T14:35:00.000Z' }],
-        order: {
-          ...testIranOrder,
-          order_number: 'ORD-PT-3001',
-          customer: { id: 'c1', name: 'Ana Silva', phone: '+55 11 98765 4321', country_code: '+55' },
-          table: { id: 't1', name: 'Mesa 2', capacity: 4, status: 'occupied', is_active: true },
-          items: [{
-            id: 1, order_id: 101, product_id: 'p1', product_name: 'Pão de Queijo', unit_price: 40.00,
-            quantity: 2, subtotal: 80.00, tax_amount: 8.00, total: 88.00, addons: null, special_instructions: null, status: 'served'
-          }],
+      html: generateBillHtml(
+        {
+          ...testIranBill,
+          bill_number: 'CONTA-PT-3001',
+          subtotal: 80.0,
+          tax_amount: 8.0,
+          total: 88.0,
+          paid_amount: 88.0,
+          payment_details: [
+            { method: 'wallet', amount: 88.0, timestamp: '2026-08-17T14:35:00.000Z' },
+          ],
+          order: {
+            ...testIranOrder,
+            order_number: 'ORD-PT-3001',
+            customer: {
+              id: 'c1',
+              name: 'Ana Silva',
+              phone: '+55 11 98765 4321',
+              country_code: '+55',
+            },
+            table: { id: 't1', name: 'Mesa 2', capacity: 4, status: 'occupied', is_active: true },
+            items: [
+              {
+                id: 1,
+                order_id: 101,
+                product_id: 'p1',
+                product_name: 'Pão de Queijo',
+                unit_price: 40.0,
+                quantity: 2,
+                subtotal: 80.0,
+                tax_amount: 8.0,
+                total: 88.0,
+                addons: null,
+                special_instructions: null,
+                status: 'served',
+              },
+            ],
+          },
         },
-      }, {
-        business_name: 'FloCafe São Paulo',
-        currency: 'BRL',
-        country: 'BR',
-        timezone: 'America/Sao_Paulo',
-      }, {
-        language: 'pt',
-        paperSize: 'thermal80',
-        isReprint: true,
-        address: 'Av. Paulista 1000, São Paulo',
-        phone: '+55 11 3000 0000',
-        includeTaxId: true,
-        taxRegistrationNumber: '12.345.678/0001-90',
-      }),
+        {
+          business_name: 'FloCafe São Paulo',
+          currency: 'BRL',
+          country: 'BR',
+          timezone: 'America/Sao_Paulo',
+        },
+        {
+          language: 'pt',
+          paperSize: 'thermal80',
+          isReprint: true,
+          address: 'Av. Paulista 1000, São Paulo',
+          phone: '+55 11 3000 0000',
+          includeTaxId: true,
+          taxRegistrationNumber: '12.345.678/0001-90',
+        },
+      ),
     },
   ];
 
@@ -906,7 +1213,9 @@ async function run() {
   // Use Playwright to capture screenshots of each receipt
   let browser: any;
   try {
-    const playwright = require(path.resolve(__dirname, '../frontend/node_modules/@playwright/test'));
+    const playwright = require(
+      path.resolve(__dirname, '../frontend/node_modules/@playwright/test'),
+    );
     browser = await playwright.chromium.launch({ headless: true });
     const context = await browser.newContext({
       viewport: { width: 480, height: 900 },
@@ -927,7 +1236,6 @@ async function run() {
       }
       console.log(`   Captured screenshot artifact: ${pngPath}`);
     }
-
   } catch (err: any) {
     if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     console.warn(`   Could not capture Playwright screenshot: ${err?.message || err}`);

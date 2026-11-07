@@ -275,6 +275,16 @@ const TABLES: Record<string, StatusTable> = {
     shutdownBackup: ['ब्याकअप लिइँदैछ', 'कृपया कम्प्युटर बन्द नगर्नुहोस्।'],
     saved: ['सबै सुरक्षित भयो', 'Flo केही क्षणमै बन्द हुनेछ।'],
   },
+  ha: {
+    starting: ['Ana fara Flo', 'Ana shirya komai…'],
+    checking: ['Ana duba bayananka', "Ana tabbatar da ma'adanar bayanai tare da kiyaye lafiyarta…"],
+    backingUp: ['Ana ajiyar bayananka', 'Ana adana kwafi mai aminci kafin ka fara…'],
+    services: ['Ana fara ayyuka', 'An kusa kammalawa…'],
+    welcome: ['Barka da zuwa Flo', 'Ana buɗe wurin aikinka…'],
+    closing: ['Ana rufe Flo', 'Ana adana bayananka. Don Allah kada ka kashe kwamfutar.'],
+    shutdownBackup: ['Ana yin ajiyar bayanai', 'Don Allah kada ka kashe kwamfutar.'],
+    saved: ['An adana komai', 'Flo zai rufe nan take.'],
+  },
 };
 
 export const RTL_STATUS_LANGUAGES: ReadonlySet<string> = new Set(['ar', 'fa', 'ur']);

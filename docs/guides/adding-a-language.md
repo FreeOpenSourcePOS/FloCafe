@@ -65,10 +65,10 @@ While translating:
   the check will reject it.
 - For a language with combining marks, the value must be in Unicode NFC. `tests/translations.test.ts`
   enforces NFC for the languages it checks by name, which are `ha`, `jv`, `ne`, `ru`, `th`, and `vi`.
-- Avoid invisible formatting characters. The Russian validator in `tests/translations.test.ts` rejects
-  U+200B, U+200C, U+200D, U+00AD, and U+FEFF, because they corrupt printed text silently. No other
-  language's validator checks for them yet, so this is your responsibility to get right rather than
-  something the test will catch.
+- Avoid invisible formatting characters. The Russian and Javanese validators in
+  `tests/translations.test.ts` reject U+200B, U+200C, U+200D, U+00AD, and U+FEFF, because they
+  corrupt printed text silently. Other language validators do not check for them yet, so this is
+  your responsibility to get right rather than something the test will catch.
 - Do not start a value with `[TODO]` or any other placeholder prefix. The check rejects it.
 
 ## 4. Register the intentional-identical keys

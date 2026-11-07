@@ -48,6 +48,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
   const [savingEnabled, setSavingEnabled] = useState(false);
   const [counters, setCounters] = useState<CounterItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   // Add / Edit Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -62,18 +63,30 @@ export function CountersSettingsTab({ isOwner }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
+    setLoading(true);
     try {
-      const [settingRes, countersRes] = await Promise.all([
-        api
-          .get('/settings/multi_counter_enabled')
-          .catch(() => ({ data: { setting: { value: 'false' } } })),
-        api
-          .get('/counters', { params: { include_inactive: 'true' } })
-          .catch(() => ({ data: { counters: [] } })),
+      const [settingResult, countersResult] = await Promise.allSettled([
+        api.get('/settings/multi_counter_enabled').catch((err: unknown) => {
+          if ((err as { response?: { status?: number } })?.response?.status === 404) {
+            return { data: { setting: { value: 'false' } } };
+          }
+          throw err;
+        }),
+        api.get('/counters', { params: { include_inactive: 'true' } }),
       ]);
-      setEnabled(settingRes.data?.setting?.value === 'true');
-      setCounters(countersRes.data?.counters || []);
+      if (settingResult.status === 'fulfilled') {
+        setEnabled(settingResult.value.data?.setting?.value === 'true');
+      }
+      if (countersResult.status === 'fulfilled') {
+        setCounters(countersResult.value.data?.counters || []);
+      }
+      const failed = settingResult.status === 'rejected' || countersResult.status === 'rejected';
+      setLoadError(failed);
+      if (failed) {
+        toast.error(t('counterLoadFailed'));
+      }
     } catch {
+      setLoadError(true);
       toast.error(t('counterLoadFailed'));
     } finally {
       setLoading(false);
@@ -82,22 +95,33 @@ export function CountersSettingsTab({ isOwner }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      api
-        .get('/settings/multi_counter_enabled')
-        .catch(() => ({ data: { setting: { value: 'false' } } })),
-      api
-        .get('/counters', { params: { include_inactive: 'true' } })
-        .catch(() => ({ data: { counters: [] } })),
+    Promise.allSettled([
+      api.get('/settings/multi_counter_enabled').catch((err: unknown) => {
+        if ((err as { response?: { status?: number } })?.response?.status === 404) {
+          return { data: { setting: { value: 'false' } } };
+        }
+        throw err;
+      }),
+      api.get('/counters', { params: { include_inactive: 'true' } }),
     ])
-      .then(([settingRes, countersRes]) => {
+      .then(([settingResult, countersResult]) => {
         if (cancelled) return;
-        setEnabled(settingRes.data?.setting?.value === 'true');
-        setCounters(countersRes.data?.counters || []);
+        if (settingResult.status === 'fulfilled') {
+          setEnabled(settingResult.value.data?.setting?.value === 'true');
+        }
+        if (countersResult.status === 'fulfilled') {
+          setCounters(countersResult.value.data?.counters || []);
+        }
+        const failed = settingResult.status === 'rejected' || countersResult.status === 'rejected';
+        setLoadError(failed);
+        if (failed) {
+          toast.error(t('counterLoadFailed'));
+        }
         setLoading(false);
       })
       .catch(() => {
         if (cancelled) return;
+        setLoadError(true);
         toast.error(t('counterLoadFailed'));
         setLoading(false);
       });
@@ -227,7 +251,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
             </div>
             <Toggle
               value={enabled}
-              disabled={savingEnabled || !isOwner}
+              disabled={savingEnabled || loadError || !isOwner}
               label={t('multiCounterTitle')}
               onChange={handleToggleEnabled}
             />
@@ -235,7 +259,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
         </div>
 
         {/* Counter management section */}
-        {enabled && (
+        {(enabled || loadError) && (
           <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -244,7 +268,7 @@ export function CountersSettingsTab({ isOwner }: Props) {
               </div>
               <Button
                 onClick={handleOpenAddModal}
-                disabled={!isOwner}
+                disabled={!isOwner || loadError}
                 size="sm"
                 className="gap-1.5"
               >
@@ -257,6 +281,13 @@ export function CountersSettingsTab({ isOwner }: Props) {
               <div className="flex justify-center items-center py-12 text-muted-foreground gap-2">
                 <Loader2 size={18} className="animate-spin" />
                 <span>{tCommon('loading')}</span>
+              </div>
+            ) : loadError ? (
+              <div className="text-center py-12 border border-dashed border-border rounded-lg text-muted-foreground space-y-3">
+                <p className="font-medium">{t('counterLoadFailed')}</p>
+                <Button variant="outline" size="sm" onClick={() => void loadData()}>
+                  {t('retry')}
+                </Button>
               </div>
             ) : counters.length === 0 ? (
               <div className="text-center py-12 border border-dashed border-border rounded-lg text-muted-foreground">

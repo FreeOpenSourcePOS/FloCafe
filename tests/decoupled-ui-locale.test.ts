@@ -375,7 +375,8 @@ async function runTests() {
       | 'th'
       | 'ha'
       | 'jv'
-      | 'mr';
+      | 'mr'
+      | 'sw';
     label: string;
     filePrefix: string;
   }> = [
@@ -394,6 +395,7 @@ async function runTests() {
     { lang: 'ha', label: 'Hausa UI', filePrefix: 'receipt-argentina-hausa-ui' },
     { lang: 'jv', label: 'Javanese UI', filePrefix: 'receipt-argentina-javanese-ui' },
     { lang: 'mr', label: 'Marathi UI', filePrefix: 'receipt-argentina-marathi-ui' },
+    { lang: 'sw', label: 'Swahili UI', filePrefix: 'receipt-argentina-swahili-ui' },
   ];
 
   const receiptResults: Record<string, { html: string; htmlPath: string; pngPath: string }> = {};
@@ -471,6 +473,11 @@ async function runTests() {
       assert.ok(
         receiptHtml.includes('ऑग'),
         `Receipt in Marathi UI must contain a Marathi month name, got: ${receiptHtml}`,
+      );
+    } else if (lang === 'sw') {
+      assert.ok(
+        receiptHtml.includes('Bili #') && receiptHtml.includes('Jumla Kuu'),
+        `Receipt in Swahili UI must contain Swahili labels`,
       );
     }
 

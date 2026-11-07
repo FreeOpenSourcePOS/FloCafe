@@ -284,7 +284,7 @@ async function main(): Promise<void> {
     const localeFiles = fs.readdirSync(messageDir).filter((file) => file.endsWith('.json'));
     assert.equal(
       localeFiles.length,
-      27,
+      28,
       'the full-report localization test covers all supported locales',
     );
     for (const localeFile of localeFiles) {

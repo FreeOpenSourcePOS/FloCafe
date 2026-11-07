@@ -55,7 +55,7 @@ is invisible on screen and corrupts comparison, searching, and print labels.
 identically and wrap identically after normalisation, which is what makes NFC a requirement rather
 than a preference. `tests/translations.test.ts` rejects a `vi.json` value that is not already NFC.
 
-The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `ru.json`, and `th.json`.
+The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `ru.json`, `sw.json`, and `th.json`.
 
 ## Albanian and Vietnamese on a generic thermal printer
 
@@ -184,6 +184,12 @@ distinct on the receipt. The vegetarian tags are `शाकाहारी` and 
 and `रोख काढणे` for pay-out, identically on the dashboard and on the Z-report. Reprint is
 `पुनःमुद्रण` with the visarga (U+0903), and standard restaurant POS loanwords remain natural:
 order is `ऑर्डर`, takeaway is `टेकअवे`, delivery is `डिलिव्हरी`, and dine-in is `डाइन-इन`.
+
+**Swahili.** Subtotal `Jumla Ndogo` and grand total `JUMLA KUU` (`Jumla Kuu` on browser receipts) are
+distinct labels and must stay distinct on the receipt. Vegetarian tags are `Mboga` and non-vegetarian
+tags `Isiyo ya Mboga`, identical between `pos.*` and `products.*`. Takeaway is `Kuchukua`, dine-in is
+`Kula Hapa`, and delivery is `Uwasilishaji`. Cash movement uses `Uwekaji pesa` for pay-in and
+`Utoaji pesa` for pay-out, identically on the dashboard and on the Z-report.
 
 ## Verification
 

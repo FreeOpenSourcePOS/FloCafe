@@ -313,6 +313,22 @@ function run(): void {
     printLabel('mr', 'pos.subtotal') === 'उप-एकूण' &&
       printLabel('mr', 'print.grandTotal') !== printLabel('mr', 'pos.subtotal'),
   );
+  assert('Swahili grand total is localized', printLabel('sw', 'print.grandTotal') === 'JUMLA KUU');
+  assert(
+    'Swahili bill number label is localized',
+    printLabel('sw', 'receipt.billNumber') === 'Bili #',
+  );
+  assert('Swahili print-test amount is localized', printLabel('sw', 'printTest.amt') === 'Kiasi');
+  assert(
+    'Swahili takeaway is distinct from delivery',
+    printLabel('sw', 'pos.orderTypeTakeaway') === 'Kuchukua' &&
+      printLabel('sw', 'pos.orderTypeDelivery') === 'Uwasilishaji',
+  );
+  assert(
+    'Swahili subtotal stays distinct from grand total',
+    printLabel('sw', 'pos.subtotal') === 'Jumla Ndogo' &&
+      printLabel('sw', 'print.grandTotal') !== printLabel('sw', 'pos.subtotal'),
+  );
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {

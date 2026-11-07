@@ -369,6 +369,7 @@ function run(): void {
     'ha',
     'jv',
     'mr',
+    'sw',
   ] as const) {
     usePosSettingsStore.getState().setLanguage(ltrLang);
     const renderedLtr = renderDirectionalToaster(getLanguageLocale(ltrLang));
@@ -478,6 +479,7 @@ function run(): void {
     'ha',
     'jv',
     'mr',
+    'sw',
   ] as const) {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
   }

@@ -432,6 +432,38 @@ async function run(): Promise<void> {
         'Marathi express snack is localized',
       );
     }
+    if (language === 'sw') {
+      assert.equal(
+        rows('categories', 'name', "id = 'cat-express-food'")[0].name,
+        'Chakula',
+        'Swahili express category is localized',
+      );
+      assert.equal(
+        rows('categories', 'name', "id = 'cat-express-beverages'")[0].name,
+        'Vinywaji',
+        'Swahili express beverages category is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-meal'")[0].name,
+        'Mlo',
+        'Swahili express product is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-tea'")[0].name,
+        'Chai',
+        'Swahili express tea is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-coffee'")[0].name,
+        'Kahawa',
+        'Swahili express coffee is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-snack'")[0].name,
+        'Vitafunio',
+        'Swahili express snack is localized',
+      );
+    }
 
     seedSetupProfile(db, 'demo', 'finedine', language, 'IN');
     const seededCustomers = rows('customers', 'phone, phone_digits, country_code', 'is_active = 1');
@@ -599,6 +631,28 @@ async function run(): Promise<void> {
           ['+6281234567813', '+62'],
         ],
         'Javanese demo customers use Indonesia E.164 numbers independent of the selected store country',
+      );
+    }
+    if (language === 'sw') {
+      assert.equal(snapshot.category, 'Vitafunio vya Mwanzo', 'Swahili demo category is localized');
+      assert.equal(snapshot.product, 'Sambusa za Nyama', 'Swahili demo product is localized');
+      assert.equal(
+        rows('products', 'name', "id = 'prod-demo-pilau'")[0].name,
+        'Pilau ya Nyama',
+        'Swahili demo pilau uses Swahili restaurant terminology',
+      );
+      assert.equal(snapshot.manager, 'Meneja wa Mfano', 'Swahili demo manager is localized');
+      assert.equal(snapshot.customer, 'Juma Bakari', 'Swahili demo customer is localized');
+      assert.deepEqual(
+        rows('customers', 'phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id").map(
+          (customer) => [customer.phone, customer.country_code],
+        ),
+        [
+          ['+254712345678', '+254'],
+          ['+254712345679', '+254'],
+          ['+254712345680', '+254'],
+        ],
+        'Swahili demo customers use Kenya E.164 numbers independent of the selected store country',
       );
     }
     if (language === 'hi') {

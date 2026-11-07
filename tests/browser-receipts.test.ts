@@ -118,6 +118,7 @@ async function run() {
     'ha',
     'jv',
     'mr',
+    'sw',
   ] as const) {
     await i18n.loadLocaleMessages(lang);
   }
@@ -650,6 +651,25 @@ async function run() {
         mrHtml.includes('तुमच्या भेटीबद्दल धन्यवाद!'),
     );
 
+    const swTenant = {
+      business_name: 'FloCafe Nairobi',
+      currency: 'KES',
+      country: 'KE',
+      timezone: 'Africa/Nairobi',
+    };
+    const swHtml = generateBillHtml(sampleEnBill, swTenant, { language: 'sw', isReprint: true });
+    assert(
+      'SW receipt has lang="sw-KE" and dir="ltr"',
+      swHtml.includes('<html lang="sw-KE" dir="ltr">'),
+    );
+    assert(
+      'SW labels are Swahili',
+      swHtml.includes('CHAPISHO LA MARUDIO') &&
+        swHtml.includes('Bili #') &&
+        swHtml.includes('Jumla Kuu') &&
+        swHtml.includes('Asante kwa kututembelea!'),
+    );
+
     // The browser receipt is the primary print path, and its body stack was
     // extended per language by hand, so Bengali was the one merged locale left
     // without a declared family here. Assert the families the order-slip and
@@ -1046,6 +1066,34 @@ async function run() {
         javaneseSlip.includes('Slip Pesenan') &&
         javaneseSlip.includes('Sub-gunggung') &&
         javaneseSlip.includes('Gunggung'),
+    );
+
+    const swahiliSlip = generateOrderSlipHtml(
+      testIranOrder,
+      {
+        title: 'Karatasi ya Oda',
+        subtotal: 'Jumla Ndogo',
+        discount: 'Punguzo',
+        serviceCharge: 'Ada ya Huduma',
+        deliveryCharge: 'Ada ya Uwasilishaji',
+        packagingCharge: 'Ada ya Ufungashaji',
+        tax: 'Kodi',
+        total: 'Jumla',
+      },
+      {
+        country: 'KE',
+        currency: 'KES',
+        locale: 'sw-KE',
+        direction: 'ltr',
+      },
+    );
+    assert(
+      'Swahili order slip carries sw-KE LTR metadata and Swahili labels',
+      swahiliSlip.includes('lang="sw-KE" dir="ltr"') &&
+        swahiliSlip.includes('direction:ltr;text-align:left;') &&
+        swahiliSlip.includes('Karatasi ya Oda') &&
+        swahiliSlip.includes('Jumla Ndogo') &&
+        swahiliSlip.includes('Jumla'),
     );
   }
 

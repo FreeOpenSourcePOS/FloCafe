@@ -204,6 +204,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/mr.json'),
   },
+  sw: {
+    locale: 'sw-KE',
+    nativeName: 'Kiswahili',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/sw.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

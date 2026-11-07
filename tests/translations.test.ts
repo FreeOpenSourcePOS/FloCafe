@@ -71,6 +71,9 @@
  *  26. Marathi safeguards: mr.json values never contain placeholders, malformed
  *      replacement characters, invisible formatting characters, or non-NFC text,
  *      and only documented shared values may remain identical to English.
+ *  27. Swahili safeguards: sw.json values never contain placeholders, malformed
+ *      replacement characters, or non-NFC text, and only documented shared
+ *      values may remain identical to English.
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -2577,6 +2580,94 @@ function mrFallbackErrors(
   return errors;
 }
 
+/** Swahili translation safeguards, including canonical NFC text. */
+const SW_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', // example email "you@business.com"
+  'common.appTitle', // brand name "Flo"
+  'common.brandName', // brand name "Flo Cafe"
+  'common.logoAlt', // brand name "Flo Cafe"
+  'dashboard.exportCsv', // format label "CSV (.csv)"
+  'dashboard.exportPdf', // format label "PDF (.pdf)"
+  'dashboard.exportXlsx', // format label "Excel (.xlsx)"
+  'dashboard.ticketMethodCount', // pure format "{count} ×"
+  'kds.emptyColumn', // pure symbol "—"
+  'kds.viewKanban', // proper term "Kanban"
+  'nav.kds', // technical acronym "KDS"
+  'nav.pos', // technical acronym "POS"
+  'nav.whatsapp', // product name "WhatsApp"
+  'pos.addonPrice', // pure format "+{currency}{price}"
+  'pos.loadingEllipsis', // pure symbol "…"
+  'pos.tagCount', // pure format "{tag} ×{count}"
+  'pos.taxLine', // pure format "{title} @{rate}%"
+  'printTest.escpos', // technical hardware standard "ESCPOS (USB)"
+  'printTest.paperWidth58', // measurement "2.5\" (58mm)"
+  'printTest.paperWidth80', // measurement "3.5\" (80mm)"
+  'print.hsn', // tax code acronym "HSN"
+  'print.zReport.paymentCount', // pure format "x{count}"
+  'products.addonSelectionRange', // pure format "{min} – {max}"
+  'products.fieldSku', // technical acronym "SKU"
+  'products.saleUnitCl', // unit "cl"
+  'products.saleUnitFlOz', // unit "fl oz"
+  'products.saleUnitG', // unit "g"
+  'products.saleUnitKg', // unit "kg"
+  'products.saleUnitL', // unit "l"
+  'products.saleUnitLb', // unit "lb"
+  'products.saleUnitMl', // unit "ml"
+  'products.saleUnitOz', // unit "oz"
+  'products.skuLabel', // pure format "SKU: {sku}"
+  'serverApp.emailPlaceholder', // example email "server@flo.local"
+  'settings.apiKeyInputPlaceholder', // example token "fac_live_xxxxxxxxxxxxxxxxxxxx"
+  'settings.connectionUsb', // technical acronym "USB"
+  'settings.instagramPlaceholder', // example handle "@yourcafe"
+  'settings.ipAddressPlaceholder', // example IP "192.168.1.100"
+  'settings.iranCurrencyDisplayRial', // currency name and native script "Rial (ریال)"
+  'settings.iranCurrencyDisplayToman', // currency name and native script "Toman (تومان)"
+  'settings.kds', // technical acronym "KDS"
+  'settings.languageEs', // autonym "Español (ES)"
+  'settings.paperSize58', // measurement "2.5\" (58mm)"
+  'settings.paperSize80', // measurement "3.5\" (80mm)"
+  'settings.paymentMethodUpi', // payment rail acronym "UPI"
+  'settings.portPlaceholder', // example port "9100"
+  'settings.registrationEmailPlaceholder', // example email "owner@yourcafe.com"
+  'settings.registrationLastError', // pure placeholder "{error}"
+  'settings.revflo', // brand name "RevFlo"
+  'settings.tabOrderflow', // brand name "OrderFlow"
+  'settings.tabWhatsapp', // product name "WhatsApp"
+  'settings.unicode', // technical standard "Unicode"
+  'settings.whatsapp', // product name "WhatsApp"
+  'setup.finedineLabel', // product mode name "FineDine"
+  'setup.ownerEmailPlaceholder', // example email "owner@restaurant.com"
+  'setup.pinLabel', // technical acronym "PIN"
+  'setup.qsrLabel', // industry acronym "QSR"
+  'tax.auditCreateOverride', // pure format "{entityType} {entityId} → {categoryId}"
+  'tax.auditUpdateOverride', // pure format "{entityType} {entityId}: {before} → {after}"
+  'update.downloadingBadge', // symbol + placeholder "↓ {percent}%"
+  'whatsapp.connect.pairingPhonePlaceholder', // pure format "{dialCode}XXXXXXXXXX"
+]);
+
+function swFallbackErrors(
+  swFlat: Record<string, string>,
+  enFlat: Record<string, string>,
+): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const swVal = swFlat[k];
+    if (swVal === undefined) continue;
+    if (swVal.startsWith('[SW]') || swVal.startsWith('[TODO]')) {
+      errors.push(`sw.json ${k} — placeholder prefix found: "${swVal}"`);
+    } else if (swVal === enFlat[k] && !SW_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(
+        `sw.json ${k} — identical to English value (renders as English for Swahili users)`,
+      );
+    } else if (swVal !== swVal.normalize('NFC')) {
+      errors.push(`sw.json ${k} — value must use Unicode NFC`);
+    } else if (swVal.includes('\uFFFD')) {
+      errors.push(`sw.json ${k} — value contains a Unicode replacement character`);
+    }
+  }
+  return errors;
+}
+
 /** Keys whose `{number}` placeholder names an order number that must stay
  * introduced by punctuation (for example `#` or `№`) or a space, never welded
  * onto the end of a verb-final clause. */
@@ -3533,7 +3624,66 @@ async function run(): Promise<void> {
     `  ✓ no untranslated mr.json values (${MR_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
   );
 
-  // 27. No locale may weld an order number onto a word. Devanagari, Arabic, and
+  // 27. sw.json values must be complete, NFC text without malformed characters.
+  const swMessages = loadedStrings.get('sw');
+  if (!swMessages) throw new Error('languages registry must include the maintained sw locale');
+  const swErrors = swFallbackErrors(swMessages, loadedStrings.get('en')!);
+  if (swErrors.length) {
+    console.error(`\nsw.json values with errors (${swErrors.length}):`);
+    for (const e of swErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(
+      false,
+      'sw.json contains untranslated, placeholder, non-NFC, or replacement-character values',
+    );
+  }
+  for (const [key, technicalLiteral] of [
+    ['products.csvCategoriesHelp', 'sort_order'],
+    ['products.csvProductsHelp', 'tax_category'],
+    ['products.csvProductsHelp', 'tax_behavior'],
+    ['products.csvProductsHelp', 'cashback_percent'],
+    ['products.csvProductsHelp', 'is_active'],
+  ] as const) {
+    assert(
+      swMessages[key]?.includes(technicalLiteral),
+      `sw.json ${key} must preserve the CSV field ${technicalLiteral}`,
+    );
+  }
+  assert(
+    swMessages['receipt.cashReceived'] === 'Pesa Taslimu Iliyopokelewa',
+    'sw.json receipt.cashReceived must preserve the canonical cash-received label',
+  );
+  assert(
+    swMessages['pos.tagVeg'] === 'Mboga' && swMessages['products.tagVeg'] === 'Mboga',
+    'sw.json vegetarian product tags must use the vegetarian Swahili term',
+  );
+  assert(
+    swMessages['pos.tagNonVeg'] === 'Isiyo ya Mboga' &&
+      swMessages['products.tagNonVeg'] === 'Isiyo ya Mboga',
+    'sw.json non-vegetarian product tags must negate the vegetarian Swahili term',
+  );
+  assert(
+    swMessages['orders.takeaway'] === swMessages['pos.orderTypeTakeaway'],
+    'sw.json takeaway labels must match the reviewed Swahili pickup term',
+  );
+  assert(
+    swMessages['dashboard.payIn'] === 'Uwekaji pesa' &&
+      swMessages['dashboard.payOut'] === 'Utoaji pesa',
+    'sw.json cash-movement labels must match the Z-report terminology',
+  );
+  assert(
+    swMessages['print.zReport.payIn'] === swMessages['dashboard.payIn'] &&
+      swMessages['print.zReport.payOut'] === swMessages['dashboard.payOut'],
+    'sw.json cash-movement labels must be identical on the dashboard and the Z-report',
+  );
+  assert(
+    swMessages['setup.emailCommunicationDescription'].includes('haziwezi kuzimwa hapa'),
+    'sw.json must tell Swahili users that essential notices cannot be disabled at setup',
+  );
+  console.log(
+    `  ✓ no untranslated sw.json values (${SW_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
+  );
+
+  // 28. No locale may weld an order number onto a word. Devanagari, Arabic, and
   // Cyrillic are all verb-final, so a trailing "{number}" reads as part of the
   // word. This covers every registered locale, not only Nepali.
   const orderNumberErrors = orderNumberPlaceholderErrors(Object.fromEntries(loadedStrings));
@@ -3913,6 +4063,25 @@ function runNegativeTests(): void {
   expectDetected(
     'mr: invisible formatting character',
     mrFallbackErrors({ 'a.b': 'अ\u200dॅक्सेस' }, { 'a.b': 'ॲक्सेस' }),
+  );
+  expectDetected(
+    'sw: English-identical value',
+    swFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'sw: placeholder prefix value',
+    swFallbackErrors({ 'a.b': '[SW] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'sw: non-NFC value',
+    swFallbackErrors(
+      { 'a.b': 'Kahawa\u0301'.normalize('NFD') },
+      { 'a.b': 'Kahawa\u0301'.normalize('NFC') },
+    ),
+  );
+  expectDetected(
+    'sw: Unicode replacement character',
+    swFallbackErrors({ 'a.b': 'Kahawa\uFFFD' }, { 'a.b': 'Kahawa' }),
   );
   expectDetected(
     'ne: Unicode replacement character',

@@ -93,6 +93,11 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
     web: 'वेब प्रिंट (ब्राउझर)',
     whatsapp: 'WhatsApp शेअर',
   },
+  sw: {
+    basic: 'Risiti ya Msingi (Joto)',
+    web: 'Uchapishaji wa Wavuti (Kivinjari)',
+    whatsapp: 'Shiriki kwa WhatsApp',
+  },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {
@@ -104,6 +109,7 @@ async function loginAsOwner(page: Page): Promise<void> {
 }
 
 test('print-test visible labels use the selected UI locale', async ({ page }) => {
+  test.setTimeout(90_000);
   await loginAsOwner(page);
   try {
     // Driven from the registry so a newly registered locale cannot be skipped:

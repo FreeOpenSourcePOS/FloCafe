@@ -521,6 +521,24 @@ async function run(): Promise<void> {
       'getBrowserLanguage must return "te" for bare te',
     );
   });
+  withNavigatorLanguage('ta-IN', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'ta',
+      'getBrowserLanguage must return "ta" for ta-IN',
+    );
+  });
+  withNavigatorLanguage('ta', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'ta',
+      'getBrowserLanguage must return "ta" for bare ta',
+    );
+  });
+  withNavigatorLanguage('ta-LK', () => {
+    assert(
+      i18nModule.getBrowserLanguage() === 'ta',
+      'ta-LK must resolve through the same-script regional fallback to ta-IN',
+    );
+  });
   withNavigatorLanguage(
     'en-US',
     () => {
@@ -577,6 +595,7 @@ async function run(): Promise<void> {
     'sw',
     'pa',
     'te',
+    'ta',
   ] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.

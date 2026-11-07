@@ -84,6 +84,29 @@ const LATIN_ASCII_MAP: Record<string, string> = {
   ë: 'e',
 };
 
+const LATIN_EXTENDED_ASCII_MAP: Record<string, string> = {
+  Æ: 'AE',
+  æ: 'ae',
+  Œ: 'OE',
+  œ: 'oe',
+  Ø: 'O',
+  ø: 'o',
+  Ł: 'L',
+  ł: 'l',
+  Đ: 'D',
+  đ: 'd',
+  Ð: 'D',
+  ð: 'd',
+  Þ: 'TH',
+  þ: 'th',
+  Ğ: 'G',
+  ğ: 'g',
+  İ: 'I',
+  ı: 'i',
+  Ş: 'S',
+  ş: 's',
+};
+
 const CODE_PAGE_CHARACTERS: Record<Exclude<ThermalCodePage, 'ascii'>, string> = {
   cp437:
     'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ',
@@ -116,6 +139,16 @@ function transliterateThermalText(text: string, capabilities: ThermalPrinterCapa
       (codePage) => codePage !== 'ascii' && codePageCanRepresent(text, codePage),
     );
     if (hasNativeCodePage) return text;
+    const withLegacyMap = text.replace(
+      /[À-ÿ]/g,
+      (character) => LATIN_ASCII_MAP[character] ?? character,
+    );
+    const withExtendedMap = [...withLegacyMap]
+      .map((character) => LATIN_EXTENDED_ASCII_MAP[character] ?? character)
+      .join('');
+    return withExtendedMap.replace(/\p{Script=Latin}\p{Mark}*/gu, (segment) =>
+      segment.normalize('NFD').replace(/\p{Diacritic}/gu, '').normalize('NFC'),
+    );
   }
   return text.replace(/[À-ÿ]/g, (character) => LATIN_ASCII_MAP[character] ?? character);
 }

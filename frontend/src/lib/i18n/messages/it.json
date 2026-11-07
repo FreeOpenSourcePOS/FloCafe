@@ -2672,7 +2672,20 @@
     "counterRole": "Ruolo postazione",
     "counterIsActive": "Attivo",
     "confirmDeleteCounter": "Eliminare questa postazione?",
-    "confirmDeleteCounterDesc": "Questa postazione verrà rimossa definitivamente."
+    "confirmDeleteCounterDesc": "Questa postazione verrà rimossa definitivamente.",
+    "printerProfile": "Tipo / profilo stampante",
+    "printerProfileAuto": "Rileva automaticamente dal nome della stampante",
+    "printerProfileImpact76": "Ad aghi / impatto da 76mm (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Serie Epson TM (termica da 80mm)",
+    "printerProfileXprinter": "Termica Xprinter da 80mm",
+    "printerProfileGeneric80": "Termica ESC/POS generica da 80mm",
+    "printerProfileGeneric58": "Termica ESC/POS generica da 58mm",
+    "printerProfileImpactHint": "Le stampanti ad aghi con nastro usano la modalità testo a 32 colonne e ignorano i loghi bitmap e la grafica QR.",
+    "printerCompatibilityImpact": "Ad aghi 76mm",
+    "printerCompatibilityDriverOnly": "Solo stampa tramite driver / browser",
+    "printerDriverOnlyWarning": "Questa stampante non utilizza comandi ESC/POS grezzi. Usa la stampa del browser invece di aggiungerla come stampante termica diretta.",
+    "printerSwitchToBrowserPrint": "Usa stampa del browser",
+    "printerSwitchedToBrowserPrint": "Metodo di stampa impostato su stampa del browser"
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",

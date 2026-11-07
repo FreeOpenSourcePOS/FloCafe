@@ -2672,7 +2672,20 @@
     "counterRole": "柜台角色",
     "counterIsActive": "启用",
     "confirmDeleteCounter": "确定删除此柜台？",
-    "confirmDeleteCounterDesc": "该柜台将被永久移除。"
+    "confirmDeleteCounterDesc": "该柜台将被永久移除。",
+    "printerProfile": "打印机类型 / 配置文件",
+    "printerProfileAuto": "根据打印机名称自动检测",
+    "printerProfileImpact76": "76mm 针式 / 点阵 (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Epson TM 系列 (80mm 热敏)",
+    "printerProfileXprinter": "Xprinter 80mm 热敏",
+    "printerProfileGeneric80": "通用 80mm ESC/POS 热敏",
+    "printerProfileGeneric58": "通用 58mm ESC/POS 热敏",
+    "printerProfileImpactHint": "色带针式打印机使用 32 列纯文本模式，并跳过位图徽标和 QR 图形。",
+    "printerCompatibilityImpact": "76mm 针式",
+    "printerCompatibilityDriverOnly": "仅限驱动 / 浏览器打印",
+    "printerDriverOnlyWarning": "此打印机不支持原始 ESC/POS 指令。请使用浏览器打印，不要将其添加为原始热敏打印机。",
+    "printerSwitchToBrowserPrint": "使用浏览器打印",
+    "printerSwitchedToBrowserPrint": "已将打印方式切换为浏览器打印"
   },
   "setup": {
     "alreadyCompleted": "此安装已完成设置。正在跳转到登录…",

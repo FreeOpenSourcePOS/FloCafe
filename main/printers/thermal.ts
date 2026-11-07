@@ -9,6 +9,7 @@ import {
   PrinterCutMode,
   resolvePrinterProfile,
   matchSupportedPrinterProfile,
+  getSupportedPrinterProfiles,
   getPrinterCapabilities,
   SupportedPrinterProfile,
   dotsForPaperWidth,
@@ -321,6 +322,7 @@ export function isMasRuntime(): boolean {
 const PRINTER_DETECTION_TIMEOUT_MS = 10_000;
 
 export type PrinterColumnWidth = 36 | 42 | 48;
+export type PrinterCompatibility = 'escpos_thermal' | 'escpos_impact' | 'driver_only';
 
 export interface PrinterInfo {
   name: string;
@@ -335,21 +337,93 @@ export interface PrinterInfo {
   port?: number;
   paperWidth?: string;
   profileId?: string;
+  compatibility?: PrinterCompatibility;
 }
 
-function guessPaperWidth(name: string, model: string): string {
+export function classifyDetectedPrinterCompatibility(info: {
+  name?: string | null;
+  make?: string | null;
+  model?: string | null;
+  driver?: string | null;
+  profileId?: string | null;
+}): PrinterCompatibility {
+  const haystack = [info.name, info.make, info.model, info.driver]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .replace(/[_]+/g, '-');
+
+  if (info.profileId === 'escpos-impact-76') return 'escpos_impact';
+
+  if (
+    /\b(?:star|tsp100|tsp143|tsp650|tsp700|tsp800|sp700|mc-print|mcp20|mcp30|mcp31)\b/.test(
+      haystack,
+    ) ||
+    /\b(?:ecotank|workforce|stylus|expression|inkjet|laserjet|deskjet|officejet|pixma|maxify|imageclass)\b/.test(
+      haystack,
+    ) ||
+    /\b(?:et-\d|wf-\d|l3\d*|l4\d*|tm-l\d*)\b/.test(haystack) ||
+    /\b(?:zebra|zd\d|gk420|gx420|zp450|zt\d|dymo|labelwriter|rollo|brother|ql-\d|td-\d|bixolon\s+slp|label)\b/.test(
+      haystack,
+    ) ||
+    /\b(?:canon|hewlett|hp\b|lexmark|ricoh|kyocera|xerox|konica|minolta|pantum)\b/.test(
+      haystack,
+    ) ||
+    /\b(?:pdf|xps|onenote|fax|microsoft\s+print|send\s+to|save\s+as|cups-pdf)\b/.test(haystack)
+  ) {
+    return 'driver_only';
+  }
+
+  const matchedProfile = info.profileId
+    ? getSupportedPrinterProfiles().find((p) => p.id === info.profileId) ?? null
+    : matchSupportedPrinterProfile(info.name, info.make, info.model, info.driver);
+
+  if (matchedProfile?.id === 'escpos-impact-76') return 'escpos_impact';
+  if (matchedProfile) return 'escpos_thermal';
+
+  if (
+    /\b(?:escpos|esc\/pos|thermal|pos-?\d+|xp-\d+|srp-\d+|ct-[se]\d+|mp-4200|tm-[tmp]\d*|58mm|80mm)\b/.test(
+      haystack,
+    )
+  ) {
+    return 'escpos_thermal';
+  }
+
+  return 'driver_only';
+}
+
+export function guessPaperWidth(name: string, model: string): string {
   const profile = matchSupportedPrinterProfile(name, model);
   if (profile) return profile.defaultPaperWidth;
   const s = (name + ' ' + model).toLowerCase();
-  if (s.includes('58')) return 'cols-32';
+  if (s.includes('58') || s.includes('tm-u') || s.includes('u220') || s.includes('76mm')) {
+    return 'cols-32';
+  }
   return 'cols-42';
 }
 
-function annotateProfile(info: Omit<PrinterInfo, 'profileId'>): PrinterInfo {
-  const profile = matchSupportedPrinterProfile(info.name, info.make, info.model);
+export function annotateProfile(
+  info: Omit<PrinterInfo, 'profileId' | 'compatibility'>,
+): PrinterInfo {
+  const profile = matchSupportedPrinterProfile(info.name, info.make, info.model, info.driver);
+  const compatibility = classifyDetectedPrinterCompatibility({
+    ...info,
+    profileId: profile?.id,
+  });
+  if (compatibility === 'driver_only') {
+    return { ...info, compatibility };
+  }
   return profile
-    ? { ...info, profileId: profile.id, paperWidth: info.paperWidth || profile.defaultPaperWidth }
-    : info;
+    ? {
+        ...info,
+        profileId: profile.id,
+        paperWidth:
+          profile.id === 'escpos-impact-76'
+            ? profile.defaultPaperWidth
+            : info.paperWidth || profile.defaultPaperWidth,
+        compatibility,
+      }
+    : { ...info, compatibility };
 }
 
 function parseDeviceUri(uri: string): { ip?: string; port?: number } {
@@ -521,83 +595,56 @@ async function getMacOSPrinterStatus(
   }
 }
 
-async function getMacOSPrinterDetails(
+function isNonTmEpsonPrinter(text: string): boolean {
+  const lower = text.toLowerCase().replace(/[_]+/g, '-');
+  return /\b(?:ecotank|et-|l3\d*|l4\d*|workforce|wf-|stylus|expression)/.test(lower);
+}
+
+export function extractEpsonModel(name: string, info: string = ''): string {
+  const combined = `${name} ${info}`.toLowerCase().replace(/[_]+/g, '-');
+  if (combined.includes('tm-u') || combined.includes('u220') || combined.includes('u230')) {
+    return 'TM-U Series';
+  }
+  if (isNonTmEpsonPrinter(combined)) {
+    return 'Epson Inkjet';
+  }
+  if (combined.includes('tm-m30')) return 'TM-m30';
+  if (combined.includes('tm-t88')) return 'TM-T88';
+  if (combined.includes('tm-t82')) return 'TM-T82';
+  if (combined.includes('tm-t20')) return 'TM-T20';
+  if (combined.includes('tm-t60')) return 'TM-T60';
+  if (combined.includes('tm-l90')) return 'TM-L90';
+  if (combined.includes('tm-l')) return 'TM-L Series';
+  if (combined.includes('tm-h600')) return 'TM-H600';
+  if (combined.includes('tm-')) return 'TM Series';
+  return 'Epson Printer';
+}
+
+export async function getMacOSPrinterDetails(
   name: string,
   signal?: AbortSignal,
 ): Promise<{ make: string; model: string }> {
-  let make = 'Unknown';
-  let model = 'Thermal Printer';
-
+  let info = '';
   try {
-    const { stdout: info } = await execFileAsync('lpoptions', ['-p', name, '-l'], {
+    const { stdout } = await execFileAsync('lpoptions', ['-p', name, '-l'], {
       encoding: 'utf8',
       timeout: PRINTER_DETECTION_TIMEOUT_MS,
       signal,
       maxBuffer: 10 * 1024 * 1024,
     });
-
-    const lower = info.toLowerCase();
-
-    if (lower.includes('epson') || name.toLowerCase().includes('tm-')) {
-      make = 'Epson';
-      model = extractEpsonModel(name, info);
-    } else if (lower.includes('xprinter') || name.toLowerCase().includes('xprinter')) {
-      make = 'Xprinter';
-      model = name.includes('80') ? 'Xprinter 80mm' : 'Xprinter 58mm';
-    } else if (lower.includes('star') || name.toLowerCase().includes('tsp')) {
-      make = 'Star';
-      model = 'TSP Thermal';
-    } else if (lower.includes('zjiang') || name.toLowerCase().includes('zj')) {
-      make = 'Zjiang';
-      model = '58mm Thermal';
-    } else if (lower.includes('zebra')) {
-      make = 'Zebra';
-      model = 'Zebra Thermal';
-    } else if (lower.includes('brother')) {
-      make = 'Brother';
-      model = 'Brother Thermal';
-    } else if (lower.includes('canon')) {
-      make = 'Canon';
-      model = 'Canon Printer';
-    } else if (lower.includes('hp') || lower.includes('hewlett')) {
-      make = 'HP';
-      model = 'HP Printer';
-    } else {
-      const nameLower = name.toLowerCase();
-      if (nameLower.includes('58') || nameLower.includes('thermal')) {
-        make = 'Generic';
-        model = '58mm Thermal Printer';
-      } else if (nameLower.includes('80')) {
-        make = 'Generic';
-        model = '80mm Thermal Printer';
-      }
-    }
+    info = stdout;
   } catch {
-    const nameLower = name.toLowerCase();
-    if (nameLower.includes('epson') || nameLower.includes('tm-')) {
-      make = 'Epson';
-      model = 'TM Series';
-    } else if (nameLower.includes('xprinter')) {
-      make = 'Xprinter';
-      model = nameLower.includes('80') ? 'Xprinter 80mm' : 'Xprinter 58mm';
-    }
+    info = '';
   }
 
-  return { make, model };
-}
-
-function extractEpsonModel(name: string, info: string): string {
-  const lower = name.toLowerCase();
-  if (lower.includes('tm-m30')) return 'TM-m30';
-  if (lower.includes('tm-t88')) return 'TM-T88';
-  if (lower.includes('tm-t82')) return 'TM-T82';
-  if (lower.includes('tm-t20')) return 'TM-T20';
-  if (lower.includes('tm-t60')) return 'TM-T60';
-  if (lower.includes('tm-l90')) return 'TM-L90';
-  if (lower.includes('tm-h600')) return 'TM-H600';
-  if (lower.includes('tm-u')) return 'TM-U Series';
-  if (lower.includes('tm-')) return 'TM Series';
-  return 'Epson Thermal';
+  const detected = detectWindowsMakeModel(name, info);
+  if (detected.make === 'Generic' && detected.model === '58mm Thermal') {
+    return { make: 'Generic', model: '58mm Thermal Printer' };
+  }
+  if (detected.make === 'Generic' && detected.model === '80mm Thermal') {
+    return { make: 'Generic', model: '80mm Thermal Printer' };
+  }
+  return detected;
 }
 
 async function isMacOSDefaultPrinter(name: string, signal?: AbortSignal): Promise<boolean> {
@@ -724,30 +771,43 @@ async function detectWindowsPrinters(signal?: AbortSignal): Promise<PrinterInfo[
   return printers;
 }
 
-function detectWindowsMakeModel(name: string, driver: string): { make: string; model: string } {
+export function detectWindowsMakeModel(
+  name: string,
+  driver: string = '',
+): { make: string; model: string } {
   let make = 'Unknown';
   let model = 'Thermal Printer';
 
-  const lower = (name + ' ' + driver).toLowerCase();
+  const lower = `${name} ${driver}`.toLowerCase().replace(/[_]+/g, '-');
+  const nameLower = name.toLowerCase().replace(/[_]+/g, '-');
 
-  if (lower.includes('epson') || name.toLowerCase().includes('tm-')) {
+  if (lower.includes('epson') || nameLower.includes('tm-') || lower.includes('u220')) {
     make = 'Epson';
-    model = name.includes('TM-m30')
-      ? 'TM-m30'
-      : name.includes('TM-T88')
-        ? 'TM-T88'
-        : name.includes('TM-T82')
-          ? 'TM-T82'
-          : name.includes('TM-T20')
-            ? 'TM-T20'
-            : 'TM Series';
-  } else if (lower.includes('xprinter')) {
+    model = extractEpsonModel(name, driver);
+  } else if (lower.includes('bixolon') || lower.includes('srp-')) {
+    make = 'Bixolon';
+    model = lower.includes('srp-275') || lower.includes('srp-270') ? 'SRP-275' : 'SRP Series';
+  } else if (lower.includes('xprinter') || lower.includes('xp-')) {
     make = 'Xprinter';
-    model = lower.includes('80') ? 'Xprinter 80mm' : 'Xprinter 58mm';
-  } else if (lower.includes('star') || lower.includes('tsp')) {
+    model =
+      lower.includes('xp-76') || lower.includes('xp-c76')
+        ? 'XP-76'
+        : lower.includes('80')
+          ? 'Xprinter 80mm'
+          : 'Xprinter 58mm';
+  } else if (
+    lower.includes('star') ||
+    lower.includes('tsp') ||
+    lower.includes('sp700') ||
+    lower.includes('mc-print')
+  ) {
     make = 'Star';
-    model = 'TSP Thermal';
-  } else if (lower.includes('zjiang')) {
+    model = lower.includes('sp700')
+      ? 'SP700'
+      : lower.includes('mc-print')
+        ? 'mC-Print'
+        : 'TSP Thermal';
+  } else if (lower.includes('zjiang') || nameLower.includes('zj')) {
     make = 'Zjiang';
     model = '58mm Thermal';
   } else if (lower.includes('zebra')) {
@@ -756,6 +816,12 @@ function detectWindowsMakeModel(name: string, driver: string): { make: string; m
   } else if (lower.includes('brother')) {
     make = 'Brother';
     model = 'Brother Thermal';
+  } else if (lower.includes('canon')) {
+    make = 'Canon';
+    model = 'Canon Printer';
+  } else if (lower.includes('hp') || lower.includes('hewlett')) {
+    make = 'HP';
+    model = 'HP Printer';
   } else if (lower.includes('58') || lower.includes('thermal')) {
     make = 'Generic';
     model = '58mm Thermal';
@@ -1445,7 +1511,7 @@ export async function printPaymentTicket(
 
     const balance = options.balance ?? order.total;
     const qrPayload = `FLOCAFE-TICKET:${order.order_number}`;
-    const qrBytes = buildEscPosQrCode(qrPayload);
+    const qrBytes = rasterCapabilityEnabled(capabilities) ? buildEscPosQrCode(qrPayload) : null;
 
     const buildTicketDocument = (
       caps: ThermalPrinterCapabilities,
@@ -1601,7 +1667,9 @@ export async function printPaymentTicket(
       lines.push('-'.repeat(cols));
       lines.push('{CENTER}Please pay at the payment counter{/CENTER}');
       lines.push('{CENTER}Scan or enter ticket number to pay:{/CENTER}');
-      lines.push(`{RAW_BYTES:${qrBytes.toString('base64')}}`);
+      if (qrBytes) {
+        lines.push(`{RAW_BYTES:${qrBytes.toString('base64')}}`);
+      }
       lines.push(`{CENTER}${qrPayload}{/CENTER}`);
       lines.push('');
       lines.push('{CUT}');
@@ -2486,7 +2554,7 @@ async function rasterizeReceiptIfEnabled(
   if (result.rasterFailed) {
     return { ...prepared, warnings: [...prepared.warnings, ...result.warnings] };
   }
-  return result.rasterSelected
+  return result.rasterSelected || document.lines.some((line) => line.startsWith('{RAW_BYTES:'))
     ? { ...prepared, data: result.data, warnings: result.warnings }
     : prepared;
 }

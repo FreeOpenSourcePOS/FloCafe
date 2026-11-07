@@ -2672,7 +2672,20 @@
     "counterRole": "Gampanin ng Counter",
     "counterIsActive": "Aktibo",
     "confirmDeleteCounter": "I-delete ang counter na ito?",
-    "confirmDeleteCounterDesc": "Permanenteng tatanggalin ang counter na ito."
+    "confirmDeleteCounterDesc": "Permanenteng tatanggalin ang counter na ito.",
+    "printerProfile": "Uri / Profile ng Printer",
+    "printerProfileAuto": "Awtomatikong tukuyin mula sa pangalan ng printer",
+    "printerProfileImpact76": "76mm Impact / Dot-Matrix na Printer (Epson TM-U220, Bixolon SRP-275)",
+    "printerProfileEpsonTm": "Seryeng Epson TM (80mm Thermal)",
+    "printerProfileXprinter": "80mm Thermal na Xprinter",
+    "printerProfileGeneric80": "Karaniwang 80mm ESC/POS Thermal",
+    "printerProfileGeneric58": "Karaniwang 58mm ESC/POS Thermal",
+    "printerProfileImpactHint": "Gumagamit ang mga impact ribbon printer ng 32-column text mode at nilalaktawan ang mga bitmap logo at QR graphic.",
+    "printerCompatibilityImpact": "76mm Impact na Printer",
+    "printerCompatibilityDriverOnly": "Pang-driver / Browser print lang",
+    "printerDriverOnlyWarning": "Hindi gumagamit ang printer na ito ng direktang ESC/POS commands. Gamitin ang Browser Print sa halip na idagdag ito bilang raw thermal printer.",
+    "printerSwitchToBrowserPrint": "Gamitin ang Browser Print",
+    "printerSwitchedToBrowserPrint": "Pinalitan ang Paraan ng Pag-print sa Browser Print"
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

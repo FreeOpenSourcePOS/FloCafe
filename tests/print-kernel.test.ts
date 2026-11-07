@@ -406,8 +406,16 @@ for (const [term, segments, cells] of [
   ['पुरणपोळी', ['पु', 'र', 'ण', 'पो', 'ळी'], 5],
   ['पुनःमुद्रण', ['पु', 'नः', 'मु', 'द्र', 'ण'], 5],
 ] as const) {
-  assert.deepEqual(graphemeSegments(term), [...segments], `Marathi term ${term} segments without splitting a virama conjunct`);
-  assert.equal(displayCellWidth(term), cells, `Marathi term ${term} consumes ${cells} thermal display cells, not its code-point count`);
+  assert.deepEqual(
+    graphemeSegments(term),
+    [...segments],
+    `Marathi term ${term} segments without splitting a virama conjunct`,
+  );
+  assert.equal(
+    displayCellWidth(term),
+    cells,
+    `Marathi term ${term} consumes ${cells} thermal display cells, not its code-point count`,
+  );
   for (let width = 1; width < cells; width += 1) {
     const wrapped = wrapToDisplayCells(term, width);
     assert.deepEqual(
@@ -421,8 +429,8 @@ for (const [term, segments, cells] of [
       assert.equal(
         graphemeSegments(wrapped[index] + wrapped[index + 1]).length,
         left.length + right.length,
-        `Marathi term ${term} must break between complete clusters at the ${width}-cell boundary `
-        + `${JSON.stringify(wrapped[index])} | ${JSON.stringify(wrapped[index + 1])}`,
+        `Marathi term ${term} must break between complete clusters at the ${width}-cell boundary ` +
+          `${JSON.stringify(wrapped[index])} | ${JSON.stringify(wrapped[index + 1])}`,
       );
     }
   }

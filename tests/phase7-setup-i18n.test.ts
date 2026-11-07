@@ -411,10 +411,26 @@ async function run(): Promise<void> {
       );
     }
     if (language === 'mr') {
-      assert.equal(rows('categories', 'name', "id = 'cat-express-food'")[0].name, 'खाद्यपदार्थ', 'Marathi express category is localized');
-      assert.equal(rows('categories', 'name', "id = 'cat-express-beverages'")[0].name, 'पेये', 'Marathi express beverages category is localized');
-      assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'जेवण', 'Marathi express product is localized');
-      assert.equal(rows('products', 'name', "id = 'prod-express-snack'")[0].name, 'नाश्ता', 'Marathi express snack is localized');
+      assert.equal(
+        rows('categories', 'name', "id = 'cat-express-food'")[0].name,
+        'खाद्यपदार्थ',
+        'Marathi express category is localized',
+      );
+      assert.equal(
+        rows('categories', 'name', "id = 'cat-express-beverages'")[0].name,
+        'पेये',
+        'Marathi express beverages category is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-meal'")[0].name,
+        'जेवण',
+        'Marathi express product is localized',
+      );
+      assert.equal(
+        rows('products', 'name', "id = 'prod-express-snack'")[0].name,
+        'नाश्ता',
+        'Marathi express snack is localized',
+      );
     }
 
     seedSetupProfile(db, 'demo', 'finedine', language, 'IN');
@@ -601,11 +617,17 @@ async function run(): Promise<void> {
     if (language === 'mr') {
       assert.equal(snapshot.category, 'स्टार्टर', 'Marathi demo category is localized');
       assert.equal(snapshot.product, 'कांदा भजी', 'Marathi demo product is localized');
-      assert.equal(rows('products', 'name', "id = 'prod-demo-misal-pav'")[0].name, 'मिसळ पाव', 'Marathi demo misal pav uses Marathi restaurant terminology');
+      assert.equal(
+        rows('products', 'name', "id = 'prod-demo-misal-pav'")[0].name,
+        'मिसळ पाव',
+        'Marathi demo misal pav uses Marathi restaurant terminology',
+      );
       assert.equal(snapshot.manager, 'डेमो व्यवस्थापक', 'Marathi demo manager is localized');
       assert.equal(snapshot.customer, 'रोहन देशमुख', 'Marathi demo customer is localized');
       assert.deepEqual(
-        rows('customers', 'phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => [customer.phone, customer.country_code]),
+        rows('customers', 'phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id").map(
+          (customer) => [customer.phone, customer.country_code],
+        ),
         [
           ['+919820123456', '+91'],
           ['+919820123457', '+91'],

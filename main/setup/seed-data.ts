@@ -1895,64 +1895,64 @@ function seedDemoRestaurant(
                                                                     1,
                                                                   ],
                                                                 ] as const)
-                                                            : ([
-                                                                [
-                                                                  'prod-demo-paneer-tikka',
-                                                                  'cat-demo-starters',
-                                                                  'Paneer Tikka',
-                                                                  250,
-                                                                  1,
-                                                                ],
-                                                                [
-                                                                  'prod-demo-chicken-wings',
-                                                                  'cat-demo-starters',
-                                                                  'Chicken Wings',
-                                                                  280,
-                                                                  2,
-                                                                ],
-                                                                [
-                                                                  'prod-demo-butter-chicken',
-                                                                  'cat-demo-main',
-                                                                  'Butter Chicken',
-                                                                  320,
-                                                                  1,
-                                                                ],
-                                                                [
-                                                                  'prod-demo-dal-makhani',
-                                                                  'cat-demo-main',
-                                                                  'Dal Makhani',
-                                                                  220,
-                                                                  2,
-                                                                ],
-                                                                [
-                                                                  'prod-demo-jeera-rice',
-                                                                  'cat-demo-main',
-                                                                  'Jeera Rice',
-                                                                  150,
-                                                                  3,
-                                                                ],
-                                                                [
-                                                                  'prod-demo-cola',
-                                                                  'cat-demo-beverages',
-                                                                  'Cola',
-                                                                  60,
-                                                                  1,
-                                                                ],
-                                                                [
-                                                                  'prod-demo-lemon-soda',
-                                                                  'cat-demo-beverages',
-                                                                  'Lemon Soda',
-                                                                  70,
-                                                                  2,
-                                                                ],
-                                                                [
-                                                                  'prod-demo-gulab-jamun',
-                                                                  'cat-demo-desserts',
-                                                                  'Gulab Jamun',
-                                                                  80,
-                                                                  1,
-                                                                ],
-                                                              ] as const);
+                                                              : ([
+                                                                  [
+                                                                    'prod-demo-paneer-tikka',
+                                                                    'cat-demo-starters',
+                                                                    'Paneer Tikka',
+                                                                    250,
+                                                                    1,
+                                                                  ],
+                                                                  [
+                                                                    'prod-demo-chicken-wings',
+                                                                    'cat-demo-starters',
+                                                                    'Chicken Wings',
+                                                                    280,
+                                                                    2,
+                                                                  ],
+                                                                  [
+                                                                    'prod-demo-butter-chicken',
+                                                                    'cat-demo-main',
+                                                                    'Butter Chicken',
+                                                                    320,
+                                                                    1,
+                                                                  ],
+                                                                  [
+                                                                    'prod-demo-dal-makhani',
+                                                                    'cat-demo-main',
+                                                                    'Dal Makhani',
+                                                                    220,
+                                                                    2,
+                                                                  ],
+                                                                  [
+                                                                    'prod-demo-jeera-rice',
+                                                                    'cat-demo-main',
+                                                                    'Jeera Rice',
+                                                                    150,
+                                                                    3,
+                                                                  ],
+                                                                  [
+                                                                    'prod-demo-cola',
+                                                                    'cat-demo-beverages',
+                                                                    'Cola',
+                                                                    60,
+                                                                    1,
+                                                                  ],
+                                                                  [
+                                                                    'prod-demo-lemon-soda',
+                                                                    'cat-demo-beverages',
+                                                                    'Lemon Soda',
+                                                                    70,
+                                                                    2,
+                                                                  ],
+                                                                  [
+                                                                    'prod-demo-gulab-jamun',
+                                                                    'cat-demo-desserts',
+                                                                    'Gulab Jamun',
+                                                                    80,
+                                                                    1,
+                                                                  ],
+                                                                ] as const);
   for (const [id, categoryId, name, price, sort] of products)
     insertProduct(db, id, categoryId, name, price, sort);
 
@@ -2125,7 +2125,7 @@ function seedDemoRestaurant(
                                 : lang === 'nl'
                                   ? 'Demomanager'
                                   : lang === 'hi'
-                                     ? 'डेमो मैनेजर'
+                                    ? 'डेमो मैनेजर'
                                     : lang === 'bn'
                                       ? 'ম্যানেজার ডেমো'
                                       : lang === 'sq'

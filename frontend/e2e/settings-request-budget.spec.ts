@@ -3209,5 +3209,5 @@ test('Counters tab reports a failed counters load instead of showing an empty li
   });
 
   await page.goto(`${BASE}/settings?tab=counters`);
-  await expect(page.getByText('Failed to load counters.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Failed to load counters.', { exact: true }).first()).toBeVisible();
 });

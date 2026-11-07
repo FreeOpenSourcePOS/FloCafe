@@ -204,6 +204,47 @@ async function run() {
       'api() does not mask non-ECONNRESET failures',
     );
     assert.equal(nonResetAttempts, 1, 'api() does not retry non-ECONNRESET errors');
+
+    let postResetAttempts = 0;
+    globalThis.fetch = (async () => {
+      postResetAttempts += 1;
+      const cause = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+      throw new TypeError('fetch failed', { cause });
+    }) as typeof fetch;
+    await assert.rejects(
+      () =>
+        api('http://127.0.0.1:39999', '/api/addon-groups', {
+          method: 'POST',
+          body: { name: 'Toppings' },
+        }),
+      /fetch failed/,
+      'api() does not automatically retry non-idempotent POST requests on ECONNRESET',
+    );
+    assert.equal(postResetAttempts, 1, 'POST requests fail without automatic retry on ECONNRESET');
+
+    let putOptInAttempts = 0;
+    globalThis.fetch = (async () => {
+      putOptInAttempts += 1;
+      if (putOptInAttempts === 1) {
+        const cause = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+        throw new TypeError('fetch failed', { cause });
+      }
+      return new Response(JSON.stringify({ offline_mode: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+    const optedInWrite = await api('http://127.0.0.1:39999', '/api/settings/offline-mode', {
+      method: 'PUT',
+      body: { offline_mode: true },
+      retryOnReset: true,
+    });
+    assert.equal(putOptInAttempts, 2, 'api() retries opted-in write requests once on ECONNRESET');
+    assert.equal(
+      optedInWrite.status,
+      200,
+      'opted-in write retry returns the second attempt status',
+    );
   } finally {
     globalThis.fetch = savedFetch;
   }

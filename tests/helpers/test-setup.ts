@@ -512,6 +512,8 @@ function isTransientConnReset(error: any): boolean {
   return false;
 }
 
+const SAFE_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 async function api(
   baseUrl: string,
   urlPath: string,
@@ -519,6 +521,7 @@ async function api(
     method?: string;
     body?: any;
     headers?: Record<string, string>;
+    retryOnReset?: boolean;
   } = {},
 ): Promise<{ status: number; data: any }> {
   const fetchOptions: any = {
@@ -533,7 +536,9 @@ async function api(
     fetchOptions.body =
       typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
 
-  const canRetryReset = isLocalTestServer(baseUrl);
+  const method = (options.method || 'GET').toUpperCase();
+  const canRetryReset =
+    isLocalTestServer(baseUrl) && (options.retryOnReset ?? SAFE_RETRY_METHODS.has(method));
   let response: any;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

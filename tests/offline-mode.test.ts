@@ -251,6 +251,7 @@ async function main() {
           method: 'PUT',
           body: { offline_mode: true },
           headers: ownerAuth,
+          retryOnReset: true,
         });
         assertEqualOrThrow(
           reenabledAfterRestore.status,

@@ -492,6 +492,28 @@ function installAndActivateTestTaxPack(db: any, pack: any) {
 
 // ── API Request Helper ───────────────────────────────────────────────────────
 
+function isLocalTestServer(baseUrl: string): boolean {
+  try {
+    const { hostname } = new URL(baseUrl);
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
+function isTransientConnReset(error: any): boolean {
+  let current = error;
+  while (current && typeof current === 'object') {
+    if (current.code === 'ECONNRESET' || String(current.message || '').includes('ECONNRESET')) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
+}
+
+const SAFE_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 async function api(
   baseUrl: string,
   urlPath: string,
@@ -499,17 +521,34 @@ async function api(
     method?: string;
     body?: any;
     headers?: Record<string, string>;
+    retryOnReset?: boolean;
   } = {},
 ): Promise<{ status: number; data: any }> {
   const fetchOptions: any = {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      Connection: 'close',
+      ...(options.headers || {}),
+    },
   };
   if (options.method) fetchOptions.method = options.method;
   if (options.body !== undefined)
     fetchOptions.body =
       typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
 
-  const response = await (globalThis as any).fetch(baseUrl + urlPath, fetchOptions);
+  const method = (options.method || 'GET').toUpperCase();
+  const canRetryReset =
+    isLocalTestServer(baseUrl) && (options.retryOnReset ?? SAFE_RETRY_METHODS.has(method));
+  let response: any;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      response = await (globalThis as any).fetch(baseUrl + urlPath, fetchOptions);
+      break;
+    } catch (error) {
+      if (attempt === 0 && canRetryReset && isTransientConnReset(error)) continue;
+      throw error;
+    }
+  }
   const data = await response.json();
   return { status: response.status, data };
 }

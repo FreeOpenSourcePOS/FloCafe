@@ -661,6 +661,7 @@ async function runTests() {
     const webusbRes = await request(app).post('/api/printers').send({
       name: 'Counter WebUSB Printer',
       connection_type: 'webusb',
+      text_size: 'extra_large',
       is_default: true,
     });
     assert(
@@ -678,10 +679,11 @@ async function runTests() {
         serverPrintersRes.body.printers[0].name === 'Counter WebUSB Printer' &&
         serverPrintersRes.body.printers[0].connection_type === 'webusb' &&
         serverPrintersRes.body.printers[0].is_default === 1 &&
+        serverPrintersRes.body.printers[0].text_size === 'extra_large' &&
         serverPrintersRes.body.printers[0].readiness_state === 'configured' &&
         Object.keys(serverPrintersRes.body.printers[0]).sort().join(',') ===
-          'connection_type,id,is_default,name,readiness_state',
-      'printing.execute receives only default-printer readiness fields',
+          'connection_type,id,is_default,name,readiness_state,text_size',
+      'printing.execute receives only default-printer readiness fields including text_size',
     );
 
     const deniedKickRes = await request(app).post('/api/printers/kick-drawer');

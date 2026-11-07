@@ -2307,6 +2307,7 @@ export async function rasterizePrintDocumentForWebUsb(
     useUnicode: boolean;
     arabicShaping: boolean;
     timezone?: string;
+    textSize?: PrinterTextSize;
   },
 ): Promise<
   | {
@@ -2319,11 +2320,14 @@ export async function rasterizePrintDocumentForWebUsb(
   | { ok: false; error: string }
 > {
   const profile = resolvePrinterProfile({ profile_id: profileId });
-  const capabilities = capabilitiesForPrinter(
+  const textSize = normalizePrinterTextSize(options.textSize);
+  const baseCapabilities = capabilitiesForPrinter(
     profile,
     `cols-${options.columns}`,
     options.arabicShaping,
   );
+  const capabilities = textSize === 'normal' ? baseCapabilities : { ...baseCapabilities, textSize };
+  const layoutColumns = layoutColumnsForTextSize(options.columns, textSize);
   if (!rasterCapabilityEnabled(capabilities, 'mixed'))
     return { ok: false, error: 'Raster output is not enabled for this printer profile' };
   const rasterGroups: RasterSemanticLineGroup[] = [];
@@ -2331,6 +2335,7 @@ export async function rasterizePrintDocumentForWebUsb(
     template === 'compact'
       ? renderBillDocumentToCompactLines(document, {
           ...options,
+          columns: layoutColumns,
           preserveCurrencySymbol: true,
           cutMode: profile.cutMode,
           capabilities,
@@ -2339,6 +2344,7 @@ export async function rasterizePrintDocumentForWebUsb(
         })
       : renderBillDocumentToClassicLines(document, {
           ...options,
+          columns: layoutColumns,
           preserveCurrencySymbol: true,
           cutMode: profile.cutMode,
           capabilities,
@@ -2350,6 +2356,7 @@ export async function rasterizePrintDocumentForWebUsb(
     [],
     {
       ...options,
+      columns: layoutColumns,
       cutMode: profile.cutMode,
       capabilities,
       requestPrefix: 'webusb-receipt',
@@ -2378,6 +2385,7 @@ export async function rasterizeKotDocumentForWebUsb(
     timezone?: string;
     useUnicode: boolean;
     arabicShaping: boolean;
+    textSize?: PrinterTextSize;
   },
 ): Promise<
   | {
@@ -2390,16 +2398,20 @@ export async function rasterizeKotDocumentForWebUsb(
   | { ok: false; error: string }
 > {
   const profile = resolvePrinterProfile({ profile_id: profileId });
-  const capabilities = capabilitiesForPrinter(
+  const textSize = normalizePrinterTextSize(options.textSize);
+  const baseCapabilities = capabilitiesForPrinter(
     profile,
     `cols-${options.columns}`,
     options.arabicShaping,
   );
+  const capabilities = textSize === 'normal' ? baseCapabilities : { ...baseCapabilities, textSize };
+  const layoutColumns = layoutColumnsForTextSize(options.columns, textSize);
   if (!rasterCapabilityEnabled(capabilities, 'mixed'))
     return { ok: false, error: 'Raster output is not enabled for this printer profile' };
   const rasterGroups: RasterSemanticLineGroup[] = [];
   const lines = renderKotDocumentToLines(document, {
     ...options,
+    columns: layoutColumns,
     cutMode: profile.cutMode,
     capabilities,
     rasterGroups,
@@ -2409,6 +2421,7 @@ export async function rasterizeKotDocumentForWebUsb(
     [],
     {
       ...options,
+      columns: layoutColumns,
       cutMode: profile.cutMode,
       capabilities,
       requestPrefix: 'webusb-kot',

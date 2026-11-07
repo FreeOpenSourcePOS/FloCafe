@@ -41,6 +41,7 @@ import { isOrdersLayout } from './routes/settings';
 import { googleDrive } from './services/google-drive';
 import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from './printers/thermal';
 import { isKotDocument, isPrintDocument } from '../shared/print/document';
+import { isPrinterTextSize } from '../shared/print/text-size';
 import { isSafeWhatsAppShareUrl } from './security/url-allowlist';
 import log from 'electron-log/main';
 import { randomUUID } from 'crypto';
@@ -793,7 +794,8 @@ export function registerIpcHandlers(
       typeof options.trimDecimals !== 'boolean' ||
       typeof options.useUnicode !== 'boolean' ||
       typeof options.arabicShaping !== 'boolean' ||
-      (options.timezone !== undefined && typeof options.timezone !== 'string')
+      (options.timezone !== undefined && typeof options.timezone !== 'string') ||
+      (options.textSize !== undefined && !isPrinterTextSize(options.textSize))
     ) {
       return { ok: false, error: 'Invalid raster document options' };
     }
@@ -832,6 +834,7 @@ export function registerIpcHandlers(
       typeof options.language !== 'string' ||
       typeof options.locale !== 'string' ||
       (options.timezone !== undefined && typeof options.timezone !== 'string') ||
+      (options.textSize !== undefined && !isPrinterTextSize(options.textSize)) ||
       typeof options.useUnicode !== 'boolean' ||
       typeof options.arabicShaping !== 'boolean'
     ) {

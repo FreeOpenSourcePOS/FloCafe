@@ -152,13 +152,14 @@ function getDeliverySlipBills(
     : [latestBill];
 }
 
-function printerShape(printer: any) {
+export function printerShape(printer: any) {
   if (!printer) return printer;
   const profile = resolvePrinterProfile(printer);
-  const capabilities = capabilitiesForPrinter(
-    profile,
-    printer.paper_width || profile.defaultPaperWidth,
-  );
+  const textSize = normalizePrinterTextSize(printer.text_size);
+  const capabilities = {
+    ...capabilitiesForPrinter(profile, printer.paper_width || profile.defaultPaperWidth),
+    textSize,
+  };
   return {
     id: printer.id,
     name: printer.name,
@@ -168,7 +169,7 @@ function printerShape(printer: any) {
     is_default: printer.is_default,
     cash_drawer_pulse_enabled: printer.cash_drawer_pulse_enabled,
     paper_width: printer.paper_width,
-    text_size: normalizePrinterTextSize(printer.text_size),
+    text_size: textSize,
     created_at: printer.created_at,
     updated_at: printer.updated_at,
     profile_id: profile.id,
@@ -185,6 +186,7 @@ interface DefaultPrinter {
   port: number | null;
   is_default: number;
   paper_width: string | null;
+  text_size?: string | null;
 }
 
 function printerReadinessShape(printer: DefaultPrinter) {
@@ -193,6 +195,7 @@ function printerReadinessShape(printer: DefaultPrinter) {
     name: printer.name,
     connection_type: printer.connection_type,
     is_default: printer.is_default,
+    text_size: normalizePrinterTextSize(printer.text_size),
     readiness_state: 'configured',
   };
 }

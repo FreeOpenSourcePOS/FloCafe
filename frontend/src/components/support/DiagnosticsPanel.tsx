@@ -203,13 +203,12 @@ export function DiagnosticsPanel({
   // A read that started before a save must not overwrite the saved value, or a
   // late response puts the switch back to off while the backend transmits.
   const savesRef = useRef(0);
-  const readStartedAtSaveRef = useRef(0);
 
-  const applySnapshot = useCallback((snapshot: DiagnosticsSnapshot) => {
+  const applySnapshot = useCallback((snapshot: DiagnosticsSnapshot, startedAtSave: number) => {
     setFailures(snapshot.failures);
     setBundle(snapshot.bundle);
     setHealth(snapshot.health);
-    if (readStartedAtSaveRef.current === savesRef.current) {
+    if (startedAtSave === savesRef.current) {
       // Absent means the read was refused or not permitted, and null keeps the
       // hint off both claims; false would claim nothing is sent while it is.
       const raw = snapshot.settings.diagnostics_transmission_enabled;
@@ -219,27 +218,24 @@ export function DiagnosticsPanel({
     }
   }, []);
 
-  const runRead = useCallback(() => {
-    readStartedAtSaveRef.current = savesRef.current;
-    return readDiagnostics(canViewSettings, canViewHealth);
-  }, [canViewSettings, canViewHealth]);
-
   const reportLoadFailure = useCallback(() => toast.error(t('diagnosticsLoadFailed')), [t]);
 
   const refresh = useCallback(() => {
+    const startedAtSave = savesRef.current;
     setLoading(true);
-    return runRead()
-      .then(applySnapshot)
+    return readDiagnostics(canViewSettings, canViewHealth)
+      .then((snapshot) => applySnapshot(snapshot, startedAtSave))
       .catch(reportLoadFailure)
       .finally(() => setLoading(false));
-  }, [applySnapshot, reportLoadFailure, runRead]);
+  }, [applySnapshot, canViewHealth, canViewSettings, reportLoadFailure]);
 
   useEffect(() => {
-    void runRead()
-      .then(applySnapshot)
+    const startedAtSave = savesRef.current;
+    void readDiagnostics(canViewSettings, canViewHealth)
+      .then((snapshot) => applySnapshot(snapshot, startedAtSave))
       .catch(reportLoadFailure)
       .finally(() => setLoading(false));
-  }, [applySnapshot, reportLoadFailure, runRead]);
+  }, [applySnapshot, canViewHealth, canViewSettings, reportLoadFailure]);
 
   async function toggleLogTail(next: boolean) {
     setIncludeLogTail(next);

@@ -723,7 +723,12 @@ export function buildEscPos(
     }
 
     if (!useLegacyUnicode && !hasNativeCodePage) line = normalizeCurrencyToAscii(line);
-    line = normalizeThermalTextByCapabilities(line, capabilities);
+    line = normalizeThermalTextByCapabilities(
+      line,
+      capabilities.raster.enabled
+        ? { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
+        : capabilities,
+    );
 
     const isStoreName = line.includes('{STORE_NAME}');
     const isFinancial =

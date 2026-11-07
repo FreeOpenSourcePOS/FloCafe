@@ -109,10 +109,7 @@ function codePageCanRepresent(text: string, codePage: ThermalCodePage): boolean 
   return [...text].every((character) => character <= '\x7F' || characters.includes(character));
 }
 
-export function normalizeThermalText(
-  text: string,
-  capabilities: ThermalPrinterCapabilities,
-): string {
+function transliterateThermalText(text: string, capabilities: ThermalPrinterCapabilities): string {
   if (!capabilities.transliteration.enabled) return text;
   if (capabilities.representability.scripts.includes('latin')) {
     const hasNativeCodePage = capabilities.encoding.codePages.some(
@@ -121,6 +118,16 @@ export function normalizeThermalText(
     if (hasNativeCodePage) return text;
   }
   return text.replace(/[À-ÿ]/g, (character) => LATIN_ASCII_MAP[character] ?? character);
+}
+
+export function normalizeThermalText(
+  text: string,
+  capabilities: ThermalPrinterCapabilities,
+): string {
+  if (capabilities.raster.enabled === true && !isThermalTextRepresentable(text, capabilities)) {
+    return text;
+  }
+  return transliterateThermalText(text, capabilities);
 }
 
 export function hasArabicScript(text: string): boolean {
@@ -139,7 +146,7 @@ export function selectThermalCodePage(
   text: string,
   capabilities: ThermalPrinterCapabilities,
 ): ThermalCodePage | null {
-  const normalized = normalizeThermalText(text, capabilities);
+  const normalized = transliterateThermalText(text, capabilities);
   for (const codePage of capabilities.encoding.codePages) {
     if (codePageCanRepresent(normalized, codePage)) return codePage;
   }
@@ -150,7 +157,7 @@ export function isThermalTextRepresentable(
   text: string,
   capabilities: ThermalPrinterCapabilities,
 ): boolean {
-  const normalized = normalizeThermalText(text, capabilities);
+  const normalized = transliterateThermalText(text, capabilities);
   if (capabilities.shaping.arabic && isArabicShapingSafeLine(normalized)) return true;
   if (hasArabicScript(normalized)) return false;
   if (

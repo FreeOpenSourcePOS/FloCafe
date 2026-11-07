@@ -25,7 +25,6 @@ import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { parseDbTimestamp } from '@/lib/utils';
 import {
-  hasUnsupportedPrinterChars,
   safePrinterText as writeSafePrinterText,
   wrapPrinterText,
   type PrintWarning,
@@ -1853,13 +1852,7 @@ function padRowForLanguage(
   const normalizedRight = normalizeThermalText(right, capabilities);
   const leftWidth = displayCellWidth(normalizedLeft);
   const rightWidth = displayCellWidth(normalizedRight);
-  const requiresRasterGap = hasUnsupportedPrinterChars(`${normalizedLeft}${normalizedRight}`);
-  if (leftWidth + rightWidth + (requiresRasterGap ? 2 : 1) > cols) {
-    const rightPadding = requiresRasterGap
-      ? ' '.repeat(Math.max(0, cols - rightWidth))
-      : '';
-    return `${normalizedLeft}\n${rightPadding}${normalizedRight}`;
-  }
+  if (leftWidth + rightWidth + 1 > cols) return `${normalizedLeft}\n${normalizedRight}`;
   const gap = cols - leftWidth - rightWidth;
   return gap > 0
     ? normalizedLeft + ' '.repeat(gap) + normalizedRight

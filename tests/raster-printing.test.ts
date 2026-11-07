@@ -3305,6 +3305,15 @@ async function run(): Promise<void> {
     assert.ok(
       zRasterRequests.some(
         (req) =>
+          req.financial === false &&
+          req.layout?.kind === 'financial-summary' &&
+          req.layout?.columns?.[0]?.text === 'Dönem başlangıcı:' &&
+          req.layout?.columns?.[1]?.align === 'right',
+      ),
+    );
+    assert.ok(
+      zRasterRequests.some(
+        (req) =>
           req.layout?.kind === 'financial-summary' &&
           req.layout?.columns?.[0]?.text.includes('Çağrı Şahin 5 kez') &&
           req.layout?.columns?.[0]?.text.startsWith('  ') &&

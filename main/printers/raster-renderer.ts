@@ -735,7 +735,7 @@ export async function renderUnsupportedRasterLines(
             ? financial
             : (range.financialSourceLines?.[physicalSourceLine.sourceIndex] ?? financial);
         const layout =
-          sourceText !== undefined && layoutFinancial
+          sourceText !== undefined
             ? range.sourceLayouts?.[physicalSourceLine.sourceIndex!]
             : undefined;
         const request = requestForRasterLine(

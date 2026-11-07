@@ -25,11 +25,12 @@ dialog instead. If no hardware printer is configured, FloCafe falls back to syst
 printing bills.
 
 Set **Text size** per printer to Normal, Large, or Extra large when printed text is hard to read.
-It applies to the kitchen tickets and bills sent to that printer across ESC/POS (USB, Network, and
-WebUSB) and Browser Print. On ESC/POS, Large doubles the character height and keeps the same number
-of characters per line, while Extra large doubles height and width so lines hold half as many
-characters and wrap sooner; on Browser Print, Large and Extra large scale the thermal receipt and
-kitchen-ticket font sizes and weights. Existing printers stay on Normal, which prints as before.
+It applies to the kitchen tickets, delivery slips, and bills sent to that printer across ESC/POS
+(USB, Network, and WebUSB) and Browser Print. On ESC/POS, Large doubles the character height and
+keeps the same number of characters per line, while Extra large doubles height and width so lines
+hold half as many characters and wrap sooner; on Browser Print, Large and Extra large scale the
+thermal receipt, kitchen-ticket, and delivery-slip font sizes and weights. Existing printers stay on
+Normal, which prints as before.
 
 Enable **Open cash drawer on checkout** on a receipt printer only when a till is connected to that
 printer's drawer-kick port. When enabled, FloCafe appends the standard ESC/POS drawer pulse to

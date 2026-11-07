@@ -1241,12 +1241,10 @@ test('frontend WebUSB byte encoders apply capabilities.textSize across 58mm and 
       {
         name: 'delivery slip',
         run: (caps: any) =>
-          fe.deliverySlipEncoder.buildDeliverySlipBytes(
-            webusbOrder,
-            webusbOrder.items,
-            contact,
-            { paperWidth, capabilities: caps },
-          ),
+          fe.deliverySlipEncoder.buildDeliverySlipBytes(webusbOrder, webusbOrder.items, contact, {
+            paperWidth,
+            capabilities: caps,
+          }),
       },
       {
         name: 'tax bill',

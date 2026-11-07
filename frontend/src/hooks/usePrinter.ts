@@ -1024,10 +1024,7 @@ export const usePrinterStore = create<PrinterState>()(
             throw new Error('Please allow popups to print');
           }
           const { paperWidth } = get();
-          const activeTextSize = resolveActivePrinterTextSize(
-            get(),
-            opts?.capabilities?.textSize,
-          );
+          const activeTextSize = resolveActivePrinterTextSize(get(), opts?.capabilities?.textSize);
           const paymentResponse = await api.get<{ payment?: DeliverySlipPayment }>(
             `/printers/delivery-slip-payment/${order.id}`,
           );

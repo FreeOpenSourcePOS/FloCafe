@@ -355,9 +355,8 @@ test.describe('@ci-tier2 Settings > Printers', () => {
     let originalDefaultPrinterId: string | null = null;
     try {
       const initialListRes = await page.request.get(`${BASE}/api/printers`, { headers });
-      const initialPrinters = (
-        (await initialListRes.json()) as { printers: E2ePrinterSnapshot[] }
-      ).printers;
+      const initialPrinters = ((await initialListRes.json()) as { printers: E2ePrinterSnapshot[] })
+        .printers;
       originalDefaultPrinterId = initialPrinters.find((p) => p.is_default === 1)?.id ?? null;
       preExistingXp58 = initialPrinters.find((p) => p.name === 'XP-58 SIR');
       if (!preExistingXp58) {

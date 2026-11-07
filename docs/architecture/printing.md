@@ -48,6 +48,7 @@ checks the consumer boundary from outside the kernel; it does not close this gap
 | `merchant-template.ts` | Merchant template payload validation and canonical serialization. |
 | `raster.ts`, `raster-canvas.ts`, `image-raster.ts` | Raster band construction, shared canvas painter (`paintRasterRequest`), ESC/POS raster encoding, and 1-bit logo trimming, contrast normalization, dithering, and packing. |
 | `z-report.ts`, `layout.ts`, `currency.ts`, `warnings.ts` | Z-report assembly, column layout, currency tokens, and warning shapes. |
+| `text-size.ts` | `PrinterTextSize`, column halving (`layoutColumnsForTextSize`), ESC/POS enlargement (`applyTextSizeToLines`), and encoder wrapping (`configureEncoderTextSize`). |
 
 ## Document models
 
@@ -260,12 +261,14 @@ On the backend, `resolvePrinterContext()` reads it (`printerShape()` also expose
 `columns`, the layout width every document renderer targets, and `capabilities.textSize`, which
 `buildEscPos()` and the raster path read. On the frontend, `usePrinterStore` resolves the active
 printer's `text_size` (`resolveActivePrinterTextSize()` and `resolveWebUsbCapabilities()`) and passes
-it to WebUSB encoders (`capabilities.textSize`) and browser HTML renderers (`web-print.ts`,
-`kot-web-print.ts`, and `order-slip-web-print.ts`). `shared/print/text-size.ts` owns the ESC/POS and
-column rules:
+it to WebUSB encoders (`capabilities.textSize`, applied via `configureEncoderTextSize()` and
+`layoutColumnsForTextSize()`), WebUSB main-process raster IPC (`rasterizePrintDocument` and
+`rasterizeKotDocument`), and browser HTML renderers (`web-print.ts`, `kot-web-print.ts`,
+`delivery-slip-web-print.ts`, and `order-slip-web-print.ts`). `shared/print/text-size.ts` owns the
+ESC/POS and column rules:
 
-- `normal` changes nothing; the capability field is left unset so output is byte-identical to a
-  printer with no setting.
+- `normal` changes nothing; on the backend `resolvePrinterContext()` path the capability field is
+  left unset so output is byte-identical to a printer with no setting.
 - `large` wraps each text line in `{DOUBLE_HEIGHT}`. The column count is unchanged.
 - `extra_large` also wraps lines in `{DOUBLE_WIDTH}` and halves the layout columns, so renderers
   wrap at half the paper's characters. `buildEscPos()` fits against the physical column count
@@ -287,11 +290,12 @@ column rules:
 The enlargement is idempotent. The raster path applies it to the lines and to each group's
 `sourceControlLines` before `renderUnsupportedRasterLines()`, so rasterized rows render with the
 same `double-height` and `double-width` styles as native rows. On the browser HTML path,
-`web-print.ts`, `kot-web-print.ts`, and `order-slip-web-print.ts` render thermal output in solid
-`#000` (so 203 DPI GDI thermal drivers do not halftone-dither text or borders) with `@page` sizing
-(`58mm` or `80mm`) and scale font sizes and weights (`600`/`700`) for `normal`, `large`, and
-`extra_large`. `tests/printer-text-size.test.ts` and `tests/browser-receipts.test.ts` cover these
-paths; the ESC/POS column math is also pinned by the receipt column oracle.
+`web-print.ts`, `kot-web-print.ts`, `delivery-slip-web-print.ts`, and `order-slip-web-print.ts`
+render thermal output in solid `#000` (so 203 DPI GDI thermal drivers do not halftone-dither text or
+borders) with `@page` sizing (`58mm` or `80mm`) and scale font sizes and weights (`600`/`700`) for
+`normal`, `large`, and `extra_large`. `tests/printer-text-size.test.ts` and
+`tests/browser-receipts.test.ts` cover these paths; the ESC/POS column math is also pinned by the
+receipt column oracle.
 
 ## Cash drawer
 

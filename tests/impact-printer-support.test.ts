@@ -44,6 +44,8 @@ import {
 } from '../main/printers/profiles';
 import {
   formatReceipt,
+  prepareReceipt,
+  rasterizePrintDocumentForWebUsb,
   receiptDocumentLines,
   classifyDetectedPrinterCompatibility,
   detectWindowsMakeModel,
@@ -52,6 +54,8 @@ import {
   guessPaperWidth,
   escPosToText,
 } from '../main/printers/thermal';
+import { buildBillPrintContext, buildBillPrintData } from '../main/printers/document-classic';
+import { buildBillDocument } from '../shared/print/document';
 import { loadFrontendPrintModules } from './helpers/receipt-column-measure';
 
 const {
@@ -430,6 +434,46 @@ async function run() {
     );
   }
 
+  const webUsbPrintData = buildBillPrintData(sampleOrder, sampleBill, sampleBiz, false);
+  const webUsbPrintContext = buildBillPrintContext({
+    columns: 48,
+    language: 'en',
+    business: sampleBiz,
+  });
+  const webUsbDocument = buildBillDocument(webUsbPrintData, webUsbPrintContext);
+  const webUsbThermalResult = await rasterizePrintDocumentForWebUsb(
+    webUsbDocument,
+    'epson-tm-series',
+    'classic',
+    {
+      columns: 48,
+      language: 'en',
+      locale: 'en-US',
+      currency: 'USD',
+      currencySymbol: '$',
+      trimDecimals: false,
+      useUnicode: false,
+      arabicShaping: false,
+    },
+  );
+  assertEqualOrThrow(
+    webUsbThermalResult.ok,
+    true,
+    'rasterizePrintDocumentForWebUsb on epson-tm-series succeeds',
+  );
+  if (webUsbThermalResult.ok) {
+    assertEqualOrThrow(
+      webUsbThermalResult.rasterSelected,
+      true,
+      'rasterizePrintDocumentForWebUsb must set rasterSelected=true when a store logo is present on a native-text receipt',
+    );
+    assertEqualOrThrow(
+      containsSubsequence(webUsbThermalResult.data, [0x1d, 0x76, 0x30]),
+      true,
+      'rasterizePrintDocumentForWebUsb data must include GS v 0 logo bytes',
+    );
+  }
+
   // Frontend receipt encoder logo guard
   const fe = loadFrontendPrintModules();
   const feTenant = {
@@ -647,6 +691,44 @@ async function run() {
     containsSubsequence(capturedThermalTicket, [0x1d, 0x28, 0x6b]),
     true,
     'Thermal payment ticket must emit GS ( k (1d 28 6b) QR code bytes',
+  );
+
+  db.prepare(
+    `UPDATE printers SET is_default = 1, is_active = 1, profile_id = 'epson-tm-series', paper_width = 'cols-48' WHERE id = ?`,
+  ).run(insertedPrinter.lastInsertRowid);
+  const preparedThermal = prepareReceipt(
+    sampleOrder,
+    sampleBill,
+    sampleBiz,
+    'classic',
+    false,
+    false,
+    false,
+    'en',
+  );
+  assertEqualOrThrow(
+    containsSubsequence(preparedThermal.data, [0x1d, 0x76, 0x30]),
+    true,
+    'prepareReceipt must emit GS v 0 logo when the default printer profile has raster.enabled=true',
+  );
+
+  db.prepare(
+    `UPDATE printers SET is_default = 1, is_active = 1, profile_id = 'escpos-impact-76', paper_width = 'cols-32' WHERE id = ?`,
+  ).run(insertedPrinter.lastInsertRowid);
+  const preparedImpact = prepareReceipt(
+    sampleOrder,
+    sampleBill,
+    sampleBiz,
+    'classic',
+    false,
+    false,
+    false,
+    'en',
+  );
+  assertEqualOrThrow(
+    containsSubsequence(preparedImpact.data, [0x1d, 0x76, 0x30]),
+    false,
+    'prepareReceipt must omit GS v 0 logo when the default printer profile has raster.enabled=false',
   );
 
   // Test HTTP routes POST /api/printers and PUT /api/printers/:id

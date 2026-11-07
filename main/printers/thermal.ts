@@ -2103,7 +2103,6 @@ export function prepareReceipt(
 
   const { profile, columns, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
   const warnings: PrintWarning[] = [];
-  const nativeCapabilities = nativeFallbackCapabilities(capabilities);
   const data = formatReceipt(
     order,
     bill,
@@ -2114,10 +2113,10 @@ export function prepareReceipt(
     isReprint,
     profile.cutMode,
     warnings,
-    nativeCapabilities.shaping.arabic,
+    capabilities.shaping.arabic,
     language,
     additionalLanguage,
-    nativeCapabilities,
+    capabilities,
   );
   return { printer, data, warnings, columns };
 }
@@ -2441,7 +2440,7 @@ export async function rasterizePrintDocumentForWebUsb(
     ok: true,
     data: result.data,
     warnings: result.warnings,
-    rasterSelected: result.rasterSelected,
+    rasterSelected: result.rasterSelected || lines.some((line) => line.startsWith('{RAW_BYTES:')),
     rasterFailed: result.rasterFailed,
   };
 }

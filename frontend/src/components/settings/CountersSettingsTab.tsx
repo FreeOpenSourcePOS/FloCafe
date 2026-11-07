@@ -64,12 +64,8 @@ export function CountersSettingsTab({ isOwner }: Props) {
   const loadData = useCallback(async () => {
     try {
       const [settingRes, countersRes] = await Promise.all([
-        api
-          .get('/settings/multi_counter_enabled')
-          .catch(() => ({ data: { setting: { value: 'false' } } })),
-        api
-          .get('/counters', { params: { include_inactive: 'true' } })
-          .catch(() => ({ data: { counters: [] } })),
+        api.get('/settings/multi_counter_enabled'),
+        api.get('/counters', { params: { include_inactive: 'true' } }),
       ]);
       setEnabled(settingRes.data?.setting?.value === 'true');
       setCounters(countersRes.data?.counters || []);
@@ -83,12 +79,8 @@ export function CountersSettingsTab({ isOwner }: Props) {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      api
-        .get('/settings/multi_counter_enabled')
-        .catch(() => ({ data: { setting: { value: 'false' } } })),
-      api
-        .get('/counters', { params: { include_inactive: 'true' } })
-        .catch(() => ({ data: { counters: [] } })),
+      api.get('/settings/multi_counter_enabled'),
+      api.get('/counters', { params: { include_inactive: 'true' } }),
     ])
       .then(([settingRes, countersRes]) => {
         if (cancelled) return;

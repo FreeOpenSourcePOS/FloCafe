@@ -3195,3 +3195,19 @@ test('Refreshing local or Drive backup history while Load more is in flight igno
   await expect(remoteRows.nth(5)).toHaveAttribute('data-backup-id', allRemoteBackups[5].id);
   await expect(remoteRows.nth(14)).toHaveAttribute('data-backup-id', allRemoteBackups[14].id);
 });
+
+test('Counters tab reports a failed counters load instead of showing an empty list', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  await page.route('**/api/counters**', async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'unavailable' }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=counters`);
+  await expect(page.getByText('Failed to load counters.', { exact: true })).toBeVisible();
+});

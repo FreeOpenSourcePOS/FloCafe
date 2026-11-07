@@ -3094,12 +3094,75 @@ async function run(): Promise<void> {
         'buildKotBytes does not emit [UNSUPPORTED] when raster is enabled',
       );
 
+      // When canvas raster rendering is unavailable or fails, buildKotBytes emits printable header fallbacks instead of blank lines
+      const kotFallbackOrder = {
+        id: 1481,
+        order_number: 'ŞUBE-14',
+        type: 'dine_in',
+        created_at: '2026-08-21T18:42:00Z',
+        table: { id: 1, name: 'Bahçe Köşesi 3' },
+        customer: { id: 2, name: 'Çağrı Şahin', phone: '+905551112233' },
+        items: [
+          {
+            id: 1,
+            product_name: 'Espresso',
+            quantity: 1,
+            unit_price: 100,
+            total: 100,
+            addons: [],
+            status: 'pending',
+          },
+        ],
+      };
+      feWarnings.setBrowserRasterCanvasFactory(null);
+      const unavailableCanvasKotWarn: any[] = [];
+      const unavailableCanvasKotText = Buffer.from(
+        feKot.buildKotBytes(
+          kotFallbackOrder as any,
+          {
+            paperWidth: 58,
+            capabilities: webusbCaps,
+            language: 'tr',
+            stationName: 'Izgara & Şiş',
+          },
+          unavailableCanvasKotWarn,
+        ),
+      ).toString('latin1');
+      assert.ok(unavailableCanvasKotWarn.length > 0);
+      assert.ok(unavailableCanvasKotText.includes('KITCHEN ORDER TICKET'));
+      assert.ok(unavailableCanvasKotText.includes('Station: [UNSUPPORTED]'));
+      assert.ok(unavailableCanvasKotText.includes('Order #[UNSUPPORTED]'));
+      assert.ok(unavailableCanvasKotText.includes('Table: [UNSUPPORTED]'));
+      assert.ok(unavailableCanvasKotText.includes('Type: DINE IN'));
+      assert.ok(unavailableCanvasKotText.includes('Customer: [UNSUPPORTED]'));
+
       // Detailed receipt fails closed if browser canvas context is unavailable on Turkish financial row
       feWarnings.setBrowserRasterCanvasFactory(() => ({
         width: 1,
         height: 1,
         getContext: () => null,
       }));
+      const failedCanvasKotWarn: any[] = [];
+      const failedCanvasKotText = Buffer.from(
+        feKot.buildKotBytes(
+          kotFallbackOrder as any,
+          {
+            paperWidth: 58,
+            capabilities: webusbCaps,
+            language: 'tr',
+            stationName: 'Izgara & Şiş',
+          },
+          failedCanvasKotWarn,
+        ),
+      ).toString('latin1');
+      assert.ok(failedCanvasKotWarn.length > 0);
+      assert.ok(failedCanvasKotText.includes('KITCHEN ORDER TICKET'));
+      assert.ok(failedCanvasKotText.includes('Station: [UNSUPPORTED]'));
+      assert.ok(failedCanvasKotText.includes('Order #[UNSUPPORTED]'));
+      assert.ok(failedCanvasKotText.includes('Table: [UNSUPPORTED]'));
+      assert.ok(failedCanvasKotText.includes('Type: DINE IN'));
+      assert.ok(failedCanvasKotText.includes('Customer: [UNSUPPORTED]'));
+
       const failedDetailedWarn: any[] = [];
       feReceipt.buildDetailedReceiptBytes(
         turkishWebUsbBill as any,
@@ -3131,6 +3194,12 @@ async function run(): Promise<void> {
   assert.equal(normalizeSharedThermalText('Müsli', generic80.capabilities), 'Muesli');
 
   // #1480: Turkish Z-report rasterization via printZReport, printPaymentTicket, and renderTestPage
+  const turkishSettings: Record<string, string> = {
+    country: 'TR',
+    currency: 'TRY',
+    timezone: 'Europe/Istanbul',
+    business_name: 'Boğaziçi Kahve Evi',
+  };
   const turkishZSnapshot = {
     z_number: 14,
     business_date: '2026-11-06',
@@ -3153,10 +3222,6 @@ async function run(): Promise<void> {
     variance_cents: 0,
     closed_by_name: 'Çağrı Şahin',
     __language: 'tr',
-    __country: 'TR',
-    __currency: 'TRY',
-    __timezone: 'Europe/Istanbul',
-    __businessName: 'Boğaziçi Kahve Evi',
   };
 
   // Without raster capability, buildZReportBody refuses Turkish financial rows fail-closed
@@ -3170,6 +3235,7 @@ async function run(): Promise<void> {
         ...generic80.capabilities,
         raster: { ...generic80.capabilities.raster, enabled: false },
       },
+      settings: turkishSettings,
     },
     nativeOnlyZWarnings,
   );
@@ -3180,6 +3246,41 @@ async function run(): Promise<void> {
       'financial row contains unsupported printer text',
     ),
   );
+
+  // printZReport and printPaymentTicket fail closed when regional settings are unconfigured instead of defaulting to US/USD/UTC
+  const unconfiguredZ = await printZReport(
+    turkishZSnapshot,
+    undefined,
+    {
+      id: 'tr-webusb-80',
+      name: 'Generic 80mm',
+      connection_type: 'webusb',
+      paper_width: '80mm',
+      profile_id: 'generic-escpos-80',
+    },
+    {},
+  );
+  assert.equal(unconfiguredZ.ok, false);
+  const unconfiguredTicket = await printPaymentTicket(
+    {
+      id: 1480,
+      order_number: 'ORD-TR-1480',
+      type: 'dine_in',
+      total: 350,
+    },
+    [{ product_name: 'Künefe', quantity: 1, total: 350 }],
+    {
+      targetPrinter: {
+        id: 'tr-webusb-80',
+        name: 'Generic 80mm',
+        connection_type: 'webusb',
+        paper_width: '80mm',
+        profile_id: 'generic-escpos-80',
+      },
+      settings: {},
+    },
+  );
+  assert.equal(unconfiguredTicket.ok, false);
 
   // With shared raster renderer active, printZReport rasterizes Turkish Z-report cleanly
   destroySharedRasterRenderer();
@@ -3210,13 +3311,18 @@ async function run(): Promise<void> {
     windowFactory: () => zSurface as any,
   });
   try {
-    const zResult = await printZReport(turkishZSnapshot, undefined, {
-      id: 'tr-webusb-80',
-      name: 'Generic 80mm',
-      connection_type: 'webusb',
-      paper_width: '80mm',
-      profile_id: 'generic-escpos-80',
-    });
+    const zResult = await printZReport(
+      turkishZSnapshot,
+      undefined,
+      {
+        id: 'tr-webusb-80',
+        name: 'Generic 80mm',
+        connection_type: 'webusb',
+        paper_width: '80mm',
+        profile_id: 'generic-escpos-80',
+      },
+      turkishSettings,
+    );
     assert.equal(zResult.ok, true, `Expected printZReport ok=true, got detail: ${zResult.detail}`);
     assert.equal(hasFinancialPrintWarning(zResult.warnings ?? []), false);
     assert.ok(Buffer.isBuffer(zResult.bytes));
@@ -3269,6 +3375,7 @@ async function run(): Promise<void> {
           paper_width: '58mm',
           profile_id: 'generic-escpos-58',
         },
+        settings: turkishSettings,
       },
     );
     ticketRasterRequests.push(...zRasterRequests);
@@ -3294,13 +3401,18 @@ async function run(): Promise<void> {
 
     // 58mm Z-report wrapped rows emit covering financial-summary rasterGroups
     zRasterRequests.length = 0;
-    const z58Result = await printZReport(turkishZSnapshot, undefined, {
-      id: 'tr-webusb-58',
-      name: 'Generic 58mm',
-      connection_type: 'webusb',
-      paper_width: '58mm',
-      profile_id: 'generic-escpos-58',
-    });
+    const z58Result = await printZReport(
+      turkishZSnapshot,
+      undefined,
+      {
+        id: 'tr-webusb-58',
+        name: 'Generic 58mm',
+        connection_type: 'webusb',
+        paper_width: '58mm',
+        profile_id: 'generic-escpos-58',
+      },
+      turkishSettings,
+    );
     assert.equal(z58Result.ok, true);
     assert.ok(
       zRasterRequests.some(
@@ -3379,13 +3491,18 @@ async function run(): Promise<void> {
     windowFactory: () => failingSurface as any,
   });
   try {
-    const failedZ = await printZReport(turkishZSnapshot, undefined, {
-      id: 'tr-webusb-80',
-      name: 'Generic 80mm',
-      connection_type: 'webusb',
-      paper_width: '80mm',
-      profile_id: 'generic-escpos-80',
-    });
+    const failedZ = await printZReport(
+      turkishZSnapshot,
+      undefined,
+      {
+        id: 'tr-webusb-80',
+        name: 'Generic 80mm',
+        connection_type: 'webusb',
+        paper_width: '80mm',
+        profile_id: 'generic-escpos-80',
+      },
+      turkishSettings,
+    );
     assert.equal(failedZ.ok, false);
     assert.equal(failedZ.bytes, undefined);
     assert.equal(hasFinancialPrintWarning(failedZ.warnings ?? []), true);
@@ -3407,6 +3524,7 @@ async function run(): Promise<void> {
           paper_width: '80mm',
           profile_id: 'generic-escpos-80',
         },
+        settings: turkishSettings,
       },
     );
     assert.equal(failedTicket.ok, false);

@@ -1404,6 +1404,7 @@ export async function printPaymentTicket(
     targetPrinter?: any;
     signal?: AbortSignal;
     preview?: boolean;
+    settings?: Record<string, string>;
   } = {},
 ): Promise<DispatchResult> {
   try {
@@ -1418,33 +1419,14 @@ export async function printPaymentTicket(
       columns: cols,
       capabilities,
     } = resolvePrinterContext(printer || { paper_width: '80mm' });
-    let storeName = 'FloCafe';
-    let countrySetting: string | undefined;
-    let currencySetting: string | undefined;
-    let timezoneSetting: string | undefined;
-    try {
-      storeName = getSettingValue('business_name') || 'FloCafe';
-      countrySetting = getSettingValue('country') || undefined;
-      currencySetting = getSettingValue('currency') || undefined;
-      timezoneSetting = getSettingValue('timezone') || undefined;
-    } catch {
-      /* fallback when database is not initialized in unit tests */
-    }
-
-    let snapshot: RegionalSnapshot;
-    try {
-      snapshot = resolveRegionalSnapshot({
-        country: countrySetting,
-        currency: currencySetting,
-        timezone: timezoneSetting,
-      });
-    } catch {
-      snapshot = resolveRegionalSnapshot({
-        country: 'US',
-        currency: 'USD',
-        timezone: 'UTC',
-      });
-    }
+    const readSetting = (key: string): string | null =>
+      options.settings !== undefined ? (options.settings[key] ?? null) : getSettingValue(key);
+    const storeName = readSetting('business_name') || 'FloCafe';
+    const snapshot = resolveRegionalSnapshot({
+      country: readSetting('country') || undefined,
+      currency: readSetting('currency') || undefined,
+      timezone: readSetting('timezone') || undefined,
+    });
     const currency = snapshot.currency;
     const fractionDigits = snapshot.currencyFractionDigits;
     const locale = snapshot.locale;
@@ -4135,6 +4117,7 @@ function buildZReportDocumentLines(
     columns?: number;
     cutMode?: PrinterCutMode;
     capabilities?: ThermalPrinterCapabilities;
+    settings?: Record<string, string>;
   },
 ): {
   lines: string[];
@@ -4149,21 +4132,16 @@ function buildZReportDocumentLines(
   const additionalLanguage = z?.__additionalLanguage
     ? normalizePrintLanguage(z.__additionalLanguage)
     : undefined;
-  let settings: Record<string, string> = {};
-  try {
-    const settingsRows = getDatabase().prepare('SELECT key, value FROM settings').all() as {
-      key: string;
-      value: string;
-    }[];
-    settings = Object.fromEntries(settingsRows.map((r) => [r.key, r.value]));
-  } catch {
-    settings = {
-      country: z?.__country || 'US',
-      currency: z?.__currency || 'USD',
-      timezone: z?.__timezone || 'UTC',
-      ...(z?.__businessName ? { business_name: String(z.__businessName) } : {}),
-    };
-  }
+  const settings: Record<string, string> =
+    printer?.settings ??
+    Object.fromEntries(
+      (
+        getDatabase().prepare('SELECT key, value FROM settings').all() as {
+          key: string;
+          value: string;
+        }[]
+      ).map((r) => [r.key, r.value]),
+    );
   // Single resolution for currency/locale/timezone — resolves the stored
   // timezone through the country profile when missing or invalid, instead of
   // leaving it undefined (which would use the server's own host timezone,
@@ -4486,6 +4464,7 @@ export function buildZReportBody(
     columns?: number;
     cutMode?: PrinterCutMode;
     capabilities?: ThermalPrinterCapabilities;
+    settings?: Record<string, string>;
   },
   warnings?: PrintWarning[],
 ): Buffer {
@@ -4715,6 +4694,7 @@ export async function printZReport(
   z: any,
   signal?: AbortSignal,
   targetPrinter?: any,
+  settings?: Record<string, string>,
 ): Promise<DispatchResult & { bytes?: Buffer; connection_type?: string }> {
   try {
     if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
@@ -4739,12 +4719,13 @@ export async function printZReport(
         columns,
         cutMode: profile.cutMode,
         capabilities,
+        settings,
       });
       const nativeWarnings: PrintWarning[] = [];
       const nativeBody = buildZReportBody(
         zWithMarker,
         undefined,
-        { columns, cutMode: profile.cutMode, capabilities: nativeCapabilities },
+        { columns, cutMode: profile.cutMode, capabilities: nativeCapabilities, settings },
         nativeWarnings,
       );
       const rasterized = await rasterizeDocumentLines(
@@ -4772,7 +4753,7 @@ export async function printZReport(
       baseBody = buildZReportBody(
         zWithMarker,
         undefined,
-        { columns, cutMode: profile.cutMode, capabilities },
+        { columns, cutMode: profile.cutMode, capabilities, settings },
         warnings,
       );
     }

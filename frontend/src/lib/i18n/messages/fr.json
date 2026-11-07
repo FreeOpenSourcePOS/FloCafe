@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "p. ex. Bar, comptoir des desserts",
     "stationNameRequired": "Le nom du poste est requis",
     "stationNoAvailableCategories": "Aucune catégorie disponible",
-    "stationNoCategories": "Aucune catégorie attribuée",
+    "stationNoCategories": "Toutes les catégories (y compris les nouvelles)",
     "stationNoChef": "Aucun chef affecté",
     "stationNoDefaultCategories": "Toutes les catégories sont affectées à des postes de cuisine",
     "stationNoPrinter": "Imprimante par défaut",

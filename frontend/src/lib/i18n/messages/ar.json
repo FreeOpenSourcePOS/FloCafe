@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "على سبيل المثال: البار، ركن الحلويات",
     "stationNameRequired": "اسم المحطة مطلوب",
     "stationNoAvailableCategories": "لا توجد فئات متاحة",
-    "stationNoCategories": "لم يتم تعيين أي فئات",
+    "stationNoCategories": "جميع الفئات (بما في ذلك الفئات الجديدة)",
     "stationNoChef": "لم يتم تعيين طاهٍ",
     "stationNoDefaultCategories": "يتم توزيع جميع الفئات على محطات المطبخ",
     "stationNoPrinter": "الطابعة الافتراضية",

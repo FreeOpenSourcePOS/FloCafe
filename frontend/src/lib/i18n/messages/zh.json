@@ -2441,7 +2441,7 @@
     "stationNamePlaceholder": "例如：吧台、甜品柜",
     "stationNameRequired": "工作站名称必填",
     "stationNoAvailableCategories": "没有可用分类",
-    "stationNoCategories": "未指派分类",
+    "stationNoCategories": "所有分类（包含新增分类）",
     "stationNoChef": "未指派厨师",
     "stationNoDefaultCategories": "所有分类均已指派到厨房工作站",
     "stationNoPrinter": "默认打印机",

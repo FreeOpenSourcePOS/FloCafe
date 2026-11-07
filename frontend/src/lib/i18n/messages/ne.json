@@ -2450,7 +2450,7 @@
     "stationNamePlaceholder": "जस्तै बार, मिठाई काउन्टर",
     "stationNameRequired": "स्टेशनको नाम आवश्यक छ",
     "stationNoAvailableCategories": "कुनै कोटीहरू उपलब्ध छैनन्",
-    "stationNoCategories": "कुनै कोटी तोकिएको छैन",
+    "stationNoCategories": "सबै कोटीहरू (नयाँ सहित)",
     "stationNoChef": "कुनै शेफ तोकिएको छैन",
     "stationNoDefaultCategories": "सबै कोटिहरू भान्सा स्टेशनहरूमा तोकिएका छन्",
     "stationNoPrinter": "पूर्वनिर्धारित प्रिन्टर",

@@ -130,15 +130,22 @@ FloCafe can print kitchen order tickets to the default printer or route items to
 stations. Configure stations under **Settings > Operations > Kitchen Stations**, whether or not KDS
 is enabled. Each category can belong to only one active station, and the station editor separates
 categories selected for the current station, categories still available, and categories assigned
-elsewhere. Selecting a category from another station moves it to the current station when saved.
-Each station maps its categories to any configured FloCafe printer.
+elsewhere, with an **All categories (including new ones)** toggle (`category_ids: []`) when no
+specific categories are selected. Selecting a category from another station moves it to the current
+station when saved. Each station maps its categories to any configured FloCafe printer, and `routeItemsToStations` in
+`main/routes/printers.ts` resolves each item's station in precedence order: first an active station
+explicitly assigned to the item's category/subcategory, second an active station assigned to the
+item's parent category, and third the first active unrestricted station (`category_ids: []`) with a
+configured non-WebUSB printer.
 
-When KDS is enabled, a station can be assigned to multiple active chef accounts for shift coverage.
-An assigned chef's KDS view is limited to their assigned stations and categories. A Chef account
-can be linked to one or more stations from the Staff form. A chef created without a station remains
-unrestricted by station.
+When KDS is enabled, a station can be assigned to multiple active chef accounts for shift coverage,
+and leaving a station's category selection empty makes that station unrestricted on KDS; see
+[KDS category and station scoping](reference/api.md#kds-category-and-station-scoping). A Chef
+account can be linked to one or more stations from the Staff form, and a chef created without a
+station remains unrestricted by station.
 
-Items in categories without a station use the read-only **DEFAULT > Printer Name** route shown with
+Items that do not match an explicit category station, an inherited parent category station, or an
+unrestricted station with a printer use the read-only **DEFAULT > Printer Name** route shown with
 the station list, and print on the default kitchen printer.
 
 KOT printing can be disabled for the business. When it is disabled, neither automatic nor manual KOT

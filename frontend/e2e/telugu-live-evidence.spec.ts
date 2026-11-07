@@ -63,7 +63,17 @@ test.describe('Live Telugu (te / te-IN) E2E verification across FloCafe surfaces
     const createdCategoryIds: string[] = [];
     const createdProductIds: string[] = [];
     const createdOrderIds: number[] = [];
-    let createdTableId: string | number | null = null;
+    let customerDisplayTokenId: string | number | null = null;
+
+    const initialBizSettingsRes = await request.get(`${E2E_BASE_URL}/api/settings/business`, {
+      headers,
+    });
+    expect(initialBizSettingsRes.ok()).toBeTruthy();
+    const initialBizSettings = (await initialBizSettingsRes.json()) as { language?: string };
+    const initialLanguage =
+      typeof initialBizSettings.language === 'string' && initialBizSettings.language
+        ? initialBizSettings.language
+        : 'en';
 
     try {
       // Seed Telugu sample catalog items on the live API to verify POS, Server App, and KDS rendering
@@ -228,14 +238,27 @@ test.describe('Live Telugu (te / te-IN) E2E verification across FloCafe surfaces
       await printContext.close();
 
       // Verify Server App (:3003/server-standalone) in Telugu and send a tableside order
-      const tableName = `TE-${Date.now().toString().slice(-4)}`;
-      const tableRes = await request.post(`${E2E_BASE_URL}/api/tables`, {
+      const fixtureTableName = 'TE-1';
+      const tablesListRes = await request.get(`${E2E_BASE_URL}/api/tables`, {
         headers: { Authorization: `Bearer ${managerToken}` },
-        data: { number: tableName, capacity: 4 },
       });
-      expect(tableRes.ok()).toBeTruthy();
-      const { table } = await tableRes.json();
-      createdTableId = table.id;
+      expect(tablesListRes.ok()).toBeTruthy();
+      const tablesListBody = (await tablesListRes.json()) as {
+        tables?: Array<{ id: string | number; number: string; is_active?: number | boolean }>;
+      };
+      let table = (tablesListBody.tables || []).find(
+        (t) => t.number === fixtureTableName && t.is_active !== 0 && t.is_active !== false,
+      );
+      if (!table) {
+        const tableRes = await request.post(`${E2E_BASE_URL}/api/tables`, {
+          headers: { Authorization: `Bearer ${managerToken}` },
+          data: { number: fixtureTableName, capacity: 4 },
+        });
+        expect(tableRes.ok()).toBeTruthy();
+        table = ((await tableRes.json()) as { table: { id: string | number; number: string } })
+          .table;
+      }
+      const tableName = table.number;
 
       const serverContext = await browser.newContext();
       const serverPage = await serverContext.newPage();
@@ -337,7 +360,7 @@ test.describe('Live Telugu (te / te-IN) E2E verification across FloCafe surfaces
       expect(pairRes.ok()).toBeTruthy();
       const pairData = await pairRes.json();
       const rawToken = pairData.token?.raw_token || pairData.raw_token || pairData.token;
-      const tokenId = pairData.token?.id || pairData.id;
+      customerDisplayTokenId = pairData.token?.id || pairData.id || null;
 
       const cdContext = await browser.newContext();
       const cdPage = await cdContext.newPage();
@@ -365,12 +388,6 @@ test.describe('Live Telugu (te / te-IN) E2E verification across FloCafe surfaces
         fullPage: true,
       });
       await cdContext.close();
-
-      if (tokenId) {
-        await request
-          .delete(`${E2E_BASE_URL}/api/settings/customer-display/tokens/${tokenId}`, { headers })
-          .catch(() => {});
-      }
 
       // Verify live Daily Sales & Daily Invoices exports and WhatsApp Daily Sales report in Telugu
       const setLangRes = await request.put(`${E2E_BASE_URL}/api/settings/language`, {
@@ -500,42 +517,41 @@ test.describe('Live Telugu (te / te-IN) E2E verification across FloCafe surfaces
       });
       await waContext.close();
     } finally {
-      await request
-        .post(`${E2E_BASE_URL}/api/whatsapp/disable`, {
-          headers,
-        })
-        .catch(() => {});
-      await request
-        .put(`${E2E_BASE_URL}/api/settings/language`, {
-          headers,
-          data: { value: 'en' },
-        })
-        .catch(() => {});
-      await setLanguage(page, 'en').catch(() => {});
+      if (customerDisplayTokenId !== null) {
+        const revokeRes = await request.delete(
+          `${E2E_BASE_URL}/api/settings/customer-display/tokens/${customerDisplayTokenId}`,
+          { headers },
+        );
+        expect(revokeRes.ok()).toBeTruthy();
+      }
+      const restoreLangRes = await request.put(`${E2E_BASE_URL}/api/settings/language`, {
+        headers,
+        data: { value: initialLanguage },
+      });
+      expect(restoreLangRes.ok()).toBeTruthy();
+      await setLanguage(page, initialLanguage as 'en').catch(() => {});
       for (const orderId of createdOrderIds) {
-        await request
-          .patch(`${E2E_BASE_URL}/api/orders/${orderId}/status`, {
-            headers,
-            data: {
-              status: 'cancelled',
-              override_pin: '1111',
-              approver_id: 'e2e-owner',
-            },
-          })
-          .catch(() => {});
+        const cancelRes = await request.patch(`${E2E_BASE_URL}/api/orders/${orderId}/status`, {
+          headers,
+          data: {
+            status: 'cancelled',
+            override_pin: '1111',
+            approver_id: 'e2e-owner',
+          },
+        });
+        expect(cancelRes.ok()).toBeTruthy();
       }
       for (const prodId of createdProductIds) {
-        await request.delete(`${E2E_BASE_URL}/api/products/${prodId}`, { headers }).catch(() => {});
+        const delProdRes = await request.delete(`${E2E_BASE_URL}/api/products/${prodId}`, {
+          headers,
+        });
+        expect(delProdRes.ok()).toBeTruthy();
       }
       for (const catId of createdCategoryIds) {
-        await request
-          .delete(`${E2E_BASE_URL}/api/categories/${catId}`, { headers })
-          .catch(() => {});
-      }
-      if (createdTableId !== null) {
-        await request
-          .delete(`${E2E_BASE_URL}/api/tables/${createdTableId}`, { headers })
-          .catch(() => {});
+        const delCatRes = await request.delete(`${E2E_BASE_URL}/api/categories/${catId}`, {
+          headers,
+        });
+        expect(delCatRes.ok()).toBeTruthy();
       }
     }
   });

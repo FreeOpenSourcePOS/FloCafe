@@ -153,6 +153,7 @@ export interface PrintersSettingsTabProps {
   kdsEnabledSetting: boolean;
   pulseCustomMethods: string[];
   markHydrationTouched: (field: string) => void;
+  onPersistPrintMethod?: (method: 'escpos' | 'browser') => void | Promise<void>;
   confirm: (
     message: string,
     options?: { title?: string; confirmLabel?: string; destructive?: boolean },
@@ -174,11 +175,12 @@ export function PrintersSettingsTab({
   kdsEnabledSetting,
   pulseCustomMethods,
   markHydrationTouched,
+  onPersistPrintMethod,
   confirm,
 }: PrintersSettingsTabProps) {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
-  const { refreshHardwarePrinter } = usePrinterStore();
+  const { refreshHardwarePrinter, setPrintMethod } = usePrinterStore();
 
   const [printerForm, setPrinterForm] = useState<PrinterForm>(emptyPrinterForm);
   const [paperWidthTouched, setPaperWidthTouched] = useState(false);
@@ -524,12 +526,14 @@ export function PrintersSettingsTab({
                           {isDriverOnly ? (
                             <button
                               type="button"
-                              onClick={() => {
+                              onClick={async () => {
                                 markHydrationTouched('printMethod');
                                 setPrintingForm((prev) => ({
                                   ...prev,
                                   printMethod: 'browser',
                                 }));
+                                setPrintMethod('browser');
+                                await onPersistPrintMethod?.('browser');
                                 toast.success(t('printerSwitchedToBrowserPrint'));
                               }}
                               className="px-3 py-1.5 text-xs border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/50 font-medium shrink-0"

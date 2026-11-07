@@ -362,7 +362,7 @@ export function classifyDetectedPrinterCompatibility(info: {
     /\b(?:ecotank|workforce|stylus|expression|inkjet|laserjet|deskjet|officejet|pixma|maxify|imageclass)\b/.test(
       haystack,
     ) ||
-    /\b(?:et-\d|wf-\d|l3\d*|l4\d*|tm-l\d*)\b/.test(haystack) ||
+    /\b(?:et-\d\w*|wf-\d\w*|l3\d*|l4\d*|tm[-\s]?l\d*)\b/.test(haystack) ||
     /\b(?:zebra|zd\d|gk420|gx420|zp450|zt\d|dymo|labelwriter|rollo|brother|ql-\d|td-\d|bixolon\s+slp|label)\b/.test(
       haystack,
     ) ||
@@ -380,7 +380,7 @@ export function classifyDetectedPrinterCompatibility(info: {
   if (matchedProfile) return 'escpos_thermal';
 
   if (
-    /\b(?:escpos|esc\/pos|thermal|pos-?\d+|xp-\d+|srp-\d+|ct-[se]\d+|mp-4200|tm-[tmp]\d*|58mm|80mm)\b/.test(
+    /\b(?:escpos|esc\/pos|thermal|pos-?\d+|xp-\d+|srp-\d+|ct-[se]\d+|mp-4200|tm[-\s]?[tmph]\d*|tm\s+series|epson\s+tm\b|58mm|80mm)\b/.test(
       haystack,
     )
   ) {
@@ -600,21 +600,26 @@ function isNonTmEpsonPrinter(text: string): boolean {
 
 export function extractEpsonModel(name: string, info: string = ''): string {
   const combined = `${name} ${info}`.toLowerCase().replace(/[_]+/g, '-');
-  if (combined.includes('tm-u') || combined.includes('u220') || combined.includes('u230')) {
+  if (
+    /\btm[-\s]?u(?:\b|\d)/.test(combined) ||
+    combined.includes('u220') ||
+    combined.includes('u230')
+  ) {
     return 'TM-U Series';
   }
   if (isNonTmEpsonPrinter(combined)) {
     return 'Epson Inkjet';
   }
-  if (combined.includes('tm-m30')) return 'TM-m30';
-  if (combined.includes('tm-t88')) return 'TM-T88';
-  if (combined.includes('tm-t82')) return 'TM-T82';
-  if (combined.includes('tm-t20')) return 'TM-T20';
-  if (combined.includes('tm-t60')) return 'TM-T60';
-  if (combined.includes('tm-l90')) return 'TM-L90';
-  if (combined.includes('tm-l')) return 'TM-L Series';
-  if (combined.includes('tm-h600')) return 'TM-H600';
-  if (combined.includes('tm-')) return 'TM Series';
+  if (/\btm[-\s]?m30/.test(combined)) return 'TM-m30';
+  if (/\btm[-\s]?t88/.test(combined)) return 'TM-T88';
+  if (/\btm[-\s]?t82/.test(combined)) return 'TM-T82';
+  if (/\btm[-\s]?t20/.test(combined)) return 'TM-T20';
+  if (/\btm[-\s]?t60/.test(combined)) return 'TM-T60';
+  if (/\btm[-\s]?t100/.test(combined)) return 'TM-T100';
+  if (/\btm[-\s]?l90/.test(combined)) return 'TM-L90';
+  if (/\btm[-\s]?l(?:\b|\d)/.test(combined)) return 'TM-L Series';
+  if (/\btm[-\s]?h600/.test(combined)) return 'TM-H600';
+  if (/\btm(?:[-\s]|$)/.test(combined)) return 'TM Series';
   return 'Epson Printer';
 }
 
@@ -779,7 +784,7 @@ export function detectWindowsMakeModel(
   const lower = `${name} ${driver}`.toLowerCase().replace(/[_]+/g, '-');
   const nameLower = name.toLowerCase().replace(/[_]+/g, '-');
 
-  if (lower.includes('epson') || nameLower.includes('tm-') || lower.includes('u220')) {
+  if (lower.includes('epson') || /\btm[-\s]/.test(nameLower) || lower.includes('u220')) {
     make = 'Epson';
     model = extractEpsonModel(name, driver);
   } else if (lower.includes('bixolon') || lower.includes('srp-')) {

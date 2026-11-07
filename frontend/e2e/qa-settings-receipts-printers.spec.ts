@@ -707,6 +707,11 @@ test.describe('@ci-tier2 Settings > Printers', () => {
 
       await expect(printMethod).toHaveValue('browser');
       await expect(page.getByText('Switched Print Method to Browser Print')).toBeVisible();
+      const persistedMethod = await page.evaluate(() => {
+        const raw = localStorage.getItem('flo-printer-settings');
+        return raw ? JSON.parse(raw)?.state?.printMethod : null;
+      });
+      expect(persistedMethod).toBe('browser');
 
       if (evidenceDir && fs.existsSync(evidenceDir)) {
         await page.screenshot({
@@ -714,6 +719,11 @@ test.describe('@ci-tier2 Settings > Printers', () => {
           fullPage: false,
         });
       }
+
+      // Navigating away and back without clicking Save preserves the 1-click Browser Print switch
+      await page.goto(`${BASE}/settings`);
+      await openPrintersTab(page);
+      await expect(printMethod).toHaveValue('browser');
 
       await page.getByRole('button', { name: 'Add Manually', exact: true }).click();
       await page.getByPlaceholder('e.g. Kitchen Printer').fill('EPSON TM-U220D Kitchen');

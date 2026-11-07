@@ -68,12 +68,16 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     model: 'TM-U220 / 76mm Impact',
     aliases: [
       'epson tm-u',
+      'epson tm u',
       'tm-u series',
+      'tm u series',
       'tm-u220',
+      'tm u220',
       'tm-u220a',
       'tm-u220b',
       'tm-u220d',
       'tm-u230',
+      'tm u230',
       'tm-u',
       'u220',
       'srp-275',
@@ -110,20 +114,34 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     make: 'Epson',
     model: 'TM Series ESC/POS',
     aliases: [
+      'epson tm',
+      'tm series',
       'epson tm-t',
       'epson tm-m',
       'epson tm-p',
+      'epson tm-h',
+      'tm-t',
+      'tm t',
+      'tm-m',
+      'tm m',
+      'tm-p',
+      'tm p',
+      'tm-h',
+      'tm h',
       'tm-t88',
       'tm-t82',
       'tm-t81',
       'tm-t70',
       'tm-t60',
       'tm-t20',
+      'tm-t100',
       'tm-m30',
       'tm-m10',
       'tm-m50',
       'tm-p20',
       'tm-p80',
+      'tm-h600',
+      'tm-h6000',
       'srp-330',
       'srp-350',
       'ct-s310',
@@ -207,7 +225,18 @@ export function matchSupportedPrinterProfile(
 
   if (!haystack) return null;
 
+  if (
+    /\b(?:tm[-\s]?l\d*|ecotank|workforce|stylus|expression|et-\d\w*|wf-\d\w*|l3\d*|l4\d*)\b/.test(
+      haystack,
+    )
+  ) {
+    return null;
+  }
+
   for (const profile of SUPPORTED_PRINTER_PROFILES) {
+    if (profile.id === 'epson-tm-series' && /\b(?:tm[-\s]?u\w*|u220\w*|u230\w*)\b/.test(haystack)) {
+      continue;
+    }
     const tokens = [`${profile.make} ${profile.model}`, profile.model, ...profile.aliases].map(
       (s) => s.toLowerCase(),
     );

@@ -338,13 +338,28 @@ test.describe('@ci-tier2 Settings > Printers', () => {
     await openPrintersTab(page);
 
     // 2. Configure an XP-58 SIR printer with Extra Large text size via the UI and verify API shape + adversarial guard
+    type E2ePrinterSnapshot = {
+      id: string;
+      name: string;
+      connection_type: string;
+      ip_address?: string | null;
+      port?: number | null;
+      paper_width?: string;
+      text_size?: string;
+      is_default?: number;
+      cash_drawer_pulse_enabled?: number;
+    };
     let createdPrinterId: string | null = null;
+    let didCreatePrinter = false;
+    let preExistingXp58: E2ePrinterSnapshot | undefined;
+    let originalDefaultPrinterId: string | null = null;
     try {
       const initialListRes = await page.request.get(`${BASE}/api/printers`, { headers });
       const initialPrinters = (
-        (await initialListRes.json()) as { printers: Array<{ id: string; name: string }> }
+        (await initialListRes.json()) as { printers: E2ePrinterSnapshot[] }
       ).printers;
-      const preExistingXp58 = initialPrinters.find((p) => p.name === 'XP-58 SIR');
+      originalDefaultPrinterId = initialPrinters.find((p) => p.is_default === 1)?.id ?? null;
+      preExistingXp58 = initialPrinters.find((p) => p.name === 'XP-58 SIR');
       if (!preExistingXp58) {
         await page.getByRole('button', { name: 'Add Manually', exact: true }).click();
         await page.getByPlaceholder('e.g. Kitchen Printer').fill('XP-58 SIR');
@@ -354,6 +369,7 @@ test.describe('@ci-tier2 Settings > Printers', () => {
         await selects.nth(1).selectOption('cols-32');
         await selects.nth(2).selectOption('extra_large');
         await formSection.getByRole('button', { name: 'Add Printer', exact: true }).click();
+        didCreatePrinter = true;
       } else {
         await page.request.put(`${BASE}/api/printers/${preExistingXp58.id}`, {
           headers,
@@ -541,7 +557,7 @@ test.describe('@ci-tier2 Settings > Printers', () => {
         await previewPage.close();
       }
     } finally {
-      if (createdPrinterId) {
+      if (didCreatePrinter && createdPrinterId) {
         const cleanupListRes = await page.request
           .get(`${BASE}/api/printers`, { headers })
           .catch(() => null);
@@ -553,6 +569,33 @@ test.describe('@ci-tier2 Settings > Printers', () => {
             .delete(`${BASE}/api/printers/${createdPrinterId}`, { headers })
             .catch(() => undefined);
         }
+      } else if (preExistingXp58) {
+        await page.request
+          .put(`${BASE}/api/printers/${preExistingXp58.id}`, {
+            headers,
+            data: {
+              name: preExistingXp58.name,
+              connection_type: preExistingXp58.connection_type,
+              ip_address: preExistingXp58.ip_address ?? undefined,
+              port: preExistingXp58.port ?? undefined,
+              paper_width: preExistingXp58.paper_width,
+              text_size: preExistingXp58.text_size,
+              is_default: preExistingXp58.is_default === 1,
+              cash_drawer_pulse_enabled: preExistingXp58.cash_drawer_pulse_enabled === 1,
+            },
+          })
+          .catch(() => undefined);
+      }
+      if (
+        originalDefaultPrinterId &&
+        (!didCreatePrinter || originalDefaultPrinterId !== createdPrinterId)
+      ) {
+        await page.request
+          .put(`${BASE}/api/printers/${originalDefaultPrinterId}`, {
+            headers,
+            data: { is_default: true },
+          })
+          .catch(() => undefined);
       }
       await openPrintersTab(page);
       const pmSelect = page

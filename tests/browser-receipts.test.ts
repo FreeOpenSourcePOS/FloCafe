@@ -42,6 +42,7 @@ function loadFrontendModules() {
       webPrint: require('../frontend/src/lib/printer/web-print'),
       kotWebPrint: require('../frontend/src/lib/printer/kot-web-print'),
       orderSlipWebPrint: require('../frontend/src/lib/printer/order-slip-web-print'),
+      deliverySlipWebPrint: require('../frontend/src/lib/printer/delivery-slip-web-print'),
       usePrinter: require('../frontend/src/hooks/usePrinter'),
       i18n: require('../frontend/src/lib/i18n'),
       countries: require('../frontend/src/lib/countries'),
@@ -51,11 +52,19 @@ function loadFrontendModules() {
   }
 }
 
-const { webPrint, kotWebPrint, orderSlipWebPrint, usePrinter, i18n, countries } =
-  loadFrontendModules();
+const {
+  webPrint,
+  kotWebPrint,
+  orderSlipWebPrint,
+  deliverySlipWebPrint,
+  usePrinter,
+  i18n,
+  countries,
+} = loadFrontendModules();
 const { generateBillHtml, getPaperStyles } = webPrint;
 const { generateKotHtml } = kotWebPrint;
 const { generateOrderSlipHtml } = orderSlipWebPrint;
+const { generateDeliverySlipHtml } = deliverySlipWebPrint;
 const { defaultWebUsbCapabilities, resolveWebUsbCapabilities, resolveActivePrinterTextSize } =
   usePrinter;
 
@@ -1111,6 +1120,111 @@ async function run() {
     );
 
     assert(
+      'resolveActivePrinterTextSize prioritizes a connected webusbPrinter over defaultPrinter while honoring explicit overrides',
+      resolveActivePrinterTextSize({
+        status: 'connected',
+        defaultPrinter: {
+          id: 'p1',
+          name: 'Default 80',
+          connection_type: 'usb',
+          is_default: 1,
+          text_size: 'normal',
+        },
+        hardwarePrinter: null,
+        webusbPrinter: {
+          id: 'w1',
+          name: 'XP-58 WebUSB',
+          connection_type: 'webusb',
+          is_default: 0,
+          text_size: 'extra_large',
+        },
+      }) === 'extra_large' &&
+        resolveActivePrinterTextSize(
+          {
+            status: 'connected',
+            defaultPrinter: {
+              id: 'p1',
+              name: 'Default 80',
+              connection_type: 'usb',
+              is_default: 1,
+              text_size: 'normal',
+            },
+            hardwarePrinter: null,
+            webusbPrinter: {
+              id: 'w1',
+              name: 'XP-58 WebUSB',
+              connection_type: 'webusb',
+              is_default: 0,
+              text_size: 'extra_large',
+            },
+          },
+          'large',
+        ) === 'large',
+    );
+
+    const deliveryContact = {
+      recipientName: 'Ali Reza',
+      phone: '+989123456789',
+      address: 'Tehran, Valiasr St, No. 42',
+    };
+    const delivery58Normal = generateDeliverySlipHtml(
+      testIranOrder,
+      testIranOrder.items || [],
+      deliveryContact,
+      { paperWidth: 58, textSize: 'normal', language: 'en' },
+    );
+    const delivery58Large = generateDeliverySlipHtml(
+      testIranOrder,
+      testIranOrder.items || [],
+      deliveryContact,
+      { paperWidth: 58, textSize: 'large', language: 'en' },
+    );
+    const delivery58Xl = generateDeliverySlipHtml(
+      testIranOrder,
+      testIranOrder.items || [],
+      deliveryContact,
+      { paperWidth: 58, textSize: 'extra_large', language: 'en' },
+    );
+    const delivery80Normal = generateDeliverySlipHtml(
+      testIranOrder,
+      testIranOrder.items || [],
+      deliveryContact,
+      { paperWidth: 80, textSize: 'normal', language: 'en' },
+    );
+    const delivery80Large = generateDeliverySlipHtml(
+      testIranOrder,
+      testIranOrder.items || [],
+      deliveryContact,
+      { paperWidth: 80, textSize: 'large', language: 'en' },
+    );
+    const delivery80Xl = generateDeliverySlipHtml(
+      testIranOrder,
+      testIranOrder.items || [],
+      deliveryContact,
+      { paperWidth: 80, textSize: 'extra_large', language: 'en' },
+    );
+    assert(
+      'Delivery slip browser HTML scales font-size for normal, large, and extra_large across 58mm and 80mm and uses pure #000 borders/text',
+      delivery58Normal.includes('font-size:12px;font-weight:600;color:#000;') &&
+        delivery58Large.includes('font-size:14px;font-weight:700;color:#000;') &&
+        delivery58Xl.includes('font-size:16px;font-weight:700;color:#000;') &&
+        delivery80Normal.includes('font-size:13px;font-weight:600;color:#000;') &&
+        delivery80Large.includes('font-size:16px;font-weight:700;color:#000;') &&
+        delivery80Xl.includes('font-size:18px;font-weight:700;color:#000;') &&
+        !/#(15803d|ecfdf5|d97706|fffbeb|9ca3af|f9fafb|374151)\b/i.test(delivery58Xl),
+    );
+
+    assert(
+      '58mm extra_large receipt CSS wraps items-table rows with flex-wrap so numeric columns cannot horizontally overflow 46mm width',
+      getPaperStyles('thermal58', 'extra_large').includes(
+        '.items-table thead tr, .items-table tbody tr { display: flex; flex-wrap: wrap;',
+      ) &&
+        getPaperStyles('thermal58', 'extra_large').includes(
+          '.items-table th:first-child, .items-table td:first-child { flex: 1 1 100%;',
+        ),
+    );
+
+    assert(
       'Unrecognized or adversarial text_size values normalize safely to normal across all browser print surfaces',
       defaultWebUsbCapabilities(58, 'cols-32', 'gigantic').textSize === 'normal' &&
         resolveActivePrinterTextSize({
@@ -1561,6 +1675,7 @@ async function run() {
 
       if (item.name === '10_thermal58_receipt_extra_large') {
         const computed = await page.evaluate(() => {
+          const bill = document.querySelector('.bill-container') as HTMLElement;
           const td = document.querySelector('.items-table td')!;
           const h1 = document.querySelector('.header h1')!;
           const banner = document.querySelector('.reprint-banner')!;
@@ -1581,10 +1696,12 @@ async function run() {
             bannerBorderColor: bannerStyle.borderTopColor,
             totalFontSize: totalStyle.fontSize,
             totalColor: totalStyle.color,
+            billScrollWidth: bill ? bill.scrollWidth : 0,
+            billClientWidth: bill ? bill.clientWidth : 0,
           };
         });
         assert(
-          'Chromium computed styles for 58mm extra_large receipt enforce 17px/700 items, 21px/700 h1, and pure rgb(0, 0, 0) colors',
+          'Chromium computed styles for 58mm extra_large receipt enforce 17px/700 items, 21px/700 h1, pure rgb(0, 0, 0) colors, and zero horizontal overflow',
           computed.tdFontSize === '17px' &&
             computed.tdFontWeight === '700' &&
             computed.tdColor === 'rgb(0, 0, 0)' &&
@@ -1595,7 +1712,10 @@ async function run() {
             computed.bannerColor === 'rgb(0, 0, 0)' &&
             computed.bannerBorderColor === 'rgb(0, 0, 0)' &&
             computed.totalFontSize === '19px' &&
-            computed.totalColor === 'rgb(0, 0, 0)',
+            computed.totalColor === 'rgb(0, 0, 0)' &&
+            computed.billClientWidth > 0 &&
+            computed.billScrollWidth <= computed.billClientWidth,
+          `scrollWidth=${computed.billScrollWidth} clientWidth=${computed.billClientWidth}`,
         );
       }
     }

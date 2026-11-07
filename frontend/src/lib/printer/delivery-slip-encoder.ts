@@ -2,6 +2,11 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
+import {
+  configureEncoderTextSize,
+  layoutColumnsForTextSize,
+  normalizePrinterTextSize,
+} from '@print/text-size';
 import { columnsForReceiptPaperSize } from '@print/width';
 import { formatTime } from './format-date';
 import {
@@ -95,7 +100,9 @@ export function buildDeliverySlipBytes(
   warnings: PrintWarning[] = [],
 ): Uint8Array {
   const { paperWidth = 58, language = 'en', timezone, arabicShaping = false } = opts;
-  const cols = opts.columns ?? CHARS[paperWidth];
+  const textSize = normalizePrinterTextSize(opts.capabilities?.textSize);
+  const physicalCols = opts.columns ?? CHARS[paperWidth];
+  const cols = layoutColumnsForTextSize(physicalCols, textSize);
   const safePrinterText = <T extends { text(value: string): T }>(
     target: T,
     value: string,
@@ -120,7 +127,10 @@ export function buildDeliverySlipBytes(
       true,
       opts.capabilities,
     );
-  const enc = new ReceiptPrinterEncoder({ columns: cols });
+  const enc = configureEncoderTextSize(
+    new ReceiptPrinterEncoder({ columns: physicalCols }),
+    textSize,
+  );
 
   const label = (concept: string): string => printLabelResolver(concept as never, language);
   const dash = '-'.repeat(cols);

@@ -610,6 +610,19 @@ export function getPaperStyles(size: PaperSize, textSize?: PrinterTextSize): str
             ? '12px'
             : '11px';
       const bodyWeight = normalizedTextSize === 'extra_large' ? 700 : 600;
+      const extraLargeRowRules =
+        normalizedTextSize === 'extra_large'
+          ? `
+        .bill-container { overflow-wrap: anywhere; word-break: break-word; }
+        .items-table thead, .items-table tbody { display: block; width: 100%; }
+        .items-table thead tr, .items-table tbody tr { display: flex; flex-wrap: wrap; width: 100%; border-bottom: 1px dashed #000; }
+        .items-table thead tr { border-bottom: 1px solid #000; }
+        .items-table th, .items-table td { border-bottom: none; overflow-wrap: anywhere; word-break: break-word; }
+        .items-table th:first-child, .items-table td:first-child { flex: 1 1 100%; width: 100%; max-width: 100%; }
+        .items-table th:not(:first-child), .items-table td:not(:first-child) { flex: 1 1 auto; min-width: 0; }
+        .items-table td.num { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+      `
+          : '';
       return (
         baseStyles +
         `
@@ -627,7 +640,8 @@ export function getPaperStyles(size: PaperSize, textSize?: PrinterTextSize): str
         .powered-by { color: #000; font-size: ${poweredByFontSize}; font-weight: 600; }
         .tax-table, .payments-table { width: 100%; margin-inline-start: 0; }
         .items-table th, .items-table td, .tax-table td, .totals-table td, .payments-table td { padding: 2px 4px; }
-      `
+      ` +
+        extraLargeRowRules
       );
     }
     case 'thermal80': {

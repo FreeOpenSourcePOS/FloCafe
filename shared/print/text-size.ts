@@ -2,6 +2,10 @@ export type PrinterTextSize = 'normal' | 'large' | 'extra_large';
 
 export const PRINTER_TEXT_SIZES: readonly PrinterTextSize[] = ['normal', 'large', 'extra_large'];
 
+export function isPrinterTextSize(value: unknown): value is PrinterTextSize {
+  return value === 'normal' || value === 'large' || value === 'extra_large';
+}
+
 export function normalizePrinterTextSize(value: unknown): PrinterTextSize {
   return value === 'large' || value === 'extra_large' ? value : 'normal';
 }
@@ -48,4 +52,50 @@ export function applyTextSizeToLine(line: string, textSize: PrinterTextSize): st
 
 export function applyTextSizeToLines(lines: string[], textSize: PrinterTextSize): string[] {
   return textSize === 'normal' ? lines : lines.map((line) => applyTextSizeToLine(line, textSize));
+}
+
+export interface SizeConfigurableEncoder {
+  width(value?: number): unknown;
+  height(value?: number): unknown;
+  size(width: string | number, height?: number): unknown;
+}
+
+/**
+ * Configures a ReceiptPrinterEncoder instance so all subsequent text lines use
+ * the configured printer text size (`large` = 1x2, `extra_large` = 2x2) while
+ * leaving `normal` completely untouched. Call after `enc.initialize()` when used.
+ */
+export function configureEncoderTextSize<T extends SizeConfigurableEncoder>(
+  enc: T,
+  textSize: PrinterTextSize,
+): T {
+  if (textSize === 'normal') return enc;
+  const baseWidth = textSize === 'extra_large' ? 2 : 1;
+  const baseHeight = 2;
+  const target: SizeConfigurableEncoder = enc;
+  const origWidth = target.width.bind(enc);
+  const origHeight = target.height.bind(enc);
+  const origSize = target.size.bind(enc);
+
+  target.width = (w?: number) => {
+    origWidth(Math.max(w ?? 1, baseWidth));
+    return enc;
+  };
+  target.height = (h?: number) => {
+    origHeight(Math.max(h ?? 1, baseHeight));
+    return enc;
+  };
+  target.size = (w: string | number, h?: number) => {
+    if (typeof w === 'string') {
+      origWidth(baseWidth);
+      origHeight(baseHeight);
+      return enc;
+    }
+    origSize(Math.max(w, baseWidth), Math.max(h ?? w, baseHeight));
+    return enc;
+  };
+
+  origWidth(baseWidth);
+  origHeight(baseHeight);
+  return enc;
 }

@@ -45,7 +45,11 @@ import {
   type ThermalPrinterCapabilities,
 } from '@print/thermal-capabilities';
 import { DEFAULT_RASTER_MAX_BAND_HEIGHT, rasterWebUsbPathEnabled } from '@print/raster';
-import { normalizePrinterTextSize, type PrinterTextSize } from '@print/text-size';
+import {
+  layoutColumnsForTextSize,
+  normalizePrinterTextSize,
+  type PrinterTextSize,
+} from '@print/text-size';
 import { columnsForConfiguredPrinter } from '@print/width';
 import {
   ensureReceiptSettingsLoaded,
@@ -104,11 +108,19 @@ export function resolveWebUsbCapabilities(
 }
 
 export function resolveActivePrinterTextSize(
-  state: Pick<PrinterState, 'defaultPrinter' | 'hardwarePrinter' | 'webusbPrinter'>,
+  state: Pick<PrinterState, 'defaultPrinter' | 'hardwarePrinter' | 'webusbPrinter'> &
+    Partial<Pick<PrinterState, 'status' | 'deviceInfo' | 'printMethod'>>,
   override?: unknown,
 ): PrinterTextSize {
   if (override !== undefined) return normalizePrinterTextSize(override);
-  const printer = state.defaultPrinter ?? state.hardwarePrinter ?? state.webusbPrinter;
+  const webusbConnected =
+    state.status === 'connected' || Boolean(state.deviceInfo) || printerService.isConnected;
+  const printer =
+    webusbConnected && state.webusbPrinter
+      ? state.webusbPrinter
+      : state.printMethod === 'escpos' && state.hardwarePrinter
+        ? state.hardwarePrinter
+        : (state.webusbPrinter ?? state.defaultPrinter ?? state.hardwarePrinter);
   return normalizePrinterTextSize(printer?.text_size ?? printer?.capabilities?.textSize);
 }
 
@@ -504,10 +516,13 @@ export const usePrinterStore = create<PrinterState>()(
           if (useElectronRaster && rasterBillTemplate && webusbPrinter && rasterizePrintDocument) {
             try {
               const currency = resolveTenantCurrency(tenant.currency, tenant.country);
+              const rasterTextSize = normalizePrinterTextSize(
+                webusbCapabilities.textSize ?? activeTextSize,
+              );
               const rasterResult = await rasterizePrintDocument({
                 document: buildFrontendBillDocument(bill, tenant, {
                   ...builderOpts,
-                  columns: billColumns,
+                  columns: layoutColumnsForTextSize(billColumns, rasterTextSize),
                   businessName: tenant.business_name,
                   includeTaxId: billShowTaxId,
                   taxIdLabel: getCountryByCode(tenant.country)?.taxIdLabel ?? 'Tax ID',
@@ -528,6 +543,7 @@ export const usePrinterStore = create<PrinterState>()(
                   trimDecimals: printerTrimDecimals,
                   useUnicode: printerUseUnicode,
                   arabicShaping: printerArabicShaping,
+                  textSize: rasterTextSize,
                   ...(tenant.timezone ? { timezone: tenant.timezone } : {}),
                 },
               });
@@ -825,11 +841,14 @@ export const usePrinterStore = create<PrinterState>()(
               warnings.push(...encoderWarnings);
             } else if (useRaster && rasterizeKotDocument && webusbPrinter) {
               try {
+                const rasterKotTextSize = normalizePrinterTextSize(
+                  webusbCapabilities.textSize ?? activeTextSize,
+                );
                 const rasterResult = await rasterizeKotDocument({
                   document: buildFrontendKotDocument(rasterOrder, {
                     items: rasterOrder.items,
                     stationName: opts?.stationName ?? 'Kitchen',
-                    columns: kotColumns,
+                    columns: layoutColumnsForTextSize(kotColumns, rasterKotTextSize),
                     language: kotLanguage,
                     ...((tenantTimezone ?? opts?.timezone)
                       ? { timezone: tenantTimezone ?? opts?.timezone }
@@ -845,6 +864,7 @@ export const usePrinterStore = create<PrinterState>()(
                       : {}),
                     useUnicode: printerUseUnicode,
                     arabicShaping: printerArabicShaping,
+                    textSize: rasterKotTextSize,
                   },
                 });
                 if (!rasterResult.ok || !rasterResult.data) {
@@ -1004,6 +1024,10 @@ export const usePrinterStore = create<PrinterState>()(
             throw new Error('Please allow popups to print');
           }
           const { paperWidth } = get();
+          const activeTextSize = resolveActivePrinterTextSize(
+            get(),
+            opts?.capabilities?.textSize,
+          );
           const paymentResponse = await api.get<{ payment?: DeliverySlipPayment }>(
             `/printers/delivery-slip-payment/${order.id}`,
           );
@@ -1015,10 +1039,6 @@ export const usePrinterStore = create<PrinterState>()(
             const columns = columnsForConfiguredPrinter(
               get().webusbPrinter?.paper_width,
               paperWidth,
-            );
-            const activeTextSize = resolveActivePrinterTextSize(
-              get(),
-              opts?.capabilities?.textSize,
             );
             const bytes = buildDeliverySlipBytes(
               slipOrder,
@@ -1060,6 +1080,7 @@ export const usePrinterStore = create<PrinterState>()(
             await import('@/lib/printer/delivery-slip-web-print');
           const html = generateDeliverySlipHtml(slipOrder, slipItems, slipContact, {
             paperWidth,
+            textSize: activeTextSize,
             language: resolveBillPrintLanguages()[0] as Language,
             ...(slipPayment ? { payment: slipPayment } : {}),
             ...(tenantTimezone ? { timezone: tenantTimezone } : {}),

@@ -186,6 +186,7 @@ interface DefaultPrinter {
   port: number | null;
   is_default: number;
   paper_width: string | null;
+  text_size?: string | null;
 }
 
 function printerReadinessShape(printer: DefaultPrinter) {
@@ -194,6 +195,7 @@ function printerReadinessShape(printer: DefaultPrinter) {
     name: printer.name,
     connection_type: printer.connection_type,
     is_default: printer.is_default,
+    text_size: normalizePrinterTextSize(printer.text_size),
     readiness_state: 'configured',
   };
 }

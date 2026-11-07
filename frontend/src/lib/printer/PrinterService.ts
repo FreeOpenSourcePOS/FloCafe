@@ -333,6 +333,7 @@ class PrinterService {
         font-size: 13px;
         font-weight: 600;
         color: #000;
+        background: #fff;
         line-height: 1.3;
         width: ${mmWidth};
         max-width: ${mmWidth};
@@ -340,8 +341,14 @@ class PrinterService {
         padding: 4px;
         text-align: left;
       }
+      body * {
+        color: #000 !important;
+        background: transparent !important;
+        border-color: #000 !important;
+      }
       @media print {
-        body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; color: #000 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; color: #000 !important; background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body * { color: #000 !important; background: transparent !important; border-color: #000 !important; }
         @page { size: ${mmWidth} auto; margin: 0; }
       }
     `;

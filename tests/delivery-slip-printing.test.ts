@@ -1738,7 +1738,11 @@ test('delivery slip: paid, partial, unpaid, and multi-tender summaries match acr
     },
   );
   assertPaid(htmlPaid, 'web print');
-  assert.ok(htmlPaid.includes('#15803d'), 'paid web print uses the green status box');
+  assert.ok(
+    htmlPaid.includes('border:2px solid #000') &&
+      htmlPaid.includes('background:transparent;color:#000'),
+    'paid web print uses pure black thermal status box without colored background',
+  );
 
   const multiTenderBackend = escPosToText(backend(multiTenderOrder).data);
   const multiTenderWebUsb = escPosToText(
@@ -1816,7 +1820,11 @@ test('delivery slip: paid, partial, unpaid, and multi-tender summaries match acr
       `${path} places collection before the items`,
     );
   }
-  assert.ok(htmlUnpaid.includes('#d97706'), 'unpaid web print uses the amber status box');
+  assert.ok(
+    htmlUnpaid.includes('border:2px solid #000') &&
+      htmlUnpaid.includes('background:transparent;color:#000'),
+    'unpaid web print uses pure black thermal status box without colored background',
+  );
 
   const backendPartial = escPosToText(backend(partialOrder).data);
   const webusbPartial = escPosToText(

@@ -18,10 +18,13 @@ import {
   type DeliverySlipPrintData,
 } from '@print/document';
 import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+import { normalizePrinterTextSize, type PrinterTextSize } from '../../../../shared/print/text-size';
 
 export interface DeliverySlipWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
   paperWidth?: 58 | 80;
+  /** Printer text size preset. Default: 'normal' */
+  textSize?: PrinterTextSize;
   /** UI/receipt language. */
   language?: Language;
   /** BCP-47 locale used by the print fragment. */
@@ -61,7 +64,32 @@ export function generateDeliverySlipHtml(
   opts: DeliverySlipWebPrintOptions = {},
 ): string {
   const paperWidth = opts.paperWidth ?? 58;
-  const fontSize = paperWidth === 58 ? '10px' : '12px';
+  const normalizedTextSize = normalizePrinterTextSize(opts.textSize);
+  const fontSize =
+    paperWidth === 58
+      ? normalizedTextSize === 'extra_large'
+        ? '16px'
+        : normalizedTextSize === 'large'
+          ? '14px'
+          : '12px'
+      : normalizedTextSize === 'extra_large'
+        ? '18px'
+        : normalizedTextSize === 'large'
+          ? '16px'
+          : '13px';
+  const headingFontSize =
+    paperWidth === 58
+      ? normalizedTextSize === 'extra_large'
+        ? '20px'
+        : normalizedTextSize === 'large'
+          ? '18px'
+          : '15px'
+      : normalizedTextSize === 'extra_large'
+        ? '22px'
+        : normalizedTextSize === 'large'
+          ? '20px'
+          : '16px';
+  const fontWeight = normalizedTextSize === 'normal' ? 600 : 700;
   const padding = paperWidth === 58 ? '4px' : '6px';
   const paperWidthCss = paperWidth === 58 ? '58mm' : '80mm';
   const lang = opts.language ?? 'en';
@@ -101,16 +129,16 @@ export function generateDeliverySlipHtml(
   const paymentHtml = !payment
     ? ''
     : isPaid
-      ? `<div style="margin:${padding} 0;padding:${padding};border:2px solid #15803d;border-radius:4px;background:#ecfdf5;color:#14532d;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;"><div>${escapeHtml(tr('print.deliverySlip.paid'))}: ${escapeHtml(paymentMethod)} (${escapeHtml(tr('pos.total'))}: ${escapeHtml(payment.formattedAmount)})</div>${payment.formattedAmountDue ? `<div style="margin-top:2px;font-weight:normal;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmountDue)}</div>` : ''}</div>`
+      ? `<div class="delivery-slip-payment delivery-slip-payment-paid" style="margin:${padding} 0;padding:${padding};border:2px solid #000;border-radius:4px;background:transparent;color:#000;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;"><div>${escapeHtml(tr('print.deliverySlip.paid'))}: ${escapeHtml(paymentMethod)} (${escapeHtml(tr('pos.total'))}: ${escapeHtml(payment.formattedAmount)})</div>${payment.formattedAmountDue ? `<div style="margin-top:2px;font-weight:normal;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmountDue)}</div>` : ''}</div>`
       : isCollectible
-        ? `<div style="margin:${padding} 0;padding:${padding};border:2px solid #d97706;border-radius:4px;background:#fffbeb;color:#92400e;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;">${escapeHtml(tr('print.deliverySlip.toCollect'))}: ${escapeHtml(payment.formattedAmount)} (${escapeHtml(deliverySlipExpectedPaymentText(payment.expectedMethod, tr, payment.expectedMethodIsCustom === true))})</div>`
+        ? `<div class="delivery-slip-payment delivery-slip-payment-collect" style="margin:${padding} 0;padding:${padding};border:2px solid #000;border-radius:4px;background:transparent;color:#000;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;">${escapeHtml(tr('print.deliverySlip.toCollect'))}: ${escapeHtml(payment.formattedAmount)} (${escapeHtml(deliverySlipExpectedPaymentText(payment.expectedMethod, tr, payment.expectedMethodIsCustom === true))})</div>`
         : payment.status === 'unpaid'
-          ? `<div style="margin:${padding} 0;padding:${padding};border:1px solid #9ca3af;border-radius:4px;background:#f9fafb;color:#374151;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmount)}</div>`
-          : `<div style="margin:${padding} 0;padding:${padding};border:1px solid #9ca3af;border-radius:4px;background:#f9fafb;color:#374151;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;"><div>${escapeHtml(tr(payment.status === 'refunded' ? 'print.deliverySlip.refunded' : 'print.deliverySlip.partiallyRefunded'))}</div><div style="margin-top:2px;font-weight:normal;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmountDue ?? '')}</div></div>`;
+          ? `<div class="delivery-slip-payment delivery-slip-payment-unpaid" style="margin:${padding} 0;padding:${padding};border:1px solid #000;border-radius:4px;background:transparent;color:#000;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmount)}</div>`
+          : `<div class="delivery-slip-payment delivery-slip-payment-refunded" style="margin:${padding} 0;padding:${padding};border:1px solid #000;border-radius:4px;background:transparent;color:#000;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;"><div>${escapeHtml(tr(payment.status === 'refunded' ? 'print.deliverySlip.refunded' : 'print.deliverySlip.partiallyRefunded'))}</div><div style="margin-top:2px;font-weight:normal;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmountDue ?? '')}</div></div>`;
 
   return `
-    <div class="delivery-slip" lang="${escapeHtml(locale)}" dir="${direction}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New','Noto Sans Bengali','Nirmala UI','Vrinda','Bangla Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Thai','Leelawadee UI',Thonburi,monospace;font-size:${fontSize};direction:${direction};text-align:${textAlign};">
-      <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(tr('print.deliverySlip.banner'))}</h2>
+    <div class="delivery-slip" lang="${escapeHtml(locale)}" dir="${direction}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New','Noto Sans Bengali','Nirmala UI','Vrinda','Bangla Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Thai','Leelawadee UI',Thonburi,monospace;font-size:${fontSize};font-weight:${fontWeight};color:#000;direction:${direction};text-align:${textAlign};">
+      <h2 style="margin:0 0 ${padding} 0;font-size:${headingFontSize};text-align:center;">${escapeHtml(tr('print.deliverySlip.banner'))}</h2>
       <p style="margin:2px 0;font-weight:bold;">#${escapeHtml(order.order_number)}</p>
       <p style="margin:2px 0;">${escapeHtml(tr('print.time'))}: ${escapeHtml(formatTime(order.created_at, locale, timezone ? { timeZone: timezone } : undefined))}</p>
       <hr style="border:1px dashed #000;margin:${padding} 0;">

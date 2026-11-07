@@ -7,6 +7,11 @@ import {
   type ThermalPrinterCapabilities,
 } from '@print/thermal-capabilities';
 import {
+  configureEncoderTextSize,
+  layoutColumnsForTextSize,
+  normalizePrinterTextSize,
+} from '@print/text-size';
+import {
   columnsForReceiptPaperSize,
   displayCellWidth,
   fitThermalLine,
@@ -404,6 +409,17 @@ type Col4Widths = [number, number, number, number];
 
 function col4Widths(cols: number): Col4Widths {
   if (cols >= 48) return [20, 4, 11, 13];
+  if (cols < 32) {
+    const qtyWidth = 3;
+    const rateWidth = Math.max(4, Math.floor((cols - qtyWidth - 4) / 2));
+    const amountWidth = Math.max(4, cols - qtyWidth - 4 - rateWidth);
+    return [
+      Math.max(4, cols - qtyWidth - rateWidth - amountWidth),
+      qtyWidth,
+      rateWidth,
+      amountWidth,
+    ];
+  }
   return [14, 3, 7, 8];
 }
 
@@ -449,6 +465,21 @@ function col4Header(
   labels: { item: string; qty: string; rate: string; amount: string },
 ): string {
   const [w0, w1, w2, w3] = widths;
+  if (colsForCol4(widths) < 32) {
+    const item = padToDisplayCells(truncateToDisplayCells(labels.item, Math.max(1, w0 - 1)), w0);
+    const qty = padToDisplayCells(truncateToDisplayCells(labels.qty, w1), w1, 'right');
+    const rate = padToDisplayCells(
+      truncateToDisplayCells(labels.rate, Math.max(1, w2 - 1)),
+      w2,
+      'right',
+    );
+    const amt = padToDisplayCells(
+      truncateToDisplayCells(labels.amount, Math.max(1, w3 - 1)),
+      w3,
+      'right',
+    );
+    return item + qty + rate + amt;
+  }
   const item = padToDisplayCells(labels.item, w0);
   const qty = padToDisplayCells(labels.qty, w1, 'right');
   const rate = padToDisplayCells(labels.rate, w2, 'right');
@@ -542,7 +573,9 @@ export function buildClassicReceiptBytes(
   warnings?: PrintWarning[],
 ): Uint8Array {
   const { paperWidth = 58, showFooter = true, useUnicode = false, arabicShaping = false } = opts;
-  const cols = opts.columns ?? CHARS[paperWidth];
+  const textSize = normalizePrinterTextSize(opts.capabilities?.textSize);
+  const physicalCols = opts.columns ?? CHARS[paperWidth];
+  const cols = layoutColumnsForTextSize(physicalCols, textSize);
   const currencyCode = resolveTenantCurrency(tenant.currency, tenant.country);
   const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country)?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, currencyCode, useUnicode, opts.capabilities);
@@ -574,9 +607,10 @@ export function buildClassicReceiptBytes(
     amount: printLabelResolver('printTest.amt', primaryLang),
   };
 
-  const enc = new ReceiptPrinterEncoder({ columns: cols });
+  const enc = new ReceiptPrinterEncoder({ columns: physicalCols });
 
   enc.initialize();
+  configureEncoderTextSize(enc, textSize);
   if (messages?.reprintBanner)
     printReprintBanner(
       enc,
@@ -605,7 +639,7 @@ export function buildClassicReceiptBytes(
 
   // Business header (document block).
   if (header?.logoRaster) {
-    const widthDots = opts.capabilities?.raster?.widthDots ?? (cols <= 32 ? 384 : 576);
+    const widthDots = opts.capabilities?.raster?.widthDots ?? (physicalCols <= 32 ? 384 : 576);
     const maxBandHeight = opts.capabilities?.raster?.maxBandHeight ?? 200;
     const bands = getLogoRasterBands(header.logoRaster, widthDots, maxBandHeight);
     if (bands.length > 0) {
@@ -621,7 +655,7 @@ export function buildClassicReceiptBytes(
       warnings,
       true,
       arabicShaping,
-      Math.floor(cols / 2),
+      Math.floor(physicalCols / 2),
     );
     enc.width(1).height(1).bold(false).newline();
   }
@@ -1078,7 +1112,9 @@ export function buildCompactReceiptBytes(
   warnings?: PrintWarning[],
 ): Uint8Array {
   const { paperWidth = 58, useUnicode = false, arabicShaping = false } = opts;
-  const cols = opts.columns ?? CHARS[paperWidth];
+  const textSize = normalizePrinterTextSize(opts.capabilities?.textSize);
+  const physicalCols = opts.columns ?? CHARS[paperWidth];
+  const cols = layoutColumnsForTextSize(physicalCols, textSize);
   const currencyCode = resolveTenantCurrency(tenant.currency, tenant.country);
   const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country)?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, currencyCode, useUnicode, opts.capabilities);
@@ -1098,9 +1134,10 @@ export function buildCompactReceiptBytes(
     truncateForLanguage(text, max, primaryLang, opts.capabilities);
   const trim = opts.trimDecimals === true;
 
-  const enc = new ReceiptPrinterEncoder({ columns: cols });
+  const enc = new ReceiptPrinterEncoder({ columns: physicalCols });
 
   enc.initialize();
+  configureEncoderTextSize(enc, textSize);
   if (messages?.reprintBanner)
     printReprintBanner(
       enc,
@@ -1129,7 +1166,7 @@ export function buildCompactReceiptBytes(
 
   // Header (document business-header block)
   if (header?.logoRaster) {
-    const widthDots = opts.capabilities?.raster?.widthDots ?? (cols <= 32 ? 384 : 576);
+    const widthDots = opts.capabilities?.raster?.widthDots ?? (physicalCols <= 32 ? 384 : 576);
     const maxBandHeight = opts.capabilities?.raster?.maxBandHeight ?? 200;
     const bands = getLogoRasterBands(header.logoRaster, widthDots, maxBandHeight);
     if (bands.length > 0) {
@@ -1526,7 +1563,9 @@ export function buildDetailedReceiptBytes(
     isReprint = false,
     trimDecimals = false,
   } = opts;
-  const cols = opts.columns ?? CHARS[paperWidth];
+  const textSize = normalizePrinterTextSize(opts.capabilities?.textSize);
+  const physicalCols = opts.columns ?? CHARS[paperWidth];
+  const cols = layoutColumnsForTextSize(physicalCols, textSize);
   const primaryLang = opts.languages?.[0] ?? 'en';
   const safePrinterText = safePrinterTextForLanguage(primaryLang, useUnicode, opts.capabilities);
   const padRow = (left: string, right: string, _columns?: number): string => {
@@ -1558,9 +1597,10 @@ export function buildDetailedReceiptBytes(
     fractionDigits,
   );
 
-  const enc = new ReceiptPrinterEncoder({ columns: cols });
+  const enc = new ReceiptPrinterEncoder({ columns: physicalCols });
 
   enc.initialize();
+  configureEncoderTextSize(enc, textSize);
   if (isReprint)
     printReprintBanner(
       enc,
@@ -1582,7 +1622,7 @@ export function buildDetailedReceiptBytes(
       warnings,
       true,
       arabicShaping,
-      Math.floor(cols / 2),
+      Math.floor(physicalCols / 2),
     );
     enc.width(1).height(1).bold(false).newline();
   }

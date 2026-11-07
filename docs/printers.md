@@ -19,14 +19,18 @@ FloCafe prints receipts and kitchen order tickets from the desktop app. Configur
 
 Set the paper width to match the printer, either 58 mm or 80 mm. The first configured printer
 becomes the default; choose a different default in Settings when another printer should receive
-ordinary receipts. If no hardware printer is configured, FloCafe falls back to system print when
+ordinary receipts. Keep **Print Method** set to **ESCPOS (USB / Network Thermal Printer)** for
+USB, Network, and WebUSB receipt printers; **Browser Print (any printer)** opens the browser print
+dialog instead. If no hardware printer is configured, FloCafe falls back to system print when
 printing bills.
 
 Set **Text size** per printer to Normal, Large, or Extra large when printed text is hard to read.
-It applies to the kitchen tickets and bills sent to that printer. Large doubles the character
-height and keeps the same number of characters per line. Extra large doubles height and width, so
-lines hold half as many characters and wrap sooner. Existing printers stay on Normal, which prints
-exactly as before. Browser (system) printing and WebUSB printers do not use this setting.
+It applies to the kitchen tickets, delivery slips, and bills sent to that printer across ESC/POS
+(USB, Network, and WebUSB) and Browser Print. On ESC/POS, Large doubles the character height and
+keeps the same number of characters per line, while Extra large doubles height and width so lines
+hold half as many characters and wrap sooner; on Browser Print, Large and Extra large scale the
+thermal receipt, kitchen-ticket, and delivery-slip font sizes and weights. Existing printers stay on
+Normal, which prints as before.
 
 Enable **Open cash drawer on checkout** on a receipt printer only when a till is connected to that
 printer's drawer-kick port. When enabled, FloCafe appends the standard ESC/POS drawer pulse to

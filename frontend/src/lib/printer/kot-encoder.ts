@@ -3,6 +3,11 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import { columnsForReceiptPaperSize, displayCellWidth, truncateToDisplayCells } from '@print/width';
+import {
+  configureEncoderTextSize,
+  layoutColumnsForTextSize,
+  normalizePrinterTextSize,
+} from '@print/text-size';
 import { formatTime } from './format-date';
 import { normalizeThermalText } from './unicode';
 import {
@@ -87,7 +92,9 @@ export function buildKotBytes(
   warnings?: PrintWarning[],
 ): Uint8Array {
   const { paperWidth = 58, arabicShaping = false, language = 'en' } = opts;
-  const cols = opts.columns ?? CHARS[paperWidth];
+  const textSize = normalizePrinterTextSize(opts.capabilities?.textSize);
+  const physicalCols = opts.columns ?? CHARS[paperWidth];
+  const cols = layoutColumnsForTextSize(physicalCols, textSize);
   const label = (key: string): string => printLabelResolver(key, language);
   const locale = opts.locale ?? LANGUAGES[language as Language]?.locale ?? 'en-US';
   const safePrinterText = safePrinterTextForLanguage(language, cols, opts.capabilities);
@@ -95,7 +102,7 @@ export function buildKotBytes(
     truncate(text, max, opts.capabilities);
   const thermalCapabilities = mergeThermalCapabilities(opts.capabilities, arabicShaping);
 
-  const enc = new ReceiptPrinterEncoder({ columns: cols });
+  const enc = new ReceiptPrinterEncoder({ columns: physicalCols });
 
   const writeKotHeaderText = (
     value: string,
@@ -152,6 +159,7 @@ export function buildKotBytes(
 
   // ── KOT Header ───────────────────────────────────────────────────────────────
   enc.initialize();
+  configureEncoderTextSize(enc, textSize);
 
   // KOT Banner
   enc.align('center').bold(true);

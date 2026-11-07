@@ -521,7 +521,10 @@ function main() {
         'created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP',
         'created_at TEXT NOT NULL COLLATE NOCASE DEFAULT CURRENT_TIMESTAMP',
       )
-      .replace(/CREATE TABLE(?:\s+IF NOT EXISTS)?\s+payment_methods/i, 'CREATE TABLE payment_methods_rebuilt');
+      .replace(
+        /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+payment_methods/i,
+        'CREATE TABLE payment_methods_rebuilt',
+      );
     assert.notEqual(movedSql, paymentMethodsSql, 'collation move modified payment_methods DDL');
     collationMovedDb.exec('PRAGMA foreign_keys = OFF');
     collationMovedDb.exec(movedSql);
@@ -573,11 +576,7 @@ function main() {
         /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+payment_methods/i,
         'CREATE TABLE payment_methods_rebuilt',
       );
-      assert.notEqual(
-        modifiedSql,
-        paymentMethodsSql,
-        `${label} modified payment_methods DDL`,
-      );
+      assert.notEqual(modifiedSql, paymentMethodsSql, `${label} modified payment_methods DDL`);
       conflictChangedDb.exec('PRAGMA foreign_keys = OFF');
       conflictChangedDb.exec(modifiedSql);
       conflictChangedDb.exec(

@@ -236,11 +236,30 @@ async function main() {
         'older-backup restore applies offline_mode=false from the backup',
       );
 
-      await api(baseUrl, '/api/settings/offline-mode', {
-        method: 'PUT',
-        body: { offline_mode: true },
-        headers: ownerAuth,
-      });
+      const savedFetchAfterRestore = globalThis.fetch;
+      let injectedPostRestoreReset = false;
+      globalThis.fetch = (async (input: any, init?: RequestInit) => {
+        if (!injectedPostRestoreReset && String(input).endsWith('/api/settings/offline-mode')) {
+          injectedPostRestoreReset = true;
+          const cause = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+          throw new TypeError('fetch failed', { cause });
+        }
+        return savedFetchAfterRestore(input, init);
+      }) as typeof fetch;
+      try {
+        const reenabledAfterRestore = await api(baseUrl, '/api/settings/offline-mode', {
+          method: 'PUT',
+          body: { offline_mode: true },
+          headers: ownerAuth,
+        });
+        assertEqualOrThrow(
+          reenabledAfterRestore.status,
+          200,
+          'api() recovers from a transient loopback ECONNRESET after restoreBackup()',
+        );
+      } finally {
+        globalThis.fetch = savedFetchAfterRestore;
+      }
 
       resetMasterPin('1234');
       const importPayload = {

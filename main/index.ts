@@ -1873,12 +1873,22 @@ function shouldShowShutdownStatus(): boolean {
 async function backupOnShutdown(): Promise<void> {
   if (!shouldShowShutdownStatus() || !localBackup.isSessionBackupWanted()) return;
   // Stay well inside the coordinator's per-step timeout, which force-exits the app.
-  const deadline = new Promise<void>((resolve) => {
-    setTimeout(resolve, SHUTDOWN_BACKUP_DEADLINE_MS).unref?.();
+  const deadline = new Promise<boolean>((resolve) => {
+    setTimeout(() => resolve(false), SHUTDOWN_BACKUP_DEADLINE_MS).unref?.();
   });
   void showStatus('shutdownBackup', true);
-  await Promise.race([localBackup.backupForSession(SESSION_BACKUP_MIN_AGE_MS, 5_000), deadline]);
-  void showStatus('saved', true);
+  const saved = await Promise.race([
+    localBackup.backupForSession(SESSION_BACKUP_MIN_AGE_MS, 5_000),
+    deadline,
+  ]);
+  if (saved) {
+    await Promise.race([
+      showStatus('saved', true),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, SHUTDOWN_MESSAGE_VISIBLE_MS).unref?.();
+      }),
+    ]);
+  }
 }
 
 const SHUTDOWN_BACKUP_DEADLINE_MS = 7_000;

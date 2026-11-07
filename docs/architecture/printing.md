@@ -256,8 +256,9 @@ instead; `getPrinterCapabilities()` merges the override into the capability set.
 ### Text size
 
 `printers.text_size` (`normal`, `large`, `extra_large`; default `normal`) enlarges text per printer.
-On the backend, `resolvePrinterContext()` reads it (`printerShape()` also exposes normalized
-`text_size` and `capabilities.textSize` on `/api/printers` responses) and returns two things:
+On the backend, `resolvePrinterContext()` reads it (`printerShape()` and `printerReadinessShape()`
+also expose normalized `text_size`, and `printerShape()` sets `capabilities.textSize`, on
+`/api/printers` responses) and returns two things:
 `columns`, the layout width every document renderer targets, and `capabilities.textSize`, which
 `buildEscPos()` and the raster path read. On the frontend, `usePrinterStore` resolves the active
 printer's `text_size` (`resolveActivePrinterTextSize()` and `resolveWebUsbCapabilities()`) and passes

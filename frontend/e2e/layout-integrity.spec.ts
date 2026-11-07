@@ -851,6 +851,132 @@ test.describe('checkout controls stay visible while catalog and cart content scr
       )
       .toBeLessThanOrEqual(viewport!.height + 1);
   });
+
+  test('POS cart item controls have non-overlapping touch targets and edge clicks do not trigger neighbors (#1471)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL(/\/(pos|orders)/, { timeout: 20000 });
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/pos`);
+
+    await addSyntheticItemsToCart(page, 1);
+
+    const cartShell = page.getByTestId('cart-shell');
+    const cartItem = cartShell.getByTestId('cart-item').first();
+    await expect(cartItem).toBeVisible();
+
+    const removeBtn = cartItem.getByTestId('cart-item-remove-btn');
+    const overrideBtn = cartItem.getByRole('button', { name: 'Override price' });
+    const editBtn = cartItem.getByRole('button', { name: 'Edit' });
+    const minusBtn = cartItem.locator(
+      'button[aria-label="Remove"]:not([data-testid="cart-item-remove-btn"])',
+    );
+    const plusBtn = cartItem.getByRole('button', { name: 'Add Items' });
+    const decreasePaxBtn = cartShell.getByRole('button', { name: 'Decrease pax' });
+    const increasePaxBtn = cartShell.getByRole('button', { name: 'Increase pax' });
+
+    for (const [label, locator] of [
+      ['remove', removeBtn],
+      ['override price', overrideBtn],
+      ['edit', editBtn],
+      ['minus', minusBtn],
+      ['plus', plusBtn],
+      ['decrease pax', decreasePaxBtn],
+      ['increase pax', increasePaxBtn],
+    ] as const) {
+      await expect(locator, `${label} button is visible`).toBeVisible();
+      const box = await locator.boundingBox();
+      expect(box, `${label} button has bounds`).not.toBeNull();
+      expect(box!.width, `${label} button width >= 28px`).toBeGreaterThanOrEqual(28);
+      expect(box!.height, `${label} button height >= 28px`).toBeGreaterThanOrEqual(28);
+    }
+
+    const overrideBox = (await overrideBtn.boundingBox())!;
+    const editBox = (await editBtn.boundingBox())!;
+    const minusBox = (await minusBtn.boundingBox())!;
+    const plusBox = (await plusBtn.boundingBox())!;
+
+    expect(
+      editBox.x - (overrideBox.x + overrideBox.width),
+      'Override price and Edit have non-overlapping horizontal separation',
+    ).toBeGreaterThanOrEqual(4);
+    expect(
+      minusBox.x - (editBox.x + editBox.width),
+      'Edit and Minus have non-overlapping horizontal separation',
+    ).toBeGreaterThanOrEqual(6);
+    expect(
+      plusBox.x - (minusBox.x + minusBox.width),
+      'Minus and Plus have non-overlapping horizontal separation',
+    ).toBeGreaterThanOrEqual(20);
+
+    const assertNoHitOverlap = async (dir: 'ltr' | 'rtl') =>
+      cartItem.evaluate((row, targetDir) => {
+        const html = document.documentElement;
+        const prevDir = html.getAttribute('dir');
+        try {
+          html.setAttribute('dir', targetDir);
+          const buttons = Array.from(row.querySelectorAll<HTMLButtonElement>('button'));
+          const mismatches: string[] = [];
+          for (const btn of buttons) {
+            const rect = btn.getBoundingClientRect();
+            const label =
+              btn.getAttribute('data-testid') || btn.getAttribute('aria-label') || 'button';
+            const samplePoints = [
+              { name: 'left-edge', x: rect.left + 1.5, y: rect.top + rect.height / 2 },
+              { name: 'right-edge', x: rect.right - 1.5, y: rect.top + rect.height / 2 },
+              { name: 'top-edge', x: rect.left + rect.width / 2, y: rect.top + 1.5 },
+              { name: 'bottom-edge', x: rect.left + rect.width / 2, y: rect.bottom - 1.5 },
+              { name: 'center', x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+            ];
+            for (const pt of samplePoints) {
+              const hit = document.elementFromPoint(pt.x, pt.y);
+              if (!hit || !btn.contains(hit)) {
+                const hitDesc =
+                  hit?.closest('button')?.getAttribute('aria-label') || hit?.tagName || 'null';
+                mismatches.push(`${label}@${pt.name} hit ${hitDesc}`);
+              }
+            }
+          }
+          return mismatches;
+        } finally {
+          if (prevDir === null) html.removeAttribute('dir');
+          else html.setAttribute('dir', prevDir);
+        }
+      }, dir);
+
+    expect(
+      await assertNoHitOverlap('ltr'),
+      'every edge point inside a cart button hits that button in LTR',
+    ).toEqual([]);
+    expect(
+      await assertNoHitOverlap('rtl'),
+      'every edge point inside a cart button hits that button in RTL',
+    ).toEqual([]);
+
+    await overrideBtn.click({
+      position: { x: Math.max(1, overrideBox.width - 2), y: overrideBox.height / 2 },
+    });
+    const overrideDialog = page.getByRole('dialog');
+    await expect(overrideDialog).toBeVisible();
+    await overrideDialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(overrideDialog).toBeHidden();
+    await expect(cartShell.getByTestId('cart-item')).toHaveCount(1);
+
+    await editBtn.click({
+      position: { x: Math.max(1, editBox.width - 2), y: editBox.height / 2 },
+    });
+    await expect(
+      cartShell.getByTestId('cart-item'),
+      'clicking near the right edge of Edit does not trigger Minus to remove the item',
+    ).toHaveCount(1);
+    const saveChangesBtn = page.getByRole('button', { name: /Save Changes/i });
+    await expect(saveChangesBtn).toBeVisible();
+  });
 });
 
 /**

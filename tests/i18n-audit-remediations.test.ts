@@ -22,7 +22,12 @@ function setupModuleResolver() {
   };
   const originalResolveFilename = moduleApi._resolveFilename;
 
-  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  moduleApi._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
     let resolvedRequest = request;
     if (request === '@countries') {
       resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
@@ -41,7 +46,9 @@ function setupModuleResolver() {
 
 const cleanupResolver = setupModuleResolver();
 
-const { webPrint } = require('../frontend/src/lib/printer/web-print') ? { webPrint: require('../frontend/src/lib/printer/web-print') } : {} as any;
+const { webPrint } = require('../frontend/src/lib/printer/web-print')
+  ? { webPrint: require('../frontend/src/lib/printer/web-print') }
+  : ({} as any);
 const { ensureReceiptMessagesLoaded, printWebBill, generateBillHtml } = webPrint;
 const { getCachedMessages, loadLocaleMessages } = require('../frontend/src/lib/i18n/loader');
 const { LANGUAGES, getLanguageDirection } = require('../frontend/src/lib/i18n/languages');
@@ -77,7 +84,31 @@ async function run() {
   console.log('Section 1: Web-print Message Loading & BCP-47 Locale Tags');
 
   // 1.1 ensureReceiptMessagesLoaded loads messages into memory
-  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne', 'mr'] as const) {
+  for (const lang of [
+    'en',
+    'es',
+    'fr',
+    'pt',
+    'ru',
+    'fa',
+    'ur',
+    'it',
+    'ja',
+    'zh',
+    'zh-tw',
+    'ko',
+    'id',
+    'nl',
+    'hi',
+    'bn',
+    'sq',
+    'vi',
+    'th',
+    'ne',
+    'ha',
+    'jv',
+    'mr',
+  ] as const) {
     await ensureReceiptMessagesLoaded(lang);
     const cached = getCachedMessages(lang);
     assert(
@@ -89,7 +120,9 @@ async function run() {
   // 1.2 printWebBill is an async function
   assert(
     'printWebBill is an async function',
-    printWebBill.constructor.name === 'AsyncFunction' || typeof printWebBill.then === 'function' || printWebBill.length >= 2,
+    printWebBill.constructor.name === 'AsyncFunction' ||
+      typeof printWebBill.then === 'function' ||
+      printWebBill.length >= 2,
   );
 
   // 1.3 generateBillHtml emits correct BCP-47 locale tags and directions
@@ -157,16 +190,22 @@ async function run() {
     vi: { tag: 'vi-VN', dir: 'ltr' },
     th: { tag: 'th-TH', dir: 'ltr' },
     ne: { tag: 'ne-NP', dir: 'ltr' },
+    ha: { tag: 'ha-NG', dir: 'ltr' },
+    jv: { tag: 'jv-ID', dir: 'ltr' },
     mr: { tag: 'mr-IN', dir: 'ltr' },
   };
 
   for (const [lang, { tag, dir }] of Object.entries(expectedLocaleTags)) {
-    const html = generateBillHtml(sampleBill, {
-      business_name: 'FloCafe Audit Test',
-      currency: 'USD',
-      country: 'US',
-      timezone: 'UTC',
-    }, { language: lang as any });
+    const html = generateBillHtml(
+      sampleBill,
+      {
+        business_name: 'FloCafe Audit Test',
+        currency: 'USD',
+        country: 'US',
+        timezone: 'UTC',
+      },
+      { language: lang as any },
+    );
 
     assert(
       `generateBillHtml('${lang}') includes <html lang="${tag}" dir="${dir}">`,
@@ -197,9 +236,12 @@ async function run() {
   await printWebBill(
     sampleBill,
     { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-    { language: 'fa' as any }
+    { language: 'fa' as any },
   );
-  assert('printWebBill opens popup window synchronously to preserve user activation', windowOpenedSync === true);
+  assert(
+    'printWebBill opens popup window synchronously to preserve user activation',
+    windowOpenedSync === true,
+  );
 
   // 1.5 printWebBill throws when popup is blocked or closed
   (global as any).window = {
@@ -209,8 +251,13 @@ async function run() {
   try {
     await printWebBill(
       sampleBill,
-      { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-      { language: 'en' as any }
+      {
+        business_name: 'FloCafe Audit Test',
+        currency: 'USD',
+        country: 'US',
+        timezone: 'UTC',
+      } as any,
+      { language: 'en' as any },
     );
   } catch (err: any) {
     blockedErrorThrown = err.message.includes('Popup window was blocked');
@@ -228,13 +275,21 @@ async function run() {
   try {
     await printWebBill(
       sampleBill,
-      { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-      { language: 'en' as any }
+      {
+        business_name: 'FloCafe Audit Test',
+        currency: 'USD',
+        country: 'US',
+        timezone: 'UTC',
+      } as any,
+      { language: 'en' as any },
     );
   } catch (err: any) {
     closedErrorThrown = err.message.includes('Print window was closed');
   }
-  assert('printWebBill throws error when window is closed before print', closedErrorThrown === true);
+  assert(
+    'printWebBill throws error when window is closed before print',
+    closedErrorThrown === true,
+  );
 
   // 1.6 printWebBill awaits deferred onload and rejects if window is closed during loading
   let deferredPrintTriggered = false;
@@ -265,13 +320,16 @@ async function run() {
   const printPromise = printWebBill(
     sampleBill,
     { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-    { language: 'en' as any }
+    { language: 'en' as any },
   );
 
   // Trigger onload callback
   if (mockOnloadCallback) (mockOnloadCallback as any)();
   await printPromise;
-  assert('printWebBill resolves after deferred onload triggers print', deferredPrintTriggered === true);
+  assert(
+    'printWebBill resolves after deferred onload triggers print',
+    deferredPrintTriggered === true,
+  );
 
   // Test deferred window close rejection
   let deferredClosedErrorThrown = false;
@@ -280,7 +338,7 @@ async function run() {
   const printClosedPromise = printWebBill(
     sampleBill,
     { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-    { language: 'en' as any }
+    { language: 'en' as any },
   );
   // Window closed before onload
   try {
@@ -289,7 +347,10 @@ async function run() {
   } catch (err: any) {
     deferredClosedErrorThrown = err.message.includes('Print window was closed');
   }
-  assert('printWebBill rejects when deferred window is closed before onload', deferredClosedErrorThrown === true);
+  assert(
+    'printWebBill rejects when deferred window is closed before onload',
+    deferredClosedErrorThrown === true,
+  );
 
   // 1.7 printWebBill rejects via poll timer when onload NEVER fires and window is closed
   let pollClosedErrorThrown = false;
@@ -312,7 +373,7 @@ async function run() {
   const pollPrintPromise = printWebBill(
     sampleBill,
     { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-    { language: 'en' as any }
+    { language: 'en' as any },
   );
 
   // Close window after 60ms without triggering onload
@@ -325,7 +386,10 @@ async function run() {
   } catch (err: any) {
     pollClosedErrorThrown = err.message.includes('Print window was closed');
   }
-  assert('printWebBill rejects via polling watcher when window closes during loading', pollClosedErrorThrown === true);
+  assert(
+    'printWebBill rejects via polling watcher when window closes during loading',
+    pollClosedErrorThrown === true,
+  );
 
   (global as any).window = originalWindow;
 
@@ -350,7 +414,31 @@ async function run() {
 
   // 2.2 Translation parity in all message files
   const MESSAGES_DIR = path.resolve(__dirname, '../frontend/src/lib/i18n/messages');
-  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne', 'mr']) {
+  for (const lang of [
+    'en',
+    'es',
+    'fr',
+    'pt',
+    'ru',
+    'fa',
+    'ur',
+    'it',
+    'ja',
+    'zh',
+    'zh-tw',
+    'ko',
+    'id',
+    'nl',
+    'hi',
+    'bn',
+    'sq',
+    'vi',
+    'th',
+    'ne',
+    'ha',
+    'jv',
+    'mr',
+  ]) {
     const filePath = path.join(MESSAGES_DIR, `${lang}.json`);
     const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const translation = content?.orders?.itemStatusVoidAdjustment;
@@ -454,14 +542,46 @@ async function run() {
   ];
 
   const itemStatusColors: Record<string, { bg: string; text: string; dot: string }> = {
-    pending: { bg: 'background-color: #fefce8;', text: 'color: #a16207;', dot: 'background-color: #eab308;' },
-    waiting: { bg: 'background-color: #fefce8;', text: 'color: #a16207;', dot: 'background-color: #eab308;' },
-    preparing: { bg: 'background-color: #eff6ff;', text: 'color: #1d4ed8;', dot: 'background-color: #3b82f6;' },
-    ready: { bg: 'background-color: #f0fdf4;', text: 'color: #15803d;', dot: 'background-color: #22c55e;' },
-    served: { bg: 'background-color: #faf5ff;', text: 'color: #7e22ce;', dot: 'background-color: #a855f7;' },
-    cancelled: { bg: 'background-color: #fef2f2;', text: 'color: #ef4444;', dot: 'background-color: #f87171;' },
-    voided: { bg: 'background-color: #fef2f2;', text: 'color: #ef4444;', dot: 'background-color: #f87171;' },
-    void_adjustment: { bg: 'background-color: #fef2f2;', text: 'color: #ef4444;', dot: 'background-color: #f87171;' },
+    pending: {
+      bg: 'background-color: #fefce8;',
+      text: 'color: #a16207;',
+      dot: 'background-color: #eab308;',
+    },
+    waiting: {
+      bg: 'background-color: #fefce8;',
+      text: 'color: #a16207;',
+      dot: 'background-color: #eab308;',
+    },
+    preparing: {
+      bg: 'background-color: #eff6ff;',
+      text: 'color: #1d4ed8;',
+      dot: 'background-color: #3b82f6;',
+    },
+    ready: {
+      bg: 'background-color: #f0fdf4;',
+      text: 'color: #15803d;',
+      dot: 'background-color: #22c55e;',
+    },
+    served: {
+      bg: 'background-color: #faf5ff;',
+      text: 'color: #7e22ce;',
+      dot: 'background-color: #a855f7;',
+    },
+    cancelled: {
+      bg: 'background-color: #fef2f2;',
+      text: 'color: #ef4444;',
+      dot: 'background-color: #f87171;',
+    },
+    voided: {
+      bg: 'background-color: #fef2f2;',
+      text: 'color: #ef4444;',
+      dot: 'background-color: #f87171;',
+    },
+    void_adjustment: {
+      bg: 'background-color: #fef2f2;',
+      text: 'color: #ef4444;',
+      dot: 'background-color: #f87171;',
+    },
   };
 
   function renderTablesPageHtml(lang: string, dir: 'ltr' | 'rtl') {
@@ -605,59 +725,79 @@ async function run() {
   visualArtifacts.push({
     filename: 'web_print_bill_en',
     title: 'Web Print Bill (English - lang="en")',
-    html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe Manhattan',
-      currency: 'USD',
-      country: 'US',
-      timezone: 'America/New_York',
-    }, { language: 'en' }),
+    html: generateBillHtml(
+      sampleBill,
+      {
+        business_name: 'FloCafe Manhattan',
+        currency: 'USD',
+        country: 'US',
+        timezone: 'America/New_York',
+      },
+      { language: 'en' },
+    ),
   });
 
   visualArtifacts.push({
     filename: 'web_print_bill_es',
     title: 'Web Print Bill (Spanish - lang="es")',
-    html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe Madrid',
-      currency: 'EUR',
-      country: 'ES',
-      timezone: 'Europe/Madrid',
-    }, { language: 'es' }),
+    html: generateBillHtml(
+      sampleBill,
+      {
+        business_name: 'FloCafe Madrid',
+        currency: 'EUR',
+        country: 'ES',
+        timezone: 'Europe/Madrid',
+      },
+      { language: 'es' },
+    ),
   });
 
   visualArtifacts.push({
     filename: 'web_print_bill_fr_fr',
     title: 'Web Print Bill (French - lang="fr-FR")',
-    html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe Paris',
-      currency: 'EUR',
-      country: 'FR',
-      timezone: 'Europe/Paris',
-    }, { language: 'fr' }),
+    html: generateBillHtml(
+      sampleBill,
+      {
+        business_name: 'FloCafe Paris',
+        currency: 'EUR',
+        country: 'FR',
+        timezone: 'Europe/Paris',
+      },
+      { language: 'fr' },
+    ),
   });
 
   visualArtifacts.push({
     filename: 'web_print_bill_pt_br',
     title: 'Web Print Bill (Portuguese - lang="pt-BR")',
-    html: generateBillHtml(sampleBill, {
-      business_name: 'FloCafe São Paulo',
-      currency: 'BRL',
-      country: 'BR',
-      timezone: 'America/Sao_Paulo',
-    }, { language: 'pt' }),
+    html: generateBillHtml(
+      sampleBill,
+      {
+        business_name: 'FloCafe São Paulo',
+        currency: 'BRL',
+        country: 'BR',
+        timezone: 'America/Sao_Paulo',
+      },
+      { language: 'pt' },
+    ),
   });
 
   visualArtifacts.push({
     filename: 'web_print_bill_fa_ir',
     title: 'Web Print Bill (Persian RTL - lang="fa-IR")',
-    html: generateBillHtml(sampleBill, {
-      business_name: 'کافه فلو تهران',
-      currency: 'IRR',
-      country: 'IR',
-      timezone: 'Asia/Tehran',
-      currency_display: 'rial',
-      number_digits: 'locale',
-      calendar: 'persian',
-    }, { language: 'fa' }),
+    html: generateBillHtml(
+      sampleBill,
+      {
+        business_name: 'کافه فلو تهران',
+        currency: 'IRR',
+        country: 'IR',
+        timezone: 'Asia/Tehran',
+        currency_display: 'rial',
+        number_digits: 'locale',
+        calendar: 'persian',
+      },
+      { language: 'fa' },
+    ),
   });
 
   // Write all HTML files to evidence dir
@@ -670,7 +810,9 @@ async function run() {
   // Use Playwright to capture screenshots
   let browser: any;
   try {
-    const playwright = require(path.resolve(__dirname, '../frontend/node_modules/@playwright/test'));
+    const playwright = require(
+      path.resolve(__dirname, '../frontend/node_modules/@playwright/test'),
+    );
     browser = await playwright.chromium.launch({ headless: true });
     const context = await browser.newContext({
       viewport: { width: 780, height: 800 },
@@ -690,7 +832,6 @@ async function run() {
       }
       console.log(`  ✓ Captured PNG Screenshot: ${pngPath}`);
     }
-
   } catch (err: any) {
     if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     console.warn(`  ! Could not capture Playwright screenshots: ${err?.message || err}`);
@@ -699,7 +840,9 @@ async function run() {
   }
 
   console.log('\n================================================================');
-  console.log(`Audit Remediations Test Summary: ${passed + failed} tests | ${passed} passed | ${failed} failed`);
+  console.log(
+    `Audit Remediations Test Summary: ${passed + failed} tests | ${passed} passed | ${failed} failed`,
+  );
   console.log('================================================================');
 
   if (failed > 0) {

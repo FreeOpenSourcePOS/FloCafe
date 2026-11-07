@@ -1806,28 +1806,13 @@ function getRecoverySchemaReference(targetVersion?: number): SchemaRecoveryRefer
     const ref: SchemaRecoveryReference = {
       identity: currentIdentity,
       tableColumns: new Map(getTables(idealDb).map((table) => [table, getColumns(idealDb, table)])),
-      definitions: normalizedSchemaDefinitions(idealDb),
+      definitions: getSchemaDefinitions(idealDb),
     };
     cachedSchemaRecoveryReferences.set(version, ref);
     return ref;
   } finally {
     idealDb.close();
   }
-}
-
-function normalizedSchemaDefinitions(dbInstance: Database.Database): Map<string, string> {
-  const definitions = dbInstance
-    .prepare(`
-    SELECT type, name, tbl_name, sql FROM sqlite_master
-    WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name <> '_flo_meta'
-  `)
-    .all() as { type: string; name: string; tbl_name: string; sql: string }[];
-  return new Map(
-    definitions.map((row) => [
-      `${row.type}:${row.name}`,
-      row.sql.replace(/\s+/g, ' ').trim().toLowerCase(),
-    ]),
-  );
 }
 
 function checkHealthyDatabaseFile(
@@ -1879,7 +1864,7 @@ function checkHealthyDatabaseFile(
           const available = new Set(getColumns(candidate, table));
           return columns.every((column) => available.has(column));
         });
-        const actualDefinitions = normalizedSchemaDefinitions(candidate);
+        const actualDefinitions = getSchemaDefinitions(candidate);
         const requiredDefinitionsValid = [...schemaRef.definitions].every(([key, sql]) =>
           actualDefinitions.has(key)
             ? actualDefinitions.get(key) === sql
@@ -4831,6 +4816,64 @@ function extractParenthesizedClauses(sql: string, keywordPattern: RegExp): strin
   return clauses.sort();
 }
 
+function splitCreateTableDefinitions(normalizedSql: string): string[] {
+  if (/^CREATE VIRTUAL TABLE\b/i.test(normalizedSql)) return [];
+  const openParen = normalizedSql.indexOf('(');
+  if (openParen === -1) return [];
+  const definitions: string[] = [];
+  let depth = 0;
+  let inQuote = false;
+  let start = openParen + 1;
+  for (let i = openParen; i < normalizedSql.length; i++) {
+    const ch = normalizedSql[i];
+    if (ch === "'") {
+      inQuote = !inQuote;
+      continue;
+    }
+    if (inQuote) continue;
+    if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+      if (depth === 0) {
+        const clause = normalizedSql.slice(start, i).trim();
+        if (clause) definitions.push(clause);
+        break;
+      }
+    } else if (ch === ',' && depth === 1) {
+      const clause = normalizedSql.slice(start, i).trim();
+      if (clause) definitions.push(clause);
+      start = i + 1;
+    }
+  }
+  return definitions;
+}
+
+function stripLiteralsAndParentheses(sql: string): string {
+  let result = '';
+  let depth = 0;
+  let inQuote = false;
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    if (ch === "'") {
+      inQuote = !inQuote;
+      if (depth === 0) result += ch;
+      continue;
+    }
+    if (inQuote) continue;
+    if (ch === '(') {
+      if (depth === 0) result += '(';
+      depth++;
+    } else if (ch === ')') {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) result += ')';
+    } else if (depth === 0) {
+      result += ch;
+    }
+  }
+  return result;
+}
+
 // Upgraded databases (ALTER ADD COLUMN, table rebuilds) and fresh installs yield identical
 // structure with different CREATE TABLE text and column order, so tables compare structurally.
 function describeTableStructure(dbInstance: Database.Database, tableName: string, sql: string) {
@@ -4861,6 +4904,83 @@ function describeTableStructure(dbInstance: Database.Database, tableName: string
     .map((fk) => `${fk.from}->${fk.table}.${fk.to}:${fk.on_delete}:${fk.on_update}`)
     .sort();
   const normalizedSql = normalizeSchemaSql(sql);
+  const collations: string[] = [];
+  const uniqueConflictPolicies = new Map<string, string[]>();
+  const conflictPolicies: string[] = [];
+  const recordUniqueConflictPolicy = (key: string, policy: string) => {
+    const existing = uniqueConflictPolicies.get(key);
+    if (existing) existing.push(policy);
+    else uniqueConflictPolicies.set(key, [policy]);
+  };
+  for (const clause of splitCreateTableDefinitions(normalizedSql)) {
+    const unlabeled = clause.replace(/^CONSTRAINT\s+[A-Za-z_][A-Za-z0-9_]*\s+/i, '');
+    const isTableConstraint = /^(?:PRIMARY\s+KEY|UNIQUE|CHECK|FOREIGN\s+KEY)\b/i.test(unlabeled);
+    if (isTableConstraint) {
+      const topLevelConstraintSql = stripLiteralsAndParentheses(unlabeled);
+      const uniqueOrPkMatch = unlabeled.match(/^(PRIMARY\s+KEY|UNIQUE)\(([^)]*)\)/i);
+      if (uniqueOrPkMatch) {
+        const origin = /^PRIMARY/i.test(uniqueOrPkMatch[1]) ? 'pk' : 'u';
+        const cols = uniqueOrPkMatch[2]
+          .split(',')
+          .map((part) => {
+            const trimmed = part.trim();
+            const colName = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)/)?.[1] ?? trimmed;
+            for (const match of trimmed.matchAll(/\bCOLLATE\s+([A-Za-z_][A-Za-z0-9_]*)/gi)) {
+              collations.push(`${origin}(${colName}):${match[1].toUpperCase()}`);
+            }
+            return colName;
+          })
+          .join(',');
+        const conflictMatch = topLevelConstraintSql.match(
+          /\bON\s+CONFLICT\s+(ROLLBACK|ABORT|FAIL|IGNORE|REPLACE)\b/i,
+        );
+        const policy = (conflictMatch?.[1] || 'ABORT').toUpperCase();
+        recordUniqueConflictPolicy(`${origin}:${cols}`, policy);
+        if (policy !== 'ABORT') conflictPolicies.push(`${origin}(${cols}):${policy}`);
+      } else if (/^CHECK\b/i.test(unlabeled)) {
+        const conflictMatch = topLevelConstraintSql.match(
+          /\bON\s+CONFLICT\s+(ROLLBACK|ABORT|FAIL|IGNORE|REPLACE)\b/i,
+        );
+        const policy = (conflictMatch?.[1] || 'ABORT').toUpperCase();
+        if (policy !== 'ABORT') conflictPolicies.push(`check:${unlabeled}:${policy}`);
+      }
+      continue;
+    }
+    const colName = clause.match(/^([A-Za-z_][A-Za-z0-9_]*)\b/)?.[1];
+    if (!colName) continue;
+    const topLevelColSql = stripLiteralsAndParentheses(clause);
+    for (const match of topLevelColSql.matchAll(/\bCOLLATE\s+([A-Za-z_][A-Za-z0-9_]*)/gi)) {
+      collations.push(`${colName}:${match[1].toUpperCase()}`);
+    }
+    const uniqueMatch = topLevelColSql.match(
+      /\bUNIQUE(?:\s+ON\s+CONFLICT\s+(ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\b/i,
+    );
+    if (uniqueMatch) {
+      const policy = (uniqueMatch[1] || 'ABORT').toUpperCase();
+      recordUniqueConflictPolicy(`u:${colName}`, policy);
+      if (policy !== 'ABORT') conflictPolicies.push(`u(${colName}):${policy}`);
+    }
+    const pkMatch = topLevelColSql.match(
+      /\bPRIMARY\s+KEY(?:\s+(?:ASC|DESC))?(?:\s+ON\s+CONFLICT\s+(ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?\b/i,
+    );
+    if (pkMatch) {
+      const policy = (pkMatch[1] || 'ABORT').toUpperCase();
+      recordUniqueConflictPolicy(`pk:${colName}`, policy);
+      if (policy !== 'ABORT') conflictPolicies.push(`pk(${colName}):${policy}`);
+    }
+    const notNullMatch = topLevelColSql.match(
+      /\bNOT\s+NULL\s+ON\s+CONFLICT\s+(ROLLBACK|ABORT|FAIL|IGNORE|REPLACE)\b/i,
+    );
+    if (notNullMatch && notNullMatch[1].toUpperCase() !== 'ABORT') {
+      conflictPolicies.push(`notnull(${colName}):${notNullMatch[1].toUpperCase()}`);
+    }
+    const checkMatch = topLevelColSql.match(
+      /\bCHECK\(\)\s+ON\s+CONFLICT\s+(ROLLBACK|ABORT|FAIL|IGNORE|REPLACE)\b/i,
+    );
+    if (checkMatch && checkMatch[1].toUpperCase() !== 'ABORT') {
+      conflictPolicies.push(`check(${colName}):${checkMatch[1].toUpperCase()}`);
+    }
+  }
   // Implicit UNIQUE / PRIMARY KEY indexes carry the uniqueness rules ON CONFLICT relies on.
   const uniqueConstraints = (
     dbInstance.prepare(`PRAGMA index_list(${tableName})`).all() as {
@@ -4875,16 +4995,21 @@ function describeTableStructure(dbInstance: Database.Database, tableName: string
       const columns = (
         dbInstance.prepare(`PRAGMA index_info(${index.name})`).all() as { name: string }[]
       ).map((column) => column.name);
-      return `${index.origin}:${index.unique}:${columns.join(',')}`;
+      const conflictPolicy = (
+        uniqueConflictPolicies.get(`${index.origin}:${columns.join(',')}`) ?? ['ABORT']
+      )
+        .slice()
+        .sort()
+        .join(',');
+      return `${index.origin}:${index.unique}:${columns.join(',')}:${conflictPolicy}`;
     })
     .sort();
   return JSON.stringify({
     uniqueConstraints,
+    conflictPolicies: conflictPolicies.sort(),
     autoincrement: /\bAUTOINCREMENT\b/i.test(normalizedSql),
     withoutRowid: /\bWITHOUT ROWID\b/i.test(normalizedSql),
-    collations: [...normalizedSql.matchAll(/\bCOLLATE\s+([A-Za-z_]+)/gi)]
-      .map((match) => match[1].toUpperCase())
-      .sort(),
+    collations: collations.sort(),
     columns,
     foreignKeys,
     checks: extractParenthesizedClauses(normalizedSql, /\bCHECK\s*(?=\()/),
@@ -5330,17 +5455,10 @@ function validateDirectBackup(backupPath: string, currentVersion: number): strin
     }
     // The backup replaces the live database, so it must match the schema this
     // version defines, not whatever the live file happens to look like.
-    const expectedDb = buildIdealSchemaDb(currentVersion);
-    let currentTables: string[];
-    let expectedColumns: Map<string, string[]>;
-    let currentSchema: Map<string, string>;
-    try {
-      currentTables = getTables(expectedDb);
-      expectedColumns = new Map(currentTables.map((name) => [name, getColumns(expectedDb, name)]));
-      currentSchema = getSchemaDefinitions(expectedDb);
-    } finally {
-      expectedDb.close();
-    }
+    const schemaRef = getRecoverySchemaReference(currentVersion);
+    const expectedColumns = schemaRef.tableColumns;
+    const currentTables = [...expectedColumns.keys()];
+    const currentSchema = schemaRef.definitions;
     const backupTables = new Set(getTables(backupDb));
     const missingTables = currentTables.filter((tableName) => !backupTables.has(tableName));
     if (missingTables.length > 0) {

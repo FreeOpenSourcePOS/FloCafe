@@ -366,6 +366,8 @@ function run(): void {
     'vi',
     'th',
     'ne',
+    'ha',
+    'jv',
     'mr',
   ] as const) {
     usePosSettingsStore.getState().setLanguage(ltrLang);
@@ -473,6 +475,8 @@ function run(): void {
     'vi',
     'th',
     'ne',
+    'ha',
+    'jv',
     'mr',
   ] as const) {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);

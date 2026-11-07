@@ -64,17 +64,17 @@ While translating:
   such as an email or IP address. Anything else renders as untranslated English to your users, and
   the check will reject it.
 - For a language with combining marks, the value must be in Unicode NFC. `tests/translations.test.ts`
-  enforces NFC for the languages it checks by name, which are `mr`, `ne`, `ru`, `th`, and `vi`.
-- Avoid invisible formatting characters. The Russian validator in `tests/translations.test.ts` rejects
-  U+200B, U+200C, U+200D, U+00AD, and U+FEFF, because they corrupt printed text silently. No other
-  language's validator checks for them yet, so this is your responsibility to get right rather than
-  something the test will catch.
+  enforces NFC for the languages it checks by name, which are `ha`, `jv`, `mr`, `ne`, `ru`, `th`, and `vi`.
+- Avoid invisible formatting characters. The Russian and Javanese validators in
+  `tests/translations.test.ts` reject U+200B, U+200C, U+200D, U+00AD, and U+FEFF, because they
+  corrupt printed text silently. Other language validators do not check for them yet, so this is
+  your responsibility to get right rather than something the test will catch.
 - Do not start a value with `[TODO]` or any other placeholder prefix. The check rejects it.
 
 ## 4. Register the intentional-identical keys
 
 Each language has a `<LANG>_INTENTIONAL_IDENTICAL` set in `tests/translations.test.ts` listing the
-keys allowed to be English-identical, most with a comment saying why. There are 20 such sets.
+keys allowed to be English-identical, most with a comment saying why. There are 22 such sets.
 
 Add an entry for every key you deliberately left identical, with a comment giving the reason. Without
 the entry the check fails, and the failure is what keeps an accidentally untranslated string from
@@ -99,7 +99,16 @@ copied from another script fails the run rather than shipping as a plausible-loo
 The expected scripts are derived from the registry through `Intl.Locale`, so a new language is
 covered without an edit here.
 
-## 6. Regenerate the print labels
+## 6. Add startup and shutdown status messages
+
+[`main/status-messages.ts`](../../main/status-messages.ts) holds the localized strings for the
+native startup and shutdown status window in `TABLES`. Add an entry for `<lang>` covering all eight
+`StatusKey` entries (`starting`, `checking`, `backingUp`, `services`, `welcome`, `closing`,
+`shutdownBackup`, and `saved`). If the language is right-to-left, also add it to
+`RTL_STATUS_LANGUAGES` in the same file. `tests/status-messages.test.ts` verifies that every
+registered language in `frontend/src/lib/i18n/languages.ts` has a complete entry in `TABLES`.
+
+## 7. Regenerate the print labels
 
 ```sh
 npm run generate:print-labels
@@ -113,20 +122,20 @@ back to English.
 If you add a new print concept, add its id to `PRINT_CONCEPT_IDS` in `shared/print/concepts.ts` in
 the same order the generator uses, then regenerate.
 
-## 7. Extend the test locale matrices
+## 8. Extend the test locale matrices
 
 Several tests iterate a hard-coded array of locale codes rather than reading the registry. A new
 language is not covered by them until you add it:
 
 | File | Array | Current coverage |
 | --- | --- | --- |
-| `tests/phase3-print-regressions.test.ts` | `languages` | 22 of 23; omits `ar`. |
-| `tests/issue-241-localized-errors.test.ts` | `LANGUAGES` | 11 of 23; omits 12 including `ar` and `ur`. |
-| `tests/rtl-setup-auth-settings.test.ts` | `languages` | 19 of 23; omits `ar`, `de`, `fil`, `tr`. |
-| `tests/browser-receipts.test.ts` | loop array | 19 of 23; omits `ar`, `de`, `fil`, `tr`. |
-| `tests/i18n-audit-remediations.test.ts` | two loop arrays | 19 of 23 each; omits `ar`, `de`, `fil`, `tr`. |
-| `tests/rtl-kds-server-whatsapp.test.ts` | four loop arrays | 19 of 23 for the all-language loops, 17 for the LTR-only loops. |
-| `tests/rtl-dashboard-pos-common.test.ts` | two LTR-only loop arrays | 17 of 23; omits the RTL languages plus `de`, `fil`, `tr`. |
+| `tests/phase3-print-regressions.test.ts` | `languages` | 25 of 26; omits `ar`. |
+| `tests/issue-241-localized-errors.test.ts` | `LANGUAGES` | All 26 (`Object.keys(LANGUAGE_REGISTRY)`). |
+| `tests/rtl-setup-auth-settings.test.ts` | `languages` | 22 of 26; omits `ar`, `de`, `fil`, `tr`. |
+| `tests/browser-receipts.test.ts` | loop array | 22 of 26; omits `ar`, `de`, `fil`, `tr`. |
+| `tests/i18n-audit-remediations.test.ts` | two loop arrays | 22 of 26 each; omits `ar`, `de`, `fil`, `tr`. |
+| `tests/rtl-kds-server-whatsapp.test.ts` | four loop arrays | 22 of 26 for the all-language loops, 20 for the LTR-only loop. |
+| `tests/rtl-dashboard-pos-common.test.ts` | two LTR-only loop arrays | 20 of 26; omits the RTL languages plus `de`, `fil`, `tr`. |
 
 This is a known baseline, not something this procedure introduces. Several of these arrays already
 omit registered locales, so they are not a reliable coverage signal. The arrays whose names include
@@ -136,7 +145,7 @@ The pattern that does not drift is in `tests/print-labels.test.ts`: it reads
 `Object.keys(LANGUAGES)` and asserts the generated `PRINT_LABEL_LANGUAGES` equals it, so a new
 language is covered with no edit. Prefer that shape if you are adding coverage.
 
-## 8. Verify
+## 9. Verify
 
 ```sh
 npm run i18n:check

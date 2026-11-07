@@ -183,6 +183,20 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/ne.json'),
   },
+  ha: {
+    locale: 'ha-NG',
+    nativeName: 'Hausa',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ha.json'),
+  },
+  jv: {
+    locale: 'jv-ID',
+    nativeName: 'Basa Jawa',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/jv.json'),
+  },
   mr: {
     locale: 'mr-IN',
     nativeName: 'मराठी',

@@ -509,19 +509,19 @@ async function main() {
     const html58 = generateBillHtml(sampleBill, sampleTenant, { paperSize: 'thermal58' });
     assertOrThrow(
       html58.includes(
-        '.bill-container { padding: 5px; max-width: 58mm; font-size: 12px; color: #000; }',
+        '.bill-container { padding: 2mm; width: 100%; max-width: 58mm; font-size: 13px; font-weight: 600; color: #000; }',
       ),
-      'thermal58 sets .bill-container to 12px and #000',
+      'thermal58 sets .bill-container to 13px, font-weight 600, and #000',
     );
     assertOrThrow(
       html58.includes(
-        '.items-table td { border-bottom: 1px dashed #000; font-size: 12px; font-weight: 500; }',
+        '.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: 13px; font-weight: 600; }',
       ),
-      'thermal58 sets .items-table td to 12px, font-weight 500, and 1px dashed #000',
+      'thermal58 sets .items-table td to 13px, font-weight 600, and 1px dashed #000',
     );
     assertOrThrow(
       html58.includes(
-        '.items-table th, .tax-table th, .payments-table th { background: transparent; border-bottom: 1px solid #000; }',
+        '.items-table th, .tax-table th, .payments-table th { background: transparent; color: #000; border-bottom: 1px solid #000; font-weight: 700; }',
       ),
       'thermal58 removes gray header backgrounds on items/tax/payments tables',
     );
@@ -530,26 +530,26 @@ async function main() {
       'thermal58 expands tax-table and payments-table to 100% width',
     );
     assertOrThrow(
-      html58.includes('.header h1 { font-size: 15px; }'),
-      'thermal58 sets .header h1 to 15px',
+      html58.includes('.header h1 { font-size: 17px; font-weight: 700; color: #000; }'),
+      'thermal58 sets .header h1 to 17px, font-weight 700, and #000',
     );
 
     const html80 = generateBillHtml(sampleBill, sampleTenant, { paperSize: 'thermal80' });
     assertOrThrow(
       html80.includes(
-        '.bill-container { padding: 10px; max-width: 80mm; font-size: 13px; color: #000; }',
+        '.bill-container { padding: 3mm; width: 100%; max-width: 80mm; font-size: 14px; font-weight: 600; color: #000; }',
       ),
-      'thermal80 sets .bill-container to 13px and #000',
+      'thermal80 sets .bill-container to 14px, font-weight 600, and #000',
     );
     assertOrThrow(
       html80.includes(
-        '.items-table td { border-bottom: 1px dashed #000; font-size: 13px; font-weight: 500; }',
+        '.items-table td { color: #000; border-bottom: 1px dashed #000; font-size: 14px; font-weight: 600; }',
       ),
-      'thermal80 sets .items-table td to 13px, font-weight 500, and 1px dashed #000',
+      'thermal80 sets .items-table td to 14px, font-weight 600, and 1px dashed #000',
     );
     assertOrThrow(
-      html80.includes('.header h1 { font-size: 17px; }'),
-      'thermal80 sets .header h1 to 17px',
+      html80.includes('.header h1 { font-size: 18px; font-weight: 700; color: #000; }'),
+      'thermal80 sets .header h1 to 18px, font-weight 700, and #000',
     );
 
     const orderSlipLabels = {
@@ -564,8 +564,8 @@ async function main() {
     };
     const slip58 = generateOrderSlipHtml(sampleBill, orderSlipLabels, { paperWidth: 58 });
     assertOrThrow(
-      slip58.includes('font-size:12px;') && slip58.includes('color:#000;'),
-      '58mm order slip uses font-size:12px and color:#000',
+      slip58.includes('font-size:13px;') && slip58.includes('color:#000;'),
+      '58mm order slip uses font-size:13px and color:#000',
     );
     assertOrThrow(
       !slip58.includes('color:#444;'),
@@ -573,8 +573,8 @@ async function main() {
     );
     const slip80 = generateOrderSlipHtml(sampleBill, orderSlipLabels, { paperWidth: 80 });
     assertOrThrow(
-      slip80.includes('font-size:13px;') && slip80.includes('color:#000;'),
-      '80mm order slip uses font-size:13px and color:#000',
+      slip80.includes('font-size:14px;') && slip80.includes('color:#000;'),
+      '80mm order slip uses font-size:14px and color:#000',
     );
     assertOrThrow(
       !slip80.includes('color:#444;'),

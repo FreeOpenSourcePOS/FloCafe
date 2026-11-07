@@ -1115,3 +1115,186 @@ test('tax breakdown rates, space-grouped addon prices, and zero-gap/wrapped fina
     /overflows available line width/i,
   );
 });
+
+test('printerShape includes normalized textSize on capabilities', () => {
+  const { printerShape } =
+    require('../main/routes/printers') as typeof import('../main/routes/printers');
+  const defaultShape = printerShape({
+    id: 'p-1',
+    name: 'XP-58',
+    connection_type: 'usb',
+    paper_width: 'cols-32',
+    is_default: 1,
+  });
+  assert.equal(defaultShape.text_size, 'normal');
+  assert.equal(defaultShape.capabilities.textSize, 'normal');
+
+  for (const size of SIZES) {
+    const shaped = printerShape({
+      id: `p-${size}`,
+      name: 'XP-58',
+      connection_type: 'usb',
+      paper_width: 'cols-32',
+      text_size: size,
+      is_default: 1,
+    });
+    assert.equal(shaped.text_size, size);
+    assert.equal(shaped.capabilities.textSize, size);
+  }
+});
+
+test('frontend WebUSB byte encoders apply capabilities.textSize across 58mm and 80mm while keeping normal byte-identical', () => {
+  const { loadFrontendPrintModules } =
+    require('./helpers/receipt-column-measure') as typeof import('./helpers/receipt-column-measure');
+  const { GENERIC_THERMAL_CAPABILITIES } =
+    require('../shared/print/thermal-capabilities') as typeof import('../shared/print/thermal-capabilities');
+  const fe = loadFrontendPrintModules();
+
+  const webusbOrder: any = {
+    id: 1,
+    order_number: 'ORD-1001',
+    type: 'delivery',
+    created_at: '2026-04-21T10:30:00Z',
+    table: { name: 'T3' },
+    customer: { name: 'Ada Lovelace', phone: '+15551234567' },
+    delivery_address: '10 Downing St, London',
+    special_instructions: 'Ring bell twice',
+    items: [
+      {
+        id: 1,
+        product_name: 'Double Espresso Macchiato',
+        quantity: 2,
+        unit_price: 12.5,
+        subtotal: 25,
+        tax_amount: 2.5,
+        total: 27.5,
+        status: 'pending',
+        addons: [{ name: 'Oat Milk', price: 1.5, quantity: 1 }],
+        special_instructions: 'Extra hot',
+      },
+    ],
+  };
+  const webusbBill: any = {
+    id: 1,
+    order_id: 1,
+    bill_number: 'INV-1001',
+    subtotal: 28,
+    discount_amount: 0,
+    tax_amount: 2.8,
+    total: 30.8,
+    paid_amount: 30.8,
+    payment_status: 'paid',
+    payment_details: [{ method: 'card', amount: 30.8 }],
+    order: webusbOrder,
+  };
+  const webusbTenant: any = {
+    business_name: 'FloCafe Test',
+    currency: 'USD',
+    country: 'US',
+    timezone: 'UTC',
+  };
+  const contact = { name: 'Ada Lovelace', phone: '+15551234567', address: '10 Downing St' };
+
+  /** GS ! size bytes written before text lines. */
+  const gsModes = (bytes: Uint8Array): number[] => {
+    const out: number[] = [];
+    for (let i = 0; i < bytes.length - 2; i += 1) {
+      if (bytes[i] === 0x1d && bytes[i + 1] === 0x21 && bytes[i + 2] !== 0) {
+        out.push(bytes[i + 2]);
+      }
+    }
+    return out;
+  };
+
+  for (const paperWidth of [58, 80] as const) {
+    const maxCols = paperWidth === 58 ? 32 : 42;
+    const encoders = [
+      {
+        name: 'classic receipt',
+        run: (caps: any) =>
+          fe.receiptEncoder.buildClassicReceiptBytes(webusbBill, webusbTenant, {
+            paperWidth,
+            capabilities: caps,
+          }),
+      },
+      {
+        name: 'compact receipt',
+        run: (caps: any) =>
+          fe.receiptEncoder.buildCompactReceiptBytes(webusbBill, webusbTenant, {
+            paperWidth,
+            capabilities: caps,
+          }),
+      },
+      {
+        name: 'detailed receipt',
+        run: (caps: any) =>
+          fe.receiptEncoder.buildDetailedReceiptBytes(webusbBill, webusbTenant, {
+            paperWidth,
+            capabilities: caps,
+          }),
+      },
+      {
+        name: 'kot',
+        run: (caps: any) =>
+          fe.kotEncoder.buildKotBytes(webusbOrder, { paperWidth, capabilities: caps }),
+      },
+      {
+        name: 'delivery slip',
+        run: (caps: any) =>
+          fe.deliverySlipEncoder.buildDeliverySlipBytes(webusbOrder, webusbOrder.items, contact, {
+            paperWidth,
+            capabilities: caps,
+          }),
+      },
+      {
+        name: 'tax bill',
+        run: (caps: any) =>
+          fe.taxBillEncoder.buildTaxBillBytes(webusbBill, webusbTenant, {
+            paperWidth,
+            capabilities: caps,
+          }),
+      },
+    ];
+
+    for (const { name, run } of encoders) {
+      const unsetBytes = run(GENERIC_THERMAL_CAPABILITIES);
+      const normalBytes = run({ ...GENERIC_THERMAL_CAPABILITIES, textSize: 'normal' });
+      assert.deepEqual(
+        normalBytes,
+        unsetBytes,
+        `${name} (${paperWidth}mm): normal is byte-identical to unset`,
+      );
+
+      const largeBytes = run({ ...GENERIC_THERMAL_CAPABILITIES, textSize: 'large' });
+      const largeMeas = measureEscPos(largeBytes);
+      assert.equal(largeMeas.unconsumedControlBytes, 0);
+      assert.ok(
+        largeMeas.maxCells <= maxCols,
+        `${name} (${paperWidth}mm): large stays within ${maxCols} cells (got ${largeMeas.maxCells})`,
+      );
+      const largeGs = gsModes(largeBytes);
+      assert.ok(
+        largeGs.length > 0 && largeGs.every((m) => (m & 0x0f) >= 1),
+        `${name} (${paperWidth}mm): large emits double-height GS ! commands`,
+      );
+
+      const xlBytes = run({ ...GENERIC_THERMAL_CAPABILITIES, textSize: 'extra_large' });
+      const xlMeas = measureEscPos(xlBytes);
+      assert.equal(xlMeas.unconsumedControlBytes, 0);
+      assert.ok(
+        xlMeas.maxCells <= maxCols,
+        `${name} (${paperWidth}mm): extra_large stays within ${maxCols} cells (got ${xlMeas.maxCells})`,
+      );
+      assert.equal(
+        xlMeas.maxFontACells,
+        0,
+        `${name} (${paperWidth}mm): extra_large leaves no single-width Font A text lines`,
+      );
+      const xlGs = gsModes(xlBytes);
+      assert.ok(
+        xlGs.length > 0 && xlGs.every((m) => ((m >> 4) & 0x0f) >= 1 && (m & 0x0f) >= 1),
+        `${name} (${paperWidth}mm): extra_large emits double-width + double-height GS ! commands`,
+      );
+    }
+  }
+});

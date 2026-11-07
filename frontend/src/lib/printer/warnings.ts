@@ -119,6 +119,16 @@ function resolveBrowserRasterCanvasFactory(): BrowserRasterCanvasFactory {
 }
 
 function resolveFinancialRasterLayout(sanitized: string): RasterTextLayout | undefined {
+  const stackedMatch = sanitized.match(/^([^\n]*\S[^\n]*)\n\s*(\S[^\n]*)$/);
+  if (stackedMatch) {
+    return {
+      kind: 'financial-summary',
+      columns: [
+        { text: stackedMatch[1].trimEnd(), align: 'left' },
+        { text: stackedMatch[2].trim(), align: 'right' },
+      ],
+    };
+  }
   const multiSpaceMatch = sanitized.match(/^(\s*\S+(?:\s\S+)*?)\s{2,}(\S.*)$/);
   if (multiSpaceMatch) {
     return {
@@ -229,7 +239,7 @@ export function safePrinterText<T extends { text(value: string): T }>(
       return enc.text(boundShapedText(sanitized, maxCols));
     }
     if (!representable) {
-      const sanitized = value.replace(ESCPOS_TEXT_CONTROL_RE, '');
+      const sanitized = value.replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '');
       const canvasFactory = resolveBrowserRasterCanvasFactory();
       if (
         sanitized &&
@@ -240,9 +250,14 @@ export function safePrinterText<T extends { text(value: string): T }>(
       ) {
         const align: 'left' | 'center' =
           centerCols !== undefined && centerCols > 0 ? 'center' : 'left';
+        const textSize = thermalCapabilities.textSize ?? 'normal';
         const styles: RasterStyle[] = isStoreName
           ? ['bold', 'double-height', 'double-width']
-          : ['normal'];
+          : textSize === 'extra_large'
+            ? ['double-height', 'double-width']
+            : textSize === 'large'
+              ? ['double-height']
+              : ['normal'];
         const layout = financial ? resolveFinancialRasterLayout(sanitized) : undefined;
         const rasterResult = paintRasterRequest(
           {

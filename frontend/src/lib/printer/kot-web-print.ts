@@ -7,6 +7,7 @@ import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/langu
 import { defaultPrintLanguagePolicy, resolveKotLanguage } from '@print/policy';
 import { directionalText, isKotItemPending, type DirectionalText } from '@print/document';
 import { containsRtlScript } from '@print/direction';
+import { normalizePrinterTextSize, type PrinterTextSize } from '@print/text-size';
 import type { TextDirection } from '@print/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useAuthStore } from '@/store/auth';
@@ -17,6 +18,8 @@ import { formatItemHeading } from './item-heading';
 export interface KotWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
   paperWidth?: 58 | 80;
+  /** Per-printer text size ('normal' | 'large' | 'extra_large'). Default: 'normal'. */
+  textSize?: PrinterTextSize;
   /** UI/receipt language (defaults to the client KOT language policy). */
   language?: Language;
   /** Kitchen station name to print on the ticket. */
@@ -138,12 +141,36 @@ export function kotFontStackForLanguage(lang: Language): string {
 /** Generate the semantic KOT HTML fragment (without opening a print dialog). */
 export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): string {
   const paperWidth = opts.paperWidth ?? 58;
+  const textSize = normalizePrinterTextSize(opts.textSize);
   const lang = resolveKotTicketLanguage(opts.language);
   const tr = translatorFor(lang);
   const base = detectTicketDirection(lang);
   const timezone = resolveKotTimezone(opts.timezone);
 
-  const fontSize = paperWidth === 58 ? '10px' : '12px';
+  const fontSize =
+    paperWidth === 58
+      ? textSize === 'extra_large'
+        ? '16px'
+        : textSize === 'large'
+          ? '14px'
+          : '12px'
+      : textSize === 'extra_large'
+        ? '17px'
+        : textSize === 'large'
+          ? '15px'
+          : '13px';
+  const headingFontSize =
+    paperWidth === 58
+      ? textSize === 'extra_large'
+        ? '19px'
+        : textSize === 'large'
+          ? '17px'
+          : '15px'
+      : textSize === 'extra_large'
+        ? '20px'
+        : textSize === 'large'
+          ? '18px'
+          : '16px';
   const padding = paperWidth === 58 ? '4px' : '6px';
   const paperWidthCss = paperWidth === 58 ? '58mm' : '80mm';
   const locale = LANGUAGES[lang]?.locale ?? 'en-US';
@@ -203,8 +230,8 @@ export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): st
       : `<div style="margin:${padding} 0;">${escapeHtml(tr('print.kot.noPendingItems'))}</div>`;
 
   return `
-    <div class="kot-container" lang="${escapeHtml(locale)}" dir="${base}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;text-align:start;padding:${padding};font-family:${fontFamily};font-size:${fontSize};line-height:1.4;">
-      <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(tr('print.kot.banner'))}</h2>
+    <div class="kot-container" lang="${escapeHtml(locale)}" dir="${base}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;text-align:start;padding:${padding};font-family:${fontFamily};font-size:${fontSize};line-height:1.4;color:#000;font-weight:600;">
+      <h2 style="margin:0 0 ${padding} 0;font-size:${headingFontSize};text-align:center;color:#000;font-weight:700;">${escapeHtml(tr('print.kot.banner'))}</h2>
       ${stationName ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.station'))}: ${directionalValue(directionalText(stationName, base), base)}</p>` : ''}
       <p style="margin:2px 0;font-weight:bold;">${formatOrderNumberLabel(tr('pos.orderNumber'), orderNumber, base)}</p>
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(labelWithoutPlaceholder(tr('pos.tableLabel')))}: ${directionalValue(directionalText(String(order.table.name), base), base)}</p>` : ''}

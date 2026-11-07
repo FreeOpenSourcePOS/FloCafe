@@ -480,7 +480,13 @@ function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWi
       lineIndex = next;
       continue;
     }
-    groups.push({ groupId: `line-${lineIndex}`, lineIndex, lineCount: 1, lines: [line] });
+    groups.push({
+      groupId: `line-${lineIndex}`,
+      lineIndex,
+      lineCount: 1,
+      lines: [line],
+      ...(line.includes('{FINANCIAL}') ? { financial: true } : {}),
+    });
     lineIndex += 1;
   }
   return groups;
@@ -664,6 +670,7 @@ export async function renderUnsupportedRasterLines(
         lineIndex,
         lineCount: 1,
         lines: [lines[lineIndex]],
+        ...(lines[lineIndex].includes('{FINANCIAL}') ? { financial: true } : {}),
       });
   }
   completeGroups.sort((left, right) => left.lineIndex - right.lineIndex);
@@ -694,7 +701,10 @@ export async function renderUnsupportedRasterLines(
       }),
     );
     if (!needsRaster) continue;
-    const financial = ranges.some((range) => range.financial === true);
+    const financial = ranges.some(
+      (range) =>
+        range.financial === true || range.lines.some((line) => line.includes('{FINANCIAL}')),
+    );
     const renderedRanges: Array<{
       lineIndex: number;
       lineCount: number;
@@ -725,7 +735,7 @@ export async function renderUnsupportedRasterLines(
             ? financial
             : (range.financialSourceLines?.[physicalSourceLine.sourceIndex] ?? financial);
         const layout =
-          sourceText !== undefined && layoutFinancial
+          sourceText !== undefined
             ? range.sourceLayouts?.[physicalSourceLine.sourceIndex!]
             : undefined;
         const request = requestForRasterLine(

@@ -30,14 +30,14 @@ overwrites an existing catalogue, including when two people run it at once.
 
 Add a `<lang>` entry to `LANGUAGES` in `frontend/src/lib/i18n/languages.ts`:
 
-| Field | Value |
-| --- | --- |
-| key | `<lang>`, matching the filename. |
-| `locale` | The canonical BCP-47 tag. For a language with a region, this is where the region belongs: key `zh-tw`, locale `zh-TW`. |
-| `nativeName` | The endonym, written in the language itself. |
-| `direction` | `ltr`, or `rtl` for a right-to-left script. |
-| `selectable` | `true` once the catalogue is complete. |
-| `load` | `() => import('./messages/<lang>.json')` |
+| Field        | Value                                                                                                                  |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| key          | `<lang>`, matching the filename.                                                                                       |
+| `locale`     | The canonical BCP-47 tag. For a language with a region, this is where the region belongs: key `zh-tw`, locale `zh-TW`. |
+| `nativeName` | The endonym, written in the language itself.                                                                           |
+| `direction`  | `ltr`, or `rtl` for a right-to-left script.                                                                            |
+| `selectable` | `true` once the catalogue is complete.                                                                                 |
+| `load`       | `() => import('./messages/<lang>.json')`                                                                               |
 
 Direction is the only field that needs more than a translation decision. An RTL language requires no
 layout code: `HtmlLangSync` sets `<html dir>` from the registry entry, and toasts flip through
@@ -127,15 +127,15 @@ the same order the generator uses, then regenerate.
 Several tests iterate a hard-coded array of locale codes rather than reading the registry. A new
 language is not covered by them until you add it:
 
-| File | Array | Current coverage |
-| --- | --- | --- |
-| `tests/phase3-print-regressions.test.ts` | `languages` | 29 of 30; omits `ar`. |
-| `tests/issue-241-localized-errors.test.ts` | `LANGUAGES` | All 30 (`Object.keys(LANGUAGE_REGISTRY)`). |
-| `tests/rtl-setup-auth-settings.test.ts` | `languages` | 26 of 30; omits `ar`, `de`, `fil`, `tr`. |
-| `tests/browser-receipts.test.ts` | loop array | 26 of 30; omits `ar`, `de`, `fil`, `tr`. |
-| `tests/i18n-audit-remediations.test.ts` | two loop arrays | 26 of 30 each; omits `ar`, `de`, `fil`, `tr`. |
-| `tests/rtl-kds-server-whatsapp.test.ts` | four loop arrays | 26 of 30 for the all-language loops, 24 for the LTR-only loop. |
-| `tests/rtl-dashboard-pos-common.test.ts` | two LTR-only loop arrays | 24 of 30; omits the RTL languages plus `de`, `fil`, `tr`. |
+| File                                       | Array                    | Current coverage                                               |
+| ------------------------------------------ | ------------------------ | -------------------------------------------------------------- |
+| `tests/phase3-print-regressions.test.ts`   | `languages`              | 29 of 30; omits `ar`.                                          |
+| `tests/issue-241-localized-errors.test.ts` | `LANGUAGES`              | All 30 (`Object.keys(LANGUAGE_REGISTRY)`).                     |
+| `tests/rtl-setup-auth-settings.test.ts`    | `languages`              | 26 of 30; omits `ar`, `de`, `fil`, `tr`.                       |
+| `tests/browser-receipts.test.ts`           | loop array               | 26 of 30; omits `ar`, `de`, `fil`, `tr`.                       |
+| `tests/i18n-audit-remediations.test.ts`    | two loop arrays          | 26 of 30 each; omits `ar`, `de`, `fil`, `tr`.                  |
+| `tests/rtl-kds-server-whatsapp.test.ts`    | four loop arrays         | 26 of 30 for the all-language loops, 24 for the LTR-only loop. |
+| `tests/rtl-dashboard-pos-common.test.ts`   | two LTR-only loop arrays | 24 of 30; omits the RTL languages plus `de`, `fil`, `tr`.      |
 
 This is a known baseline, not something this procedure introduces. Several of these arrays already
 omit registered locales, so they are not a reliable coverage signal. The arrays whose names include

@@ -501,7 +501,6 @@ async function runTests() {
         receiptHtml.includes('ஆக'),
         `Receipt in Tamil UI must contain a Tamil month name, got: ${receiptHtml}`,
       );
-      );
     }
 
     console.log(

@@ -744,35 +744,35 @@ function seedDemoRestaurant(
                                                                 ],
                                                               ] as const)
                                                             : ([
-                                                              [
-                                                                'cat-demo-starters',
-                                                                'Starters',
-                                                                '#FF6B6B',
-                                                                '🍔',
-                                                                1,
-                                                              ],
-                                                              [
-                                                                'cat-demo-main',
-                                                                'Main Course',
-                                                                '#4ECDC4',
-                                                                '🍛',
-                                                                2,
-                                                              ],
-                                                              [
-                                                                'cat-demo-beverages',
-                                                                'Beverages',
-                                                                '#45B7D1',
-                                                                '🥤',
-                                                                3,
-                                                              ],
-                                                              [
-                                                                'cat-demo-desserts',
-                                                                'Desserts',
-                                                                '#96CEB4',
-                                                                '🍰',
-                                                                4,
-                                                              ],
-                                                            ] as const);
+                                                                [
+                                                                  'cat-demo-starters',
+                                                                  'Starters',
+                                                                  '#FF6B6B',
+                                                                  '🍔',
+                                                                  1,
+                                                                ],
+                                                                [
+                                                                  'cat-demo-main',
+                                                                  'Main Course',
+                                                                  '#4ECDC4',
+                                                                  '🍛',
+                                                                  2,
+                                                                ],
+                                                                [
+                                                                  'cat-demo-beverages',
+                                                                  'Beverages',
+                                                                  '#45B7D1',
+                                                                  '🥤',
+                                                                  3,
+                                                                ],
+                                                                [
+                                                                  'cat-demo-desserts',
+                                                                  'Desserts',
+                                                                  '#96CEB4',
+                                                                  '🍰',
+                                                                  4,
+                                                                ],
+                                                              ] as const);
   for (const [id, name, color, icon, sort] of cats) insertCategory(db, id, name, color, icon, sort);
 
   const products =
@@ -2024,7 +2024,7 @@ function seedDemoRestaurant(
                                 : lang === 'nl'
                                   ? 'Demomanager'
                                   : lang === 'hi'
-                                     ? 'डेमो मैनेजर'
+                                    ? 'डेमो मैनेजर'
                                     : lang === 'bn'
                                       ? 'ম্যানেজার ডেমো'
                                       : lang === 'sq'

@@ -15,9 +15,21 @@ const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-schema-cache-test-'));
 
+let memoryDbOpenCount = 0;
+
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+  }
+  if (request === 'better-sqlite3') {
+    const RealDatabase = originalLoad.apply(this, arguments as any);
+    function WrappedDatabase(filename?: string, options?: unknown) {
+      if (filename === ':memory:') memoryDbOpenCount += 1;
+      return new RealDatabase(filename, options);
+    }
+    Object.setPrototypeOf(WrappedDatabase, RealDatabase);
+    WrappedDatabase.prototype = RealDatabase.prototype;
+    return WrappedDatabase;
   }
   return originalLoad.apply(this, arguments as any);
 };
@@ -46,7 +58,7 @@ async function main() {
     // Create a valid same-schema backup to test restores
     await createBackup(backupPath);
 
-    const { getRecoverySchemaBuildCount } = dbModule;
+    const { getRecoverySchemaBuildCount, clearRecoverySchemaReference } = dbModule;
 
     // ── 1. Cold health check builds the reference exactly once ──
     console.log('[1/4] Testing cold health check builds reference at most once...');
@@ -85,12 +97,43 @@ async function main() {
     // ── 2. Same-version direct restore reuses the cached reference ──
     console.log('[2/4] Testing same-version direct restore caching...');
     const countBeforeRestore = getRecoverySchemaBuildCount();
+    const memoryBeforeRestore = memoryDbOpenCount;
 
     await restoreBackup(backupPath);
     assert.equal(
       getRecoverySchemaBuildCount(),
       countBeforeRestore,
       'direct restore reuses the cached reference without re-building',
+    );
+    assert.equal(
+      memoryDbOpenCount,
+      memoryBeforeRestore,
+      'validateDirectBackup reuses cached recovery schema reference without opening a new :memory: DB',
+    );
+
+    clearRecoverySchemaReference();
+    const countBeforeColdRestore = getRecoverySchemaBuildCount();
+    const memoryBeforeColdRestore = memoryDbOpenCount;
+    await restoreBackup(backupPath);
+    assert.equal(
+      getRecoverySchemaBuildCount() - countBeforeColdRestore,
+      1,
+      'cold direct restore populates the recovery schema reference cache once',
+    );
+    assert.equal(
+      memoryDbOpenCount - memoryBeforeColdRestore,
+      1,
+      'cold direct restore builds the :memory: ideal schema DB only once across preflight and validateDirectBackup',
+    );
+    assert.equal(
+      isHealthyDatabaseFile(backupPath),
+      true,
+      'subsequent health check reuses cache populated by direct restore',
+    );
+    assert.equal(
+      getRecoverySchemaBuildCount() - countBeforeColdRestore,
+      1,
+      'health check after cold direct restore does not rebuild reference',
     );
 
     // ── 3. Migration registry mutation invalidates and updates cache ──

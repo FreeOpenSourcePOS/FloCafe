@@ -39,9 +39,11 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initDatabase,
   getDatabase,
+  getDbPath,
   closeDatabase,
   getCurrentSchemaVersion,
   buildIdealSchemaDb,
+  isHealthyDatabaseFile,
 } = require('../main/db');
 const { runHealthCheck, applySafeFixes } = require('../main/services/schema-health');
 
@@ -378,6 +380,221 @@ function main() {
   );
   console.log(
     '   ✓ initDatabase() tolerates missing users table and applySafeFixes() installs revision triggers',
+  );
+
+  // ── Upgraded / applySafeFixes-healed databases pass isHealthyDatabaseFile and journal recovery ──
+  closeDatabase();
+  const liveDbPath = getDbPath();
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    fs.rmSync(`${liveDbPath}${suffix}`, { force: true });
+  }
+  fs.rmSync(path.join(testDir, '.flo-db-initialized'), { force: true });
+  fs.rmSync(path.join(testDir, 'backups'), { recursive: true, force: true });
+  const preUpgradeV98Db = buildIdealSchemaDb(98);
+  try {
+    preUpgradeV98Db.exec('ALTER TABLE orders DROP COLUMN charges_breakdown');
+    fs.writeFileSync(liveDbPath, preUpgradeV98Db.serialize());
+  } finally {
+    preUpgradeV98Db.close();
+  }
+  initDatabase();
+  const upgradedDb = getDatabase();
+  upgradedDb.exec('ALTER TABLE products DROP COLUMN cb_percent');
+  const healedCols = applySafeFixes(['missing_column:products.cb_percent']);
+  assert.deepEqual(
+    healedCols.applied,
+    ['missing_column:products.cb_percent'],
+    'applySafeFixes() re-adds column via ALTER TABLE ADD COLUMN',
+  );
+  assert.equal(healedCols.errors.length, 0);
+  assert.equal(runHealthCheck().findings.length, 0, 'upgraded database has zero schema drift');
+  upgradedDb
+    .prepare("INSERT INTO categories (id, name) VALUES ('cat-upgraded-rec', 'Upgraded Recovery')")
+    .run();
+  const freshCheckDb = buildIdealSchemaDb();
+  try {
+    const upgradedOrdersSql = (
+      upgradedDb
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'orders'")
+        .get() as { sql: string }
+    ).sql;
+    const freshOrdersSql = (
+      freshCheckDb
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'orders'")
+        .get() as { sql: string }
+    ).sql;
+    assert.notEqual(
+      upgradedOrdersSql.replace(/\s+/g, ' ').trim().toLowerCase(),
+      freshOrdersSql.replace(/\s+/g, ' ').trim().toLowerCase(),
+      'upgraded database has different raw sqlite_master CREATE TABLE text than a fresh install',
+    );
+  } finally {
+    freshCheckDb.close();
+  }
+  upgradedDb.pragma('wal_checkpoint(TRUNCATE)');
+  closeDatabase();
+
+  assert.equal(
+    isHealthyDatabaseFile(liveDbPath, undefined, false),
+    true,
+    'upgraded database with ALTER TABLE column order is recognized as healthy',
+  );
+
+  const backupDir = path.join(testDir, 'backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const preparedRecoveryName = 'flo-restore-recovery-upgraded-prepared';
+  const preparedRecoveryPath = path.join(backupDir, `${preparedRecoveryName}.db`);
+  const preparedJournalPath = path.join(backupDir, `${preparedRecoveryName}.json`);
+  fs.copyFileSync(liveDbPath, preparedRecoveryPath);
+  fs.writeFileSync(
+    preparedJournalPath,
+    JSON.stringify({
+      phase: 'prepared',
+      recoveryPath: preparedRecoveryPath,
+      dbPath: liveDbPath,
+    }),
+  );
+  fs.writeFileSync(liveDbPath, 'interrupted replacement partial write');
+
+  initDatabase();
+  assert.equal(
+    (
+      getDatabase().prepare("SELECT name FROM categories WHERE id = 'cat-upgraded-rec'").get() as
+        | { name: string }
+        | undefined
+    )?.name,
+    'Upgraded Recovery',
+    'recoverInterruptedDatabaseReplacement restores healthy upgraded snapshot from prepared journal',
+  );
+  assert.equal(
+    fs.existsSync(preparedJournalPath),
+    false,
+    'prepared recovery journal is cleaned up',
+  );
+  getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+  closeDatabase();
+
+  const committedRecoveryName = 'flo-restore-recovery-upgraded-committed';
+  const committedRecoveryPath = path.join(backupDir, `${committedRecoveryName}.db`);
+  const committedJournalPath = path.join(backupDir, `${committedRecoveryName}.json`);
+  fs.writeFileSync(
+    committedJournalPath,
+    JSON.stringify({
+      phase: 'committed',
+      recoveryPath: committedRecoveryPath,
+      dbPath: liveDbPath,
+      driveInvalidationRequired: false,
+    }),
+  );
+
+  initDatabase();
+  assert.equal(
+    (
+      getDatabase().prepare("SELECT name FROM categories WHERE id = 'cat-upgraded-rec'").get() as
+        | { name: string }
+        | undefined
+    )?.name,
+    'Upgraded Recovery',
+    'recoverInterruptedDatabaseReplacement finalizes committed journal for healthy upgraded database',
+  );
+  assert.equal(
+    fs.existsSync(committedJournalPath),
+    false,
+    'committed recovery journal is finalized and removed',
+  );
+  console.log(
+    '   ✓ upgraded / applySafeFixes-healed databases pass isHealthyDatabaseFile and journal recovery',
+  );
+
+  // ── Column collation ownership and constraint ON CONFLICT policies are enforced ──
+  const collationMovedDb = buildIdealSchemaDb();
+  const collationMovedPath = path.join(testDir, 'collation-moved.db');
+  try {
+    const paymentMethodsSql = (
+      collationMovedDb
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'payment_methods'")
+        .get() as { sql: string }
+    ).sql;
+    const movedSql = paymentMethodsSql
+      .replace('name TEXT NOT NULL COLLATE NOCASE UNIQUE', 'name TEXT NOT NULL UNIQUE')
+      .replace(
+        'created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP',
+        'created_at TEXT NOT NULL COLLATE NOCASE DEFAULT CURRENT_TIMESTAMP',
+      )
+      .replace(
+        /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+payment_methods/i,
+        'CREATE TABLE payment_methods_rebuilt',
+      );
+    assert.notEqual(movedSql, paymentMethodsSql, 'collation move modified payment_methods DDL');
+    collationMovedDb.exec('PRAGMA foreign_keys = OFF');
+    collationMovedDb.exec(movedSql);
+    collationMovedDb.exec(
+      'INSERT INTO payment_methods_rebuilt SELECT * FROM payment_methods; DROP TABLE payment_methods; ALTER TABLE payment_methods_rebuilt RENAME TO payment_methods; CREATE INDEX IF NOT EXISTS idx_payment_methods_active_sort ON payment_methods(is_active, sort_order, id);',
+    );
+    collationMovedDb.exec('PRAGMA foreign_keys = ON');
+    fs.writeFileSync(collationMovedPath, collationMovedDb.serialize());
+  } finally {
+    collationMovedDb.close();
+  }
+  assert.equal(
+    isHealthyDatabaseFile(collationMovedPath, undefined, false),
+    false,
+    'isHealthyDatabaseFile rejects database where COLLATE NOCASE moved off payment_methods.name',
+  );
+
+  for (const [label, transform] of [
+    [
+      'column-level UNIQUE ON CONFLICT REPLACE',
+      (sql: string) =>
+        sql.replace(
+          'name TEXT NOT NULL COLLATE NOCASE UNIQUE',
+          'name TEXT NOT NULL COLLATE NOCASE UNIQUE ON CONFLICT REPLACE',
+        ),
+    ],
+    [
+      'table-level UNIQUE ON CONFLICT REPLACE',
+      (sql: string) =>
+        sql
+          .replace('name TEXT NOT NULL COLLATE NOCASE UNIQUE', 'name TEXT NOT NULL COLLATE NOCASE')
+          .replace(/\)\s*$/, ', UNIQUE(name) ON CONFLICT REPLACE)'),
+    ],
+  ] as const) {
+    const conflictChangedDb = buildIdealSchemaDb();
+    const conflictChangedPath = path.join(
+      testDir,
+      `conflict-changed-${label.replace(/\s+/g, '-')}.db`,
+    );
+    try {
+      const paymentMethodsSql = (
+        conflictChangedDb
+          .prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'payment_methods'",
+          )
+          .get() as { sql: string }
+      ).sql;
+      const modifiedSql = transform(paymentMethodsSql).replace(
+        /CREATE TABLE(?:\s+IF NOT EXISTS)?\s+payment_methods/i,
+        'CREATE TABLE payment_methods_rebuilt',
+      );
+      assert.notEqual(modifiedSql, paymentMethodsSql, `${label} modified payment_methods DDL`);
+      conflictChangedDb.exec('PRAGMA foreign_keys = OFF');
+      conflictChangedDb.exec(modifiedSql);
+      conflictChangedDb.exec(
+        'INSERT INTO payment_methods_rebuilt SELECT * FROM payment_methods; DROP TABLE payment_methods; ALTER TABLE payment_methods_rebuilt RENAME TO payment_methods; CREATE INDEX IF NOT EXISTS idx_payment_methods_active_sort ON payment_methods(is_active, sort_order, id);',
+      );
+      conflictChangedDb.exec('PRAGMA foreign_keys = ON');
+      fs.writeFileSync(conflictChangedPath, conflictChangedDb.serialize());
+    } finally {
+      conflictChangedDb.close();
+    }
+    assert.equal(
+      isHealthyDatabaseFile(conflictChangedPath, undefined, false),
+      false,
+      `isHealthyDatabaseFile rejects database with ${label} on payment_methods.name`,
+    );
+  }
+  console.log(
+    '   ✓ isHealthyDatabaseFile enforces per-column collation ownership and UNIQUE ON CONFLICT policies',
   );
 }
 

@@ -139,6 +139,23 @@ function transliterateThermalText(text: string, capabilities: ThermalPrinterCapa
       (codePage) => codePage !== 'ascii' && codePageCanRepresent(text, codePage),
     );
     if (hasNativeCodePage) return text;
+  }
+  return text.replace(/[À-ÿ]/g, (character) => LATIN_ASCII_MAP[character] ?? character);
+}
+
+export function normalizeThermalText(
+  text: string,
+  capabilities: ThermalPrinterCapabilities,
+): string {
+  if (capabilities.raster.enabled === true && !isThermalTextRepresentable(text, capabilities)) {
+    return text;
+  }
+  if (!capabilities.transliteration.enabled) return text;
+  if (capabilities.representability.scripts.includes('latin')) {
+    const hasNativeCodePage = capabilities.encoding.codePages.some(
+      (codePage) => codePage !== 'ascii' && codePageCanRepresent(text, codePage),
+    );
+    if (hasNativeCodePage) return text;
     const withLegacyMap = text.replace(
       /[À-ÿ]/g,
       (character) => LATIN_ASCII_MAP[character] ?? character,
@@ -152,16 +169,6 @@ function transliterateThermalText(text: string, capabilities: ThermalPrinterCapa
         .replace(/\p{Diacritic}/gu, '')
         .normalize('NFC'),
     );
-  }
-  return text.replace(/[À-ÿ]/g, (character) => LATIN_ASCII_MAP[character] ?? character);
-}
-
-export function normalizeThermalText(
-  text: string,
-  capabilities: ThermalPrinterCapabilities,
-): string {
-  if (capabilities.raster.enabled === true && !isThermalTextRepresentable(text, capabilities)) {
-    return text;
   }
   return transliterateThermalText(text, capabilities);
 }
@@ -216,7 +223,7 @@ export function thermalTextFallback(
   fallback: string,
   capabilities: ThermalPrinterCapabilities,
 ): string {
-  const normalized = normalizeThermalText(value, capabilities);
+  const normalized = transliterateThermalText(value, capabilities);
   return isThermalTextRepresentable(normalized, capabilities) ? normalized : fallback;
 }
 

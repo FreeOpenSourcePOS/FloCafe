@@ -64,6 +64,21 @@ function isZeroWidthCodePoint(codePoint: number): boolean {
   );
 }
 
+function isIndicConsonant(codePoint: number): boolean {
+  return (
+    (codePoint >= 0x0915 && codePoint <= 0x0939) ||
+    (codePoint >= 0x0958 && codePoint <= 0x095f) ||
+    (codePoint >= 0x0978 && codePoint <= 0x097f) ||
+    (codePoint >= 0x0995 && codePoint <= 0x09b9) ||
+    (codePoint >= 0x09dc && codePoint <= 0x09df) ||
+    (codePoint >= 0x09f0 && codePoint <= 0x09f1) ||
+    codePoint === 0x09fc ||
+    (codePoint >= 0x0a15 && codePoint <= 0x0a39) ||
+    (codePoint >= 0x0a59 && codePoint <= 0x0a5e) ||
+    codePoint === 0x0a75
+  );
+}
+
 function fallbackGraphemeSegments(value: string): string[] {
   const segments: string[] = [];
   let current = '';
@@ -92,7 +107,7 @@ function fallbackGraphemeSegments(value: string): string[] {
         previousCodePoint !== undefined &&
         EMOJI_BASE_RE.test(String.fromCodePoint(previousCodePoint))) ||
       current.endsWith('\u200d') ||
-      pendingIndicConjunct;
+      (pendingIndicConjunct && isIndicConsonant(codePoint));
 
     if (continuesCurrent) {
       current += character;
@@ -116,11 +131,13 @@ export function graphemeSegments(text: string): string[] {
   for (const segment of raw) {
     const prev = merged[merged.length - 1];
     const prevLast = prev ? codePointBefore(prev) : undefined;
+    const nextFirst = segment.codePointAt(0);
     if (
       prev &&
       prevLast !== undefined &&
       INDIC_VIRAMA_CODE_POINTS.has(prevLast) &&
-      /^\p{L}/u.test(segment)
+      nextFirst !== undefined &&
+      isIndicConsonant(nextFirst)
     ) {
       merged[merged.length - 1] = prev + segment;
     } else {

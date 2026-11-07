@@ -603,6 +603,7 @@ try {
   const fallbackClusters = [
     String.fromCodePoint(0x0915, 0x094d, 0x0937),
     String.fromCodePoint(0x0995, 0x09cd, 0x09b7),
+    String.fromCodePoint(0x0a2a, 0x0a4d, 0x0a30),
     String.fromCodePoint(0x0e01, 0x0e33),
     'کّ',
     'ک\u200c',
@@ -615,6 +616,26 @@ try {
     fallbackClusters.map((cluster) => fallbackWidth.graphemeSegments(cluster)),
     fallbackClusters.map((cluster) => [cluster]),
     'fallback segmentation keeps Indic, Thai, and Urdu clusters together without Intl.Segmenter',
+  );
+  assert.deepEqual(
+    fallbackWidth.graphemeSegments('ਕ੍!'),
+    ['ਕ੍', '!'],
+    'fallback segmentation does not absorb punctuation after a Gurmukhi virama',
+  );
+  assert.equal(
+    fallbackWidth.displayCellWidth('ਕ੍!'),
+    2,
+    'fallback measures a Gurmukhi virama followed by punctuation as two display cells',
+  );
+  assert.deepEqual(
+    fallbackWidth.graphemeSegments('ਕ੍ ਖ'),
+    ['ਕ੍', ' ', 'ਖ'],
+    'fallback segmentation does not absorb whitespace after a Gurmukhi virama',
+  );
+  assert.equal(
+    fallbackWidth.displayCellWidth('ਕ੍ ਖ'),
+    3,
+    'fallback measures a Gurmukhi virama followed by whitespace and a consonant as three display cells',
   );
   assert.deepEqual(
     fallbackWidth.graphemeSegments('خ\u200cود'),

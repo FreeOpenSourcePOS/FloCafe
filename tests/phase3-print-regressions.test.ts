@@ -32,6 +32,7 @@ const languages = [
   'jv',
   'mr',
   'sw',
+  'pa',
   'uk',
 ] as const;
 // Any Devanagari codepoint: the native paths must emit none, not merely none of
@@ -167,6 +168,18 @@ async function run(): Promise<void> {
         browserHtml,
         new RegExp(`lang="${expectedLocale}" dir="ltr"`),
         `${language}: browser KOT must carry its own locale ${expectedLocale}, not another Devanagari bundle`,
+      );
+    }
+    if (language === 'pa') {
+      assert.match(
+        browserHtml,
+        /font-family:'Noto Sans Gurmukhi'/,
+        `${language}: browser KOT selects the Gurmukhi font stack`,
+      );
+      assert.match(
+        browserHtml,
+        /lang="pa-IN" dir="ltr"/,
+        `${language}: browser KOT carries locale pa-IN`,
       );
     }
     assert.match(browserHtml, /KOT-PHASE3-001/, `${language}: browser order number`);

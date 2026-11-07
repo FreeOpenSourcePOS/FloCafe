@@ -166,9 +166,9 @@ test.describe('Server App tableside ordering', () => {
     );
     const viewports = [320, 375, 390, 430, 768];
 
+    await openServerApp(page, serverToken);
     for (const width of viewports) {
       await page.setViewportSize({ width, height: 800 });
-      await openServerApp(page, serverToken);
       await expect(page.getByTestId('pos-product-grid')).toBeVisible();
 
       const header = page.locator('header');

@@ -109,6 +109,7 @@ async function run() {
     'jv',
     'mr',
     'sw',
+    'pa',
     'uk',
   ] as const) {
     await ensureReceiptMessagesLoaded(lang);
@@ -196,6 +197,7 @@ async function run() {
     jv: { tag: 'jv-ID', dir: 'ltr' },
     mr: { tag: 'mr-IN', dir: 'ltr' },
     sw: { tag: 'sw-KE', dir: 'ltr' },
+    pa: { tag: 'pa-IN', dir: 'ltr' },
     uk: { tag: 'uk-UA', dir: 'ltr' },
   };
 
@@ -443,6 +445,7 @@ async function run() {
     'jv',
     'mr',
     'sw',
+    'pa',
     'uk',
   ]) {
     const filePath = path.join(MESSAGES_DIR, `${lang}.json`);
@@ -803,6 +806,21 @@ async function run() {
         calendar: 'persian',
       },
       { language: 'fa' },
+    ),
+  });
+
+  visualArtifacts.push({
+    filename: 'web_print_bill_pa_in',
+    title: 'Web Print Bill (Punjabi - lang="pa-IN")',
+    html: generateBillHtml(
+      sampleBill,
+      {
+        business_name: 'FloCafe Amritsar',
+        currency: 'INR',
+        country: 'IN',
+        timezone: 'Asia/Kolkata',
+      },
+      { language: 'pa' },
     ),
   });
 

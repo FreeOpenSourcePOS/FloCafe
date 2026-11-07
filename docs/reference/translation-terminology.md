@@ -27,9 +27,9 @@ Pinned by `tests/print-kernel.test.ts`.
 
 ## Indic conjuncts are never split
 
-A Devanagari or Bengali conjunct is a single grapheme cluster and must stay one. The virama
-characters that join them, U+094D in Devanagari and U+09CD in Bengali, are the ones a naive
-splitter would break.
+A Devanagari, Bengali, or Gurmukhi conjunct is a single grapheme cluster and must stay one. The
+virama characters that join them, U+094D in Devanagari, U+09CD in Bengali, and U+0A4D in Gurmukhi,
+are the ones a naive splitter would break.
 
 Pinned by `tests/print-kernel.test.ts`, which asserts that wrapping a two-cluster Indic string at one
 column per line keeps each conjunct intact, and that truncation whose budget ends inside a conjunct
@@ -55,7 +55,7 @@ is invisible on screen and corrupts comparison, searching, and print labels.
 identically and wrap identically after normalisation, which is what makes NFC a requirement rather
 than a preference. `tests/translations.test.ts` rejects a `vi.json` value that is not already NFC.
 
-The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `ru.json`, `sw.json`, `th.json`, and `uk.json`.
+The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `pa.json`, `ru.json`, `sw.json`, `th.json`, and `uk.json`.
 
 ## Albanian and Vietnamese on a generic thermal printer
 
@@ -70,19 +70,19 @@ character set; the printer path handles the reduction.
 Vietnamese is a different case, because many of its characters are outside every supported code page.
 Verified against `LATIN_THERMAL_CAPABILITIES`:
 
-| String | Representable | Code page |
-| --- | --- | --- |
-| `Món` | yes | `cp437` |
-| `Khách hàng` | yes | `cp437` |
-| `Cà phê` | yes | `cp437` |
-| `Bàn` | yes | `cp437` |
-| `Tổng cộng` | no | none |
-| `Hóa đơn` | no | none |
-| `Ăn tại chỗ` | no | none |
-| `Nước` | no | none |
-| `Số tiền` | no | none |
-| `Đơn vị` | no | none |
-| `Tiếng Việt` | no | none |
+| String       | Representable | Code page |
+| ------------ | ------------- | --------- |
+| `Món`        | yes           | `cp437`   |
+| `Khách hàng` | yes           | `cp437`   |
+| `Cà phê`     | yes           | `cp437`   |
+| `Bàn`        | yes           | `cp437`   |
+| `Tổng cộng`  | no            | none      |
+| `Hóa đơn`    | no            | none      |
+| `Ăn tại chỗ` | no            | none      |
+| `Nước`       | no            | none      |
+| `Số tiền`    | no            | none      |
+| `Đơn vị`     | no            | none      |
+| `Tiếng Việt` | no            | none      |
 
 The characters that fail are those carrying a tone mark: `ộ`, `đ`, `ạ`, `ố`, `ơ`, and the stacked
 `ế` in `Tiếng`. Note that the language endonym itself is not representable, so a printer-specific
@@ -190,6 +190,13 @@ distinct labels and must stay distinct on the receipt. Vegetarian tags are `Mbog
 tags `Isiyo ya Mboga`, identical between `pos.*` and `products.*`. Takeaway is `Kuchukua`, dine-in is
 `Kula Hapa`, and delivery is `Uwasilishaji`. Cash movement uses `Uwekaji pesa` for pay-in and
 `Utoaji pesa` for pay-out, identically on the dashboard and on the Z-report.
+
+**Punjabi.** Subtotal `ਉਪ-ਜੋੜ` and grand total `ਕੁੱਲ ਜੋੜ` stay distinct on the receipt, and cash
+received is `ਪ੍ਰਾਪਤ ਨਕਦ`. The vegetarian and non-vegetarian tags are `ਸ਼ਾਕਾਹਾਰੀ` and `ਮਾਸਾਹਾਰੀ` across
+both `pos.*` and `products.*`. Cash movement uses `ਨਕਦ ਜਮ੍ਹਾਂ` for pay-in and `ਨਕਦ ਨਿਕਾਸੀ` for
+pay-out on both the dashboard and the Z-report, and takeaway is `ਟੇਕਅਵੇ` across `orders.*` and
+`pos.*`. Gurmukhi virama conjuncts (`ਪ੍ਰ`, `ਸ੍ਰ`) and combining signs (`ੰ` tippi, `ਂ` bindi, `ੱ`
+addak, `਼` nukta) must remain NFC-normalized and attached to their base consonant.
 
 **Ukrainian.** Takeaway is `З собою` and dine-in is `У закладі`; "delivery" is `Доставка`. Subtotal
 `Проміжний підсумок` and grand total `РАЗОМ` (or `Загальна сума` on browser receipts) stay distinct.

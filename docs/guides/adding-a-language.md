@@ -64,8 +64,8 @@ While translating:
   such as an email or IP address. Anything else renders as untranslated English to your users, and
   the check will reject it.
 - For a language with combining marks, the value must be in Unicode NFC. `tests/translations.test.ts`
-  enforces NFC for the languages it checks by name, which are `ha`, `jv`, `mr`, `ne`, `pa`, `ru`, `sw`, `th`, `uk`, and `vi`.
-- Avoid invisible formatting characters. The Russian, Javanese, Marathi, and Ukrainian validators in
+  enforces NFC for the languages it checks by name, which are `ha`, `jv`, `mr`, `ne`, `pa`, `ru`, `sw`, `te`, `th`, `uk`, and `vi`.
+- Avoid invisible formatting characters. The Russian, Javanese, Marathi, Telugu, and Ukrainian validators in
   `tests/translations.test.ts` reject U+200B, U+200C, U+200D, U+00AD, and U+FEFF, because they
   corrupt printed text silently. Other language validators do not check for them yet, so this is
   your responsibility to get right rather than something the test will catch.
@@ -74,7 +74,7 @@ While translating:
 ## 4. Register the intentional-identical keys
 
 Each language has a `<LANG>_INTENTIONAL_IDENTICAL` set in `tests/translations.test.ts` listing the
-keys allowed to be English-identical, most with a comment saying why. There are 25 such sets.
+keys allowed to be English-identical, most with a comment saying why. There are 26 such sets.
 
 Add an entry for every key you deliberately left identical, with a comment giving the reason. Without
 the entry the check fails, and the failure is what keeps an accidentally untranslated string from
@@ -129,13 +129,13 @@ language is not covered by them until you add it:
 
 | File                                       | Array                    | Current coverage                                               |
 | ------------------------------------------ | ------------------------ | -------------------------------------------------------------- |
-| `tests/phase3-print-regressions.test.ts`   | `languages`              | 29 of 30; omits `ar`.                                          |
-| `tests/issue-241-localized-errors.test.ts` | `LANGUAGES`              | All 30 (`Object.keys(LANGUAGE_REGISTRY)`).                     |
-| `tests/rtl-setup-auth-settings.test.ts`    | `languages`              | 26 of 30; omits `ar`, `de`, `fil`, `tr`.                       |
-| `tests/browser-receipts.test.ts`           | loop array               | 26 of 30; omits `ar`, `de`, `fil`, `tr`.                       |
-| `tests/i18n-audit-remediations.test.ts`    | two loop arrays          | 26 of 30 each; omits `ar`, `de`, `fil`, `tr`.                  |
-| `tests/rtl-kds-server-whatsapp.test.ts`    | four loop arrays         | 26 of 30 for the all-language loops, 24 for the LTR-only loop. |
-| `tests/rtl-dashboard-pos-common.test.ts`   | two LTR-only loop arrays | 24 of 30; omits the RTL languages plus `de`, `fil`, `tr`.      |
+| `tests/phase3-print-regressions.test.ts`   | `languages`              | 30 of 31; omits `ar`.                                          |
+| `tests/issue-241-localized-errors.test.ts` | `LANGUAGES`              | All 31 (`Object.keys(LANGUAGE_REGISTRY)`).                     |
+| `tests/rtl-setup-auth-settings.test.ts`    | `languages`              | 27 of 31; omits `ar`, `de`, `fil`, `tr`.                       |
+| `tests/browser-receipts.test.ts`           | loop array               | 27 of 31; omits `ar`, `de`, `fil`, `tr`.                       |
+| `tests/i18n-audit-remediations.test.ts`    | two loop arrays          | 27 of 31 each; omits `ar`, `de`, `fil`, `tr`.                  |
+| `tests/rtl-kds-server-whatsapp.test.ts`    | four loop arrays         | 27 of 31 for the all-language loops, 25 for the LTR-only loop. |
+| `tests/rtl-dashboard-pos-common.test.ts`   | two LTR-only loop arrays | 25 of 31; omits the RTL languages plus `de`, `fil`, `tr`.      |
 
 This is a known baseline, not something this procedure introduces. Several of these arrays already
 omit registered locales, so they are not a reliable coverage signal. The arrays whose names include

@@ -77,7 +77,10 @@
  *  28. Punjabi safeguards: pa.json values never contain placeholders, malformed
  *      replacement characters, or non-NFC text, and only documented shared
  *      values may remain identical to English.
- *  29. Ukrainian safeguards: uk.json values never contain placeholders, malformed
+ *  29. Telugu safeguards: te.json values never contain placeholders, malformed
+ *      replacement characters, invisible formatting characters, or non-NFC text,
+ *      and only documented shared values may remain identical to English.
+ *  30. Ukrainian safeguards: uk.json values never contain placeholders, malformed
  *      replacement characters, invisible formatting characters, or non-NFC text,
  *      and only documented shared values may remain identical to English.
  *
@@ -2743,6 +2746,84 @@ function paFallbackErrors(
   return errors;
 }
 
+/** Telugu translation safeguards, including canonical NFC text and script checks. */
+const TE_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', // example email placeholder
+  'common.appTitle', // brand name
+  'common.brandName', // brand name
+  'common.logoAlt', // brand name
+  'dashboard.exportCsv', // file format label
+  'dashboard.exportPdf', // file format label
+  'dashboard.exportXlsx', // file format label
+  'dashboard.ticketMethodCount', // pure format: {count} ×
+  'kds.emptyColumn', // em dash
+  'nav.kds', // technical acronym
+  'nav.pos', // technical acronym
+  'nav.whatsapp', // brand name
+  'pos.addonPrice', // pure format: +{currency}{price}
+  'pos.loadingEllipsis', // ellipsis
+  'pos.tagCount', // pure format: {tag} ×{count}
+  'pos.taxLine', // pure format: {title} @{rate}%
+  'printTest.escpos', // technical acronym
+  'printTest.paperWidth58', // paper size specification
+  'printTest.paperWidth80', // paper size specification
+  'print.hsn', // GST HSN technical acronym
+  'print.zReport.paymentCount', // pure format: x{count}
+  'products.addonSelectionRange', // pure format: {min} – {max}
+  'products.fieldSku', // technical acronym
+  'products.skuLabel', // pure format: SKU: {sku}
+  'serverApp.emailPlaceholder', // example email placeholder
+  'settings.apiKeyInputPlaceholder', // example API key placeholder
+  'settings.connectionUsb', // technical acronym
+  'settings.instagramPlaceholder', // example handle placeholder
+  'settings.ipAddressPlaceholder', // example IP placeholder
+  'settings.kds', // technical acronym
+  'settings.languageEn', // native language name
+  'settings.languageEs', // native language name
+  'settings.languagePt', // native language name
+  'settings.paperSize58', // paper size specification
+  'settings.paperSize80', // paper size specification
+  'settings.paymentMethodUpi', // Indian payment rail acronym
+  'settings.portPlaceholder', // example TCP port placeholder
+  'settings.registrationEmailPlaceholder', // example email placeholder
+  'settings.registrationLastError', // pure placeholder: {error}
+  'settings.revflo', // brand name
+  'settings.tabOrderflow', // brand name
+  'settings.tabWhatsapp', // brand name
+  'settings.whatsapp', // brand name
+  'setup.ownerEmailPlaceholder', // example email placeholder
+  'setup.qsrLabel', // industry acronym
+  'tax.auditCreateOverride', // pure format: {entityType} {entityId} → {categoryId}
+  'tax.auditUpdateOverride', // pure format: {entityType} {entityId}: {before} → {after}
+  'update.downloadingBadge', // pure format: ↓ {percent}%
+  'whatsapp.connect.pairingPhonePlaceholder', // pure format: {dialCode}XXXXXXXXXX
+]);
+
+function teFallbackErrors(
+  teFlat: Record<string, string>,
+  enFlat: Record<string, string>,
+): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const teVal = teFlat[k];
+    if (teVal === undefined) continue;
+    if (teVal.startsWith('[TE]') || teVal.startsWith('[TODO]')) {
+      errors.push(`te.json ${k} — placeholder prefix found: "${teVal}"`);
+    } else if (teVal === enFlat[k] && !TE_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(
+        `te.json ${k} — identical to English value (renders as English for Telugu users)`,
+      );
+    } else if (teVal !== teVal.normalize('NFC')) {
+      errors.push(`te.json ${k} — value must use Unicode NFC`);
+    } else if (teVal.includes('\uFFFD')) {
+      errors.push(`te.json ${k} — value contains a Unicode replacement character`);
+    } else if (/[\u200B\u200C\u200D\u00AD\uFEFF]/u.test(teVal)) {
+      errors.push(`te.json ${k} — invisible formatting character found`);
+    }
+  }
+  return errors;
+}
+
 /** Ukrainian translation safeguards. */
 const UK_INTENTIONAL_IDENTICAL = new Set<string>([
   'common.appTitle', // brand name: Flo
@@ -3868,7 +3949,57 @@ async function run(): Promise<void> {
     `  ✓ no untranslated pa.json values (${PA_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
   );
 
-  // 29. uk.json values must be complete, NFC text without malformed or invisible characters.
+  // 29. te.json values must be complete, NFC text without malformed or invisible characters.
+  const teMessages = loadedStrings.get('te');
+  if (!teMessages) throw new Error('languages registry must include the maintained te locale');
+  const teErrors = teFallbackErrors(teMessages, loadedStrings.get('en')!);
+  if (teErrors.length) {
+    console.error(`\nte.json values with errors (${teErrors.length}):`);
+    for (const e of teErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(
+      false,
+      'te.json contains untranslated, placeholder, non-NFC, replacement-character, or invisible values',
+    );
+  }
+  assert(
+    teMessages['receipt.cashReceived'] === 'స్వీకరించిన నగదు',
+    'te.json receipt.cashReceived must preserve the canonical cash-received label',
+  );
+  assert(
+    teMessages['pos.tagVeg'] === 'శాకాహారం' && teMessages['products.tagVeg'] === 'శాకాహారం',
+    'te.json vegetarian product tags must use the vegetarian Telugu term',
+  );
+  assert(
+    teMessages['pos.tagNonVeg'] === 'మాంసాహారం' && teMessages['products.tagNonVeg'] === 'మాంసాహారం',
+    'te.json non-vegetarian product tags must use the non-vegetarian Telugu term',
+  );
+  assert(
+    teMessages['orders.takeaway'] === teMessages['pos.orderTypeTakeaway'],
+    'te.json takeaway labels must match across orders and POS',
+  );
+  assert(
+    teMessages['dashboard.payIn'] === 'నగదు జమ' &&
+      teMessages['dashboard.payOut'] === 'నగదు ఉపసంహరణ',
+    'te.json cash-movement labels must match the Z-report terminology',
+  );
+  assert(
+    teMessages['print.zReport.payIn'] === teMessages['dashboard.payIn'] &&
+      teMessages['print.zReport.payOut'] === teMessages['dashboard.payOut'],
+    'te.json cash-movement labels must be identical on the dashboard and the Z-report',
+  );
+  assert(
+    teMessages['pos.addingItemsToOrder'] === 'ఆర్డర్ #{number} కు ఐటెమ్లు జోడించబడుతున్నాయి',
+    'te.json addingItemsToOrder must place the order number directly after the # marker',
+  );
+  assert(
+    teMessages['pos.itemsAddedToOrder'] === 'ఆర్డర్ #{number} కు ఐటెమ్లు జోడించబడ్డాయి',
+    'te.json itemsAddedToOrder must place the order number directly after the # marker',
+  );
+  console.log(
+    `  ✓ no untranslated te.json values (${TE_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
+  );
+
+  // 30. uk.json values must be complete, NFC text without malformed or invisible characters.
   const ukMessages = loadedStrings.get('uk');
   if (!ukMessages) throw new Error('languages registry must include the maintained uk locale');
   const ukErrors = ukFallbackErrors(ukMessages, loadedStrings.get('en')!);
@@ -3967,7 +4098,7 @@ async function run(): Promise<void> {
     `  ✓ no untranslated uk.json values (${UK_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`,
   );
 
-  // 30. No locale may weld an order number onto a word. Devanagari, Arabic, and
+  // 31. No locale may weld an order number onto a word. Devanagari, Arabic, and
   // Cyrillic are all verb-final, so a trailing "{number}" reads as part of the
   // word. This covers every registered locale, not only Nepali.
   const orderNumberErrors = orderNumberPlaceholderErrors(Object.fromEntries(loadedStrings));
@@ -4384,6 +4515,22 @@ function runNegativeTests(): void {
     swFallbackErrors({ 'a.b': 'Kahawa\uFFFD' }, { 'a.b': 'Kahawa' }),
   );
   expectDetected(
+    'te: English-identical value',
+    teFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'te: placeholder prefix value',
+    teFallbackErrors({ 'a.b': '[TE] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'te: Unicode replacement character',
+    teFallbackErrors({ 'a.b': 'కా\uFFFDఫీ' }, { 'a.b': 'కాఫీ' }),
+  );
+  expectDetected(
+    'te: invisible formatting character',
+    teFallbackErrors({ 'a.b': 'కా\u200bఫీ' }, { 'a.b': 'కాఫీ' }),
+  );
+  expectDetected(
     'uk: English-identical value',
     ukFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
   );
@@ -4491,8 +4638,12 @@ function runNegativeTests(): void {
         'pos.addingItemsToOrder': 'در حال افزودن کالاها به سفارش شماره {number}',
         'pos.itemsAddedToOrder': 'کالاها به سفارش شماره {number} افزوده شدند',
       },
+      te: {
+        'pos.addingItemsToOrder': 'ఆర్డర్ #{number} కు ఐటెమ్లు జోడించబడుతున్నాయి',
+        'pos.itemsAddedToOrder': 'ఆర్డర్ #{number} కు ఐటెమ్లు జోడించబడ్డాయి',
+      },
     }).length === 0,
-    'order-number validator must not flag healthy English, Nepali, Russian, or Persian values',
+    'order-number validator must not flag healthy English, Nepali, Russian, Persian, or Telugu values',
   );
 
   // 8. TypeScript key safety.

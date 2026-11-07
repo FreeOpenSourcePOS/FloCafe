@@ -649,6 +649,28 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await page.getByRole('button', { name: 'Remove', exact: true }).first().click();
   });
 
+  test('Escape closes the payment queue drawer', async ({ page }) => {
+    await page.route('**/api/settings/multi_counter_enabled', async (route) => {
+      await route.fulfill({ json: { setting: { key: 'multi_counter_enabled', value: 'true' } } });
+    });
+    await page.route('**/api/counters*', async (route) => {
+      await route.fulfill({ json: { counters: [] } });
+    });
+    await page.reload();
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    await page.getByTestId('pos-payment-queue-btn').click();
+    const drawer = page.getByTestId('payment-queue-drawer');
+    await expect(drawer).toBeVisible();
+
+    await page.getByTestId('payment-queue-search').focus();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(page.getByTestId('pos-payment-queue-btn')).toBeFocused();
+  });
+
   test('PrepaidCheckoutModal focused buttons are not hijacked by global Space/Enter quick-pay', async ({
     page,
   }) => {

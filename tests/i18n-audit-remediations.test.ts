@@ -110,6 +110,7 @@ async function run() {
     'mr',
     'sw',
     'pa',
+    'te',
     'uk',
   ] as const) {
     await ensureReceiptMessagesLoaded(lang);
@@ -198,6 +199,7 @@ async function run() {
     mr: { tag: 'mr-IN', dir: 'ltr' },
     sw: { tag: 'sw-KE', dir: 'ltr' },
     pa: { tag: 'pa-IN', dir: 'ltr' },
+    te: { tag: 'te-IN', dir: 'ltr' },
     uk: { tag: 'uk-UA', dir: 'ltr' },
   };
 
@@ -446,6 +448,7 @@ async function run() {
     'mr',
     'sw',
     'pa',
+    'te',
     'uk',
   ]) {
     const filePath = path.join(MESSAGES_DIR, `${lang}.json`);

@@ -401,6 +401,7 @@ for (const [label, cluster] of [
   ['Devanagari', 'क्ष'],
   ['Bengali', 'ক্ষ'],
   ['Gurmukhi', 'ਪ੍ਰ'],
+  ['Telugu', 'క్ష'],
   ['Thai', 'กำ'],
   ['Urdu', 'کّ'],
 ] as const) {
@@ -646,6 +647,7 @@ try {
     String.fromCodePoint(0x0915, 0x094d, 0x0937),
     String.fromCodePoint(0x0995, 0x09cd, 0x09b7),
     String.fromCodePoint(0x0a2a, 0x0a4d, 0x0a30),
+    String.fromCodePoint(0x0c15, 0x0c4d, 0x0c37),
     String.fromCodePoint(0x0e01, 0x0e33),
     'کّ',
     'ک\u200c',

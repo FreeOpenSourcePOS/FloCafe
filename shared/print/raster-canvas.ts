@@ -56,7 +56,7 @@ export function paintRasterRequest(
     const topPad = 3;
     const weight = styles.includes('bold') ? '700' : '400';
     const fontFallback =
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Bengali", "Nirmala UI", "Vrinda", "Bangla Sangam MN", "Noto Sans Devanagari", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Gurmukhi", "Raavi", "Kohinoor Gurmukhi", "Gurmukhi Sangam MN", "Noto Sans Thai", "Leelawadee UI", "Thonburi", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Noto Sans", sans-serif';
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Bengali", "Nirmala UI", "Vrinda", "Bangla Sangam MN", "Noto Sans Devanagari", "Kohinoor Devanagari", "Devanagari Sangam MN", "Noto Sans Gurmukhi", "Raavi", "Kohinoor Gurmukhi", "Gurmukhi Sangam MN", "Noto Sans Telugu", "Kohinoor Telugu", "Telugu Sangam MN", "Noto Sans Thai", "Leelawadee UI", "Thonburi", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Noto Sans", sans-serif';
     const fontSpec = request.bundledFont
       ? JSON.stringify(request.bundledFont.family) + ', ' + fontFallback
       : fontFallback;
@@ -69,7 +69,7 @@ export function paintRasterRequest(
       return makeFailure('Grapheme segmentation is unavailable');
     const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
     const isIndicVirama = (codePoint: number): boolean =>
-      codePoint === 0x094d || codePoint === 0x09cd || codePoint === 0x0a4d;
+      codePoint === 0x094d || codePoint === 0x09cd || codePoint === 0x0a4d || codePoint === 0x0c4d;
     const isIndicConsonant = (codePoint: number): boolean =>
       (codePoint >= 0x0915 && codePoint <= 0x0939) ||
       (codePoint >= 0x0958 && codePoint <= 0x095f) ||
@@ -80,7 +80,9 @@ export function paintRasterRequest(
       codePoint === 0x09fc ||
       (codePoint >= 0x0a15 && codePoint <= 0x0a39) ||
       (codePoint >= 0x0a59 && codePoint <= 0x0a5e) ||
-      codePoint === 0x0a75;
+      codePoint === 0x0a75 ||
+      (codePoint >= 0x0c15 && codePoint <= 0x0c39) ||
+      (codePoint >= 0x0c58 && codePoint <= 0x0c5a);
     const graphemes = (value: string): string[] => {
       const merged: string[] = [];
       for (const { segment } of segmenter.segment(value)) {

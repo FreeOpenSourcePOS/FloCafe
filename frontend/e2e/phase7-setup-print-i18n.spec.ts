@@ -103,6 +103,7 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
     web: 'ਵੈੱਬ ਪ੍ਰਿੰਟ (ਬ੍ਰਾਊਜ਼ਰ)',
     whatsapp: 'WhatsApp ਸ਼ੇਅਰ',
   },
+  te: { basic: 'ప్రాథమిక రసీదు (థర్మల్)', web: 'వెబ్ ప్రింట్ (బ్రౌజర్)', whatsapp: 'WhatsApp షేర్' },
   uk: {
     basic: 'Базовий чек (термопринтер)',
     web: 'Веб-друк (браузер)',

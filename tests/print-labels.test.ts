@@ -345,6 +345,22 @@ function run(): void {
     printLabel('pa', 'pos.subtotal') === 'ਉਪ-ਜੋੜ' &&
       printLabel('pa', 'print.grandTotal') !== printLabel('pa', 'pos.subtotal'),
   );
+  assert('Telugu grand total is localized', printLabel('te', 'print.grandTotal') === 'మొత్తం');
+  assert(
+    'Telugu bill number label is localized',
+    printLabel('te', 'receipt.billNumber') === 'బిల్లు #',
+  );
+  assert('Telugu print-test amount is localized', printLabel('te', 'printTest.amt') === 'మొత్తం');
+  assert(
+    'Telugu takeaway is distinct from delivery',
+    printLabel('te', 'pos.orderTypeTakeaway') === 'టేక్అవే' &&
+      printLabel('te', 'pos.orderTypeDelivery') === 'డెలివరీ',
+  );
+  assert(
+    'Telugu subtotal stays distinct from grand total',
+    printLabel('te', 'pos.subtotal') === 'ఉప మొత్తం' &&
+      printLabel('te', 'print.grandTotal') !== printLabel('te', 'pos.subtotal'),
+  );
   assert('Ukrainian grand total is localized', printLabel('uk', 'print.grandTotal') === 'РАЗОМ');
   assert(
     'Ukrainian bill number label is localized',

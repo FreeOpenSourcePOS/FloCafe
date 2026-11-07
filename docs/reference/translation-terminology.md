@@ -27,8 +27,8 @@ Pinned by `tests/print-kernel.test.ts`.
 
 ## Indic conjuncts are never split
 
-A Devanagari, Bengali, or Gurmukhi conjunct is a single grapheme cluster and must stay one. The
-virama characters that join them, U+094D in Devanagari, U+09CD in Bengali, and U+0A4D in Gurmukhi,
+A Devanagari, Bengali, Gurmukhi, or Telugu conjunct is a single grapheme cluster and must stay one. The
+virama characters that join them, U+094D in Devanagari, U+09CD in Bengali, U+0A4D in Gurmukhi, and U+0C4D in Telugu,
 are the ones a naive splitter would break.
 
 Pinned by `tests/print-kernel.test.ts`, which asserts that wrapping a two-cluster Indic string at one
@@ -55,7 +55,7 @@ is invisible on screen and corrupts comparison, searching, and print labels.
 identically and wrap identically after normalisation, which is what makes NFC a requirement rather
 than a preference. `tests/translations.test.ts` rejects a `vi.json` value that is not already NFC.
 
-The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `pa.json`, `ru.json`, `sw.json`, `th.json`, and `uk.json`.
+The same NFC requirement is enforced for `ha.json`, `jv.json`, `mr.json`, `ne.json`, `pa.json`, `ru.json`, `sw.json`, `te.json`, `th.json`, and `uk.json`.
 
 ## Albanian and Vietnamese on a generic thermal printer
 
@@ -197,6 +197,12 @@ both `pos.*` and `products.*`. Cash movement uses `ਨਕਦ ਜਮ੍ਹਾਂ`
 pay-out on both the dashboard and the Z-report, and takeaway is `ਟੇਕਅਵੇ` across `orders.*` and
 `pos.*`. Gurmukhi virama conjuncts (`ਪ੍ਰ`, `ਸ੍ਰ`) and combining signs (`ੰ` tippi, `ਂ` bindi, `ੱ`
 addak, `਼` nukta) must remain NFC-normalized and attached to their base consonant.
+
+**Telugu.** Subtotal `ఉప మొత్తం` and grand total `మొత్తం` are distinct labels and must stay
+distinct on the receipt. The vegetarian tags are `శాకాహారం` and the non-vegetarian tags
+`మాంసాహారం`, identical between `pos.*` and `products.*`. Cash movement uses `నగదు జమ` for pay-in
+and `నగదు ఉపసంహరణ` for pay-out, identically on the dashboard and on the Z-report. Takeaway is
+`టేక్అవే` and delivery is `డెలివరీ`.
 
 **Ukrainian.** Takeaway is `З собою` and dine-in is `У закладі`; "delivery" is `Доставка`. Subtotal
 `Проміжний підсумок` and grand total `РАЗОМ` (or `Загальна сума` on browser receipts) stay distinct,

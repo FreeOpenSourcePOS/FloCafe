@@ -30,7 +30,9 @@ const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.j
 
 const nextNavPath = path.resolve(ROOT, 'frontend/node_modules/next/navigation.js');
 try {
-  const nextNavResolved = require.resolve('next/navigation', { paths: [path.join(ROOT, 'frontend')] });
+  const nextNavResolved = require.resolve('next/navigation', {
+    paths: [path.join(ROOT, 'frontend')],
+  });
   require.cache[nextNavResolved] = {
     id: nextNavResolved,
     filename: nextNavResolved,
@@ -49,7 +51,12 @@ const moduleApi = require('module') as {
   _resolveFilename: (...args: any[]) => string;
 };
 const originalResolveFilename = moduleApi._resolveFilename;
-moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+moduleApi._resolveFilename = function (
+  request: string,
+  parent: any,
+  isMain: boolean,
+  options?: any,
+) {
   let resolvedRequest = request;
   if (request === 'next/navigation') {
     return 'next/navigation';
@@ -82,8 +89,14 @@ React.useSyncExternalStore = function (subscribe: any, getSnapshot: any, getServ
   return origUseSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
 
-const { getLanguageDirection, loadLocaleMessages, getCachedMessages, getLanguageLocale } = require('@/lib/i18n');
-const { LANGUAGES: LANGUAGE_REGISTRY } = require('@/lib/i18n/languages') as typeof import('../frontend/src/lib/i18n/languages');
+const {
+  getLanguageDirection,
+  loadLocaleMessages,
+  getCachedMessages,
+  getLanguageLocale,
+} = require('@/lib/i18n');
+const { LANGUAGES: LANGUAGE_REGISTRY } =
+  require('@/lib/i18n/languages') as typeof import('../frontend/src/lib/i18n/languages');
 const { createTranslator } = frontendRequire('use-intl/core');
 const { IntlProvider } = frontendRequire('use-intl');
 const { usePosSettingsStore } = require('@/store/pos-settings');
@@ -198,7 +211,12 @@ function buildHtmlDocument(title: string, bodyContent: string, lang: Lang): stri
 </html>`;
 }
 
-async function renderScreenshotWithPlaywright(html: string, outputPath: string, width = 640, height = 480): Promise<boolean> {
+async function renderScreenshotWithPlaywright(
+  html: string,
+  outputPath: string,
+  width = 640,
+  height = 480,
+): Promise<boolean> {
   try {
     const { chromium } = frontendRequire('playwright');
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -215,12 +233,16 @@ async function renderScreenshotWithPlaywright(html: string, outputPath: string, 
           return true;
         } catch (err) {
           if (
-            attempt > 0
-            || !String(err?.message || '').includes('Protocol error (Page.captureScreenshot): Unable to capture screenshot')
+            attempt > 0 ||
+            !String(err?.message || '').includes(
+              'Protocol error (Page.captureScreenshot): Unable to capture screenshot',
+            )
           ) {
             throw err;
           }
-          console.warn(`  ! Screenshot capture failed once; restarting Chromium for retry: ${err?.message || err}`);
+          console.warn(
+            `  ! Screenshot capture failed once; restarting Chromium for retry: ${err?.message || err}`,
+          );
           retryCapture = true;
         }
       } finally {
@@ -272,15 +294,23 @@ async function run(): Promise<void> {
   for (const key of REQUIRED_KEYS) {
     for (const lang of LANGUAGES) {
       const translated = t(key, lang);
-      assert(typeof translated === 'string' && translated.length > 0, `Missing translation for ${key} in ${lang}`);
+      assert(
+        typeof translated === 'string' && translated.length > 0,
+        `Missing translation for ${key} in ${lang}`,
+      );
       assert(translated !== key, `Translation for ${key} returned raw key in ${lang}`);
       if (lang === 'fa') {
         // Persian must not be equal to English
         const enVal = t(key, 'en');
-        assert(translated !== enVal, `Persian translation for ${key} falls back to English: "${translated}"`);
+        assert(
+          translated !== enVal,
+          `Persian translation for ${key} falls back to English: "${translated}"`,
+        );
       }
     }
-    console.log(`  ✓ ${key}: en="${t(key, 'en')}" | es="${t(key, 'es')}" | fr="${t(key, 'fr')}" | pt="${t(key, 'pt')}" | fa="${t(key, 'fa')}"`);
+    console.log(
+      `  ✓ ${key}: en="${t(key, 'en')}" | es="${t(key, 'es')}" | fr="${t(key, 'fr')}" | pt="${t(key, 'pt')}" | fa="${t(key, 'fa')}"`,
+    );
   }
 
   // =========================================================================
@@ -310,11 +340,19 @@ async function run(): Promise<void> {
     const expectedErrorText = t('pos.printerError', lang);
 
     // Verify localized error is in markup
-    assert(markup.includes(expectedErrorText), `PrinterStatus markup for ${lang} does not contain "${expectedErrorText}"`);
+    assert(
+      markup.includes(expectedErrorText),
+      `PrinterStatus markup for ${lang} does not contain "${expectedErrorText}"`,
+    );
     // Verify raw English error message is NOT rendered in user-facing markup
-    assert(!markup.includes('USB transfer failed: LIBUSB_ERROR_IO'), `PrinterStatus markup for ${lang} leaked raw English lastError`);
+    assert(
+      !markup.includes('USB transfer failed: LIBUSB_ERROR_IO'),
+      `PrinterStatus markup for ${lang} leaked raw English lastError`,
+    );
 
-    console.log(`  ✓ [${lang}] PrinterStatus renders localized error "${expectedErrorText}" and hides raw error`);
+    console.log(
+      `  ✓ [${lang}] PrinterStatus renders localized error "${expectedErrorText}" and hides raw error`,
+    );
 
     // Render dropdown visual for evidence
     const dropdownHtml = `
@@ -335,7 +373,11 @@ async function run(): Promise<void> {
     const pngPath = path.join(EVIDENCE_DIR, `printer-status-dropdown-${lang}.png`);
     fs.writeFileSync(htmlPath, docHtml, 'utf8');
     if (await renderScreenshotWithPlaywright(docHtml, pngPath)) {
-      generatedArtifacts.push({ kind: 'screenshot', label: `PrinterStatus error dropdown (${lang.toUpperCase()})`, path: pngPath });
+      generatedArtifacts.push({
+        kind: 'screenshot',
+        label: `PrinterStatus error dropdown (${lang.toUpperCase()})`,
+        path: pngPath,
+      });
     }
   }
 
@@ -364,15 +406,30 @@ async function run(): Promise<void> {
       return React.createElement(
         'div',
         { className: 'rounded-xl border border-red-200 bg-red-50 p-4 text-start' },
-        React.createElement('p', { className: 'font-semibold text-red-800' }, t('pos.printingFailed', lang)),
-        React.createElement('p', { className: 'mt-1 text-sm text-gray-600' }, kotSupportError.message),
+        React.createElement(
+          'p',
+          { className: 'font-semibold text-red-800' },
+          t('pos.printingFailed', lang),
+        ),
+        React.createElement(
+          'p',
+          { className: 'mt-1 text-sm text-gray-600' },
+          kotSupportError.message,
+        ),
         React.createElement(
           'details',
           { className: 'mt-2 text-xs text-gray-500' },
-          React.createElement('summary', { className: 'cursor-pointer' }, t('support.showPayload', lang)),
+          React.createElement(
+            'summary',
+            { className: 'cursor-pointer' },
+            t('support.showPayload', lang),
+          ),
           React.createElement(
             Ltr,
-            { as: 'pre', className: 'mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs' },
+            {
+              as: 'pre',
+              className: 'mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2 font-mono text-xs',
+            },
             JSON.stringify(kotSupportError.payload, null, 2),
           ),
         ),
@@ -386,7 +443,9 @@ async function run(): Promise<void> {
           ),
           React.createElement(
             'button',
-            { className: 'rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700' },
+            {
+              className: 'rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700',
+            },
             t('support.dismiss', lang),
           ),
         ),
@@ -397,22 +456,44 @@ async function run(): Promise<void> {
 
     // Asserts
     assert(cardMarkup.includes(t('pos.printingFailed', lang)), `Header not localized for ${lang}`);
-    assert(cardMarkup.includes(t('pos.kotPrintFailed', lang)), `KOT message not localized for ${lang}`);
-    assert(cardMarkup.includes(t('support.getHelp', lang)), `Get help button not localized for ${lang}`);
-    assert(cardMarkup.includes(t('support.dismiss', lang)), `Dismiss button not localized for ${lang}`);
-    assert(cardMarkup.includes(t('support.showPayload', lang)), `Show payload summary not localized for ${lang}`);
+    assert(
+      cardMarkup.includes(t('pos.kotPrintFailed', lang)),
+      `KOT message not localized for ${lang}`,
+    );
+    assert(
+      cardMarkup.includes(t('support.getHelp', lang)),
+      `Get help button not localized for ${lang}`,
+    );
+    assert(
+      cardMarkup.includes(t('support.dismiss', lang)),
+      `Dismiss button not localized for ${lang}`,
+    );
+    assert(
+      cardMarkup.includes(t('support.showPayload', lang)),
+      `Show payload summary not localized for ${lang}`,
+    );
     // Diagnostics JSON preserves raw English message inside LTR block
     assert(cardMarkup.includes(rawKotError), `Diagnostic payload must preserve raw English error`);
 
-    console.log(`  ✓ [${lang}] POS support-error card renders all UI strings localized with English payload`);
+    console.log(
+      `  ✓ [${lang}] POS support-error card renders all UI strings localized with English payload`,
+    );
 
     // Render HTML & Screenshot
-    const cardDocHtml = buildHtmlDocument(`POS Printer Support-Error Card (${lang})`, cardMarkup, lang);
+    const cardDocHtml = buildHtmlDocument(
+      `POS Printer Support-Error Card (${lang})`,
+      cardMarkup,
+      lang,
+    );
     const cardHtmlPath = path.join(EVIDENCE_DIR, `pos-printer-error-card-${lang}.html`);
     const cardPngPath = path.join(EVIDENCE_DIR, `pos-printer-error-card-${lang}.png`);
     fs.writeFileSync(cardHtmlPath, cardDocHtml, 'utf8');
     if (await renderScreenshotWithPlaywright(cardDocHtml, cardPngPath)) {
-      generatedArtifacts.push({ kind: 'screenshot', label: `POS printer support-error card (${lang.toUpperCase()})`, path: cardPngPath });
+      generatedArtifacts.push({
+        kind: 'screenshot',
+        label: `POS printer support-error card (${lang.toUpperCase()})`,
+        path: cardPngPath,
+      });
     }
   }
 
@@ -421,7 +502,10 @@ async function run(): Promise<void> {
   // =========================================================================
   console.log('\n--- 4. Settings DB Import Success Toast ---');
   for (const lang of LANGUAGES) {
-    const rawBackendResponse = { success: true, message: 'Database imported 124 tables successfully in 320ms' };
+    const rawBackendResponse = {
+      success: true,
+      message: 'Database imported 124 tables successfully in 320ms',
+    };
 
     // Function matching SettingsPage runImport behavior:
     const simulateRunImport = (res: typeof rawBackendResponse) => {
@@ -435,7 +519,10 @@ async function run(): Promise<void> {
     const toastMessage = simulateRunImport(rawBackendResponse);
     const expectedToast = t('settings.importSuccess', lang);
     assert(toastMessage === expectedToast, `Settings import toast mismatch for ${lang}`);
-    assert(toastMessage !== rawBackendResponse.message, `Settings import toast leaked backend English message`);
+    assert(
+      toastMessage !== rawBackendResponse.message,
+      `Settings import toast leaked backend English message`,
+    );
 
     console.log(`  ✓ [${lang}] Settings import success toast: "${toastMessage}"`);
 
@@ -446,12 +533,20 @@ async function run(): Promise<void> {
         <div class="font-medium">${toastMessage}</div>
       </div>
     `;
-    const toastDocHtml = buildHtmlDocument(`Settings DB Import Success Toast (${lang})`, toastHtml, lang);
+    const toastDocHtml = buildHtmlDocument(
+      `Settings DB Import Success Toast (${lang})`,
+      toastHtml,
+      lang,
+    );
     const toastHtmlPath = path.join(EVIDENCE_DIR, `import-success-toast-${lang}.html`);
     const toastPngPath = path.join(EVIDENCE_DIR, `import-success-toast-${lang}.png`);
     fs.writeFileSync(toastHtmlPath, toastDocHtml, 'utf8');
     if (await renderScreenshotWithPlaywright(toastDocHtml, toastPngPath, 500, 200)) {
-      generatedArtifacts.push({ kind: 'screenshot', label: `Settings import success toast (${lang.toUpperCase()})`, path: toastPngPath });
+      generatedArtifacts.push({
+        kind: 'screenshot',
+        label: `Settings import success toast (${lang.toUpperCase()})`,
+        path: toastPngPath,
+      });
     }
   }
 
@@ -460,7 +555,10 @@ async function run(): Promise<void> {
   // =========================================================================
   console.log('\n--- 5. Support Ticket Submission Success Toast ---');
   for (const lang of LANGUAGES) {
-    const rawBackendData = { client_ticket_id: 'ticket-987123', message: 'Support ticket queued to local spooler' };
+    const rawBackendData = {
+      client_ticket_id: 'ticket-987123',
+      message: 'Support ticket queued to local spooler',
+    };
 
     // Function matching SupportPage handleSubmit behavior:
     const simulateSupportSubmit = (_res: typeof rawBackendData) => {
@@ -470,7 +568,10 @@ async function run(): Promise<void> {
     const toastMessage = simulateSupportSubmit(rawBackendData);
     const expectedToast = t('support.queued', lang);
     assert(toastMessage === expectedToast, `Support submit toast mismatch for ${lang}`);
-    assert(toastMessage !== rawBackendData.message, `Support submit toast leaked backend English message`);
+    assert(
+      toastMessage !== rawBackendData.message,
+      `Support submit toast leaked backend English message`,
+    );
 
     console.log(`  ✓ [${lang}] Support submit success toast: "${toastMessage}"`);
 
@@ -480,17 +581,27 @@ async function run(): Promise<void> {
         <div class="font-medium">${toastMessage}</div>
       </div>
     `;
-    const toastDocHtml = buildHtmlDocument(`Support Ticket Queued Toast (${lang})`, toastHtml, lang);
+    const toastDocHtml = buildHtmlDocument(
+      `Support Ticket Queued Toast (${lang})`,
+      toastHtml,
+      lang,
+    );
     const toastHtmlPath = path.join(EVIDENCE_DIR, `support-queued-toast-${lang}.html`);
     const toastPngPath = path.join(EVIDENCE_DIR, `support-queued-toast-${lang}.png`);
     fs.writeFileSync(toastHtmlPath, toastDocHtml, 'utf8');
     if (await renderScreenshotWithPlaywright(toastDocHtml, toastPngPath, 500, 200)) {
-      generatedArtifacts.push({ kind: 'screenshot', label: `Support queued success toast (${lang.toUpperCase()})`, path: toastPngPath });
+      generatedArtifacts.push({
+        kind: 'screenshot',
+        label: `Support queued success toast (${lang.toUpperCase()})`,
+        path: toastPngPath,
+      });
     }
   }
 
   await closeScreenshotBrowser();
-  console.log(`\n✅ All ${generatedArtifacts.length} visual evidence artifacts generated in ${EVIDENCE_DIR}`);
+  console.log(
+    `\n✅ All ${generatedArtifacts.length} visual evidence artifacts generated in ${EVIDENCE_DIR}`,
+  );
 }
 
 run().catch(async (err) => {

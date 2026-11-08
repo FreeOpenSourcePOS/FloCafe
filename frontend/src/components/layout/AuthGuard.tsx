@@ -34,6 +34,19 @@ export function getLandingPage(tenant?: Tenant | null): string {
   );
 }
 
+export function resolveSafeRedirect(raw: string | null | undefined): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) {
+    return null;
+  }
+  const normalized = normalizePathname(trimmed.split(/[?#]/, 1)[0]);
+  if (!normalized.startsWith('/auth') && !normalized.startsWith('/setup')) {
+    return normalized;
+  }
+  return null;
+}
+
 const PUBLIC_PATHS = [
   '/kds',
   '/kds-standalone',
@@ -162,7 +175,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!user) {
       router.push('/auth/login');
     } else if (!currentTenant) {
-      router.push('/auth/login?select_tenant=true');
+      const search = typeof window !== 'undefined' ? window.location?.search : '';
+      const redirect = search
+        ? resolveSafeRedirect(new URLSearchParams(search).get('redirect'))
+        : null;
+      router.push(
+        redirect
+          ? `/auth/login?select_tenant=true&redirect=${encodeURIComponent(redirect)}`
+          : '/auth/login?select_tenant=true',
+      );
     } else {
       const pagePermission = PAGE_PERMISSIONS.find(
         ([prefix]) => pathname === prefix || pathname?.startsWith(`${prefix}/`),

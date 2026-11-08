@@ -79,6 +79,7 @@ async function run() {
 
   const {
     getLandingPage,
+    resolveSafeRedirect,
     LANDING_PAGE_CANDIDATES,
     PAGE_PERMISSIONS,
   } = require('../frontend/src/components/layout/AuthGuard');
@@ -98,6 +99,35 @@ async function run() {
     '/auth/login',
     'staff without a page permission fall back to login',
   );
+  assert.equal(
+    resolveSafeRedirect('/customer-display'),
+    '/customer-display',
+    'resolveSafeRedirect accepts /customer-display',
+  );
+  assert.equal(
+    resolveSafeRedirect('/customer-display/'),
+    '/customer-display',
+    'resolveSafeRedirect normalizes trailing slash on /customer-display/',
+  );
+  for (const unsafeRedirect of [
+    null,
+    undefined,
+    '',
+    '   ',
+    'https://evil.com',
+    '//evil.com',
+    '/\\evil.com',
+    '/auth',
+    '/auth/login',
+    '/setup',
+    '/setup/',
+  ]) {
+    assert.equal(
+      resolveSafeRedirect(unsafeRedirect),
+      null,
+      `resolveSafeRedirect rejects ${JSON.stringify(unsafeRedirect)}`,
+    );
+  }
 
   const pagePermissionsByRoute = new Map<string, string>(PAGE_PERMISSIONS);
   assert.equal(
@@ -853,6 +883,57 @@ async function run() {
         'AuthGuard still routes to /setup when server explicitly reports needsSetup: true',
       );
 
+      // Subcase 2c: when user is authenticated without currentTenant selected, AuthGuard preserves a safe ?redirect= param on select_tenant=true and drops unsafe values
+      for (const slot of effectSlots) {
+        if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+      }
+      states.length = 0;
+      refs.length = 0;
+      effectSlots.length = 0;
+      pushedRoutes.length = 0;
+      scheduledTimers.length = 0;
+      setupStatusCalls = 0;
+      setupStatusHandler = async () => ({ data: { needsSetup: false } });
+      (guardAuthState as { user: unknown; currentTenant: unknown }).user = {
+        id: 'u1',
+        name: 'Owner',
+        email: 'owner@cafe.local',
+        role: 'owner',
+      };
+      (guardAuthState as { user: unknown; currentTenant: unknown }).currentTenant = null;
+      (globalThis as any).window.location.search = '?redirect=/customer-display';
+
+      renderAuthGuard();
+      await flushMicrotasks();
+      renderAuthGuard();
+
+      assert.deepEqual(
+        pushedRoutes,
+        ['/auth/login?select_tenant=true&redirect=%2Fcustomer-display'],
+        'AuthGuard preserves safe ?redirect=/customer-display when redirecting to select_tenant=true',
+      );
+
+      for (const slot of effectSlots) {
+        if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+      }
+      states.length = 0;
+      refs.length = 0;
+      effectSlots.length = 0;
+      pushedRoutes.length = 0;
+      (globalThis as any).window.location.search = '?redirect=https://evil.com';
+
+      renderAuthGuard();
+      await flushMicrotasks();
+      renderAuthGuard();
+
+      assert.deepEqual(
+        pushedRoutes,
+        ['/auth/login?select_tenant=true'],
+        'AuthGuard drops unsafe ?redirect= when redirecting to select_tenant=true',
+      );
+      (guardAuthState as { user: unknown; currentTenant: unknown }).user = null;
+      (globalThis as any).window.location.search = '';
+
       // Subcase 3: SetupPage mount check retries transient /auth/setup/status failure and redirects when needsSetup: false
       for (const slot of effectSlots) {
         if (slot && typeof slot.cleanup === 'function') slot.cleanup();
@@ -1141,6 +1222,9 @@ async function run() {
               }),
             };
           }
+          if (request === '@/lib/printer/warnings-toast') {
+            return { showPrintLanguageLoadErrorsToast: () => {} };
+          }
           if (request === '@/components/ui/button') return { Button: ButtonStub };
           if (request === '@/components/ui/input') return { Input: IconStub };
           if (request === '@/components/ui/label') return { Label: IconStub };
@@ -1210,6 +1294,212 @@ async function run() {
           ['/setup'],
           'LoginPage redirects to /setup when retry confirms needsSetup: true',
         );
+
+        // Subcase 4b: LoginPage honors safe ?redirect=/customer-display after login and falls back to getLandingPage(currentTenant) for unsafe redirects (#1514)
+        let mockLoginSearchParams = new URLSearchParams('redirect=/customer-display');
+        const loginAuthState = {
+          login: async () => {},
+          pinLogin: async () => {},
+          selectTenant: async () => {},
+          user: { id: 'u1', name: 'Owner', email: 'owner@cafe.local', role: 'owner' },
+          tenants: [{ id: 1, business_name: 'Cafe', role: 'owner', permission_ids: ['pos.use'] }],
+          currentTenant: {
+            id: 1,
+            business_name: 'Cafe',
+            role: 'owner',
+            permission_ids: ['pos.use'],
+          },
+          loadFromStorage: () => {},
+        };
+        (globalThis as any).fetch = async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({ needsSetup: false, status: 'ok', users: [] }),
+        });
+
+        Module._load = function (request: string, parent: unknown, isMain: boolean) {
+          if (request === 'react') {
+            return {
+              ...reactHooks,
+              Suspense: 'Suspense',
+              useCallback: (fn: unknown) => fn,
+              useLayoutEffect: reactHooks.useEffect,
+              useMemo: (fn: () => unknown) => fn(),
+            };
+          }
+          if (request === 'react/jsx-runtime') {
+            return { jsx: jsxElement, jsxs: jsxElement, Fragment: 'Fragment' };
+          }
+          if (request === 'next/navigation') {
+            return {
+              usePathname: () => '/auth/login',
+              useRouter: () => ({
+                push: (url: string) => pushedRoutes.push(url),
+                replace: (url: string) => pushedRoutes.push(url),
+              }),
+              useSearchParams: () => mockLoginSearchParams,
+            };
+          }
+          if (request === 'use-intl') {
+            return {
+              useTranslations: (ns: string) => (key: string) => `${ns}.${key}`,
+            };
+          }
+          if (request === '@/hooks/useFormatDate') {
+            return { useFormatDate: () => ({ formatTime: () => '' }) };
+          }
+          if (request === '@/lib/customer-display-token') {
+            return {
+              clearStoredDisplayToken: () => {},
+              consumeDisplayTokenFromUrl: () => null,
+              readStoredDisplayToken: () => null,
+            };
+          }
+          if (request === '@/store/auth') {
+            return {
+              StorageUnavailableError,
+              useAuthStore: () => loginAuthState,
+            };
+          }
+          if (request === '@/lib/permissions') {
+            return {
+              tenantCan: (
+                tenant: { permission_ids?: string[] } | null | undefined,
+                permission: string,
+              ) => tenant?.permission_ids?.includes(permission) === true,
+            };
+          }
+          if (request === '@/lib/printer/warnings-toast') {
+            return { showPrintLanguageLoadErrorsToast: () => {} };
+          }
+          if (request === '@/components/ui/button') return { Button: ButtonStub };
+          if (request === '@/components/ui/input') return { Input: IconStub };
+          if (request === '@/components/ui/label') return { Label: IconStub };
+          if (request === '@/components/ui/card') return { Card: IconStub, CardContent: IconStub };
+          if (request === '@/components/ui/dialog') {
+            return {
+              Dialog: IconStub,
+              DialogContent: IconStub,
+              DialogHeader: IconStub,
+              DialogTitle: IconStub,
+            };
+          }
+          if (request === '@/components/ui/dropdown-menu') {
+            return {
+              DropdownMenu: IconStub,
+              DropdownMenuContent: IconStub,
+              DropdownMenuItem: IconStub,
+              DropdownMenuTrigger: IconStub,
+            };
+          }
+          if (request === '@/components/support/SupportTicketForm') {
+            return { SupportTicketForm: IconStub, PRE_LOGIN_SUPPORT_ENDPOINTS: {} };
+          }
+          if (request === 'lucide-react') return new Proxy({}, { get: () => IconStub });
+          if (request === 'react-hot-toast') {
+            return { __esModule: true, default: { success: () => {}, error: () => {} } };
+          }
+          return originalLoad.apply(this, arguments as any);
+        };
+
+        delete require.cache[path.resolve(rootDir, 'frontend/src/components/layout/AuthGuard.tsx')];
+        delete require.cache[path.resolve(rootDir, 'frontend/src/app/auth/login/page.tsx')];
+        delete require.cache[path.resolve(rootDir, 'frontend/src/app/customer-display/page.tsx')];
+        const CustomerDisplayPage = require('../frontend/src/app/customer-display/page').default;
+        const LoginPageWithRedirect = require('../frontend/src/app/auth/login/page').default;
+
+        // First verify unauthenticated/unpaired /customer-display redirects to /auth/login?redirect=/customer-display
+        for (const slot of effectSlots) {
+          if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+        }
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pushedRoutes.length = 0;
+        scheduledTimers.length = 0;
+        pendingEffects.length = 0;
+        const savedUser = loginAuthState.user;
+        const savedTenant = loginAuthState.currentTenant;
+        (loginAuthState as { user: unknown; currentTenant: unknown; loading?: boolean }).user =
+          null;
+        (
+          loginAuthState as { user: unknown; currentTenant: unknown; loading?: boolean }
+        ).currentTenant = null;
+        (loginAuthState as { loading?: boolean }).loading = false;
+
+        const renderCustomerDisplay = () => {
+          currentStateIdx = 0;
+          currentRefIdx = 0;
+          currentEffectIdx = 0;
+          pendingEffects.length = 0;
+          CustomerDisplayPage();
+          while (pendingEffects.length > 0) {
+            const runEffect = pendingEffects.shift()!;
+            runEffect();
+          }
+        };
+
+        renderCustomerDisplay();
+        while (scheduledTimers.some((t) => !t.cleared)) {
+          const nextTimer = scheduledTimers.find((t) => !t.cleared)!;
+          nextTimer.cleared = true;
+          nextTimer.fn();
+        }
+        renderCustomerDisplay();
+
+        assert.deepEqual(
+          pushedRoutes,
+          ['/auth/login?redirect=/customer-display'],
+          'Unauthenticated unpaired CustomerDisplayPage redirects to /auth/login?redirect=/customer-display',
+        );
+        const customerDisplayLoginUrl = pushedRoutes[0];
+        const customerDisplayQuery = customerDisplayLoginUrl.split('?')[1] ?? '';
+
+        loginAuthState.user = savedUser;
+        loginAuthState.currentTenant = savedTenant;
+
+        const runLoginRedirectCase = (query: string) => {
+          for (const slot of effectSlots) {
+            if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+          }
+          states.length = 0;
+          refs.length = 0;
+          effectSlots.length = 0;
+          pushedRoutes.length = 0;
+          pendingEffects.length = 0;
+          currentStateIdx = 0;
+          currentRefIdx = 0;
+          currentEffectIdx = 0;
+          mockLoginSearchParams = new URLSearchParams(query);
+          const wrapper = LoginPageWithRedirect();
+          wrapper.props.children.type(wrapper.props.children.props);
+          while (pendingEffects.length > 0) {
+            const runEffect = pendingEffects.shift()!;
+            runEffect();
+          }
+        };
+
+        runLoginRedirectCase(customerDisplayQuery);
+        assert.deepEqual(
+          pushedRoutes,
+          ['/customer-display'],
+          'LoginPage navigates to /customer-display after login when redirect=/customer-display',
+        );
+
+        for (const unsafe of [
+          'https://evil.com',
+          '//evil.com',
+          '/\\evil.com',
+          '/auth/login',
+          '/setup',
+        ]) {
+          runLoginRedirectCase(`redirect=${encodeURIComponent(unsafe)}`);
+          assert.deepEqual(
+            pushedRoutes,
+            ['/pos'],
+            `LoginPage falls back to getLandingPage (/pos) when redirect=${unsafe}`,
+          );
+        }
 
         // Subcase 5: DesktopDragSurface exposes ApplicationMenuRow on standalone routes (/setup, /auth/*) and omits it on dashboard routes
         let mockPathname = '/setup';

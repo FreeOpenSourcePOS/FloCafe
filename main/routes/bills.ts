@@ -912,6 +912,7 @@ export function getOrdersWithItemsForBills(
 
   const projected = new Map<number, any>();
   const addonItems = new Map<number, any>();
+  const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency());
   for (const bill of bills) {
     const order = orders.get(Number(bill.order_id));
     if (!order) continue;
@@ -924,7 +925,6 @@ export function getOrdersWithItemsForBills(
         ? childAllocationsForBills(groupBills, allBillItems, Number(bill.id))
         : new Map<number, ChildItemAllocation>();
     const rawItems = itemsByOrder.get(Number(bill.order_id)) || [];
-    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency());
     const projectedItems = projectOrderItems(
       order,
       rawItems,

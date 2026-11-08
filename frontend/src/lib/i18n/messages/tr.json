@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "Ödeme yöntemi güncellendi",
     "correctPaymentMethodFailed": "Ödeme yöntemi güncellenemedi",
     "releaseScheduled": "Planlı",
-    "releaseBlocked": "İletim engellendi"
+    "releaseBlocked": "İletim engellendi",
+    "refundOwnerOnlyNotice": "Yönetici iade onayları devre dışı — bu iadeyi onaylamak için işletme sahibi PIN kodu gereklidir.",
+    "refundOutsideWindowNotice": "Bu sipariş yönetici onay süresinin dışında — bu iadeyi onaylamak için işletme sahibi PIN kodu gereklidir."
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "Yalnızca sürücü / tarayıcı yazdırma",
     "printerDriverOnlyWarning": "Bu yazıcı ham ESC/POS komutlarını kullanmaz. Ham termal yazıcı olarak eklemek yerine Tarayıcı ile Yazdır seçeneğini kullanın.",
     "printerSwitchToBrowserPrint": "Tarayıcı ile Yazdırmayı Kullan",
-    "printerSwitchedToBrowserPrint": "Yazdırma Yöntemi Tarayıcı ile Yazdırma olarak değiştirildi"
+    "printerSwitchedToBrowserPrint": "Yazdırma Yöntemi Tarayıcı ile Yazdırma olarak değiştirildi",
+    "refundPolicyTitle": "İade Politikası",
+    "refundPolicyHint": "Yöneticilerin iadeleri onaylayıp onaylayamayacağını ve onay süresinin ne kadar açık kalacağını kontrol edin.",
+    "refundManagerEnabled": "Yönetici İade Onaylarına İzin Ver",
+    "refundManagerEnabledHint": "Kapalı olduğunda her iade için işletme sahibinin Personel Onay PIN kodu gerekir.",
+    "refundManagerWindow": "Yönetici İade Onay Süresi",
+    "refundManagerWindowHint": "Bir sipariş oluşturulduktan veya yayınlandıktan sonra yönetici Personel Onay PIN kodunun iadeyi onaylayabileceği süre.",
+    "refundWindow30m": "30 dakika",
+    "refundWindow1h": "1 saat",
+    "refundWindow2h": "2 saat",
+    "refundWindow4h": "4 saat",
+    "refundWindowSameDay": "Aynı iş günü",
+    "refundOwnerUnlimitedNote": "İşletme sahipleri geçmiş herhangi bir siparişin iadesini kendi Personel Onay PIN kodlarıyla her zaman onaylayabilir."
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",

@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "An sabunta hanyar biyan kuɗi",
     "correctPaymentMethodFailed": "Ba a iya sabunta hanyar biyan kuɗi ba",
     "releaseScheduled": "An tsara lokaci",
-    "releaseBlocked": "An dakatar da turawa"
+    "releaseBlocked": "An dakatar da turawa",
+    "refundOwnerOnlyNotice": "An kashe amincewar mayar da kuɗi na manaja — ana buƙatar PIN na mai shago don amincewa da wannan mayar da kuɗi.",
+    "refundOutsideWindowNotice": "Wannan odar ta wuce lokacin amincewar manaja — ana buƙatar PIN na mai shago don amincewa da wannan mayar da kuɗi."
   },
   "pos": {
     "addCustomer": "Ƙara Abokin Ciniki",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "Buga ta Direba / Burauza kawai",
     "printerDriverOnlyWarning": "Wannan firinta ba ta amfani da umarnin ESC/POS kai tsaye. Yi amfani da Buga ta Burauza maimakon ƙara ta a matsayin firinta mai zafi.",
     "printerSwitchToBrowserPrint": "Yi amfani da Buga ta Burauza",
-    "printerSwitchedToBrowserPrint": "An sauya Hanyar Bugawa zuwa Buga ta Burauza"
+    "printerSwitchedToBrowserPrint": "An sauya Hanyar Bugawa zuwa Buga ta Burauza",
+    "refundPolicyTitle": "Manufar Mayar da Kuɗi",
+    "refundPolicyHint": "Sarrafa ko manajoji za su iya amincewa da mayar da kuɗi da kuma tsawon lokacin da tagar amincewarsu za ta kasance a buɗe.",
+    "refundManagerEnabled": "Bada Izinin Amincewar Mayar da Kuɗi na Manaja",
+    "refundManagerEnabledHint": "Idan an kashe, kowane mayar da kuɗi yana buƙatar PIN na Amincewar Ma’aikata na mai shago.",
+    "refundManagerWindow": "Lokacin Amincewar Mayar da Kuɗi na Manaja",
+    "refundManagerWindowHint": "Tsawon lokacin da bayan an ƙirƙiri oda ko an saki ta PIN na manaja zai iya amincewa da mayar da kuɗi.",
+    "refundWindow30m": "Minti 30",
+    "refundWindow1h": "Awa 1",
+    "refundWindow2h": "Awanni 2",
+    "refundWindow4h": "Awanni 4",
+    "refundWindowSameDay": "Rana ɗaya ta kasuwanci",
+    "refundOwnerUnlimitedNote": "Masu shago za su iya amincewa da mayar da kuɗi a kowane lokaci don kowace tsohuwar oda da PIN ɗinsu na amincewa."
   },
   "setup": {
     "alreadyCompleted": "An riga an kammala saitin farko a wannan manhajar da aka girka. Ana turawa zuwa shafin shiga…",

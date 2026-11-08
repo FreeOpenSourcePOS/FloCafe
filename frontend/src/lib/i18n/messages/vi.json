@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "Đã cập nhật phương thức thanh toán",
     "correctPaymentMethodFailed": "Không thể cập nhật phương thức thanh toán",
     "releaseScheduled": "Hẹn giờ",
-    "releaseBlocked": "Chặn gửi bếp"
+    "releaseBlocked": "Chặn gửi bếp",
+    "refundOwnerOnlyNotice": "Phê duyệt hoàn tiền của quản lý đã bị tắt — cần mã PIN của chủ quán để phê duyệt khoản hoàn tiền này.",
+    "refundOutsideWindowNotice": "Đơn hàng này đã quá thời hạn phê duyệt của quản lý — cần mã PIN của chủ quán để phê duyệt khoản hoàn tiền này."
   },
   "pos": {
     "addCustomer": "Thêm khách hàng",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "Chỉ in qua trình điều khiển / trình duyệt",
     "printerDriverOnlyWarning": "Máy in này không dùng lệnh ESC/POS trực tiếp. Hãy dùng In qua trình duyệt thay vì thêm làm máy in nhiệt trực tiếp.",
     "printerSwitchToBrowserPrint": "Dùng In qua trình duyệt",
-    "printerSwitchedToBrowserPrint": "Đã chuyển phương thức in sang In qua trình duyệt"
+    "printerSwitchedToBrowserPrint": "Đã chuyển phương thức in sang In qua trình duyệt",
+    "refundPolicyTitle": "Chính sách hoàn tiền",
+    "refundPolicyHint": "Kiểm soát việc quản lý có thể phê duyệt hoàn tiền hay không và thời hạn phê duyệt của họ kéo dài bao lâu.",
+    "refundManagerEnabled": "Cho phép quản lý phê duyệt hoàn tiền",
+    "refundManagerEnabledHint": "Khi tắt, mọi khoản hoàn tiền đều yêu cầu mã PIN phê duyệt của chủ quán.",
+    "refundManagerWindow": "Thời hạn phê duyệt hoàn tiền của quản lý",
+    "refundManagerWindowHint": "Khoảng thời gian sau khi đơn hàng được tạo hoặc phát hành mà mã PIN phê duyệt của quản lý có thể duyệt hoàn tiền.",
+    "refundWindow30m": "30 phút",
+    "refundWindow1h": "1 giờ",
+    "refundWindow2h": "2 giờ",
+    "refundWindow4h": "4 giờ",
+    "refundWindowSameDay": "Cùng ngày kinh doanh",
+    "refundOwnerUnlimitedNote": "Chủ quán luôn có thể phê duyệt hoàn tiền cho bất kỳ đơn hàng cũ nào bằng mã PIN phê duyệt của mình."
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

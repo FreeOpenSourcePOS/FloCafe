@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "Zahlungsart aktualisiert",
     "correctPaymentMethodFailed": "Zahlungsart konnte nicht aktualisiert werden",
     "releaseScheduled": "Geplant",
-    "releaseBlocked": "Freigabe blockiert"
+    "releaseBlocked": "Freigabe blockiert",
+    "refundOwnerOnlyNotice": "Rückerstattungsgenehmigungen durch Manager sind deaktiviert — zur Genehmigung dieser Rückerstattung ist eine Inhaber-PIN erforderlich.",
+    "refundOutsideWindowNotice": "Diese Bestellung liegt außerhalb des Genehmigungszeitfensters für Manager — zur Genehmigung dieser Rückerstattung ist eine Inhaber-PIN erforderlich."
   },
   "pos": {
     "addCustomer": "Kunde hinzufügen",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "Nur Treiber- / Browserdruck",
     "printerDriverOnlyWarning": "Dieser Drucker unterstützt keine direkten ESC/POS-Befehle. Verwenden Sie den Browserdruck, anstatt ihn als direkten Thermodrucker hinzuzufügen.",
     "printerSwitchToBrowserPrint": "Browserdruck verwenden",
-    "printerSwitchedToBrowserPrint": "Druckmethode auf Browserdruck umgestellt"
+    "printerSwitchedToBrowserPrint": "Druckmethode auf Browserdruck umgestellt",
+    "refundPolicyTitle": "Rückerstattungsrichtlinie",
+    "refundPolicyHint": "Legen Sie fest, ob Manager Rückerstattungen genehmigen dürfen und wie lange ihr Genehmigungszeitfenster geöffnet bleibt.",
+    "refundManagerEnabled": "Rückerstattungsgenehmigungen durch Manager erlauben",
+    "refundManagerEnabledHint": "Wenn deaktiviert, erfordert jede Rückerstattung die Personal-Genehmigungs-PIN eines Inhabers.",
+    "refundManagerWindow": "Genehmigungszeitfenster für Manager-Rückerstattungen",
+    "refundManagerWindowHint": "Wie lange nach Erstellung oder Freigabe einer Bestellung ein Manager mit seiner Genehmigungs-PIN eine Rückerstattung freigeben kann.",
+    "refundWindow30m": "30 Minuten",
+    "refundWindow1h": "1 Stunde",
+    "refundWindow2h": "2 Stunden",
+    "refundWindow4h": "4 Stunden",
+    "refundWindowSameDay": "Gleicher Geschäftstag",
+    "refundOwnerUnlimitedNote": "Inhaber können Rückerstattungen für jede vergangene Bestellung jederzeit mit ihrer Personal-Genehmigungs-PIN genehmigen."
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",

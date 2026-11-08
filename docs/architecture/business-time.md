@@ -138,12 +138,15 @@ isolated in a shared drawer. For cross-shift bill tax attribution on shift X/Z r
 
 ### Refunds
 
-`main/services/refund.ts` allows a refund freely within `REFUND_WINDOW_MS` of order creation (or of
-`released_at` for released scheduled orders; unreleased scheduled orders never age into the late
-refund tier), which is one hour. After that window the anchor timestamp's business day is computed
-with `localDateInTimezone`, and if the current instant has passed that day's end the refund is
-refused with a `409`. Before the `409`, a late refund narrows the approver to owners and requires
-that owner's Staff Approval PIN. The device Master PIN never authorizes a refund.
+`main/services/refund.ts` evaluates manager approval eligibility against the owner-configured
+`refund_manager_enabled` (default `'true'`) and `refund_manager_window` (`'30m'`, `'1h'`, `'2h'`,
+`'4h'`, or `'same_business_day'`, default `'1h'`) settings, anchored to `released_at || created_at`
+for released orders (when `refund_manager_enabled === 'true'`, unreleased scheduled orders never age
+into the owner-only tier). The anchor timestamp's business day is computed with
+`localDateInTimezone` and `dayBoundsInTimezone`. Once the configured manager window or the anchor
+timestamp's business day has passed (or when `refund_manager_enabled === 'false'`), a refund
+narrows the eligible approver to active owners and requires that owner's Staff Approval PIN, with no
+age cutoff for owner-approved refunds. The device Master PIN never authorizes a refund.
 
 `parseDbTimestamp` is used on both ends of that comparison, so the boundary is an instant
 comparison in UTC rather than a string comparison.

@@ -183,8 +183,8 @@ explicit product decision.
 
 **Rule:** The initial owner creates and confirms a separate 4 to 6 digit Staff Approval PIN during
 first-run setup. It is stored as a bcrypt hash on the owner user record, independent of the device
-Master PIN. Owners, and within the in-progress window also managers, can refund a bill that has
-already been paid: in full, partially, or for a single item. The
+Master PIN. Owners, and when enabled within the configured manager approval window also managers,
+can refund a bill that has already been paid: in full, partially, or for a single item. The
 refund can be paid back in a different method than the customer used, or issued as store credit.
 
 1. **Selected approver.** Every refund identifies one approver through `approver_id`. `manager_id`
@@ -195,19 +195,20 @@ refund can be paid back in a different method than the customer used, or issued 
 2. **Ceiling.** A refund can never exceed `paid_amount` minus the sum of prior refunds for that
    bill, not the order's gross total, so a partly refunded bill cannot be refunded past what is
    outstanding. Enforced by `getRefundableBalance()` in `main/services/refund.ts`.
-3. **Approval tiers**, keyed off `released_at || created_at` for released orders and the store's
-   business day (while an unreleased scheduled order in `release_status` `scheduled` or `blocked` is
-   exempt from the late-refund cutoffs so multi-day prepaid scheduled orders can be refunded before
-   cancellation). The in-progress window is `REFUND_WINDOW_MS`, one hour.
-   - Unreleased scheduled order, or within the window of `released_at || created_at`: the selected
-     active owner's or manager's Staff Approval PIN.
-   - After the window but inside the anchor timestamp's business day, computed by
-     `dayBoundsInTimezone()` in `main/db.ts` from the tenant's configured timezone and
-     `business_day_start_time`: the selected active owner's PIN only. A manager PIN is rejected
-     outright. Once an order is effectively closed there is no kitchen or service context left to
-     sanity-check the request, so the bar is raised rather than reused.
-   - After that business day ends: refused with HTTP 409, regardless of who approves. Reversing an
-     older transaction happens outside the system.
+3. **Approval tiers**, keyed off `released_at || created_at` for released orders, the store's
+   business day (`dayBoundsInTimezone()` in `main/db.ts` from the tenant's configured timezone and
+   `business_day_start_time`), and the owner-configured refund policy settings
+   `refund_manager_enabled` (`'true'` | `'false'`, default `'true'`) and `refund_manager_window`
+   (`'30m'` | `'1h'` | `'2h'` | `'4h'` | `'same_business_day'`, default `'1h'`).
+   - When `refund_manager_enabled === 'true'`, an unreleased scheduled order in `release_status`
+     `scheduled` or `blocked`, or a released order within the configured `refund_manager_window` of
+     `released_at || created_at` and before the end of that anchor timestamp's business day, may be
+     approved with either the selected active owner's or manager's Staff Approval PIN.
+   - When `refund_manager_enabled === 'false'`, or once the configured manager approval window or
+     the anchor timestamp's business day has passed, only the selected active owner's Staff Approval
+     PIN is accepted. A manager PIN is rejected with HTTP 403.
+   - Owners have no age cutoff: an active owner can approve a refund on any eligible paid order from
+     any past business day using their Staff Approval PIN.
 4. **Item eligibility** for a single-item refund is `REFUND_ITEM_ELIGIBLE_STATUSES`: `preparing`,
    `ready`, `served`, `completed`.
 5. **The refund payment method is independent of the original.** A card payment can be refunded in
@@ -220,11 +221,14 @@ refund can be paid back in a different method than the customer used, or issued 
 7. **Accepted limitation.** A refund does not claw back cashback already credited on that sale at
    payment time. Proportional cashback clawback was judged not worth the complexity at the product's
    install-base scale.
-8. **Refund initiation is configurable; approval eligibility is not.** `refunds.initiate` (shipped
-   owner/manager) controls who may start the workflow and is owner-editable per role or per user,
-   see [role templates and user permissions](#role-templates-and-user-permissions-are-owner-configurable).
-   The selected approver must still independently satisfy the owner/manager and time-tier rules
-   above — those are fixed context policy, not a permission, regardless of the initiator's grant.
+8. **Refund initiation and manager approval window are owner-configurable.** `refunds.initiate`
+   (shipped owner/manager) controls who may start the workflow and is owner-editable per role or per
+   user, see [role templates and user permissions](#role-templates-and-user-permissions-are-owner-configurable).
+   Owners can also toggle manager refund approval (`refund_manager_enabled`) and set the manager
+   refund approval window (`refund_manager_window`) via `/api/settings/refunds`. The selected
+   approver must still independently satisfy the owner/manager and time-tier rules above - those are
+   enforced against the approver's role and the order's anchor timestamp regardless of the
+   initiator's grant.
 9. **Product and supply inventory are never restored by a refund; single-item refunds restore
    tracked add-on stock.** Whole-bill and partial-amount refunds never restore stock. A single-item
    refund (`order_item_id`) leaves product stock and recipe supplies untouched, matching how

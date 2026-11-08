@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "Njia ya malipo imesasishwa",
     "correctPaymentMethodFailed": "Imeshindikana kusasisha njia ya malipo",
     "releaseScheduled": "Imepangwa",
-    "releaseBlocked": "Utumaji umezuiwa"
+    "releaseBlocked": "Utumaji umezuiwa",
+    "refundOwnerOnlyNotice": "Uidhinishaji wa kurejesha pesa kwa meneja umezimwa — PIN ya mmiliki inahitajika ili kuidhinisha urejeshaji huu.",
+    "refundOutsideWindowNotice": "Oda hii iko nje ya muda wa uidhinishaji wa meneja — PIN ya mmiliki inahitajika ili kuidhinisha urejeshaji huu."
   },
   "pos": {
     "addCustomer": "Ongeza Mteja",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "Uchapishaji wa kiendeshi / kivinjari pekee",
     "printerDriverOnlyWarning": "Printa hii haitumii amri ghafi za ESC/POS. Tumia Uchapishaji wa Kivinjari badala ya kuiongeza kama printa ghafi ya joto.",
     "printerSwitchToBrowserPrint": "Tumia Uchapishaji wa Kivinjari",
-    "printerSwitchedToBrowserPrint": "Njia ya uchapishaji imebadilishwa kuwa Uchapishaji wa Kivinjari"
+    "printerSwitchedToBrowserPrint": "Njia ya uchapishaji imebadilishwa kuwa Uchapishaji wa Kivinjari",
+    "refundPolicyTitle": "Sera ya Marejesho",
+    "refundPolicyHint": "Dhibiti ikiwa mameneja wanaweza kuidhinisha marejesho ya pesa na muda ambao dirisha lao la uidhinishaji linakaa wazi.",
+    "refundManagerEnabled": "Ruhusu Uidhinishaji wa Marejesho kwa Meneja",
+    "refundManagerEnabledHint": "Ikizimwa, kila urejeshaji wa pesa unahitaji PIN ya Uidhinishaji wa Wafanyakazi ya mmiliki.",
+    "refundManagerWindow": "Muda wa Uidhinishaji wa Marejesho kwa Meneja",
+    "refundManagerWindowHint": "Muda gani baada ya oda kuundwa au kutolewa PIN ya Uidhinishaji ya meneja inaweza kuidhinisha urejeshaji wa pesa.",
+    "refundWindow30m": "Dakika 30",
+    "refundWindow1h": "Saa 1",
+    "refundWindow2h": "Saa 2",
+    "refundWindow4h": "Saa 4",
+    "refundWindowSameDay": "Siku hiyo hiyo ya biashara",
+    "refundOwnerUnlimitedNote": "Wamiliki wanaweza kuidhinisha marejesho ya pesa kwa oda yoyote ya zamani wakati wowote kwa kutumia PIN yao ya Uidhinishaji."
   },
   "setup": {
     "alreadyCompleted": "Usanidi tayari umekamilishwa kwenye usakinishaji huu. Inaelekeza kwenye kuingia…",

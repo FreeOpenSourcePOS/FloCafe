@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "روش پرداخت به‌روزرسانی شد",
     "correctPaymentMethodFailed": "به‌روزرسانی روش پرداخت انجام نشد",
     "releaseScheduled": "زمان‌بندی‌شده",
-    "releaseBlocked": "ارسال مسدود"
+    "releaseBlocked": "ارسال مسدود",
+    "refundOwnerOnlyNotice": "تأیید استرداد توسط مدیر غیرفعال است — برای تأیید این استرداد به پین مالک نیاز است.",
+    "refundOutsideWindowNotice": "این سفارش خارج از بازه زمانی تأیید مدیر است — برای تأیید این استرداد به پین مالک نیاز است."
   },
   "pos": {
     "addCustomer": "افزودن مشتری",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "فقط چاپ مرورگر / درایور",
     "printerDriverOnlyWarning": "این چاپگر از دستورات مستقیم ESC/POS پشتیبانی نمی‌کند. به‌جای افزودن آن به‌عنوان چاپگر حرارتی مستقیم، از چاپ مرورگر استفاده کنید.",
     "printerSwitchToBrowserPrint": "استفاده از چاپ مرورگر",
-    "printerSwitchedToBrowserPrint": "روش چاپ به چاپ مرورگر تغییر یافت"
+    "printerSwitchedToBrowserPrint": "روش چاپ به چاپ مرورگر تغییر یافت",
+    "refundPolicyTitle": "سیاست استرداد وجه",
+    "refundPolicyHint": "مشخص کنید آیا مدیران میتوانند استردادها را تأیید کنند و بازه زمانی تأیید آنها چقدر باز بماند.",
+    "refundManagerEnabled": "مجاز بودن تأیید استرداد توسط مدیر",
+    "refundManagerEnabledHint": "در صورت غیرفعال بودن، هر استرداد نیازمند پین تأیید مالک فروشگاه است.",
+    "refundManagerWindow": "بازه زمانی تأیید استرداد توسط مدیر",
+    "refundManagerWindowHint": "مدت زمانی پس از ثبت یا ارسال سفارش که پین تأیید مدیر میتواند استرداد را تأیید کند.",
+    "refundWindow30m": "۳۰ دقیقه",
+    "refundWindow1h": "۱ ساعت",
+    "refundWindow2h": "۲ ساعت",
+    "refundWindow4h": "۴ ساعت",
+    "refundWindowSameDay": "همان روز کاری",
+    "refundOwnerUnlimitedNote": "مالکان همیشه میتوانند استرداد هر سفارش قبلی را با پین تأیید خود تأیید کنند."
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",

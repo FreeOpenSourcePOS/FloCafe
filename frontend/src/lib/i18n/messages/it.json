@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "Metodo di pagamento aggiornato",
     "correctPaymentMethodFailed": "Impossibile aggiornare il metodo di pagamento",
     "releaseScheduled": "Programmato",
-    "releaseBlocked": "Invio bloccato"
+    "releaseBlocked": "Invio bloccato",
+    "refundOwnerOnlyNotice": "Le approvazioni dei rimborsi da parte del responsabile sono disabilitate — è richiesto il PIN del titolare per approvare questo rimborso.",
+    "refundOutsideWindowNotice": "Questo ordine è fuori dalla finestra di approvazione del responsabile — è richiesto il PIN del titolare per approvare questo rimborso."
   },
   "pos": {
     "addCustomer": "Aggiungi cliente",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "Solo stampa tramite driver / browser",
     "printerDriverOnlyWarning": "Questa stampante non utilizza comandi ESC/POS grezzi. Usa la stampa del browser invece di aggiungerla come stampante termica diretta.",
     "printerSwitchToBrowserPrint": "Usa stampa del browser",
-    "printerSwitchedToBrowserPrint": "Metodo di stampa impostato su stampa del browser"
+    "printerSwitchedToBrowserPrint": "Metodo di stampa impostato su stampa del browser",
+    "refundPolicyTitle": "Politica di rimborso",
+    "refundPolicyHint": "Controlla se i responsabili possono approvare i rimborsi e per quanto tempo resta aperta la loro finestra di approvazione.",
+    "refundManagerEnabled": "Consenti approvazioni di rimborso del responsabile",
+    "refundManagerEnabledHint": "Quando è disattivato, ogni rimborso richiede il PIN di approvazione del titolare.",
+    "refundManagerWindow": "Finestra di approvazione rimborso del responsabile",
+    "refundManagerWindowHint": "Per quanto tempo dopo la creazione o il rilascio di un ordine il PIN di approvazione di un responsabile può autorizzare un rimborso.",
+    "refundWindow30m": "30 minuti",
+    "refundWindow1h": "1 ora",
+    "refundWindow2h": "2 ore",
+    "refundWindow4h": "4 ore",
+    "refundWindowSameDay": "Stesso giorno lavorativo",
+    "refundOwnerUnlimitedNote": "I titolari possono sempre approvare i rimborsi per qualsiasi ordine passato con il proprio PIN di approvazione."
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",

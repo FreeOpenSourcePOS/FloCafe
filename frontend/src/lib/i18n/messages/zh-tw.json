@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "付款方式已更新",
     "correctPaymentMethodFailed": "無法更新付款方式",
     "releaseScheduled": "已預約",
-    "releaseBlocked": "送廚受阻"
+    "releaseBlocked": "送廚受阻",
+    "refundOwnerOnlyNotice": "經理退款核准已停用 — 需要店主 PIN 碼才能核准此退款。",
+    "refundOutsideWindowNotice": "此訂單已超出經理核准時限 — 需要店主 PIN 碼才能核准此退款。"
   },
   "pos": {
     "addCustomer": "新增顧客",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "僅限驅動程式 / 瀏覽器列印",
     "printerDriverOnlyWarning": "此印表機不使用原生 ESC/POS 指令。請改用瀏覽器列印，勿將其新增為原生熱感式印表機。",
     "printerSwitchToBrowserPrint": "使用瀏覽器列印",
-    "printerSwitchedToBrowserPrint": "已將列印方式切換為瀏覽器列印"
+    "printerSwitchedToBrowserPrint": "已將列印方式切換為瀏覽器列印",
+    "refundPolicyTitle": "退款政策",
+    "refundPolicyHint": "控制經理是否可以核准退款以及其核准時限保持開啟的時長。",
+    "refundManagerEnabled": "允許經理核准退款",
+    "refundManagerEnabledHint": "關閉後，每筆退款都需要店主的員工核准 PIN 碼。",
+    "refundManagerWindow": "經理退款核准時限",
+    "refundManagerWindowHint": "訂單建立或釋出後，經理的員工核准 PIN 碼可以核准退款的時長。",
+    "refundWindow30m": "30 分鐘",
+    "refundWindow1h": "1 小時",
+    "refundWindow2h": "2 小時",
+    "refundWindow4h": "4 小時",
+    "refundWindowSameDay": "同一營業日",
+    "refundOwnerUnlimitedNote": "店主始終可以使用其員工核准 PIN 碼核准任何歷史訂單的退款。"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",

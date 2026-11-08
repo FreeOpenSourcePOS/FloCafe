@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "Mënyra e pagesës u përditësua",
     "correctPaymentMethodFailed": "Mënyra e pagesës nuk mund të përditësohej",
     "releaseScheduled": "E planifikuar",
-    "releaseBlocked": "Dërgimi i bllokuar"
+    "releaseBlocked": "Dërgimi i bllokuar",
+    "refundOwnerOnlyNotice": "Miratimet e rimbursimit nga menaxheri janë të çaktivizuara — kërkohet PIN-i i pronarit për të miratuar këtë rimbursim.",
+    "refundOutsideWindowNotice": "Kjo porosi është jashtë afatit të miratimit të menaxherit — kërkohet PIN-i i pronarit për të miratuar këtë rimbursim."
   },
   "pos": {
     "addCustomer": "Shto klient",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "Vetëm printim me drajver / shfletues",
     "printerDriverOnlyWarning": "Ky printer nuk përdor komanda të drejtpërdrejta ESC/POS. Përdorni Printimin nga Shfletuesi në vend që ta shtoni si printer termik.",
     "printerSwitchToBrowserPrint": "Përdor printimin nga shfletuesi",
-    "printerSwitchedToBrowserPrint": "Metoda e printimit u kalua në printimin nga shfletuesi"
+    "printerSwitchedToBrowserPrint": "Metoda e printimit u kalua në printimin nga shfletuesi",
+    "refundPolicyTitle": "Politika e rimbursimit",
+    "refundPolicyHint": "Kontrolloni nëse menaxherët mund të miratojnë rimbursime dhe sa gjatë qëndron e hapur dritarja e tyre e miratimit.",
+    "refundManagerEnabled": "Lejo miratimet e rimbursimit nga menaxheri",
+    "refundManagerEnabledHint": "Kur është e fikur, çdo rimbursim kërkon PIN-in e miratimit të stafit të pronarit.",
+    "refundManagerWindow": "Dritarja e miratimit të rimbursimit nga menaxheri",
+    "refundManagerWindowHint": "Sa kohë pas krijimit ose lëshimit të një porosie PIN-i i miratimit të menaxherit mund të miratojë një rimbursim.",
+    "refundWindow30m": "30 minuta",
+    "refundWindow1h": "1 orë",
+    "refundWindow2h": "2 orë",
+    "refundWindow4h": "4 orë",
+    "refundWindowSameDay": "E njëjta ditë pune",
+    "refundOwnerUnlimitedNote": "Pronarët mund të miratojnë gjithmonë rimbursime për çdo porosi të kaluar me PIN-in e tyre të miratimit të stafit."
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

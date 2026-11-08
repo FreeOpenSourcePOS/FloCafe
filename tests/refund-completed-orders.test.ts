@@ -18,14 +18,17 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
+const jwt = require('jsonwebtoken');
 const {
   initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedCustomer,
   api, assert, assertEqual, getResults, closeDatabase, now,
 } = require('./helpers/test-setup');
-const { orderRoutes } = require('../main/routes/orders');
+const { orderRoutes, resetPinRateLimitForTests } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { refundRoutes } = require('../main/routes/refunds');
 const { customerRoutes } = require('../main/routes/customers');
+const { settingsRoutes } = require('../main/routes/settings');
+const { getJWTSecret } = require('../main/routes/auth');
 
 async function main() {
   console.log('Refunds on completed orders: business-day tiers, item eligibility, store credit');
@@ -36,6 +39,14 @@ async function main() {
   }
   const { userId: ownerId, authHeader: ownerAuth } = seedOwnerUser(db);
   const { userId: managerId, authHeader: managerAuth } = seedManagerUser(db);
+  const cashierId = 'cashier-refund-co';
+  db.prepare(
+    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(cashierId, 'Test Cashier', 'cashier@test.local', bcrypt.hashSync('testpass123', 10), 'cashier', 1, now(), now());
+  const cashierAuth = {
+    Authorization: `Bearer ${jwt.sign({ userId: cashierId, email: 'cashier@test.local', role: 'cashier' }, getJWTSecret(), { expiresIn: '1h' })}`,
+  };
   // seedOwnerUser doesn't set a PIN by default — completed-order refunds need one to approve.
   db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(bcrypt.hashSync('9999', 10), ownerId);
   seedCategory(db, 'cat-refund-co', 'Refund menu (completed orders)');
@@ -47,6 +58,7 @@ async function main() {
     '/api/bills': billRoutes,
     '/api/refunds': refundRoutes,
     '/api/customers': customerRoutes,
+    '/api/settings': settingsRoutes,
   });
   const { baseUrl, server } = await startServer(app);
 
@@ -106,15 +118,202 @@ async function main() {
     assertEqual(auditDetails.lateRefund, true, 'the audit details flag this as a late refund');
     assertEqual(auditDetails.approvedBy, ownerId, 'the audit details record the owner as approver');
 
-    // ── A prior business day is closed even to an owner PIN ─────────────────
+    // ── Prior business day: manager PIN rejected, owner PIN accepted (no age limit) ──
     const priorDayBill = await newPaidBill('prod-refund-co');
     db.prepare("UPDATE orders SET created_at = '2025-06-13 12:00:00' WHERE id = ?").run(priorDayBill.order.id);
+    const priorDayManagerAttempt = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: priorDayBill.bill.id, amount: priorDayBill.bill.paid_amount, method: 'cash', override_pin: '1234', approver_id: managerId },
+      headers: ownerAuth,
+    });
+    assertEqual(priorDayManagerAttempt.status, 403, 'a manager PIN cannot refund an order from a prior business day');
+
     const priorDayAttempt = await api(baseUrl, '/api/refunds', {
       method: 'POST',
       body: { bill_id: priorDayBill.bill.id, amount: priorDayBill.bill.paid_amount, method: 'cash', override_pin: '9999', manager_id: ownerId },
       headers: ownerAuth,
     });
-    assertEqual(priorDayAttempt.status, 409, 'even an owner PIN cannot refund an order from a prior business day');
+    assertEqual(priorDayAttempt.status, 201, 'an owner PIN can refund an order from a prior business day');
+    assertEqual(priorDayAttempt.data.refund.approved_by, ownerId, 'prior-day refund records the owner as approver');
+
+    // Backdated 1 year old order with an open cash session attaches to the current open session
+    const sessionInsert = db.prepare(
+      "INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status) VALUES (?, 'Test Owner', '2025-06-15 08:00:00', 10000, 'open')",
+    ).run(ownerId);
+    const openSessionId = Number(sessionInsert.lastInsertRowid);
+    const yearOldBill = await newPaidBill('prod-refund-co');
+    db.prepare("UPDATE orders SET created_at = '2024-06-15 12:00:00' WHERE id = ?").run(yearOldBill.order.id);
+    const yearOldRefund = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: yearOldBill.bill.id, amount: yearOldBill.bill.paid_amount, method: 'cash', override_pin: '9999', approver_id: ownerId },
+      headers: ownerAuth,
+    });
+    assertEqual(yearOldRefund.status, 201, 'an owner PIN can refund a 1-year-old order');
+    const yearOldRefundRow = db.prepare('SELECT * FROM refunds WHERE id = ?').get(yearOldRefund.data.refund.id) as any;
+    assertEqual(yearOldRefundRow.cash_session_id, openSessionId, 'a backdated cash refund attaches to the current open cash session');
+
+    // ── Refund policy settings endpoints & configurable manager windows ──────
+    const defaultPolicy = await api(baseUrl, '/api/settings/refunds', { headers: cashierAuth });
+    assertEqual(defaultPolicy.status, 200, 'authenticated staff can read /api/settings/refunds');
+    assertEqual(defaultPolicy.data.refund_manager_enabled, true, 'refund_manager_enabled defaults to true');
+    assertEqual(defaultPolicy.data.refund_manager_window, '1h', 'refund_manager_window defaults to 1h');
+
+    const managerWriteAttempt = await api(baseUrl, '/api/settings/refunds', {
+      method: 'PUT',
+      body: { refund_manager_enabled: false },
+      headers: managerAuth,
+    });
+    assertEqual(managerWriteAttempt.status, 403, 'a manager cannot update /api/settings/refunds');
+
+    const invalidWindowAttempt = await api(baseUrl, '/api/settings/refunds', {
+      method: 'PUT',
+      body: { refund_manager_window: '10h' },
+      headers: ownerAuth,
+    });
+    assertEqual(invalidWindowAttempt.status, 400, 'invalid refund_manager_window is rejected with 400');
+
+    // Toggling refund_manager_enabled to false requires Owner PIN even within 5 minutes
+    const disableManagerRes = await api(baseUrl, '/api/settings/refunds', {
+      method: 'PUT',
+      body: { refund_manager_enabled: false },
+      headers: ownerAuth,
+    });
+    assertEqual(disableManagerRes.status, 200, 'owner can disable manager refund approvals');
+    assertEqual(disableManagerRes.data.refund_manager_enabled, false, 'response reflects refund_manager_enabled = false');
+
+    resetPinRateLimitForTests();
+    const freshBill = await newPaidBill('prod-refund-co');
+    db.prepare("UPDATE orders SET created_at = '2025-06-15 11:55:00' WHERE id = ?").run(freshBill.order.id);
+    const managerWhenDisabled = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: freshBill.bill.id, amount: freshBill.bill.paid_amount, method: 'cash', override_pin: '1234', approver_id: managerId },
+      headers: managerAuth,
+    });
+    assertEqual(managerWhenDisabled.status, 403, 'manager PIN is rejected even within 5 minutes when refund_manager_enabled is false');
+    const ownerWhenDisabled = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: freshBill.bill.id, amount: freshBill.bill.paid_amount, method: 'cash', override_pin: '9999', approver_id: ownerId },
+      headers: managerAuth,
+    });
+    assertEqual(ownerWhenDisabled.status, 201, 'owner PIN succeeds when refund_manager_enabled is false');
+
+    // Window: 30m
+    await api(baseUrl, '/api/settings/refunds', {
+      method: 'PUT',
+      body: { refund_manager_enabled: true, refund_manager_window: '30m' },
+      headers: ownerAuth,
+    });
+    resetPinRateLimitForTests();
+    const bill20m = await newPaidBill('prod-refund-co');
+    db.prepare("UPDATE orders SET created_at = '2025-06-15 11:40:00' WHERE id = ?").run(bill20m.order.id);
+    const manager20m = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: bill20m.bill.id, amount: bill20m.bill.paid_amount, method: 'cash', override_pin: '1234', approver_id: managerId },
+      headers: managerAuth,
+    });
+    assertEqual(manager20m.status, 201, '30m window allows manager PIN at 20 minutes');
+
+    const bill40m = await newPaidBill('prod-refund-co');
+    db.prepare("UPDATE orders SET created_at = '2025-06-15 11:20:00' WHERE id = ?").run(bill40m.order.id);
+    const manager40m = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: bill40m.bill.id, amount: bill40m.bill.paid_amount, method: 'cash', override_pin: '1234', approver_id: managerId },
+      headers: managerAuth,
+    });
+    assertEqual(manager40m.status, 403, '30m window rejects manager PIN at 40 minutes');
+
+    // Window: 2h
+    await api(baseUrl, '/api/settings/refunds', {
+      method: 'PUT',
+      body: { refund_manager_window: '2h' },
+      headers: ownerAuth,
+    });
+    resetPinRateLimitForTests();
+    const bill90m = await newPaidBill('prod-refund-co');
+    db.prepare("UPDATE orders SET created_at = '2025-06-15 10:30:00' WHERE id = ?").run(bill90m.order.id);
+    const manager90m = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: bill90m.bill.id, amount: bill90m.bill.paid_amount, method: 'cash', override_pin: '1234', approver_id: managerId },
+      headers: managerAuth,
+    });
+    assertEqual(manager90m.status, 201, '2h window allows manager PIN at 90 minutes');
+
+    const bill150m = await newPaidBill('prod-refund-co');
+    db.prepare("UPDATE orders SET created_at = '2025-06-15 09:30:00' WHERE id = ?").run(bill150m.order.id);
+    const manager150m = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: bill150m.bill.id, amount: bill150m.bill.paid_amount, method: 'cash', override_pin: '1234', approver_id: managerId },
+      headers: managerAuth,
+    });
+    assertEqual(manager150m.status, 403, '2h window rejects manager PIN at 150 minutes');
+
+    // Window: 4h (including across business-day boundary check)
+    await api(baseUrl, '/api/settings/refunds', {
+      method: 'PUT',
+      body: { refund_manager_window: '4h' },
+      headers: ownerAuth,
+    });
+    resetPinRateLimitForTests();
+    const bill3h = await newPaidBill('prod-refund-co');
+    db.prepare("UPDATE orders SET created_at = '2025-06-15 09:00:00' WHERE id = ?").run(bill3h.order.id);
+    const manager3h = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: bill3h.bill.id, amount: bill3h.bill.paid_amount, method: 'cash', override_pin: '1234', approver_id: managerId },
+      headers: managerAuth,
+    });
+    assertEqual(manager3h.status, 201, '4h window allows manager PIN at 3 hours on same business day');
+
+    // Move clock to 01:00 UTC on 2025-06-15; an order at 23:00 UTC on 2025-06-14 is only 2h old,
+    // but its business day (2025-06-14) has ended, so manager PIN must be rejected.
+    Date.now = () => Date.UTC(2025, 5, 15, 1, 0, 0);
+    const crossDayBill = await newPaidBill('prod-refund-co');
+    db.prepare("UPDATE orders SET created_at = '2025-06-14 23:00:00' WHERE id = ?").run(crossDayBill.order.id);
+    const crossDayManager = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: crossDayBill.bill.id, amount: crossDayBill.bill.paid_amount, method: 'cash', override_pin: '1234', approver_id: managerId },
+      headers: managerAuth,
+    });
+    assertEqual(crossDayManager.status, 403, '4h window across business-day close still requires owner PIN');
+    Date.now = () => FIXED_NOW;
+
+    // Window: same_business_day
+    await api(baseUrl, '/api/settings/refunds', {
+      method: 'PUT',
+      body: { refund_manager_window: 'same_business_day' },
+      headers: ownerAuth,
+    });
+    resetPinRateLimitForTests();
+    const bill10hSameDay = await newPaidBill('prod-refund-co');
+    db.prepare("UPDATE orders SET created_at = '2025-06-15 02:00:00' WHERE id = ?").run(bill10hSameDay.order.id);
+    const manager10hSameDay = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: bill10hSameDay.bill.id, amount: bill10hSameDay.bill.paid_amount, method: 'cash', override_pin: '1234', approver_id: managerId },
+      headers: managerAuth,
+    });
+    assertEqual(manager10hSameDay.status, 201, 'same_business_day window allows manager PIN 10 hours later on the same business day');
+
+    // Cashier with refunds.initiate granted can initiate, still subject to manager/owner approval tier
+    db.prepare(
+      "INSERT OR REPLACE INTO role_permission_overrides (role, permission_id, effect, updated_by, updated_at) VALUES ('cashier', 'refunds.initiate', 'allow', ?, ?)",
+    ).run(ownerId, now());
+    await api(baseUrl, '/api/settings/refunds', {
+      method: 'PUT',
+      body: { refund_manager_enabled: true, refund_manager_window: '1h' },
+      headers: ownerAuth,
+    });
+    resetPinRateLimitForTests();
+    const cashierInWindowBill = await newPaidBill('prod-refund-co');
+    db.prepare("UPDATE orders SET created_at = '2025-06-15 11:30:00' WHERE id = ?").run(cashierInWindowBill.order.id);
+    const cashierWithManagerPin = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: cashierInWindowBill.bill.id, amount: cashierInWindowBill.bill.paid_amount, method: 'cash', override_pin: '1234', approver_id: managerId },
+      headers: cashierAuth,
+    });
+    assertEqual(cashierWithManagerPin.status, 201, 'cashier with refunds.initiate can initiate an in-window refund with manager PIN');
+    db.prepare(
+      "DELETE FROM role_permission_overrides WHERE role = 'cashier' AND permission_id = 'refunds.initiate'",
+    ).run();
+    resetPinRateLimitForTests();
 
     // ── A completed item is refundable once the order is past the short window ──
     const itemBill = await newPaidBill('prod-refund-co');

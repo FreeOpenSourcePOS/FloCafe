@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "Payment method updated",
     "correctPaymentMethodFailed": "Could not update payment method",
     "releaseScheduled": "Scheduled",
-    "releaseBlocked": "Release blocked"
+    "releaseBlocked": "Release blocked",
+    "refundOwnerOnlyNotice": "Manager refund approvals are disabled — an owner PIN is required to approve this refund.",
+    "refundOutsideWindowNotice": "This order is outside the manager approval window — an owner PIN is required to approve this refund."
   },
   "pos": {
     "addCustomer": "Add Customer",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "Driver / Browser print only",
     "printerDriverOnlyWarning": "This printer does not use raw ESC/POS commands. Use Browser Print instead of adding it as a raw thermal printer.",
     "printerSwitchToBrowserPrint": "Use Browser Print",
-    "printerSwitchedToBrowserPrint": "Switched Print Method to Browser Print"
+    "printerSwitchedToBrowserPrint": "Switched Print Method to Browser Print",
+    "refundPolicyTitle": "Refund Policy",
+    "refundPolicyHint": "Control whether managers can approve refunds and how long their approval window stays open.",
+    "refundManagerEnabled": "Allow Manager Refund Approvals",
+    "refundManagerEnabledHint": "When off, every refund requires an owner's Staff Approval PIN.",
+    "refundManagerWindow": "Manager Refund Approval Window",
+    "refundManagerWindowHint": "How long after an order is created or released a manager's Staff Approval PIN can approve a refund.",
+    "refundWindow30m": "30 minutes",
+    "refundWindow1h": "1 hour",
+    "refundWindow2h": "2 hours",
+    "refundWindow4h": "4 hours",
+    "refundWindowSameDay": "Same business day",
+    "refundOwnerUnlimitedNote": "Owners can always approve refunds for any past order with their Staff Approval PIN."
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

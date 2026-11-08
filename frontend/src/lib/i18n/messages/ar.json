@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "تم تحديث طريقة الدفع",
     "correctPaymentMethodFailed": "تعذر تحديث طريقة الدفع",
     "releaseScheduled": "مجدول",
-    "releaseBlocked": "الإرسال متوقف"
+    "releaseBlocked": "الإرسال متوقف",
+    "refundOwnerOnlyNotice": "موافقات استرداد المدير معطلة — يلزم رمز PIN للمالك للموافقة على هذا الاسترداد.",
+    "refundOutsideWindowNotice": "هذا الطلب خارج نافذة موافقة المدير — يلزم رمز PIN للمالك للموافقة على هذا الاسترداد."
   },
   "pos": {
     "addCustomer": "إضافة عميل",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "طباعة عبر المتصفح / التعريف فقط",
     "printerDriverOnlyWarning": "لا تستخدم هذه الطابعة أوامر ESC/POS المباشرة. استخدم الطباعة عبر المتصفح بدلا من إضافتها كطابعة حرارية مباشرة.",
     "printerSwitchToBrowserPrint": "استخدام طباعة المتصفح",
-    "printerSwitchedToBrowserPrint": "تم التبديل إلى الطباعة عبر المتصفح"
+    "printerSwitchedToBrowserPrint": "تم التبديل إلى الطباعة عبر المتصفح",
+    "refundPolicyTitle": "سياسة الاسترداد",
+    "refundPolicyHint": "تحكم فيما إذا كان بإمكان المديرين الموافقة على عمليات الاسترداد والمدة التي تظل فيها نافذة الموافقة مفتوحة.",
+    "refundManagerEnabled": "السماح بموافقات الاسترداد للمدير",
+    "refundManagerEnabledHint": "عند الإيقاف، يتطلب كل استرداد رمز PIN لموافقة المالك.",
+    "refundManagerWindow": "نافذة موافقة المدير على الاسترداد",
+    "refundManagerWindowHint": "المدة الزمنية بعد إنشاء الطلب أو إطلاقه التي يمكن خلالها لرمز PIN الخاص بالمدير الموافقة على الاسترداد.",
+    "refundWindow30m": "30 دقيقة",
+    "refundWindow1h": "ساعة واحدة",
+    "refundWindow2h": "ساعتان",
+    "refundWindow4h": "4 ساعات",
+    "refundWindowSameDay": "نفس يوم العمل",
+    "refundOwnerUnlimitedNote": "يمكن للمالكين دائماً الموافقة على استرداد أي طلب سابق باستخدام رمز PIN للموافقة الخاص بهم."
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",

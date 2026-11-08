@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "Metode pembayaran diperbarui",
     "correctPaymentMethodFailed": "Tidak dapat memperbarui metode pembayaran",
     "releaseScheduled": "Terjadwal",
-    "releaseBlocked": "Rilis tertahan"
+    "releaseBlocked": "Rilis tertahan",
+    "refundOwnerOnlyNotice": "Persetujuan pengembalian dana oleh manajer dinonaktifkan — PIN pemilik diperlukan untuk menyetujui pengembalian dana ini.",
+    "refundOutsideWindowNotice": "Pesanan ini berada di luar batas waktu persetujuan manajer — PIN pemilik diperlukan untuk menyetujui pengembalian dana ini."
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "Khusus cetak driver / browser",
     "printerDriverOnlyWarning": "Printer ini tidak menggunakan perintah ESC/POS mentah. Gunakan Cetak Browser alih-alih menambahkannya sebagai printer termal mentah.",
     "printerSwitchToBrowserPrint": "Gunakan Cetak Browser",
-    "printerSwitchedToBrowserPrint": "Metode Cetak dialihkan ke Cetak Browser"
+    "printerSwitchedToBrowserPrint": "Metode Cetak dialihkan ke Cetak Browser",
+    "refundPolicyTitle": "Kebijakan Pengembalian Dana",
+    "refundPolicyHint": "Atur apakah manajer dapat menyetujui pengembalian dana dan berapa lama batas waktu persetujuannya tetap terbuka.",
+    "refundManagerEnabled": "Izinkan Persetujuan Pengembalian Dana Manajer",
+    "refundManagerEnabledHint": "Saat nonaktif, setiap pengembalian dana memerlukan PIN Persetujuan Staf pemilik.",
+    "refundManagerWindow": "Batas Waktu Persetujuan Pengembalian Dana Manajer",
+    "refundManagerWindowHint": "Berapa lama setelah pesanan dibuat atau dirilis PIN Persetujuan Staf manajer dapat menyetujui pengembalian dana.",
+    "refundWindow30m": "30 menit",
+    "refundWindow1h": "1 jam",
+    "refundWindow2h": "2 jam",
+    "refundWindow4h": "4 jam",
+    "refundWindowSameDay": "Hari kerja yang sama",
+    "refundOwnerUnlimitedNote": "Pemilik selalu dapat menyetujui pengembalian dana untuk pesanan lama mana pun dengan PIN Persetujuan Staf mereka."
   },
   "setup": {
     "alreadyCompleted": "Pengaturan awal sudah selesai dilakukan pada instalasi ini. Mengalihkan ke layar masuk…",

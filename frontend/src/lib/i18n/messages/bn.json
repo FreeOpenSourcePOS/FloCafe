@@ -855,7 +855,9 @@
     "paymentMethodCorrected": "পেমেন্ট পদ্ধতি আপডেট হয়েছে",
     "correctPaymentMethodFailed": "পেমেন্ট পদ্ধতি আপডেট করা যায়নি",
     "releaseScheduled": "নির্ধারিত",
-    "releaseBlocked": "রিলিজ স্থগিত"
+    "releaseBlocked": "রিলিজ স্থগিত",
+    "refundOwnerOnlyNotice": "ম্যানেজার রিফান্ড অনুমোদন নিষ্ক্রিয় — এই রিফান্ড অনুমোদনের জন্য মালিকের পিন প্রয়োজন।",
+    "refundOutsideWindowNotice": "এই অর্ডারটি ম্যানেজারের অনুমোদনের সময়সীমার বাইরে — এই রিফান্ড অনুমোদনের জন্য মালিকের পিন প্রয়োজন।"
   },
   "pos": {
     "addCustomer": "গ্রাহক যোগ করুন",
@@ -2685,7 +2687,19 @@
     "printerCompatibilityDriverOnly": "শুধু ড্রাইভার / ব্রাউজার প্রিন্ট",
     "printerDriverOnlyWarning": "এই প্রিন্টারটি সরাসরি ESC/POS কমান্ড ব্যবহার করে না। থার্মাল প্রিন্টার হিসেবে যোগ না করে ব্রাউজার প্রিন্ট ব্যবহার করুন।",
     "printerSwitchToBrowserPrint": "ব্রাউজার প্রিন্ট ব্যবহার করুন",
-    "printerSwitchedToBrowserPrint": "প্রিন্ট পদ্ধতি ব্রাউজার প্রিন্টে পরিবর্তন করা হয়েছে"
+    "printerSwitchedToBrowserPrint": "প্রিন্ট পদ্ধতি ব্রাউজার প্রিন্টে পরিবর্তন করা হয়েছে",
+    "refundPolicyTitle": "রিফান্ড নীতি",
+    "refundPolicyHint": "ম্যানেজাররা রিফান্ড অনুমোদন করতে পারবেন কি না এবং তাদের অনুমোদনের সময়সীমা কতক্ষণ খোলা থাকবে তা নিয়ন্ত্রণ করুন।",
+    "refundManagerEnabled": "ম্যানেজার রিফান্ড অনুমোদনের অনুমতি দিন",
+    "refundManagerEnabledHint": "বন্ধ থাকলে, প্রতিটি রিফান্ডের জন্য মালিকের স্টাফ অনুমোদন পিন প্রয়োজন।",
+    "refundManagerWindow": "ম্যানেজার রিফান্ড অনুমোদনের সময়সীমা",
+    "refundManagerWindowHint": "অর্ডার তৈরি বা রিলিজ হওয়ার পর কতক্ষণ পর্যন্ত ম্যানেজারের স্টাফ অনুমোদন পিন রিফান্ড অনুমোদন করতে পারবে।",
+    "refundWindow30m": "৩০ মিনিট",
+    "refundWindow1h": "১ ঘণ্টা",
+    "refundWindow2h": "২ ঘণ্টা",
+    "refundWindow4h": "৪ ঘণ্টা",
+    "refundWindowSameDay": "একই ব্যবসায়িক দিন",
+    "refundOwnerUnlimitedNote": "মালিকরা তাদের স্টাফ অনুমোদন পিন দিয়ে যেকোনো পুরনো অর্ডারের রিফান্ড সর্বদা অনুমোদন করতে পারেন।"
   },
   "setup": {
     "alreadyCompleted": "এই ইনস্টলে সেটআপ ইতিমধ্যেই সম্পন্ন হয়েছে। লগইন করার জন্য পুনঃনির্দেশ করা হচ্ছে...",

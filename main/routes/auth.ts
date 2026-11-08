@@ -873,7 +873,7 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
 
     // Rate-limit key is IP-scoped to prevent resetting attempt counters with varying emails.
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const pinResult = authorizeMasterPin(master_pin, `auth:recover-password:${ip}`);
+    const pinResult = authorizeMasterPin(master_pin, `master-pin:${normalizeIpForRateLimit(ip)}`);
     if (!pinResult.ok) {
       return res.status(pinResult.status).json({ error: pinResult.error });
     }

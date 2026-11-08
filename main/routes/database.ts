@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
 import {
+  GOOGLE_DRIVE_PRIVATE_SETTING_KEYS,
   backfillWhatsAppMessageAttempts,
   captureKitchenStationSecurityState,
   captureKdsEnabledSetting,
@@ -42,7 +43,6 @@ import * as path from 'path';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { parsePhoneE164 } from '../lib/phone';
-import { isRole } from '../../shared/role-permissions';
 import { randomUUID } from 'node:crypto';
 import { googleDrive } from '../services/google-drive';
 import {
@@ -65,6 +65,7 @@ const EXPORT_SETTINGS_REDACT = new Set([
   'cloud_deletion_status_token',
   // Redact legacy error strings from exported settings.
   'cloud_last_error',
+  ...GOOGLE_DRIVE_PRIVATE_SETTING_KEYS,
 ]);
 
 // User columns stripped from export — hashes must never leave the server.
@@ -82,6 +83,14 @@ const EXPORT_EXCLUDE_TABLES = new Set([
   'local_diagnostics',
   'kds_pairing_tokens',
   'customer_display_tokens',
+  'revoked_tokens',
+]);
+
+const IMPORT_BLOCKED_SECURITY_TABLES = new Set([
+  'role_permission_overrides',
+  'user_permission_overrides',
+  'authorization_audit_log',
+  'auth_audit_log',
 ]);
 
 // Parse schema version; invalid or missing versions collapse to -1 or 0 to trigger mismatch handling.
@@ -336,30 +345,26 @@ router.post(
             }
           }
 
-          // Preserve existing accounts and create inactive placeholders for redacted users without hashes.
+          // Preserve existing accounts and create inactive placeholders for missing imported users.
           const importedUserRows = Array.isArray(importData.users) ? importData.users : [];
-          const credentialedUserIds = new Set(
-            importedUserRows
-              .filter((row) => typeof row?.password === 'string' && row.password.length > 0)
-              .map((row) => String(row.id)),
+          const existingUserIds = new Set(
+            (db.prepare('SELECT id FROM users').all() as { id: string }[]).map((row) =>
+              String(row.id),
+            ),
           );
-          const redactedUserIds = new Set(
+          const redactedPlaceholderIds = new Set(
             importedUserRows
               .filter(
                 (row) =>
                   row &&
                   typeof row === 'object' &&
                   row.id != null &&
-                  !credentialedUserIds.has(String(row.id)),
+                  String(row.id) !== '' &&
+                  !existingUserIds.has(String(row.id)),
               )
               .map((row) => String(row.id)),
           );
-          const importProvidedUserIds = new Set([...credentialedUserIds, ...redactedUserIds]);
-          const existingUserIds = new Set(
-            (db.prepare('SELECT id FROM users').all() as { id: string }[]).map((row) =>
-              String(row.id),
-            ),
-          );
+          const importProvidedUserIds = redactedPlaceholderIds;
           const unresolvedUserIds = new Set<string>();
           for (const [tableName, rows] of Object.entries(importData)) {
             if (
@@ -367,7 +372,8 @@ router.post(
               !Array.isArray(rows) ||
               !isSafeIdentifier(tableName) ||
               !allowedTables.has(tableName) ||
-              EXPORT_EXCLUDE_TABLES.has(tableName)
+              EXPORT_EXCLUDE_TABLES.has(tableName) ||
+              IMPORT_BLOCKED_SECURITY_TABLES.has(tableName)
             )
               continue;
             const userReferenceColumns = (
@@ -430,6 +436,7 @@ router.post(
               for (const tableName of importedTables) {
                 throwIfDatabaseMaintenanceAborted(signal);
                 if (!allowedTables.has(tableName) || EXPORT_EXCLUDE_TABLES.has(tableName)) continue;
+                if (IMPORT_BLOCKED_SECURITY_TABLES.has(tableName)) continue;
                 // Validate table name to prevent SQL injection
                 if (!isSafeIdentifier(tableName)) {
                   console.warn(`[DB Import] Skipping unsafe table name: ${tableName}`);
@@ -440,6 +447,7 @@ router.post(
                 if (!rows || !Array.isArray(rows)) continue;
                 if (rows.length === 0) {
                   if (overwrite || hasVersionMismatch) {
+                    if (IMPORT_BLOCKED_SECURITY_TABLES.has(tableName)) continue;
                     if (tableName === 'settings') {
                       const protectedKeys = Array.from(EXPORT_SETTINGS_REDACT);
                       const placeholders = protectedKeys.map(() => '?').join(', ');
@@ -467,9 +475,8 @@ router.post(
                         new Set(rows.flatMap((row) => Object.keys(row).filter(isSafeIdentifier))),
                       )
                     : Object.keys(rows[0]).filter(isSafeIdentifier);
-                // A normal export intentionally omits password/pin hashes. It must not
-                // attempt to recreate users with a NULL required password.
-                if (tableName === 'users' && !importCols.includes('password')) continue;
+                // Never raw-insert rows into users; missing users are restored only as safe placeholders.
+                if (tableName === 'users') continue;
                 const commonCols = importCols.filter(
                   (c) => currentCols.includes(c) && isSafeIdentifier(c),
                 );
@@ -767,7 +774,6 @@ function restoreRedactedUserPlaceholders(
 
   for (const row of importedUserRows) {
     if (!row || typeof row !== 'object') continue;
-    if (typeof row.password === 'string' && row.password.length > 0) continue;
 
     const id = row.id == null ? '' : String(row.id);
     if (!id || existingUserIds.has(id)) continue;
@@ -776,8 +782,8 @@ function restoreRedactedUserPlaceholders(
       typeof row.updated_at === 'string' && row.updated_at
         ? row.updated_at
         : new Date().toISOString();
-    const roleValue = String(row.role);
-    const role = isRole(roleValue) ? roleValue : 'cashier';
+    const role =
+      row.role === 'server' || row.role === 'chef' || row.role === 'cashier' ? row.role : 'cashier';
     const values: Record<string, unknown> = {
       id,
       name: typeof row.name === 'string' && row.name.trim() ? row.name : `Imported staff ${id}`,

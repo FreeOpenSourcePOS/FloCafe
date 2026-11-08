@@ -35,9 +35,16 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const {
-  isMasterPinAvailable, isMasterPinSet, setMasterPin, resetMasterPin, verifyMasterPin,
-  checkMasterPinRateLimit, authorizeMasterPin,
+  isMasterPinAvailable,
+  isMasterPinSet,
+  setMasterPin,
+  resetMasterPin,
+  verifyMasterPin,
+  checkMasterPinRateLimit,
+  authorizeMasterPin,
+  resetMasterPinRateLimit,
 } = require('../main/services/master-pin');
+const { requireMasterPin } = require('../main/middleware/master-pin');
 
 function main() {
   console.log('🧪 FloDesktop Master PIN Tests');
@@ -54,7 +61,10 @@ function main() {
   console.log('   ✓ setMasterPin() + verifyMasterPin() round-trip correctly');
 
   const rawFile = fs.readFileSync(path.join(testDir, 'master-pin.enc'), 'utf8');
-  assert.ok(!rawFile.includes('1234'), 'the raw PIN is never stored in plaintext, even under the mock encryptor');
+  assert.ok(
+    !rawFile.includes('1234'),
+    'the raw PIN is never stored in plaintext, even under the mock encryptor',
+  );
   console.log('   ✓ the stored blob never contains the plaintext PIN');
 
   resetMasterPin('5678');
@@ -108,10 +118,110 @@ function main() {
   // ── fallback when encryption is unavailable ──────────────────────────
   encryptionAvailable = false;
   result = authorizeMasterPin('anything-or-nothing', 'test:no-encryption');
-  assert.equal(result.ok, false, 'gate hard-blocks (ok: false) when safeStorage is unavailable — vuln-0002');
+  assert.equal(
+    result.ok,
+    false,
+    'gate hard-blocks (ok: false) when safeStorage is unavailable — vuln-0002',
+  );
   if (!result.ok) assert.equal(result.status, 503, 'unavailable encryption returns 503');
-  console.log('   ✓ authorizeMasterPin() hard-blocks with 503 when encryption is unavailable (vuln-0002 regression)');
+  console.log(
+    '   ✓ authorizeMasterPin() hard-blocks with 503 when encryption is unavailable (vuln-0002 regression)',
+  );
   encryptionAvailable = true;
+
+  // ── requireMasterPin middleware: shared IP budget & x-master-pin header ──
+  resetMasterPin('4321');
+  resetMasterPinRateLimit('master-pin:127.0.0.1');
+
+  function runMiddleware(reqOverrides: Record<string, any>) {
+    let statusCode = 200;
+    let bodyPayload: any = null;
+    let nextCalled = false;
+    const req = {
+      ip: '127.0.0.1',
+      socket: { remoteAddress: '127.0.0.1' },
+      baseUrl: '/api/db',
+      path: '/backup',
+      headers: {},
+      body: {},
+      query: {},
+      ...reqOverrides,
+    };
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(payload: any) {
+        bodyPayload = payload;
+        return this;
+      },
+    };
+    requireMasterPin(req, res, () => {
+      nextCalled = true;
+    });
+    return { statusCode, bodyPayload, nextCalled };
+  }
+
+  // Accepts x-master-pin header when body has no master_pin
+  const headerOk = runMiddleware({
+    path: '/download',
+    headers: { 'x-master-pin': '4321' },
+    body: undefined,
+  });
+  assert.equal(headerOk.nextCalled, true, 'requireMasterPin accepts valid x-master-pin header');
+
+  // Never accepts query parameter master_pin
+  const queryAttempt = runMiddleware({
+    path: '/download',
+    query: { master_pin: '4321' },
+    body: undefined,
+  });
+  assert.equal(queryAttempt.nextCalled, false, 'requireMasterPin rejects query string master_pin');
+  assert.equal(queryAttempt.statusCode, 403, 'query string master_pin returns 403');
+  console.log(
+    '   ✓ requireMasterPin accepts x-master-pin header and rejects query string credentials',
+  );
+
+  // Shared budget across routes, filename params, trailing slashes, casing, and equivalent IPs
+  const attempts = [
+    { ip: '127.0.0.1', baseUrl: '/api/db', path: '/backup', body: { master_pin: '0000' } },
+    {
+      ip: '::ffff:127.0.0.1',
+      baseUrl: '/api/db-tools',
+      path: '/initialize/',
+      body: { master_pin: '0000' },
+    },
+    {
+      ip: '::FFFF:127.0.0.1',
+      baseUrl: '/api/db-tools',
+      path: '/backups/fake1.db/delete',
+      body: { master_pin: '0000' },
+    },
+    {
+      ip: '127.0.0.1',
+      baseUrl: '/api/db-tools',
+      path: '/BACKUPS/fake2.db/DELETE',
+      headers: { 'x-master-pin': '0000' },
+    },
+  ];
+  for (let i = 0; i < attempts.length; i++) {
+    const r = runMiddleware(attempts[i]);
+    assert.equal(r.nextCalled, false);
+    assert.equal(r.statusCode, 403, `shared IP attempt ${i + 1} returns 403`);
+  }
+  const fifth = runMiddleware({
+    ip: '::ffff:127.0.0.1',
+    baseUrl: '/api/db',
+    path: '/download',
+    headers: { 'x-master-pin': '0000' },
+  });
+  assert.equal(fifth.nextCalled, false);
+  assert.equal(fifth.statusCode, 429, '5th failed attempt across routes/IPs returns 429');
+  resetMasterPinRateLimit('master-pin:127.0.0.1');
+  console.log(
+    '   ✓ requireMasterPin shares one 5-attempt budget per normalized IP across routes and variants',
+  );
 }
 
 try {

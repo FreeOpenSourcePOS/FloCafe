@@ -289,12 +289,17 @@ to `authorizeMasterPin` in
 | PIN does not verify                               | 403, and the attempt is recorded; 429 once the limit is reached     |
 
 The PIN hash is stored through Electron `safeStorage` in `master-pin.enc` under the app's
-`userData` directory, written with mode `0o600`. Rate limiting is in memory, keyed by IP and route
-path, at 5 attempts per 15 minutes.
+`userData` directory, written with mode `0o600`. Rate limiting is in memory, at 5 attempts per 15
+minutes per key.
 
-The rate-limit key includes the route, so attempts against one endpoint do not consume another's
-budget. A caller with a different route can therefore attempt the PIN 5 times per route. That is
-the intended scoping, not an oversight.
+For HTTP routes (`requireMasterPin`) and local password recovery (`POST /api/auth/recover-password`),
+the rate-limit key is `master-pin:${normalizeIpForRateLimit(ip)}`, so all HTTP Master PIN endpoints,
+parameterized routes (such as `POST /api/db-tools/backups/:fileName/delete`), trailing slashes, path
+casing, and equivalent IP representations (`::1`, `127.0.0.1`, `::ffff:127.0.0.1`) share a single
+5-attempt budget per normalized client IP. `requireMasterPin` reads `master_pin` from the request
+body first and falls back to the `x-master-pin` request header (used by bodyless requests such as
+`GET /api/db/download`); it never reads URL query parameters. Electron IPC handlers pass channel-scoped
+`ipc:*` keys to `authorizeMasterPin`.
 
 ## KDS station and category narrowing
 

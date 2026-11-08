@@ -69,13 +69,24 @@ const {
   generateOrderNumber,
   generateBillNumber,
   repairSequences,
+  GOOGLE_DRIVE_PRIVATE_SETTING_KEYS,
 } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
 const { authRoutes } = require('../main/routes/auth');
 const { databaseToolsRoutes } = require('../main/routes/database-tools');
 const { databaseRoutes } = require('../main/routes/database');
 const { orderRoutes } = require('../main/routes/orders');
-const { verifyMasterPin, isMasterPinSet, resetMasterPin } = require('../main/services/master-pin');
+const {
+  verifyMasterPin,
+  isMasterPinSet,
+  resetMasterPin,
+  resetMasterPinRateLimit,
+} = require('../main/services/master-pin');
+const {
+  hasActiveAdministrator,
+  hasPermission,
+  resolveEffectivePermissions,
+} = require('../main/services/authorization');
 const {
   cancelHttpShutdownWork,
   closeHttpServer,
@@ -166,6 +177,12 @@ app.use((req: any, res: any, next: any) => {
     };
     res.download = (_filePath: string, _filename: string, _callback: (error?: Error) => void) => {
       stalledDownloadStarted();
+    };
+  } else if (req.path === '/api/db/download') {
+    res.download = (filePath: string, filename: string, callback: (error?: Error) => void) => {
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.status(200).send(fs.readFileSync(filePath));
+      callback();
     };
   }
   next();
@@ -2690,6 +2707,473 @@ async function runTests() {
 
     const fkCheck = db.pragma('foreign_key_check') as any[];
     assertEqual(fkCheck.length, 0, 'PRAGMA foreign_key_check is clean after rollback');
+  }
+
+  // ── Test 3k: JSON import boundary for delegated database.manage user (#4) ──
+  console.log(
+    '\nTest 3k: delegated database.manage user cannot escalate privileges, mutate security/audit tables, or strand administration via JSON import',
+  );
+  {
+    const bcrypt = require('bcryptjs');
+    const delegatedManagerId = 'delegated-db-manager-1';
+    db.prepare(`
+      INSERT OR REPLACE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES (?, 'Delegated DB Manager', 'delegated-manager@flo.local', ?, 'manager', 1, ?, ?)
+    `).run(delegatedManagerId, bcrypt.hashSync('ManagerPass123', 10), now(), now());
+    db.prepare(`
+      INSERT OR REPLACE INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES (?, 'database.manage', 'allow', 'owner-1', ?, ?)
+    `).run(delegatedManagerId, now(), now());
+
+    const delegatedToken = tokenFor(delegatedManagerId, 'manager');
+    assert(
+      hasPermission(delegatedManagerId, 'database.manage'),
+      'delegated manager holds database.manage',
+    );
+    assert(
+      !hasPermission(delegatedManagerId, 'authorization.manage'),
+      'delegated manager does not hold authorization.manage',
+    );
+    assert(
+      !hasPermission(delegatedManagerId, 'staff.privileged.manage'),
+      'delegated manager does not hold staff.privileged.manage',
+    );
+    assert(hasActiveAdministrator(), 'store has an active administrator before import');
+
+    db.prepare(`
+      INSERT INTO authorization_audit_log (batch_id, actor_user_id, target_type, target_id, permission_id, previous_effect, next_effect, created_at)
+      VALUES ('sentinel-authz-batch', 'owner-1', 'user', ?, 'database.manage', NULL, 'allow', ?)
+    `).run(delegatedManagerId, now());
+    db.prepare(`
+      INSERT INTO auth_audit_log (user_id, event_type, outcome, ip_address, details_json, created_at)
+      VALUES ('owner-1', 'login_success', 'success', '127.0.0.1', '{"sentinel":true}', ?)
+    `).run(now());
+
+    const authzAuditCountBefore = (
+      db.prepare('SELECT COUNT(*) AS count FROM authorization_audit_log').get() as { count: number }
+    ).count;
+    const authAuditCountBefore = (
+      db.prepare('SELECT COUNT(*) AS count FROM auth_audit_log').get() as { count: number }
+    ).count;
+
+    const rogueOwnerHash = bcrypt.hashSync('RogueOwnerPass123', 10);
+    const roguePinHash = bcrypt.hashSync('9876', 10);
+
+    const attackImportRes = await request(app)
+      .post('/api/db/import')
+      .set('Authorization', `Bearer ${delegatedToken}`)
+      .send({
+        overwrite: false,
+        data: {
+          schema_version: String(getCurrentSchemaVersion()),
+          data: {
+            settings: [],
+            categories: [],
+            products: [],
+            users: [
+              {
+                id: 'rogue-imported-owner',
+                name: 'Rogue Imported Owner',
+                email: 'rogue-owner@flo.local',
+                password: rogueOwnerHash,
+                pin: '9876',
+                pin_hash: roguePinHash,
+                role: 'owner',
+                is_active: 1,
+              },
+              {
+                id: 'rogue-imported-manager',
+                name: 'Rogue Imported Manager',
+                email: 'rogue-manager@flo.local',
+                password: rogueOwnerHash,
+                role: 'manager',
+                is_active: 1,
+              },
+              {
+                id: 'imported-historical-server',
+                name: 'Historical Server',
+                password: rogueOwnerHash,
+                role: 'server',
+                is_active: 1,
+              },
+            ],
+            orders: [
+              {
+                id: 9931,
+                order_number: 'ORD-ROGUE-REF-9931',
+                user_id: 'rogue-imported-owner',
+                type: 'takeaway',
+                status: 'pending',
+                subtotal: 10,
+                total: 10,
+                created_at: now(),
+                updated_at: now(),
+              },
+            ],
+            user_permission_overrides: [
+              {
+                user_id: delegatedManagerId,
+                permission_id: 'settings.manage',
+                effect: 'allow',
+                updated_by: 'owner-1',
+                created_at: now(),
+                updated_at: now(),
+              },
+              {
+                user_id: 'owner-1',
+                permission_id: 'settings.manage',
+                effect: 'deny',
+                updated_by: 'owner-1',
+                created_at: now(),
+                updated_at: now(),
+              },
+              {
+                user_id: 'owner-1',
+                permission_id: 'staff.operational.manage',
+                effect: 'deny',
+                updated_by: 'owner-1',
+                created_at: now(),
+                updated_at: now(),
+              },
+            ],
+            role_permission_overrides: [
+              {
+                role: 'owner',
+                permission_id: 'settings.manage',
+                effect: 'deny',
+                updated_by: 'owner-1',
+                created_at: now(),
+                updated_at: now(),
+              },
+              {
+                role: 'manager',
+                permission_id: 'settings.manage',
+                effect: 'allow',
+                updated_by: 'owner-1',
+                created_at: now(),
+                updated_at: now(),
+              },
+            ],
+            authorization_audit_log: [
+              {
+                batch_id: 'forged-authz-batch',
+                actor_user_id: 'owner-1',
+                target_type: 'role',
+                target_id: 'manager',
+                permission_id: 'settings.manage',
+                previous_effect: null,
+                next_effect: 'allow',
+                created_at: now(),
+              },
+            ],
+            auth_audit_log: [
+              {
+                user_id: 'owner-1',
+                event_type: 'forged_audit_event',
+                outcome: 'success',
+                ip_address: '127.0.0.1',
+                details_json: '{"forged":true}',
+                created_at: now(),
+              },
+            ],
+          },
+        },
+      });
+
+    assert(
+      attackImportRes.status === 200,
+      `additive import with credentialed users and blocked security tables succeeds safely (got ${attackImportRes.status}, ${JSON.stringify(attackImportRes.body)})`,
+    );
+    assert(
+      hasActiveAdministrator(),
+      'hasActiveAdministrator remains true after import attempt to strand owner permissions',
+    );
+    assert(
+      !db
+        .prepare(
+          "SELECT 1 FROM user_permission_overrides WHERE user_id = ? AND permission_id = 'settings.manage'",
+        )
+        .get(delegatedManagerId),
+      'import did not insert user_permission_overrides for delegated manager',
+    );
+    assert(
+      !db.prepare("SELECT 1 FROM user_permission_overrides WHERE user_id = 'owner-1'").get(),
+      'import did not insert deny user_permission_overrides targeting owner-1',
+    );
+    assert(
+      !db.prepare('SELECT 1 FROM role_permission_overrides').get(),
+      'import did not insert role_permission_overrides',
+    );
+
+    const authzAuditCountAfter = (
+      db.prepare('SELECT COUNT(*) AS count FROM authorization_audit_log').get() as { count: number }
+    ).count;
+    const authAuditCountAfter = (
+      db.prepare('SELECT COUNT(*) AS count FROM auth_audit_log').get() as { count: number }
+    ).count;
+    assertEqual(
+      authzAuditCountAfter,
+      authzAuditCountBefore,
+      'authorization_audit_log is unchanged by additive import',
+    );
+    assertEqual(
+      authAuditCountAfter,
+      authAuditCountBefore,
+      'auth_audit_log is unchanged by additive import',
+    );
+
+    const rogueOwnerRow = db
+      .prepare(
+        "SELECT email, password, pin, pin_hash, role, is_active FROM users WHERE id = 'rogue-imported-owner'",
+      )
+      .get() as any;
+    assert(!!rogueOwnerRow, 'missing imported user referenced by order is created as placeholder');
+    assertEqual(rogueOwnerRow.is_active, 0, 'credential-bearing imported user is created inactive');
+    assertEqual(
+      rogueOwnerRow.role,
+      'cashier',
+      'imported owner role is clamped to cashier on placeholder',
+    );
+    assertEqual(rogueOwnerRow.email, null, 'imported user email is cleared on placeholder');
+    assertEqual(rogueOwnerRow.pin, null, 'imported user pin is null on placeholder');
+    assertEqual(rogueOwnerRow.pin_hash, null, 'imported user pin_hash is null on placeholder');
+    assertEqual(
+      rogueOwnerRow.password,
+      'disabled-redacted-import-rogue-imported-owner',
+      'imported user password is replaced with unusable placeholder string',
+    );
+    assert(
+      resolveEffectivePermissions('rogue-imported-owner') === null,
+      'inactive placeholder user has no effective permissions',
+    );
+
+    const rogueManagerRow = db
+      .prepare("SELECT role, is_active, password FROM users WHERE id = 'rogue-imported-manager'")
+      .get() as any;
+    assertEqual(
+      rogueManagerRow.role,
+      'cashier',
+      'imported manager role is clamped to cashier on placeholder',
+    );
+    assertEqual(rogueManagerRow.is_active, 0, 'imported manager placeholder is inactive');
+
+    const historicalServerRow = db
+      .prepare("SELECT role, is_active FROM users WHERE id = 'imported-historical-server'")
+      .get() as any;
+    assertEqual(
+      historicalServerRow.role,
+      'server',
+      'imported operational role (server) is preserved on placeholder',
+    );
+    assertEqual(historicalServerRow.is_active, 0, 'historical server placeholder is inactive');
+
+    // Also verify overwrite: true with empty arrays for blocked security tables does not wipe existing rows
+    db.exec('DELETE FROM inventory_movements;');
+    const overwriteBlockedTablesRes = await request(app)
+      .post('/api/db/import')
+      .set('Authorization', `Bearer ${delegatedToken}`)
+      .send({
+        overwrite: true,
+        master_pin: '1234',
+        data: {
+          schema_version: String(getCurrentSchemaVersion()),
+          data: {
+            settings: [],
+            categories: [],
+            products: [],
+            product_variants: [],
+            addons: [],
+            users: [],
+            user_permission_overrides: [],
+            role_permission_overrides: [],
+            authorization_audit_log: [],
+            auth_audit_log: [],
+          },
+        },
+      });
+    assert(
+      overwriteBlockedTablesRes.status === 200,
+      `overwrite import with empty blocked security tables succeeds (got ${overwriteBlockedTablesRes.status})`,
+    );
+    assert(
+      hasPermission(delegatedManagerId, 'database.manage'),
+      'overwrite import with empty user_permission_overrides does not delete existing overrides',
+    );
+    assertEqual(
+      (
+        db.prepare('SELECT COUNT(*) AS count FROM authorization_audit_log').get() as {
+          count: number;
+        }
+      ).count,
+      authzAuditCountBefore,
+      'overwrite import with empty authorization_audit_log does not clear audit history',
+    );
+    assertEqual(
+      (db.prepare('SELECT COUNT(*) AS count FROM auth_audit_log').get() as { count: number }).count,
+      authAuditCountBefore,
+      'overwrite import with empty auth_audit_log does not clear auth audit history',
+    );
+  }
+
+  // ── Test 3l: GET /api/db/export narrow cleanup (#3) ──
+  console.log(
+    '\nTest 3l: GET /api/db/export excludes revoked_tokens, redacts GOOGLE_DRIVE_PRIVATE_SETTING_KEYS, preserves audit logs and PostHog settings',
+  );
+  {
+    db.prepare(
+      'INSERT OR REPLACE INTO revoked_tokens (token_hash, expires_at, revoked_at) VALUES (?, ?, ?)',
+    ).run('hash-export-test-1', Date.now() + 60000, now());
+    for (const key of GOOGLE_DRIVE_PRIVATE_SETTING_KEYS) {
+      db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
+        key,
+        `secret-${key}`,
+        now(),
+      );
+    }
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('posthog_project_token', 'phc_public_bootstrap_token', ?)",
+    ).run(now());
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('posthog_host', 'https://us.i.posthog.com', ?)",
+    ).run(now());
+
+    const exportCleanupRes = await request(app)
+      .get('/api/db/export')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    assertEqual(exportCleanupRes.status, 200, 'GET /api/db/export succeeds');
+
+    assert(
+      !('revoked_tokens' in exportCleanupRes.body.data),
+      'revoked_tokens table is excluded from export data',
+    );
+    assert(
+      exportCleanupRes.body.redacted_fields.includes('table:revoked_tokens'),
+      'table:revoked_tokens is listed in redacted_fields',
+    );
+
+    const exportedSettings: Array<{ key: string; value: string }> =
+      exportCleanupRes.body.data.settings || [];
+    for (const key of GOOGLE_DRIVE_PRIVATE_SETTING_KEYS) {
+      const settingRow = exportedSettings.find((r) => r.key === key);
+      assertEqual(
+        settingRow?.value,
+        '[REDACTED]',
+        `Google Drive private setting ${key} is redacted in export`,
+      );
+      assert(
+        exportCleanupRes.body.redacted_fields.includes(`settings.${key}`),
+        `settings.${key} is listed in redacted_fields`,
+      );
+    }
+
+    const posthogTokenRow = exportedSettings.find((r) => r.key === 'posthog_project_token');
+    const posthogHostRow = exportedSettings.find((r) => r.key === 'posthog_host');
+    assertEqual(
+      posthogTokenRow?.value,
+      'phc_public_bootstrap_token',
+      'posthog_project_token remains unredacted in export',
+    );
+    assertEqual(
+      posthogHostRow?.value,
+      'https://us.i.posthog.com',
+      'posthog_host remains unredacted in export',
+    );
+
+    assert(
+      Array.isArray(exportCleanupRes.body.data.authorization_audit_log) &&
+        exportCleanupRes.body.data.authorization_audit_log.length > 0,
+      'authorization_audit_log is preserved in export data',
+    );
+    assert(
+      Array.isArray(exportCleanupRes.body.data.auth_audit_log) &&
+        exportCleanupRes.body.data.auth_audit_log.length > 0,
+      'auth_audit_log is preserved in export data',
+    );
+  }
+
+  // ── Test 3m: GET /api/db/download header auth and shared HTTP Master PIN rate limit (#2 & #9) ──
+  console.log(
+    '\nTest 3m: GET /api/db/download accepts x-master-pin header, rejects query credentials, and shares IP rate limit across routes and recovery',
+  );
+  {
+    resetMasterPin('1234');
+    resetMasterPinRateLimit('master-pin:127.0.0.1');
+
+    const queryPinDownload = await request(app)
+      .get('/api/db/download?master_pin=1234')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    assertEqual(
+      queryPinDownload.status,
+      403,
+      'GET /api/db/download rejects master_pin in URL query string with 403',
+    );
+
+    const headerPinDownload = await request(app)
+      .get('/api/db/download')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .set('x-master-pin', '1234');
+    assertEqual(
+      headerPinDownload.status,
+      200,
+      'GET /api/db/download succeeds with x-master-pin request header and no body',
+    );
+
+    resetMasterPinRateLimit('master-pin:127.0.0.1');
+
+    // Attempt 1: POST /api/db/backup
+    const fail1 = await request(app)
+      .post('/api/db/backup')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ master_pin: '0000' });
+    assertEqual(fail1.status, 403, 'shared budget attempt 1 (POST /api/db/backup) returns 403');
+
+    // Attempt 2: POST /api/db-tools/initialize with trailing slash and uppercase path
+    const fail2 = await request(app)
+      .post('/api/db-tools/INITIALIZE/')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ master_pin: '0000', confirmation_phrase: 'INITIALIZE' });
+    assertEqual(
+      fail2.status,
+      403,
+      'shared budget attempt 2 (POST /api/db-tools/INITIALIZE/) returns 403',
+    );
+
+    // Attempt 3: POST /api/db-tools/backups/fake1.db/delete
+    const fail3 = await request(app)
+      .post('/api/db-tools/backups/fake1.db/delete')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ master_pin: '0000' });
+    assertEqual(
+      fail3.status,
+      403,
+      'shared budget attempt 3 (POST /api/db-tools/backups/fake1.db/delete) returns 403',
+    );
+
+    // Attempt 4: POST /api/db-tools/backups/fake2.db/delete
+    const fail4 = await request(app)
+      .post('/api/db-tools/backups/fake2.db/delete')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ master_pin: '0000' });
+    assertEqual(
+      fail4.status,
+      403,
+      'shared budget attempt 4 (POST /api/db-tools/backups/fake2.db/delete) returns 403',
+    );
+
+    // Attempt 5: POST /api/auth/recover-password hits the shared 5-attempt cap and returns 429
+    const fail5 = await request(app).post('/api/auth/recover-password').send({
+      email: 'owner@example.com',
+      master_pin: '0000',
+      new_password: 'RecoveredPassword123',
+    });
+    assertEqual(
+      fail5.status,
+      429,
+      'shared budget attempt 5 (POST /api/auth/recover-password) returns 429 lockout',
+    );
+
+    // Clear the lockout so Test 4 can run cleanly
+    resetMasterPinRateLimit('master-pin:127.0.0.1');
   }
 
   // ── Test 4: POST /db-tools/initialize ────────────────────────────────────

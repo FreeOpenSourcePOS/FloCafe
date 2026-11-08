@@ -11504,18 +11504,39 @@ export function now(): string {
   return new Date().toISOString().replace('T', ' ').replace(/\..*$/, '');
 }
 
-let lastAuthWallMs = 0;
 let lastAuthLogicalMs = 0;
+
+function readPersistedMaxTokensValidAfterMs(): number {
+  if (!db) return 0;
+  try {
+    const row = db
+      .prepare(
+        'SELECT MAX(tokens_valid_after) AS max_valid_after FROM users WHERE tokens_valid_after IS NOT NULL',
+      )
+      .get() as { max_valid_after?: string | null } | undefined;
+    if (!row?.max_valid_after) return 0;
+    const raw = row.max_valid_after.trim();
+    const parsedMs = parseDbTimestamp(raw).getTime();
+    if (!Number.isFinite(parsedMs)) return 0;
+    return /\.\d+/.test(raw) ? parsedMs : parsedMs + 999;
+  } catch {
+    return 0;
+  }
+}
+
+export function resetAuthClockForTests(): void {
+  lastAuthLogicalMs = 0;
+}
 
 /** Monotonic millisecond clock shared by JWT issuance and `tokens_valid_after` updates. */
 export function nextAuthTimestampMs(): number {
   const wallMs = Date.now();
-  let nextMs = wallMs < lastAuthWallMs - 1000 ? wallMs : Math.max(wallMs, lastAuthLogicalMs + 1);
+  const persistedMaxMs = readPersistedMaxTokensValidAfterMs();
+  let nextMs = Math.max(wallMs, lastAuthLogicalMs + 1, persistedMaxMs > 0 ? persistedMaxMs + 1 : 0);
   // Avoid exact `.000` second boundaries so sub-second `iat` remains distinct from legacy integer `iat`.
   if (nextMs % 1000 === 0) {
     nextMs += 1;
   }
-  lastAuthWallMs = wallMs;
   lastAuthLogicalMs = nextMs;
   return nextMs;
 }

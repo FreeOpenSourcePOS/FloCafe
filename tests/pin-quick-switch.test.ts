@@ -692,6 +692,58 @@ async function run() {
   resetSuccessfulLogin(`10.10.0.2:pin:${cashierId}`);
   resetSuccessfulLogin(`127.0.0.1:pin:${cashierId}`);
 
+  // Non-loopback IPv6 addresses in the same /64 prefix share one 5-attempt lockout bucket per user,
+  // while a different IPv6 /64 prefix remains independent
+  app.set('trust proxy', true);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const resV6Host1 = await request(app)
+      .post('/api/auth/pin-login')
+      .set('X-Forwarded-For', '2001:db8:1:2::10')
+      .send({ user_id: cashierId, pin: '0000' });
+    assertEqualOrThrow(
+      resV6Host1.status,
+      401,
+      `IPv6 /64 host 1 (2001:db8:1:2::10) attempt ${attempt} returns 401`,
+    );
+  }
+  for (let attempt = 4; attempt <= 5; attempt++) {
+    const resV6Host2 = await request(app)
+      .post('/api/auth/pin-login')
+      .set('X-Forwarded-For', '2001:db8:1:2::20')
+      .send({ user_id: cashierId, pin: '0000' });
+    assertEqualOrThrow(
+      resV6Host2.status,
+      401,
+      `IPv6 /64 host 2 (2001:db8:1:2::20) attempt ${attempt} shares /64 bucket and returns 401`,
+    );
+    assertEqualOrThrow(
+      resV6Host2.body.attempts_remaining,
+      5 - attempt,
+      `IPv6 /64 host 2 attempt ${attempt} reports ${5 - attempt} attempts remaining on shared /64 bucket`,
+    );
+  }
+  const lockedSameV6Prefix = await request(app)
+    .post('/api/auth/pin-login')
+    .set('X-Forwarded-For', '2001:db8:1:2::30')
+    .send({ user_id: cashierId, pin: '2468' });
+  assertEqualOrThrow(
+    lockedSameV6Prefix.status,
+    429,
+    '6th attempt from another SLAAC address in the same IPv6 /64 (2001:db8:1:2::30) is locked out with 429',
+  );
+  const differentV6PrefixLogin = await request(app)
+    .post('/api/auth/pin-login')
+    .set('X-Forwarded-For', '2001:db8:1:3::10')
+    .send({ user_id: cashierId, pin: '2468' });
+  assertEqualOrThrow(
+    differentV6PrefixLogin.status,
+    200,
+    'Client on a different IPv6 /64 prefix (2001:db8:1:3::10) is not locked out and can authenticate',
+  );
+  app.set('trust proxy', false);
+  resetSuccessfulLogin(`2001:0db8:0001:0002::/64:pin:${cashierId}`);
+  resetSuccessfulLogin(`2001:0db8:0001:0003::/64:pin:${cashierId}`);
+
   // ── 5. Cashier PIN rejected on EVERY approval endpoint ──
   console.log('\n5. Cashier PIN rejected on every approval endpoint');
   const cashierAuth = makeToken(cashierId, 'cashier', 'cashier@test.local');

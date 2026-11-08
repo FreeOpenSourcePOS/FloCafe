@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import {
   getDatabase,
   isKdsEnabled,
@@ -8,9 +9,10 @@ import {
   nextTokensValidAfterTimestamp,
   now,
   parseDbTimestamp,
+  resetAuthClockForTests,
 } from '../db';
 
-export { nextTokenIatSeconds, nextTokensValidAfterTimestamp };
+export { nextTokenIatSeconds, nextTokensValidAfterTimestamp, resetAuthClockForTests };
 
 interface RateLimitRecord {
   count: number;
@@ -34,6 +36,44 @@ export function normalizeIpForRateLimit(ip: string): string {
   const lower = ip.toLowerCase();
   const stripped = lower.startsWith('::ffff:') ? lower.substring(7) : lower;
   return stripped === '::1' || stripped === '0:0:0:0:0:0:0:1' ? '127.0.0.1' : stripped;
+}
+
+function expandIpv6Hextets(addr: string): string[] {
+  const expandPart = (part: string): string[] => {
+    if (!part) return [];
+    const tokens = part.split(':');
+    const last = tokens[tokens.length - 1];
+    if (last && last.includes('.')) {
+      const octets = last.split('.').map((n) => Number.parseInt(n, 10));
+      tokens.pop();
+      tokens.push(
+        ((octets[0] << 8) | octets[1]).toString(16),
+        ((octets[2] << 8) | octets[3]).toString(16),
+      );
+    }
+    return tokens;
+  };
+  if (addr.includes('::')) {
+    const [leftRaw, rightRaw] = addr.split('::');
+    const left = expandPart(leftRaw);
+    const right = expandPart(rightRaw);
+    const missing = Math.max(0, 8 - (left.length + right.length));
+    return [...left, ...Array<string>(missing).fill('0'), ...right];
+  }
+  return expandPart(addr);
+}
+
+/** Normalizes a client IP for PIN lockout bucketing, collapsing non-loopback IPv6 addresses to `/64`. */
+export function normalizeIpForPinRateLimit(ip: string): string {
+  const canonicalIp = normalizeIpForRateLimit(ip).split('%')[0];
+  if (isIP(canonicalIp) === 6 && canonicalIp !== '::1') {
+    const prefix = expandIpv6Hextets(canonicalIp)
+      .slice(0, 4)
+      .map((group) => group.padStart(4, '0').toLowerCase())
+      .join(':');
+    return `${prefix}::/64`;
+  }
+  return canonicalIp;
 }
 
 /** In-memory rate limiter for local Express API keyed by canonicalized IP. */

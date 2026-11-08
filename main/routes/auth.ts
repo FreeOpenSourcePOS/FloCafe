@@ -22,7 +22,7 @@ import {
   incrementFailedLogin,
   resetSuccessfulLogin,
   FAILED_LOGIN_LOCKOUT_MINUTES,
-  normalizeIpForRateLimit,
+  normalizeIpForPinRateLimit,
   withPinVerificationLock,
   validatePassword,
   revokeToken,
@@ -411,9 +411,9 @@ router.post(
         return res.status(400).json({ error: 'user_id and pin are required' });
       }
 
-      // Scope failed-attempt lockout per (normalized client IP, user ID) to preserve main POS
-      // terminal availability on shared restaurant LANs; trade-off: reduced multi-device guessing resistance.
-      const canonicalIp = normalizeIpForRateLimit(ip);
+      // Scope failed-attempt lockout per (normalized client IP or IPv6 /64 prefix, user ID) to preserve
+      // main POS terminal availability on shared restaurant LANs; trade-off: reduced multi-device guessing resistance.
+      const canonicalIp = normalizeIpForPinRateLimit(ip);
       const pinRateKey = `${canonicalIp}:pin:${userId}`;
       const pinLockKey = `pin-user:${userId}`;
       type VerifiedUser = {

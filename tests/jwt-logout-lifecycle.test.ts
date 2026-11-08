@@ -46,6 +46,7 @@ const {
   initDatabase,
   nextTokenIatSeconds,
   nextTokensValidAfterTimestamp,
+  resetAuthClockForTests,
 } = require('../main/db');
 const { staffRoutes } = require('../main/routes/staff');
 const {
@@ -256,6 +257,7 @@ async function run() {
   // 10b: Pre-change token vs. credential change vs. fresh post-change login when Date.now() is frozen to the exact same millisecond (including .000 boundary)
   const realDateNow = Date.now;
   try {
+    resetAuthClockForTests();
     for (const frozenMs of [1_760_000_010_000, 1_760_000_020_500, 1_760_000_030_999]) {
       Date.now = () => frozenMs;
       const iatBefore = nextTokenIatSeconds();
@@ -319,12 +321,47 @@ async function run() {
       'Fresh post-change login token in the same frozen millisecond is accepted by /api/auth/me',
     );
 
-    // Restore original password while still verifying PIN change invalidation in the same frozen ms
-    const restorePwRes = await request(app)
+    // Backward wall-clock jump (> 10s): pre-change token must still be invalidated when credentials change after clock jump backward
+    Date.now = () => frozenRouteMs - 15_000;
+    const pwChangeAfterBackwardJump = await request(app)
       .post('/api/auth/password/change')
       .set('Authorization', `Bearer ${postChangeToken}`)
       .send({ current_password: 'Pass5678!', password: 'Pass1234!' });
-    assertEqual(restorePwRes.status, 200, 'Password restore in same frozen ms succeeds');
+    assertEqual(
+      pwChangeAfterBackwardJump.status,
+      200,
+      'Password change after backward wall-clock jump (> 10s) succeeds',
+    );
+
+    const staleAfterBackwardJump = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${postChangeToken}`);
+    assertEqual(
+      staleAfterBackwardJump.status,
+      401,
+      'Pre-change token is rejected after credential change even when Date.now() jumped backward by > 10s',
+    );
+
+    // Simulated process restart (in-memory monotonic clock reset while persisted tokens_valid_after is ahead of wall clock):
+    // fresh login must still receive an iat strictly greater than persisted tokens_valid_after and succeed on /api/auth/me
+    resetAuthClockForTests();
+    const loginAfterSimulatedRestart = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'jwt-owner@test.local', password: 'Pass1234!' });
+    assertEqual(
+      loginAfterSimulatedRestart.status,
+      200,
+      'Login after simulated process restart with persisted tokens_valid_after ahead of wall clock succeeds',
+    );
+    const restartToken = loginAfterSimulatedRestart.body.access_token;
+    const meAfterSimulatedRestart = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${restartToken}`);
+    assertEqual(
+      meAfterSimulatedRestart.status,
+      200,
+      'Fresh login token after simulated process restart is accepted by /api/auth/me',
+    );
   } finally {
     Date.now = realDateNow;
   }

@@ -557,11 +557,10 @@ A ticket may carry a `log_tail` string holding the tail of the current session's
   string. `logTail` is `undefined` when the request body has no non-blank `log_tail`.
 - **Where it is persisted.** In the outbox row's `payload`, alongside the ticket's other fields,
   and sent by `queueSupportTicket()` as the `log_tail` property.
-
-**There is no test covering `log_tail`.** `grep -rn "log_tail\|get-log-tail" tests/` returns
-nothing: the 200,000-byte cap, the 7-day window, and the absent-not-null semantics are unenforced
-by the suite, and a change to any of them would not be caught. This is a coverage gap, not a
-statement that the behaviour is wrong.
+- **Redaction.** Both the `get-log-tail` IPC handler and `POST /api/support-ticket` pass the tail
+  through `sanitizeLogTail()` in [`main/lib/log-sanitizer.ts`](../../main/lib/log-sanitizer.ts) to
+  redact bearer JWTs, `Authorization` headers, PIN/password/API-key/secret fields, and OAuth tokens
+  while preserving stack traces, timestamps, and error codes.
 
 ### Linking a ticket to a known operation failure
 

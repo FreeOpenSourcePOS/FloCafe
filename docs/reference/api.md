@@ -1165,8 +1165,11 @@ when the store setting changes under a live connection.
 
 ### Connection limits
 
-- 100 connected clients, and at most 25 of them unauthenticated. Over either cap the server closes
-  with `1013`.
+- 100 connected clients, at most 25 pending (unauthenticated) clients globally, and at most 5
+  pending clients per normalized IP. Once a socket authenticates, it stops consuming the pending
+  budget. Upgrades with an untrusted `Origin` header are rejected with HTTP 403 (`1008` on a direct
+  socket), while requests with no `Origin` header or a local/LAN/Tailscale `Origin` are admitted.
+  Upgrades over a connection cap are rejected with HTTP 429 (`1013` on a direct socket).
 - A client whose `bufferedAmount` exceeds 1 MB at send time is closed with `1013` as too slow.
 - The server sends a WebSocket ping every 30 seconds and terminates a client that misses one.
 - A client is re-sent a fresh `initial_data` without any change of its own when its category or

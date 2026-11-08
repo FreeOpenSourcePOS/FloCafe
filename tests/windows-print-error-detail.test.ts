@@ -53,6 +53,11 @@ case "$FLO_FAKE_PS_MODE" in
   signal_death)
     kill -9 $$
     ;;
+  inspect_spool)
+    ls -ln "$FLO_PRINT_FILE" >&2
+    printf "FILE=%s\\n" "$FLO_PRINT_FILE" >&2
+    exit 1
+    ;;
   hang)
     sleep 30
     ;;
@@ -65,7 +70,7 @@ esac
 
 /** Matches a base64 blob the way the encoded helper would appear. */
 const BASE64_BLOB = /[A-Za-z0-9+/]{60,}={0,2}/;
-const PAYLOAD_FILE_NAME = /flo_print_\d+_\d+\.bin/;
+const PAYLOAD_FILE_NAME = /flo_print_\d+_\d+(?:_[0-9a-f-]+)?\.bin/i;
 
 let stubDir = '';
 let emptyDir = '';
@@ -88,7 +93,10 @@ async function runWindowsDispatch(
 }
 
 function assertNoSubprocessEvidence(detail: string, label: string): void {
-  assert.ok(!detail.includes('-EncodedCommand'), `${label}: encoded-command switch must not escape`);
+  assert.ok(
+    !detail.includes('-EncodedCommand'),
+    `${label}: encoded-command switch must not escape`,
+  );
   assert.ok(!detail.includes('-NoProfile'), `${label}: command arguments must not escape`);
   assert.ok(!detail.includes('Command failed:'), `${label}: the raw command line must not escape`);
   assert.ok(!BASE64_BLOB.test(detail), `${label}: the encoded helper payload must not escape`);
@@ -100,7 +108,12 @@ function assertProcessClassifications(): void {
   // Stable classifications for the process-level shapes Node reports, plus
   // the defensive default for anything unrecognized.
   assert.equal(
-    describeWindowsPrintProcessFailure({ killed: true, signal: 'SIGTERM', code: null, message: 'Command failed: powershell -EncodedCommand AAAA' }),
+    describeWindowsPrintProcessFailure({
+      killed: true,
+      signal: 'SIGTERM',
+      code: null,
+      message: 'Command failed: powershell -EncodedCommand AAAA',
+    }),
     'Windows print command timed out',
   );
   assert.equal(
@@ -173,7 +186,10 @@ async function main(): Promise<void> {
       (verbose.detail || '').length <= MAX_DETAIL_LENGTH,
       `verbose stderr is bounded (got ${(verbose.detail || '').length} chars)`,
     );
-    assert.ok((verbose.detail || '').includes('SendRaw'), 'the useful stderr text survives the bound');
+    assert.ok(
+      (verbose.detail || '').includes('SendRaw'),
+      'the useful stderr text survives the bound',
+    );
     assert.ok((verbose.detail || '').endsWith('[truncated]'), 'the bound is marked as truncated');
 
     // 6. The helper executable is missing.
@@ -193,6 +209,57 @@ async function main(): Promise<void> {
     const signalDeath = await runWindowsDispatch('signal_death');
     assert.equal(signalDeath.detail, 'Windows print helper was terminated (SIGKILL)');
     assertNoSubprocessEvidence(signalDeath.detail || '', 'terminated helper');
+
+    // 9. Spool file creation uses exclusive wx flag, 0o600 permissions, UUID suffix,
+    //    and never unlinks a pre-existing file if writeFileSync fails.
+    const inspectSpool = await runWindowsDispatch('inspect_spool');
+    assert.equal(inspectSpool.ok, false);
+    assert.match(
+      inspectSpool.detail || '',
+      /^-rw-------.*<payload file>/s,
+      `spool file created with 0o600 permissions and path redacted (got: ${inspectSpool.detail})`,
+    );
+
+    const fixedNow = 1700000000000;
+    const fixedUuid = '00000000-0000-4000-8000-000000000001';
+    const preExistingPath = path.join(
+      os.tmpdir(),
+      `flo_print_${process.pid}_${fixedNow}_${fixedUuid}.bin`,
+    );
+    fs.writeFileSync(preExistingPath, 'PRE-EXISTING-SENTINEL', { mode: 0o600 });
+    const origDateNow = Date.now;
+    const cjsCrypto = require('crypto');
+    const origRandomUUID = cjsCrypto.randomUUID;
+    Date.now = () => fixedNow;
+    cjsCrypto.randomUUID = () => fixedUuid;
+    try {
+      const collisionRes = await runWindowsDispatch('inspect_spool');
+      assert.equal(
+        collisionRes.ok,
+        false,
+        'exclusive wx write fails when spool file already exists',
+      );
+      assert.ok(
+        !(collisionRes.detail || '').includes('FILE='),
+        'powershell helper was never invoked when exclusive spool creation failed',
+      );
+      assert.equal(
+        fs.existsSync(preExistingPath),
+        true,
+        'failed exclusive spool creation never unlinks a pre-existing file in finally',
+      );
+      assert.equal(
+        fs.readFileSync(preExistingPath, 'utf8'),
+        'PRE-EXISTING-SENTINEL',
+        'pre-existing file contents remain untouched',
+      );
+    } finally {
+      Date.now = origDateNow;
+      cjsCrypto.randomUUID = origRandomUUID;
+      try {
+        fs.unlinkSync(preExistingPath);
+      } catch {}
+    }
 
     console.log('Issue #789 Windows raw-print failure detail tests passed');
   } finally {

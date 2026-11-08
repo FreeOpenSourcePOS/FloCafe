@@ -22,6 +22,7 @@ import {
   prepareReceipt,
   escPosToText,
   printMenuDocument,
+  validateNetworkPrinterTarget,
 } from '../printers/thermal';
 import {
   buildDeliverySlipPrintData,
@@ -123,11 +124,21 @@ function validatePrinterFields(body: any, existing?: any): string | null {
   const connectionType =
     body.connection_type !== undefined ? body.connection_type : existing?.connection_type;
   const ipAddress = body.ip_address !== undefined ? body.ip_address : existing?.ip_address;
+  const effectivePort = body.port !== undefined ? body.port : (existing?.port ?? 9100);
   if (
     connectionType === 'network' &&
     (typeof ipAddress !== 'string' || ipAddress.trim().length === 0)
   ) {
     return 'ip_address is required for network printers';
+  }
+  if (
+    connectionType === 'network' &&
+    typeof ipAddress === 'string' &&
+    ipAddress.trim().length > 0 &&
+    isValidPort(effectivePort)
+  ) {
+    const targetError = validateNetworkPrinterTarget(ipAddress, effectivePort);
+    if (targetError) return targetError;
   }
   return null;
 }

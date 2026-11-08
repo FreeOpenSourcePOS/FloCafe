@@ -24,8 +24,18 @@ Module._load = function (requestName: string, parent: unknown, isMain: boolean) 
 
 import { startKdsServer, stopKdsServer, getKdsPort } from '../main/kds-server';
 import { initDatabase, closeDatabase, getDatabase, now } from '../main/db';
-import { revokeToken, clearRevokedTokens, invalidateUserAuthCache } from '../main/middleware/security';
-import { notifyKdsUpdate, KDS_AUTH_TIMEOUT_MS } from '../main/services/kds';
+import {
+  revokeToken,
+  clearRevokedTokens,
+  invalidateUserAuthCache,
+  isAllowedOrigin,
+} from '../main/middleware/security';
+import {
+  notifyKdsUpdate,
+  KDS_AUTH_TIMEOUT_MS,
+  MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP,
+  getKdsClientCount,
+} from '../main/services/kds';
 import { getJWTSecret } from '../main/routes/auth';
 import { WebSocket } from 'ws';
 import * as jwt from 'jsonwebtoken';
@@ -50,7 +60,10 @@ function createMessageQueue(ws: WebSocket) {
         if (index >= 0) servers.splice(index, 1);
         reject(new Error(`Timed out waiting for ${type}`));
       }, 10000);
-      server.resolve = (message: any) => { clearTimeout(timeout); resolve(message); };
+      server.resolve = (message: any) => {
+        clearTimeout(timeout);
+        resolve(message);
+      };
       servers.push(server);
     });
   };
@@ -74,31 +87,51 @@ async function run() {
       VALUES ('kds-ws-chef-1', 'WS Chef', 'wschef@flo.local', ?, 'chef', 1)
     `).run(bcrypt.hashSync('Pass123!', 10));
 
-    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)')
-      .run('ws-cat-1', 'WS Category', 1);
-    db.prepare('INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)')
-      .run('ws-prod-1', 'ws-cat-1', 'WS Burger', 15);
+    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)').run(
+      'ws-cat-1',
+      'WS Category',
+      1,
+    );
+    db.prepare(
+      'INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)',
+    ).run('ws-prod-1', 'ws-cat-1', 'WS Burger', 15);
     db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
-      VALUES (?, 'takeaway', 'pending', 15, 15, ?, ?)`)
-      .run('WS-REVAL-001', now(), now());
-    const orderId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('WS-REVAL-001') as any).id;
+      VALUES (?, 'takeaway', 'pending', 15, 15, ?, ?)`).run('WS-REVAL-001', now(), now());
+    const orderId = (
+      db.prepare('SELECT id FROM orders WHERE order_number = ?').get('WS-REVAL-001') as any
+    ).id;
     db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-      VALUES (?, 'ws-prod-1', 'WS Burger', 15, 1, 15, 0, 15, 'pending', ?, ?)`)
-      .run(orderId, now(), now());
-    const itemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any).id;
+      VALUES (?, 'ws-prod-1', 'WS Burger', 15, 1, 15, 0, 15, 'pending', ?, ?)`).run(
+      orderId,
+      now(),
+      now(),
+    );
+    const itemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any)
+      .id;
 
-    const validToken = jwt.sign({ userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-valid-1' }, getJWTSecret(), { expiresIn: '1h' });
+    const validToken = jwt.sign(
+      { userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-valid-1' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    );
 
     // Unauthenticated sockets must not remain open indefinitely.
     const idleWs = new WebSocket(`ws://127.0.0.1:${port}/kds`);
     const idleQueue = createMessageQueue(idleWs);
     await once(idleWs, 'open');
     const idleAuthError = await idleQueue('auth_error');
-    assertOrThrow(idleAuthError.type === 'auth_error', 'Idle unauthenticated socket receives an auth error');
+    assertOrThrow(
+      idleAuthError.type === 'auth_error',
+      'Idle unauthenticated socket receives an auth error',
+    );
     await once(idleWs, 'close');
 
     // Test 1: Revoked token fails WebSocket auth
-    const revokedToken = jwt.sign({ userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-revoked-1' }, getJWTSecret(), { expiresIn: '1h' });
+    const revokedToken = jwt.sign(
+      { userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-revoked-1' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    );
     revokeToken(revokedToken);
 
     const wsRev = new WebSocket(`ws://127.0.0.1:${port}/kds`);
@@ -123,14 +156,21 @@ async function run() {
     revokeToken(validToken);
     const closePromise1 = new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('revoked KDS socket stayed open')), 2500);
-      ws1.once('close', () => { clearTimeout(timeout); resolve(); });
+      ws1.once('close', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
     });
     notifyKdsUpdate();
     await closePromise1;
 
     // Test 3: Status update after user deactivation fails
     clearRevokedTokens();
-    const freshToken = jwt.sign({ userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-fresh-1' }, getJWTSecret(), { expiresIn: '1h' });
+    const freshToken = jwt.sign(
+      { userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-fresh-1' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    );
     const ws2 = new WebSocket(`ws://127.0.0.1:${port}/kds`);
     const q2 = createMessageQueue(ws2);
     await once(ws2, 'open');
@@ -144,7 +184,10 @@ async function run() {
 
     ws2.send(JSON.stringify({ type: 'status_update', order_item_id: itemId, status: 'preparing' }));
     const errRes2 = await q2('auth_error');
-    assertOrThrow(errRes2.message.includes('revoked') || errRes2.message.includes('expired'), 'Deactivated user status update blocked');
+    assertOrThrow(
+      errRes2.message.includes('revoked') || errRes2.message.includes('expired'),
+      'Deactivated user status update blocked',
+    );
     await once(ws2, 'close');
 
     // Test 4: A broadcast must not terminate a socket that is still inside its
@@ -156,12 +199,20 @@ async function run() {
     clearRevokedTokens();
     db.prepare('UPDATE users SET is_active = 1 WHERE id = ?').run('kds-ws-chef-1');
     invalidateUserAuthCache('kds-ws-chef-1');
-    const graceToken = jwt.sign({ userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-grace-1' }, getJWTSecret(), { expiresIn: '1h' });
+    const graceToken = jwt.sign(
+      { userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-grace-1' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    );
 
     // A second, fully authenticated socket so the broadcast has an authorized
     // client to serve while the pre-auth one is connected. It authenticates
     // with its own token so revoking the token under test does not close it.
-    const authedToken = jwt.sign({ userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-authed-1' }, getJWTSecret(), { expiresIn: '1h' });
+    const authedToken = jwt.sign(
+      { userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-authed-1' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    );
     const wsAuthed = new WebSocket(`ws://127.0.0.1:${port}/kds`);
     const qAuthed = createMessageQueue(wsAuthed);
     await once(wsAuthed, 'open');
@@ -177,34 +228,55 @@ async function run() {
       messagesDuringWindow.push(JSON.parse(raw.toString()).type);
     });
     let closedEarly: string | null = null;
-    wsPreAuth.once('close', (_code: number, reason: Buffer) => { closedEarly = reason.toString(); });
+    wsPreAuth.once('close', (_code: number, reason: Buffer) => {
+      closedEarly = reason.toString();
+    });
 
     // Fire several broadcasts inside the grace window.
     for (let i = 0; i < 5; i++) {
       notifyKdsUpdate();
       await new Promise((resolve) => setTimeout(resolve, 40));
     }
-    assertOrThrow(wsPreAuth.readyState === WebSocket.OPEN,
-      `Unauthenticated socket survives broadcasts inside its grace window (closed: ${closedEarly})`);
-    assertOrThrow(!messagesDuringWindow.includes('auth_error'),
-      'Unauthenticated socket receives no auth_error from a broadcast');
-    assertOrThrow(!messagesDuringWindow.includes('initial_data'),
-      'Unauthenticated socket receives no order snapshot from a broadcast');
+    assertOrThrow(
+      wsPreAuth.readyState === WebSocket.OPEN,
+      `Unauthenticated socket survives broadcasts inside its grace window (closed: ${closedEarly})`,
+    );
+    assertOrThrow(
+      !messagesDuringWindow.includes('auth_error'),
+      'Unauthenticated socket receives no auth_error from a broadcast',
+    );
+    assertOrThrow(
+      !messagesDuringWindow.includes('initial_data'),
+      'Unauthenticated socket receives no order snapshot from a broadcast',
+    );
 
     // The grace window itself still owns the socket: it is closed on its own
     // schedule, with the authentication-required reason rather than a
     // revocation.
     const windowDeadline = KDS_AUTH_TIMEOUT_MS + 4000;
     const windowClose = await Promise.race([
-      once(wsPreAuth, 'close').then(([code, reason]: any) => ({ closed: true as const, code, reason: reason.toString() })),
-      new Promise<{ closed: false }>((resolve) => setTimeout(() => resolve({ closed: false }), windowDeadline)),
+      once(wsPreAuth, 'close').then(([code, reason]: any) => ({
+        closed: true as const,
+        code,
+        reason: reason.toString(),
+      })),
+      new Promise<{ closed: false }>((resolve) =>
+        setTimeout(() => resolve({ closed: false }), windowDeadline),
+      ),
     ]);
-    if (!windowClose.closed) throw new Error('An unauthenticated socket is still closed once its grace window expires');
-    assertOrThrow(String(windowClose.reason).includes('Authentication required'),
-      `Grace-window close reports authentication, not revocation (got: ${windowClose.reason})`);
+    if (!windowClose.closed)
+      throw new Error('An unauthenticated socket is still closed once its grace window expires');
+    assertOrThrow(
+      String(windowClose.reason).includes('Authentication required'),
+      `Grace-window close reports authentication, not revocation (got: ${windowClose.reason})`,
+    );
 
     // Test 5: an authenticated-but-revoked socket is still closed by a broadcast.
-    const revokedGraceToken = jwt.sign({ userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-grace-2' }, getJWTSecret(), { expiresIn: '1h' });
+    const revokedGraceToken = jwt.sign(
+      { userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-grace-2' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    );
     const wsRevoked = new WebSocket(`ws://127.0.0.1:${port}/kds`);
     const qRevoked = createMessageQueue(wsRevoked);
     await once(wsRevoked, 'open');
@@ -213,8 +285,14 @@ async function run() {
     await qRevoked('initial_data');
     revokeToken(revokedGraceToken);
     const revokedClose = new Promise<void>((resolve, reject) => {
-      const deadline = setTimeout(() => reject(new Error('revoked KDS socket survived the broadcast')), 2500);
-      wsRevoked.once('close', () => { clearTimeout(deadline); resolve(); });
+      const deadline = setTimeout(
+        () => reject(new Error('revoked KDS socket survived the broadcast')),
+        2500,
+      );
+      wsRevoked.once('close', () => {
+        clearTimeout(deadline);
+        resolve();
+      });
     });
     notifyKdsUpdate();
     await revokedClose;
@@ -222,13 +300,125 @@ async function run() {
     if (wsAuthed.readyState === WebSocket.OPEN) wsAuthed.close();
     if (wsAuthed.readyState !== WebSocket.CLOSED) await once(wsAuthed, 'close');
 
+    // Test 6: Origin validation allows empty/local/private Origins and rejects untrusted Origins
+    assertOrThrow(isAllowedOrigin(undefined) === true, 'No Origin header is allowed');
+    assertOrThrow(isAllowedOrigin('http://localhost:3002') === true, 'localhost Origin is allowed');
+    assertOrThrow(isAllowedOrigin('http://flo.local:3002') === true, '.local Origin is allowed');
+    assertOrThrow(isAllowedOrigin('http://192.168.1.25:3002') === true, 'LAN IP Origin is allowed');
+    assertOrThrow(
+      isAllowedOrigin('http://100.80.1.2:3002') === true,
+      'Tailscale IP Origin is allowed',
+    );
+    assertOrThrow(
+      isAllowedOrigin('https://evil.example.com') === false,
+      'Untrusted public Origin is rejected',
+    );
+
+    const badOriginWs = new WebSocket(`ws://127.0.0.1:${port}/kds`, {
+      headers: { Origin: 'https://evil.example.com' },
+    });
+    const badOriginRejected = await new Promise<boolean>((resolve) => {
+      badOriginWs.once('unexpected-response', (_req, res) => {
+        res.resume();
+        resolve(res.statusCode === 403);
+      });
+      badOriginWs.once('error', () => resolve(true));
+      badOriginWs.once('open', () => resolve(false));
+    });
+    assertOrThrow(
+      badOriginRejected,
+      'Untrusted Origin WebSocket upgrade is rejected before connection',
+    );
+    assertEqualOrThrow(
+      getKdsClientCount(),
+      0,
+      'Rejected Origin socket is never added to KDS client map',
+    );
+
+    // Test 7: Per-IP pending cap (5) and non-accumulation of rejected sockets
+    assertEqualOrThrow(MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP, 5, 'Per-IP pending limit is 5');
+    const pendingWave: WebSocket[] = [];
+    for (let i = 0; i < MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP; i++) {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/kds`);
+      await once(ws, 'open');
+      pendingWave.push(ws);
+    }
+    assertEqualOrThrow(
+      getKdsClientCount(),
+      MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP,
+      '5 pending sockets from same IP are accepted',
+    );
+
+    // 6th unauthenticated connection from same IP must be rejected without accumulating
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const sixthWs = new WebSocket(`ws://127.0.0.1:${port}/kds`);
+      const sixthRejected = await new Promise<boolean>((resolve) => {
+        sixthWs.once('unexpected-response', (_req, res) => {
+          res.resume();
+          resolve(res.statusCode === 429);
+        });
+        sixthWs.once('error', () => resolve(true));
+        sixthWs.once('open', () => resolve(false));
+      });
+      assertOrThrow(
+        sixthRejected,
+        `6th unauthenticated socket from same IP is rejected (attempt ${attempt + 1})`,
+      );
+      assertEqualOrThrow(
+        getKdsClientCount(),
+        MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP,
+        'Rejected over-cap socket does not accumulate in client map',
+      );
+    }
+
+    // Test 8: Once the first wave authenticates, they stop consuming the pending budget,
+    // allowing simultaneous reconnects from another wave of 5 clients sharing the same IP.
+    for (let i = 0; i < pendingWave.length; i++) {
+      const ws = pendingWave[i];
+      const q = createMessageQueue(ws);
+      const waveToken = jwt.sign(
+        { userId: 'kds-ws-chef-1', role: 'chef', jti: `wave1-${i}` },
+        getJWTSecret(),
+        { expiresIn: '1h' },
+      );
+      ws.send(JSON.stringify({ type: 'auth', token: waveToken }));
+      await q('auth_success');
+      await q('initial_data');
+    }
+
+    const secondWave: WebSocket[] = [];
+    for (let i = 0; i < MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP; i++) {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/kds`);
+      const q = createMessageQueue(ws);
+      await once(ws, 'open');
+      const waveToken = jwt.sign(
+        { userId: 'kds-ws-chef-1', role: 'chef', jti: `wave2-${i}` },
+        getJWTSecret(),
+        { expiresIn: '1h' },
+      );
+      ws.send(JSON.stringify({ type: 'auth', token: waveToken }));
+      await q('auth_success');
+      await q('initial_data');
+      secondWave.push(ws);
+    }
+    assertEqualOrThrow(
+      getKdsClientCount(),
+      MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP * 2,
+      '10 authenticated sockets from the same IP coexist after authenticating in waves of 5',
+    );
+
+    for (const ws of [...pendingWave, ...secondWave]) {
+      if (ws.readyState === WebSocket.OPEN) ws.close();
+      if (ws.readyState !== WebSocket.CLOSED) await once(ws, 'close');
+    }
+
     console.log('✅ KDS WebSocket session revalidation tests passed!');
   } finally {
     stopKdsServer();
     closeDatabase();
     try {
       fs.rmSync(testDir, { recursive: true, force: true });
-    } catch { }
+    } catch {}
   }
 }
 

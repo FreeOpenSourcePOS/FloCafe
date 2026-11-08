@@ -26,7 +26,13 @@ import {
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret } from '../security/jwt-secret';
 import { parseCategoryIds } from '../routes/auth';
-import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
+import {
+  getUserAuthStatus,
+  isAllowedOrigin,
+  isTokenRevoked,
+  isTokenStale,
+  normalizeIpForRateLimit,
+} from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { hasPermission } from './authorization';
 import { reconcileActiveOrderStatusFromItems } from './orders';
@@ -34,6 +40,7 @@ import { cloudSync } from './cloud-sync';
 
 interface KdsClient {
   ws: WebSocket;
+  ip: string;
   userId: string | null;
   userName: string | null;
   role: string | null;
@@ -52,9 +59,84 @@ interface KdsClient {
 export const KDS_AUTH_TIMEOUT_MS = 5_000;
 export const MAX_KDS_CLIENTS = 100;
 export const MAX_UNAUTHENTICATED_KDS_CLIENTS = 25;
+export const MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP = 5;
 const clients: Map<WebSocket, KdsClient> = new Map();
 let activeWebSocketServers = 0;
 let heartbeat: NodeJS.Timeout | null = null;
+
+function getKdsRequestIp(req?: { socket?: { remoteAddress?: string | null } } | null): string {
+  const rawIp = req?.socket?.remoteAddress;
+  return typeof rawIp === 'string' && rawIp.trim()
+    ? normalizeIpForRateLimit(rawIp.trim())
+    : 'unknown';
+}
+
+function pruneClosedKdsClients(): void {
+  clients.forEach((client, ws) => {
+    if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+      clearClientAuthTimeout(client);
+      clients.delete(ws);
+    }
+  });
+}
+
+export type KdsWebSocketAdmission =
+  | { allowed: true; ip: string }
+  | {
+      allowed: false;
+      statusCode: number;
+      statusText: string;
+      closeCode: number;
+      reason: string;
+    };
+
+export function checkKdsWebSocketAdmission(
+  req?: {
+    headers?: { origin?: string | string[] };
+    socket?: { remoteAddress?: string | null };
+  } | null,
+): KdsWebSocketAdmission {
+  pruneClosedKdsClients();
+  const rawOrigin = req?.headers?.origin;
+  const origin = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin;
+  if (!isAllowedOrigin(origin)) {
+    return {
+      allowed: false,
+      statusCode: 403,
+      statusText: 'Forbidden',
+      closeCode: 1008,
+      reason: 'Origin not allowed',
+    };
+  }
+
+  const ip = getKdsRequestIp(req);
+  let unauthenticatedClients = 0;
+  let unauthenticatedForIp = 0;
+  clients.forEach((client) => {
+    if (!client.userId) {
+      unauthenticatedClients += 1;
+      if (client.ip === ip) {
+        unauthenticatedForIp += 1;
+      }
+    }
+  });
+
+  if (
+    clients.size >= MAX_KDS_CLIENTS ||
+    unauthenticatedClients >= MAX_UNAUTHENTICATED_KDS_CLIENTS ||
+    unauthenticatedForIp >= MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP
+  ) {
+    return {
+      allowed: false,
+      statusCode: 429,
+      statusText: 'Too Many Requests',
+      closeCode: 1013,
+      reason: 'KDS connection capacity reached',
+    };
+  }
+
+  return { allowed: true, ip };
+}
 
 function clearClientAuthTimeout(client: KdsClient): void {
   if (client.authTimeout) {
@@ -179,15 +261,12 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
     clients.forEach((client) => closeKdsClient(client, 'Database maintenance in progress'));
   });
   wss.once('close', unregisterMaintenanceListener);
-  wss.on('connection', (ws: WebSocket, _req) => {
-    const unauthenticatedClients = Array.from(clients.values()).filter(
-      (client) => !client.userId,
-    ).length;
-    if (
-      clients.size >= MAX_KDS_CLIENTS ||
-      unauthenticatedClients >= MAX_UNAUTHENTICATED_KDS_CLIENTS
-    ) {
-      ws.close(1013, 'KDS connection capacity reached');
+  wss.on('connection', (ws: WebSocket, req) => {
+    const admission = checkKdsWebSocketAdmission(req);
+    if (!admission.allowed) {
+      try {
+        ws.close(admission.closeCode, admission.reason);
+      } catch {}
       return;
     }
 
@@ -195,6 +274,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
 
     const client: KdsClient = {
       ws,
+      ip: admission.ip,
       userId: null,
       userName: null,
       role: null,
@@ -311,9 +391,13 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
   }
   wss.once('close', () => {
     activeWebSocketServers = Math.max(0, activeWebSocketServers - 1);
-    if (activeWebSocketServers === 0 && heartbeat) {
-      clearInterval(heartbeat);
-      heartbeat = null;
+    if (activeWebSocketServers === 0) {
+      clients.forEach((client) => clearClientAuthTimeout(client));
+      clients.clear();
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
     }
   });
 

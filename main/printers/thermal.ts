@@ -2,9 +2,12 @@ import * as net from 'net';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import crypto from 'crypto';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
+import { getKdsPort, getServerPort } from '../server-state';
+import { getServerAppPort } from '../server-app-state';
 import {
   PrinterCutMode,
   resolvePrinterProfile,
@@ -4976,12 +4979,160 @@ function decodeThermalPreviewBytes(bytes: number[], codePage: ThermalCodePage | 
 export const NETWORK_PRINT_CHUNK_SIZE = 4096;
 export const NETWORK_PRINT_CHUNK_DELAY_MS = 10;
 
+function expandPrinterIpv6Groups(ip: string): number[] | null {
+  let text = ip.toLowerCase();
+  const dotted = text.match(/^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (dotted) {
+    const octets = dotted[2].split('.').map(Number);
+    if (octets.some((n) => n > 255)) return null;
+    const hi = ((octets[0] << 8) | octets[1]).toString(16);
+    const lo = ((octets[2] << 8) | octets[3]).toString(16);
+    text = `${dotted[1]}${hi}:${lo}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const parseSide = (side: string): number[] | null => {
+    if (side === '') return [];
+    const groups: number[] = [];
+    for (const piece of side.split(':')) {
+      if (!/^[0-9a-f]{1,4}$/.test(piece)) return null;
+      groups.push(parseInt(piece, 16));
+    }
+    return groups;
+  };
+  const left = parseSide(halves[0]);
+  const right = parseSide(halves[1] ?? '');
+  if (left === null || right === null) return null;
+  const explicit = left.length + right.length;
+  if (explicit > 8) return null;
+  if (halves.length === 1) return explicit === 8 ? left : null;
+  return [...left, ...Array(8 - explicit).fill(0), ...right];
+}
+
+function isLocalInterfaceIp(canonicalIp: string, targetGroups: number[] | null): boolean {
+  try {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const alias of interfaces[name] ?? []) {
+        const addr = String(alias.address || '')
+          .split('%')[0]
+          .trim()
+          .toLowerCase();
+        if (!addr) continue;
+        if (addr === canonicalIp) return true;
+        if (targetGroups && net.isIP(addr) === 6) {
+          const aliasGroups = expandPrinterIpv6Groups(addr);
+          if (aliasGroups && aliasGroups.every((g, idx) => g === targetGroups[idx])) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore interface enumeration failures
+  }
+  return false;
+}
+
+export function validateNetworkPrinterTarget(rawHost: string, port: number): string | null {
+  if (typeof rawHost !== 'string') return 'ip_address is required for network printers';
+  const trimmed = rawHost.trim();
+  if (!trimmed) return 'ip_address is required for network printers';
+
+  const unbracketed =
+    trimmed.startsWith('[') && trimmed.endsWith(']') ? trimmed.slice(1, -1).trim() : trimmed;
+  if (!unbracketed || /[\s\x00-\x1f\x7f]/.test(unbracketed)) {
+    return 'Invalid printer host or IP address';
+  }
+
+  const host = unbracketed.toLowerCase().replace(/\.+$/, '');
+  if (host === 'metadata.google.internal' || host === 'metadata' || host === 'instance-data') {
+    return 'Printer address cannot target a cloud metadata service';
+  }
+
+  const ipCandidate = host.split('%')[0];
+  let effectiveIpv4: string | null = net.isIP(ipCandidate) === 4 ? ipCandidate : null;
+  const ipv6Groups: number[] | null =
+    net.isIP(ipCandidate) === 6 ? expandPrinterIpv6Groups(ipCandidate) : null;
+
+  if (ipv6Groups) {
+    const isZeros = (from: number, to: number) => ipv6Groups.slice(from, to).every((g) => g === 0);
+    if (isZeros(0, 8)) {
+      return 'Printer address cannot be an unspecified or broadcast address';
+    }
+    if (
+      ipv6Groups[0] === 0xfd00 &&
+      ipv6Groups[1] === 0x0ec2 &&
+      isZeros(2, 7) &&
+      ipv6Groups[7] === 0x0254
+    ) {
+      return 'Printer address cannot target a cloud metadata service';
+    }
+    const ipv4Mapped = isZeros(0, 5) && ipv6Groups[5] === 0xffff;
+    const ipv4Compatible = isZeros(0, 6) && (ipv6Groups[6] !== 0 || ipv6Groups[7] > 1);
+    const nat64 = ipv6Groups[0] === 0x64 && ipv6Groups[1] === 0xff9b && isZeros(2, 6);
+    if (ipv4Mapped || ipv4Compatible || nat64) {
+      effectiveIpv4 = `${ipv6Groups[6] >> 8}.${ipv6Groups[6] & 0xff}.${ipv6Groups[7] >> 8}.${ipv6Groups[7] & 0xff}`;
+    }
+  }
+
+  if (effectiveIpv4) {
+    if (effectiveIpv4 === '169.254.169.254') {
+      return 'Printer address cannot target a cloud metadata service';
+    }
+    if (effectiveIpv4 === '0.0.0.0' || effectiveIpv4 === '255.255.255.255') {
+      return 'Printer address cannot be an unspecified or broadcast address';
+    }
+  }
+
+  const isLoopback =
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    (effectiveIpv4 !== null && effectiveIpv4.startsWith('127.')) ||
+    (ipv6Groups !== null && ipv6Groups.slice(0, 7).every((g) => g === 0) && ipv6Groups[7] === 1);
+
+  const isLocalHost =
+    isLoopback ||
+    (effectiveIpv4 !== null && isLocalInterfaceIp(effectiveIpv4, null)) ||
+    (ipv6Groups !== null && isLocalInterfaceIp(ipCandidate, ipv6Groups));
+
+  if (isLocalHost) {
+    const ownPorts = new Set<number>([
+      3001,
+      3002,
+      3003,
+      getServerPort(),
+      getKdsPort(),
+      getServerAppPort(),
+    ]);
+    if (ownPorts.has(port)) {
+      return 'Printer address cannot target a local FloCafe server port';
+    }
+  }
+
+  return null;
+}
+
 export async function printViaNetwork(
   ip: string,
   port: number,
   data: Buffer,
   signal?: AbortSignal,
 ): Promise<DispatchResult> {
+  const targetError = validateNetworkPrinterTarget(ip, port);
+  if (targetError) {
+    return {
+      ok: false,
+      detail: targetError,
+      failureClass: classifyPrintFailure(targetError),
+    };
+  }
+  const trimmedIp = ip.trim();
+  const connectHost =
+    trimmedIp.startsWith('[') && trimmedIp.endsWith(']')
+      ? trimmedIp.slice(1, -1).trim()
+      : trimmedIp;
+
   return new Promise((resolve) => {
     const client = new net.Socket();
     let settled = false;
@@ -5001,7 +5152,7 @@ export async function printViaNetwork(
       resolve(result);
     };
 
-    client.connect(port, ip, () => {
+    client.connect(port, connectHost, () => {
       connected = true;
       // For small payloads (typical text receipts <4KB), write directly in a single pass.
       if (data.length <= NETWORK_PRINT_CHUNK_SIZE) {
@@ -5199,10 +5350,15 @@ async function printViaCups(
     return { ok: false, detail: problem };
   }
 
-  const tmpFile = path.join(os.tmpdir(), `flo_print_${process.pid}_${Date.now()}.bin`);
+  const tmpFile = path.join(
+    os.tmpdir(),
+    `flo_print_${process.pid}_${Date.now()}_${crypto.randomUUID()}.bin`,
+  );
+  let tmpFileCreated = false;
 
   try {
-    fs.writeFileSync(tmpFile, data);
+    fs.writeFileSync(tmpFile, data, { mode: 0o600, flag: 'wx' });
+    tmpFileCreated = true;
 
     const args = printerName ? ['-d', printerName, '-o', 'raw', tmpFile] : ['-o', 'raw', tmpFile];
     const { stdout } = await execFileAsync('lp', args, {
@@ -5218,9 +5374,11 @@ async function printViaCups(
     console.error(`[Printer] CUPS print failed for "${label}": ${detail}`);
     return { ok: false, detail: detail || `CUPS print failed for "${label}"` };
   } finally {
-    try {
-      fs.unlinkSync(tmpFile);
-    } catch {}
+    if (tmpFileCreated) {
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch {}
+    }
   }
 }
 
@@ -5507,10 +5665,15 @@ async function printViaUSBWindows(
   }
 
   // %TEMP%, not C:\Windows\Temp — the latter is not writable by a standard user.
-  const tmpFile = path.join(os.tmpdir(), `flo_print_${process.pid}_${Date.now()}.bin`);
+  const tmpFile = path.join(
+    os.tmpdir(),
+    `flo_print_${process.pid}_${Date.now()}_${crypto.randomUUID()}.bin`,
+  );
+  let tmpFileCreated = false;
 
   try {
-    fs.writeFileSync(tmpFile, data);
+    fs.writeFileSync(tmpFile, data, { mode: 0o600, flag: 'wx' });
+    tmpFileCreated = true;
 
     const { stdout } = await execFileAsync(
       'powershell',
@@ -5540,9 +5703,11 @@ async function printViaUSBWindows(
       ...parseWindowsPrintOutput(err.stdout),
     };
   } finally {
-    try {
-      fs.unlinkSync(tmpFile);
-    } catch {}
+    if (tmpFileCreated) {
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch {}
+    }
   }
 }
 

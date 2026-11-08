@@ -195,7 +195,9 @@ In-window navigation (`will-navigate`) is handled by `createMainWindowWillNaviga
 [`main/window-options.ts`](../../main/window-options.ts), which confines navigation to local
 application URLs (`isAllowedLocalWindowUrl`). Safe external URLs (`isSafeExternalUrl`) are prevented
 from navigating inside the window and opened in the default system browser via `shell.openExternal`;
-unsafe schemes are blocked with a warning.
+unsafe schemes are blocked with a warning. Child windows spawned from the POS window are guarded by
+`attachChildWindowLifecycleGuards`, which denies nested `window.open` calls and attaches the same
+`will-navigate` handler while preserving `about:blank` print popups and local KDS windows.
 
 ## Content Security Policy
 

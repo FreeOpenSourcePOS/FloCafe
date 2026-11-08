@@ -628,22 +628,38 @@ export function isBlockedSsrfTarget(ip: string): boolean {
   return true; // unparseable — fail closed
 }
 
+export function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return true;
+
+  try {
+    const parsedOrigin = new URL(origin);
+    const rawHostname = parsedOrigin.hostname.toLowerCase();
+    const hostname =
+      rawHostname.startsWith('[') && rawHostname.endsWith(']')
+        ? rawHostname.slice(1, -1)
+        : rawHostname;
+
+    return hostname === 'localhost' || hostname.endsWith('.local') || isAllowedPrivateIp(hostname);
+  } catch {
+    return false;
+  }
+}
+
 export const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     if (!origin) return callback(null, true);
 
     try {
-      const parsedOrigin = new URL(origin);
-      const hostname = parsedOrigin.hostname;
-
-      if (hostname === 'localhost' || hostname.endsWith('.local') || isAllowedPrivateIp(hostname)) {
-        return callback(null, true);
-      }
-
-      callback(new Error('Not allowed by CORS'));
-    } catch (err) {
-      callback(new Error('Invalid origin format'));
+      new URL(origin);
+    } catch {
+      return callback(new Error('Invalid origin format'));
     }
+
+    if (isAllowedOrigin(origin)) {
+      return callback(null, true);
+    }
+
+    callback(new Error('Not allowed by CORS'));
   },
 };
 

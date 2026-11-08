@@ -5,7 +5,10 @@ import {
   registerDirectUpdateIpcHandlers,
   type DirectUpdateIpcOptions,
 } from '../main/update-ipc';
-import { createMainWindowWillNavigateHandler } from '../main/window-options';
+import {
+  attachChildWindowLifecycleGuards,
+  createMainWindowWillNavigateHandler,
+} from '../main/window-options';
 import { createRestartAndInstallHandler } from '../main/updater-shutdown';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from '../main/security/url-allowlist';
 import type { StoredUpdateStatus, UpdateErrorPhase } from '../main/update-state';
@@ -794,6 +797,92 @@ async function runTests() {
 
   console.log(
     '✓ createMainWindowWillNavigateHandler confines local app navigation and delegates external URLs safely',
+  );
+
+  console.log('--- Testing attachChildWindowLifecycleGuards ---');
+
+  let didCreateWindowListener: ((childWindow: any) => void) | null = null;
+  const mockParentWebContents = {
+    on: (event: string, listener: (childWindow: any) => void) => {
+      if (event === 'did-create-window') {
+        didCreateWindowListener = listener;
+      }
+    },
+  };
+
+  attachChildWindowLifecycleGuards(mockParentWebContents as any, willNavigate);
+  assert.equal(
+    typeof didCreateWindowListener,
+    'function',
+    'did-create-window listener registered on parent webContents',
+  );
+
+  let childWindowOpenHandler: ((details: { url: string }) => { action: 'deny' }) | null = null;
+  let childWillNavigateListener:
+    | ((event: { preventDefault: () => void }, url: string) => void)
+    | null = null;
+  const mockChildWindow = {
+    webContents: {
+      setWindowOpenHandler: (handler: (details: { url: string }) => { action: 'deny' }) => {
+        childWindowOpenHandler = handler;
+      },
+      on: (
+        event: string,
+        listener: (event: { preventDefault: () => void }, url: string) => void,
+      ) => {
+        if (event === 'will-navigate') {
+          childWillNavigateListener = listener;
+        }
+      },
+    },
+  };
+
+  didCreateWindowListener!(mockChildWindow);
+  assert.equal(typeof childWindowOpenHandler, 'function', 'child setWindowOpenHandler attached');
+  assert.deepEqual(
+    childWindowOpenHandler!({ url: 'http://localhost:3001/kds' }),
+    { action: 'deny' },
+    'nested window.open inside child popup is denied',
+  );
+  assert.equal(
+    typeof childWillNavigateListener,
+    'function',
+    'child will-navigate listener attached',
+  );
+
+  // about:blank print popup navigation permitted
+  navPrevented = false;
+  openedExternalUrl = null;
+  childWillNavigateListener!(mockNavEvent, 'about:blank');
+  assert.equal(navPrevented, false, 'about:blank print popup navigation permitted');
+
+  // Local KDS popup navigation permitted
+  navPrevented = false;
+  openedExternalUrl = null;
+  childWillNavigateListener!(mockNavEvent, 'http://localhost:3001/kds');
+  assert.equal(navPrevented, false, 'local KDS popup navigation permitted');
+
+  // External navigation inside child popup prevented and routed to openExternal
+  navPrevented = false;
+  openedExternalUrl = null;
+  childWillNavigateListener!(mockNavEvent, 'https://example.com/phishing');
+  assert.equal(navPrevented, true, 'external navigation in child popup prevented');
+  assert.equal(
+    openedExternalUrl,
+    'https://example.com/phishing',
+    'safe external URL in child popup routed to openExternal',
+  );
+
+  // Unsafe scheme in child popup blocked without calling openExternal
+  navPrevented = false;
+  openedExternalUrl = null;
+  navWarnings.length = 0;
+  childWillNavigateListener!(mockNavEvent, 'javascript:alert(1)');
+  assert.equal(navPrevented, true, 'unsafe scheme in child popup prevented');
+  assert.equal(openedExternalUrl, null, 'unsafe scheme in child popup not opened externally');
+
+  console.log(
+    '✓ attachChildWindowLifecycleGuards denies nested popups and confines child navigation while preserving print and KDS popups',
   );
 
   console.log(

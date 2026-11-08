@@ -97,6 +97,7 @@ import {
 } from './updater-shutdown';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import {
+  attachChildWindowLifecycleGuards,
   createLocalWindowOpenHandler,
   createMainWindow,
   createMainWindowWillNavigateHandler,
@@ -902,6 +903,7 @@ function createWindow(): void {
     }
     return { action: 'deny' };
   });
+  attachChildWindowLifecycleGuards(mainWindow.webContents, mainWindowWillNavigateHandler);
 
   // Intercept all renderer downloads and show a save dialog instead of
   // auto-saving to Downloads — required for MAS sandbox compliance.

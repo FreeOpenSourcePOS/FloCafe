@@ -570,6 +570,201 @@ async function run() {
       401,
       'Token from setup/initialize is invalidated in the same frozen millisecond after password change',
     );
+
+    // 10d: After a 48-hour forward clock jump and wall-clock correction, all 7 issuers compute exp from wall-clock Date.now()
+    clearLoginRateLimits();
+    const clockJumpMs = frozenAllIssuersMs + 48 * 3600 * 1000;
+    Date.now = () => clockJumpMs;
+    const jumpPwChange = await request(app)
+      .post('/api/auth/password/change')
+      .set(
+        'Authorization',
+        `Bearer ${jwt.sign(
+          {
+            userId: setupRes.body.user.id,
+            email: 'setup-owner@test.local',
+            role: 'owner',
+            iat: nextTokenIatSeconds(),
+            exp: Math.floor(clockJumpMs / 1000) + 86400,
+          },
+          getJWTSecret(),
+        )}`,
+      )
+      .send({ current_password: 'NewSetupPass123!', password: 'PostJumpPass123!' });
+    assertEqual(jumpPwChange.status, 200, 'Password change during +48h clock jump succeeds');
+
+    // Correct wall clock back by 48 hours to frozenAllIssuersMs
+    const correctedWallMs = frozenAllIssuersMs;
+    const expected24hExp = Math.floor(correctedWallMs / 1000) + 86400;
+    const expected10dExp = Math.floor(correctedWallMs / 1000) + 10 * 86400;
+    Date.now = () => correctedWallMs;
+
+    // Re-initialize via /api/auth/setup/initialize after clearing users so all 7 issuers are exercised post-correction
+    freshDb.prepare('DELETE FROM users').run();
+    const postCorrectionSetup = await request(app).post('/api/auth/setup/initialize').send({
+      name: 'Corrected Owner',
+      email: 'corrected-owner@test.local',
+      password: 'CorrectedPass123!',
+      business_type: 'restaurant',
+      setup_profile: 'empty',
+      service_model: 'qsr',
+      business_name: 'Corrected Cafe',
+      country: 'IN',
+      currency: 'INR',
+      timezone: 'Asia/Kolkata',
+      terms_accepted: true,
+      master_pin: '1234',
+      owner_approval_pin: '2468',
+      owner_approval_pin_confirmation: '2468',
+    });
+    assertEqual(
+      postCorrectionSetup.status,
+      200,
+      'Post-48h-correction /api/auth/setup/initialize succeeds',
+    );
+    const correctedUserId = postCorrectionSetup.body.user.id as string;
+
+    clearLoginRateLimits();
+    const postCorrectionLogin = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'corrected-owner@test.local', password: 'CorrectedPass123!' });
+    assertEqual(postCorrectionLogin.status, 200, 'Post-48h-correction /api/auth/login succeeds');
+
+    const postCorrectionRememberLogin = await request(app).post('/api/auth/login').send({
+      email: 'corrected-owner@test.local',
+      password: 'CorrectedPass123!',
+      rememberMe: true,
+    });
+    assertEqual(
+      postCorrectionRememberLogin.status,
+      200,
+      'Post-48h-correction /api/auth/login (rememberMe) succeeds',
+    );
+
+    const postCorrectionPinLogin = await request(app)
+      .post('/api/auth/pin-login')
+      .send({ user_id: correctedUserId, pin: '2468' });
+    assertEqual(
+      postCorrectionPinLogin.status,
+      200,
+      'Post-48h-correction /api/auth/pin-login succeeds',
+    );
+
+    const postCorrectionSelect = await request(app)
+      .post('/api/auth/tenants/select')
+      .set('Authorization', `Bearer ${postCorrectionLogin.body.access_token}`);
+    assertEqual(
+      postCorrectionSelect.status,
+      200,
+      'Post-48h-correction /api/auth/tenants/select succeeds',
+    );
+
+    const postCorrectionRefresh = await request(app)
+      .post('/api/auth/refresh')
+      .set('Authorization', `Bearer ${postCorrectionLogin.body.access_token}`);
+    assertEqual(
+      postCorrectionRefresh.status,
+      200,
+      'Post-48h-correction /api/auth/refresh succeeds',
+    );
+
+    const postCorrectionServerAppLogin = await request(serverAppBaseUrl)
+      .post('/api/auth/login')
+      .send({ email: 'corrected-owner@test.local', password: 'CorrectedPass123!' });
+    assertEqual(
+      postCorrectionServerAppLogin.status,
+      200,
+      'Post-48h-correction server-app /api/auth/login succeeds',
+    );
+
+    const postCorrectionServerAppRemember = await request(serverAppBaseUrl)
+      .post('/api/auth/login')
+      .send({
+        email: 'corrected-owner@test.local',
+        password: 'CorrectedPass123!',
+        remember_me: true,
+      });
+    assertEqual(
+      postCorrectionServerAppRemember.status,
+      200,
+      'Post-48h-correction server-app /api/auth/login (remember_me) succeeds',
+    );
+
+    const postCorrectionKdsLogin = await request(kdsBaseUrl)
+      .post('/api/auth/login')
+      .send({ email: 'corrected-owner@test.local', password: 'CorrectedPass123!' });
+    assertEqual(
+      postCorrectionKdsLogin.status,
+      200,
+      'Post-48h-correction kds-server /api/auth/login succeeds',
+    );
+
+    const postCorrection24hTokens = [
+      { name: 'setup/initialize', token: postCorrectionSetup.body.access_token as string },
+      { name: 'login', token: postCorrectionLogin.body.access_token as string },
+      { name: 'pin-login', token: postCorrectionPinLogin.body.access_token as string },
+      { name: 'tenants/select', token: postCorrectionSelect.body.access_token as string },
+      { name: 'refresh', token: postCorrectionRefresh.body.access_token as string },
+      { name: 'server-app login', token: postCorrectionServerAppLogin.body.access_token as string },
+      { name: 'kds-server login', token: postCorrectionKdsLogin.body.access_token as string },
+    ];
+
+    for (const { name, token: tok } of postCorrection24hTokens) {
+      const decoded = jwt.verify(tok, getJWTSecret()) as { iat: number; exp: number };
+      assertEqual(
+        decoded.exp,
+        expected24hExp,
+        `Post-48h-correction ${name} sets exp to wall-clock + 24h (${expected24hExp}), not logical iat + 24h`,
+      );
+      assert(
+        decoded.iat > decoded.exp,
+        `Post-48h-correction ${name} preserves ahead monotonic iat (${decoded.iat}) while exp is wall-clock bounded (${decoded.exp})`,
+      );
+    }
+
+    for (const { name, token: tok } of [
+      { name: 'login rememberMe', token: postCorrectionRememberLogin.body.access_token as string },
+      {
+        name: 'server-app remember_me',
+        token: postCorrectionServerAppRemember.body.access_token as string,
+      },
+    ]) {
+      const decoded = jwt.verify(tok, getJWTSecret()) as { exp: number };
+      assertEqual(
+        decoded.exp,
+        expected10dExp,
+        `Post-48h-correction ${name} sets exp to wall-clock + 10d (${expected10dExp})`,
+      );
+    }
+
+    // Advance wall clock to +25 hours: every 24h token must be expired (401), not valid for 72 hours
+    Date.now = () => correctedWallMs + 25 * 3600 * 1000;
+    for (const { name, token: tok } of postCorrection24hTokens) {
+      const expiredMain = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${tok}`);
+      assertEqual(
+        expiredMain.status,
+        401,
+        `Post-48h-correction 24h token from ${name} expires by +25h wall-clock on Main API`,
+      );
+    }
+    const expiredServerApp = await request(serverAppBaseUrl)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${postCorrectionServerAppLogin.body.access_token}`);
+    assertEqual(
+      expiredServerApp.status,
+      401,
+      'Post-48h-correction 24h token from server-app login expires by +25h wall-clock on Server App',
+    );
+    const expiredKds = await request(kdsBaseUrl)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${postCorrectionKdsLogin.body.access_token}`);
+    assertEqual(
+      expiredKds.status,
+      401,
+      'Post-48h-correction 24h token from kds-server login expires by +25h wall-clock on KDS',
+    );
   } finally {
     Date.now = realDateNow;
     await stopServerApp();

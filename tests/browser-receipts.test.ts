@@ -1555,13 +1555,16 @@ async function run() {
     );
 
     assert(
-      '58mm extra_large receipt CSS wraps items-table rows with flex-wrap so numeric columns cannot horizontally overflow 46mm width',
-      getPaperStyles('thermal58', 'extra_large').includes(
-        '.items-table thead tr, .items-table tbody tr { display: flex; flex-wrap: wrap;',
-      ) &&
-        getPaperStyles('thermal58', 'extra_large').includes(
-          '.items-table th:first-child, .items-table td:first-child { flex: 1 1 100%;',
-        ),
+      '58mm receipt CSS wraps items-table rows with flex-wrap across normal, large, and extra_large so numeric columns cannot horizontally overflow 58mm width',
+      (['normal', 'large', 'extra_large'] as const).every(
+        (preset) =>
+          getPaperStyles('thermal58', preset).includes(
+            '.items-table thead tr, .items-table tbody tr { display: flex; flex-wrap: wrap;',
+          ) &&
+          getPaperStyles('thermal58', preset).includes(
+            '.items-table th:first-child, .items-table td:first-child { flex: 1 1 100%;',
+          ),
+      ),
     );
 
     assert(
@@ -2058,6 +2061,73 @@ async function run() {
           `scrollWidth=${computed.billScrollWidth} clientWidth=${computed.billClientWidth}`,
         );
       }
+    }
+
+    // Verify 58mm "Breakfast", qty 2 at ₹125 fits within the 219px container across normal, large, and extra_large without horizontal overflow or financial truncation
+    const breakfastInrBill: Bill = {
+      ...testIranBill,
+      bill_number: 'BILL-IN-58',
+      subtotal: 250,
+      discount_amount: 0,
+      tax_amount: 0,
+      total: 250,
+      paid_amount: 250,
+      payment_details: [{ method: 'cash', amount: 250, timestamp: '2026-08-17T14:35:00.000Z' }],
+      order: {
+        ...testIranOrder,
+        order_number: 'ORD-IN-58',
+        subtotal: 250,
+        discount_amount: 0,
+        tax_amount: 0,
+        total: 250,
+        items: [
+          {
+            id: 1,
+            order_id: 101,
+            product_id: 'p-breakfast',
+            product_name: 'Breakfast',
+            unit_price: 125,
+            quantity: 2,
+            subtotal: 250,
+            tax_amount: 0,
+            total: 250,
+            addons: null,
+            special_instructions: null,
+            status: 'served',
+          },
+        ],
+      },
+    };
+    const inrTenant = {
+      business_name: 'FloCafe Mumbai',
+      currency: 'INR',
+      country: 'IN',
+      timezone: 'Asia/Kolkata',
+    };
+    for (const preset of ['normal', 'large', 'extra_large'] as const) {
+      const presetHtml = generateBillHtml(breakfastInrBill, inrTenant, {
+        language: 'en',
+        paperSize: 'thermal58',
+        textSize: preset,
+      });
+      await page.setContent(presetHtml, { waitUntil: 'load' });
+      const metrics = await page.evaluate(() => {
+        const bill = document.querySelector('.bill-container') as HTMLElement;
+        return {
+          clientWidth: bill ? bill.clientWidth : 0,
+          scrollWidth: bill ? bill.scrollWidth : 0,
+          text: bill ? bill.innerText : '',
+        };
+      });
+      assert(
+        `Chromium 58mm ${preset} receipt for "Breakfast" x2 at ₹125 fits within ${metrics.clientWidth}px container without overflow and preserves ₹125.00 / ₹250.00`,
+        metrics.clientWidth > 0 &&
+          metrics.scrollWidth <= metrics.clientWidth &&
+          metrics.text.includes('Breakfast') &&
+          metrics.text.includes('₹125.00') &&
+          metrics.text.includes('₹250.00'),
+        `preset=${preset} scrollWidth=${metrics.scrollWidth} clientWidth=${metrics.clientWidth}`,
+      );
     }
   } catch (err: any) {
     if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;

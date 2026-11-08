@@ -673,9 +673,7 @@ async function main() {
       !activeWithoutKdsNumbers.includes('ORD-COMPLETED-DINEIN-PENDING'),
       'completed dine-in orders excluded from customer display order_types are omitted from view=active when KDS is disabled',
     );
-    db.prepare(
-      `INSERT OR REPLACE INTO settings (key, value) VALUES ('customer_display', ?)`,
-    ).run(
+    db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('customer_display', ?)`).run(
       JSON.stringify({
         statuses: ['pending', 'preparing', 'ready'],
         order_types: ['takeaway', 'dine_in'],

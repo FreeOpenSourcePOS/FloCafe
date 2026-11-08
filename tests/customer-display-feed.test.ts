@@ -1875,11 +1875,7 @@ async function main(): Promise<void> {
     .patch(`/api/orders/${retainedTakeawayId}/status`)
     .set(signedInCashier)
     .send({ status: 'ready' });
-  assert.equal(
-    cashierKdsOffReady.status,
-    200,
-    'cashier can mark order ready when KDS is disabled',
-  );
+  assert.equal(cashierKdsOffReady.status, 200, 'cashier can mark order ready when KDS is disabled');
 
   // Settled non-completed takeaway order auto-completes when marked served via PATCH /api/orders/:id/status
   const settledReadyOrderId = Number(

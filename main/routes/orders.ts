@@ -696,10 +696,7 @@ router.get(
                 AND active_item.quantity > 0
             )
         )`);
-        params.push(
-          completedKdsProjectionCutoff(),
-          ...(kdsEnabled ? [] : completedOrderTypes),
-        );
+        params.push(completedKdsProjectionCutoff(), ...(kdsEnabled ? [] : completedOrderTypes));
       }
       if (view === 'unpaid') {
         wheres.push("orders.status != 'cancelled'");

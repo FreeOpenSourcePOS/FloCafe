@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import type { AxiosInstance } from 'axios';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
+import { parseLoginFailure } from '@/lib/login-errors';
 
 // Exponential backoff for KDS WebSocket reconnects (1s to 30s)
 // preventing server hammering during outages.
@@ -150,6 +151,12 @@ export interface KdsUser {
   token: string;
 }
 
+export interface KdsPinUser {
+  id: string;
+  name: string;
+  role: string;
+}
+
 interface WsMessage {
   type: string;
   orders?: KdsOrder[];
@@ -160,6 +167,8 @@ interface WsMessage {
 
 export interface UseKdsConnectionEndpoints {
   login?: string;
+  pinUsers?: string;
+  pinLogin?: string;
   me?: string;
   logout?: string;
   orders?: string;
@@ -189,10 +198,12 @@ export interface UseKdsConnectionResult {
   loginError: string;
   loginLoading: boolean;
   rememberMe: boolean;
+  pinUsers: KdsPinUser[];
   setLoginEmail: (v: string) => void;
   setLoginPassword: (v: string) => void;
   setRememberMe: (v: boolean) => void;
   handleLogin: (e: React.FormEvent) => Promise<void>;
+  handlePinLogin: (userId: string, pin: string) => Promise<void>;
   handleLogout: () => Promise<void>;
   updateItemStatus: (
     itemId: number,
@@ -233,12 +244,19 @@ function markKdsAuthBlocked(): void {
 export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnectionResult {
   const { api, endpoints, enabled } = options;
   const loginPath = endpoints?.login ?? LOGIN_ENDPOINT;
+  const pinUsersPath =
+    endpoints?.pinUsers ??
+    (loginPath.startsWith('/api/') ? '/api/auth/pin-users' : '/auth/pin-users?scope=kds');
+  const pinLoginPath =
+    endpoints?.pinLogin ??
+    (loginPath.startsWith('/api/') ? '/api/auth/pin-login' : '/auth/pin-login');
   const mePath = endpoints?.me ?? ME_ENDPOINT;
   const logoutPath = endpoints?.logout ?? '/auth/logout';
   const ordersPath = endpoints?.orders ?? ORDERS_ENDPOINT;
   const itemStatusPath = endpoints?.itemStatus ?? ITEM_STATUS_ENDPOINT;
   const viewPath = endpoints?.view ?? VIEW_ENDPOINT;
   const t = useTranslations('kds');
+  const tAuth = useTranslations('auth');
   const tNav = useTranslations('nav');
   const { confirm, ConfirmDialog } = useConfirm();
 
@@ -258,6 +276,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [pinUsers, setPinUsers] = useState<KdsPinUser[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -731,6 +750,64 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     [loginEmail, loginPassword, rememberMe, loginPath, api, t, tryWebSocket, enabled],
   );
 
+  const handlePinLogin = useCallback(
+    async (userId: string, pin: string) => {
+      if (!enabled || kdsDisabledRef.current) return;
+      clearKdsAuthBlocked();
+      setLoginError('');
+      sessionGenerationRef.current += 1;
+      const generation = sessionGenerationRef.current;
+      setLoginLoading(true);
+
+      try {
+        const { data } = await api.post(pinLoginPath, {
+          user_id: userId,
+          pin,
+          rememberMe,
+        });
+
+        if (generation !== sessionGenerationRef.current) return;
+        const token = data.access_token ?? data.token;
+        const loggedInUser: KdsUser = {
+          id: data.user.id,
+          name: data.user.name,
+          role: data.user.role,
+          token,
+        };
+
+        setUser(loggedInUser);
+        window.localStorage.setItem('token', token);
+        tryWebSocket(token);
+      } catch (error: unknown) {
+        if (generation === sessionGenerationRef.current) {
+          const failure = parseLoginFailure(error);
+          let msg = failure.message || t('loginFailed');
+          if (failure.status === 401) {
+            const remaining = failure.attemptsRemaining;
+            if (remaining === 0) {
+              msg = tAuth('lockedOut', { minutes: failure.lockoutMinutes ?? 15 });
+            } else if (typeof remaining === 'number' && remaining < 4) {
+              msg = `${tAuth('invalidCredentials')} ${tAuth('attemptsRemaining', { count: remaining })}`;
+            } else {
+              msg = tAuth('invalidCredentials');
+            }
+          } else if (failure.status === 429) {
+            msg = tAuth('lockedOut', { minutes: failure.lockoutMinutes ?? 15 });
+          } else if (failure.status === undefined) {
+            msg = tAuth('connectionFailed');
+          }
+          setLoginError(msg);
+        }
+        throw error;
+      } finally {
+        if (generation === sessionGenerationRef.current) {
+          setLoginLoading(false);
+        }
+      }
+    },
+    [rememberMe, pinLoginPath, api, t, tAuth, tryWebSocket, enabled],
+  );
+
   const handleLogout = useCallback(async () => {
     if (!(await confirm(tNav('confirmLogout')))) return;
     sessionGenerationRef.current += 1;
@@ -856,6 +933,24 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     return () => stopRestPolling();
   }, [connectionMode, user, startRestPolling, stopRestPolling, enabled]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !enabled || user || loading) return;
+    let cancelled = false;
+    api
+      .get(pinUsersPath)
+      .then((res) => {
+        if (!cancelled && Array.isArray(res.data?.users)) {
+          setPinUsers(res.data.users);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPinUsers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, pinUsersPath, enabled, user, loading]);
+
   return {
     user,
     orders,
@@ -869,10 +964,12 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     loginError,
     loginLoading,
     rememberMe,
+    pinUsers,
     setLoginEmail,
     setLoginPassword,
     setRememberMe,
     handleLogin,
+    handlePinLogin,
     handleLogout,
     updateItemStatus,
     persistViewMode,

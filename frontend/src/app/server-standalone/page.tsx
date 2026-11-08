@@ -8,9 +8,12 @@ import {
   CheckCircle2,
   ChefHat,
   Circle,
+  Delete,
   Flame,
+  KeyRound,
   LayoutGrid,
   LogOut,
+  Mail,
   Minus,
   Plus,
   RefreshCw,
@@ -28,6 +31,7 @@ import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { toastApiError } from '@/lib/api-error';
+import { parseLoginFailure } from '@/lib/login-errors';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { formatItemHeading } from '@/lib/printer/item-heading';
@@ -37,6 +41,7 @@ import AddonModal from '@/components/pos/AddonModal';
 import ProductGrid from '@/components/pos/ProductGrid';
 import type { PosCategorySort, PosItemSort } from '@/lib/pos-sort';
 import MoveTableModal from '@/components/tables/MoveTableModal';
+import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
 import { tenantCan } from '@/lib/permissions';
 import type {
   Table as FullTable,
@@ -50,6 +55,7 @@ import type {
 import { cartItemToOrderItem } from '@/lib/cart-order-item';
 
 type User = { id: string; name: string; email: string; role: string; permission_ids?: string[] };
+type PinUser = { id: string; name: string; role: string };
 type Table = {
   id: string;
   name?: string;
@@ -186,6 +192,7 @@ export default function ServerStandalonePage() {
   const tNav = useTranslations('nav');
   const tPos = useTranslations('pos');
   const tSettings = useTranslations('settings');
+  const tStaff = useTranslations('staff');
 
   // Fall back to caller-supplied localized message for server-app errors without dotted error codes.
   const apiErrorT = (key: string): string => key;
@@ -195,6 +202,11 @@ export default function ServerStandalonePage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
+  const [pinUsers, setPinUsers] = useState<PinUser[]>([]);
+  const [selectedPinUser, setSelectedPinUser] = useState<PinUser | null>(null);
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [signInMode, setSignInMode] = useState<'pin' | 'password'>('password');
   const [user, setUser] = useState<User | null>(null);
   const [disabled, setDisabled] = useState(false);
   const [regional, setRegional] = useState<ServerAppInfo | null>(null);
@@ -422,6 +434,27 @@ export default function ServerStandalonePage() {
   useEffect(() => {
     activeUserIdRef.current = userId ?? null;
   }, [userId]);
+
+  useEffect(() => {
+    if (!api || user || disabled || loading) return;
+    let cancelled = false;
+    api
+      .get('/api/auth/pin-users')
+      .then((res) => {
+        if (!cancelled && Array.isArray(res.data?.users)) {
+          setPinUsers(res.data.users);
+          if (res.data.users.length > 0) {
+            setSignInMode('pin');
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPinUsers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, user, disabled, loading]);
 
   useEffect(() => {
     if (!api || !userId) return;
@@ -744,6 +777,37 @@ export default function ServerStandalonePage() {
     setEditingDraftLine(line);
   }
 
+  function applyAuthenticatedSession(accessToken: string, loggedInUser: User) {
+    authSessionSeqRef.current += 1;
+    localStorage.setItem(TOKEN_KEY, accessToken);
+    const suspended = suspendedDraftRef.current;
+    if (suspended && suspended.ownerId === loggedInUser.id) {
+      selectedTableIdRef.current = suspended.tableId;
+      setSelectedTableId(suspended.tableId);
+      setDraft(suspended.draft);
+      setCustomerName(suspended.customerName);
+      setCustomerPhone(suspended.customerPhone);
+      setOrderNotes(suspended.orderNotes);
+      sendAttemptRef.current = suspended.attempt;
+    } else if (suspended) {
+      const hadDraft =
+        suspended.draft.length > 0 ||
+        Boolean(suspended.attempt) ||
+        Boolean(suspended.orderNotes.trim()) ||
+        Boolean(suspended.customerName.trim()) ||
+        Boolean(suspended.customerPhone.trim());
+      suspendedDraftRef.current = null;
+      if (hadDraft) {
+        toast(t('draftDiscardedOnUserChange'));
+      }
+    }
+    setSelectedPinUser(null);
+    setPin('');
+    setPinError('');
+    activeUserIdRef.current = loggedInUser.id;
+    setUser(loggedInUser);
+  }
+
   async function handleLogin(event: FormEvent) {
     event.preventDefault();
     if (!api) return;
@@ -754,33 +818,60 @@ export default function ServerStandalonePage() {
         password,
         remember_me: rememberMe,
       });
-      authSessionSeqRef.current += 1;
-      localStorage.setItem(TOKEN_KEY, res.data.access_token);
-      const suspended = suspendedDraftRef.current;
-      if (suspended && suspended.ownerId === res.data.user.id) {
-        selectedTableIdRef.current = suspended.tableId;
-        setSelectedTableId(suspended.tableId);
-        setDraft(suspended.draft);
-        setCustomerName(suspended.customerName);
-        setCustomerPhone(suspended.customerPhone);
-        setOrderNotes(suspended.orderNotes);
-        sendAttemptRef.current = suspended.attempt;
-      } else if (suspended) {
-        const hadDraft =
-          suspended.draft.length > 0 ||
-          Boolean(suspended.attempt) ||
-          Boolean(suspended.orderNotes.trim()) ||
-          Boolean(suspended.customerName.trim()) ||
-          Boolean(suspended.customerPhone.trim());
-        suspendedDraftRef.current = null;
-        if (hadDraft) {
-          toast(t('draftDiscardedOnUserChange'));
-        }
-      }
-      activeUserIdRef.current = res.data.user.id;
-      setUser(res.data.user);
+      applyAuthenticatedSession(res.data.access_token, res.data.user);
     } catch (error: unknown) {
       toastApiError(error, t('signInFailed'), apiErrorT);
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  function appendPinDigit(digit: string) {
+    setPinError('');
+    setPin((prev) => (prev.length < 8 ? prev + digit : prev));
+  }
+
+  function backspacePin() {
+    setPinError('');
+    setPin((prev) => prev.slice(0, -1));
+  }
+
+  function clearPin() {
+    setPinError('');
+    setPin('');
+  }
+
+  async function handlePinLogin(event?: FormEvent) {
+    event?.preventDefault();
+    if (!api || !selectedPinUser || pin.length < 4 || loginLoading) return;
+    setPinError('');
+    setLoginLoading(true);
+    try {
+      const res = await api.post('/api/auth/pin-login', {
+        user_id: selectedPinUser.id,
+        pin,
+        remember_me: rememberMe,
+      });
+      applyAuthenticatedSession(res.data.access_token, res.data.user);
+    } catch (error: unknown) {
+      const failure = parseLoginFailure(error);
+      let msg = failure.message || t('signInFailed');
+      if (failure.status === 401) {
+        const remaining = failure.attemptsRemaining;
+        if (remaining === 0) {
+          msg = tAuth('lockedOut', { minutes: failure.lockoutMinutes ?? 15 });
+        } else if (typeof remaining === 'number' && remaining < 4) {
+          msg = `${tAuth('invalidCredentials')} ${tAuth('attemptsRemaining', { count: remaining })}`;
+        } else {
+          msg = tAuth('invalidCredentials');
+        }
+      } else if (failure.status === 429) {
+        msg = tAuth('lockedOut', { minutes: failure.lockoutMinutes ?? 15 });
+      } else if (failure.status === undefined) {
+        msg = tAuth('connectionFailed');
+      }
+      setPinError(msg);
+      setPin('');
     } finally {
       setLoginLoading(false);
     }
@@ -1205,53 +1296,262 @@ export default function ServerStandalonePage() {
   }
 
   if (!user) {
+    const activeSignInMode = pinUsers.length > 0 ? signInMode : 'password';
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <form
-          onSubmit={handleLogin}
-          className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-sm"
-        >
+        <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-sm">
           <div className="mb-6 text-center">
             <UserRound size={42} className="mx-auto mb-3 text-brand" />
             <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
             <p className="mt-1 text-sm text-muted-foreground">{t('loginSubtitle')}</p>
           </div>
-          <div className="space-y-3">
-            <input
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              type="email"
-              dir="ltr"
-              placeholder={t('emailPlaceholder')}
-              required
-              className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
-            />
-            <input
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              type="password"
-              placeholder={tAuth('password')}
-              required
-              className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
-            />
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(event) => setRememberMe(event.target.checked)}
-                className="rounded border-border text-brand focus:ring-brand"
-              />
-              {tAuth('rememberMe')}
-            </label>
-            <button
-              disabled={loginLoading}
-              className="h-11 w-full rounded-lg bg-brand font-semibold text-white disabled:opacity-60"
+
+          {pinUsers.length > 0 && (
+            <div
+              data-testid="signin-mode-toggle"
+              role="tablist"
+              aria-label={tAuth('signIn')}
+              className="mb-5 grid grid-cols-2 gap-1 rounded-xl border border-border bg-muted p-1"
             >
-              {loginLoading ? tAuth('signingIn') : tAuth('signIn')}
-            </button>
-          </div>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSignInMode === 'pin'}
+                data-testid="signin-mode-pin"
+                onClick={() => {
+                  setSignInMode('pin');
+                  setPinError('');
+                }}
+                className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                  activeSignInMode === 'pin'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <KeyRound size={15} />
+                <span>{tAuth('quickSwitchTitle')}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSignInMode === 'password'}
+                data-testid="signin-mode-password"
+                onClick={() => {
+                  setSignInMode('password');
+                  setPinError('');
+                }}
+                className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                  activeSignInMode === 'password'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Mail size={15} />
+                <span>
+                  {tAuth('email')} / {tAuth('password')}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {activeSignInMode === 'pin' ? (
+            <div data-testid="pin-user-picker" className="space-y-4">
+              <div className="flex items-center gap-2">
+                <KeyRound size={18} className="text-brand" />
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">
+                    {tAuth('quickSwitchTitle')}
+                  </h2>
+                  <p className="text-xs text-muted-foreground">{tAuth('quickSwitchSubtitle')}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {pinUsers.map((u) => {
+                  const isSelected = selectedPinUser?.id === u.id;
+                  const roleKey = ROLE_LABEL_KEYS[u.role];
+                  const roleLabel = roleKey ? tStaff(roleKey) : u.role;
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      data-testid={`pin-user-tile-${u.id}`}
+                      onClick={() => {
+                        setSelectedPinUser(u);
+                        setPin('');
+                        setPinError('');
+                      }}
+                      className={`flex items-center gap-2.5 rounded-xl border p-2.5 text-start transition-all ${
+                        isSelected
+                          ? 'border-brand bg-brand-muted ring-2 ring-brand/30'
+                          : 'border-border hover:border-brand/50 hover:bg-muted/60'
+                      }`}
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand">
+                        <UserRound size={16} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">{u.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{roleLabel}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedPinUser && (
+                <form
+                  onSubmit={handlePinLogin}
+                  data-testid="pin-login-form"
+                  className="space-y-3 border-t border-border pt-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {tAuth('enterPinFor', { name: selectedPinUser.name })}
+                    </span>
+                    <span className="font-mono text-xs text-muted-foreground">{pin.length}/8</span>
+                  </div>
+
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    pattern="\d*"
+                    maxLength={8}
+                    dir="ltr"
+                    autoFocus
+                    data-testid="pin-login-input"
+                    value={pin}
+                    onChange={(e) => {
+                      setPinError('');
+                      setPin(e.target.value.replace(/\D/g, '').slice(0, 8));
+                    }}
+                    placeholder="••••"
+                    className="h-11 w-full rounded-lg border border-input bg-card px-3 text-center font-mono text-lg tracking-[0.5em] text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+
+                  <div className="grid grid-cols-3 gap-2" dir="ltr">
+                    {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                      <button
+                        key={digit}
+                        type="button"
+                        data-testid={`pin-pad-digit-${digit}`}
+                        onClick={() => appendPinDigit(digit)}
+                        className="h-11 rounded-lg border border-border bg-muted/50 text-base font-semibold text-foreground transition-colors hover:bg-muted"
+                      >
+                        {digit}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      data-testid="pin-pad-clear"
+                      onClick={clearPin}
+                      className="h-11 rounded-lg border border-border bg-muted/50 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+                    >
+                      {tCommon('clear')}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="pin-pad-digit-0"
+                      onClick={() => appendPinDigit('0')}
+                      className="h-11 rounded-lg border border-border bg-muted/50 text-base font-semibold text-foreground transition-colors hover:bg-muted"
+                    >
+                      0
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="pin-pad-backspace"
+                      onClick={backspacePin}
+                      aria-label={tCommon('delete')}
+                      className="flex h-11 items-center justify-center rounded-lg border border-border bg-muted/50 text-muted-foreground transition-colors hover:bg-muted"
+                    >
+                      <Delete size={16} />
+                    </button>
+                  </div>
+
+                  {pinError && (
+                    <p
+                      role="alert"
+                      data-testid="pin-login-error"
+                      className="text-center text-xs font-medium text-destructive"
+                    >
+                      {pinError}
+                    </p>
+                  )}
+
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(event) => setRememberMe(event.target.checked)}
+                      className="rounded border-border text-brand focus:ring-brand"
+                    />
+                    {tAuth('rememberMe')}
+                  </label>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      data-testid="pin-login-cancel"
+                      onClick={() => {
+                        setSelectedPinUser(null);
+                        setPin('');
+                        setPinError('');
+                      }}
+                      className="flex-1 rounded-lg border border-border py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                    >
+                      {tCommon('cancel')}
+                    </button>
+                    <button
+                      type="submit"
+                      data-testid="pin-login-submit"
+                      disabled={loginLoading || pin.length < 4}
+                      className="flex-1 rounded-lg bg-brand py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand/90 disabled:opacity-50"
+                    >
+                      {loginLoading ? tAuth('signingIn') : tAuth('signIn')}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-3">
+              <input
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                type="email"
+                dir="ltr"
+                placeholder={t('emailPlaceholder')}
+                required
+                className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+              />
+              <input
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                type="password"
+                placeholder={tAuth('password')}
+                required
+                className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+              />
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(event) => setRememberMe(event.target.checked)}
+                  className="rounded border-border text-brand focus:ring-brand"
+                />
+                {tAuth('rememberMe')}
+              </label>
+              <button
+                disabled={loginLoading}
+                className="h-11 w-full rounded-lg bg-brand font-semibold text-white disabled:opacity-60"
+              >
+                {loginLoading ? tAuth('signingIn') : tAuth('signIn')}
+              </button>
+            </form>
+          )}
+
           <p className="mt-4 text-center text-xs text-muted-foreground">{t('loginHint')}</p>
-        </form>
+        </div>
       </div>
     );
   }

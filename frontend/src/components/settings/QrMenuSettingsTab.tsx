@@ -281,7 +281,10 @@ export function QrMenuSettingsTab({
   if (!status.connected)
     return (
       <SettingsTabShell>
-        <div className="rounded-xl border border-border bg-card p-6">
+        <div
+          data-setting-section="qr-menu-publish"
+          className="rounded-xl border border-border bg-card p-6"
+        >
           <h2 className="text-lg font-semibold">{t('title')}</h2>
           <p className="mt-2 text-sm text-muted-foreground">
             {status.configured ? t('connectHint') : t('notConfigured')}
@@ -354,7 +357,10 @@ export function QrMenuSettingsTab({
             </div>
           </section>
         )}
-        <section className="rounded-xl border border-border bg-card p-6">
+        <section
+          data-setting-section="qr-menu-publish"
+          className="rounded-xl border border-border bg-card p-6"
+        >
           <div className="flex items-center gap-2">
             <QrCode size={20} />
             <h2 className="text-lg font-semibold">

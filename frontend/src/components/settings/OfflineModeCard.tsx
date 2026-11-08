@@ -48,7 +48,11 @@ export function OfflineModeCard({ canManage }: { canManage: boolean }) {
   };
 
   return (
-    <div className="bg-card rounded-xl border border-border p-6" data-testid="offline-mode-card">
+    <div
+      data-setting-section="offline-mode"
+      className="bg-card rounded-xl border border-border p-6"
+      data-testid="offline-mode-card"
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-2">
           <WifiOff size={20} className="mt-0.5 text-muted-foreground" />

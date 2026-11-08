@@ -321,7 +321,10 @@ export function DatabaseSettingsTab({
       <LocalBackupCard />
 
       {/* Database Export */}
-      <div className="bg-card rounded-xl border border-border p-6">
+      <div
+        data-setting-section="export-database"
+        className="bg-card rounded-xl border border-border p-6"
+      >
         <div className="flex items-center gap-2 mb-4">
           <FileText size={20} className="text-muted-foreground" />
           <h2 className="font-semibold text-foreground">{t('exportDatabase')}</h2>
@@ -352,7 +355,10 @@ export function DatabaseSettingsTab({
       </div>
 
       {/* Database Backup */}
-      <div className="bg-card rounded-xl border border-blue-100 bg-blue-50/30 p-6">
+      <div
+        data-setting-section="database-backup"
+        className="bg-card rounded-xl border border-blue-100 bg-blue-50/30 p-6"
+      >
         <div className="flex items-center gap-2 mb-4">
           <Database size={20} className="text-blue-600" />
           <h2 className="font-semibold text-foreground">{t('createBackup')}</h2>
@@ -383,7 +389,10 @@ export function DatabaseSettingsTab({
       </div>
 
       {/* Backup History */}
-      <div className="bg-card rounded-xl border border-border p-6">
+      <div
+        data-setting-section="backup-history"
+        className="bg-card rounded-xl border border-border p-6"
+      >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Database size={20} className="text-muted-foreground" />
@@ -477,7 +486,10 @@ export function DatabaseSettingsTab({
 
       {/* Google Drive - automated off-device backups */}
       {isOwner && (
-        <div className="bg-card rounded-2xl border border-border p-6 space-y-6">
+        <div
+          data-setting-section="google-drive-backup"
+          className="bg-card rounded-2xl border border-border p-6 space-y-6"
+        >
           <div className="flex items-center gap-3">
             <GoogleDriveIcon className="w-10 h-10 shrink-0" />
             <div>
@@ -926,7 +938,10 @@ export function DatabaseSettingsTab({
       )}
 
       {/* Database Import */}
-      <div className="bg-card rounded-xl border border-border p-6">
+      <div
+        data-setting-section="import-database"
+        className="bg-card rounded-xl border border-border p-6"
+      >
         <div className="flex items-center gap-2 mb-4">
           <FileText size={20} className="text-muted-foreground" />
           <h2 className="font-semibold text-foreground">{t('importDatabase')}</h2>
@@ -992,7 +1007,10 @@ export function DatabaseSettingsTab({
       </div>
 
       {/* Database Info */}
-      <div className="bg-card rounded-xl border border-border p-6">
+      <div
+        data-setting-section="database-info"
+        className="bg-card rounded-xl border border-border p-6"
+      >
         <div className="flex items-center gap-2 mb-4">
           <Database size={20} className="text-muted-foreground" />
           <h2 className="font-semibold text-foreground">{t('databaseInformation')}</h2>
@@ -1015,7 +1033,10 @@ export function DatabaseSettingsTab({
       </div>
 
       {/* Database Health Check */}
-      <div className="bg-card rounded-xl border border-border p-6">
+      <div
+        data-setting-section="database-health-check"
+        className="bg-card rounded-xl border border-border p-6"
+      >
         <div className="flex items-center gap-2 mb-4">
           <Wrench size={20} className="text-muted-foreground" />
           <h2 className="font-semibold text-foreground">{t('databaseHealthCheck')}</h2>
@@ -1030,7 +1051,10 @@ export function DatabaseSettingsTab({
       </div>
 
       {/* Master PIN */}
-      <div className="bg-card rounded-xl border border-border p-6">
+      <div
+        data-setting-section="master-pin"
+        className="bg-card rounded-xl border border-border p-6"
+      >
         <div className="flex items-center gap-2 mb-4">
           <KeyRound size={20} className="text-muted-foreground" />
           <h2 className="font-semibold text-foreground">{t('masterPin')}</h2>
@@ -1056,7 +1080,10 @@ export function DatabaseSettingsTab({
       </div>
 
       {/* Danger Zone: Initialize Database */}
-      <div className="bg-card rounded-xl border border-red-200 p-6">
+      <div
+        data-setting-section="initialize-database"
+        className="bg-card rounded-xl border border-red-200 p-6"
+      >
         <div className="flex items-center gap-2 mb-4">
           <AlertTriangle size={20} className="text-red-600" />
           <h2 className="font-semibold text-red-600">{t('initializeDatabase')}</h2>

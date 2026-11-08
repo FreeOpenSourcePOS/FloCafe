@@ -145,7 +145,10 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <SettingsTabShell>
-      <div className="bg-card rounded-xl border border-border p-6">
+      <div
+        data-setting-section="payment-methods"
+        className="bg-card rounded-xl border border-border p-6"
+      >
         <div className="flex items-center gap-2 mb-2">
           <CreditCard size={20} className="text-muted-foreground" />
           <h2 className="font-semibold text-foreground">{t('paymentMethods')}</h2>
@@ -247,7 +250,10 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
         </div>
       </div>
 
-      <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
+      <div
+        data-setting-section="split-checks"
+        className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4"
+      >
         <div>
           <h2 className="font-semibold text-foreground">{t('splitChecks')}</h2>
           <p className="text-sm text-muted-foreground mt-1">{t('splitChecksHint')}</p>
@@ -270,7 +276,10 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
         />
       </div>
 
-      <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
+      <div
+        data-setting-section="card-transaction-id"
+        className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4"
+      >
         <div>
           <h2 id="card-transaction-id-required-label" className="font-semibold text-foreground">
             {t('cardTransactionIdRequired')}
@@ -324,7 +333,10 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
         )}
       </div>
 
-      <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
+      <div
+        data-setting-section="require-open-shift"
+        className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4"
+      >
         <div>
           <h2 id="require-open-shift-label" className="font-semibold text-foreground">
             {t('requireOpenShift')}
@@ -354,7 +366,10 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
         />
       </div>
 
-      <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
+      <div
+        data-setting-section="one-shift-per-staff"
+        className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4"
+      >
         <div>
           <h2 id="one-shift-per-staff-label" className="font-semibold text-foreground">
             {t('oneShiftPerStaff')}

@@ -38,7 +38,7 @@ export function WhatsAppEnableCard() {
   };
 
   return (
-    <Card>
+    <Card data-setting-section="whatsapp-integration">
       <CardContent className="space-y-5 py-6">
         <div className="flex items-center gap-2">
           <MessageCircle size={20} className="text-brand" />

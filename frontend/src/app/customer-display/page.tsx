@@ -766,10 +766,14 @@ export default function CustomerDisplayPage() {
   }, [loadFromStorage]);
 
   useEffect(() => {
-    if (pairedToken === null && !authLoading && !user) {
-      router.replace('/auth/login?redirect=/customer-display');
+    if (pairedToken === null && !authLoading && (!user || !currentTenant)) {
+      router.replace(
+        user
+          ? '/auth/login?select_tenant=true&redirect=/customer-display'
+          : '/auth/login?redirect=/customer-display',
+      );
     }
-  }, [pairedToken, authLoading, user, router]);
+  }, [pairedToken, authLoading, user, currentTenant, router]);
 
   useEffect(() => {
     if (pairedToken === undefined || unpaired) return;

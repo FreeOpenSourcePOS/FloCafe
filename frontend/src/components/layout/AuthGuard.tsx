@@ -37,14 +37,34 @@ export function getLandingPage(tenant?: Tenant | null): string {
 export function resolveSafeRedirect(raw: string | null | undefined): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
-  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) {
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//')) {
     return null;
   }
-  const normalized = normalizePathname(trimmed.split(/[?#]/, 1)[0]);
-  if (!normalized.startsWith('/auth') && !normalized.startsWith('/setup')) {
-    return normalized;
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const code = trimmed.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f || trimmed[i] === '\\') {
+      return null;
+    }
   }
-  return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed, 'http://localhost');
+  } catch {
+    return null;
+  }
+  if (parsed.origin !== 'http://localhost') {
+    return null;
+  }
+  const normalized = normalizePathname(parsed.pathname);
+  if (
+    !normalized.startsWith('/') ||
+    normalized.startsWith('//') ||
+    normalized.startsWith('/auth') ||
+    normalized.startsWith('/setup')
+  ) {
+    return null;
+  }
+  return normalized;
 }
 
 const PUBLIC_PATHS = [
@@ -175,15 +195,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!user) {
       router.push('/auth/login');
     } else if (!currentTenant) {
-      const search = typeof window !== 'undefined' ? window.location?.search : '';
-      const redirect = search
-        ? resolveSafeRedirect(new URLSearchParams(search).get('redirect'))
-        : null;
-      router.push(
-        redirect
-          ? `/auth/login?select_tenant=true&redirect=${encodeURIComponent(redirect)}`
-          : '/auth/login?select_tenant=true',
-      );
+      router.push('/auth/login?select_tenant=true');
     } else {
       const pagePermission = PAGE_PERMISSIONS.find(
         ([prefix]) => pathname === prefix || pathname?.startsWith(`${prefix}/`),

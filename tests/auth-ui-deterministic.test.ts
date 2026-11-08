@@ -117,6 +117,10 @@ async function run() {
     'https://evil.com',
     '//evil.com',
     '/\\evil.com',
+    '/\t/evil.com',
+    '/\r/evil.com',
+    '/\n\\evil.com',
+    '/..//evil.com',
     '/auth',
     '/auth/login',
     '/setup',
@@ -883,57 +887,6 @@ async function run() {
         'AuthGuard still routes to /setup when server explicitly reports needsSetup: true',
       );
 
-      // Subcase 2c: when user is authenticated without currentTenant selected, AuthGuard preserves a safe ?redirect= param on select_tenant=true and drops unsafe values
-      for (const slot of effectSlots) {
-        if (slot && typeof slot.cleanup === 'function') slot.cleanup();
-      }
-      states.length = 0;
-      refs.length = 0;
-      effectSlots.length = 0;
-      pushedRoutes.length = 0;
-      scheduledTimers.length = 0;
-      setupStatusCalls = 0;
-      setupStatusHandler = async () => ({ data: { needsSetup: false } });
-      (guardAuthState as { user: unknown; currentTenant: unknown }).user = {
-        id: 'u1',
-        name: 'Owner',
-        email: 'owner@cafe.local',
-        role: 'owner',
-      };
-      (guardAuthState as { user: unknown; currentTenant: unknown }).currentTenant = null;
-      (globalThis as any).window.location.search = '?redirect=/customer-display';
-
-      renderAuthGuard();
-      await flushMicrotasks();
-      renderAuthGuard();
-
-      assert.deepEqual(
-        pushedRoutes,
-        ['/auth/login?select_tenant=true&redirect=%2Fcustomer-display'],
-        'AuthGuard preserves safe ?redirect=/customer-display when redirecting to select_tenant=true',
-      );
-
-      for (const slot of effectSlots) {
-        if (slot && typeof slot.cleanup === 'function') slot.cleanup();
-      }
-      states.length = 0;
-      refs.length = 0;
-      effectSlots.length = 0;
-      pushedRoutes.length = 0;
-      (globalThis as any).window.location.search = '?redirect=https://evil.com';
-
-      renderAuthGuard();
-      await flushMicrotasks();
-      renderAuthGuard();
-
-      assert.deepEqual(
-        pushedRoutes,
-        ['/auth/login?select_tenant=true'],
-        'AuthGuard drops unsafe ?redirect= when redirecting to select_tenant=true',
-      );
-      (guardAuthState as { user: unknown; currentTenant: unknown }).user = null;
-      (globalThis as any).window.location.search = '';
-
       // Subcase 3: SetupPage mount check retries transient /auth/setup/status failure and redirects when needsSetup: false
       for (const slot of effectSlots) {
         if (slot && typeof slot.cleanup === 'function') slot.cleanup();
@@ -1455,6 +1408,37 @@ async function run() {
         const customerDisplayLoginUrl = pushedRoutes[0];
         const customerDisplayQuery = customerDisplayLoginUrl.split('?')[1] ?? '';
 
+        // Next verify authenticated unpaired /customer-display without currentTenant redirects to /auth/login?select_tenant=true&redirect=/customer-display
+        for (const slot of effectSlots) {
+          if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+        }
+        states.length = 0;
+        refs.length = 0;
+        effectSlots.length = 0;
+        pushedRoutes.length = 0;
+        scheduledTimers.length = 0;
+        pendingEffects.length = 0;
+        loginAuthState.user = savedUser;
+        (
+          loginAuthState as { user: unknown; currentTenant: unknown; loading?: boolean }
+        ).currentTenant = null;
+        (loginAuthState as { loading?: boolean }).loading = false;
+
+        renderCustomerDisplay();
+        while (scheduledTimers.some((t) => !t.cleared)) {
+          const nextTimer = scheduledTimers.find((t) => !t.cleared)!;
+          nextTimer.cleared = true;
+          nextTimer.fn();
+        }
+        renderCustomerDisplay();
+
+        assert.deepEqual(
+          pushedRoutes,
+          ['/auth/login?select_tenant=true&redirect=/customer-display'],
+          'Authenticated unpaired CustomerDisplayPage without currentTenant redirects to /auth/login?select_tenant=true&redirect=/customer-display',
+        );
+        const selectTenantQuery = pushedRoutes[0].split('?')[1] ?? '';
+
         loginAuthState.user = savedUser;
         loginAuthState.currentTenant = savedTenant;
 
@@ -1486,10 +1470,19 @@ async function run() {
           'LoginPage navigates to /customer-display after login when redirect=/customer-display',
         );
 
+        runLoginRedirectCase(selectTenantQuery);
+        assert.deepEqual(
+          pushedRoutes,
+          ['/customer-display'],
+          'LoginPage navigates to /customer-display after tenant selection when select_tenant=true&redirect=/customer-display',
+        );
+
         for (const unsafe of [
           'https://evil.com',
           '//evil.com',
           '/\\evil.com',
+          '/\t/evil.com',
+          '/\n\\evil.com',
           '/auth/login',
           '/setup',
         ]) {

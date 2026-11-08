@@ -35,20 +35,20 @@ checks the consumer boundary from outside the kernel; it does not close this gap
 
 ### Module map
 
-| File                                                     | Contents                                                                                                                                                                            |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `types.ts`                                               | `PrintLanguageCode`, `TextDirection`, `DirectionScope`, the policy shapes, and `LanguageRegistryFacts`.                                                                             |
-| `concepts.ts`                                            | `PRINT_CONCEPT_IDS`, the typed concept-id catalog boundary.                                                                                                                         |
-| `document.ts`                                            | `PrintDocument` v1, `KotDocument` v1, and `DeliverySlipDocument` v1, the block types, and the pure `buildBillDocument` / `buildKotDocument` / `buildDeliverySlipDocument` builders. |
-| `direction.ts`                                           | Per-scope direction resolution and LTR-island classification.                                                                                                                       |
-| `policy.ts`                                              | `parsePrintLanguagePolicy`, `parseKotLanguagePolicy`, and the language resolvers.                                                                                                   |
-| `bilingual.ts`                                           | `BilingualLabel` and width-fit strategies.                                                                                                                                          |
-| `width.ts`                                               | Grapheme- and display-cell-aware measurement and truncation.                                                                                                                        |
-| `thermal-capabilities.ts`                                | Capability shape, code pages, representability, and warning policy.                                                                                                                 |
-| `merchant-template.ts`                                   | Merchant template payload validation and canonical serialization.                                                                                                                   |
-| `raster.ts`, `raster-canvas.ts`, `image-raster.ts`       | Raster band construction, shared canvas painter (`paintRasterRequest`), ESC/POS raster encoding, and 1-bit logo trimming, contrast normalization, dithering, and packing.           |
-| `z-report.ts`, `layout.ts`, `currency.ts`, `warnings.ts` | Z-report assembly, column layout, currency tokens, and warning shapes.                                                                                                              |
-| `text-size.ts`                                           | `PrinterTextSize`, column halving (`layoutColumnsForTextSize`), ESC/POS enlargement (`applyTextSizeToLines`), and encoder wrapping (`configureEncoderTextSize`).                    |
+| File | Contents |
+| --- | --- |
+| `types.ts` | `PrintLanguageCode`, `TextDirection`, `DirectionScope`, the policy shapes, and `LanguageRegistryFacts`. |
+| `concepts.ts` | `PRINT_CONCEPT_IDS`, the typed concept-id catalog boundary. |
+| `document.ts` | `PrintDocument` v1, `KotDocument` v1, and `DeliverySlipDocument` v1, the block types, and the pure `buildBillDocument` / `buildKotDocument` / `buildDeliverySlipDocument` builders. |
+| `direction.ts` | Per-scope direction resolution and LTR-island classification. |
+| `policy.ts` | `parsePrintLanguagePolicy`, `parseKotLanguagePolicy`, and the language resolvers. |
+| `bilingual.ts` | `BilingualLabel` and width-fit strategies. |
+| `width.ts` | Grapheme- and display-cell-aware measurement and truncation. |
+| `thermal-capabilities.ts` | Capability shape, code pages, representability, and warning policy. |
+| `merchant-template.ts` | Merchant template payload validation and canonical serialization. |
+| `raster.ts`, `raster-canvas.ts`, `image-raster.ts` | Raster band construction, shared canvas painter (`paintRasterRequest`), ESC/POS raster encoding, and 1-bit logo trimming, contrast normalization, dithering, and packing. |
+| `z-report.ts`, `layout.ts`, `currency.ts`, `warnings.ts` | Z-report assembly, column layout, currency tokens, and warning shapes. |
+| `text-size.ts` | `PrinterTextSize`, column halving (`layoutColumnsForTextSize`), ESC/POS enlargement (`applyTextSizeToLines`), and encoder wrapping (`configureEncoderTextSize`). |
 
 ## Document models
 
@@ -96,24 +96,24 @@ regenerate it, and `npm run generate:print-labels -- --check` to assert it is no
 
 `MessageBlock` carries five semantic entries:
 
-| Entry               | Type                      | Present when                                      |
-| ------------------- | ------------------------- | ------------------------------------------------- |
-| `reprintBanner`     | `SemanticLabel \| null`   | The receipt is a reprint.                         |
-| `onlineOrderBanner` | object or `null`          | The order carries a platform or external id.      |
-| `footerNote`        | `DirectionalText \| null` | The merchant configured a footer note.            |
-| `thankYou`          | `SemanticLabel \| null`   | A thank-you line applies.                         |
-| `taxIncluded`       | `SemanticLabel`           | Required; carries the tax-inclusive pricing note. |
+| Entry | Type | Present when |
+| --- | --- | --- |
+| `reprintBanner` | `SemanticLabel \| null` | The receipt is a reprint. |
+| `onlineOrderBanner` | object or `null` | The order carries a platform or external id. |
+| `footerNote` | `DirectionalText \| null` | The merchant configured a footer note. |
+| `thankYou` | `SemanticLabel \| null` | A thank-you line applies. |
+| `taxIncluded` | `SemanticLabel` | Required; carries the tax-inclusive pricing note. |
 
 ## Language policy
 
 Four language domains are stored and resolved independently, so a receipt, a kitchen ticket, and a
 Z-report can each be in a different language from the same store:
 
-| Setting key                | Policy type             | Languages |
-| -------------------------- | ----------------------- | --------- |
-| `bill_language_policy`     | `ReceiptLanguagePolicy` | 1 or 2.   |
-| `kot_language_policy`      | `KotLanguagePolicy`     | 1.        |
-| `z_report_language_policy` | Z-report policy         | 1.        |
+| Setting key | Policy type | Languages |
+| --- | --- | --- |
+| `bill_language_policy` | `ReceiptLanguagePolicy` | 1 or 2. |
+| `kot_language_policy` | `KotLanguagePolicy` | 1. |
+| `z_report_language_policy` | Z-report policy | 1. |
 
 A receipt's two-language maximum is enforced at the type level: `ReceiptLanguagePolicy` is
 `PrintLanguagePolicy<readonly []> | PrintLanguagePolicy<readonly [PrintLanguageCode]>`, so a
@@ -148,19 +148,19 @@ four whitespace-separated tokens read as a sentence.
 
 ## Renderers
 
-| Renderer                 | Source                                                                               | Consumes                                                                                                                                                                   |
-| ------------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Classic                  | `main/printers/document-classic.ts`                                                  | `PrintDocument`                                                                                                                                                            |
-| Compact                  | `main/printers/document-compact.ts`                                                  | `PrintDocument`                                                                                                                                                            |
-| Kitchen ticket           | `main/printers/document-kot.ts`                                                      | `KotDocument`                                                                                                                                                              |
-| Delivery slip            | `main/printers/document-delivery-slip.ts`                                            | `DeliverySlipDocument`                                                                                                                                                     |
-| Merchant                 | `main/printers/document-merchant.ts`                                                 | Wraps the classic renderer and applies a merchant template's block selection and order.                                                                                    |
-| Compliance line template | `escposLineTemplateV1Lines` in `main/printers/thermal.ts`                            | A pack-signed `escpos-line-template-v1` payload, as a plugin inside the thermal pipeline.                                                                                  |
-| Browser HTML             | `frontend/src/lib/printer/web-print.ts` and `kot-web-print.ts`                       | A `PrintDocument` or `KotDocument`, rendered as HTML.                                                                                                                      |
-| WebUSB                   | `frontend/src/lib/printer/PrinterService.ts`                                         | Encoder output, sent over the browser's WebUSB API.                                                                                                                        |
-| Delivery slip            | `frontend/src/lib/printer/delivery-slip-encoder.ts` and `delivery-slip-web-print.ts` | A `DeliverySlipDocument`'s contact facts, rendered as bytes or HTML.                                                                                                       |
-| Tax bill                 | `frontend/src/lib/printer/tax-bill-encoder.ts`                                       | A raw `Bill` and `Tenant`, not a document.                                                                                                                                 |
-| Payment ticket slip      | `printPaymentTicket` in `main/printers/thermal.ts`                                   | Order metadata, item lines, balance due, centered `FLOCAFE-TICKET:<order_number>` text, and (when `raster.enabled` is true) an ESC/POS QR code for multi-counter ordering. |
+| Renderer | Source | Consumes |
+| --- | --- | --- |
+| Classic | `main/printers/document-classic.ts` | `PrintDocument` |
+| Compact | `main/printers/document-compact.ts` | `PrintDocument` |
+| Kitchen ticket | `main/printers/document-kot.ts` | `KotDocument` |
+| Delivery slip | `main/printers/document-delivery-slip.ts` | `DeliverySlipDocument` |
+| Merchant | `main/printers/document-merchant.ts` | Wraps the classic renderer and applies a merchant template's block selection and order. |
+| Compliance line template | `escposLineTemplateV1Lines` in `main/printers/thermal.ts` | A pack-signed `escpos-line-template-v1` payload, as a plugin inside the thermal pipeline. |
+| Browser HTML | `frontend/src/lib/printer/web-print.ts` and `kot-web-print.ts` | A `PrintDocument` or `KotDocument`, rendered as HTML. |
+| WebUSB | `frontend/src/lib/printer/PrinterService.ts` | Encoder output, sent over the browser's WebUSB API. |
+| Delivery slip | `frontend/src/lib/printer/delivery-slip-encoder.ts` and `delivery-slip-web-print.ts` | A `DeliverySlipDocument`'s contact facts, rendered as bytes or HTML. |
+| Tax bill | `frontend/src/lib/printer/tax-bill-encoder.ts` | A raw `Bill` and `Tenant`, not a document. |
+| Payment ticket slip | `printPaymentTicket` in `main/printers/thermal.ts` | Order metadata, item lines, balance due, centered `FLOCAFE-TICKET:<order_number>` text, and (when `raster.enabled` is true) an ESC/POS QR code for multi-counter ordering. |
 
 The tax bill encoder and payment ticket slip generator are exceptions to "renderers consume
 documents": the tax bill encoder reads `Bill` directly for per-component tax detail, while
@@ -200,13 +200,13 @@ tickets do not use the bill logo setting.
 
 ## Transports
 
-| Transport           | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Network             | Raw socket. Data is sent in 4096-byte chunks (`NETWORK_PRINT_CHUNK_SIZE`) with a 10 ms delay between chunks (`NETWORK_PRINT_CHUNK_DELAY_MS`), so a large receipt does not overrun the printer's buffer. `validateNetworkPrinterTarget()` (enforced on `/api/printers` configuration and `printViaNetwork()` dispatch) rejects cloud metadata endpoints, unspecified/broadcast addresses, and FloCafe's own local listening ports (including shorthand, octal, hexadecimal, and integer IPv4 aliases) while preserving hostnames, custom ports, LAN/Tailscale/IPv6 addresses, and link-local printers. |
-| CUPS                | `lp -d <printer> -o raw <tmpfile>`, using an exclusive (`wx`, `0600`) temporary file with a per-job UUID suffix that is unlinked only if created.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Windows             | `OpenPrinterW` with `pDataType` set to `RAW`, reading an exclusive (`wx`, `0600`) temporary file with a per-job UUID suffix that is unlinked only if created.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| macOS Mac App Store | IPP over the local CUPS UNIX domain socket `/private/var/run/cupsd` (with loopback HTTP fallback on `127.0.0.1:631`) using `main/printers/ipp-client.ts` and `document-format` `application/vnd.cups-raw`, because the macOS App Sandbox blocks shelling out to `lp` and blocks outbound TCP to `localhost:631` while permitting `/private/var/run/cupsd` under `com.apple.security.print`.                                                                                                                                                                                                           |
-| WebUSB              | The browser WebUSB API through the frontend bridge.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Transport | Mechanism |
+| --- | --- |
+| Network | Raw socket. Data is sent in 4096-byte chunks (`NETWORK_PRINT_CHUNK_SIZE`) with a 10 ms delay between chunks (`NETWORK_PRINT_CHUNK_DELAY_MS`), so a large receipt does not overrun the printer's buffer. `validateNetworkPrinterTarget()` (enforced on `/api/printers` configuration and `printViaNetwork()` dispatch) rejects cloud metadata endpoints, unspecified/broadcast addresses, and FloCafe's own local listening ports across canonical and non-canonical (shorthand, octal, hexadecimal, and integer) IPv4 forms while preserving hostnames, custom ports, LAN/Tailscale/IPv6 addresses, and link-local printers. |
+| CUPS | `lp -d <printer> -o raw <tmpfile>`, using an exclusive (`wx`, `0600`) temporary file with a per-job UUID suffix that is unlinked only if created. |
+| Windows | `OpenPrinterW` with `pDataType` set to `RAW`, reading an exclusive (`wx`, `0600`) temporary file with a per-job UUID suffix that is unlinked only if created. |
+| macOS Mac App Store | IPP over the local CUPS UNIX domain socket `/private/var/run/cupsd` (with loopback HTTP fallback on `127.0.0.1:631`) using `main/printers/ipp-client.ts` and `document-format` `application/vnd.cups-raw`, because the macOS App Sandbox blocks shelling out to `lp` and blocks outbound TCP to `localhost:631` while permitting `/private/var/run/cupsd` under `com.apple.security.print`. |
+| WebUSB | The browser WebUSB API through the frontend bridge. |
 
 Dispatch failures are classified by `classifyPrintFailure()` into a stable, privacy-safe set:
 `not_configured`, `offline`, `queue_unavailable`, `spooler_error`, `driver_error`,
@@ -217,13 +217,13 @@ so it must not embed device names or user data.
 
 `main/printers/profiles.ts` ships five profiles:
 
-| Id                        | Make and model               | Paper            | Font A columns |
-| ------------------------- | ---------------------------- | ---------------- | -------------- |
-| `xprinter-xp-v320m-v330m` | Xprinter XP-V320M / XP-V330M | 72 mm, `cols-48` | 48             |
-| `escpos-impact-76`        | Epson TM-U220 / 76mm Impact  | 64 mm, `cols-32` | 32             |
-| `epson-tm-series`         | Epson TM Series ESC/POS      | `cols-48`        | 48             |
-| `generic-escpos-80`       | Generic ESC/POS 80 mm        | `cols-42`        | 42             |
-| `generic-escpos-58`       | Generic ESC/POS 58 mm        | `cols-32`        | 32             |
+| Id | Make and model | Paper | Font A columns |
+| --- | --- | --- | --- |
+| `xprinter-xp-v320m-v330m` | Xprinter XP-V320M / XP-V330M | 72 mm, `cols-48` | 48 |
+| `escpos-impact-76` | Epson TM-U220 / 76mm Impact | 64 mm, `cols-32` | 32 |
+| `epson-tm-series` | Epson TM Series ESC/POS | `cols-48` | 48 |
+| `generic-escpos-80` | Generic ESC/POS 80 mm | `cols-42` | 42 |
+| `generic-escpos-58` | Generic ESC/POS 58 mm | `cols-32` | 32 |
 
 The four thermal profiles declare `raster.enabled: true` with modes `mixed` and `whole-receipt`, at
 576 dots of width except the 58 mm profile, which declares 384. `escpos-impact-76` targets 76 mm

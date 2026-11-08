@@ -3,6 +3,7 @@ import { getDatabase, now } from '../db';
 import {
   CUSTOMER_DISPLAY_DEFAULTS,
   CUSTOMER_DISPLAY_KEY,
+  CUSTOMER_DISPLAY_ORDER_TYPES,
   CUSTOMER_DISPLAY_STATUSES,
   readStoredCustomerDisplayConfig,
   type CustomerDisplayConfig,
@@ -61,6 +62,18 @@ export function parseBoardStatuses(raw: unknown): CustomerDisplayBoardStatus[] |
     return null;
   }
   return CUSTOMER_DISPLAY_STATUSES.filter((status) => parts.includes(status));
+}
+
+export function parseBoardOrderTypes(raw: unknown): CustomerDisplayOrderType[] | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  const parts = raw.split(',');
+  if (
+    parts.length === 0 ||
+    parts.some((part) => !(CUSTOMER_DISPLAY_ORDER_TYPES as readonly string[]).includes(part))
+  ) {
+    return null;
+  }
+  return CUSTOMER_DISPLAY_ORDER_TYPES.filter((orderType) => parts.includes(orderType));
 }
 
 export class DisplayFeedPaginationError extends Error {

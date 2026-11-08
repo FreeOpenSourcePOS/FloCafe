@@ -1648,6 +1648,157 @@ async function main(): Promise<void> {
     'paid takeaway order clears from customer display once marked Picked Up (served)',
   );
 
+  const repeatPickedUpRes = await request(app)
+    .patch(`/api/orders/${takeawayPrepId}/status`)
+    .set(signedInOwnerReady)
+    .send({ status: 'served' });
+  assert.equal(
+    repeatPickedUpRes.status,
+    200,
+    'repeating PATCH /api/orders/:id/status served on already-served completed order is idempotent',
+  );
+  assert.equal(repeatPickedUpRes.body.order.status, 'completed');
+  assert.equal(repeatPickedUpRes.body.order.items[0].status, 'served');
+
+  const activeCatchUpOrderId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
+         VALUES ('ACTIVE-CATCHUP-1', 'feed-owner', 'takeaway', 'ready', 10, 10, ?, ?)`,
+      )
+      .run(typeStamp, typeStamp).lastInsertRowid,
+  );
+  db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
+     VALUES (?, 'feed-prod-1', 'Latte', 1, 5, 5, 5, 'ready', ?, ?),
+            (?, 'feed-prod-2', 'Muffin', 1, 5, 5, 5, 'pending', ?, ?)`,
+  ).run(activeCatchUpOrderId, typeStamp, typeStamp, activeCatchUpOrderId, typeStamp, typeStamp);
+
+  const catchUpReadyRes = await request(app)
+    .patch(`/api/orders/${activeCatchUpOrderId}/status`)
+    .set(signedInOwnerReady)
+    .send({ status: 'ready' });
+  assert.equal(
+    catchUpReadyRes.status,
+    200,
+    'active ready order with pending item accepts PATCH status=ready to catch up items',
+  );
+  assert.deepEqual(
+    catchUpReadyRes.body.order.items.map((item: any) => item.status),
+    ['ready', 'ready'],
+    'all active items on ready order catch up to ready',
+  );
+
+  const markActiveServedRes = await request(app)
+    .patch(`/api/orders/${activeCatchUpOrderId}/status`)
+    .set(signedInOwnerReady)
+    .send({ status: 'served' });
+  assert.equal(markActiveServedRes.status, 200);
+  db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
+     VALUES (?, 'feed-prod-1', 'Espresso', 1, 5, 5, 5, 'pending', ?, ?)`,
+  ).run(activeCatchUpOrderId, typeStamp, typeStamp);
+
+  const servedToReadyCatchUpRes = await request(app)
+    .patch(`/api/orders/${activeCatchUpOrderId}/status`)
+    .set(signedInOwnerReady)
+    .send({ status: 'ready' });
+  assert.equal(
+    servedToReadyCatchUpRes.status,
+    200,
+    'active served order with newly added pending item accepts PATCH status=ready',
+  );
+  assert.equal(servedToReadyCatchUpRes.body.order.status, 'ready');
+  assert.deepEqual(
+    servedToReadyCatchUpRes.body.order.items.map((item: any) => item.status),
+    ['served', 'served', 'ready'],
+  );
+
+  db.prepare(
+    `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, status, created_at, updated_at)
+     VALUES (?, 'feed-prod-2', 'Muffin', 1, 5, 5, 5, 'pending', ?, ?)`,
+  ).run(activeCatchUpOrderId, typeStamp, typeStamp);
+  db.prepare("UPDATE orders SET status = 'served' WHERE id = ?").run(activeCatchUpOrderId);
+
+  const catchUpServedRes = await request(app)
+    .patch(`/api/orders/${activeCatchUpOrderId}/status`)
+    .set(signedInOwnerReady)
+    .send({ status: 'served' });
+  assert.equal(
+    catchUpServedRes.status,
+    200,
+    'active served order with unserved items accepts PATCH status=served to catch up items',
+  );
+  assert.deepEqual(
+    catchUpServedRes.body.order.items.map((item: any) => item.status),
+    ['served', 'served', 'served', 'served'],
+    'all active items on served order catch up to served',
+  );
+
+  assert.equal(
+    (
+      await request(app)
+        .put('/api/settings/customer-display')
+        .set(ownerApi)
+        .send({
+          statuses: ['pending', 'preparing', 'ready'],
+          order_types: ['takeaway'],
+          refresh_seconds: 3,
+          show_updated: true,
+        })
+    ).status,
+    200,
+  );
+  const insertDineInCompleted = db.prepare(
+    `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+     VALUES (?, 'feed-owner', 'dine_in', 'completed', 10, 10, ?, ?, ?)`,
+  );
+  db.transaction(() => {
+    for (let i = 1; i <= 250; i += 1) {
+      const oid = Number(
+        insertDineInCompleted.run(`EXCL-DINEIN-COMP-${i}`, typeStamp, typeStamp, typeStamp)
+          .lastInsertRowid,
+      );
+      insertHistoricalItem.run(oid, 'pending', typeStamp, typeStamp);
+    }
+  })();
+
+  let signedInOrderTypePages = 0;
+  const signedInFilteredByType = await fetchSignedInBoardOrders({
+    config: {
+      statuses: ['pending', 'preparing', 'ready'],
+      order_types: ['takeaway'],
+      refresh_seconds: 3,
+      show_updated: true,
+    },
+    fetchPage: async (params: Record<string, unknown>) => {
+      signedInOrderTypePages += 1;
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined) qs.set(k, String(v));
+      }
+      const res = await request(app)
+        .get(`/api/orders?${qs.toString()}`)
+        .set(signedInOwnerReady);
+      assert.equal(res.status, 200);
+      assert.ok(
+        res.body.orders.every((o: any) => o.type === 'takeaway'),
+        'GET /api/orders pre-filters by type=takeaway before pagination',
+      );
+      return res.body;
+    },
+  });
+  assert.equal(
+    signedInOrderTypePages,
+    1,
+    'signed-in board filters excluded dine_in orders in SQL before pagination so takeaway orders fit in 1 page',
+  );
+  assert.equal(
+    signedInFilteredByType.orders.some((o: any) => String(o.number).startsWith('EXCL-DINEIN-COMP-')),
+    false,
+    'excluded dine_in completed orders never appear on takeaway-only signed-in board',
+  );
+
   console.log('customer-display-feed: all assertions passed');
 }
 

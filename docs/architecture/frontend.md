@@ -219,24 +219,6 @@ parameter. The in-dashboard KDS polls `GET /api/kitchen/orders`; `/kds-standalon
 The frames, the handshake, and the server-side conditions live in
 [the API reference](../reference/api.md#kds-websocket-kds).
 
-### Customer Display board filtering and POS pickup controls
-
-The Customer Display board (`/customer-display/`) filters orders by both configured preparation
-statuses (`statuses`, defaulting to `['pending', 'preparing', 'ready']`) and configured order types
-(`order_types`, defaulting to `['takeaway']` so Dine-in, Online, and Delivery orders stay off the
-pickup screen unless enabled in **Settings > Customer display**). Both the paired token feed
-(`GET /api/customer-display/feed`) and the signed-in board helper
-([`fetchSignedInBoardOrders`](../../frontend/src/lib/customer-display.ts)) apply the configured
-`order_types` filter.
-
-Paid (`completed`) orders from the last 24 hours remain projected onto the Customer Display and the
-active orders view while any active `order_items` row is in `pending`, `preparing`, or `ready`,
-regardless of whether the Kitchen Display System (`kds_enabled`) is enabled. On the POS Orders
-screen (`/orders`), each released order exposes **Mark Ready** (when its effective preparation
-status is `pending` or `preparing`) and **Picked Up** (when its effective preparation status is
-`ready`), calling `PATCH /api/orders/:id/status` with `'ready'` or `'served'` to advance all active
-items and clear picked-up orders from the Customer Display without requiring KDS.
-
 ## The permission model
 
 ### Two catalogs, and which one you are looking at
@@ -599,16 +581,24 @@ against `en.json`, the derived print-label table, and a `tsc` pass over the fron
 staff session from storage and redirects to `/auth/login?redirect=/customer-display` (or adds
 `select_tenant=true` when a user is signed in without a selected tenant) so signing in returns to
 `/customer-display`. Once signed in, it pages through `GET /orders` with
-`view=active` and `board_status` set to the configured statuses via `before_id` cursor pagination
-(100 orders per page, up to 50 pages) so effective board eligibility applies before pagination,
-projects effective board status from `order.items` for settled `completed` orders via
-`projectBoardStatusFromItems` in [`shared/order-item-status.ts`](../../shared/order-item-status.ts)
-(see [Order lifecycle](order-lifecycle.md#order-status)), and shows eligible orders in a Preparing
+`view=active`, `board_status` set to the configured statuses, and `type` set to the configured
+`order_types` via `before_id` cursor pagination (100 orders per page, up to 50 pages) so effective
+board status and order-type eligibility apply in SQL before pagination, projects effective board
+status from `order.items` for settled `completed` orders via `projectBoardStatusFromItems` in
+[`shared/order-item-status.ts`](../../shared/order-item-status.ts) (see
+[Order lifecycle](order-lifecycle.md#order-status)), and shows eligible orders in a Preparing
 column (`pending`, `preparing`) and a Ready column (`ready`).
 It re-reads `GET /settings/customer-display` on every poll cycle, so changes made in Settings >
-Kitchen Display apply without reloading the board. The tenant-wide config sets which statuses show,
-the refresh interval, and whether the last-updated time is shown. Deduplicated orders are sorted
-oldest first and applied atomically once all pages complete in a cycle, preserving the ten-second TV
+Kitchen Display apply without reloading the board. The tenant-wide config sets which statuses show
+(`statuses`, defaulting to `['pending', 'preparing', 'ready']`), which order types show
+(`order_types`, defaulting to `['takeaway']` so Dine-in, Online, and Delivery orders stay off the
+pickup screen unless enabled), the refresh interval (`refresh_seconds`), and whether the
+last-updated time is shown (`show_updated`). On the POS Orders screen (`/orders`), each released
+order derives its effective preparation status via `getOrderEffectivePrepStatus` in
+[`shared/order-item-status.ts`](../../shared/order-item-status.ts) and exposes **Mark Ready** (when
+`pending` or `preparing`) and **Picked Up** (when `ready`), calling `PATCH /api/orders/:id/status`
+with `'ready'` or `'served'` to advance active `order_items` and clear picked-up orders from
+`/customer-display` even when KDS is disabled. Deduplicated orders are sorted oldest first and applied atomically once all pages complete in a cycle, preserving the ten-second TV
 visual page rotation. At desktop widths, each column renders complete bill or order numbers in
 readable rows and independently rotates measured pages every ten seconds when needed, showing a
 multi-page indicator (`1 / N`, page dots, and a `+count` overflow pill) and a ten-second progress

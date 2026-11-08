@@ -111,6 +111,7 @@ export interface SignedInBoardOrderSource {
 export interface SignedInOrdersQueryParams {
   view: 'active';
   board_status?: string;
+  type?: string;
   per_page: number;
   before_id?: number | string;
 }
@@ -152,9 +153,11 @@ export async function fetchSignedInBoardOrders(options: {
   isStale?: () => boolean;
 }): Promise<{ orders: BoardOrder[]; stale: boolean }> {
   const { config, fetchPage, isStale } = options;
-  const allowedOrderTypes = new Set<string>(
-    config.order_types ?? CUSTOMER_DISPLAY_DEFAULTS.order_types,
-  );
+  const orderTypes =
+    config.order_types && config.order_types.length > 0
+      ? config.order_types
+      : CUSTOMER_DISPLAY_DEFAULTS.order_types;
+  const allowedOrderTypes = new Set<string>(orderTypes);
   const seenById = new Map<string, { order: SignedInBoardOrderSource; projectedStatus: string }>();
   let beforeId: number | string | null = null;
 
@@ -162,6 +165,7 @@ export async function fetchSignedInBoardOrders(options: {
     const page = await fetchPage({
       view: 'active',
       board_status: config.statuses.join(','),
+      type: orderTypes.join(','),
       per_page: 100,
       ...(beforeId !== null ? { before_id: beforeId } : {}),
     });

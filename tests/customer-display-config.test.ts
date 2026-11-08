@@ -168,5 +168,38 @@ assert.equal(
   null,
   'completed order with all served items projects null',
 );
+assert.equal(
+  getOrderEffectivePrepStatus({
+    status: 'ready',
+    items: [
+      { status: 'ready', quantity: 1 },
+      { status: 'pending', quantity: 1 },
+    ] as any,
+  }),
+  'preparing',
+  'ready order with newly appended pending item projects preparing so Mark Ready is shown',
+);
+assert.equal(
+  getOrderEffectivePrepStatus({
+    status: 'served',
+    items: [
+      { status: 'served', quantity: 1 },
+      { status: 'pending', quantity: 1 },
+    ] as any,
+  }),
+  'preparing',
+  'served order with newly appended pending item projects preparing so Mark Ready is shown',
+);
+assert.equal(
+  getOrderEffectivePrepStatus({
+    status: 'served',
+    items: [
+      { status: 'served', quantity: 1 },
+      { status: 'ready', quantity: 1 },
+    ] as any,
+  }),
+  'ready',
+  'served order with ready item projects ready so Picked Up is shown',
+);
 
 console.log('customer-display-config: all assertions passed');

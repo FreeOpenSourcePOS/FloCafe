@@ -40,6 +40,7 @@ import {
 } from '../services/orders';
 import {
   collectProjectedCompletedOrderIds,
+  parseBoardOrderTypes,
   parseBoardStatuses,
   selectBoardEligibleOrderPage,
   type DisplayFeedCursor,
@@ -653,6 +654,15 @@ router.get(
       if (req.query.board_status !== undefined && boardStatuses === null) {
         return res.status(400).json({ error: 'Invalid board_status parameter.' });
       }
+      const boardOrderTypes =
+        boardStatuses !== null
+          ? req.query.type !== undefined
+            ? parseBoardOrderTypes(req.query.type)
+            : CUSTOMER_DISPLAY_ORDER_TYPES
+          : null;
+      if (boardStatuses !== null && boardOrderTypes === null) {
+        return res.status(400).json({ error: 'Invalid type parameter.' });
+      }
       const statusQuery = typeof req.query.status === 'string' ? req.query.status : '';
       const statuses = statusQuery ? statusQuery.split(',') : [];
       const statusIsActive = statuses.length === 1 && statuses[0] === 'active';
@@ -695,9 +705,19 @@ router.get(
           params.push(...statuses);
         }
       }
-      if (req.query.type) {
-        wheres.push('orders.type = ?');
-        params.push(req.query.type);
+      if (boardStatuses === null && req.query.type) {
+        const typeValues =
+          typeof req.query.type === 'string' ? req.query.type.split(',').filter(Boolean) : [];
+        if (typeValues.length === 1) {
+          wheres.push('orders.type = ?');
+          params.push(typeValues[0]);
+        } else if (typeValues.length > 1) {
+          wheres.push(`orders.type IN (${typeValues.map(() => '?').join(',')})`);
+          params.push(...typeValues);
+        } else {
+          wheres.push('orders.type = ?');
+          params.push(req.query.type);
+        }
       }
       const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
       if (search) {
@@ -815,10 +835,10 @@ router.get(
           ? Math.min(requestedPerPage, 500)
           : 50;
 
-      if (boardStatuses !== null && wheres.length === 0) {
+      if (boardStatuses !== null && boardOrderTypes !== null && wheres.length === 0) {
         const { pageRows, hasMore } = selectBoardEligibleOrderPage(db, {
           statuses: boardStatuses,
-          orderTypes: CUSTOMER_DISPLAY_ORDER_TYPES,
+          orderTypes: boardOrderTypes,
           cursor: beforeCursor,
           limit: perPage,
         });
@@ -843,30 +863,37 @@ router.get(
         });
       }
 
-      if (boardStatuses !== null) {
+      if (boardStatuses !== null && boardOrderTypes !== null) {
         const boardPlaceholders = boardStatuses.map(() => '?').join(',');
+        const boardOrderTypePlaceholders = boardOrderTypes.map(() => '?').join(',');
         const projectedCompletedIds = collectProjectedCompletedOrderIds(
           db,
           boardStatuses,
           beforeCursor,
-          CUSTOMER_DISPLAY_ORDER_TYPES,
+          boardOrderTypes,
         );
         if (projectedCompletedIds.length > 0) {
           wheres.push(`orders.id IN (
             SELECT ao.id FROM orders AS ao
             WHERE ao.status IN (${boardPlaceholders})
               AND ao.release_status = 'released'
+              AND +ao.type IN (${boardOrderTypePlaceholders})
             UNION ALL
             SELECT CAST(value AS INTEGER) FROM json_each(?)
           )`);
-          params.push(...boardStatuses, JSON.stringify(projectedCompletedIds));
+          params.push(
+            ...boardStatuses,
+            ...boardOrderTypes,
+            JSON.stringify(projectedCompletedIds),
+          );
         } else {
           wheres.push(`orders.id IN (
             SELECT ao.id FROM orders AS ao
             WHERE ao.status IN (${boardPlaceholders})
               AND ao.release_status = 'released'
+              AND +ao.type IN (${boardOrderTypePlaceholders})
           )`);
-          params.push(...boardStatuses);
+          params.push(...boardStatuses, ...boardOrderTypes);
         }
       }
       if (beforeCursor) {
@@ -3589,8 +3616,8 @@ router.patch(
             !(status === 'ready' && hasPendingOrPreparingItems) &&
             !(status === 'served' && hasActivePickupItems)) ||
           (currentOrder.status === 'completed' &&
-            status === 'ready' &&
-            projectedCompletedBoardStatus === 'ready');
+            ((status === 'ready' && projectedCompletedBoardStatus === 'ready') ||
+              (status === 'served' && !hasActivePickupItems)));
 
         if (isSameOrderState) {
           // Idempotent same-state request for order
@@ -3622,18 +3649,15 @@ router.patch(
           cancelled: [],
         };
 
-        const canTransitionCompletedPreparation =
-          currentOrder.status === 'completed' &&
-          ((status === 'ready' &&
-            (projectedCompletedBoardStatus === 'pending' ||
-              projectedCompletedBoardStatus === 'preparing')) ||
-            (status === 'served' &&
-              (projectedCompletedBoardStatus === 'pending' ||
-                projectedCompletedBoardStatus === 'preparing' ||
-                projectedCompletedBoardStatus === 'ready')));
+        const canTransitionPreparation =
+          (currentOrder.status === 'ready' ||
+            currentOrder.status === 'served' ||
+            currentOrder.status === 'completed') &&
+          ((status === 'ready' && hasPendingOrPreparingItems) ||
+            (status === 'served' && hasActivePickupItems));
 
         const allowedTargets = VALID_TRANSITIONS[currentOrder.status] || [];
-        if (!allowedTargets.includes(status) && !canTransitionCompletedPreparation) {
+        if (!allowedTargets.includes(status) && !canTransitionPreparation) {
           throw Object.assign(
             new Error(
               `Cannot transition order status from '${currentOrder.status}' to '${status}'`,
@@ -3822,7 +3846,7 @@ router.patch(
               );
             } else {
               db.prepare(
-                'UPDATE orders SET status = ?, ready_at = ?, updated_at = ? WHERE id = ?',
+                'UPDATE orders SET status = ?, ready_at = ?, served_at = NULL, updated_at = ? WHERE id = ?',
               ).run(status, nowStr, nowStr, req.params.id);
             }
             break;

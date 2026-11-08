@@ -88,10 +88,18 @@ export function getOrderEffectivePrepStatus(order: {
   if (order.release_status && order.release_status !== 'released') {
     return null;
   }
-  const status =
-    order.status === 'completed' ? projectBoardStatusFromItems(order.items) : order.status;
-  if (status === 'pending' || status === 'preparing' || status === 'ready') {
-    return status;
+  if (order.status === 'completed' || order.status === 'served') {
+    return projectBoardStatusFromItems(order.items);
+  }
+  if (order.status === 'ready') {
+    const projected = projectBoardStatusFromItems(order.items);
+    if (projected === 'pending' || projected === 'preparing') {
+      return projected;
+    }
+    return 'ready';
+  }
+  if (order.status === 'pending' || order.status === 'preparing') {
+    return order.status;
   }
   return null;
 }

@@ -78,9 +78,9 @@ function getCurrentTime(): number {
 function isOrderLikelyLateForRefund(
   order: Order,
   nowMs: number,
-  policy: RefundPolicySettings = DEFAULT_REFUND_POLICY,
-  timezone?: string | null,
-  businessDayStartTime?: string | null,
+  policy: RefundPolicySettings,
+  timezone: string | null | undefined,
+  businessDayStartTime: string | null | undefined,
 ): boolean {
   if (!policy.refund_manager_enabled) return true;
   if (order.release_status && order.release_status !== 'released') return false;
@@ -395,7 +395,13 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     try {
       const staffResponse = await api.get('/staff/approvers');
       const submissionNow = getCurrentTime();
-      const submissionIsLate = isOrderLikelyLateForRefund(order, submissionNow);
+      const submissionIsLate = isOrderLikelyLateForRefund(
+        order,
+        submissionNow,
+        refundPolicy,
+        currentTenant?.timezone,
+        currentTenant?.business_day_start_time,
+      );
       const configuredApprovers = getConfiguredApprovers(
         staffResponse.data?.approvers ?? staffResponse.data?.staff ?? [],
       );

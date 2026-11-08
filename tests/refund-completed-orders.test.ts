@@ -367,6 +367,252 @@ async function main() {
       headers: ownerAuth,
     });
     assertEqual(disabledCreditRefund.status, 400, 'a store-credit refund is rejected when loyalty is disabled');
+
+    // ── RefundModal.submit() honors loaded refundPolicy and tenant timezone ──
+    {
+      const originalResolveFilename = Module._resolveFilename;
+      const rootDir = path.join(__dirname, '..');
+      Module._resolveFilename = function (request: string, parent: unknown, isMain: boolean, options?: unknown) {
+        if (request.startsWith('@/')) {
+          return originalResolveFilename.call(this, path.resolve(rootDir, 'frontend/src', request.slice(2)), parent, isMain, options);
+        }
+        if (request === '@countries') {
+          return originalResolveFilename.call(this, path.resolve(rootDir, 'main/countries.ts'), parent, isMain, options);
+        }
+        if (request.startsWith('@shared/')) {
+          return originalResolveFilename.call(this, path.resolve(rootDir, 'shared', request.slice('@shared/'.length)), parent, isMain, options);
+        }
+        return originalResolveFilename.call(this, request, parent, isMain, options);
+      };
+
+      const states: any[] = [];
+      const setters: Array<(next: any) => void> = [];
+      const effectEntries: Array<{ deps?: any[]; initialized: boolean; cleanup?: any }> = [];
+      const pendingEffects: Array<() => void> = [];
+      let stateIdx = 0;
+      let effectIdx = 0;
+
+      const jsx = (type: any, props: any, key?: any) => ({ type, props, key });
+      const createElement = (type: any, props: any, ...children: any[]) => ({
+        type,
+        props: {
+          ...(props || {}),
+          children: children.length === 0 ? props?.children : children.length === 1 ? children[0] : children,
+        },
+      });
+
+      const reactMock = {
+        createElement,
+        Fragment: 'Fragment',
+        useState: (initial: any) => {
+          const idx = stateIdx++;
+          if (idx >= states.length) {
+            states.push(typeof initial === 'function' ? initial() : initial);
+            setters.push((next: any) => {
+              states[idx] = typeof next === 'function' ? next(states[idx]) : next;
+            });
+          }
+          return [states[idx], setters[idx]];
+        },
+        useEffect: (effect: () => any, deps?: any[]) => {
+          const idx = effectIdx++;
+          const prev = effectEntries[idx];
+          const changed =
+            !prev ||
+            !prev.initialized ||
+            deps === undefined ||
+            prev.deps === undefined ||
+            deps.length !== prev.deps.length ||
+            deps.some((d, i) => !Object.is(d, prev.deps![i]));
+          if (!prev) effectEntries[idx] = { deps, initialized: false };
+          else prev.deps = deps;
+          if (changed) {
+            pendingEffects.push(() => {
+              if (typeof effectEntries[idx].cleanup === 'function') effectEntries[idx].cleanup();
+              effectEntries[idx].cleanup = effect();
+              effectEntries[idx].initialized = true;
+            });
+          }
+        },
+      };
+
+      let mockPolicy = { refund_manager_enabled: true, refund_manager_window: '2h' };
+      let mockTenant: any = {
+        id: 't-1',
+        country: 'US',
+        currency: 'USD',
+        timezone: 'America/New_York',
+        business_day_start_time: '00:00',
+        role: 'manager',
+      };
+      const postedRefunds: any[] = [];
+      const ButtonStub = (props: any) => ({ type: 'ButtonStub', props });
+
+      const modalMocks: Record<string, any> = {
+        react: reactMock,
+        'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
+        clsx: { clsx: (...args: any[]) => args.filter(Boolean).join(' ') },
+        'tailwind-merge': { twMerge: (s: string) => s },
+        'next/link': { __esModule: true, default: (props: any) => ({ type: 'Link', props }) },
+        'lucide-react': { Loader2: () => null },
+        'use-intl': { useTranslations: () => (k: string) => k },
+        'react-hot-toast': { __esModule: true, default: { success: () => {}, error: () => {} } },
+        '@/components/ui/button': { Button: ButtonStub },
+        '@/hooks/useCurrencyUnitAdapter': {
+          useCurrencyUnitAdapter: () => ({
+            toDisplay: (v: number) => v,
+            toStored: (v: number) => v,
+            formatInput: (v: number) => String(v),
+          }),
+        },
+        '@/hooks/useFormatCurrency': { useFormatCurrency: () => (v: number) => `$${v}` },
+        '@/lib/countries': {
+          getCountryByCode: () => ({ currency: 'USD' }),
+          getCurrencyMinorUnitFactor: () => 100,
+        },
+        '@/store/auth': {
+          useAuthStore: () => ({
+            user: { id: managerId, name: 'Test Manager', role: 'manager' },
+            currentTenant: mockTenant,
+          }),
+        },
+        '@/lib/api': {
+          __esModule: true,
+          default: {
+            get: async (url: string) => {
+              if (url === '/staff/approvers') {
+                return {
+                  data: {
+                    approvers: [
+                      { id: ownerId, name: 'Owner', role: 'owner', is_active: 1, has_pin: true },
+                      { id: managerId, name: 'Manager', role: 'manager', is_active: 1, has_pin: true },
+                    ],
+                  },
+                };
+              }
+              if (url === '/settings/refunds') return { data: mockPolicy };
+              if (url.startsWith('/bills/')) return { data: { bill: { id: 901, paid_amount: 50, order: { items: [] } } } };
+              if (url === '/payment-methods') return { data: { payment_methods: [] } };
+              if (url === '/settings/loyalty') return { data: { loyalty_enabled: false } };
+              if (url === '/refunds') return { data: { refunds: [] } };
+              return { data: {} };
+            },
+            post: async (url: string, body: any) => {
+              if (url === '/refunds') {
+                postedRefunds.push(body);
+                return { data: { refund: { id: 1 } } };
+              }
+              return { data: {} };
+            },
+          },
+        },
+      };
+
+      const prevLoad = Module._load;
+      const prevGlobalReact = (globalThis as any).React;
+      (globalThis as any).React = reactMock;
+      Module._load = function (request: string, parent: unknown, isMain: boolean) {
+        if (request in modalMocks) return modalMocks[request];
+        return prevLoad.call(this, request, parent, isMain);
+      };
+
+      function collectNodes(node: any, pred: (n: any) => boolean, out: any[] = []): any[] {
+        if (Array.isArray(node)) {
+          for (const child of node) collectNodes(child, pred, out);
+          return out;
+        }
+        if (!node || typeof node !== 'object') return out;
+        if (pred(node)) out.push(node);
+        if (node.props?.children !== undefined) collectNodes(node.props.children, pred, out);
+        return out;
+      }
+
+      try {
+        const RefundModal = require('../frontend/src/components/orders/RefundModal').default;
+
+        const runModalScenario = async (createdAtUtc: string) => {
+          states.length = 0;
+          setters.length = 0;
+          effectEntries.length = 0;
+          pendingEffects.length = 0;
+          postedRefunds.length = 0;
+          let refundedCount = 0;
+
+          const modalProps = {
+            order: {
+              id: 500,
+              order_number: 'ORD-500',
+              created_at: createdAtUtc,
+              release_status: 'released',
+              items: [],
+            },
+            bills: [{ id: 901, bill_number: 'B-901', paid_amount: 50, payment_status: 'paid' }],
+            onClose: () => {},
+            onRefunded: () => {
+              refundedCount += 1;
+            },
+          };
+
+          const renderModal = () => {
+            stateIdx = 0;
+            effectIdx = 0;
+            const tree = RefundModal(modalProps);
+            while (pendingEffects.length > 0) {
+              const fn = pendingEffects.shift()!;
+              fn();
+            }
+            return tree;
+          };
+
+          renderModal();
+          await new Promise((r) => setTimeout(r, 20));
+          let tree = renderModal();
+
+          const pinInput = collectNodes(tree, (n) => n.props?.id === 'refundPin')[0];
+          pinInput.props.onChange({ target: { value: '1234' } });
+          tree = renderModal();
+
+          const submitBtn = collectNodes(
+            tree,
+            (n) =>
+              n.type === ButtonStub &&
+              (n.props?.children === 'refundSubmit' ||
+                (Array.isArray(n.props?.children) && n.props.children.includes('refundSubmit'))),
+          )[0];
+          assert(submitBtn && !submitBtn.props.disabled, 'RefundModal submit button is enabled for eligible manager');
+          await submitBtn.props.onClick();
+
+          for (const entry of effectEntries) {
+            if (typeof entry?.cleanup === 'function') entry.cleanup();
+          }
+          return { refundedCount, posted: [...postedRefunds] };
+        };
+
+        // Case 1: 2h window with a 90-minute-old order (past default 1h, within configured 2h)
+        Date.now = () => Date.UTC(2025, 5, 15, 16, 0, 0);
+        mockPolicy = { refund_manager_enabled: true, refund_manager_window: '2h' };
+        const res2h = await runModalScenario('2025-06-15 14:30:00');
+        assertEqual(res2h.posted.length, 1, 'RefundModal submits POST /refunds for manager at 90m under 2h policy');
+        assertEqual(res2h.posted[0]?.approver_id, managerId, 'RefundModal submits manager approver_id under 2h policy');
+        assertEqual(res2h.refundedCount, 1, 'RefundModal invokes onRefunded callback under 2h policy');
+
+        // Case 2: same_business_day in America/New_York across 00:00 UTC (2025-06-15 22:30 UTC -> 2025-06-16 01:00 UTC, still 2025-06-15 EDT)
+        Date.now = () => Date.UTC(2025, 5, 16, 1, 0, 0);
+        mockPolicy = { refund_manager_enabled: true, refund_manager_window: 'same_business_day' };
+        const resSameDayTz = await runModalScenario('2025-06-15 22:30:00');
+        assertEqual(
+          resSameDayTz.posted.length,
+          1,
+          'RefundModal submits POST /refunds for manager across UTC midnight when still same business day in store timezone',
+        );
+        assertEqual(resSameDayTz.posted[0]?.approver_id, managerId, 'RefundModal keeps manager approver_id across UTC midnight');
+      } finally {
+        (globalThis as any).React = prevGlobalReact;
+        Module._load = prevLoad;
+        Module._resolveFilename = originalResolveFilename;
+        Date.now = () => FIXED_NOW;
+      }
+    }
   } finally {
     Date.now = originalDateNow;
     server.close();

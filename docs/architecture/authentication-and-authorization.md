@@ -221,8 +221,9 @@ terminals, while approval authority stays restricted to active `owner` and `mana
    verifications for a target account remain serialized per user (`pin-user:${userId}`) with
    `withPinVerificationLock`, while the 5-attempt / 15-minute failed-attempt lockout is scoped per
    normalized client IP and user ID (`${normalizeIpForPinRateLimit(ip)}:pin:${userId}`, collapsing
-   non-loopback IPv6 addresses to their canonical `/64` prefix while keeping IPv4 and loopback
-   `127.0.0.1` / `::1` independent without an authentication exemption), alongside the endpoint
+   non-loopback IPv6 addresses to their canonical `/64` prefix while keeping individual IPv4
+   addresses and canonicalized loopback `127.0.0.1` / `::1` in their own buckets without an
+   authentication exemption), alongside the endpoint
    volume limiter. Scoping lockouts per `(client IP, user ID)` rather than install-wide per account
    protects main POS terminal availability when another device on a shared restaurant LAN submits
    wrong PINs, at the explicit trade-off of reduced resistance to PIN guessing distributed across

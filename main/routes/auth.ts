@@ -23,6 +23,7 @@ import {
   resetSuccessfulLogin,
   FAILED_LOGIN_LOCKOUT_MINUTES,
   normalizeIpForPinRateLimit,
+  normalizeIpForRateLimit,
   withPinVerificationLock,
   validatePassword,
   revokeToken,

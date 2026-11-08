@@ -5064,6 +5064,16 @@ export function validateNetworkPrinterTarget(rawHost: string, port: number): str
   let effectiveIpv4: string | null = net.isIP(ipCandidate) === 4 ? ipCandidate : null;
   const ipv6Groups: number[] | null =
     net.isIP(ipCandidate) === 6 ? expandPrinterIpv6Groups(ipCandidate) : null;
+  if (effectiveIpv4 === null && ipv6Groups === null && !ipCandidate.includes(':')) {
+    try {
+      const parsedHost = new URL(`http://${ipCandidate}`).hostname;
+      if (net.isIP(parsedHost) === 4) {
+        effectiveIpv4 = parsedHost;
+      }
+    } catch {
+      // Non-URL host candidates fall through to hostname checks.
+    }
+  }
 
   if (ipv6Groups) {
     const isZeros = (from: number, to: number) => ipv6Groups.slice(from, to).every((g) => g === 0);

@@ -305,7 +305,9 @@ Route gating lives in `AuthGuard`:
 - `getLandingPage` returns the first page in a fixed list the tenant can reach. The list is ordered,
   not role-aware: `pos.use` is checked before `dashboard.view`, and `pos.use` ships to owners, so
   an owner lands on the POS like anyone else. The list is a fallback order for whichever surfaces
-  are available, not a statement about what a role prefers.
+  are available, not a statement about what a role prefers. When `/auth/login` carries a
+  `?redirect=` query parameter, `resolveSafeRedirect` accepts only a normalized same-origin internal
+  path outside `/auth` and `/setup`; any other value falls back to `getLandingPage`.
 - `PAGE_PERMISSIONS` maps a guarded route to the single permission id it needs. `/staff` and
   `/settings` are the two exceptions and carry an any-of list instead, because either screen
   aggregates several permissions. Adding a route means adding it to one of those three; a route in
@@ -574,7 +576,10 @@ against `en.json`, the derived print-label table, and a `tsc` pass over the fron
 
 ## Customer display
 
-`/customer-display` is a signed-in order-status board. It pages through `GET /orders` with
+`/customer-display` is a signed-in order-status board. Without a paired display token it loads the
+staff session from storage and redirects to `/auth/login?redirect=/customer-display` (or adds
+`select_tenant=true` when a user is signed in without a selected tenant) so signing in returns to
+`/customer-display`. Once signed in, it pages through `GET /orders` with
 `view=active` and `board_status` set to the configured statuses via `before_id` cursor pagination
 (100 orders per page, up to 50 pages) so effective board eligibility applies before pagination,
 projects effective board status from `order.items` for settled `completed` orders via

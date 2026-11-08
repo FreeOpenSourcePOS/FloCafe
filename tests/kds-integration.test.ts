@@ -420,6 +420,43 @@ async function run() {
     ws.close();
     await once(ws, 'close');
 
+    // Verify standalone KDS view persistence and default/preserved view behavior before revoking permission
+    const defaultInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
+    assert(defaultInfoRes.status === 200, 'Public info endpoint returns 200 for default view check');
+    assert(
+      defaultInfoRes.body.kds_default_view === 'kanban',
+      'Fresh DB migration seeds kds_default_view = kanban on standalone /api/kds/info',
+    );
+
+    const putTabsRes = await request(`http://127.0.0.1:${port}`)
+      .put('/api/kds/view')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kds_default_view: 'tabs' });
+    assert(putTabsRes.status === 200, 'Standalone PUT /api/kds/view succeeds for authenticated chef');
+    assert(
+      putTabsRes.body.kds_default_view === 'tabs',
+      'Standalone PUT /api/kds/view returns updated kds_default_view = tabs',
+    );
+
+    const preservedTabsInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
+    assert(
+      preservedTabsInfoRes.body.kds_default_view === 'tabs',
+      'Existing installation with kds_default_view = tabs preserves tabs on /api/kds/info',
+    );
+
+    const invalidViewRes = await request(`http://127.0.0.1:${port}`)
+      .put('/api/kds/view')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ kds_default_view: 'invalid' });
+    assert(invalidViewRes.status === 400, 'Standalone PUT /api/kds/view rejects invalid view with 400');
+
+    db.prepare("DELETE FROM settings WHERE key = 'kds_default_view'").run();
+    const fallbackInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
+    assert(
+      fallbackInfoRes.body.kds_default_view === 'kanban',
+      'Standalone /api/kds/info falls back to kanban when kds_default_view is unset',
+    );
+
     db.prepare(`INSERT INTO user_permission_overrides
       (user_id, permission_id, effect, updated_by, created_at, updated_at)
       VALUES ('user-chef-1', 'kitchen.use', 'deny', 'user-chef-1', ?, ?)`).run(now(), now());
@@ -431,12 +468,12 @@ async function run() {
       'KDS permission denial applies to an existing session immediately',
     );
 
-    // 8. Public KDS info endpoint responds
+    // 8. Public KDS info endpoint responds and rate-limits repeated LAN requests (100 total requests per window)
     const infoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
     assert(infoRes.status === 200, 'Public info endpoint returns 200');
 
     // The public endpoint must also throttle LAN clients before repeated database reads.
-    for (let i = 1; i < 100; i += 1) {
+    for (let i = 4; i < 100; i += 1) {
       const allowedInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
       assert(
         allowedInfoRes.status === 200,

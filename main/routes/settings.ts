@@ -728,38 +728,46 @@ router.put('/discount', requirePermission('settings.manage'), (req: Request, res
 // ─── KDS settings (must come BEFORE /:key wildcard) ─────────────────────────
 
 // Mirrors KDS default view for the dashboard settings page.
-router.get('/kds', requirePermission('settings.view'), (_req: Request, res: Response) => {
-  try {
-    const s = getAllSettings(getDatabase());
-    res.json({
-      kds_default_view: s.kds_default_view === 'kanban' ? 'kanban' : 'tabs',
-    });
-  } catch (error: any) {
-    res.locals.postHogError = error;
-    console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+router.get(
+  '/kds',
+  requireAnyPermission('settings.view', 'kitchen.use'),
+  (_req: Request, res: Response) => {
+    try {
+      const s = getAllSettings(getDatabase());
+      res.json({
+        kds_default_view: s.kds_default_view === 'tabs' ? 'tabs' : 'kanban',
+      });
+    } catch (error: any) {
+      res.locals.postHogError = error;
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
-router.put('/kds', requirePermission('settings.manage'), (req: Request, res: Response) => {
-  try {
-    const { kds_default_view } = req.body;
-    if (kds_default_view !== undefined && !['tabs', 'kanban'].includes(kds_default_view)) {
-      return res.status(400).json({ error: 'kds_default_view must be "tabs" or "kanban"' });
+router.put(
+  '/kds',
+  requireAnyPermission('settings.manage', 'kitchen.use'),
+  (req: Request, res: Response) => {
+    try {
+      const { kds_default_view } = req.body;
+      if (kds_default_view !== undefined && !['tabs', 'kanban'].includes(kds_default_view)) {
+        return res.status(400).json({ error: 'kds_default_view must be "tabs" or "kanban"' });
+      }
+      if (kds_default_view !== undefined) {
+        upsertSettings(getDatabase(), { kds_default_view });
+      }
+      const s = getAllSettings(getDatabase());
+      res.json({
+        kds_default_view: s.kds_default_view === 'tabs' ? 'tabs' : 'kanban',
+      });
+    } catch (error: any) {
+      res.locals.postHogError = error;
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
-    if (kds_default_view !== undefined) {
-      upsertSettings(getDatabase(), { kds_default_view });
-    }
-    const s = getAllSettings(getDatabase());
-    res.json({
-      kds_default_view: s.kds_default_view === 'kanban' ? 'kanban' : 'tabs',
-    });
-  } catch (error: any) {
-    res.locals.postHogError = error;
-    console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+  },
+);
 
 // ─── Product analytics sharing level (must come BEFORE /:key wildcard) ──────
 

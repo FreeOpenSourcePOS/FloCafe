@@ -7407,7 +7407,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     name: 'add_kds_default_view',
     up: () => {
       db.prepare(
-        `INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('kds_default_view', 'tabs', ?)`,
+        `INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('kds_default_view', 'kanban', ?)`,
       ).run(now());
     },
   },

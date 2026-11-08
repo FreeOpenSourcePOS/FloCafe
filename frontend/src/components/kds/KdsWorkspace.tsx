@@ -8,6 +8,10 @@ import type { UseKdsConnectionResult } from '@/hooks/useKdsConnection';
 
 export function KdsWorkspace({ conn, serverDefault }: { conn: UseKdsConnectionResult; serverDefault: 'tabs' | 'kanban' | null }) {
   const { viewMode, setViewMode } = useKdsView(serverDefault);
+  const handleChangeView = (nextView: 'tabs' | 'kanban') => {
+    setViewMode(nextView);
+    conn.persistViewMode?.(nextView);
+  };
 
   return (
     <div data-testid="kds-workspace" className="h-full flex flex-col">
@@ -17,7 +21,7 @@ export function KdsWorkspace({ conn, serverDefault }: { conn: UseKdsConnectionRe
         connected={conn.connected}
         connectionMode={conn.connectionMode}
         viewMode={viewMode}
-        onChangeView={setViewMode}
+        onChangeView={handleChangeView}
         onLogout={conn.handleLogout}
       />
       <div className="flex-1 min-h-0 flex flex-col">

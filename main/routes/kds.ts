@@ -81,6 +81,26 @@ router.use('/pairing', requireKdsEnabledOr404);
 
 router.use(requirePermission('kitchen.use'));
 
+router.put('/view', requireKdsEnabled, (req: Request, res: Response) => {
+  try {
+    const view = req.body?.kds_default_view ?? req.body?.view;
+    if (!['tabs', 'kanban'].includes(view)) {
+      return res.status(400).json({ error: 'kds_default_view must be "tabs" or "kanban"' });
+    }
+    const db = getDatabase();
+    db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
+      'kds_default_view',
+      view,
+      now(),
+    );
+    res.json({ kds_default_view: view });
+  } catch (error: any) {
+    res.locals.postHogError = error;
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const db = getDatabase();

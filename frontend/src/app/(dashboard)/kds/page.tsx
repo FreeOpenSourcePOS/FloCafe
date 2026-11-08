@@ -8,6 +8,7 @@ import { KdsLoginForm } from '@/components/kds/KdsLoginForm';
 import { KdsWorkspace } from '@/components/kds/KdsWorkspace';
 import { useKdsConnection } from '@/hooks/useKdsConnection';
 import { useSyncServerLanguage } from '@/lib/i18n';
+import { useAuthStore } from '@/store/auth';
 import { useTranslations } from 'use-intl';
 import type { KdsViewMode } from '@/hooks/useKdsView';
 
@@ -29,7 +30,7 @@ function useKdsEnabledCheck(): boolean | null {
 }
 
 // Fetches KDS default view from main API (port 3001) instead of standalone server.
-function useDashboardKdsDefault(): KdsViewMode | null {
+function useDashboardKdsDefault(userId?: string | null): KdsViewMode | null {
   const [view, setView] = useState<KdsViewMode | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -37,13 +38,13 @@ function useDashboardKdsDefault(): KdsViewMode | null {
       .get('/settings/kds')
       .then(({ data }) => {
         if (cancelled) return;
-        setView(data?.kds_default_view === 'kanban' ? 'kanban' : 'tabs');
+        setView(data?.kds_default_view === 'tabs' ? 'tabs' : 'kanban');
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
   return view;
 }
 
@@ -54,7 +55,19 @@ export default function KdsPage() {
   // Stay idle until the feature is confirmed on: a disabled KDS refuses the
   // /kds upgrade with 404, which only logs handshake failures.
   const conn = useKdsConnection({ api, enabled: kdsEnabled === true });
-  const kdsDefaultView = useDashboardKdsDefault();
+  const kdsDefaultView = useDashboardKdsDefault(conn.user?.id);
+
+  useEffect(() => {
+    if (
+      conn.user &&
+      !useAuthStore.getState().user &&
+      typeof window !== 'undefined' &&
+      Boolean(window.localStorage.getItem('token')) &&
+      Boolean(window.localStorage.getItem('tenant'))
+    ) {
+      useAuthStore.getState().loadFromStorage();
+    }
+  }, [conn.user]);
 
   if (kdsEnabled === null) {
     return (

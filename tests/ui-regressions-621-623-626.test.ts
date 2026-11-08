@@ -635,6 +635,52 @@ try {
     'rendered OrdersPage search bar matches the sleek Products search bar styling with pe-3 when empty',
   );
 
+  // 7. Issue #1515: KDS default view kanban, persisted view selection, and body pointer-events recovery
+  const kdsViewSource = source('frontend/src/hooks/useKdsView.ts');
+  assert.match(
+    kdsViewSource,
+    /const viewMode = override \?\? serverDefault \?\? 'kanban';/,
+    'useKdsView falls back to kanban when no override or serverDefault is set',
+  );
+  const kdsWorkspaceSource = source('frontend/src/components/kds/KdsWorkspace.tsx');
+  assert.match(
+    kdsWorkspaceSource,
+    /setViewMode\(nextView\);\s*conn\.persistViewMode\?\.\(nextView\);/,
+    'KdsWorkspace persists selected view to both localStorage and backend',
+  );
+  const sidebarSource = source('frontend/src/components/layout/Sidebar.tsx');
+  assert.match(
+    sidebarSource,
+    /window\.setTimeout\(\(\) => \{\s*void lock\(\);\s*\}, 0\)/,
+    'Sidebar defers lock() from DropdownMenuItem so Radix DropdownMenu releases body pointer-events',
+  );
+  assert.match(
+    sidebarSource,
+    /window\.setTimeout\(async \(\) => \{\s*if \(await confirm\(t\('confirmLogout'\)\)\) logout\(\);\s*\}, 0\)/,
+    'Sidebar defers confirmLogout from DropdownMenuItem so ConfirmDialog does not snapshot pointer-events: none',
+  );
+  const { clearStaleBodyPointerEvents } = require('../frontend/src/hooks/use-confirm');
+  (globalThis as any).document = {
+    body: { style: { pointerEvents: 'none' } },
+    querySelector: () => null,
+  };
+  clearStaleBodyPointerEvents();
+  assert.equal(
+    (globalThis as any).document.body.style.pointerEvents,
+    '',
+    'clearStaleBodyPointerEvents clears stuck body pointer-events: none when no modal is open',
+  );
+  (globalThis as any).document = {
+    body: { style: { pointerEvents: 'none' } },
+    querySelector: () => ({ nodeName: 'DIV' }),
+  };
+  clearStaleBodyPointerEvents();
+  assert.equal(
+    (globalThis as any).document.body.style.pointerEvents,
+    'none',
+    'clearStaleBodyPointerEvents preserves body pointer-events: none while a modal dialog/menu is open',
+  );
+
   useCartStore.getState().clearCart();
 } finally {
   if (origDocument === undefined) {

@@ -240,7 +240,7 @@ export function startKdsServer(): Promise<void> {
           res.json({
             language: s.language || null,
             country: s.country || null,
-            kds_default_view: s.kds_default_view === 'kanban' ? 'kanban' : 'tabs',
+            kds_default_view: s.kds_default_view === 'tabs' ? 'tabs' : 'kanban',
           });
         } catch (error: any) {
           console.error('[API] Internal error:', error);
@@ -248,6 +248,28 @@ export function startKdsServer(): Promise<void> {
         }
       },
     );
+
+    app.put('/api/kds/view', requireAuth, (req: Request, res: Response) => {
+      if (!isKdsEnabled()) {
+        return res.status(403).json({ error: 'KDS is disabled for this business' });
+      }
+      try {
+        const view = req.body?.kds_default_view ?? req.body?.view;
+        if (!['tabs', 'kanban'].includes(view)) {
+          return res.status(400).json({ error: 'kds_default_view must be "tabs" or "kanban"' });
+        }
+        const db = getDatabase();
+        db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
+          'kds_default_view',
+          view,
+          now(),
+        );
+        res.json({ kds_default_view: view });
+      } catch (error: any) {
+        console.error('[API] Internal error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
 
     // KDS Auth - verify user has chef/manager/owner role
     app.post('/api/auth/login', loginAuthRateLimit(), (req: Request, res: Response) => {

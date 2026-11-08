@@ -84,11 +84,40 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     pathname?.startsWith('/customer-display/');
 
   useEffect(() => {
+    if (
+      typeof document !== 'undefined' &&
+      document.body?.style?.pointerEvents === 'none'
+    ) {
+      const hasOpenModal =
+        typeof document.querySelector === 'function' &&
+        Boolean(
+          document.querySelector(
+            '[data-slot="dialog-content"][data-state="open"], [data-slot="dropdown-menu-content"][data-state="open"]',
+          ),
+        );
+      if (!hasOpenModal) {
+        document.body.style.pointerEvents = '';
+      }
+    }
+  }, [pathname, user]);
+
+  useEffect(() => {
     // Standalone KDS, Server App, and paired customer display pages manage their own
-    // auth sessions; skip loading shared POS auth store to avoid clearing their tokens.
-    if (isStandalonePath) return;
+    // auth sessions; skip loading shared POS auth store unless a dashboard tenant session
+    // is present on the in-dashboard /kds route.
+    if (isStandalonePath) {
+      if (
+        pathname === '/kds' &&
+        typeof window !== 'undefined' &&
+        Boolean(window.localStorage.getItem('token')) &&
+        Boolean(window.localStorage.getItem('tenant'))
+      ) {
+        loadFromStorage();
+      }
+      return;
+    }
     loadFromStorage();
-  }, [isStandalonePath, loadFromStorage]);
+  }, [isStandalonePath, loadFromStorage, pathname]);
 
   useEffect(() => {
     if (isStandalonePath || !user || !currentTenant) return;

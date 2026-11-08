@@ -881,11 +881,7 @@ router.get(
             UNION ALL
             SELECT CAST(value AS INTEGER) FROM json_each(?)
           )`);
-          params.push(
-            ...boardStatuses,
-            ...boardOrderTypes,
-            JSON.stringify(projectedCompletedIds),
-          );
+          params.push(...boardStatuses, ...boardOrderTypes, JSON.stringify(projectedCompletedIds));
         } else {
           wheres.push(`orders.id IN (
             SELECT ao.id FROM orders AS ao

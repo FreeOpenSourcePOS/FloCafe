@@ -738,16 +738,16 @@ export default function OrdersPage() {
     setUpdatingPrepOrderId(orderId);
     const operationId = createOperationReference();
     try {
-      await api.patch(
+      const { data } = await api.patch(
         `/orders/${orderId}/status`,
         { status: targetStatus },
         { headers: operationHeaders(operationId) },
       );
+      if (selectedOrderIdRef.current === orderId && data?.order) {
+        setSelectedOrderSnapshot(data.order);
+      }
       toast.success(targetStatus === 'ready' ? tOrders('markedReady') : tOrders('markedPickedUp'));
       await fetchOrders(undefined, { refreshLoadedPages: true });
-      if (selectedOrderIdRef.current === orderId) {
-        await refreshSelectedOrder(orderId);
-      }
     } catch {
       toast.error(tOrders('updateStatusFailed'));
       await fetchOrders(undefined, { refreshLoadedPages: true });

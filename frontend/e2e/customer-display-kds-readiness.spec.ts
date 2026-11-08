@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import * as path from 'node:path';
 import { E2E_BASE_URL as BASE, E2E_KDS_BASE_URL as KDS_BASE } from './helpers/urls';
 import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
 import { captureSettings, restoreSettings, writeSetting } from './helpers/kitchen-fixture';
@@ -670,14 +671,31 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
     });
     const takeawayCheckbox = page.getByRole('checkbox', { name: 'Takeaway / Pickup' });
     const dineInCheckbox = page.getByRole('checkbox', { name: 'Dine-in' });
+    const onlineCheckbox = page.getByRole('checkbox', { name: 'Online' });
     const deliveryCheckbox = page.getByRole('checkbox', { name: 'Delivery' });
     await expect(takeawayCheckbox).toBeChecked();
     await expect(dineInCheckbox).not.toBeChecked();
+    await expect(onlineCheckbox).not.toBeChecked();
     await expect(deliveryCheckbox).not.toBeChecked();
 
+    // Adversarial UI check: attempting to uncheck the last checked order type is blocked
+    await takeawayCheckbox.click();
+    await expect(takeawayCheckbox).toBeChecked();
+    await expect(page.getByText('Select at least one order type')).toBeVisible();
+
+    const evidenceDir = process.env.FLO_E2E_EVIDENCE_DIR;
+    if (evidenceDir) {
+      await page.screenshot({
+        path: path.join(evidenceDir, '01-settings-customer-display-order-types.png'),
+        fullPage: true,
+      });
+    }
+
     const staffDisplayPage = await page.context().newPage();
+    await staffDisplayPage.setViewportSize({ width: 1440, height: 900 });
     const pairedContext = await browser.newContext();
     const pairedDisplayPage = await pairedContext.newPage();
+    await pairedDisplayPage.setViewportSize({ width: 1440, height: 900 });
 
     try {
       const tokenRes = await request.post(`${BASE}/api/settings/customer-display/tokens`, {
@@ -688,9 +706,7 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
       const { token } = (await tokenRes.json()) as { token: string };
 
       await staffDisplayPage.goto(`${BASE}/customer-display/`);
-      await pairedDisplayPage.goto(
-        `${BASE}/customer-display/#token=${encodeURIComponent(token)}`,
-      );
+      await pairedDisplayPage.goto(`${BASE}/customer-display/#token=${encodeURIComponent(token)}`);
 
       for (const board of [staffDisplayPage, pairedDisplayPage]) {
         await expect(board.getByTestId('customer-display-preparing-scroll')).toBeVisible({
@@ -773,14 +789,83 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
         );
       }
 
-      // Open POS /orders page and click Mark Ready -> moves order to Ready for pickup on both boards
+      // Enable Dine-in in Settings -> Customer Display and Save; verify dine_in order appears on both boards without reload
+      await dineInCheckbox.check();
+      const saveConfigPromise = page.waitForResponse(
+        (res) =>
+          res.request().method() === 'PUT' &&
+          new URL(res.url()).pathname === '/api/settings/customer-display',
+      );
+      const customerDisplayCard = page
+        .locator('div.bg-card')
+        .filter({ has: page.getByRole('heading', { name: 'Customer display', exact: true }) })
+        .first();
+      await customerDisplayCard.getByRole('button', { name: 'Save', exact: true }).click();
+      expect((await saveConfigPromise).status()).toBe(200);
+
+      for (const board of [staffDisplayPage, pairedDisplayPage]) {
+        await expect(board.getByTestId('customer-display-preparing-scroll')).toContainText(
+          dineInOrder.order_number,
+          { timeout: 15_000 },
+        );
+        await expect(board.getByTestId('customer-display-preparing-scroll')).toContainText(
+          displayNumber,
+        );
+        await expect(board.getByTestId('customer-display-preparing-scroll')).not.toContainText(
+          deliveryOrder.order_number,
+        );
+      }
+
+      if (evidenceDir) {
+        await pairedDisplayPage.screenshot({
+          path: path.join(evidenceDir, '02-customer-display-dine-in-enabled.png'),
+        });
+      }
+
+      // Restore Takeaway-only filter via Settings UI and verify dine_in order leaves the boards without reload
+      await dineInCheckbox.uncheck();
+      const restoreConfigPromise = page.waitForResponse(
+        (res) =>
+          res.request().method() === 'PUT' &&
+          new URL(res.url()).pathname === '/api/settings/customer-display',
+      );
+      await customerDisplayCard.getByRole('button', { name: 'Save', exact: true }).click();
+      expect((await restoreConfigPromise).status()).toBe(200);
+
+      for (const board of [staffDisplayPage, pairedDisplayPage]) {
+        await expect(board.getByTestId('customer-display-preparing-scroll')).not.toContainText(
+          dineInOrder.order_number,
+          { timeout: 15_000 },
+        );
+        await expect(board.getByTestId('customer-display-preparing-scroll')).toContainText(
+          displayNumber,
+        );
+      }
+
+      // Open POS /orders page, select the paid Takeaway order so both master list and detail panel controls are visible
       await page.goto(`${BASE}/orders`);
       const markReadyButton = page.getByTestId(`order-mark-ready-${takeawayOrder.id}`);
       await expect(markReadyButton).toBeVisible({ timeout: 15_000 });
+      await page.getByText(`#${takeawayOrder.order_number}`).first().click();
+      const detailMarkReadyButton = page.getByTestId(`order-detail-mark-ready-${takeawayOrder.id}`);
+      await expect(detailMarkReadyButton).toBeVisible({ timeout: 15_000 });
+
+      if (evidenceDir) {
+        await page.screenshot({
+          path: path.join(evidenceDir, '03-pos-orders-mark-ready.png'),
+        });
+      }
+
+      // Click Mark Ready -> moves order to Ready for pickup on both boards and switches buttons to Picked Up
       await markReadyButton.click();
 
       const pickedUpButton = page.getByTestId(`order-mark-picked-up-${takeawayOrder.id}`);
+      const detailPickedUpButton = page.getByTestId(
+        `order-detail-mark-picked-up-${takeawayOrder.id}`,
+      );
       await expect(pickedUpButton).toBeVisible({ timeout: 15_000 });
+      await expect(detailPickedUpButton).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText('This order is no longer in the current list.')).toBeHidden();
 
       for (const board of [staffDisplayPage, pairedDisplayPage]) {
         await expect(board.getByTestId('customer-display-ready-scroll')).toContainText(
@@ -792,9 +877,19 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
         );
       }
 
-      // Click Picked Up -> clears order from both Customer Display boards
-      await pickedUpButton.click();
+      if (evidenceDir) {
+        await page.screenshot({
+          path: path.join(evidenceDir, '04-pos-orders-picked-up.png'),
+        });
+        await pairedDisplayPage.screenshot({
+          path: path.join(evidenceDir, '05-customer-display-ready-for-pickup.png'),
+        });
+      }
+
+      // Click Picked Up in the detail panel -> clears order from both Customer Display boards
+      await detailPickedUpButton.click();
       await expect(pickedUpButton).toBeHidden({ timeout: 15_000 });
+      await expect(detailPickedUpButton).toBeHidden({ timeout: 15_000 });
 
       for (const board of [staffDisplayPage, pairedDisplayPage]) {
         await expect(board.getByTestId('customer-display-preparing-scroll')).not.toContainText(
@@ -805,6 +900,12 @@ test.describe('Customer display KDS readiness across postpaid and prepaid takeaw
           displayNumber,
           { timeout: 15_000 },
         );
+      }
+
+      if (evidenceDir) {
+        await pairedDisplayPage.screenshot({
+          path: path.join(evidenceDir, '06-customer-display-cleared-after-pickup.png'),
+        });
       }
     } finally {
       await staffDisplayPage.close().catch(() => {});

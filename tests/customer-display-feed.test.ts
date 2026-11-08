@@ -1487,6 +1487,16 @@ async function main(): Promise<void> {
   );
 
   // Order-type filtering + POS Mark Ready / Picked Up transitions when KDS is disabled
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE orders
+       SET status = 'completed',
+           completed_at = '2026-01-02 00:00:00',
+           created_at = '2026-01-02 00:00:00',
+           updated_at = '2026-01-02 00:00:00'
+       WHERE created_at >= '2026-01-03 00:00:00'`,
+    ).run();
+  })();
   db.prepare(
     "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', ?)",
   ).run(now());
@@ -1538,7 +1548,9 @@ async function main(): Promise<void> {
   const takeawayOnlyFeed = await request(app).get(FEED).set(display);
   assert.equal(takeawayOnlyFeed.status, 200);
   assert.equal(
-    takeawayOnlyFeed.body.orders.some((o: any) => o.id === takeawayPrepId && o.status === 'preparing'),
+    takeawayOnlyFeed.body.orders.some(
+      (o: any) => o.id === takeawayPrepId && o.status === 'preparing',
+    ),
     true,
     'default takeaway order_types includes paid takeaway order in preparing',
   );
@@ -1555,15 +1567,15 @@ async function main(): Promise<void> {
       for (const [k, v] of Object.entries(params)) {
         if (v !== undefined) qs.set(k, String(v));
       }
-      const res = await request(app)
-        .get(`/api/orders?${qs.toString()}`)
-        .set(signedInOwnerReady);
+      const res = await request(app).get(`/api/orders?${qs.toString()}`).set(signedInOwnerReady);
       assert.equal(res.status, 200);
       return res.body;
     },
   });
   assert.equal(
-    signedInTakeawayOnly.orders.some((o: any) => o.id === takeawayPrepId && o.status === 'preparing'),
+    signedInTakeawayOnly.orders.some(
+      (o: any) => o.id === takeawayPrepId && o.status === 'preparing',
+    ),
     true,
     'signed-in board helper includes paid takeaway order under default order_types',
   );
@@ -1606,7 +1618,11 @@ async function main(): Promise<void> {
     .patch(`/api/orders/${takeawayPrepId}/status`)
     .set(signedInOwnerReady)
     .send({ status: 'ready' });
-  assert.equal(markReadyRes.status, 200, 'PATCH /api/orders/:id/status ready succeeds on completed order');
+  assert.equal(
+    markReadyRes.status,
+    200,
+    'PATCH /api/orders/:id/status ready succeeds on completed order',
+  );
   assert.equal(
     markReadyRes.body.order.status,
     'completed',
@@ -1629,7 +1645,11 @@ async function main(): Promise<void> {
     .patch(`/api/orders/${takeawayPrepId}/status`)
     .set(signedInOwnerReady)
     .send({ status: 'served' });
-  assert.equal(markPickedUpRes.status, 200, 'PATCH /api/orders/:id/status served succeeds on completed order');
+  assert.equal(
+    markPickedUpRes.status,
+    200,
+    'PATCH /api/orders/:id/status served succeeds on completed order',
+  );
   assert.equal(
     markPickedUpRes.body.order.status,
     'completed',
@@ -1749,6 +1769,16 @@ async function main(): Promise<void> {
     ).status,
     200,
   );
+  const retainedTakeawayId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+         VALUES ('RETAINED-TAKEAWAY-1', 'feed-owner', 'takeaway', 'completed', 10, 10, ?, ?, ?)`,
+      )
+      .run(typeStamp, typeStamp, typeStamp).lastInsertRowid,
+  );
+  insertHistoricalItem.run(retainedTakeawayId, 'preparing', typeStamp, typeStamp);
+
   const insertDineInCompleted = db.prepare(
     `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
      VALUES (?, 'feed-owner', 'dine_in', 'completed', 10, 10, ?, ?, ?)`,
@@ -1777,9 +1807,7 @@ async function main(): Promise<void> {
       for (const [k, v] of Object.entries(params)) {
         if (v !== undefined) qs.set(k, String(v));
       }
-      const res = await request(app)
-        .get(`/api/orders?${qs.toString()}`)
-        .set(signedInOwnerReady);
+      const res = await request(app).get(`/api/orders?${qs.toString()}`).set(signedInOwnerReady);
       assert.equal(res.status, 200);
       assert.ok(
         res.body.orders.every((o: any) => o.type === 'takeaway'),
@@ -1793,8 +1821,15 @@ async function main(): Promise<void> {
     1,
     'signed-in board filters excluded dine_in orders in SQL before pagination so takeaway orders fit in 1 page',
   );
+  assert.deepEqual(
+    signedInFilteredByType.orders.map((o: any) => o.id),
+    [retainedTakeawayId],
+    'takeaway-only signed-in board returns the eligible takeaway order on page 1 despite 250 newer dine_in completed orders',
+  );
   assert.equal(
-    signedInFilteredByType.orders.some((o: any) => String(o.number).startsWith('EXCL-DINEIN-COMP-')),
+    signedInFilteredByType.orders.some((o: any) =>
+      String(o.number).startsWith('EXCL-DINEIN-COMP-'),
+    ),
     false,
     'excluded dine_in completed orders never appear on takeaway-only signed-in board',
   );

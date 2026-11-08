@@ -464,6 +464,9 @@ export default function OrdersPage() {
   const canRestoreItems = tenantCan(currentTenant, 'orders.item.restore');
   const canRefund = tenantCan(currentTenant, 'refunds.initiate');
   const canUpdateOrderStatus = tenantCan(currentTenant, 'orders.status.update');
+  const canUpdateKitchenStatus = tenantCan(currentTenant, 'kitchen.status.update');
+  const canUpdateOrderPrepStatus =
+    canUpdateOrderStatus && (kdsEnabled === false || canUpdateKitchenStatus);
   const [updatingPrepOrderId, setUpdatingPrepOrderId] = useState<number | null>(null);
 
   // A tenant that disables discounts has no type left to normalize into, so an
@@ -2062,7 +2065,9 @@ export default function OrdersPage() {
                 selectedOrderId={selectedOrderId}
                 onSelect={handleSelectOrder}
                 now={now}
-                onUpdatePrepStatus={canUpdateOrderStatus ? handleUpdateOrderPrepStatus : undefined}
+                onUpdatePrepStatus={
+                  canUpdateOrderPrepStatus ? handleUpdateOrderPrepStatus : undefined
+                }
                 updatingPrepOrderId={updatingPrepOrderId}
               />
             ) : (
@@ -2166,7 +2171,9 @@ export default function OrdersPage() {
               }
               onRestoreItem={restoreItem}
               onItemEditResolved={handleItemEditResolved}
-              onUpdatePrepStatus={canUpdateOrderStatus ? handleUpdateOrderPrepStatus : undefined}
+              onUpdatePrepStatus={
+                canUpdateOrderPrepStatus ? handleUpdateOrderPrepStatus : undefined
+              }
               updatingPrepOrderId={updatingPrepOrderId}
             />
           </div>
@@ -2249,7 +2256,9 @@ export default function OrdersPage() {
               }
               onRestoreItem={restoreItem}
               onItemEditResolved={handleItemEditResolved}
-              onUpdatePrepStatus={canUpdateOrderStatus ? handleUpdateOrderPrepStatus : undefined}
+              onUpdatePrepStatus={
+                canUpdateOrderPrepStatus ? handleUpdateOrderPrepStatus : undefined
+              }
               updatingPrepOrderId={updatingPrepOrderId}
             />
           ))}

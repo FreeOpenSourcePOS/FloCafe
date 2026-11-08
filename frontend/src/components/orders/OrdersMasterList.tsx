@@ -54,7 +54,7 @@ export function OrdersMasterList({
     <ul className="flex-1 min-h-0 overflow-y-auto divide-y divide-border">
       {orders.map((order) => {
         const badge = orderStatusBadge[order.status];
-        const effectivePrepStatus = getOrderEffectivePrepStatus(order);
+        const effectivePrepStatus = getOrderEffectivePrepStatus(order, now);
         const active = order.status !== 'cancelled';
         const itemCount = (order.items || []).filter(
           (i) => !['cancelled', 'voided', 'void_adjustment'].includes(i.status),

@@ -17,6 +17,8 @@ import {
   utcTodayDate,
   recordOrderAudit,
   registerOrderSearchFunctions,
+  completeSettledReleasedOrderIfServed,
+  isKdsEnabled,
 } from '../db';
 import { asyncHandler } from '../middleware/async-handler';
 import {
@@ -45,7 +47,10 @@ import {
   selectBoardEligibleOrderPage,
   type DisplayFeedCursor,
 } from '../services/customer-display-tokens';
-import { CUSTOMER_DISPLAY_ORDER_TYPES } from '../services/customer-display-config';
+import {
+  CUSTOMER_DISPLAY_ORDER_TYPES,
+  readStoredCustomerDisplayConfig,
+} from '../services/customer-display-config';
 import {
   buildAppliedCharges,
   ChargeValidationError,
@@ -98,7 +103,11 @@ import {
   validateScheduledOrderRequest,
 } from '../services/scheduled-orders';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
-import { isTerminalItemStatus, projectBoardStatusFromItems } from '../../shared/order-item-status';
+import {
+  isTerminalItemStatus,
+  isWithinCompletedKdsProjectionWindow,
+  projectBoardStatusFromItems,
+} from '../../shared/order-item-status';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import {
   checkKitchenDeliveryStatus,
@@ -667,6 +676,11 @@ router.get(
       const statuses = statusQuery ? statusQuery.split(',') : [];
       const statusIsActive = statuses.length === 1 && statuses[0] === 'active';
       if (boardStatuses === null && (view === 'active' || statusIsActive)) {
+        const kdsEnabled = isKdsEnabled();
+        const completedOrderTypes = kdsEnabled
+          ? CUSTOMER_DISPLAY_ORDER_TYPES
+          : readStoredCustomerDisplayConfig(getSettingValue('customer_display')).order_types;
+        const completedTypePlaceholders = completedOrderTypes.map(() => '?').join(',');
         wheres.push(`orders.id IN (
           SELECT ao.id FROM orders AS ao
           WHERE ao.status IN ('pending', 'preparing', 'ready', 'served')
@@ -674,6 +688,7 @@ router.get(
           SELECT co.id FROM orders AS co
           WHERE +co.status = 'completed'
             AND co.created_at >= ?
+            ${kdsEnabled ? '' : `AND +co.type IN (${completedTypePlaceholders})`}
             AND EXISTS (
               SELECT 1 FROM order_items AS active_item
               WHERE active_item.order_id = co.id
@@ -681,7 +696,10 @@ router.get(
                 AND active_item.quantity > 0
             )
         )`);
-        params.push(completedKdsProjectionCutoff());
+        params.push(
+          completedKdsProjectionCutoff(),
+          ...(kdsEnabled ? [] : completedOrderTypes),
+        );
       }
       if (view === 'unpaid') {
         wheres.push("orders.status != 'cancelled'");
@@ -3576,7 +3594,7 @@ router.patch(
 
       const nowStr = now();
 
-      const { updatedOrder, orderItems, table, changed } = withTxn(() => {
+      const { updatedOrder, orderItems, table, changed, autoCompleted } = withTxn(() => {
         const currentOrder = db
           .prepare('SELECT * FROM orders WHERE id = ?')
           .get(req.params.id) as any;
@@ -3589,13 +3607,18 @@ router.patch(
           throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
         }
 
+        const canBulkUpdatePreparationItems =
+          !isKdsEnabled() || hasPermission(authUser.userId, 'kitchen.status.update');
+        const isWithinCompletedProjectionWindow =
+          currentOrder.status === 'completed' &&
+          isWithinCompletedKdsProjectionWindow(currentOrder.created_at);
+
         const existingItemRows = db
           .prepare('SELECT status, quantity FROM order_items WHERE order_id = ?')
           .all(req.params.id) as Array<{ status: string | null; quantity: number | null }>;
-        const projectedCompletedBoardStatus =
-          currentOrder.status === 'completed'
-            ? projectBoardStatusFromItems(existingItemRows)
-            : null;
+        const projectedCompletedBoardStatus = isWithinCompletedProjectionWindow
+          ? projectBoardStatusFromItems(existingItemRows)
+          : null;
         const hasPendingOrPreparingItems = existingItemRows.some(
           (item) =>
             (item.quantity === null || item.quantity === undefined || item.quantity > 0) &&
@@ -3609,9 +3632,13 @@ router.patch(
 
         const isSameOrderState =
           (currentOrder.status === status &&
-            !(status === 'ready' && hasPendingOrPreparingItems) &&
-            !(status === 'served' && hasActivePickupItems)) ||
-          (currentOrder.status === 'completed' &&
+            !(
+              canBulkUpdatePreparationItems &&
+              ((status === 'ready' && hasPendingOrPreparingItems) ||
+                (status === 'served' && hasActivePickupItems))
+            )) ||
+          (canBulkUpdatePreparationItems &&
+            isWithinCompletedProjectionWindow &&
             ((status === 'ready' && projectedCompletedBoardStatus === 'ready') ||
               (status === 'served' && !hasActivePickupItems)));
 
@@ -3633,6 +3660,7 @@ router.patch(
             orderItems: items,
             table: tableObj,
             changed: false,
+            autoCompleted: false,
           };
         }
 
@@ -3645,15 +3673,20 @@ router.patch(
           cancelled: [],
         };
 
-        const canTransitionPreparation =
+        const rawCanTransitionPreparation =
           (currentOrder.status === 'ready' ||
             currentOrder.status === 'served' ||
-            currentOrder.status === 'completed') &&
+            isWithinCompletedProjectionWindow) &&
           ((status === 'ready' && hasPendingOrPreparingItems) ||
             (status === 'served' && hasActivePickupItems));
+        const canTransitionPreparation =
+          canBulkUpdatePreparationItems && rawCanTransitionPreparation;
 
         const allowedTargets = VALID_TRANSITIONS[currentOrder.status] || [];
         if (!allowedTargets.includes(status) && !canTransitionPreparation) {
+          if (rawCanTransitionPreparation && !canBulkUpdatePreparationItems) {
+            throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+          }
           throw Object.assign(
             new Error(
               `Cannot transition order status from '${currentOrder.status}' to '${status}'`,
@@ -3822,6 +3855,7 @@ router.patch(
           approvedByUserId = user.id;
         }
 
+        let autoCompleted = false;
         switch (status) {
           case 'preparing':
             db.prepare(
@@ -3830,10 +3864,12 @@ router.patch(
             break;
 
           case 'ready':
-            db.prepare(`
-            UPDATE order_items SET status = 'ready', updated_at = ?
-            WHERE order_id = ? AND status IN ('pending', 'preparing')
-          `).run(nowStr, req.params.id);
+            if (canBulkUpdatePreparationItems) {
+              db.prepare(`
+              UPDATE order_items SET status = 'ready', updated_at = ?
+              WHERE order_id = ? AND status IN ('pending', 'preparing')
+            `).run(nowStr, req.params.id);
+            }
             if (currentOrder.status === 'completed') {
               db.prepare('UPDATE orders SET ready_at = ?, updated_at = ? WHERE id = ?').run(
                 nowStr,
@@ -3848,10 +3884,12 @@ router.patch(
             break;
 
           case 'served':
-            db.prepare(`
-            UPDATE order_items SET status = 'served', updated_at = ?
-            WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
-          `).run(nowStr, req.params.id);
+            if (canBulkUpdatePreparationItems) {
+              db.prepare(`
+              UPDATE order_items SET status = 'served', updated_at = ?
+              WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
+            `).run(nowStr, req.params.id);
+            }
             if (currentOrder.status === 'completed') {
               db.prepare('UPDATE orders SET served_at = ?, updated_at = ? WHERE id = ?').run(
                 nowStr,
@@ -3862,6 +3900,13 @@ router.patch(
               db.prepare(
                 'UPDATE orders SET status = ?, served_at = ?, updated_at = ? WHERE id = ?',
               ).run(status, nowStr, nowStr, req.params.id);
+              if (canBulkUpdatePreparationItems) {
+                autoCompleted = completeSettledReleasedOrderIfServed(
+                  db,
+                  req.params.id as string,
+                  nowStr,
+                );
+              }
             }
             break;
 
@@ -3993,11 +4038,14 @@ router.patch(
           ? (db.prepare('SELECT * FROM tables WHERE id = ?').get(updatedOrder.table_id) as any)
           : null;
         const table = tableRow2 ? { ...tableRow2, name: tableRow2.number } : null;
-        return { updatedOrder, orderItems, table, changed: true };
+        return { updatedOrder, orderItems, table, changed: true, autoCompleted };
       });
 
       if (changed) {
         cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
+        if (autoCompleted) {
+          cloudSync.recordOrderChanged(req.params.id as string, 'order.completed');
+        }
         if (isUnreleasedOrderRow(updatedOrder)) {
           notifyOrderUpdated();
         } else {

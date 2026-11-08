@@ -282,7 +282,7 @@ function OrderDetailContent({
   ).filter((charge) => charge.id !== 'service_charge' && charge.id !== 'packaging_charge');
 
   const statusBadgeInfo = orderStatusBadge[order.status];
-  const effectivePrepStatus = getOrderEffectivePrepStatus(order);
+  const effectivePrepStatus = getOrderEffectivePrepStatus(order, now);
   const orderPrints = bill?.id ? printHistory[bill.id] || [] : [];
   const printCount = orderPrints.length;
 

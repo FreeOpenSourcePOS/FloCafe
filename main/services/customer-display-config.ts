@@ -72,7 +72,9 @@ export function parseCustomerDisplayConfig(value: unknown): CustomerDisplayConfi
 }
 
 /** Parses a stored settings value, falling back to defaults when absent or invalid. */
-export function readStoredCustomerDisplayConfig(raw: string | undefined): CustomerDisplayConfig {
+export function readStoredCustomerDisplayConfig(
+  raw: string | null | undefined,
+): CustomerDisplayConfig {
   if (!raw) return cloneDefaultCustomerDisplayConfig();
   try {
     return parseCustomerDisplayConfig(JSON.parse(raw)) ?? cloneDefaultCustomerDisplayConfig();

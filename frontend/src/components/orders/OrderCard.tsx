@@ -352,7 +352,7 @@ export function OrderCard({
   };
 
   const statusBadgeInfo = orderStatusBadge[order.status];
-  const effectivePrepStatus = getOrderEffectivePrepStatus(order);
+  const effectivePrepStatus = getOrderEffectivePrepStatus(order, now);
   const orderPrints = bill?.id ? printHistory[bill.id] || [] : [];
   const printCount = orderPrints.length;
 

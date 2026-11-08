@@ -137,6 +137,14 @@ async function main() {
     '2022-01-01 00:00:00',
   );
   insertItem.run(expiredKitchenOrderId, 'ORD-COMPLETED-KITCHEN-EXPIRED', 'pending');
+  const completedDineInOrderId = createViewOrder(
+    'ORD-COMPLETED-DINEIN-PENDING',
+    'completed',
+    recentKitchenStamp,
+    'dine_in',
+    'orders-search-table',
+  );
+  insertItem.run(completedDineInOrderId, 'ORD-COMPLETED-DINEIN-PENDING', 'pending');
 
   const insertBill = db.prepare(`
     INSERT INTO bills (bill_number, order_id, total, paid_amount, balance, payment_status, split_group_id, split_label)
@@ -642,6 +650,10 @@ async function main() {
       !activeCompletedNumbers.includes('ORD-COMPLETED-KITCHEN-EXPIRED'),
       'completed orders older than the 24-hour window are excluded from active kitchen work',
     );
+    assertOrThrow(
+      activeCompletedNumbers.includes('ORD-COMPLETED-DINEIN-PENDING'),
+      'completed dine-in orders with pending items stay active when KDS is enabled',
+    );
     db.prepare("UPDATE settings SET value = 'false' WHERE key = 'kds_enabled'").run();
     const activeWithoutKds = await api(
       baseUrl,
@@ -657,6 +669,32 @@ async function main() {
         `recent completed orders with ${itemStatus.toLowerCase()} items remain active when KDS is disabled until picked up`,
       );
     }
+    assertOrThrow(
+      !activeWithoutKdsNumbers.includes('ORD-COMPLETED-DINEIN-PENDING'),
+      'completed dine-in orders excluded from customer display order_types are omitted from view=active when KDS is disabled',
+    );
+    db.prepare(
+      `INSERT OR REPLACE INTO settings (key, value) VALUES ('customer_display', ?)`,
+    ).run(
+      JSON.stringify({
+        statuses: ['pending', 'preparing', 'ready'],
+        order_types: ['takeaway', 'dine_in'],
+        refresh_seconds: 3,
+        show_updated: true,
+      }),
+    );
+    const activeWithoutKdsWithDineIn = await api(
+      baseUrl,
+      '/api/orders?view=active&status=completed&per_page=50',
+      { headers: owner.authHeader },
+    );
+    assertOrThrow(
+      activeWithoutKdsWithDineIn.data.orders.some(
+        (order: any) => order.order_number === 'ORD-COMPLETED-DINEIN-PENDING',
+      ),
+      'completed dine-in orders are included in view=active when KDS is disabled and dine_in is enabled in customer_display.order_types',
+    );
+    db.prepare("DELETE FROM settings WHERE key = 'customer_display'").run();
     assertOrThrow(
       !activeWithoutKdsNumbers.includes('ORD-COMPLETED-KITCHEN-SERVED'),
       'completed orders whose items are served are excluded when KDS is disabled',

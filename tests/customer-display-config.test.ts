@@ -169,6 +169,30 @@ assert.equal(
   'completed order with all served items projects null',
 );
 assert.equal(
+  getOrderEffectivePrepStatus(
+    {
+      status: 'completed',
+      created_at: '2020-01-01 00:00:00',
+      items: [{ status: 'pending', quantity: 1 }] as any,
+    },
+    Date.parse('2026-01-02T00:00:00Z'),
+  ),
+  null,
+  'completed order older than 24h completedKdsProjectionCutoff window projects null',
+);
+assert.equal(
+  getOrderEffectivePrepStatus(
+    {
+      status: 'completed',
+      created_at: '2026-01-01 12:00:00',
+      items: [{ status: 'pending', quantity: 1 }] as any,
+    },
+    Date.parse('2026-01-02T00:00:00Z'),
+  ),
+  'pending',
+  'completed order within 24h completedKdsProjectionCutoff window projects pending',
+);
+assert.equal(
   getOrderEffectivePrepStatus({
     status: 'ready',
     items: [

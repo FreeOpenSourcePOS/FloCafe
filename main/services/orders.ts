@@ -15,10 +15,13 @@ import {
   type TenantInfo,
 } from './tax';
 import {
+  COMPLETED_KDS_PROJECTION_WINDOW_MS,
+  completedKdsProjectionCutoff,
   deriveOrderStatusFromItems,
   isTerminalItemStatus,
   type DerivedOrderKdsStatus,
 } from '../../shared/order-item-status';
+export { COMPLETED_KDS_PROJECTION_WINDOW_MS, completedKdsProjectionCutoff };
 import {
   ChargeValidationError,
   toStandardChargeColumns,
@@ -339,15 +342,6 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
 
 const RECONCILABLE_ORDER_STATUSES = new Set(['pending', 'preparing', 'ready', 'served']);
 const RECONCILABLE_ORDER_TYPES = new Set(['dine_in', 'takeaway', 'delivery', 'online']);
-
-export const COMPLETED_KDS_PROJECTION_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-export function completedKdsProjectionCutoff(nowMs: number = Date.now()): string {
-  return new Date(nowMs - COMPLETED_KDS_PROJECTION_WINDOW_MS)
-    .toISOString()
-    .replace('T', ' ')
-    .replace(/\..*$/, '');
-}
 
 export interface ReconciledOrderStatusResult {
   changed: boolean;

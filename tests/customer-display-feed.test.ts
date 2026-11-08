@@ -1834,6 +1834,78 @@ async function main(): Promise<void> {
     'excluded dine_in completed orders never appear on takeaway-only signed-in board',
   );
 
+  // Expired (>24h) completed order rejects PATCH /api/orders/:id/status ready/served
+  const expiredCompletedOrderId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, subtotal, total, completed_at, created_at, updated_at)
+         VALUES ('EXPIRED-COMPLETED-PREP-1', 'feed-owner', 'takeaway', 'completed', 10, 10, ?, ?, ?)`,
+      )
+      .run(expired25hStamp, expired25hStamp, expired25hStamp).lastInsertRowid,
+  );
+  insertHistoricalItem.run(expiredCompletedOrderId, 'pending', expired25hStamp, expired25hStamp);
+  const expiredPatchReady = await request(app)
+    .patch(`/api/orders/${expiredCompletedOrderId}/status`)
+    .set(signedInOwnerReady)
+    .send({ status: 'ready' });
+  assert.equal(
+    expiredPatchReady.status,
+    400,
+    'completed order older than 24h window rejects PATCH status=ready',
+  );
+
+  // Cashier without kitchen.status.update cannot bulk-transition completed order when KDS is enabled, but can when KDS is disabled
+  const signedInCashier = seedUser(db, 'feed-cashier', 'cashier');
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)",
+  ).run(now());
+  const cashierKdsOnReady = await request(app)
+    .patch(`/api/orders/${retainedTakeawayId}/status`)
+    .set(signedInCashier)
+    .send({ status: 'ready' });
+  assert.equal(
+    cashierKdsOnReady.status,
+    403,
+    'cashier without kitchen.status.update is rejected from bulk-advancing completed order when KDS is enabled',
+  );
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', ?)",
+  ).run(now());
+  const cashierKdsOffReady = await request(app)
+    .patch(`/api/orders/${retainedTakeawayId}/status`)
+    .set(signedInCashier)
+    .send({ status: 'ready' });
+  assert.equal(
+    cashierKdsOffReady.status,
+    200,
+    'cashier can mark order ready when KDS is disabled',
+  );
+
+  // Settled non-completed takeaway order auto-completes when marked served via PATCH /api/orders/:id/status
+  const settledReadyOrderId = Number(
+    db
+      .prepare(
+        `INSERT INTO orders (order_number, user_id, type, status, release_status, subtotal, total, created_at, updated_at)
+         VALUES ('SETTLED-READY-TAKEAWAY-1', 'feed-owner', 'takeaway', 'ready', 'released', 10, 10, ?, ?)`,
+      )
+      .run(typeStamp, typeStamp).lastInsertRowid,
+  );
+  insertHistoricalItem.run(settledReadyOrderId, 'ready', typeStamp, typeStamp);
+  db.prepare(
+    `INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, discount_amount, total, paid_amount, balance, payment_status, created_at)
+     VALUES ('BILL-SETTLED-READY-1', ?, 10, 0, 0, 10, 10, 0, 'paid', ?)`,
+  ).run(settledReadyOrderId, typeStamp);
+  const autoCompleteOnServed = await request(app)
+    .patch(`/api/orders/${settledReadyOrderId}/status`)
+    .set(signedInCashier)
+    .send({ status: 'served' });
+  assert.equal(autoCompleteOnServed.status, 200);
+  assert.equal(
+    autoCompleteOnServed.body.order.status,
+    'completed',
+    'settled released takeaway order auto-completes when marked served via PATCH /api/orders/:id/status',
+  );
+
   console.log('customer-display-feed: all assertions passed');
 }
 

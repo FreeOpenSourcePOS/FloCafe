@@ -253,12 +253,7 @@ export const SETTINGS_SEARCH_CATALOG: readonly SettingsSearchEntry[] = [
     tabLabelKey: 'storeDetails',
     titleKey: 'storeLogo',
     hintKey: 'storeLogoHint',
-    extraKeys: [
-      'uploadLogo',
-      'removeLogo',
-      'instagramHandle',
-      'instagramHint',
-    ],
+    extraKeys: ['uploadLogo', 'removeLogo', 'instagramHandle', 'instagramHint'],
     keywords: [
       'logo',
       'store logo',

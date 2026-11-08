@@ -29,6 +29,7 @@ type OrderGroup = 'priority' | 'ordinary';
 interface OrderBoardPage {
   orderIds: string[];
   group: OrderGroup;
+  cycle: number;
 }
 
 interface OrderBoardSectionProps {
@@ -152,7 +153,11 @@ function OrderBoardSection({
     rowHeights: Map<string, number>;
     rowGap: number;
   }>({ availableHeight: 0, rowHeights: new Map(), rowGap: ORDER_ROW_GAP_FALLBACK });
-  const [activePage, setActivePage] = useState<OrderBoardPage>({ orderIds: [], group: 'ordinary' });
+  const [activePage, setActivePage] = useState<OrderBoardPage>({
+    orderIds: [],
+    group: 'ordinary',
+    cycle: 0,
+  });
   const activePageRef = useRef(activePage);
   const ordinaryPageCursorRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -164,13 +169,45 @@ function OrderBoardSection({
     () => new Map(orders.map((order) => [getOrderId(order), order])),
     [orders],
   );
+  const activePriorityIdSet = useMemo(
+    () =>
+      isReady && activePage.group === 'priority'
+        ? new Set(activePage.orderIds)
+        : new Set<string>(),
+    [activePage.group, activePage.orderIds, isReady],
+  );
   const priorityOrders = useMemo(
-    () => (isReady ? orders.filter((order) => newlyReadyOrderIds.has(getOrderId(order))) : []),
-    [isReady, newlyReadyOrderIds, orders],
+    () =>
+      isReady
+        ? orders.filter(
+            (order) =>
+              newlyReadyOrderIds.has(getOrderId(order)) &&
+              !activePriorityIdSet.has(getOrderId(order)),
+          )
+        : [],
+    [activePriorityIdSet, isReady, newlyReadyOrderIds, orders],
+  );
+  const activePriorityOrders = useMemo(
+    () =>
+      isReady && activePriorityIdSet.size > 0
+        ? orders.filter((order) => activePriorityIdSet.has(getOrderId(order)))
+        : [],
+    [activePriorityIdSet, isReady, orders],
   );
   const ordinaryOrders = useMemo(
     () => (isReady ? orders.filter((order) => !newlyReadyOrderIds.has(getOrderId(order))) : orders),
     [isReady, newlyReadyOrderIds, orders],
+  );
+  const displayOrdinaryOrders = useMemo(
+    () =>
+      isReady
+        ? orders.filter(
+            (order) =>
+              !newlyReadyOrderIds.has(getOrderId(order)) &&
+              !activePriorityIdSet.has(getOrderId(order)),
+          )
+        : orders,
+    [activePriorityIdSet, isReady, newlyReadyOrderIds, orders],
   );
   const areOrdersMeasured = useMemo(
     () =>
@@ -200,6 +237,24 @@ function OrderBoardSection({
       priorityOrders,
     ],
   );
+  const activePriorityPages = useMemo(
+    () =>
+      combinedPages.length <= 1 || activePriorityOrders.length === 0
+        ? []
+        : paginateOrders(
+            activePriorityOrders,
+            metrics.availableHeight,
+            metrics.rowHeights,
+            metrics.rowGap,
+          ),
+    [
+      activePriorityOrders,
+      combinedPages.length,
+      metrics.availableHeight,
+      metrics.rowGap,
+      metrics.rowHeights,
+    ],
+  );
   const ordinaryPages = useMemo(
     () =>
       combinedPages.length <= 1 || priorityOrders.length === 0
@@ -219,16 +274,38 @@ function OrderBoardSection({
       priorityOrders.length,
     ],
   );
+  const displayOrdinaryPages = useMemo(
+    () =>
+      combinedPages.length <= 1 ||
+      (priorityOrders.length === 0 && activePriorityOrders.length === 0)
+        ? combinedPages
+        : paginateOrders(
+            displayOrdinaryOrders,
+            metrics.availableHeight,
+            metrics.rowHeights,
+            metrics.rowGap,
+          ),
+    [
+      activePriorityOrders.length,
+      combinedPages,
+      displayOrdinaryOrders,
+      metrics.availableHeight,
+      metrics.rowGap,
+      metrics.rowHeights,
+      priorityOrders.length,
+    ],
+  );
   const hasMultiplePages = isPagedLayout && combinedPages.length > 1;
   const allPages = useMemo(
     () =>
-      priorityPages.length > 0
+      activePriorityPages.length > 0 || priorityPages.length > 0
         ? [
+            ...displayOrdinaryPages.map((page) => ({ page, group: 'ordinary' as const })),
+            ...activePriorityPages.map((page) => ({ page, group: 'priority' as const })),
             ...priorityPages.map((page) => ({ page, group: 'priority' as const })),
-            ...ordinaryPages.map((page) => ({ page, group: 'ordinary' as const })),
           ]
         : combinedPages.map((page) => ({ page, group: 'ordinary' as const })),
-    [combinedPages, ordinaryPages, priorityPages],
+    [activePriorityPages, combinedPages, displayOrdinaryPages, priorityPages],
   );
   const priorityPagesRef = useRef(priorityPages);
   const ordinaryPagesRef = useRef(ordinaryPages);
@@ -239,17 +316,24 @@ function OrderBoardSection({
     ordinaryPagesRef.current = ordinaryPages;
   }, [onPriorityOrdersShown, ordinaryPages, priorityPages]);
 
-  const updateActivePage = useCallback((nextPage: OrderBoardPage) => {
-    const current = activePageRef.current;
-    if (
-      current.group === nextPage.group &&
-      getPageKey(current.orderIds) === getPageKey(nextPage.orderIds)
-    ) {
-      return;
-    }
-    activePageRef.current = nextPage;
-    setActivePage(nextPage);
-  }, []);
+  const updateActivePage = useCallback(
+    (nextPage: Omit<OrderBoardPage, 'cycle'>, resetTimer = true) => {
+      const current = activePageRef.current;
+      if (
+        current.group === nextPage.group &&
+        getPageKey(current.orderIds) === getPageKey(nextPage.orderIds)
+      ) {
+        return;
+      }
+      const updated: OrderBoardPage = {
+        ...nextPage,
+        cycle: resetTimer ? current.cycle + 1 : current.cycle,
+      };
+      activePageRef.current = updated;
+      setActivePage(updated);
+    },
+    [],
+  );
 
   const selectNextPage = useCallback(
     (currentPriorityPages: BoardOrder[][], currentOrdinaryPages: BoardOrder[][]) => {
@@ -371,30 +455,33 @@ function OrderBoardSection({
 
     if (!isPagedLayout) {
       if (getPageKey(active.orderIds) !== getPageKey(retainedIds)) {
-        updateActivePage({ ...active, orderIds: retainedIds });
+        updateActivePage({ group: active.group, orderIds: retainedIds }, false);
       }
       return;
     }
 
     if (orders.length === 0) {
-      updateActivePage({ orderIds: [], group: 'ordinary' });
+      updateActivePage({ orderIds: [], group: 'ordinary' }, false);
       ordinaryPageCursorRef.current = 0;
       return;
     }
 
     if (!areOrdersMeasured) {
       if (getPageKey(active.orderIds) !== getPageKey(retainedIds)) {
-        updateActivePage({ ...active, orderIds: retainedIds });
+        updateActivePage({ group: active.group, orderIds: retainedIds }, false);
       }
       return;
     }
 
     if (combinedPages.length === 1) {
       const orderIds = combinedPages[0].map(getOrderId);
-      updateActivePage({
-        orderIds,
-        group: 'ordinary',
-      });
+      updateActivePage(
+        {
+          orderIds,
+          group: 'ordinary',
+        },
+        false,
+      );
       ordinaryPageCursorRef.current = 0;
       if (priorityOrders.length > 0) {
         priorityCallbackRef.current(priorityOrders.map(getOrderId));
@@ -407,7 +494,7 @@ function OrderBoardSection({
       orderIdsFit(retainedIds, metrics.availableHeight, metrics.rowHeights, metrics.rowGap)
     ) {
       if (getPageKey(active.orderIds) !== getPageKey(retainedIds)) {
-        updateActivePage({ ...active, orderIds: retainedIds });
+        updateActivePage({ group: active.group, orderIds: retainedIds }, false);
       }
       return;
     }
@@ -455,7 +542,7 @@ function OrderBoardSection({
       selectNextPage(priorityPagesRef.current, ordinaryPagesRef.current);
     }, ORDER_PAGE_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [hasMultiplePages, isPagedLayout, isPageVisible, selectNextPage]);
+  }, [activePage.cycle, hasMultiplePages, isPagedLayout, isPageVisible, selectNextPage]);
 
   const visibleOrders = isPagedLayout
     ? activePage.orderIds
@@ -463,7 +550,6 @@ function OrderBoardSection({
         .filter((order): order is BoardOrder => !!order)
     : orders;
   const totalPages = allPages.length;
-  const activePageKey = `${activePage.group}:${getPageKey(activePage.orderIds)}`;
   const activePageIndex = useMemo(() => {
     if (allPages.length === 0) return 0;
     const activeIdsKey = getPageKey(activePage.orderIds);
@@ -566,7 +652,7 @@ function OrderBoardSection({
           >
             {isPageVisible && (
               <div
-                key={activePageKey}
+                key={activePage.cycle}
                 data-testid="customer-display-page-timer-bar"
                 className={`flo-display-page-timer-bar ${
                   accent === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'

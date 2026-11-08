@@ -1648,6 +1648,9 @@ async function run() {
             pendingEffects.length = 0;
             intervalTimers.length = 0;
 
+            let currentIsReady = false;
+            let currentNewlyReadyIds = new Set<string>();
+            let currentOnPriorityOrdersShown: (orderIds: string[]) => void = () => {};
             const renderBoardSection = (
               ordersList: Array<{ id: string; number: string; status: 'preparing' | 'ready' }>,
             ) => {
@@ -1659,14 +1662,14 @@ async function run() {
                 pendingEffects.length = 0;
                 tree = renderTree(
                   boardSectionComponent!({
-                    accent: 'blue',
+                    accent: currentIsReady ? 'emerald' : 'blue',
                     emptyMessage: 'Empty',
                     hint: 'Hint',
-                    isReady: false,
-                    newlyReadyOrderIds: new Set<string>(),
-                    onPriorityOrdersShown: () => {},
+                    isReady: currentIsReady,
+                    newlyReadyOrderIds: currentNewlyReadyIds,
+                    onPriorityOrdersShown: currentOnPriorityOrdersShown,
                     orders: ordersList,
-                    title: 'Preparing',
+                    title: currentIsReady ? 'Ready' : 'Preparing',
                   }),
                 );
                 attachElementMocks(tree);
@@ -1826,6 +1829,190 @@ async function run() {
               flattenText(overflowBadgesPage3[0]),
               '+4',
               'page 3 overflow count shows +4 hidden orders (5 total - 1 visible)',
+            );
+
+            // Case 3: Poll updates mid-interval keep timer bar and setInterval in sync
+            // Rotate back to page 1 ([1, 2])
+            const page3Interval = intervalTimers.find((t) => !t.cleared && t.ms === 10_000);
+            assert.ok(page3Interval, '10s interval is active on page 3');
+            page3Interval.fn();
+            const rotatedBackTree = renderBoardSection(multiPageOrders);
+            const rotatedBackTimerBar = findNodes(
+              rotatedBackTree,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-timer-bar',
+            )[0];
+            const rotatedBackInterval = intervalTimers.find((t) => !t.cleared && t.ms === 10_000);
+            assert.ok(rotatedBackInterval, 'fresh 10s interval scheduled after rotating to page 1');
+
+            // 3a: Order 1 completes on a poll while order 2 on the active page remains (retainedIds = ['2'])
+            const afterOneOrderCompleted = multiPageOrders.filter((o) => o.id !== '1');
+            const retainedTree = renderBoardSection(afterOneOrderCompleted);
+            const retainedTimerBar = findNodes(
+              retainedTree,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-timer-bar',
+            )[0];
+            assert.equal(
+              retainedTimerBar.key,
+              rotatedBackTimerBar.key,
+              'in-place retainedIds filtering on poll does not remount timer bar',
+            );
+            assert.equal(
+              rotatedBackInterval.cleared,
+              false,
+              'in-place retainedIds filtering on poll does not reset 10s interval',
+            );
+
+            // 3b: Remaining order 2 on active page also completes on a poll (retainedIds = []) -> immediate switch to next page
+            const afterActivePageCleared = afterOneOrderCompleted.filter((o) => o.id !== '2');
+            const switchedTree = renderBoardSection(afterActivePageCleared);
+            const switchedTimerBar = findNodes(
+              switchedTree,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-timer-bar',
+            )[0];
+            assert.notEqual(
+              switchedTimerBar.key,
+              retainedTimerBar.key,
+              'switching page when active page orders are removed remounts timer bar',
+            );
+            assert.equal(
+              rotatedBackInterval.cleared,
+              true,
+              'switching page when active page orders are removed clears previous 10s interval',
+            );
+            const postSwitchInterval = intervalTimers.find((t) => !t.cleared && t.ms === 10_000);
+            assert.ok(
+              postSwitchInterval && postSwitchInterval !== rotatedBackInterval,
+              'switching page schedules a fresh 10s interval in sync with the timer bar',
+            );
+
+            // Case 4: Ready column priority arrivals do not shift active ordinary page index and preserve priority partition while displayed
+            for (const slot of effectSlots) {
+              if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+            }
+            states.length = 0;
+            refs.length = 0;
+            effectSlots.length = 0;
+            pendingEffects.length = 0;
+            intervalTimers.length = 0;
+
+            currentIsReady = true;
+            currentNewlyReadyIds = new Set<string>();
+            currentOnPriorityOrdersShown = (shownIds: string[]) => {
+              const shown = new Set(shownIds);
+              currentNewlyReadyIds = new Set(
+                [...currentNewlyReadyIds].filter((id) => !shown.has(id)),
+              );
+            };
+
+            const readyOrdersInitial = [
+              { id: '1', number: '201', status: 'ready' as const },
+              { id: '2', number: '202', status: 'ready' as const },
+              { id: '3', number: '203', status: 'ready' as const },
+              { id: '4', number: '204', status: 'ready' as const },
+              { id: '5', number: '205', status: 'ready' as const },
+            ];
+            const readyTreeInitial = renderBoardSection(readyOrdersInitial);
+            const readyIndInitial = findNodes(
+              readyTreeInitial,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-indicator',
+            )[0];
+            assert.ok(
+              flattenText(readyIndInitial).includes('1 / 3'),
+              'initial ready board shows 1 / 3 on first ordinary page',
+            );
+            const readyTimerBarInitial = findNodes(
+              readyTreeInitial,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-timer-bar',
+            )[0];
+            const readyIntervalInitial = intervalTimers.find((t) => !t.cleared && t.ms === 10_000);
+            assert.ok(readyIntervalInitial, 'initial ready board schedules 10s interval');
+
+            // Newly ready order '6' arrives on a poll while ordinary page 1 ([1, 2]) is displayed
+            currentNewlyReadyIds = new Set(['6']);
+            const readyOrdersWithPriority = [
+              ...readyOrdersInitial,
+              { id: '6', number: '206', status: 'ready' as const },
+            ];
+            const readyTreePollArrival = renderBoardSection(readyOrdersWithPriority);
+            const readyIndArrival = findNodes(
+              readyTreePollArrival,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-indicator',
+            )[0];
+            assert.ok(
+              flattenText(readyIndArrival).includes('1 / 4'),
+              'pending newly ready order appends priority page without shifting active ordinary page 1 index (1 / 4)',
+            );
+            const readyDotsArrival = findNodes(
+              readyTreePollArrival,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-dot',
+            );
+            assert.deepEqual(
+              readyDotsArrival.map((d) => d.props?.['data-active']),
+              ['true', 'false', 'false', 'false'],
+              'first dot stays active when pending priority order arrives',
+            );
+            const readyTimerBarArrival = findNodes(
+              readyTreePollArrival,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-timer-bar',
+            )[0];
+            assert.equal(
+              readyTimerBarArrival.key,
+              readyTimerBarInitial.key,
+              'pending priority arrival does not restart timer bar before rotation',
+            );
+            assert.equal(
+              readyIntervalInitial.cleared,
+              false,
+              'pending priority arrival does not reset 10s interval before rotation',
+            );
+
+            // Advance 10s interval: rotates to priority page ['6'] and invokes onPriorityOrdersShown(['6'])
+            readyIntervalInitial.fn();
+            const readyTreePriorityShown = renderBoardSection(readyOrdersWithPriority);
+            assert.equal(
+              currentNewlyReadyIds.size,
+              0,
+              'onPriorityOrdersShown removes shown priority order from newlyReadyOrderIds',
+            );
+            const readyIndPriorityShown = findNodes(
+              readyTreePriorityShown,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-indicator',
+            )[0];
+            assert.ok(
+              flattenText(readyIndPriorityShown).includes('4 / 4'),
+              'displayed priority page retains its priority partition and shows 4 / 4',
+            );
+            const readyDotsPriorityShown = findNodes(
+              readyTreePriorityShown,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-dot',
+            );
+            assert.deepEqual(
+              readyDotsPriorityShown.map((d) => d.props?.['data-active']),
+              ['false', 'false', 'false', 'true'],
+              'displayed priority page activates the fourth dot',
+            );
+
+            // Next 10s interval: rotates back to ordinary page 2 ([3, 4]) and merges '6' into ordinary pages ([5, 6])
+            const readyIntervalPriority = intervalTimers.find((t) => !t.cleared && t.ms === 10_000);
+            assert.ok(readyIntervalPriority, '10s interval active on priority page');
+            readyIntervalPriority.fn();
+            const readyTreeNextOrdinary = renderBoardSection(readyOrdersWithPriority);
+            const readyIndNextOrdinary = findNodes(
+              readyTreeNextOrdinary,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-indicator',
+            )[0];
+            assert.ok(
+              flattenText(readyIndNextOrdinary).includes('2 / 3'),
+              'rotating from priority page to second ordinary page shows 2 / 3',
+            );
+            const readyDotsNextOrdinary = findNodes(
+              readyTreeNextOrdinary,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-dot',
+            );
+            assert.deepEqual(
+              readyDotsNextOrdinary.map((d) => d.props?.['data-active']),
+              ['false', 'true', 'false'],
+              'second ordinary page activates second dot of 3',
             );
           } finally {
             for (const slot of effectSlots) {

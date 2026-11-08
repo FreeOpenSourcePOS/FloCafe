@@ -201,6 +201,7 @@ export interface UseKdsConnectionResult {
   pinUsers: KdsPinUser[];
   setLoginEmail: (v: string) => void;
   setLoginPassword: (v: string) => void;
+  setLoginError: (v: string) => void;
   setRememberMe: (v: boolean) => void;
   handleLogin: (e: React.FormEvent) => Promise<void>;
   handlePinLogin: (userId: string, pin: string) => Promise<void>;
@@ -967,6 +968,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     pinUsers,
     setLoginEmail,
     setLoginPassword,
+    setLoginError,
     setRememberMe,
     handleLogin,
     handlePinLogin,

@@ -828,7 +828,7 @@ export default function ServerStandalonePage() {
 
   function appendPinDigit(digit: string) {
     setPinError('');
-    setPin((prev) => (prev.length < 8 ? prev + digit : prev));
+    setPin((prev) => (prev.length < 6 ? prev + digit : prev));
   }
 
   function backspacePin() {
@@ -1338,6 +1338,8 @@ export default function ServerStandalonePage() {
                 data-testid="signin-mode-password"
                 onClick={() => {
                   setSignInMode('password');
+                  setSelectedPinUser(null);
+                  setPin('');
                   setPinError('');
                 }}
                 className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
@@ -1409,21 +1411,21 @@ export default function ServerStandalonePage() {
                     <span className="text-xs font-medium text-muted-foreground">
                       {tAuth('enterPinFor', { name: selectedPinUser.name })}
                     </span>
-                    <span className="font-mono text-xs text-muted-foreground">{pin.length}/8</span>
+                    <span className="font-mono text-xs text-muted-foreground">{pin.length}/6</span>
                   </div>
 
                   <input
                     type="password"
                     inputMode="numeric"
                     pattern="\d*"
-                    maxLength={8}
+                    maxLength={6}
                     dir="ltr"
                     autoFocus
                     data-testid="pin-login-input"
                     value={pin}
                     onChange={(e) => {
                       setPinError('');
-                      setPin(e.target.value.replace(/\D/g, '').slice(0, 8));
+                      setPin(e.target.value.replace(/\D/g, '').slice(0, 6));
                     }}
                     placeholder="••••"
                     className="h-11 w-full rounded-lg border border-input bg-card px-3 text-center font-mono text-lg tracking-[0.5em] text-foreground focus:outline-none focus:ring-2 focus:ring-ring"

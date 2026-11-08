@@ -18,37 +18,34 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
   const [signInMode, setSignInMode] = useState<'pin' | 'password' | null>(null);
   const [selectedPinUser, setSelectedPinUser] = useState<KdsPinUser | null>(null);
   const [pin, setPin] = useState('');
-  const [pinError, setPinError] = useState('');
 
   const activeSignInMode = pinUsers.length > 0 ? (signInMode ?? 'pin') : 'password';
 
   const appendPinDigit = (digit: string) => {
-    setPinError('');
-    setPin((prev) => (prev.length < 8 ? prev + digit : prev));
+    conn.setLoginError?.('');
+    setPin((prev) => (prev.length < 6 ? prev + digit : prev));
   };
 
   const backspacePin = () => {
-    setPinError('');
+    conn.setLoginError?.('');
     setPin((prev) => prev.slice(0, -1));
   };
 
   const clearPin = () => {
-    setPinError('');
+    conn.setLoginError?.('');
     setPin('');
   };
 
   const handlePinSubmit = async (e?: FormEvent) => {
     e?.preventDefault();
     if (!selectedPinUser || pin.length < 4 || conn.loginLoading) return;
-    setPinError('');
+    conn.setLoginError?.('');
     try {
       await conn.handlePinLogin(selectedPinUser.id, pin);
     } catch {
       setPin('');
     }
   };
-
-  const displayPinError = pinError || conn.loginError;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -73,7 +70,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
               data-testid="signin-mode-pin"
               onClick={() => {
                 setSignInMode('pin');
-                setPinError('');
+                conn.setLoginError?.('');
               }}
               className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
                 activeSignInMode === 'pin'
@@ -91,7 +88,9 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
               data-testid="signin-mode-password"
               onClick={() => {
                 setSignInMode('password');
-                setPinError('');
+                setSelectedPinUser(null);
+                setPin('');
+                conn.setLoginError?.('');
               }}
               className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
                 activeSignInMode === 'password'
@@ -132,7 +131,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                     onClick={() => {
                       setSelectedPinUser(u);
                       setPin('');
-                      setPinError('');
+                      conn.setLoginError?.('');
                     }}
                     className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-start transition-all ${
                       isSelected
@@ -162,21 +161,21 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                   <span className="text-xs font-medium text-muted-foreground">
                     {tAuth('enterPinFor', { name: selectedPinUser.name })}
                   </span>
-                  <span className="text-xs font-mono text-muted-foreground">{pin.length}/8</span>
+                  <span className="text-xs font-mono text-muted-foreground">{pin.length}/6</span>
                 </div>
 
                 <input
                   type="password"
                   inputMode="numeric"
                   pattern="\d*"
-                  maxLength={8}
+                  maxLength={6}
                   dir="ltr"
                   autoFocus
                   data-testid="pin-login-input"
                   value={pin}
                   onChange={(e) => {
-                    setPinError('');
-                    setPin(e.target.value.replace(/\D/g, '').slice(0, 8));
+                    conn.setLoginError?.('');
+                    setPin(e.target.value.replace(/\D/g, '').slice(0, 6));
                   }}
                   placeholder="••••"
                   className="w-full h-11 px-3 text-center tracking-[0.5em] text-lg font-mono rounded-lg border border-input bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -221,13 +220,13 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                   </button>
                 </div>
 
-                {displayPinError && (
+                {conn.loginError && (
                   <p
                     role="alert"
                     data-testid="pin-login-error"
                     className="text-xs text-destructive text-center font-medium"
                   >
-                    {displayPinError}
+                    {conn.loginError}
                   </p>
                 )}
 
@@ -248,7 +247,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
                     onClick={() => {
                       setSelectedPinUser(null);
                       setPin('');
-                      setPinError('');
+                      conn.setLoginError?.('');
                     }}
                     className="flex-1 py-2.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                   >

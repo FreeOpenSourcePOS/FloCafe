@@ -68,7 +68,11 @@ export function LocalBackupCard() {
 
   if (!status) {
     return (
-      <div className="bg-card rounded-xl border border-border p-6" data-testid="local-backup-card">
+      <div
+        data-setting-section="local-backup"
+        className="bg-card rounded-xl border border-border p-6"
+        data-testid="local-backup-card"
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -88,7 +92,11 @@ export function LocalBackupCard() {
   }
 
   return (
-    <div className="bg-card rounded-xl border border-border p-6" data-testid="local-backup-card">
+    <div
+      data-setting-section="local-backup"
+      className="bg-card rounded-xl border border-border p-6"
+      data-testid="local-backup-card"
+    >
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">

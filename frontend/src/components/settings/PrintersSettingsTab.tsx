@@ -386,7 +386,10 @@ export function PrintersSettingsTab({
   return (
     <SettingsTabShell maxWidth="wide">
       <div className="space-y-6">
-        <div className="bg-card rounded-xl border border-border p-6">
+        <div
+          data-setting-section="printers-hardware"
+          className="bg-card rounded-xl border border-border p-6"
+        >
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Printer size={20} className="text-muted-foreground" />
@@ -863,7 +866,10 @@ export function PrintersSettingsTab({
           </h2>
         </div>
 
-        <div className="bg-card rounded-xl border border-border p-6">
+        <div
+          data-setting-section="printing-options"
+          className="bg-card rounded-xl border border-border p-6"
+        >
           <div className="flex items-center gap-2 mb-4">
             <Printer size={20} className="text-muted-foreground" />
             <h2 className="font-semibold text-foreground">{t('printing')}</h2>
@@ -883,7 +889,10 @@ export function PrintersSettingsTab({
                 }}
               />
             </div>
-            <div className="border-t border-border pt-4">
+            <div
+              data-setting-section="cash-drawer"
+              className="border-t border-border pt-4 rounded-lg"
+            >
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-foreground">{t('sendPulseToCashDrawer')}</p>
@@ -973,7 +982,10 @@ export function PrintersSettingsTab({
                   : t('printMethodBrowserHint')}
               </p>
             </div>
-            <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
+            <div
+              data-setting-section="kot-printing"
+              className="flex items-center justify-between gap-4 border-t border-border pt-4 rounded-lg"
+            >
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-foreground">{t('kotPrintingEnabledToggle')}</p>
                 <p className="text-sm text-muted-foreground">{t('kotPrintingEnabledToggleHint')}</p>
@@ -1077,7 +1089,10 @@ export function PrintersSettingsTab({
                 }}
               />
             </div>
-            <div className="pt-4 border-t border-border">
+            <div
+              data-setting-section="receipt-languages"
+              className="pt-4 border-t border-border rounded-lg"
+            >
               <p className="font-medium text-foreground mb-1">{t('receiptLanguage')}</p>
               <p className="text-sm text-muted-foreground mb-3">{t('receiptLanguageHint')}</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
@@ -1205,7 +1220,10 @@ export function PrintersSettingsTab({
               <p className="text-xs text-muted-foreground mt-2">{t('kotPrintLanguageHint')}</p>
               <p className="text-xs text-muted-foreground mt-1">{t('zReportLanguageHint')}</p>
             </div>
-            <div className="pt-4 border-t border-border">
+            <div
+              data-setting-section="store-logo"
+              className="pt-4 border-t border-border rounded-lg"
+            >
               <p className="font-medium text-foreground mb-1">{t('billContent')}</p>
               <p className="text-sm text-muted-foreground mb-3">{t('billContentHint')}</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
@@ -1290,7 +1308,10 @@ export function PrintersSettingsTab({
           </div>
         </div>
 
-        <div className="bg-card rounded-xl border border-border p-6">
+        <div
+          data-setting-section="whatsapp-sharing"
+          className="bg-card rounded-xl border border-border p-6"
+        >
           <div className="flex items-center gap-2 mb-4">
             <Share2 size={20} className="text-muted-foreground" />
             <h2 className="font-semibold text-foreground">{t('whatsappSharing')}</h2>
@@ -1313,7 +1334,10 @@ export function PrintersSettingsTab({
       </div>
 
       <div className="space-y-6">
-        <div className="bg-card rounded-xl border border-border p-6">
+        <div
+          data-setting-section="bill-template"
+          className="bg-card rounded-xl border border-border p-6"
+        >
           <div className="flex items-center gap-2 mb-4">
             <FileText size={20} className="text-muted-foreground" />
             <h2 className="font-semibold text-foreground">{t('billTemplate')}</h2>

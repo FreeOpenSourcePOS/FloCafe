@@ -37,7 +37,14 @@ const expressRateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
 const { API_JSON_BODY_LIMIT } = require('../main/http-limits');
-const { initDatabase, getDatabase, closeDatabase, createBackup, now } = require('../main/db');
+const {
+  initDatabase,
+  getDatabase,
+  closeDatabase,
+  createBackup,
+  nextTokenIatSeconds,
+  now,
+} = require('../main/db');
 const { isAllowedPrivateIp } = require('../main/middleware/security');
 const { getJWTSecret } = require('../main/routes/auth');
 const { databaseRoutes } = require('../main/routes/database');
@@ -50,13 +57,21 @@ const {
 const RESTORE_CONFIRMATION = 'RESTORE BACKUP';
 
 function ownerToken(): string {
-  return jwt.sign({ userId: 'restore-owner', role: 'owner' }, getJWTSecret(), { expiresIn: '10m' });
+  return jwt.sign(
+    { userId: 'restore-owner', role: 'owner', iat: nextTokenIatSeconds() },
+    getJWTSecret(),
+    { expiresIn: '10m' },
+  );
 }
 
 function serverToken(): string {
-  return jwt.sign({ userId: 'restore-server', role: 'server' }, getJWTSecret(), {
-    expiresIn: '10m',
-  });
+  return jwt.sign(
+    { userId: 'restore-server', role: 'server', iat: nextTokenIatSeconds() },
+    getJWTSecret(),
+    {
+      expiresIn: '10m',
+    },
+  );
 }
 
 async function run() {

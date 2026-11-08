@@ -6,6 +6,8 @@ import {
   getCurrentSchemaVersion,
   getDatabase,
   getSettingValue,
+  nextTokenIatSeconds,
+  nextTokensValidAfterTimestamp,
   now,
   recordAuthAudit,
   verifyPinAsync,
@@ -289,7 +291,14 @@ router.post(
 
       const remember = !!rememberMe;
       const token = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role, remember, jti: randomUUID() },
+        {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          remember,
+          jti: randomUUID(),
+          iat: nextTokenIatSeconds(),
+        },
         getJWTSecret(),
         { expiresIn: expiresInFor(remember) },
       );
@@ -402,9 +411,11 @@ router.post(
         return res.status(400).json({ error: 'user_id and pin are required' });
       }
 
+      // Scope failed-attempt lockout per (normalized client IP, user ID) to preserve main POS
+      // terminal availability on shared restaurant LANs; trade-off: reduced multi-device guessing resistance.
       const canonicalIp = normalizeIpForRateLimit(ip);
       const pinRateKey = `${canonicalIp}:pin:${userId}`;
-      const accountRateKey = `pin-user:${userId}`;
+      const pinLockKey = `pin-user:${userId}`;
       type VerifiedUser = {
         id: string;
         name: string;
@@ -420,15 +431,11 @@ router.post(
         | { status: 200; user: VerifiedUser };
 
       const verificationResult = await withPinVerificationLock<PinLoginOutcome>(
-        accountRateKey,
+        pinLockKey,
         async () => {
           const ipRateLimit = checkLoginRateLimit(pinRateKey);
-          const accountRateLimit = checkLoginRateLimit(accountRateKey);
-          if (!ipRateLimit.allowed || !accountRateLimit.allowed) {
-            const waitMinutes = Math.max(
-              ipRateLimit.allowed ? 0 : ipRateLimit.waitMinutes || 0,
-              accountRateLimit.allowed ? 0 : accountRateLimit.waitMinutes || 0,
-            );
+          if (!ipRateLimit.allowed) {
+            const waitMinutes = ipRateLimit.waitMinutes || 0;
             recordAuthAudit(db, {
               userId,
               eventType: 'pin_login',
@@ -445,9 +452,7 @@ router.post(
           }
 
           if (!/^\d{4,6}$/.test(rawPin)) {
-            const ipAttemptsRemaining = incrementFailedLogin(pinRateKey);
-            const accountAttemptsRemaining = incrementFailedLogin(accountRateKey);
-            const attemptsRemaining = Math.min(ipAttemptsRemaining, accountAttemptsRemaining);
+            const attemptsRemaining = incrementFailedLogin(pinRateKey);
             recordAuthAudit(db, {
               userId,
               eventType: 'pin_login',
@@ -481,9 +486,7 @@ router.post(
           }
 
           if (!user || user.is_active !== 1 || !user.pin_hash || !pinMatches) {
-            const ipAttemptsRemaining = incrementFailedLogin(pinRateKey);
-            const accountAttemptsRemaining = incrementFailedLogin(accountRateKey);
-            const attemptsRemaining = Math.min(ipAttemptsRemaining, accountAttemptsRemaining);
+            const attemptsRemaining = incrementFailedLogin(pinRateKey);
             recordAuthAudit(db, {
               userId,
               eventType: 'pin_login',
@@ -511,7 +514,6 @@ router.post(
           }
 
           resetSuccessfulLogin(pinRateKey);
-          resetSuccessfulLogin(accountRateKey);
           recordAuthAudit(db, {
             userId: user.id,
             eventType: 'pin_login',
@@ -530,7 +532,14 @@ router.post(
       const { user } = verificationResult;
       const remember = !!rememberMe;
       const token = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role, remember, jti: randomUUID() },
+        {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          remember,
+          jti: randomUUID(),
+          iat: nextTokenIatSeconds(),
+        },
         getJWTSecret(),
         { expiresIn: expiresInFor(remember) },
       );
@@ -599,6 +608,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
         tenantId: 1,
         remember,
         jti: randomUUID(),
+        iat: nextTokenIatSeconds(),
       },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) },
@@ -665,6 +675,7 @@ router.post('/refresh', (req: Request, res: Response) => {
         tenantId: decoded.tenantId,
         remember,
         jti: randomUUID(),
+        iat: nextTokenIatSeconds(),
       },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) },
@@ -771,9 +782,10 @@ router.post('/password/change', authRateLimit(), (req: Request, res: Response) =
 
     const hashedPassword = bcrypt.hashSync(password, 10);
     const changedAt = now();
+    const tokensValidAfter = nextTokensValidAfterTimestamp();
     db.prepare(
       'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ?',
-    ).run(hashedPassword, changedAt, changedAt, decoded.userId);
+    ).run(hashedPassword, tokensValidAfter, changedAt, decoded.userId);
     invalidateUserAuthCache(decoded.userId);
 
     res.json({ message: 'Password changed successfully' });
@@ -793,6 +805,7 @@ function applyOwnerRecovery(
 ): { ok: true; restoredOwnerAccess: boolean } | { ok: false } {
   const hashedPassword = bcrypt.hashSync(newPassword, 10);
   const changedAt = now();
+  const tokensValidAfter = nextTokensValidAfterTimestamp();
   let restoredOwnerAccess = false;
   const updated = db.transaction(() => {
     // Re-checked in the transaction, so a concurrent write cannot turn a
@@ -802,7 +815,7 @@ function applyOwnerRecovery(
         .prepare(
           'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND role = ? AND is_active = 1',
         )
-        .run(hashedPassword, changedAt, changedAt, user.id, INITIAL_ADMIN_ROLE);
+        .run(hashedPassword, tokensValidAfter, changedAt, user.id, INITIAL_ADMIN_ROLE);
     }
 
     restoredOwnerAccess = true;
@@ -811,7 +824,7 @@ function applyOwnerRecovery(
         UPDATE users SET password = ?, role = ?, tokens_valid_after = ?, updated_at = ?
         WHERE id = ? AND is_active = 1
       `)
-      .run(hashedPassword, INITIAL_ADMIN_ROLE, changedAt, changedAt, user.id);
+      .run(hashedPassword, INITIAL_ADMIN_ROLE, tokensValidAfter, changedAt, user.id);
   })();
   if (updated.changes === 0) {
     const failure = serializeOperationFailure({
@@ -1380,7 +1393,13 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     });
 
     const token = jwt.sign(
-      { userId, email, role: INITIAL_ADMIN_ROLE, jti: randomUUID() },
+      {
+        userId,
+        email,
+        role: INITIAL_ADMIN_ROLE,
+        jti: randomUUID(),
+        iat: nextTokenIatSeconds(),
+      },
       getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN },
     );

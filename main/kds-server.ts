@@ -52,6 +52,7 @@ import {
   corsOptions,
   isTokenRevoked,
   isTokenStale,
+  nextTokenIatSeconds,
   revokeToken,
 } from './middleware/security';
 import { buildCspHeader } from './csp';
@@ -300,7 +301,13 @@ export function startKdsServer(): Promise<void> {
         resetSuccessfulLogin(ip);
 
         const token = jwt.sign(
-          { userId: user.id, email: user.email, role: user.role, jti: randomUUID() },
+          {
+            userId: user.id,
+            email: user.email,
+            role: user.role,
+            jti: randomUUID(),
+            iat: nextTokenIatSeconds(),
+          },
           getJWTSecret(),
           { expiresIn: '24h' },
         );

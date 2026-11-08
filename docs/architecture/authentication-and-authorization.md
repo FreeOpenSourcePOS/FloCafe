@@ -83,8 +83,11 @@ That module owns the only copy of the cache;
 `clearJWTSecretCache()` in the same module invalidates it, and a restore that restored a rotated
 secret must go through it or pre-rotation tokens would keep validating.
 
-**Issuance.** `jwt.sign` runs on login and on the token-refresh paths. A token without the remember
-option expires in 24 hours; with it, in 10 days.
+**Issuance.** `jwt.sign` runs across all seven token-issuance paths (`POST /api/auth/login`,
+`POST /api/auth/pin-login`, `POST /api/auth/tenants/select`, `POST /api/auth/refresh`, and
+`POST /api/auth/setup/initialize` on `:3001`, plus `POST /api/auth/login` on `:3002` KDS and
+`:3003` Server App) using `nextTokenIatSeconds()`, which stamps a monotonically advancing sub-second
+`iat` claim. A token without the remember option expires in 24 hours; with it, in 10 days.
 
 **Verification.** `requireAuth` in
 [`main/server.ts`](../../main/server.ts) guards paths under `/api`. It passes through `/api/health`,
@@ -104,9 +107,15 @@ with the token's expiry, so revocation stops mattering on its own. A `Set` of ra
 is the fast path, bounded at 5,000 entries. `isTokenRevoked` fails closed: if the database lookup
 throws, the token is rejected rather than accepted.
 
-**Staleness.** `tokens_valid_after` on the `users` row is compared against the token's `iat` at
-second resolution. A password or PIN change bumps this column, which invalidates every token
-issued before it without needing to enumerate them.
+**Staleness.** `tokens_valid_after` on the `users` row is written via `nextTokensValidAfterTimestamp()`
+as a monotonically advancing UTC millisecond timestamp (`YYYY-MM-DD HH:MM:SS.SSS`) using the same
+shared monotonic clock as `nextTokenIatSeconds()`. Password changes, PIN changes, owner recovery,
+and account deactivations bump this column, invalidating every token issued before the update
+without needing to enumerate them. `isTokenStale` compares sub-second `iat` claims against
+`tokens_valid_after` with `<=` at millisecond resolution so pre-change tokens are invalidated and
+fresh post-change logins succeed even within the same UTC second or millisecond; legacy
+integer-second `iat` claims (and whole-second `tokens_valid_after` strings) are compared at second
+resolution with `<=`.
 
 **Role freshness.** The role attached to the request is the value read from the database, not the
 role claim inside the token, so a role change takes effect on the next request. `getUserAuthStatus`
@@ -206,11 +215,15 @@ terminals, while approval authority stays restricted to active `owner` and `mana
    picker and sign in with email and password.
 2. **Selected-user PIN sign-in (`POST /api/auth/pin-login`):** Accepts `{ user_id, pin, rememberMe }`
    and verifies the PIN strictly against the selected `user_id` via `verifyPinAsync` without
-   scanning other users, so two staff members may share the same PIN. Verification and rate-limit
-   checks are serialized per target account (`pin-user:${userId}`) with `withPinVerificationLock`,
-   failed attempts are tracked by the install-wide login rate limiter both per client IP + user
-   (`${normalizedIp}:pin:${userId}`) and per target account across source IPs (`pin-user:${userId}`),
-   and every attempt is recorded in `auth_audit_log` (`event_type = 'pin_login'`, `outcome` in
+   scanning other users, so two staff members may share the same PIN. Concurrent bcrypt
+   verifications for a target account remain serialized per user (`pin-user:${userId}`) with
+   `withPinVerificationLock`, while the 5-attempt / 15-minute failed-attempt lockout is scoped per
+   normalized client IP and user ID (`${normalizedIp}:pin:${userId}`), including on loopback
+   (`127.0.0.1` / `::1`) without an authentication exemption, alongside the endpoint volume limiter.
+   Scoping lockouts per `(client IP, user ID)` rather than install-wide per account protects main
+   POS terminal availability when another device on a shared restaurant LAN submits wrong PINs, at
+   the explicit trade-off of reduced resistance to PIN guessing distributed across multiple LAN
+   devices. Every attempt is recorded in `auth_audit_log` (`event_type = 'pin_login'`, `outcome` in
    `'success'`, `'failure'`, or `'rate_limited'`).
 3. **Terminal lock and session boundary:** Only one user is signed in on a device at a time. The
    manual **Lock** action in the POS topbar/sidebar (and the optional `auto_lock_minutes` idle

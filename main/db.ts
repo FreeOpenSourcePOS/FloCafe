@@ -6182,7 +6182,8 @@ export function mergeUserSecurityState(
     'UPDATE users SET is_active = 0, tokens_valid_after = ? WHERE id = ?',
   );
   for (const user of restoredUsers) {
-    if (!preservedIds.has(user.id)) disableRestoredOnly.run(now(), user.id);
+    if (!preservedIds.has(user.id))
+      disableRestoredOnly.run(nextTokensValidAfterTimestamp(), user.id);
   }
 
   const insertPreservedUser = dbInstance.prepare(`
@@ -6468,7 +6469,7 @@ export function restoreBackup(
           .run(rotatedJwtSecret, credentialTimestamp);
         freshDb
           .prepare('UPDATE users SET tokens_valid_after = ?, updated_at = ?')
-          .run(credentialTimestamp, credentialTimestamp);
+          .run(nextTokensValidAfterTimestamp(), credentialTimestamp);
         freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
         freshDb.prepare('DELETE FROM customer_display_tokens').run();
         freshDb
@@ -11501,6 +11502,32 @@ export function generateBillNumber(): string {
 export function now(): string {
   // Returns SQLite CURRENT_TIMESTAMP format (`YYYY-MM-DD HH:MM:SS`, UTC).
   return new Date().toISOString().replace('T', ' ').replace(/\..*$/, '');
+}
+
+let lastAuthWallMs = 0;
+let lastAuthLogicalMs = 0;
+
+/** Monotonic millisecond clock shared by JWT issuance and `tokens_valid_after` updates. */
+export function nextAuthTimestampMs(): number {
+  const wallMs = Date.now();
+  let nextMs = wallMs < lastAuthWallMs - 1000 ? wallMs : Math.max(wallMs, lastAuthLogicalMs + 1);
+  // Avoid exact `.000` second boundaries so sub-second `iat` remains distinct from legacy integer `iat`.
+  if (nextMs % 1000 === 0) {
+    nextMs += 1;
+  }
+  lastAuthWallMs = wallMs;
+  lastAuthLogicalMs = nextMs;
+  return nextMs;
+}
+
+/** Monotonic sub-second `iat` claim (in seconds) for JWT issuance. */
+export function nextTokenIatSeconds(): number {
+  return nextAuthTimestampMs() / 1000;
+}
+
+/** Monotonic UTC millisecond timestamp (`YYYY-MM-DD HH:MM:SS.SSS`) for `users.tokens_valid_after`. */
+export function nextTokensValidAfterTimestamp(): string {
+  return new Date(nextAuthTimestampMs()).toISOString().replace('T', ' ').replace('Z', '');
 }
 
 /** Records who performed an order/item mutation (docs/reference/product-invariants.md). */

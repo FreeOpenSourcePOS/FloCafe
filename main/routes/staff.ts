@@ -2,7 +2,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
-import { getDatabase, now } from '../db';
+import { getDatabase, nextTokensValidAfterTimestamp, now } from '../db';
 import { validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
 import { PASSWORD_POLICY_MESSAGE } from '../../shared/password-policy';
 import { hasPermission, requireAnyPermission, requirePermission } from '../services/authorization';
@@ -494,7 +494,9 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
 
     // Revoke outstanding sessions only when credentials actually change.
     const credentialsChanged = passwordChanged || pinChanged;
-    const tokensValidAfter = credentialsChanged ? now() : member.tokens_valid_after;
+    const tokensValidAfter = credentialsChanged
+      ? nextTokensValidAfterTimestamp()
+      : member.tokens_valid_after;
 
     const demotesActiveOwner =
       member.role === 'owner' && member.is_active === 1 && targetRole !== 'owner';
@@ -595,6 +597,7 @@ router.post('/:id/deactivate', requireStaffWrite, (req: Request, res: Response) 
     }
 
     const changedAt = now();
+    const tokensValidAfter = nextTokensValidAfterTimestamp();
     assertAdministrationReachable(db, {
       kind: 'user_state',
       userId: String(req.params.id),
@@ -609,7 +612,7 @@ router.post('/:id/deactivate', requireStaffWrite, (req: Request, res: Response) 
         WHERE id = ? AND is_active = 1
           AND (role != 'owner' OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1)
       `)
-        .run(changedAt, changedAt, req.params.id);
+        .run(tokensValidAfter, changedAt, req.params.id);
       if (updateResult.changes > 0 && member.role === 'owner') {
         ownerEmailSynced = syncRegisteredOwnerEmail(db);
       }

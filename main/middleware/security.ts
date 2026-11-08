@@ -1,7 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { createHash } from 'node:crypto';
-import { getDatabase, isKdsEnabled, now, parseDbTimestamp } from '../db';
+import {
+  getDatabase,
+  isKdsEnabled,
+  nextTokenIatSeconds,
+  nextTokensValidAfterTimestamp,
+  now,
+  parseDbTimestamp,
+} from '../db';
+
+export { nextTokenIatSeconds, nextTokensValidAfterTimestamp };
 
 interface RateLimitRecord {
   count: number;
@@ -189,10 +198,6 @@ export function incrementFailedLogin(ip: string): number {
 export function resetSuccessfulLogin(ip: string): void {
   const canonicalIp = normalizeIpForRateLimit(ip);
   loginAttempts.delete(canonicalIp);
-  const pinIdx = canonicalIp.indexOf(':pin:');
-  if (pinIdx >= 0) {
-    loginAttempts.delete(`pin-user:${canonicalIp.slice(pinIdx + 5)}`);
-  }
 }
 
 export function clearLoginRateLimits(): void {
@@ -348,15 +353,19 @@ export function clearUserAuthCache(): void {
   lastUserAuthCachePruneAt = 0;
 }
 
-/** True if token iat predates user tokens_valid_after (e.g. after password/PIN change). */
+/** True if token iat predates or coincides with user tokens_valid_after (e.g. after password/PIN change). */
 export function isTokenStale(
   iat: number | undefined,
   tokensValidAfter: string | null | undefined,
 ): boolean {
-  if (!tokensValidAfter || typeof iat !== 'number') return false;
-  // tokens_valid_after is stored in UTC; compare at second resolution.
-  const tokensValidAfterSeconds = Math.floor(parseDbTimestamp(tokensValidAfter).getTime() / 1000);
-  return iat < tokensValidAfterSeconds;
+  if (!tokensValidAfter || typeof iat !== 'number' || !Number.isFinite(iat)) return false;
+  const validAfterMs = parseDbTimestamp(tokensValidAfter).getTime();
+  if (!Number.isFinite(validAfterMs)) return false;
+  // Legacy integer-second JWTs and whole-second timestamps compare at second resolution with <=.
+  if (Number.isInteger(iat) || !/\.\d+/.test(tokensValidAfter)) {
+    return Math.floor(iat) <= Math.floor(validAfterMs / 1000);
+  }
+  return iat <= validAfterMs / 1000;
 }
 
 // In-memory fallback and persistent hash store for token revocations.

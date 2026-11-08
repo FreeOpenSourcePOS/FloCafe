@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -13,11 +14,14 @@ const { buildBillDocument, buildKotDocument } = require('../shared/print/documen
 // recording stand-in lets the suite assert the surface it is handed, the page
 // size it asks for, and the window teardown, without a real Chromium renderer.
 let saveDialogResult: any = { canceled: true };
+let saveDialogDelayMs = 0;
 let lastSaveDialogOptions: any = null;
 let printToPdfFailure: Error | null = null;
+let printToPdfHook: ((win: RecordingWindow, printOptions: any) => Promise<Buffer>) | null = null;
+let loadFileHook: ((win: RecordingWindow, filePath: string) => Promise<void>) | null = null;
 const pdfWindows: any[] = [];
 
-class RecordingWindow {
+class RecordingWindow extends EventEmitter {
   options: any;
   destroyed = false;
   loadedUrl: string | null = null;
@@ -26,17 +30,18 @@ class RecordingWindow {
   webContents: any;
 
   constructor(options: any = {}) {
+    super();
     this.options = options;
-    this.webContents = {
+    this.webContents = Object.assign(new EventEmitter(), {
       session: { webRequest: { onBeforeRequest: () => {} } },
       setWindowOpenHandler: () => {},
-      on: () => {},
       printToPDF: async (printOptions: any) => {
         this.pdfOptions = printOptions;
+        if (printToPdfHook) return await printToPdfHook(this, printOptions);
         if (printToPdfFailure) throw printToPdfFailure;
         return Buffer.from('%PDF-1.4 recorded');
       },
-    };
+    });
     pdfWindows.push(this);
   }
 
@@ -46,6 +51,9 @@ class RecordingWindow {
   async loadFile(filePath: string): Promise<void> {
     this.loadedUrl = filePath;
     this.loadedHtml = fs.readFileSync(filePath, 'utf8');
+    if (loadFileHook) {
+      await loadFileHook(this, filePath);
+    }
   }
   isDestroyed(): boolean {
     return this.destroyed;
@@ -70,6 +78,9 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
       dialog: {
         showSaveDialog: async (options: any) => {
           lastSaveDialogOptions = options;
+          if (saveDialogDelayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, saveDialogDelayMs));
+          }
           return saveDialogResult;
         },
         showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
@@ -108,8 +119,14 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { initDatabase, closeDatabase } = require('../main/db');
+const { initDatabase, closeDatabase, getDatabase } = require('../main/db');
 const { registerIpcHandlers } = require('../main/ipc');
+const {
+  PDF_RENDER_TIMEOUT_MS,
+  renderHtmlToPdfBuffer,
+  setHtmlToPdfTimeoutForTests,
+} = require('../main/services/html-to-pdf');
+const { getOrdersWithItemsForBills } = require('../main/routes/bills');
 
 async function run(): Promise<void> {
   const mainFrame = { frameToken: 'frame-main', detached: false };
@@ -388,6 +405,209 @@ async function run(): Promise<void> {
       'a failed render writes no file',
     );
     printToPdfFailure = null;
+
+    // PDF rendering deadline, save-dialog exclusion, renderer termination, and window closure:
+    assert.equal(PDF_RENDER_TIMEOUT_MS, 30_000, 'default PDF render deadline is 30 seconds');
+
+    // (a) Time spent in the save dialog is excluded from the PDF rendering deadline
+    setHtmlToPdfTimeoutForTests(30);
+    saveDialogDelayMs = 60;
+    const delayedDialogPdfPath = path.join(testDir, 'delayed-dialog.pdf');
+    saveDialogResult = { canceled: false, filePath: delayedDialogPdfPath };
+    assert.deepEqual(
+      await saveHtmlAsPdf!(trustedSender, { html: '<html><body>Delayed dialog</body></html>' }),
+      { success: true, path: delayedDialogPdfPath },
+      'save dialog delay does not count against the PDF rendering deadline',
+    );
+    saveDialogDelayMs = 0;
+
+    // (b) Stalled printToPDF times out, destroys the BrowserWindow, deletes staging HTML, and cleans up listeners
+    printToPdfHook = () => new Promise<Buffer>(() => {});
+    const timedOutPdfPath = path.join(testDir, 'timed-out.pdf');
+    saveDialogResult = { canceled: false, filePath: timedOutPdfPath };
+    const timeoutIpcRes = await saveHtmlAsPdf!(trustedSender, {
+      html: '<html><body>Stalled</body></html>',
+    });
+    assert.equal(timeoutIpcRes.success, false, 'stalled PDF export fails on timeout');
+    assert.match(
+      String(timeoutIpcRes.error),
+      /PDF rendering timed out after 30ms/,
+      'timeout error message identifies the rendering deadline',
+    );
+    const timedOutWin = pdfWindows[pdfWindows.length - 1];
+    assert.equal(
+      timedOutWin.destroyed,
+      true,
+      'timed-out PDF render destroys the hidden BrowserWindow so work cannot continue in background',
+    );
+    assert.equal(
+      fs.existsSync(timedOutWin.loadedUrl),
+      false,
+      'timed-out PDF render deletes the staging HTML file',
+    );
+    assert.equal(
+      fs.existsSync(timedOutPdfPath),
+      false,
+      'timed-out PDF render writes no output PDF file',
+    );
+    assert.equal(
+      timedOutWin.listenerCount('closed'),
+      0,
+      'timed-out PDF render removes closed listener from BrowserWindow',
+    );
+    assert.equal(
+      timedOutWin.webContents.listenerCount('render-process-gone'),
+      0,
+      'timed-out PDF render removes render-process-gone listener from webContents',
+    );
+    assert.equal(
+      timedOutWin.webContents.listenerCount('will-navigate'),
+      0,
+      'timed-out PDF render removes will-navigate listener from webContents',
+    );
+    printToPdfHook = null;
+    setHtmlToPdfTimeoutForTests(null);
+
+    // (c) Renderer process termination (render-process-gone) rejects immediately and cleans up
+    printToPdfHook = (win) =>
+      new Promise<Buffer>(() => {
+        setImmediate(() => {
+          win.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 139 });
+        });
+      });
+    await assert.rejects(
+      () => renderHtmlToPdfBuffer({ html: '<html><body>Crash</body></html>' }),
+      /PDF renderer process terminated unexpectedly \(crashed\)/,
+      'render-process-gone rejects renderHtmlToPdfBuffer with termination reason',
+    );
+    const crashedWin = pdfWindows[pdfWindows.length - 1];
+    assert.equal(
+      crashedWin.destroyed,
+      true,
+      'render-process-gone destroys the hidden BrowserWindow',
+    );
+    assert.equal(
+      fs.existsSync(crashedWin.loadedUrl),
+      false,
+      'render-process-gone deletes the staging HTML file',
+    );
+    assert.equal(crashedWin.listenerCount('closed'), 0, 'closed listener cleaned up after crash');
+    assert.equal(
+      crashedWin.webContents.listenerCount('render-process-gone'),
+      0,
+      'render-process-gone listener cleaned up after crash',
+    );
+    printToPdfHook = null;
+
+    // (d) Unexpected window closure (closed) rejects immediately and cleans up
+    printToPdfHook = (win) =>
+      new Promise<Buffer>(() => {
+        setImmediate(() => {
+          win.destroyed = true;
+          win.emit('closed');
+        });
+      });
+    await assert.rejects(
+      () => renderHtmlToPdfBuffer({ html: '<html><body>Closed</body></html>' }),
+      /PDF rendering window closed unexpectedly/,
+      'unexpected window closure rejects renderHtmlToPdfBuffer',
+    );
+    const closedWin = pdfWindows[pdfWindows.length - 1];
+    assert.equal(closedWin.destroyed, true, 'closed window remains destroyed');
+    assert.equal(
+      fs.existsSync(closedWin.loadedUrl),
+      false,
+      'unexpected window closure deletes the staging HTML file',
+    );
+    assert.equal(closedWin.listenerCount('closed'), 0, 'closed listener cleaned up after close');
+    printToPdfHook = null;
+
+    // (e) loadFile() rejection propagates directly without redundant did-fail-load listener
+    loadFileHook = async (win) => {
+      assert.equal(
+        win.webContents.listenerCount('did-fail-load'),
+        0,
+        'no redundant did-fail-load listener is registered on webContents',
+      );
+      throw new Error('ERR_FILE_NOT_FOUND');
+    };
+    await assert.rejects(
+      () => renderHtmlToPdfBuffer({ html: '<html><body>LoadFail</body></html>' }),
+      /ERR_FILE_NOT_FOUND/,
+      'loadFile rejection is propagated directly',
+    );
+    const loadFailWin = pdfWindows[pdfWindows.length - 1];
+    assert.equal(loadFailWin.destroyed, true, 'loadFile failure destroys the BrowserWindow');
+    assert.equal(
+      fs.existsSync(loadFailWin.loadedUrl),
+      false,
+      'loadFile failure deletes the staging HTML file',
+    );
+    assert.equal(
+      loadFailWin.listenerCount('closed'),
+      0,
+      'loadFile failure cleans up closed listener',
+    );
+    assert.equal(
+      loadFailWin.webContents.listenerCount('render-process-gone'),
+      0,
+      'loadFile failure cleans up render-process-gone listener',
+    );
+    loadFileHook = null;
+
+    // (f) getOrdersWithItemsForBills hoists currency lookup outside the per-bill loop
+    {
+      const db = getDatabase();
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'US', CURRENT_TIMESTAMP), ('currency', 'USD', CURRENT_TIMESTAMP)",
+      ).run();
+      db.prepare(
+        "INSERT OR IGNORE INTO categories (id, name, sort_order, is_active, created_at, updated_at) VALUES ('cat-hoist', 'Hoist Cat', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+      ).run();
+      db.prepare(
+        "INSERT OR IGNORE INTO products (id, category_id, name, price, is_active, created_at, updated_at) VALUES ('prod-hoist', 'cat-hoist', 'Hoist Product', 10, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+      ).run();
+      const batchBills: any[] = [];
+      for (let i = 1; i <= 5; i++) {
+        const orderRes = db
+          .prepare(
+            "INSERT INTO orders (order_number, status, type, subtotal, tax_amount, discount_amount, total, created_at, updated_at) VALUES (?, 'completed', 'dine-in', 10, 1, 0, 11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+          )
+          .run(`ORD-HOIST-${i}`);
+        const orderId = Number(orderRes.lastInsertRowid);
+        db.prepare(
+          "INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, tax_amount, total, status, created_at, updated_at) VALUES (?, 'prod-hoist', ?, 1, 10, 10, 1, 11, 'ready', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        ).run(orderId, `Item ${i}`);
+        const billRes = db
+          .prepare(
+            "INSERT INTO bills (bill_number, order_id, subtotal, discount_amount, service_charge, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at) VALUES (?, ?, 10, 0, 0, 1, 11, 11, 0, 'paid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+          )
+          .run(`BILL-HOIST-${i}`, orderId);
+        const billId = Number(billRes.lastInsertRowid);
+        batchBills.push(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId));
+      }
+
+      const originalPrepare = db.prepare.bind(db);
+      let settingsQueries = 0;
+      db.prepare = ((sql: string) => {
+        if (/FROM\s+settings\b/i.test(sql)) {
+          settingsQueries++;
+        }
+        return originalPrepare(sql);
+      }) as typeof db.prepare;
+
+      try {
+        const ordersByBill = getOrdersWithItemsForBills(db, batchBills);
+        assert.equal(ordersByBill.size, 5, 'all 5 bills are projected');
+        assert.equal(
+          settingsQueries,
+          2,
+          'getOrdersWithItemsForBills queries settings once per call (currency + country) instead of per bill',
+        );
+      } finally {
+        db.prepare = originalPrepare;
+      }
+    }
 
     console.log('Electron printer IPC surface matches the live SQLite schema.');
   } finally {

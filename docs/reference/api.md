@@ -214,7 +214,7 @@ Router: `main/routes/products.ts`. Full path: `/api/products`.
 | Method   | Path                              | Authorization              | Parameters                                                                                                                                                                                                                                                                                                                                                                                                                  | Response                                                                                                                                                                                                                                                                                     |
 | -------- | --------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`    | `/`                               | any authenticated role     | query: `?category_id`, `?active`, `?search`, `?barcode`, `?low_stock`                                                                                                                                                                                                                                                                                                                                                       | Menu list. Variant objects include `recipe_multiplier`. `?category_id` matches direct product assignment. `?active=true` (or `1`) requires an active product that is uncategorized or in an active, non-deleted category chain. `?low_stock` returns only items at or below their threshold. |
-| `GET`    | `/:id/image`                      | any authenticated role     | path: `id`                                                                                                                                                                                                                                                                                                                                                                                                                  | Product image bytes. Unauthenticated by design so `<img>` tags work; subject to SSRF and path-containment checks on the stored URL.                                                                                                                                                          |
+| `GET`    | `/:id/image`                      | none                       | path: `id`                                                                                                                                                                                                                                                                                                                                                                                                                  | Product image bytes. Unauthenticated by design so `<img>` tags work; serves only stored `data:image/(webp\|png\|jpeg\|jpg);base64,...` URIs within `MAX_IMAGE_DATA_URI_LENGTH` (50,000 chars) and `MAX_IMAGE_BYTES` (37,500 bytes), checking `If-None-Match` against the SHA-256 `ETag` (`304`) before decoding Base64 (`404` otherwise). |
 | `GET`    | `/:id`                            | any authenticated role     | path: `id`                                                                                                                                                                                                                                                                                                                                                                                                                  | Single product; variant objects include `recipe_multiplier`.                                                                                                                                                                                                                                 |
 | `POST`   | `/fetch-url`                      | `ROLE_ACCESS.ownerManager` | body: `url`                                                                                                                                                                                                                                                                                                                                                                                                                 | Body `url` is fetched server-side and stored as the product image. Subject to the SSRF blocklist.                                                                                                                                                                                            |
 | `POST`   | `/`                               | `ROLE_ACCESS.ownerManager` | body: `category_id`, `name`, `sku`, `barcode`, `description`, `price`, `cost_price`, `sale_unit`, `allow_fractional_quantity`, `weight_precision`, `inventory_product_id`, `inventory_deduction_quantity`, `tax_category_id`, `tax_behavior`, `track_inventory`, `stock_quantity`, `low_stock_threshold`, `is_active`, `image_url`, `sort_order`, `cb_percent`, `tags`, `addon_group_ids`, `variants`, `reason`             | `400` if `category_id` names a missing, soft-deleted, or inactive category or ancestor.                                                                                                                                                                                                      |
@@ -1067,12 +1067,14 @@ One connection contract, implemented once in
 Open `ws://<host>:<port>/kds` on `3001` or `3002`. The upgrade handler answers before the upgrade
 completes:
 
-| Condition                        | Response                                              |
-| -------------------------------- | ----------------------------------------------------- |
-| Path is not `/kds`               | `404`, socket destroyed                               |
-| Database maintenance in progress | `503`, socket destroyed                               |
-| KDS disabled (`kds_enabled` off) | `404`, socket destroyed                               |
-| Otherwise                        | upgraded, and a `connected` frame is sent immediately |
+| Condition                                 | Response                                              |
+| ----------------------------------------- | ----------------------------------------------------- |
+| Path is not `/kds`                        | `404`, socket destroyed                               |
+| Database maintenance in progress          | `503`, socket destroyed                               |
+| KDS disabled (`kds_enabled` off)          | `404`, socket destroyed                               |
+| Disallowed `Origin` header                | `403`, socket destroyed                               |
+| Total or pending connection limit reached | `429`, socket destroyed                               |
+| Otherwise                                 | upgraded, and a `connected` frame is sent immediately |
 
 ### Handshake
 
@@ -1165,11 +1167,13 @@ when the store setting changes under a live connection.
 
 ### Connection limits
 
-- 100 connected clients, at most 25 pending (unauthenticated) clients globally, and at most 5
-  pending clients per normalized IP. Once a socket authenticates, it stops consuming the pending
-  budget. Upgrades with an untrusted `Origin` header are rejected with HTTP 403 (`1008` on a direct
-  socket), while requests with no `Origin` header or a local/LAN/Tailscale `Origin` are admitted.
-  Upgrades over a connection cap are rejected with HTTP 429 (`1013` on a direct socket).
+- 100 connected clients (`MAX_KDS_CLIENTS`), at most 25 pending (unauthenticated) clients globally
+  (`MAX_UNAUTHENTICATED_KDS_CLIENTS`), and at most 5 pending clients per normalized IP
+  (`MAX_UNAUTHENTICATED_KDS_CLIENTS_PER_IP`). Once a socket authenticates, it stops consuming the
+  pending budget; closing and closed sockets are pruned before each admission check. Requests with
+  no `Origin` header or a local/LAN/Tailscale `Origin` (`isAllowedOrigin`) are admitted; a direct
+  `connection` event that fails admission closes with `1008` (disallowed `Origin`) or `1013`
+  (capacity reached).
 - A client whose `bufferedAmount` exceeds 1 MB at send time is closed with `1013` as too slow.
 - The server sends a WebSocket ping every 30 seconds and terminates a client that misses one.
 - A client is re-sent a fresh `initial_data` without any change of its own when its category or

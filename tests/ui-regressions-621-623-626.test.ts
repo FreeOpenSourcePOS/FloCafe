@@ -635,6 +635,137 @@ try {
     'rendered OrdersPage search bar matches the sleek Products search bar styling with pe-3 when empty',
   );
 
+  // 7. Issue #1515: KDS default view kanban, persisted view selection, and body pointer-events recovery
+  const kdsHeaderModule = require('../frontend/src/components/kds/KdsHeader');
+  const OriginalKdsHeader = kdsHeaderModule.KdsHeader;
+  let capturedOnChangeView: ((mode: 'tabs' | 'kanban') => void) | undefined;
+  kdsHeaderModule.KdsHeader = function SpiedKdsHeader(props: any) {
+    capturedOnChangeView = props.onChangeView;
+    return OriginalKdsHeader(props);
+  };
+  const { KdsWorkspace } = require('../frontend/src/components/kds/KdsWorkspace');
+  const persistedViews: Array<'tabs' | 'kanban'> = [];
+  const baseKdsConn = {
+    user: { id: 'chef-1', name: 'Chef Alex', role: 'chef' },
+    orders: [],
+    loading: false,
+    connected: true,
+    connectionMode: 'websocket' as const,
+    email: '',
+    setEmail: () => {},
+    password: '',
+    setPassword: () => {},
+    loginError: '',
+    loginLoading: false,
+    updating: null,
+    handleLogin: async () => {},
+    handleLogout: async () => {},
+    updateItemStatus: async () => true,
+    persistViewMode: (view: 'tabs' | 'kanban') => {
+      persistedViews.push(view);
+    },
+    ConfirmDialog: null,
+  };
+  try {
+    const defaultKdsMarkup = renderWithIntl(
+      React.createElement(KdsWorkspace, { conn: baseKdsConn, serverDefault: null }),
+    );
+    assert.match(
+      defaultKdsMarkup,
+      /<button[^>]*aria-pressed="false"[^>]*>Tabs<\/button><button[^>]*aria-pressed="true"[^>]*>Kanban<\/button>/,
+      'rendered KdsWorkspace defaults to Kanban when serverDefault is null',
+    );
+    assert.match(
+      defaultKdsMarkup,
+      />Waiting<\/span>[\s\S]*?>Preparing<\/span>[\s\S]*?>Ready<\/span>[\s\S]*?>Delivered<\/span>/,
+      'rendered KdsWorkspace mounts KdsKanbanBoard columns by default',
+    );
+
+    const tabsKdsMarkup = renderWithIntl(
+      React.createElement(KdsWorkspace, { conn: baseKdsConn, serverDefault: 'tabs' }),
+    );
+    assert.match(
+      tabsKdsMarkup,
+      /<button[^>]*aria-pressed="true"[^>]*>Tabs<\/button><button[^>]*aria-pressed="false"[^>]*>Kanban<\/button>/,
+      'rendered KdsWorkspace renders Tabs view when serverDefault is tabs',
+    );
+
+    const origWindow = (globalThis as any).window;
+    const storage = new Map<string, string>();
+    const dispatchedEvents: string[] = [];
+    try {
+      (globalThis as any).window = {
+        localStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          setItem: (key: string, value: string) => {
+            storage.set(key, value);
+          },
+        },
+        dispatchEvent: (event: Event) => {
+          dispatchedEvents.push(event.type);
+          return true;
+        },
+      };
+      assert.equal(typeof capturedOnChangeView, 'function', 'KdsWorkspace wires onChangeView');
+      capturedOnChangeView!('tabs');
+      assert.equal(
+        storage.get('kds_view_override'),
+        'tabs',
+        'changing KDS view writes kds_view_override to localStorage',
+      );
+      assert.deepEqual(
+        dispatchedEvents,
+        ['kds_view_override_changed'],
+        'changing KDS view dispatches kds_view_override_changed',
+      );
+      assert.deepEqual(
+        persistedViews,
+        ['tabs'],
+        'changing KDS view persists the selected view to backend via conn.persistViewMode',
+      );
+    } finally {
+      if (origWindow === undefined) {
+        delete (globalThis as any).window;
+      } else {
+        (globalThis as any).window = origWindow;
+      }
+    }
+  } finally {
+    kdsHeaderModule.KdsHeader = OriginalKdsHeader;
+  }
+
+  const { clearStaleBodyPointerEvents } = require('../frontend/src/hooks/use-confirm');
+  (globalThis as any).document = {
+    body: { style: { pointerEvents: 'none' } },
+    querySelector: () => null,
+  };
+  clearStaleBodyPointerEvents();
+  assert.equal(
+    (globalThis as any).document.body.style.pointerEvents,
+    '',
+    'clearStaleBodyPointerEvents clears stuck body pointer-events: none when no modal is open',
+  );
+  for (const openSlot of [
+    'dialog-content',
+    'dropdown-menu-content',
+    'sheet-content',
+    'drawer-content',
+  ]) {
+    (globalThis as any).document = {
+      body: { style: { pointerEvents: 'none' } },
+      querySelector: (selector: string) =>
+        selector.includes(`[data-slot="${openSlot}"][data-state="open"]`)
+          ? { nodeName: 'DIV' }
+          : null,
+    };
+    clearStaleBodyPointerEvents();
+    assert.equal(
+      (globalThis as any).document.body.style.pointerEvents,
+      'none',
+      `clearStaleBodyPointerEvents preserves body pointer-events: none while ${openSlot} is open`,
+    );
+  }
+
   useCartStore.getState().clearCart();
 } finally {
   if (origDocument === undefined) {

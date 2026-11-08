@@ -20,8 +20,12 @@ function useKdsEnabledCheck(baseUrl: string): boolean | null {
         if (cancelled) return;
         setEnabled(res.status === 404 ? false : res.ok ? true : null);
       })
-      .catch(() => { if (!cancelled) setEnabled(null); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) setEnabled(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [baseUrl]);
   return enabled;
 }
@@ -41,7 +45,9 @@ function createStandaloneApi() {
   api.interceptors.response.use(
     (response) => response,
     (error) => {
-      if (error.response?.status === 401) {
+      const sentAuth = error.config?.headers?.Authorization;
+      const currentToken = localStorage.getItem('token');
+      if (error.response?.status === 401 && currentToken && sentAuth === `Bearer ${currentToken}`) {
         localStorage.removeItem('token');
         window.location.reload();
       }
@@ -59,17 +65,22 @@ export default function KdsStandalonePage() {
   // Standalone KDS server endpoint routes overriding dashboard defaults.
   const standaloneEndpoints = {
     login: '/api/auth/login',
+    pinUsers: '/api/auth/pin-users',
+    pinLogin: '/api/auth/pin-login',
     me: '/api/auth/me',
     logout: '/api/auth/logout',
     orders: '/api/kds/orders',
     itemStatus: '/api/kds/items/:itemId/status',
+    view: '/api/kds/view',
   };
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const { kdsDefaultView } = useServerKdsInfo(origin);
   const kdsEnabled = useKdsEnabledCheck(origin);
-  const conn = useKdsConnection(api
-    ? { api, endpoints: standaloneEndpoints, enabled: kdsEnabled === true }
-    : { api: axios.create(), enabled: false });
+  const conn = useKdsConnection(
+    api
+      ? { api, endpoints: standaloneEndpoints, enabled: kdsEnabled === true }
+      : { api: axios.create(), enabled: false },
+  );
 
   if (kdsEnabled === null) {
     return (
@@ -83,9 +94,7 @@ export default function KdsStandalonePage() {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3 text-center px-6 bg-background text-foreground">
         <h1 className="text-lg font-semibold">{t('disabledTitle')}</h1>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          {t('disabledHint')}
-        </p>
+        <p className="text-sm text-muted-foreground max-w-sm">{t('disabledHint')}</p>
       </div>
     );
   }

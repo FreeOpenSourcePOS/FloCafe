@@ -24,6 +24,7 @@ import {
   EyeOff,
   KeyRound,
   LifeBuoy,
+  Mail,
   MessageCircle,
   Ticket,
   UserCheck,
@@ -73,6 +74,7 @@ function LoginContent() {
   const [selectedPinUser, setSelectedPinUser] = useState<PinPickerUser | null>(null);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
+  const [signInMode, setSignInMode] = useState<'pin' | 'password' | null>(null);
   const tSupport = useTranslations('support');
 
   useEffect(() => {
@@ -287,10 +289,15 @@ function LoginContent() {
     );
   }
 
+  const activeSignInMode =
+    pinUsers.length > 0 && (signInMode ?? 'pin') === 'pin' && !email && !password
+      ? 'pin'
+      : 'password';
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <img src="/logo.svg" alt="Flo" width={96} height={96} className="mx-auto mb-3" />
           <p className="text-muted-foreground mt-2">{t('signInTitle')}</p>
         </div>
@@ -300,7 +307,55 @@ function LoginContent() {
           </div>
         )}
         {pinUsers.length > 0 && (
-          <Card className="mb-4" data-testid="pin-user-picker">
+          <div
+            role="tablist"
+            data-testid="signin-mode-toggle"
+            className="mb-4 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/60 p-1"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSignInMode === 'pin'}
+              data-testid="signin-mode-pin"
+              onClick={() => {
+                setSignInMode('pin');
+                setEmail('');
+                setPassword('');
+                setLoginError(null);
+              }}
+              className={`flex items-center justify-center gap-1.5 rounded-md py-2 px-3 text-sm font-medium transition-colors ${
+                activeSignInMode === 'pin'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <KeyRound className="size-4 shrink-0" />
+              <span className="truncate">{t('quickSwitchTitle')}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSignInMode === 'password'}
+              data-testid="signin-mode-password"
+              onClick={() => {
+                setSignInMode('password');
+                setSelectedPinUser(null);
+                setPin('');
+                setPinError(null);
+              }}
+              className={`flex items-center justify-center gap-1.5 rounded-md py-2 px-3 text-sm font-medium transition-colors ${
+                activeSignInMode === 'password'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Mail className="size-4 shrink-0" />
+              <span className="truncate">{t('password')}</span>
+            </button>
+          </div>
+        )}
+        {activeSignInMode === 'pin' ? (
+          <Card data-testid="pin-user-picker">
             <CardContent className="pt-5">
               <div className="flex items-center justify-between gap-2 mb-3">
                 <div>
@@ -436,7 +491,7 @@ function LoginContent() {
                   </div>
                 </form>
               ) : (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
                   {pinUsers.map((u) => {
                     const roleKey = ROLE_LABEL_KEYS[u.role];
                     return (
@@ -466,70 +521,73 @@ function LoginContent() {
               )}
             </CardContent>
           </Card>
-        )}
-        <Card>
-          <CardContent className="pt-6">
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">{t('email')}</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={t('emailPlaceholder')}
-                  dir="ltr"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">{t('password')}</Label>
-                <div className="relative">
+        ) : (
+          <Card>
+            <CardContent className="pt-6">
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">{t('email')}</Label>
                   <Input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={t('passwordPlaceholder')}
-                    className="pe-10"
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onFocus={() => setSignInMode('password')}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder={t('emailPlaceholder')}
+                    dir="ltr"
                     required
                   />
-                  <button
-                    type="button"
-                    data-testid="password-visibility-toggle"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
-                    tabIndex={-1}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
                 </div>
-              </div>
-              <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="rounded border-input text-primary focus:ring-primary"
-                />
-                {t('rememberMe')}
-              </label>
-              {loginError && <p className="text-sm text-destructive text-center">{loginError}</p>}
-              <Button type="submit" disabled={loading} className="w-full" size="lg">
-                {loading ? t('signingIn') : t('signIn')}
-              </Button>
-              <button
-                type="button"
-                onClick={() => router.push('/auth/recover')}
-                className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {t('forgotPasswordLink')}
-              </button>
-            </form>
-          </CardContent>
-        </Card>
+                <div className="space-y-2">
+                  <Label htmlFor="password">{t('password')}</Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      value={password}
+                      onFocus={() => setSignInMode('password')}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={t('passwordPlaceholder')}
+                      className="pe-10"
+                      required
+                    />
+                    <button
+                      type="button"
+                      data-testid="password-visibility-toggle"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="rounded border-input text-primary focus:ring-primary"
+                  />
+                  {t('rememberMe')}
+                </label>
+                {loginError && <p className="text-sm text-destructive text-center">{loginError}</p>}
+                <Button type="submit" disabled={loading} className="w-full" size="lg">
+                  {loading ? t('signingIn') : t('signIn')}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => router.push('/auth/recover')}
+                  className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {t('forgotPasswordLink')}
+                </button>
+              </form>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="mt-4 flex justify-center">
           <DropdownMenu>
@@ -540,7 +598,9 @@ function LoginContent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="center">
-              <DropdownMenuItem onClick={() => setTicketDialogOpen(true)}>
+              <DropdownMenuItem
+                onClick={() => window.setTimeout(() => setTicketDialogOpen(true), 0)}
+              >
                 <Ticket className="size-4" />
                 {tSupport('menuSubmitTicket')}
               </DropdownMenuItem>

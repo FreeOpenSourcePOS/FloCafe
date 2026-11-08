@@ -106,18 +106,29 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     if (settingsBefore) {
       await restoreSettings(request, settingsBefore);
     }
-    const staffToRestore = [
-      { id: 'e2e-owner', pin: '1111' },
-      { id: 'e2e-manager', pin: '2222' },
-    ];
-    for (const { id, pin } of staffToRestore) {
+    const freshOwnerAuth = () => ({
+      Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+      'Content-Type': 'application/json',
+    });
+    for (const managerId of [managerAliceId, managerBobId]) {
+      if (!managerId) continue;
+      try {
+        await request.put(`${BASE}/api/staff/${managerId}`, {
+          headers: freshOwnerAuth(),
+          data: { pin: null },
+        });
+        await request.post(`${BASE}/api/staff/${managerId}/deactivate`, {
+          headers: freshOwnerAuth(),
+        });
+      } catch {
+        // Ignore if staff not found
+      }
+    }
+    for (const id of ['e2e-owner', 'e2e-manager']) {
       try {
         await request.put(`${BASE}/api/staff/${id}`, {
-          headers: {
-            Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
-            'Content-Type': 'application/json',
-          },
-          data: { pin },
+          headers: freshOwnerAuth(),
+          data: { pin: null },
         });
       } catch {
         // Ignore if staff not found
@@ -132,7 +143,15 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     ordersLayoutBefore = await readOrdersLayout(page, BASE, ownerToken);
 
     // Login via UI
+    const pinUsersFetched = page
+      .waitForResponse((res) => res.url().includes('/api/auth/pin-users'), { timeout: 5_000 })
+      .catch(() => null);
     await page.goto(`${BASE}/auth/login`);
+    await pinUsersFetched;
+    const passwordTab = page.getByTestId('signin-mode-password');
+    if (await passwordTab.isVisible()) {
+      await passwordTab.click();
+    }
     await page.locator('#email').fill('owner@flo.local');
     await page.locator('#password').fill('E2ePass123!');
     await page.locator('button[type="submit"]').click();

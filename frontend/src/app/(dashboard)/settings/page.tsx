@@ -271,8 +271,8 @@ function SettingsNavItem({
 function KdsDefaultViewCard() {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
-  const [view, setView] = useState<'tabs' | 'kanban'>('tabs');
-  const [savedView, setSavedView] = useState<'tabs' | 'kanban'>('tabs');
+  const [view, setView] = useState<'tabs' | 'kanban'>('kanban');
+  const [savedView, setSavedView] = useState<'tabs' | 'kanban'>('kanban');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -281,7 +281,7 @@ function KdsDefaultViewCard() {
       .get('/settings/kds', { signal: controller.signal })
       .then((res) => {
         if (controller.signal.aborted) return;
-        const v = res.data?.kds_default_view === 'kanban' ? 'kanban' : 'tabs';
+        const v = res.data?.kds_default_view === 'tabs' ? 'tabs' : 'kanban';
         setView(v);
         setSavedView(v);
       })
@@ -295,9 +295,15 @@ function KdsDefaultViewCard() {
     setSaving(true);
     try {
       const { data } = await api.put('/settings/kds', { kds_default_view: view });
-      const next = data?.kds_default_view === 'kanban' ? 'kanban' : 'tabs';
+      const next = data?.kds_default_view === 'tabs' ? 'tabs' : 'kanban';
       setSavedView(next);
       setView(next);
+      try {
+        window.localStorage.setItem('kds_view_override', next);
+        window.dispatchEvent(new Event('kds_view_override_changed'));
+      } catch {
+        // Ignore localStorage failures in restricted browser contexts.
+      }
       toast.success(t('kdsViewSaved'));
     } catch {
       toast.error(t('kdsViewSaveFailed'));

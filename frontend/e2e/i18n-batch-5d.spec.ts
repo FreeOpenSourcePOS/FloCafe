@@ -313,6 +313,14 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
             ownerCancelRes.ok(),
             `owner cancellation should succeed (status ${ownerCancelRes.status()})`,
           ).toBeTruthy();
+          const clearPinOwnerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
+          await page.request.put(`${BASE_API}/api/staff/e2e-owner`, {
+            headers: {
+              Authorization: `Bearer ${clearPinOwnerToken}`,
+              'Content-Type': 'application/json',
+            },
+            data: { pin: null },
+          });
         }
       }
     } catch (error) {

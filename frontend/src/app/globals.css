@@ -326,6 +326,29 @@ html[data-flo-desktop-titlebar='true'] {
   }
 }
 
+@keyframes flo-display-page-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.flo-display-page-timer-bar {
+  inline-size: 100%;
+  block-size: 100%;
+  transform-origin: left center;
+  animation-name: flo-display-page-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  pointer-events: none;
+}
+
+html[dir='rtl'] .flo-display-page-timer-bar {
+  transform-origin: right center;
+}
+
 .flo-toast-drain {
   position: absolute;
   inset-block-end: 0;

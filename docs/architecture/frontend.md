@@ -315,7 +315,8 @@ Route gating lives in `AuthGuard`:
 - `PUBLIC_PATHS` holds the unauthenticated surfaces: `/kds`, `/kds-standalone`,
   `/server-standalone`, `/customer-display`, `/auth/login`, `/auth/register`, `/auth/recover`, and
   `/setup`. The standalone KDS, Server App, and paired customer display pages run their own session
-  and skip the shared auth store, so loading it there would clear their token.
+  and skip the shared auth store, so loading it there would clear their token; `/kds` loads the
+  shared store only when both `token` and `tenant` are already in `localStorage`.
 - Once a user and tenant are resolved, the guard refreshes the auth context on window focus, every
   30 seconds, and on `flo:authorization-denied`.
 

@@ -34,6 +34,7 @@ const { kdsRoutes } = require('../main/routes/kds');
 const { orderItemRoutes } = require('../main/routes/order-items');
 const { orderRoutes } = require('../main/routes/orders');
 const { refundRoutes } = require('../main/routes/refunds');
+const { settingsRoutes } = require('../main/routes/settings');
 
 async function main() {
   const db = initTestDb();
@@ -174,6 +175,7 @@ async function main() {
     '/api/order-items': orderItemRoutes,
     '/api/orders': orderRoutes,
     '/api/refunds': refundRoutes,
+    '/api/settings': settingsRoutes,
   });
   try {
     const orders = await request(app).get('/api/kds/orders').set(authHeader);
@@ -1253,6 +1255,66 @@ async function main() {
       (db.prepare('SELECT status FROM order_items WHERE id = ?').get(barItemId) as any).status,
       'preparing',
       'orphaned update does not commit a status change',
+    );
+
+    // KDS default view: fresh install seeds 'kanban', preserves existing 'tabs', and persists view changes
+    const initialKdsViewRow = db
+      .prepare("SELECT value FROM settings WHERE key = 'kds_default_view'")
+      .get() as { value: string } | undefined;
+    assertEqualOrThrow(
+      initialKdsViewRow?.value,
+      'kanban',
+      'fresh DB migration v26 seeds kds_default_view = kanban',
+    );
+    const chefGetKdsSettings = await request(app).get('/api/settings/kds').set(chefAuth);
+    assertEqualOrThrow(
+      chefGetKdsSettings.status,
+      200,
+      'chef with kitchen.use can read GET /api/settings/kds',
+    );
+    assertEqualOrThrow(
+      chefGetKdsSettings.body.kds_default_view,
+      'kanban',
+      'GET /api/settings/kds returns kanban on fresh install',
+    );
+
+    const chefPutKdsView = await request(app)
+      .put('/api/kds/view')
+      .set(chefAuth)
+      .send({ kds_default_view: 'tabs' });
+    assertEqualOrThrow(
+      chefPutKdsView.status,
+      200,
+      'chef can persist KDS view via PUT /api/kds/view',
+    );
+    assertEqualOrThrow(
+      chefPutKdsView.body.kds_default_view,
+      'tabs',
+      'PUT /api/kds/view returns updated tabs view',
+    );
+    const afterChefPut = await request(app).get('/api/settings/kds').set(authHeader);
+    assertEqualOrThrow(
+      afterChefPut.body.kds_default_view,
+      'tabs',
+      'existing installation with kds_default_view = tabs preserves tabs',
+    );
+
+    const invalidKdsView = await request(app)
+      .put('/api/kds/view')
+      .set(chefAuth)
+      .send({ kds_default_view: 'grid' });
+    assertEqualOrThrow(
+      invalidKdsView.status,
+      400,
+      'PUT /api/kds/view rejects invalid view values with 400',
+    );
+
+    db.prepare("DELETE FROM settings WHERE key = 'kds_default_view'").run();
+    const unsetFallbackRes = await request(app).get('/api/settings/kds').set(authHeader);
+    assertEqualOrThrow(
+      unsetFallbackRes.body.kds_default_view,
+      'kanban',
+      'GET /api/settings/kds falls back to kanban when kds_default_view is unset',
     );
   } finally {
     closeDatabase();

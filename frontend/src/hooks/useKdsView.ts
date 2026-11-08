@@ -16,7 +16,7 @@ function readOverride(): KdsViewMode | null {
 }
 
 /** Resolves active KDS view mode with precedence:
- * session override > server default > 'tabs' fallback. */
+ * session override > server default > 'kanban' fallback. */
 export function useKdsView(serverDefault: KdsViewMode | null): {
   viewMode: KdsViewMode;
   setViewMode: (v: KdsViewMode) => void;
@@ -39,6 +39,6 @@ export function useKdsView(serverDefault: KdsViewMode | null): {
     window.dispatchEvent(new Event(VIEW_CHANGE_EVENT));
   }, []);
 
-  const viewMode = override ?? serverDefault ?? 'tabs';
+  const viewMode = override ?? serverDefault ?? 'kanban';
   return { viewMode, setViewMode };
 }

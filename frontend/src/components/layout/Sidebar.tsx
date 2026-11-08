@@ -361,7 +361,9 @@ export default function AppSidebar() {
                   data-testid="sidebar-lock-button"
                   onClick={() => {
                     closeMobile();
-                    void lock();
+                    window.setTimeout(() => {
+                      void lock();
+                    }, 0);
                   }}
                   className="cursor-pointer flex items-center gap-2"
                 >
@@ -370,8 +372,10 @@ export default function AppSidebar() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onClick={async () => {
-                    if (await confirm(t('confirmLogout'))) logout();
+                  onClick={() => {
+                    window.setTimeout(async () => {
+                      if (await confirm(t('confirmLogout'))) logout();
+                    }, 0);
                   }}
                   className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50 flex items-center gap-2"
                 >

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslations } from 'use-intl';
 import {
   Dialog,
@@ -11,6 +11,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { clearStaleBodyPointerEvents } from '@/lib/utils';
+
+export { clearStaleBodyPointerEvents };
 
 interface ConfirmState {
   open: boolean;
@@ -27,6 +30,19 @@ export function useConfirm() {
   const t = useTranslations('common');
   const [state, setState] = useState<ConfirmState | null>(null);
 
+  useEffect(() => {
+    if (!state?.open) {
+      clearStaleBodyPointerEvents();
+      return;
+    }
+    return () => {
+      clearStaleBodyPointerEvents();
+      if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+        window.setTimeout(clearStaleBodyPointerEvents, 0);
+      }
+    };
+  }, [state?.open]);
+
   const confirm = useCallback(
     (
       message: string,
@@ -36,6 +52,7 @@ export function useConfirm() {
         destructive?: boolean;
       },
     ): Promise<boolean> => {
+      clearStaleBodyPointerEvents();
       return new Promise((resolve) => {
         setState((previous) => {
           previous?.resolve(false);
@@ -54,13 +71,23 @@ export function useConfirm() {
   );
 
   const handleConfirm = useCallback(() => {
-    state?.resolve(true);
+    const resolve = state?.resolve;
     setState(null);
+    clearStaleBodyPointerEvents();
+    if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+      window.setTimeout(clearStaleBodyPointerEvents, 0);
+    }
+    resolve?.(true);
   }, [state]);
 
   const handleCancel = useCallback(() => {
-    state?.resolve(false);
+    const resolve = state?.resolve;
     setState(null);
+    clearStaleBodyPointerEvents();
+    if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+      window.setTimeout(clearStaleBodyPointerEvents, 0);
+    }
+    resolve?.(false);
   }, [state]);
 
   const ConfirmDialog: ReactNode = state ? (

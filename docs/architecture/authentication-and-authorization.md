@@ -110,12 +110,12 @@ throws, the token is rejected rather than accepted.
 **Staleness.** `tokens_valid_after` on the `users` row is written via `nextTokensValidAfterTimestamp()`
 as a monotonically advancing UTC millisecond timestamp (`YYYY-MM-DD HH:MM:SS.SSS`) using the same
 shared monotonic clock as `nextTokenIatSeconds()`. Password changes, PIN changes, owner recovery,
-and account deactivations bump this column, invalidating every token issued before the update
-without needing to enumerate them. `isTokenStale` compares sub-second `iat` claims against
-`tokens_valid_after` with `<=` at millisecond resolution so pre-change tokens are invalidated and
-fresh post-change logins succeed even within the same UTC second or millisecond; legacy
-integer-second `iat` claims (and whole-second `tokens_valid_after` strings) are compared at second
-resolution with `<=`.
+account deactivations, and backup restores bump this column, invalidating every token issued before
+the update without needing to enumerate them. `isTokenStale` compares sub-second `iat` claims
+against `tokens_valid_after` with `<=` at millisecond resolution so pre-change tokens are
+invalidated and fresh post-change logins succeed even within the same UTC second or millisecond;
+legacy integer-second `iat` claims (and whole-second `tokens_valid_after` strings) are compared at
+second resolution with `<=`.
 
 **Role freshness.** The role attached to the request is the value read from the database, not the
 role claim inside the token, so a role change takes effect on the next request. `getUserAuthStatus`

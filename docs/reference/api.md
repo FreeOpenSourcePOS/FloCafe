@@ -111,7 +111,7 @@ LAN clients are counted against authentication rate limits.
 (`POST /api/auth/login` on `3001`, `3002`, and `3003`). It reuses a single shared budget
 (default 10 requests per 15 minutes, configurable via `FLO_AUTH_RATE_LIMIT_MAX`).
 In addition, the three password login endpoints share an install-wide failed-login attempt lockout keyed to
-canonical client IP (`normalizeIpForRateLimit`), and `POST /api/auth/pin-login` applies the same 5-attempt, 15-minute lockout scoped per `(normalized client IP, user ID)` (`${normalizedIp}:pin:${userId}`, including loopback without exemption) while serializing concurrent PIN verifications per target account (`pin-user:${userId}`); this preserves POS terminal availability on shared restaurant LANs while trading off resistance to PIN guessing distributed across multiple LAN devices (see [PIN quick user switch and terminal lock](../architecture/authentication-and-authorization.md#pin-quick-user-switch-and-terminal-lock)). Successful login
+canonical client IP (`normalizeIpForRateLimit`), and `POST /api/auth/pin-login` applies the same 5-attempt, 15-minute lockout per `(client IP, user ID)` pair (including loopback; see [PIN quick user switch and terminal lock](../architecture/authentication-and-authorization.md#pin-quick-user-switch-and-terminal-lock)). Successful login
 resets the corresponding counter(s) (non-credential `403` responses preserve accumulated failures). See
 [`docs/architecture/authentication-and-authorization.md`](../architecture/authentication-and-authorization.md#shared-login-attempt-rate-limiting-across-servers)
 for architecture and role/permission handling details.

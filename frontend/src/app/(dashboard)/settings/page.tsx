@@ -598,6 +598,8 @@ export default function SettingsPage() {
   } | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
+  const searchListboxRef = useRef<HTMLDivElement | null>(null);
+  const shouldScrollSearchOptionRef = useRef(false);
   const highlightTimeoutRef = useRef<number | null>(null);
   const highlightedElementRef = useRef<HTMLElement | null>(null);
 
@@ -625,6 +627,10 @@ export default function SettingsPage() {
     : [];
   const activeSearchIndex =
     searchResults.length > 0 ? Math.min(selectedSearchIndex, searchResults.length - 1) : 0;
+  const activeSearchOptionId =
+    searchQuery.trim() && searchOpen && searchResults[activeSearchIndex]
+      ? `settings-search-option-${searchResults[activeSearchIndex].id}`
+      : undefined;
 
   const handleSelectSearchResult = (result: SettingsSearchResult) => {
     handleSettingsTabChange(result.tab);
@@ -637,6 +643,22 @@ export default function SettingsPage() {
       tab: result.tab,
     });
   };
+
+  useEffect(() => {
+    if (!shouldScrollSearchOptionRef.current || !activeSearchOptionId) return;
+    shouldScrollSearchOptionRef.current = false;
+    const listbox = searchListboxRef.current;
+    if (!listbox) return;
+    const optionEl = document.getElementById(activeSearchOptionId);
+    if (!optionEl || !listbox.contains(optionEl)) return;
+    const listboxRect = listbox.getBoundingClientRect();
+    const optionRect = optionEl.getBoundingClientRect();
+    if (optionRect.bottom > listboxRect.bottom) {
+      listbox.scrollTop += optionRect.bottom - listboxRect.bottom;
+    } else if (optionRect.top < listboxRect.top) {
+      listbox.scrollTop -= listboxRect.top - optionRect.top;
+    }
+  }, [activeSearchOptionId]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
@@ -655,7 +677,7 @@ export default function SettingsPage() {
         tagName === 'SELECT' ||
         Boolean(activeEl?.isContentEditable);
 
-      if (isEditable) return;
+      if (isSlash && isEditable) return;
       if (
         document.querySelector(
           '[role="dialog"]:not([aria-hidden="true"]), [role="alertdialog"]:not([aria-hidden="true"])',
@@ -4157,6 +4179,7 @@ export default function SettingsPage() {
                 role="combobox"
                 aria-expanded={Boolean(searchQuery.trim() && searchOpen)}
                 aria-controls="settings-search-listbox"
+                aria-activedescendant={activeSearchOptionId}
                 aria-autocomplete="list"
                 aria-label={tCommon('search')}
                 data-testid="settings-search-input"
@@ -4173,12 +4196,14 @@ export default function SettingsPage() {
                     e.preventDefault();
                     setSearchOpen(true);
                     if (searchResults.length > 0) {
+                      shouldScrollSearchOptionRef.current = true;
                       setSelectedSearchIndex((prev) => (prev + 1) % searchResults.length);
                     }
                   } else if (e.key === 'ArrowUp') {
                     e.preventDefault();
                     setSearchOpen(true);
                     if (searchResults.length > 0) {
+                      shouldScrollSearchOptionRef.current = true;
                       setSelectedSearchIndex(
                         (prev) => (prev - 1 + searchResults.length) % searchResults.length,
                       );
@@ -4226,6 +4251,7 @@ export default function SettingsPage() {
 
             {searchQuery.trim() && searchOpen && (
               <div
+                ref={searchListboxRef}
                 id="settings-search-listbox"
                 role="listbox"
                 data-testid="settings-search-results"
@@ -4237,6 +4263,7 @@ export default function SettingsPage() {
                     return (
                       <button
                         key={result.id}
+                        id={`settings-search-option-${result.id}`}
                         type="button"
                         role="option"
                         aria-selected={isSelected}

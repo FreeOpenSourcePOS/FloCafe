@@ -20,9 +20,34 @@ test('Settings search bar finds settings by keyword, switches tabs, and highligh
   await page.keyboard.press('/');
   await expect(searchInput).toBeFocused();
 
+  // While editing a settings form field, '/' types into the field while Ctrl+K focuses search
+  const storeNameInput = page
+    .locator('[data-setting-section="store-details"] input[type="text"]')
+    .first();
+  await storeNameInput.click();
+  await page.keyboard.press('/');
+  await expect(storeNameInput).toBeFocused();
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Control+k');
+  await expect(searchInput).toBeFocused();
+
+  // Broad query exposes aria-activedescendant and scrolls the active option into view on ArrowDown
+  await searchInput.fill('a');
+  const resultsList = page.getByTestId('settings-search-results');
+  await expect(resultsList).toBeVisible();
+  const firstActiveId = await searchInput.getAttribute('aria-activedescendant');
+  expect(firstActiveId).toMatch(/^settings-search-option-/);
+  for (let i = 0; i < 8; i += 1) {
+    await searchInput.press('ArrowDown');
+  }
+  const nextActiveId = await searchInput.getAttribute('aria-activedescendant');
+  expect(nextActiveId).toMatch(/^settings-search-option-/);
+  expect(nextActiveId).not.toBe(firstActiveId);
+  const scrollTopAfterArrows = await resultsList.evaluate((el) => el.scrollTop);
+  expect(scrollTopAfterArrows).toBeGreaterThan(0);
+
   // Search by synonym keyword ("parcel" -> Charges & Surcharges on POS Workflow tab)
   await searchInput.fill('parcel');
-  const resultsList = page.getByTestId('settings-search-results');
   await expect(resultsList).toBeVisible();
 
   const chargesResult = page.getByTestId('settings-search-result-charges-surcharges');

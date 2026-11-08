@@ -154,6 +154,13 @@ const enTranslators = createTranslatorsForLocale(enBundle);
   assertTopMatch('instagram', 'store-logo', 'store');
   assertTopMatch('bill content', 'bill-content', 'receipts-printers');
   assertTopMatch('footer message', 'bill-content', 'receipts-printers');
+  assertTopMatch('subscription', 'subscription', 'store');
+
+  const subscriptionResult = searchSettingsCatalog('subscription', enTranslators)[0];
+  assert.equal(subscriptionResult.title, 'Subscription');
+  assert.equal(subscriptionResult.hint, 'Languages');
+  const languageResults = searchSettingsCatalog('languages', enTranslators);
+  assert.ok(languageResults.some((r) => r.id === 'subscription'));
 
   // Ranking order: title match > keyword match > description match
   const workflowResults = searchSettingsCatalog('POS Workflow', enTranslators);

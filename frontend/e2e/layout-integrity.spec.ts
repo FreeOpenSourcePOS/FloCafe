@@ -2243,6 +2243,9 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await page.clock.runFor(3000);
     await updatedFeed;
     await page.clock.runFor(0);
+    const readySection = ready.locator('..');
+    const readyIndicator = readySection.getByTestId('customer-display-page-indicator');
+    await expect(readyIndicator).toContainText(/^1 \/ \d+/);
     expect(
       await updatedAt.textContent(),
       'the changed feed is accepted before the current page expires',
@@ -2262,6 +2265,8 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       ready.locator('[data-order-id="display-ready-new-1"]:visible'),
       'the first rotation prioritizes newly ready orders',
     ).toBeVisible();
+    const priorityIndicatorText = (await readyIndicator.textContent()) ?? '';
+    expect(priorityIndicatorText).toMatch(/^(\d+) \/ \1/);
     expectPinned(
       await elementTop(page.locator('header'), 'display header'),
       pinned.header,
@@ -2282,6 +2287,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await page.clock.runFor(0);
     await page.clock.runFor(7000);
     await expect.poll(readReadyIds).not.toEqual(firstOrdinaryPage);
+    await expect(readyIndicator).toContainText(/^2 \/ \d+/);
     const secondOrdinaryPage = await readReadyIds();
     expect(
       secondOrdinaryPage.length,
@@ -2540,6 +2546,8 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
         .locator('[data-order-id]:visible')
         .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-order-id')));
     await expect(preparing.locator('[data-order-id="display-preparing-1"]:visible')).toBeVisible();
+    const preparingSection = preparing.locator('..');
+    await expect(preparingSection.getByTestId('customer-display-page-timer-bar')).toBeVisible();
     await page.clock.pauseAt(new Date(Date.now() + 1000));
     const currentPage = await readIds();
     expect(currentPage.length).toBeGreaterThan(0);
@@ -2549,6 +2557,10 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await page.clock.runFor(0);
+    await expect(
+      preparingSection.getByTestId('customer-display-page-timer-bar'),
+      'hidden tab unmounts the timer bar',
+    ).toHaveCount(0);
     await page.clock.runFor(20_000);
     expect(await readIds(), 'hidden time does not advance the board').toEqual(currentPage);
 
@@ -2557,6 +2569,10 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await page.clock.runFor(0);
+    await expect(
+      preparingSection.getByTestId('customer-display-page-timer-bar'),
+      'resuming mounts a fresh timer bar',
+    ).toBeVisible();
     await page.clock.runFor(9500);
     expect(await readIds(), 'resuming starts a fresh page interval').toEqual(currentPage);
     await page.clock.runFor(700);
@@ -2672,6 +2688,14 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       12,
     );
     await expect(ready.locator('[data-order-id^="display-ready-"]:visible')).toHaveCount(12);
+    await expect(
+      page.getByTestId('customer-display-page-indicator'),
+      'narrow viewport omits page indicator',
+    ).toHaveCount(0);
+    await expect(
+      page.getByTestId('customer-display-page-timer'),
+      'narrow viewport omits page timer bar',
+    ).toHaveCount(0);
 
     const widths = await page.evaluate(() => ({
       clientWidth: document.documentElement.clientWidth,

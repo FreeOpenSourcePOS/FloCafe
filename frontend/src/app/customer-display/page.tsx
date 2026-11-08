@@ -171,9 +171,7 @@ function OrderBoardSection({
   );
   const activePriorityIdSet = useMemo(
     () =>
-      isReady && activePage.group === 'priority'
-        ? new Set(activePage.orderIds)
-        : new Set<string>(),
+      isReady && activePage.group === 'priority' ? new Set(activePage.orderIds) : new Set<string>(),
     [activePage.group, activePage.orderIds, isReady],
   );
   const priorityOrders = useMemo(

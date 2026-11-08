@@ -1275,7 +1275,19 @@ async function run() {
             return {
               ...reactHooks,
               Suspense: 'Suspense',
-              useCallback: (fn: unknown) => fn,
+              useCallback: (fn: unknown, deps?: unknown[]) => {
+                const slot = reactHooks.useRef({ fn, deps });
+                const prev = slot.current as { fn: unknown; deps?: unknown[] };
+                const depsChanged =
+                  !deps ||
+                  !prev.deps ||
+                  deps.length !== prev.deps.length ||
+                  deps.some((d, i) => !Object.is(d, prev.deps![i]));
+                if (depsChanged) {
+                  slot.current = { fn, deps };
+                }
+                return (slot.current as { fn: unknown }).fn;
+              },
               useLayoutEffect: reactHooks.useEffect,
               useMemo: (fn: () => unknown) => fn(),
             };

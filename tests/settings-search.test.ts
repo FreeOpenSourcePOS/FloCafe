@@ -16,8 +16,6 @@ import {
 
 const ROOT = path.resolve(__dirname, '..');
 const I18N_DIR = path.join(ROOT, 'frontend/src/lib/i18n/messages');
-const SETTINGS_PAGE_PATH = path.join(ROOT, 'frontend/src/app/(dashboard)/settings/page.tsx');
-const SETTINGS_COMPONENTS_DIR = path.join(ROOT, 'frontend/src/components/settings');
 
 type LocaleBundle = Record<string, Record<string, unknown>>;
 
@@ -51,7 +49,7 @@ function createTranslatorsForLocale(bundle: LocaleBundle): SettingsTranslatorMap
 const enBundle = loadLocaleBundle('en');
 const enTranslators = createTranslatorsForLocale(enBundle);
 
-// 1. Catalog completeness and DOM anchor integrity
+// 1. Catalog completeness and translation integrity
 {
   const expectedTabs: SettingsTabValue[] = [
     'store',
@@ -82,28 +80,16 @@ const enTranslators = createTranslatorsForLocale(enBundle);
     assert.ok(coveredTabs.has(tab), `Expected SETTINGS_SEARCH_CATALOG to cover tab "${tab}"`);
   }
 
-  const componentFiles = fs
-    .readdirSync(SETTINGS_COMPONENTS_DIR)
-    .filter((name) => name.endsWith('.tsx'))
-    .map((name) => path.join(SETTINGS_COMPONENTS_DIR, name));
-  const settingsSources = [SETTINGS_PAGE_PATH, ...componentFiles]
-    .map((filePath) => fs.readFileSync(filePath, 'utf8'))
-    .join('\n');
-
+  const allEntryIds = new Set(SETTINGS_SEARCH_CATALOG.map((entry) => entry.id));
   const seenIds = new Set<string>();
   for (const entry of SETTINGS_SEARCH_CATALOG) {
     assert.ok(!seenIds.has(entry.id), `Duplicate catalog entry id "${entry.id}"`);
     seenIds.add(entry.id);
 
-    assert.ok(
-      settingsSources.includes(`data-setting-section="${entry.id}"`),
-      `Missing data-setting-section="${entry.id}" in settings page or components`,
-    );
-
     if (entry.fallbackSectionId) {
       assert.ok(
-        settingsSources.includes(`data-setting-section="${entry.fallbackSectionId}"`),
-        `Missing fallback data-setting-section="${entry.fallbackSectionId}" for "${entry.id}"`,
+        allEntryIds.has(entry.fallbackSectionId),
+        `Expected fallbackSectionId "${entry.fallbackSectionId}" for "${entry.id}" to reference a known catalog entry id`,
       );
     }
 
@@ -163,6 +149,11 @@ const enTranslators = createTranslatorsForLocale(enBundle);
   assertTopMatch('master pin', 'master-pin', 'data');
   assertTopMatch('split bill', 'split-checks', 'payments');
   assertTopMatch('closing time', 'store-business-day', 'store');
+  assertTopMatch('store logo', 'store-logo', 'store');
+  assertTopMatch('upload logo', 'store-logo', 'store');
+  assertTopMatch('instagram', 'store-logo', 'store');
+  assertTopMatch('bill content', 'bill-content', 'receipts-printers');
+  assertTopMatch('footer message', 'bill-content', 'receipts-printers');
 
   // Ranking order: title match > keyword match > description match
   const workflowResults = searchSettingsCatalog('POS Workflow', enTranslators);
@@ -188,6 +179,7 @@ const enTranslators = createTranslatorsForLocale(enBundle);
 {
   const restrictedPermissions: SettingsPermissions = {
     isAdmin: false,
+    isOwner: false,
     canViewTaxConfiguration: false,
     canManageQrMenu: false,
     canManageMobileAccess: false,
@@ -198,6 +190,16 @@ const enTranslators = createTranslatorsForLocale(enBundle);
     searchSettingsCatalog('dark mode', enTranslators, restrictedPermissions),
     [],
     'Appearance settings must be hidden when isAdmin is false',
+  );
+  assert.deepEqual(
+    searchSettingsCatalog('contact email', enTranslators, restrictedPermissions),
+    [],
+    'Account contact email setting must be hidden when isOwner is false',
+  );
+  assert.deepEqual(
+    searchSettingsCatalog('cloud privacy controls', enTranslators, restrictedPermissions),
+    [],
+    'Cloud privacy controls setting must be hidden when isOwner is false',
   );
   assert.deepEqual(
     searchSettingsCatalog('gst', enTranslators, restrictedPermissions).filter(

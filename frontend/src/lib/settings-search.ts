@@ -23,6 +23,7 @@ export type SettingsTabValue =
 
 export interface SettingsPermissions {
   isAdmin: boolean;
+  isOwner: boolean;
   canViewTaxConfiguration: boolean;
   canManageQrMenu: boolean;
   canManageMobileAccess: boolean;
@@ -31,6 +32,7 @@ export interface SettingsPermissions {
 
 export const DEFAULT_SETTINGS_PERMISSIONS: SettingsPermissions = {
   isAdmin: true,
+  isOwner: true,
   canViewTaxConfiguration: true,
   canManageQrMenu: true,
   canManageMobileAccess: true,
@@ -241,6 +243,34 @@ export const SETTINGS_SEARCH_CATALOG: readonly SettingsSearchEntry[] = [
       'pan',
       'business registration',
       'company tax id',
+    ],
+  },
+  {
+    id: 'store-logo',
+    fallbackSectionId: 'store-details',
+    tab: 'store',
+    groupLabelKey: 'navGroupGeneral',
+    tabLabelKey: 'storeDetails',
+    titleKey: 'storeLogo',
+    hintKey: 'storeLogoHint',
+    extraKeys: [
+      'uploadLogo',
+      'removeLogo',
+      'instagramHandle',
+      'instagramHint',
+    ],
+    keywords: [
+      'logo',
+      'store logo',
+      'receipt logo',
+      'bill logo',
+      'upload logo',
+      'remove logo',
+      'image on receipt',
+      'bitmap logo',
+      'instagram',
+      'instagram handle',
+      'social handle',
     ],
   },
   {
@@ -552,36 +582,41 @@ export const SETTINGS_SEARCH_CATALOG: readonly SettingsSearchEntry[] = [
     ],
   },
   {
-    id: 'store-logo',
+    id: 'bill-content',
     fallbackSectionId: 'printing-options',
     tab: 'receipts-printers',
     groupLabelKey: 'navGroupGeneral',
     tabLabelKey: 'tabPrinters',
-    titleKey: 'storeLogo',
-    hintKey: 'storeLogoHint',
+    titleKey: 'billContent',
+    hintKey: 'billContentHint',
     extraKeys: [
-      'uploadLogo',
-      'removeLogo',
       'showLogo',
+      'showRestaurantName',
+      'showRestaurantAddress',
+      'showRestaurantPhone',
+      'showTaxId',
+      'showTaxBreakdown',
+      'showCustomerName',
+      'showCustomerPhone',
+      'showTableNumber',
+      'deliveryShowCustomerPhoneAlways',
+      'deliveryShowCustomerPhoneAlwaysHint',
       'footerMessage',
       'footerMessageHint',
       'footerMessagePlaceholder',
-      'instagramHandle',
-      'instagramHandleHint',
     ],
     keywords: [
-      'logo',
-      'store logo',
-      'receipt logo',
-      'bill logo',
-      'upload logo',
-      'image on receipt',
-      'bitmap logo',
+      'bill content',
+      'receipt fields',
+      'show logo',
       'footer message',
       'receipt footer',
       'thank you message',
-      'instagram',
-      'social handle',
+      'show customer phone',
+      'courier slip',
+      'delivery slip phone',
+      'show table number',
+      'show tax breakdown',
     ],
   },
   {
@@ -1738,6 +1773,7 @@ export const SETTINGS_SEARCH_CATALOG: readonly SettingsSearchEntry[] = [
       'marketing emails',
       'release notes email',
     ],
+    permission: 'isOwner',
   },
 
   // ─── Account: Privacy ──────────────────────────────────────────────────────
@@ -1806,6 +1842,7 @@ export const SETTINGS_SEARCH_CATALOG: readonly SettingsSearchEntry[] = [
       'gdpr',
       'erase cloud data',
     ],
+    permission: 'isOwner',
   },
 
   // ─── Account: Software Updates ─────────────────────────────────────────────

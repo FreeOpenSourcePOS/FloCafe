@@ -615,6 +615,7 @@ export default function SettingsPage() {
         },
         {
           isAdmin,
+          isOwner,
           canViewTaxConfiguration,
           canManageQrMenu,
           canManageMobileAccess,

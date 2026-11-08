@@ -1221,7 +1221,7 @@ export function PrintersSettingsTab({
               <p className="text-xs text-muted-foreground mt-1">{t('zReportLanguageHint')}</p>
             </div>
             <div
-              data-setting-section="store-logo"
+              data-setting-section="bill-content"
               className="pt-4 border-t border-border rounded-lg"
             >
               <p className="font-medium text-foreground mb-1">{t('billContent')}</p>

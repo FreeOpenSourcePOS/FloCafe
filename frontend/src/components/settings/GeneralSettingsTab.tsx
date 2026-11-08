@@ -522,7 +522,10 @@ export function GeneralSettingsTab({
           </div>
 
           {/* Receipt Store Logo */}
-          <div className="md:col-span-2 pt-4 border-t border-border">
+          <div
+            data-setting-section="store-logo"
+            className="md:col-span-2 pt-4 border-t border-border rounded-lg"
+          >
             <label className="block text-sm font-medium text-foreground mb-1">
               {t('storeLogo')}
             </label>

@@ -32,7 +32,7 @@ Base URLs:
 ## Authentication
 
 All three servers authenticate with a bearer JWT. Send it as `Authorization: Bearer <token>`. Each
-server issues its own token through a `POST /api/auth/login` on its own port, using the same signing
+server issues its own token through `POST /api/auth/login` and `POST /api/auth/pin-login` on its own port, using the same signing
 secret, so a token from one server is accepted by the others. The scheme, token lifecycle, revocation, staleness handling, the
 Master PIN second factor, and audit attribution are described in
 [authentication and authorization](../architecture/authentication-and-authorization.md). That page

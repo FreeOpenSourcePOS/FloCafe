@@ -247,7 +247,10 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
   ) : null;
 
   return (
-    <div className="bg-card rounded-xl border border-border p-6">
+    <div
+      data-setting-section="charges-surcharges"
+      className="bg-card rounded-xl border border-border p-6"
+    >
       <div className="flex items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-2">
           <Percent size={20} className="text-muted-foreground" />

@@ -49,6 +49,8 @@ import {
   SunMoon,
   ArrowUpDown,
   LayoutPanelTop,
+  Search,
+  X,
 } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -111,6 +113,9 @@ import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { tenantCan } from '@/lib/permissions';
+import { searchSettingsCatalog, type SettingsSearchResult } from '@/lib/settings-search';
+
+const HIGHLIGHT_CLASSES = ['ring-2', 'ring-brand', 'ring-offset-2', 'transition-all'] as const;
 
 const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
 const GOOGLE_DRIVE_JOB_POLL_INTERVAL_MS = 500;
@@ -313,7 +318,10 @@ function KdsDefaultViewCard() {
   }
 
   return (
-    <div className="bg-card rounded-xl border border-border p-6">
+    <div
+      data-setting-section="kds-default-view"
+      className="bg-card rounded-xl border border-border p-6"
+    >
       <div className="flex items-center gap-2 mb-4">
         <Monitor size={20} className="text-muted-foreground" />
         <h2 className="font-semibold text-foreground">{t('kdsDefaultView')}</h2>
@@ -380,6 +388,9 @@ export default function SettingsPage() {
   const tRestore = useTranslations('restore');
   const tUpdate = useTranslations('update');
   const tWhatsappSettings = useTranslations('whatsapp.settings');
+  const tCustomerDisplay = useTranslations('customerDisplay');
+  const tTax = useTranslations('tax');
+  const tQrMenu = useTranslations('qrMenu');
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
   const isAdmin = tenantCan(currentTenant, 'settings.manage');
   const isOwner = tenantCan(currentTenant, 'cloud.account.manage');
@@ -582,6 +593,206 @@ export default function SettingsPage() {
     const query = nextParams.toString();
     router.replace(query ? `/settings?${query}` : '/settings');
   };
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
+  const [pendingHighlightSection, setPendingHighlightSection] = useState<{
+    id: string;
+    fallbackId?: string;
+    tab: string;
+  } | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchContainerRef = useRef<HTMLDivElement | null>(null);
+  const searchListboxRef = useRef<HTMLDivElement | null>(null);
+  const shouldScrollSearchOptionRef = useRef(false);
+  const highlightTimeoutRef = useRef<number | null>(null);
+  const highlightedElementRef = useRef<HTMLElement | null>(null);
+
+  const searchResults = searchQuery.trim()
+    ? searchSettingsCatalog(
+        searchQuery,
+        {
+          settings: t,
+          pos: tPos,
+          customerDisplay: tCustomerDisplay,
+          tax: tTax,
+          qrMenu: tQrMenu,
+          update: tUpdate,
+          productAnalytics: tAnalytics,
+        },
+        {
+          isAdmin,
+          isOwner,
+          canViewTaxConfiguration,
+          canManageQrMenu,
+          canManageMobileAccess,
+          canManageDatabase,
+        },
+      )
+    : [];
+  const activeSearchIndex =
+    searchResults.length > 0 ? Math.min(selectedSearchIndex, searchResults.length - 1) : 0;
+  const activeSearchOptionId =
+    searchQuery.trim() && searchOpen && searchResults[activeSearchIndex]
+      ? `settings-search-option-${searchResults[activeSearchIndex].id}`
+      : undefined;
+
+  const handleSelectSearchResult = (result: SettingsSearchResult) => {
+    handleSettingsTabChange(result.tab);
+    setSearchQuery('');
+    setSearchOpen(false);
+    setSelectedSearchIndex(0);
+    setPendingHighlightSection({
+      id: result.id,
+      fallbackId: result.entry.fallbackSectionId,
+      tab: result.tab,
+    });
+  };
+
+  useEffect(() => {
+    if (!shouldScrollSearchOptionRef.current || !activeSearchOptionId) return;
+    shouldScrollSearchOptionRef.current = false;
+    const listbox = searchListboxRef.current;
+    if (!listbox) return;
+    const optionEl = document.getElementById(activeSearchOptionId);
+    if (!optionEl || !listbox.contains(optionEl)) return;
+    const listboxRect = listbox.getBoundingClientRect();
+    const optionRect = optionEl.getBoundingClientRect();
+    if (optionRect.bottom > listboxRect.bottom) {
+      listbox.scrollTop += optionRect.bottom - listboxRect.bottom;
+    } else if (optionRect.top < listboxRect.top) {
+      listbox.scrollTop -= listboxRect.top - optionRect.top;
+    }
+  }, [activeSearchOptionId]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const isCmdOrCtrlK =
+        (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k';
+      const isSlash = !event.metaKey && !event.ctrlKey && !event.altKey && event.key === '/';
+
+      if (!isCmdOrCtrlK && !isSlash) return;
+
+      const activeEl = document.activeElement as HTMLElement | null;
+      const tagName = activeEl?.tagName;
+      const isEditable =
+        tagName === 'INPUT' ||
+        tagName === 'TEXTAREA' ||
+        tagName === 'SELECT' ||
+        Boolean(activeEl?.isContentEditable);
+
+      if (isSlash && isEditable) return;
+      if (
+        document.querySelector(
+          '[role="dialog"]:not([aria-hidden="true"]), [role="alertdialog"]:not([aria-hidden="true"])',
+        )
+      )
+        return;
+
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+      setSearchOpen(true);
+    };
+
+    const handlePointerDownOutside = (event: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(event.target as Node)
+      ) {
+        setSearchOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    document.addEventListener('mousedown', handlePointerDownOutside);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+      document.removeEventListener('mousedown', handlePointerDownOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+      if (highlightedElementRef.current) {
+        highlightedElementRef.current.classList.remove(...HIGHLIGHT_CLASSES);
+        highlightedElementRef.current.removeAttribute('data-setting-highlighted');
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingHighlightSection || activeTab !== pendingHighlightSection.tab) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    let retryTimer: number | null = null;
+
+    const clearPreviousHighlight = () => {
+      if (highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current);
+        highlightTimeoutRef.current = null;
+      }
+      if (highlightedElementRef.current) {
+        highlightedElementRef.current.classList.remove(...HIGHLIGHT_CLASSES);
+        highlightedElementRef.current.removeAttribute('data-setting-highlighted');
+        highlightedElementRef.current = null;
+      }
+    };
+
+    const tryHighlight = () => {
+      if (cancelled) return;
+      const primary = document.querySelector<HTMLElement>(
+        `[data-setting-section="${pendingHighlightSection.id}"]`,
+      );
+      const target =
+        primary ??
+        (pendingHighlightSection.fallbackId && attempts >= 4
+          ? document.querySelector<HTMLElement>(
+              `[data-setting-section="${pendingHighlightSection.fallbackId}"]`,
+            )
+          : null);
+
+      if (target) {
+        clearPreviousHighlight();
+        setPendingHighlightSection(null);
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add(...HIGHLIGHT_CLASSES);
+        target.setAttribute('data-setting-highlighted', 'true');
+        highlightedElementRef.current = target;
+        highlightTimeoutRef.current = window.setTimeout(() => {
+          target.classList.remove(...HIGHLIGHT_CLASSES);
+          target.removeAttribute('data-setting-highlighted');
+          if (highlightedElementRef.current === target) {
+            highlightedElementRef.current = null;
+          }
+          highlightTimeoutRef.current = null;
+        }, 2000);
+        return;
+      }
+
+      attempts += 1;
+      if (attempts < 30) {
+        retryTimer = window.setTimeout(tryHighlight, 50);
+      } else {
+        setPendingHighlightSection(null);
+      }
+    };
+
+    const rafId = window.requestAnimationFrame(tryHighlight);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(rafId);
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [activeTab, pendingHighlightSection]);
 
   // Unified PIN gate: 'set' opens the set/change-PIN dialog; 'backup'/'backup-custom'/
   // 'import'/'restore' open a verify prompt and, on success, run the pending action.
@@ -3956,9 +4167,147 @@ export default function SettingsPage() {
       >
         {/* Settings sidebar nav */}
         <div className="w-full md:w-40 md:min-w-[10rem] shrink-0 md:h-full md:min-h-0 md:flex md:flex-col">
-          <div className="flex items-center gap-3 mb-6 shrink-0">
+          <div className="flex items-center gap-3 mb-4 shrink-0">
             <Settings size={28} className="text-brand" />
             <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
+          </div>
+
+          <div ref={searchContainerRef} className="relative mb-3 shrink-0 z-30 md:me-2">
+            <div className="relative flex items-center">
+              <Search
+                size={15}
+                aria-hidden="true"
+                className="pointer-events-none absolute start-2.5 text-muted-foreground"
+              />
+              <input
+                ref={searchInputRef}
+                type="search"
+                role="combobox"
+                aria-expanded={Boolean(searchQuery.trim() && searchOpen)}
+                aria-controls="settings-search-listbox"
+                aria-activedescendant={activeSearchOptionId}
+                aria-autocomplete="list"
+                aria-label={tCommon('search')}
+                data-testid="settings-search-input"
+                value={searchQuery}
+                placeholder={`${tCommon('search')}...`}
+                onFocus={() => setSearchOpen(true)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setSearchOpen(true);
+                  setSelectedSearchIndex(0);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setSearchOpen(true);
+                    if (searchResults.length > 0) {
+                      shouldScrollSearchOptionRef.current = true;
+                      setSelectedSearchIndex((prev) => (prev + 1) % searchResults.length);
+                    }
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setSearchOpen(true);
+                    if (searchResults.length > 0) {
+                      shouldScrollSearchOptionRef.current = true;
+                      setSelectedSearchIndex(
+                        (prev) => (prev - 1 + searchResults.length) % searchResults.length,
+                      );
+                    }
+                  } else if (e.key === 'Enter') {
+                    if (searchResults.length > 0) {
+                      e.preventDefault();
+                      handleSelectSearchResult(searchResults[activeSearchIndex]);
+                    }
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    if (searchQuery) {
+                      setSearchQuery('');
+                      setSelectedSearchIndex(0);
+                    }
+                    setSearchOpen(false);
+                    searchInputRef.current?.blur();
+                  }
+                }}
+                className="w-full rounded-lg border border-border bg-card ps-8 pe-7 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-brand focus:ring-1 focus:ring-brand [&::-webkit-search-cancel-button]:hidden"
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  data-testid="settings-search-clear"
+                  aria-label={tCommon('clear')}
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedSearchIndex(0);
+                    searchInputRef.current?.focus();
+                  }}
+                  className="absolute end-1.5 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              ) : (
+                <kbd
+                  aria-hidden="true"
+                  className="pointer-events-none absolute end-2 hidden md:inline-flex items-center rounded border border-border bg-muted px-1 text-[10px] font-mono text-muted-foreground"
+                >
+                  /
+                </kbd>
+              )}
+            </div>
+
+            {searchQuery.trim() && searchOpen && (
+              <div
+                ref={searchListboxRef}
+                id="settings-search-listbox"
+                role="listbox"
+                data-testid="settings-search-results"
+                className="absolute start-0 top-full mt-1.5 max-h-96 w-full md:w-80 lg:w-96 overflow-y-auto rounded-xl border border-border bg-card p-1.5 shadow-xl"
+              >
+                {searchResults.length > 0 ? (
+                  searchResults.map((result, idx) => {
+                    const isSelected = idx === activeSearchIndex;
+                    return (
+                      <button
+                        key={result.id}
+                        id={`settings-search-option-${result.id}`}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        data-testid={`settings-search-result-${result.id}`}
+                        onMouseEnter={() => setSelectedSearchIndex(idx)}
+                        onClick={() => handleSelectSearchResult(result)}
+                        className={`flex w-full flex-col gap-1 rounded-lg px-3 py-2 text-start transition-colors ${
+                          isSelected
+                            ? 'bg-brand/10 text-foreground'
+                            : 'hover:bg-muted text-foreground'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold text-foreground truncate">
+                            {result.title}
+                          </span>
+                          <span className="shrink-0 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            {result.breadcrumb}
+                          </span>
+                        </div>
+                        {result.hint && (
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            {result.hint}
+                          </p>
+                        )}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p
+                    data-testid="settings-search-empty"
+                    className="px-3 py-4 text-center text-sm text-muted-foreground"
+                  >
+                    {tCommon('noResults')}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:flex-1 md:min-h-0 md:overflow-x-hidden md:overflow-y-auto md:overscroll-contain border-b md:border-b-0 md:border-e border-border pb-2 md:pb-0 md:pe-2">
@@ -4180,7 +4529,10 @@ export default function SettingsPage() {
           {isAdmin && (
             <TabsContent value="appearance">
               <SettingsTabShell>
-                <div className="bg-card rounded-xl border border-border p-6">
+                <div
+                  data-setting-section="appearance-theme"
+                  className="bg-card rounded-xl border border-border p-6"
+                >
                   <div className="flex items-center gap-2 mb-4">
                     <SunMoon size={20} className="text-muted-foreground" />
                     <h2 className="font-semibold text-foreground">{t('themeTitle')}</h2>
@@ -4227,7 +4579,10 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="bg-card rounded-xl border border-border p-6">
+                <div
+                  data-setting-section="orders-layout"
+                  className="bg-card rounded-xl border border-border p-6"
+                >
                   <div className="flex items-center gap-2 mb-4">
                     <LayoutPanelTop size={20} className="text-muted-foreground" />
                     <h2 className="font-semibold text-foreground">{t('ordersLayoutTitle')}</h2>
@@ -4285,7 +4640,10 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="bg-card rounded-xl border border-border p-6">
+                <div
+                  data-setting-section="pos-sorting"
+                  className="bg-card rounded-xl border border-border p-6"
+                >
                   <div className="flex items-center gap-2 mb-4">
                     <ArrowUpDown size={20} className="text-muted-foreground" />
                     <h2 className="font-semibold text-foreground">{t('posSortTitle')}</h2>
@@ -4356,7 +4714,10 @@ export default function SettingsPage() {
           <TabsContent value="pos">
             <SettingsTabShell>
               {/* POS Display */}
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="pos-display"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center gap-2 mb-4">
                   <Monitor size={20} className="text-muted-foreground" />
                   <h2 className="font-semibold text-foreground">{t('posDisplay')}</h2>
@@ -4380,7 +4741,10 @@ export default function SettingsPage() {
               </div>
 
               {/* POS Workflow */}
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="pos-workflow"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center gap-2 mb-4">
                   <Users size={20} className="text-muted-foreground" />
                   <h2 className="font-semibold text-foreground">{t('posWorkflow')}</h2>
@@ -4421,7 +4785,10 @@ export default function SettingsPage() {
                       }}
                     />
                   </div>
-                  <div className="flex items-center justify-between gap-4 pt-2 border-t border-border">
+                  <div
+                    data-setting-section="pos-auto-lock"
+                    className="flex items-center justify-between gap-4 pt-2 border-t border-border rounded-lg"
+                  >
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-foreground">{t('autoLockLabel')}</p>
                       <p className="text-sm text-muted-foreground">{t('autoLockHint')}</p>
@@ -4455,7 +4822,10 @@ export default function SettingsPage() {
                       ))}
                     </select>
                   </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-border">
+                  <div
+                    data-setting-section="pos-scheduled-orders"
+                    className="flex items-center justify-between pt-3 border-t border-border rounded-lg"
+                  >
                     <div>
                       <p className="text-sm font-medium text-foreground">
                         {tPos('scheduledOrdersTitle')}
@@ -4482,7 +4852,10 @@ export default function SettingsPage() {
               </div>
 
               {/* Add a cashier — pair another device onto the same POS over the local network */}
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="pos-pairing"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center gap-2 mb-4">
                   <Smartphone size={20} className="text-muted-foreground" />
                   <h2 className="font-semibold text-foreground">{t('posPairing')}</h2>
@@ -4669,7 +5042,10 @@ export default function SettingsPage() {
 
           <TabsContent value="kitchen-stations">
             <SettingsTabShell>
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="kitchen-stations"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <ChefHat size={20} className="text-muted-foreground" />
@@ -5004,7 +5380,10 @@ export default function SettingsPage() {
           <TabsContent value="kds">
             <SettingsTabShell>
               {/* Kitchen Display System enable toggle */}
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="kds-enable"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground">{t('kdsEnabledToggle')}</p>
@@ -5031,7 +5410,10 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="kds-require-delivered"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground">
@@ -5052,11 +5434,19 @@ export default function SettingsPage() {
               </div>
 
               {!kdsEnabledSetting && (
-                <p className="text-sm text-muted-foreground italic">{t('kdsPairingHiddenHint')}</p>
+                <p
+                  data-setting-section="kds-pairing"
+                  className="text-sm text-muted-foreground italic rounded-lg"
+                >
+                  {t('kdsPairingHiddenHint')}
+                </p>
               )}
 
               {kdsEnabledSetting && (
-                <div className="bg-card rounded-xl border border-border p-6">
+                <div
+                  data-setting-section="kds-pairing"
+                  className="bg-card rounded-xl border border-border p-6"
+                >
                   <div className="flex items-center gap-2 mb-4">
                     <ChefHat size={20} className="text-muted-foreground" />
                     <h2 className="font-semibold text-foreground">{t('kds')}</h2>
@@ -5251,7 +5641,10 @@ export default function SettingsPage() {
 
           <TabsContent value="server-app">
             <SettingsTabShell>
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="server-app-enable"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground">{t('serverApp')}</p>
@@ -5268,13 +5661,19 @@ export default function SettingsPage() {
               </div>
 
               {!serverAppEnabledSetting && (
-                <p className="text-sm text-muted-foreground italic">
+                <p
+                  data-setting-section="server-app-pairing"
+                  className="text-sm text-muted-foreground italic rounded-lg"
+                >
                   {t('serverAppPairingHiddenHint')}
                 </p>
               )}
 
               {serverAppEnabledSetting && (
-                <div className="bg-card rounded-xl border border-border p-6">
+                <div
+                  data-setting-section="server-app-printing"
+                  className="bg-card rounded-xl border border-border p-6"
+                >
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-foreground">{t('serverAppBillPrinting')}</p>
@@ -5295,7 +5694,10 @@ export default function SettingsPage() {
               )}
 
               {serverAppEnabledSetting && (
-                <div className="bg-card rounded-xl border border-border p-6">
+                <div
+                  data-setting-section="server-app-pairing"
+                  className="bg-card rounded-xl border border-border p-6"
+                >
                   <div className="flex items-center gap-2 mb-4">
                     <Smartphone size={20} className="text-muted-foreground" />
                     <h2 className="font-semibold text-foreground">{t('tablesideOrdering')}</h2>
@@ -5483,7 +5885,10 @@ export default function SettingsPage() {
           <TabsContent value="loyalty">
             <SettingsTabShell>
               {/* Loyalty */}
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="loyalty-program"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center gap-2 mb-4">
                   <Gift size={20} className="text-muted-foreground" />
                   <h2 className="font-semibold text-foreground">{t('loyaltyProgram')}</h2>
@@ -5569,7 +5974,10 @@ export default function SettingsPage() {
           <TabsContent value="discounts">
             <SettingsTabShell>
               {/* Discount Limits */}
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="discount-limits"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center gap-2 mb-4">
                   <Percent size={20} className="text-muted-foreground" />
                   <h2 className="font-semibold text-foreground">{t('discountLimits')}</h2>
@@ -5673,7 +6081,10 @@ export default function SettingsPage() {
           <TabsContent value="account">
             <SettingsTabShell>
               {/* Account */}
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="account-details"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <h2 className="font-semibold text-foreground mb-4">{t('account')}</h2>
                 <div className="space-y-3">
                   <div>
@@ -5696,6 +6107,7 @@ export default function SettingsPage() {
               </div>
               {isOwner && (
                 <div
+                  data-setting-section="account-contact-email"
                   className={`rounded-xl border p-6 ${cloudAccountAvailable && cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 dark:border-red-800/40 bg-red-50/40 dark:bg-red-950/20' : 'border-border bg-card'}`}
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -5832,7 +6244,10 @@ export default function SettingsPage() {
           <TabsContent value="privacy">
             <SettingsTabShell>
               <OfflineModeCard canManage={tenantCan(currentTenant, 'offline-mode.manage')} />
-              <div className="bg-card rounded-xl border border-border p-6 space-y-4">
+              <div
+                data-setting-section="privacy-telemetry"
+                className="bg-card rounded-xl border border-border p-6 space-y-4"
+              >
                 <div className="flex items-center gap-2">
                   <Lock size={20} className="text-muted-foreground" />
                   <div>
@@ -5885,7 +6300,10 @@ export default function SettingsPage() {
               </div>
 
               {isOwner && (
-                <div className="rounded-xl border border-border bg-card p-6">
+                <div
+                  data-setting-section="cloud-privacy-controls"
+                  className="rounded-xl border border-border bg-card p-6"
+                >
                   <h2 className="font-semibold text-foreground">{t('cloudPrivacyControls')}</h2>
                   <p className="mt-2 text-sm text-muted-foreground">{t('cloudStopReversible')}</p>
                   {cloudAccount?.deletion_request && (
@@ -6079,7 +6497,10 @@ export default function SettingsPage() {
               {!whatsappEnabled ? (
                 <WhatsAppEnableCard />
               ) : (
-                <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
+                <div
+                  data-setting-section="whatsapp-integration"
+                  className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4"
+                >
                   <div>
                     <p className="font-semibold text-foreground">{tWhatsappSettings('enabled')}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -6098,7 +6519,10 @@ export default function SettingsPage() {
             {canManageMobileAccess ? (
               <SettingsTabShell title={t('tabMobileAccess')}>
                 {/* FloAdmin — reporting sync */}
-                <div className="bg-card rounded-xl border border-border p-6 space-y-5">
+                <div
+                  data-setting-section="floadmin-reporting"
+                  className="bg-card rounded-xl border border-border p-6 space-y-5"
+                >
                   <div className="flex items-center gap-2">
                     <Cloud size={20} className="text-brand" />
                     <div>
@@ -6272,7 +6696,10 @@ export default function SettingsPage() {
                 </div>
 
                 {/* RevFlo — consolidated: download/QR + app (pairing) code + paired devices */}
-                <div className="bg-card rounded-xl border border-border p-6 space-y-5">
+                <div
+                  data-setting-section="revflo-mobile"
+                  className="bg-card rounded-xl border border-border p-6 space-y-5"
+                >
                   <div className="flex items-center gap-2">
                     <Smartphone size={20} className="text-muted-foreground" />
                     <div>
@@ -6444,7 +6871,10 @@ export default function SettingsPage() {
           <TabsContent value="orderflow">
             <SettingsTabShell title={t('tabOrderflow')}>
               {/* OrderFlow — online orders */}
-              <div className="bg-card rounded-xl border border-border p-6 space-y-4">
+              <div
+                data-setting-section="orderflow-online-orders"
+                className="bg-card rounded-xl border border-border p-6 space-y-4"
+              >
                 <div className="flex items-center gap-2">
                   <Zap size={20} className="text-amber-500" />
                   <div>
@@ -6477,7 +6907,10 @@ export default function SettingsPage() {
           {/* About tab */}
           <TabsContent value="about">
             <SettingsTabShell>
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="about-flocafe"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <h2 className="font-semibold text-foreground mb-4">{t('aboutFloCafe')}</h2>
                 <p className="text-sm text-muted-foreground mb-6">{t('aboutDescription')}</p>
                 <div className="space-y-3">
@@ -6530,7 +6963,10 @@ export default function SettingsPage() {
               </div>
 
               {/* More Apps — moved here from the old Integrations tab */}
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="more-apps"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center gap-2 mb-4">
                   <Smartphone size={20} className="text-muted-foreground" />
                   <h2 className="font-semibold text-foreground">{t('moreApps')}</h2>
@@ -6612,7 +7048,10 @@ export default function SettingsPage() {
           {/* Software Updates tab */}
           <TabsContent value="updates">
             <SettingsTabShell>
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div
+                data-setting-section="software-updates"
+                className="bg-card rounded-xl border border-border p-6"
+              >
                 <div className="flex items-center gap-2 mb-4">
                   <RefreshCw size={20} className="text-muted-foreground" />
                   <h2 className="font-semibold text-foreground">{t('updates')}</h2>

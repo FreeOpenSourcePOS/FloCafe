@@ -470,7 +470,10 @@ export function CustomerDisplayCard() {
   }
 
   return (
-    <div className="bg-card rounded-xl border border-border p-6">
+    <div
+      data-setting-section="customer-display"
+      className="bg-card rounded-xl border border-border p-6"
+    >
       <div className="flex items-center gap-2 mb-4">
         <MonitorSmartphone size={20} className="text-muted-foreground" />
         <h2 className="font-semibold text-foreground">{t('settingsTitle')}</h2>

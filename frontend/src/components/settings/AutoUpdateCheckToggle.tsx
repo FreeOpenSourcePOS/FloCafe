@@ -18,6 +18,7 @@ export default function AutoUpdateCheckToggle() {
 
   return (
     <div
+      data-setting-section="auto-update-check"
       className="bg-card rounded-xl border border-border p-6"
       data-testid="auto-update-check-toggle"
     >

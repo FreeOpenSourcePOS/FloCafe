@@ -1013,11 +1013,7 @@ async function main() {
 
         // Case 4: failed /settings/refunds read is treated as a load error and blocks submission
         shouldFailPolicyLoad = true;
-        const resFailedPolicyLoad = await runModalScenario(
-          '2025-06-15 15:50:00',
-          undefined,
-          true,
-        );
+        const resFailedPolicyLoad = await runModalScenario('2025-06-15 15:50:00', undefined, true);
         assertEqual(
           resFailedPolicyLoad.submitDisabled,
           true,

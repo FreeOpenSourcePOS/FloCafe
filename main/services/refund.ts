@@ -144,7 +144,7 @@ export function getRefundableBalance(
   return { paidCents, refundedCents, refundableCents: paidCents - refundedCents };
 }
 
-/** `ownerOnly` narrows the approving PIN to owner accounts — used once a refund falls outside the short in-progress window. */
+/** `ownerOnly` narrows the approving PIN to owner accounts when manager approval is disabled or the manager window has elapsed. */
 function resolveRefundApprover(
   db: Database,
   overridePin: string,

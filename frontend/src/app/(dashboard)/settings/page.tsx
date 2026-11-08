@@ -4944,7 +4944,9 @@ export default function SettingsPage() {
                       value={refundManagerEnabled}
                       onChange={(val) => void saveRefundManagerEnabled(val)}
                       label={t('refundManagerEnabled')}
-                      disabled={!canManageRefundPolicy || !refundPolicyHydrated || savingRefundPolicy}
+                      disabled={
+                        !canManageRefundPolicy || !refundPolicyHydrated || savingRefundPolicy
+                      }
                       dataTestId="setting-refund-manager-enabled"
                     />
                   </div>

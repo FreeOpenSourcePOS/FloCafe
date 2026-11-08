@@ -183,8 +183,9 @@ explicit product decision.
 
 **Rule:** The initial owner creates and confirms a separate 4 to 6 digit Staff Approval PIN during
 first-run setup. It is stored as a bcrypt hash on the owner user record, independent of the device
-Master PIN. Owners, and when enabled within the configured manager approval window also managers,
-can refund a bill that has already been paid: in full, partially, or for a single item. The
+Master PIN. Staff holding `refunds.initiate` can refund a bill that has already been paid - in full,
+partially, or for a single item - with approval from an active owner, or from an active manager when
+manager approval is enabled and within the configured manager approval window. The
 refund can be paid back in a different method than the customer used, or issued as store credit.
 
 1. **Selected approver.** Every refund identifies one approver through `approver_id`. `manager_id`
@@ -249,12 +250,14 @@ settlement records. It is not changed on an active store; see
 
 **Reason:** A controlled way to reverse completed sales without reopening the order-editing
 surface, while keeping the two things most exposed to misuse deliberately tight: how far back a
-refund reaches, and who can approve one.
+manager can approve a refund, and who can approve one.
 
-**Enforced by:** `main/services/refund.ts` (`createRefund`, `resolveRefundApprover`,
-`getRefundableBalance`, `REFUND_ITEM_ELIGIBLE_STATUSES`), `main/services/inventory.ts`
-(`adjustProductStock`), `main/routes/refunds.ts`, and the first-run setup path in
-`main/routes/auth.ts`. Every refund also writes a `refund_issued` row to `order_audit_log`.
+**Enforced by:** `main/services/refund.ts` (`createRefund`, `checkIsLateRefund`,
+`getRefundPolicySettings`, `resolveRefundApprover`, `getRefundableBalance`,
+`REFUND_ITEM_ELIGIBLE_STATUSES`), `main/services/inventory.ts` (`adjustProductStock`),
+`main/routes/refunds.ts`, `main/routes/settings.ts` (`/api/settings/refunds` and `/:key`), and the
+first-run setup path in `main/routes/auth.ts`. Every refund also writes a `refund_issued` row to
+`order_audit_log`.
 
 **How to verify:**
 

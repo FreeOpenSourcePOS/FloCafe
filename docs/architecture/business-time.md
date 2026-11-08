@@ -95,7 +95,7 @@ function tenantTimezone(): string {
   cash closures, shift sessions, and bill business-day checks resolve the same window rather than a
   second, divergent one.
 - [`main/services/refund.ts`](../../main/services/refund.ts) resolves inline, because a wrong
-  business-day end there can wrongly accept or reject a late refund.
+  business-day end there can wrongly accept or reject a manager-approved refund.
 
 Pass `getSettingValue('timezone')` straight into `dayBoundsInTimezone` and you have reintroduced
 the trap. Go through the snapshot.
@@ -138,18 +138,13 @@ isolated in a shared drawer. For cross-shift bill tax attribution on shift X/Z r
 
 ### Refunds
 
-`main/services/refund.ts` evaluates manager approval eligibility against the owner-configured
-`refund_manager_enabled` (default `'true'`) and `refund_manager_window` (`'30m'`, `'1h'`, `'2h'`,
-`'4h'`, or `'same_business_day'`, default `'1h'`) settings, anchored to `released_at || created_at`
-for released orders (when `refund_manager_enabled === 'true'`, unreleased scheduled orders never age
-into the owner-only tier). The anchor timestamp's business day is computed with
-`localDateInTimezone` and `dayBoundsInTimezone`. Once the configured manager window or the anchor
-timestamp's business day has passed (or when `refund_manager_enabled === 'false'`), a refund
-narrows the eligible approver to active owners and requires that owner's Staff Approval PIN, with no
-age cutoff for owner-approved refunds. The device Master PIN never authorizes a refund.
-
-`parseDbTimestamp` is used on both ends of that comparison, so the boundary is an instant
-comparison in UTC rather than a string comparison.
+`main/services/refund.ts` bounds manager refund approval by the anchor timestamp's
+(`released_at || created_at`) business day, computed with `localDateInTimezone` and
+`dayBoundsInTimezone`, alongside the configured `refund_manager_window` duration. `parseDbTimestamp`
+is used on both ends of that comparison so the boundary is evaluated as a UTC instant rather than a
+string comparison. See
+[product invariants](../reference/product-invariants.md#refunds-and-staff-approval-pins) for the
+approval tiers and refund policy settings.
 
 ### Scheduled kitchen release
 

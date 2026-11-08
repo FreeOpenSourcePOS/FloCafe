@@ -12,6 +12,9 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
+const OPEN_MODAL_SELECTOR =
+  '[data-slot="dialog-content"][data-state="open"], [data-slot="dropdown-menu-content"][data-state="open"], [data-slot="sheet-content"][data-state="open"], [data-slot="drawer-content"][data-state="open"]';
+
 export function clearStaleBodyPointerEvents(): void {
   if (
     typeof document === 'undefined' ||
@@ -22,11 +25,7 @@ export function clearStaleBodyPointerEvents(): void {
   }
   const hasOpenModal =
     typeof document.querySelector === 'function' &&
-    Boolean(
-      document.querySelector(
-        '[data-slot="dialog-content"][data-state="open"], [data-slot="dropdown-menu-content"][data-state="open"]',
-      ),
-    );
+    Boolean(document.querySelector(OPEN_MODAL_SELECTOR));
   if (!hasOpenModal) {
     document.body.style.pointerEvents = '';
   }
@@ -69,10 +68,7 @@ export function useConfirm() {
         destructive?: boolean;
       },
     ): Promise<boolean> => {
-      // Clear any transient pointer-events lock from a closing DropdownMenu before Dialog mounts.
-      if (typeof document !== 'undefined' && document.body?.style?.pointerEvents === 'none') {
-        document.body.style.pointerEvents = '';
-      }
+      clearStaleBodyPointerEvents();
       return new Promise((resolve) => {
         setState((previous) => {
           previous?.resolve(false);

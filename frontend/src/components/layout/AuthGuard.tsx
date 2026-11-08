@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { showPrintLanguageLoadErrorsToast } from '@/lib/printer/warnings-toast';
 import { tenantCan } from '@/lib/permissions';
 import { normalizePathname } from '@/lib/utils';
+import { clearStaleBodyPointerEvents } from '@/hooks/use-confirm';
 import type { Tenant } from '@/lib/types';
 
 export const LANDING_PAGE_CANDIDATES = [
@@ -84,21 +85,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     pathname?.startsWith('/customer-display/');
 
   useEffect(() => {
-    if (
-      typeof document !== 'undefined' &&
-      document.body?.style?.pointerEvents === 'none'
-    ) {
-      const hasOpenModal =
-        typeof document.querySelector === 'function' &&
-        Boolean(
-          document.querySelector(
-            '[data-slot="dialog-content"][data-state="open"], [data-slot="dropdown-menu-content"][data-state="open"]',
-          ),
-        );
-      if (!hasOpenModal) {
-        document.body.style.pointerEvents = '';
-      }
-    }
+    clearStaleBodyPointerEvents();
   }, [pathname, user]);
 
   useEffect(() => {

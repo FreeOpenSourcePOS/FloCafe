@@ -591,7 +591,9 @@ Kitchen Display apply without reloading the board. The tenant-wide config sets w
 the refresh interval, and whether the last-updated time is shown. Deduplicated orders are sorted
 oldest first and applied atomically once all pages complete in a cycle, preserving the ten-second TV
 visual page rotation. At desktop widths, each column renders complete bill or order numbers in
-readable rows and independently rotates measured pages every ten seconds when needed. Newly ready
+readable rows and independently rotates measured pages every ten seconds when needed, showing a
+multi-page indicator (`1 / N`, page dots, and a `+count` overflow pill) and a ten-second progress
+bar in the column header when orders span multiple pages. Newly ready
 orders take priority on the next rotation, interleaved with existing pages. At narrow widths the rows
 remain in one scrollable flow. A failed poll retains the last successful orders and reports that the
 feed is stale. Multi-page poll cycles automatically pace their interval above the configured refresh

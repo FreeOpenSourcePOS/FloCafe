@@ -1494,6 +1494,356 @@ async function run() {
           );
         }
 
+        // Subcase 4c: OrderBoardSection on /customer-display renders multi-page indicator, overflow pill, and 10s timer bar only when hasMultiplePages === true (#1527)
+        {
+          for (const slot of effectSlots) {
+            if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+          }
+          states.length = 0;
+          refs.length = 0;
+          effectSlots.length = 0;
+          pendingEffects.length = 0;
+
+          const intervalTimers: Array<{ fn: () => void; ms: number; cleared: boolean }> = [];
+          const originalDocument = (globalThis as any).document;
+          const originalResizeObserver = (globalThis as any).ResizeObserver;
+          const prevSetInterval = (globalThis as any).window.setInterval;
+          const prevClearInterval = (globalThis as any).window.clearInterval;
+          const prevMatchMedia = (globalThis as any).window.matchMedia;
+          const prevGetComputedStyle = (globalThis as any).window.getComputedStyle;
+
+          try {
+            (globalThis as any).document = {
+              visibilityState: 'visible',
+              addEventListener: () => {},
+              removeEventListener: () => {},
+            };
+            (globalThis as any).ResizeObserver = class {
+              observe() {}
+              disconnect() {}
+            };
+            (globalThis as any).window.matchMedia = () => ({
+              matches: true,
+              addEventListener: () => {},
+              removeEventListener: () => {},
+            });
+            (globalThis as any).window.getComputedStyle = () => ({
+              paddingTop: '0',
+              paddingBottom: '0',
+              rowGap: '12',
+            });
+            (globalThis as any).window.setInterval = (fn: () => void, ms: number) => {
+              const entry = { fn, ms, cleared: false };
+              intervalTimers.push(entry);
+              return entry;
+            };
+            (globalThis as any).window.clearInterval = (entry: { cleared?: boolean } | null) => {
+              if (entry && typeof entry === 'object') entry.cleared = true;
+            };
+
+            let listHeight = 160;
+            const attachElementMocks = (node: any): void => {
+              if (Array.isArray(node)) {
+                for (const child of node) attachElementMocks(child);
+                return;
+              }
+              if (!node || typeof node !== 'object') return;
+              if (
+                node.props?.['data-testid'] === 'customer-display-preparing-scroll' ||
+                node.props?.['data-testid'] === 'customer-display-ready-scroll'
+              ) {
+                node.clientHeight = listHeight;
+              }
+              if (node.props?.['data-testid'] === 'customer-display-order-row') {
+                node.getBoundingClientRect = () => ({ height: 72 });
+              }
+              const ref = node.props?.ref;
+              if (typeof ref === 'function') {
+                ref(node);
+              } else if (ref && typeof ref === 'object' && 'current' in ref) {
+                ref.current = node;
+              }
+              if (node.props?.children !== undefined) {
+                attachElementMocks(node.props.children);
+              }
+            };
+
+            const renderTree = (tree: any): any => {
+              if (Array.isArray(tree)) return tree.map(renderTree);
+              if (!tree || typeof tree !== 'object') return tree;
+              if (typeof tree.type === 'function') {
+                const rendered = tree.type(tree.props);
+                return renderTree(rendered);
+              }
+              if (tree.props?.children !== undefined) {
+                return {
+                  ...tree,
+                  props: {
+                    ...tree.props,
+                    children: renderTree(tree.props.children),
+                  },
+                };
+              }
+              return tree;
+            };
+
+            const flattenText = (node: unknown): string => {
+              if (node === null || node === undefined || typeof node === 'boolean') return '';
+              if (typeof node === 'string' || typeof node === 'number') return String(node);
+              if (Array.isArray(node)) return node.map(flattenText).join('');
+              if (typeof node === 'object' && 'props' in (node as Record<string, unknown>)) {
+                return flattenText((node as { props?: { children?: unknown } }).props?.children);
+              }
+              return '';
+            };
+
+            // Render OrderBoardSection directly by locating it inside CustomerDisplayPage's rendered tree
+            states.length = 0;
+            refs.length = 0;
+            effectSlots.length = 0;
+            pendingEffects.length = 0;
+
+            let boardSectionComponent: ((props: any) => any) | null = null;
+            // Temporarily set CustomerDisplayPage state so it renders the board sections:
+            // useState order in CustomerDisplayPage:
+            // 0: orders, 1: newlyReadyOrderIds, 2: pairedToken, 3: unpaired, 4: businessName, 5: loading, 6: error, 7: lastUpdated, 8: config
+            states[0] = [
+              { id: '1', number: '101', status: 'preparing' },
+              { id: '2', number: '102', status: 'preparing' },
+            ];
+            states[1] = new Set<string>();
+            states[2] = 'paired-token';
+            states[3] = false;
+            states[4] = 'Flo Cafe';
+            states[5] = false;
+            states[6] = false;
+            states[7] = new Date();
+            states[8] = {
+              statuses: ['pending', 'preparing', 'ready'],
+              refresh_seconds: 5,
+              show_updated: true,
+            };
+
+            currentStateIdx = 0;
+            currentRefIdx = 0;
+            currentEffectIdx = 0;
+            const pageTree = CustomerDisplayPage();
+            const sectionNodes = findNodes(
+              pageTree,
+              (el) => typeof el.type === 'function' && el.props?.accent === 'blue',
+            );
+            assert.equal(
+              sectionNodes.length,
+              1,
+              'CustomerDisplayPage renders blue OrderBoardSection',
+            );
+            boardSectionComponent = sectionNodes[0].type as (props: any) => any;
+
+            for (const slot of effectSlots) {
+              if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+            }
+            states.length = 0;
+            refs.length = 0;
+            effectSlots.length = 0;
+            pendingEffects.length = 0;
+            intervalTimers.length = 0;
+
+            const renderBoardSection = (
+              ordersList: Array<{ id: string; number: string; status: 'preparing' | 'ready' }>,
+            ) => {
+              let tree: any = null;
+              for (let pass = 0; pass < 4; pass += 1) {
+                currentStateIdx = 0;
+                currentRefIdx = 0;
+                currentEffectIdx = 0;
+                pendingEffects.length = 0;
+                tree = renderTree(
+                  boardSectionComponent!({
+                    accent: 'blue',
+                    emptyMessage: 'Empty',
+                    hint: 'Hint',
+                    isReady: false,
+                    newlyReadyOrderIds: new Set<string>(),
+                    onPriorityOrdersShown: () => {},
+                    orders: ordersList,
+                    title: 'Preparing',
+                  }),
+                );
+                attachElementMocks(tree);
+                if (pendingEffects.length === 0) break;
+                while (pendingEffects.length > 0) {
+                  const runEffect = pendingEffects.shift()!;
+                  runEffect();
+                }
+              }
+              return tree;
+            };
+
+            // Case 1: Single page (2 orders of 72px + 12px gap = 156px <= 160px availableHeight)
+            const singlePageOrders = [
+              { id: '1', number: '101', status: 'preparing' as const },
+              { id: '2', number: '102', status: 'preparing' as const },
+            ];
+            const singleTree = renderBoardSection(singlePageOrders);
+            assert.equal(
+              findNodes(
+                singleTree,
+                (el) => el.props?.['data-testid'] === 'customer-display-page-indicator',
+              ).length,
+              0,
+              'single-page OrderBoardSection does not render customer-display-page-indicator',
+            );
+            assert.equal(
+              findNodes(
+                singleTree,
+                (el) => el.props?.['data-testid'] === 'customer-display-page-timer',
+              ).length,
+              0,
+              'single-page OrderBoardSection does not render customer-display-page-timer',
+            );
+
+            // Case 2: Multi-page (5 orders of 72px with availableHeight=160 -> 2 orders per page -> 3 pages: [1,2], [3,4], [5])
+            const multiPageOrders = [
+              { id: '1', number: '101', status: 'preparing' as const },
+              { id: '2', number: '102', status: 'preparing' as const },
+              { id: '3', number: '103', status: 'preparing' as const },
+              { id: '4', number: '104', status: 'preparing' as const },
+              { id: '5', number: '105', status: 'preparing' as const },
+            ];
+            const multiTreePage1 = renderBoardSection(multiPageOrders);
+            const indicatorsPage1 = findNodes(
+              multiTreePage1,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-indicator',
+            );
+            assert.equal(
+              indicatorsPage1.length,
+              1,
+              'multi-page OrderBoardSection renders customer-display-page-indicator',
+            );
+            assert.ok(
+              flattenText(indicatorsPage1[0]).includes('1 / 3'),
+              'page 1 indicator shows 1 / 3',
+            );
+            const overflowBadgesPage1 = findNodes(
+              multiTreePage1,
+              (el) => el.props?.['data-testid'] === 'customer-display-overflow-count',
+            );
+            assert.equal(
+              overflowBadgesPage1.length,
+              1,
+              'multi-page OrderBoardSection renders customer-display-overflow-count',
+            );
+            assert.equal(
+              flattenText(overflowBadgesPage1[0]),
+              '+3',
+              'page 1 overflow count shows +3 hidden orders (5 total - 2 visible)',
+            );
+            const dotsPage1 = findNodes(
+              multiTreePage1,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-dot',
+            );
+            assert.equal(dotsPage1.length, 3, 'multi-page indicator renders 3 page dots');
+            assert.deepEqual(
+              dotsPage1.map((d) => d.props?.['data-active']),
+              ['true', 'false', 'false'],
+              'page 1 activates first page dot',
+            );
+            const timersPage1 = findNodes(
+              multiTreePage1,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-timer',
+            );
+            assert.equal(
+              timersPage1.length,
+              1,
+              'multi-page OrderBoardSection renders timer bar container',
+            );
+            const timerBarsPage1 = findNodes(
+              multiTreePage1,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-timer-bar',
+            );
+            assert.equal(
+              timerBarsPage1.length,
+              1,
+              'multi-page OrderBoardSection renders animated timer bar',
+            );
+            const page1TimerKey = timerBarsPage1[0].key;
+            assert.equal(
+              timerBarsPage1[0].props?.style?.animationDuration,
+              '10000ms',
+              'timer bar animates over 10000ms',
+            );
+
+            // Advance 10s interval timer to rotate to page 2
+            const activeInterval = intervalTimers.find((t) => !t.cleared && t.ms === 10_000);
+            assert.ok(activeInterval, '10s page rotation interval is scheduled');
+            activeInterval.fn();
+            const multiTreePage2 = renderBoardSection(multiPageOrders);
+            const indicatorsPage2 = findNodes(
+              multiTreePage2,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-indicator',
+            );
+            assert.ok(
+              flattenText(indicatorsPage2[0]).includes('2 / 3'),
+              'advancing interval updates page indicator to 2 / 3',
+            );
+            const dotsPage2 = findNodes(
+              multiTreePage2,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-dot',
+            );
+            assert.deepEqual(
+              dotsPage2.map((d) => d.props?.['data-active']),
+              ['false', 'true', 'false'],
+              'page 2 activates second page dot',
+            );
+            const timerBarsPage2 = findNodes(
+              multiTreePage2,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-timer-bar',
+            );
+            assert.notEqual(
+              timerBarsPage2[0].key,
+              page1TimerKey,
+              'advancing page updates timer bar key to restart animation',
+            );
+
+            // Advance to page 3 (1 visible order, 4 hidden orders -> +4)
+            const nextInterval = intervalTimers.find((t) => !t.cleared && t.ms === 10_000);
+            assert.ok(nextInterval, '10s page rotation interval remains active');
+            nextInterval.fn();
+            const multiTreePage3 = renderBoardSection(multiPageOrders);
+            const indicatorsPage3 = findNodes(
+              multiTreePage3,
+              (el) => el.props?.['data-testid'] === 'customer-display-page-indicator',
+            );
+            assert.ok(
+              flattenText(indicatorsPage3[0]).includes('3 / 3'),
+              'advancing interval updates page indicator to 3 / 3',
+            );
+            const overflowBadgesPage3 = findNodes(
+              multiTreePage3,
+              (el) => el.props?.['data-testid'] === 'customer-display-overflow-count',
+            );
+            assert.equal(
+              flattenText(overflowBadgesPage3[0]),
+              '+4',
+              'page 3 overflow count shows +4 hidden orders (5 total - 1 visible)',
+            );
+          } finally {
+            for (const slot of effectSlots) {
+              if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+            }
+            states.length = 0;
+            refs.length = 0;
+            effectSlots.length = 0;
+            pendingEffects.length = 0;
+            (globalThis as any).document = originalDocument;
+            (globalThis as any).ResizeObserver = originalResizeObserver;
+            (globalThis as any).window.setInterval = prevSetInterval;
+            (globalThis as any).window.clearInterval = prevClearInterval;
+            (globalThis as any).window.matchMedia = prevMatchMedia;
+            (globalThis as any).window.getComputedStyle = prevGetComputedStyle;
+          }
+        }
+
         // Subcase 5: DesktopDragSurface exposes ApplicationMenuRow on standalone routes (/setup, /auth/*) and omits it on dashboard routes
         let mockPathname = '/setup';
         const AppMenuRowStub = () => ({ type: 'ApplicationMenuRow' });

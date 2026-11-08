@@ -2480,8 +2480,40 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     expect(firstPreparingPage.length, 'preparing has multiple pages').toBeLessThan(30);
     expect(readyPage).toEqual(['display-ready-1', 'display-ready-2']);
 
+    const preparingSection = preparing.locator('..');
+    const readySection = ready.locator('..');
+    const preparingIndicator = preparingSection.getByTestId('customer-display-page-indicator');
+    await expect(
+      preparingIndicator,
+      'multi-page preparing column shows page indicator',
+    ).toBeVisible();
+    await expect(preparingIndicator).toContainText(/^1 \/ \d+/);
+    await expect(preparingSection.getByTestId('customer-display-overflow-count')).toHaveText(
+      `+${30 - firstPreparingPage.length}`,
+    );
+    const preparingDots = preparingSection.getByTestId('customer-display-page-dot');
+    expect(await preparingDots.count()).toBeGreaterThan(1);
+    await expect(preparingDots.nth(0)).toHaveAttribute('data-active', 'true');
+    await expect(preparingDots.nth(1)).toHaveAttribute('data-active', 'false');
+    await expect(
+      preparingSection.getByTestId('customer-display-page-timer'),
+      'multi-page preparing column shows 10s switch timer',
+    ).toBeVisible();
+    await expect(preparingSection.getByTestId('customer-display-page-timer-bar')).toBeVisible();
+    await expect(
+      readySection.getByTestId('customer-display-page-indicator'),
+      'single-page ready column omits page indicator',
+    ).toHaveCount(0);
+    await expect(
+      readySection.getByTestId('customer-display-page-timer'),
+      'single-page ready column omits page timer',
+    ).toHaveCount(0);
+
     await page.clock.runFor(10_000);
     await expect.poll(() => readIds(preparing)).not.toEqual(firstPreparingPage);
+    await expect(preparingIndicator).toContainText(/^2 \/ \d+/);
+    await expect(preparingDots.nth(0)).toHaveAttribute('data-active', 'false');
+    await expect(preparingDots.nth(1)).toHaveAttribute('data-active', 'true');
     expect(await readIds(ready), 'the single ready page does not rotate').toEqual(readyPage);
 
     feed.replace(displayOrders(30, 3));

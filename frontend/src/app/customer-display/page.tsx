@@ -220,6 +220,16 @@ function OrderBoardSection({
     ],
   );
   const hasMultiplePages = isPagedLayout && combinedPages.length > 1;
+  const allPages = useMemo(
+    () =>
+      priorityPages.length > 0
+        ? [
+            ...priorityPages.map((page) => ({ page, group: 'priority' as const })),
+            ...ordinaryPages.map((page) => ({ page, group: 'ordinary' as const })),
+          ]
+        : combinedPages.map((page) => ({ page, group: 'ordinary' as const })),
+    [combinedPages, ordinaryPages, priorityPages],
+  );
   const priorityPagesRef = useRef(priorityPages);
   const ordinaryPagesRef = useRef(ordinaryPages);
 
@@ -402,11 +412,6 @@ function OrderBoardSection({
       return;
     }
 
-    const allPages = [
-      ...priorityPages.map((page) => ({ page, group: 'priority' as const })),
-      ...ordinaryPages.map((page) => ({ page, group: 'ordinary' as const })),
-    ];
-
     if (retainedIds.length > 0) {
       const currentPage = allPages.find(({ page }) =>
         page.some((order) => getOrderId(order) === retainedIds[0]),
@@ -428,6 +433,7 @@ function OrderBoardSection({
 
     selectNextPage(priorityPages, ordinaryPages);
   }, [
+    allPages,
     areOrdersMeasured,
     combinedPages,
     isPagedLayout,
@@ -456,6 +462,26 @@ function OrderBoardSection({
         .map((id) => orderById.get(id))
         .filter((order): order is BoardOrder => !!order)
     : orders;
+  const totalPages = allPages.length;
+  const activePageKey = `${activePage.group}:${getPageKey(activePage.orderIds)}`;
+  const activePageIndex = useMemo(() => {
+    if (allPages.length === 0) return 0;
+    const activeIdsKey = getPageKey(activePage.orderIds);
+    const exactMatch = allPages.findIndex(
+      (entry) =>
+        entry.group === activePage.group && getPageKey(entry.page.map(getOrderId)) === activeIdsKey,
+    );
+    if (exactMatch >= 0) return exactMatch;
+    if (activePage.orderIds.length > 0) {
+      const firstId = activePage.orderIds[0];
+      const byFirstOrder = allPages.findIndex((entry) =>
+        entry.page.some((order) => getOrderId(order) === firstId),
+      );
+      if (byFirstOrder >= 0) return byFirstOrder;
+    }
+    return 0;
+  }, [activePage.group, activePage.orderIds, allPages]);
+  const hiddenOrderCount = Math.max(0, orders.length - visibleOrders.length);
   const dataTestId = isReady
     ? 'customer-display-ready-scroll'
     : 'customer-display-preparing-scroll';
@@ -465,16 +491,91 @@ function OrderBoardSection({
       className={`flex min-w-0 flex-col overflow-hidden rounded-3xl border ${accent === 'blue' ? 'border-blue-900/70 bg-blue-950/60' : 'border-emerald-900/70 bg-emerald-950/60'}`}
     >
       <div
-        className={`shrink-0 border-b px-5 py-4 md:px-6 md:py-5 ${accent === 'blue' ? 'border-blue-800/60 bg-blue-900/50' : 'border-emerald-800/60 bg-emerald-900/50'}`}
+        className={`relative shrink-0 border-b px-5 py-4 md:px-6 md:py-5 ${accent === 'blue' ? 'border-blue-800/60 bg-blue-900/50' : 'border-emerald-800/60 bg-emerald-900/50'}`}
       >
-        <h2 className="text-[clamp(1.875rem,1.5vw,3.75rem)] font-extrabold uppercase tracking-wide">
-          {title}
-        </h2>
-        <p
-          className={`mt-1 text-[clamp(1rem,0.8vw,2rem)] ${accent === 'blue' ? 'text-blue-200/70' : 'text-emerald-200/70'}`}
-        >
-          {hint}
-        </p>
+        <div className="flex min-w-0 items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-[clamp(1.875rem,1.5vw,3.75rem)] font-extrabold uppercase tracking-wide">
+              {title}
+            </h2>
+            <p
+              className={`mt-1 text-[clamp(1rem,0.8vw,2rem)] ${accent === 'blue' ? 'text-blue-200/70' : 'text-emerald-200/70'}`}
+            >
+              {hint}
+            </p>
+          </div>
+          {hasMultiplePages && (
+            <div
+              data-testid="customer-display-page-indicator"
+              className="ltr-island flex shrink-0 flex-col items-end gap-1.5 pt-1"
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`rounded-full border px-2.5 py-0.5 text-sm font-bold tabular-nums md:px-3 md:py-1 md:text-base ${
+                    accent === 'blue'
+                      ? 'border-blue-400/40 bg-blue-950/80 text-blue-100'
+                      : 'border-emerald-400/40 bg-emerald-950/80 text-emerald-100'
+                  }`}
+                >
+                  {activePageIndex + 1} / {totalPages}
+                </span>
+                {hiddenOrderCount > 0 && (
+                  <span
+                    data-testid="customer-display-overflow-count"
+                    className={`rounded-full border px-2.5 py-0.5 text-sm font-extrabold tabular-nums md:px-3 md:py-1 md:text-base ${
+                      accent === 'blue'
+                        ? 'border-blue-300/50 bg-blue-500/25 text-blue-100'
+                        : 'border-emerald-300/50 bg-emerald-500/25 text-emerald-100'
+                    }`}
+                  >
+                    +{hiddenOrderCount}
+                  </span>
+                )}
+              </div>
+              <div className="flex max-w-44 flex-wrap items-center justify-end gap-1.5">
+                {allPages.map((entry, index) => {
+                  const isActive = index === activePageIndex;
+                  return (
+                    <span
+                      key={`${entry.group}:${getPageKey(entry.page.map(getOrderId))}`}
+                      data-testid="customer-display-page-dot"
+                      data-active={isActive ? 'true' : 'false'}
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        isActive
+                          ? accent === 'blue'
+                            ? 'w-5 bg-blue-300'
+                            : 'w-5 bg-emerald-300'
+                          : accent === 'blue'
+                            ? 'w-2 bg-blue-300/35'
+                            : 'w-2 bg-emerald-300/35'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+        {hasMultiplePages && (
+          <div
+            data-testid="customer-display-page-timer"
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-x-0 bottom-0 h-1.5 w-full overflow-hidden ${
+              accent === 'blue' ? 'bg-blue-950/80' : 'bg-emerald-950/80'
+            }`}
+          >
+            {isPageVisible && (
+              <div
+                key={activePageKey}
+                data-testid="customer-display-page-timer-bar"
+                className={`flo-display-page-timer-bar ${
+                  accent === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'
+                }`}
+                style={{ animationDuration: `${ORDER_PAGE_INTERVAL_MS}ms` }}
+              />
+            )}
+          </div>
+        )}
       </div>
       <div
         ref={listRef}

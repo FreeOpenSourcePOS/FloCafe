@@ -179,12 +179,12 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
   useEffect(() => {
     let cancelled = false;
     const requestUserId = user?.id == null ? null : String(user.id);
-    Promise.all([api.get('/staff/approvers'), api.get('/settings/refunds').catch(() => null)])
+    Promise.all([api.get('/staff/approvers'), api.get('/settings/refunds')])
       .then(([res, policyRes]) => {
         if (cancelled) return;
         const loadedPolicy: RefundPolicySettings = {
-          refund_manager_enabled: policyRes?.data?.refund_manager_enabled !== false,
-          refund_manager_window: isRefundManagerWindow(policyRes?.data?.refund_manager_window)
+          refund_manager_enabled: policyRes.data?.refund_manager_enabled !== false,
+          refund_manager_window: isRefundManagerWindow(policyRes.data?.refund_manager_window)
             ? policyRes.data.refund_manager_window
             : '1h',
         };
@@ -393,12 +393,21 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     if (!canSubmit || !effectiveBill) return;
     setSubmitting(true);
     try {
-      const staffResponse = await api.get('/staff/approvers');
+      const [staffResponse, policyResponse] = await Promise.all([
+        api.get('/staff/approvers'),
+        api.get('/settings/refunds'),
+      ]);
+      const latestPolicy: RefundPolicySettings = {
+        refund_manager_enabled: policyResponse.data?.refund_manager_enabled !== false,
+        refund_manager_window: isRefundManagerWindow(policyResponse.data?.refund_manager_window)
+          ? policyResponse.data.refund_manager_window
+          : '1h',
+      };
       const submissionNow = getCurrentTime();
       const submissionIsLate = isOrderLikelyLateForRefund(
         order,
         submissionNow,
-        refundPolicy,
+        latestPolicy,
         currentTenant?.timezone,
         currentTenant?.business_day_start_time,
       );
@@ -415,6 +424,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
         : eligibleApproversAtSubmission.length === 1
           ? String(eligibleApproversAtSubmission[0].id)
           : '';
+      setRefundPolicy(latestPolicy);
       setNow(submissionNow);
       setApprovers(configuredApprovers);
       setApproverId(approverIdAtSubmission);

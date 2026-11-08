@@ -394,6 +394,7 @@ export default function SettingsPage() {
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
   const isAdmin = tenantCan(currentTenant, 'settings.manage');
   const isOwner = tenantCan(currentTenant, 'cloud.account.manage');
+  const canManageRefundPolicy = currentTenant?.role === 'owner' && isAdmin;
   const canManageDatabase = tenantCan(currentTenant, 'database.manage');
   const canManageTaxPacks = tenantCan(currentTenant, 'tax-packs.manage');
   const canViewTaxConfiguration = tenantCan(currentTenant, 'tax-packs.view-test');
@@ -475,6 +476,7 @@ export default function SettingsPage() {
       confirmedKitchenVersions.current.clear();
       failedKitchenSaveVersions.current.clear();
       confirmedKitchenSettings.current = { tenantId };
+      setRefundPolicyHydrated(false);
     }
   };
   const markHydrationTouched = (field: string) => {
@@ -1991,6 +1993,7 @@ export default function SettingsPage() {
   const [refundManagerWindow, setRefundManagerWindow] = useState<
     '30m' | '1h' | '2h' | '4h' | 'same_business_day'
   >('1h');
+  const [refundPolicyHydrated, setRefundPolicyHydrated] = useState(false);
   const [savingRefundPolicy, setSavingRefundPolicy] = useState(false);
 
   const [savedOrderNumberForm, setSavedOrderNumberForm] = useState<OrderNumberForm>({
@@ -2979,17 +2982,21 @@ export default function SettingsPage() {
         if (active()) {
           setScheduledOrdersEnabled(res?.data?.setting?.value === 'true');
           if (refundsRes?.data) {
-            setRefundManagerEnabled(refundsRes.data.refund_manager_enabled !== false);
+            if (!isHydrationTouched('refundManagerEnabled')) {
+              setRefundManagerEnabled(refundsRes.data.refund_manager_enabled !== false);
+            }
             if (
-              refundsRes.data.refund_manager_window === '30m' ||
-              refundsRes.data.refund_manager_window === '1h' ||
-              refundsRes.data.refund_manager_window === '2h' ||
-              refundsRes.data.refund_manager_window === '4h' ||
-              refundsRes.data.refund_manager_window === 'same_business_day'
+              !isHydrationTouched('refundManagerWindow') &&
+              (refundsRes.data.refund_manager_window === '30m' ||
+                refundsRes.data.refund_manager_window === '1h' ||
+                refundsRes.data.refund_manager_window === '2h' ||
+                refundsRes.data.refund_manager_window === '4h' ||
+                refundsRes.data.refund_manager_window === 'same_business_day')
             ) {
               setRefundManagerWindow(refundsRes.data.refund_manager_window);
             }
           }
+          setRefundPolicyHydrated(true);
         }
         return;
       }
@@ -3802,12 +3809,16 @@ export default function SettingsPage() {
 
   const saveRefundManagerEnabled = async (enabled: boolean) => {
     const previous = refundManagerEnabled;
+    markHydrationTouched('refundManagerEnabled');
     setRefundManagerEnabled(enabled);
     setSavingRefundPolicy(true);
     try {
-      await api.put('/settings/refunds', {
+      const { data } = await api.put('/settings/refunds', {
         refund_manager_enabled: enabled,
       });
+      if (typeof data?.refund_manager_enabled === 'boolean') {
+        setRefundManagerEnabled(data.refund_manager_enabled);
+      }
       toast.success(t('diagnosticsSettingSaved'));
     } catch {
       setRefundManagerEnabled(previous);
@@ -3821,12 +3832,22 @@ export default function SettingsPage() {
     nextWindow: '30m' | '1h' | '2h' | '4h' | 'same_business_day',
   ) => {
     const previous = refundManagerWindow;
+    markHydrationTouched('refundManagerWindow');
     setRefundManagerWindow(nextWindow);
     setSavingRefundPolicy(true);
     try {
-      await api.put('/settings/refunds', {
+      const { data } = await api.put('/settings/refunds', {
         refund_manager_window: nextWindow,
       });
+      if (
+        data?.refund_manager_window === '30m' ||
+        data?.refund_manager_window === '1h' ||
+        data?.refund_manager_window === '2h' ||
+        data?.refund_manager_window === '4h' ||
+        data?.refund_manager_window === 'same_business_day'
+      ) {
+        setRefundManagerWindow(data.refund_manager_window);
+      }
       toast.success(t('diagnosticsSettingSaved'));
     } catch {
       setRefundManagerWindow(previous);
@@ -4923,7 +4944,7 @@ export default function SettingsPage() {
                       value={refundManagerEnabled}
                       onChange={(val) => void saveRefundManagerEnabled(val)}
                       label={t('refundManagerEnabled')}
-                      disabled={!isOwner || savingRefundPolicy}
+                      disabled={!canManageRefundPolicy || !refundPolicyHydrated || savingRefundPolicy}
                       dataTestId="setting-refund-manager-enabled"
                     />
                   </div>
@@ -4940,7 +4961,12 @@ export default function SettingsPage() {
                     <select
                       aria-label={t('refundManagerWindow')}
                       data-testid="setting-refund-manager-window"
-                      disabled={!isOwner || !refundManagerEnabled || savingRefundPolicy}
+                      disabled={
+                        !canManageRefundPolicy ||
+                        !refundPolicyHydrated ||
+                        !refundManagerEnabled ||
+                        savingRefundPolicy
+                      }
                       value={refundManagerWindow}
                       onChange={(e) =>
                         void saveRefundManagerWindow(

@@ -764,6 +764,7 @@ async function main() {
       };
 
       let mockPolicy = { refund_manager_enabled: true, refund_manager_window: '2h' };
+      let shouldFailPolicyLoad = false;
       let mockTenant: any = {
         id: 't-1',
         country: 'US',
@@ -823,7 +824,10 @@ async function main() {
                   },
                 };
               }
-              if (url === '/settings/refunds') return { data: mockPolicy };
+              if (url === '/settings/refunds') {
+                if (shouldFailPolicyLoad) throw new Error('Policy load failed');
+                return { data: mockPolicy };
+              }
               if (url.startsWith('/bills/'))
                 return { data: { bill: { id: 901, paid_amount: 50, order: { items: [] } } } };
               if (url === '/payment-methods') return { data: { payment_methods: [] } };
@@ -864,7 +868,11 @@ async function main() {
       try {
         const RefundModal = require('../frontend/src/components/orders/RefundModal').default;
 
-        const runModalScenario = async (createdAtUtc: string) => {
+        const runModalScenario = async (
+          createdAtUtc: string,
+          beforeSubmit?: () => void,
+          expectDisabledBeforePin = false,
+        ) => {
           states.length = 0;
           setters.length = 0;
           effectEntries.length = 0;
@@ -902,9 +910,30 @@ async function main() {
           await new Promise((r) => setTimeout(r, 20));
           let tree = renderModal();
 
+          if (expectDisabledBeforePin) {
+            const submitBtnInitial = collectNodes(
+              tree,
+              (n) =>
+                n.type === ButtonStub &&
+                (n.props?.children === 'refundSubmit' ||
+                  (Array.isArray(n.props?.children) && n.props.children.includes('refundSubmit'))),
+            )[0];
+            for (const entry of effectEntries) {
+              if (typeof entry?.cleanup === 'function') entry.cleanup();
+            }
+            return {
+              refundedCount,
+              posted: [...postedRefunds],
+              submitDisabled: Boolean(submitBtnInitial?.props?.disabled),
+              tree,
+            };
+          }
+
           const pinInput = collectNodes(tree, (n) => n.props?.id === 'refundPin')[0];
           pinInput.props.onChange({ target: { value: '1234' } });
           tree = renderModal();
+
+          if (beforeSubmit) beforeSubmit();
 
           const submitBtn = collectNodes(
             tree,
@@ -918,11 +947,12 @@ async function main() {
             'RefundModal submit button is enabled for eligible manager',
           );
           await submitBtn.props.onClick();
+          tree = renderModal();
 
           for (const entry of effectEntries) {
             if (typeof entry?.cleanup === 'function') entry.cleanup();
           }
-          return { refundedCount, posted: [...postedRefunds] };
+          return { refundedCount, posted: [...postedRefunds], submitDisabled: false, tree };
         };
 
         // Case 1: 2h window with a 90-minute-old order (past default 1h, within configured 2h)
@@ -959,6 +989,41 @@ async function main() {
           managerId,
           'RefundModal keeps manager approver_id across UTC midnight',
         );
+
+        // Case 3: policy changes before submit() (manager approvals disabled while modal open)
+        Date.now = () => Date.UTC(2025, 5, 15, 16, 0, 0);
+        mockPolicy = { refund_manager_enabled: true, refund_manager_window: '2h' };
+        const resPolicyChangedOnSubmit = await runModalScenario('2025-06-15 15:50:00', () => {
+          mockPolicy = { refund_manager_enabled: false, refund_manager_window: '2h' };
+        });
+        assertEqual(
+          resPolicyChangedOnSubmit.posted.length,
+          0,
+          'RefundModal aborts POST /refunds when refreshed policy makes selected manager ineligible',
+        );
+        const pinInputAfterRefresh = collectNodes(
+          resPolicyChangedOnSubmit.tree,
+          (n) => n.props?.id === 'refundPin',
+        )[0];
+        assertEqual(
+          pinInputAfterRefresh?.props?.value,
+          '',
+          'RefundModal clears PIN when refreshed policy changes eligible approver',
+        );
+
+        // Case 4: failed /settings/refunds read is treated as a load error and blocks submission
+        shouldFailPolicyLoad = true;
+        const resFailedPolicyLoad = await runModalScenario(
+          '2025-06-15 15:50:00',
+          undefined,
+          true,
+        );
+        assertEqual(
+          resFailedPolicyLoad.submitDisabled,
+          true,
+          'RefundModal disables submit when /settings/refunds fails to load',
+        );
+        shouldFailPolicyLoad = false;
       } finally {
         (globalThis as any).React = prevGlobalReact;
         Module._load = prevLoad;

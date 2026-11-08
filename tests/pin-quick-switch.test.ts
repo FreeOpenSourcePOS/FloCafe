@@ -2182,6 +2182,232 @@ async function run() {
     'User without orders.status.update does not see cancel-blocked-btn-502',
   );
 
+  // ── 13. KDS and Server App PIN Quick Sign-In endpoints (#1516) ──
+  console.log('\n── 13. KDS and Server App GET /api/auth/pin-users and POST /api/auth/pin-login');
+  const net = require('node:net');
+  async function getFreePort(): Promise<number> {
+    const srv = net.createServer();
+    await new Promise<void>((res, rej) => {
+      srv.once('error', rej);
+      srv.listen(0, '127.0.0.1', res);
+    });
+    const addr = srv.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+    await new Promise<void>((res, rej) =>
+      srv.close((err: Error | undefined) => (err ? rej(err) : res())),
+    );
+    return port;
+  }
+
+  process.env.KDS_PORT = String(await getFreePort());
+  process.env.SERVER_APP_PORT = String(await getFreePort());
+
+  const { startKdsServer, stopKdsServer, getKdsPort } = require('../main/kds-server');
+  const { startServerApp, stopServerApp, getServerAppPort } = require('../main/server-app');
+
+  // Seed chef with PIN, chef with inactive station, and server with PIN
+  db.prepare(`
+    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES ('chef-pin', 'Chef With Pin', 'chefpin@test.local', ?, 'chef', ?, 1, ?, ?)
+  `).run(bcrypt.hashSync('ChefPass1!', 10), bcrypt.hashSync('4321', 10), ts, ts);
+
+  db.prepare(`
+    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES ('chef-inactive-station', 'Chef Inactive Station', 'chefinactive@test.local', ?, 'chef', ?, 1, ?, ?)
+  `).run(bcrypt.hashSync('ChefPass1!', 10), bcrypt.hashSync('8765', 10), ts, ts);
+
+  db.prepare(`
+    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES ('server-pin', 'Waiter With Pin', 'serverpin@test.local', ?, 'server', ?, 1, ?, ?)
+  `).run(bcrypt.hashSync('SrvPass1!', 10), bcrypt.hashSync('3456', 10), ts, ts);
+
+  // Create an inactive kitchen station and assign chef-inactive-station ONLY to it
+  db.prepare(`
+    INSERT INTO kitchen_stations (id, name, is_active, sort_order, created_at, updated_at)
+    VALUES ('station-inactive-test', 'Inactive Grill', 0, 99, ?, ?)
+  `).run(ts, ts);
+  db.prepare(`
+    INSERT INTO station_users (user_id, station_id, created_at)
+    VALUES ('chef-inactive-station', 'station-inactive-test', ?)
+  `).run(ts);
+
+  // Enable KDS and Server App in settings
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)",
+  ).run(ts);
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('server_app_enabled', 'true', ?)",
+  ).run(ts);
+
+  // Check Main API GET /api/auth/pin-users?scope=kds filtering
+  const mainKdsScopeRes = await request(app).get('/api/auth/pin-users?scope=kds');
+  assertEqualOrThrow(
+    mainKdsScopeRes.status,
+    200,
+    'Main API GET /api/auth/pin-users?scope=kds returns 200',
+  );
+  const mainKdsUsers = mainKdsScopeRes.body.users as Array<{
+    id: string;
+    name: string;
+    role: string;
+  }>;
+  assertOrThrow(
+    mainKdsUsers.some((u) => u.id === 'owner-1') &&
+      mainKdsUsers.some((u) => u.id === 'mgr-1') &&
+      mainKdsUsers.some((u) => u.id === 'chef-pin'),
+    'Main API scope=kds includes owner, manager, and active-station chef',
+  );
+  assertOrThrow(
+    !mainKdsUsers.some((u) => u.id === cashierId) &&
+      !mainKdsUsers.some((u) => u.id === 'server-pin') &&
+      !mainKdsUsers.some((u) => u.id === 'chef-inactive-station'),
+    'Main API scope=kds excludes cashier, server, and chef with only inactive station',
+  );
+
+  await startKdsServer();
+  await startServerApp();
+  const kdsUrl = `http://127.0.0.1:${getKdsPort()}`;
+  const serverAppUrl = `http://127.0.0.1:${getServerAppPort()}`;
+
+  try {
+    // KDS GET /api/auth/pin-users
+    const kdsPinUsersRes = await fetch(`${kdsUrl}/api/auth/pin-users`);
+    assertEqualOrThrow(kdsPinUsersRes.status, 200, 'KDS GET /api/auth/pin-users returns 200');
+    const kdsPinUsersBody = (await kdsPinUsersRes.json()) as {
+      users: Array<{ id: string; name: string; role: string }>;
+    };
+    assertOrThrow(
+      kdsPinUsersBody.users.some((u) => u.id === 'owner-1') &&
+        kdsPinUsersBody.users.some((u) => u.id === 'mgr-1') &&
+        kdsPinUsersBody.users.some((u) => u.id === 'chef-pin'),
+      'KDS pin-users includes owner, manager, and chef-pin',
+    );
+    assertOrThrow(
+      !kdsPinUsersBody.users.some((u) => u.id === cashierId) &&
+        !kdsPinUsersBody.users.some((u) => u.id === 'server-pin') &&
+        !kdsPinUsersBody.users.some((u) => u.id === 'chef-inactive-station'),
+      'KDS pin-users excludes cashier, server-pin, and chef-inactive-station',
+    );
+
+    // KDS POST /api/auth/pin-login validation, permission checks, rate limiting, and success
+    const kdsMissingRes = await fetch(`${kdsUrl}/api/auth/pin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 'chef-pin' }),
+    });
+    assertEqualOrThrow(kdsMissingRes.status, 400, 'KDS pin-login missing pin returns 400');
+
+    const kdsCashierDenied = await fetch(`${kdsUrl}/api/auth/pin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: cashierId, pin: '7777' }),
+    });
+    assertEqualOrThrow(
+      kdsCashierDenied.status,
+      403,
+      'KDS pin-login rejects cashier without kitchen.use with 403',
+    );
+
+    const kdsInactiveStationDenied = await fetch(`${kdsUrl}/api/auth/pin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 'chef-inactive-station', pin: '8765' }),
+    });
+    assertEqualOrThrow(
+      kdsInactiveStationDenied.status,
+      403,
+      'KDS pin-login rejects chef with no active station with 403',
+    );
+
+    const kdsWrongPin = await fetch(`${kdsUrl}/api/auth/pin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 'chef-pin', pin: '0000' }),
+    });
+    assertEqualOrThrow(kdsWrongPin.status, 401, 'KDS pin-login rejects wrong PIN with 401');
+    const kdsWrongBody = (await kdsWrongPin.json()) as { attempts_remaining?: number };
+    assertEqualOrThrow(
+      kdsWrongBody.attempts_remaining,
+      4,
+      'KDS wrong PIN decrements attempts_remaining',
+    );
+
+    const kdsValidLogin = await fetch(`${kdsUrl}/api/auth/pin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 'chef-pin', pin: '4321' }),
+    });
+    assertEqualOrThrow(kdsValidLogin.status, 200, 'KDS pin-login succeeds for chef-pin');
+    const kdsValidBody = (await kdsValidLogin.json()) as {
+      access_token: string;
+      user: { id: string; role: string };
+    };
+    assertOrThrow(Boolean(kdsValidBody.access_token), 'KDS pin-login returns access_token');
+    assertEqualOrThrow(kdsValidBody.user.id, 'chef-pin', 'KDS pin-login returns chef-pin user');
+
+    // Server App GET /api/auth/pin-users
+    const saPinUsersRes = await fetch(`${serverAppUrl}/api/auth/pin-users`);
+    assertEqualOrThrow(saPinUsersRes.status, 200, 'Server App GET /api/auth/pin-users returns 200');
+    const saPinUsersBody = (await saPinUsersRes.json()) as {
+      users: Array<{ id: string; name: string; role: string }>;
+    };
+    assertOrThrow(
+      saPinUsersBody.users.some((u) => u.id === 'owner-1') &&
+        saPinUsersBody.users.some((u) => u.id === 'mgr-1') &&
+        saPinUsersBody.users.some((u) => u.id === 'server-pin'),
+      'Server App pin-users includes owner, manager, and server-pin',
+    );
+    assertOrThrow(
+      !saPinUsersBody.users.some((u) => u.id === cashierId) &&
+        !saPinUsersBody.users.some((u) => u.id === 'chef-pin'),
+      'Server App pin-users excludes cashier and chef-pin without server-app.use',
+    );
+
+    // Server App POST /api/auth/pin-login validation, permission checks, wrong PIN, and success
+    const saChefDenied = await fetch(`${serverAppUrl}/api/auth/pin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 'chef-pin', pin: '4321' }),
+    });
+    assertEqualOrThrow(
+      saChefDenied.status,
+      403,
+      'Server App pin-login rejects chef without server-app.use with 403',
+    );
+
+    const saWrongPin = await fetch(`${serverAppUrl}/api/auth/pin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 'server-pin', pin: '0000' }),
+    });
+    assertEqualOrThrow(saWrongPin.status, 401, 'Server App pin-login rejects wrong PIN with 401');
+
+    const saValidLogin = await fetch(`${serverAppUrl}/api/auth/pin-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: 'server-pin', pin: '3456' }),
+    });
+    assertEqualOrThrow(saValidLogin.status, 200, 'Server App pin-login succeeds for server-pin');
+    const saValidBody = (await saValidLogin.json()) as {
+      access_token: string;
+      user: { id: string; role: string; permission_ids?: string[] };
+    };
+    assertOrThrow(Boolean(saValidBody.access_token), 'Server App pin-login returns access_token');
+    assertEqualOrThrow(
+      saValidBody.user.id,
+      'server-pin',
+      'Server App pin-login returns server-pin user',
+    );
+    assertOrThrow(
+      Array.isArray(saValidBody.user.permission_ids) &&
+        saValidBody.user.permission_ids.includes('server-app.use'),
+      'Server App pin-login includes permission_ids with server-app.use',
+    );
+  } finally {
+    await stopServerApp();
+    await stopKdsServer();
+  }
+
   closeDatabase();
   fs.rmSync(testDir, { recursive: true, force: true });
   console.log('\n✅ All PIN Quick Switch & Approval Hardening tests passed!');

@@ -677,7 +677,7 @@ try {
     );
     assert.match(
       defaultKdsMarkup,
-      />Pending<\/span>[\s\S]*?>Preparing<\/span>[\s\S]*?>Ready<\/span>[\s\S]*?>Served<\/span>/,
+      />Waiting<\/span>[\s\S]*?>Preparing<\/span>[\s\S]*?>Ready<\/span>[\s\S]*?>Delivered<\/span>/,
       'rendered KdsWorkspace mounts KdsKanbanBoard columns by default',
     );
 

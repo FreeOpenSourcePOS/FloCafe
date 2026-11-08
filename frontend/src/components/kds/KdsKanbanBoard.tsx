@@ -296,10 +296,20 @@ const KanbanOrderCard = memo(function KanbanOrderCard({
                 <span className="text-lg text-foreground font-medium flex-1 truncate">
                   {formatItemHeading(item.product_name, item.variant_selection)}
                 </span>
-                {item.addons && item.addons.length > 0 && (
-                  <span className="text-[10px] text-blue-600">+{item.addons.length}</span>
-                )}
               </div>
+              {item.addons && item.addons.length > 0 && (
+                <div className="ms-[26px] flex flex-wrap gap-1 mt-1">
+                  {item.addons.map((addon, i) => (
+                    <span
+                      key={`${addon.id ?? addon.name}-${i}`}
+                      className="text-[10px] bg-card/70 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200"
+                    >
+                      + {addon.name}
+                      {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
               {item.special_instructions && (
                 <p className="ms-[26px] text-sm text-red-600 italic mt-0.5 font-medium break-words">
                   {`"${item.special_instructions}"`}
@@ -369,6 +379,24 @@ function VoidedColumn({
                       {formatItemHeading(item.product_name, item.variant_selection)}
                     </span>
                   </div>
+                  {item.addons && item.addons.length > 0 && (
+                    <div className="ms-[26px] flex flex-wrap gap-1 mt-1">
+                      {item.addons.map((addon, i) => (
+                        <span
+                          key={`${addon.id ?? addon.name}-${i}`}
+                          className="text-[10px] bg-card/70 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200"
+                        >
+                          + {addon.name}
+                          {(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {item.special_instructions && (
+                    <p className="ms-[26px] text-sm text-red-600 italic mt-0.5 font-medium break-words">
+                      {`"${item.special_instructions}"`}
+                    </p>
+                  )}
                 </button>
               ))}
             </div>
